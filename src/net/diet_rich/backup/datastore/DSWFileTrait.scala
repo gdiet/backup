@@ -61,8 +61,8 @@ extends net.diet_rich.util.logging.Logged {
     }
   }
 
-  /** write cache to file */
-  final def close() : Unit = {
+  /** write cache to file. not final for testability only. */
+  def close() : Unit = {
     synchronized { 
       require(isOpen)
       isOpen = false

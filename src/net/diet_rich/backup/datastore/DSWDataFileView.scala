@@ -3,12 +3,10 @@
 package net.diet_rich.backup.datastore
 
 trait DSWDataFileView {
-  protected val startIndex : Int
+  protected var index: Int
   protected val endIndex : Int
   protected def store(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit
   def close : Unit
-  
-  private var index: Int = startIndex
 
   /**
    * store as much data as fits in the data file view.

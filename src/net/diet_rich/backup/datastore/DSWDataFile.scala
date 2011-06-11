@@ -13,7 +13,8 @@ extends DSWFileTrait {
 
   private val dswDataFile = this
 
-  private var views : Set[DSWDataFileView] = Set.empty
+  /** protected for testability only. */
+  protected var views : Set[DSWDataFileView] = Set.empty
 
   /**
    * create a writer view for writing a part of the data file.
@@ -26,11 +27,11 @@ extends DSWFileTrait {
         require(isOpen)
         views = views + this
       }
-      protected val startIndex = start
-      protected val endIndex = end
-      protected def store(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit =
+      override protected var index = start
+      override protected val endIndex = end
+      override protected def store(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit =
         dswDataFile.store(bytes, offset, length, position)
-      def close : Unit = {
+      override def close : Unit = {
         dswDataFile.synchronized {
           views = views - this
           if (views isEmpty) dswDataFile.close
