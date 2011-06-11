@@ -3,11 +3,22 @@
 package net.diet_rich.backup.datastore
 
 private[datastore]
-class DSECFileWriter(settings: DSSettings, file: java.io.File, source: Option[java.io.File] = None)
-extends net.diet_rich.util.logging.Logged {
+class DSECFileWriter(
+    protected val settings: DSSettings, 
+    protected val file: java.io.File, 
+    protected val source: Option[java.io.File] = None)
+extends DSFileWriterTrait {
 
-  def write(data: Array[Byte], dataOffset: Int, dataLength: Int, position: Int) = {
-    error("not implemented")
+  /**
+   * update error correction data at the given position.
+   * thread safe synchronized.
+   */
+  def store(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit = {
+    storeChecks(bytes, offset, length, position)
+    synchronized {
+      for (n <- 0 until length)
+        dataArray(position + n) = dataArray(position + n) ^ bytes(offset + n) toByte
+    }
   }
 
 }
