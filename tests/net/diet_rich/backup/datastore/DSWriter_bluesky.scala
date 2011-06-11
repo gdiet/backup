@@ -6,24 +6,33 @@ import org.testng.annotations.Test
 import org.testng.Assert._
 import org.mockito.Mockito._
 import net.diet_rich.testutils._
+import net.diet_rich.util.io.Streams._
 
 class DSWriter_bluesky extends TempFileProvider {
 
   @Test
-  def blueSky_inMemory_DataStoreWriter_ECCalculation_orig {
+  def blueSky_DataStoreWriter_ECCalculation {
     val settings = new DSSettings { override val dataFileChunkSize = 10 }
     val ecFile = newTempFile
     val dfFile = newTempFile
-    
+
+    // set up test data file
+    usingIt(new java.io.RandomAccessFile(ecFile, "rw")) { raf =>
+      val initialData = Array[Byte](-1, -1, -1, -1, -1,    -1, -1, -1, 0, 0)
+      val checksum = settings.newDataFileChecksum
+      checksum.update(initialData, 0, initialData.length)
+      raf write initialData
+      raf writeLong checksum.getValue
+    }
+
     // override and add methods for testing
     trait TestAdapter {
       protected val dataArray : Array[Byte]
       var timesCloseCalled = 0
-      def setData(bytes: Array[Byte]) = { for (n <- 0 until bytes.length) dataArray(n) = bytes(n) }
       def getData = dataArray
     }
     
-    val ecWriter = new DSWECFile(settings, ecFile, None) with TestAdapter {
+    val ecWriter = new DSWECFile(settings, ecFile, Option(ecFile)) with TestAdapter {
       override def close = { timesCloseCalled = timesCloseCalled + 1; super.close }
     }
 
@@ -32,9 +41,6 @@ class DSWriter_bluesky extends TempFileProvider {
       def viewIsListed(view: DSWDataFileView) = views contains view
     }
 
-    // set up test data
-    ecWriter.setData(Array(-1, -1, -1, -1, -1,    -1, -1, -1))
-    
     // create views
     val view1 = dfWriter.makeView(2, 5)
     val view2 = dfWriter.makeView(7, 10)
