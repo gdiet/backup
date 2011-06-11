@@ -2,10 +2,6 @@
 // Licensed under the MIT license: http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.backup.datastore
 
-/**
- * always writes files of DSSettings.dataFileChunkSize + 8 bytes length (0-padded if necessary)
- * the last 8 bytes are the DSSettings.newDataFileChecksum Long checksum
- */
 private[datastore]
 class DSDataFileWriter(
     protected val settings: DSSettings, 

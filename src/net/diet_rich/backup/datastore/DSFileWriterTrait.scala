@@ -5,14 +5,14 @@ package net.diet_rich.backup.datastore
 import net.diet_rich.util.io.Streams.{readBytes,usingIt}
 
 /**
- * always writes files of DSSettings.dataFileChunkSize + 8 bytes length (0-padded if necessary)
+ * always writes files of DSSettings.dataFileChunkSize + 8 bytes length (zero-padded where necessary)
  * the last 8 bytes are the DSSettings.newDataFileChecksum Long checksum
  */
 private[datastore]
 trait DSFileWriterTrait
 extends net.diet_rich.util.logging.Logged {
   
-  // members required from implementing class
+  // members required in implementing class
   protected val settings: DSSettings
   protected val file: java.io.File
   protected val source: Option[java.io.File]
@@ -25,33 +25,51 @@ extends net.diet_rich.util.logging.Logged {
   /** the data array to store the data in temporarily */
   protected val dataArray = new Array[Byte](settings.dataFileChunkSize)
 
+  private def dataChecksum : Long = {
+      val checksum = settings.newDataFileChecksum
+      checksum.update(dataArray, 0, dataArray.length)
+      return checksum.getValue
+  }
+  
   // initialize from source file if source is defined
   source foreach { sourceFile =>
     usingIt(new java.io.RandomAccessFile(sourceFile,  "r")){raFile => 
       // check source size
       val size = raFile.length
       if (size != settings.dataFileChunkSize + 8)
-        throwError(new DataFileSizeException, "data file size error", file, size)
+        throwError(new DataFileSizeException, "data file size error", sourceFile, size)
       // copy data from source to data array and check checksum
-      val read = readBytes(raFile, dataArray, size - 8)
-      if (read != size - 8) throwError(new DataFileSizeException, "data file size error", file, read)
-      val checksum = settings.newDataFileChecksum
-      checksum.update(dataArray, 0, read)
-      if (checksum.getValue != raFile.readLong) throwError(new DataFileChecksumException, "data file checksum error", file)
+      raFile.readFully(dataArray)
+      if (dataChecksum != raFile.readLong)
+        throwError(new DataFileChecksumException, "data file checksum error", sourceFile)
     }
   }
 
+  private var isOpen = true;
+  
   /** store the bytes in the writer cache. thread safe synchronized. */
   final def store(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit = {
     assume(length >= 0)
     assume(position >= 0)
     assume(position <= settings.dataFileChunkSize - length)
     assume(offset <= bytes.length - length)
-    synchronized { storeMethod(bytes, offset, length, position) }
+    synchronized { 
+      require(isOpen)
+      storeMethod(bytes, offset, length, position)
+    }
   }
 
-  
-  // FIXME def close : Unit with write-to-file including checksum
+  /** write cache to file */
+  final def close() : Unit = {
+    synchronized { 
+      require(isOpen)
+      isOpen = false
+      usingIt(new java.io.RandomAccessFile(file,  "rw")){raFile => 
+        raFile write dataArray
+        raFile writeLong dataChecksum
+      }
+    }
+  }
   
 }
 
