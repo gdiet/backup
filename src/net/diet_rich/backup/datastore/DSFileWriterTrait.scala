@@ -16,6 +16,8 @@ extends net.diet_rich.util.logging.Logged {
   protected val settings: DSSettings
   protected val file: java.io.File
   protected val source: Option[java.io.File]
+  /** method parameters: data bytes, data byte offset, data length, file position */
+  protected val storeMethod: (Array[Byte], Int, Int, Int) => Unit
   
   // import companion members
   import DSFileWriterTrait._
@@ -39,11 +41,13 @@ extends net.diet_rich.util.logging.Logged {
     }
   }
 
-  def storeChecks(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit = {
+  /** store the bytes in the writer cache. thread safe synchronized. */
+  final def store(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit = {
     assume(length >= 0)
     assume(position >= 0)
     assume(position <= settings.dataFileChunkSize - length)
     assume(offset <= bytes.length - length)
+    synchronized { storeMethod(bytes, offset, length, position) }
   }
 
   

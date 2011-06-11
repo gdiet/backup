@@ -14,17 +14,11 @@ class DSDataFileWriter(
     protected val source: Option[java.io.File] = None)
 extends DSFileWriterTrait {
 
-  /**
-   * store bytes at the given position, updating the error correction data accordingly.
-   * thread safe synchronized.
-   */
-  def store(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit = {
-    storeChecks(bytes, offset, length, position)
-    synchronized {
-      ecWriter.store(dataArray, position, length, position)
-      for (n <- 0 until length) dataArray(position + n) = bytes(offset + n)
-      ecWriter.store(dataArray, position, length, position)
-    }
+  /** store bytes at the given position, updating the error correction data accordingly. */
+  protected val storeMethod = (bytes: Array[Byte], offset: Int, length: Int, position: Int) => {
+    ecWriter.store(dataArray, position, length, position)
+    for (n <- 0 until length) dataArray(position + n) = bytes(offset + n)
+    ecWriter.store(dataArray, position, length, position)
   }
-  
+
 }

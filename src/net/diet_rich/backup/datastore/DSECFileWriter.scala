@@ -9,16 +9,8 @@ class DSECFileWriter(
     protected val source: Option[java.io.File] = None)
 extends DSFileWriterTrait {
 
-  /**
-   * update error correction data at the given position.
-   * thread safe synchronized.
-   */
-  def store(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit = {
-    storeChecks(bytes, offset, length, position)
-    synchronized {
-      for (n <- 0 until length)
-        dataArray(position + n) = dataArray(position + n) ^ bytes(offset + n) toByte
-    }
-  }
+  /** update error correction data at the given position. */
+  protected val storeMethod = (bytes: Array[Byte], offset: Int, length: Int, position: Int) =>
+    for (n <- 0 until length) dataArray(position + n) = dataArray(position + n) ^ bytes(offset + n) toByte
 
 }
