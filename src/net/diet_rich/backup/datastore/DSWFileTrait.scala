@@ -9,7 +9,7 @@ import net.diet_rich.util.io.Streams.{readBytes,usingIt}
  * the last 8 bytes are the DSSettings.newDataFileChecksum Long checksum
  */
 private[datastore]
-trait DSFileWriterTrait
+trait DSWFileTrait
 extends net.diet_rich.util.logging.Logged {
   
   // members required in implementing class
@@ -20,7 +20,7 @@ extends net.diet_rich.util.logging.Logged {
   protected val storeMethod: (Array[Byte], Int, Int, Int) => Unit
   
   // import companion members
-  import DSFileWriterTrait._
+  import DSWFileTrait._
   
   /** the data array to store the data in temporarily */
   protected val dataArray = new Array[Byte](settings.dataFileChunkSize)
@@ -45,7 +45,9 @@ extends net.diet_rich.util.logging.Logged {
     }
   }
 
-  private var isOpen = true;
+  private var _isOpen = true
+  protected def isOpen = _isOpen // getter
+  private def isOpen_= (value: Boolean) : Unit = _isOpen = value // setter
   
   /** store the bytes in the writer cache. thread safe synchronized. */
   final def store(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit = {
@@ -73,7 +75,7 @@ extends net.diet_rich.util.logging.Logged {
   
 }
 
-object DSFileWriterTrait {
+object DSWFileTrait {
   class DataFileWriterException extends Exception
   class DataFileSizeException extends DataFileWriterException
   class DataFileChecksumException extends DataFileWriterException

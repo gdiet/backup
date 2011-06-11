@@ -3,11 +3,11 @@
 package net.diet_rich.backup.datastore
 
 private[datastore]
-class DSECFileWriter(
+class DSWECFile(
     protected val settings: DSSettings, 
     protected val file: java.io.File, 
     protected val source: Option[java.io.File] = None)
-extends DSFileWriterTrait {
+extends DSWFileTrait {
 
   /** update error correction data at the given position. */
   protected val storeMethod = (bytes: Array[Byte], offset: Int, length: Int, position: Int) =>
