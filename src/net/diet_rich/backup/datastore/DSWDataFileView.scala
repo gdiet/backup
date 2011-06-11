@@ -5,6 +5,7 @@ package net.diet_rich.backup.datastore
 trait DSWDataFileView {
   protected var index: Int
   protected val endIndex : Int
+  protected val fileID : Long
   protected def store(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit
   def close : Unit
 
@@ -14,14 +15,15 @@ trait DSWDataFileView {
    * thread safe synchronized.
    * @return the number of bytes stored
    */
-  def store(bytes: Array[Byte], offset: Int, length: Int) : Int = synchronized {
+  def store(bytes: Array[Byte], offset: Int, length: Int) : DSWDataFileResult = synchronized {
+    val position = index
     val numBytes = math.min(length, endIndex - index)
     if (numBytes > 0) {
       store(bytes, offset, numBytes, index)
       index = index + numBytes
       if (index == endIndex) close
     }
-    numBytes
+    new DSWDataFileResult(numBytes, fileID, position)
   }
 
 }

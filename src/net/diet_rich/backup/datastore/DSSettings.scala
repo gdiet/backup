@@ -6,7 +6,7 @@ package net.diet_rich.backup.datastore
 private[datastore]
 class DSSettings {
 
-  /** maximum size of data chunk in data files. */
+  /** maximum size of data chunk in data files. data file size is limited by Int.MaxValue. */
   val dataFileChunkSize : Int = 1000000
   
   /** factory for data file checksum objects */

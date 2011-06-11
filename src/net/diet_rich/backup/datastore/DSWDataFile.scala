@@ -29,6 +29,7 @@ extends DSWFileTrait {
       }
       override protected var index = start
       override protected val endIndex = end
+      override protected val fileID = dswDataFile.fileID
       override protected def store(bytes: Array[Byte], offset: Int, length: Int, position: Int) : Unit =
         dswDataFile.store(bytes, offset, length, position)
       override def close : Unit = {
