@@ -14,7 +14,7 @@ extends DSWFileTrait {
   private val dswDataFile = this
 
   /** protected for testability only. */
-  protected var views : Set[DSWDataFileView] = Set.empty
+  protected val views = new collection.mutable.HashSet[DSWDataFileView]()
 
   /**
    * create a writer view for writing a part of the data file.
@@ -25,7 +25,7 @@ extends DSWFileTrait {
     new DSWDataFileView { 
       dswDataFile.synchronized {
         require(isOpen)
-        views = views + this
+        views += this
       }
       override protected var index = start
       override protected val endIndex = end
@@ -34,7 +34,7 @@ extends DSWFileTrait {
         dswDataFile.store(bytes, offset, length, position)
       override def close : Unit = {
         dswDataFile.synchronized {
-          views = views - this
+          views -= this
           if (views isEmpty) dswDataFile.close
         }
       }

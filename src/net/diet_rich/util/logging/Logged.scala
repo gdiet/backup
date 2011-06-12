@@ -3,17 +3,34 @@
 package net.diet_rich.util.logging
 
 /**
+ * simple logging trait that can be used for console and file logging as well as 
+ * to display a nice event log on a GUI. The key strings are intended to be keys 
+ * for looking up localized error message formatters.
+ * 
  * this trait can easily be extended to include e.g. output to SLF4J.
- * the key strings are intended to be keys for looking up the
- * localized error message formatters
  */
 trait Logged {
   
-  def throwError(throwable: java.lang.Throwable, key: String, args: Any*) = { print("error", key, args:_*); throw throwable }
-  def error(key: String, args: Any*) = print("error", key, args:_*)
-  def warning(key: String, args: Any*) = print("warn", key, args:_*)
-  def info(key: String, args: Any*) = print("info", key, args:_*)
-  def debug(key: String, args: Any*) = print("debug", key, args:_*)
+  /** optional specific logging object to use. */
+  def logListener : Option[Logger] = None
+  
+  /** log an error, then throw it. for logging, the throwable is always the last argument. */
+  def throwError(throwable: java.lang.Throwable, key: String, args: Any*) : Unit = {
+    error(key, args :+ throwable :_*)
+    throw throwable
+  }
+  
+  def error(key: String, args: Any*) = optionAndFlag("error", key, args:_*)(_.error(key, args:_*))
+  def warning(key: String, args: Any*) = optionAndFlag("warn", key, args:_*)(_.warning(key, args:_*))
+  def info(key: String, args: Any*) = optionAndFlag("info", key, args:_*)(_.info(key, args:_*))
+  def debug(key: String, args: Any*) = optionAndFlag("debug", key, args:_*)(_.debug(key, args:_*))
+  
+  private def optionAndFlag(level: String, key: String, args: Any*)(loggerFunction: => Logger => Unit) = {
+    // if a log listener is defined, call it
+    logListener.foreach(loggerFunction(_))
+    // if no log listener is defined or the log listener does not consume logs, call the default logging
+    if (logListener.forall(!_.consumeLogs)) print(level, key, args:_*)
+  }
   
   private def print(level: String, key: String, args: Any*) = printf("%s: %s %s", level, key, args.mkString("[", ", ", "]"))
   

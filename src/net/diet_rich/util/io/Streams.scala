@@ -2,6 +2,13 @@
 // Licensed under the MIT license: http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util.io
 
+/**
+ * utility methods for stream handling.
+ * 
+ * duck typing input stream and output stream allows to use normal streams
+ * as well as RandomAccessFile objects and other stream like objects with
+ * the utility methods.
+ */
 object Streams {
   
   type InStream = { def read(buffer: Array[Byte], offset: Int, length: Int) : Int }
@@ -15,9 +22,7 @@ object Streams {
   def usingIt[Closeable <: {def close() : Unit}, ReturnType] (resource: Closeable)(operation: (Closeable) => ReturnType) : ReturnType =
     try { operation(resource) } finally { resource.close }
 
-  /**
-   * buffer factory used internally
-   */
+  /** buffer factory used internally */
   private def createBuffer() = new Array[Byte](8192)
   
   /**
@@ -58,7 +63,7 @@ object Streams {
   }
 
   /**
-   * Copy data from input to output until end-of-stream is reached.
+   * copies data from input to output until end-of-stream is reached.
    * @return the number of bytes copied.
    */
   def copyData(source: InStream, sink: OutStream) : Long = {

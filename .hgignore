@@ -2,3 +2,5 @@ src/tryout
 
 syntax: regexp
 ^test-output$
+syntax: glob
+bin/
