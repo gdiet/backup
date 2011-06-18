@@ -10,9 +10,7 @@ package net.diet_rich.util.io
  * the utility methods.
  */
 object Streams {
-  
-  type InStream = { def read(buffer: Array[Byte], offset: Int, length: Int) : Int }
-  type OutStream = { def write(buffer: Array[Byte], offset: Int, length: Int) : Unit }
+  import net.diet_rich.util.data.{Digest,Digester}
   
   /** closes the resource after the operation */
   def using[Closeable <: {def close() : Unit}, ReturnType] (resource: Closeable)(operation: => ReturnType) : ReturnType =
@@ -26,60 +24,43 @@ object Streams {
   private def createBuffer() = new Array[Byte](8192)
   
   /**
-   * reads and discards a number of bytes from a stream. stops if end-of-stream is reached.
+   * reads and discards data from a stream until limit or end-of-stream is reached.
+   * 
    * @return the number of bytes read.
    */
-  def readSkip(source: InStream, length: Long = Long.MaxValue) : Long = {
-    // Note: Designed tail recursively.
-    val buffer = createBuffer()
-    def readSome(alreadyRead: Long) : Long = {
-      val maxread = math.min(length - alreadyRead, buffer.length) toInt
-      val read = source.read(buffer, 0, maxread)
-      if (read <= 0) {
-        alreadyRead
-      } else {
-        readSome(alreadyRead + read)
-      }
-    }
-    readSome(0)
+  def readSkip(source: InputStream, limit: Long = Long.MaxValue) : Long = {
+    copyData(source, OutputStream.empty, limit)
   }
 
   /**
-   * fills the array with bytes from a stream. stops if end-of-stream is reached, buffer is filled or limit is reached.
-   * @return the number of bytes read.
-   */
-  def readBytes(source: InStream, buffer: Array[Byte], limit: Long = Long.MaxValue) : Int = {
-    // Note: Designed tail recursively.
-    val maxread = math.min(buffer.length, limit) toInt
-    def readBytes(alreadyRead: Int) : Int = {
-      val read = source.read(buffer, alreadyRead, maxread - alreadyRead)
-      if (read <= 0) {
-        alreadyRead
-      } else {
-        readBytes(alreadyRead + read)
-      }
-    }
-    readBytes(0)
-  }
-
-  /**
-   * copies data from input to output until end-of-stream is reached.
+   * copies data from input to output until limit or end-of-stream is reached.
+   * 
    * @return the number of bytes copied.
    */
-  def copyData(source: InStream, sink: OutStream) : Long = {
-    // Note: Designed tail recursively.
+  def copyData(source: InputStream, sink: OutputStream, limit: Long = Long.MaxValue) : Long = {
     val copyBuffer = createBuffer()
-    def copyDataRecursion(source: InStream, sink: OutStream, previouslyWritten: Long) : Long = {
-      val read = source.read(copyBuffer, 0, copyBuffer.length)
-      if (read <= 0) {
-        assert(read < 0)
-        previouslyWritten
-      } else {
-        sink.write(copyBuffer, 0, read)
-        copyDataRecursion(source, sink, previouslyWritten + read)
+    def copyDataRecursion(source: InputStream, sink: OutputStream, alreadyWritten: Long) : Long = {
+      val maxread = math.min(copyBuffer.length, limit - alreadyWritten).toInt
+      source.read(copyBuffer, 0, maxread) match {
+        case bytesRead if bytesRead <= 0 => 
+          assert(bytesRead == 0)
+          alreadyWritten
+        case bytesRead => 
+          sink.write(copyBuffer, 0, bytesRead)
+          copyDataRecursion(source, sink, alreadyWritten + bytesRead)
       }
     }
     copyDataRecursion(source, sink, 0)
   }
- 
+
+  def digestStream[DigestType](stream: InputStream, digester: Digester[DigestType]) : InputStream with Digest[DigestType] = {
+    new InputStream with Digest[DigestType] {
+      override def read(buffer: Array[Byte], offset: Int, length: Int) : Int = {
+        val bytesRead = stream.read(buffer: Array[Byte], offset: Int, length: Int)
+        digester.write(buffer, offset, bytesRead)
+        bytesRead
+      }
+      def getDigest : DigestType = digester.getDigest
+    }
+  }
 }

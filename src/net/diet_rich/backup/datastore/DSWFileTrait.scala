@@ -2,7 +2,7 @@
 // Licensed under the MIT license: http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.backup.datastore
 
-import net.diet_rich.util.io.Streams.{readBytes,usingIt}
+import net.diet_rich.util.io.Streams.usingIt
 
 /**
  * always writes files of DSSettings.dataFileChunkSize + 8 bytes length (zero-padded where necessary)

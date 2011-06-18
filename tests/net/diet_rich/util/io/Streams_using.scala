@@ -17,7 +17,7 @@ class Streams_using {
     verify(closeable, times(1)) close
   }
 
-   private class TestError extends Error
+  private class TestError extends Error
  
   @Test(expectedExceptions = Array(classOf[TestError]))
   def test_using_closes_on_error : Unit = {
@@ -28,5 +28,5 @@ class Streams_using {
     }
     verify(closeable, times(1)) close
   }
-
+  
 }
