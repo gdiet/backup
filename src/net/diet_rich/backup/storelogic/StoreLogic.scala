@@ -11,10 +11,10 @@ trait StoreLogic extends net.diet_rich.util.logging.Logged {
   // methods to implement when trait is used
   
   val headerSize : Int
-  def newHeaderDigester() : Digester[Long]
+  def newHeaderDigester() : Digester[Checksum]
   def newHashDigester() : Digester[DataHash]
-  def dbContains(size: Long, headerChecksum: Long) : Boolean
-  def dbLookup(size: Long, headerChecksum: Long, hash: DataHash) : Option[DataLocation]
+  def dbContains(size: Long, headerChecksum: Checksum) : Boolean
+  def dbLookup(size: Long, headerChecksum: Checksum, hash: DataHash) : Option[DataLocation]
   def dbMarkDeleted(data: DataLocation)
   def newStoreStream() : Digester[DataLocation] with Closeable
 
@@ -38,7 +38,7 @@ trait StoreLogic extends net.diet_rich.util.logging.Logged {
     }
   }
   
-  private def storeNow(input: ResettableBackupInput, initialHeaderChecksum: Long, initialHash: Option[DataHash]) : DataLocation = {
+  private def storeNow(input: ResettableBackupInput, initialHeaderChecksum: Checksum, initialHash: Option[DataHash]) : DataLocation = {
     debug("store input", input.sourceForLog)
     val (length, headerChecksum, hash, location) = executeStore(input)
     val warnkey = if (length != input.length) "detected source length change"
@@ -51,7 +51,7 @@ trait StoreLogic extends net.diet_rich.util.logging.Logged {
     } else location
   }
 
-  private def markDeletedIfNecessary(input: ResettableBackupInput, length: Long, headerChecksum: Long, hash: DataHash, location: DataLocation) : DataLocation = {
+  private def markDeletedIfNecessary(input: ResettableBackupInput, length: Long, headerChecksum: Checksum, hash: DataHash, location: DataLocation) : DataLocation = {
     dbLookup(length, headerChecksum, hash) match {
       case None => 
         location
@@ -62,7 +62,7 @@ trait StoreLogic extends net.diet_rich.util.logging.Logged {
     } 
   }
   
-  private def executeStore(input: ResettableBackupInput) : (Long, Long, DataHash, DataLocation) = {
+  private def executeStore(input: ResettableBackupInput) : (Long, Checksum, DataHash, DataLocation) = {
     input.reset
     val hashStream = digestStream(input, newHashDigester)
     val checksumStream = digestStream(hashStream, newHeaderDigester)
@@ -72,14 +72,14 @@ trait StoreLogic extends net.diet_rich.util.logging.Logged {
     (length, checksumStream.getDigest, hashStream.getDigest, storeStream.getDigest)
   }
   
-  private def getHeaderChecksum(input: ResettableInputStream) : Long = {
+  private def getHeaderChecksum(input: ResettableInputStream) : Checksum = {
     input.reset
     val checksumStream = digestStream(input, newHeaderDigester)
     readSkip(checksumStream, headerSize)
     checksumStream.getDigest
   }
 
-  private def getHeaderChecksumAndHash(input: ResettableInputStream) : (Long, Long, DataHash) = {
+  private def getHeaderChecksumAndHash(input: ResettableInputStream) : (Long, Checksum, DataHash) = {
     input.reset
     val hashStream = digestStream(input, newHashDigester)
     val checksumStream = digestStream(hashStream, newHeaderDigester)
@@ -103,7 +103,7 @@ object StoreLogic {
     def length : Long
   }
 
-  // FIXME introduce type Checksum = Long to increase type safety (so length and checksum are not mixed up)
+  trait Checksum // TODO implement
   
   trait DataLocation // TODO implement
   
