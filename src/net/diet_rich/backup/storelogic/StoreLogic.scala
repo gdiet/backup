@@ -4,6 +4,7 @@ package net.diet_rich.backup.storelogic
 
 trait StoreLogic extends net.diet_rich.util.logging.Logged {
   import net.diet_rich.util.data.Digester
+  import net.diet_rich.util.data.Digester.Checksum
   import net.diet_rich.util.io.{Closeable,ResettableInputStream}
   import net.diet_rich.util.io.Streams._
   import StoreLogic._
@@ -103,8 +104,6 @@ object StoreLogic {
     def length : Long
   }
 
-  trait Checksum // TODO implement
-  
   trait DataLocation // TODO implement
   
 }
