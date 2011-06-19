@@ -44,7 +44,7 @@ trait StoreLogic extends net.diet_rich.util.logging.Logged {
     val (length, headerChecksum, hash, location) = executeStore(input)
     val warnkey = if (length != input.length) "detected source length change"
       else if (headerChecksum != initialHeaderChecksum) "detected source header change"
-      else if (!initialHash.forall(_ sameAs hash)) "detected source hash change"
+      else if (!initialHash.forall(_ sameElements hash)) "detected source hash change"
       else ""
     if (!warnkey.isEmpty) {
       warning(warnkey, input.sourceForLog)
@@ -93,10 +93,7 @@ trait StoreLogic extends net.diet_rich.util.logging.Logged {
 object StoreLogic {
   import net.diet_rich.util.io._
 
-  trait DataHash {
-    def sameAs(other: DataHash) : Boolean
-    def notSameAs(other: DataHash) : Boolean = !sameAs(other)
-  }
+  type DataHash = Array[Byte]
   
   trait ResettableBackupInput extends ResettableInputStream {
     /** used for logging purposes only */
