@@ -13,7 +13,10 @@ object ResettableInputStream {
       require(offset >= 0)
       require(length >= 0)
       require(buffer.length >= offset + length)
-      math.min(0, randomAccessFile.read(buffer, offset, length))
+      randomAccessFile.read(buffer, offset, length) match {
+        case x if x < 0 => 0
+        case x => x
+      }
     }
     override def close : Unit = randomAccessFile.close
   }
