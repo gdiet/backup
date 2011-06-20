@@ -2,6 +2,10 @@
 // Licensed under the MIT license: http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.backup.storelogic
 
+// note: the following imports are useful for mockito matching
+//  import org.mockito.Matchers.{argThat,eq => isEq}
+//  import org.hamcrest.CoreMatchers._
+
 class StoreLogic_storeOrLink extends net.diet_rich.testutils.TestDataFileProvider {
   import org.fest.assertions.Assertions.assertThat
   import org.testng.annotations.Test
@@ -9,24 +13,31 @@ class StoreLogic_storeOrLink extends net.diet_rich.testutils.TestDataFileProvide
   import net.diet_rich.util.data.Digester
   import net.diet_rich.util.data.Digester.Checksum
   import net.diet_rich.util.io.{Closeable,OutputStream,ResettableInputStream}
+  import net.diet_rich.util.Strings._
   import StoreLogic._
 
+  val location = new DataLocation {}
+  val storedData = new collection.mutable.ArrayBuffer[Byte]
+  
+  class StoreStub extends StoreLogic {
+    override val headerSize = 10
+    override def newHeaderDigester() = Digester.adler32
+    override def newHashDigester() = Digester.hash("MD5")
+    override def dbContains(size: Long, headerChecksum: Checksum) = false
+    override def dbLookup(size: Long, headerChecksum: Checksum, hash: DataHash) : Option[Long] = None
+    override def dbStoreLocation(size: Long, headerChecksum: Checksum, hash: DataHash, data: DataLocation) = Left(0)
+    override def dbMarkDeleted(data: DataLocation) = { }
+    override def newStoreStream() : Digester[DataLocation] with Closeable = 
+      new Digester[DataLocation] with Closeable {
+        override def write(buffer: Array[Byte], offset: Int, length: Int) =
+          storedData ++= buffer.toSeq.slice(offset, offset + length)
+        override def getDigest = location
+        override def close = {}
+      }
+  }
+  
   @Test
   def blueSky_StoreLogic_storeOrLink {
-     class StoreStub extends StoreLogic {
-      override val headerSize = 10
-      override def newHeaderDigester() = Digester.adler32
-      override def newHashDigester() = Digester.hash("MD5")
-      override def dbContains(size: Long, headerChecksum: Checksum) = false
-      override def dbLookup(size: Long, headerChecksum: Checksum, hash: DataHash) : Option[DataLocation] = None
-      override def dbMarkDeleted(data: DataLocation) = { }
-      override def newStoreStream() : Digester[DataLocation] with Closeable = 
-        new Digester[DataLocation] with Closeable {
-          def write(buffer: Array[Byte], offset: Int, length: Int) : Unit = { }
-          def getDigest : DataLocation = new DataLocation {}
-          def close : Unit = {}
-        }
-    }
     val storeMock = spy(new StoreStub)
     
     val input1 = new ResettableInputStream.FromFile(testDataFile("15_A")) with ResettableBackupInput {
@@ -34,12 +45,18 @@ class StoreLogic_storeOrLink extends net.diet_rich.testutils.TestDataFileProvide
       override def length : Long = randomAccessFile.length
     }
     val adler_10_A = Checksum(0x0e01028b)
-    
-    when(storeMock.dbContains(15, adler_10_A)).thenThrow(new AssertionError("hit"))
+    val hash_15_A = hex2Bytes("409c94b762769ea5fb9384eb9bddf207")
 
+    // store input 1
     storeMock.storeOrLink(input1)
 
+    // check it was processed correctly
     verify(storeMock).dbContains(15, adler_10_A)
+    verify(storeMock).dbStoreLocation(15L, adler_10_A, hash_15_A, location)
+    assertThat(storedData.sameElements("AAAAAAAAAAAAAAA")).isTrue
+
+    // now, mock the answer for input 1
+    when(storeMock.dbContains(15, adler_10_A)).thenReturn(true)
 
   }
 
