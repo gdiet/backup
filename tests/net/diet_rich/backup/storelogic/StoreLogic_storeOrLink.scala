@@ -25,7 +25,7 @@ class StoreLogic_storeOrLink extends net.diet_rich.testutils.TestDataFileProvide
     override def newHashDigester() = Digester.hash("MD5")
     override def dbContains(size: Long, headerChecksum: Checksum) = false
     override def dbLookup(size: Long, headerChecksum: Checksum, hash: DataHash) : Option[Long] = None
-    override def dbStoreLocation(size: Long, headerChecksum: Checksum, hash: DataHash, data: DataLocation) = Left(0)
+    override def dbStoreLocation(size: Long, headerChecksum: Checksum, hash: DataHash, data: DataLocation) = Left(321)
     override def dbMarkDeleted(data: DataLocation) = { }
     override def newStoreStream() : Digester[DataLocation] with Closeable = 
       new Digester[DataLocation] with Closeable {
@@ -48,16 +48,25 @@ class StoreLogic_storeOrLink extends net.diet_rich.testutils.TestDataFileProvide
     val hash_15_A = hex2Bytes("409c94b762769ea5fb9384eb9bddf207")
 
     // store input 1
-    storeMock.storeOrLink(input1)
+    assertThat(storeMock.storeOrLink(input1)) isEqualTo 321
 
     // check it was processed correctly
     verify(storeMock).dbContains(15, adler_10_A)
     verify(storeMock).dbStoreLocation(15L, adler_10_A, hash_15_A, location)
     assertThat(storedData.sameElements("AAAAAAAAAAAAAAA")).isTrue
 
-    // now, mock the answer for input 1
-    when(storeMock.dbContains(15, adler_10_A)).thenReturn(true)
+    // now, mock the answers for input 1
+    when(storeMock.dbContains(15, adler_10_A)) thenReturn true
+    when(storeMock.dbLookup(15, adler_10_A, hash_15_A)) thenReturn Option(123L)
 
+    // store input 1 again
+    input1.reset
+    assertThat(storeMock.storeOrLink(input1)) isEqualTo 123
+    
+    // check it was processed correctly and no data was written
+    verify(storeMock).dbLookup(15, adler_10_A, hash_15_A)
+    assertThat(storedData.length) isEqualTo 15
+    
   }
 
 }

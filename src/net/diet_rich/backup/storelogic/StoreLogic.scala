@@ -68,17 +68,6 @@ trait StoreLogic extends net.diet_rich.util.logging.Logged {
         newPK => newPK)
   }
 
-//  private def markDeletedIfNecessary(input: ResettableBackupInput, length: Long, headerChecksum: Checksum, hash: DataHash, location: DataLocation) : DataLocation = {
-//    dbLookup(length, headerChecksum, hash) match {
-//      case None => 
-//        location
-//      case Some(previousLocation) =>
-//        dbMarkDeleted(location)
-//        info("marked duplicate data obsolete", input.sourceForLog)
-//        previousLocation
-//    } 
-//  }
-  
   private def executeStore(input: ResettableBackupInput) : (Long, Checksum, DataHash, DataLocation) = {
     input.reset
     val hashStream = digestStream(input, newHashDigester)
