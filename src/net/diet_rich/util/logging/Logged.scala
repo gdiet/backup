@@ -14,8 +14,11 @@ trait Logged {
   /** optional specific logging object to use. */
   def logListener : Option[Logger] = None
   
-  /** log an error, then throw it. for logging, the throwable is always the last argument. */
-  def throwError(throwable: java.lang.Throwable, key: String, args: Any*) : Unit = {
+  /**
+   * log an error, then throw it (= never returns normally).
+   * internally, the throwable is logged as last argument.
+   */
+  def throwError[T](throwable: java.lang.Throwable, key: String, args: Any*) : T = {
     error(key, args :+ throwable :_*)
     throw throwable
   }
