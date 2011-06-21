@@ -28,12 +28,16 @@ trait StoreLogic extends net.diet_rich.util.logging.Logged {
   def newHashDigester() : Digester[DataHash]
   def dbContains(size: Long, headerChecksum: Checksum) : Boolean
   def dbLookup(size: Long, headerChecksum: Checksum, hash: DataHash) : Option[Long]
-  /** @return left if already in database, right for new entry. */
+  /** 
+   * this method must be synchronized properly-
+   * 
+   * @return left if already in database, right for new entry.
+   */
   def dbStoreLocation(size: Long, headerChecksum: Checksum, hash: DataHash, data: DataLocation) : Either[Long, Long]
   def dbMarkDeleted(data: DataLocation)
   def newStoreStream() : Digester[DataLocation] with Closeable
 
-  // store logic
+  // implemented logic
   
   /**
    * Note: May not be called at all for files that have the same
