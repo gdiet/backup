@@ -10,9 +10,10 @@ package net.diet_rich.util.logging
  * this trait can easily be extended to include e.g. output to SLF4J.
  */
 trait Logged {
+  import Logged._
   
   /** optional specific logging object to use. */
-  def logListener : Option[Logger] = None
+  def logListener : Option[Logger] = defaultLogListener
   
   /**
    * log an error, then throw it (= never returns normally).
@@ -28,13 +29,15 @@ trait Logged {
   def info(key: String, args: Any*) = optionAndFlag("info", key, args:_*)(_.info(key, args:_*))
   def debug(key: String, args: Any*) = optionAndFlag("debug", key, args:_*)(_.debug(key, args:_*))
   
-  private def optionAndFlag(level: String, key: String, args: Any*)(loggerFunction: => Logger => Unit) = {
-    // if a log listener is defined, call it
-    logListener.foreach(loggerFunction(_))
-    // if no log listener is defined or the log listener does not consume logs, call the default logging
-    if (logListener.forall(!_.consumeLogs)) print(level, key, args:_*)
-  }
+  private def optionAndFlag(level: String, key: String, args: Any*)(loggerFunction: => Logger => Boolean) =
+    // if no log listener is defined or the log listener does not consume logs, log to stdout
+    if (logListener.forall(loggerFunction(_)))
+      printf("%s: %s %s\n", level, key, args.mkString("[", ", ", "]"))
   
-  private def print(level: String, key: String, args: Any*) = printf("%s: %s %s", level, key, args.mkString("[", ", ", "]"))
+}
+
+object Logged {
+  
+  var defaultLogListener : Option[Logger] = None
   
 }

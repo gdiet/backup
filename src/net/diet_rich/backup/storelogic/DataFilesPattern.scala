@@ -28,12 +28,9 @@ import net.diet_rich.util.logging.Logged
  * 303 308 313
  * 304 309                                                                     399 r19
  */
-trait DataFilesPattern extends Logged {
-  import DataFilesPattern._
-
-  // methods to implement when trait is used
+object DataFilesPattern extends Logged {
   
-  // implemented logic
+  class IllegalFileNameException extends Exception
   
   // FIXME write some tests
   
@@ -44,32 +41,28 @@ trait DataFilesPattern extends Logged {
     val base = fileID - fileID % 400
     val column = fileID % 100 / 5
     val row = fileID % 5 + 5 * ((fileID % 400) / 100)
-    val columnName = "ec_%15d_c%2d".formatLocal(java.util.Locale.US, base, column)
-    val rowName = "ec_%15d_r%2d".formatLocal(java.util.Locale.US, base, row)
+    val columnName = "ec_%015d_c%02d".formatLocal(java.util.Locale.US, base, column)
+    val rowName = "ec_%015d_r%02d".formatLocal(java.util.Locale.US, base, row)
     (columnName, rowName)
   }
   
   /** @return the file name for a given data file. */
-  def nameForFileID(fileID: Long) : String = "%15d".formatLocal(java.util.Locale.US, fileID)
+  def nameForFileID(fileID: Long) : String = "%015d".formatLocal(java.util.Locale.US, fileID)
 
   /** @return the data file IDs protected by an error correction file. */
   def idsForECname(ecName: String) : Seq[Long] = {
     val parts = ecName.split('_')
     require(parts(0) == "ec")
-    val base = Integer.parseInt(parts(1))
-    val colRow = parts(1)(1)
-    val index = Integer.parseInt(parts(1).substring(1))
-    if (colRow == 'c') {
-      for (n <- Seq.range(0, 300, 100); m <- 0 to 4) yield m + n + index * 5L
-    } else if (colRow == 'r') {
-      for (n <- Seq.range(0, 100, 5)) yield n + index % 5 + index / 5 * 100L
+    val base = parts(1).toLong
+    val colOrRow = parts(2)(0)
+    val index = parts(2).substring(1).toInt
+    if (colOrRow == 'c') {
+      for (n <- Seq.range(0, 400, 100); m <- 0 to 4) yield base + m + n + index * 5
+    } else if (colOrRow == 'r') {
+      for (n <- Seq.range(0, 100, 5)) yield base + n + index % 5 + index / 5 * 100
     } else {
       throwError(new IllegalFileNameException, "illegal EC file name", ecName)
     }
   }
   
-}
-
-object DataFilesPattern {
-  class IllegalFileNameException extends Exception
 }

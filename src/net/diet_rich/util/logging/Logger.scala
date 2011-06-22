@@ -7,15 +7,26 @@ package net.diet_rich.util.logging
  * event logs on a GUI. Logging is introduced in the code by 
  * mixing in the Logged trait. The key strings are intended to be keys 
  * for looking up localized error message formatters.
+ * 
+ * the log methods should return false if the log event should 
+ * not be processed further after the log method
  */
 trait Logger {
 
-  /** true if the log event should not be processed further after this call */
-  def consumeLogs : Boolean
+  def error(key: String, args: Any*) : Boolean
+  def warning(key: String, args: Any*) : Boolean
+  def info(key: String, args: Any*) : Boolean
+  def debug(key: String, args: Any*) : Boolean
   
-  def error(key: String, args: Any*)
-  def warning(key: String, args: Any*)
-  def info(key: String, args: Any*)
-  def debug(key: String, args: Any*)
+}
+
+object Logger {
+  
+  object NULLLOGGER extends Logger {
+    override def error(key: String, args: Any*) = false
+    override def warning(key: String, args: Any*) = false
+    override def info(key: String, args: Any*) = false
+    override def debug(key: String, args: Any*) = false
+  }
   
 }
