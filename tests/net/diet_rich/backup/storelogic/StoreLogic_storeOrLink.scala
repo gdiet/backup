@@ -13,7 +13,7 @@ class StoreLogic_storeOrLink extends net.diet_rich.testutils.TestDataFileProvide
   import net.diet_rich.util.data.Digester
   import net.diet_rich.util.data.Digester.Checksum
   import net.diet_rich.util.io.{Closeable,OutputStream,ResettableInputStream}
-  import net.diet_rich.util.JStrings._
+  import net.diet_rich.util.Strings._
   import StoreLogic._
 
   val location = new DataLocation {}

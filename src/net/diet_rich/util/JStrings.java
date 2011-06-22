@@ -6,7 +6,7 @@ package net.diet_rich.util;
  * static string utility methods. adapted version of 
  * http://jabak.svn.sourceforge.net/viewvc/jabak/util/trunk/src/jut/lang/Strings.java
  */
-public final class JStrings {
+final class JStrings {
 
     /** private default constructor for utility class with exclusively static methods. */
     private JStrings() { throw new UnsupportedOperationException(); }
