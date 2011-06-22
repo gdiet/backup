@@ -32,8 +32,6 @@ object DataFilesPattern extends Logged {
   
   class IllegalFileNameException extends Exception
   
-  // FIXME write some tests
-  
   /** @return the error correction row and column file names for a given data file. */
   def ecNamesForFileID(fileID: Long) : (String, String) = {
     require(fileID >= 0)
@@ -54,14 +52,14 @@ object DataFilesPattern extends Logged {
     val parts = ecName.split('_')
     require(parts(0) == "ec")
     val base = parts(1).toLong
-    val colOrRow = parts(2)(0)
     val index = parts(2).substring(1).toInt
-    if (colOrRow == 'c') {
-      for (n <- Seq.range(0, 400, 100); m <- 0 to 4) yield base + m + n + index * 5
-    } else if (colOrRow == 'r') {
-      for (n <- Seq.range(0, 100, 5)) yield base + n + index % 5 + index / 5 * 100
-    } else {
-      throwError(new IllegalFileNameException, "illegal EC file name", ecName)
+    parts(2)(0) match {
+      case 'c' => 
+        for (n <- Seq.range(0, 400, 100); m <- 0 to 4) yield base + m + n + index * 5
+      case 'r' => 
+        for (n <- Seq.range(0, 100, 5)) yield base + n + index % 5 + index / 5 * 100
+      case _ =>
+        throwError(new IllegalFileNameException, "illegal EC file name", ecName)
     }
   }
   
