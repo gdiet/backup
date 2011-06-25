@@ -4,3 +4,5 @@ syntax: regexp
 ^test-output$
 syntax: glob
 bin/
+syntax: regexp
+^coverage$
