@@ -8,27 +8,22 @@ class DataFilesPattern_Names {
   import net.diet_rich.testutils.Assertions._
   import DataFilesPattern._
 
-  /** FIXME why? -> raise a bug! calling nop last in a method fixes the problem that assertThat may not be last. */
-  def nop = {}
-  
   @Test
-  def test_nameForFileID = {
-    assertThat(nameForFileID(100)) isEqualTo "000000000000100"
-    nop
+  def test_nameForFileID : Unit = {
+    assertThat(nameForFileID(100)).isEqualTo("000000000000100");
   }
 
   @Test
-  def test_ecNamesForFileID = {
+  def test_ecNamesForFileID : Unit = {
     ensure that ecNamesForFileID(-1) willThrow new IllegalArgumentException
     assertThat(ecNamesForFileID(0)) isEqualTo ("ec_000000000000000_c00", "ec_000000000000000_r00")
     assertThat(ecNamesForFileID(1)) isEqualTo ("ec_000000000000000_c00", "ec_000000000000000_r01")
     assertThat(ecNamesForFileID(99)) isEqualTo ("ec_000000000000000_c19", "ec_000000000000000_r04")
     assertThat(ecNamesForFileID(799)) isEqualTo ("ec_000000000000400_c19", "ec_000000000000400_r19")
-    nop
   }
  
   @Test
-  def test_idsForECnameCol = {
+  def test_idsForECnameCol : Unit = {
     assertThat(
         idsForECname("ec_000000000000000_c01")
         sameElements 
@@ -42,7 +37,7 @@ class DataFilesPattern_Names {
   }
 
   @Test
-  def test_idsForECnameRow = {
+  def test_idsForECnameRow : Unit = {
     assertThat(
         idsForECname("ec_000000000000000_r01")
         sameElements 
@@ -56,11 +51,12 @@ class DataFilesPattern_Names {
   }
   
   @Test
-  def test_illegalIdForECname = {
+  def test_illegalIdForECname : Unit = {
     ensure that idsForECname("ec_000000000000000_X01") willThrow(new IllegalArgumentException)
     ensure that idsForECname("XX_000000000000000_r01") willThrow new IllegalArgumentException
     ensure that idsForECname("ecX000000000000000_r01") willThrow new IllegalArgumentException
     ensure that idsForECname("ec_000000000000000Xr01") willThrow new IllegalArgumentException
+    
     ensure that idsForECname("ec_000000000000000_r1") willThrow new IllegalArgumentException
     ensure that idsForECname("ec_00000000000000_r01") willThrow new IllegalArgumentException
   }

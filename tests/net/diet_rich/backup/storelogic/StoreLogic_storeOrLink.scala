@@ -37,7 +37,7 @@ class StoreLogic_storeOrLink extends net.diet_rich.testutils.TestDataFileProvide
   }
   
   @Test
-  def blueSky_StoreLogic_storeOrLink {
+  def blueSky_StoreLogic_storeOrLink : Unit = {
     val storeMock = spy(new StoreStub)
     
     val input1 = new ResettableInputStream.FromFile(testDataFile("15_A")) with ResettableBackupInput {

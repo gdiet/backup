@@ -11,7 +11,7 @@ import net.diet_rich.util.io.Streams._
 class DSWriter_bluesky extends TempFileProvider {
 
   @Test
-  def blueSky_DataStoreWriter_ECCalculation {
+  def blueSky_DataStoreWriter_ECCalculation : Unit = {
     val settings = new DSSettings { override val dataFileChunkSize = 10 }
     val ecFile = newTempFile
     val dfFile = newTempFile

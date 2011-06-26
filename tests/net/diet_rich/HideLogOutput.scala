@@ -5,7 +5,7 @@ package net.diet_rich
 class HideLogOutput {
 
   @org.testng.annotations.BeforeSuite
-  def hideLogOuput = {
+  def hideLogOuput : Unit = {
     import net.diet_rich.util.logging.{Logged,Logger}
    
     Logged.defaultLogListener = Some(Logger.NULLLOGGER)
