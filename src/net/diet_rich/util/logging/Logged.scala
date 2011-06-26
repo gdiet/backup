@@ -17,17 +17,18 @@ trait Logged {
   
   /**
    * log an error, then throw it (= never returns normally).
-   * internally, the throwable is logged as last argument.
+   * internally, the throwable's message is taken as log key,
+   * and the throwable itself is logged as last argument.
    */
-  def throwError[T](throwable: java.lang.Throwable, key: String, args: Any*) : T = {
-    error(key, args :+ throwable :_*)
+  def throwError[T](throwable: java.lang.Throwable, args: Any*) : T = {
+    error(throwable.getMessage, args :+ throwable :_*)
     throw throwable
   }
   
-  def error(key: String, args: Any*) = optionAndFlag("error", key, args:_*)(_.error(key, args:_*))
-  def warning(key: String, args: Any*) = optionAndFlag("warn", key, args:_*)(_.warning(key, args:_*))
-  def info(key: String, args: Any*) = optionAndFlag("info", key, args:_*)(_.info(key, args:_*))
-  def debug(key: String, args: Any*) = optionAndFlag("debug", key, args:_*)(_.debug(key, args:_*))
+  def error(key: String, args: Any*) = optionAndFlag("ERROR", key, args:_*)(_.error(key, args:_*))
+  def warning(key: String, args: Any*) = optionAndFlag("WARN", key, args:_*)(_.warning(key, args:_*))
+  def info(key: String, args: Any*) = optionAndFlag("INFO", key, args:_*)(_.info(key, args:_*))
+  def debug(key: String, args: Any*) = optionAndFlag("DEBUG", key, args:_*)(_.debug(key, args:_*))
   
   private def optionAndFlag(level: String, key: String, args: Any*)(loggerFunction: => Logger => Boolean) =
     // if no log listener is defined or the log listener does not consume logs, log to stdout

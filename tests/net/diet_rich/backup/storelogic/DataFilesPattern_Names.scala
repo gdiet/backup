@@ -5,9 +5,10 @@ package net.diet_rich.backup.storelogic
 class DataFilesPattern_Names {
   import org.fest.assertions.Assertions.assertThat
   import org.testng.annotations.Test
+  import net.diet_rich.testutils.Assertions._
   import DataFilesPattern._
 
-  /** calling nop last in a method fixes the problem that assertThat may not be last. */
+  /** FIXME why? -> raise a bug! calling nop last in a method fixes the problem that assertThat may not be last. */
   def nop = {}
   
   @Test
@@ -18,6 +19,7 @@ class DataFilesPattern_Names {
 
   @Test
   def test_ecNamesForFileID = {
+    ensure that ecNamesForFileID(-1) willThrow new IllegalArgumentException
     assertThat(ecNamesForFileID(0)) isEqualTo ("ec_000000000000000_c00", "ec_000000000000000_r00")
     assertThat(ecNamesForFileID(1)) isEqualTo ("ec_000000000000000_c00", "ec_000000000000000_r01")
     assertThat(ecNamesForFileID(99)) isEqualTo ("ec_000000000000000_c19", "ec_000000000000000_r04")
@@ -37,7 +39,6 @@ class DataFilesPattern_Names {
         sameElements 
         List(495,496,497,498,499, 595,596,597,598,599, 695,696,697,698,699,  795,796,797,798,799)
     ).isTrue
-    nop
   }
 
   @Test
@@ -52,7 +53,16 @@ class DataFilesPattern_Names {
         sameElements 
         Seq.range(704, 804, 5)
     ).isTrue
-    nop
+  }
+  
+  @Test
+  def test_illegalIdForECname = {
+    ensure that idsForECname("ec_000000000000000_X01") willThrow(new IllegalArgumentException)
+    ensure that idsForECname("XX_000000000000000_r01") willThrow new IllegalArgumentException
+    ensure that idsForECname("ecX000000000000000_r01") willThrow new IllegalArgumentException
+    ensure that idsForECname("ec_000000000000000Xr01") willThrow new IllegalArgumentException
+    ensure that idsForECname("ec_000000000000000_r1") willThrow new IllegalArgumentException
+    ensure that idsForECname("ec_00000000000000_r01") willThrow new IllegalArgumentException
   }
 
 }

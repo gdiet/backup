@@ -30,8 +30,6 @@ import net.diet_rich.util.logging.Logged
  */
 object DataFilesPattern extends Logged {
   
-  class IllegalFileNameException extends Exception
-  
   /** @return the error correction row and column file names for a given data file. */
   def ecNamesForFileID(fileID: Long) : (String, String) = {
     require(fileID >= 0)
@@ -50,7 +48,10 @@ object DataFilesPattern extends Logged {
   /** @return the data file IDs protected by an error correction file. */
   def idsForECname(ecName: String) : Seq[Long] = {
     val parts = ecName.split('_')
+    require(parts.size == 3)
     require(parts(0) == "ec")
+    require(parts(1) matches "\\d{15}")
+    require(parts(2) matches "[cr]\\d{2}")
     val base = parts(1).toLong
     val index = parts(2).substring(1).toInt
     parts(2)(0) match {
@@ -58,8 +59,6 @@ object DataFilesPattern extends Logged {
         for (n <- Seq.range(0, 400, 100); m <- 0 to 4) yield base + m + n + index * 5
       case 'r' => 
         for (n <- Seq.range(0, 100, 5)) yield base + n + index % 5 + index / 5 * 100
-      case _ =>
-        throwError(new IllegalFileNameException, "illegal EC file name", ecName)
     }
   }
   

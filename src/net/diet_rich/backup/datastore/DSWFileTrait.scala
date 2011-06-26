@@ -37,11 +37,11 @@ extends net.diet_rich.util.logging.Logged {
       // check source size
       val size = raFile.length
       if (size != settings.dataFileChunkSize + 8)
-        throwError(new DataFileSizeException, "data file size error", sourceFile, size)
+        throwError(new DataFileSizeException("data file size error"), sourceFile, size)
       // copy data from source to data array and check checksum
       raFile.readFully(dataArray)
       if (dataChecksum != raFile.readLong)
-        throwError(new DataFileChecksumException, "data file checksum error", sourceFile)
+        throwError(new DataFileChecksumException("data file checksum error"), sourceFile)
     }
   }
 
@@ -76,7 +76,7 @@ extends net.diet_rich.util.logging.Logged {
 }
 
 object DSWFileTrait {
-  class DataFileWriterException extends Exception
-  class DataFileSizeException extends DataFileWriterException
-  class DataFileChecksumException extends DataFileWriterException
+  class DataFileWriterException(message: String) extends Exception(message)
+  class DataFileSizeException(message: String) extends DataFileWriterException(message)
+  class DataFileChecksumException(message: String) extends DataFileWriterException(message)
 }
