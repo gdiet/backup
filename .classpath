@@ -8,5 +8,6 @@
 	<classpathentry kind="lib" path="testlib/fest-assert-1.4.jar"/>
 	<classpathentry kind="lib" path="testlib/mockito-all-1.8.5.jar"/>
 	<classpathentry kind="lib" path="testlib/fest-util-1.1.6.jar"/>
+	<classpathentry kind="lib" path="lib/hsqldb.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

@@ -10,7 +10,7 @@ class DataFilesPattern_Names {
 
   @Test
   def test_nameForFileID : Unit = {
-    assertThat(nameForFileID(100)).isEqualTo("000000000000100");
+    assertThat(nameForFileID(100)) isEqualTo "000000000000100"
   }
 
   @Test
@@ -52,7 +52,7 @@ class DataFilesPattern_Names {
   
   @Test
   def test_illegalIdForECname : Unit = {
-    ensure that idsForECname("ec_000000000000000_X01") willThrow(new IllegalArgumentException)
+    ensure that idsForECname("ec_000000000000000_X01") willThrow new IllegalArgumentException
     ensure that idsForECname("XX_000000000000000_r01") willThrow new IllegalArgumentException
     ensure that idsForECname("ecX000000000000000_r01") willThrow new IllegalArgumentException
     ensure that idsForECname("ec_000000000000000Xr01") willThrow new IllegalArgumentException

@@ -28,8 +28,9 @@ trait StoreLogic extends net.diet_rich.util.logging.Logged {
   def newHashDigester() : Digester[DataHash]
   def dbContains(size: Long, headerChecksum: Checksum) : Boolean
   def dbLookup(size: Long, headerChecksum: Checksum, hash: DataHash) : Option[Long]
+  
   /** 
-   * this method must be synchronized properly-
+   * this method must be synchronized properly
    * 
    * @return left if already in database, right for new entry.
    */
