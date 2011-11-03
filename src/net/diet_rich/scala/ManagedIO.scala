@@ -28,6 +28,13 @@ object ManagedIO {
    *  @version 1.0, 2011-11-01
    */
   case object EOI extends SourceSignal
+
+  /** The signal that an error occurred when fetching source data.
+   * 
+   *  @author  Georg Dietrich
+   *  @version 1.0, 2011-11-03
+   */
+  case class SourceError(error: Throwable) extends SourceSignal
   
   /** The ´DataSource´ trait defines the source data pull accessor
    *  to use in a ´PushingSource´. The ´PushingSource´ guarantees
@@ -69,7 +76,7 @@ object ManagedIO {
    *  @tparam A  the source value object type.
    *  
    *  @author  Georg Dietrich
-   *  @version 1.0, 2011-11-01
+   *  @version 1.1, 2011-11-03
    */
   trait PushingSource[A] {
     
@@ -77,7 +84,10 @@ object ManagedIO {
      */
     protected def source() : DataSource[A]
     
-    /** Produce the data to process.
+    /** Produce the data to process. Note that in ´SourceError´
+     *  conditions the ´DataProcessor´ is called once for clean-up. 
+     *  If it returns a ´finished(result)´, the error is suppressed,
+     *  else the error is thrown.
      * 
      *  @parameter processor the processor to receive the data.
      */
@@ -85,9 +95,11 @@ object ManagedIO {
       val localSource = source()
       @annotation.tailrec
       def loopProduce[B](localProcessor: DataProcessor[A,B]) : B = {
-        localProcessor.process(localSource.fetch) match {
-          case Right(result) => result
-          case Left(nextProcessor) => loopProduce(nextProcessor)
+        val sourceData = try { localSource.fetch } catch { case e => finished(SourceError(e)) }
+        (sourceData, localProcessor.process(sourceData)) match {
+          case (_, Right(result)) => result
+          case (Right(SourceError(e)), _) => throw e;
+          case (_, Left(nextProcessor)) => loopProduce(nextProcessor)
         }
       }
       try {
