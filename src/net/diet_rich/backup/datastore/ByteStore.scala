@@ -116,36 +116,33 @@ class ByteStoreImpl(config: Configuration) extends TypedActor with ByteStore {
     bytes.length - readBytesTailRec(bytes)
   }
 
-  private def internalWriteBytes(position: Long, bytes: Bytes) : Unit = {
-    @annotation.tailrec
-    def writeBytesTailRec(position: Long, bytes: Bytes) : Unit = {
-      val (accessor, positionInFile) = accessorAndPosition(position)
-      if (positionInFile + bytes.length > fileSize) {
-        val bytesToWrite = (fileSize - positionInFile).toInt
-        accessor.write(bytes.bytes, bytes.offset, bytesToWrite)
-        writeBytesTailRec(position + bytesToWrite, bytes.dropFirst(bytesToWrite))
-      } else {
-        accessor.write(bytes.bytes, bytes.offset, bytes.length)
-      }
+  private def writeToAccessor(accessor: RandomAccessFile, bytes: Bytes) : Unit =
+    accessor.write(bytes.bytes, bytes.offset, bytes.length)
+
+  @annotation.tailrec
+  private def processBytesTailRec(position: Long, bytes: Bytes)(task: (RandomAccessFile,Bytes) => Unit) : Bytes = {
+    require(position >= 0)
+    val (accessor, positionInFile) = accessorAndPosition(position)
+    if (positionInFile + bytes.length > fileSize) {
+      val bytesToWrite = (fileSize - positionInFile).toInt
+      task(accessor, bytes.keepFirst(bytesToWrite))
+      processBytesTailRec(position + bytesToWrite, bytes.dropFirst(bytesToWrite))(task)
+    } else {
+      task(accessor, bytes)
+      bytes
     }
-    writeBytesTailRec(position, bytes)
-  }
+  }  
+  
+  private def internalWriteBytes(position: Long, bytes: Bytes) : Unit =
+    processBytesTailRec(position, bytes) {
+      (accessor, bytes) => writeToAccessor(accessor, bytes)
+    }
 
   /** Fills parts missing because data file is too short with 0. */
   private def internalReadBytes(position: Long, length: Int) : Array[Byte] = {
-    @annotation.tailrec
-    def readBytesTailRec(position: Long, bytes: Bytes) : Unit = {
-      val (accessor, positionInFile) = accessorAndPosition(position)
-      if (positionInFile + length > fileSize) {
-        val bytesToRead = (fileSize - positionInFile).toInt
-        readFromAccessor(accessor, bytes.keepFirst(bytesToRead))
-        readBytesTailRec(position + bytesToRead, bytes.dropFirst(bytesToRead))
-      } else {
-        readFromAccessor(accessor, bytes)
-      }
-    }
-    val bytes = Bytes(length)
-    readBytesTailRec(position, bytes)
-    bytes.bytes
+    require(length >= 0)
+    processBytesTailRec(position, Bytes(length)) {
+      (accessor, bytes) => readFromAccessor(accessor, bytes)
+    }.bytes
   }
 }
