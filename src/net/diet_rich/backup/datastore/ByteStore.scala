@@ -5,8 +5,9 @@ package net.diet_rich.backup.datastore
 
 import akka.actor.{TypedActor,TypedActorConfiguration}
 import akka.config.Configuration
-import akka.dispatch.{BoundedMailbox,Dispatchers}
+import akka.dispatch.{BoundedMailbox,Dispatchers,Future}
 import java.io.{File, RandomAccessFile}
+import net.diet_rich.backup.BackupSystemConfig
 
 case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
   require(offset >= 0)
@@ -22,32 +23,47 @@ object Bytes {
 }
 
 object ByteStore {
-  private val dispatcher = Dispatchers
-      .newExecutorBasedEventDrivenDispatcher("bounded mailbox dispatcher", 0, BoundedMailbox(1))
+  /* Note: The actors in the backup system must have the following attributes:
+   * 
+   * a) They must have a bounded mailbox to avoid running out of memory due to
+   *    large messages queuing up in the system.
+   * b) They must guarantee that messages sent from one thread to one actor are
+   *    processed FIFO.
+   */
+  val mailboxSizeLimit = BackupSystemConfig()("actors.MailboxSizeLimit", 20)
+  val boundedMailboxDispatcher = Dispatchers
+      .newExecutorBasedEventDrivenDispatcher("bounded mailbox dispatcher", 0, BoundedMailbox(mailboxSizeLimit))
       .build
-  private val typedActorConfig = TypedActorConfiguration().dispatcher(dispatcher)
+  val boundedTypedActorConfig = TypedActorConfiguration().dispatcher(boundedMailboxDispatcher)
   
   def apply(configuration: Configuration) : ByteStore =
-    TypedActor.newInstance(classOf[ByteStore], new ByteStoreImpl(configuration), typedActorConfig)
+    TypedActor.newInstance(classOf[ByteStore], new ByteStoreImpl(configuration), boundedTypedActorConfig)
 }
 
 trait ByteStore {
-  /** May throw an exception. */
-  def close : Unit
-  /** May throw an exception. */
+  /** Fills areas nothing has been written to with 0. May throw an exception. */
   def readBytes(position: Long, length: Int) : Array[Byte]
-  /** May throw an exception. */
-  def writeBytes(position: Long, bytes: Bytes) : Unit
+  def writeBytes(position: Long, bytes: Bytes) : Future[Option[Throwable]]
+  def close : Future[List[Throwable]]
 }
 
+/** Used only by clients in net.diet_rich.backup.datastore. */
 class ByteStoreImpl(config: Configuration) extends TypedActor with ByteStore {
   
-  override def close : Unit = {
+  override def close : Future[List[Throwable]] = {
     self.stop()
-    fileAccessorCache.values.foreach(_.close())
+    Future(
+        fileAccessorCache.values.
+        foldLeft(List[Throwable]())((list,accessor) => 
+          try { accessor.close() ; list } catch { case e => e :: list }
+        ))
   }
-  override def readBytes(position: Long, length: Int) : Array[Byte] = new Array[Byte](0) // FIXME 
-  def writeBytes(position: Long, bytes: Bytes) : Unit = Unit // FIXME
+  
+  override def readBytes(position: Long, length: Int) : Array[Byte] =
+    internalReadBytes(position, length)
+  
+  def writeBytes(position: Long, bytes: Bytes) : Future[Option[Throwable]] =
+    try { internalWriteBytes(position, bytes) ; Future(None) } catch { case e => Future(Some(e)) }
   
   val sqrtOfFilesPerFolder: Int     = config("ByteStore.sqrtOfFilesPerFolder", 20)
   val accessorCacheSize   : Int     = config("ByteStore.accessorCacheSize",    10)
@@ -133,160 +149,3 @@ class ByteStoreImpl(config: Configuration) extends TypedActor with ByteStore {
     bytes.bytes
   }
 }
-
-
-
-//import java.io.{File,RandomAccessFile}
-//import scala.actors.Actor._
-//import scala.actors.Future
-//
-//
-//
-//
-//
-//trait StoreAccess {
-//  def close : Option[Throwable]
-//  def readBytes(position: Long, length: Int) : Either[Throwable,Array[Byte]]
-//  def writeBytes(
-//      position: Long, 
-//      bytes: Array[Byte],
-//      length: Int = Int.MaxValue,
-//      offset: Int = 0) : Future[Option[Throwable]]
-//}
-//
-//abstract class LimitedQueueActor(val queueSize : Int) {
-//  private val semaphore = new java.util.concurrent.Semaphore(queueSize, true)
-//  private val actor = scala.actors.Actor.actor { act }
-//
-//  def !? (msg: Any): Any         = { semaphore.acquire ; actor !? msg }
-//  def !! (msg: Any): Future[Any] = { semaphore.acquire ; actor !! msg }
-//  
-//  protected def reply (msg: Any): Unit = { semaphore.release ; scala.actors.Actor.reply(msg) }
-//  protected def act() : Unit
-//}
-//
-//// EVENTUALLY add requirements to the methods
-//class StoreAccessImpl(storeDir: File, fileSize: Long) extends StoreAccess {
-//
-//  override def close : Option[Throwable] =
-//    (storeActor !! "EXIT").asInstanceOf[Option[Throwable]]
-//  
-//  override def readBytes(position: Long, length: Int) : Either[Throwable,Array[Byte]] =
-//    (storeActor !? ((position, length))).asInstanceOf[Either[Throwable,Array[Byte]]]
-//
-//  override def writeBytes(position: Long, bytes: Array[Byte], length: Int, offset: Int) : Future[Option[Throwable]] =
-//    (storeActor !! ((position, bytes, math.min(length, bytes.length), offset))).asInstanceOf[Future[Option[Throwable]]]
-//
-//  val queueSize = 10 // EVENTUALLY make configurable
-//  val sqrtOfFilesPerFolder = 20 // EVENTUALLY make configurable
-//  val fileMapMaxSize = 20 // EVENTUALLY make configurable
-//  val readonly = false // EVENTUALLY make configurable
-//  
-//  val filesPerFolder = sqrtOfFilesPerFolder * sqrtOfFilesPerFolder
-//  val fileAccessorCache = collection.mutable.LinkedHashMap.empty[File, RandomAccessFile]
-//
-//  /** Note: Ideally, this actor should be FIFO (which scala's actors not
-//   *  always are) and its mailbox should be bound and blocking (which is 
-//   *  implemented using the semaphore). Possibly, the actors of the akka 
-//   *  framework would offer these features out of the shelf.
-//   */
-//  private val storeActor = new LimitedQueueActor(queueSize) {
-//    override def act {
-//      loop { react {
-//        case (position: Long, length: Int) =>
-//          reply(internalReadBytes(position, length))
-//        case (position: Long, bytes: Array[Byte], length: Int, offset: Int) =>
-//          reply(internalWriteBytes(position, bytes, length, offset))
-//        case _ =>
-//          reply(internalClose) ; exit
-//      } }
-//    }
-//  }
-//
-//  private def internalClose = 
-//    fileAccessorCache.values.foreach(_.close())
-//  
-//  private def pathForFileNumber(fileNumber: Long) : String =
-//    "%015d/%015.bck".formatLocal(java.util.Locale.US, fileNumber - fileNumber % filesPerFolder, fileNumber)
-//
-//  private def fileAndPosition(position: Long) : (File, Long) = {
-//    val fileNumber = position / fileSize
-//    val positionInFile = position % fileSize
-//    (new File(storeDir, pathForFileNumber(fileNumber)), positionInFile)
-//  }
-//  
-//  private def fileAccessor(file: File) : RandomAccessFile =
-//    fileAccessorCache.getOrElse(file, {
-//      if (fileAccessorCache.size > fileMapMaxSize) {
-//        val (file, accessor) = fileAccessorCache.head
-//        accessor.close
-//        fileAccessorCache -= file
-//      }
-//      val accessor = new RandomAccessFile(file, if (readonly) "r" else "rw")
-//      fileAccessorCache += file -> accessor
-//      accessor
-//    })
-//
-//  private def accessorAndPosition(position: Long) : (RandomAccessFile, Long) = {
-//      val (file, positionInFile) = fileAndPosition(position)
-//      val accessor = fileAccessor(file)
-//      accessor.seek(positionInFile)
-//      (accessor, positionInFile)
-//  }
-//    
-//  /** Blocks until requested length is read or end of stream is reached.
-//   * 
-//   *  @return the number of bytes read.
-//   */
-//  private def readFromAccessor(accessor: RandomAccessFile, buffer: Array[Byte], offset: Int, length: Int) : Int = {
-//    require(offset >= 0)
-//    require(length >= 0)
-//    require(buffer.length >= offset + length)
-//    
-//    @annotation.tailrec
-//    def readBytesTailRec(alreadyRead: Int) : Int =
-//      accessor.read(buffer, offset + alreadyRead, length - alreadyRead) match {
-//        case bytesRead if bytesRead <= 0 => alreadyRead
-//        case bytesRead => readBytesTailRec(alreadyRead + bytesRead)
-//      }
-//    readBytesTailRec(0)
-//  }
-//  
-//  private def internalWriteBytes(position: Long, bytes: Array[Byte], length: Int, offset: Int) : Option[Throwable] = {
-//    try {
-//      @annotation.tailrec
-//      def writeBytesTailRec(position: Long, bytes: Array[Byte], length: Int, offset: Int) : Unit = {
-//        val (accessor, positionInFile) = accessorAndPosition(position)
-//        if (positionInFile + length > fileSize) {
-//          val bytesToWrite = (fileSize - positionInFile).toInt
-//          accessor.write(bytes, offset, bytesToWrite)
-//          writeBytesTailRec(position+bytesToWrite, bytes, length - bytesToWrite, offset + bytesToWrite)
-//        } else {
-//          accessor.write(bytes, offset, length)
-//        }
-//      }
-//      writeBytesTailRec(position, bytes, length, offset)
-//      None
-//    } catch { case e => Some(e) }
-//  }
-//
-//  private def internalReadBytes(position: Long, length: Int) : Either[Throwable,Array[Byte]] = {
-//    try {
-//      @annotation.tailrec
-//      def readBytesTailRec(bytes: Array[Byte], position: Long, offset: Int, length: Int) : Unit = {
-//        val (accessor, positionInFile) = accessorAndPosition(position)
-//        if (positionInFile + length > fileSize) {
-//          val bytesToRead = (fileSize - positionInFile).toInt
-//          readFromAccessor(accessor, bytes, offset, bytesToRead)
-//          readBytesTailRec(bytes, position + bytesToRead, offset + bytesToRead, length - bytesToRead)
-//        } else {
-//          readFromAccessor(accessor, bytes, offset, length)
-//        }
-//      }
-//      val result = new Array[Byte](length)
-//      readBytesTailRec(result, position, 0, length)
-//      Right(result)
-//    } catch { case e => Left(e) }
-//  }
-//
-//}
