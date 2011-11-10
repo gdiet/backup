@@ -6,10 +6,10 @@ package net.diet_rich.backup.datastore
 import akka.actor.{TypedActor,TypedActorConfiguration}
 import akka.config.Configuration
 import akka.dispatch.{BoundedMailbox,Dispatchers,Future}
-import java.io.{File, RandomAccessFile}
+import java.io.File
 import net.diet_rich.backup.BackupSystemConfig
 import net.diet_rich.util.Bytes
-import net.diet_rich.util.io.IO
+import net.diet_rich.util.io.RandomAccessFile
 
 object ByteStore {
   /* Note: The actors in the backup system must have the following attributes:
@@ -30,12 +30,11 @@ object ByteStore {
     
   def readonly(configuration: Configuration) : ByteStoreReadOnly =
     TypedActor.newInstance(classOf[ByteStoreReadOnly], new ByteStoreImplReadOnly(configuration), boundedTypedActorConfig)
-    
 }
 
 trait ByteStoreReadOnly {
   /** Fills areas nothing has been written to with 0. May throw an exception. */
-  def readBytes(position: Long, length: Int) : Array[Byte]
+  def readBytes(position: Long, length: Int) : Bytes
   def close : Future[List[Throwable]]
 }
 
@@ -51,12 +50,12 @@ class ByteStoreImplReadOnly(config: Configuration) extends TypedActor with ByteS
     Future(
         fileAccessorCache.values.
         foldLeft(List[Throwable]())((list,accessor) => 
-          try { accessor.close() ; list } catch { case e => e :: list }
+          try { accessor.close ; list } catch { case e => e :: list }
         ))
   }
   
-  override def readBytes(position: Long, length: Int) : Array[Byte] =
-    internalReadBytes(position, length)
+  override def readBytes(position: Long, length: Int) : Bytes =
+    processBytesTailRec(position, Bytes(length)){ (accessor, bytes) => accessor.readFully(bytes) }
   
   val readonly            : Boolean = true
   val sqrtOfFilesPerFolder: Int     = config("ByteStore.sqrtOfFilesPerFolder", 20)
@@ -83,7 +82,7 @@ class ByteStoreImplReadOnly(config: Configuration) extends TypedActor with ByteS
         accessor.close
         fileAccessorCache -= file
       }
-      val accessor = new RandomAccessFile(file, if (readonly) "r" else "rw")
+      val accessor = new RandomAccessFile(file)
       fileAccessorCache += file -> accessor
       accessor
     })
@@ -108,29 +107,15 @@ class ByteStoreImplReadOnly(config: Configuration) extends TypedActor with ByteS
       bytes
     }
   }  
-  
-  /** Fills parts missing because data file is too short with 0. */
-  private def internalReadBytes(position: Long, length: Int) : Array[Byte] = {
-    require(length >= 0)
-    processBytesTailRec(position, Bytes(length)) {
-      (accessor, bytes) => IO.readFromByteInput(accessor, bytes)
-    }.bytes
-  }
 }
 
 /** Used only by clients in net.diet_rich.backup.datastore. */
 class ByteStoreImpl(config: Configuration) extends ByteStoreImplReadOnly(config) with ByteStore {
-  
-  def writeBytes(position: Long, bytes: Bytes) : Future[Option[Throwable]] =
-    try { internalWriteBytes(position, bytes) ; Future(None) } catch { case e => Future(Some(e)) }
-  
   override val readonly : Boolean = false
   
-  private def writeToAccessor(accessor: RandomAccessFile, bytes: Bytes) : Unit =
-    accessor.write(bytes.bytes, bytes.offset, bytes.length)
-
-  private def internalWriteBytes(position: Long, bytes: Bytes) : Unit =
-    processBytesTailRec(position, bytes) {
-      (accessor, bytes) => writeToAccessor(accessor, bytes)
-    }
+  def writeBytes(position: Long, bytes: Bytes) : Future[Option[Throwable]] =
+    try { 
+      processBytesTailRec(position, bytes){ (accessor, bytes) => accessor.write(bytes) }
+      Future(None) 
+    } catch { case e => Future(Some(e)) }
 }
