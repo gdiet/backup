@@ -132,9 +132,9 @@ object ManagedIO {
   
   /** Convenience type used for inline data processor definitions.
    *  {{{
-   *    def processor : DataProc[Int,Unit] = {
-   *      case Left(x) => finished(Unit)
-   *      case Right(x) => println(x); continue(processor)
+   *    def processor : InlineDataProcessor[Int,Unit] = {
+   *      case Left(x)  => println(x); continue(processor)
+   *      case Right(x) => finished(Unit)
    *    }
    *  }}}
    * 
