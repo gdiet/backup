@@ -8,19 +8,8 @@ import akka.config.Configuration
 import akka.dispatch.{BoundedMailbox,Dispatchers,Future}
 import java.io.{File, RandomAccessFile}
 import net.diet_rich.backup.BackupSystemConfig
-
-case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
-  require(offset >= 0)
-  require(length >= 0)
-  require(bytes.length >= offset + length)
-  def dropFirst(size: Int) = copy(length = length - size, offset = offset + size)
-  def keepFirst(size: Int) = copy(length = size)
-}
-
-object Bytes {
-  def apply(bytes: Array[Byte]) : Bytes = Bytes(bytes, bytes.length)
-  def apply(size: Int) : Bytes = Bytes(new Array[Byte](size))
-}
+import net.diet_rich.util.Bytes
+import net.diet_rich.util.io.IO
 
 object ByteStore {
   /* Note: The actors in the backup system must have the following attributes:
@@ -30,7 +19,7 @@ object ByteStore {
    * b) They must guarantee that messages sent from one thread to one actor are
    *    processed FIFO.
    */
-  val mailboxSizeLimit = BackupSystemConfig()("actors.MailboxSizeLimit", 20)
+  private val mailboxSizeLimit = BackupSystemConfig()("actors.MailboxSizeLimit", 20)
   val boundedMailboxDispatcher = Dispatchers
       .newExecutorBasedEventDrivenDispatcher("bounded mailbox dispatcher", 0, BoundedMailbox(mailboxSizeLimit))
       .build
@@ -102,20 +91,6 @@ class ByteStoreImpl(config: Configuration) extends TypedActor with ByteStore {
       (accessor, positionInFile)
   }
     
-  /** Blocks until requested length is read or end of stream is reached.
-   * 
-   *  @return the number of bytes read.
-   */
-  private def readFromAccessor(accessor: RandomAccessFile, bytes: Bytes) : Int = {
-    @annotation.tailrec
-    def readBytesTailRec(bytes: Bytes) : Int =
-      accessor.read(bytes.bytes, bytes.offset, bytes.length) match {
-        case bytesRead if bytesRead <= 0 => bytes.length
-        case bytesRead => readBytesTailRec(bytes.dropFirst(bytesRead))
-      }
-    bytes.length - readBytesTailRec(bytes)
-  }
-
   private def writeToAccessor(accessor: RandomAccessFile, bytes: Bytes) : Unit =
     accessor.write(bytes.bytes, bytes.offset, bytes.length)
 
@@ -142,7 +117,7 @@ class ByteStoreImpl(config: Configuration) extends TypedActor with ByteStore {
   private def internalReadBytes(position: Long, length: Int) : Array[Byte] = {
     require(length >= 0)
     processBytesTailRec(position, Bytes(length)) {
-      (accessor, bytes) => readFromAccessor(accessor, bytes)
+      (accessor, bytes) => IO.readFromByteInput(accessor, bytes)
     }.bytes
   }
 }
