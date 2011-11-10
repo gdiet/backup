@@ -27,17 +27,24 @@ object ByteStore {
   
   def apply(configuration: Configuration) : ByteStore =
     TypedActor.newInstance(classOf[ByteStore], new ByteStoreImpl(configuration), boundedTypedActorConfig)
+    
+  def readonly(configuration: Configuration) : ByteStoreReadOnly =
+    TypedActor.newInstance(classOf[ByteStoreReadOnly], new ByteStoreImplReadOnly(configuration), boundedTypedActorConfig)
+    
 }
 
-trait ByteStore {
+trait ByteStoreReadOnly {
   /** Fills areas nothing has been written to with 0. May throw an exception. */
   def readBytes(position: Long, length: Int) : Array[Byte]
-  def writeBytes(position: Long, bytes: Bytes) : Future[Option[Throwable]]
   def close : Future[List[Throwable]]
 }
 
+trait ByteStore extends ByteStoreReadOnly {
+  def writeBytes(position: Long, bytes: Bytes) : Future[Option[Throwable]]
+}
+
 /** Used only by clients in net.diet_rich.backup.datastore. */
-class ByteStoreImpl(config: Configuration) extends TypedActor with ByteStore {
+class ByteStoreImplReadOnly(config: Configuration) extends TypedActor with ByteStoreReadOnly {
   
   override def close : Future[List[Throwable]] = {
     self.stop()
@@ -51,12 +58,9 @@ class ByteStoreImpl(config: Configuration) extends TypedActor with ByteStore {
   override def readBytes(position: Long, length: Int) : Array[Byte] =
     internalReadBytes(position, length)
   
-  def writeBytes(position: Long, bytes: Bytes) : Future[Option[Throwable]] =
-    try { internalWriteBytes(position, bytes) ; Future(None) } catch { case e => Future(Some(e)) }
-  
+  val readonly            : Boolean = true
   val sqrtOfFilesPerFolder: Int     = config("ByteStore.sqrtOfFilesPerFolder", 20)
   val accessorCacheSize   : Int     = config("ByteStore.accessorCacheSize",    10)
-  val readonly            : Boolean = config("ByteStore.readonly",             false)
   val fileSize            : Long    = config("ByteStore.fileSize",             0x400000)
   val storeDirectory      : String  = config("ByteStore.storeDirectory")
   
@@ -91,11 +95,8 @@ class ByteStoreImpl(config: Configuration) extends TypedActor with ByteStore {
       (accessor, positionInFile)
   }
     
-  private def writeToAccessor(accessor: RandomAccessFile, bytes: Bytes) : Unit =
-    accessor.write(bytes.bytes, bytes.offset, bytes.length)
-
   @annotation.tailrec
-  private def processBytesTailRec(position: Long, bytes: Bytes)(task: (RandomAccessFile,Bytes) => Unit) : Bytes = {
+  protected final def processBytesTailRec(position: Long, bytes: Bytes)(task: (RandomAccessFile,Bytes) => Unit) : Bytes = {
     require(position >= 0)
     val (accessor, positionInFile) = accessorAndPosition(position)
     if (positionInFile + bytes.length > fileSize) {
@@ -108,11 +109,6 @@ class ByteStoreImpl(config: Configuration) extends TypedActor with ByteStore {
     }
   }  
   
-  private def internalWriteBytes(position: Long, bytes: Bytes) : Unit =
-    processBytesTailRec(position, bytes) {
-      (accessor, bytes) => writeToAccessor(accessor, bytes)
-    }
-
   /** Fills parts missing because data file is too short with 0. */
   private def internalReadBytes(position: Long, length: Int) : Array[Byte] = {
     require(length >= 0)
@@ -120,4 +116,21 @@ class ByteStoreImpl(config: Configuration) extends TypedActor with ByteStore {
       (accessor, bytes) => IO.readFromByteInput(accessor, bytes)
     }.bytes
   }
+}
+
+/** Used only by clients in net.diet_rich.backup.datastore. */
+class ByteStoreImpl(config: Configuration) extends ByteStoreImplReadOnly(config) with ByteStore {
+  
+  def writeBytes(position: Long, bytes: Bytes) : Future[Option[Throwable]] =
+    try { internalWriteBytes(position, bytes) ; Future(None) } catch { case e => Future(Some(e)) }
+  
+  override val readonly : Boolean = false
+  
+  private def writeToAccessor(accessor: RandomAccessFile, bytes: Bytes) : Unit =
+    accessor.write(bytes.bytes, bytes.offset, bytes.length)
+
+  private def internalWriteBytes(position: Long, bytes: Bytes) : Unit =
+    processBytesTailRec(position, bytes) {
+      (accessor, bytes) => writeToAccessor(accessor, bytes)
+    }
 }
