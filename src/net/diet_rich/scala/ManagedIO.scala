@@ -14,35 +14,41 @@ package net.diet_rich.scala
 object ManagedIO {
 
   /** The ´SourceSignal´ trait is the base trait for any signal
-   *  a ´DataSource´ may return to indicate no more data is
-   *  available.
+   *  a ´DataSource´ may return.
    *  
    *  @author  Georg Dietrich
-   *  @version 1.0, 2011-11-01
+   *  @version 1.1, 2011-11-12
    */
-  trait SourceSignal
+  trait SourceSignal[-A]
   
   /** The end-of-input source signal.
    * 
    *  @author  Georg Dietrich
-   *  @version 1.0, 2011-11-01
+   *  @version 1.1, 2011-11-12
    */
-  case object EOI extends SourceSignal
+  case object EOI extends SourceSignal[Any]
 
   /** The signal that an error occurred when fetching source data.
    * 
    *  @author  Georg Dietrich
-   *  @version 1.0, 2011-11-03
+   *  @version 1.1, 2011-11-12
    */
-  case class SourceError(error: Throwable) extends SourceSignal
-  
+  case class SourceError(error: Throwable) extends SourceSignal[Any]
+
+  /** The signal containing the next data item.
+   * 
+   *  @author  Georg Dietrich
+   *  @version 1.0, 2011-11-12
+   */
+  case class Next[A](data: A) extends SourceSignal[A]
+
   /** The ´DataSource´ trait defines the source data pull accessor
    *  to use in a ´PushingSource´. The ´PushingSource´ guarantees
    *  to call the ´close´ method on the data accessor after use.
    *  {{{
    *    def dataSource = new DataSource[Int] {
    *      var n = 0;
-   *      def fetch = { n = n + 1 ; if (n < 1000) continue(n) else finished(EOI) }
+   *      def fetch = { n = n + 1 ; if (n < 1000) Next(n) else EOI }
    *      def close = { }
    *    }
    *  }}}
@@ -50,13 +56,10 @@ object ManagedIO {
    *  @tparam A  the source value object type.
    *  
    *  @author  Georg Dietrich
-   *  @version 1.0, 2011-11-01
+   *  @version 1.1, 2011-11-01
    */
   trait DataSource[A] {
-    /** @return either (left) the next source value or
-     *          (right) a signal indicating no more data is available.
-     */
-    def fetch : Either[A,SourceSignal]
+    def fetch : SourceSignal[A]
     def close : Unit
   }
 
@@ -76,7 +79,7 @@ object ManagedIO {
    *  @tparam A  the source value object type.
    *  
    *  @author  Georg Dietrich
-   *  @version 1.1, 2011-11-03
+   *  @version 1.2, 2011-11-12
    */
   trait PushingSource[A] {
     
@@ -95,10 +98,10 @@ object ManagedIO {
       val localSource = source()
       @annotation.tailrec
       def loopProduce[B](localProcessor: DataProcessor[A,B]) : B = {
-        val sourceData = try { localSource.fetch } catch { case e => finished(SourceError(e)) }
+        val sourceData = try { localSource.fetch } catch { case e => SourceError(e) }
         (sourceData, localProcessor.process(sourceData)) match {
-          case (_, Right(result)) => result
-          case (Right(SourceError(e)), _) => throw e;
+          case (_, Right(result))  => result
+          case (SourceError(e), _) => throw e;
           case (_, Left(nextProcessor)) => loopProduce(nextProcessor)
         }
       }
@@ -117,17 +120,17 @@ object ManagedIO {
    *  @tparam B  the result object type.
    * 
    *  @author  Georg Dietrich
-   *  @version 1.0, 2011-11-01
+   *  @version 1.1, 2011-11-12
    */
   trait DataProcessor[A,B] {
-    /** Process the current source state, either an input value 
-     *  or the signal indicating no more data is available.
+    /** Process the current source state, either an input value or 
+     *  a source signal indicating e.g. no more data is available.
      *  
      *  @return either the result or the processor for the next
      *          source state. If the result is returned, the
      *          ´DataSource´ is closed.
      */
-    def process(item: Either[A,SourceSignal]) : Either[DataProcessor[A,B],B]
+    def process(item: SourceSignal[A]) : Either[DataProcessor[A,B],B]
   }
   
   /** Convenience type used for inline data processor definitions.
@@ -144,13 +147,13 @@ object ManagedIO {
    *  @author  Georg Dietrich
    *  @version 1.0, 2011-11-01
    */
-  type InlineDataProcessor[A,B] = Either[A,SourceSignal] => Either[DataProcessor[A,B],B]
+  type InlineDataProcessor[A,B] = SourceSignal[A] => Either[DataProcessor[A,B],B]
   
   /** Convenience conversion used for inline data processor definitions.
    */
   implicit def setupProcessor[A,B](processor: InlineDataProcessor[A,B]) : DataProcessor[A,B] =
     new DataProcessor[A,B] {
-      def process(item: Either[A,SourceSignal]) : Either[DataProcessor[A,B],B] = processor(item)
+      def process(item: SourceSignal[A]) : Either[DataProcessor[A,B],B] = processor(item)
     }
   
   /** Create a 'finished' signal to return in the data source or data processor.
