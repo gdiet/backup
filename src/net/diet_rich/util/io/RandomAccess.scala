@@ -9,18 +9,21 @@ trait RandomAccessInputStream extends InputStream with Seekable
 
 trait RandomAccessStream extends RandomAccessInputStream with OutputStream
 
+/** Note: The file size and content may change while the input is open. */
 class RandomAccessFileInput(file: File) extends RandomAccessInputStream {
-  protected val randomAccessFile = new java.io.RandomAccessFile(file, "rw")
-  override def seek(position: Long) : Unit = randomAccessFile seek position
-  override def close() : Unit = randomAccessFile.close
-  override def read(bytes: Bytes) : Int = {
+  protected val accessMode = "r"
+  protected final lazy val randomAccessFile = new java.io.RandomAccessFile(file, accessMode)
+  final def length : Long = randomAccessFile length
+  override final def seek(position: Long) : Unit = randomAccessFile seek position
+  override final def close() : Unit = randomAccessFile.close
+  override final def read(bytes: Bytes) : Int =
     randomAccessFile.read(bytes.bytes, bytes.offset, bytes.length) match {
       case x if x < 0 => 0
       case x => x
     }
-  }
 }
 
 class RandomAccessFile(file: File) extends RandomAccessFileInput(file) with RandomAccessStream {
-  override def write(bytes: Bytes) : Unit = randomAccessFile.write(bytes.bytes, bytes.offset, bytes.length)
+  override protected val accessMode = "rw"
+  override final def write(bytes: Bytes) : Unit = randomAccessFile.write(bytes.bytes, bytes.offset, bytes.length)
 }
