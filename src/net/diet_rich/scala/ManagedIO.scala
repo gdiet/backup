@@ -17,23 +17,23 @@ object ManagedIO {
    *  a ´DataSource´ may return.
    *  
    *  @author  Georg Dietrich
-   *  @version 1.1, 2011-11-12
+   *  @version 1.2, 2011-11-12
    */
-  trait SourceSignal[-A]
+  trait SourceSignal[A]
   
   /** The end-of-input source signal.
    * 
    *  @author  Georg Dietrich
-   *  @version 1.1, 2011-11-12
+   *  @version 1.2, 2011-11-12
    */
-  case object EOI extends SourceSignal[Any]
+  case class EOI[A]() extends SourceSignal[A]
 
   /** The signal that an error occurred when fetching source data.
    * 
    *  @author  Georg Dietrich
-   *  @version 1.1, 2011-11-12
+   *  @version 1.2, 2011-11-12
    */
-  case class SourceError(error: Throwable) extends SourceSignal[Any]
+  case class SourceError[A](error: Throwable) extends SourceSignal[A]
 
   /** The signal containing the next data item.
    * 
@@ -98,11 +98,12 @@ object ManagedIO {
       val localSource = source()
       @annotation.tailrec
       def loopProduce[B](localProcessor: DataProcessor[A,B]) : B = {
-        val sourceData = try { localSource.fetch } catch { case e => SourceError(e) }
+        val sourceData = try { localSource.fetch } catch { case e => SourceError[A](e) }
         (sourceData, localProcessor.process(sourceData)) match {
-          case (_, Right(result))  => result
+          case (_, Finished(result))  => result
           case (SourceError(e), _) => throw e;
-          case (_, Left(nextProcessor)) => loopProduce(nextProcessor)
+          case (_, Continue(nextProcessor)) => loopProduce(nextProcessor)
+          case (_, ContinueSame()) => loopProduce(localProcessor)
         }
       }
       try {
@@ -113,6 +114,18 @@ object ManagedIO {
     }
   }
 
+  // FIXME
+  trait ProcessorSignal[A,B]
+
+  // FIXME
+  case class Continue[A,B](processor: DataProcessor[A,B]) extends ProcessorSignal[A,B]
+
+  // FIXME also recommend this for source error
+  case class ContinueSame[A,B]() extends ProcessorSignal[A,B]
+
+  // FIXME
+  case class Finished[A,B](result: B) extends ProcessorSignal[A,B]
+  
   /** The ´DataProcessor´ trait defines the data receiver
    *  for a ´PushingSource´.
    * 
@@ -120,23 +133,23 @@ object ManagedIO {
    *  @tparam B  the result object type.
    * 
    *  @author  Georg Dietrich
-   *  @version 1.1, 2011-11-12
+   *  @version 1.2, 2011-11-12
    */
   trait DataProcessor[A,B] {
     /** Process the current source state, either an input value or 
      *  a source signal indicating e.g. no more data is available.
      *  
-     *  @return either the result or the processor for the next
+     *  @return either the result or the processor for the next // FIXME
      *          source state. If the result is returned, the
-     *          ´DataSource´ is closed.
+     *          ´DataSource´ is closed by the ´PushingSource´.
      */
-    def process(item: SourceSignal[A]) : Either[DataProcessor[A,B],B]
+    def process(item: SourceSignal[A]) : ProcessorSignal[A,B]
   }
   
   /** Convenience type used for inline data processor definitions.
    *  {{{
    *    def processor : InlineDataProcessor[Int,Unit] = {
-   *      case Left(x)  => println(x); continue(processor)
+   *      case Left(x)  => println(x); continue(processor) // FIXME
    *      case Right(x) => finished(Unit)
    *    }
    *  }}}
@@ -145,23 +158,15 @@ object ManagedIO {
    *  @tparam B  the result object type.
    * 
    *  @author  Georg Dietrich
-   *  @version 1.0, 2011-11-01
+   *  @version 1.1, 2011-11-12
    */
-  type InlineDataProcessor[A,B] = SourceSignal[A] => Either[DataProcessor[A,B],B]
+  type InlineDataProcessor[A,B] = SourceSignal[A] => ProcessorSignal[A,B]
   
   /** Convenience conversion used for inline data processor definitions.
    */
   implicit def setupProcessor[A,B](processor: InlineDataProcessor[A,B]) : DataProcessor[A,B] =
     new DataProcessor[A,B] {
-      def process(item: SourceSignal[A]) : Either[DataProcessor[A,B],B] = processor(item)
+      def process(item: SourceSignal[A]) : ProcessorSignal[A,B] = processor(item)
     }
-  
-  /** Create a 'finished' signal to return in the data source or data processor.
-   */
-  def finished[B](b:B) = Right(b)
-  
-  /** Create a 'continue' signal to return in the data source or data processor.
-   */
-  def continue[A](a:A) = Left(a)
   
 }
