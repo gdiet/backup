@@ -5,12 +5,8 @@ package net.diet_rich.util.io
 import java.io.File
 import net.diet_rich.util.Bytes
 
-trait RandomAccessInputStream extends InputStream with Seekable
-
-trait RandomAccessStream extends RandomAccessInputStream with OutputStream
-
 /** Note: The file size and content may change while the input is open. */
-class RandomAccessFileInput(file: File) extends RandomAccessInputStream {
+class RandomAccessFileInput(file: File) extends InputStream with Seekable {
   protected val accessMode = "r"
   protected final lazy val randomAccessFile = new java.io.RandomAccessFile(file, accessMode)
   final def length : Long = randomAccessFile length
@@ -23,7 +19,7 @@ class RandomAccessFileInput(file: File) extends RandomAccessInputStream {
     }
 }
 
-class RandomAccessFile(file: File) extends RandomAccessFileInput(file) with RandomAccessStream {
+class RandomAccessFile(file: File) extends RandomAccessFileInput(file) with OutputStream[RandomAccessFile] {
   override protected val accessMode = "rw"
-  override final def write(bytes: Bytes) : Unit = randomAccessFile.write(bytes.bytes, bytes.offset, bytes.length)
+  override final def write(bytes: Bytes) = { randomAccessFile.write(bytes.bytes, bytes.offset, bytes.length) ; this }
 }

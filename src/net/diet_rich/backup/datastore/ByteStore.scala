@@ -19,7 +19,7 @@ object ByteStore {
    * b) They must guarantee that messages sent from one thread to one actor are
    *    processed FIFO.
    */
-  private val mailboxSizeLimit = BackupSystemConfig()("actors.MailboxSizeLimit", 20)
+  private val mailboxSizeLimit = BackupSystemConfig()("actors.MailboxSizeLimit", 8)
   val boundedMailboxDispatcher = Dispatchers
       .newExecutorBasedEventDrivenDispatcher("bounded mailbox dispatcher", 0, BoundedMailbox(mailboxSizeLimit))
       .build
@@ -44,6 +44,8 @@ trait ByteStore extends ByteStoreReadOnly {
 
 /** Used only by clients in net.diet_rich.backup.datastore. */
 class ByteStoreImplReadOnly(config: Configuration) extends TypedActor with ByteStoreReadOnly {
+  
+  // FIXME make truly read-only
   
   override def close : Future[List[Throwable]] = {
     self.stop()

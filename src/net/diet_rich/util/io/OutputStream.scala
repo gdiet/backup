@@ -4,16 +4,14 @@ package net.diet_rich.util.io
 
 import net.diet_rich.util.Bytes
 
-trait OutputStream {
-  // EVENTUALLY make this method return a self reference
-  def write(bytes: Bytes) : Unit
-}
+trait OutputStream[+Repr] { def write(bytes: Bytes) : Repr }
 
 object OutputStream {
-  val empty = new OutputStream {
-    override def write(bytes: Bytes) : Unit = { }
+  val empty = new OutputStream[Any] {
+    override def write(bytes: Bytes) = this
   }
-  def tee(out1: OutputStream, out2: OutputStream) : OutputStream = new OutputStream {
-    override def write(bytes: Bytes) : Unit = { out1.write(bytes) ; out2.write(bytes) }
+  
+  def tee(out1: OutputStream[Any], out2: OutputStream[Any]) = new OutputStream[Any] {
+    override def write(bytes: Bytes) = { out1.write(bytes) ; out2.write(bytes) ; this }
   }
 }
