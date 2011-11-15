@@ -13,8 +13,6 @@ import net.diet_rich.util.logging.Logged
 
 object FileStoreProcessor extends Logged {
 
-  type PossibleProblem = Future[Option[Throwable]]
-  
   private val dataChunkSize : Int = BackupSystemConfig()("processing.ChunkSize", 524288)    // 512 kB
   private val maxChunkSize : Int = BackupSystemConfig()("processing.MaxChunkSize", 3145728) //   3 MB
   assert (maxChunkSize >= dataChunkSize)
@@ -76,7 +74,7 @@ object FileStoreProcessor extends Logged {
             if (firstRead) { firstRead = false ; firstReadSize }
             else dataChunkSize
           )
-        bytes.keepFirst(input.readFully(bytes)) match {
+        input.readFully(bytes) match {
           case bytes if bytes.length == 0 => EOI()
           case bytes                      => Next(bytes)
         }

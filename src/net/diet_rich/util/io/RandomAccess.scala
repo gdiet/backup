@@ -12,11 +12,8 @@ class RandomAccessFileInput(file: File) extends InputStream with Seekable {
   final def length : Long = randomAccessFile length
   override final def seek(position: Long) : Unit = randomAccessFile seek position
   override final def close() : Unit = randomAccessFile.close
-  override final def read(bytes: Bytes) : Int =
-    randomAccessFile.read(bytes.bytes, bytes.offset, bytes.length) match {
-      case x if x < 0 => 0
-      case x => x
-    }
+  override final def read(bytes: Bytes) : Bytes =
+    bytes.keepFirst(math.max(0, randomAccessFile.read(bytes.bytes, bytes.offset, bytes.length)))
 }
 
 class RandomAccessFile(file: File) extends RandomAccessFileInput(file) with OutputStream[RandomAccessFile] {

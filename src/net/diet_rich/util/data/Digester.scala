@@ -16,7 +16,6 @@ trait BytesDigester extends Digester[Bytes, BytesDigester]
 
 object Digester {
   
-
   private def checksum(checksum: java.util.zip.Checksum, seed: Option[Bytes]) =
     new ChecksumDigester {
       if (seed.isDefined) reset
@@ -33,7 +32,7 @@ object Digester {
     new ChecksumDigester {
       val crc = crc32(seed)
       val adler = adler32(seed)
-      override def write(bytes: Bytes) = { crc.write(bytes) ; adler.write(bytes) }
+      override def write(bytes: Bytes) = { crc.write(bytes) ; adler.write(bytes) ; this }
       override def getDigest = Checksum(adler.getDigest.value << 32 | crc.getDigest.value)
       override def reset = { crc.reset ; adler.reset }
     }
