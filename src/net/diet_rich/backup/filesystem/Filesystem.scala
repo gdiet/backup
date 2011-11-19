@@ -2,31 +2,32 @@
 // Licensed under the MIT license: http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.backup.filesystem
 
-import net.diet_rich.util.io.{InputStream,OutputStream}
+import net.diet_rich.util.io.{InputStream,BasicOutputStream}
 
 trait Filesystem[+Repr] {
-  def roots : Iterable[Dir[Repr]]
-  def entry(path: String) : Option[Entry[Repr]]
+  def roots : Iterable[Entry[Repr]]
+  def entry(path: String) : Entry[Repr]
 }
+
+trait IOSignal
+
+object NotAFile extends IOSignal
+object NotADir extends IOSignal
+
+case class IOError(error: Throwable) extends IOSignal
 
 trait Entry[+Repr] {
-  def path : String = 
-    parent.map(p => if (p.isRoot) p.path else p.path + "/").getOrElse("") + name
   def name : String
+  def path : String
   def parent : Option[Entry[Repr]]
   def isRoot : Boolean = parent.isEmpty
+  // directory
+  def children : Either[IOSignal, Iterable[Entry[Repr]]]
+  // file
+  def size : Either[IOSignal, Long]
+  def time : Either[IOSignal, Long]
+  def input : Either[IOSignal, InputStream]
+  def output : Either[IOSignal, BasicOutputStream]
 }
 
-trait Dir[+Repr] extends Entry[Repr] {
-  def children : Iterable[Entry[Repr]]
-}
-
-trait File[+Repr] extends Entry[Repr] {
-  def size : Long
-  def time : Long
-  def input : InputStream
-}
-
-trait WriteableFile[+Repr] extends File[Repr] {
-  def output : OutputStream[Any] // FIXME
-}
+//    parent.map(p => if (p.isRoot) p.path else p.path + "/").getOrElse("") + name

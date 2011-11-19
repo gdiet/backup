@@ -22,6 +22,7 @@ object Digester {
       override def write(bytes: Bytes) = { checksum.update(bytes.bytes, bytes.offset, bytes.length) ; this }
       override def getDigest = Checksum(checksum.getValue)
       override def reset = { checksum.reset ; seed.foreach(write(_)) }
+      override def close = Unit
     }
   
   def adler32(seed: Option[Long] = None) = checksum(new java.util.zip.Adler32, seed.map(Bytes.forLong(_)))
@@ -35,6 +36,7 @@ object Digester {
       override def write(bytes: Bytes) = { crc.write(bytes) ; adler.write(bytes) ; this }
       override def getDigest = Checksum(adler.getDigest.value << 32 | crc.getDigest.value)
       override def reset = { crc.reset ; adler.reset }
+      override def close = Unit
     }
   
   def hash(algorithm: String, seed: Option[Long] = None) =
@@ -44,6 +46,7 @@ object Digester {
       override def write(bytes: Bytes) = { digest.update(bytes.bytes, bytes.offset, bytes.length) ; this }
       override def getDigest = Bytes(digest.digest)
       override def reset = { digest.reset ; seed.foreach(long => write(Bytes.forLong(long))) }
+      override def close = Unit
     }
 
   def hash64(algorithm: String, seed: Option[Long] = None) =
@@ -52,6 +55,7 @@ object Digester {
       override def write(bytes: Bytes) = { digester.write(bytes) ; this }
       override def getDigest = Checksum(digester.getDigest.keepFirst(8).toLong)
       override def reset = digester.reset
+      override def close = Unit
     }
 
 }

@@ -16,7 +16,7 @@ class RandomAccessFileInput(file: File) extends InputStream with Seekable {
     bytes.keepFirst(math.max(0, randomAccessFile.read(bytes.bytes, bytes.offset, bytes.length)))
 }
 
-class RandomAccessFile(file: File) extends RandomAccessFileInput(file) with OutputStream[RandomAccessFile] {
+class RandomAccessFile(file: File) extends RandomAccessFileInput(file) with OutputStream[RandomAccessFile] with BasicOutputStream {
   override protected val accessMode = "rw"
   override final def write(bytes: Bytes) = { randomAccessFile.write(bytes.bytes, bytes.offset, bytes.length) ; this }
 }
