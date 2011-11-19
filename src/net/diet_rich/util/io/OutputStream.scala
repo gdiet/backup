@@ -6,10 +6,12 @@ import net.diet_rich.util.Bytes
 
 trait OutputStream[+Repr] { def write(bytes: Bytes) : Repr }
 
+trait EmptyOutputStream extends OutputStream[EmptyOutputStream] {
+  override def write(bytes: Bytes) = this
+}
+
 object OutputStream {
-  val empty = new OutputStream[Any] {
-    override def write(bytes: Bytes) = this
-  }
+  val empty = new EmptyOutputStream {}
   
   def tee(out1: OutputStream[Any], out2: OutputStream[Any]) = new OutputStream[Any] {
     override def write(bytes: Bytes) = { out1.write(bytes) ; out2.write(bytes) ; this }
