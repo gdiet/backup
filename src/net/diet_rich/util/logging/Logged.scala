@@ -30,10 +30,12 @@ trait Logged {
   def info(key: String, args: Any*) = optionAndFlag("INFO", key, args:_*)(_.info(key, args:_*))
   def debug(key: String, args: Any*) = optionAndFlag("DEBUG", key, args:_*)(_.debug(key, args:_*))
   
-  private def optionAndFlag(level: String, key: String, args: Any*)(loggerFunction: => Logger => Boolean) =
+  private def optionAndFlag(level: String, key: String, args: Any*)(loggerFunction: => Logger => Boolean) = {
+    val argString = if (args.isEmpty) "" else args.mkString("[", ", ", "]")
     // if no log listener is defined or the log listener does not consume logs, log to stdout
     if (logListener.forall(loggerFunction(_)))
-      printf("%s: %s %s\n", level, key, args.mkString("[", ", ", "]"))
+      printf("%s: %s %s\n", level, key, argString)
+  }
   
 }
 

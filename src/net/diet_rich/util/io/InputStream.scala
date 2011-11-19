@@ -35,3 +35,10 @@ trait InputStream extends Closeable {
   override def close : Unit = Unit
 
 }
+
+object InputStream {
+  val empty = new InputStream {
+    def read(bytes: Bytes) : Bytes = bytes.copy(length = 0)
+  }
+}
+

@@ -27,7 +27,7 @@ class SimpleFileStoreProcessor {
   trait StoreMethod
   object Uncompressed extends StoreMethod
   object Deflated extends StoreMethod
-  case class StoredData(method: StoreMethod, pieces : List[StoredPiece])
+  case class StoredData(id: Long, size: Long, method: StoreMethod, pieces : List[StoredPiece])
   def dbContains(size: Long, headerChecksum: Checksum) : Boolean = false
   def dbLookup(size: Long, headerChecksum: Checksum, hash: Bytes) : Option[StoreEntry] = None
   def dbCreateEntry(size: Long, headerChecksum: Checksum, hash: Bytes) : StoreEntry = StoreEntry(0)
@@ -37,7 +37,7 @@ class SimpleFileStoreProcessor {
 
   // FIXME implement storage
   /** @throws Exception on error state in storage. */
-  def store(data: Iterator[Bytes]) : StoredData = StoredData(Uncompressed, Nil)
+  def store(data: Iterator[Bytes]) : StoredData = StoredData(0, 0, Uncompressed, Nil)
   def release(data: StoredData) : Unit = Unit
   
   
@@ -106,13 +106,11 @@ class SimpleFileStoreProcessor {
   def storeProbablyNew(iterator: Iterator[Bytes]) : StoreEntry = {
     val headerDigester = newHeaderDigester()
     val hashDigester = newHashDigester()
-    var dataSize : Long = 0
     val hashIterator = new Iterator[Bytes] {
       var firstRun = true
       override def hasNext: Boolean = iterator.hasNext
       override def next: Bytes = {
         val bytes = iterator.next
-        dataSize += bytes.length
         hashDigester.write(bytes)
         if (firstRun) {
           headerDigester.write(bytes.keepAtMostFirst(headerChunkSize))
@@ -125,9 +123,9 @@ class SimpleFileStoreProcessor {
     val header = headerDigester.getDigest
     val hash = hashDigester.getDigest
     dbTransaction {
-      dbLookup(dataSize, header, hash) match {
+      dbLookup(storedData.size, header, hash) match {
         case Some(entry) => release(storedData) ; entry
-        case None => dbCreateEntry(dataSize, header, hash)
+        case None => dbCreateEntry(storedData.size, header, hash)
       }
     }
     // EVENTUALLY add an option to avoid hash recalculation when called from storeProbablyKnown
