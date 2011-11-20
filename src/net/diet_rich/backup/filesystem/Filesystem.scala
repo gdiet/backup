@@ -30,4 +30,4 @@ trait Entry[+Repr] {
   def output : Either[IOSignal, BasicOutputStream]
 }
 
-//    parent.map(p => if (p.isRoot) p.path else p.path + "/").getOrElse("") + name
+//    path = parent.map(p => if (p.isRoot) p.path else p.path + "/").getOrElse("") + name
