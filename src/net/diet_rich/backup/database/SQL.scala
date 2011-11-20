@@ -48,6 +48,7 @@ INSERT INTO Entries (id, parent, name) VALUES ( 0, NULL, '' );
   , CHECK (parent != id)                        // no self references
   , CHECK (deleted OR deleteTime = 0)           // defined deleted status
   , CHECK ((id = 0) = (parent IS NULL))         // only one root
+  , CHECK (id != 0 OR deleted = FALSE)          // can't delete root
   , CHECK (type = 'DIR' OR type = 'FILE')       // no other types yet
 
 [create tables]

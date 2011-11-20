@@ -4,29 +4,51 @@ package net.diet_rich.backup.database
 
 import java.sql._
 import net.diet_rich.util.logging.Logged
+import net.diet_rich.util.{Bytes,ScalaThreadLocal}
 
 class Database extends Logged {
 
   Class.forName("org.hsqldb.jdbc.JDBCDriver")
   val connection = DriverManager.getConnection("jdbc:hsqldb:mem:mymemdb", "SA", "")
-  val statement = connection.createStatement
+  val statement = connection.createStatement // use only synchronized!
   
-  val prepGetRootEntry = connection.prepareStatement("SELECT id, parent, name, type FROM Entries WHERE id = 0;")
+  def prepareStatement(statement: String) = ScalaThreadLocal(connection.prepareStatement(statement))
   
-  def createTables = {
-    val createTables = SQL.sectionsWithConstraints("create tables")
-    createTables.foreach(_.split("\n").foreach(info(_)))
-    statement.execute(createTables.mkString("\n"))
+  def createTables = synchronized {
+    val createTables = SQL.sectionsWithConstraints("create tables").mkString("\n").split(";")
+    createTables.foreach(command => {
+      command.split("\n").foreach(info(_))
+      statement.execute(command)
+    })
     
-    val initializeTables = SQL.sectionsWithConstraints("initialize tables")
-    initializeTables.foreach(_.split("\n").foreach(info(_)))
-    statement.execute(initializeTables.mkString("\n"))
+    val initializeTables = SQL.sectionsWithConstraints("initialize tables").mkString("\n").split(";")
+    initializeTables.foreach(command => {
+      command.split("\n").foreach(info(_))
+      statement.execute(command)
+    })
   }
 
+  // FIXME implement a possibility to skip DB creation
+  createTables
+  
+  val getRootEntry  = prepareStatement("SELECT id, parent, name, type FROM Entries WHERE id = 0;")
+  val getEntry      = prepareStatement("SELECT id, parent, name, type FROM Entries WHERE name = ? AND parent = ?;")
+  
   // EVENTUALLY use status flag in database to signal "connected / shut down orderly"
 
+  def query(preparedQuery: ScalaThreadLocal[PreparedStatement], args: Any*) = {
+    val query = preparedQuery()
+    args.zipWithIndex.foreach(_ match {
+      case (x : Long, index)    => query.setLong(index, x)
+      case (x : Integer, index) => query.setInt(index, x)
+      case (x : String, index)  => query.setString(index, x)
+      case (x : Boolean, index) => query.setBoolean(index, x)
+      case (x : Bytes, index)   => query.setBytes(index, x.bytes)
+    })
+  }
+  
   val rootEntry = {
-    val results   = prepGetRootEntry.executeQuery
+    val results   = getRootEntry().executeQuery
     val hasResult = results.next
     assert (hasResult)
     val id = results.getLong(1)
