@@ -4,7 +4,7 @@ package net.diet_rich.backup.database
 
 import java.sql._
 import net.diet_rich.util.logging.Logged
-import net.diet_rich.util.{Bytes,ScalaThreadLocal}
+import net.diet_rich.util.{Bytes,Choice,ScalaThreadLocal}
 
 class Database extends Logged {
 
@@ -31,38 +31,57 @@ class Database extends Logged {
   // FIXME implement a possibility to skip DB creation
   createTables
   
-  val getRootEntry  = prepareStatement("SELECT id, parent, name, type FROM Entries WHERE id = 0;")
   val getEntry      = prepareStatement("SELECT id, parent, name, type FROM Entries WHERE name = ? AND parent = ?;")
   
   // EVENTUALLY use status flag in database to signal "connected / shut down orderly"
 
-  def query(preparedQuery: ScalaThreadLocal[PreparedStatement], args: Any*) = {
-    val query = preparedQuery()
+  def prepareStatement(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) = {
+    val statement = preparedStatement()
     args.zipWithIndex.foreach(_ match {
-      case (x : Long, index)    => query.setLong(index, x)
-      case (x : Integer, index) => query.setInt(index, x)
-      case (x : String, index)  => query.setString(index, x)
-      case (x : Boolean, index) => query.setBoolean(index, x)
-      case (x : Bytes, index)   => query.setBytes(index, x.bytes)
+      case (x : Long, index)    => statement.setLong(index, x)
+      case (x : Int, index)     => statement.setInt(index, x)
+      case (x : String, index)  => statement.setString(index, x)
+      case (x : Boolean, index) => statement.setBoolean(index, x)
+      case (x : Bytes, index)   => statement.setBytes(index, x.bytes)
     })
-  }
-  
-  val rootEntry = {
-    val results   = getRootEntry().executeQuery
-    val hasResult = results.next
-    assert (hasResult)
-    val id = results.getLong(1)
-    val parent = results.getLong(2)
-    val name = results.getString(3)
-    val typ = results.getString(4)
+    statement
   }
 
+  def executeUpdate(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Int = {
+    prepareStatement(preparedStatement, args:_*).executeUpdate()
+  }
+
+  def executeQuery(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) = {
+    val resultSet = prepareStatement(preparedStatement, args:_*).executeQuery()
+    if (resultSet.next()) Some(new WrappedResult(resultSet)) else None
+  }
+
+  /* this is never the ROOT entry since root's parent is NULL */
+  case class Entry(id: Long, parent: Long, name: String, typ: String)
   
-  def entryForPath(path: String) = {
-    require(path != "/")
-    require(path == "" || path.startsWith("/"))
-    statement.executeQuery("SELECT id, parent, name, type FROM Entries WHERE")
+  class WrappedResult(resultSet: ResultSet) {
+    def next =
+      if (resultSet.next()) new WrappedResult(resultSet) else None
+    def long(column: Int) = resultSet.getLong(column)
+    def long(column: String) = resultSet.getLong(column)
+    def longOption(column: Int) = Choice.nullIsNone(resultSet.getLong(column))
+    def longOption(column: String) = Choice.nullIsNone(resultSet.getLong(column))
+    def string(column: Int) = resultSet.getString(column)
+    def string(column: String) = resultSet.getString(column)
   }
   
+  def entryForName(name: String, parent: Long) = {
+    require(name != "")
+    require(!name.contains("/"))
+    executeQuery(getEntry, name, parent).map(results =>
+      Entry(results.long("id"), results.long("parent"), results.string("name"), results.string("type"))
+    )
+  }
+    
+  def entryForPath(path: String, parent: Long = 0) = {
+    require(path.startsWith("/"))
+    require(!path.endsWith("/"))
+    // split, then fold left
+  }
   
 }

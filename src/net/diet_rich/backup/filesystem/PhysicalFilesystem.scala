@@ -20,11 +20,11 @@ class PhysicalEntry(file: File) extends Entry[PhysicalFilesystem] {
   override def name : String = file.getName
   override def path : String = file.getPath.replaceAll(File.separator,"/")
   override def parent : Option[PhysicalEntry] = 
-    nullIsNone(file.getParentFile){PhysicalEntry(_)}
+    nullIsNone(file.getParentFile).map(PhysicalEntry(_))
   
   // directory
   override def children : Either[IOSignal, Iterable[PhysicalEntry]] =
-    nullIsLeft(file.listFiles, NotADir){_.map(PhysicalEntry(_))}
+    mapRight(nullIsLeft(NotADir, file.listFiles)){_.map(PhysicalEntry(_))}
   
   // file
   override def size : Either[IOSignal, Long] =
