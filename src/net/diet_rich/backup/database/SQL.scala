@@ -22,8 +22,8 @@ CREATE TABLE RepositoryInfo (
     value  VARCHAR(256) NOT NULL
 );
 [initialize tables]
-// EVENTUALLY use status on loading the database
-INSERT INTO RepositoryInfo (key, value) VALUES ( 'status', 'shut down' );
+// EVENTUALLY check shut down status on loading the database
+INSERT INTO RepositoryInfo (key, value) VALUES ( 'shut down', 'OK' );
 // EVENTUALLY use
 INSERT INTO RepositoryInfo (key, value) VALUES ( 'version', '1' );
 // EVENTUALLY use

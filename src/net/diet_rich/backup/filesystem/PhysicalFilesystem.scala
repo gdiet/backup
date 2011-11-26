@@ -15,13 +15,26 @@ object PhysicalFilesystem extends PhysicalFilesystem {
   def entry(file: java.io.File) : Entry[PhysicalFilesystem] = PhysicalEntry(file)
 }
 
-class PhysicalEntry(file: File) extends Entry[PhysicalFilesystem] {
+final class PhysicalEntry(val file: File) extends Entry[PhysicalFilesystem] {
   // general
   override def name : String = file.getName
   override def path : String = file.getPath.replaceAll(File.separator,"/")
   override def parent : Option[PhysicalEntry] = 
     nullIsNone(file.getParentFile).map(PhysicalEntry(_))
-  
+  override def rename(newName: String) : Option[IOSignal] =
+    if (file.renameTo(new File(file.getParentFile, newName))) None
+    else Some(OtherProblem)
+  override def move[T >: PhysicalFilesystem](newParent: Entry[T]) : Option[IOSignal] =
+    newParent match { case newParent: PhysicalEntry =>
+      if (file.renameTo(new File(newParent.file, file.getName))) None
+      else Some(OtherProblem)
+    }
+  override def delete : Option[IOSignal] =
+    if (file.delete) None
+    else Some(OtherProblem)
+  def deleteAll : Option[IOSignal] =
+    throw new UnsupportedOperationException // FIXME
+
   // directory
   override def children : Either[IOSignal, Iterable[PhysicalEntry]] =
     mapRight(nullIsLeft(NotADir, file.listFiles)){_.map(PhysicalEntry(_))}

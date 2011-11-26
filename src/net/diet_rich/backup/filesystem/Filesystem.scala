@@ -11,6 +11,8 @@ trait Filesystem[+Repr] {
 
 trait IOSignal
 
+object OtherProblem extends IOSignal
+object IOError extends IOSignal
 object NotAFile extends IOSignal
 object NotADir extends IOSignal
 
@@ -21,6 +23,10 @@ trait Entry[+Repr] {
   def path : String
   def parent : Option[Entry[Repr]]
   def isRoot : Boolean = parent.isEmpty
+  def rename(newName: String) : Option[IOSignal]
+  def move[T >: Repr](newParent: Entry[T]) : Option[IOSignal]
+  def delete : Option[IOSignal]
+  def deleteAll : Option[IOSignal]
   // directory
   def children : Either[IOSignal, Iterable[Entry[Repr]]]
   // file
