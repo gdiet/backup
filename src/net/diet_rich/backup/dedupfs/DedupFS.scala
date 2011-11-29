@@ -2,13 +2,15 @@
 // Licensed under the MIT license: http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.backup.dedupfs
 
+import collection.mutable.{HashMap,Queue}
+
 class CachedDB(db: Database) {
 
   private val cacheSize = 5000 // FIXME make a system config
   
-  private val entryMap = collection.mutable.HashMap[Long, Entry]()
-  private val entryQueue = collection.mutable.Queue[Long]()
-  private val writeCache = collection.mutable.HashMap[Long, Entry]()
+  private val entryMap = HashMap[Long, Entry]()
+  private val entryQueue = Queue[Long]()
+  private val writeCache = HashMap[Long, Entry]()
 
   private def addOrChangeEntry(entry: Entry) : Unit = {
     entryMap.synchronized {
@@ -41,18 +43,6 @@ class CachedDB(db: Database) {
     }
   }
     
-//  private def entry(name: String, parent: Long) : Option[Entry] =
-//    // get parent if any and unwrap option
-//    entry(parent).flatMap(
-//      // get parent entry if a dir and unwrap option
-//      _.dir.flatMap(
-//        // get a list of children for the parent dir
-//        _.childIDs.map(entry(_)).flatten
-//        // find the first matching child (result: child option)
-//        .find(_.name == name)
-//      )
-//    )
-    
   private def entryForPath(path: String, parent: Long = 0) : Option[Entry] = {
     require(path.startsWith("/"))
     require(!path.endsWith("/"))
@@ -70,8 +60,21 @@ class CachedDB(db: Database) {
 trait Database {
   def entry(id: Long) : Option[Entry]
   def entry(name: String, parent: Long) : Option[Entry]
-  /** queue write from write cache. once written removes entry from write cache. */
+  /** queue write from write cache. once written removes entry from write cache. synchronize on write cache! */
   def writeEntry(id: Long) : Unit
+}
+
+class MemoryDB(writeCache: HashMap[Long, Entry]) extends Database {
+  private val entryMap = HashMap[Long, Entry]()
+  
+  def entry(id: Long) : Option[Entry] = writeCache.synchronized { entryMap.get(id) }
+  def entry(name: String, parent: Long) : Option[Entry] = writeCache.synchronized {
+    entryMap.get(parent) match {
+      case dir: Dir => dir.childIDs.map(entryMap.get(_)).flatten.find(_.name == name)
+      case _ => None
+    }
+  }
+  def writeEntry(id: Long) : Unit = writeCache.synchronized { entryMap += id -> writeCache(id) }
 }
 
 trait Entry {
