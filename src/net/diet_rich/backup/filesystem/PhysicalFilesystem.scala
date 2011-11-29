@@ -6,36 +6,42 @@ import java.io.File
 import net.diet_rich.util.io.{BasicOutputStream,InputStream,RandomAccessFile,RandomAccessFileInput}
 import net.diet_rich.util.Choice._
 
-trait PhysicalFilesystem extends Filesystem[PhysicalFilesystem]
-
-object PhysicalFilesystem extends PhysicalFilesystem {
-  def roots : Iterable[PhysicalEntry] =
+object PhysicalFilesystem extends Filesystem[PhysicalEntry] {
+  override def roots : Iterable[PhysicalEntry] =
     java.io.File.listRoots().map(PhysicalEntry(_))
-  def entry(path: String) : Entry[PhysicalFilesystem] = entry(new File(path))
-  def entry(file: java.io.File) : Entry[PhysicalFilesystem] = PhysicalEntry(file)
+  override def entry(path: String) : PhysicalEntry = entry(new File(path))
+  def entry(file: java.io.File) : PhysicalEntry = PhysicalEntry(file)
 }
 
-final class PhysicalEntry(val file: File) extends Entry[PhysicalFilesystem] {
+final class PhysicalEntry(val file: File) extends Entry[PhysicalEntry] {
   // general
   override def name : String = file.getName
   override def path : String = file.getPath.replaceAll(File.separator,"/")
   override def parent : Option[PhysicalEntry] = 
     nullIsNone(file.getParentFile).map(PhysicalEntry(_))
-  override def rename(newName: String) : Option[IOSignal] =
-    if (file.renameTo(new File(file.getParentFile, newName))) None
-    else Some(OtherProblem)
-  override def move[T >: PhysicalFilesystem](newParent: Entry[T]) : Option[IOSignal] =
-    newParent match { case newParent: PhysicalEntry =>
-      if (file.renameTo(new File(newParent.file, file.getName))) None
-      else Some(OtherProblem)
-    }
+  override def rename(newName: String) : Either[IOSignal, PhysicalEntry] = {
+    val newFile = new File(file.getParentFile, newName)
+    if (file.renameTo(newFile)) Right(PhysicalEntry(newFile))
+    else Left(OtherProblem)
+  }
+  override def move(newParent: PhysicalEntry) : Either[IOSignal, PhysicalEntry] = {
+    val newFile = new File(newParent.file, file.getName)
+    if (file.renameTo(newFile)) Right(PhysicalEntry(newFile))
+    else Left(OtherProblem)
+  }
   override def delete : Option[IOSignal] =
     if (file.delete) None
     else Some(OtherProblem)
-  def deleteAll : Option[IOSignal] =
+  override def deleteAll : Option[IOSignal] =
     throw new UnsupportedOperationException // FIXME
-
+  override def isFile : Boolean =
+    file.isFile
+  override def isDir : Boolean =
+    file.isDirectory
+    
   // directory
+  override def makedirs : Option[IOSignal] =
+    throw new UnsupportedOperationException // FIXME
   override def children : Either[IOSignal, Iterable[PhysicalEntry]] =
     mapRight(nullIsLeft(NotADir, file.listFiles)){_.map(PhysicalEntry(_))}
   

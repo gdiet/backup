@@ -4,9 +4,9 @@ package net.diet_rich.backup.filesystem
 
 import net.diet_rich.util.io.{InputStream,BasicOutputStream}
 
-trait Filesystem[+Repr] {
-  def roots : Iterable[Entry[Repr]]
-  def entry(path: String) : Entry[Repr]
+trait Filesystem[Repr] {
+  def roots : Iterable[Repr]
+  def entry(path: String) : Repr
 }
 
 trait IOSignal
@@ -18,17 +18,20 @@ object NotADir extends IOSignal
 
 case class IOError(error: Throwable) extends IOSignal
 
-trait Entry[+Repr] {
+trait Entry[Repr] {
   def name : String
   def path : String
-  def parent : Option[Entry[Repr]]
+  def parent : Option[Repr]
   def isRoot : Boolean = parent.isEmpty
-  def rename(newName: String) : Option[IOSignal]
-  def move[T >: Repr](newParent: Entry[T]) : Option[IOSignal]
+  def rename(newName: String) : Either[IOSignal, Repr]
+  def move(newParent: Repr) : Either[IOSignal, Repr]
   def delete : Option[IOSignal]
   def deleteAll : Option[IOSignal]
+  def isFile: Boolean
+  def isDir: Boolean
   // directory
-  def children : Either[IOSignal, Iterable[Entry[Repr]]]
+  def makedirs : Option[IOSignal]
+  def children : Either[IOSignal, Iterable[Repr]]
   // file
   def size : Either[IOSignal, Long]
   def time : Either[IOSignal, Long]
