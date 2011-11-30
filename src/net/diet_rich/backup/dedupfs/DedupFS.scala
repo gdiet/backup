@@ -14,21 +14,27 @@ class CachedDB(db: Database) {
 
   private def addOrChangeEntry(entry: Entry) : Unit = {
     entryMap synchronized {
-      // EVENTUALLY check for duplicate elements in the queue
-      entryMap += entry.id -> entry
+      cacheEntry (entry)
       writeCache += entry.id -> entry
-      entryQueue enqueue entry.id
-      if (entryQueue.length > cacheSize) entryMap remove entryQueue.dequeue
     }
     db writeEntry entry.id
   }
 
-  private def entry(id: Long) : Option[Entry] =
+  private def cacheEntry(entry: Entry) : Entry =
+    entryMap synchronized {
+      // EVENTUALLY check for duplicate elements in the queue
+      entryMap += entry.id -> entry
+      entryQueue enqueue entry.id
+      if (entryQueue.length > cacheSize) entryMap remove entryQueue.dequeue
+      entry
+    }
+  
+  private def get(id: Long) : Option[Entry] =
     entryMap synchronized {
       (entryMap get id) orElse (writeCache get id)
-    } orElse (db get id)
+    } orElse (db get id map cacheEntry)
 
-  private def entry(name: String, parent: Long) : Option[Entry] = {
+  private def get(name: String, parent: Long) : Option[Entry] = {
     entryMap synchronized {
       // get parent if cached
       (entryMap get parent) orElse (writeCache get parent)
@@ -36,17 +42,17 @@ class CachedDB(db: Database) {
       // not cached - fetch from database
       case None => db get (name, parent)
       // get a list of children and find the first matching child
-      case dir: Dir => ( dir.childIDs map entry ).flatten find (_.name == name)
+      case dir: Dir => (dir.childIDs map get) .flatten find (_.name == name)
       // parent is not a dir => no child entry
       case _ => None
     }
   }
     
-  private def entryForPath(path: String, parent: Long = 0) : Option[Entry] = {
+  private def getPath(path: String, parent: Long = 0) : Option[Entry] = {
     require(path startsWith "/")
     require(! (path endsWith "/"))
-    (path split "/" tail).foldLeft(entry(parent))((parent, name) =>
-      parent.flatMap( parentEntry => entry(name, parentEntry.parent) )
+    (path split "/" tail) .foldLeft (get(parent)) ((parent, name) =>
+      parent.flatMap( parentEntry => get(name, parentEntry.parent) )
     )
   }
 
@@ -69,11 +75,14 @@ class MemoryDB(writeCache: Map[Long, Entry]) extends Database {
   def get(id: Long) : Option[Entry] = synchronized { entryMap get id }
   def get(name: String, parent: Long) : Option[Entry] = synchronized {
     entryMap get parent match {
-      case dir: Dir => (dir.childIDs map entryMap.get).flatten find (_.name == name)
+      case dir: Dir => (dir.childIDs map entryMap.get) .flatten find (_.name == name)
       case _ => None
     }
   }
-  def writeEntry(id: Long) : Unit = synchronized { entryMap += id -> (writeCache remove id).get }
+  def writeEntry(id: Long) : Unit = synchronized {
+    // entry may not be in write cache because it was queued for writing twice
+    writeCache remove id foreach (entryMap += id -> _)
+  }
 }
 
 trait Entry {
