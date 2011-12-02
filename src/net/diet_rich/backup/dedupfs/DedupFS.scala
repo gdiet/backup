@@ -8,19 +8,38 @@ class CachedDB(db: Database) {
 
   private val cacheSize = 5000 // FIXME make a system config
   
-  private val entryMap = HashMap[Long, Entry]()
+  private val entryMap = HashMap[Long, DBEntry]()
   private val entryQueue = Queue[Long]()
-  private val writeCache = new HashMap[Long, Entry]() with SynchronizedMap[Long, Entry]
+  
+  // FIXME two methods: add / change
+//  private def addOrChangeEntry(entry: DBEntry) : Unit = {
+//    entryMap synchronized {
+//      cacheEntry (entry)
+//      db.writeCache += entry.id -> entry
+//    }
+//    db writeEntry entry.id
+//  }
 
-  private def addOrChangeEntry(entry: Entry) : Unit = {
-    entryMap synchronized {
-      cacheEntry (entry)
-      writeCache += entry.id -> entry
+  // FIXME on add we'll have to check the path for duplicates
+  // on change we'll have to check whether the entry still exists
+  // we'll assume an entry can not change its type
+  
+  private def addOrChangeEntry(entry: DBEntry, trueToChange: Boolean) : Boolean = {
+    val result = entryMap synchronized {
+      if ((entryMap contains entry.id) == trueToChange) {
+        cacheEntry (entry)
+        db.writeCache += entry.id -> entry
+        true
+      } else false
     }
-    db writeEntry entry.id
+    if (result) db writeEntry entry.id
+    result
   }
 
-  private def cacheEntry(entry: Entry) : Entry =
+  def updateEntry(entry: DBEntry) : Boolean = addOrChangeEntry(entry, true)
+  def addEntry(entry: DBEntry) : Boolean = addOrChangeEntry(entry, false)
+
+  private def cacheEntry(entry: DBEntry) : DBEntry =
     entryMap synchronized {
       // EVENTUALLY check for duplicate elements in the queue
       entryMap += entry.id -> entry
@@ -29,26 +48,26 @@ class CachedDB(db: Database) {
       entry
     }
   
-  private def get(id: Long) : Option[Entry] =
+  private def get(id: Long) : Option[DBEntry] =
     entryMap synchronized {
-      (entryMap get id) orElse (writeCache get id)
+      (entryMap get id) orElse (db.writeCache get id)
     } orElse (db get id map cacheEntry)
 
-  private def get(name: String, parent: Long) : Option[Entry] = {
+  private def get(name: String, parent: Long) : Option[DBEntry] = {
     entryMap synchronized {
       // get parent if cached
-      (entryMap get parent) orElse (writeCache get parent)
+      (entryMap get parent) orElse (db.writeCache get parent)
     } match {
       // not cached - fetch from database
       case None => db get (name, parent)
       // get a list of children and find the first matching child
-      case dir: Dir => (dir.childIDs map get) .flatten find (_.name == name)
+      case dir: DBDir => (dir.childIDs map get) .flatten find (_.name == name)
       // parent is not a dir => no child entry
       case _ => None
     }
   }
     
-  private def getPath(path: String, parent: Long = 0) : Option[Entry] = {
+  def getPath(path: String, parent: Long = 0) : Option[DBEntry] = {
     require(path startsWith "/")
     require(! (path endsWith "/"))
     (path split "/" tail) .foldLeft (get(parent)) ((parent, name) =>
@@ -62,20 +81,24 @@ class CachedDB(db: Database) {
 
 }
 
+/** synchronize all methods! */
 trait Database {
-  def get(id: Long) : Option[Entry]
-  def get(name: String, parent: Long) : Option[Entry]
-  /** queue write from write cache. once written removes entry from write cache. synchronize on write cache! */
+  def writeCache : SynchronizedMap[Long, DBEntry]
+  def get(id: Long) : Option[DBEntry]
+  def get(name: String, parent: Long) : Option[DBEntry]
+  /** queue write from write cache. once written removes entry from write cache. */
   def writeEntry(id: Long) : Unit
 }
 
-class MemoryDB(writeCache: Map[Long, Entry]) extends Database {
-  private val entryMap = HashMap[Long, Entry]()
+class MemoryDB() extends Database {
+  val writeCache = new HashMap[Long, DBEntry]() with SynchronizedMap[Long, DBEntry]
   
-  def get(id: Long) : Option[Entry] = synchronized { entryMap get id }
-  def get(name: String, parent: Long) : Option[Entry] = synchronized {
+  private val entryMap = HashMap[Long, DBEntry](0L -> new DBDir(0, "", 0, Nil))
+  
+  def get(id: Long) : Option[DBEntry] = synchronized { entryMap get id }
+  def get(name: String, parent: Long) : Option[DBEntry] = synchronized {
     entryMap get parent match {
-      case dir: Dir => (dir.childIDs map entryMap.get) .flatten find (_.name == name)
+      case dir: DBDir => (dir.childIDs map entryMap.get) .flatten find (_.name == name)
       case _ => None
     }
   }
@@ -85,15 +108,56 @@ class MemoryDB(writeCache: Map[Long, Entry]) extends Database {
   }
 }
 
-trait Entry {
+/** root has id 0 and parent 0 */
+trait DBEntry {
   def id: Long
   def name: String
   def parent: Long
-  def dir : Option[Dir]  = this match { case dir:  Dir  => Some(dir)  ; case _ => None }
-  def file: Option[File] = this match { case file: File => Some(file) ; case _ => None }
+  def dir : Option[DBDir]  = this match { case dir:  DBDir  => Some(dir)  ; case _ => None }
+  def file: Option[DBFile] = this match { case file: DBFile => Some(file) ; case _ => None }
 }
 
-abstract class Dir(val childIDs: List[Long]) extends Entry
+class DBDir(
+    val id: Long,
+    val name: String,
+    val parent: Long,
+    val childIDs: List[Long]
+  ) extends DBEntry
 
-abstract class File extends Entry
+class DBFile(
+    val id: Long,
+    val name: String,
+    val parent: Long
+  ) extends DBEntry
 
+
+  
+class DedupFS(private[dedupfs] val db: CachedDB) {
+  def get(path: String) : Entry = new Entry(this, path)
+}
+
+class Entry(val fs: DedupFS, val path: String) {
+  require(path.startsWith("/") || path.isEmpty())
+  require(!path.endsWith("/"))
+  
+  def data: Option[EntryData] = {
+    fs.db getPath path map (_ match {
+      case dir: DBDir => new EntryData(
+          id = dir.id,
+          isDir = true
+        )
+      case _ => throw new UnsupportedOperationException
+    })
+  }
+}
+
+class EntryData(
+  val id: Long,
+  val isDir: Boolean,
+  val size: Option[Long] = None,
+  val time: Option[Long] = None
+){
+  def isFile : Boolean = ! isDir
+}
+
+//class Dir(val fs: DedupFS, val id: Long) extends Entry
