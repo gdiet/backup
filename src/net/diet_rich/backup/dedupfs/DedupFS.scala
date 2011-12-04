@@ -11,7 +11,6 @@ class Entry(val fs: DedupFS, val path: String) {
   require(!path.endsWith("/"))
   
   def data: Option[EntryData] = {
-    println(path + "->" + (fs.db getPath(path)))
     fs.db getPath path map (_ match {
       case dir: DBDir => new EntryData(
           id = dir.id,
@@ -31,6 +30,7 @@ trait Signal
 
 case object EntryExists extends Signal
 case object ParentDoesNotExist extends Signal
+case object ParentIsNotADir extends Signal
 
 class EntryData(
   val id: Long,
