@@ -6,9 +6,13 @@ import java.sql.DriverManager
 import java.sql.PreparedStatement
 import java.sql.ResultSet
 import net.diet_rich.util.Choice
+import net.diet_rich.util.EnhancedIterator
 import net.diet_rich.util.ScalaThreadLocal
 
 class SQLDB {
+  // configuration
+  val enableConstraints = true // EVENTUALLY make configurable
+  
   // set up connection
   Class forName "org.hsqldb.jdbc.JDBCDriver"
   val connection = DriverManager getConnection("jdbc:hsqldb:mem:mymemdb", "SA", "")
@@ -16,53 +20,74 @@ class SQLDB {
 
   // create tables
   def createTables = synchronized {
-    val statement = connection.createStatement
-    SQL sectionsWithConstraints "create tables" mkString "\n" split ";" foreach statement.execute
-    SQL sectionsWithConstraints "initialize tables" mkString "\n" split ";" foreach statement.execute
+    executeDirectly(
+      """
+      CREATE TABLE Entries (
+        id          BIGINT PRIMARY KEY,
+        parent      BIGINT NOT NULL,
+        name        VARCHAR(256) NOT NULL,
+        type        VARCHAR(4) DEFAULT 'DIR' NOT NULL,  // DIR or FILE
+        deleted     BOOLEAN DEFAULT FALSE NOT NULL,
+        deleteTime  BIGINT DEFAULT 0 NOT NULL           // timestamp if marked deleted, else 0
+        - constraints -
+      );
+      """,
+      """
+      , FOREIGN KEY (parent) REFERENCES Entries(id)     // reference integrity of parent
+      , UNIQUE (parent, name, deleted, deleteTime)      // unique entries only
+      , CHECK (parent != id OR id = 0)                  // no self references
+      , CHECK (deleted OR deleteTime = 0)               // defined deleted status
+      , CHECK ((id = 0) = (parent = 0))                 // root's parent is 0
+      , CHECK (id != 0 OR deleted = FALSE)              // can't delete root
+      , CHECK (type = 'DIR' OR type = 'FILE')           // no other types yet
+      """
+    )
+    executeDirectly("INSERT INTO Entries (id, parent, name) VALUES ( 0, 0, '' );")
   }
   
   // FIXME implement a possibility to skip DB creation
   createTables
 
   // JDBC helper methods
+  def executeDirectly(command: String, constraints: String = "") : Unit = {
+    val fullCommand = command replaceAllLiterally("- constraints -", if (enableConstraints) constraints else "")
+    val strippedCommand = fullCommand split "\\n" map (_ replaceAll("//.*", "")) mkString ("\n")
+    connection.createStatement execute strippedCommand
+  }
+  
   def prepareStatement(statement: String) = ScalaThreadLocal(connection prepareStatement statement)
   
   def setArguments(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) = {
     val statement = preparedStatement()
-    args.zipWithIndex.foreach(_ match {
-      case (x : Long, index)    => statement.setLong(index+1, x)
-      case (x : Int, index)     => statement.setInt(index+1, x)
-      case (x : String, index)  => statement.setString(index+1, x)
-      case (x : Boolean, index) => statement.setBoolean(index+1, x)
+    args.zipWithIndex foreach(_ match {
+      case (x : Long, index)    => statement setLong (index+1, x)
+      case (x : Int, index)     => statement setInt (index+1, x)
+      case (x : String, index)  => statement setString (index+1, x)
+      case (x : Boolean, index) => statement setBoolean (index+1, x)
     })
     statement
   }
 
   def executeUpdate(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Int = {
-    setArguments(preparedStatement, args:_*).executeUpdate()
+    setArguments(preparedStatement, args:_*) executeUpdate
   }
 
-  def executeQuery(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Option[WrappedResult] = {
-    val resultSet = setArguments(preparedStatement, args:_*).executeQuery()
-    if (resultSet.next()) Some(new WrappedResult(resultSet)) else None
-  }
-
-  def executeQueryIter(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Iterator[WrappedResult]{def nextOption: Option[WrappedResult]} = {
-    val resultSet = setArguments(preparedStatement, args:_*).executeQuery()
-    new Iterator[WrappedResult] {
-      def hasNext = resultSet.next
+  /** Note: Calling next(Option) invalidates any previous result objects! */
+  def executeQueryIter(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : EnhancedIterator[WrappedResult] = {
+    val resultSet = setArguments(preparedStatement, args:_*) .executeQuery
+    new EnhancedIterator[WrappedResult] {
+      def hasNext = resultSet next
       val next = new WrappedResult(resultSet)
-      def nextOption = if (hasNext) Some(next) else None
     }
   }
 
   class WrappedResult(resultSet: ResultSet) {
-    def long(column: Int) = resultSet.getLong(column)
-    def long(column: String) = resultSet.getLong(column)
-    def longOption(column: Int) = Choice.nullIsNone(resultSet.getLong(column))
-    def longOption(column: String) = Choice.nullIsNone(resultSet.getLong(column))
-    def string(column: Int) = resultSet.getString(column)
-    def string(column: String) = resultSet.getString(column)
+    def long(column: Int)           = resultSet getLong column
+    def long(column: String)        = resultSet getLong column
+    def longOption(column: Int)     = Choice nullIsNone (resultSet getLong column)
+    def longOption(column: String)  = Choice nullIsNone (resultSet getLong column)
+    def string(column: Int)         = resultSet getString column
+    def string(column: String)      = resultSet getString column
   }
 
   val getEntryForIdPS = 
