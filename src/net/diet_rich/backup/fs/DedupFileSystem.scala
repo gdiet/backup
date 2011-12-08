@@ -35,6 +35,11 @@ class DedupFileSystem(db: DedupDb) {
     require(!childName.contains("/"))
     db mkChild (id, childName)
   }
+  def rename(id: Long, newName: String) : Boolean ={
+    require(!newName.contains("/"))
+    db rename (id, newName)
+  }
+  def delete(id: Long) : Boolean = if (id == 0) false else db delete id
   
   override def toString: String = "fs" // EVENTUALLY write a sensible name
 }
@@ -66,6 +71,8 @@ case class DFile (val fs: DedupFileSystem, val id: Long) {
   def name : Option[String] = fs name id
   /** Creating the child will fail if a child with the same name already exists. */
   def mkChild(childName: String) : Option[DFile] = fs mkChild (id, childName) map (copy (fs, _))
+  def rename(newName: String) : Boolean = fs rename (id, newName)
+  def delete : Boolean = fs delete id
 }
 
 

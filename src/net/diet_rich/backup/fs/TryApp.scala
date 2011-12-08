@@ -16,5 +16,19 @@ object TryApp extends App {
   println("---")
 
   println(fs.path("/a").file.flatMap(_.mkChild("b")))
+  println(fs.path("/a/b").file.flatMap(_.mkChild("x")))
   println(fs.path("/a/b").file.flatMap(_.path))
+  
+  println("---")
+
+  println(fs.path("/a").file.map(_.rename("c")))
+  println(fs.path("/a/b").file)
+  println(fs.path("/c/b").file)
+  
+  println("---")
+
+  println(fs.path("/c").file.map(_.delete))
+  println(fs.path("/c/b").file)
+  
+  Thread sleep 500
 }

@@ -56,7 +56,7 @@ class DedupSqlDb {
     connection.createStatement execute strippedCommand
   }
   
-  private def prepareStatement(statement: String) = ScalaThreadLocal(connection prepareStatement statement)
+  private def prepareStatement(statement: String) = ScalaThreadLocal(connection prepareStatement statement, statement)
   
   private def setArguments(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) = {
     val statement = preparedStatement()
@@ -70,11 +70,15 @@ class DedupSqlDb {
   }
 
   private def executeUpdate(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Int = {
+    // FIXME logging
+    println("SQL: " + preparedStatement + " " + args.mkString("( "," , "," )"))
     setArguments(preparedStatement, args:_*) executeUpdate
   }
 
   /** Note: Calling next(Option) invalidates any previous result objects! */
   private def executeQueryIter(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : EnhancedIterator[WrappedResult] = {
+    // FIXME logging
+    println("SQL: " + preparedStatement + " " + args.mkString("( "," , "," )"))
     val resultSet = setArguments(preparedStatement, args:_*) .executeQuery
     new EnhancedIterator[WrappedResult] {
       def hasNext = resultSet next
@@ -97,6 +101,10 @@ class DedupSqlDb {
     prepareStatement("SELECT id, name FROM Entries WHERE deleted = false AND parent = ?;")
   private val addEntryPS =
     prepareStatement("INSERT INTO Entries (id, parent, name) VALUES ( ? , ? , ? );")
+  private val renamePS =
+    prepareStatement("UPDATE Entries SET name = ? WHERE deleted = false AND id = ?;")
+  private val markDeletedPS =
+    prepareStatement("UPDATE Entries SET deleted = true, deleteTime = ? WHERE deleted = false AND id = ?;")
 
   case class ParentAndName(parent: Long, name: String)
   case class IdAndName(id: Long, name: String)
@@ -121,9 +129,33 @@ class DedupSqlDb {
   /** Insert a new entry into the database. */
   def dbAddEntry(id: Long, parent: Long, name: String) : Boolean = {
     try {
-      executeUpdate(addEntryPS, id, parent, name) > 0
+      executeUpdate(addEntryPS, id, parent, name) match {
+        case 1 => true
+        case _ => throw new IllegalStateException("id: " + id)
+      }
     } catch {
       case e: SQLIntegrityConstraintViolationException => false
+    }
+  }
+
+  /** Rename an entry if it exists. */
+  def rename(id: Long, newName: String) : Boolean = {
+    try {
+      executeUpdate(renamePS, newName, id) match {
+        case 0 => false
+        case 1 => true
+        case _ => throw new IllegalStateException("id: " + id)
+      }
+    } catch {
+      case e: SQLIntegrityConstraintViolationException => false
+    }
+  }
+
+  def delete(id: Long) : Boolean = {
+    executeUpdate(markDeletedPS, System.currentTimeMillis(), id) match {
+      case 0 => false
+      case 1 => true
+      case _ => throw new IllegalStateException("id: " + id)
     }
   }
   
