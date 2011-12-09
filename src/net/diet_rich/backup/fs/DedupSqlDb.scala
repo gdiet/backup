@@ -125,10 +125,22 @@ class DedupSqlDb extends Logging {
   private def executeQueryIter(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : EnhancedIterator[WrappedResult] = {
     logger debug ("SQL: " + preparedStatement + " " + args.mkString("( "," , "," )"))
     val resultSet = setArguments(preparedStatement, args:_*) .executeQuery
-    // FIXME do not require checking hasNext
+    val wrappedResult = new WrappedResult(resultSet)
     new EnhancedIterator[WrappedResult] {
-      def hasNext = resultSet next
-      val next = new WrappedResult(resultSet)
+      var hasNextIsChecked = false
+      var hasNextResult = false
+      override def hasNext : Boolean = {
+        if (!hasNextIsChecked) {
+          hasNextResult = resultSet next()
+          hasNextIsChecked = true
+        }
+        hasNextResult
+      }
+      override def next : WrappedResult = {
+        hasNext
+        hasNextIsChecked = false
+        wrappedResult
+      }
     }
   }
 
