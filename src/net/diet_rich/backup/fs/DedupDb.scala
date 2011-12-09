@@ -3,9 +3,8 @@ package net.diet_rich.backup.fs
 /** Database wrapper to reducing the number of needed database methods. */
 class DedupDb(db: DedupSqlDb) {
 
-  // FIXME initialize with largest value in database + 1
   // EVENTUALLY consider synchronization that allows to "unget" a new entry on failure to insert it
-  val nextEntry = new java.util.concurrent.atomic.AtomicLong(1)
+  val nextEntry = new java.util.concurrent.atomic.AtomicLong( db.maxEntryID + 1 )
   
   
   def getName(id: Long) : Option[String] = db.dbGetParentAndName(id) map (_ name)

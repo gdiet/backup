@@ -7,18 +7,50 @@ import java.sql.SQLIntegrityConstraintViolationException
 import net.diet_rich.util.Choice
 import net.diet_rich.util.EnhancedIterator
 import net.diet_rich.util.ScalaThreadLocal
+import com.weiglewilczek.slf4s.Logging
+import java.sql.SQLSyntaxErrorException
 
-class DedupSqlDb {
+class DedupSqlDb extends Logging {
   // configuration
   private val enableConstraints = true // EVENTUALLY make configurable
   
-  // set up connection
+  // FIXME database shutdown:
+  // A special form of closing the database is via the SHUTDOWN COMPACT command. 
+  // This command rewrites the .data file that contains the information stored 
+  // in CACHED tables and compacts it to its minimum size. This command should 
+  // be issued periodically, especially when lots of inserts, updates or deletes 
+  // have been performed on the cached tables. Changes to the structure of the 
+  // database, such as dropping or modifying populated CACHED tables or indexes 
+  // also create large amounts of unused file space that can be reclaimed using 
+  // this command.
+  
   Class forName "org.hsqldb.jdbc.JDBCDriver"
-  private val connection = DriverManager getConnection("jdbc:hsqldb:mem:mymemdb", "SA", "")
+  // FIXME make database location configurable
+  private val connection = DriverManager getConnection("jdbc:hsqldb:file:temp/testdb", "SA", "")
+
   connection setAutoCommit true
 
   // create tables
-  private def createTables = {
+  private def createTables : Unit = {
+    logger info "creating SQL tables"
+    // HSQLDB: CACHED tables [...] Only part of their data or indexes is held
+    // in memory, allowing large tables that would otherwise take up to several
+    // hundred megabytes of memory. [...] The default type of table resulting
+    // from future CREATE TABLE statements can be specified with the SQL command:
+    executeDirectly("SET DATABASE DEFAULT TABLE TYPE CACHED;")
+    executeDirectly("""
+      CREATE TABLE RepositoryInfo (
+        key   VARCHAR(32) PRIMARY KEY,
+        value VARCHAR(256) NOT NULL
+      );
+      """
+    )
+    // EVENTUALLY check shut down status on loading the database
+    // for this, insert ( 'shut down', 'OK' ) on shutdown and
+    // remove the key/value pair on startup.
+    executeDirectly("INSERT INTO RepositoryInfo (key, value) VALUES ( 'shut down', 'OK' );")
+    executeDirectly("INSERT INTO RepositoryInfo (key, value) VALUES ( 'database version', '1.0' );")
+    executeDirectly("INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', '" + enableConstraints + "' );")
     executeDirectly(
       """
       CREATE TABLE Entries (
@@ -45,9 +77,22 @@ class DedupSqlDb {
     executeDirectly("INSERT INTO Entries (id, parent, name) VALUES ( -1, -1, '*' );")
     executeDirectly("INSERT INTO Entries (id, parent, name) VALUES (  0, -1, '' );")
   }
+
+  def createTablesIfNotExist : Unit = {
+    logger info "checking whether SQL tables are already created"
+    try {
+      val result = connection.createStatement executeQuery "SELECT value FROM RepositoryInfo WHERE key = 'database version';"
+      if (!result.next) throw new IllegalStateException("No database version entry in RepositoryInfo table")
+      val dbversion = result getString "value"
+      if (dbversion != "1.0") throw new IllegalStateException("Database version " + dbversion + "not supported")
+    } catch {
+      case e: SQLSyntaxErrorException =>
+        if(!e.getMessage.contains("object not found")) throw e
+        createTables
+    }
+  }
   
-  // FIXME implement a possibility to skip DB creation
-  createTables
+  createTablesIfNotExist
 
   // JDBC helper methods
   private def executeDirectly(command: String, constraints: String = "") : Unit = {
@@ -69,17 +114,18 @@ class DedupSqlDb {
     statement
   }
 
+  // FIXME execUpdate
   private def executeUpdate(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Int = {
-    // FIXME logging
-    println("SQL: " + preparedStatement + " " + args.mkString("( "," , "," )"))
-    setArguments(preparedStatement, args:_*) executeUpdate
+    logger debug ("SQL: " + preparedStatement + " " + args.mkString("( "," , "," )"))
+    setArguments(preparedStatement, args:_*) executeUpdate()
   }
 
   /** Note: Calling next(Option) invalidates any previous result objects! */
+  // FIXME execQuery
   private def executeQueryIter(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : EnhancedIterator[WrappedResult] = {
-    // FIXME logging
-    println("SQL: " + preparedStatement + " " + args.mkString("( "," , "," )"))
+    logger debug ("SQL: " + preparedStatement + " " + args.mkString("( "," , "," )"))
     val resultSet = setArguments(preparedStatement, args:_*) .executeQuery
+    // FIXME do not require checking hasNext
     new EnhancedIterator[WrappedResult] {
       def hasNext = resultSet next
       val next = new WrappedResult(resultSet)
@@ -105,6 +151,15 @@ class DedupSqlDb {
     prepareStatement("UPDATE Entries SET name = ? WHERE deleted = false AND id = ?;")
   private val markDeletedPS =
     prepareStatement("UPDATE Entries SET deleted = true, deleteTime = ? WHERE deleted = false AND id = ?;")
+  private val maxEntryIdPS =
+    prepareStatement("SELECT MAX ( id ) AS id FROM ENTRIES;")
+
+  private val getConfigEntryPS =
+    prepareStatement("SELECT value FROM RepositoryInfo WHERE key = ?;")
+  private val addConfigEntryPS =
+    prepareStatement("INSERT INTO RepositoryInfo (key, value) VALUES ( ? , ? );")
+  private val deleteConfigEntryPS =
+    prepareStatement("DELETE FROM RepositoryInfo WHERE key = ?;")
 
   case class ParentAndName(parent: Long, name: String)
   case class IdAndName(id: Long, name: String)
@@ -134,7 +189,9 @@ class DedupSqlDb {
         case _ => throw new IllegalStateException("id: " + id)
       }
     } catch {
-      case e: SQLIntegrityConstraintViolationException => false
+      case e: SQLIntegrityConstraintViolationException =>
+        logger info "could not add entry: " + id + " / " + e; 
+        false
     }
   }
 
@@ -142,7 +199,7 @@ class DedupSqlDb {
   def rename(id: Long, newName: String) : Boolean = {
     try {
       executeUpdate(renamePS, newName, id) match {
-        case 0 => false
+        case 0 => logger info "could not rename, not found: " + id; false
         case 1 => true
         case _ => throw new IllegalStateException("id: " + id)
       }
@@ -153,12 +210,31 @@ class DedupSqlDb {
 
   def delete(id: Long) : Boolean = {
     executeUpdate(markDeletedPS, System.currentTimeMillis(), id) match {
-      case 0 => false
+      case 0 => logger info "could not delete, not found: " + id; false
       case 1 => true
       case _ => throw new IllegalStateException("id: " + id)
     }
   }
   
   //// END OF DATABASE ACCESS TO CACHE
+  
+  //// START OF DATABASE ACCESS NOT TO CACHE
+
+  def getConfig(key: String) : Option[String] =
+    executeQueryIter(getConfigEntryPS, key) .nextOption map (_ string "value")
+
+  // EVENTUALLY wrap into transaction
+  def setConfig(key: String, value: String) : Unit = {
+    executeUpdate(deleteConfigEntryPS, key);
+    executeUpdate(addConfigEntryPS, key, value);
+  }
+
+//  def maxEntryID : Long = executeQueryIter(maxEntryIdPS).nextOption.map(_.long("id")).getOrElse({
+//    logger warn "no max id" // FIXME
+//    999L
+//  })
+  def maxEntryID = executeQueryIter(maxEntryIdPS).next.long("id")
+  
+  //// END OF DATABASE ACCESS NOT TO CACHE
     
 }

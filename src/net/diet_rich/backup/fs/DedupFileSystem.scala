@@ -12,6 +12,7 @@ class DedupFileSystem(db: DedupDb) {
     require((path equals "") || (path matches "/.*[^/]")) // root or starting but not ending with a slash
     if (path == "") Some(0)
     else
+      // FIXME move down to DedupSqlDb since path->id might be interesting to cache
       path.split("/").tail
       .foldLeft(Option(0L))((parent, name) => parent flatMap ( child(_, name) ))
   }

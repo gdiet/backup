@@ -9,5 +9,7 @@
 	<classpathentry kind="lib" path="lib/aspectwerkz-2.2.3.jar"/>
 	<classpathentry kind="lib" path="lib/akka-typed-actor-1.2.jar" sourcepath="lib/akka-typed-actor-1.2-sources.jar"/>
 	<classpathentry kind="lib" path="lib/hsqldb.jar"/>
+	<classpathentry kind="lib" path="lib/slf4j/slf4j-api-1.6.4.jar" sourcepath="lib/slf4j/slf4j-api-1.6.4-sources.jar"/>
+	<classpathentry kind="lib" path="lib/slf4j/slf4j-simple-1.6.4.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
