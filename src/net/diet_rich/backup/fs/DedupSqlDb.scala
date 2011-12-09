@@ -114,15 +114,13 @@ class DedupSqlDb extends Logging {
     statement
   }
 
-  // FIXME execUpdate
-  private def executeUpdate(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Int = {
+  private def execUpdate(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Int = {
     logger debug ("SQL: " + preparedStatement + " " + args.mkString("( "," , "," )"))
     setArguments(preparedStatement, args:_*) executeUpdate()
   }
 
   /** Note: Calling next(Option) invalidates any previous result objects! */
-  // FIXME execQuery
-  private def executeQueryIter(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : EnhancedIterator[WrappedResult] = {
+  private def execQuery(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : EnhancedIterator[WrappedResult] = {
     logger debug ("SQL: " + preparedStatement + " " + args.mkString("( "," , "," )"))
     val resultSet = setArguments(preparedStatement, args:_*) .executeQuery
     val wrappedResult = new WrappedResult(resultSet)
@@ -182,21 +180,21 @@ class DedupSqlDb extends Logging {
   def dbGetParentAndName(id: Long) : Option[ParentAndName] =
     if (id == 0) Some( ParentAndName(0, "") )
     else {
-      executeQueryIter(getEntryForIdPS, id)
+      execQuery(getEntryForIdPS, id)
       .nextOption
       .map(rs => ParentAndName(rs long "parent", rs string "name"))
     }
 
   /** Get the children of an entry from database. */
   def dbGetChildrenIdAndName(id: Long) : List[IdAndName] =
-    executeQueryIter(getChildrenForIdPS, id)
+    execQuery(getChildrenForIdPS, id)
     .map(rs => IdAndName(rs long "id", rs string "name"))
     .toList
   
   /** Insert a new entry into the database. */
   def dbAddEntry(id: Long, parent: Long, name: String) : Boolean = {
     try {
-      executeUpdate(addEntryPS, id, parent, name) match {
+      execUpdate(addEntryPS, id, parent, name) match {
         case 1 => true
         case _ => throw new IllegalStateException("id: " + id)
       }
@@ -210,7 +208,7 @@ class DedupSqlDb extends Logging {
   /** Rename an entry if it exists. */
   def rename(id: Long, newName: String) : Boolean = {
     try {
-      executeUpdate(renamePS, newName, id) match {
+      execUpdate(renamePS, newName, id) match {
         case 0 => logger info "could not rename, not found: " + id; false
         case 1 => true
         case _ => throw new IllegalStateException("id: " + id)
@@ -221,7 +219,7 @@ class DedupSqlDb extends Logging {
   }
 
   def delete(id: Long) : Boolean = {
-    executeUpdate(markDeletedPS, System.currentTimeMillis(), id) match {
+    execUpdate(markDeletedPS, System.currentTimeMillis(), id) match {
       case 0 => logger info "could not delete, not found: " + id; false
       case 1 => true
       case _ => throw new IllegalStateException("id: " + id)
@@ -233,19 +231,15 @@ class DedupSqlDb extends Logging {
   //// START OF DATABASE ACCESS NOT TO CACHE
 
   def getConfig(key: String) : Option[String] =
-    executeQueryIter(getConfigEntryPS, key) .nextOption map (_ string "value")
+    execQuery(getConfigEntryPS, key) .nextOption map (_ string "value")
 
   // EVENTUALLY wrap into transaction
   def setConfig(key: String, value: String) : Unit = {
-    executeUpdate(deleteConfigEntryPS, key);
-    executeUpdate(addConfigEntryPS, key, value);
+    execUpdate(deleteConfigEntryPS, key);
+    execUpdate(addConfigEntryPS, key, value);
   }
 
-//  def maxEntryID : Long = executeQueryIter(maxEntryIdPS).nextOption.map(_.long("id")).getOrElse({
-//    logger warn "no max id" // FIXME
-//    999L
-//  })
-  def maxEntryID = executeQueryIter(maxEntryIdPS).next.long("id")
+  def maxEntryID = execQuery(maxEntryIdPS).next.long("id")
   
   //// END OF DATABASE ACCESS NOT TO CACHE
     
