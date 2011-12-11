@@ -24,7 +24,6 @@ class DedupDb(db: DedupSqlDb) {
   def rename(id: Long, newName: String) : Boolean = db rename (id, newName)
 
   def delete(id: Long) : Boolean = {
-    val children = getChildren(id)
     val result = db delete id
     scala.actors.Futures.future {
       def recursiveDelete(children: List[Long]) : Unit = {
@@ -35,7 +34,7 @@ class DedupDb(db: DedupSqlDb) {
           } catch { case e => println (e) }
         )
       }
-      recursiveDelete (children)
+      recursiveDelete (getChildren(id))
     }
     result
   }

@@ -175,8 +175,14 @@ class DedupSqlDb extends Logging {
   case class IdAndName(id: Long, name: String)
   
   //// START OF DATABASE ACCESS TO CACHE
+
+  // Note: currently, it seems like HSQLDB could handle >1000 file operations
+  // per second. This would be OK. If it drops below that, caching could
+  // greatly increase the speed of file operations.
   
-  /** Get the entry data from database if any. */
+  /** Get the entry data from database if any.
+   *  Does not get entry data for entries marked deleted.
+   */
   def dbGetParentAndName(id: Long) : Option[ParentAndName] =
     if (id == 0) Some( ParentAndName(0, "") )
     else {
@@ -185,7 +191,10 @@ class DedupSqlDb extends Logging {
       .map(rs => ParentAndName(rs long "parent", rs string "name"))
     }
 
-  /** Get the children of an entry from database. */
+  /** Get the children of an entry from database.
+   *  Gets the children of deleted entries, but does not get
+   *  children marked deleted.
+   */
   def dbGetChildrenIdAndName(id: Long) : List[IdAndName] =
     execQuery(getChildrenForIdPS, id)
     .map(rs => IdAndName(rs long "id", rs string "name"))
@@ -205,7 +214,9 @@ class DedupSqlDb extends Logging {
     }
   }
 
-  /** Rename an entry if it exists. */
+  /** Rename an entry if it exists.
+   *  Does not rename entries marked deleted.
+   */
   def rename(id: Long, newName: String) : Boolean = {
     try {
       execUpdate(renamePS, newName, id) match {
@@ -218,6 +229,9 @@ class DedupSqlDb extends Logging {
     }
   }
 
+  /** Mark an entry deleted if it exists.
+   *  Does not mark entries that have already been marked deleted.
+   */
   def delete(id: Long) : Boolean = {
     execUpdate(markDeletedPS, System.currentTimeMillis(), id) match {
       case 0 => logger info "could not delete, not found: " + id; false
