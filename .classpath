@@ -11,5 +11,6 @@
 	<classpathentry kind="lib" path="lib/hsqldb.jar"/>
 	<classpathentry kind="lib" path="lib/slf4j/slf4j-api-1.6.4.jar" sourcepath="lib/slf4j/slf4j-api-1.6.4-sources.jar"/>
 	<classpathentry kind="lib" path="lib/slf4j/slf4j-simple-1.6.4.jar"/>
+	<classpathentry kind="lib" path="lib/apache/commons/io/commons-io-2.1.jar" sourcepath="lib/apache/commons/io/commons-io-2.1-sources.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
