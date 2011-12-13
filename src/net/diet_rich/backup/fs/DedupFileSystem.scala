@@ -1,22 +1,56 @@
 // Copyright (c) 2011 Georg Dietrich
 // Licensed under the MIT license: http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.backup.fs
+import java.util.ConcurrentModificationException
 
 class DedupFileSystem(db: DedupDb) {
+  
+  // convenience methods for path and file creation
+  
   def path(path: String) : DPath = DPath(this, path)
-  def file(path: String) : Option[DFile] = fileId(path) map (DFile(this, _))
-  def path(id: Long) : Option[DPath] = pathString(id) map (DPath(this, _))
+  def file(path: String) : Option[DFile] = fileId(path) map (file _)
+  def path(id: Long) : Option[DPath] = pathString(id) map (path _)
   def file(id: Long) : DFile = DFile(this, id)
 
+  // checks used in requirements
+  
+  private[fs] def isWellformedEntryName(name: String) : Boolean =
+    !name.isEmpty && !name.contains("/")
+  private[fs] def isWellformedSubPath(path: String) : Boolean =
+    (path matches "/.*[^/]") // starting but not ending with a slash FIXME no consecutive slashes
+  private[fs] def isWellformedPath(path: String) : Boolean =
+    (path equals "") || isWellformedSubPath (path) // root or well formed sub path
+
+  // path string handling methods
+    
+  def parentPath(path: String) = {
+    require(isWellformedPath(path))
+    if (path == "") "" else path substring (0, path lastIndexOf "/")    
+  }
+  
+  def entryName(path: String) = {
+    require(isWellformedPath(path))
+    if (path == "") "" else path substring (1 + path lastIndexOf "/", path length)
+  }
+
+  def child(path: String, childPath: String) : String = {
+    require(isWellformedPath(path))
+    require(isWellformedSubPath(childPath))
+    path + "/" + childPath
+  }
+
+  // methods operating on file IDs
+  
+  // FIXME move down to DedupSqlDb since path->id might be interesting to cache
   def fileId(path: String) : Option[Long] = {
-    require((path equals "") || (path matches "/.*[^/]")) // root or starting but not ending with a slash
+    require(isWellformedPath(path))
     if (path == "") Some(0)
     else
-      // FIXME move down to DedupSqlDb since path->id might be interesting to cache
       path.split("/").tail
       .foldLeft(Option(0L))((parent, name) => parent flatMap ( child(_, name) ))
   }
   
+  // FIXME move down to DedupSqlDb since path->id might be interesting to cache
   def pathString(id: Long) : Option[String] =
     if (id == 0) Some("")
     else
@@ -29,15 +63,25 @@ class DedupFileSystem(db: DedupDb) {
   def name(id: Long) : Option[String] = db getName id
   def parent(id: Long) : Option[Long] = db getParent id
   def child(id: Long, childName: String) : Option[Long] = {
-    require(!childName.contains("/"))
+    require(isWellformedEntryName(childName))
     db getChild (id, childName)
   }
   def mkChild(id: Long, childName: String) : Option[Long] = {
-    require(!childName.contains("/"))
+    require(isWellformedEntryName(childName))
     db mkChild (id, childName)
   }
+  /** Create any required path element. None only if missing e.g. write permission (future extension). */
+  def getOrMake(path: String) : Option[Long] = {
+    require(isWellformedPath(path))
+    fileId(path) orElse {
+      getOrMake(parentPath(path)) flatMap (parent =>
+        mkChild(parent, entryName(path)) orElse child(parent, entryName(path)) orElse getOrMake(path)
+      )
+    }
+  }
   def rename(id: Long, newName: String) : Boolean ={
-    require(!newName.contains("/"))
+    require(id > 0)
+    require(isWellformedEntryName(newName))
     db rename (id, newName)
   }
   def delete(id: Long) : Boolean = if (id == 0) false else db delete id
@@ -50,16 +94,15 @@ class DedupFileSystem(db: DedupDb) {
  *  ...) during the path object's lifetime.
  */
 case class DPath (val fs: DedupFileSystem, val path: String) {
-  require((path equals "") || (path matches "/.*[^/]")) // root or starting but not ending with a slash
+  require(fs isWellformedPath path, path)
   
   def file : Option[DFile] = fs file path
   /** For root, returns root. */
-  def parent : DPath = if (isRoot) this else copy( path = path substring (0, path lastIndexOf "/") )
+  def parent : DPath = copy( path = fs parentPath path )
+  def name : String = fs entryName path
   def isRoot : Boolean = path == ""
-  def child(childName: String) : DPath = {
-    require(childName matches "/.*[^/]") // starting but not ending with a slash
-    DPath(fs, path + "/" + childName)
-  }
+  def child(subPath: String) : DPath = copy(path = fs child (path,subPath))
+  def getOrMakeEntry : DFile = DFile(fs, fs getOrMake(path) get)
 }
 
 /** A file system entry identified by its ID. The entry may not exist, and it may change

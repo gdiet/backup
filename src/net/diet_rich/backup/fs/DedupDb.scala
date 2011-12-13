@@ -16,7 +16,7 @@ class DedupDb(db: DedupSqlDb) {
   def getChild(id: Long, childName: String) : Option[Long] =
     db.dbGetChildrenIdAndName(id) find (_.name == childName) map (_.id)
 
-    def mkChild(id: Long, childName: String) : Option[Long] = {
+  def mkChild(id: Long, childName: String) : Option[Long] = {
     val childId = nextEntry.getAndIncrement()
     if (db.dbAddEntry(childId, id, childName)) Some(childId) else None
   }
