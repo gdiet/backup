@@ -76,6 +76,20 @@ class DedupSqlDb extends Logging {
     )
     executeDirectly("INSERT INTO Entries (id, parent, name) VALUES ( -1, -1, '*' );")
     executeDirectly("INSERT INTO Entries (id, parent, name) VALUES (  0, -1, '' );")
+    
+    executeDirectly("""
+      CREATE TABLE FileData (
+        id      BIGINT UNIQUE NOT NULL,
+        time    BIGINT NOT NULL,
+        data    BIGINT DEFAULT 0 NOT NULL               // 0 for 0-byte entries
+        - constraints -
+      );
+      """,
+      """
+      , FOREIGN KEY (id) REFERENCES Entries(id)
+      // , FOREIGN KEY (data) REFERENCES StoredData(id)  FIXME enable with StoredData
+      """
+    )
   }
 
   def createTablesIfNotExist : Unit = {
