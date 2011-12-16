@@ -53,40 +53,40 @@ class DedupSqlDb extends Logging {
     executeDirectly("INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', '" + enableConstraints + "' );")
     executeDirectly(
       """
-      CREATE TABLE Entries (
+      CREATE TABLE TreeEntries (
         id          BIGINT PRIMARY KEY,
         parent      BIGINT NOT NULL,
         name        VARCHAR(256) NOT NULL,
         deleted     BOOLEAN DEFAULT FALSE NOT NULL,
         deleteTime  BIGINT DEFAULT 0 NOT NULL,          // timestamp if marked deleted, else 0
-        UNIQUE (parent, name, deleted, deleteTime)      // unique entries only
+        UNIQUE (parent, name, deleted, deleteTime)      // unique TreeEntries only
         - constraints -
       );
       """,
       """
-      , FOREIGN KEY (parent) REFERENCES Entries(id)     // reference integrity of parent
+      , FOREIGN KEY (parent) REFERENCES TreeEntries(id) // reference integrity of parent
       , CHECK (parent != id OR id = -1)                 // no self references (except for root's parent)
       , CHECK (deleted OR deleteTime = 0)               // defined deleted status
       , CHECK ((id < 1) = (parent = -1))                // root's and root's parent's parent is -1
-      , CHECK (id > -2)                                 // regular entries must have a positive id
+      , CHECK (id > -2)                                 // regular TreeEntries must have a positive id
       , CHECK ((id = 0) = (name = ''))                  // root's and root's parent's name is "", no other empty names
       , CHECK ((id = -1) = (name = '*'))                // root's and root's parent's name is "", no other empty names
       , CHECK (id > 0 OR deleted = FALSE)               // can't delete root nor root's parent
       """
     )
-    executeDirectly("INSERT INTO Entries (id, parent, name) VALUES ( -1, -1, '*' );")
-    executeDirectly("INSERT INTO Entries (id, parent, name) VALUES (  0, -1, '' );")
+    executeDirectly("INSERT INTO TreeEntries (id, parent, name) VALUES ( -1, -1, '*' );")
+    executeDirectly("INSERT INTO TreeEntries (id, parent, name) VALUES (  0, -1, '' );")
     
     executeDirectly("""
       CREATE TABLE FileData (
         id      BIGINT UNIQUE NOT NULL,
         time    BIGINT NOT NULL,
-        data    BIGINT DEFAULT 0 NOT NULL               // 0 for 0-byte entries
+        data    BIGINT DEFAULT 0 NOT NULL               // 0 for 0-byte TreeEntries
         - constraints -
       );
       """,
       """
-      , FOREIGN KEY (id) REFERENCES Entries(id)
+      , FOREIGN KEY (id) REFERENCES TreeEntries(id)
       // , FOREIGN KEY (data) REFERENCES StoredData(id)  FIXME enable with StoredData
       """
     )
@@ -166,17 +166,17 @@ class DedupSqlDb extends Logging {
   }
 
   private val getEntryForIdPS = 
-    prepareStatement("SELECT parent, name FROM Entries WHERE deleted = false AND id = ?;")
+    prepareStatement("SELECT parent, name FROM TreeEntries WHERE deleted = false AND id = ?;")
   private val getChildrenForIdPS = 
-    prepareStatement("SELECT id, name FROM Entries WHERE deleted = false AND parent = ?;")
+    prepareStatement("SELECT id, name FROM TreeEntries WHERE deleted = false AND parent = ?;")
   private val addEntryPS =
-    prepareStatement("INSERT INTO Entries (id, parent, name) VALUES ( ? , ? , ? );")
+    prepareStatement("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
   private val renamePS =
-    prepareStatement("UPDATE Entries SET name = ? WHERE deleted = false AND id = ?;")
+    prepareStatement("UPDATE TreeEntries SET name = ? WHERE deleted = false AND id = ?;")
   private val markDeletedPS =
-    prepareStatement("UPDATE Entries SET deleted = true, deleteTime = ? WHERE deleted = false AND id = ?;")
+    prepareStatement("UPDATE TreeEntries SET deleted = true, deleteTime = ? WHERE deleted = false AND id = ?;")
   private val maxEntryIdPS =
-    prepareStatement("SELECT MAX ( id ) AS id FROM ENTRIES;")
+    prepareStatement("SELECT MAX ( id ) AS id FROM TreeEntries;")
 
   private val getConfigEntryPS =
     prepareStatement("SELECT value FROM RepositoryInfo WHERE key = ?;")
@@ -195,7 +195,7 @@ class DedupSqlDb extends Logging {
   // greatly increase the speed of file operations.
   
   /** Get the entry data from database if any.
-   *  Does not get entry data for entries marked deleted.
+   *  Does not get entry data for TreeEntries marked deleted.
    */
   def dbGetParentAndName(id: Long) : Option[ParentAndName] =
     if (id == 0) Some( ParentAndName(0, "") )
@@ -206,7 +206,7 @@ class DedupSqlDb extends Logging {
     }
 
   /** Get the children of an entry from database.
-   *  Gets the children of deleted entries, but does not get
+   *  Gets the children of deleted TreeEntries, but does not get
    *  children marked deleted.
    */
   def dbGetChildrenIdAndName(id: Long) : List[IdAndName] =
@@ -229,7 +229,7 @@ class DedupSqlDb extends Logging {
   }
 
   /** Rename an entry if it exists.
-   *  Does not rename entries marked deleted.
+   *  Does not rename TreeEntries marked deleted.
    */
   def rename(id: Long, newName: String) : Boolean = {
     try {
@@ -244,7 +244,7 @@ class DedupSqlDb extends Logging {
   }
 
   /** Mark an entry deleted if it exists.
-   *  Does not mark entries that have already been marked deleted.
+   *  Does not mark TreeEntries that have already been marked deleted.
    */
   def delete(id: Long) : Boolean = {
     execUpdate(markDeletedPS, System.currentTimeMillis(), id) match {
