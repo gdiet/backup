@@ -1,3 +1,5 @@
+// Copyright (c) 2011 Georg Dietrich
+// Licensed under the MIT license: http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.backup.fs
 
 import java.sql.DriverManager
@@ -198,9 +200,14 @@ class DedupSqlDb extends Logging {
   
   //// START OF DATABASE ACCESS TO CACHE
 
-  // Note: currently, it seems like HSQLDB could handle >1000 file operations
+  // Note: currently, it seems like HSQLDB could handle >100 file operations
   // per second. This would be OK. If it drops below that, caching could
   // greatly increase the speed of file operations.
+  // For 100.000 files, 100 file operations per second would still mean that
+  // an incremental backup with almost no files changed could be processed
+  // within ~20 minutes.
+  // Caching would also be a necessity as soon as remote access to the database
+  // is considered.
 
   //// TREE ENTRY METHODS
   
