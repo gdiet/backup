@@ -69,8 +69,8 @@ class DedupSqlDb extends Logging {
       , CHECK (deleted OR deleteTime = 0)               // defined deleted status
       , CHECK ((id < 1) = (parent = -1))                // root's and root's parent's parent is -1
       , CHECK (id > -2)                                 // regular TreeEntries must have a positive id
-      , CHECK ((id = 0) = (name = ''))                  // root's and root's parent's name is "", no other empty names
-      , CHECK ((id = -1) = (name = '*'))                // root's and root's parent's name is "", no other empty names
+      , CHECK ((id = 0) = (name = ''))                  // root's name is "", no other empty names
+      , CHECK ((id != -1) OR (name = '*'))              // root's parent's name is "*"
       , CHECK (id > 0 OR deleted = FALSE)               // can't delete root nor root's parent
       """
     )
@@ -185,14 +185,24 @@ class DedupSqlDb extends Logging {
   private val deleteConfigEntryPS =
     prepareStatement("DELETE FROM RepositoryInfo WHERE key = ?;")
 
+  private val addFileDataPS =
+    prepareStatement("INSERT INTO FileData (id, time, data) VALUES ( ? , ? , ? );")
+  private val getFileDataPS =
+    prepareStatement("SELECT time, data FROM FileData WHERE id = ?;")
+  private val deleteFileDataPS =
+    prepareStatement("DELETE FROM FileData WHERE id = ?;")
+
   case class ParentAndName(parent: Long, name: String)
   case class IdAndName(id: Long, name: String)
+  case class TimeAndData(time: Long, data: Long)
   
   //// START OF DATABASE ACCESS TO CACHE
 
   // Note: currently, it seems like HSQLDB could handle >1000 file operations
   // per second. This would be OK. If it drops below that, caching could
   // greatly increase the speed of file operations.
+
+  //// TREE ENTRY METHODS
   
   /** Get the entry data from database if any.
    *  Does not get entry data for TreeEntries marked deleted.
@@ -254,6 +264,22 @@ class DedupSqlDb extends Logging {
     }
   }
   
+  //// FILE DATA METHODS
+  
+  // EVENTUALLY wrap into transaction instead of checking for the exception
+  def setFileData(id: Long, time: Long, data: Long) : Boolean = {
+    execUpdate(deleteFileDataPS, id)
+    try { execUpdate(addFileDataPS, id, time, data); true }
+    catch { case e: SQLIntegrityConstraintViolationException => false }
+  }
+
+  def getFileData(id: Long) : Option[TimeAndData] =
+    execQuery(getFileDataPS, id)
+    .nextOption
+    .map(rs => TimeAndData(rs long "time", rs long "data"))
+  
+  def clearFileData(id: Long) : Unit = execUpdate(deleteFileDataPS, id)
+  
   //// END OF DATABASE ACCESS TO CACHE
   
   //// START OF DATABASE ACCESS NOT TO CACHE
@@ -261,10 +287,11 @@ class DedupSqlDb extends Logging {
   def getConfig(key: String) : Option[String] =
     execQuery(getConfigEntryPS, key) .nextOption map (_ string "value")
 
-  // EVENTUALLY wrap into transaction
+  // EVENTUALLY wrap into transaction instead of checking for the exception
   def setConfig(key: String, value: String) : Unit = {
-    execUpdate(deleteConfigEntryPS, key);
-    execUpdate(addConfigEntryPS, key, value);
+    execUpdate(deleteConfigEntryPS, key)
+    try execUpdate(addConfigEntryPS, key, value)
+    catch { case e: SQLIntegrityConstraintViolationException => /**/ }
   }
 
   def maxEntryID = execQuery(maxEntryIdPS).next.long("id")

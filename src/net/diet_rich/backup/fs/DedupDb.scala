@@ -39,4 +39,11 @@ class DedupDb(db: DedupSqlDb) {
     result
   }
 
+  def setFileData(id: Long, time: Long, data: Long) : Boolean =
+    db setFileData (id, time, data)
+  def getLastModified(id: Long) : Option[Long] = db getFileData id map (_.time)
+  def getFileDataId(id: Long) : Option[Long] = db getFileData id map (_.data)
+  def clearFileData(id: Long) : Unit =
+    db clearFileData id
+    
 }

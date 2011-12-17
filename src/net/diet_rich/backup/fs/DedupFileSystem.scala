@@ -86,6 +86,12 @@ class DedupFileSystem(db: DedupDb) {
   }
   def delete(id: Long) : Boolean = if (id == 0) false else db delete id
   
+  // file data methods
+  def setFileData(id: Long, time: Long, data: Long) : Unit = db setFileData (id, time, data)
+  def getLastModified(id: Long) : Option[Long] = db getLastModified id
+  def getFileDataId(id: Long) : Option[Long] = db getFileDataId id
+  def clearFileData(id: Long) : Unit = db clearFileData id
+  
   override def toString: String = "fs" // EVENTUALLY write a sensible name
 }
 
@@ -117,6 +123,10 @@ case class DFile (val fs: DedupFileSystem, val id: Long) {
   def mkChild(childName: String) : Option[DFile] = fs mkChild (id, childName) map (copy (fs, _))
   def rename(newName: String) : Boolean = fs rename (id, newName)
   def delete : Boolean = fs delete id
+  def setFileData(time: Long, data: Long) : Unit = fs setFileData (id, time, data)
+  def getLastModified : Option[Long] = fs getLastModified id
+  def getFileDataId : Option[Long] = fs getFileDataId id
+  def clearFileData : Unit = fs clearFileData id
 }
 
 

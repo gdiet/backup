@@ -10,13 +10,15 @@ object TryApp extends App {
   val db = new DedupDb(sqldb)
   val fs = new DedupFileSystem(db)
 
-  val base = new File("E:/georg/bin/eclipse")
+  val base = new File("C:/bin/eclipse")
   val baseLength = base.getPath length
   val files = FileUtils iterateFiles(base, null, true)
   
   files.foreach(file => {
     val path = file.getPath substring(baseLength) replace("\\","/")
-    fs path(path) getOrMakeEntry
+    val entry = fs.path(path).getOrMakeEntry
+    if (file.isFile())
+      entry.setFileData(file.lastModified(), 0)
   })
   
 }
