@@ -8,7 +8,7 @@ sealed class CachedDB(db: Database) {
   private val entryMap = collection.mutable.HashMap[Long, Entry]()
   private val entryQueue = collection.mutable.Queue[Long]()
 
-  private val cacheSize = 5000 // FIXME make a system config
+  private val cacheSize = 5000 // EVENTUALLY make a system config
   
   private def addEntry(entry: Entry) = synchronized {
     if (!entryMap.contains(entry.id)) {

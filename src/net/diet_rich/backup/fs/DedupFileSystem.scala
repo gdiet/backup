@@ -17,7 +17,7 @@ class DedupFileSystem(db: DedupDb) {
   private[fs] def isWellformedEntryName(name: String) : Boolean =
     !name.isEmpty && !name.contains("/")
   private[fs] def isWellformedSubPath(path: String) : Boolean =
-    (path matches "/.*[^/]") // starting but not ending with a slash FIXME no consecutive slashes
+    ((path matches "/.*[^/]") && !(path contains"//")) // starting but not ending with a slash, no consecutive slashes
   private[fs] def isWellformedPath(path: String) : Boolean =
     (path equals "") || isWellformedSubPath (path) // root or well formed sub path
 

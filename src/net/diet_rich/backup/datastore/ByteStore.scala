@@ -45,7 +45,7 @@ trait ByteStore extends ByteStoreReadOnly {
 /** Used only by clients in net.diet_rich.backup.datastore. */
 class ByteStoreImplReadOnly(config: Configuration) extends TypedActor with ByteStoreReadOnly {
   
-  // FIXME make truly read-only
+  // EVENTUALLY make truly read-only
   
   override def close : Future[List[Throwable]] = {
     self.stop()

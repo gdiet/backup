@@ -29,7 +29,7 @@ class Database extends Logged {
     })
   }
 
-  // FIXME implement a possibility to skip DB creation
+  // EVENTUALLY implement a possibility to skip DB creation
   createTables
   
   def setArguments(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) = {

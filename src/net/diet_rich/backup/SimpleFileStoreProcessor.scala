@@ -15,13 +15,13 @@ class SimpleFileStoreProcessor {
   private val maxChunkSize : Int = BackupSystemConfig()("processing.MaxChunkSize", 3145728) //   3 MB
   assert (maxChunkSize >= dataChunkSize)
 
-  // FIXME make a repository settings
+  // EVENTUALLY make a repository settings
   private val headerChunkSize : Int = 1024
   private def newHeaderDigester() = Digester.crcadler()
   private def newHashDigester() = Digester.hash("MD5")
   assert (dataChunkSize >= headerChunkSize)
   
-  // FIXME implement storage database (two tables: id/header/hash/sourceSize and id/index/position/storageSize
+  // EVENTUALLY implement storage database (two tables: id/header/hash/sourceSize and id/index/position/storageSize
   case class StoreEntry(id : Long)
   case class StoredPiece(position: Long, size: Long)
   trait StoreMethod
@@ -35,7 +35,7 @@ class SimpleFileStoreProcessor {
   def dbCompleteEntry(entry: StoreEntry, size: Long, headerChecksum: Checksum, hash: Bytes, storedData: StoredData) : StoreEntry = StoreEntry(0)
   def dbTransaction[T](task: => T) = task
 
-  // FIXME implement storage
+  // EVENTUALLY implement storage
   /** @throws Exception on error state in storage. */
   def store(data: Iterator[Bytes]) : StoredData = StoredData(0, 0, Uncompressed, Nil)
   def release(data: StoredData) : Unit = Unit

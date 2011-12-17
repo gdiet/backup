@@ -8,7 +8,7 @@ import net.diet_rich.util.logging.Logged
 
 class CachedDB(db: Database) extends Logged {
 
-  private val cacheSize = 5000 // FIXME make a system config
+  private val cacheSize = 5000 // EVENTUALLY make a system config
   
   private val entryMap = HashMap[Long, DBEntry]()
   private val entryQueue = Queue[Long]()
@@ -54,7 +54,7 @@ class CachedDB(db: Database) extends Logged {
 //      Some(EntryExists)
   } match { case x => debug("mkdir result", x) ; x }
   
-  // FIXME two methods: add / change
+  // EVENTUALLY two methods: add / change
 //  private def addOrChangeEntry(entry: DBEntry, trueToChange: Boolean) : Boolean = {
 //    val result = entryMap synchronized {
 //      if ((entryMap contains entry.id) == trueToChange) {
