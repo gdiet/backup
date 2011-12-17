@@ -14,7 +14,7 @@ class DedupSqlDb extends Logging {
   // configuration
   private val enableConstraints = true // EVENTUALLY make configurable
   
-  // FIXME database shutdown:
+  // EVENTUALLY add explicit database shutdown:
   // A special form of closing the database is via the SHUTDOWN COMPACT command. 
   // This command rewrites the .data file that contains the information stored 
   // in CACHED tables and compacts it to its minimum size. This command should 

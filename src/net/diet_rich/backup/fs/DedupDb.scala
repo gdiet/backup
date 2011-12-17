@@ -1,12 +1,24 @@
 package net.diet_rich.backup.fs
 
-/** Database wrapper to reducing the number of needed database methods. */
+/** Database wrapper to reducing the number of needed database methods.
+ *  Possibly, this would also be the best place to add caching.
+ */
 class DedupDb(db: DedupSqlDb) {
 
   // EVENTUALLY consider synchronization that allows to "unget" a new entry on failure to insert it
   val nextEntry = new java.util.concurrent.atomic.AtomicLong( db.maxEntryID + 1 )
   
   
+  def getFileId(path: String) : Option[Long] =
+    path.split("/").tail
+    .foldLeft(Option(0L))((parent, name) => parent flatMap ( getChild(_, name) ))
+  
+  def getPathString(id: Long) : Option[String] =
+    getName(id) flatMap (name => getParent(id) 
+      .flatMap (parent => getPathString(parent)
+      .map (parentPath => parentPath + "/" + name)
+    ))
+    
   def getName(id: Long) : Option[String] = db.dbGetParentAndName(id) map (_ name)
 
   def getParent(id: Long) : Option[Long] = db.dbGetParentAndName(id) map (_ parent)

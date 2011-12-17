@@ -41,23 +41,14 @@ class DedupFileSystem(db: DedupDb) {
 
   // methods operating on file IDs
   
-  // FIXME move down to DedupSqlDb since path->id might be interesting to cache
   def fileId(path: String) : Option[Long] = {
     require(isWellformedPath(path))
-    if (path == "") Some(0)
-    else
-      path.split("/").tail
-      .foldLeft(Option(0L))((parent, name) => parent flatMap ( child(_, name) ))
+    if (path == "") Some(0) else db getFileId path
   }
   
-  // FIXME move down to DedupSqlDb since path->id might be interesting to cache
   def pathString(id: Long) : Option[String] =
-    if (id == 0) Some("")
-    else
-      name(id) flatMap (name => parent(id) flatMap (parent => pathString(parent) map (parentPath => 
-        parentPath + "/" + name
-      )))
-
+    if (id == 0) Some("") else db getPathString id
+      
   def children(id: Long) : List[Long] = db getChildren id
   def exists(id: Long) : Boolean = name(id) isDefined
   def name(id: Long) : Option[String] = db getName id
