@@ -16,6 +16,11 @@ class DedupSqlDb extends Logging {
   // configuration
   private val enableConstraints = true // EVENTUALLY make configurable
   
+  // NOTE on SQL syntax used: A PRIMARY KEY constraint is equivalent to a
+  // UNIQUE constraint on one or more NOT NULL columns. Only one PRIMARY KEY
+  // can be defined in each table.
+  // Source: http://hsqldb.org/doc/2.0/guide/guide.pdf
+  
   // EVENTUALLY add explicit database shutdown:
   // A special form of closing the database is via the SHUTDOWN COMPACT command. 
   // This command rewrites the .data file that contains the information stored 
@@ -40,19 +45,6 @@ class DedupSqlDb extends Logging {
     // hundred megabytes of memory. [...] The default type of table resulting
     // from future CREATE TABLE statements can be specified with the SQL command:
     executeDirectly("SET DATABASE DEFAULT TABLE TYPE CACHED;")
-    executeDirectly("""
-      CREATE TABLE RepositoryInfo (
-        key   VARCHAR(32) PRIMARY KEY,
-        value VARCHAR(256) NOT NULL
-      );
-      """
-    )
-    // EVENTUALLY check shut down status on loading the database
-    // for this, insert ( 'shut down', 'OK' ) on shutdown and
-    // remove the key/value pair on startup.
-    executeDirectly("INSERT INTO RepositoryInfo (key, value) VALUES ( 'shut down', 'OK' );")
-    executeDirectly("INSERT INTO RepositoryInfo (key, value) VALUES ( 'database version', '1.0' );")
-    executeDirectly("INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', '" + enableConstraints + "' );")
     executeDirectly(
       """
       CREATE TABLE TreeEntries (
@@ -80,8 +72,33 @@ class DedupSqlDb extends Logging {
     executeDirectly("INSERT INTO TreeEntries (id, parent, name) VALUES (  0, -1, '' );")
     
     executeDirectly("""
+      CREATE TABLE DataInfo (
+        id     BIGINT PRIMARY KEY,
+        size   BIGINT NOT NULL,                         // entry size (uncompressed)
+        print  BIGINT NOT NULL,                         // fast file content fingerprint
+        hash   VARBINARY(16) NOT NULL,                  // EVENTUALLY make configurable: MD5: 16, SHA-256: 64
+        usage  INTEGER DEFAULT 0 NOT NULL,              // usage count
+        method INTEGER DEFAULT 0 NOT NULL               // store method (0 = PLAIN, 1 = DEFLATE)
+        - constraints -
+      );
+      """,
+      """
+      , CHECK (size >= 0)
+      , CHECK (usage >= 0)
+      , CHECK (method = 0 OR method = 1)
+      , UNIQUE (size, print, hash)
+      """
+    )
+    // EVENTUALLY make configurable for other hash algorithms
+    val zeroByteHash = java.security.MessageDigest.getInstance("MD5").digest
+    // FIXME add zero byte print calculation
+    execUpdateWithArgs("""
+      INSERT INTO DataInfo (id, size, print, hash, usage, method) VALUES ( 0, 0, ?, ?, 0, 0 );
+    """, 0L, zeroByteHash)
+
+    executeDirectly("""
       CREATE TABLE FileData (
-        id      BIGINT UNIQUE NOT NULL,
+        id      BIGINT PRIMARY KEY,
         time    BIGINT NOT NULL,
         data    BIGINT DEFAULT 0 NOT NULL               // 0 for 0-byte TreeEntries
         - constraints -
@@ -89,9 +106,25 @@ class DedupSqlDb extends Logging {
       """,
       """
       , FOREIGN KEY (id) REFERENCES TreeEntries(id)
-      // , FOREIGN KEY (data) REFERENCES StoredData(id)  FIXME enable with StoredData
+      , FOREIGN KEY (data) REFERENCES DataInfo(id)
       """
     )
+    
+    // create and fill RepositoryInfo last so errors in table creation
+    // are detected before the "database version" value is inserted.
+    executeDirectly("""
+      CREATE TABLE RepositoryInfo (
+        key   VARCHAR(32) PRIMARY KEY,
+        value VARCHAR(256) NOT NULL
+      );
+      """
+    )
+    // EVENTUALLY check shut down status on loading the database
+    // for this, insert ( 'shut down', 'OK' ) on shutdown and
+    // remove the key/value pair on startup.
+    executeDirectly("INSERT INTO RepositoryInfo (key, value) VALUES ( 'shut down', 'OK' );")
+    executeDirectly("INSERT INTO RepositoryInfo (key, value) VALUES ( 'database version', '1.0' );")
+    executeDirectly("INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', '" + enableConstraints + "' );")
   }
 
   def createTablesIfNotExist : Unit = {
@@ -111,10 +144,16 @@ class DedupSqlDb extends Logging {
   createTablesIfNotExist
 
   // JDBC helper methods
+  /** only use where performance is not a critical factor. */
   private def executeDirectly(command: String, constraints: String = "") : Unit = {
     val fullCommand = command replaceAllLiterally("- constraints -", if (enableConstraints) constraints else "")
     val strippedCommand = fullCommand split "\\n" map (_ replaceAll("//.*", "")) mkString ("\n")
     connection.createStatement execute strippedCommand
+  }
+
+  /** only use where performance is not a critical factor. */
+  private def execUpdateWithArgs(command: String, args: Any*) : Int = {
+    setArguments(prepareStatement(command), args:_*).executeUpdate()
   }
   
   private def prepareStatement(statement: String) = ScalaThreadLocal(connection prepareStatement statement, statement)
@@ -126,6 +165,7 @@ class DedupSqlDb extends Logging {
       case (x : Int, index)     => statement setInt (index+1, x)
       case (x : String, index)  => statement setString (index+1, x)
       case (x : Boolean, index) => statement setBoolean (index+1, x)
+      case (x : Array[Byte], index) => statement setObject(index+1, x)
     })
     statement
   }
@@ -277,7 +317,12 @@ class DedupSqlDb extends Logging {
   def setFileData(id: Long, time: Long, data: Long) : Boolean = {
     execUpdate(deleteFileDataPS, id)
     try { execUpdate(addFileDataPS, id, time, data); true }
-    catch { case e: SQLIntegrityConstraintViolationException => false }
+    catch { case e: SQLIntegrityConstraintViolationException =>
+      // catch the rare race condition of concurrent setFileData calls
+      if (e.getMessage contains "unique constraint") false
+      // but do not catch e.g. "foreign key no parent"
+      else throw e
+    }
   }
 
   def getFileData(id: Long) : Option[TimeAndData] =
