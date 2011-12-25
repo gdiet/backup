@@ -4,22 +4,23 @@ package net.diet_rich.util.data
 
 import net.diet_rich.util.Bytes
 
-trait Digester[DigestType, +Repr] extends net.diet_rich.util.io.OutputStream[Repr] with Digest[DigestType] {
+trait Digester[DigestType] extends net.diet_rich.util.io.OutputStream with Digest[DigestType] {
   def reset : Unit
+  final def writeAnd(bytes: Bytes) : Digester[DigestType] = { write(bytes); this }
 }
 
 /** Wrapped to distinguish it from e.g. a length or time stamp. */
 case class Checksum (value: Long)
 
-trait ChecksumDigester extends Digester[Checksum, ChecksumDigester]
-trait BytesDigester extends Digester[Bytes, BytesDigester]
+trait ChecksumDigester extends Digester[Checksum]
+trait BytesDigester extends Digester[Bytes]
 
 object Digester {
   
   private def checksum(checksum: java.util.zip.Checksum, seed: Option[Bytes]) =
     new ChecksumDigester {
       if (seed.isDefined) reset
-      override def write(bytes: Bytes) = { checksum.update(bytes.bytes, bytes.offset, bytes.length) ; this }
+      override def write(bytes: Bytes) = { checksum.update(bytes.bytes, bytes.offset, bytes.length) }
       override def getDigest = Checksum(checksum.getValue)
       override def reset = { checksum.reset ; seed.foreach(write(_)) }
       override def close = Unit
@@ -33,7 +34,7 @@ object Digester {
     new ChecksumDigester {
       val crc = crc32(seed)
       val adler = adler32(seed)
-      override def write(bytes: Bytes) = { crc.write(bytes) ; adler.write(bytes) ; this }
+      override def write(bytes: Bytes) = { crc.write(bytes) ; adler.write(bytes) }
       override def getDigest = Checksum(adler.getDigest.value << 32 | crc.getDigest.value)
       override def reset = { crc.reset ; adler.reset }
       override def close = Unit
@@ -43,7 +44,7 @@ object Digester {
     new BytesDigester {
       val digest = java.security.MessageDigest.getInstance(algorithm)
       if (seed.isDefined) reset
-      override def write(bytes: Bytes) = { digest.update(bytes.bytes, bytes.offset, bytes.length) ; this }
+      override def write(bytes: Bytes) = { digest.update(bytes.bytes, bytes.offset, bytes.length) }
       override def getDigest = Bytes(digest.digest)
       override def reset = { digest.reset ; seed.foreach(long => write(Bytes.forLong(long))) }
       override def close = Unit
@@ -52,7 +53,7 @@ object Digester {
   def hash64(algorithm: String, seed: Option[Long] = None) =
     new ChecksumDigester {
       val digester = hash(algorithm, seed)
-      override def write(bytes: Bytes) = { digester.write(bytes) ; this }
+      override def write(bytes: Bytes) = { digester.write(bytes) }
       override def getDigest = Checksum(digester.getDigest.keepFirst(8).toLong)
       override def reset = digester.reset
       override def close = Unit

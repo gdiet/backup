@@ -53,7 +53,7 @@ class SimpleFileStoreProcessor {
         if (input.length <= maxChunkSize) input.length.toInt + 1
         else math.max(headerChunkSize, dataChunkSize)
       val firstChunk = input.readFully(readSize)
-      val header = newHeaderDigester().write(firstChunk.keepAtMostFirst(headerChunkSize)).getDigest
+      val header = newHeaderDigester().writeAnd(firstChunk.keepAtMostFirst(headerChunkSize)).getDigest
       if (readSize > firstChunk.length)
         linkOrStoreFromMemory(firstChunk, header)
       else if (dbContains(input.length, header))
@@ -63,7 +63,7 @@ class SimpleFileStoreProcessor {
     }
 
   def linkOrStoreFromMemory(data: Bytes, header: Checksum) : StoreEntry = {
-    val hash = newHashDigester().write(data).getDigest
+    val hash = newHashDigester().writeAnd(data).getDigest
     dbTransaction {
       dbLookup(data.length, header, hash) match {
         case Some(entry) => (true, entry)

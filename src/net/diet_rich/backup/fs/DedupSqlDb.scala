@@ -45,6 +45,8 @@ class DedupSqlDb extends Logging {
     // hundred megabytes of memory. [...] The default type of table resulting
     // from future CREATE TABLE statements can be specified with the SQL command:
     executeDirectly("SET DATABASE DEFAULT TABLE TYPE CACHED;")
+    
+    // TODO check for needed indexes
     executeDirectly(
       """
       CREATE TABLE TreeEntries (
@@ -109,7 +111,24 @@ class DedupSqlDb extends Logging {
       , FOREIGN KEY (data) REFERENCES DataInfo(id)
       """
     )
-    
+
+    executeDirectly("""
+      CREATE TABLE ByteStore (
+        id    BIGINT NULL,      // reference to StoredData#id or NULL if free
+        index INTEGER NOT NULL, // data part index
+        start BIGINT NOT NULL,  // data part start position
+        fin   BIGINT NOT NULL   // data part end position + 1
+        - constraints -
+      );
+      """,
+      """
+      , UNIQUE (start)
+      , UNIQUE (fin)
+      , FOREIGN KEY (id) REFERENCES StoredData(id)
+      , CHECK (fin > start AND start >= 0)
+      """ // EVENTUALLY check that start has matching fin or is 0
+    )
+        
     // create and fill RepositoryInfo last so errors in table creation
     // are detected before the "database version" value is inserted.
     executeDirectly("""
