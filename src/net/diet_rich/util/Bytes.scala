@@ -53,7 +53,7 @@ case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
 
   def filled : Boolean = length == bytes.length
   
-  override def toString : String = "Bytes(%s)".format(bytes.mkString(","))
+  override def toString : String = "Bytes(%s)".format(bytes.map("%02x".format(_)).mkString(" "))
 }
 
 object Bytes {

@@ -2,6 +2,8 @@
 // Licensed under the MIT license: http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.backup.fs
 
+import net.diet_rich.util.io.RandomAccessInput
+
 trait DataPrintCalculator {
-  
+  def print(input: RandomAccessInput) : Long
 }

@@ -3,6 +3,10 @@
 package net.diet_rich.backup.fs
 import java.util.ConcurrentModificationException
 
+trait FSConfig {
+  def printCalculator : DataPrintCalculator
+}
+
 class DedupFileSystem(db: DedupDb) {
   
   // convenience methods for path and file creation
