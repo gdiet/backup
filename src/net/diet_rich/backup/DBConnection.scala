@@ -24,7 +24,7 @@ class DBConnection(val settings: FSSettings) {
   connection setAutoCommit true
 
   // Note: Without explicit shutdown, the last changes may not be written to file!
-  ShutdownHookThread(
+  ShutdownHookThread {
     // HSQLDB explicit database shutdown:
     // A special form of closing the database is via the SHUTDOWN COMPACT command. 
     // This command rewrites the .data file that contains the information stored 
@@ -35,6 +35,6 @@ class DBConnection(val settings: FSSettings) {
     // also create large amounts of unused file space that can be reclaimed using 
     // this command.
     connection.createStatement execute "SHUTDOWN COMPACT;"
-  )
+  }
   
 }

@@ -11,6 +11,7 @@ import java.sql.ResultSet
 import java.sql.SQLSyntaxErrorException
 import java.sql.SQLIntegrityConstraintViolationException
 import net.diet_rich.util.NextOptIterator
+import net.diet_rich.util.io.RandomAccessInput
 
 class SqlDB(database: DBConnection) extends Logging {
   import SqlDB._
@@ -20,7 +21,7 @@ class SqlDB(database: DBConnection) extends Logging {
   private val connection = database connection
   private val enableConstraints = true // TODO make configurable
   // EVENTUALLY add/remove constraints independently of database creation
-  createTablesIfNotExist (connection, enableConstraints)
+  createTablesIfNotExist (connection, enableConstraints, settings)
 
   private def prepareStatement(statement: String) : ScalaThreadLocal[PreparedStatement] =
     ScalaThreadLocal(connection prepareStatement statement, statement)
@@ -115,7 +116,7 @@ object SqlDB extends Logging {
   private def execUpdateWithArgs(connection: Connection, command: String, args: Any*) : Int =
     setArguments(connection prepareStatement command, args:_*).executeUpdate()
   
-  private def createTables(connection : Connection, constraintsEnabled: Boolean) : Unit = {
+  private def createTables(connection : Connection, constraintsEnabled: Boolean, settings: FSSettings) : Unit = {
     logger info "creating SQL tables"
     // HSQLDB: CACHED tables [...] Only part of their data or indexes is held
     // in memory, allowing large tables that would otherwise take up to several
@@ -175,12 +176,11 @@ object SqlDB extends Logging {
       , UNIQUE (size, print, hash)
       """
     )
-    // EVENTUALLY make configurable for other hash algorithms
-    val zeroByteHash = java.security.MessageDigest.getInstance("MD5").digest
-    // FIXME add zero byte print calculation
+    val zeroByteHash = settings.hashProvider.getHashDigester getDigest
+    val zeroBytePrint = settings.printCalculator calculate RandomAccessInput.empty
     execUpdateWithArgs(connection, """
       INSERT INTO DataInfo (id, size, print, hash, usage, method) VALUES ( 0, 0, ?, ?, 0, 0 );
-    """, 0L, zeroByteHash)
+    """, zeroBytePrint, zeroByteHash)
 
     executeDirectly(connection, """
       CREATE TABLE FileData (
@@ -230,7 +230,7 @@ object SqlDB extends Logging {
     executeDirectly(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', '" + constraintsEnabled + "' );")
   }
 
-  def createTablesIfNotExist(connection : Connection, constraintsEnabled: Boolean) : Unit = {
+  def createTablesIfNotExist(connection : Connection, constraintsEnabled: Boolean, settings: FSSettings) : Unit = {
     logger info "checking whether SQL tables are already created"
     try {
       val result = connection.createStatement executeQuery "SELECT value FROM RepositoryInfo WHERE key = 'database version';"
@@ -240,7 +240,7 @@ object SqlDB extends Logging {
     } catch {
       case e: SQLSyntaxErrorException =>
         if(!e.getMessage.contains("object not found")) throw e
-        createTables(connection, constraintsEnabled)
+        createTables(connection, constraintsEnabled, settings)
     }
   }
 

@@ -85,6 +85,7 @@ class StoreEntryPoint (fs: DedupFileSystem) extends Logging {
   private def storeFile(parentID: Long, source: File) : Unit =
     usingIt(FileDataAccess(source, fs.settings.printCalculator, fs.settings.hashProvider)) { input =>
       logger debug "Processing file " + source
+      // FIXME move this logic to file system
       val dataId, info = if (fs contains input.timeSizePrint) {
         val info = input.timeSizePrintHash
         fs dataId info match {

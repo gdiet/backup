@@ -4,7 +4,7 @@
 package net.diet_rich.backup
 
 import java.io.Closeable
-import net.diet_rich.util.Bytes
+import net.diet_rich.util.data.Bytes
 import net.diet_rich.util.data.Digester.BytesDigester
 import net.diet_rich.util.data.Digester.ChecksumDigester
 import net.diet_rich.util.io.OutputStream

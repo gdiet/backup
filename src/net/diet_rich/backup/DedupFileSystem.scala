@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.backup
 
-import net.diet_rich.util.Bytes
+import net.diet_rich.util.data.Bytes
 
 class DedupFileSystem (cache: FSDataCache) {
 

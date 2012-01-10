@@ -4,7 +4,7 @@
 package net.diet_rich.util.io
 
 import java.io.Closeable
-import net.diet_rich.util.Bytes
+import net.diet_rich.util.data.Bytes
 
 trait InputStream extends Closeable {
 
@@ -54,8 +54,9 @@ trait InputStream extends Closeable {
 }
 
 object InputStream {
-  val empty = new InputStream {
-    def read(bytes: Bytes) : Bytes = bytes.copy(length = 0)
+  class Empty extends InputStream {
+    override def read(bytes: Bytes) : Bytes = bytes.copy(length = 0)
   }
+  val empty = new Empty
 }
 

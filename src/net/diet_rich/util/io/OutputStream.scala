@@ -4,7 +4,7 @@
 package net.diet_rich.util.io
 
 import java.io.Closeable
-import net.diet_rich.util.Bytes
+import net.diet_rich.util.data.Bytes
 
 trait OutputStream extends Closeable { def write(bytes: Bytes) : Unit }
 

@@ -4,7 +4,7 @@
 package net.diet_rich.util.io
 
 import java.io.File
-import net.diet_rich.util.Bytes
+import net.diet_rich.util.data.Bytes
 
 /** Note: The file size and content may change while the input is open. */
 class RandomAccessFileInput(file: File) extends RandomAccessInput {

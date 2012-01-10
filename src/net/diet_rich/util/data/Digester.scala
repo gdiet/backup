@@ -3,8 +3,6 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util.data
 
-import net.diet_rich.util.Bytes
-
 trait Digester[DigestType] extends net.diet_rich.util.io.OutputStream with Digest[DigestType] {
   def reset : Unit
   final def writeAnd(bytes: Bytes) : Digester[DigestType] = { write(bytes); this }

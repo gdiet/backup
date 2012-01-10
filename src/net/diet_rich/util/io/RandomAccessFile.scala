@@ -4,7 +4,7 @@
 package net.diet_rich.util.io
 
 import java.io.File
-import net.diet_rich.util.Bytes
+import net.diet_rich.util.data.Bytes
 
 class RandomAccessFile(file: File) extends RandomAccessFileInput(file) with OutputStream {
   override protected val accessMode = "rw"

@@ -1,9 +1,7 @@
 // Copyright (c) 2012 Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-package net.diet_rich.util
-
-// FIXME move to "data"
+package net.diet_rich.util.data
 
 case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
   require(offset >= 0)
