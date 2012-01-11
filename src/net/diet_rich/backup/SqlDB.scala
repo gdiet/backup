@@ -5,6 +5,7 @@ package net.diet_rich.backup
 
 import com.weiglewilczek.slf4s.Logging
 import net.diet_rich.util.ScalaThreadLocal
+import net.diet_rich.util.sql.WrappedSQLResult
 import java.sql.Connection
 import java.sql.PreparedStatement
 import java.sql.ResultSet
@@ -12,6 +13,7 @@ import java.sql.SQLSyntaxErrorException
 import java.sql.SQLIntegrityConstraintViolationException
 import net.diet_rich.util.NextOptIterator
 import net.diet_rich.util.io.RandomAccessInput
+import net.diet_rich.util.sql._
 
 class SqlDB(database: DBConnection) extends Logging {
   import SqlDB._
@@ -23,26 +25,26 @@ class SqlDB(database: DBConnection) extends Logging {
   // EVENTUALLY add/remove constraints independently of database creation
   createTablesIfNotExist (connection, enableConstraints, settings)
 
-  private def prepareStatement(statement: String) : ScalaThreadLocal[PreparedStatement] =
+  private def prepTLStatement(statement: String) : ScalaThreadLocal[PreparedStatement] =
     ScalaThreadLocal(connection prepareStatement statement, statement)
 
-  private val childrenForIdPS = 
-    prepareStatement("SELECT id, name FROM TreeEntries WHERE deleted = false AND parent = ?;")
-  private val addEntryPS =
-    prepareStatement("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
-  private val maxEntryIdPS =
-    prepareStatement("SELECT MAX ( id ) AS id FROM TreeEntries;")
+  private val childrenForIdS = 
+    prepTLStatement("SELECT id, name FROM TreeEntries WHERE deleted = false AND parent = ?;")
+  private val addEntryS =
+    prepTLStatement("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
+  private val maxEntryIdS =
+    prepTLStatement("SELECT MAX ( id ) AS id FROM TreeEntries;")
 
   /** Get the children of an entry from database. Does not retrieve
    *  any children marked deleted.
    */
   def children(id: Long) : List[IdAndName] =
-    execQuery(childrenForIdPS, id) {rs => IdAndName(rs long "id", rs string "name")} toList
+    execQuery(childrenForIdS, id) {rs => IdAndName(rs long "id", rs string "name")} toList
 
   /** Insert a new entry into the database. */
   def make(id: Long, parent: Long, name: String) : Boolean = {
     try {
-      execUpdate(addEntryPS, id, parent, name) match {
+      execUpdate(addEntryS, id, parent, name) match {
         case 1 => true
         case n => throw new IllegalStateException("Unexpected " + n + " times update for id " + id)
       }
@@ -54,29 +56,17 @@ class SqlDB(database: DBConnection) extends Logging {
   }
 
   /** @return The numerically highest file tree id. */
-  def maxEntryID = execQuery(maxEntryIdPS) {_.long("id")} head
+  def maxEntryID = execQuery(maxEntryIdS) {_.long("id")} head
   
 }
 
 object SqlDB extends Logging {
+  // FIXME make top level objects or collect somewhere
   case class ParentAndName(parent: Long, name: String)
   case class IdAndName(id: Long, name: String)
   case class TimeAndData(time: Long, data: Long)
-  
-  private def setArguments(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*): PreparedStatement =
-    setArguments(preparedStatement(), args:_*)
 
-  private def setArguments(statement: PreparedStatement, args: Any*): PreparedStatement = {
-    args.zipWithIndex foreach(_ match {
-      case (x : Long, index)    => statement setLong (index+1, x)
-      case (x : Int, index)     => statement setInt (index+1, x)
-      case (x : String, index)  => statement setString (index+1, x)
-      case (x : Boolean, index) => statement setBoolean (index+1, x)
-      case (x : Array[Byte], index) => statement setObject(index+1, x)
-    })
-    statement
-  }
-  
+  // FIXME move to util.sql
   private def execQuery[T](stat: ScalaThreadLocal[PreparedStatement], args: Any*)(processor: WrappedSQLResult => T) : Stream[T] = {
     val resultSet = new WrappedSQLResult(setArguments(stat, args:_*) executeQuery)
     new Iterator[T] {
@@ -98,6 +88,7 @@ object SqlDB extends Logging {
     } toStream
   }
   
+  // FIXME move to util.sql
   /** only use where performance is not a critical factor. */
   private def executeDirectly(connection : Connection, command: String, constraints: String = "") : Unit = {
     val fullCommand = command replaceAllLiterally ("- constraints -", constraints)
@@ -105,10 +96,12 @@ object SqlDB extends Logging {
     connection.createStatement execute strippedCommand
   }
 
+  // FIXME move to util.sql
   private def execUpdate(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Int = {
     setArguments(preparedStatement, args:_*) executeUpdate()
   }
 
+  // FIXME move to util.sql
   /** only use where performance is not a critical factor. */
   private def execUpdateWithArgs(connection: Connection, command: String, args: Any*) : Int =
     setArguments(connection prepareStatement command, args:_*).executeUpdate()
