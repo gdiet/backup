@@ -9,7 +9,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
-import net.diet_rich.util.io.usingIt
+import net.diet_rich.util.io.using
 
 class StoreEntryPoint (fs: DedupFileSystem) extends Logging {
 
@@ -83,7 +83,7 @@ class StoreEntryPoint (fs: DedupFileSystem) extends Logging {
   }
 
   private def storeFile(parentID: Long, source: File) : Unit =
-    usingIt(FileDataAccess(source, fs.settings.printCalculator, fs.settings.hashProvider)) { input =>
+    using(FileDataAccess(source, fs.settings.printCalculator, fs.settings.hashProvider)) { input =>
       logger debug "Processing file " + source
       // FIXME move this logic to file system
       val dataId, info = if (fs contains input.timeSizePrint) {

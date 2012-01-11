@@ -26,7 +26,7 @@ class SqlDB(database: DBConnection) extends Logging {
   private def prepareStatement(statement: String) : ScalaThreadLocal[PreparedStatement] =
     ScalaThreadLocal(connection prepareStatement statement, statement)
 
-  private val getChildrenForIdPS = 
+  private val childrenForIdPS = 
     prepareStatement("SELECT id, name FROM TreeEntries WHERE deleted = false AND parent = ?;")
   private val addEntryPS =
     prepareStatement("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
@@ -37,9 +37,7 @@ class SqlDB(database: DBConnection) extends Logging {
    *  any children marked deleted.
    */
   def children(id: Long) : List[IdAndName] =
-    execQuery(getChildrenForIdPS, id)
-    .map(rs => IdAndName(rs long "id", rs string "name"))
-    .toList
+    execQuery(childrenForIdPS, id) {rs => IdAndName(rs long "id", rs string "name")} toList
 
   /** Insert a new entry into the database. */
   def make(id: Long, parent: Long, name: String) : Boolean = {
@@ -56,7 +54,7 @@ class SqlDB(database: DBConnection) extends Logging {
   }
 
   /** @return The numerically highest file tree id. */
-  def maxEntryID = execQuery(maxEntryIdPS).next.long("id")
+  def maxEntryID = execQuery(maxEntryIdPS) {_.long("id")} head
   
 }
 
@@ -79,28 +77,27 @@ object SqlDB extends Logging {
     statement
   }
   
-  /** Note: Calling next(Option) invalidates any previous result objects! */
-  private def execQuery(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : NextOptIterator[WrappedSQLResult] = {
-    val resultSet = setArguments(preparedStatement, args:_*) .executeQuery
-    val wrappedResult = new WrappedSQLResult(resultSet)
-    new NextOptIterator[WrappedSQLResult] {
+  private def execQuery[T](stat: ScalaThreadLocal[PreparedStatement], args: Any*)(processor: WrappedSQLResult => T) : Stream[T] = {
+    val resultSet = new WrappedSQLResult(setArguments(stat, args:_*) executeQuery)
+    new Iterator[T] {
       var hasNextIsChecked = false
       var hasNextResult = false
       override def hasNext : Boolean = {
         if (!hasNextIsChecked) {
-          hasNextResult = resultSet next()
+          hasNextResult = resultSet.next
           hasNextIsChecked = true
         }
         hasNextResult
       }
-      override def next : WrappedSQLResult = {
-        hasNext
+      override def next : T = {
+        val hasNextResult = hasNext
+        assert (hasNextResult)
         hasNextIsChecked = false
-        wrappedResult
+        processor(resultSet)
       }
-    }
+    } toStream
   }
-
+  
   /** only use where performance is not a critical factor. */
   private def executeDirectly(connection : Connection, command: String, constraints: String = "") : Unit = {
     val fullCommand = command replaceAllLiterally ("- constraints -", constraints)

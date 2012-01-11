@@ -18,4 +18,6 @@ class WrappedSQLResult(resultSet: ResultSet) extends Logging {
   def longOption(column: String)  = log(column, nullIsNone (resultSet getLong column) )
   def string(column: Int)         = log(column, resultSet getString column)
   def string(column: String)      = log(column, resultSet getString column)
+  
+  def next: Boolean = resultSet.next
 }
