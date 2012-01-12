@@ -30,6 +30,9 @@ class FSDataCache(db: SqlDB) {
   def make(id: Long, childName: String, dataInfo: Option[StoredFileInfo]) : Option[Long] = {
     val childId = nextEntry.getAndIncrement()
     if (db make (childId, id, childName)) Some(childId) else None
+    // FIXME dataInfo
   }
   
+  def contains(print: TimeSizePrint) : Boolean = db contains print
+    
 }

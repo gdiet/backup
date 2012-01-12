@@ -73,8 +73,7 @@ class DedupFileSystem (cache: FSDataCache) {
   }
 
   /** @return true if a matching data entry is already stored. */
-  def contains(print: TimeSizePrint) : Boolean =
-    false // FIXME
+  def contains(print: TimeSizePrint) : Boolean = cache contains print
   
   /** @return The matching data entry ID if any. */
   def dataId(print: TimeSizePrintHash) : Option[Long] =

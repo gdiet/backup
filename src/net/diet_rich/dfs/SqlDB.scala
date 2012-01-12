@@ -36,6 +36,8 @@ class SqlDB(database: DBConnection) extends Logging {
     prepTLStatement("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
   private val maxEntryIdS =
     prepTLStatement("SELECT MAX ( id ) AS id FROM TreeEntries;")
+  private val containsPrintS =
+    prepTLStatement("SELECT COUNT(*) FROM DataInfo JOIN FileData ON DataInfo.id = FileData.data;")
 
   /** Get the children of an entry from database. Does not retrieve
    *  any children marked deleted.
@@ -59,6 +61,9 @@ class SqlDB(database: DBConnection) extends Logging {
 
   /** @return The numerically highest file tree id. */
   def maxEntryID = execQuery(maxEntryIdS) {_.long("id")} head
+
+  def contains(print: TimeSizePrint) : Boolean =
+    execQuery(containsPrintS){_ long 1}.head > 0
   
 }
 
@@ -71,6 +76,20 @@ object SqlDB extends Logging {
     connection.createStatement execute strippedCommand
   }
 
+  def createTablesIfNotExist(connection : Connection, constraintsEnabled: Boolean, settings: FSSettings) : Unit = {
+    logger info "checking whether SQL tables are already created"
+    try {
+      val result = connection.createStatement executeQuery "SELECT value FROM RepositoryInfo WHERE key = 'database version';"
+      if (!result.next) throw new IllegalStateException("No database version entry in RepositoryInfo table")
+      val dbversion = result getString "value"
+      if (dbversion != "1.0") throw new IllegalStateException("Database version " + dbversion + "not supported")
+    } catch {
+      case e: SQLSyntaxErrorException =>
+        if(!e.getMessage.contains("object not found")) throw e
+        createTables(connection, constraintsEnabled, settings)
+    }
+  }
+
   private def createTables(connection : Connection, constraintsEnabled: Boolean, settings: FSSettings) : Unit = {
     logger info "creating SQL tables"
     // HSQLDB: CACHED tables [...] Only part of their data or indexes is held
@@ -79,10 +98,12 @@ object SqlDB extends Logging {
     // from future CREATE TABLE statements can be specified with the SQL command:
     executeDirectly(connection, "SET DATABASE DEFAULT TABLE TYPE CACHED;")
     
-    // NOTE on SQL syntax used: A PRIMARY KEY constraint is equivalent to a
+    // NOTES on SQL syntax used: A PRIMARY KEY constraint is equivalent to a
     // UNIQUE constraint on one or more NOT NULL columns. Only one PRIMARY KEY
     // can be defined in each table.
     // Source: http://hsqldb.org/doc/2.0/guide/guide.pdf
+    
+    // JOIN is the short form for INNER JOIN.
     
     // TODO check for needed indexes
     
@@ -183,20 +204,6 @@ object SqlDB extends Logging {
     executeDirectly(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'shut down', 'OK' );")
     executeDirectly(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'database version', '1.0' );")
     executeDirectly(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', '" + constraintsEnabled + "' );")
-  }
-
-  def createTablesIfNotExist(connection : Connection, constraintsEnabled: Boolean, settings: FSSettings) : Unit = {
-    logger info "checking whether SQL tables are already created"
-    try {
-      val result = connection.createStatement executeQuery "SELECT value FROM RepositoryInfo WHERE key = 'database version';"
-      if (!result.next) throw new IllegalStateException("No database version entry in RepositoryInfo table")
-      val dbversion = result getString "value"
-      if (dbversion != "1.0") throw new IllegalStateException("Database version " + dbversion + "not supported")
-    } catch {
-      case e: SQLSyntaxErrorException =>
-        if(!e.getMessage.contains("object not found")) throw e
-        createTables(connection, constraintsEnabled, settings)
-    }
   }
 
 }
