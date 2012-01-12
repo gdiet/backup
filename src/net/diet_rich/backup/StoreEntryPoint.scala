@@ -9,6 +9,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import net.diet_rich.dfs.DedupFileSystem
+import net.diet_rich.dfs.FileDataAccess
 import net.diet_rich.util.io.using
 
 class StoreEntryPoint (fs: DedupFileSystem) extends Logging {

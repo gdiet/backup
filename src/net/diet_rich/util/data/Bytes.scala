@@ -55,6 +55,12 @@ case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
   }
 
   def filled : Boolean = length == bytes.length
+
+  def toArray : Array[Byte] = {
+    val result = new Array[Byte](length)
+    System.arraycopy(bytes, offset, result, 0, length)
+    result
+  }
   
   override def toString : String = "Bytes(%s)".format(bytes.map("%02x".format(_)).mkString(" "))
 }

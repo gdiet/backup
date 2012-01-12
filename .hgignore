@@ -1,9 +1,5 @@
-src/tryout
-.cache
-
-syntax: regexp
-^test-output$
 syntax: glob
+.cache
 bin/
-syntax: regexp
-^coverage$
+src/tryout/
+temp/

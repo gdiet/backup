@@ -1,7 +1,7 @@
 // Copyright (c) 2012 Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-package net.diet_rich.backup
+package net.diet_rich.dfs
 
 import com.weiglewilczek.slf4s.Logging
 import net.diet_rich.util.ScalaThreadLocal
@@ -14,6 +14,8 @@ import java.sql.SQLIntegrityConstraintViolationException
 import net.diet_rich.util.NextOptIterator
 import net.diet_rich.util.io.RandomAccessInput
 import net.diet_rich.util.sql._
+
+import DataDefinitions._
 
 class SqlDB(database: DBConnection) extends Logging {
   import SqlDB._
@@ -61,34 +63,7 @@ class SqlDB(database: DBConnection) extends Logging {
 }
 
 object SqlDB extends Logging {
-  // FIXME make top level objects or collect somewhere
-  case class ParentAndName(parent: Long, name: String)
-  case class IdAndName(id: Long, name: String)
-  case class TimeAndData(time: Long, data: Long)
 
-  // FIXME move to util.sql
-  private def execQuery[T](stat: ScalaThreadLocal[PreparedStatement], args: Any*)(processor: WrappedSQLResult => T) : Stream[T] = {
-    val resultSet = new WrappedSQLResult(setArguments(stat, args:_*) executeQuery)
-    new Iterator[T] {
-      var hasNextIsChecked = false
-      var hasNextResult = false
-      override def hasNext : Boolean = {
-        if (!hasNextIsChecked) {
-          hasNextResult = resultSet.next
-          hasNextIsChecked = true
-        }
-        hasNextResult
-      }
-      override def next : T = {
-        val hasNextResult = hasNext
-        assert (hasNextResult)
-        hasNextIsChecked = false
-        processor(resultSet)
-      }
-    } toStream
-  }
-  
-  // FIXME move to util.sql
   /** only use where performance is not a critical factor. */
   private def executeDirectly(connection : Connection, command: String, constraints: String = "") : Unit = {
     val fullCommand = command replaceAllLiterally ("- constraints -", constraints)
@@ -96,16 +71,6 @@ object SqlDB extends Logging {
     connection.createStatement execute strippedCommand
   }
 
-  // FIXME move to util.sql
-  private def execUpdate(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Int = {
-    setArguments(preparedStatement, args:_*) executeUpdate()
-  }
-
-  // FIXME move to util.sql
-  /** only use where performance is not a critical factor. */
-  private def execUpdateWithArgs(connection: Connection, command: String, args: Any*) : Int =
-    setArguments(connection prepareStatement command, args:_*).executeUpdate()
-  
   private def createTables(connection : Connection, constraintsEnabled: Boolean, settings: FSSettings) : Unit = {
     logger info "creating SQL tables"
     // HSQLDB: CACHED tables [...] Only part of their data or indexes is held

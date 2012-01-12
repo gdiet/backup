@@ -1,16 +1,17 @@
 // Copyright (c) 2012 Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-package net.diet_rich.backup
+package net.diet_rich.dfs
 
 import java.io.Closeable
+import java.io.File
 import net.diet_rich.util.data.Bytes
 import net.diet_rich.util.data.Digester.BytesDigester
 import net.diet_rich.util.data.Digester.ChecksumDigester
 import net.diet_rich.util.io.OutputStream
 import net.diet_rich.util.io.RandomAccessFileInput
 import net.diet_rich.util.io.RandomAccessInput
-import java.io.File
+import DataDefinitions._
 
 /** Multiple calls to the methods may not return the same results since
  *  the file in the file system may have changed between two calls.

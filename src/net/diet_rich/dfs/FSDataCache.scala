@@ -1,9 +1,10 @@
 // Copyright (c) 2012 Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-package net.diet_rich.backup
+package net.diet_rich.dfs
 
 import java.util.concurrent.atomic.AtomicLong
+import DataDefinitions._
 
 /** Data provided by this cache reflects either the current or a recent state. */
 class FSDataCache(db: SqlDB) {
