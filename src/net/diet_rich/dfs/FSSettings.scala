@@ -5,10 +5,13 @@ package net.diet_rich.dfs
 
 import net.diet_rich.util.data.Digester
 
-class FSSettings {
-  val hashProvider: HashProvider = new HashProvider {
-    override def getHashDigester = Digester.hash("MD5")
-  }
-  val printCalculator: PrintCalculator =
-    PrintCalculator("start:crcadler", 8192)
+class FSSettings(val hashProvider: HashProvider, val printCalculator: PrintCalculator)
+
+object FSSettings {
+  def apply(hashAlgorithm: String, printAlgorithm: String, printLength: Int) : FSSettings = new FSSettings(
+    HashProvider(hashAlgorithm),
+    PrintCalculator(printAlgorithm, printLength)
+  )
+  
+  def apply(): FSSettings = FSSettings("MD5", "start:crcadler", 8192)
 }

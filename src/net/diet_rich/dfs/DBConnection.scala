@@ -6,23 +6,16 @@ package net.diet_rich.dfs
 import java.sql.DriverManager
 import sys.ShutdownHookThread
 
-class DBConnection(val settings: FSSettings) {
-
-//  HSQLDB without logging:
-//  Class forName "org.hsqldb.jdbc.JDBCDriver"
-//  val connection = DriverManager getConnection("jdbc:hsqldb:file:temp/testdb", "SA", "")
-
-//  HSQLDB with logging using log4jdbc (http://code.google.com/p/log4jdbc):
-//  Class forName "net.sf.log4jdbc.DriverSpy" // auto-loads "org.hsqldb.jdbc.JDBCDriver"
-//  val connection = DriverManager getConnection("jdbc:log4jdbc:hsqldb:file:temp/testdb", "SA", "")
-
-//  Note: As alternative to log4jdbc, jdbcdslog (http://code.google.com/p/jdbcdslog) could be used.
+// FIXME a connection and a SqlDB is needed to read some of the FSSettings
+class DBConnection(val dbSettings: DBSettings) {
+  import dbSettings._
   
-  // TODO make database driver and URL configurable
-  Class forName "net.sf.log4jdbc.DriverSpy" // auto-loads "org.hsqldb.jdbc.JDBCDriver"
-  val connection = DriverManager getConnection("jdbc:log4jdbc:hsqldb:file:temp/testdb", "SA", "")
+  Class forName jdbcDriverClassName
+  val connection = DriverManager getConnection(jdbcURL, jdbcUser, jdbcPassword)
   connection setAutoCommit true
 
+  // EVENTUALLY add close() method to close connection without shutdown
+  
   // Note: Without explicit shutdown, the last changes may not be written to file!
   ShutdownHookThread {
     // HSQLDB explicit database shutdown:

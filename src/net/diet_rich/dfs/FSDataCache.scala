@@ -8,11 +8,10 @@ import DataDefinitions._
 
 /** Data provided by this cache reflects either the current or a recent state. */
 class FSDataCache(db: SqlDB) {
-
-  val settings = db settings
-  
   // EVENTUALLY consider synchronization that allows to "unget" a new entry on failure to insert it
   private val nextEntry = new AtomicLong(db.maxEntryID + 1)
+  
+  val settings: FSSettings = db.settings
   
   /** @return The ID for a path or None if there is no such entry. */
   def get(path: String) : Option[Long] =
@@ -29,8 +28,12 @@ class FSDataCache(db: SqlDB) {
    */
   def make(id: Long, childName: String, dataInfo: Option[StoredFileInfo]) : Option[Long] = {
     val childId = nextEntry.getAndIncrement()
-    if (db make (childId, id, childName)) Some(childId) else None
-    // FIXME dataInfo
+    if (db make (childId, id, childName)) {
+      dataInfo.foreach{
+        throw new UnsupportedOperationException // FIXME store dataInfo
+      }
+      Some(childId)
+    } else None
   }
   
   def contains(print: TimeSizePrint) : Boolean = db contains print

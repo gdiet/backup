@@ -14,18 +14,24 @@ import java.sql.SQLIntegrityConstraintViolationException
 import net.diet_rich.util.NextOptIterator
 import net.diet_rich.util.io.RandomAccessInput
 import net.diet_rich.util.sql._
+import collection.immutable.WrappedString
 
 import DataDefinitions._
 
 class SqlDB(database: DBConnection) extends Logging {
   import SqlDB._
 
-  val settings = database.settings
-  
   private val connection = database connection
-  private val enableConstraints = true // TODO make configurable
-  // EVENTUALLY add/remove constraints independently of database creation
-  createTablesIfNotExist (connection, enableConstraints, settings)
+
+  val settings: FSSettings = {
+    val hashAlgorithm =
+      execQuery(connection, "SELECT value FROM RepositoryInfo WHERE key = 'hash algorithm'"){_.string("value")}.head
+    val printAlgorithm =
+      execQuery(connection, "SELECT value FROM RepositoryInfo WHERE key = 'print algorithm'"){_.string("value")}.head
+    val printLengthString: WrappedString =
+      execQuery(connection, "SELECT value FROM RepositoryInfo WHERE key = 'print length'"){_.string("value")}.head
+    FSSettings(hashAlgorithm, printAlgorithm, printLengthString.toInt)
+  }
 
   private def prepTLStatement(statement: String) : ScalaThreadLocal[PreparedStatement] =
     ScalaThreadLocal(connection prepareStatement statement, statement)
@@ -70,33 +76,37 @@ class SqlDB(database: DBConnection) extends Logging {
 object SqlDB extends Logging {
 
   /** only use where performance is not a critical factor. */
-  private def executeDirectly(connection : Connection, command: String, constraints: String = "") : Unit = {
+  private def execWithConstraints(connection : Connection, command: String, constraints: String) : Unit = {
     val fullCommand = command replaceAllLiterally ("- constraints -", constraints)
     val strippedCommand = fullCommand split "\\n" map (_ replaceAll("//.*", "")) mkString ("\n")
     connection.createStatement execute strippedCommand
   }
 
-  def createTablesIfNotExist(connection : Connection, constraintsEnabled: Boolean, settings: FSSettings) : Unit = {
-    logger info "checking whether SQL tables are already created"
+  def hasTablesFor(dbcon : DBConnection) : Boolean = {
+    logger info "checking whether SQL tables already exist"
     try {
-      val result = connection.createStatement executeQuery "SELECT value FROM RepositoryInfo WHERE key = 'database version';"
+      val result = dbcon.connection.createStatement executeQuery "SELECT value FROM RepositoryInfo WHERE key = 'database version';"
       if (!result.next) throw new IllegalStateException("No database version entry in RepositoryInfo table")
       val dbversion = result getString "value"
-      if (dbversion != "1.0") throw new IllegalStateException("Database version " + dbversion + "not supported")
+      if (dbversion != "1.0") throw new IllegalStateException("Database version " + dbversion + " not supported")
+      true
     } catch {
       case e: SQLSyntaxErrorException =>
         if(!e.getMessage.contains("object not found")) throw e
-        createTables(connection, constraintsEnabled, settings)
+        false
     }
   }
-
-  private def createTables(connection : Connection, constraintsEnabled: Boolean, settings: FSSettings) : Unit = {
+  
+  // EVENTUALLY add/remove constraints independently of database creation
+  def createTables(dbcon: DBConnection, constraintsEnabled: Boolean, settings: DBSettings, fsSettings: FSSettings) : Unit = {
     logger info "creating SQL tables"
+    val connection = dbcon.connection
+    
     // HSQLDB: CACHED tables [...] Only part of their data or indexes is held
     // in memory, allowing large tables that would otherwise take up to several
     // hundred megabytes of memory. [...] The default type of table resulting
     // from future CREATE TABLE statements can be specified with the SQL command:
-    executeDirectly(connection, "SET DATABASE DEFAULT TABLE TYPE CACHED;")
+    execUpdate(connection, "SET DATABASE DEFAULT TABLE TYPE CACHED;")
     
     // NOTES on SQL syntax used: A PRIMARY KEY constraint is equivalent to a
     // UNIQUE constraint on one or more NOT NULL columns. Only one PRIMARY KEY
@@ -109,7 +119,7 @@ object SqlDB extends Logging {
     
     // The tree is represented by nodes that store their parent but not their children.
     // The tree root can not be deleted and has the ID 0.
-    executeDirectly(connection, """
+    execWithConstraints(connection, """
       CREATE TABLE TreeEntries (
         id          BIGINT PRIMARY KEY,
         parent      BIGINT NOT NULL,
@@ -131,10 +141,10 @@ object SqlDB extends Logging {
       , CHECK (id > 0 OR deleted = FALSE)               // can't delete root nor root's parent
       """
     )
-    executeDirectly(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES ( -1, -1, '*' );")
-    executeDirectly(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (  0, -1, ''  );")
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES ( -1, -1, '*' );")
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (  0, -1, ''  );")
     
-    executeDirectly(connection, """
+    execWithConstraints(connection, """
       CREATE TABLE DataInfo (
         id     BIGINT PRIMARY KEY,
         size   BIGINT NOT NULL,                         // entry size (uncompressed)
@@ -152,13 +162,13 @@ object SqlDB extends Logging {
       , UNIQUE (size, print, hash)
       """
     )
-    val zeroByteHash = settings.hashProvider.getHashDigester getDigest
-    val zeroBytePrint = settings.printCalculator calculate RandomAccessInput.empty
-    execUpdateWithArgs(connection, """
+    val zeroByteHash = fsSettings.hashProvider.getHashDigester getDigest
+    val zeroBytePrint = fsSettings.printCalculator calculate RandomAccessInput.empty
+    execUpdate(connection, """
       INSERT INTO DataInfo (id, size, print, hash, usage, method) VALUES ( 0, 0, ?, ?, 0, 0 );
     """, zeroBytePrint, zeroByteHash)
 
-    executeDirectly(connection, """
+    execWithConstraints(connection, """
       CREATE TABLE FileData (
         id      BIGINT PRIMARY KEY,
         time    BIGINT NOT NULL,
@@ -172,7 +182,7 @@ object SqlDB extends Logging {
       """
     )
 
-    executeDirectly(connection, """
+    execWithConstraints(connection, """
       CREATE TABLE ByteStore (
         id    BIGINT NULL,      // reference to DataInfo#id or NULL if free
         index INTEGER NOT NULL, // data part index
@@ -191,7 +201,7 @@ object SqlDB extends Logging {
         
     // create and fill RepositoryInfo last so errors in table creation
     // are detected before the "database version" value is inserted.
-    executeDirectly(connection, """
+    execUpdate(connection, """
       CREATE TABLE RepositoryInfo (
         key   VARCHAR(32) PRIMARY KEY,
         value VARCHAR(256) NOT NULL
@@ -201,9 +211,13 @@ object SqlDB extends Logging {
     // EVENTUALLY check shut down status on loading the database
     // for this, insert ( 'shut down', 'OK' ) on shutdown and
     // remove the key/value pair on startup.
-    executeDirectly(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'shut down', 'OK' );")
-    executeDirectly(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'database version', '1.0' );")
-    executeDirectly(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', '" + constraintsEnabled + "' );")
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'shut down', 'OK' );")
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'database version', '1.0' );")
+    // FIXME use args
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', '" + constraintsEnabled + "' );")
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'hash algorithm', '" + fsSettings.hashProvider.name + "' );")
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'print algorithm', '" + fsSettings.printCalculator.name + "' );")
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'print length', '" + fsSettings.printCalculator.length + "' );")
   }
 
 }

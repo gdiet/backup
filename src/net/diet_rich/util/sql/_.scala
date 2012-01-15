@@ -23,8 +23,8 @@ package object sql {
     })
     statement
   }
-  
-  def execQuery[T](stat: ScalaThreadLocal[PreparedStatement], args: Any*)(processor: WrappedSQLResult => T) : Stream[T] = {
+
+  def execQuery[T](stat: PreparedStatement, args: Any*)(processor: WrappedSQLResult => T) : Stream[T] = {
     val resultSet = new WrappedSQLResult(setArguments(stat, args:_*) executeQuery)
     new Iterator[T] {
       var hasNextIsChecked = false
@@ -44,12 +44,19 @@ package object sql {
       }
     } toStream
   }
+
+  def execQuery[T](stat: ScalaThreadLocal[PreparedStatement], args: Any*)(processor: WrappedSQLResult => T) : Stream[T] =
+    execQuery(stat(), args:_*)(processor)
   
+  /** only use where performance is not a critical factor. */
+  def execQuery[T](connection: Connection, command: String, args: Any*)(processor: WrappedSQLResult => T) : Stream[T] =
+    execQuery(connection prepareStatement command, args:_*)(processor)
+    
   def execUpdate(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Int =
     setArguments(preparedStatement, args:_*) executeUpdate()
 
   /** only use where performance is not a critical factor. */
-  def execUpdateWithArgs(connection: Connection, command: String, args: Any*) : Int =
-    setArguments(connection prepareStatement command, args:_*).executeUpdate()
+  def execUpdate(connection: Connection, command: String, args: Any*) : Int =
+    setArguments(connection prepareStatement command, args:_*) executeUpdate()
   
 }

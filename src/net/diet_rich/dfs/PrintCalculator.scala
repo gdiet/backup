@@ -14,6 +14,9 @@ trait PrintCalculator {
   /** Calculates (finger print, length) while copying the input after resetting it. */
   def calculate(input: RandomAccessInput, output: OutputStream) : SizePrint
   
+  def name : String
+  def length : Int
+  
   private def reset(input: RandomAccessInput) : RandomAccessInput = {
     input seek 0
     input
@@ -25,7 +28,7 @@ object PrintCalculator {
     name match {
       case "start:crcadler" => startCrcAdler(length)
     }
-  private def startCrcAdler(length: Int) : PrintCalculator = new PrintCalculator {
+  private def startCrcAdler(len: Int) : PrintCalculator = new PrintCalculator {
     override def calculate(input: RandomAccessInput) : Long =
       Digester.crcadler().writeAnd (reset(input) readFully length) getDigest
     override def calculate(input: RandomAccessInput, output: OutputStream) = {
@@ -35,5 +38,8 @@ object PrintCalculator {
       val read = input copyTo output
       SizePrint(print, start.length + read)
     }
+    override def name = "start:crcadler"
+    override def length = len
+    override def toString = name + "(" + length + ") print provider"
   }
 }
