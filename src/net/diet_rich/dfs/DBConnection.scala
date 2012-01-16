@@ -6,7 +6,6 @@ package net.diet_rich.dfs
 import java.sql.DriverManager
 import sys.ShutdownHookThread
 
-// FIXME a connection and a SqlDB is needed to read some of the FSSettings
 class DBConnection(val dbSettings: DBSettings) {
   import dbSettings._
   

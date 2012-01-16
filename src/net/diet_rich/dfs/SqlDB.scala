@@ -42,6 +42,10 @@ class SqlDB(database: DBConnection) extends Logging {
     prepTLStatement("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
   private val maxEntryIdS =
     prepTLStatement("SELECT MAX ( id ) AS id FROM TreeEntries;")
+  private val maxFileIdS =
+    prepTLStatement("SELECT MAX ( fileid ) AS fileid FROM TreeEntries;")
+  private val maxCreateTimeS =
+    prepTLStatement("SELECT MAX ( createtime ) AS createtime FROM TreeEntries;")
   private val containsPrintS =
     prepTLStatement("SELECT COUNT(*) FROM DataInfo JOIN FileData ON DataInfo.id = FileData.data;")
 
@@ -68,6 +72,12 @@ class SqlDB(database: DBConnection) extends Logging {
   /** @return The numerically highest file tree id. */
   def maxEntryID = execQuery(maxEntryIdS) {_.long("id")} head
 
+  /** @return The numerically highest file entry id. */
+  def maxFileID = execQuery(maxFileIdS) {_.long("fileid")} head
+
+  /** @return The numerically highest entry creation time stamp. */
+  def maxCreateTime = execQuery(maxCreateTimeS) {_.long("createTime")} head
+  
   def contains(print: TimeSizePrint) : Boolean =
     execQuery(containsPrintS){_ long 1}.head > 0
   
@@ -75,6 +85,8 @@ class SqlDB(database: DBConnection) extends Logging {
 
 object SqlDB extends Logging {
 
+  def time = System.currentTimeMillis
+  
   /** only use where performance is not a critical factor. */
   private def execWithConstraints(connection : Connection, command: String, constraints: String) : Unit = {
     val fullCommand = command replaceAllLiterally ("- constraints -", constraints)
@@ -124,6 +136,8 @@ object SqlDB extends Logging {
         id          BIGINT PRIMARY KEY,
         parent      BIGINT NOT NULL,
         name        VARCHAR(256) NOT NULL,
+        fileid      BIGINT DEFAULT NULL,
+        createTime  BIGINT NOT NULL,
         deleted     BOOLEAN DEFAULT FALSE NOT NULL,
         deleteTime  BIGINT DEFAULT 0 NOT NULL,          // timestamp if marked deleted, else 0
         UNIQUE (parent, name, deleted, deleteTime)      // unique TreeEntries only
@@ -131,6 +145,7 @@ object SqlDB extends Logging {
       );
       """,
       if (!constraintsEnabled) "" else """
+      , UNIQUE (fileid)                                 // needed for FOREIGN KEY reference
       , FOREIGN KEY (parent) REFERENCES TreeEntries(id) // reference integrity of parent
       , CHECK (parent != id OR id = -1)                 // no self references (except for root's parent)
       , CHECK (deleted OR deleteTime = 0)               // defined deleted status
@@ -141,8 +156,8 @@ object SqlDB extends Logging {
       , CHECK (id > 0 OR deleted = FALSE)               // can't delete root nor root's parent
       """
     )
-    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES ( -1, -1, '*' );")
-    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (  0, -1, ''  );")
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, fileid, createTime) VALUES ( -1, -1, '*', NULL, ? );", time)
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, fileid, createTime) VALUES (  0, -1, '',  NULL, ? );", time)
     
     execWithConstraints(connection, """
       CREATE TABLE DataInfo (
@@ -172,29 +187,29 @@ object SqlDB extends Logging {
       CREATE TABLE FileData (
         id      BIGINT PRIMARY KEY,
         time    BIGINT NOT NULL,
-        data    BIGINT DEFAULT 0 NOT NULL               // 0 for 0-byte TreeEntries
+        dataid  BIGINT DEFAULT 0 NOT NULL               // 0 for 0-byte TreeEntries
         - constraints -
       );
       """,
       if (!constraintsEnabled) "" else """
-      , FOREIGN KEY (id) REFERENCES TreeEntries(id)
-      , FOREIGN KEY (data) REFERENCES DataInfo(id)
+      , FOREIGN KEY (id) REFERENCES TreeEntries(fileid)
+      , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
       """
     )
 
     execWithConstraints(connection, """
       CREATE TABLE ByteStore (
-        id    BIGINT NULL,      // reference to DataInfo#id or NULL if free
-        index INTEGER NOT NULL, // data part index
-        start BIGINT NOT NULL,  // data part start position
-        fin   BIGINT NOT NULL   // data part end position + 1
+        dataid BIGINT NULL,      // reference to DataInfo#id or NULL if free
+        index  INTEGER NOT NULL, // data part index
+        start  BIGINT NOT NULL,  // data part start position
+        fin    BIGINT NOT NULL   // data part end position + 1
         - constraints -
       );
       """,
       if (!constraintsEnabled) "" else """
       , UNIQUE (start)
       , UNIQUE (fin)
-      , FOREIGN KEY (id) REFERENCES DataInfo(id)
+      , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
       , CHECK (fin > start AND start >= 0)
       """ // EVENTUALLY check that start has matching fin or is 0
     )
@@ -213,11 +228,10 @@ object SqlDB extends Logging {
     // remove the key/value pair on startup.
     execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'shut down', 'OK' );")
     execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'database version', '1.0' );")
-    // FIXME use args
-    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', '" + constraintsEnabled + "' );")
-    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'hash algorithm', '" + fsSettings.hashProvider.name + "' );")
-    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'print algorithm', '" + fsSettings.printCalculator.name + "' );")
-    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'print length', '" + fsSettings.printCalculator.length + "' );")
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', ? );", constraintsEnabled toString)
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'hash algorithm', ? );", fsSettings.hashProvider.name)
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'print algorithm', ? );", fsSettings.printCalculator.name)
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'print length', ? );", fsSettings.printCalculator.length toString)
   }
 
 }
