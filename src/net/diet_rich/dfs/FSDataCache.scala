@@ -26,14 +26,9 @@ class FSDataCache(db: SqlDB) {
    * 
    *  @return ID if element was created, None if element already exists.
    */
-  def make(id: Long, childName: String, dataInfo: Option[StoredFileInfo]) : Option[Long] = {
+  def make(id: Long, childName: String) : Option[Long] = {
     val childId = nextEntry.getAndIncrement()
-    if (db make (childId, id, childName)) {
-      dataInfo.foreach { fileInfo =>
-        throw new UnsupportedOperationException // FIXME store dataInfo
-      }
-      Some(childId)
-    } else None
+    if (db make (childId, id, childName)) Some(childId) else None
   }
   
   def contains(print: TimeSizePrint) : Boolean = db contains print

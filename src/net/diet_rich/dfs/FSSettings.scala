@@ -13,5 +13,5 @@ object FSSettings {
     PrintCalculator(printAlgorithm, printLength)
   )
   
-  def apply(): FSSettings = FSSettings("MD5", "start:crcadler", 8192)
+  def default: FSSettings = FSSettings("MD5", "start:crcadler", 8192)
 }

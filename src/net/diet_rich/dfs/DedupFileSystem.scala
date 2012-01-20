@@ -6,7 +6,7 @@ package net.diet_rich.dfs
 import net.diet_rich.util.data.Bytes
 import DataDefinitions._
 
-class DedupFileSystem (cache: FSDataCache) {
+class DedupFileSystem (cache: FSDataCache) extends DFSTree {
 
   val settings = cache settings
   
@@ -31,7 +31,7 @@ class DedupFileSystem (cache: FSDataCache) {
     require(isWellformedPath(path))
     if (path == "") "" else path substring (1 + path lastIndexOf "/", path length)
   }
-    
+  
   /** Create any missing elements in the path, all without data information.
    * 
    *  @return ID if path was created, None if path already exists or missing write permission.
@@ -52,36 +52,55 @@ class DedupFileSystem (cache: FSDataCache) {
     require(isWellformedPath(path))
     cache get path orElse {
       getOrMake(parent(path)) flatMap (parent =>
-        make(parent, name(path)) orElse child(parent, name(path)) orElse getOrMake(path)
+        make(parent, name(path)) orElse get(parent, name(path)) orElse getOrMake(path)
       )
     }
+  }
+
+  def get(path: String) : Option[Long] = {
+    require(isWellformedPath(path))
+    cache get path
   }
 
   /** Create a child element.
    * 
    *  @return ID if element was created, None if element already exists or missing write permission.
    */
-  def make(id: Long, child: String, dataInfo: Option[StoredFileInfo] = None) : Option[Long] = {
+  def make(id: Long, child: String) : Option[Long] = {
     require(isWellformedEntryName(child))
-    cache make (id, child, dataInfo)
+    cache make (id, child)
   }
 
   /** @return ID of the corresponding child element if any. */
-  def child(id: Long, child: String) : Option[Long] = {
+  override def get(id: Long, child: String) : Option[Long] = {
     require(isWellformedEntryName(child))
     cache get (id, child)
   }
 
+  override def getOrMake(id: Long, child: String) : Option[Long] =
+    throw new UnsupportedOperationException
+
   /** @return true if a matching data entry is already stored. */
-  def contains(print: TimeSizePrint) : Boolean = cache contains print
+  def contains(print: TimeSizePrint) : Boolean = cache contains print // FIXME make private?
   
   /** @return The matching file entry ID if any. */
-  def fileId(print: TimeSizePrintHash) : Option[Long] = cache fileId print
+  def fileId(print: TimeSizePrintHash) : Option[Long] = cache fileId print // FIXME make private?
 
   /** Store the input data in the repository.
    *  
    *  @return The data ID and the info on the data stored. */
   def store(input: FileDataAccess) : (Long, TimeSizePrintHash) =
-    (0, input timeSizePrintHash) // FIXME
+    (0, input timeSizePrintHash) // FIXME remove or make private
+
+//  def store(id: Long, input: FileDataAccess) : StoredFileInfo = {
+//    val file, info = if (contains (input.timeSizePrint)) {
+//      val info = input.timeSizePrintHash
+//      fileId(info) match {
+//        case Some(id) => (id, info)
+//        case None => store (input)
+//      }
+//    } else store (input)
+//    // FIXME continue
+//  }    
     
 }

@@ -122,7 +122,7 @@ object SqlDB extends Logging {
   }
   
   // EVENTUALLY add/remove constraints independently of database creation
-  def createTables(dbcon: DBConnection, constraintsEnabled: Boolean, settings: DBSettings, fsSettings: FSSettings) : Unit = {
+  def createTables(dbcon: DBConnection, settings: DBSettings, fsSettings: FSSettings) : Unit = {
     logger info "creating SQL tables"
     val connection = dbcon.connection
     
@@ -152,7 +152,7 @@ object SqlDB extends Logging {
         - constraints -
       );
       """,
-      if (!constraintsEnabled) "" else """
+      if (!settings.enableConstraints) "" else """
       , CHECK (size >= 0)
       , CHECK (usage >= 0)
       , CHECK (method = 0 OR method = 1)
@@ -173,7 +173,7 @@ object SqlDB extends Logging {
         - constraints -
       );
       """,
-      if (!constraintsEnabled) "" else """
+      if (!settings.enableConstraints) "" else """
       , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
       """
     )
@@ -193,7 +193,7 @@ object SqlDB extends Logging {
         - constraints -
       );
       """,
-      if (!constraintsEnabled) "" else """
+      if (!settings.enableConstraints) "" else """
       , UNIQUE (fileid)                                 // needed for FOREIGN KEY reference
       , FOREIGN KEY (parent) REFERENCES TreeEntries(id) // reference integrity of parent
       , FOREIGN KEY (fileid) REFERENCES FileData(id)    // reference integrity of file data pointer
@@ -218,7 +218,7 @@ object SqlDB extends Logging {
         - constraints -
       );
       """,
-      if (!constraintsEnabled) "" else """
+      if (!settings.enableConstraints) "" else """
       , UNIQUE (start)
       , UNIQUE (fin)
       , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
@@ -240,7 +240,7 @@ object SqlDB extends Logging {
     // remove the key/value pair on startup.
     execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'shut down', 'OK' );")
     execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'database version', '1.0' );")
-    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', ? );", constraintsEnabled toString)
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', ? );", settings.enableConstraints toString)
     execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'hash algorithm', ? );", fsSettings.hashProvider.name)
     execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'print algorithm', ? );", fsSettings.printCalculator.name)
     execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'print length', ? );", fsSettings.printCalculator.length toString)

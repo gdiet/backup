@@ -1,0 +1,9 @@
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd" >
+ 
+<suite name="AllTests">
+  <test name="AllTests"   >
+    <packages>
+      <package name="net.diet_rich.*" />
+    </packages>
+  </test>
+</suite>

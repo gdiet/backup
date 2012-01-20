@@ -13,6 +13,7 @@ object DataDefinitions {
   type StoredFileInfo = TimeAndData
   case class SizePrint(size: Long, print: Long)
   case class TimeSize(time: Long, size: Long)
-  case class TimeSizePrint(time:  Long, size:  Long, print:  Long)
-  case class TimeSizePrintHash(time:  Long, size:  Long, print:  Long, hash: Bytes)
+  case class TimeSizePrint(time: Long, size: Long, print: Long)
+  case class TimeSizePrintHash(time: Long, size: Long, print: Long, hash: Bytes)
+  case class FullFileData(time: Long, size: Long, print: Long, hash: Bytes, dataId: Long)
 }
