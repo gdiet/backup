@@ -75,9 +75,8 @@ class DedupFileSystem (cache: FSDataCache) {
   /** @return true if a matching data entry is already stored. */
   def contains(print: TimeSizePrint) : Boolean = cache contains print
   
-  /** @return The matching data entry ID if any. */
-  def dataId(print: TimeSizePrintHash) : Option[Long] =
-    None // FIXME
+  /** @return The matching file entry ID if any. */
+  def fileId(print: TimeSizePrintHash) : Option[Long] = cache fileId print
 
   /** Store the input data in the repository.
    *  

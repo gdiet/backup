@@ -70,8 +70,8 @@ class StoreEntryPoint (fs: DedupFileSystem) extends Logging {
           }
         } else if (file isFile) {
           storeSpawnCount acquire()
-          submit{
-            storeFile(parentID, file)
+          submit {
+            storeFile (parentID, file)
           }{
             logger error ("Problem while storing file", _)
           }{
@@ -88,9 +88,9 @@ class StoreEntryPoint (fs: DedupFileSystem) extends Logging {
     using(FileDataAccess(source, fs.settings.printCalculator, fs.settings.hashProvider)) { input =>
       logger debug "Processing file " + source
       // FIXME move this logic to file system
-      val dataId, info = if (fs contains input.timeSizePrint) {
+      val fileId, info = if (fs contains input.timeSizePrint) {
         val info = input.timeSizePrintHash
-        fs dataId info match {
+        fs fileId info match {
           case Some(id) => (id, info)
           case None => fs store input
         }

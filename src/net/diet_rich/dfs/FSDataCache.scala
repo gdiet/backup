@@ -29,7 +29,7 @@ class FSDataCache(db: SqlDB) {
   def make(id: Long, childName: String, dataInfo: Option[StoredFileInfo]) : Option[Long] = {
     val childId = nextEntry.getAndIncrement()
     if (db make (childId, id, childName)) {
-      dataInfo.foreach{
+      dataInfo.foreach { fileInfo =>
         throw new UnsupportedOperationException // FIXME store dataInfo
       }
       Some(childId)
@@ -37,5 +37,8 @@ class FSDataCache(db: SqlDB) {
   }
   
   def contains(print: TimeSizePrint) : Boolean = db contains print
-    
+
+  /** @return The matching data entry ID if any. */
+  def fileId(print: TimeSizePrintHash) : Option[Long] = db fileId print
+  
 }
