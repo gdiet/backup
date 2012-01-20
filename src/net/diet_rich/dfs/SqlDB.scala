@@ -39,15 +39,22 @@ class SqlDB(database: DBConnection) extends Logging {
   private val childrenForIdS = 
     prepTLStatement("SELECT id, name FROM TreeEntries WHERE deleted = false AND parent = ?;")
   private val addEntryS =
-    prepTLStatement("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
+    prepTLStatement("INSERT INTO TreeEntries (id, parent, name, createTime) VALUES ( ? , ? , ? , ? );")
   private val maxEntryIdS =
     prepTLStatement("SELECT MAX ( id ) AS id FROM TreeEntries;")
   private val maxFileIdS =
     prepTLStatement("SELECT MAX ( fileid ) AS fileid FROM TreeEntries;")
   private val maxCreateTimeS =
     prepTLStatement("SELECT MAX ( createtime ) AS createtime FROM TreeEntries;")
-  private val containsPrintS =
-    prepTLStatement("SELECT COUNT(*) FROM DataInfo JOIN FileData ON DataInfo.id = FileData.data;")
+  private val matchesForPrintS =
+    prepTLStatement("SELECT COUNT(*) FROM DataInfo JOIN FileData ON DataInfo.id = FileData.dataid;")
+  private val fileIdS =
+    prepTLStatement("SELECT FileData.id FROM FileData JOIN DataInfo" +
+    		" ON  DataInfo.id    = FileData.dataid" +
+    		" AND FileData.time  = ?" +
+    		" AND DataInfo.size  = ?" +
+    		" AND DataInfo.print = ?" +
+    		" AND DataInfo.hash  = ? ;")
 
   /** Get the children of an entry from database. Does not retrieve
    *  any children marked deleted.
@@ -58,7 +65,7 @@ class SqlDB(database: DBConnection) extends Logging {
   /** Insert a new entry into the database. */
   def make(id: Long, parent: Long, name: String) : Boolean = {
     try {
-      execUpdate(addEntryS, id, parent, name) match {
+      execUpdate(addEntryS, id, parent, name, time) match {
         case 1 => true
         case n => throw new IllegalStateException("Unexpected " + n + " times update for id " + id)
       }
@@ -79,8 +86,13 @@ class SqlDB(database: DBConnection) extends Logging {
   def maxCreateTime = execQuery(maxCreateTimeS) {_.long("createTime")} head
   
   def contains(print: TimeSizePrint) : Boolean =
-    execQuery(containsPrintS){_ long 1}.head > 0
-  
+    execQuery(matchesForPrintS){_ long 1}.head > 0
+
+  /** @return The matching data entry ID if any. */
+  def fileId(print: TimeSizePrintHash) : Option[Long] =
+    execQuery(fileIdS, print.time, print.size, print.print, print.hash)(_ long 1)
+    .headOption
+    
 }
 
 object SqlDB extends Logging {
@@ -129,36 +141,6 @@ object SqlDB extends Logging {
     
     // TODO check for needed indexes
     
-    // The tree is represented by nodes that store their parent but not their children.
-    // The tree root can not be deleted and has the ID 0.
-    execWithConstraints(connection, """
-      CREATE TABLE TreeEntries (
-        id          BIGINT PRIMARY KEY,
-        parent      BIGINT NOT NULL,
-        name        VARCHAR(256) NOT NULL,
-        fileid      BIGINT DEFAULT NULL,
-        createTime  BIGINT NOT NULL,
-        deleted     BOOLEAN DEFAULT FALSE NOT NULL,
-        deleteTime  BIGINT DEFAULT 0 NOT NULL,          // timestamp if marked deleted, else 0
-        UNIQUE (parent, name, deleted, deleteTime)      // unique TreeEntries only
-        - constraints -
-      );
-      """,
-      if (!constraintsEnabled) "" else """
-      , UNIQUE (fileid)                                 // needed for FOREIGN KEY reference
-      , FOREIGN KEY (parent) REFERENCES TreeEntries(id) // reference integrity of parent
-      , CHECK (parent != id OR id = -1)                 // no self references (except for root's parent)
-      , CHECK (deleted OR deleteTime = 0)               // defined deleted status
-      , CHECK ((id < 1) = (parent = -1))                // root's and root's parent's parent is -1
-      , CHECK (id > -2)                                 // regular TreeEntries must have a positive id
-      , CHECK ((id = 0) = (name = ''))                  // root's name is "", no other empty names
-      , CHECK ((id != -1) OR (name = '*'))              // root's parent's name is "*"
-      , CHECK (id > 0 OR deleted = FALSE)               // can't delete root nor root's parent
-      """
-    )
-    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, fileid, createTime) VALUES ( -1, -1, '*', NULL, ? );", time)
-    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, fileid, createTime) VALUES (  0, -1, '',  NULL, ? );", time)
-    
     execWithConstraints(connection, """
       CREATE TABLE DataInfo (
         id     BIGINT PRIMARY KEY,
@@ -192,11 +174,41 @@ object SqlDB extends Logging {
       );
       """,
       if (!constraintsEnabled) "" else """
-      , FOREIGN KEY (id) REFERENCES TreeEntries(fileid)
       , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
       """
     )
 
+    // The tree is represented by nodes that store their parent but not their children.
+    // The tree root can not be deleted and has the ID 0.
+    execWithConstraints(connection, """
+      CREATE TABLE TreeEntries (
+        id          BIGINT PRIMARY KEY,
+        parent      BIGINT NOT NULL,
+        name        VARCHAR(256) NOT NULL,
+        fileid      BIGINT DEFAULT NULL,
+        createTime  BIGINT NOT NULL,
+        deleted     BOOLEAN DEFAULT FALSE NOT NULL,
+        deleteTime  BIGINT DEFAULT 0 NOT NULL,          // timestamp if marked deleted, else 0
+        UNIQUE (parent, name, deleted, deleteTime)      // unique TreeEntries only
+        - constraints -
+      );
+      """,
+      if (!constraintsEnabled) "" else """
+      , UNIQUE (fileid)                                 // needed for FOREIGN KEY reference
+      , FOREIGN KEY (parent) REFERENCES TreeEntries(id) // reference integrity of parent
+      , FOREIGN KEY (fileid) REFERENCES FileData(id)    // reference integrity of file data pointer
+      , CHECK (parent != id OR id = -1)                 // no self references (except for root's parent)
+      , CHECK (deleted OR deleteTime = 0)               // defined deleted status
+      , CHECK ((id < 1) = (parent = -1))                // root's and root's parent's parent is -1
+      , CHECK (id > -2)                                 // regular TreeEntries must have a positive id
+      , CHECK ((id = 0) = (name = ''))                  // root's name is "", no other empty names
+      , CHECK ((id != -1) OR (name = '*'))              // root's parent's name is "*"
+      , CHECK (id > 0 OR deleted = FALSE)               // can't delete root nor root's parent
+      """
+    )
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, fileid, createTime) VALUES ( -1, -1, '*', NULL, ? );", time)
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, fileid, createTime) VALUES (  0, -1, '',  NULL, ? );", time)
+    
     execWithConstraints(connection, """
       CREATE TABLE ByteStore (
         dataid BIGINT NULL,      // reference to DataInfo#id or NULL if free
