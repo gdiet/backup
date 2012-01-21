@@ -38,6 +38,10 @@ class SqlDB(database: DBConnection) extends Logging {
 
   private val childrenForIdS = 
     prepTLStatement("SELECT id, name FROM TreeEntries WHERE deleted = false AND parent = ?;")
+  private val parentForIdS = 
+    prepTLStatement("SELECT parent FROM TreeEntries WHERE deleted = false AND id = ?;")
+  private val nameForIdS = 
+    prepTLStatement("SELECT name FROM TreeEntries WHERE deleted = false AND id = ?;")
   private val addEntryS =
     prepTLStatement("INSERT INTO TreeEntries (id, parent, name, createTime) VALUES ( ? , ? , ? , ? );")
   private val maxEntryIdS =
@@ -62,8 +66,14 @@ class SqlDB(database: DBConnection) extends Logging {
   def children(id: Long) : List[IdAndName] =
     execQuery(childrenForIdS, id) {rs => IdAndName(rs long "id", rs string "name")} toList
 
-  /** Insert a new entry into the database. */
-  def make(id: Long, parent: Long, name: String) : Boolean = {
+  def name(id: Long) : Option[String] =
+    execQuery(nameForIdS, id) {_ string "name"} headOption
+    
+  def parent(id: Long) : Option[Long] =
+    execQuery(parentForIdS, id) {_ long "parent"} headOption
+    
+  def make(id: Long, parent: Long, name: String) : Boolean =
+    // Note: This method MUST check that there is not yet a child with the same name.
     try {
       execUpdate(addEntryS, id, parent, name, time) match {
         case 1 => true
@@ -76,7 +86,6 @@ class SqlDB(database: DBConnection) extends Logging {
           false
         } else throw e
     }
-  }
 
   /** @return The numerically highest file tree id. */
   def maxEntryID = execQuery(maxEntryIdS) {_.long("id")} head

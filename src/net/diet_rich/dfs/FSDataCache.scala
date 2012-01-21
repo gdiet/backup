@@ -31,6 +31,18 @@ class FSDataCache(db: SqlDB) {
     if (db make (childId, parentId, childName)) Some(childId) else None
   }
   
+  def name(id: Long) : Option[String] =
+    if (id == 0) Some("") else db name id
+    
+  def path(id: Long) : Option[String] =
+    if (id == 0) Some("")
+    else name(id) flatMap { name =>
+      db parent id flatMap (path(_) map (_ + "/" + name))
+    }
+    
+  def children(id: Long) : List[IdAndName] =
+    db children id
+    
   def contains(print: TimeSizePrint) : Boolean = db contains print
 
   /** @return The matching data entry ID if any. */

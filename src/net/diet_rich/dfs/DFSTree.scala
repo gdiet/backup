@@ -2,6 +2,7 @@
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dfs
+import net.diet_rich.dfs.DataDefinitions.IdAndName
 
 /**
  * The make and getOrMake methods may return None in case of concurrent
@@ -45,6 +46,13 @@ trait DFSTree {
   /** @return ID of the corresponding child element if any. */
   def get(id: Long, child: String) : Option[Long]
 
-  // FIXME name(id), path(id), children(id)
+  /** @return The name of the corresponding element if any. */
+  def name(id: Long) : Option[String]
+
+  /** @return The full of path the corresponding element if any. */
+  def path(id: Long) : Option[String]
+
+  /** @return The child IDs of the corresponding element if any. */
+  def children(id: Long) : List[IdAndName]
   
 }
