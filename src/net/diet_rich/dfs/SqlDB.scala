@@ -71,8 +71,10 @@ class SqlDB(database: DBConnection) extends Logging {
       }
     } catch {
       case e: SQLIntegrityConstraintViolationException =>
-        logger info "Could not add entry: " + id + " / " + e
-        false
+        if (e.getMessage contains "unique constraint") {
+          logger.info("Could not add entry - already present: " + parent + "/" + id, e)
+          false
+        } else throw e
     }
   }
 

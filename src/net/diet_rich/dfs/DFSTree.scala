@@ -3,14 +3,28 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dfs
 
+/**
+ * The make and getOrMake methods may return None in case of concurrent
+ * modification.
+ * 
+ * Most checks against illegal arguments depend on assertions and database
+ * constraints being enabled. If assertions or database constraints are
+ * disabled, it is possible to create data inconsistencies using illegal
+ * values.
+ * 
+ * It is possible to add children to deleted tree nodes.
+ * TODO implement a database script to detect and handle such orphan nodes.
+ */
 trait DFSTree {
   
   /** Create any missing elements in the path, all without data information.
+   *  None may also be returned on concurrent modifications of the respective entries.
    * 
    *  @return ID if path was created, None if path already exists or missing write permission. */
   def make(path: String) : Option[Long]
   
   /** Create any missing elements in the path, all without data information.
+   *  None may also be returned on concurrent modifications of the respective entries.
    * 
    *  @return ID or None if missing write permission. */
   def getOrMake(path: String) : Option[Long]
