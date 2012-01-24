@@ -7,7 +7,7 @@ import net.diet_rich.dfs.DataDefinitions.IdAndName
 
 trait CacheForTree {
 
-  protected def db: SqlDB
+  protected def db: SqlForTree
   
   /** @return The ID for a path or None if there is no such entry. */
   final def get(path: String) : Option[Long] =

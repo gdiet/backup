@@ -18,10 +18,10 @@ import collection.immutable.WrappedString
 
 import DataDefinitions._
 
-class SqlDB(database: DBConnection) extends Logging {
+class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlForFiles with Logging {
   import SqlDB._
 
-  private val connection = database connection
+  protected val connection = database connection
 
   val settings: FSSettings = {
     val hashAlgorithm =
@@ -33,45 +33,24 @@ class SqlDB(database: DBConnection) extends Logging {
     FSSettings(hashAlgorithm, printAlgorithm, printLengthString.toInt)
   }
 
-  private def prepTLStatement(statement: String) : ScalaThreadLocal[PreparedStatement] =
-    ScalaThreadLocal(connection prepareStatement statement, statement)
-
-  private val childrenForIdS = 
-    prepTLStatement("SELECT id, name FROM TreeEntries WHERE deleted = false AND parent = ?;")
-  private val parentForIdS = 
-    prepTLStatement("SELECT parent FROM TreeEntries WHERE deleted = false AND id = ?;")
-  private val nameForIdS = 
-    prepTLStatement("SELECT name FROM TreeEntries WHERE deleted = false AND id = ?;")
   private val addEntryS =
-    prepTLStatement("INSERT INTO TreeEntries (id, parent, name, createTime) VALUES ( ? , ? , ? , ? );")
+    prepare("INSERT INTO TreeEntries (id, parent, name, createTime) VALUES ( ? , ? , ? , ? );")
   private val maxEntryIdS =
-    prepTLStatement("SELECT MAX ( id ) AS id FROM TreeEntries;")
+    prepare("SELECT MAX ( id ) AS id FROM TreeEntries;")
   private val maxFileIdS =
-    prepTLStatement("SELECT MAX ( fileid ) AS fileid FROM TreeEntries;")
+    prepare("SELECT MAX ( fileid ) AS fileid FROM TreeEntries;")
   private val maxCreateTimeS =
-    prepTLStatement("SELECT MAX ( createtime ) AS createtime FROM TreeEntries;")
+    prepare("SELECT MAX ( createtime ) AS createtime FROM TreeEntries;")
   private val matchesForPrintS =
-    prepTLStatement("SELECT COUNT(*) FROM DataInfo JOIN FileData ON DataInfo.id = FileData.dataid;")
+    prepare("SELECT COUNT(*) FROM DataInfo JOIN FileData ON DataInfo.id = FileData.dataid;")
   private val fileIdS =
-    prepTLStatement("SELECT FileData.id FROM FileData JOIN DataInfo" +
+    prepare("SELECT FileData.id FROM FileData JOIN DataInfo" +
     		" ON  DataInfo.id    = FileData.dataid" +
     		" AND FileData.time  = ?" +
     		" AND DataInfo.size  = ?" +
     		" AND DataInfo.print = ?" +
     		" AND DataInfo.hash  = ? ;")
 
-  /** Get the children of an entry from database. Does not retrieve
-   *  any children marked deleted.
-   */
-  def children(id: Long) : List[IdAndName] =
-    execQuery(childrenForIdS, id) {rs => IdAndName(rs long "id", rs string "name")} toList
-
-  def name(id: Long) : Option[String] =
-    execQuery(nameForIdS, id) {_ string "name"} headOption
-    
-  def parent(id: Long) : Option[Long] =
-    execQuery(parentForIdS, id) {_ long "parent"} headOption
-    
   def make(id: Long, parent: Long, name: String) : Boolean =
     // Note: This method MUST check that there is not yet a child with the same name.
     try {
@@ -103,7 +82,7 @@ class SqlDB(database: DBConnection) extends Logging {
   def fileId(print: TimeSizePrintHash) : Option[Long] =
     execQuery(fileIdS, print.time, print.size, print.print, print.hash)(_ long 1)
     .headOption
-    
+
 }
 
 object SqlDB extends Logging {
@@ -176,19 +155,6 @@ object SqlDB extends Logging {
       INSERT INTO DataInfo (id, size, print, hash, usage, method) VALUES ( 0, 0, ?, ?, 0, 0 );
     """, zeroBytePrint, zeroByteHash)
 
-    execWithConstraints(connection, """
-      CREATE TABLE FileData (
-        id      BIGINT PRIMARY KEY,
-        time    BIGINT NOT NULL,
-        dataid  BIGINT DEFAULT 0 NOT NULL               // 0 for 0-byte TreeEntries
-        - constraints -
-      );
-      """,
-      if (!settings.enableConstraints) "" else """
-      , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
-      """
-    )
-
     // The tree is represented by nodes that store their parent but not their children.
     // The tree root can not be deleted and has the ID 0.
     execWithConstraints(connection, """
@@ -196,7 +162,8 @@ object SqlDB extends Logging {
         id          BIGINT PRIMARY KEY,
         parent      BIGINT NOT NULL,
         name        VARCHAR(256) NOT NULL,
-        fileid      BIGINT DEFAULT NULL,
+        time        BIGINT DEFAULT NULL,
+        dataid      BIGINT DEFAULT NULL,                // 0 for 0-byte TreeEntries
         createTime  BIGINT NOT NULL,
         deleted     BOOLEAN DEFAULT FALSE NOT NULL,
         deleteTime  BIGINT DEFAULT 0 NOT NULL,          // timestamp if marked deleted, else 0
@@ -205,10 +172,10 @@ object SqlDB extends Logging {
       );
       """,
       if (!settings.enableConstraints) "" else """
-      , UNIQUE (fileid)                                 // needed for FOREIGN KEY reference
       , FOREIGN KEY (parent) REFERENCES TreeEntries(id) // reference integrity of parent
-      , FOREIGN KEY (fileid) REFERENCES FileData(id)    // reference integrity of file data pointer
+      , FOREIGN KEY (dataid) REFERENCES DataInfo(id)    // reference integrity of data info pointer
       , CHECK (parent != id OR id = -1)                 // no self references (except for root's parent)
+      , CHECK ((dataid is NULL) = (time is NULL))       // timestamp iff data is present
       , CHECK (deleted OR deleteTime = 0)               // defined deleted status
       , CHECK ((id < 1) = (parent = -1))                // root's and root's parent's parent is -1
       , CHECK (id > -2)                                 // regular TreeEntries must have a positive id
@@ -217,8 +184,8 @@ object SqlDB extends Logging {
       , CHECK (id > 0 OR deleted = FALSE)               // can't delete root nor root's parent
       """
     )
-    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, fileid, createTime) VALUES ( -1, -1, '*', NULL, ? );", time)
-    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, fileid, createTime) VALUES (  0, -1, '',  NULL, ? );", time)
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, createTime) VALUES ( -1, -1, '*', ? );", time)
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, createTime) VALUES (  0, -1, '',  ? );", time)
     
     execWithConstraints(connection, """
       CREATE TABLE ByteStore (

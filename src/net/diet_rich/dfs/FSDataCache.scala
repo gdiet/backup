@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicLong
 import DataDefinitions._
 
 /** Data provided by this cache reflects either the current or a recent state. */
-class FSDataCache(protected val db: SqlDB) extends CacheForTree {
+class FSDataCache(protected val db: SqlDB) extends CacheForTree with CacheForFiles {
   // EVENTUALLY consider synchronization that allows to "unget" a new entry on failure to insert it
   private val nextEntry = new AtomicLong(db.maxEntryID + 1)
   

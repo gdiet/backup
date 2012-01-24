@@ -10,7 +10,7 @@ import net.diet_rich.util.io.InputStream
 
 trait DFSFilesLogic extends DFSFiles {
 
-  protected def cache: FSDataCache
+  protected def cache: CacheForFiles
 
   final override def store(id: Long, input: FileDataAccess) : Unit =
     throw new UnsupportedOperationException
