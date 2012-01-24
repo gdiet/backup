@@ -5,19 +5,38 @@ package net.diet_rich.dfs
 
 import DataDefinitions.FullFileData
 import DataDefinitions.TimeAndData
+import DataDefinitions.TimeSize
+import net.diet_rich.util.io.InputStream
 
+/**
+ * Most checks against illegal arguments depend on assertions and database
+ * constraints being enabled. If assertions or database constraints are
+ * disabled, it might be possible to create data inconsistencies using
+ * illegal values.
+ * 
+ * It is possible to store data at deleted tree nodes. The nodes stay deleted.
+ */
 trait DFSFiles {
   
-  /** Store the input data (if necessary) and link it with the tree entry.
-   *  If the tree entry is marked deleted, it stays deleted.
-   *  If the tree entry ID does not exist, the behavior of the method is not specified. */
+  /** Store the input data (if necessary) and link it with the tree entry. */
   def store(id: Long, input: FileDataAccess) : Unit
 
-  /** Link the file data with the tree entry.
-   *  If the tree entry is marked deleted, it stays deleted.
-   *  If the tree entry ID or the data ID does not exist, the behavior of the method is not specified. */
+  /** Link the file data with the tree entry. */
   def store(id: Long, timeAndData: TimeAndData) : Unit
 
-  def getData(id: Long) : FullFileData
+  /** @return The properties of the data stored with the node if any. */
+  def dataProperties(id: Long) : Option[FullFileData]
+
+  /** @return The time stamp of the node's data if any. */
+  def time(id: Long) : Option[Long]
+
+  /** @return The size of the node's data if any. */
+  def size(id: Long) : Option[Long]
+
+  /** @return The time stamp and size of the node's data if any. */
+  def timeAndSize(id: Long) : Option[TimeSize]
+  
+  /** @return An input stream of the node's data if any. */
+  def read(id: Long) : Option[InputStream]
   
 }

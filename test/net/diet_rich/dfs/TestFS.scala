@@ -11,6 +11,6 @@ object TestFS {
   private val sqldb = { SqlDB createTables (dbcon, dbset, fsset); new SqlDB(dbcon) }
   private val fscache = new FSDataCache(sqldb)
   
-  lazy val memfs : DFSTree = new DedupFileSystem(fscache)
+  lazy val memfs : DedupFileSystem = new DedupFileSystem(fscache)
   
 }

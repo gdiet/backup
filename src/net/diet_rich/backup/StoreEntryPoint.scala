@@ -84,18 +84,20 @@ class StoreEntryPoint (fs: DedupFileSystem) extends Logging {
     }
   }
 
+  // FIXME
   private def storeFile(parentID: Long, source: File) : Unit =
-    using(FileDataAccess(source, fs.settings.printCalculator, fs.settings.hashProvider)) { input =>
-      logger debug "Processing file " + source
-      // FIXME move this logic to file system
-      val fileId, info = if (fs contains input.timeSizePrint) {
-        val info = input.timeSizePrintHash
-        fs fileId info match {
-          case Some(id) => (id, info)
-          case None => fs store input
-        }
-      } else fs store input
-      // FIXME continue
-    }
+    throw new UnsupportedOperationException
+//    using(FileDataAccess(source, fs.settings.printCalculator, fs.settings.hashProvider)) { input =>
+//      logger debug "Processing file " + source
+//      // FIXME move this logic to file system
+//      val fileId, info = if (fs contains input.timeSizePrint) {
+//        val info = input.timeSizePrintHash
+//        fs fileId info match {
+//          case Some(id) => (id, info)
+//          case None => fs store input
+//        }
+//      } else fs store input
+//      // FIXME continue
+//    }
   
 }
