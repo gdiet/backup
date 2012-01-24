@@ -24,9 +24,11 @@ package object sql {
     statement
   }
 
-  def execQuery[T](stat: PreparedStatement, args: Any*)(processor: WrappedSQLResult => T) : Stream[T] = {
+  trait ResultIterator[T] extends Iterator[T] with HeadAndIterator[T] with NextOptIterator[T]
+  
+  def execQuery[T](stat: PreparedStatement, args: Any*)(processor: WrappedSQLResult => T) : ResultIterator[T] = {
     val resultSet = new WrappedSQLResult(setArguments(stat, args:_*) executeQuery)
-    new Iterator[T] {
+    new ResultIterator[T] {
       var hasNextIsChecked = false
       var hasNextResult = false
       override def hasNext : Boolean = {
@@ -42,14 +44,14 @@ package object sql {
         hasNextIsChecked = false
         processor(resultSet)
       }
-    } toStream
+    }
   }
 
-  def execQuery[T](stat: ScalaThreadLocal[PreparedStatement], args: Any*)(processor: WrappedSQLResult => T) : Stream[T] =
+  def execQuery[T](stat: ScalaThreadLocal[PreparedStatement], args: Any*)(processor: WrappedSQLResult => T) : ResultIterator[T] =
     execQuery(stat(), args:_*)(processor)
   
   /** only use where performance is not a critical factor. */
-  def execQuery[T](connection: Connection, command: String, args: Any*)(processor: WrappedSQLResult => T) : Stream[T] =
+  def execQuery[T](connection: Connection, command: String, args: Any*)(processor: WrappedSQLResult => T) : ResultIterator[T] =
     execQuery(connection prepareStatement command, args:_*)(processor)
     
   def execUpdate(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Int =

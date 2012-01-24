@@ -34,7 +34,7 @@ class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlFo
   }
 
   private val addEntryS =
-    prepare("INSERT INTO TreeEntries (id, parent, name, createTime) VALUES ( ? , ? , ? , ? );")
+    prepare("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
   private val maxEntryIdS =
     prepare("SELECT MAX ( id ) AS id FROM TreeEntries;")
   private val maxFileIdS =
@@ -54,7 +54,7 @@ class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlFo
   def make(id: Long, parent: Long, name: String) : Boolean =
     // Note: This method MUST check that there is not yet a child with the same name.
     try {
-      execUpdate(addEntryS, id, parent, name, time) match {
+      execUpdate(addEntryS, id, parent, name) match {
         case 1 => true
         case n => throw new IllegalStateException("Unexpected " + n + " times update for id " + id)
       }
@@ -81,14 +81,12 @@ class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlFo
   /** @return The matching data entry ID if any. */
   def fileId(print: TimeSizePrintHash) : Option[Long] =
     execQuery(fileIdS, print.time, print.size, print.print, print.hash)(_ long 1)
-    .headOption
+    .headOnly
 
 }
 
 object SqlDB extends Logging {
 
-  def time = System.currentTimeMillis
-  
   /** only use where performance is not a critical factor. */
   private def execWithConstraints(connection : Connection, command: String, constraints: String) : Unit = {
     val fullCommand = command replaceAllLiterally ("- constraints -", constraints)
@@ -131,20 +129,55 @@ object SqlDB extends Logging {
     
     // TODO check for needed indexes
     
+/* for debugging purposes etc in external SQL tools
+
+      CREATE TABLE DataInfo (
+        id     BIGINT PRIMARY KEY,
+        size   BIGINT NOT NULL,
+        print  BIGINT NOT NULL,
+        hash   VARBINARY(16) NOT NULL,
+        method INTEGER DEFAULT 0 NOT NULL
+      , CHECK (size >= 0)
+      , CHECK (method = 0 OR method = 1)
+      , UNIQUE (size, print, hash)
+      );
+      
+      CREATE TABLE TreeEntries (
+        id          BIGINT PRIMARY KEY,
+        parent      BIGINT NOT NULL,
+        name        VARCHAR(256) NOT NULL,
+        time        BIGINT DEFAULT NULL,
+        dataid      BIGINT DEFAULT NULL,
+        deleted     BOOLEAN DEFAULT FALSE NOT NULL,
+        deleteTime  BIGINT DEFAULT 0 NOT NULL,
+        UNIQUE (parent, name, deleted, deleteTime)
+      , FOREIGN KEY (parent) REFERENCES TreeEntries(id)
+      , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
+      , CHECK (parent != id OR id = -1)
+      , CHECK ((dataid is NULL) = (time is NULL))
+      , CHECK (deleted OR deleteTime = 0)
+      , CHECK ((id < 1) = (parent = -1))
+      , CHECK (id > -2)
+      , CHECK ((id = 0) = (name = ''))
+      , CHECK ((id != -1) OR (name = '*'))
+      , CHECK (id > 0 OR deleted = FALSE)
+      );
+
+ */
+    
+    
     execWithConstraints(connection, """
       CREATE TABLE DataInfo (
         id     BIGINT PRIMARY KEY,
         size   BIGINT NOT NULL,                         // entry size (uncompressed)
         print  BIGINT NOT NULL,                         // fast file content fingerprint
         hash   VARBINARY(16) NOT NULL,                  // EVENTUALLY make configurable: MD5: 16, SHA-256: 64
-        usage  INTEGER DEFAULT 0 NOT NULL,              // usage count
         method INTEGER DEFAULT 0 NOT NULL               // store method (0 = PLAIN, 1 = DEFLATE)
         - constraints -
       );
       """,
       if (!settings.enableConstraints) "" else """
       , CHECK (size >= 0)
-      , CHECK (usage >= 0)
       , CHECK (method = 0 OR method = 1)
       , UNIQUE (size, print, hash)
       """
@@ -152,7 +185,7 @@ object SqlDB extends Logging {
     val zeroByteHash = fsSettings.hashProvider.getHashDigester getDigest
     val zeroBytePrint = fsSettings.printCalculator calculate RandomAccessInput.empty
     execUpdate(connection, """
-      INSERT INTO DataInfo (id, size, print, hash, usage, method) VALUES ( 0, 0, ?, ?, 0, 0 );
+      INSERT INTO DataInfo (id, size, print, hash, method) VALUES ( 0, 0, ?, ?, 0 );
     """, zeroBytePrint, zeroByteHash)
 
     // The tree is represented by nodes that store their parent but not their children.
@@ -162,9 +195,8 @@ object SqlDB extends Logging {
         id          BIGINT PRIMARY KEY,
         parent      BIGINT NOT NULL,
         name        VARCHAR(256) NOT NULL,
-        time        BIGINT DEFAULT NULL,
+        time        BIGINT DEFAULT NULL,                // not NULL iff dataid is not NULL
         dataid      BIGINT DEFAULT NULL,                // 0 for 0-byte TreeEntries
-        createTime  BIGINT NOT NULL,
         deleted     BOOLEAN DEFAULT FALSE NOT NULL,
         deleteTime  BIGINT DEFAULT 0 NOT NULL,          // timestamp if marked deleted, else 0
         UNIQUE (parent, name, deleted, deleteTime)      // unique TreeEntries only
@@ -184,8 +216,8 @@ object SqlDB extends Logging {
       , CHECK (id > 0 OR deleted = FALSE)               // can't delete root nor root's parent
       """
     )
-    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, createTime) VALUES ( -1, -1, '*', ? );", time)
-    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name, createTime) VALUES (  0, -1, '',  ? );", time)
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES ( -1, -1, '*' );")
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (  0, -1,  '' );")
     
     execWithConstraints(connection, """
       CREATE TABLE ByteStore (

@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dfs
 
+import DataDefinitions.FullFileData
 import DataDefinitions.TimeAndData
 
 trait CacheForFiles {
@@ -12,4 +13,7 @@ trait CacheForFiles {
   def store(id: Long, timeAndData: TimeAndData) : Unit =
     db store (id, timeAndData)
 
+  def dataProperties(id: Long) : Option[FullFileData] =
+    db dataProperties id
+  
 }

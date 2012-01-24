@@ -16,10 +16,10 @@ trait DFSFilesLogic extends DFSFiles {
     throw new UnsupportedOperationException
   
   final override def store(id: Long, timeAndData: TimeAndData) : Unit =
-    throw new UnsupportedOperationException
+    cache store(id, timeAndData)
 
   final override def dataProperties(id: Long) : Option[FullFileData] =
-    throw new UnsupportedOperationException
+    cache dataProperties id
     
   // EVENTUALLY consider just fetching time (less complex database access)
   final override def time(id: Long) : Option[Long] =

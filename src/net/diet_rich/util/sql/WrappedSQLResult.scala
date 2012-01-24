@@ -6,6 +6,7 @@ package net.diet_rich.util.sql
 import com.weiglewilczek.slf4s.Logging
 import java.sql.ResultSet
 import net.diet_rich.util.nullIsNone
+import net.diet_rich.util.data.Bytes
 
 class WrappedSQLResult(resultSet: ResultSet) extends Logging {
   private def log[S,T](column: S, value: T): T = {
@@ -18,6 +19,7 @@ class WrappedSQLResult(resultSet: ResultSet) extends Logging {
   def longOption(column: String)  = log(column, nullIsNone (resultSet getLong column) )
   def string(column: Int)         = log(column, resultSet getString column)
   def string(column: String)      = log(column, resultSet getString column)
+  def bytes(column: String)       = log(column, Bytes(resultSet getBytes column))
   
   def next: Boolean = resultSet.next
 }
