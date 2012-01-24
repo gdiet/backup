@@ -7,7 +7,7 @@ import net.diet_rich.dfs.DataDefinitions.IdAndName
 
 trait DFSTreeLogic extends DFSTree with DFSTreeRequirements {
 
-  protected def cache: FSDataCache
+  protected def cache: CacheForTree
   
   /** @return The parent path for a path, "" for the root path "". */
   private final def parent(path: String) =
