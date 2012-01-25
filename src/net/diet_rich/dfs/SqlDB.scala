@@ -163,6 +163,22 @@ object SqlDB extends Logging {
       , CHECK (id > 0 OR deleted = FALSE)
       );
 
+      CREATE TABLE ByteStore (
+        dataid BIGINT NULL,
+        index  INTEGER NOT NULL,
+        start  BIGINT NOT NULL,
+        fin    BIGINT NOT NULL
+      , UNIQUE (start)
+      , UNIQUE (fin)
+      , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
+      , CHECK (fin > start AND start >= 0)
+      );
+        
+      CREATE TABLE RepositoryInfo (
+        key   VARCHAR(32) PRIMARY KEY,
+        value VARCHAR(256) NOT NULL
+      );
+
  */
     
     

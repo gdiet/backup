@@ -3,3 +3,5 @@ syntax: glob
 bin/
 src/tryout/
 temp/
+syntax: regexp
+^test-output$

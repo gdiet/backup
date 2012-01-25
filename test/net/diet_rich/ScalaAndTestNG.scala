@@ -16,6 +16,10 @@ class ScalaAndTestNG {
     1
   }
 
+  // needed to enforce that the @AfterClass method is run
+  @Test
+  def testMethodWithoutReturnType : Unit = Unit
+  
   @AfterClass
   def checkThatTestMethodWithReturnTypeHasRun : Unit =
     assert (testMethodWithReturnTypeHasRun)
