@@ -12,13 +12,13 @@ trait SqlForFiles { self: SqlCommon =>
   private val storeTimeAndDataS = prepare(
       "UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?;")
   private val allFileDataForIdS = prepare(
-      "SELECT time, size, print, hash, dataid FROM TreeEntries JOIN DataInfo ON dataid = DataInfo.id WHERE id = ?;")
+      "SELECT time, length, print, hash, dataid FROM TreeEntries JOIN DataInfo ON dataid = DataInfo.id WHERE id = ?;")
 
   def store(id: Long, timeAndData: TimeAndData) : Unit =
     execUpdate(storeTimeAndDataS, timeAndData time, timeAndData dataId, id)
   
   def dataProperties(id: Long) : Option[FullFileData] =
-    execQuery(allFileDataForIdS, id) {rs => FullFileData(rs long "time", rs long "size", rs long "print", rs bytes "hash", rs long "dataid")} headOnly
+    execQuery(allFileDataForIdS, id) {rs => FullFileData(rs long "time", rs long "length", rs long "print", rs bytes "hash", rs long "dataid")} headOnly
 
     
 }

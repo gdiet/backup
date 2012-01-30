@@ -186,7 +186,7 @@ object SqlDB extends Logging {
     execWithConstraints(connection, """
       CREATE TABLE DataInfo (
         id     BIGINT PRIMARY KEY,
-        size   BIGINT NOT NULL,                         // entry size (uncompressed)
+        length BIGINT NOT NULL,                         // entry size (uncompressed)
         print  BIGINT NOT NULL,                         // fast file content fingerprint
         hash   VARBINARY(16) NOT NULL,                  // EVENTUALLY make configurable: MD5: 16, SHA-256: 64
         method INTEGER DEFAULT 0 NOT NULL               // store method (0 = PLAIN, 1 = DEFLATE)
@@ -194,15 +194,15 @@ object SqlDB extends Logging {
       );
       """,
       if (!settings.enableConstraints) "" else """
-      , CHECK (size >= 0)
+      , CHECK (length >= 0)
       , CHECK (method = 0 OR method = 1)
-      , UNIQUE (size, print, hash)
+      , UNIQUE (length, print, hash)
       """
     )
     val zeroByteHash = fsSettings.hashProvider.getHashDigester getDigest
     val zeroBytePrint = fsSettings.printCalculator calculate RandomAccessInput.empty
     execUpdate(connection, """
-      INSERT INTO DataInfo (id, size, print, hash, method) VALUES ( 0, 0, ?, ?, 0 );
+      INSERT INTO DataInfo (id, length, print, hash, method) VALUES ( 0, 0, ?, ?, 0 );
     """, zeroBytePrint, zeroByteHash)
 
     // The tree is represented by nodes that store their parent but not their children.
@@ -214,7 +214,7 @@ object SqlDB extends Logging {
         name        VARCHAR(256) NOT NULL,
         time        BIGINT DEFAULT NULL,                // not NULL iff dataid is not NULL
         dataid      BIGINT DEFAULT NULL,                // 0 for 0-byte TreeEntries
-        deleted     BOOLEAN DEFAULT FALSE NOT NULL,
+        deleted     BOOLEAN DEFAULT FALSE NOT NULL,     // needed to avoid race conditions (e.g., delete & add child) TODO ???
         deleteTime  BIGINT DEFAULT 0 NOT NULL,          // timestamp if marked deleted, else 0
         UNIQUE (parent, name, deleted, deleteTime)      // unique TreeEntries only
         - constraints -
