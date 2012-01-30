@@ -110,6 +110,7 @@ object SqlDB extends Logging {
   }
   
   // EVENTUALLY add/remove constraints independently of database creation
+  // e.g. ALTER TABLE DATAINFO ADD CONSTRAINT NoNegativeSize CHECK (size >= 0);
   def createTables(dbcon: DBConnection, settings: DBSettings, fsSettings: FSSettings) : Unit = {
     logger info "creating SQL tables"
     val connection = dbcon.connection
