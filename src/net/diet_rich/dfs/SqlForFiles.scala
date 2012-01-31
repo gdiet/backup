@@ -12,7 +12,7 @@ trait SqlForFiles { self: SqlCommon =>
   private val storeTimeAndDataS = prepare(
       "UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?;")
   private val allFileDataForIdS = prepare(
-      "SELECT time, length, print, hash, dataid FROM TreeEntries JOIN DataInfo ON dataid = DataInfo.id WHERE id = ?;")
+      "SELECT time, length, print, hash, dataid FROM TreeEntries JOIN DataInfo ON dataid = DataInfo.id WHERE TreeEntries.id = ?;")
 
   def store(id: Long, timeAndData: TimeAndData) : Unit =
     execUpdate(storeTimeAndDataS, timeAndData time, timeAndData dataId, id)

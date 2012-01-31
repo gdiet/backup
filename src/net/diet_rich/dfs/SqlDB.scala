@@ -54,13 +54,20 @@ class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlFo
   def make(id: Long, parent: Long, name: String) : Boolean =
     // Note: This method MUST check that there is not yet a child with the same name.
     try {
+      println(id + " " + parent + " " + name)
       execUpdate(addEntryS, id, parent, name) match {
         case 1 => true
         case n => throw new IllegalStateException("Unexpected " + n + " times update for id " + id)
       }
     } catch {
-      case e: SQLIntegrityConstraintViolationException =>
-        if (e.getMessage contains "unique constraint") {
+      case e: SQLIntegrityConstraintViolationException => // HSQLDB
+        if (e.getMessage contains "unique constraint or index violation") {
+          println(e.getMessage)
+          logger.info("Could not add entry - already present: " + parent + "/" + id, e)
+          false
+        } else throw e
+      case e: org.h2.jdbc.JdbcSQLException => // H2
+        if (e.getMessage contains "Unique index or primary key violation") {
           logger.info("Could not add entry - already present: " + parent + "/" + id, e)
           false
         } else throw e
@@ -111,15 +118,9 @@ object SqlDB extends Logging {
   
   // EVENTUALLY add/remove constraints independently of database creation
   // e.g. ALTER TABLE DATAINFO ADD CONSTRAINT NoNegativeSize CHECK (size >= 0);
-  def createTables(dbcon: DBConnection, settings: DBSettings, fsSettings: FSSettings) : Unit = {
+  def createTables(dbcon: DBConnection, settings: DBSettings /* FIXME remove? */, fsSettings: FSSettings) : Unit = {
     logger info "creating SQL tables"
     val connection = dbcon.connection
-    
-    // HSQLDB: CACHED tables [...] Only part of their data or indexes is held
-    // in memory, allowing large tables that would otherwise take up to several
-    // hundred megabytes of memory. [...] The default type of table resulting
-    // from future CREATE TABLE statements can be specified with the SQL command:
-    execUpdate(connection, "SET DATABASE DEFAULT TABLE TYPE CACHED;")
     
     // NOTES on SQL syntax used: A PRIMARY KEY constraint is equivalent to a
     // UNIQUE constraint on one or more NOT NULL columns. Only one PRIMARY KEY
@@ -132,18 +133,18 @@ object SqlDB extends Logging {
     
 /* for debugging purposes etc in external SQL tools
 
-      CREATE TABLE DataInfo (
+      CREATE CACHED TABLE DataInfo (
         id     BIGINT PRIMARY KEY,
-        size   BIGINT NOT NULL,
+        length BIGINT NOT NULL,
         print  BIGINT NOT NULL,
         hash   VARBINARY(16) NOT NULL,
         method INTEGER DEFAULT 0 NOT NULL
-      , CHECK (size >= 0)
+      , CHECK (length >= 0)
       , CHECK (method = 0 OR method = 1)
-      , UNIQUE (size, print, hash)
+      , UNIQUE (length, print, hash)
       );
-      
-      CREATE TABLE TreeEntries (
+
+      CREATE CACHED TABLE TreeEntries (
         id          BIGINT PRIMARY KEY,
         parent      BIGINT NOT NULL,
         name        VARCHAR(256) NOT NULL,
@@ -163,8 +164,8 @@ object SqlDB extends Logging {
       , CHECK ((id != -1) OR (name = '*'))
       , CHECK (id > 0 OR deleted = FALSE)
       );
-
-      CREATE TABLE ByteStore (
+      
+      CREATE CACHED TABLE ByteStore (
         dataid BIGINT NULL,
         index  INTEGER NOT NULL,
         start  BIGINT NOT NULL,
@@ -175,16 +176,53 @@ object SqlDB extends Logging {
       , CHECK (fin > start AND start >= 0)
       );
         
-      CREATE TABLE RepositoryInfo (
+      CREATE CACHED TABLE RepositoryInfo (
         key   VARCHAR(32) PRIMARY KEY,
         value VARCHAR(256) NOT NULL
       );
 
+
+ORACLE VERSION:
+
+      CREATE TABLE DataInfo (
+        id     NUMBER(20) PRIMARY KEY,
+        length NUMBER(20) NOT NULL,
+        print  NUMBER(20) NOT NULL,
+        hash   RAW(16) NOT NULL,
+        method INTEGER DEFAULT 0 NOT NULL
+      , CHECK (length >= 0)
+      , CHECK (method = 0 OR method = 1)
+      , UNIQUE (length, print, hash)
+      );
+
+      CREATE TABLE TreeEntries (
+        id          NUMBER(20) PRIMARY KEY,
+        parent      NUMBER(20) NOT NULL,
+        name        VARCHAR(256) NOT NULL,
+        time        NUMBER(20) DEFAULT NULL,
+        dataid      NUMBER(20) DEFAULT NULL,
+        deleted     char DEFAULT 0 NOT NULL,
+        check (deleted in(0,1))
+      , FOREIGN KEY (parent) REFERENCES TreeEntries(id),
+      , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
+      );
+      // TODO continue with constraints
+
+      CREATE TABLE ByteStore (
+        dataid NUMBER(20) NULL,
+        part   INTEGER NOT NULL,
+        begin  NUMBER(20) NOT NULL,
+        end    NUMBER(20) NOT NULL
+      );
+      
+      TODO index -> part
+      TODO start -> begin (Oracle) fin -> end (consistency)
+      
  */
     
     
     execWithConstraints(connection, """
-      CREATE TABLE DataInfo (
+      CREATE CACHED TABLE DataInfo (
         id     BIGINT PRIMARY KEY,
         length BIGINT NOT NULL,                         // entry size (uncompressed)
         print  BIGINT NOT NULL,                         // fast file content fingerprint
@@ -208,7 +246,7 @@ object SqlDB extends Logging {
     // The tree is represented by nodes that store their parent but not their children.
     // The tree root can not be deleted and has the ID 0.
     execWithConstraints(connection, """
-      CREATE TABLE TreeEntries (
+      CREATE CACHED TABLE TreeEntries (
         id          BIGINT PRIMARY KEY,
         parent      BIGINT NOT NULL,
         name        VARCHAR(256) NOT NULL,
@@ -237,7 +275,7 @@ object SqlDB extends Logging {
     execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (  0, -1,  '' );")
     
     execWithConstraints(connection, """
-      CREATE TABLE ByteStore (
+      CREATE CACHED TABLE ByteStore (
         dataid BIGINT NULL,      // reference to DataInfo#id or NULL if free
         index  INTEGER NOT NULL, // data part index
         start  BIGINT NOT NULL,  // data part start position
@@ -256,7 +294,7 @@ object SqlDB extends Logging {
     // create and fill RepositoryInfo last so errors in table creation
     // are detected before the "database version" value is inserted.
     execUpdate(connection, """
-      CREATE TABLE RepositoryInfo (
+      CREATE CACHED TABLE RepositoryInfo (
         key   VARCHAR(32) PRIMARY KEY,
         value VARCHAR(256) NOT NULL
       );

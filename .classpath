@@ -14,5 +14,6 @@
 	<classpathentry kind="lib" path="testlib/fest-assert-1.4.jar"/>
 	<classpathentry kind="lib" path="testlib/fest-util-1.1.6.jar"/>
 	<classpathentry kind="lib" path="testlib/commons-io-2.1.jar"/>
+	<classpathentry kind="lib" path="lib/sql/h2-1.3.163.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

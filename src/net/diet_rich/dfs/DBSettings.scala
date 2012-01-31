@@ -26,7 +26,23 @@ object DBSettings {
     enableConstraints = true
   )
 
+  val h2memoryDatabase = DBSettings (
+    jdbcDriverClassName = "net.sf.log4jdbc.DriverSpy",
+    jdbcURL = "jdbc:log4jdbc:h2:mem:test",
+    jdbcUser = "SA",
+    jdbcPassword = "",
+    enableConstraints = true
+  )
+
   // for file database, use
   // jdbcURL = "jdbc:log4jdbc:hsqldb:file:temp/testdb",
 
+  // Oracle driver:   oracle.jdbc.driver.OracleDriver
+  // Oracle URL e.g.: jdbc:oracle:thin:@localhost:1521:XE
+  
+  // h2 driver: org.h2.Driver
+  // h2 memory: jdbc:h2:mem:test
+  // h2 file:   jdbc:h2:temp/testdb
+  // h2 client: jdbc:h2:tcp://localhost/temp/testdb
+  
 }

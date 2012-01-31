@@ -5,7 +5,7 @@ package net.diet_rich.dfs
 
 object TestFS {
 
-  private val dbset = DBSettings.memoryDatabase
+  private val dbset = DBSettings.h2memoryDatabase
   private val dbcon = new DBConnection(dbset)
   private val fsset = FSSettings default
   private val sqldb = { SqlDB createTables (dbcon, dbset, fsset); new SqlDB(dbcon) }

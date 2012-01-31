@@ -13,15 +13,16 @@ object SQLPerformanceApp extends App {
 
 //  val dbset = DBSettings("oracle.jdbc.driver.OracleDriver", "jdbc:oracle:thin:@localhost:1521:XE", "tcom", "tcom", false)
 
-  val dbset = DBSettings("org.hsqldb.jdbc.JDBCDriver", "jdbc:hsqldb:file:temp/testdb", "SA", "", false)
+//  val dbset = DBSettings("org.hsqldb.jdbc.JDBCDriver", "jdbc:hsqldb:file:temp/testdb", "SA", "", false)
+  val dbset = DBSettings("org.h2.Driver", "jdbc:h2:temp/testdb", "SA", "", false)
   val dbcon = new DBConnection(dbset)
   val fsset = FSSettings default
   val sqldb = { SqlDB createTables (dbcon, dbset, fsset); new SqlDB(dbcon) }
 
   val con = dbcon.connection
   val stat = con.createStatement
-  val insertDatainfo = con.prepareStatement("INSERT INTO Datainfo (id, size, print, hash, method) VALUES ?, ?, ?, ?, ?")
-  val insertTreeEntries = con.prepareStatement("INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES ?, ?, ?, ?, ?")
+  val insertDatainfo = con.prepareStatement("INSERT INTO Datainfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
+  val insertTreeEntries = con.prepareStatement("INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES (?, ?, ?, ?, ?);")
   val datasize = 250000
   val sizeFactor = 10
   
@@ -79,10 +80,10 @@ no indices, 1000 / 50 / 7 elements
 +  10000 / 50 / 7 elements
 + 250000 / 10 / 7 elements
 
-step 1 after  25 seconds.   25
-step 2 after  71 seconds.   46
-step 3 after  116 seconds.  45
-step 4 after  179 seconds.  63
+step 1 after  25 seconds.   25  h2  123 - 123  XE  191 - 191
+step 2 after  71 seconds.   46  h2  882 - 759  XE  398 - 207
+step 3 after  116 seconds.  45  XE  871 - 473
+step 4 after  179 seconds.  63  XE 1862 - 991
 step 5 after  251 seconds.  72
 step 6 after  304 seconds.  53
 step 7 after  397 seconds.  93
