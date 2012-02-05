@@ -54,7 +54,6 @@ class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlFo
   def make(id: Long, parent: Long, name: String) : Boolean =
     // Note: This method MUST check that there is not yet a child with the same name.
     try {
-      println(id + " " + parent + " " + name)
       execUpdate(addEntryS, id, parent, name) match {
         case 1 => true
         case n => throw new IllegalStateException("Unexpected " + n + " times update for id " + id)
@@ -62,7 +61,6 @@ class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlFo
     } catch {
       case e: SQLIntegrityConstraintViolationException => // HSQLDB
         if (e.getMessage contains "unique constraint or index violation") {
-          println(e.getMessage)
           logger.info("Could not add entry - already present: " + parent + "/" + id, e)
           false
         } else throw e
@@ -118,7 +116,7 @@ object SqlDB extends Logging {
   
   // EVENTUALLY add/remove constraints independently of database creation
   // e.g. ALTER TABLE DATAINFO ADD CONSTRAINT NoNegativeSize CHECK (size >= 0);
-  def createTables(dbcon: DBConnection, settings: DBSettings /* FIXME remove? */, fsSettings: FSSettings) : Unit = {
+  def createTables(dbcon: DBConnection, settings: DBSettings /* TODO remove when constraints are separate */, fsSettings: FSSettings) : Unit = {
     logger info "creating SQL tables"
     val connection = dbcon.connection
     
@@ -130,6 +128,7 @@ object SqlDB extends Logging {
     // JOIN is the short form for INNER JOIN.
     
     // TODO check for needed indexes
+    // FIXME CREATE INDEX TreeEntries_dataid_idx on TREEENTRIES (dataid);
     
 /* for debugging purposes etc in external SQL tools
 
@@ -180,43 +179,6 @@ object SqlDB extends Logging {
         key   VARCHAR(32) PRIMARY KEY,
         value VARCHAR(256) NOT NULL
       );
-
-
-ORACLE VERSION:
-
-      CREATE TABLE DataInfo (
-        id     NUMBER(20) PRIMARY KEY,
-        length NUMBER(20) NOT NULL,
-        print  NUMBER(20) NOT NULL,
-        hash   RAW(16) NOT NULL,
-        method INTEGER DEFAULT 0 NOT NULL
-      , CHECK (length >= 0)
-      , CHECK (method = 0 OR method = 1)
-      , UNIQUE (length, print, hash)
-      );
-
-      CREATE TABLE TreeEntries (
-        id          NUMBER(20) PRIMARY KEY,
-        parent      NUMBER(20) NOT NULL,
-        name        VARCHAR(256) NOT NULL,
-        time        NUMBER(20) DEFAULT NULL,
-        dataid      NUMBER(20) DEFAULT NULL,
-        deleted     char DEFAULT 0 NOT NULL,
-        check (deleted in(0,1))
-      , FOREIGN KEY (parent) REFERENCES TreeEntries(id),
-      , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
-      );
-      // TODO continue with constraints
-
-      CREATE TABLE ByteStore (
-        dataid NUMBER(20) NULL,
-        part   INTEGER NOT NULL,
-        begin  NUMBER(20) NOT NULL,
-        end    NUMBER(20) NOT NULL
-      );
-      
-      TODO index -> part
-      TODO start -> begin (Oracle) fin -> end (consistency)
       
  */
     

@@ -28,7 +28,9 @@ object DBSettings {
 
   val h2memoryDatabase = DBSettings (
     jdbcDriverClassName = "net.sf.log4jdbc.DriverSpy",
-    jdbcURL = "jdbc:log4jdbc:h2:mem:test",
+    // Added ";DB_CLOSE_ON_EXIT=FALSE" to the db URL to disable automatic closing at VM shutdown.
+    // Needed to execute SHUTDOWN COMPACT in the ShutdownHookThread (see DBConnection).
+    jdbcURL = "jdbc:log4jdbc:h2:mem:test;DB_CLOSE_ON_EXIT=FALSE",
     jdbcUser = "SA",
     jdbcPassword = "",
     enableConstraints = true
@@ -40,9 +42,11 @@ object DBSettings {
   // Oracle driver:   oracle.jdbc.driver.OracleDriver
   // Oracle URL e.g.: jdbc:oracle:thin:@localhost:1521:XE
   
+  // Added ";DB_CLOSE_ON_EXIT=FALSE" to the db URL to disable automatic closing at VM shutdown.
+  // Needed to execute SHUTDOWN COMPACT in the ShutdownHookThread (see DBConnection).
   // h2 driver: org.h2.Driver
-  // h2 memory: jdbc:h2:mem:test
-  // h2 file:   jdbc:h2:temp/testdb
+  // h2 memory: jdbc:h2:mem:test;DB_CLOSE_ON_EXIT=FALSE
+  // h2 file:   jdbc:h2:temp/testdb;DB_CLOSE_ON_EXIT=FALSE
   // h2 client: jdbc:h2:tcp://localhost/temp/testdb
   
 }
