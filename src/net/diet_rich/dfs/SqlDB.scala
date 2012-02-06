@@ -59,14 +59,22 @@ class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlFo
         case n => throw new IllegalStateException("Unexpected " + n + " times update for id " + id)
       }
     } catch {
+      
       case e: SQLIntegrityConstraintViolationException => // HSQLDB
         if (e.getMessage contains "unique constraint or index violation") {
           logger.info("Could not add entry - already present: " + parent + "/" + id, e)
           false
+        } else if (e.getMessage contains "foreign key no parent") {
+          logger.info("Could not add entry - parent does not exist: " + parent + "/" + id, e)
+          false
         } else throw e
+        
       case e: org.h2.jdbc.JdbcSQLException => // H2
         if (e.getMessage contains "Unique index or primary key violation") {
           logger.info("Could not add entry - already present: " + parent + "/" + id, e)
+          false
+        } else if (e.getMessage contains "Referential integrity constraint violation") {
+          logger.info("Could not add entry - parent does not exist: " + parent + "/" + id, e)
           false
         } else throw e
     }
@@ -149,19 +157,15 @@ object SqlDB extends Logging {
         name        VARCHAR(256) NOT NULL,
         time        BIGINT DEFAULT NULL,
         dataid      BIGINT DEFAULT NULL,
-        deleted     BOOLEAN DEFAULT FALSE NOT NULL,
-        deleteTime  BIGINT DEFAULT 0 NOT NULL,
-        UNIQUE (parent, name, deleted, deleteTime)
+        UNIQUE (parent, name)
       , FOREIGN KEY (parent) REFERENCES TreeEntries(id)
       , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
       , CHECK (parent != id OR id = -1)
       , CHECK ((dataid is NULL) = (time is NULL))
-      , CHECK (deleted OR deleteTime = 0)
       , CHECK ((id < 1) = (parent = -1))
       , CHECK (id > -2)
       , CHECK ((id = 0) = (name = ''))
       , CHECK ((id != -1) OR (name = '*'))
-      , CHECK (id > 0 OR deleted = FALSE)
       );
       
       CREATE CACHED TABLE ByteStore (
@@ -214,9 +218,7 @@ object SqlDB extends Logging {
         name        VARCHAR(256) NOT NULL,
         time        BIGINT DEFAULT NULL,                // not NULL iff dataid is not NULL
         dataid      BIGINT DEFAULT NULL,                // 0 for 0-byte TreeEntries
-        deleted     BOOLEAN DEFAULT FALSE NOT NULL,     // needed to avoid race conditions (e.g., delete & add child) TODO ???
-        deleteTime  BIGINT DEFAULT 0 NOT NULL,          // timestamp if marked deleted, else 0
-        UNIQUE (parent, name, deleted, deleteTime)      // unique TreeEntries only
+        UNIQUE (parent, name)                           // unique TreeEntries only
         - constraints -
       );
       """,
@@ -225,12 +227,10 @@ object SqlDB extends Logging {
       , FOREIGN KEY (dataid) REFERENCES DataInfo(id)    // reference integrity of data info pointer
       , CHECK (parent != id OR id = -1)                 // no self references (except for root's parent)
       , CHECK ((dataid is NULL) = (time is NULL))       // timestamp iff data is present
-      , CHECK (deleted OR deleteTime = 0)               // defined deleted status
       , CHECK ((id < 1) = (parent = -1))                // root's and root's parent's parent is -1
       , CHECK (id > -2)                                 // regular TreeEntries must have a positive id
       , CHECK ((id = 0) = (name = ''))                  // root's name is "", no other empty names
       , CHECK ((id != -1) OR (name = '*'))              // root's parent's name is "*"
-      , CHECK (id > 0 OR deleted = FALSE)               // can't delete root nor root's parent
       """
     )
     execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES ( -1, -1, '*' );")

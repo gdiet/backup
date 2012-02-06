@@ -16,13 +16,13 @@ class SimpleFileTreeTests {
  
   @Test
   def createChildrenForInvalidIdShouldFail =
-    expectThat(fs make (Long.MaxValue, "invalid")) doesThrow new Exception
+    assertThat(fs make (Long.MaxValue, "invalid")) isEqualTo None
 
   @Test
   def createChildrenTwiceShouldFail = {
     val childName = randomString
     assertThat(fs make (0, childName) isDefined)
-    assertThat(fs make (0, childName) isEmpty)
+    assertThat(fs make (0, childName)) isEqualTo None
   }
     
   @Test

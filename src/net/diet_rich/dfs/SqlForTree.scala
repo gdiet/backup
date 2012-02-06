@@ -6,15 +6,14 @@ package net.diet_rich.dfs
 import net.diet_rich.util.sql._
 import DataDefinitions.IdAndName
 
-/** Note: Deleted entries are ignored. */
 trait SqlForTree { self: SqlCommon =>
   
   private val childrenForIdS = prepare(
-      "SELECT id, name FROM TreeEntries WHERE deleted = false AND parent = ?;")
+      "SELECT id, name FROM TreeEntries WHERE parent = ?;")
   private val parentForIdS = prepare(
-      "SELECT parent FROM TreeEntries WHERE deleted = false AND id = ?;")
+      "SELECT parent FROM TreeEntries WHERE id = ?;")
   private val nameForIdS = prepare(
-      "SELECT name FROM TreeEntries WHERE deleted = false AND id = ?;")
+      "SELECT name FROM TreeEntries WHERE id = ?;")
   
   def children(id: Long) : List[IdAndName] =
     execQuery(childrenForIdS, id) {rs => IdAndName(rs long "id", rs string "name")} toList

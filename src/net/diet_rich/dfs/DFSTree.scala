@@ -12,9 +12,6 @@ import net.diet_rich.dfs.DataDefinitions.IdAndName
  * constraints being enabled. If assertions or database constraints are
  * disabled, it is possible to create data inconsistencies using illegal
  * values.
- * 
- * It is possible to add children to deleted tree nodes.
- * TODO implement a database script to detect and handle such orphan nodes.
  */
 trait DFSTree {
   

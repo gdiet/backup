@@ -41,7 +41,7 @@ object SQLPerformanceApp extends App {
   val stat = con.createStatement
   val insertDatainfo = con.prepareStatement("INSERT INTO Datainfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
   val datasize = 101000
-  val sizeFactor = 100
+  val sizeFactor = 50
   
   Random.setSeed(0L)
   
@@ -49,8 +49,7 @@ object SQLPerformanceApp extends App {
   val other = new collection.mutable.ListBuffer[Long]
 
   stat.executeUpdate("CREATE INDEX TreeEntries_dataid_idx on TREEENTRIES (dataid)")
-  stat.executeUpdate("CREATE INDEX TreeEntries_deleted_idx on TREEENTRIES (deleted)") // almost no effect, possibly negative
-  stat.executeUpdate("CREATE INDEX TreeEntries_parent_idx on TREEENTRIES (parent)") // almost no effect, possibly negative
+//  stat.executeUpdate("CREATE INDEX TreeEntries_parent_idx on TREEENTRIES (parent)") // almost no effect, possibly negative
   
   println("preparing datainfo")
   for (i <- 1 to datasize) {
@@ -94,49 +93,7 @@ object SQLPerformanceApp extends App {
   println(time2-time1)
   println(time3-time2)
   println(time4-time3)
-  
-/*
-without additional indexes:
-CREATE INDEX TreeEntries_deleted_idx on TREEENTRIES (deleted)
-CREATE INDEX TreeEntries_parent_idx on TREEENTRIES (parent)
-03:02:23:105 INFO - net.diet_rich.dfs.SqlDB$: creating SQL tables
-preparing datainfo
-linked elements: 100456
-other  elements: 544
-preparing tree entries
-step 1 after 59 seconds.
-step 2 after 148 seconds.
-step 3 after 236 seconds.
-step 4 after 336 seconds.
-step 5 after 443 seconds.
-step 6 after 567 seconds.
-step 7 after 684 seconds.
-step 8 after 811 seconds.
-step 9 after 936 seconds.
-step 10 after 1079 seconds.
-speed test 1
-speed test 2
-speed test 3
-12560
-6414
-4916
 
-with additional indexes:
-CREATE INDEX TreeEntries_deleted_idx on TREEENTRIES (deleted)
-CREATE INDEX TreeEntries_parent_idx on TREEENTRIES (parent)
-step 1 after 61 seconds.
-step 2 after 140 seconds.
-step 3 after 234 seconds.
-step 4 after 339 seconds.
-step 5 after 447 seconds.
-step 6 after 567 seconds.
-step 7 after 690 seconds.
-step 8 after 828 seconds.
-step 9 after 959 seconds.
-step 10 after 1109 seconds.
- */
-  
-  
   /*
 Performance (time in ms) of three equivalent queries on hsqldb to find orphan 
 data IDs (with "CREATE INDEX TreeEntries_dataid_idx on TREEENTRIES (dataid);") 

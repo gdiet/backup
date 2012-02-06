@@ -12,10 +12,10 @@ trait DFSFilesLogic extends DFSFiles {
 
   protected def cache: CacheForFiles
 
-  final override def store(id: Long, input: FileDataAccess) : Unit =
+  final override def store(id: Long, input: FileDataAccess) : Boolean =
     throw new UnsupportedOperationException
   
-  final override def store(id: Long, timeAndData: TimeAndData) : Unit =
+  final override def store(id: Long, timeAndData: TimeAndData) : Boolean =
     cache store(id, timeAndData)
 
   final override def dataProperties(id: Long) : Option[FullFileData] =

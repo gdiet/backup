@@ -14,15 +14,16 @@ import net.diet_rich.util.io.InputStream
  * disabled, it might be possible to create data inconsistencies using
  * illegal values.
  * 
- * It is possible to store data at deleted tree nodes. The nodes stay deleted.
+ * The store methods return false if storing fails, e.g. because the node 
+ * has been deleted.
  */
 trait DFSFiles {
   
   /** Store the input data (if necessary) and link it with the tree entry. */
-  def store(id: Long, input: FileDataAccess) : Unit
+  def store(id: Long, input: FileDataAccess) : Boolean
 
   /** Link the file data with the tree entry. */
-  def store(id: Long, timeAndData: TimeAndData) : Unit
+  def store(id: Long, timeAndData: TimeAndData) : Boolean
 
   /** @return The properties of the data stored with the node if any. */
   def dataProperties(id: Long) : Option[FullFileData]

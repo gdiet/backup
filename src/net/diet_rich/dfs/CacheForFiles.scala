@@ -10,7 +10,7 @@ trait CacheForFiles {
 
   protected def db: SqlForFiles
 
-  def store(id: Long, timeAndData: TimeAndData) : Unit =
+  def store(id: Long, timeAndData: TimeAndData) : Boolean =
     db store (id, timeAndData)
 
   def dataProperties(id: Long) : Option[FullFileData] =

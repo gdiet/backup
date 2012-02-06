@@ -14,8 +14,10 @@ trait SqlForFiles { self: SqlCommon =>
   private val allFileDataForIdS = prepare(
       "SELECT time, length, print, hash, dataid FROM TreeEntries JOIN DataInfo ON dataid = DataInfo.id WHERE TreeEntries.id = ?;")
 
-  def store(id: Long, timeAndData: TimeAndData) : Unit =
+  def store(id: Long, timeAndData: TimeAndData) : Boolean = {
     execUpdate(storeTimeAndDataS, timeAndData time, timeAndData dataId, id)
+    true
+  }
   
   def dataProperties(id: Long) : Option[FullFileData] =
     execQuery(allFileDataForIdS, id) {rs => FullFileData(rs long "time", rs long "length", rs long "print", rs bytes "hash", rs long "dataid")} headOnly
