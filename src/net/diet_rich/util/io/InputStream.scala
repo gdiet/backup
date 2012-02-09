@@ -8,10 +8,10 @@ import net.diet_rich.util.data.Bytes
 
 trait InputStream extends Closeable {
 
-  /** If length is not zero, blocks until at least one byte is read 
-   *  or end of stream is reached.
+  /** Read into provided bytes object. If length is not zero, blocks 
+   *  until at least one byte is read or end of stream is reached.
    */
-  def read(bytes: Bytes) : Bytes
+  protected def read(bytes: Bytes) : Bytes
 
   /** If length is not zero, blocks until at least one byte is read 
    *  or end of stream is reached.
@@ -20,18 +20,16 @@ trait InputStream extends Closeable {
   
   /** Blocks until requested length is read or end of stream is reached.
    */
-  def readFully(bytes: Bytes) : Bytes = {
+  def readFully(length: Int) : Bytes = {
     @annotation.tailrec
     def readBytesTailRec(bytes: Bytes) : Int =
       read(bytes) length match {
         case 0 => bytes length
         case length => readBytesTailRec(bytes dropFirst length)
       }
-    bytes.keepFirst(bytes.length - readBytesTailRec(bytes))
+    val result = Bytes(length)
+    result.keepFirst(length - readBytesTailRec(result))
   }
-  
-  /** Blocks until requested length is read or end of stream is reached. */
-  def readFully(length: Int) : Bytes = readFully(Bytes(length))
   
   def copyTo(output: OutputStream) : Long = {
     val bytes = Bytes(32768)
@@ -54,9 +52,9 @@ trait InputStream extends Closeable {
 }
 
 object InputStream {
-  class Empty extends InputStream {
-    override def read(bytes: Bytes) : Bytes = bytes.copy(length = 0)
+  trait Empty extends InputStream {
+    override protected def read(bytes: Bytes) : Bytes = bytes.keepFirst(0)
   }
-  val empty = new Empty
+  val empty = new Empty {}
 }
 

@@ -1,3 +1,6 @@
+// Copyright (c) 2012 Georg Dietrich
+// Licensed under the MIT license:
+// http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dfs
 
 import org.apache.commons.io.FileUtils
@@ -41,7 +44,7 @@ object SQLPerformanceApp extends App {
   val stat = con.createStatement
   val insertDatainfo = con.prepareStatement("INSERT INTO Datainfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
   val datasize = 101000
-  val sizeFactor = 50
+  val sizeFactor = 5
   
   Random.setSeed(0L)
   
@@ -109,5 +112,42 @@ for different numbers of elements:
 
 --> 3) performs best on HSQLDB.
    */
+/*
+H2:
+10:02:09:301 INFO - net.diet_rich.dfs.SqlDB$: creating SQL tables
+preparing datainfo
+linked elements: 100456
+other  elements: 544
+preparing tree entries
+step 1 after 58 seconds.
+step 2 after 131 seconds.
+step 3 after 217 seconds.
+step 4 after 310 seconds.
+step 5 after 410 seconds.
+speed test 1
+speed test 2
+speed test 3
+6413
+3963
+3776
+
+HSQLDB:
+10:02:17:968 INFO - net.diet_rich.dfs.SqlDB$: creating SQL tables
+preparing datainfo
+linked elements: 100456
+other  elements: 544
+preparing tree entries
+step 1 after 57 seconds.
+step 2 after 132 seconds.
+step 3 after 221 seconds.
+step 4 after 316 seconds.
+step 5 after 419 seconds.
+speed test 1
+speed test 2
+speed test 3
+6709
+3933
+3994
+ */
   
 }
