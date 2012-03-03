@@ -8,5 +8,5 @@ import net.diet_rich.util.data.Bytes
 
 class RandomAccessFile(file: File) extends RandomAccessFileInput(file) with OutputStream {
   override protected val accessMode = "rw"
-  override final def write(bytes: Bytes) = { randomAccessFile.write(bytes.bytes, bytes.offset, bytes.length) ; this }
+  override final def write(bytes: Bytes) = { randomAccessFile.write(bytes.bytes, bytes.offset toInt, bytes.length toInt) ; this }
 }

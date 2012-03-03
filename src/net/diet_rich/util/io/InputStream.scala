@@ -17,18 +17,18 @@ trait InputStream extends Closeable {
    *  or end of stream is reached. The returned Bytes can be 0-padded
    *  extended up to 'length'.
    */
-  def read(length: Int) : Bytes = read(Bytes(length))
+  def read(length: Long) : Bytes = read(Bytes(length))
 
   def readLong : Long = read(8) toLong
   def readExtendLong : Long = read(8) extend 8 longFrom
   
   /** Blocks until requested length is read or end of stream is reached.
    */
-  def readFully(length: Int) : Bytes = {
+  def readFully(length: Long) : Bytes = {
     @annotation.tailrec
     def readBytesTailRec(bytes: Bytes) : Int =
       read(bytes) length match {
-        case 0 => bytes length
+        case 0 => bytes.length toInt
         case length => readBytesTailRec(bytes dropFirst length)
       }
     val result = Bytes(length)

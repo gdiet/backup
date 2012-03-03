@@ -3,37 +3,40 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util.data
 
-// FIXME replace Int with Long and introduce appropriate requirements
-case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
+case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
+  // since the unterlying Array is restricted to Int offset and length,
+  // offset and length of Bytes is restricted in the same way.
   require(offset >= 0)
+  require(offset <= Int.MaxValue)
   require(length >= 0)
+  require(length <= Int.MaxValue)
   require(bytes.length >= offset + length)
 
-  def copyFrom(other: Bytes, offset: Int = 0) : Bytes = {
-    System.arraycopy(other.bytes, other.offset, bytes, this.offset + offset, other.length)
+  def copyFrom(other: Bytes, offset: Long = 0) : Bytes = {
+    System.arraycopy(other bytes, other.offset toInt, bytes, (this.offset + offset) toInt, other.length toInt)
     this
   }
   
   def extendMax: Bytes = extend(bytes.length - offset)
 
-  def extend(size: Int) : Bytes = copy(length = size)
+  def extend(size: Long) : Bytes = copy(length = size)
 
-  def dropFirst(size: Int) : Bytes =
+  def dropFirst(size: Long) : Bytes =
     copy(length = length - size, offset = offset + size)
 
-  def keepFirst(size: Int) : Bytes = {
+  def keepFirst(size: Long) : Bytes = {
     require(size <= length)
     copy(length = size)
   }
 
-  def keepAtMostFirst(size: Int) : Bytes = {
+  def keepAtMostFirst(size: Long) : Bytes = {
     copy(length = math.min(size, length))
   }
 
-  def apply(position: Int) : Byte = {
+  def apply(position: Long) : Byte = {
     require(position <= length)
     require(position + offset <= bytes.length)
-    bytes(position + offset)
+    bytes((position + offset) toInt)
   }
 
   def store(long : Long) : Bytes = {
@@ -72,8 +75,8 @@ case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
   def filled : Boolean = length == bytes.length
 
   def toArray : Array[Byte] = {
-    val result = new Array[Byte](length)
-    System.arraycopy(bytes, offset, result, 0, length)
+    val result = new Array[Byte](length toInt)
+    System.arraycopy(bytes, offset toInt, result, 0, length toInt)
     result
   }
   
@@ -82,6 +85,6 @@ case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
 
 object Bytes {
   def apply(bytes: Array[Byte]) : Bytes = Bytes(bytes, bytes.length)
-  def apply(size: Int) : Bytes = Bytes(new Array[Byte](size))
+  def apply(size: Long) : Bytes = Bytes(new Array[Byte](size toInt), size)
   def forLong(long: Long) : Bytes = Bytes(8).storeIn(long)
 }

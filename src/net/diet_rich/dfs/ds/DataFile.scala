@@ -5,7 +5,7 @@ import net.diet_rich.util.data.Bytes
 import net.diet_rich.util.io.{using, RandomAccessFile, RandomAccessFileInput}
 import net.diet_rich.util.data.Digester
 
-class DataFile(val dataLength: Int, val file: File) {
+class DataFile(val dataLength: Long, val file: File) {
   require (dataLength > 0)
   require (file != null)
   
@@ -15,7 +15,7 @@ class DataFile(val dataLength: Int, val file: File) {
     assert (off >= 0 && off < dataLength)
     using(new RandomAccessFileInput(file)) { input =>
       input seek (off)
-      input read math.min(len, dataLength - off).toInt extendMax
+      input read math.min(len, dataLength - off) extendMax
     }
   }
 

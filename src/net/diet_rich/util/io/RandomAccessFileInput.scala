@@ -14,5 +14,5 @@ class RandomAccessFileInput(file: File) extends RandomAccessInput {
   override final def seek(position: Long) : Unit = randomAccessFile seek position
   override final def close() : Unit = randomAccessFile.close
   override protected final def read(bytes: Bytes) : Bytes =
-    bytes.keepFirst(math.max(0, randomAccessFile.read(bytes.bytes, bytes.offset, bytes.length)))
+    bytes.keepFirst(math.max(0, randomAccessFile.read(bytes.bytes, bytes.offset toInt, bytes.length toInt)))
 }

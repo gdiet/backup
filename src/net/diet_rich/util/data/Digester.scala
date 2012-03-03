@@ -16,7 +16,7 @@ object Digester {
   private def checksum(checksum: java.util.zip.Checksum, seed: Option[Bytes]) =
     new ChecksumDigester {
       if (seed.isDefined) reset
-      override def write(bytes: Bytes) = { checksum.update(bytes.bytes, bytes.offset, bytes.length) }
+      override def write(bytes: Bytes) = { checksum.update(bytes.bytes, bytes.offset toInt, bytes.length toInt) }
       override def getDigest = checksum.getValue
       override def reset = { checksum.reset ; seed.foreach(write(_)) }
       override def close = Unit
@@ -40,7 +40,7 @@ object Digester {
     new BytesDigester {
       val digest = java.security.MessageDigest.getInstance(algorithm)
       if (seed.isDefined) reset
-      override def write(bytes: Bytes) = { digest.update(bytes.bytes, bytes.offset, bytes.length) }
+      override def write(bytes: Bytes) = { digest.update(bytes.bytes, bytes.offset toInt, bytes.length toInt) }
       override def getDigest = Bytes(digest.digest)
       override def reset = { digest.reset ; seed.foreach(long => write(Bytes forLong long)) }
       override def close = Unit
