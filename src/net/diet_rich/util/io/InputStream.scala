@@ -14,9 +14,13 @@ trait InputStream extends Closeable {
   protected def read(bytes: Bytes) : Bytes
 
   /** If length is not zero, blocks until at least one byte is read 
-   *  or end of stream is reached.
+   *  or end of stream is reached. The returned Bytes can be 0-padded
+   *  extended up to 'length'.
    */
   def read(length: Int) : Bytes = read(Bytes(length))
+
+  def readLong : Long = read(8) toLong
+  def readExtendLong : Long = read(8) extend 8 longFrom
   
   /** Blocks until requested length is read or end of stream is reached.
    */
@@ -39,7 +43,7 @@ trait InputStream extends Closeable {
         case 0 => 0
         case length =>
           output write bytes
-          bytes extend()
+          bytes.extendMax
           copyBytesTailRec
       }
     

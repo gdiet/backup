@@ -44,7 +44,7 @@ object DataStore {
               currentIndex = nextPart.map(_.start)
               read(bytes)
             } else {
-              System.ar
+//              System.ar
               Bytes(0)
             }
           }

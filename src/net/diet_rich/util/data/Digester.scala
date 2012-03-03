@@ -42,16 +42,16 @@ object Digester {
       if (seed.isDefined) reset
       override def write(bytes: Bytes) = { digest.update(bytes.bytes, bytes.offset, bytes.length) }
       override def getDigest = Bytes(digest.digest)
-      override def reset = { digest.reset ; seed.foreach(long => write(Bytes.forLong(long))) }
+      override def reset = { digest.reset ; seed.foreach(long => write(Bytes forLong long)) }
       override def close = Unit
     }
 
   def hash64(algorithm: String, seed: Option[Long] = None) =
     new ChecksumDigester {
       val digester = hash(algorithm, seed)
-      override def write(bytes: Bytes) = { digester.write(bytes) }
-      override def getDigest = digester.getDigest.keepFirst(8).toLong
-      override def reset = digester.reset
+      override def write(bytes: Bytes) = { digester write bytes }
+      override def getDigest = digester.getDigest longFrom
+      override def reset = digester reset
       override def close = Unit
     }
 

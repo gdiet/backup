@@ -3,13 +3,20 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util.data
 
+// FIXME replace Int with Long and introduce appropriate requirements
 case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
   require(offset >= 0)
   require(length >= 0)
   require(bytes.length >= offset + length)
+
+  def copyFrom(other: Bytes, offset: Int = 0) : Bytes = {
+    System.arraycopy(other.bytes, other.offset, bytes, this.offset + offset, other.length)
+    this
+  }
   
-  def extend(size: Int = bytes.length) : Bytes =
-    copy(length = size)
+  def extendMax: Bytes = extend(bytes.length - offset)
+
+  def extend(size: Int) : Bytes = copy(length = size)
 
   def dropFirst(size: Int) : Bytes =
     copy(length = length - size, offset = offset + size)
@@ -28,9 +35,13 @@ case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
     require(position + offset <= bytes.length)
     bytes(position + offset)
   }
-  
+
   def store(long : Long) : Bytes = {
     require(length == 8)
+    storeIn(long)
+  }
+
+  def storeIn(long : Long) : Bytes = {
     bytes(0) = (long >>  0).toByte
     bytes(1) = (long >>  8).toByte
     bytes(2) = (long >> 16).toByte
@@ -41,9 +52,13 @@ case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
     bytes(7) = (long >> 56).toByte
     this
   }
-  
+
   def toLong : Long = {
     require(length == 8)
+    longFrom
+  }
+
+  def longFrom : Long = {
     (bytes(0).toLong & 0xff) <<  0 |
     (bytes(1).toLong & 0xff) <<  8 |
     (bytes(2).toLong & 0xff) << 16 |
@@ -68,5 +83,5 @@ case class Bytes(bytes: Array[Byte], length: Int, offset: Int = 0) {
 object Bytes {
   def apply(bytes: Array[Byte]) : Bytes = Bytes(bytes, bytes.length)
   def apply(size: Int) : Bytes = Bytes(new Array[Byte](size))
-  def forLong(long: Long) : Bytes = Bytes(8).store(long)
+  def forLong(long: Long) : Bytes = Bytes(8).storeIn(long)
 }
