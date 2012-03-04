@@ -16,7 +16,12 @@ case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
     System.arraycopy(other bytes, other.offset toInt, bytes, (this.offset + offset) toInt, other.length toInt)
     this
   }
-  
+
+  def copyTo(other: Bytes, offset: Long = 0) : Bytes = {
+    System.arraycopy(bytes, this.offset toInt, other bytes, (other.offset + offset) toInt, this.length toInt)
+    other
+  }
+
   def extendMax: Bytes = extend(bytes.length - offset)
 
   def extend(size: Long) : Bytes = copy(length = size)
