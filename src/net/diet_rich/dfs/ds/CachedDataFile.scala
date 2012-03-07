@@ -1,15 +1,15 @@
 package net.diet_rich.dfs.ds
 
 import java.io.File
+import net.diet_rich.util._
 import net.diet_rich.util.io.using
 import net.diet_rich.util.data.{Bytes,Digester}
+import CachedDataFile._
 
 class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File) {
-  require(dataLength > 0)
-  require (file != null)
+  ASSUME(dataLength > 0, "dataLength " + dataLength + " must be positive.")
+  ASSUME(file != null, "file must not be null")
   
-  import CachedDataFile._
-
   private val dataFile = new DataFile(headerSize + dataLength, file)
 
   private var dirty = false
@@ -48,19 +48,19 @@ class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File)
   }
 
   def write(offset: Long, data: Bytes) : Option[Bytes] = synchronized {
-    require(offset >= fileOffset, "offset " + offset + " should be at least " + fileOffset)
-    require(offset < fileOffset + dataLength, "offset " + offset + " should be less than " + (fileOffset + dataLength))
+    ASSUME(offset >= fileOffset, "offset " + offset + " should be at least " + fileOffset)
+    ASSUME(offset < fileOffset + dataLength, "offset " + offset + " should be less than " + (fileOffset + dataLength))
     dirty = true
     val writeOffset = offset - fileOffset
     val writeLength = math.min(data length, fileOffset + dataLength - offset)
     this.data copyFrom (data keepFirst writeLength, writeOffset + headerSize)
-    if (writeLength < data.length) Some(data dropFirst writeLength) else None
+    if (writeLength < data.length) Some(data dropFirst (data.length - writeLength)) else None
   }
 
   def read(offset: Long, size: Long) : Bytes = synchronized {
     // TODO synchronization would be better here with read and write locks
-    require(offset >= fileOffset)
-    require(offset + size <= fileOffset + dataLength)
+    ASSUME(offset >= fileOffset, "offset " + offset + " should be at least " + fileOffset)
+    ASSUME(offset + size <= fileOffset + dataLength, "offset+size " + (offset+size) + " should be less or equal to fileOffset+dataLength " + (fileOffset+dataLength))
     val readOffset = offset - fileOffset
     data dropFirst (readOffset + headerSize) keepFirst size copyTo Bytes(size)
   }
