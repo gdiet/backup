@@ -6,6 +6,7 @@ package net.diet_rich.util.data
 case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
   // since the unterlying Array is restricted to Int offset and length,
   // offset and length of Bytes is restricted in the same way.
+  // TODO use ASSUME
   require(offset >= 0)
   require(offset <= Int.MaxValue)
   require(length >= 0)
