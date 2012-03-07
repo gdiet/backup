@@ -39,18 +39,32 @@ class CachedDataFileTests {
       out.writeLong(10);
       out.writeLong(0);
     }
-    val cdfile = new CachedDataFile(0, 5, testFile)
-    expectThat( cdfile.writeData ) doesThrow new AssertionError
+    val cdfile = new CachedDataFile(0, 5, testFile) { def setDirty = { dirty = true } }
+    assertThat( cdfile readData ) isFalse()
+    cdfile.setDirty
+    expectThat( cdfile writeData ) doesThrow new AssertionError
   }
 
   @Test
+  def noWriteIfNotDirty = {
+    val cdfile = new CachedDataFile(0, 5, testFile)
+    assertThat( cdfile readData ) isTrue()
+    cdfile.writeData
+    assertThat( testFile.exists ) isFalse
+  }
+  
+  @Test
   def writeDataToFileAndReadItAgain = {
-    val cdfile = new CachedDataFile(0, 100, testFile) { def getData = data }
+    val cdfile = new CachedDataFile(0, 100, testFile)
     val content = Bytes("example content" getBytes "UTF-8")
     assertThat (cdfile readData) isTrue()
     assertThat (cdfile write(0, content)) isEqualTo None
     cdfile.writeData
-    assert(false) // CONTINUE
+    
+    val cdfile2 = new CachedDataFile(0, 100, testFile)
+    assertThat (cdfile2 readData) isTrue()
+    val read = cdfile2.read(0, content.length)
+    assertThat(read toArray) isEqualTo(content toArray)
   }
   
 }

@@ -10,9 +10,9 @@ class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File)
   ASSUME(dataLength > 0, "dataLength " + dataLength + " must be positive.")
   ASSUME(file != null, "file must not be null")
   
-  private val dataFile = new DataFile(headerSize + dataLength, file)
+  protected val dataFile = new DataFile(headerSize + dataLength, file)
 
-  private var dirty = true
+  protected var dirty = true
 
   protected var allData: Bytes = Bytes(0)
   protected def data: Bytes = allData.dropFirst(headerSize)
@@ -30,6 +30,7 @@ class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File)
 
   def readData: Boolean = synchronized {
     ASSUME(allData.length == 0, "may not read alread data present")
+    dirty = false
     if (file exists) {
       allData = dataFile.readFullFile
       fileOffset == offset && dataLength == length && dataPrint == print
@@ -45,7 +46,7 @@ class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File)
 
   def writeData: Unit = if (dirty) synchronized {
     ASSUME(allData.length > 0, "it seems the cached data file has not been properly initialized with readData")
-    ASSUME(data.length == dataLength, "data.length " + data.length + " must be equal to dataLength " + dataLength)
+    ASSUME(length == dataLength, "length " + length + " must be equal to dataLength " + dataLength)
     print = dataPrint
     dataFile.writeAllData(allData)
     dirty = false
