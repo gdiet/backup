@@ -46,6 +46,13 @@ class CachedDataFileTests {
   }
 
   @Test
+  def noReadingTwice = {
+    val cdfile = new CachedDataFile(0, 5, testFile)
+    assertThat( cdfile readData ) isTrue()
+    expectThat( cdfile readData ) doesThrow new AssertionError
+  }
+  
+  @Test
   def noWriteIfNotDirty = {
     val cdfile = new CachedDataFile(0, 5, testFile)
     assertThat( cdfile readData ) isTrue()
@@ -55,9 +62,11 @@ class CachedDataFileTests {
   
   @Test
   def writeDataToFileAndReadItAgain = {
-    val cdfile = new CachedDataFile(0, 100, testFile)
+    val cdfile = new CachedDataFile(0, 100, testFile){ def a = all }
     val content = Bytes("example content" getBytes "UTF-8")
+    assertThat (testFile exists) isFalse()
     assertThat (cdfile readData) isTrue()
+    println(cdfile.a.allData)
     assertThat (cdfile write(0, content)) isEqualTo None
     cdfile.writeData
     

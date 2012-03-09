@@ -12,7 +12,7 @@ class CachedDataFileInternalTests extends CachedDataFile(testOffset, testLength,
   @BeforeMethod
   def prepareTest = {
     require(!file.exists)
-    allData = Bytes(0)
+    all = new CachedDataFile.HeaderAndData
     assertThat(readData) isTrue
   }
 

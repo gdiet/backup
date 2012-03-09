@@ -94,14 +94,14 @@ class BytesReader(private[Bytes] bytes: Bytes) {
   def readLong : Long = {
     ASSUME(length >= 8, "length " + length + " must be at least 8 to read a Long")
     val result = 
-      (bytes(offset+0).toLong & 0xff) <<  0 |
-      (bytes(offset+1).toLong & 0xff) <<  8 |
-      (bytes(offset+2).toLong & 0xff) << 16 |
-      (bytes(offset+3).toLong & 0xff) << 24 |
-      (bytes(offset+4).toLong & 0xff) << 32 |
-      (bytes(offset+5).toLong & 0xff) << 40 |
-      (bytes(offset+6).toLong & 0xff) << 48 |
-      (bytes(offset+7).toLong & 0xff) << 56
+      (data(offset+0).toLong & 0xff) <<  0 |
+      (data(offset+1).toLong & 0xff) <<  8 |
+      (data(offset+2).toLong & 0xff) << 16 |
+      (data(offset+3).toLong & 0xff) << 24 |
+      (data(offset+4).toLong & 0xff) << 32 |
+      (data(offset+5).toLong & 0xff) << 40 |
+      (data(offset+6).toLong & 0xff) << 48 |
+      (data(offset+7).toLong & 0xff) << 56
     length = length - 8
     offset = offset + 8
     result

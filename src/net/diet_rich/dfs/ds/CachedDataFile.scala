@@ -14,42 +14,29 @@ class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File)
 
   protected var dirty = true
 
-  protected var allData: Bytes = Bytes(0)
-  protected def data: Bytes = allData.dropFirst(headerSize)
-
-  // HEADER: offset / length / print
+  protected var all = new HeaderAndData
   
-  // TODO encapsulate and use val for read offset, length and print
-  protected def offset = allData readLong
-  protected def offset_= (offset: Long) = allData store offset
-  
-  protected def length = allData dropFirst 8 readLong
-  protected def length_= (length: Long) = allData dropFirst 8 store length
-  
-  protected def print = allData dropFirst 16 readLong
-  protected def print_= (print: Long) = allData dropFirst 16 store print
-
   def readData: Boolean = synchronized {
-    ASSUME(allData.length == 0, "may not read alread data present")
+    ASSUME(all.allData.length == 0, "may not read if already data present")
     dirty = false
     if (file exists) {
-      allData = dataFile.readFullFile
-      fileOffset == offset && dataLength == length && dataPrint == print
+      all = new HeaderAndData(dataFile readFullFile)
+      fileOffset == all.readOffset && dataLength == all.readLength && dataPrint == all.readPrint
     } else {
-      allData = Bytes(headerSize + dataLength)
-      offset = fileOffset
-      length = dataLength
+      all = new HeaderAndData(Bytes(headerSize + dataLength))
+      all writeOffset fileOffset
+      all writeLength dataLength
       true
     }
   }
 
-  private def dataPrint = Digester crcadler() writeAnd data getDigest
+  private def dataPrint = Digester crcadler() writeAnd all.data getDigest
 
   def writeData: Unit = if (dirty) synchronized {
-    ASSUME(allData.length > 0, "it seems the cached data file has not been properly initialized with readData")
-    ASSUME(length == dataLength, "length " + length + " must be equal to dataLength " + dataLength)
-    print = dataPrint
-    dataFile.writeAllData(allData)
+    ASSUME(all.allData.length > 0, "it seems the cached data file has not been properly initialized with readData")
+    ASSUME(all.readLength == dataLength, "readLength " + all.readLength + " must be equal to dataLength " + dataLength)
+    all writePrint dataPrint
+    dataFile.writeAllData(all allData)
     dirty = false
   }
 
@@ -59,7 +46,7 @@ class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File)
     dirty = true
     val writeOffset = offset - fileOffset
     val writeLength = math.min(source length, fileOffset + dataLength - offset)
-    data copyFrom (source keepFirst writeLength, writeOffset)
+    all.data copyFrom (source keepFirst writeLength, writeOffset)
     if (writeLength < source.length) Some(source dropFirst (source.length - writeLength)) else None
   }
 
@@ -69,11 +56,25 @@ class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File)
     ASSUME(offset + size <= fileOffset + dataLength, "offset+size " + (offset+size) + " should be less or equal to fileOffset+dataLength " + (fileOffset+dataLength))
     val readOffset = offset - fileOffset
     // TODO support partial reads up to end
-    data dropFirst readOffset keepFirst size copyTo Bytes(size)
+    all.data dropFirst readOffset keepFirst size copyTo Bytes(size)
   }
   
 }
 
+
 object CachedDataFile {
   private val headerSize = 24
+  
+  // HEADER: offset / length / print
+  class HeaderAndData(val allData: Bytes = Bytes(0)) {
+    lazy val data = allData dropFirst headerSize
+    lazy val readOffset = allData readLong
+    lazy val readLength = allData dropFirst 8 readLong
+    lazy val readPrint = allData dropFirst 16 readLong
+    def writeOffset(offset: Long) : Unit = allData store offset
+    def writeLength(length: Long) : Unit = allData dropFirst 8 store length
+    def writePrint(print: Long) : Unit = allData dropFirst 16 store print
+  }
 }
+
+
