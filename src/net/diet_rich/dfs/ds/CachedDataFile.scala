@@ -19,14 +19,15 @@ class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File)
 
   // HEADER: offset / length / print
   
-  protected def offset = allData longFrom
-  protected def offset_= (offset: Long) = allData storeIn offset
+  // TODO encapsulate and use val for read offset, length and print
+  protected def offset = allData readLong
+  protected def offset_= (offset: Long) = allData store offset
   
-  protected def length = allData dropFirst 8 longFrom
-  protected def length_= (length: Long) = allData dropFirst 8 storeIn length
+  protected def length = allData dropFirst 8 readLong
+  protected def length_= (length: Long) = allData dropFirst 8 store length
   
-  protected def print = allData dropFirst 16 longFrom
-  protected def print_= (print: Long) = allData dropFirst 16 storeIn print
+  protected def print = allData dropFirst 16 readLong
+  protected def print_= (print: Long) = allData dropFirst 16 store print
 
   def readData: Boolean = synchronized {
     ASSUME(allData.length == 0, "may not read alread data present")

@@ -50,7 +50,7 @@ object Digester {
     new ChecksumDigester {
       val digester = hash(algorithm, seed)
       override def write(bytes: Bytes) = { digester write bytes }
-      override def getDigest = digester.getDigest longFrom
+      override def getDigest = digester.getDigest readLong
       override def reset = digester reset
       override def close = Unit
     }

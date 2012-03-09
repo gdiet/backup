@@ -3,18 +3,19 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util.data
 
-case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
+import net.diet_rich.util.ASSUME
+
+final case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
   // since the unterlying Array is restricted to Int offset and length,
   // offset and length of Bytes is restricted in the same way.
-  // TODO use ASSUME
-  require(offset >= 0)
-  require(offset <= Int.MaxValue)
-  require(length >= 0)
-  require(length <= Int.MaxValue)
-  require(bytes.length >= offset + length)
+  ASSUME(offset >= 0, "offset " + offset + " may not be negative")
+  ASSUME(offset <= Int.MaxValue, "offset " + offset + " must be less than Int.MaxValue")
+  ASSUME(length >= 0, "length " + length + " may not be negative")
+  ASSUME(length <= Int.MaxValue, "length " + length + " must be less than Int.MaxValue")
+  ASSUME(bytes.length >= offset + length, "bytes.length " + bytes.length + " must be at least offset+length " + (offset+length))
 
-  lazy val intOff = offset.toInt
-  lazy val intLen = length.toInt
+  protected lazy val intOff = offset.toInt
+  protected lazy val intLen = length.toInt
   
   def copyFrom(other: Bytes, offset: Long = 0) : Bytes = {
     System.arraycopy(other bytes, other.offset toInt, bytes, (this.offset + offset) toInt, other.length toInt)
@@ -48,12 +49,9 @@ case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
     bytes((position + offset) toInt)
   }
 
+  // Note: java.io.DataOuput writes big-endian, but these
+  // methods stick to the more common little-endian.
   def store(long : Long) : Bytes = {
-    require(length == 8)
-    storeIn(long)
-  }
-
-  def storeIn(long : Long) : Bytes = {
     bytes(intOff+0) = (long >>  0).toByte
     bytes(intOff+1) = (long >>  8).toByte
     bytes(intOff+2) = (long >> 16).toByte
@@ -62,25 +60,13 @@ case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
     bytes(intOff+5) = (long >> 40).toByte
     bytes(intOff+6) = (long >> 48).toByte
     bytes(intOff+7) = (long >> 56).toByte
-    this
+    dropFirst(8)
   }
 
-  def toLong : Long = {
-    require(length == 8)
-    longFrom
-  }
-
-  def longFrom : Long = {
-    (bytes(intOff+0).toLong & 0xff) <<  0 |
-    (bytes(intOff+1).toLong & 0xff) <<  8 |
-    (bytes(intOff+2).toLong & 0xff) << 16 |
-    (bytes(intOff+3).toLong & 0xff) << 24 |
-    (bytes(intOff+4).toLong & 0xff) << 32 |
-    (bytes(intOff+5).toLong & 0xff) << 40 |
-    (bytes(intOff+6).toLong & 0xff) << 48 |
-    (bytes(intOff+7).toLong & 0xff) << 56
-  }
-
+  def reader = new BytesReader(this)
+  
+  def readLong = reader.readLong
+  
   def filled : Boolean = length == bytes.length
 
   def toArray : Array[Byte] = {
@@ -92,8 +78,32 @@ case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
   override def toString : String = "Bytes(%s/%s)(%s)".format(offset, length, bytes.map("%02x".format(_)).mkString(" "))
 }
 
+
 object Bytes {
   def apply(bytes: Array[Byte]) : Bytes = Bytes(bytes, bytes.length)
   def apply(size: Long) : Bytes = Bytes(new Array[Byte](size toInt), size)
-  def forLong(long: Long) : Bytes = Bytes(8).storeIn(long)
+  def forLong(long: Long) : Bytes = Bytes(8).store(long)
+}
+
+
+class BytesReader(private[Bytes] bytes: Bytes) {
+  var length = bytes.length.toInt
+  var offset = bytes.offset.toInt
+  var data = bytes.bytes
+
+  def readLong : Long = {
+    ASSUME(length >= 8, "length " + length + " must be at least 8 to read a Long")
+    val result = 
+      (bytes(offset+0).toLong & 0xff) <<  0 |
+      (bytes(offset+1).toLong & 0xff) <<  8 |
+      (bytes(offset+2).toLong & 0xff) << 16 |
+      (bytes(offset+3).toLong & 0xff) << 24 |
+      (bytes(offset+4).toLong & 0xff) << 32 |
+      (bytes(offset+5).toLong & 0xff) << 40 |
+      (bytes(offset+6).toLong & 0xff) << 48 |
+      (bytes(offset+7).toLong & 0xff) << 56
+    length = length - 8
+    offset = offset + 8
+    result
+  }
 }

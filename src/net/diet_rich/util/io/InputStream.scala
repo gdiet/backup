@@ -19,8 +19,8 @@ trait InputStream extends Closeable {
    */
   def read(length: Long) : Bytes = read(Bytes(length))
 
-  def readLong : Long = read(8) toLong
-  def readExtendLong : Long = read(8) extend 8 longFrom
+  def readLong : Long = read(8) readLong
+  def readExtendLong : Long = read(8) extend 8 readLong
   
   /** Blocks until requested length is read or end of stream is reached.
    */
