@@ -1,7 +1,7 @@
 package net.diet_rich.dfs.ds
 
 import java.io.File
-import net.diet_rich.util._
+import net.diet_rich.util.ASSUME
 import net.diet_rich.util.io.using
 import net.diet_rich.util.data.{Bytes,Digester}
 import CachedDataFile._
