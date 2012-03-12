@@ -21,7 +21,9 @@ class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File)
     dirty = false
     if (file exists) {
       all = new HeaderAndData(dataFile readFullFile)
-      fileOffset == all.readOffset && dataLength == all.readLength && dataPrint == all.readPrint
+      fileOffset == all.readOffset && 
+      dataLength == all.readLength && 
+      dataPrint == all.readPrint
     } else {
       all = new HeaderAndData(Bytes(headerSize + dataLength))
       all writeOffset fileOffset

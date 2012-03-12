@@ -5,10 +5,9 @@ import org.testng.annotations.{BeforeMethod,Test}
 import java.io.File
 import net.diet_rich.dfs.TestUtil.expectThat
 import net.diet_rich.util.data.Bytes
-import net.diet_rich.util.io.using
+import net.diet_rich.util.data.Digester
+import net.diet_rich.util.io.{using,RandomAccessFile}
 import CachedDataFileTests._
-import java.io.DataOutputStream
-import java.io.FileOutputStream
 
 class CachedDataFileTests {
 
@@ -34,17 +33,71 @@ class CachedDataFileTests {
 
   @Test
   def ignoringCorruptFileLengthWillFailOnWriteData = {
-    using(new DataOutputStream(new FileOutputStream(testFile))) { out =>
-      out.writeLong(0);
-      out.writeLong(10);
-      out.writeLong(0);
-    }
+    val print = Digester.crcadler().writeAnd(Bytes(10)).getDigest
+    val content = Bytes(34)
+    content store 0 store 10 store print
+    using(new RandomAccessFile(testFile)) { _.write(content) }
     val cdfile = new CachedDataFile(0, 5, testFile) { def setDirty = { dirty = true } }
     assertThat( cdfile readData ) isFalse()
     cdfile.setDirty
     expectThat( cdfile writeData ) doesThrow new AssertionError
   }
 
+  @Test
+  def intactFileIsReadOK = {
+    val print = Digester.crcadler().writeAnd(Bytes(10)).getDigest
+    val content = Bytes(34)
+    content store 5 store 10 store print
+    using(new RandomAccessFile(testFile)) { _.write(content) }
+    val cdfile = new CachedDataFile(5, 10, testFile) {def a = all}
+    val result = cdfile.readData
+    assertThat( cdfile.a.readOffset ) isEqualTo 5
+    assertThat( cdfile.a.readLength ) isEqualTo 10
+    assertThat( cdfile.a.readPrint ) isEqualTo print
+    assertThat( result ) isTrue
+  }
+  
+  @Test
+  def corruptPrintWillBeDetectedOnReadData = {
+    val content = Bytes(34)
+    content store 0 store 10 store 0
+    using(new RandomAccessFile(testFile)) { _.write(content) }
+    val cdfile = new CachedDataFile(0, 10, testFile) {def a = all}
+    val result = cdfile.readData
+    assertThat( cdfile.a.readOffset ) isEqualTo 0
+    assertThat( cdfile.a.readLength ) isEqualTo 10
+    assertThat( cdfile.a.readPrint ) isEqualTo 0
+    assertThat( result ) isFalse
+  }
+
+  @Test
+  def corruptOffsetWillBeDetectedOnReadData = {
+    val print = Digester.crcadler().writeAnd(Bytes(10)).getDigest
+    val content = Bytes(34)
+    content store 0 store 10 store print
+    using(new RandomAccessFile(testFile)) { _.write(content) }
+    val cdfile = new CachedDataFile(1, 10, testFile) {def a = all}
+    val result = cdfile.readData
+    assertThat( cdfile.a.readOffset ) isEqualTo 0
+    assertThat( cdfile.a.readLength ) isEqualTo 10
+    assertThat( cdfile.a.readPrint ) isEqualTo print
+    assertThat( result ) isFalse
+  }
+  
+  @Test
+  def corruptDataLengthWillBeDetectedOnReadData = {
+    val print = Digester.crcadler().writeAnd(Bytes(10)).getDigest
+    val content = Bytes(34)
+    content store 0 store 5 store print
+    using(new RandomAccessFile(testFile)) { _.write(content) }
+    val cdfile = new CachedDataFile(0, 10, testFile) {def a = all}
+    val result = cdfile.readData
+    assertThat( cdfile.a.readOffset ) isEqualTo 0
+    assertThat( cdfile.a.readLength ) isEqualTo 5
+    assertThat( cdfile.a.readPrint ) isEqualTo print
+    assertThat( result ) isFalse
+  }
+  
   @Test
   def noReadingTwice = {
     val cdfile = new CachedDataFile(0, 5, testFile)
