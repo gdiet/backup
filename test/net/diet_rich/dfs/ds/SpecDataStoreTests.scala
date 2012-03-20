@@ -14,27 +14,32 @@ class SpecDataStoreTests {
   def prepareTest = {
     FileUtils.cleanDirectory(testDir)
   }
-  
-  @Test
-  def writeAndRead = using (new BasicDataStore(testDir)) { store =>
-    val data = Bytes forLong 987654321
-    store write (5000, data)
-    assertThat( store read (5000, data length) bytes ) isEqualTo data.bytes
-  }
-  
-  @Test
-  def writeCloseRead = {
-    val store1 = new BasicDataStore(testDir)
-    val data = Bytes forLong 987654321
-    store1 write (5000, data)
-    store1.close
-    using (new BasicDataStore(testDir)) { store2 =>
-      assertThat( store2 read (5000, data length) bytes ) isEqualTo data.bytes
-    }
-  }
-  
-  @Test
-  def moreTests = throw new AssertionError
+
+//  @Test
+//  def readAcrossFileLimit = using (new BasicDataStore(testDir)) { store =>
+//    assertThat (store read (990, 20) bytes) containsOnly 0
+//  }
+//  
+//  @Test
+//  def writeAndRead = using (new BasicDataStore(testDir)) { store =>
+//    val data = Bytes forLong 987654321
+//    store write (5000, data)
+//    assertThat( store read (5000, data length) bytes ) isEqualTo data.bytes
+//  }
+//  
+//  @Test
+//  def writeCloseRead = {
+//    val store1 = new BasicDataStore(testDir)
+//    val data = Bytes forLong 987654321
+//    store1 write (5000, data)
+//    store1.close
+//    using (new BasicDataStore(testDir)) { store2 =>
+//      assertThat( store2 read (5000, data length) bytes ) isEqualTo data.bytes
+//    }
+//  }
+//  
+//  @Test
+//  def moreTests = throw new AssertionError
   
 //  @Test
 //  def writeOverwriteRead = throw new AssertionError

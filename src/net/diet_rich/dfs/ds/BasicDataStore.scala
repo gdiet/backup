@@ -4,6 +4,7 @@ import java.io.File
 import net.diet_rich.util.ASSUME
 import net.diet_rich.util.data.Bytes
 import scala.collection.mutable.LinkedHashMap
+import java.io.IOException
 
 class BasicDataStore(datadir: File) extends DataStore {
 
@@ -30,19 +31,22 @@ class BasicDataStore(datadir: File) extends DataStore {
         removed writeData
       }
       val result = new CachedDataFile(entryOffset, dataLength, dataFileFor(offset))
+      if (!result.readData) throw new IOException("data file %s is corrupt" format dataFileFor(offset))
       openDataFiles += ((entryOffset, result))
       result
     }
   }
   
   def write(offset: Long, data: Bytes) = checkClosed {
-    val df = dataFile(offset)
-    df.write(offset, data)
-    // write rest if any to next file
-    throw new AssertionError
+    dataFile(offset) write(offset, data) foreach { remainder =>
+      write(offset + data.length - remainder.length, remainder)
+    }
   }
   
-  def read(offset: Long, size: Long) : Bytes = checkClosed { throw new AssertionError }
+  def read(offset: Long, size: Long) : Bytes = checkClosed {
+    dataFile(offset).read(offset,size)
+    throw new AssertionError
+  }
   
   protected var closed = false
   

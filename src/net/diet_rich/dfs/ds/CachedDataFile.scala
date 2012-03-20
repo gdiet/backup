@@ -56,8 +56,8 @@ class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File)
     // TODO synchronization would be better here with read and write locks
     ASSUME(offset >= fileOffset, "offset " + offset + " should be at least " + fileOffset)
     ASSUME(offset + size <= fileOffset + dataLength, "offset+size " + (offset+size) + " should be less or equal to fileOffset+dataLength " + (fileOffset+dataLength))
-    val readOffset = offset - fileOffset
     // TODO support partial reads up to end
+    val readOffset = offset - fileOffset
     all.data dropFirst readOffset keepFirst size copyTo Bytes(size)
   }
   
@@ -73,9 +73,9 @@ object CachedDataFile {
     lazy val readOffset = allData readLong
     lazy val readLength = allData dropFirst 8 readLong
     lazy val readPrint = allData dropFirst 16 readLong
-    def writeOffset(offset: Long) : Unit = allData store offset
-    def writeLength(length: Long) : Unit = allData dropFirst 8 store length
-    def writePrint(print: Long) : Unit = allData dropFirst 16 store print
+    def writeOffset(offset: Long) : Unit = allData write offset
+    def writeLength(length: Long) : Unit = allData dropFirst 8 write length
+    def writePrint(print: Long) : Unit = allData dropFirst 16 write print
   }
 }
 

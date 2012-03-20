@@ -14,8 +14,8 @@ final case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
   ASSUME(length <= Int.MaxValue, "length " + length + " must be less than Int.MaxValue")
   ASSUME(bytes.length >= offset + length, "bytes.length " + bytes.length + " must be at least offset+length " + (offset+length))
 
-  protected lazy val intOff = offset.toInt
-  protected lazy val intLen = length.toInt
+  protected def intOff = offset.toInt
+  protected def intLen = length.toInt
   
   def copyFrom(other: Bytes, offset: Long = 0) : Bytes = {
     System.arraycopy(other bytes, other.offset toInt, bytes, (this.offset + offset) toInt, other.length toInt)
@@ -51,7 +51,7 @@ final case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
 
   // Note: java.io.DataOuput writes big-endian, but these
   // methods stick to the more common little-endian.
-  def store(long : Long) : Bytes = {
+  def write(long: Long) : Bytes = {
     bytes(intOff+0) = (long >>  0).toByte
     bytes(intOff+1) = (long >>  8).toByte
     bytes(intOff+2) = (long >> 16).toByte
@@ -60,8 +60,10 @@ final case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
     bytes(intOff+5) = (long >> 40).toByte
     bytes(intOff+6) = (long >> 48).toByte
     bytes(intOff+7) = (long >> 56).toByte
-    dropFirst(8)
+    this
   }
+  
+  def store(long: Long) : Bytes = write (long) dropFirst 8
 
   def reader = new BytesReader(this)
   
@@ -82,7 +84,7 @@ final case class Bytes(bytes: Array[Byte], length: Long, offset: Long = 0) {
 object Bytes {
   def apply(bytes: Array[Byte]) : Bytes = Bytes(bytes, bytes.length)
   def apply(size: Long) : Bytes = Bytes(new Array[Byte](size toInt), size)
-  def forLong(long: Long) : Bytes = Bytes(8).store(long)
+  def forLong(long: Long) : Bytes = Bytes(8).write(long)
 }
 
 
