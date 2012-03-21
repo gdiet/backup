@@ -3,10 +3,10 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dfs
 
+import net.diet_rich.util.Bytes
 import DataDefinitions.FullFileData
 import DataDefinitions.TimeAndData
 import DataDefinitions.TimeSize
-import net.diet_rich.util.io.InputStream
 
 trait DFSFilesLogic extends DFSFiles {
 
@@ -31,7 +31,7 @@ trait DFSFilesLogic extends DFSFiles {
   final override def timeAndSize(id: Long) : Option[TimeSize] =
     dataProperties(id) map (info => TimeSize(info time, info size))
     
-  final override def read(id: Long) : Option[InputStream] =
+  final override def read(id: Long) : Iterator[Bytes] =
     throw new UnsupportedOperationException
     
 }

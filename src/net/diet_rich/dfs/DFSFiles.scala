@@ -3,10 +3,10 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dfs
 
+import net.diet_rich.util.Bytes
 import DataDefinitions.FullFileData
 import DataDefinitions.TimeAndData
 import DataDefinitions.TimeSize
-import net.diet_rich.util.io.InputStream
 
 /**
  * Most checks against illegal arguments depend on assertions and database
@@ -38,6 +38,6 @@ trait DFSFiles {
   def timeAndSize(id: Long) : Option[TimeSize]
   
   /** @return An input stream of the node's data if any. */
-  def read(id: Long) : Option[InputStream]
+  def read(id: Long) : Iterator[Bytes]
   
 }

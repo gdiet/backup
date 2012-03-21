@@ -12,7 +12,6 @@ import java.sql.ResultSet
 import java.sql.SQLSyntaxErrorException
 import java.sql.SQLIntegrityConstraintViolationException
 import net.diet_rich.util.NextOptIterator
-import net.diet_rich.util.io.RandomAccessInput
 import net.diet_rich.util.sql._
 import collection.immutable.WrappedString
 
@@ -26,11 +25,9 @@ class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlFo
   val settings: FSSettings = {
     val hashAlgorithm =
       execQuery(connection, "SELECT value FROM RepositoryInfo WHERE key = 'hash algorithm'"){_.string("value")}.head
-    val printAlgorithm =
-      execQuery(connection, "SELECT value FROM RepositoryInfo WHERE key = 'print algorithm'"){_.string("value")}.head
     val printLengthString: WrappedString =
       execQuery(connection, "SELECT value FROM RepositoryInfo WHERE key = 'print length'"){_.string("value")}.head
-    FSSettings(hashAlgorithm, printAlgorithm, printLengthString.toInt)
+    FSSettings.default // FIXME use settings (also for print algorithm) from database (hashAlgorithm, printLengthString.toInt)
   }
 
   private val addEntryS =
@@ -203,8 +200,8 @@ object SqlDB extends Logging {
       , UNIQUE (length, print, hash)
       """
     )
-    val zeroByteHash = fsSettings.hashProvider.getHashDigester getDigest
-    val zeroBytePrint = fsSettings.printCalculator calculate RandomAccessInput.empty
+    val zeroByteHash = fsSettings.hashProvider.getHashDigester.digest
+    val zeroBytePrint = fsSettings.hashProvider.getPrintDigester.digest
     execUpdate(connection, """
       INSERT INTO DataInfo (id, length, print, hash, method) VALUES ( 0, 0, ?, ?, 0 );
     """, zeroBytePrint, zeroByteHash)
@@ -268,9 +265,8 @@ object SqlDB extends Logging {
     execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'shut down', 'OK' );")
     execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'database version', '1.0' );")
     execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'constraints enabled', ? );", settings.enableConstraints toString)
-    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'hash algorithm', ? );", fsSettings.hashProvider.name)
-    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'print algorithm', ? );", fsSettings.printCalculator.name)
-    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'print length', ? );", fsSettings.printCalculator.length toString)
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'hash algorithm', ? );", fsSettings.hashProvider.name) // FIXME get print provider by name
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES ( 'print length', ? );", fsSettings.printLength toString)
   }
 
 }

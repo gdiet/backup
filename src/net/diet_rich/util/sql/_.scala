@@ -5,7 +5,6 @@ package net.diet_rich.util
 
 import java.sql.PreparedStatement
 import java.sql.Connection
-import data.Bytes
 
 package object sql {
   
@@ -19,7 +18,7 @@ package object sql {
       case (x : String, index)      => statement setString (index+1, x)
       case (x : Boolean, index)     => statement setBoolean (index+1, x)
       case (x : Array[Byte], index) => statement setObject(index+1, x)
-      case (x : Bytes, index)       => statement setObject(index+1, x toArray)
+      case (x : Bytes, index)       => statement setObject(index+1, x copyOfBytes)
     })
     statement
   }

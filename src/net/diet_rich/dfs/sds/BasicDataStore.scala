@@ -1,9 +1,10 @@
 package net.diet_rich.dfs.sds
 
 import java.io.File
-import net.diet_rich.util.ASSUME
-import scala.collection.mutable.LinkedHashMap
 import java.io.IOException
+import net.diet_rich.util.ASSUME
+import net.diet_rich.util.Bytes
+import scala.collection.mutable.LinkedHashMap
 import scala.collection.immutable.Stream
 import scala.annotation.tailrec
 

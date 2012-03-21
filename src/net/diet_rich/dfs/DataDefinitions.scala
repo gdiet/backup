@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dfs
 
-import net.diet_rich.util.data.Bytes
+import net.diet_rich.util.Bytes
 
 object DataDefinitions {
   case class ParentAndName(parent: Long, name: String)

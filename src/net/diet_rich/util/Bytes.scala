@@ -1,6 +1,4 @@
-package net.diet_rich.dfs.sds
-
-import net.diet_rich.util.ASSUME
+package net.diet_rich.util
 
 case class Bytes(data: Array[Byte], offset: Long, size: Long) {
   ASSUME (offset >= 0, "offset must be positive but is %s" format offset)
@@ -57,4 +55,5 @@ case class Bytes(data: Array[Byte], offset: Long, size: Long) {
 
 object Bytes {
   def apply(size: Long) : Bytes = Bytes(new Array[Byte](size toInt), 0, size)
+  def apply(data: Array[Byte]) : Bytes = Bytes(data, 0, data.length)
 }

@@ -1,11 +1,12 @@
 package net.diet_rich.dfs.sds
 
+import java.io.File
+import net.diet_rich.util.Bytes
+import net.diet_rich.util.io.using
+import org.apache.commons.io.FileUtils
 import org.fest.assertions.Assertions.assertThat
 import org.testng.annotations.{BeforeMethod,Test}
-import java.io.File
-import org.apache.commons.io.FileUtils
 import SpecDataStoreTests._
-import net.diet_rich.util.io.using
 
 class SpecDataStoreTests {
 

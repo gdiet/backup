@@ -2,6 +2,7 @@ package net.diet_rich.dfs.sds
 
 import java.io.File
 import net.diet_rich.util.ASSUME
+import net.diet_rich.util.Bytes
 import net.diet_rich.util.io.using
 
 class DataFile(val dataLength: Long, val file: File) {

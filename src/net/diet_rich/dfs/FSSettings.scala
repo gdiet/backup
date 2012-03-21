@@ -3,15 +3,8 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dfs
 
-import net.diet_rich.util.data.Digester
-
-class FSSettings(val hashProvider: HashProvider, val printCalculator: PrintCalculator)
+class FSSettings(val hashProvider: HashAndPrintProvider, val printLength: Int)
 
 object FSSettings {
-  def apply(hashAlgorithm: String, printAlgorithm: String, printLength: Int) : FSSettings = new FSSettings(
-    HashProvider(hashAlgorithm),
-    PrintCalculator(printAlgorithm, printLength)
-  )
-  
-  def default: FSSettings = FSSettings("MD5", "start:crcadler", 8192)
+  def default: FSSettings = new FSSettings(HashAndPrintProvider("MD5"), 8192)
 }

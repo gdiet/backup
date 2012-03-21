@@ -2,6 +2,8 @@ package net.diet_rich.dfs.sds
 
 import java.io.File
 import net.diet_rich.util.ASSUME
+import net.diet_rich.util.Bytes
+import net.diet_rich.util.PrintDigester.crcAdler
 import CachedDataFile._
 
 class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File) {
@@ -52,12 +54,5 @@ class CachedDataFile(val fileOffset: Long, val dataLength: Long, val file: File)
 
 object CachedDataFile {
   private val headerSize = 24
-
-  def dataPrint(contents: Bytes) = {
-    val crc = new java.util.zip.CRC32
-    val adler = new java.util.zip.Adler32
-    crc.update(contents data, contents intOffset, contents intSize)
-    adler.update(contents data, contents intOffset, contents intSize)
-    adler.getValue << 32 | crc.getValue
-  }
+  def dataPrint(contents: Bytes) = crcAdler write contents digest
 }

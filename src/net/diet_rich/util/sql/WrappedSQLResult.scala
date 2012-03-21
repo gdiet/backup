@@ -6,7 +6,7 @@ package net.diet_rich.util.sql
 import com.weiglewilczek.slf4s.Logging
 import java.sql.ResultSet
 import net.diet_rich.util.nullIsNone
-import net.diet_rich.util.data.Bytes
+import net.diet_rich.util.Bytes
 
 class WrappedSQLResult(resultSet: ResultSet) extends Logging {
   private def log[S,T](column: S, value: T): T = {
