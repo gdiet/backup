@@ -1,3 +1,6 @@
+// Copyright (c) 2012 Georg Dietrich
+// Licensed under the MIT license:
+// http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util
 
 import org.apache.commons.io.FileUtils
@@ -14,39 +17,45 @@ object SourceStatistics extends App {
     val filePathToPrint = file getPath() substring(4) replaceAll("\\\\","/")
     val lines = Source.fromFile(file, "UTF-8").getLines
     
-    var inComment = false
-    val sourceLines = lines
-    // remove "//" comments
-    .map(line => if (line contains "//") line.substring(0, line.indexOf("//")) else line)
-    // remove "/* */" comments
-    .map{line =>
-      if (inComment) {
+    def removeFullComments(line: String) : (String, Boolean) = {
+      if (line contains "/*") {
         if (line contains "*/") {
-          inComment = false
-          line.substring(line.indexOf("*/") + 2)
-        } else ""
-      } else {
-        if (line contains "/*") {
-          if (line contains "*/") {
+          removeFullComments(
             line.substring(0, line.indexOf("/*")) + line.substring(line.indexOf("*/") + 2)
-          } else {
-            inComment = true
-            line.substring(0, line.indexOf("/*"))
-          }
-        } else line
-      }
+          )
+        } else {
+          (line.substring(0, line.indexOf("/*")), true)
+        }
+      } else (line, false)
     }
-    // trim leading and trailing blanks and filter empty lines
+    
+    // remove "//" comments
+    val preparedLines = lines
+    .map(line => if (line contains "//") line.substring(0, line.indexOf("//")) else line)
+    
+    val (noCommentLines, endsInComment) = preparedLines.foldLeft((List[String](), false)) {
+      case ((result, false), line) =>
+        val (cutLine, inComment) = removeFullComments(line)
+        (cutLine :: result, inComment)
+        
+      case ((result, true), line) =>
+        if (line contains "*/") {
+          val (cutLine, inComment) =
+            removeFullComments(line.substring(line.indexOf("*/") + 2))
+          (cutLine :: result, inComment)
+        } else (result, true)
+    }
+
+    val sourceLines = noCommentLines
     .map(_ trim)
     .filterNot(_.isEmpty)
-    .toList
 
     val statements = sourceLines flatMap (_.split("[\\s^!\"%&/(){}=+*~#<>|;,:-]")) filterNot (_ isEmpty)
-    
+
     val nloc = sourceLines.size
     val ncss = statements.size
     println("%5d nloc %6d ncss in %s" format (nloc, ncss, filePathToPrint))
-    
+
     (nlocSum + nloc, ncssSum + ncss)
   }
 
