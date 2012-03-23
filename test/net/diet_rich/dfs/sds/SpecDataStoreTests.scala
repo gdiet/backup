@@ -17,7 +17,7 @@ class SpecDataStoreTests {
 
   @Test
   def readAcrossFileLimit = {
-    val store = new BasicDataStore(testDir)
+    val store = BasicDataStore(testDir, systemConfig, storeConfig)
     val data = store .read (990, 20) .toList
     assertThat(data size) isEqualTo(2)
     data foreach {bytes => assertThat(bytes.data) containsOnly(0)}
@@ -25,7 +25,7 @@ class SpecDataStoreTests {
   
   @Test
   def writeAndReadWithinFileLimit = {
-    val store = new BasicDataStore(testDir)
+    val store = BasicDataStore(testDir, systemConfig, storeConfig)
     val content = Bytes(8) writeLong(0, 987654321)
     store write (5000, content)
     val data = store .read (5000, content size) .toList
@@ -35,7 +35,7 @@ class SpecDataStoreTests {
   
   @Test
   def writeAndReadAcrossFileLimit = {
-    val store = new BasicDataStore(testDir)
+    val store = BasicDataStore(testDir, systemConfig, storeConfig)
     val content = Bytes(8) writeLong(0, 987654321)
     store write (996, content)
     val data = store .read (996, content size) .toList
@@ -46,11 +46,11 @@ class SpecDataStoreTests {
   
   @Test
   def writeFlushNewRead = {
-    val store1 = new BasicDataStore(testDir)
+    val store1 = BasicDataStore(testDir, systemConfig, storeConfig)
     val content = Bytes(8) writeLong(0, 987654321)
     store1 write (5000, content)
     store1.flush
-    val store2 = new BasicDataStore(testDir)
+    val store2 = BasicDataStore(testDir, systemConfig, storeConfig)
     val data = store2 .read (5000, content size) .toList
     assertThat(data size) isEqualTo(1)
     assertThat(data.head.copyOfBytes) isEqualTo content.data
@@ -79,4 +79,6 @@ class SpecDataStoreTests {
 object SpecDataStoreTests {
   val testDir = new File("temp/net.diet_rich.dfs.sds.SpecDataStoreTests")
   testDir.mkdirs
+  val storeConfig = Map("dataLength" -> "1000")
+  val systemConfig = Map("openFiles" -> "2")
 }

@@ -7,16 +7,18 @@ import java.io.File
 import java.io.IOException
 import net.diet_rich.util.ASSUME
 import net.diet_rich.util.Bytes
+import net.diet_rich.util.Configuration
 import scala.collection.mutable.LinkedHashMap
 import scala.collection.immutable.Stream
 import scala.annotation.tailrec
+import BasicDataStore._
 
-class BasicDataStore(datadir: File) {
+class BasicDataStore(datadir: File, runtimeConfiguration: Configuration, configuration: Configuration) {
 
   ASSUME(datadir.isDirectory, "data directory <%s> is not a directory." format datadir)
 
-  protected val dataLength = 1000 // TODO store in directory configuration file
-  protected val openFiles = 10 // TODO make a backup system configuration property
+  protected val dataLength = configuration.long("dataLength")
+  protected val openFiles = runtimeConfiguration.long("openFiles")
 
   protected def fileOffset(offset: Long) = offset - offset % dataLength
   protected def fileName(offset: Long) = "%015d" format fileOffset(offset)
@@ -55,5 +57,17 @@ class BasicDataStore(datadir: File) {
     }
 
   def flush : Unit = openDataFiles.values.foreach(_.flush)
+  
+}
+
+object BasicDataStore {
+  val storeConfigFile = "config.txt"
+  val defaultConfig = Map("dataLength" -> "4000000")
+  val defaultSystemConfig = Map("openFiles" -> "10")
+    
+  def apply(datadir: File, systemDefaults: Map[String, String] = defaultSystemConfig, storeDefaults: Map[String, String] = defaultConfig) : BasicDataStore = {
+    val configuration = Configuration(new File(datadir, storeConfigFile), storeDefaults)
+    new BasicDataStore(datadir, Configuration(systemDefaults), configuration)
+  }
   
 }
