@@ -1,30 +1,33 @@
 package net.diet_rich.util
 
-import collection.mutable.{Map => MutableMap}
-import java.io.File
-import io.using
-import scala.io.Source
+import Configuration._
 
-// TODO make a read-only configuration
-class Configuration(val map: MutableMap[String, String], val file: Option[File]) {
-  def string(key: String) : String = map(key)
-  def long(key: String) : Long = string(key).toLong
-  def set(key: String, value: Any) : Option[String] = map.put(key, value toString)
+class Configuration (val map: StringMap) {
+  def string(key: String) : String = map get key get
+  def long(key: String) : Long = string(key) toLong
+  def int(key: String) : Int = string(key) toInt
+  def hasTheseKeys(keys: String*) : Boolean =
+    (map.keySet -- keys).isEmpty && (keys.toSet -- map.keySet).isEmpty
+  def writeConfigFile(file: java.io.File) =
+    io.using(new java.io.PrintWriter(file, "UTF-8")){ writer =>
+      map foreach { case (key, value) => writer println "%s=%s".format(key, value) }
+    }
 }
 
 object Configuration {
-  def apply(file: File, defaults: Map[String, String] = Map()) : Configuration = {
-    val values = MutableMap[String, String]() ++= defaults
-    if (file isFile()) {
-      val valueLines = using(Source fromFile (file, "UTF-8"))(_ getLines)
+  type StringMap = Map[String, String]
+  
+  implicit def extendMapWithConfiguration(map: StringMap) = new Configuration(map)
+  
+  def readConfigFile(file: java.io.File) : StringMap = {
+    io.using(scala.io.Source fromFile (file, "UTF-8"))(
+        _.getLines
         .map(_ trim)
         .filterNot(_ isEmpty)
         .filterNot(_ startsWith("#"))
-      values ++= valueLines.map{_ split("=")}.map(elem => (elem(0), elem(1)))
-    }
-    new Configuration(values, Some(file))
+        .map{_ split("=")}
+        .map( elem => (elem(0),elem(1)) )
+        .toMap
+    )
   }
-  
-  def apply(entries: Map[String, String]) : Configuration =
-    new Configuration(MutableMap[String, String]() ++= entries, None)
 }

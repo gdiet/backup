@@ -13,11 +13,12 @@ class SpecDataStoreTests {
   @BeforeMethod
   def prepareTest = {
     FileUtils.cleanDirectory(testDir)
+    assertThat(BasicDataStore.initDirectory(testDir, storeConfig)) isTrue()
   }
 
   @Test
   def readAcrossFileLimit = {
-    val store = BasicDataStore(testDir, systemConfig, storeConfig)
+    val store = BasicDataStore(testDir, systemConfig)
     val data = store .read (990, 20) .toList
     assertThat(data size) isEqualTo(2)
     data foreach {bytes => assertThat(bytes.data) containsOnly(0)}
@@ -25,7 +26,7 @@ class SpecDataStoreTests {
   
   @Test
   def writeAndReadWithinFileLimit = {
-    val store = BasicDataStore(testDir, systemConfig, storeConfig)
+    val store = BasicDataStore(testDir, systemConfig)
     val content = Bytes(8) writeLong(0, 987654321)
     store write (5000, content)
     val data = store .read (5000, content size) .toList
@@ -35,7 +36,7 @@ class SpecDataStoreTests {
   
   @Test
   def writeAndReadAcrossFileLimit = {
-    val store = BasicDataStore(testDir, systemConfig, storeConfig)
+    val store = BasicDataStore(testDir, systemConfig)
     val content = Bytes(8) writeLong(0, 987654321)
     store write (996, content)
     val data = store .read (996, content size) .toList
@@ -46,11 +47,11 @@ class SpecDataStoreTests {
   
   @Test
   def writeFlushNewRead = {
-    val store1 = BasicDataStore(testDir, systemConfig, storeConfig)
+    val store1 = BasicDataStore(testDir, systemConfig)
     val content = Bytes(8) writeLong(0, 987654321)
     store1 write (5000, content)
     store1.flush
-    val store2 = BasicDataStore(testDir, systemConfig, storeConfig)
+    val store2 = BasicDataStore(testDir, systemConfig)
     val data = store2 .read (5000, content size) .toList
     assertThat(data size) isEqualTo(1)
     assertThat(data.head.copyOfBytes) isEqualTo content.data
