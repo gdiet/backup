@@ -24,7 +24,23 @@ package object sql {
   }
 
   trait ResultIterator[T] extends Iterator[T] with HeadAndIterator[T] with NextOptIterator[T]
+
+  def fetchOnlyLong(stat: PreparedStatement, args: Any*) : Long =
+    execQuery(stat, args:_*)(_ long 1) headOnly
+
+  def fetchOnlyLong(stat: ScalaThreadLocal[PreparedStatement], args: Any*) : Long =
+    fetchOnlyLong(stat(), args:_*)
+    
+  def fetchOnlyString(stat: PreparedStatement, args: Any*) : String =
+    execQuery(stat, args:_*)(_ string 1) headOnly
+
+  def fetchOnlyString(stat: ScalaThreadLocal[PreparedStatement], args: Any*) : String =
+    fetchOnlyString(stat(), args:_*)
   
+  /** only use where performance is not a critical factor. */
+  def fetchOnlyString(connection: Connection, command: String, args: Any*) : String =
+    fetchOnlyString(connection prepareStatement command, args:_*)
+    
   def execQuery[T](stat: PreparedStatement, args: Any*)(processor: WrappedSQLResult => T) : ResultIterator[T] = {
     val resultSet = new WrappedSQLResult(setArguments(stat, args:_*) executeQuery)
     new ResultIterator[T] {
@@ -48,7 +64,7 @@ package object sql {
 
   def execQuery[T](stat: ScalaThreadLocal[PreparedStatement], args: Any*)(processor: WrappedSQLResult => T) : ResultIterator[T] =
     execQuery(stat(), args:_*)(processor)
-  
+    
   /** only use where performance is not a critical factor. */
   def execQuery[T](connection: Connection, command: String, args: Any*)(processor: WrappedSQLResult => T) : ResultIterator[T] =
     execQuery(connection prepareStatement command, args:_*)(processor)

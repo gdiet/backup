@@ -19,9 +19,9 @@ trait SqlForTree { self: SqlCommon =>
     execQuery(childrenForIdS, id) {rs => IdAndName(rs long "id", rs string "name")} toList
 
   def name(id: Long) : Option[String] =
-    execQuery(nameForIdS, id) {_ string "name"} headOnly
+    execQuery(nameForIdS, id) {_ string "name"} headOptionOnly
     
   def parent(id: Long) : Option[Long] =
-    execQuery(parentForIdS, id) {_ long "parent"} headOnly
+    execQuery(parentForIdS, id) {_ long "parent"} headOptionOnly
     
 }

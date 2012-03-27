@@ -8,7 +8,7 @@ import DataDefinitions._
 
 class DedupFileSystem (protected val cache: FSDataCache) extends DFSTreeLogic with DFSFilesLogic {
 
-  val settings = cache settings
+//  val settings = cache settings
   
 //  /** @return true if a matching data entry is already stored. */
 //  def contains(print: TimeSizePrint) : Boolean = cache contains print // FIXME make private?

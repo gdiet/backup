@@ -11,7 +11,7 @@ class FSDataCache(protected val db: SqlDB) extends CacheForTree with CacheForFil
   // EVENTUALLY consider synchronization that allows to "unget" a new entry on failure to insert it
   private val nextEntry = new AtomicLong(db.maxEntryID + 1)
   
-  val settings: FSSettings = db.settings
+//  val settings: FSSettings = db.settings
   
   /** Create a child element.
    * 
@@ -19,7 +19,7 @@ class FSDataCache(protected val db: SqlDB) extends CacheForTree with CacheForFil
    */
   def make(parentId: Long, childName: String) : Option[Long] = {
     val childId = nextEntry.getAndIncrement()
-    if (db make (childId, parentId, childName)) Some(childId) else None
+    if (db createNewNode (childId, parentId, childName)) Some(childId) else None
   }
   
   def contains(print: TimeSizePrint) : Boolean = db contains print

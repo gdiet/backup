@@ -4,43 +4,37 @@
 package net.diet_rich.dfs
 
 import com.weiglewilczek.slf4s.Logging
-import net.diet_rich.util.ScalaThreadLocal
-import net.diet_rich.util.sql.WrappedSQLResult
-import java.sql.Connection
-import java.sql.PreparedStatement
-import java.sql.ResultSet
-import java.sql.SQLSyntaxErrorException
-import java.sql.SQLIntegrityConstraintViolationException
-import net.diet_rich.util.NextOptIterator
+import net.diet_rich.util.Configuration._
 import net.diet_rich.util.sql._
-import collection.immutable.WrappedString
+import java.sql._
 
 import DataDefinitions._
 
 class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlForFiles with Logging {
   import SqlDB._
 
-  protected val connection = database connection
+  protected val connection : Connection = database connection
+  protected def repositoryInfo(key: String) =
+    fetchOnlyString(connection, "SELECT value FROM RepositoryInfo WHERE key = '%s'" format key)
 
-  val settings: FSSettings = {
-    val hashAlgorithm =
-      execQuery(connection, "SELECT value FROM RepositoryInfo WHERE key = 'hash algorithm'"){_.string("value")}.head
-    val printLengthString: WrappedString =
-      execQuery(connection, "SELECT value FROM RepositoryInfo WHERE key = 'print length'"){_.string("value")}.head
-    FSSettings.default // FIXME use settings (also for print algorithm) from database (hashAlgorithm, printLengthString.toInt)
-  }
-
-  private val addEntryS =
+  // FIXME use this information
+  val settingsInDb : StringMap =
+    Map(
+      "hash algorithm" -> repositoryInfo("hash algorithm"),
+      "print length" -> repositoryInfo("print length")
+    )
+    
+  private val addEntry_ =
     prepare("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
-  private val maxEntryIdS =
+  private val maxEntryId_ =
     prepare("SELECT MAX ( id ) AS id FROM TreeEntries;")
-  private val maxFileIdS =
+  private val maxFileId_ =
     prepare("SELECT MAX ( fileid ) AS fileid FROM TreeEntries;")
-  private val maxCreateTimeS =
+  private val maxCreateTime_ =
     prepare("SELECT MAX ( createtime ) AS createtime FROM TreeEntries;")
-  private val matchesForPrintS =
+  private val matchesForPrint_ =
     prepare("SELECT COUNT(*) FROM DataInfo JOIN FileData ON DataInfo.id = FileData.dataid;")
-  private val fileIdS =
+  private val fileId_ =
     prepare("SELECT FileData.id FROM FileData JOIN DataInfo" +
     		" ON  DataInfo.id    = FileData.dataid" +
     		" AND FileData.time  = ?" +
@@ -48,50 +42,48 @@ class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlFo
     		" AND DataInfo.print = ?" +
     		" AND DataInfo.hash  = ? ;")
 
-  def make(id: Long, parent: Long, name: String) : Boolean =
+  def createNewNode(id: Long, parent: Long, name: String) : Boolean =
     // Note: This method MUST check that there is not yet a child with the same name.
     try {
-      execUpdate(addEntryS, id, parent, name) match {
+      execUpdate(addEntry_, id, parent, name) match {
         case 1 => true
         case n => throw new IllegalStateException("Unexpected " + n + " times update for id " + id)
       }
     } catch {
       
       case e: SQLIntegrityConstraintViolationException => // HSQLDB
-        if (e.getMessage contains "unique constraint or index violation") {
+        if (e.getMessage contains "unique constraint or index violation")
           logger.info("Could not add entry - already present: " + parent + "/" + id, e)
-          false
-        } else if (e.getMessage contains "foreign key no parent") {
+        else if (e.getMessage contains "foreign key no parent")
           logger.info("Could not add entry - parent does not exist: " + parent + "/" + id, e)
-          false
-        } else throw e
+        else throw e
+        false
         
       case e: org.h2.jdbc.JdbcSQLException => // H2
-        if (e.getMessage contains "Unique index or primary key violation") {
+        if (e.getMessage contains "Unique index or primary key violation")
           logger.info("Could not add entry - already present: " + parent + "/" + id, e)
-          false
-        } else if (e.getMessage contains "Referential integrity constraint violation") {
+        else if (e.getMessage contains "Referential integrity constraint violation")
           logger.info("Could not add entry - parent does not exist: " + parent + "/" + id, e)
-          false
-        } else throw e
+        else throw e
+        false
     }
 
   /** @return The numerically highest file tree id. */
-  def maxEntryID = execQuery(maxEntryIdS) {_.long("id")} head
+  def maxEntryID = fetchOnlyLong(maxEntryId_)
 
   /** @return The numerically highest file entry id. */
-  def maxFileID = execQuery(maxFileIdS) {_.long("fileid")} head
+  def maxFileID = fetchOnlyLong(maxFileId_)
 
   /** @return The numerically highest entry creation time stamp. */
-  def maxCreateTime = execQuery(maxCreateTimeS) {_.long("createTime")} head
+  def maxCreateTime = fetchOnlyLong(maxCreateTime_)
   
   def contains(print: TimeSizePrint) : Boolean =
-    execQuery(matchesForPrintS){_ long 1}.head > 0
+    fetchOnlyLong(matchesForPrint_) > 0
 
   /** @return The matching data entry ID if any. */
   def fileId(print: TimeSizePrintHash) : Option[Long] =
-    execQuery(fileIdS, print.time, print.size, print.print, print.hash)(_ long 1)
-    .headOnly
+    execQuery(fileId_, print.time, print.size, print.print, print.hash)(_ long 1)
+    .headOptionOnly
 
 }
 

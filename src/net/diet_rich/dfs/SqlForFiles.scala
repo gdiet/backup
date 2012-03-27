@@ -20,7 +20,6 @@ trait SqlForFiles { self: SqlCommon =>
   }
   
   def dataProperties(id: Long) : Option[FullFileData] =
-    execQuery(allFileDataForIdS, id) {rs => FullFileData(rs long "time", rs long "length", rs long "print", rs bytes "hash", rs long "dataid")} headOnly
-
+    execQuery(allFileDataForIdS, id) {rs => FullFileData(rs long "time", rs long "length", rs long "print", rs bytes "hash", rs long "dataid")} headOptionOnly
     
 }
