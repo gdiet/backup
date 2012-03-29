@@ -8,9 +8,6 @@ import java.sql.Connection
 
 package object sql {
   
-  def setArguments(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*): PreparedStatement =
-    setArguments(preparedStatement(), args:_*)
-
   def setArguments(statement: PreparedStatement, args: Any*): PreparedStatement = {
     args.zipWithIndex foreach(_ match {
       case (x : Long, index)        => statement setLong (index+1, x)
@@ -28,15 +25,9 @@ package object sql {
   def fetchOnlyLong(stat: PreparedStatement, args: Any*) : Long =
     execQuery(stat, args:_*)(_ long 1) headOnly
 
-  def fetchOnlyLong(stat: ScalaThreadLocal[PreparedStatement], args: Any*) : Long =
-    fetchOnlyLong(stat(), args:_*)
-    
   def fetchOnlyString(stat: PreparedStatement, args: Any*) : String =
     execQuery(stat, args:_*)(_ string 1) headOnly
 
-  def fetchOnlyString(stat: ScalaThreadLocal[PreparedStatement], args: Any*) : String =
-    fetchOnlyString(stat(), args:_*)
-  
   /** only use where performance is not a critical factor. */
   def fetchOnlyString(connection: Connection, command: String, args: Any*) : String =
     fetchOnlyString(connection prepareStatement command, args:_*)
@@ -62,14 +53,11 @@ package object sql {
     }
   }
 
-  def execQuery[T](stat: ScalaThreadLocal[PreparedStatement], args: Any*)(processor: WrappedSQLResult => T) : ResultIterator[T] =
-    execQuery(stat(), args:_*)(processor)
-    
   /** only use where performance is not a critical factor. */
   def execQuery[T](connection: Connection, command: String, args: Any*)(processor: WrappedSQLResult => T) : ResultIterator[T] =
     execQuery(connection prepareStatement command, args:_*)(processor)
     
-  def execUpdate(preparedStatement: ScalaThreadLocal[PreparedStatement], args: Any*) : Int =
+  def execUpdate(preparedStatement: PreparedStatement, args: Any*) : Int =
     setArguments(preparedStatement, args:_*) executeUpdate()
 
   /** only use where performance is not a critical factor. */

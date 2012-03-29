@@ -12,4 +12,6 @@ object ScalaThreadLocal {
       override def apply : T = local.get
       override def toString: String = name
     }
+  
+  implicit def unwrapThreadLocal[T](scalaThreadLocal : ScalaThreadLocal[T]) : T = scalaThreadLocal()
 }
