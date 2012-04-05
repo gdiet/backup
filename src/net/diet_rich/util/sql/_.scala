@@ -53,6 +53,8 @@ package object sql {
     }
   }
 
+  // FIXME "connection prepareStatement command" can be made an implicit
+  
   /** only use where performance is not a critical factor. */
   def execQuery[T](connection: Connection, command: String, args: Any*)(processor: WrappedSQLResult => T) : ResultIterator[T] =
     execQuery(connection prepareStatement command, args:_*)(processor)

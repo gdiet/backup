@@ -82,7 +82,7 @@ class SqlDB(database: DBConnection) extends SqlCommon with SqlForTree with SqlFo
 
   /** @return The matching data entry ID if any. */
   def fileId(print: TimeSizePrintHash) : Option[Long] =
-    execQuery(fileId_, print.time, print.size, print.print, print.hash)(_ long 1)
+    execQuery(fileId_, print time, print size, print print, print hash)(_ long 1)
     .headOptionOnly
 
 }
@@ -99,12 +99,12 @@ object SqlDB extends Logging {
   def hasTablesFor(dbcon : DBConnection) : Boolean = {
     logger info "checking whether SQL tables already exist"
     try {
-      val result = dbcon.connection.createStatement executeQuery "SELECT value FROM RepositoryInfo WHERE key = 'database version';"
-      if (!result.next) throw new IllegalStateException("No database version entry in RepositoryInfo table")
-      val dbversion = result getString "value"
+      val dbversion = fetchOnlyString(dbcon.connection, "SELECT value FROM RepositoryInfo WHERE key = 'database version';")
       if (dbversion != "1.0") throw new IllegalStateException("Database version " + dbversion + " not supported")
       true
     } catch {
+      case e: NoSuchElementException =>
+        throw new IllegalStateException("No database version entry in RepositoryInfo table")
       case e: SQLSyntaxErrorException =>
         if(!e.getMessage.contains("object not found")) throw e
         false
@@ -120,61 +120,12 @@ object SqlDB extends Logging {
     // NOTES on SQL syntax used: A PRIMARY KEY constraint is equivalent to a
     // UNIQUE constraint on one or more NOT NULL columns. Only one PRIMARY KEY
     // can be defined in each table.
-    // Source: http://hsqldb.org/doc/2.0/guide/guide.pdf
+    // (Source: http://hsqldb.org/doc/2.0/guide/guide.pdf)
     
     // JOIN is the short form for INNER JOIN.
     
     // TODO check for needed indexes
     // FIXME CREATE INDEX TreeEntries_dataid_idx on TREEENTRIES (dataid);
-    
-/* for debugging purposes etc in external SQL tools
-
-      CREATE CACHED TABLE DataInfo (
-        id     BIGINT PRIMARY KEY,
-        length BIGINT NOT NULL,
-        print  BIGINT NOT NULL,
-        hash   VARBINARY(16) NOT NULL,
-        method INTEGER DEFAULT 0 NOT NULL
-      , CHECK (length >= 0)
-      , CHECK (method = 0 OR method = 1)
-      , UNIQUE (length, print, hash)
-      );
-
-      CREATE CACHED TABLE TreeEntries (
-        id          BIGINT PRIMARY KEY,
-        parent      BIGINT NOT NULL,
-        name        VARCHAR(256) NOT NULL,
-        time        BIGINT DEFAULT NULL,
-        dataid      BIGINT DEFAULT NULL,
-        UNIQUE (parent, name)
-      , FOREIGN KEY (parent) REFERENCES TreeEntries(id)
-      , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
-      , CHECK (parent != id OR id = -1)
-      , CHECK ((dataid is NULL) = (time is NULL))
-      , CHECK ((id < 1) = (parent = -1))
-      , CHECK (id > -2)
-      , CHECK ((id = 0) = (name = ''))
-      , CHECK ((id != -1) OR (name = '*'))
-      );
-      
-      CREATE CACHED TABLE ByteStore (
-        dataid BIGINT NULL,
-        index  INTEGER NOT NULL,
-        start  BIGINT NOT NULL,
-        fin    BIGINT NOT NULL
-      , UNIQUE (start)
-      , UNIQUE (fin)
-      , FOREIGN KEY (dataid) REFERENCES DataInfo(id)
-      , CHECK (fin > start AND start >= 0)
-      );
-        
-      CREATE CACHED TABLE RepositoryInfo (
-        key   VARCHAR(32) PRIMARY KEY,
-        value VARCHAR(256) NOT NULL
-      );
-      
- */
-    
     
     execWithConstraints(connection, """
       CREATE CACHED TABLE DataInfo (
