@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.sql.SQLIntegrityConstraintViolationException
 import java.sql.SQLException
 import scala.collection.mutable.SynchronizedQueue
+import java.sql.Connection
 
 trait TreeDB {
   /** @return the name, None if no such node. */
@@ -37,7 +38,7 @@ object TreeDB {
   val ROOTNAME = ""
   val ROOTPATH = ""
   
-  def apply(connection: java.sql.Connection) : TreeDB with TreeCacheUpdater = new TreeDB with TreeCacheUpdater {
+  def apply(connection: Connection) : TreeDB with TreeCacheUpdater = new TreeDB with TreeCacheUpdater {
     var updateAdapters = new SynchronizedQueue[TreeCacheUpdateAdapter]
     def registerUpdateAdapter(adapter: TreeCacheUpdateAdapter) = updateAdapters += adapter
     
@@ -65,8 +66,45 @@ object TreeDB {
         // EVENTUALLY, the update adapters should be called from a separate thread
         case 1 => updateAdapters foreach(_ created (id, name, parent)); Some(id)
         case n => throw new IllegalStateException("Unexpected %s times update for id %s" format(n, id))
+        // EVENTUALLY, the exception could be inspected more in detail
       } } catch { case e: SQLException => maxEntryId compareAndSet(id, id-1); None }
     }
-      
   }
+  
+  def createTables(connection: Connection) : Unit = {
+    // The tree is represented by nodes that store their parent but not their children.
+    // The tree root must not be deleted, has the ID 0 and parent 0.
+    // time should be not NULL iff dataid is not NULL
+    // dataid should be 0 for 0-byte TreeEntries
+    // UNIQUE (parent, name) is needed in createNewNode()
+    execUpdate(connection, """
+      CREATE CACHED TABLE TreeEntries (
+        id     BIGINT PRIMARY KEY,
+        parent BIGINT NOT NULL,
+        name   VARCHAR(256) NOT NULL,
+        time   BIGINT DEFAULT NULL,
+        dataid BIGINT DEFAULT NULL,
+        UNIQUE (parent, name)
+      );
+    """)
+    execUpdate(connection,
+      "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?);", ROOTID, ROOTID, ROOTNAME
+    )
+  }
+
+  protected val constraints = List(
+    "ParentReference FOREIGN KEY (parent) REFERENCES TreeEntries(id)",
+    "ParentSelfReference CHECK (parent != id OR id = 0)",
+    "DataReference FOREIGN KEY (dataid) REFERENCES DataInfo(id)",
+    "TimestampIffDataPresent CHECK ((dataid is NULL) = (time is NULL))",
+    "IdNotNegative CHECK (id > -1)",
+    "RootNameIsEmpty CHECK ((id > 0) OR (name = ''))",
+    "ParentSelfReference CHECK (parent != id OR id = 0)"
+  )
+  
+  def addConstraints(connection: Connection) : Unit =
+    constraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries ADD CONSTRAINT " + constraint))
+
+  def removeConstraints(connection: Connection) : Unit =
+    constraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries DROP CONSTRAINT " + constraint.split(" ").head))
 }
