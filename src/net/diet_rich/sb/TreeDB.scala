@@ -53,7 +53,7 @@ object TreeDB {
     val addEntry_ = prepare("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
     
     override def name(id: Long) : Option[String] =
-      execQuery(nameForId_, id)(_ string 2) headOption
+      execQuery(nameForId_, id)(_ string 1) headOption
     override def children(id: Long) : Iterable[IdAndName] =
       execQuery(childrenForId_, id)(result => IdAndName(result long 1, result string 2)) toList
     override def parent(id: Long) : Option[Long] =
@@ -95,16 +95,28 @@ object TreeDB {
   protected val constraints = List(
     "ParentReference FOREIGN KEY (parent) REFERENCES TreeEntries(id)",
     "ParentSelfReference CHECK (parent != id OR id = 0)",
-    "DataReference FOREIGN KEY (dataid) REFERENCES DataInfo(id)",
     "TimestampIffDataPresent CHECK ((dataid is NULL) = (time is NULL))",
     "IdNotNegative CHECK (id > -1)",
-    "RootNameIsEmpty CHECK ((id > 0) OR (name = ''))",
-    "ParentSelfReference CHECK (parent != id OR id = 0)"
+    "RootNameIsEmpty CHECK ((id > 0) OR (name = ''))"
+  )
+
+  protected val externalConstraints = List(
+    "DataReference FOREIGN KEY (dataid) REFERENCES DataInfo(id)"
   )
   
-  def addConstraints(connection: Connection) : Unit =
+  def addConstraints(connection: Connection) : Unit = {
+    addInternalConstraints(connection)
+    addExternalConstraints(connection)
+  }
+  
+  def addInternalConstraints(connection: Connection) : Unit =
     constraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries ADD CONSTRAINT " + constraint))
+  
+  def addExternalConstraints(connection: Connection) : Unit =
+    externalConstraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries ADD CONSTRAINT " + constraint))
 
-  def removeConstraints(connection: Connection) : Unit =
+  def removeConstraints(connection: Connection) : Unit = {
     constraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries DROP CONSTRAINT " + constraint.split(" ").head))
+    externalConstraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries DROP CONSTRAINT " + constraint.split(" ").head))
+  }
 }
