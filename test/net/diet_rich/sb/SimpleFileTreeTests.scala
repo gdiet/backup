@@ -32,20 +32,21 @@ class SimpleFileTreeTests {
   @Test
   def createChildrenTwiceShouldFail = {
     val childName = randomString
-    assertThat(tree make (0, childName) isDefined)
+    assertThat(tree make (0, childName) isDefined).isTrue
     assertThat(tree make (0, childName)) isEqualTo None
+    assertThat(tree make ("/" + childName)) isEqualTo None
   }
     
   @Test
   def createPathWithMultipleElements = {
-    assertThat(tree make "/"+randomString+"/some/more/subnodes" isDefined)
+    assertThat(tree make "/"+randomString+"/some/more/subnodes" isDefined).isTrue
   }
 
   @Test
   def createPathWithSomeElementsMissing = {
     val baseName = randomString
-    assertThat(tree make "/"+baseName+"/some/more/subnodes" isDefined)
-    assertThat(tree make "/"+baseName+"/some/other/subnodes" isDefined)
+    assertThat(tree make "/"+baseName+"/some/more/subnodes" isDefined).isTrue
+    assertThat(tree make "/"+baseName+"/some/other/subnodes" isDefined).isTrue
   }
 
   @Test
@@ -53,7 +54,7 @@ class SimpleFileTreeTests {
     val baseName = randomString
     val childOpt = tree make "/"+baseName+"/some/subnodes"
     assertThat(tree get "/"+baseName+"/some/subnodes") isEqualTo childOpt isNotEqualTo None
-    assertThat(tree get "/"+baseName+"/some" isDefined)
+    assertThat(tree get "/"+baseName+"/some" isDefined).isTrue
   }
 
   @Test
@@ -85,11 +86,37 @@ class SimpleFileTreeTests {
   def getChildrenListForNode = {
     val path = "/"+randomString
     val baseId = tree make path get;
-    assertThat(tree make (baseId, "child1") isDefined)
-    assertThat(tree make (baseId, "child2") isDefined)
+    assertThat(tree make (baseId, "child1") isDefined).isTrue
+    assertThat(tree make (baseId, "child2") isDefined).isTrue
     val children = tree children baseId map(_ name) toList;
     assertThat(children size) isEqualTo 2
     assertThat(children intersect List("child1","child2") size) isEqualTo 2
   }
+
+  @Test
+  def renamedNodesName = {
+    val baseName = randomString
+    val id = (tree make "/"+baseName+"/initialName").get
+    val id2 = (tree make (id, "subName")).get
+    assertThat(tree rename(id, "newName")).isTrue
+    assertThat(tree name id get) isEqualTo "newName"
+    assertThat(tree get "/"+baseName+"/newName") isEqualTo Some(id)
+    assertThat(tree get "/"+baseName+"/newName/subName") isEqualTo Some(id2)
+    assertThat(tree get "/"+baseName+"/initialName") isEqualTo None
+    assertThat(tree get "/"+baseName+"/initialName/subName") isEqualTo None
+    val base = (tree get "/"+baseName).get
+    assertThat(tree children base size) isEqualTo 1
+    assertThat(tree.children(base).head.name) isEqualTo "newName"
+    assertThat(tree.children(base).head.id) isEqualTo id
+  }
   
+  @Test
+  def renameNegativeTests = {
+    val baseName = randomString
+    val id = (tree make "/"+baseName+"/initialName").get
+    val id2 = (tree make "/"+baseName+"/anotherName").get
+    assertThat(tree rename(id, "anotherName")).isFalse
+    assertThat(tree rename(Long.MaxValue, "anotherName")).isFalse
+  }
+
 }

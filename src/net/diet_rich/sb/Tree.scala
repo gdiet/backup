@@ -8,7 +8,7 @@ trait Tree {
   
   protected def treeDb: TreeDB
   
-  private final def makeFromParent(path: String) : Option[Long] =
+  private def makeFromParent(path: String) : Option[Long] =
     getOrMake(parentPath(path)) flatMap { parent => make(parent, nameFromPath(path)) }
   
   /** Create any nodes elements in the path.
@@ -60,6 +60,9 @@ trait Tree {
   /** @return the children, empty if no such node. */
   def children(id: Long) : Iterable[df.IdAndName] = treeDb children id
 
+  /** @return true if node was renamed. */
+  def rename(id: Long, newName: String) : Boolean = treeDb rename (id, newName)
+  
 }
 
 object Tree {
@@ -79,4 +82,6 @@ object Tree {
   /** Either ROOTPATH for root or a valid sub-path. */
   def isWellformedPath(path: String) : Boolean = (path equals ROOTPATH) || isWellformedSubPath (path)
 
+  // FIXME add requirements to the appropriate methods
+  
 }

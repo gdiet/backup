@@ -23,6 +23,8 @@ trait TreeDB {
   def parent(id: Long) : Option[Long]
   /** @return ID, None if node could not be created. */
   def createNewNode(parent: Long, name: String) : Option[Long]
+  /** @return true if node was renamed. */
+  def rename(id: Long, newName: String) : Boolean
 }
 
 trait TreeCacheUpdater {
@@ -31,6 +33,7 @@ trait TreeCacheUpdater {
 
 trait TreeCacheUpdateAdapter {
   def created(id: Long, name: String, parent: Long)
+  def renamed(id: Long, newName: String)
 }
 
 object TreeDB {
@@ -51,6 +54,7 @@ object TreeDB {
     val nameForId_ = prepare("SELECT name FROM TreeEntries WHERE id = ?;")
     val parentForId_ = prepare("SELECT parent FROM TreeEntries WHERE id = ?;")
     val addEntry_ = prepare("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
+    val renameEntry_ = prepare("UPDATE TreeEntries SET name = ? WHERE id = ?;")
     
     override def name(id: Long) : Option[String] =
       execQuery(nameForId_, id)(_ string 1) headOption
@@ -58,7 +62,6 @@ object TreeDB {
       execQuery(childrenForId_, id)(result => IdAndName(result long 1, result string 2)) toList
     override def parent(id: Long) : Option[Long] =
       execQuery(parentForId_, id)(_ long 1) headOption
-      
     override def createNewNode(parent: Long, name: String) : Option[Long] = {
       // This method MUST check that the parent exists and there is no child with the same name.
       val id = maxEntryId incrementAndGet()
@@ -68,6 +71,16 @@ object TreeDB {
         case n => throw new IllegalStateException("Unexpected %s times update for id %s" format(n, id))
         // EVENTUALLY, the exception could be inspected more in detail
       } } catch { case e: SQLException => maxEntryId compareAndSet(id, id-1); None }
+    }
+    override def rename(id: Long, newName: String) : Boolean = {
+      // This method MUST check that there is no sibling with the same name.
+      try { execUpdate(renameEntry_, newName, id) match {
+        // EVENTUALLY, the update adapters should be called from a separate thread
+        case 0 => false
+        case 1 => updateAdapters foreach(_ renamed (id, newName)); true
+        case n => throw new IllegalStateException("Unexpected %s times update for id %s" format(n, id))
+        // EVENTUALLY, the exception could be inspected more in detail
+      } } catch { case e: SQLException => false }
     }
   }
   
