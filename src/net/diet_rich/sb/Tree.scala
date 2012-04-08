@@ -62,6 +62,11 @@ trait Tree {
 
   /** @return true if node was renamed. */
   def rename(id: Long, newName: String) : Boolean = treeDb rename (id, newName)
+
+  /** @return true if node was moved. */
+  def move(id: Long, newParent: Long) : Boolean = treeDb move (id, newParent)
+  
+  // FIXME delete
   
 }
 

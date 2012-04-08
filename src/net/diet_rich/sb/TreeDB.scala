@@ -25,6 +25,8 @@ trait TreeDB {
   def createNewNode(parent: Long, name: String) : Option[Long]
   /** @return true if node was renamed. */
   def rename(id: Long, newName: String) : Boolean
+  /** @return true if node was moved. */
+  def move(id: Long, newParent: Long) : Boolean
 }
 
 trait TreeCacheUpdater {
@@ -34,6 +36,7 @@ trait TreeCacheUpdater {
 trait TreeCacheUpdateAdapter {
   def created(id: Long, name: String, parent: Long)
   def renamed(id: Long, newName: String)
+  def moved(id: Long, newParent: Long)
 }
 
 object TreeDB {
@@ -55,6 +58,7 @@ object TreeDB {
     val parentForId_ = prepare("SELECT parent FROM TreeEntries WHERE id = ?;")
     val addEntry_ = prepare("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
     val renameEntry_ = prepare("UPDATE TreeEntries SET name = ? WHERE id = ?;")
+    val moveEntry_ = prepare("UPDATE TreeEntries SET parent = ? WHERE id = ?;")
     
     override def name(id: Long) : Option[String] =
       execQuery(nameForId_, id)(_ string 1) headOption
@@ -68,7 +72,7 @@ object TreeDB {
       try { execUpdate(addEntry_, id, parent, name) match {
         // EVENTUALLY, the update adapters should be called from a separate thread
         case 1 => updateAdapters foreach(_ created (id, name, parent)); Some(id)
-        case n => throw new IllegalStateException("Unexpected %s times update for id %s" format(n, id))
+        case n => throw new IllegalStateException("Create: Unexpected %s times update for id %s" format(n, id))
         // EVENTUALLY, the exception could be inspected more in detail
       } } catch { case e: SQLException => maxEntryId compareAndSet(id, id-1); None }
     }
@@ -78,7 +82,17 @@ object TreeDB {
         // EVENTUALLY, the update adapters should be called from a separate thread
         case 0 => false
         case 1 => updateAdapters foreach(_ renamed (id, newName)); true
-        case n => throw new IllegalStateException("Unexpected %s times update for id %s" format(n, id))
+        case n => throw new IllegalStateException("Rename: Unexpected %s times update for id %s" format(n, id))
+        // EVENTUALLY, the exception could be inspected more in detail
+      } } catch { case e: SQLException => false }
+    }
+    override def move(id: Long, newParent: Long) : Boolean = {
+      // This method MUST check that there will be no sibling with the same name.
+      try { execUpdate(moveEntry_, newParent, id) match {
+        // EVENTUALLY, the update adapters should be called from a separate thread
+        case 0 => false
+        case 1 => updateAdapters foreach(_ moved (id, newParent)); true
+        case n => throw new IllegalStateException("Move: Unexpected %s times update for id %s" format(n, id))
         // EVENTUALLY, the exception could be inspected more in detail
       } } catch { case e: SQLException => false }
     }

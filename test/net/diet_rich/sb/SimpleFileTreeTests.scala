@@ -19,6 +19,7 @@ class SimpleFileTreeTests {
     TreeDB addInternalConstraints connection
     val dbSettings = Map("TreeDBCache.cacheSize"->"3")
     val treeDb: TreeDB = TreeDBCache(connection, dbSettings)
+//    val treeDb: TreeDB = TreeDB(connection)
   }
   
   @Test
@@ -27,7 +28,7 @@ class SimpleFileTreeTests {
  
   @Test
   def createChildrenForInvalidIdShouldFail =
-    assertThat(tree make (Long.MaxValue, "invalid")) isEqualTo None
+    assertThat(tree make (Long MaxValue, "invalid")) isEqualTo None
 
   @Test
   def createChildrenTwiceShouldFail = {
@@ -116,7 +117,33 @@ class SimpleFileTreeTests {
     val id = (tree make "/"+baseName+"/initialName").get
     val id2 = (tree make "/"+baseName+"/anotherName").get
     assertThat(tree rename(id, "anotherName")).isFalse
-    assertThat(tree rename(Long.MaxValue, "anotherName")).isFalse
+    assertThat(tree rename(Long MaxValue, "anotherName")).isFalse
   }
 
+  @Test
+  def movedNode = {
+    val baseName = randomString
+    assertThat(tree make ("/"+baseName+"/A/B/C") isDefined).isTrue
+    assertThat(tree make ("/"+baseName+"/X/X/C") isDefined).isTrue
+    val parent = (tree get "/"+baseName+"/A").get
+    val child = (tree get "/"+baseName+"/A/B").get
+    val newParent = (tree get "/"+baseName+"/X").get
+    assertThat(tree move(child, newParent)).isTrue
+    assertThat(tree get "/"+baseName+"/X/B") isEqualTo Some(child)
+    assertThat(tree get ("/"+baseName+"/X/B/C") isDefined).isTrue
+    assertThat(tree get ("/"+baseName+"/A/B") isDefined).isFalse
+    assertThat(tree children parent size) isEqualTo 0
+    assertThat(tree children newParent size) isEqualTo 2
+  }
+
+  @Test
+  def moveNegatigeTests = {
+    val baseName = randomString
+    assertThat(tree make ("/"+baseName+"/A/B") isDefined).isTrue
+    val child = (tree get "/"+baseName+"/A").get
+    assertThat(tree move(child, Long MaxValue)).isFalse
+    assertThat(tree move(Long MaxValue, child)).isFalse
+    assertThat(tree move(Long MaxValue, Long MaxValue)).isFalse
+  }
+  
 }

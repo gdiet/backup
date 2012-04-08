@@ -28,13 +28,17 @@ You can download the jar directly from the Maven Central repository
 class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap) extends TreeDB {
   db.registerUpdateAdapter(new TreeCacheUpdateAdapter {
     override def created(id: Long, name: String, parent: Long) = {
-      childrenCache.invalidate(parent)
-      nameCache.put(id, Some(name))
-      parentCache.put(id, Some(parent))
+      childrenCache invalidate parent
+      nameCache put(id, Some(name))
+      parentCache put(id, Some(parent))
     }
     override def renamed(id: Long, newName: String) = {
       parent(id) foreach (childrenCache invalidate _)
-      nameCache.put(id, Some(newName))
+      nameCache put(id, Some(newName))
+    }
+    override def moved(id: Long, newParent: Long) = {
+      childrenCache invalidate newParent
+      parent(id) foreach (childrenCache invalidate _)
     }
   })
 
@@ -66,6 +70,7 @@ class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap)
   override def parent(id: Long) : Option[Long] = parentCache get id map (x => x)
   override def createNewNode(parent: Long, name: String) : Option[Long] = db createNewNode(parent, name)
   override def rename(id: Long, newName: String) : Boolean = db rename(id, newName)
+  override def move(id: Long, newParent: Long) : Boolean = db move(id, newParent)
 }
 
 object TreeDBCache {
