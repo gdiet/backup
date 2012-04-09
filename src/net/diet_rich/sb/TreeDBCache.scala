@@ -25,7 +25,7 @@ declare in their pom.xml (http://code.google.com/p/guava-libraries/source/browse
 You can download the jar directly from the Maven Central repository
 (http://repo2.maven.org/maven2/com/google/code/findbugs/jsr305/1.3.9). */
 
-class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap) extends TreeDB {
+class TreeDBCache protected(db: TreeDB with TreeCacheUpdater with TreeDBInternals, config: StringMap) extends TreeDB {
   protected val cacheSize = config.long("TreeDBCache.cacheSize")
   
   db.registerUpdateAdapter(new TreeCacheUpdateAdapter {
@@ -76,8 +76,8 @@ class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap)
   override def parent(id: Long) : Option[Long] = parentCache get id map (x => x)
   override def createNewNode(parent: Long, name: String) : Option[Long] = db createNewNode(parent, name)
   override def rename(id: Long, newName: String) : Boolean = db rename(id, newName)
-  override def move(id: Long, newParent: Long) : Boolean = db move(id, newParent)
-  override def deleteWithChildren(id: Long) : Boolean = db deleteWithChildren id
+  override def move(id: Long, newParent: Long) : Boolean = parent(id) map(db move(id, _, newParent)) getOrElse false
+  override def deleteWithChildren(id: Long) : Boolean = parent(id) map(db deleteWithChildren(id, _)) getOrElse false
 }
 
 object TreeDBCache {

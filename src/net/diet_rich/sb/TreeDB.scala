@@ -31,6 +31,11 @@ trait TreeDB {
   def deleteWithChildren(id: Long) : Boolean
 }
 
+trait TreeDBInternals {
+  def move(id: Long, oldParent: Long, newParent: Long) : Boolean
+  def deleteWithChildren(id: Long, oldParent: Long) : Boolean
+}
+
 trait TreeCacheUpdater {
   def registerUpdateAdapter(adapter: TreeCacheUpdateAdapter)
 }

@@ -14,7 +14,7 @@ import java.sql.PreparedStatement
 import java.sql.SQLException
 import scala.collection.mutable.SynchronizedQueue
 
-class TreeSqlDB(connection: Connection) extends TreeDB with TreeCacheUpdater with TreeDataUpdater {
+class TreeSqlDB(connection: Connection) extends TreeDB with TreeCacheUpdater with TreeDataUpdater with TreeDBInternals {
   var treeAdapters = new SynchronizedQueue[TreeCacheUpdateAdapter]
   override def registerUpdateAdapter(adapter: TreeCacheUpdateAdapter) = treeAdapters += adapter
 
@@ -61,19 +61,21 @@ class TreeSqlDB(connection: Connection) extends TreeDB with TreeCacheUpdater wit
       // EVENTUALLY, the exception could be inspected more in detail
     } } catch { case e: SQLException => false }
   }
-  override def move(id: Long, newParent: Long) : Boolean = {
-    val oldParent = parent(id) // FIXME take from cache
+  override def move(id: Long, newParent: Long) : Boolean =
+    parent(id) map(move(id, _, newParent)) getOrElse false
+  override def move(id: Long, oldParent: Long, newParent: Long) : Boolean = {
     // This method MUST check that there will be no sibling with the same name.
     try { execUpdate(moveEntry_, newParent, id) match {
       // EVENTUALLY, the update adapters should be called from a separate thread
       case 0 => false
-      case 1 => treeAdapters foreach(_ moved (id, oldParent get, newParent)); true
+      case 1 => treeAdapters foreach(_ moved (id, oldParent, newParent)); true
       case n => throw new IllegalStateException("Move: Unexpected %s times update for id %s" format(n, id))
       // EVENTUALLY, the exception could be inspected more in detail
     } } catch { case e: SQLException => false }
   }
-  override def deleteWithChildren(id: Long) : Boolean = {
-    val oldParent = parent(id) // FIXME take from cache
+  override def deleteWithChildren(id: Long) : Boolean =
+    parent(id) map(deleteWithChildren(id, _)) getOrElse false
+  override def deleteWithChildren(id: Long, oldParent: Long) : Boolean = {
     val markedDeleted = try { execUpdate(moveEntry_, DELETEDROOT, id) match {
       case 0 => false
       case 1 => true
@@ -82,7 +84,7 @@ class TreeSqlDB(connection: Connection) extends TreeDB with TreeCacheUpdater wit
     } } catch { case e: SQLException => false }
     if (markedDeleted) {
       // EVENTUALLY, the following should be called from a separate thread
-      oldParent foreach {parent => treeAdapters foreach(_ deleted (id, parent))}
+      treeAdapters foreach(_ deleted (id, oldParent))
       def deleteRecurse(id: Long) : Unit = {
         children(id) foreach {child => 
           deleteRecurse(child id)
@@ -129,7 +131,7 @@ object TreeSqlDB {
   def dropTables(connection: Connection) : Unit =
     execUpdate(connection, "DROP TABLE TreeEntries IF EXISTS;")
   
-  protected val constraints = List(
+  protected val internalConstraints = List(
     "ParentReference FOREIGN KEY (parent) REFERENCES TreeEntries(id)",
     "ParentSelfReference CHECK (parent != id OR id < 1)",
     "TimestampIffDataPresent CHECK ((dataid is NULL) = (time is NULL))",
@@ -147,13 +149,13 @@ object TreeSqlDB {
   }
   
   def addInternalConstraints(connection: Connection) : Unit =
-    constraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries ADD CONSTRAINT " + constraint))
+    internalConstraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries ADD CONSTRAINT " + constraint))
   
   def addExternalConstraints(connection: Connection) : Unit =
     externalConstraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries ADD CONSTRAINT " + constraint))
 
   def removeConstraints(connection: Connection) : Unit = {
-    constraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries DROP CONSTRAINT " + constraint.split(" ").head))
+    internalConstraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries DROP CONSTRAINT " + constraint.split(" ").head))
     externalConstraints foreach(constraint => execUpdate(connection, "ALTER TABLE TreeEntries DROP CONSTRAINT " + constraint.split(" ").head))
   }
 }
