@@ -43,7 +43,9 @@ class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap)
       parent(id) foreach (childrenCache invalidate _)
     }
     override def deleted(id: Long, oldParent: Long) = {
-      throw new UnsupportedOperationException
+      nameCache invalidate id
+      parentCache invalidate id
+      childrenCache invalidate oldParent
     }
   })
 

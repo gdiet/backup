@@ -137,7 +137,7 @@ class SimpleFileTreeTests {
   }
 
   @Test
-  def moveNegatigeTests = {
+  def moveNegativeTests = {
     val baseName = randomString
     assertThat(tree make ("/"+baseName+"/A/B") isDefined).isTrue
     val child = (tree get "/"+baseName+"/A").get
@@ -145,5 +145,25 @@ class SimpleFileTreeTests {
     assertThat(tree move(Long MaxValue, child)).isFalse
     assertThat(tree move(Long MaxValue, Long MaxValue)).isFalse
   }
-  
+
+  @Test
+  def deletedNode = {
+    val baseName = randomString
+    assertThat(tree make ("/"+baseName+"/A/B") isDefined).isTrue
+    val parent = (tree get "/"+baseName).get
+    val id = (tree get "/"+baseName+"/A").get
+    val child = (tree get "/"+baseName+"/A/B").get
+    assertThat(tree deleteWithChildren id).isTrue
+    assertThat(tree get "/"+baseName) isEqualTo Some(parent)
+    assertThat(tree get "/"+baseName+"/A") isEqualTo None
+    assertThat(tree name id) isEqualTo None
+    assertThat(tree name child) isEqualTo None
+    assertThat(tree children parent size) isEqualTo 0
+  }
+
+  @Test
+  def deleteNegativeTests = {
+    assertThat(tree deleteWithChildren(Long MaxValue)).isFalse
+  }
+
 }
