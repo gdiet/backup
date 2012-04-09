@@ -157,6 +157,9 @@ object TreeDB {
         UNIQUE (parent, name)
       );
     """)
+    // from http://hsqldb.org/doc/guide/databaseobjects-chapt.html
+    // PRIMARY KEY, UNIQUE or FOREIGN key constraints [... create] an index automatically.
+    execUpdate(connection, "CREATE INDEX idxParent ON TreeEntries(parent);")
     execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?);", ROOTID, ROOTID, ROOTNAME)
     // used intermediately when deleting nodes
     execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, 'recently deleted');", DELETEDROOT, DELETEDROOT)
