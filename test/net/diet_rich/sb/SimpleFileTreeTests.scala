@@ -15,8 +15,8 @@ class SimpleFileTreeTests {
 
   lazy val tree = new Tree {
     val connection = DBConnection.hsqlMemoryDB
-    TreeDB createTables connection
-    TreeDB addInternalConstraints connection
+    TreeSqlDB createTables connection
+    TreeSqlDB addInternalConstraints connection
     val dbSettings = Map("TreeDBCache.cacheSize"->"3")
     val treeDb: TreeDB = TreeDBCache(connection, dbSettings)
 //    val treeDb: TreeDB = TreeDB(connection)

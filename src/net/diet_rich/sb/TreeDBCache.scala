@@ -38,9 +38,10 @@ class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap)
       parent(id) foreach (childrenCache invalidate _)
       nameCache put(id, Some(newName))
     }
-    override def moved(id: Long, newParent: Long) = {
+    override def moved(id: Long, oldParent: Long, newParent: Long) = {
+      childrenCache invalidate oldParent
       childrenCache invalidate newParent
-      parent(id) foreach (childrenCache invalidate _)
+      parentCache put(id, Some(newParent))
     }
     override def deleted(id: Long, oldParent: Long) = {
       nameCache invalidate id
@@ -81,5 +82,5 @@ class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap)
 
 object TreeDBCache {
   def apply(connection: java.sql.Connection, config: StringMap) : TreeDB =
-    new TreeDBCache(TreeDB(connection), config)
+    new TreeDBCache(TreeSqlDB(connection), config)
 }
