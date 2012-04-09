@@ -27,6 +27,10 @@ trait TreeDB {
   def rename(id: Long, newName: String) : Boolean
   /** @return true if node was moved. */
   def move(id: Long, newParent: Long) : Boolean
+  /** Deletes a node and all its children.
+   *  @return true if node was deleted. */
+  def delete(id: Long) : Boolean = throw new UnsupportedOperationException
+  def delete(id: Long, oldParent: Long) : Boolean // FIXME make protected
 }
 
 trait TreeCacheUpdater {
@@ -37,12 +41,14 @@ trait TreeCacheUpdateAdapter {
   def created(id: Long, name: String, parent: Long)
   def renamed(id: Long, newName: String)
   def moved(id: Long, newParent: Long)
+  def deleted(id: Long, oldParent: Long)
 }
 
 object TreeDB {
   val ROOTID = 0L
   val ROOTNAME = ""
   val ROOTPATH = ""
+  val DELETEDROOT = -1L
   
   def apply(connection: Connection) : TreeDB with TreeCacheUpdater = new TreeDB with TreeCacheUpdater {
     var updateAdapters = new SynchronizedQueue[TreeCacheUpdateAdapter]
@@ -96,6 +102,20 @@ object TreeDB {
         // EVENTUALLY, the exception could be inspected more in detail
       } } catch { case e: SQLException => false }
     }
+    override def delete(id: Long, oldParent: Long) : Boolean = {
+      val markedDeleted = try { execUpdate(moveEntry_, DELETEDROOT, id) match {
+        case 0 => false
+        case 1 => true
+        case n => throw new IllegalStateException("Delete: Unexpected %s times update for id %s" format(n, id))
+        // EVENTUALLY, the exception could be inspected more in detail
+      } } catch { case e: SQLException => false }
+      if (markedDeleted) {
+        // EVENTUALLY, the following should be called from a separate thread
+        updateAdapters foreach(_ deleted (id, oldParent))
+        throw new UnsupportedOperationException
+      }
+      markedDeleted
+    }
   }
   
   def createTables(connection: Connection) : Unit = {
@@ -114,17 +134,17 @@ object TreeDB {
         UNIQUE (parent, name)
       );
     """)
-    execUpdate(connection,
-      "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?);", ROOTID, ROOTID, ROOTNAME
-    )
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?);", ROOTID, ROOTID, ROOTNAME)
+    // used intermediately when deleting nodes
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, 'recently deleted');", DELETEDROOT, DELETEDROOT)
   }
 
   protected val constraints = List(
     "ParentReference FOREIGN KEY (parent) REFERENCES TreeEntries(id)",
-    "ParentSelfReference CHECK (parent != id OR id = 0)",
+    "ParentSelfReference CHECK (parent != id OR id < 1)",
     "TimestampIffDataPresent CHECK ((dataid is NULL) = (time is NULL))",
-    "IdNotNegative CHECK (id > -1)",
-    "RootNameIsEmpty CHECK ((id > 0) OR (name = ''))"
+    "ValidId CHECK (id >= -1)",
+    "RootNameIsEmpty CHECK ((id != 0) OR (name = ''))"
   )
 
   protected val externalConstraints = List(

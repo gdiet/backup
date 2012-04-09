@@ -40,6 +40,9 @@ class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap)
       childrenCache invalidate newParent
       parent(id) foreach (childrenCache invalidate _)
     }
+    override def deleted(id: Long, oldParent: Long) = {
+      throw new UnsupportedOperationException
+    }
   })
 
   protected val cacheSize = config.long("TreeDBCache.cacheSize")
@@ -71,6 +74,7 @@ class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap)
   override def createNewNode(parent: Long, name: String) : Option[Long] = db createNewNode(parent, name)
   override def rename(id: Long, newName: String) : Boolean = db rename(id, newName)
   override def move(id: Long, newParent: Long) : Boolean = db move(id, newParent)
+  override def delete(id: Long, oldParent: Long) : Boolean = db delete (id, oldParent)
 }
 
 object TreeDBCache {

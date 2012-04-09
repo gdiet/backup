@@ -66,7 +66,10 @@ trait Tree {
   /** @return true if node was moved. */
   def move(id: Long, newParent: Long) : Boolean = treeDb move (id, newParent)
   
-  // FIXME delete
+  /** Deletes a node and all its children.
+   * 
+   *  @return true if node was deleted. */
+  def delete(id: Long) : Boolean = treeDb delete id
   
 }
 
