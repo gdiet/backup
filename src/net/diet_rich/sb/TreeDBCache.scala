@@ -25,11 +25,8 @@ declare in their pom.xml (http://code.google.com/p/guava-libraries/source/browse
 You can download the jar directly from the Maven Central repository
 (http://repo2.maven.org/maven2/com/google/code/findbugs/jsr305/1.3.9). */
 
-trait TreeDBCache extends TreeDB {
-  // Note: if implemented as val, it must be a lazy val, else there will be problems with initialization order
-  protected def db: TreeDB with TreeCacheUpdater
-  // Note: if implemented as val, it must be a lazy val, else there will be problems with initialization order
-  protected def cacheSize : Long // = config.long("TreeDBCache.cacheSize")
+class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap) extends TreeDB {
+  protected val cacheSize = config.long("TreeDBCache.cacheSize")
   
   db.registerUpdateAdapter(new TreeCacheUpdateAdapter {
     override def created(id: Long, name: String, parent: Long) = {
@@ -77,13 +74,10 @@ trait TreeDBCache extends TreeDB {
   override def createNewNode(parent: Long, name: String) : Option[Long] = db createNewNode(parent, name)
   override def rename(id: Long, newName: String) : Boolean = db rename(id, newName)
   override def move(id: Long, newParent: Long) : Boolean = db move(id, newParent)
-  override def delete(id: Long, oldParent: Long) : Boolean = db delete (id, oldParent)
+  override def deleteWithChildren(id: Long) : Boolean = db deleteWithChildren id
 }
 
 object TreeDBCache {
   def apply(connection: java.sql.Connection, config: StringMap) : TreeDB =
-    new TreeDBCache {
-      override lazy val db = TreeDB(connection)
-      override lazy val cacheSize = config.long("TreeDBCache.cacheSize")
-    }
+    new TreeDBCache(TreeDB(connection), config)
 }
