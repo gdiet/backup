@@ -24,7 +24,7 @@ class TreeSqlDB(connection: Connection) extends TreeDB with TreeCacheUpdater wit
   def prepare(statement: String) : ScalaThreadLocal[PreparedStatement] =
     ScalaThreadLocal(connection prepareStatement statement, statement)
   val maxEntryId: AtomicLong = new AtomicLong(
-    execQuery(connection, "SELECT MAX ( id ) AS id FROM TreeEntries;")(_ long 1 ) headOnly
+    execQuery(connection, "SELECT MAX(id) FROM TreeEntries;")(_ long 1) headOnly
   )
   val childrenForId_ = prepare("SELECT id, name FROM TreeEntries WHERE parent = ?;")
   val nameForId_ = prepare("SELECT name FROM TreeEntries WHERE id = ?;")
@@ -37,42 +37,42 @@ class TreeSqlDB(connection: Connection) extends TreeDB with TreeCacheUpdater wit
 
   override def name(id: Long) : Option[String] =
     execQuery(nameForId_, id)(_ string 1) headOption
+
   override def children(id: Long) : Iterable[IdAndName] =
     execQuery(childrenForId_, id)(result => IdAndName(result long 1, result string 2)) toList
+
   override def parent(id: Long) : Option[Long] =
     execQuery(parentForId_, id)(_ long 1) headOption
+    
   override def createNewNode(parent: Long, name: String) : Option[Long] = {
     // This method MUST check that the parent exists and there is no child with the same name.
     val id = maxEntryId incrementAndGet()
     try { execUpdate(addEntry_, id, parent, name) match {
-      // EVENTUALLY, the update adapters should be called from a separate thread
-      case 1 => treeAdapters foreach(_ created (id, name, parent)); Some(id)
+      case 1 => treeAdapters foreach(_ created (id, name, parent)); Some(id) // EVENTUALLY, call adapters from a separate thread
       case n => throw new IllegalStateException("Create: Unexpected %s times update for id %s" format(n, id))
-      // EVENTUALLY, the exception could be inspected more in detail
-    } } catch { case e: SQLException => maxEntryId compareAndSet(id, id-1); None }
+    } } catch { case e: SQLException => maxEntryId compareAndSet(id, id-1); None } // EVENTUALLY, check exception details
   }
+  
   override def rename(id: Long, newName: String) : Boolean = {
     // This method MUST check that there is no sibling with the same name.
     try { execUpdate(renameEntry_, newName, id) match {
-      // EVENTUALLY, the update adapters should be called from a separate thread
       case 0 => false
-      case 1 => treeAdapters foreach(_ renamed (id, newName)); true
+      case 1 => treeAdapters foreach(_ renamed (id, newName)); true // EVENTUALLY, call adapters from a separate thread
       case n => throw new IllegalStateException("Rename: Unexpected %s times update for id %s" format(n, id))
-      // EVENTUALLY, the exception could be inspected more in detail
-    } } catch { case e: SQLException => false }
+    } } catch { case e: SQLException => false } // EVENTUALLY, check exception details
   }
+  
   override def move(id: Long, newParent: Long) : Boolean =
     parent(id) map(move(id, _, newParent)) getOrElse false
   override def move(id: Long, oldParent: Long, newParent: Long) : Boolean = {
     // This method MUST check that there will be no sibling with the same name.
     try { execUpdate(moveEntry_, newParent, id) match {
-      // EVENTUALLY, the update adapters should be called from a separate thread
       case 0 => false
-      case 1 => treeAdapters foreach(_ moved (id, oldParent, newParent)); true
+      case 1 => treeAdapters foreach(_ moved (id, oldParent, newParent)); true // EVENTUALLY, call adapters from a separate thread
       case n => throw new IllegalStateException("Move: Unexpected %s times update for id %s" format(n, id))
-      // EVENTUALLY, the exception could be inspected more in detail
-    } } catch { case e: SQLException => false }
+    } } catch { case e: SQLException => false } // EVENTUALLY, check exception details
   }
+  
   override def deleteWithChildren(id: Long) : Boolean =
     parent(id) map(deleteWithChildren(id, _)) getOrElse false
   override def deleteWithChildren(id: Long, oldParent: Long) : Boolean = {
@@ -80,11 +80,9 @@ class TreeSqlDB(connection: Connection) extends TreeDB with TreeCacheUpdater wit
       case 0 => false
       case 1 => true
       case n => throw new IllegalStateException("Delete: Unexpected %s times update for id %s" format(n, id))
-      // EVENTUALLY, the exception could be inspected more in detail
-    } } catch { case e: SQLException => false }
+    } } catch { case e: SQLException => false } // EVENTUALLY, check exception details
     if (markedDeleted) {
-      // EVENTUALLY, the following should be called from a separate thread
-      treeAdapters foreach(_ deleted (id, oldParent))
+      treeAdapters foreach(_ deleted (id, oldParent)) // EVENTUALLY, call adapters and delete from a separate thread
       def deleteRecurse(id: Long) : Unit = {
         children(id) foreach {child => 
           deleteRecurse(child id)

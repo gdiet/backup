@@ -19,7 +19,7 @@ class SimpleFileTreeTests {
     TreeSqlDB addInternalConstraints connection
     val dbSettings = Map("TreeDBCache.cacheSize"->"3")
     val treeDb: TreeDB = TreeDBCache(connection, dbSettings)
-//    val treeDb: TreeDB = TreeDB(connection)
+//    val treeDb: TreeDB = TreeSqlDB(connection)
   }
 
   @Test
