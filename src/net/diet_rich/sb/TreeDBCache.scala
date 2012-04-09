@@ -25,7 +25,12 @@ declare in their pom.xml (http://code.google.com/p/guava-libraries/source/browse
 You can download the jar directly from the Maven Central repository
 (http://repo2.maven.org/maven2/com/google/code/findbugs/jsr305/1.3.9). */
 
-class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap) extends TreeDB {
+trait TreeDBCache extends TreeDB {
+  // Note: if implemented as val, it must be a lazy val, else there will be problems with initialization order
+  protected def db: TreeDB with TreeCacheUpdater
+  // Note: if implemented as val, it must be a lazy val, else there will be problems with initialization order
+  protected def cacheSize : Long // = config.long("TreeDBCache.cacheSize")
+  
   db.registerUpdateAdapter(new TreeCacheUpdateAdapter {
     override def created(id: Long, name: String, parent: Long) = {
       childrenCache invalidate parent
@@ -45,8 +50,6 @@ class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap)
     }
   })
 
-  protected val cacheSize = config.long("TreeDBCache.cacheSize")
-  
   protected val nameCache : LoadingCache[JLong, Option[String]] =
     CacheBuilder.newBuilder()
     .maximumSize(cacheSize)
@@ -79,5 +82,8 @@ class TreeDBCache protected(db: TreeDB with TreeCacheUpdater, config: StringMap)
 
 object TreeDBCache {
   def apply(connection: java.sql.Connection, config: StringMap) : TreeDB =
-    new TreeDBCache(TreeDB(connection), config)
+    new TreeDBCache {
+      override lazy val db = TreeDB(connection)
+      override lazy val cacheSize = config.long("TreeDBCache.cacheSize")
+    }
 }

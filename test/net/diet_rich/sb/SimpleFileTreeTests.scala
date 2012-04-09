@@ -13,7 +13,7 @@ import TestUtil._
 
 class SimpleFileTreeTests {
 
-  val tree = new Tree {
+  lazy val tree = new Tree {
     val connection = DBConnection.hsqlMemoryDB
     TreeDB createTables connection
     TreeDB addInternalConstraints connection
@@ -21,7 +21,7 @@ class SimpleFileTreeTests {
     val treeDb: TreeDB = TreeDBCache(connection, dbSettings)
 //    val treeDb: TreeDB = TreeDB(connection)
   }
-  
+
   @Test
   def rootShouldBeEmptyStringWithId0 =
     assertThat(tree get "") isEqualTo Some(0L)

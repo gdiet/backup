@@ -139,6 +139,9 @@ object TreeDB {
     execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, 'recently deleted');", DELETEDROOT, DELETEDROOT)
   }
 
+  def dropTables(connection: Connection) : Unit =
+    execUpdate(connection, "DROP TABLE TreeEntries IF EXISTS;")
+  
   protected val constraints = List(
     "ParentReference FOREIGN KEY (parent) REFERENCES TreeEntries(id)",
     "ParentSelfReference CHECK (parent != id OR id < 1)",
