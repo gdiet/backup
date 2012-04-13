@@ -41,7 +41,33 @@ class DataInfoSqlDB(connection: Connection) extends DataInfoDB {
 }
 
 object DataInfoSqlDB {
-  // FIXME detect duplicates and orphan entries
+  // NOTES on SQL syntax used: A PRIMARY KEY constraint is equivalent to a
+  // UNIQUE constraint on one or more NOT NULL columns. Only one PRIMARY KEY
+  // can be defined in each table.
+  // (Source: http://hsqldb.org/doc/2.0/guide/guide.pdf)
+  
+  // JOIN is the short form for INNER JOIN.
+  
+  def duplicateEntries(connection: Connection) : Map[Long, DataInfo] =
+    execQuery(connection,
+      """SELECT id, length, print, hash, method FROM DataInfo d1
+         JOIN DataInfo d2
+         ON d1.length = d2.length
+         AND d1.print = d2.print
+         AND d1.hash = d2.hash
+         AND d1.id < d2.id;"""
+    )(
+      result => ((result long 1) -> DataInfo(result long 2, result long 3, result bytes 4, result int 5))
+    ) toMap
+    
+  def orphanEntries(connection: Connection) : Map[Long, DataInfo] =
+    execQuery(connection,
+      """SELECT DISTINCT id, length, print, hash, method FROM DataInfo
+         LEFT OUTER JOIN TreeEntries ON DataInfo.id = TreeEntries.dataid
+         WHERE TreeEntries.dataid is NULL;"""
+    )(
+      result => ((result long 1) -> DataInfo(result long 2, result long 3, result bytes 4, result int 5))
+    ) toMap
 
   def apply(connection: Connection) : DataInfoSqlDB = new DataInfoSqlDB(connection)
   
@@ -59,6 +85,7 @@ object DataInfoSqlDB {
         method INTEGER NOT NULL
       );
     """, zeroByteHash.size);
+    execUpdate(connection, "CREATE INDEX idxDuplicates ON DataInfo(length, print, hash);")
     execUpdate(connection, "INSERT INTO DataInfo (id, length, print, hash, method) VALUES ( 0, 0, ?, ?, 0);", PrintDigester.zeroBytePrint, zeroByteHash)
   }
   
