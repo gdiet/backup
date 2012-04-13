@@ -9,7 +9,7 @@ object RepositoryInfoDB {
   // entries to use eventually:
   // 'shut down' -> 'OK' to check for regular shutdown on last access, remove key when opening database
   // 'database version' -> '1.0'
-  // 'hash algorithm' -> ?
+  // 'hash algorithm' -> 'MD5', 'SHA-1' or similar
   // 'print length' -> ?
   
   def createTables(connection: Connection) : Unit =
@@ -26,9 +26,12 @@ object RepositoryInfoDB {
   def read(connection: Connection) : StringMap =
     execQuery(connection, "SELECT key, value FROM RepositoryInfo;")(result => (result string 1, result string 2)) toMap
 
+  def set(connection: Connection, key: String, value: String) : Unit =
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES (?, ?);", key, value)
+    
   def setOrUpdate(connection: Connection, key: String, value: String) : Unit = {
     delete(connection, key)
-    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES (?, ?);", key, value)
+    set(connection, key, value)
   }
 
   def delete(connection: Connection, key: String) : Unit =

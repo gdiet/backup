@@ -15,25 +15,25 @@ import java.sql.SQLException
 import scala.collection.mutable.SynchronizedQueue
 
 class TreeSqlDB(connection: Connection) extends TreeDB with TreeCacheUpdater with TreeDataUpdater with TreeDBInternals {
-  var treeAdapters = new SynchronizedQueue[TreeCacheUpdateAdapter]
+  protected var treeAdapters = new SynchronizedQueue[TreeCacheUpdateAdapter]
   override def registerUpdateAdapter(adapter: TreeCacheUpdateAdapter) = treeAdapters += adapter
 
-  var dataAdapters = new SynchronizedQueue[TreeDataUpdateAdapter]
+  protected var dataAdapters = new SynchronizedQueue[TreeDataUpdateAdapter]
   override def registerUpdateAdapter(adapter: TreeDataUpdateAdapter) = dataAdapters += adapter
   
-  def prepare(statement: String) : ScalaThreadLocal[PreparedStatement] =
+  protected def prepare(statement: String) : ScalaThreadLocal[PreparedStatement] =
     ScalaThreadLocal(connection prepareStatement statement, statement)
-  val maxEntryId: AtomicLong = new AtomicLong(
+  protected val maxEntryId: AtomicLong = new AtomicLong(
     execQuery(connection, "SELECT MAX(id) FROM TreeEntries;")(_ long 1) headOnly
   )
-  val childrenForId_ = prepare("SELECT id, name FROM TreeEntries WHERE parent = ?;")
-  val nameForId_ = prepare("SELECT name FROM TreeEntries WHERE id = ?;")
-  val parentForId_ = prepare("SELECT parent FROM TreeEntries WHERE id = ?;")
-  val dataForId_ = prepare("SELECT dataid FROM TreeEntries WHERE id = ?;")
-  val addEntry_ = prepare("INSERT INTO TreeEntries (id, parent, name) VALUES ( ? , ? , ? );")
-  val renameEntry_ = prepare("UPDATE TreeEntries SET name = ? WHERE id = ?;")
-  val moveEntry_ = prepare("UPDATE TreeEntries SET parent = ? WHERE id = ?;")
-  val deleteEntry_ = prepare("DELETE FROM TreeEntries WHERE id = ?;")
+  protected val childrenForId_ = prepare("SELECT id, name FROM TreeEntries WHERE parent = ?;")
+  protected val nameForId_ = prepare("SELECT name FROM TreeEntries WHERE id = ?;")
+  protected val parentForId_ = prepare("SELECT parent FROM TreeEntries WHERE id = ?;")
+  protected val dataForId_ = prepare("SELECT dataid FROM TreeEntries WHERE id = ?;")
+  protected val addEntry_ = prepare("INSERT INTO TreeEntries (id, parent, name) VALUES (? , ? , ?);")
+  protected val renameEntry_ = prepare("UPDATE TreeEntries SET name = ? WHERE id = ?;")
+  protected val moveEntry_ = prepare("UPDATE TreeEntries SET parent = ? WHERE id = ?;")
+  protected val deleteEntry_ = prepare("DELETE FROM TreeEntries WHERE id = ?;")
 
   override def name(id: Long) : Option[String] =
     execQuery(nameForId_, id)(_ string 1) headOption
@@ -121,6 +121,7 @@ object TreeSqlDB {
     // from http://hsqldb.org/doc/guide/databaseobjects-chapt.html
     // PRIMARY KEY, UNIQUE or FOREIGN key constraints [... create] an index automatically.
     execUpdate(connection, "CREATE INDEX idxParent ON TreeEntries(parent);")
+    execUpdate(connection, "CREATE INDEX idxDataid ON TreeEntries(dataid);")
     execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?);", ROOTID, ROOTID, ROOTNAME)
     // used intermediately when deleting nodes
     execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, 'recently deleted');", DELETEDROOT, DELETEDROOT)
