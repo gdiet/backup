@@ -26,7 +26,7 @@ You can download the jar directly from the Maven Central repository
 (http://repo2.maven.org/maven2/com/google/code/findbugs/jsr305/1.3.9). */
 
 class TreeDBCache protected(db: TreeDB with TreeCacheUpdater with TreeDBInternals, config: StringMap) extends TreeDB {
-  protected val cacheSize = config.long("TreeDBCache.cacheSize")
+  protected val cacheSize = config.long("TreeDB.cacheSize")
   
   db.registerUpdateAdapter(new TreeCacheUpdateAdapter {
     override def created(id: Long, name: String, parent: Long) = {

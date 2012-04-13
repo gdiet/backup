@@ -10,12 +10,18 @@ import java.sql.SQLException
 
 case class DataInfo (length: Long, print: Long, hash: Array[Byte], method: Int)
 
-class DataInfoSqlDB(connection: Connection) {
+trait DataInfoDB {
+  def read(id: Long) : DataInfo = readOption(id) get
+  def readOption(id: Long) : Option[DataInfo]
+  def write(info: DataInfo) : Long
+}
+
+class DataInfoSqlDB(connection: Connection) extends DataInfoDB {
   protected val maxEntryId: AtomicLong = new AtomicLong(
     execQuery(connection, "SELECT MAX(id) FROM DataInfo;")(_ long 1) headOnly
   )
   
-  def readOption(id: Long) : Option[DataInfo] =
+  override def readOption(id: Long) : Option[DataInfo] =
     execQuery(connection, "SELECT length, print, hash, method FROM DataInfo WHERE id = ?;", id)(
       result => DataInfo(result long 1, result long 2, result bytes 3, result int 4)
     ) headOption
@@ -25,17 +31,20 @@ class DataInfoSqlDB(connection: Connection) {
     
   protected val insertNewEntry_ = prepare("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
     
-  def write(info: DataInfo) : Long = {
+  override def write(info: DataInfo) : Long = {
     val id = maxEntryId incrementAndGet()
     try { execUpdate(insertNewEntry_, id, info length, info print, info hash, info method) match {
       case 1 => id
       case n => throw new IllegalStateException("Write: Unexpected %s times update for id %s" format(n, id))
     } } catch { case e: SQLException => maxEntryId compareAndSet(id, id-1); throw e }
   }
-  
 }
 
 object DataInfoSqlDB {
+  // FIXME detect duplicates and orphan entries
+
+  def apply(connection: Connection) : DataInfoSqlDB = new DataInfoSqlDB(connection)
+  
   def createTables(connection: Connection) : Unit = {
     // length: uncompressed entry size
     // method: store method (0 = PLAIN, 1 = DEFLATE, 2 = LZMA?)
@@ -58,8 +67,7 @@ object DataInfoSqlDB {
   
   protected val constraints = List(
     "NoNegativeLength CHECK (length >= 0)",
-    "ValidMethod CHECK (method = 0 OR method = 1)",
-    "UniqueEntries UNIQUE (length, print, hash)"
+    "ValidMethod CHECK (method = 0 OR method = 1)"
   )
 
   def addConstraints(connection: Connection) : Unit =
