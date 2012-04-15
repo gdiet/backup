@@ -38,6 +38,8 @@ class DataInfoSqlDB(connection: Connection) extends DataInfoDB {
       case n => throw new IllegalStateException("Write: Unexpected %s times update for id %s" format(n, id))
     } } catch { case e: SQLException => maxEntryId compareAndSet(id, id-1); throw e }
   }
+  
+  // FIXME listener for possible orphans
 }
 
 object DataInfoSqlDB {
@@ -47,6 +49,23 @@ object DataInfoSqlDB {
   // (Source: http://hsqldb.org/doc/2.0/guide/guide.pdf)
   
   // JOIN is the short form for INNER JOIN.
+
+  // FIXME cleanup method: delete orphans and duplicates
+
+  def cleanupDuplicates(connection: Connection) = {
+//    execQuery(connection,
+//      """SELECT id, length, print, hash, method FROM DataInfo d1
+//         JOIN DataInfo d2
+//         ON d1.length = d2.length
+//         AND d1.print = d2.print
+//         AND d1.hash = d2.hash
+//         AND d1.id < d2.id;"""
+//    )(
+//      result => ((result long 1) -> DataInfo(result long 2, result long 3, result bytes 4, result int 5))
+//    ) toMap
+    // FIXME needs TreeDataDB
+    throw new UnsupportedOperationException
+  }
   
   def duplicateEntries(connection: Connection) : Map[Long, DataInfo] =
     execQuery(connection,
