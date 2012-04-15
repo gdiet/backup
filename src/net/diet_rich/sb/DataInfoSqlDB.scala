@@ -16,19 +16,15 @@ trait DataInfoDB {
   def write(info: DataInfo) : Long
 }
 
-class DataInfoSqlDB(connection: Connection) extends DataInfoDB {
-  protected val maxEntryId: AtomicLong = new AtomicLong(
-    execQuery(connection, "SELECT MAX(id) FROM DataInfo;")(_ long 1) headOnly
-  )
+class DataInfoSqlDB(protected val connection: Connection) extends DataInfoDB with SqlDBCommon {
+  
+  protected val maxEntryId = readAsAtomicLong("SELECT MAX(id) FROM DataInfo;")
   
   override def readOption(id: Long) : Option[DataInfo] =
     execQuery(connection, "SELECT length, print, hash, method FROM DataInfo WHERE id = ?;", id)(
       result => DataInfo(result long 1, result long 2, result bytes 3, result int 4)
     ) headOption
 
-  protected def prepare(statement: String) : ScalaThreadLocal[PreparedStatement] =
-    ScalaThreadLocal(connection prepareStatement statement, statement)
-    
   protected val insertNewEntry_ = prepare("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
     
   override def write(info: DataInfo) : Long = {
@@ -42,7 +38,7 @@ class DataInfoSqlDB(connection: Connection) extends DataInfoDB {
   // FIXME listener for possible orphans
 }
 
-object DataInfoSqlDB {
+object DataInfoSqlDB extends SqlDBObjectCommon {
   // NOTES on SQL syntax used: A PRIMARY KEY constraint is equivalent to a
   // UNIQUE constraint on one or more NOT NULL columns. Only one PRIMARY KEY
   // can be defined in each table.
@@ -51,6 +47,8 @@ object DataInfoSqlDB {
   // JOIN is the short form for INNER JOIN.
 
   // FIXME cleanup method: delete orphans and duplicates
+
+  override val tableName = "DataInfo"
 
   def cleanupDuplicates(connection: Connection) = {
 //    execQuery(connection,
@@ -90,11 +88,10 @@ object DataInfoSqlDB {
 
   def apply(connection: Connection) : DataInfoSqlDB = new DataInfoSqlDB(connection)
   
-  def createTables(connection: Connection) : Unit = {
+  def createTable(connection: Connection, repoSettings: StringMap) : Unit = {
     // length: uncompressed entry size
     // method: store method (0 = PLAIN, 1 = DEFLATE, 2 = LZMA?)
-    val algorithm = RepositoryInfoDB.read(connection).string("hash algorithm")
-    val zeroByteHash = HashProvider.digest(algorithm).digest
+    val zeroByteHash = HashProvider.digester(repoSettings).digest
     execUpdate(connection, """
       CREATE CACHED TABLE DataInfo (
         id     BIGINT PRIMARY KEY,
@@ -115,10 +112,4 @@ object DataInfoSqlDB {
     "NoNegativeLength CHECK (length >= 0)",
     "ValidMethod CHECK (method = 0 OR method = 1)"
   )
-
-  def addConstraints(connection: Connection) : Unit =
-    constraints foreach(constraint => execUpdate(connection, "ALTER TABLE DataInfo ADD CONSTRAINT " + constraint))
-  
-  def removeConstraints(connection: Connection) : Unit =
-    constraints foreach(constraint => execUpdate(connection, "ALTER TABLE DataInfo DROP CONSTRAINT " + constraint.split(" ").head))
 }

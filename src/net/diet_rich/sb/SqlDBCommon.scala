@@ -21,19 +21,15 @@ protected trait SqlDBCommon {
 }
 
 protected trait SqlDBObjectCommon {
-  protected def tableDefinition: List[String]
+  protected def tableName: String
   protected def externalConstraints: List[String] = List()
   protected def internalConstraints: List[String] = List()
-  protected def tableName: String
   
   final def addConstraints(connection: Connection) : Unit = {
     addInternalConstraints(connection)
     addConstraints(connection, externalConstraints)
   }
 
-  final def createTable(connection: Connection) : Unit =
-    tableDefinition foreach(execUpdate(connection, _))
-  
   protected def addConstraints(connection: Connection, constraints: List[String]) : Unit =
     constraints foreach(constraint => execUpdate(connection, "ALTER TABLE %s ADD CONSTRAINT %s;" format(tableName, constraint)))
   

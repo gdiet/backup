@@ -7,6 +7,7 @@ import TreeDB._
 import df.IdAndName
 import net.diet_rich.util.sql._
 import scala.collection.immutable.Iterable
+import net.diet_rich.util.Configuration._
 import java.sql.Connection
 import java.sql.SQLException
 import scala.collection.mutable.SynchronizedQueue
@@ -97,14 +98,14 @@ class TreeSqlDB(protected val connection: Connection)
 
 object TreeSqlDB extends SqlDBObjectCommon {
   override val tableName = "TreeEntries"
-
-  override protected val tableDefinition = List(
+    
+  def createTable(connection: Connection) : Unit = {
     // The tree is represented by nodes that store their parent but not their children.
     // The tree root must not be deleted, has the ID 0 and parent 0.
     // time should be not NULL iff dataid is not NULL
     // dataid should be 0 for 0-byte TreeEntries
     // UNIQUE (parent, name) is needed in createNewNode()
-    """
+    execUpdate(connection, """
       CREATE CACHED TABLE TreeEntries (
         id     BIGINT PRIMARY KEY,
         parent BIGINT NOT NULL,
@@ -113,15 +114,15 @@ object TreeSqlDB extends SqlDBObjectCommon {
         dataid BIGINT DEFAULT NULL,
         UNIQUE (parent, name)
       );
-    """,
+    """)
     // from http://hsqldb.org/doc/guide/databaseobjects-chapt.html
     // PRIMARY KEY, UNIQUE or FOREIGN key constraints [... create] an index automatically.
-    "CREATE INDEX idxParent ON TreeEntries(parent);",
-    "CREATE INDEX idxDataid ON TreeEntries(dataid);",
-    "INSERT INTO TreeEntries (id, parent, name) VALUES (%s, %s, '%s');" format(ROOTID, ROOTID, ROOTNAME),
+    execUpdate(connection, "CREATE INDEX idxParent ON TreeEntries(parent);")
+    execUpdate(connection, "CREATE INDEX idxDataid ON TreeEntries(dataid);")
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?);", ROOTID, ROOTID, ROOTNAME)
     // used intermediately when deleting nodes
-    "INSERT INTO TreeEntries (id, parent, name) VALUES (%s, %s, 'recently deleted');" format(DELETEDROOT, DELETEDROOT)
-  )
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, 'recently deleted');", DELETEDROOT, DELETEDROOT)
+  }
     
   override protected val internalConstraints = List(
     "ParentReference FOREIGN KEY (parent) REFERENCES TreeEntries(id)",
