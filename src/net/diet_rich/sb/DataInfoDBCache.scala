@@ -10,6 +10,7 @@ import df.IdAndName
 import java.lang.{Long => JLong}
 import net.diet_rich.util.Configuration._
 import scala.collection.immutable.Iterable
+import df.DataInfo
 
 class DataInfoDBCache protected(infoDB: DataInfoDB, config: StringMap) extends DataInfoDB {
   protected val cacheSize = config.long("DataInfoDB.cacheSize")

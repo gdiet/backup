@@ -1,3 +1,6 @@
+// Copyright (c) 2012 Georg Dietrich
+// Licensed under the MIT license:
+// http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.sb
 
 import java.sql.Connection
@@ -7,8 +10,7 @@ import net.diet_rich.util.Configuration._
 import java.util.concurrent.atomic.AtomicLong
 import java.sql.PreparedStatement
 import java.sql.SQLException
-
-case class DataInfo (length: Long, print: Long, hash: Array[Byte], method: Int)
+import df.DataInfo
 
 trait DataInfoDB {
   def read(id: Long) : DataInfo = readOption(id) get
@@ -51,14 +53,14 @@ object DataInfoSqlDB extends SqlDBObjectCommon {
   override val tableName = "DataInfo"
 
   def cleanupDuplicates(connection: Connection) = {
-//    execQuery(connection,
+//    execQuery(connection, idxDuplicates(
 //      """SELECT id, length, print, hash, method FROM DataInfo d1
 //         JOIN DataInfo d2
 //         ON d1.length = d2.length
 //         AND d1.print = d2.print
 //         AND d1.hash = d2.hash
 //         AND d1.id < d2.id;"""
-//    )(
+//    ))(
 //      result => ((result long 1) -> DataInfo(result long 2, result long 3, result bytes 4, result int 5))
 //    ) toMap
     // FIXME needs TreeDataDB
@@ -66,23 +68,23 @@ object DataInfoSqlDB extends SqlDBObjectCommon {
   }
   
   def duplicateEntries(connection: Connection) : Map[Long, DataInfo] =
-    execQuery(connection,
+    execQuery(connection, idxDuplicates(
       """SELECT id, length, print, hash, method FROM DataInfo d1
          JOIN DataInfo d2
          ON d1.length = d2.length
          AND d1.print = d2.print
          AND d1.hash = d2.hash
          AND d1.id < d2.id;"""
-    )(
+    ))(
       result => ((result long 1) -> DataInfo(result long 2, result long 3, result bytes 4, result int 5))
     ) toMap
     
   def orphanEntries(connection: Connection) : Map[Long, DataInfo] =
-    execQuery(connection,
+    execQuery(connection, TreeSqlDB.idxDataid(
       """SELECT DISTINCT id, length, print, hash, method FROM DataInfo
          LEFT OUTER JOIN TreeEntries ON DataInfo.id = TreeEntries.dataid
          WHERE TreeEntries.dataid is NULL;"""
-    )(
+    ))(
       result => ((result long 1) -> DataInfo(result long 2, result long 3, result bytes 4, result int 5))
     ) toMap
 
@@ -104,6 +106,8 @@ object DataInfoSqlDB extends SqlDBObjectCommon {
     execUpdate(connection, "CREATE INDEX idxDuplicates ON DataInfo(length, print, hash);")
     execUpdate(connection, "INSERT INTO DataInfo (id, length, print, hash, method) VALUES ( 0, 0, ?, ?, 0);", PrintDigester.zeroBytePrint, zeroByteHash)
   }
+  
+  def idxDuplicates[T](t : T) = t
   
   def dropTables(connection: Connection) : Unit =
     execUpdate(connection, "DROP TABLE DataInfo IF EXISTS;")

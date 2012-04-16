@@ -11,8 +11,7 @@ import net.diet_rich.util.Configuration._
 import java.sql.Connection
 import java.sql.SQLException
 import scala.collection.mutable.SynchronizedQueue
-
-// FIXME dataid and time access - in a separate class!!!
+import TreeSqlDB._
 
 class TreeSqlDB(protected val connection: Connection)
     extends TreeDB with TreeCacheUpdater with TreeDataUpdater with TreeDBInternals with SqlDBCommon {
@@ -25,7 +24,7 @@ class TreeSqlDB(protected val connection: Connection)
   
   protected val maxEntryId = readAsAtomicLong("SELECT MAX(id) FROM TreeEntries;")
   
-  protected val childrenForId_ = prepare("SELECT id, name FROM TreeEntries WHERE parent = ?;") // FIXME dataid and time access?
+  protected val childrenForId_ = idxParent(prepare("SELECT id, name FROM TreeEntries WHERE parent = ?;")) // FIXME dataid and time access?
   protected val nameForId_ = prepare("SELECT name FROM TreeEntries WHERE id = ?;") // FIXME dataid and time access?
   protected val parentForId_ = prepare("SELECT parent FROM TreeEntries WHERE id = ?;") // FIXME dataid and time access?
   protected val dataForId_ = prepare("SELECT dataid FROM TreeEntries WHERE id = ?;") // FIXME dataid and time access?
@@ -123,7 +122,11 @@ object TreeSqlDB extends SqlDBObjectCommon {
     // used intermediately when deleting nodes
     execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, 'recently deleted');", DELETEDROOT, DELETEDROOT)
   }
-    
+  
+  // used as index usage markers
+  def idxParent[T](t : T) = t
+  def idxDataid[T](t : T) = t
+  
   override protected val internalConstraints = List(
     "ParentReference FOREIGN KEY (parent) REFERENCES TreeEntries(id)",
     "ParentSelfReference CHECK (parent != id OR id < 1)",
