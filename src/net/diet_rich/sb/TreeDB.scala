@@ -13,6 +13,7 @@ import java.sql.SQLIntegrityConstraintViolationException
 import java.sql.SQLException
 import scala.collection.mutable.SynchronizedQueue
 import java.sql.Connection
+import net.diet_rich.util.Configuration._
 
 trait TreeDB {
   /** @return the name, None if no such node. */
@@ -36,28 +37,12 @@ trait TreeDBInternals {
   def deleteWithChildren(id: Long, oldParent: Long) : Boolean
 }
 
-trait TreeCacheUpdater {
-  def registerUpdateAdapter(adapter: TreeCacheUpdateAdapter)
-}
-
-trait TreeCacheUpdateAdapter {
-  def created(id: Long, name: String, parent: Long)
-  def renamed(id: Long, newName: String)
-  def moved(id: Long, oldParent: Long, newParent: Long)
-  def deleted(id: Long, oldParent: Long)
-}
-
-trait TreeDataUpdater {
-  def registerUpdateAdapter(adapter: TreeDataUpdateAdapter)
-}
-
-trait TreeDataUpdateAdapter {
-  def deleted(dataId: Long)
-}
-
 object TreeDB {
   val ROOTID = 0L
   val ROOTNAME = ""
   val ROOTPATH = ""
   val DELETEDROOT = -1L
+  
+  def apply(connection: java.sql.Connection, config: StringMap) : TreeDB =
+    TreeDBCache(connection, config)
 }

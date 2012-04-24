@@ -15,10 +15,15 @@ import df.TimeDataId
 import net.diet_rich.sb.df.TimeDataId
 import net.diet_rich.sb.df.TimeDataId
 
-class TreeDataSqlDB(protected val connection: Connection) extends SqlDBCommon {
+trait TreeDataDB {
+  def readOption(id: Long) : Option[TimeDataId]
+  def read(id: Long) : TimeDataId = readOption(id) get
+}
+
+class TreeDataSqlDB(protected val connection: Connection) extends TreeDataDB with SqlDBCommon {
   protected val dataForId_ = prepare("SELECT time, dataid FROM TreeEntries WHERE id = ?;")
 
-  def read(id: Long) : Option[TimeDataId] =
+  override def readOption(id: Long) : Option[TimeDataId] =
     execQuery(dataForId_, id)(result => TimeDataId(result long 1, result long 2)) headOption
   
   // FIXME continue

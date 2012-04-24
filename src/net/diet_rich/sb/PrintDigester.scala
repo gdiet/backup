@@ -13,6 +13,9 @@ trait PrintDigester extends InputStream {
 object PrintDigester {
   val zeroBytePrint: Long = PrintDigester(new ByteArrayInputStream(new Array(0))).print
   
+  // FIXME the print digester should be constructed with a print length argument
+  // reading the print should trigger reading the print length to buffer (if not yet read)
+  
   def apply(stream: InputStream) : PrintDigester = new FilterInputStream(stream) with PrintDigester {
     val crc = new java.util.zip.CRC32
     val adler = new java.util.zip.Adler32
