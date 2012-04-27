@@ -23,7 +23,7 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
   // the public methods are synchronized to avoid race conditions when updating the caches
   
   protected val readES = new EventSource[TreeEntry]
-  def readEvent : Events[TreeEntry] = readES
+  override def readEvent : Events[TreeEntry] = readES
 
   protected val queryEntry = 
     prepareQuery("SELECT parent, name, time, dataid FROM TreeEntries WHERE id = ?;")
@@ -47,7 +47,7 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
 
     
   protected val createES = new EventSource[TreeEntry]
-  def createEvent : Events[TreeEntry] = createES
+  override def createEvent : Events[TreeEntry] = createES
 
   protected val maxEntryId = 
     readAsAtomicLong("SELECT MAX(id) FROM TreeEntries;")
@@ -63,8 +63,8 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
   }
 
 
-  protected val renameES = new EventSource[(Long, String)]
-  def renameEvent : Events[(Long, String)] = renameES
+  protected val changeES = new EventSource[Long]
+  override def changeEvent : Events[Long] = changeES
 
   protected val renameEntry = 
     prepareUpdate("UPDATE TreeEntries SET name = ? WHERE id = ?;")
@@ -72,14 +72,14 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
     // This method MUST check that there is no sibling with the same name.
     try { renameEntry(newName, id) match {
       case 0 => false
-      case 1 => renameES emit (id, newName); true
+      case 1 => changeES emit id; true
       case n => throwIllegalUpdateException("Rename", n, id)
     } } catch { case e: SQLException => false } // EVENTUALLY, check exception details
   }
 
     
   protected val moveES = new EventSource[MoveInformation]
-  def moveEvent : Events[MoveInformation] = moveES
+  override def moveEvent : Events[MoveInformation] = moveES
 
   protected val moveEntry =
     prepareUpdate("UPDATE TreeEntries SET parent = ? WHERE id = ?;")
@@ -103,7 +103,7 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
 
   
   protected val deleteES = new EventSource[TreeEntry]
-  def deleteEvent : Events[TreeEntry] = deleteES
+  override def deleteEvent : Events[TreeEntry] = deleteES
   
   protected val deleteEntry =
     prepareUpdate("DELETE FROM TreeEntries WHERE id = ?;")
@@ -168,5 +168,5 @@ object TreeSqlDB2 extends SqlDBObjectCommon {
     "DataReference FOREIGN KEY (dataid) REFERENCES DataInfo(id)"
   )
 
-  def apply(connection: Connection) = new TreeSqlDB(connection)
+  def apply(connection: Connection) = new TreeSqlDB2(connection)
 }

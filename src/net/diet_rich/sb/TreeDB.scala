@@ -14,6 +14,7 @@ import java.sql.SQLException
 import scala.collection.mutable.SynchronizedQueue
 import java.sql.Connection
 import net.diet_rich.util.Configuration._
+import net.diet_rich.util.Events
 
 trait TreeDB {
   /** @return the name, None if no such node. */
@@ -55,6 +56,11 @@ trait TreeDBInternals {
 trait TreeDBInternals2 {
   def move(id: Long, entryGetter: Long => Option[TreeEntry], newParent: Long) : Boolean
   def deleteWithChildren(id: Long, entryGetter: Long => Option[TreeEntry], childrenGetter: Long => Iterable[Long]) : Boolean
+  def readEvent : Events[TreeEntry]
+  def createEvent : Events[TreeEntry]
+  def changeEvent : Events[Long]
+  def moveEvent : Events[MoveInformation]
+  def deleteEvent : Events[TreeEntry]
 }
 
 object TreeDB {
