@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.sql.PreparedStatement
 
 protected trait SqlDBCommon {
+  import SqlDBCommon._
   protected def connection: Connection
   
   protected def prepare(statement: String) : ScalaThreadLocal[PreparedStatement] =
@@ -16,8 +17,33 @@ protected trait SqlDBCommon {
     execQuery(connection, statement)(_ long 1) headOnly
   )
 
-  protected def illegalUpdateException(where: String, count: Int, id: Long) =
+  protected def prepareQuery(statement: String) : Query =
+    new Query {
+      protected val prepared =
+        ScalaThreadLocal(connection prepareStatement statement, statement)
+      override def apply[T](args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T] =
+        execQuery(prepared, args:_*)(processor)
+    }
+
+  protected def prepareUpdate(statement: String) : Update =
+    new Update {
+      protected val prepared =
+        ScalaThreadLocal(connection prepareStatement statement, statement)
+      override def apply(args: Any*): Int =
+        execUpdate(prepared, args:_*)
+    }
+  
+  protected def throwIllegalUpdateException(where: String, count: Int, id: Long) =
     throw new IllegalStateException("%s: Unexpected %s times update for id %s" format(where, count, id))
+}
+
+object SqlDBCommon {
+  trait Query {
+    def apply[T](args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T]
+  }
+  trait Update {
+    def apply(args: Any*): Int
+  }
 }
 
 protected trait SqlDBObjectCommon {

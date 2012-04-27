@@ -47,7 +47,7 @@ class TreeSqlDB(protected val connection: Connection)
     val id = maxEntryId incrementAndGet()
     try { execUpdate(addEntry_, id, parent, name) match {
       case 1 => treeAdapters foreach(_ created (id, name, parent)); Some(id) // EVENTUALLY, call adapters from a separate thread
-      case n => illegalUpdateException("Create", n, id)
+      case n => throwIllegalUpdateException("Create", n, id)
     } } catch { case e: SQLException => maxEntryId compareAndSet(id, id-1); None } // EVENTUALLY, check exception details
   }
   
@@ -56,7 +56,7 @@ class TreeSqlDB(protected val connection: Connection)
     try { execUpdate(renameEntry_, newName, id) match {
       case 0 => false
       case 1 => treeAdapters foreach(_ renamed (id, newName)); true // EVENTUALLY, call adapters from a separate thread
-      case n => illegalUpdateException("Rename", n, id)
+      case n => throwIllegalUpdateException("Rename", n, id)
     } } catch { case e: SQLException => false } // EVENTUALLY, check exception details
   
   override def move(id: Long, newParent: Long) : Boolean =
@@ -66,7 +66,7 @@ class TreeSqlDB(protected val connection: Connection)
     try { execUpdate(moveEntry_, newParent, id) match {
       case 0 => false
       case 1 => treeAdapters foreach(_ moved (id, oldParent, newParent)); true // EVENTUALLY, call adapters from a separate thread
-      case n => illegalUpdateException("Move", n, id)
+      case n => throwIllegalUpdateException("Move", n, id)
     } } catch { case e: SQLException => false } // EVENTUALLY, check exception details
   
   override def deleteWithChildren(id: Long) : Boolean =
@@ -75,7 +75,7 @@ class TreeSqlDB(protected val connection: Connection)
     val markedDeleted = try { execUpdate(moveEntry_, DELETEDROOT, id) match {
       case 0 => false
       case 1 => true
-      case n => illegalUpdateException("Delete", n, id)
+      case n => throwIllegalUpdateException("Delete", n, id)
     } } catch { case e: SQLException => false } // EVENTUALLY, check exception details
     if (markedDeleted) {
       treeAdapters foreach(_ deleted (id, oldParent)) // EVENTUALLY, call adapters and delete from a separate thread
