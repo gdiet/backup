@@ -12,11 +12,11 @@ object SourceStatistics extends App {
 
   // restrict to .scala extension
   val scalaFiles = FileUtils iterateFiles (new File("src"), Array("scala"), true) asScala
-
+  
   val (nloc, ncss) = scalaFiles.foldLeft((0,0)){case ((nlocSum,ncssSum), file) =>
     val filePathToPrint = file getPath() substring(4) replaceAll("\\\\","/")
     val lines = Source.fromFile(file, "UTF-8").getLines
-    
+
     def removeFullComments(line: String) : (String, Boolean) = {
       if (line contains "/*") {
         if (line contains "*/") {
@@ -29,11 +29,8 @@ object SourceStatistics extends App {
       } else (line, false)
     }
     
-    // remove "//" comments
-    val preparedLines = lines
-    .map(line => if (line contains "//") line.substring(0, line.indexOf("//")) else line)
-    
-    val (noCommentLines, endsInComment) = preparedLines.foldLeft((List[String](), false)) {
+    // remove "/* */" comments
+    val (noCommentLines, endsInComment) = lines.foldLeft((List[String](), false)) {
       case ((result, false), line) =>
         val (cutLine, inComment) = removeFullComments(line)
         (cutLine :: result, inComment)
@@ -45,6 +42,10 @@ object SourceStatistics extends App {
           (cutLine :: result, inComment)
         } else (result, true)
     }
+
+    // remove "//" comments
+    val preparedLines = noCommentLines
+    .map(line => if (line contains "//") line.substring(0, line.indexOf("//")) else line)
 
     val sourceLines = noCommentLines
     .map(_ trim)
