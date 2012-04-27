@@ -42,6 +42,10 @@ trait TreeDB2 {
   def create(parent: Long, name: String) : Option[Long]
   /** @return true if node was renamed. */
   def rename(id: Long, newName: String) : Boolean
+  /** @return true if the new time was set. */
+  def setTime(id: Long, newTime: Long) : Boolean
+  /** @return true if the new data was set. */
+  def setData(id: Long, newTime: Option[Long], newData: Option[Long]) : Boolean
   /** @return true if node was moved. */
   def move(id: Long, newParent: Long) : Boolean
   /** @return true if node was deleted. */
@@ -56,11 +60,13 @@ trait TreeDBInternals {
 trait TreeDBInternals2 {
   def move(id: Long, entryGetter: Long => Option[TreeEntry], newParent: Long) : Boolean
   def deleteWithChildren(id: Long, entryGetter: Long => Option[TreeEntry], childrenGetter: Long => Iterable[Long]) : Boolean
+  def setData(id: Long, entryGetter: Long => Option[TreeEntry], newTime: Option[Long], newData: Option[Long]) : Boolean
   def readEvent : Events[TreeEntry]
   def createEvent : Events[TreeEntry]
   def changeEvent : Events[Long]
   def moveEvent : Events[MoveInformation]
   def deleteEvent : Events[TreeEntry]
+  def dereferencedDataEvent : Events[Long]
 }
 
 object TreeDB {

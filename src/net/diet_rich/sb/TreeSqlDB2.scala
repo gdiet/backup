@@ -77,7 +77,37 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
     } } catch { case e: SQLException => false } // EVENTUALLY, check exception details
   }
 
-    
+  protected val changeTime = 
+    prepareUpdate("UPDATE TreeEntries SET time = ? WHERE id = ?;")
+  override def setTime(id: Long, newTime: Long) : Boolean = synchronized {
+    // This method MUST check that there is no sibling with the same name.
+    try { changeTime(newTime, id) match {
+      case 0 => false
+      case 1 => changeES emit id; true
+      case n => throwIllegalUpdateException("Rename", n, id)
+    } } catch { case e: SQLException => false } // EVENTUALLY, check exception details
+  }
+  
+
+  protected val dereferencedDataES = new EventSource[Long]
+  override def dereferencedDataEvent : Events[Long] = dereferencedDataES
+  
+  protected val changeData = 
+    prepareUpdate("UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?;")
+  override def setData(id: Long, newTime: Option[Long], newData: Option[Long]) : Boolean = synchronized {
+    setData(id, entry, newTime, newData)
+  }
+  override def setData(id: Long, entryGetter: Long => Option[TreeEntry], newTime: Option[Long], newData: Option[Long]) : Boolean = synchronized {
+    entryGetter(id) flatMap{ oldEntry =>    
+      try { changeData(newTime, newData, id) match {
+        case 0 => None
+        case 1 => changeES emit id; oldEntry.dataid foreach dereferencedDataES.emit; Some()
+        case n => throwIllegalUpdateException("setData", n, id)
+      } } catch { case e: SQLException => None } // EVENTUALLY, check exception details
+    } isDefined
+  }
+
+  
   protected val moveES = new EventSource[MoveInformation]
   override def moveEvent : Events[MoveInformation] = moveES
 
@@ -113,12 +143,13 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
   override def deleteWithChildren(id: Long, entryGetter: Long => Option[TreeEntry], childrenGetter: Long => Iterable[Long]) : Boolean = synchronized {
     entryGetter(id) flatMap{ originalEntry =>
       moveNoNotification(id, entryGetter, DELETEDROOT) map { dontcare =>
-        def deleteRecurse(id: Long) : Unit = {
-          deleteES emit originalEntry
-          childrenGetter(id) foreach {child => deleteRecurse(child)}
+        def deleteRecurse(entry: TreeEntry) : Unit = {
+          childrenGetter(entry id) flatMap (entryGetter(_)) foreach {child => deleteRecurse(child)}
           deleteEntry(id) // EVENTUALLY, react appropriately on unexpected results
+          deleteES emit entry
+          entry.dataid foreach dereferencedDataES.emit
         }
-        deleteRecurse(id)
+        deleteRecurse(originalEntry)
       }
     } isDefined
   }

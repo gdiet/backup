@@ -55,12 +55,14 @@ class TreeDBCache2 protected(db: TreeDB2 with TreeDBInternals2, config: StringMa
   override def children(id: Long) : Iterable[TreeEntry] = childrenCache get id flatMap (entry(_))
   override def create(parent: Long, name: String) : Option[Long] = db create (parent, name)
   override def rename(id: Long, newName: String) : Boolean = db rename (id, newName)
+  override def setTime(id: Long, newTime: Long) : Boolean = db setTime (id, newTime)
   // EVENTUALLY check performance compared to the "pure" implementations
 //  override def move(id: Long, newParent: Long) : Boolean = db move (id, newParent)
 //  override def deleteWithChildren(id: Long) : Boolean = db deleteWithChildren(id)
+//  override def setData(id: Long, newTime: Option[Long], newData: Option[Long]) : Boolean = db setData (id, newTime, newData)
   override def move(id: Long, newParent: Long) : Boolean = db move (id, entry, newParent)
   override def deleteWithChildren(id: Long) : Boolean = db deleteWithChildren(id, entry, node => children(node) map (_ id))
-  
+  override def setData(id: Long, newTime: Option[Long], newData: Option[Long]) : Boolean = db setData (id, entry, newTime, newData)
 }
 
 object TreeDBCache2 {
