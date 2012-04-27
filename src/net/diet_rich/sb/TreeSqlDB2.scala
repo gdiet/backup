@@ -19,7 +19,7 @@ import net.diet_rich.util.ScalaThreadLocal
 case class TreeEntry(id: Long, parent: Long, name: String, time: Option[Long], dataid: Option[Long])
 case class MoveInformation(id: Long, oldParent: Long, newParent: Long)
 
-class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon {
+class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with TreeDB2 with TreeDBInternals2 {
   // the public methods are synchronized to avoid race conditions when updating the caches
   
   protected val readES = new EventSource[TreeEntry]
@@ -27,7 +27,7 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon {
 
   protected val queryEntry = 
     prepareQuery("SELECT parent, name, time, dataid FROM TreeEntries WHERE id = ?;")
-  def entry(id: Long) : Option[TreeEntry] = synchronized {
+  override def entry(id: Long) : Option[TreeEntry] = synchronized {
     queryEntry(id){result =>
       readES.emit(
         TreeEntry(id, result long 1, result string 2, result longOption 3, result longOption 4)
@@ -37,11 +37,11 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon {
   
   protected val queryChildren = 
     idxParent(prepareQuery("SELECT id, name, time, dataid FROM TreeEntries WHERE parent = ?;"))
-  def children(id: Long) : Iterable[Long] = synchronized {
+  override def children(id: Long) : Iterable[TreeEntry] = synchronized {
     queryChildren(id){result =>
       readES.emit(
         TreeEntry(result long 1, id, result string 2, result longOption 3, result longOption 4)
-      ) id
+      )
     } toList
   }
 
@@ -53,7 +53,7 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon {
     readAsAtomicLong("SELECT MAX(id) FROM TreeEntries;")
   protected val addEntry = 
     prepareUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (? , ? , ?);")
-  def create(parent: Long, name: String) : Option[Long] = synchronized {
+  override def create(parent: Long, name: String) : Option[Long] = synchronized {
     // This method MUST check that the parent exists and there is no child with the same name.
     val id = maxEntryId incrementAndGet()
     try { addEntry(id, parent, name) match {
@@ -68,7 +68,7 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon {
 
   protected val renameEntry = 
     prepareUpdate("UPDATE TreeEntries SET name = ? WHERE id = ?;")
-  def rename(id: Long, newName: String) : Boolean = synchronized {
+  override def rename(id: Long, newName: String) : Boolean = synchronized {
     // This method MUST check that there is no sibling with the same name.
     try { renameEntry(newName, id) match {
       case 0 => false
@@ -83,24 +83,23 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon {
 
   protected val moveEntry =
     prepareUpdate("UPDATE TreeEntries SET parent = ? WHERE id = ?;")
-  def move(id: Long, newParent: Long) : Boolean = synchronized {
-    entry(id) map {entry => move(id, () => entry.parent, newParent)} getOrElse false
+  override def move(id: Long, newParent: Long) : Boolean = synchronized {
+    move(id, entry, newParent)
   }
-  // TODO only part of the tree internals api
-  def move(id: Long, parentGetter: () => Long, newParent: Long) : Boolean = synchronized {
-    moveNoNotification(id, parentGetter, newParent) map {
+  override def move(id: Long, entryGetter: Long => Option[TreeEntry], newParent: Long) : Boolean = synchronized {
+    moveNoNotification(id, entryGetter, newParent) map {
       moveES emit MoveInformation(id, _, newParent)
     } isDefined
   }
-  protected def moveNoNotification(id: Long, parentGetter: () => Long, newParent: Long) : Option[Long] = {
+  protected def moveNoNotification(id: Long, entryGetter: Long => Option[TreeEntry], newParent: Long) : Option[Long] =
     // This method MUST check that there will be no sibling with the same name.
-    val oldParent: Long = parentGetter()
-    try { moveEntry(newParent, id) match {
-      case 0 => None
-      case 1 => Some(oldParent)
-      case n => throwIllegalUpdateException("Move", n, id)
-    } } catch { case e: SQLException => None } // EVENTUALLY, check exception details
-  }
+    entryGetter(id) flatMap{ oldEntry =>
+      try { moveEntry(newParent, id) match {
+        case 0 => None
+        case 1 => Some(oldEntry.parent)
+        case n => throwIllegalUpdateException("Move", n, id)
+      } } catch { case e: SQLException => None } // EVENTUALLY, check exception details
+    }
 
   
   protected val deleteES = new EventSource[TreeEntry]
@@ -108,13 +107,12 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon {
   
   protected val deleteEntry =
     prepareUpdate("DELETE FROM TreeEntries WHERE id = ?;")
-  def deleteWithChildren(id: Long) : Boolean = synchronized {
-    deleteWithChildren(id, entry, children)
+  override def deleteWithChildren(id: Long) : Boolean = synchronized {
+    deleteWithChildren(id, entry, node => children(node) map(_ id))
   }
-  // TODO only part of the tree internals api
-  def deleteWithChildren(id: Long, entryGetter: Long => Option[TreeEntry], childrenGetter: Long => Iterable[Long]) : Boolean = synchronized {
+  override def deleteWithChildren(id: Long, entryGetter: Long => Option[TreeEntry], childrenGetter: Long => Iterable[Long]) : Boolean = synchronized {
     entryGetter(id) flatMap{ originalEntry =>
-      moveNoNotification(id, () => originalEntry.parent, DELETEDROOT) map { dontcare =>
+      moveNoNotification(id, entryGetter, DELETEDROOT) map { dontcare =>
         def deleteRecurse(id: Long) : Unit = {
           deleteES emit originalEntry
           childrenGetter(id) foreach {child => deleteRecurse(child)}

@@ -32,9 +32,29 @@ trait TreeDB {
   def deleteWithChildren(id: Long) : Boolean
 }
 
+trait TreeDB2 {
+  /** @return the tree entry, None if no such node. */
+  def entry(id: Long) : Option[TreeEntry]
+  /** @return the children, empty if no such node. */
+  def children(id: Long) : Iterable[TreeEntry]
+  /** @return ID, None if node could not be created. */
+  def create(parent: Long, name: String) : Option[Long]
+  /** @return true if node was renamed. */
+  def rename(id: Long, newName: String) : Boolean
+  /** @return true if node was moved. */
+  def move(id: Long, newParent: Long) : Boolean
+  /** @return true if node was deleted. */
+  def deleteWithChildren(id: Long) : Boolean
+}
+
 trait TreeDBInternals {
   def move(id: Long, oldParent: Long, newParent: Long) : Boolean
   def deleteWithChildren(id: Long, oldParent: Long) : Boolean
+}
+
+trait TreeDBInternals2 {
+  def move(id: Long, entryGetter: Long => Option[TreeEntry], newParent: Long) : Boolean
+  def deleteWithChildren(id: Long, entryGetter: Long => Option[TreeEntry], childrenGetter: Long => Iterable[Long]) : Boolean
 }
 
 object TreeDB {
