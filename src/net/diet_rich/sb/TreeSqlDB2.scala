@@ -89,6 +89,7 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
   }
   
 
+  // FIXME make a deletedDataEvent instead
   protected val dereferencedDataES = new EventSource[Long]
   override def dereferencedDataEvent : Events[Long] = dereferencedDataES
   
@@ -145,7 +146,7 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
       moveNoNotification(id, entryGetter, DELETEDROOT) map { dontcare =>
         def deleteRecurse(entry: TreeEntry) : Unit = {
           childrenGetter(entry id) flatMap (entryGetter(_)) foreach {child => deleteRecurse(child)}
-          deleteEntry(id) // EVENTUALLY, react appropriately on unexpected results
+          deleteEntry(entry id) // EVENTUALLY, react appropriately on unexpected results
           deleteES emit entry
           entry.dataid foreach dereferencedDataES.emit
         }
@@ -189,7 +190,7 @@ object TreeSqlDB2 extends SqlDBObjectCommon {
   
   override protected val internalConstraints = List(
     "ParentReference FOREIGN KEY (parent) REFERENCES TreeEntries(id)",
-    "ParentSelfReference CHECK (parent != id OR id < 1)",
+    "ParentSelfReference CHECK ((parent != id) = (id > 0))",
     "TimestampIffDataPresent CHECK ((dataid is NULL) = (time is NULL))",
     "ValidId CHECK (id >= -1)",
     "RootNameIsEmpty CHECK ((id != 0) OR (name = ''))"
