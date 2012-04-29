@@ -16,23 +16,6 @@ import java.sql.Connection
 import net.diet_rich.util.Configuration._
 import net.diet_rich.util.Events
 
-trait TreeDB {
-  /** @return the name, None if no such node. */
-  def name(id: Long) : Option[String]
-  /** @return the children, empty if no such node. */
-  def children(id: Long) : Iterable[IdAndName]
-  /** @return the parent ID, None if no such node. */
-  def parent(id: Long) : Option[Long]
-  /** @return ID, None if node could not be created. */
-  def createNewNode(parent: Long, name: String) : Option[Long]
-  /** @return true if node was renamed. */
-  def rename(id: Long, newName: String) : Boolean
-  /** @return true if node was moved. */
-  def move(id: Long, newParent: Long) : Boolean
-  /** @return true if node was deleted. */
-  def deleteWithChildren(id: Long) : Boolean
-}
-
 trait TreeDB2 {
   /** @return the tree entry, None if no such node. */
   def entry(id: Long) : Option[TreeEntry]
@@ -50,11 +33,6 @@ trait TreeDB2 {
   def move(id: Long, newParent: Long) : Boolean
   /** @return true if node was deleted. */
   def deleteWithChildren(id: Long) : Boolean
-}
-
-trait TreeDBInternals {
-  def move(id: Long, oldParent: Long, newParent: Long) : Boolean
-  def deleteWithChildren(id: Long, oldParent: Long) : Boolean
 }
 
 trait TreeDBInternals2 {
