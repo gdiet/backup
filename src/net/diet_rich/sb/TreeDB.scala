@@ -75,6 +75,6 @@ object TreeDB {
   val ROOTPATH = ""
   val DELETEDROOT = -1L
   
-  def apply(connection: java.sql.Connection, config: StringMap) : TreeDB =
-    TreeDBCache(connection, config)
+  def apply(connection: java.sql.Connection, config: StringMap) : TreeDB2 =
+    TreeDBCache2(connection, config)
 }

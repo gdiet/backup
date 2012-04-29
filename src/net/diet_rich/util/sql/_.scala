@@ -16,10 +16,8 @@ package object sql {
       case (x : Boolean, index)     => statement setBoolean (index+1, x)
       case (x : Array[Byte], index) => statement setObject(index+1, x)
       case (x : Bytes, index)       => statement setObject(index+1, x copyOfBytes)
-      case (x : Option[Long], index)=> x match {
-        case Some(x)                => statement setLong (index+1, x)
-        case None                   => statement setNull (index+1, java.sql.Types.BIGINT)
-      }
+      case (Some(x : Long), index)  => statement setLong (index+1, x)
+      case (None, index)            => statement setNull (index+1, statement.getParameterMetaData getParameterType (index+1))
     })
     statement
   }
