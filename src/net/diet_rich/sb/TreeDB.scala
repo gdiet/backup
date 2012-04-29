@@ -66,7 +66,7 @@ trait TreeDBInternals2 {
   def changeEvent : Events[Long]
   def moveEvent : Events[MoveInformation]
   def deleteEvent : Events[TreeEntry]
-  def dereferencedDataEvent : Events[Long]
+  def deletedDataEvent : Events[Long]
 }
 
 object TreeDB {

@@ -89,9 +89,14 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
   }
   
 
-  // FIXME make a deletedDataEvent instead
-  protected val dereferencedDataES = new EventSource[Long]
-  override def dereferencedDataEvent : Events[Long] = dereferencedDataES
+  protected val deletedDataES = new EventSource[Long]
+  override def deletedDataEvent : Events[Long] = deletedDataES
+
+  protected val countDataRefs = 
+    prepareQuery("SELECT COUNT(dataid) FROM TreeEntries WHERE dataid = ?;")
+  protected def dataDereferenced(dataid: Long) =
+    countDataRefs(dataid){result => if (result.int(1) == 0) deletedDataES emit dataid}
+  
   
   protected val changeData = 
     prepareUpdate("UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?;")
@@ -102,7 +107,7 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
     entryGetter(id) flatMap{ oldEntry =>    
       try { changeData(newTime, newData, id) match {
         case 0 => None
-        case 1 => changeES emit id; oldEntry.dataid foreach dereferencedDataES.emit; Some()
+        case 1 => changeES emit id; oldEntry.dataid foreach dataDereferenced; Some()
         case n => throwIllegalUpdateException("setData", n, id)
       } } catch { case e: SQLException => None } // EVENTUALLY, check exception details
     } isDefined
@@ -148,7 +153,7 @@ class TreeSqlDB2(protected val connection: Connection) extends SqlDBCommon with 
           childrenGetter(entry id) flatMap (entryGetter(_)) foreach {child => deleteRecurse(child)}
           deleteEntry(entry id) // EVENTUALLY, react appropriately on unexpected results
           deleteES emit entry
-          entry.dataid foreach dereferencedDataES.emit
+          entry.dataid foreach dataDereferenced
         }
         deleteRecurse(originalEntry)
       }
