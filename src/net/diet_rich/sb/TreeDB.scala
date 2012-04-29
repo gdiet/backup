@@ -16,7 +16,7 @@ import java.sql.Connection
 import net.diet_rich.util.Configuration._
 import net.diet_rich.util.Events
 
-trait TreeDB2 {
+trait TreeDB {
   /** @return the tree entry, None if no such node. */
   def entry(id: Long) : Option[TreeEntry]
   /** @return the children, empty if no such node. */
@@ -35,7 +35,7 @@ trait TreeDB2 {
   def deleteWithChildren(id: Long) : Boolean
 }
 
-trait TreeDBInternals2 {
+trait TreeDBInternals {
   def move(id: Long, entryGetter: Long => Option[TreeEntry], newParent: Long) : Boolean
   def deleteWithChildren(id: Long, entryGetter: Long => Option[TreeEntry], childrenGetter: Long => Iterable[Long]) : Boolean
   def setData(id: Long, entryGetter: Long => Option[TreeEntry], newTime: Option[Long], newData: Option[Long]) : Boolean
@@ -53,6 +53,6 @@ object TreeDB {
   val ROOTPATH = ""
   val DELETEDROOT = -1L
   
-  def apply(connection: java.sql.Connection, config: StringMap) : TreeDB2 =
-    TreeDBCache2(connection, config)
+  def apply(connection: java.sql.Connection, config: StringMap) : TreeDB =
+    TreeDBCache(connection, config)
 }

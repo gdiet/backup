@@ -20,9 +20,9 @@ class SimpleFileSystemTests {
   
   lazy val dbSettings = Map("TreeDB.cacheSize"->"3")
   
-  lazy val fs = new Tree2 with ReadWrite {
-    TreeSqlDB2 createTable(connection)
-    TreeSqlDB2 addInternalConstraints connection
+  lazy val fs = new Tree with ReadWrite {
+    TreeSqlDB createTable(connection)
+    TreeSqlDB addInternalConstraints connection
     val treeDb = TreeDB(connection, dbSettings) // without cache: TreeSqlDB(connection)
   }
 

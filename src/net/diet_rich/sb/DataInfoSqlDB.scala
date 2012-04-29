@@ -80,7 +80,7 @@ object DataInfoSqlDB extends SqlDBObjectCommon {
     ) toMap
     
   def orphanEntries(connection: Connection) : Map[Long, DataInfo] =
-    execQuery(connection, TreeSqlDB2.idxDataid(
+    execQuery(connection, TreeSqlDB.idxDataid(
       """SELECT DISTINCT id, length, print, hash, method FROM DataInfo
          LEFT OUTER JOIN TreeEntries ON DataInfo.id = TreeEntries.dataid
          WHERE TreeEntries.dataid is NULL;"""
