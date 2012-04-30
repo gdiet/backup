@@ -11,31 +11,28 @@ trait PrintDigester extends InputStream {
 }
 
 object PrintDigester {
-  val zeroBytePrint: Long = PrintDigester(new ByteArrayInputStream(new Array(0))).print
+  val zeroBytePrint: Long = PrintDigester(0, new ByteArrayInputStream(new Array(0))).print
   
-  // FIXME the print digester should be constructed with a print length argument
-  // reading the print should trigger reading the print length to buffer (if not yet read)
-  
-  def apply(stream: InputStream) : PrintDigester = new FilterInputStream(stream) with PrintDigester {
-    val crc = new java.util.zip.CRC32
-    val adler = new java.util.zip.Adler32
-    override def print: Long = adler.getValue << 32 | crc.getValue
-    override def read: Int = {
-      val array = new Array[Byte](1)
-      read(array) match {
-        case -1 => -1
-        case 1  => array(0)
-        case _  => throw new IllegalStateException("unexpeced read result for single byte array")
+  def apply(length: Int, stream: InputStream) : PrintDigester = new FilterInputStream(stream) with PrintDigester {
+    val header = new Array[Byte](length)
+    val headerLength = {
+      def readRecurse(offset: Int): Int = {
+        in.read(header, offset, length - offset) match {
+          case -1 => offset
+          case  n => readRecurse(offset)
+        }
       }
+      readRecurse(0)
     }
-    override def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
-      in.read(bytes, offset, length) match {
-        case -1 => -1
-        case read =>
-          crc.update(bytes, offset, read)
-          adler.update(bytes, offset, read)
-          read
-      }
+    override val print: Long = {
+      val crc = new java.util.zip.CRC32
+      val adler = new java.util.zip.Adler32
+      crc.update(header, 0, headerLength)
+      adler.update(header, 0, headerLength)
+      adler.getValue << 32 | crc.getValue
     }
+    val input = new java.io.SequenceInputStream(new ByteArrayInputStream(header, 0, headerLength), in)
+    override def read: Int = input.read
+    override def read(bytes: Array[Byte], offset: Int, length: Int): Int = input.read(bytes, offset, length)
   }
 }

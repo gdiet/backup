@@ -86,6 +86,4 @@ object Tree {
   /** Either ROOTPATH for root or a valid sub-path. */
   def isWellformedPath(path: String) : Boolean = (path equals ROOTPATH) || isWellformedSubPath (path)
 
-  // FIXME add requirements to the appropriate methods
-  
 }
