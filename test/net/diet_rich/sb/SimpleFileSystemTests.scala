@@ -16,7 +16,7 @@ import java.io.File
 
 class SimpleFileSystemTests {
 
-  lazy val connection = DBConnection.hsqlMemoryDB
+  lazy val connection = DBConnection.hsqlMemoryDB()
   
   lazy val dbSettings = Map("TreeDB.cacheSize"->"3")
   

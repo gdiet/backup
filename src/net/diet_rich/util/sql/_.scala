@@ -26,16 +26,6 @@ package object sql {
 
   trait ResultIterator[T] extends Iterator[T] with HeadAndIterator[T] with NextOptIterator[T]
 
-  def fetchOnlyLong(stat: PreparedStatement, args: Any*) : Long =
-    execQuery(stat, args:_*)(_ long 1) headOnly
-
-  def fetchOnlyString(stat: PreparedStatement, args: Any*) : String =
-    execQuery(stat, args:_*)(_ string 1) headOnly
-
-  /** only use where performance is not a critical factor. */
-  def fetchOnlyString(connection: Connection, command: String, args: Any*) : String =
-    fetchOnlyString(connection prepareStatement command, args:_*)
-    
   def execQuery[T](stat: PreparedStatement, args: Any*)(processor: WrappedSQLResult => T) : ResultIterator[T] = {
     val resultSet = new WrappedSQLResult(setArguments(stat, args:_*) executeQuery)
     new ResultIterator[T] {
@@ -67,5 +57,29 @@ package object sql {
   /** only use where performance is not a critical factor. */
   def execUpdate(connection: Connection, command: String, args: Any*) : Int =
     setArguments(connection prepareStatement command, args:_*) executeUpdate()
+
+  def prepareQuery(statement: String)(implicit connection: Connection) : SqlQuery =
+    new SqlQuery {
+      protected val prepared =
+        ScalaThreadLocal(connection prepareStatement statement, statement)
+      override def apply[T](args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T] =
+        execQuery(prepared, args:_*)(processor)
+    }
+
+  def prepareUpdate(statement: String)(implicit connection: Connection) : SqlUpdate =
+    new SqlUpdate {
+      protected val prepared =
+        ScalaThreadLocal(connection prepareStatement statement, statement)
+      override def apply(args: Any*): Int =
+        execUpdate(prepared, args:_*)
+    }
+  
+  trait SqlQuery {
+    def apply[T](args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T]
+  }
+  
+  trait SqlUpdate {
+    def apply(args: Any*): Int
+  }
   
 }

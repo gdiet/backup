@@ -19,6 +19,7 @@ trait DataInfoDB {
 }
 
 class DataInfoSqlDB(protected val connection: Connection) extends DataInfoDB with SqlDBCommon {
+  implicit val con = connection
   
   protected val maxEntryId = readAsAtomicLong("SELECT MAX(id) FROM DataInfo;")
   
@@ -27,11 +28,11 @@ class DataInfoSqlDB(protected val connection: Connection) extends DataInfoDB wit
       result => DataInfo(result long 1, result long 2, result bytes 3, result int 4)
     ) headOption
 
-  protected val insertNewEntry_ = prepare("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
+  protected val insertNewEntry = prepareUpdate("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
     
   override def write(info: DataInfo) : Long = {
     val id = maxEntryId incrementAndGet()
-    try { execUpdate(insertNewEntry_, id, info length, info print, info hash, info method) match {
+    try { insertNewEntry(id, info length, info print, info hash, info method) match {
       case 1 => id
       case n => throw new IllegalStateException("Write: Unexpected %s times update for id %s" format(n, id))
     } } catch { case e: SQLException => maxEntryId compareAndSet(id, id-1); throw e }

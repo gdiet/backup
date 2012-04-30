@@ -41,16 +41,16 @@ object DBConnection {
   // Note: As alternative to log4jdbc, jdbcdslog
   // (http://code.google.com/p/jdbcdslog) could be used.
   
-  def hsqlMemoryDB : Connection = connect(
+  def hsqlMemoryDB(name: String = "memdb") : Connection = connect(
     jdbcDriverClassName = "net.sf.log4jdbc.DriverSpy",
-    jdbcURL = "jdbc:log4jdbc:hsqldb:mem:memdb",
+    jdbcURL = "jdbc:log4jdbc:hsqldb:mem:" + name,
     jdbcUser = "SA",
     jdbcPassword = ""
   )
   
-  def h2MemoryDB : Connection = connect (
+  def h2MemoryDB(name: String = "memdb") : Connection = connect (
     jdbcDriverClassName = "net.sf.log4jdbc.DriverSpy",
-    jdbcURL = "jdbc:log4jdbc:h2:mem:test",
+    jdbcURL = "jdbc:log4jdbc:h2:mem:" + name,
     jdbcUser = "SA",
     jdbcPassword = ""
   )

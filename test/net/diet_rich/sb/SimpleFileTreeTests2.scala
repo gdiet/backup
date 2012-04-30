@@ -12,7 +12,7 @@ import TestUtil._
 class SimpleFileTreeTests2 {
 
   lazy val tree = new Tree {
-    val connection = DBConnection.hsqlMemoryDB
+    val connection = DBConnection.hsqlMemoryDB()
     TreeSqlDB dropTable connection
     TreeSqlDB createTable connection
     TreeSqlDB addInternalConstraints connection
