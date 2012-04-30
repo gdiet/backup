@@ -11,12 +11,14 @@ package object sql {
   def setArguments(statement: PreparedStatement, args: Any*): PreparedStatement = {
     args.zipWithIndex foreach(_ match {
       case (x : Long, index)        => statement setLong (index+1, x)
+      case (Some(x : Long), index)  => statement setLong (index+1, x)
       case (x : Int, index)         => statement setInt (index+1, x)
+      case (Some(x : Int), index)   => statement setInt (index+1, x)
       case (x : String, index)      => statement setString (index+1, x)
+      case (Some(x : String), index)=> statement setString (index+1, x)
       case (x : Boolean, index)     => statement setBoolean (index+1, x)
       case (x : Array[Byte], index) => statement setObject(index+1, x)
       case (x : Bytes, index)       => statement setObject(index+1, x copyOfBytes)
-      case (Some(x : Long), index)  => statement setLong (index+1, x)
       case (None, index)            => statement setNull (index+1, statement.getParameterMetaData getParameterType (index+1))
     })
     statement

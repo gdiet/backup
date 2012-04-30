@@ -17,6 +17,7 @@ protected trait SqlDBCommon {
     execQuery(connection, statement)(_ long 1) headOnly
   )
 
+  // FIXME possibly, connection could be made implicit, and this definition be moved to util.sql package
   protected def prepareQuery(statement: String) : Query =
     new Query {
       protected val prepared =

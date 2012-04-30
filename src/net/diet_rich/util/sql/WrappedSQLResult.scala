@@ -13,11 +13,15 @@ class WrappedSQLResult(resultSet: ResultSet) extends Logging {
     logger debug "result [" + column + "]: " + value
     value
   }
-  def int(column: Int)        = log(column, resultSet getInt column)
-  def long(column: Int)       = log(column, resultSet getLong column)
-  def longOption(column: Int) = log(column, nullIsNone (resultSet getLong column) )
-  def string(column: Int)     = log(column, resultSet getString column)
-  def bytes(column: Int)      = log(column, resultSet getBytes column)
+  private def asOption[T](value: T) : Option[T] = if (resultSet.wasNull) None else Some(value)
+  def int(column: Int)         = log(column, resultSet getInt column)
+  def intOption(column: Int)   = log(column, asOption (resultSet getInt column) )
+  def long(column: Int)        = log(column, resultSet getLong column)
+  def longOption(column: Int)  = log(column, asOption (log(column, resultSet getLong column)) )
+  def string(column: Int)      = log(column, resultSet getString column)
+  def stringOption(column: Int)= log(column, asOption (resultSet getString column) )
+  def bytes(column: Int)       = log(column, resultSet getBytes column)
+  def bytesOption(column: Int) = log(column, asOption (resultSet getBytes column) )
   
   def next: Boolean = resultSet.next
 }

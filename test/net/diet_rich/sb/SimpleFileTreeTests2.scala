@@ -3,8 +3,6 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.sb
 
-import java.sql.Connection
-import java.sql.DriverManager
 import net.diet_rich.util.Configuration.StringMap
 import org.testng.annotations.Test
 import org.testng.annotations.BeforeClass
