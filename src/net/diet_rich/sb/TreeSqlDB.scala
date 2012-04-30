@@ -91,28 +91,14 @@ class TreeSqlDB(protected val connection: Connection) extends SqlDBCommon with T
   }
   
 
-  protected val deletedDataES = new EventSource[Long]
-  override def deletedDataEvent : Events[Long] = deletedDataES
-
-  protected val countDataRefs = 
-    prepareQuery("SELECT COUNT(dataid) FROM TreeEntries WHERE dataid = ?;")
-  protected def dataDereferenced(dataid: Long) =
-    countDataRefs(dataid){result => if (result.int(1) == 0) deletedDataES emit dataid}
-  
-  
   protected val changeData = 
     prepareUpdate("UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?;")
   override def setData(id: Long, newTime: Option[Long], newData: Option[Long]) : Boolean = synchronized {
-    setData(id, entry, newTime, newData)
-  }
-  override def setData(id: Long, entryGetter: Long => Option[TreeEntry], newTime: Option[Long], newData: Option[Long]) : Boolean = synchronized {
-    entryGetter(id) flatMap{ oldEntry =>    
-      try { changeData(newTime, newData, id) match {
-        case 0 => None
-        case 1 => changeES emit id; oldEntry.dataid foreach dataDereferenced; Some()
-        case n => throwIllegalUpdateException("setData", n, id)
-      } } catch { case e: SQLException => None } // EVENTUALLY, check exception details
-    } isDefined
+    try { changeData(newTime, newData, id) match {
+      case 0 => false
+      case 1 => changeES emit id; true
+      case n => throwIllegalUpdateException("setData", n, id)
+    } } catch { case e: SQLException => false } // EVENTUALLY, check exception details
   }
 
   
@@ -125,21 +111,19 @@ class TreeSqlDB(protected val connection: Connection) extends SqlDBCommon with T
     move(id, entry, newParent)
   }
   override def move(id: Long, entryGetter: Long => Option[TreeEntry], newParent: Long) : Boolean = synchronized {
-    moveNoNotification(id, entryGetter, newParent) map {
-      moveES emit MoveInformation(id, _, newParent)
-    } isDefined
+    entryGetter(id) map{ oldEntry =>
+      moveNoNotification(id, newParent)(moveES emit MoveInformation(id, oldEntry parent, newParent))
+    } getOrElse false
   }
-  protected def moveNoNotification(id: Long, entryGetter: Long => Option[TreeEntry], newParent: Long) : Option[Long] =
+  protected def moveNoNotification(id: Long, newParent: Long)(onSuceess: => Unit) : Boolean =
     // This method MUST check that there will be no sibling with the same name.
-    entryGetter(id) flatMap{ oldEntry =>
-      try { moveEntry(newParent, id) match {
-        case 0 => None
-        case 1 => Some(oldEntry.parent)
-        case n => throwIllegalUpdateException("Move", n, id)
-      } } catch { case e: SQLException => None } // EVENTUALLY, check exception details
-    }
+    try { moveEntry(newParent, id) match {
+      case 0 => false
+      case 1 => onSuceess; true
+      case n => throwIllegalUpdateException("Move", n, id)
+    } } catch { case e: SQLException => false } // EVENTUALLY, check exception details
 
-  
+    
   protected val deleteES = new EventSource[TreeEntry]
   override def deleteEvent : Events[TreeEntry] = deleteES
   
@@ -149,17 +133,16 @@ class TreeSqlDB(protected val connection: Connection) extends SqlDBCommon with T
     deleteWithChildren(id, entry, node => children(node) map(_ id))
   }
   override def deleteWithChildren(id: Long, entryGetter: Long => Option[TreeEntry], childrenGetter: Long => Iterable[Long]) : Boolean = synchronized {
-    entryGetter(id) flatMap{ originalEntry =>
-      moveNoNotification(id, entryGetter, DELETEDROOT) map { dontcare =>
-        def deleteRecurse(entry: TreeEntry) : Unit = {
-          childrenGetter(entry id) flatMap (entryGetter(_)) foreach {child => deleteRecurse(child)}
-          deleteEntry(entry id) // EVENTUALLY, react appropriately on unexpected results
-          deleteES emit entry
-          entry.dataid foreach dataDereferenced
+    entryGetter(id) map{ oldEntry =>
+      moveNoNotification(id, DELETEDROOT){
+        def deleteRecurse(oldEntry: TreeEntry) : Unit = {
+          childrenGetter(oldEntry id) flatMap (entryGetter(_)) foreach deleteRecurse
+          deleteEntry(oldEntry id) // EVENTUALLY, react appropriately on unexpected results
+          deleteES emit oldEntry
         }
-        deleteRecurse(originalEntry)
+        deleteRecurse(oldEntry)
       }
-    } isDefined
+    } getOrElse false
   }
 }
 

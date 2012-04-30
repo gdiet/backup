@@ -1,0 +1,11 @@
+// Copyright (c) 2012 Georg Dietrich
+// Licensed under the MIT license:
+// http://www.opensource.org/licenses/mit-license.php
+
+1) The tree data is stored in an SQL table, where each entry references its parent. Entry ID 0 is the standard root entry, entry IDs < 0 are reserved for special roots like deleted entries. Columns in the tree table are: id, parent, name, time, dataid.
+
+2) If entries are deleted, orphan dataid entries may occur. These orphans (together with the data) are not be deleted/freed during active use, since there may still references to the dataid entries be held in the running code.
+
+3) The tree data can be cached. Changes to the tree SQL are immediately forwarded to the cache(s). To avoid race conditions with values fetched from caches and concurrent access, the public tree SQL methods are synchronized.
+
+4) Any data and references obtained from the tree methods are subject to change between any two method calls, even to deletion (with exception of the dataid, which is guaranteed to stay valid at least until the end of the session).

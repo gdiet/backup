@@ -38,13 +38,11 @@ trait TreeDB {
 trait TreeDBInternals {
   def move(id: Long, entryGetter: Long => Option[TreeEntry], newParent: Long) : Boolean
   def deleteWithChildren(id: Long, entryGetter: Long => Option[TreeEntry], childrenGetter: Long => Iterable[Long]) : Boolean
-  def setData(id: Long, entryGetter: Long => Option[TreeEntry], newTime: Option[Long], newData: Option[Long]) : Boolean
   def readEvent : Events[TreeEntry]
   def createEvent : Events[TreeEntry]
   def changeEvent : Events[Long]
   def moveEvent : Events[MoveInformation]
   def deleteEvent : Events[TreeEntry]
-  def deletedDataEvent : Events[Long]
 }
 
 object TreeDB {
