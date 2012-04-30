@@ -3,7 +3,6 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.sb
 
-import df.IdAndName
 import java.sql.PreparedStatement
 import net.diet_rich.util.ScalaThreadLocal
 import net.diet_rich.util.sql._

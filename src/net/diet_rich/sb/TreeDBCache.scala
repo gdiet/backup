@@ -6,7 +6,6 @@ package net.diet_rich.sb
 import com.google.common.cache.CacheLoader
 import com.google.common.cache.LoadingCache
 import com.google.common.cache.CacheBuilder
-import df.IdAndName
 import java.lang.{Long => JLong}
 import net.diet_rich.util.Configuration._
 import scala.collection.immutable.Iterable
@@ -60,7 +59,6 @@ class TreeDBCache protected(db: TreeDB with TreeDBInternals, config: StringMap) 
   // EVENTUALLY check performance compared to the "pure" implementations
 //  override def move(id: Long, newParent: Long) : Boolean = db move (id, newParent)
 //  override def deleteWithChildren(id: Long) : Boolean = db deleteWithChildren(id)
-//  override def setData(id: Long, newTime: Option[Long], newData: Option[Long]) : Boolean = db setData (id, newTime, newData)
   override def move(id: Long, newParent: Long) : Boolean = db move (id, entry, newParent)
   override def deleteWithChildren(id: Long) : Boolean = db deleteWithChildren(id, entry, node => children(node) map (_ id))
 }

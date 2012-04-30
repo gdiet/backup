@@ -6,7 +6,6 @@ package net.diet_rich.sb
 import com.google.common.cache.CacheLoader
 import com.google.common.cache.LoadingCache
 import com.google.common.cache.CacheBuilder
-import df.IdAndName
 import java.lang.{Long => JLong}
 import net.diet_rich.util.Configuration._
 import scala.collection.immutable.Iterable

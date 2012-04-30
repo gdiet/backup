@@ -19,6 +19,8 @@ import net.diet_rich.util.ScalaThreadLocal
 case class TreeEntry(id: Long, parent: Long, name: String, time: Option[Long], dataid: Option[Long])
 case class MoveInformation(id: Long, oldParent: Long, newParent: Long)
 
+// eventually synchronize with java.util.concurrent.locks.ReentrantReadWriteLock
+
 class TreeSqlDB(protected val connection: Connection) extends SqlDBCommon with TreeDB with TreeDBInternals {
   // the public methods are synchronized to avoid race conditions when updating the caches
   // this is also needed because cached values are used to speed up certain methods like delete
