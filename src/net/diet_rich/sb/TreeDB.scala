@@ -3,17 +3,9 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.sb
 
-import java.sql.PreparedStatement
-import net.diet_rich.util.ScalaThreadLocal
-import net.diet_rich.util.sql._
-import scala.collection.immutable.Iterable
-import java.util.concurrent.atomic.AtomicLong
-import java.sql.SQLIntegrityConstraintViolationException
-import java.sql.SQLException
-import scala.collection.mutable.SynchronizedQueue
-import java.sql.Connection
 import net.diet_rich.util.Configuration._
 import net.diet_rich.util.Events
+import net.diet_rich.util.sql._
 
 trait TreeDB {
   /** @return the tree entry, None if no such node. */

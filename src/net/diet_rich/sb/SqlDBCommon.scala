@@ -1,10 +1,10 @@
 package net.diet_rich.sb
 
 import java.sql.Connection
+import java.sql.PreparedStatement
+import java.util.concurrent.atomic.AtomicLong
 import net.diet_rich.util.ScalaThreadLocal
 import net.diet_rich.util.sql._
-import java.util.concurrent.atomic.AtomicLong
-import java.sql.PreparedStatement
 
 protected trait SqlDBCommon {
   protected def readAsAtomicLong(statement: String)(implicit connection: Connection): AtomicLong = new AtomicLong(

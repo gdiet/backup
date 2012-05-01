@@ -3,18 +3,13 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.sb
 
-import TreeDB._
-import df._
-import net.diet_rich.util.sql._
-import scala.collection.immutable.Iterable
-import net.diet_rich.util.Configuration._
 import java.sql.Connection
 import java.sql.SQLException
-import scala.collection.mutable.SynchronizedQueue
-import TreeSqlDB._
 import net.diet_rich.util.EventSource
 import net.diet_rich.util.Events
-import net.diet_rich.util.ScalaThreadLocal
+import net.diet_rich.util.sql._
+import TreeDB._
+import TreeSqlDB._
 
 case class TreeEntry(id: Long, parent: Long, name: String, time: Option[Long], dataid: Option[Long])
 case class MoveInformation(id: Long, oldParent: Long, newParent: Long)

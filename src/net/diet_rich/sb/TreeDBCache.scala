@@ -8,7 +8,6 @@ import com.google.common.cache.LoadingCache
 import com.google.common.cache.CacheBuilder
 import java.lang.{Long => JLong}
 import net.diet_rich.util.Configuration._
-import scala.collection.immutable.Iterable
 
 /* http://stackoverflow.com/questions/10007994/why-do-i-need-jsr305-to-use-guava-in-scala
 

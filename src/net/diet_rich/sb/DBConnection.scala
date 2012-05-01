@@ -3,10 +3,10 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.sb
 
-import java.sql.DriverManager
-import sys.ShutdownHookThread
 import java.io.File
 import java.sql.Connection
+import java.sql.DriverManager
+import scala.sys.ShutdownHookThread
 
 object DBConnection {
   def connect(jdbcDriverClassName: String, jdbcURL: String, jdbcUser: String, jdbcPassword: String) : Connection = {
