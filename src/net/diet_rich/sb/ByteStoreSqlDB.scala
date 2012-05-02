@@ -17,7 +17,24 @@ class ByteStoreSqlDB(protected val connection: Connection) extends SqlDBCommon {
 
 object ByteStoreSqlDB extends SqlDBObjectCommon {
   override val tableName = "ByteStore"
+
+  // find illegal overlaps:
+  // SELECT * FROM ByteStore b1 JOIN ByteStore b2 ON b1.start < b2.fin AND b1.fin > b2.fin
+  // illegal overlaps must be ignored during free space detection
   
+  // find entries without matching datainfo entry
+  // emit warning and free the space
+    
+  // find gaps
+  // a) start without matching fin
+  // SELECT * FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 on b1.start = b2.fin where b2.fin is null
+  // b) fin without matching start
+  // SELECT * FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 on b1.fin = b2.start where b2.start is null
+
+    
+  // find highest entry
+  // SELECT MAX(fin) FROM ByteStore
+    
   def createTable(connection: Connection, repoSettings: StringMap) : Unit = {
     val zeroByteHash = HashProvider.digester(repoSettings).digest
     // index: data part index (starts at 0)
