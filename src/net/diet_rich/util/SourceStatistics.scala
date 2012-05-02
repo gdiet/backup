@@ -47,7 +47,7 @@ object SourceStatistics extends App {
     val preparedLines = noCommentLines
     .map(line => if (line contains "//") line.substring(0, line.indexOf("//")) else line)
 
-    val sourceLines = noCommentLines
+    val sourceLines = preparedLines
     .map(_ trim)
     .filterNot(_.isEmpty)
 
