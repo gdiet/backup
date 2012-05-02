@@ -9,9 +9,8 @@ import com.google.common.cache.CacheBuilder
 import java.lang.{Long => JLong}
 import net.diet_rich.util.Configuration._
 import scala.collection.immutable.Iterable
-import df.DataInfo
 
-class DataInfoDBCache protected(infoDB: DataInfoDB, config: StringMap) extends DataInfoDB {
+class DataInfoDBCache protected(infoDB: DataInfoSqlDB, config: StringMap) extends DataInfoDB {
   protected val cacheSize = config.long("DataInfoDB.cacheSize")
   
   protected val cache : LoadingCache[JLong, Option[DataInfo]] =
@@ -20,6 +19,8 @@ class DataInfoDBCache protected(infoDB: DataInfoDB, config: StringMap) extends D
     .build(new CacheLoader[JLong, Option[DataInfo]] {
       override def load(key: JLong) : Option[DataInfo] = infoDB readOption key
     })
+  
+  infoDB.entryInsertEvent subscribe { case (id, info) => cache put (id, Some(info)) }
 
   override def readOption(id: Long) : Option[DataInfo] = cache get id
   override def write(info: DataInfo) : Long = infoDB write info

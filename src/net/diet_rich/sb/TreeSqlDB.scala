@@ -28,9 +28,9 @@ class TreeSqlDB(protected val connection: Connection) extends SqlDBCommon with T
     prepareQuery("SELECT parent, name, time, dataid FROM TreeEntries WHERE id = ?;")
   override def entry(id: Long) : Option[TreeEntry] = synchronized {
     queryEntry(id){result =>
-      readES.emit(
-        TreeEntry(id, result long 1, result string 2, result longOption 3, result longOption 4)
-      )
+      // no read event emitted: for one-cache-solutions superfluous;
+      // for multiple-cache-solutions, only minimal advantages are to be expected.
+      TreeEntry(id, result long 1, result string 2, result longOption 3, result longOption 4)
     } headOption
   }
   
