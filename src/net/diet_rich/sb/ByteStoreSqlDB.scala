@@ -9,30 +9,34 @@ import net.diet_rich.util.Configuration._
 import net.diet_rich.util.EventSource
 import net.diet_rich.util.Events
 import net.diet_rich.util.sql._
+import ByteStoreSqlDB._
 
 class ByteStoreSqlDB(protected val connection: Connection) extends SqlDBCommon {
   implicit val con = connection
+
+  execQuery(connection, idxStart( idxFin(
+    "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.start = b2.fin WHERE b2.fin IS NULL"
+  )))(result => result long 1).toList filterNot (_ == 0)
   
 }
 
 object ByteStoreSqlDB extends SqlDBObjectCommon {
   override val tableName = "ByteStore"
 
-  // find illegal overlaps:
+  // EVENTUALLY, it would be good to look for illegal overlaps:
   // SELECT * FROM ByteStore b1 JOIN ByteStore b2 ON b1.start < b2.fin AND b1.fin > b2.fin
-  // illegal overlaps must be ignored during free space detection
-  
-  // find entries without matching datainfo entry
-  // emit warning and free the space
+  // Illegal overlaps should be ignored during free space detection
+
+  // EVENTUALLY, it would be good to look for orphan ByteStore entries (in case the FOREIGN KEY constraint is not enabled).
+  // Emit warning and free the space?
     
-  // find gaps
+  // Find gaps
   // a) start without matching fin
   // SELECT * FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 on b1.start = b2.fin where b2.fin is null
   // b) fin without matching start
   // SELECT * FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 on b1.fin = b2.start where b2.start is null
 
-    
-  // find highest entry
+  // Find highest entry
   // SELECT MAX(fin) FROM ByteStore
     
   def createTable(connection: Connection, repoSettings: StringMap) : Unit = {
@@ -50,11 +54,13 @@ object ByteStoreSqlDB extends SqlDBObjectCommon {
     """);
     execUpdate(connection, "CREATE INDEX idxStart ON ByteStore(start);")
     execUpdate(connection, "CREATE INDEX idxFin ON ByteStore(fin);")
+    execUpdate(connection, "CREATE INDEX idxData ON ByteStore(dataid);")
   }
   
   // used as index usage markers
   def idxStart[T](t : T) = t
   def idxFin[T](t : T) = t
+  def idxData[T](t : T) = t
   
   override protected val internalConstraints = List(
     "UniqueStart UNIQUE (start)",
