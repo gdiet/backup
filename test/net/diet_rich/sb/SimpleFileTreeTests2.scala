@@ -23,7 +23,7 @@ class SimpleFileTreeTests2 {
 
   @Test
   def rootShouldBeEmptyStringWithId0 =
-    assertThat(tree get "") isEqualTo Some(0L)
+    assertThat(tree get "" map (_ id)) isEqualTo Some(0L)
  
   @Test
   def createChildrenForInvalidIdShouldFail =
@@ -53,7 +53,7 @@ class SimpleFileTreeTests2 {
   def getIdForPathWithSomeElements = {
     val baseName = randomString
     val childOpt = tree make "/"+baseName+"/some/subnodes"
-    assertThat(tree get "/"+baseName+"/some/subnodes") isEqualTo childOpt isNotEqualTo None
+    assertThat(tree get "/"+baseName+"/some/subnodes" map (_ id)) isEqualTo childOpt isNotEqualTo None
     assertThat(tree get "/"+baseName+"/some" isDefined).isTrue
   }
 
@@ -100,11 +100,11 @@ class SimpleFileTreeTests2 {
     val id2 = (tree make (id, "subName")).get
     assertThat(tree rename(id, "newName")).isTrue
     assertThat(tree.entry(id).get.name) isEqualTo "newName"
-    assertThat(tree get "/"+baseName+"/newName") isEqualTo Some(id)
-    assertThat(tree get "/"+baseName+"/newName/subName") isEqualTo Some(id2)
+    assertThat(tree get "/"+baseName+"/newName" map (_ id)) isEqualTo Some(id)
+    assertThat(tree get "/"+baseName+"/newName/subName" map (_ id)) isEqualTo Some(id2)
     assertThat(tree get "/"+baseName+"/initialName") isEqualTo None
     assertThat(tree get "/"+baseName+"/initialName/subName") isEqualTo None
-    val base = (tree get "/"+baseName).get
+    val base = (tree get "/"+baseName).get.id
     assertThat(tree children base size) isEqualTo 1
     assertThat(tree.children(base).head.name) isEqualTo "newName"
     assertThat(tree.children(base).head.id) isEqualTo id
@@ -124,11 +124,11 @@ class SimpleFileTreeTests2 {
     val baseName = randomString
     assertThat(tree make ("/"+baseName+"/A/B/C") isDefined).isTrue
     assertThat(tree make ("/"+baseName+"/X/X/C") isDefined).isTrue
-    val parent = (tree get "/"+baseName+"/A").get
-    val child = (tree get "/"+baseName+"/A/B").get
-    val newParent = (tree get "/"+baseName+"/X").get
+    val parent = (tree get "/"+baseName+"/A").get.id
+    val child = (tree get "/"+baseName+"/A/B").get.id
+    val newParent = (tree get "/"+baseName+"/X").get.id
     assertThat(tree move(child, newParent)).isTrue
-    assertThat(tree get "/"+baseName+"/X/B") isEqualTo Some(child)
+    assertThat(tree get "/"+baseName+"/X/B" map (_ id)) isEqualTo Some(child)
     assertThat(tree get ("/"+baseName+"/X/B/C") isDefined).isTrue
     assertThat(tree get ("/"+baseName+"/A/B") isDefined).isFalse
     assertThat(tree children parent size) isEqualTo 0
@@ -139,7 +139,7 @@ class SimpleFileTreeTests2 {
   def moveNegativeTests = {
     val baseName = randomString
     assertThat(tree make ("/"+baseName+"/A/B") isDefined).isTrue
-    val child = (tree get "/"+baseName+"/A").get
+    val child = (tree get "/"+baseName+"/A").get.id
     assertThat(tree move(child, Long MaxValue)).isFalse
     assertThat(tree move(Long MaxValue, child)).isFalse
     assertThat(tree move(Long MaxValue, Long MaxValue)).isFalse
@@ -149,15 +149,15 @@ class SimpleFileTreeTests2 {
   def deletedNode = {
     val baseName = randomString
     assertThat(tree make ("/"+baseName+"/A/B") isDefined).isTrue
-    val parent = (tree get "/"+baseName).get
-    val id = (tree get "/"+baseName+"/A").get
-    val child = (tree get "/"+baseName+"/A/B").get
+    val parent = (tree get "/"+baseName)
+    val id = (tree get "/"+baseName+"/A").get.id
+    val child = (tree get "/"+baseName+"/A/B").get.id
     assertThat(tree deleteWithChildren id).isTrue
-    assertThat(tree get "/"+baseName) isEqualTo Some(parent)
+    assertThat(tree get "/"+baseName) isEqualTo parent
     assertThat(tree get "/"+baseName+"/A") isEqualTo None
     assertThat(tree entry id) isEqualTo None
     assertThat(tree entry child) isEqualTo None
-    assertThat(tree children parent size) isEqualTo 0
+    assertThat(tree children parent.get.id size) isEqualTo 0
   }
 
   @Test

@@ -25,7 +25,7 @@ trait Tree {
    *  @return ID, None if node was missing and could not be created.
    *  If None is returned, parts of the path may already have been created. */
   def getOrMake(path: String) : Option[Long] =
-    get(path) orElse makeFromParent(path)
+    get(path) map(_ id) orElse makeFromParent(path)
 
   /** Create child.
    * 
@@ -39,10 +39,10 @@ trait Tree {
     get(id, child) map(_ id) orElse make(id, child)
   
   /** @return the ID, None if no such node. */
-  def get(path: String) : Option[Long] =
+  def get(path: String) : Option[TreeEntry] =
     // for maximum performance, we could cache full path -> ID
     path.split("/").tail
-    .foldLeft(Option(ROOTID))((parent, name) => parent flatMap( get(_, name) map(_ id) ))
+    .foldLeft(entry(ROOTID))((parent, name) => parent flatMap(parent => get(parent.id, name) ))
   
   /** @return the child, None if no such node or child. */
   def get(id: Long, childName: String) : Option[TreeEntry] = treeDb children id find(_.name == childName)
