@@ -31,8 +31,8 @@ trait ByteStoreDB {
    *  @param sizeEstimate   Estimated size in bytes of the entry to write
    *  @param source         The write function is provided data ranges as input.
    *                        It is called repeatedly until it returns a data range
-   *                        other than its input, signaling that there is no more
-   *                        data to write.
+   *                        other (shorter) than its input, signaling that there 
+   *                        is no more data to write.
    */
   def write(id: Long, sizeEstimate: Long)(source: DataRange => DataRange)
 }
@@ -63,8 +63,21 @@ class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB w
   override def read(id: Long): Iterable[DataRange] =
     readEntry(id){ result => DataRange(result long 1, result long 2) }.toSeq
   
+  protected val insertEntry = 
+    prepareUpdate("INSERT INTO ByteStore (dataid, index, start, fin) VALUES (?, ?, ?, ?);")
   override def write(id: Long, sizeEstimate: Long)(source: DataRange => DataRange) = {
-    throw new UnsupportedOperationException
+    @annotation.tailrec
+    def writeStep(index: Int): DataRange = {
+      val range = nextFreeRange
+      val stored = source(range)
+      if (stored.fin != stored.start)
+        insertEntry(id, index, stored.start, stored.fin) match {
+          case 1 => /* OK */
+          case n => throwIllegalUpdateException("ByteStore", n, id)
+        }
+      if (stored == range) writeStep(index+1) else DataRange(stored.fin, range.fin)
+    }
+    enqueueFreeRange(writeStep(0))
   }
     
 }
