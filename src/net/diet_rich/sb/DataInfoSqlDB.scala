@@ -19,10 +19,12 @@ trait DataInfoDB {
   def readOption(id: Long) : Option[DataInfo]
   /** @return ID for the new data info. */
   def write(info: DataInfo) : Long
+  /** @return true if the entry was updated. */
+  def update(id: Long, info: DataInfo) : Boolean
 }
 
 class DataInfoSqlDB(protected val connection: Connection) extends DataInfoDB with SqlDBCommon {
-  implicit val con = connection
+  protected implicit val con = connection
   
   protected val maxEntryId = readAsAtomicLong("SELECT MAX(id) FROM DataInfo;")
 
@@ -33,17 +35,27 @@ class DataInfoSqlDB(protected val connection: Connection) extends DataInfoDB wit
       result => DataInfo(result long 1, result long 2, result bytes 3, result int 4)
     ) headOption // NOTE: the query may yield multiple results - only the first is used
 
-  protected val entryInsertES = new EventSource[(Long, DataInfo)]
-  def entryInsertEvent : Events[(Long, DataInfo)] = entryInsertES
+  protected val entryES = new EventSource[(Long, DataInfo)]
+  def entryEvent : Events[(Long, DataInfo)] = entryES
   
   protected val insertNewEntry =
     prepareUpdate("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
   override def write(info: DataInfo) : Long = {
     val id = maxEntryId incrementAndGet()
     try { insertNewEntry(id, info length, info print, info hash, info method) match {
-      case 1 => entryInsertES emit (id -> info); id
+      case 1 => entryES emit (id -> info); id
       case n => throw new IllegalStateException("Write: Unexpected %s times update for id %s" format(n, id))
     } } catch { case e: SQLException => maxEntryId compareAndSet(id, id-1); throw e }
+  }
+  
+  protected val updateNewEntry =
+    prepareUpdate("UPDATE DataInfo SET length = ?, print = ?, hash = ?, method = ? WHERE id = ?;")
+  override def update(id: Long, info: DataInfo) : Boolean = {
+    updateNewEntry(info length, info print, info hash, info method, id) match {
+      case 0 => false
+      case 1 => entryES emit (id -> info); true
+      case n => throw new IllegalStateException("Write: Unexpected %s times update for id %s" format(n, id))
+    }
   }
 }
 
@@ -103,12 +115,13 @@ object DataInfoSqlDB extends SqlDBObjectCommon {
       result => ((result long 1, result long 2))
     )
 
-  def deleteOrphansHereAndInByteStore(connection: Connection) : Int = {
+  def deleteOrphansHereAndMarkThemInByteStore(connection: Connection) : Int = {
     execUpdate(connection, TreeSqlDB idxDataid
-      """DELETE FROM ByteStore WHERE dataid IN (
+      """UPDATE ByteStore SET dataid = 0 WHERE dataid IN (
            SELECT DISTINCT id FROM DataInfo
            LEFT OUTER JOIN TreeEntries ON DataInfo.id = TreeEntries.dataid
            WHERE TreeEntries.dataid is NULL
+           AND DataInfo.id != 0
          );"""
     )
     execUpdate(connection, TreeSqlDB idxDataid
@@ -116,6 +129,7 @@ object DataInfoSqlDB extends SqlDBObjectCommon {
            SELECT DISTINCT id FROM DataInfo
            LEFT OUTER JOIN TreeEntries ON DataInfo.id = TreeEntries.dataid
            WHERE TreeEntries.dataid is NULL
+           AND DataInfo.id != 0
          );"""
     )
   }

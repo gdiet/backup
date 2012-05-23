@@ -19,7 +19,7 @@ case class MoveInformation(id: Long, oldParent: Long, newParent: Long)
 class TreeSqlDB(protected val connection: Connection) extends SqlDBCommon with TreeDB with TreeDBInternals {
   // the public methods are synchronized to avoid race conditions when updating the caches
   // this is also needed because cached values are used to speed up certain methods like delete
-  implicit val con = connection
+  protected implicit val con = connection
   
   protected val readES = new EventSource[TreeEntry]
   override def readEvent : Events[TreeEntry] = readES
