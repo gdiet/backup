@@ -11,84 +11,52 @@ import TestUtil._
 
 class SimpleFileTreeTests2 {
 
-  lazy val tree = new Tree {
+  lazy val treedb: TreeDB = {
     val connection = DBConnection.hsqlMemoryDB()
     TreeSqlDB dropTable connection
     TreeSqlDB createTable connection
     TreeSqlDB addInternalConstraints connection
     val dbSettings = Map("TreeDB.cacheSize"->"3")
-    val treeDb: TreeDB = TreeDBCache(connection, dbSettings)
-//    val treeDb: TreeDB = TreeSqlDB(connection)
+    TreeDBCache(connection, dbSettings)
+//    TreeSqlDB(connection)
   }
-
+  
   @Test
-  def rootShouldBeEmptyStringWithId0 =
-    assertThat(tree get "" map (_ id)) isEqualTo Some(0L)
+  def rootShouldBeEmptyStringWithId0 = {
+    assertThat(treedb.entry(TreeDB.ROOTID).get.name) isEqualTo ""
+    assertThat(treedb.entry(TreeDB.ROOTID).get.id) isEqualTo 0
+    assertThat(treedb.entry(TreeDB.ROOTID).get.parent) isEqualTo 0
+  }
  
   @Test
   def createChildrenForInvalidIdShouldFail =
-    assertThat(tree make (Long MaxValue, "invalid")) isEqualTo None
+    assertThat(treedb create (Long MaxValue, "invalid")) isEqualTo None
 
   @Test
   def createChildrenTwiceShouldFail = {
     val childName = randomString
-    assertThat(tree make (0, childName) isDefined).isTrue
-    assertThat(tree make (0, childName)) isEqualTo None
-    assertThat(tree make ("/" + childName)) isEqualTo None
-  }
-    
-  @Test
-  def createPathWithMultipleElements = {
-    assertThat(tree make "/"+randomString+"/some/more/subnodes" isDefined).isTrue
+    assertThat(treedb create (0, childName) isDefined).isTrue
+    assertThat(treedb create (0, childName)) isEqualTo None
   }
 
   @Test
-  def createPathWithSomeElementsMissing = {
-    val baseName = randomString
-    assertThat(tree make "/"+baseName+"/some/more/subnodes" isDefined).isTrue
-    assertThat(tree make "/"+baseName+"/some/other/subnodes" isDefined).isTrue
-  }
-
-  @Test
-  def getIdForPathWithSomeElements = {
-    val baseName = randomString
-    val childOpt = tree make "/"+baseName+"/some/subnodes"
-    assertThat(tree get "/"+baseName+"/some/subnodes" map (_ id)) isEqualTo childOpt isNotEqualTo None
-    assertThat(tree get "/"+baseName+"/some" isDefined).isTrue
-  }
-
-  @Test
-  def getNameForPathWithSomeElements = {
-    val path = "/"+randomString+"/some/subnodes"
-    val childId = tree make path get;
-    assertThat(tree entry childId map (_ name)) isEqualTo Some("subnodes")
-  }
-
-  @Test
-  def nameForInvalidIdShouldFail =
-    assertThat(tree entry Long.MaxValue) isEqualTo None
-
-  @Test
-  def getPathWithSomeElements = {
-    val path = "/"+randomString+"/some/subnodes"
-    val childId = tree make path get;
-    assertThat(tree path childId) isEqualTo Some(path)
-  }
+  def entryForInvalidIdShouldFail =
+    assertThat(treedb entry Long.MaxValue) isEqualTo None
 
   @Test
   def getEmptyChildrenListForLeaf = {
-    val path = "/"+randomString+"/some/subnodes"
-    val childId = tree make path get;
-    assertThat(tree children childId isEmpty)
+    val childname = randomString
+    val childid = treedb create (TreeDB.ROOTID, childname) get;
+    assertThat(treedb children childid isEmpty)
   }
 
   @Test
   def getChildrenListForNode = {
-    val path = "/"+randomString
-    val baseId = tree make path get;
-    assertThat(tree make (baseId, "child1") isDefined).isTrue
-    assertThat(tree make (baseId, "child2") isDefined).isTrue
-    val children = tree children baseId map(_ name) toList;
+    val childname = randomString
+    val childid0 = treedb create (TreeDB.ROOTID, childname) get;
+    val childid1 = treedb create (childid0, "child1") get;
+    val childid2 = treedb create (childid0, "child2") get;
+    val children = treedb children childid0 map(_ name) toList;
     assertThat(children size) isEqualTo 2
     assertThat(children intersect List("child1","child2") size) isEqualTo 2
   }
@@ -96,73 +64,69 @@ class SimpleFileTreeTests2 {
   @Test
   def renamedNodesName = {
     val baseName = randomString
-    val id = (tree make "/"+baseName+"/initialName").get
-    val id2 = (tree make (id, "subName")).get
-    assertThat(tree rename(id, "newName")).isTrue
-    assertThat(tree.entry(id).get.name) isEqualTo "newName"
-    assertThat(tree get "/"+baseName+"/newName" map (_ id)) isEqualTo Some(id)
-    assertThat(tree get "/"+baseName+"/newName/subName" map (_ id)) isEqualTo Some(id2)
-    assertThat(tree get "/"+baseName+"/initialName") isEqualTo None
-    assertThat(tree get "/"+baseName+"/initialName/subName") isEqualTo None
-    val base = (tree get "/"+baseName).get.id
-    assertThat(tree children base size) isEqualTo 1
-    assertThat(tree.children(base).head.name) isEqualTo "newName"
-    assertThat(tree.children(base).head.id) isEqualTo id
+    val id = treedb create (TreeDB.ROOTID, baseName) get;
+    val id2 = treedb create (id, "subName") get;
+    assertThat(treedb rename(id2, "newName")).isTrue
+    assertThat(treedb.entry(id2).get.name) isEqualTo "newName"
+    val children = treedb children id map(_ name) toList;
+    assertThat(children size) isEqualTo 1
+    assertThat(children head) isEqualTo "newName"
   }
   
   @Test
   def renameNegativeTests = {
     val baseName = randomString
-    val id = (tree make "/"+baseName+"/initialName").get
-    val id2 = (tree make "/"+baseName+"/anotherName").get
-    assertThat(tree rename(id, "anotherName")).isFalse
-    assertThat(tree rename(Long MaxValue, "anotherName")).isFalse
+    val id = treedb create (TreeDB.ROOTID, baseName) get;
+    val id2 = treedb create (id, "subName") get;
+    val id3 = treedb create (id, "subName2") get;
+    assertThat(treedb rename(id2, "subName2")).isFalse
+    assertThat(treedb rename(Long MaxValue, "anotherName")).isFalse
   }
 
   @Test
   def movedNode = {
     val baseName = randomString
-    assertThat(tree make ("/"+baseName+"/A/B/C") isDefined).isTrue
-    assertThat(tree make ("/"+baseName+"/X/X/C") isDefined).isTrue
-    val parent = (tree get "/"+baseName+"/A").get.id
-    val child = (tree get "/"+baseName+"/A/B").get.id
-    val newParent = (tree get "/"+baseName+"/X").get.id
-    assertThat(tree move(child, newParent)).isTrue
-    assertThat(tree get "/"+baseName+"/X/B" map (_ id)) isEqualTo Some(child)
-    assertThat(tree get ("/"+baseName+"/X/B/C") isDefined).isTrue
-    assertThat(tree get ("/"+baseName+"/A/B") isDefined).isFalse
-    assertThat(tree children parent size) isEqualTo 0
-    assertThat(tree children newParent size) isEqualTo 2
+    val id = treedb create (TreeDB.ROOTID, baseName) get;
+    val id2 = treedb create (id, "subName") get;
+    val id3 = treedb create (id, "subName2") get;
+    assertThat(treedb move(id3, id2)).isTrue
+    val children1 = treedb children id map(_ name) toList;
+    assertThat(children1 size) isEqualTo 1
+    assertThat(children1 head) isEqualTo "subName"
+    val children2 = treedb children id2 map(_ name) toList;
+    assertThat(children2 size) isEqualTo 1
+    assertThat(children2 head) isEqualTo "subName2"
   }
 
   @Test
   def moveNegativeTests = {
     val baseName = randomString
-    assertThat(tree make ("/"+baseName+"/A/B") isDefined).isTrue
-    val child = (tree get "/"+baseName+"/A").get.id
-    assertThat(tree move(child, Long MaxValue)).isFalse
-    assertThat(tree move(Long MaxValue, child)).isFalse
-    assertThat(tree move(Long MaxValue, Long MaxValue)).isFalse
+    val id = treedb create (TreeDB.ROOTID, baseName) get;
+    val id2 = treedb create (id, "subName") get;
+    val id3 = treedb create (id2, "subName2") get;
+    val id4 = treedb create (id, "subName2") get;
+    assertThat(treedb move(id4, id2)).isFalse
+    assertThat(treedb move(id3, id)).isFalse
+    assertThat(treedb move(Long MaxValue, id)).isFalse
+    assertThat(treedb move(id3, Long MaxValue)).isFalse
   }
 
   @Test
   def deletedNode = {
     val baseName = randomString
-    assertThat(tree make ("/"+baseName+"/A/B") isDefined).isTrue
-    val parent = (tree get "/"+baseName)
-    val id = (tree get "/"+baseName+"/A").get.id
-    val child = (tree get "/"+baseName+"/A/B").get.id
-    assertThat(tree deleteWithChildren id).isTrue
-    assertThat(tree get "/"+baseName) isEqualTo parent
-    assertThat(tree get "/"+baseName+"/A") isEqualTo None
-    assertThat(tree entry id) isEqualTo None
-    assertThat(tree entry child) isEqualTo None
-    assertThat(tree children parent.get.id size) isEqualTo 0
+    val id = treedb create (TreeDB.ROOTID, baseName) get;
+    val id2 = treedb create (id, "subName") get;
+    val id3 = treedb create (id2, "subName2") get;
+    val id4 = treedb create (id, "subName2") get;
+    assertThat(treedb deleteWithChildren id2).isTrue
+    val children = treedb children id map(_ name) toList;
+    assertThat(children size) isEqualTo 1
+    assertThat(children head) isEqualTo "subName2"
   }
 
   @Test
   def deleteNegativeTests = {
-    assertThat(tree deleteWithChildren(Long MaxValue)).isFalse
+    assertThat(treedb deleteWithChildren(Long MaxValue)).isFalse
   }
 
 }

@@ -49,8 +49,8 @@ class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB w
     nextFreeRanges.synchronized {
       if (nextFreeRanges.isEmpty)
         for (n <- 0 until 10) {
-          nextFreeRanges enqueue DataRange(startOfFreeArea, startOfFreeArea + 100000000)
-          startOfFreeArea = startOfFreeArea + 100000000
+          nextFreeRanges enqueue DataRange(startOfFreeArea, startOfFreeArea + blockSize)
+          startOfFreeArea = startOfFreeArea + blockSize
         }
       nextFreeRanges dequeue
     }
@@ -86,6 +86,7 @@ class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB w
 }
 
 object ByteStoreSqlDB extends SqlDBObjectCommon {
+  protected val blockSize = 100000000
   override val tableName = "ByteStore"
 
   // EVENTUALLY, it would be good to look for illegal overlaps:

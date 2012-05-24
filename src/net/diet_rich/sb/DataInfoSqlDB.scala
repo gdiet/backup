@@ -17,8 +17,10 @@ trait DataInfoDB {
   final def read(id: Long) : DataInfo = readOption(id) get
   /** @return the data info, None if no such entry. */
   def readOption(id: Long) : Option[DataInfo]
+  /** @return ID for the new empty data info. */
+  final def create : Long = create(DataInfo(0, 0, Array(), 0))
   /** @return ID for the new data info. */
-  def write(info: DataInfo) : Long
+  def create(info: DataInfo) : Long
   /** @return true if the entry was updated. */
   def update(id: Long, info: DataInfo) : Boolean
 }
@@ -40,7 +42,7 @@ class DataInfoSqlDB(protected val connection: Connection) extends DataInfoDB wit
   
   protected val insertNewEntry =
     prepareUpdate("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
-  override def write(info: DataInfo) : Long = {
+  override def create(info: DataInfo) : Long = {
     val id = maxEntryId incrementAndGet()
     try { insertNewEntry(id, info length, info print, info hash, info method) match {
       case 1 => entryES emit (id -> info); id
@@ -75,10 +77,10 @@ object DataInfoSqlDB extends SqlDBObjectCommon {
         id     BIGINT PRIMARY KEY,
         length BIGINT NOT NULL,
         print  BIGINT NOT NULL,
-        hash   VARBINARY(?) NOT NULL,
+        hash   VARBINARY(%d) NOT NULL,
         method INTEGER NOT NULL
       );
-    """, zeroByteHash.size);
+    """ format zeroByteHash.size);
     execUpdate(connection, "CREATE INDEX idxDuplicates ON DataInfo(length, print, hash);")
     execUpdate(connection, "CREATE INDEX idxFastPrint ON DataInfo(length, print);")
     execUpdate(connection, "INSERT INTO DataInfo (id, length, print, hash, method) VALUES ( 0, 0, ?, ?, 0);", PrintDigester.zeroBytePrint, zeroByteHash)

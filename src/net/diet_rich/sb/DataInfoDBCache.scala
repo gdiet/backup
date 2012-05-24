@@ -23,7 +23,7 @@ class DataInfoDBCache protected(infoDB: DataInfoSqlDB, config: StringMap) extend
   infoDB.entryEvent subscribe { case (id, info) => cache put (id, Some(info)) }
 
   override def readOption(id: Long) : Option[DataInfo] = cache get id
-  override def write(info: DataInfo) : Long = infoDB write info
+  override def create(info: DataInfo) : Long = infoDB create info
   override def update(id: Long, info: DataInfo) : Boolean = infoDB update (id, info)
 }
 

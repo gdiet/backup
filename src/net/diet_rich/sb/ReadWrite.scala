@@ -5,13 +5,18 @@ package net.diet_rich.sb
 
 import java.io.File
 
-trait ReadWrite {
-  
-  /** Store a file in the fileid node.
-   * 
-   *  @return data id, None if node was missing. */
-  def write(fileid: Long, file: File) : Option[Long] = {
-    throw new UnsupportedOperationException
-  }
-  
-}
+// this could become part of a high level API
+
+//trait ReadWrite {
+//  protected def tree: Tree
+//  protected def datainfo: DataInfoDB
+//  
+//  /** Store a file in the fileid node.
+//   * 
+//   *  @return data id, None if node was missing. */
+//  def write(fileid: Long, file: File) : Option[Long] = {
+//    val dataid = datainfo.create
+//    throw new UnsupportedOperationException
+//  }
+//  
+//}
