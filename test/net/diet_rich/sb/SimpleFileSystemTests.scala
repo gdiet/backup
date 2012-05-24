@@ -3,16 +3,13 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.sb
 
-import java.sql.Connection
-import java.sql.DriverManager
-import net.diet_rich.util.Configuration.StringMap
-import org.testng.annotations.Test
-import org.testng.annotations.BeforeClass
-import org.fest.assertions.Assertions.assertThat
-import TestUtil._
-import org.testng.annotations.BeforeMethod
-import org.apache.commons.io.FileUtils
 import java.io.File
+import net.diet_rich.util.Configuration.StringMap
+import org.apache.commons.io.FileUtils
+import org.fest.assertions.Assertions.assertThat
+import org.testng.annotations.BeforeMethod
+import org.testng.annotations.Test
+import TestUtil._
 
 class SimpleFileSystemTests {
 

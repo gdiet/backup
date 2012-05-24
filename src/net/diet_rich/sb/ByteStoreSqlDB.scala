@@ -12,7 +12,10 @@ import net.diet_rich.util.sql._
 import ByteStoreSqlDB._
 import net.diet_rich.util.Bytes
 
-case class DataRange(start: Long, fin: Long)
+case class DataRange(start: Long, fin: Long) {
+  def length = fin - start
+  def length(length: Long) = copy(fin = start + length)
+}
 
 object DataRange {
   val startOrdering: Ordering[DataRange] = new Ordering[DataRange] {
@@ -70,7 +73,7 @@ class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB w
     def writeStep(index: Int): DataRange = {
       val range = nextFreeRange
       val stored = source(range)
-      if (stored.fin != stored.start)
+      if (stored.length != 0)
         insertEntry(id, index, stored.start, stored.fin) match {
           case 1 => /* OK */
           case n => throwIllegalUpdateException("ByteStore", n, id)
@@ -135,5 +138,5 @@ object ByteStoreSqlDB extends SqlDBObjectCommon {
     "DataReference FOREIGN KEY (dataid) REFERENCES DataInfo(id)"
   )
   
-  def apply(connection: Connection) : DataInfoSqlDB = new DataInfoSqlDB(connection)
+  def apply(connection: Connection) : ByteStoreSqlDB = new ByteStoreSqlDB(connection)
 }
