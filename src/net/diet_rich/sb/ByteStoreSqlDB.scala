@@ -31,13 +31,11 @@ trait ByteStoreDB {
   def read(id: Long): Iterable[DataRange]
   /** Write a data blocks entry.
    *  @param id             Data id of the entry to write
-   *  @param sizeEstimate   Estimated size in bytes of the entry to write
-   *  @param source         The write function is provided data ranges as input.
-   *                        It is called repeatedly until it returns a data range
-   *                        other (shorter) than its input, signaling that there 
-   *                        is no more data to write.
+   *  @param source         The write function is provided data ranges as input. It
+   *                        is called repeatedly until it returns a data range of
+   *                        size 0, signaling that there is no more data to write.
    */
-  def write(id: Long, sizeEstimate: Long)(source: DataRange => DataRange)
+  def write(id: Long)(source: DataRange => DataRange)
 }
 
 class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB with SqlDBCommon {
@@ -68,7 +66,7 @@ class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB w
   
   protected val insertEntry = 
     prepareUpdate("INSERT INTO ByteStore (dataid, index, start, fin) VALUES (?, ?, ?, ?);")
-  override def write(id: Long, sizeEstimate: Long)(source: DataRange => DataRange) = {
+  override def write(id: Long)(source: DataRange => DataRange) = {
     @annotation.tailrec
     def writeStep(index: Int): DataRange = {
       val range = nextFreeRange
@@ -78,7 +76,7 @@ class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB w
           case 1 => /* OK */
           case n => throwIllegalUpdateException("ByteStore", n, id)
         }
-      if (stored == range) writeStep(index+1) else DataRange(stored.fin, range.fin)
+      if (stored.length != 0) writeStep(index+1) else DataRange(stored.fin, range.fin)
     }
     enqueueFreeRange(writeStep(0))
   }

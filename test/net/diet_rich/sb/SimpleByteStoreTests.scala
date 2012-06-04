@@ -24,13 +24,13 @@ class SimpleByteStoreTests {
   def storeAndReadASimpleEntry = {
     var count = 0
     var start = 0L
-    store.write(1, 10){ range =>
+    store.write(1){ range =>
       count = count + 1
-      start = range.start
+      if (count == 1) start = range.start
       assertThat(range length) isGreaterThan 10
-      range length 10
+      if (count == 1) range length 10 else range length 0
     }
-    assertThat(count) isEqualTo 1
+    assertThat(count) isEqualTo 2
     val read = store.read(1)
     assertThat(read size) isEqualTo 1
     assertThat(read.head length) isEqualTo 10
@@ -42,18 +42,18 @@ class SimpleByteStoreTests {
     var count = 0
     var range1 = DataRange(0,0)
     var start2 = 0L
-    store.write(2, 10){ range =>
+    store.write(2){ range =>
       assertThat(range length) isGreaterThan 10
       count = count + 1
       if (count == 1) {
-        range1 = range
-        range
+        range1 = range length 10
+        range1
       } else {
-        start2 = range.start
-        range length 10
+        if (count == 2) start2 = range.start
+        if (count == 2) range length 10 else range length 0
       }
     }
-    assertThat(count) isEqualTo 2
+    assertThat(count) isEqualTo 3
     val read = store.read(2)
     assertThat(read size) isEqualTo 2
     assertThat(read.head) isEqualTo range1
@@ -65,7 +65,7 @@ class SimpleByteStoreTests {
   def storeAndReadOneFullBlock = {
     var count = 0
     var range1 = DataRange(0,0)
-    store.write(3, 10){ range =>
+    store.write(3){ range =>
       assertThat(range length) isGreaterThan 0
       count = count + 1
       if (count == 1) {
