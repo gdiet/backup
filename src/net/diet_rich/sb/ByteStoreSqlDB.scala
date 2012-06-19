@@ -12,19 +12,11 @@ import net.diet_rich.util.sql._
 import ByteStoreSqlDB._
 import net.diet_rich.util.Bytes
 
-case class DataRange(start: Long, fin: Long) {
+case class DataRange(start: Long, fin: Long) extends Ordered[DataRange] {
   def length = fin - start
   def reduce(length: Long) = copy(fin = start + length)
   def offset(offset: Long) = copy(start = start + offset)
-}
-
-object DataRange {
-  val startOrdering: Ordering[DataRange] = new Ordering[DataRange] {
-    override def compare(a: DataRange, b: DataRange) = b.start compareTo a.start
-  }
-  val startComparator = new java.util.Comparator[DataRange] {
-    override def compare(a: DataRange, b: DataRange) = b.start compareTo a.start
-  }
+  override def compare(that: DataRange): Int = that.start compare start
 }
 
 trait ByteStoreDB {
@@ -44,7 +36,7 @@ class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB w
   
   protected object FreeRanges {
     private val startOfFreeArea = execQuery(connection, "SELECT MAX(fin) FROM ByteStore;")(_ long 1) headOnly
-    private val queue = new scala.collection.mutable.PriorityQueue[DataRange]()(DataRange.startOrdering)
+    private val queue = new scala.collection.mutable.PriorityQueue[DataRange]()
 
     // insert ranges for gaps in queue
     private val gapFins = execQuery(connection, idxStart( idxFin(
@@ -58,6 +50,8 @@ class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB w
     
     dataStart.filterNot(_ == 0).foreach(e => queue.enqueue(DataRange(0, e)))
     gapFins.zip(gapStarts).foreach(e => queue.enqueue(DataRange(e._1, e._2)))
+
+    // insert upper free area
     queue.enqueue(DataRange(startOfFreeArea, Long.MaxValue))
 
     def next: DataRange = queue.synchronized {
