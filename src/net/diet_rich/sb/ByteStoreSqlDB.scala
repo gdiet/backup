@@ -14,15 +14,16 @@ import net.diet_rich.util.Bytes
 
 case class DataRange(start: Long, fin: Long) {
   def length = fin - start
-  def length(length: Long) = copy(fin = start + length)
+  def reduce(length: Long) = copy(fin = start + length)
+  def offset(offset: Long) = copy(start = start + offset)
 }
 
 object DataRange {
   val startOrdering: Ordering[DataRange] = new Ordering[DataRange] {
-    override def compare(a: DataRange, b: DataRange) = a.start compareTo b.start
+    override def compare(a: DataRange, b: DataRange) = b.start compareTo a.start
   }
   val startComparator = new java.util.Comparator[DataRange] {
-    override def compare(a: DataRange, b: DataRange) = a.start compareTo b.start
+    override def compare(a: DataRange, b: DataRange) = b.start compareTo a.start
   }
 }
 
@@ -41,24 +42,35 @@ trait ByteStoreDB {
 class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB with SqlDBCommon {
   protected implicit val con = connection
   
-  protected var startOfFreeArea = execQuery(connection, "SELECT MAX(fin) FROM ByteStore;")(_ long 1) headOnly
-  protected val nextFreeRanges = new scala.collection.mutable.PriorityQueue[DataRange]()(DataRange.startOrdering)
-  protected def nextFreeRange: DataRange =
-    nextFreeRanges.synchronized {
-      if (nextFreeRanges.isEmpty)
-        for (n <- 0 until 10) {
-          nextFreeRanges enqueue DataRange(startOfFreeArea, startOfFreeArea + blockSize)
-          startOfFreeArea = startOfFreeArea + blockSize
-        }
-      nextFreeRanges dequeue
-    }
-  protected def enqueueFreeRange(range: DataRange) =
-    nextFreeRanges.synchronized { nextFreeRanges.enqueue(range) }
-  
-  execQuery(connection, idxStart( idxFin(
-    "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.start = b2.fin WHERE b2.fin IS NULL"
-  )))(result => result long 1).toList filterNot (_ == 0)
+  protected object FreeRanges {
+    private val startOfFreeArea = execQuery(connection, "SELECT MAX(fin) FROM ByteStore;")(_ long 1) headOnly
+    private val queue = new scala.collection.mutable.PriorityQueue[DataRange]()(DataRange.startOrdering)
 
+    // insert ranges for gaps in queue
+    private val gapFins = execQuery(connection, idxStart( idxFin(
+      "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin"
+    )))(result => result long 1).filterNot(_ == startOfFreeArea)
+    private val gapStartsAndHead = execQuery(connection, idxStart( idxFin(
+      "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start"
+    )))(result => result long 1)
+    private val dataStart = gapStartsAndHead.headOption;
+    private val gapStarts = if (gapStartsAndHead.isEmpty) Iterator() else gapStartsAndHead
+    
+    dataStart.filterNot(_ == 0).foreach(e => queue.enqueue(DataRange(0, e)))
+    gapFins.zip(gapStarts).foreach(e => queue.enqueue(DataRange(e._1, e._2)))
+    queue.enqueue(DataRange(startOfFreeArea, Long.MaxValue))
+
+    def next: DataRange = queue.synchronized {
+      val range = queue.dequeue()
+      if (range.fin == Long.MaxValue) {
+        queue.enqueue(range.offset(blockSize))
+        range.reduce(blockSize)
+      } else range
+    }
+    def enqueue(range: DataRange) =
+      queue.synchronized { queue.enqueue(range) }
+  }
+  
   protected val readEntry = 
     prepareQuery("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY index;")
   override def read(id: Long): Iterable[DataRange] =
@@ -69,7 +81,7 @@ class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB w
   override def write(id: Long)(source: DataRange => DataRange) = {
     @annotation.tailrec
     def writeStep(index: Int): DataRange = {
-      val range = nextFreeRange
+      val range = FreeRanges.next
       val stored = source(range)
       if (stored.length != 0)
         insertEntry(id, index, stored.start, stored.fin) match {
@@ -78,7 +90,7 @@ class ByteStoreSqlDB(protected val connection: Connection) extends ByteStoreDB w
         }
       if (stored.length != 0) writeStep(index+1) else DataRange(stored.fin, range.fin)
     }
-    enqueueFreeRange(writeStep(0))
+    FreeRanges.enqueue(writeStep(0))
   }
     
 }
@@ -93,15 +105,6 @@ object ByteStoreSqlDB extends SqlDBObjectCommon {
 
   // EVENTUALLY, it would be good to look for orphan ByteStore entries (in case the FOREIGN KEY constraint is not enabled).
   // Emit warning and free the space?
-    
-  // Find gaps
-  // a) start without matching fin
-  // SELECT * FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 on b1.start = b2.fin where b2.fin is null
-  // b) fin without matching start
-  // SELECT * FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 on b1.fin = b2.start where b2.start is null
-
-  // Find highest entry
-  // SELECT MAX(fin) FROM ByteStore
     
   def createTable(connection: Connection, repoSettings: StringMap) : Unit = {
     val zeroByteHash = HashProvider.digester(repoSettings).digest
