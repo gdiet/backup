@@ -28,7 +28,7 @@ class SimpleByteStoreTests {
       count = count + 1
       if (count == 1) start = range.start
       assertThat(range length) isGreaterThan 10
-      if (count == 1) range reduce 10 else range reduce 0
+      if (count == 1) 10 else 0
     }
     assertThat(count) isEqualTo 2
     val read = store.read(1)
@@ -47,10 +47,10 @@ class SimpleByteStoreTests {
       count = count + 1
       if (count == 1) {
         range1 = range reduce 10
-        range1
+        10
       } else {
         if (count == 2) start2 = range.start
-        if (count == 2) range reduce 10 else range reduce 0
+        if (count == 2) 10 else 0
       }
     }
     assertThat(count) isEqualTo 3
@@ -70,9 +70,9 @@ class SimpleByteStoreTests {
       count = count + 1
       if (count == 1) {
         range1 = range
-        range
+        range.length
       } else {
-        range reduce 0
+        0
       }
     }
     assertThat(count) isEqualTo 2

@@ -36,18 +36,18 @@ class ComplexByteStoreTests {
         var count2 = 0
         store1.write(2){ range =>
           count2 = count2 + 1
-          if (count2 == 1) range reduce 10 else range reduce 0
+          if (count2 == 1) 10 else 0
         }
         range1Start = range.start
-        range reduce 10
-      } else range reduce 0
+        10
+      } else 0
     }
     
     val store2 = ByteStoreSqlDB(connection)
     var count3 = 0
     store2.write(3){ range =>
       assertThat(range.start).isEqualTo(range1Start + 10)
-      range reduce 0
+      0
     }
   }
   
