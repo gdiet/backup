@@ -117,13 +117,12 @@ object DataInfoSqlDB extends SqlDBObjectCommon {
       result => ((result long 1, result long 2))
     )
 
-  def deleteOrphansHereAndMarkThemInByteStore(connection: Connection) : Int = {
+  def deleteOrphansHereAndInByteStore(connection: Connection) : Int = {
     execUpdate(connection, TreeSqlDB idxDataid
-      """UPDATE ByteStore SET dataid = 0 WHERE dataid IN (
+      """DELETE FROM ByteStore WHERE dataid IN (
            SELECT DISTINCT id FROM DataInfo
            LEFT OUTER JOIN TreeEntries ON DataInfo.id = TreeEntries.dataid
            WHERE TreeEntries.dataid is NULL
-           AND DataInfo.id != 0
          );"""
     )
     execUpdate(connection, TreeSqlDB idxDataid
