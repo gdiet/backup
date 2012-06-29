@@ -63,6 +63,6 @@ class TreeDBCache protected(db: TreeDB with TreeDBInternals, config: StringMap) 
 }
 
 object TreeDBCache {
-  def apply(connection: java.sql.Connection, config: StringMap) : TreeDB =
-    new TreeDBCache(TreeSqlDB(connection), config)
+  def apply(connection: java.sql.Connection, config: StringMap) : TreeMethods =
+    new TreeDBCache(TreeSqlDB(connection), config) with TreeMethods
 }
