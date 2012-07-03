@@ -87,6 +87,12 @@ object TreeSqlDB extends SqlDBObjectCommon {
 
 }
 
+// TODO for backup, set up delayed insert db based on configuration
+// backup.delayedInsert = true|false
+// backup.delayedInsert.autocommit = true|false
+// backup.delayedInsert.batchsize = <Int, 0: no batch>
+// backup.delayedInsert.threads = <Int, 0: inline>
+
 class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
   import TreeSqlDB._
   import TreeDB._
@@ -132,12 +138,22 @@ class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
     
   protected val addEntry = 
     prepareUpdate("INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES (?, ?, ?, ?, ?);")
+  protected val addE = connection.prepareStatement("INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES (?, ?, ?, ?, ?);")
+  protected var size = 0;
   override def create(parent: Long, name: String) : Long =
     create(parent, name, NOTIME, NODATAID)
   override def create(parent: Long, name: String, time: Long, data: Long) : Long = {
     val id = maxEntryId incrementAndGet()
-//    addEntry(id, parent, name, time, data)
-    deque putLast Some(() => addEntry(id, parent, name, time, data))
+    addEntry(id, parent, name, time, data)
+//    deque putLast Some(() => addEntry(id, parent, name, time, data))
+//    net.diet_rich.util.sql.setArguments(addE, id, parent, name, time, data)
+//    addE.addBatch
+//    size = size + 1
+//    if (size > 1000) {
+//      size = 0
+//      addE.executeBatch
+//      connection.commit
+//    }
     id
   }
 
