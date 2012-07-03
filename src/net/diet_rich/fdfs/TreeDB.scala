@@ -10,6 +10,7 @@ import java.sql.Connection
 import com.google.common.cache.LoadingCache
 import com.google.common.cache.CacheBuilder
 import com.google.common.cache.CacheLoader
+import java.util.concurrent.TimeUnit
 
 case class TreeEntry(id: Long, parent: Long, name: String, time: Long, dataid: Long)
 
@@ -46,7 +47,7 @@ object TreeDB {
 object TreeSqlDB extends SqlDBObjectCommon {
   import TreeDB._
   override val tableName = "TreeEntries"
-    
+  
   def createTable(connection: Connection) : Unit = {
     // The tree is represented by nodes that store their parent but not their children.
     // There are not technical restrictions against illegal node types, e.g.
@@ -90,6 +91,20 @@ class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
   import TreeSqlDB._
   import TreeDB._
 
+  val deque = new java.util.concurrent.LinkedBlockingDeque[Option[() => Unit]](100)
+  val pool = java.util.concurrent.Executors.newCachedThreadPool
+
+  for (i <- 1 to 4) pool.submit(new Runnable { def run {
+    var polled = deque.pollFirst(Long.MaxValue, TimeUnit.DAYS)
+    while(polled isDefined) {
+      polled.get.apply()
+      polled = deque.pollFirst(Long.MaxValue, TimeUnit.DAYS)
+    }
+    println("shut down")
+  }})
+  
+  def shutdown = { for (i <- 1 to 100) deque.putLast(None); pool.shutdown; pool.awaitTermination(Long.MaxValue, TimeUnit.DAYS) }
+  
   protected implicit val con = connection
 
   protected val queryEntry =
@@ -121,7 +136,8 @@ class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
     create(parent, name, NOTIME, NODATAID)
   override def create(parent: Long, name: String, time: Long, data: Long) : Long = {
     val id = maxEntryId incrementAndGet()
-    addEntry(id, parent, name, time, data)
+//    addEntry(id, parent, name, time, data)
+    deque putLast Some(() => addEntry(id, parent, name, time, data))
     id
   }
 

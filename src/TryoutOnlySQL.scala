@@ -22,6 +22,8 @@ object TryoutOnlySQL extends App {
   }
 
   val root = TestFileTree.treeRoot;
+
+  for (i <- 1 to 2000) tree.create(0, "node" + i)
   
   def process(entry: net.diet_rich.TreeEntry, id: Long) : Unit = {
     entry.children.reverse.foreach { node =>
@@ -34,9 +36,15 @@ object TryoutOnlySQL extends App {
     }
   }
   
+  println("starting...")
   val time = System.currentTimeMillis
-  process(root, 0);
+  for (i <- 1 to 600) process(root, i);
   println(System.currentTimeMillis - time);
+  println("queue: " + tree.deque.size)
+  println("shutting down...")
+  tree.shutdown
+  
+  // 100 times, h2, no constraints, single thread: 7446ms
   
 }
 
@@ -83,6 +91,8 @@ object TryoutOnlySQL2 {
     }
     source.close
     println(count)
+    println(tree.deque.size)
+    tree.shutdown
     
   }
 }
