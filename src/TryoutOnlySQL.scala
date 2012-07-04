@@ -14,12 +14,8 @@ object TryoutOnlySQL extends App {
   FileUtils.cleanDirectory(testDir)
 
   val connection = DBConnection.hsqlFileDB(testDir)
-  val tree : TreeSqlDB = {
-    TreeSqlDB dropTable connection
-    TreeSqlDB createTable connection
-//    TreeSqlDB addDebuggingConstraints connection // FIXME
-    new TreeSqlDB(connection)
-  }
+  TreeSqlDB createTable connection
+  val tree = new DeferredInsertTreeDB(connection, false, 100, 100, 0)
 
   val root = TestFileTree.treeRoot;
 
@@ -39,10 +35,9 @@ object TryoutOnlySQL extends App {
   println("starting...")
 //  connection.setAutoCommit(false)
   val time = System.currentTimeMillis
-  for (i <- 1 to 10) process(root, i);
+  for (i <- 1 to 40) process(root, i);
   println(System.currentTimeMillis - time);
   connection.setAutoCommit(true)
-  println("queue: " + tree.deque.size)
   println("shutting down...")
   tree.shutdown
   
@@ -60,7 +55,6 @@ object TryoutOnlySQL2 {
   
     val connection = DBConnection.h2FileDB(testDir)
     val tree : TreeSqlDB = {
-      TreeSqlDB dropTable connection
       TreeSqlDB createTable connection
   //    TreeSqlDB addDebuggingConstraints connection // FIXME
       new TreeSqlDB(connection)
@@ -93,8 +87,7 @@ object TryoutOnlySQL2 {
     }
     source.close
     println(count)
-    println(tree.deque.size)
-    tree.shutdown
+//    tree.shutdown
     
   }
 }

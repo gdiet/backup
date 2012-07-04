@@ -6,7 +6,6 @@ package net.diet_rich.fdfs.old
 import net.diet_rich.util.Configuration._
 import net.diet_rich.util.Events
 import net.diet_rich.util.sql._
-import net.diet_rich.fdfs.{SqlDBCommon,SqlDBObjectCommon}
 import java.sql.Connection
 import com.google.common.cache.LoadingCache
 import com.google.common.cache.CacheBuilder
@@ -43,9 +42,8 @@ object TreeDB {
   val NODATAID = -1L
 }
 
-object TreeSqlDB extends SqlDBObjectCommon {
+object TreeSqlDB {
   import TreeDB._
-  override val tableName = "TreeEntries"
     
   def createTable(connection: Connection) : Unit = {
     // The tree is represented by nodes that store their parent but not their children.
@@ -76,17 +74,9 @@ object TreeSqlDB extends SqlDBObjectCommon {
   def idxParent[T](t : T) = t
   def idxDataid[T](t : T) = t
   
-  override protected val debuggingConstraints = List(
-    "ParentReference FOREIGN KEY (parent) REFERENCES TreeEntries(id)",
-    "ParentSelfReference CHECK ((parent != id) = (id > 0))",
-    "TimestampIffDataPresent CHECK ((dataid is NULL) = (time is NULL))",
-    "ValidId CHECK (id >= -1)",
-    "RootNameIsEmpty CHECK ((id != 0) OR (name = ''))"
-  )
-
 }
 
-class TreeSqlDB(protected val connection: Connection) extends SqlDBCommon with TreeDB {
+class TreeSqlDB(protected val connection: Connection) extends TreeDB {
   import java.lang.{Long => JLong}
   import java.util.concurrent.locks.ReentrantReadWriteLock
   import TreeSqlDB._

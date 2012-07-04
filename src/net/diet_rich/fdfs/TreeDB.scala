@@ -44,9 +44,9 @@ object TreeDB {
   val NODATAID = -1L
 }
 
-object TreeSqlDB extends SqlDBObjectCommon {
+// FIXME SqlDBObjectCommon and SqlDBCommon still used?
+object TreeSqlDB {
   import TreeDB._
-  override val tableName = "TreeEntries"
   
   def createTable(connection: Connection) : Unit = {
     // The tree is represented by nodes that store their parent but not their children.
@@ -69,48 +69,18 @@ object TreeSqlDB extends SqlDBObjectCommon {
     execUpdate(connection, "CREATE INDEX idxParent ON TreeEntries(parent);")
     execUpdate(connection, "CREATE INDEX idxDataid ON TreeEntries(dataid);")
     execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?);", ROOTID, ROOTID, ROOTNAME)
-    // used intermediately when deleting nodes
-    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, 'recently deleted');", DELETEDROOT, DELETEDROOT)
   }
   
   // used as index usage markers
   def idxParent[T](t : T) = t
   def idxDataid[T](t : T) = t
   
-  override protected val debuggingConstraints = List(
-    "ParentReference FOREIGN KEY (parent) REFERENCES TreeEntries(id)",
-    "ParentSelfReference CHECK ((parent != id) = (id > 0))",
-    "TimestampIffDataPresent CHECK ((dataid is NULL) = (time is NULL))",
-    "ValidId CHECK (id >= -1)",
-    "RootNameIsEmpty CHECK ((id != 0) OR (name = ''))"
-  )
-
 }
-
-// TODO for backup, set up delayed insert db based on configuration
-// backup.delayedInsert = true|false
-// backup.delayedInsert.autocommit = true|false
-// backup.delayedInsert.batchsize = <Int, 0: no batch>
-// backup.delayedInsert.threads = <Int, 0: inline>
 
 class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
   import TreeSqlDB._
   import TreeDB._
 
-  val deque = new java.util.concurrent.LinkedBlockingDeque[Option[() => Unit]](100)
-  val pool = java.util.concurrent.Executors.newCachedThreadPool
-
-  for (i <- 1 to 4) pool.submit(new Runnable { def run {
-    var polled = deque.pollFirst(Long.MaxValue, TimeUnit.DAYS)
-    while(polled isDefined) {
-      polled.get.apply()
-      polled = deque.pollFirst(Long.MaxValue, TimeUnit.DAYS)
-    }
-    println("shut down")
-  }})
-  
-  def shutdown = { for (i <- 1 to 100) deque.putLast(None); pool.shutdown; pool.awaitTermination(Long.MaxValue, TimeUnit.DAYS) }
-  
   protected implicit val con = connection
 
   protected val queryEntry =
@@ -145,15 +115,6 @@ class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
   override def create(parent: Long, name: String, time: Long, data: Long) : Long = {
     val id = maxEntryId incrementAndGet()
     addEntry(id, parent, name, time, data)
-//    deque putLast Some(() => addEntry(id, parent, name, time, data))
-//    net.diet_rich.util.sql.setArguments(addE, id, parent, name, time, data)
-//    addE.addBatch
-//    size = size + 1
-//    if (size > 1000) {
-//      size = 0
-//      addE.executeBatch
-//      connection.commit
-//    }
     id
   }
 
@@ -175,7 +136,7 @@ class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
   protected val deleteEntry =
     prepareUpdate("DELETE FROM TreeEntries WHERE id = ?;")
   override def deleteWithChildren(id: Long) : Unit = {
-    move(id, DELETEDROOT)
+    deleteEntry(id)
     // eventually, move to a separate thread
     def innerRecurse(id: Long) : Unit = {
       children(id) foreach { entry => innerRecurse(entry id) }
