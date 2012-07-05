@@ -16,6 +16,10 @@ trait DataInfoDB {
   final def read(id: Long) : DataInfo = readOption(id) get
   /** @return the data info, None if no such entry. */
   def readOption(id: Long) : Option[DataInfo]
+  /** @return TRUE if a matching print is in the data info db. */
+  def hasMatchingPrint(size: Long, print: Long) : Boolean
+  /** @return matching id, None if no such entry. */
+  def findMatch(size: Long, print: Long, hash: Array[Byte]) : Option[Long]
   /** @return ID for a new data info entry. */
   def reserveID : Long
   /** @return ID for the new data info. */
@@ -92,16 +96,28 @@ object DataInfoSqlDB {
 }
 
 class DataInfoSqlDB(protected val connection: Connection) extends DataInfoDB with SqlDBCommon {
+  import DataInfoSqlDB._
   protected implicit val con = connection
   
   protected val maxEntryId = readAsAtomicLong("SELECT MAX(id) FROM DataInfo;")
 
   protected val readEntry = 
-    prepareQuery("SELECT length, print, hash, method FROM DataInfo WHERE id = ?;")
+    idxFastPrint(prepareQuery("SELECT length, print, hash, method FROM DataInfo WHERE id = ?;"))
   override def readOption(id: Long) : Option[DataInfo] =
     readEntry(id)(
       result => DataInfo(result long 1, result long 2, result bytes 3, result int 4)
     ) headOption // NOTE: the query may yield multiple results - only the first is used
+
+  protected val checkPrint = 
+    prepareQuery("SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?;")
+  override def hasMatchingPrint(size: Long, print: Long) : Boolean =
+    checkPrint(size, print)( result => (result long 1) > 0 ) head
+
+  protected val findEntry = 
+    prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?;")
+  override def findMatch(size: Long, print: Long, hash: Array[Byte]) : Option[Long] =
+    // NOTE: the query may yield multiple results - only the first is used
+    findEntry(size, print, hash)(result => result long 1) headOption
 
   override def reserveID : Long = maxEntryId incrementAndGet()
   

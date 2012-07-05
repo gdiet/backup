@@ -33,8 +33,19 @@ object TryoutOnlySQL extends App {
       if (node.timeAndSize isDefined) {
         val time = node.timeAndSize.get._1
         val size = node.timeAndSize.get._2
-        val dataid = datainfo.reserveID
-        datainfo.create(dataid, DataInfo(size, size*17, new Array[Byte](0), 0))
+        val fastCheck = datainfo.hasMatchingPrint(size, size*17)
+        val dataid = if (fastCheck) {
+          val found = datainfo.findMatch(size, size*17, new Array[Byte](0))
+          found.getOrElse {
+            val dataid = datainfo.reserveID
+            datainfo.create(dataid, DataInfo(size, size*17, new Array[Byte](0), 0))
+            dataid
+          }
+        } else {
+          val dataid = datainfo.reserveID
+          datainfo.create(dataid, DataInfo(size, size*17, new Array[Byte](0), 0))
+          dataid
+        }
         tree.create(id, node.name, time, dataid)
       } else {
         val childId = tree.create(id, node.name)
@@ -52,5 +63,6 @@ object TryoutOnlySQL extends App {
   
   // 100 times, h2, tree only, single thread: 6950 ... 7446ms
   // 100 times, h2, tree and datainfo, single thread: 15900 ... 16600ms
+  // 100 times, h2, tree and datainfo with finders, single thread: 10900 ... 11200 ms
   
 }
