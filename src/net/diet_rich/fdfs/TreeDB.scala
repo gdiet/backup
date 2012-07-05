@@ -3,26 +3,19 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.fdfs
 
-import net.diet_rich.util.Configuration._
-import net.diet_rich.util.Events
 import net.diet_rich.util.sql._
 import java.sql.Connection
-import com.google.common.cache.LoadingCache
-import com.google.common.cache.CacheBuilder
-import com.google.common.cache.CacheLoader
-import java.util.concurrent.TimeUnit
 
 case class TreeEntry(id: Long, parent: Long, name: String, time: Long, dataid: Long)
 
 trait TreeDB {
+  import TreeDB._
   /** @return The tree entry, None if no such node. */
   def entry(id: Long) : Option[TreeEntry]
   /** @return The children, empty if no such node. */
   def children(id: Long) : Iterable[TreeEntry]
   /** @return The entry ID. */
-  def create(parent: Long, name: String) : Long
-  /** @return The entry ID. */
-  def create(parent: Long, name: String, time: Long, data: Long) : Long
+  def create(parent: Long, name: String, time: Long = NOTIME, data: Long = NODATAID) : Long
   /** Does nothing if no such node. */
   def rename(id: Long, newName: String) : Unit
   /** Does nothing if no such node. */
@@ -44,7 +37,6 @@ object TreeDB {
   val NODATAID = -1L
 }
 
-// FIXME SqlDBObjectCommon and SqlDBCommon still used?
 object TreeSqlDB {
   import TreeDB._
   
@@ -108,10 +100,6 @@ class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
     
   protected val addEntry = 
     prepareUpdate("INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES (?, ?, ?, ?, ?);")
-  protected val addE = connection.prepareStatement("INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES (?, ?, ?, ?, ?);")
-  protected var size = 0;
-  override def create(parent: Long, name: String) : Long =
-    create(parent, name, NOTIME, NODATAID)
   override def create(parent: Long, name: String, time: Long, data: Long) : Long = {
     val id = maxEntryId incrementAndGet()
     addEntry(id, parent, name, time, data)
@@ -145,4 +133,21 @@ class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
     innerRecurse(id)
   }
 }
+
+class DeferredInsertTreeDB(
+      connection: Connection,
+      executor: SqlDBCommon.Executor
+    ) extends TreeSqlDB(connection) {
+  import net.diet_rich.util.closureToRunnable
+
+  // eventually, we could think about SQL batch execution
+  // and turning autocommit off to get a few percent higher performance
+  
+  override def create(parent: Long, name: String, time: Long, data: Long) : Long = {
+    val id = maxEntryId incrementAndGet()
+    executor.execute { addEntry(id, parent, name, time, data) }
+    id
+  }
+}
+
 

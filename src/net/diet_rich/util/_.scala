@@ -13,4 +13,7 @@ package object util {
   @annotation.elidable(annotation.elidable.ASSERTION)
   def ASSUME(assumption: Boolean, message: Any) = assume(assumption, message)
   
+  implicit def closureToRunnable(closure: => Any): Runnable =
+    new Runnable() { override def run: Unit = closure }
+  
 }
