@@ -28,10 +28,10 @@ object DataInfoSqlDB {
   // UNIQUE constraint on one or more NOT NULL columns. Only one PRIMARY KEY
   // can be defined in each table.
   // (Source: http://hsqldb.org/doc/2.0/guide/guide.pdf)
-  def createTable(connection: Connection, repoSettings: StringMap) : Unit = {
+  def createTable(connection: Connection, hashAlgorithm: String) : Unit = {
     // length: uncompressed entry size
     // method: store method (0 = PLAIN, 1 = DEFLATE, 2 = LZMA?)
-    val zeroByteHash = HashProvider.digester(repoSettings).digest
+    val zeroByteHash = HashProvider.digester(hashAlgorithm).digest
     execUpdate(connection, """
       CREATE CACHED TABLE DataInfo (
         id     BIGINT PRIMARY KEY,

@@ -14,8 +14,7 @@ object SqlDBCommon {
   
   type Executor = {
     def execute(command: Runnable) : Unit
-    def shutdown() : Unit
-    def awaitTermination(timeout: Long, unit: TimeUnit) : Boolean
+    def shutdownAndAwaitTermination : Unit
   }
   
   def executor(threads: Int, queueSize: Int) : Executor = {
@@ -23,8 +22,7 @@ object SqlDBCommon {
       // inline execution
       new java.util.concurrent.Executor() {
         override def execute(command: Runnable) : Unit = command.run
-        def shutdown() : Unit = Unit
-        def awaitTermination(timeout: Long, unit: TimeUnit) : Boolean = true
+        def shutdownAndAwaitTermination : Unit = Unit
       }
     else
       // deferred execution
@@ -32,7 +30,12 @@ object SqlDBCommon {
         threads, threads, 1, TimeUnit.SECONDS,
         new java.util.concurrent.LinkedBlockingQueue[Runnable](queueSize),
         new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy
-      )
+      ) {
+        def shutdownAndAwaitTermination : Unit = {
+          shutdown
+          awaitTermination(1, TimeUnit.DAYS)
+        }
+      }
   }
   
 }

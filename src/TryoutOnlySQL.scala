@@ -6,7 +6,6 @@ import java.io.FileInputStream
 import scala.io.Source
 import net.diet_rich.fdfs._
 import net.diet_rich.TestFileTree
-import java.util.concurrent.TimeUnit
 
 object TryoutOnlySQL extends App {
 
@@ -14,11 +13,17 @@ object TryoutOnlySQL extends App {
   testfile.getParentFile.mkdirs
   FileUtils.cleanDirectory(testfile.getParentFile)
 
-  val connection = DBConnection.h2FileDB(testfile)
-  TreeSqlDB createTable connection
   val executor = SqlDBCommon.executor(0, 100)
-  val tree = new DeferredInsertTreeDB(connection, executor)
+  val connection = DBConnection.h2FileDB(testfile)
+  
+  TreeSqlDB createTable connection
+  val tree = new TreeSqlDB(connection)
+//  val tree = new DeferredInsertTreeDB(connection, executor)
 
+  DataInfoSqlDB createTable (connection, "MD5")
+  val datainfo = new DataInfoSqlDB(connection)
+//  val datainfo = new DeferredInsertDataInfoDB(connection, executor)
+  
   val root = TestFileTree.treeRoot;
 
   for (i <- 1 to 2000) tree.create(0, "node" + i)
@@ -26,7 +31,11 @@ object TryoutOnlySQL extends App {
   def process(entry: net.diet_rich.TreeEntry, id: Long) : Unit = {
     entry.children.reverse.foreach { node =>
       if (node.timeAndSize isDefined) {
-        tree.create(id, node.name, node.timeAndSize.get._1, node.timeAndSize.get._2)
+        val time = node.timeAndSize.get._1
+        val size = node.timeAndSize.get._2
+        val dataid = datainfo.reserveID
+        datainfo.create(dataid, DataInfo(size, size*17, new Array[Byte](0), 0))
+        tree.create(id, node.name, time, dataid)
       } else {
         val childId = tree.create(id, node.name)
         process(node, childId)
@@ -35,15 +44,13 @@ object TryoutOnlySQL extends App {
   }
   
   println("starting...")
-//  connection.setAutoCommit(false)
   val time = System.currentTimeMillis
-  for (i <- 1 to 5) process(root, i);
-  executor.shutdown
-  executor.awaitTermination(1, TimeUnit.DAYS)
+  for (i <- 1 to 100) process(root, i);
+  executor.shutdownAndAwaitTermination
   println(System.currentTimeMillis - time);
-  connection.setAutoCommit(true)
   println("shutting down...")
   
-  // 100 times, h2, no constraints, single thread: 6950 ... 7446ms
+  // 100 times, h2, tree only, single thread: 6950 ... 7446ms
+  // 100 times, h2, tree and datainfo, single thread: 15900 ... 16600ms
   
 }
