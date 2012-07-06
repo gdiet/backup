@@ -54,7 +54,7 @@ object DataInfoSqlDB {
   def idxDuplicates[T](t : T) = t
   def idxFastPrint[T](t : T) = t
   
-  def apply(connection: Connection) : DataInfoSqlDB = new DataInfoSqlDB(connection)
+  def apply(connection: Connection) : DataInfoSqlDB = new DataInfoSqlDB()(connection)
   
   def cleanupDuplicatesFromTree(connection: Connection) = {
     val changeTreeDataEntries = TreeSqlDB idxDataid
@@ -93,11 +93,14 @@ object DataInfoSqlDB {
          );"""
     )
   }
+  
+  def setupDB(connection: Connection) : DataInfoDB = new DataInfoSqlDB()(connection)
+  def setupDeferredInsertDB(connection: Connection, executor: SqlDBCommon.Executor) : DataInfoDB =
+    new DeferredInsertDataInfoDB(connection, executor)
 }
 
-class DataInfoSqlDB(protected val connection: Connection) extends DataInfoDB with SqlDBCommon {
+protected[fdfs] class DataInfoSqlDB(protected implicit val connection: Connection) extends DataInfoDB with SqlDBCommon {
   import DataInfoSqlDB._
-  protected implicit val con = connection
   
   protected val maxEntryId = readAsAtomicLong("SELECT MAX(id) FROM DataInfo;")
 
@@ -123,17 +126,19 @@ class DataInfoSqlDB(protected val connection: Connection) extends DataInfoDB wit
   
   protected val insertNewEntry =
     prepareUpdate("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
-  override def create(id: Long, info: DataInfo) : Unit =
+  protected def doInsertNewEntry(id: Long, info: DataInfo): Unit =
     insertNewEntry(id, info length, info print, info hash, info method)
+  override final def create(id: Long, info: DataInfo) : Unit =
+    doInsertNewEntry(id, info)
 }
 
-class DeferredInsertDataInfoDB (
+protected[fdfs] class DeferredInsertDataInfoDB (
       connection: Connection,
       executor: SqlDBCommon.Executor
-    ) extends DataInfoSqlDB(connection) {
+    ) extends DataInfoSqlDB()(connection) {
   import net.diet_rich.util.closureToRunnable
   
-  override def create(id: Long, info: DataInfo) : Unit =
+  protected override def doInsertNewEntry(id: Long, info: DataInfo): Unit =
     executor.execute { insertNewEntry(id, info length, info print, info hash, info method) }
 }
 

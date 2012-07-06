@@ -66,14 +66,16 @@ object TreeSqlDB {
   // used as index usage markers
   def idxParent[T](t : T) = t
   def idxDataid[T](t : T) = t
-  
+
+  def setupDB(connection: Connection) : TreeDB = new TreeSqlDB()(connection)
+  def setupDeferredInsertDB(connection: Connection, executor: SqlDBCommon.Executor) : TreeDB =
+    new DeferredInsertTreeDB(connection, executor)
+
 }
 
-class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
+protected[fdfs] class TreeSqlDB(protected implicit val connection: Connection) extends SqlDBCommon with TreeDB {
   import TreeSqlDB._
   import TreeDB._
-
-  protected implicit val con = connection
 
   protected val queryEntry =
     prepareQuery("SELECT parent, name, time, dataid FROM TreeEntries WHERE id = ?;")
@@ -100,9 +102,11 @@ class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
     
   protected val addEntry = 
     prepareUpdate("INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES (?, ?, ?, ?, ?);")
-  override def create(parent: Long, name: String, time: Long, data: Long) : Long = {
-    val id = maxEntryId incrementAndGet()
+  protected def doAddEntry(id: Long, parent: Long, name: String, time: Long, data: Long): Unit = 
     addEntry(id, parent, name, time, data)
+  override final def create(parent: Long, name: String, time: Long, data: Long): Long = {
+    val id = maxEntryId incrementAndGet()
+    doAddEntry(id, parent, name, time, data)
     id
   }
 
@@ -134,20 +138,17 @@ class TreeSqlDB(val connection: Connection) extends SqlDBCommon with TreeDB {
   }
 }
 
-class DeferredInsertTreeDB(
+protected[fdfs] class DeferredInsertTreeDB(
       connection: Connection,
       executor: SqlDBCommon.Executor
-    ) extends TreeSqlDB(connection) {
+    ) extends TreeSqlDB()(connection) {
   import net.diet_rich.util.closureToRunnable
 
   // eventually, we could think about SQL batch execution
   // and turning autocommit off to get a few percent higher performance
-  
-  override def create(parent: Long, name: String, time: Long, data: Long) : Long = {
-    val id = maxEntryId incrementAndGet()
+
+  protected override def doAddEntry(id: Long, parent: Long, name: String, time: Long, data: Long) = 
     executor.execute { addEntry(id, parent, name, time, data) }
-    id
-  }
 }
 
 

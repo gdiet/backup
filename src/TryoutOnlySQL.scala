@@ -17,11 +17,11 @@ object TryoutOnlySQL extends App {
   val connection = DBConnection.h2FileDB(testfile)
   
   TreeSqlDB createTable connection
-  val tree = new TreeSqlDB(connection)
+  val tree = new TreeSqlDB()(connection)
 //  val tree = new DeferredInsertTreeDB(connection, executor)
 
   DataInfoSqlDB createTable (connection, "MD5")
-  val datainfo = new DataInfoSqlDB(connection)
+  val datainfo = new DataInfoSqlDB()(connection)
 //  val datainfo = new DeferredInsertDataInfoDB(connection, executor)
   
   val root = TestFileTree.treeRoot;
