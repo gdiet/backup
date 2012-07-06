@@ -67,13 +67,12 @@ object TreeSqlDB {
   def idxParent[T](t : T) = t
   def idxDataid[T](t : T) = t
 
-  def setupDB(connection: Connection) : TreeDB = new TreeSqlDB()(connection)
-  def setupDeferredInsertDB(connection: Connection, executor: SqlDBCommon.Executor) : TreeDB =
-    new DeferredInsertTreeDB(connection, executor)
+  def exampleDeferredInsertDB(connection: Connection, sqlExecutor: SqlDBCommon.Executor): TreeDB =
+    new TreeSqlDB()(connection) with DeferredInsertTreeDB { val executor = sqlExecutor }
 
 }
 
-protected[fdfs] class TreeSqlDB(protected implicit val connection: Connection) extends SqlDBCommon with TreeDB {
+class TreeSqlDB(protected implicit val connection: Connection) extends SqlDBCommon with TreeDB {
   import TreeSqlDB._
   import TreeDB._
 
@@ -138,17 +137,9 @@ protected[fdfs] class TreeSqlDB(protected implicit val connection: Connection) e
   }
 }
 
-protected[fdfs] class DeferredInsertTreeDB(
-      connection: Connection,
-      executor: SqlDBCommon.Executor
-    ) extends TreeSqlDB()(connection) {
+trait DeferredInsertTreeDB { this: TreeSqlDB =>
+  val executor: SqlDBCommon.Executor
   import net.diet_rich.util.closureToRunnable
-
-  // eventually, we could think about SQL batch execution
-  // and turning autocommit off to get a few percent higher performance
-
   protected override def doAddEntry(id: Long, parent: Long, name: String, time: Long, data: Long) = 
     executor.execute { addEntry(id, parent, name, time, data) }
 }
-
-

@@ -13,16 +13,17 @@ object TryoutOnlySQL extends App {
   testfile.getParentFile.mkdirs
   FileUtils.cleanDirectory(testfile.getParentFile)
 
-  val executor = SqlDBCommon.executor(0, 100)
+  val sqlExecutor = SqlDBCommon.executor(0, 100)
   val connection = DBConnection.h2FileDB(testfile)
   
   TreeSqlDB createTable connection
-  val tree = new TreeSqlDB()(connection)
-//  val tree = new DeferredInsertTreeDB(connection, executor)
+  val tree = new TreeSqlDB()(connection) with DeferredInsertTreeDB { val executor = sqlExecutor }
 
   DataInfoSqlDB createTable (connection, "MD5")
-  val datainfo = new DataInfoSqlDB()(connection)
-//  val datainfo = new DeferredInsertDataInfoDB(connection, executor)
+  val datainfo = new DataInfoSqlDB()(connection) with DeferredInsertDataInfoDB { val executor = sqlExecutor }
+  
+  ByteStoreDB createTable (connection)
+  val bytestore = new ByteStoreSqlDB()(connection) with DeferredByteStoreDB { val executor = sqlExecutor }
   
   val root = TestFileTree.treeRoot;
 
@@ -38,11 +39,28 @@ object TryoutOnlySQL extends App {
           val found = datainfo.findMatch(size, size*17, new Array[Byte](0))
           found.getOrElse {
             val dataid = datainfo.reserveID
+            
+            // FIXME check whether this code should be executed and is not
+            var sizeCount = size
+            bytestore.write(dataid){ range => 
+              val oldCount = sizeCount
+              sizeCount = math.max(0, sizeCount - range.length)
+              if (sizeCount > 0) range.length else oldCount
+            }
+            
             datainfo.create(dataid, DataInfo(size, size*17, new Array[Byte](0), 0))
             dataid
           }
         } else {
           val dataid = datainfo.reserveID
+          
+          var sizeCount = size
+          bytestore.write(dataid){ range => 
+            val oldCount = sizeCount
+            sizeCount = math.max(0, sizeCount - range.length)
+            if (sizeCount > 0) range.length else oldCount
+          }
+          
           datainfo.create(dataid, DataInfo(size, size*17, new Array[Byte](0), 0))
           dataid
         }
@@ -56,8 +74,8 @@ object TryoutOnlySQL extends App {
   
   println("starting...")
   val time = System.currentTimeMillis
-  for (i <- 1 to 100) process(root, i);
-  executor.shutdownAndAwaitTermination
+  for (i <- 1 to 2) process(root, i);
+  sqlExecutor.shutdownAndAwaitTermination
   println(System.currentTimeMillis - time);
   println("shutting down...")
   

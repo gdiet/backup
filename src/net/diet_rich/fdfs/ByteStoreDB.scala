@@ -10,7 +10,7 @@ import net.diet_rich.util.EventSource
 import net.diet_rich.util.Events
 import net.diet_rich.util.sql._
 import net.diet_rich.sb.HashProvider
-import ByteStoreSqlDB._
+import ByteStoreDB._
 import net.diet_rich.util.Bytes
 
 case class DataRange(start: Long, fin: Long) extends Ordered[DataRange] {
@@ -32,7 +32,39 @@ trait ByteStoreDB {
   def write(id: Long)(source: DataRange => Long)
 }
 
-protected[fdfs] class ByteStoreSqlDB(protected implicit val connection: Connection) extends ByteStoreDB with SqlDBCommon {
+object ByteStoreDB {
+  val blockSize = 100000000
+
+  // EVENTUALLY, it would be good to look for illegal overlaps:
+  // SELECT * FROM ByteStore b1 JOIN ByteStore b2 ON b1.start < b2.fin AND b1.fin > b2.fin
+  // Illegal overlaps should be ignored during free space detection
+
+  // TODO Do we need to look for orphan ByteStore entries to free the space?
+    
+  def createTable(connection: Connection) : Unit = {
+    // index: data part index (starts at 0)
+    // start: data part start position
+    // fin: data part end position + 1
+    execUpdate(connection, """
+      CREATE CACHED TABLE ByteStore (
+        dataid BIGINT NOT NULL,
+        index  INTEGER NOT NULL,
+        start  BIGINT NOT NULL,
+        fin    BIGINT NOT NULL
+      );
+    """);
+    execUpdate(connection, "CREATE INDEX idxStart ON ByteStore(start);")
+    execUpdate(connection, "CREATE INDEX idxFin ON ByteStore(fin);")
+    execUpdate(connection, "CREATE INDEX idxData ON ByteStore(dataid);")
+  }
+  
+  // used as index usage markers
+  def idxStart[T](t : T) = t
+  def idxFin[T](t : T) = t
+  def idxData[T](t : T) = t
+}
+
+class ByteStoreSqlDB(protected implicit val connection: Connection) extends ByteStoreDB with SqlDBCommon {
   
   protected object FreeRanges {
     private val startOfFreeArea = execQuery(connection, "SELECT MAX(fin) FROM ByteStore;")(_ long 1) headOnly
@@ -62,7 +94,10 @@ protected[fdfs] class ByteStoreSqlDB(protected implicit val connection: Connecti
       } else range
     }
     def enqueue(range: DataRange) =
-      queue.synchronized { queue.enqueue(range) }
+      queue.synchronized {
+        queue.enqueue(range)
+//queue.foreach(range => println("queue: " + range))
+      }
   }
   
   protected val readEntry = 
@@ -72,57 +107,27 @@ protected[fdfs] class ByteStoreSqlDB(protected implicit val connection: Connecti
   
   protected val insertEntry = 
     prepareUpdate("INSERT INTO ByteStore (dataid, index, start, fin) VALUES (?, ?, ?, ?);")
+  protected def doInsertEntry(id: Long, index: Int, start: Long, fin: Long): Unit =
+    insertEntry(id, index, start, fin)
   override def write(id: Long)(source: DataRange => Long) = {
     @annotation.tailrec
-    def writeStep(index: Int): DataRange = {
+    def writeStep(index: Int): Unit = {
       val range = FreeRanges.next
       val stored = source(range)
-      if (stored == 0) {
-        DataRange(range.start + stored, range.fin)
-      } else {
-        insertEntry(id, index, range.start, range.start + stored)
+      if (stored < range.length)
+        FreeRanges enqueue DataRange(range.start + stored, range.fin)
+      if (stored > 0) {
+        doInsertEntry(id, index, range.start, range.start + stored)
         writeStep(index+1)
       }
     }
-    FreeRanges.enqueue(writeStep(0))
+    writeStep(0)
   }
-    
 }
 
-object ByteStoreSqlDB {
-  protected val blockSize = 100000000
-
-  // EVENTUALLY, it would be good to look for illegal overlaps:
-  // SELECT * FROM ByteStore b1 JOIN ByteStore b2 ON b1.start < b2.fin AND b1.fin > b2.fin
-  // Illegal overlaps should be ignored during free space detection
-
-  // EVENTUALLY, it would be good to look for orphan ByteStore entries (in case the FOREIGN KEY constraint is not enabled).
-  // Emit warning and free the space?
-    
-  def createTable(connection: Connection, repoSettings: StringMap) : Unit = {
-    val zeroByteHash = HashProvider.digester(repoSettings).digest
-    // dataid: set to 0 for data chunks not needed anymore
-    // index: data part index (starts at 0)
-    // start: data part start position
-    // fin: data part end position + 1
-    execUpdate(connection, """
-      CREATE CACHED TABLE ByteStore (
-        dataid BIGINT NOT NULL,
-        index  INTEGER NOT NULL,
-        start  BIGINT NOT NULL,
-        fin    BIGINT NOT NULL
-      );
-    """);
-    execUpdate(connection, "CREATE INDEX idxStart ON ByteStore(start);")
-    execUpdate(connection, "CREATE INDEX idxFin ON ByteStore(fin);")
-    execUpdate(connection, "CREATE INDEX idxData ON ByteStore(dataid);")
-  }
-  
-  // used as index usage markers
-  def idxStart[T](t : T) = t
-  def idxFin[T](t : T) = t
-  def idxData[T](t : T) = t
-
-// FIXME
-//  def apply(connection: Connection) : ByteStoreSqlDB = new ByteStoreSqlDB(connection)
+trait DeferredByteStoreDB { this: ByteStoreSqlDB =>
+  val executor: SqlDBCommon.Executor
+  import net.diet_rich.util.closureToRunnable
+  protected override def doInsertEntry(id: Long, index: Int, start: Long, fin: Long): Unit =
+    executor.execute { insertEntry(id, index, start, fin) }
 }

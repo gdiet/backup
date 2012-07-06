@@ -93,13 +93,9 @@ object DataInfoSqlDB {
          );"""
     )
   }
-  
-  def setupDB(connection: Connection) : DataInfoDB = new DataInfoSqlDB()(connection)
-  def setupDeferredInsertDB(connection: Connection, executor: SqlDBCommon.Executor) : DataInfoDB =
-    new DeferredInsertDataInfoDB(connection, executor)
 }
 
-protected[fdfs] class DataInfoSqlDB(protected implicit val connection: Connection) extends DataInfoDB with SqlDBCommon {
+class DataInfoSqlDB(protected implicit val connection: Connection) extends DataInfoDB with SqlDBCommon {
   import DataInfoSqlDB._
   
   protected val maxEntryId = readAsAtomicLong("SELECT MAX(id) FROM DataInfo;")
@@ -132,13 +128,9 @@ protected[fdfs] class DataInfoSqlDB(protected implicit val connection: Connectio
     doInsertNewEntry(id, info)
 }
 
-protected[fdfs] class DeferredInsertDataInfoDB (
-      connection: Connection,
-      executor: SqlDBCommon.Executor
-    ) extends DataInfoSqlDB()(connection) {
+trait DeferredInsertDataInfoDB { this: DataInfoSqlDB =>
+  val executor: SqlDBCommon.Executor
   import net.diet_rich.util.closureToRunnable
-  
   protected override def doInsertNewEntry(id: Long, info: DataInfo): Unit =
     executor.execute { insertNewEntry(id, info length, info print, info hash, info method) }
 }
-
