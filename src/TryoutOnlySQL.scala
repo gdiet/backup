@@ -17,13 +17,13 @@ object TryoutOnlySQL extends App {
   val connection = DBConnection.h2FileDB(testfile)
   
   TreeSqlDB createTable connection
-  val tree = new TreeSqlDB()(connection) with DeferredInsertTreeDB { val executor = sqlExecutor }
+  val tree = new TreeSqlDB()(connection) // with DeferredInsertTreeDB { val executor = sqlExecutor }
 
   DataInfoSqlDB createTable (connection, "MD5")
-  val datainfo = new DataInfoSqlDB()(connection) with DeferredInsertDataInfoDB { val executor = sqlExecutor }
+  val datainfo = new DataInfoSqlDB()(connection) // with DeferredInsertDataInfoDB { val executor = sqlExecutor }
   
   ByteStoreDB createTable (connection)
-  val bytestore = new ByteStoreSqlDB()(connection) with DeferredByteStoreDB { val executor = sqlExecutor }
+  val bytestore = new ByteStoreSqlDB()(connection) // with DeferredByteStoreDB { val executor = sqlExecutor }
   
   val root = TestFileTree.treeRoot;
 
@@ -73,7 +73,7 @@ object TryoutOnlySQL extends App {
   
   println("starting...")
   val time = System.currentTimeMillis
-  for (i <- 1 to 2) process(root, i);
+  for (i <- 1 to 100) process(root, i);
   sqlExecutor.shutdownAndAwaitTermination
   println(System.currentTimeMillis - time);
   println("shutting down...")

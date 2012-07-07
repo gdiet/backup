@@ -57,6 +57,9 @@ object ByteStoreDB {
     execUpdate(connection, "CREATE INDEX idxFin ON ByteStore(fin);")
     execUpdate(connection, "CREATE INDEX idxData ON ByteStore(dataid);")
   }
+
+  def dropTable(connection: Connection) : Unit =
+    execUpdate(connection, "DROP TABLE ByteStore IF EXISTS;")
   
   // used as index usage markers
   def idxStart[T](t : T) = t

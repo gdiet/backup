@@ -49,7 +49,10 @@ object DataInfoSqlDB {
     execUpdate(connection, "CREATE INDEX idxFastPrint ON DataInfo(length, print);")
     execUpdate(connection, "INSERT INTO DataInfo (id, length, print, hash, method) VALUES ( 0, 0, ?, ?, 0);", PrintDigester.zeroBytePrint, zeroByteHash)
   }
-  
+
+  def dropTable(connection: Connection) : Unit =
+    execUpdate(connection, "DROP TABLE DataInfo IF EXISTS;")
+
   // used as index usage markers
   def idxDuplicates[T](t : T) = t
   def idxFastPrint[T](t : T) = t
