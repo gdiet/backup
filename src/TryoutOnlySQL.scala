@@ -40,7 +40,6 @@ object TryoutOnlySQL extends App {
           found.getOrElse {
             val dataid = datainfo.reserveID
             
-            // FIXME check whether this code should be executed and is not
             var sizeCount = size
             bytestore.write(dataid){ range => 
               val oldCount = sizeCount

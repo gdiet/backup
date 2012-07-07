@@ -3,7 +3,7 @@
 <suite name="AllTests" allow-return-values="true">
   <test name="AllTests"   >
     <packages>
-      <package name="net.diet_rich.sb.*" />
+      <package name="net.diet_rich.fdfs.*" />
     </packages>
   </test>
 </suite>

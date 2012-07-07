@@ -29,6 +29,7 @@ trait TreeDB {
 }
 
 object TreeDB {
+  val ROOTPARENT = -1L
   val ROOTID = 0L
   val ROOTNAME = ""
   val ROOTPATH = ""
@@ -60,9 +61,12 @@ object TreeSqlDB {
     // PRIMARY KEY, UNIQUE or FOREIGN key constraints [... create] an index automatically.
     execUpdate(connection, "CREATE INDEX idxParent ON TreeEntries(parent);")
     execUpdate(connection, "CREATE INDEX idxDataid ON TreeEntries(dataid);")
-    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?);", ROOTID, ROOTID, ROOTNAME)
+    execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?);", ROOTID, ROOTPARENT, ROOTNAME)
   }
-  
+
+  def dropTable(connection: Connection) : Unit =
+    execUpdate(connection, "DROP TABLE TreeEntries IF EXISTS;")
+
   // used as index usage markers
   def idxParent[T](t : T) = t
   def idxDataid[T](t : T) = t
