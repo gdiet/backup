@@ -32,6 +32,8 @@ object DataInfoSqlDB {
   // UNIQUE constraint on one or more NOT NULL columns. Only one PRIMARY KEY
   // can be defined in each table.
   // (Source: http://hsqldb.org/doc/2.0/guide/guide.pdf)
+  
+  // FIXME better: use 0-byte hash for argument
   def createTable(connection: Connection, hashAlgorithm: String) : Unit = {
     // length: uncompressed entry size
     // method: store method (0 = PLAIN, 1 = DEFLATE, 2 = LZMA?)
@@ -45,8 +47,8 @@ object DataInfoSqlDB {
         method INTEGER NOT NULL
       );
     """ format zeroByteHash.size);
-    execUpdate(connection, "CREATE INDEX idxDuplicates ON DataInfo(length, print, hash);")
-    execUpdate(connection, "CREATE INDEX idxFastPrint ON DataInfo(length, print);")
+    execUpdate(connection, "CREATE INDEX idxDataInfoDuplicates ON DataInfo(length, print, hash);")
+    execUpdate(connection, "CREATE INDEX idxDataInfoFastPrint ON DataInfo(length, print);")
     execUpdate(connection, "INSERT INTO DataInfo (id, length, print, hash, method) VALUES ( 0, 0, ?, ?, 0);", PrintDigester.zeroBytePrint, zeroByteHash)
   }
 

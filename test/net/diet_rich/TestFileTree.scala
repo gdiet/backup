@@ -6,6 +6,8 @@ import java.io.FileInputStream
 import scala.io.Source
 
 class TreeEntry(val name: String, val timeAndSize: Option[(Long, Long)] = None, var children: List[TreeEntry] = Nil) {
+  def time = timeAndSize.get._1
+  def size = timeAndSize.get._2
   def printAllWithPrefix(prefix: String) : Unit = {
     println(prefix + name)
     children.reverse.foreach(_ printAllWithPrefix(prefix + name + "/"))

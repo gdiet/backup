@@ -22,7 +22,7 @@ object TryoutOnlySQL extends App {
   DataInfoSqlDB createTable (connection, "MD5")
   val datainfo = new DataInfoSqlDB()(connection) // with DeferredInsertDataInfoDB { val executor = sqlExecutor }
   
-  ByteStoreDB createTable (connection)
+  ByteStoreSqlDB createTable (connection)
   val bytestore = new ByteStoreSqlDB()(connection) // with DeferredByteStoreDB { val executor = sqlExecutor }
   
   val root = TestFileTree.treeRoot;

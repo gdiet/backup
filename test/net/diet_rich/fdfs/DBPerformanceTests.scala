@@ -30,18 +30,21 @@ class DBPerformanceTests {
     TreeSqlDB createTable connection
     DataInfoSqlDB dropTable connection
     DataInfoSqlDB createTable (connection, "MD5")
-    ByteStoreDB dropTable connection
-    ByteStoreDB createTable connection
+    ByteStoreSqlDB dropTable connection
+    ByteStoreSqlDB createTable connection
+  }
+  
+  def warmUpDatabase = {
+    // this speeds up execution of subsequent database commands
+    for (i <- 1 to 5000) treedb.create(0, "node" + i)
   }
   
   @Test
-  def create5000TreeEntriesInOneSecond = {
+  def create15000TreeEntriesInOneSecond = {
     def process(entry: net.diet_rich.TreeEntry, id: Long) : Unit = {
       entry.children.reverse.foreach { node =>
         if (node.timeAndSize isDefined) {
-          val time = node.timeAndSize.get._1
-          val size = node.timeAndSize.get._2
-          treedb.create(id, node.name, time)
+          treedb.create(id, node.name, node.time)
         } else {
           treedb.create(id, node.name)
           val childId = treedb.create(id, node.name)
@@ -49,22 +52,24 @@ class DBPerformanceTests {
         }
       }
     }
+    warmUpDatabase
     val time = System.currentTimeMillis
-    process(TestFileTree.treeRoot, 0)
+    for (i <- 1 to 3) process(TestFileTree.treeRoot, 0)
     assertThat(System.currentTimeMillis - time) isLessThan 1000
-    println("create5000TreeEntriesInOneSecond: " + (System.currentTimeMillis - time))
+    println("create15000TreeEntriesInOneSecond: " + (System.currentTimeMillis - time))
   }
 
+  def dataInfoForNode(entry: net.diet_rich.TreeEntry) =
+    DataInfo(entry.size, entry.size*17, new Array[Byte](0), 0)
+  
   @Test
-  def create5000TreeAndDataEntriesInOneSecond = {
+  def create10000TreeAndDataEntriesInOneSecond = {
     def process(entry: net.diet_rich.TreeEntry, id: Long) : Unit = {
       entry.children.reverse.foreach { node =>
         if (node.timeAndSize isDefined) {
-          val time = node.timeAndSize.get._1
-          val size = node.timeAndSize.get._2
           val dataid = datadb.reserveID
-          datadb.create(dataid, DataInfo(size, size*17, new Array[Byte](0), 0))
-          treedb.create(id, node.name, time, dataid)
+          datadb.create(dataid, dataInfoForNode(node))
+          treedb.create(id, node.name, node.time, dataid)
         } else {
           treedb.create(id, node.name)
           val childId = treedb.create(id, node.name)
@@ -72,10 +77,11 @@ class DBPerformanceTests {
         }
       }
     }
+    warmUpDatabase
     val time = System.currentTimeMillis
-    process(TestFileTree.treeRoot, 0)
+    for (i <- 1 to 2) process(TestFileTree.treeRoot, 0)
     assertThat(System.currentTimeMillis - time) isLessThan 1000
-    println("create5000TreeAndDataEntriesInOneSecond: " + (System.currentTimeMillis - time))
+    println("create10000TreeAndDataEntriesInOneSecond: " + (System.currentTimeMillis - time))
   }
   
   @Test
@@ -83,38 +89,35 @@ class DBPerformanceTests {
     def process(entry: net.diet_rich.TreeEntry, id: Long) : Unit = {
       entry.children.reverse.foreach { node =>
         if (node.timeAndSize isDefined) {
-          val time = node.timeAndSize.get._1
-          val size = node.timeAndSize.get._2
-
-          val dataid = if (datadb.hasMatchingPrint(size, size*17)) {
-            val found = datadb.findMatch(size, size*17, new Array[Byte](0))
+          val dataid = if (datadb.hasMatchingPrint(node.size, node.size*17)) {
+            val found = datadb.findMatch(node.size, node.size*17, new Array[Byte](0))
             found.getOrElse {
               val dataid = datadb.reserveID
               
-              var sizeCount = size
+              var sizeCount = node.size
               storedb.write(dataid){ range => 
                 val oldCount = sizeCount
                 sizeCount = math.max(0, sizeCount - range.length)
                 if (sizeCount > 0) range.length else oldCount
               }
               
-              datadb.create(dataid, DataInfo(size, size*17, new Array[Byte](0), 0))
+              datadb.create(dataid, dataInfoForNode(node))
               dataid
             }
           } else {
             val dataid = datadb.reserveID
             
-            var sizeCount = size
+            var sizeCount = node.size
             storedb.write(dataid){ range => 
               val oldCount = sizeCount
               sizeCount = math.max(0, sizeCount - range.length)
               if (sizeCount > 0) range.length else oldCount
             }
             
-            datadb.create(dataid, DataInfo(size, size*17, new Array[Byte](0), 0))
+            datadb.create(dataid, dataInfoForNode(node))
             dataid
           }
-          treedb.create(id, node.name, time, dataid)
+          treedb.create(id, node.name, node.time, dataid)
           
         } else {
           treedb.create(id, node.name)

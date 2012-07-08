@@ -10,7 +10,6 @@ import net.diet_rich.util.EventSource
 import net.diet_rich.util.Events
 import net.diet_rich.util.sql._
 import net.diet_rich.sb.HashProvider
-import ByteStoreDB._
 import net.diet_rich.util.Bytes
 
 case class DataRange(start: Long, fin: Long) extends Ordered[DataRange] {
@@ -32,7 +31,7 @@ trait ByteStoreDB {
   def write(id: Long)(source: DataRange => Long)
 }
 
-object ByteStoreDB {
+object ByteStoreSqlDB {
   val blockSize = 100000000
 
   // EVENTUALLY, it would be good to look for illegal overlaps:
@@ -68,6 +67,7 @@ object ByteStoreDB {
 }
 
 class ByteStoreSqlDB(protected implicit val connection: Connection) extends ByteStoreDB with SqlDBCommon {
+  import ByteStoreSqlDB._
   
   protected object FreeRanges {
     private val startOfFreeArea = execQuery(connection, "SELECT MAX(fin) FROM ByteStore;")(_ long 1) headOnly

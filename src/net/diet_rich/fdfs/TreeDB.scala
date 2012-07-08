@@ -11,28 +11,54 @@ case class TreeEntry(id: Long, parent: Long, name: String, time: Long, dataid: L
 trait TreeDB {
   import TreeDB._
   /** @return The tree entry, None if no such node. */
-  def entry(id: Long) : Option[TreeEntry]
+  def entry(id: Long): Option[TreeEntry]
   /** @return The children, empty if no such node. */
-  def children(id: Long) : Iterable[TreeEntry]
+  def children(id: Long): Iterable[TreeEntry]
   /** @return The entry ID. */
-  def create(parent: Long, name: String, time: Long = NOTIME, data: Long = NODATAID) : Long
+  def create(parent: Long, name: String, time: Long = NOTIME, data: Long = NODATAID): Long
   /** Does nothing if no such node. */
-  def rename(id: Long, newName: String) : Unit
+  def rename(id: Long, newName: String): Unit
   /** Does nothing if no such node. */
-  def setTime(id: Long, newTime: Long) : Unit
+  def setTime(id: Long, newTime: Long): Unit
   /** Does nothing if no such node. */
-  def setData(id: Long, newData: Long) : Unit
+  def setData(id: Long, newData: Long): Unit
   /** Does nothing if no such node. */
-  def move(id: Long, newParent: Long) : Unit
+  def move(id: Long, newParent: Long): Unit
   /** Does nothing if no such node. */
-  def deleteWithChildren(id: Long) : Unit
+  def deleteWithChildren(id: Long): Unit
+}
+
+trait TreeDBMethods extends TreeDB {
+  import TreeDB._
+  /** @return The entry ID. Missing path elements are created on the fly. */
+  def getOrMake(path: String): Long = {
+    require(path.startsWith("/"), "Path <%s> does not start with '/'" format path)
+    val parts = path.split("/").drop(1)
+    parts.foldLeft(0L) {(node, childName) =>
+      val childOption = children(node) filter (_.name == childName) headOption;
+      childOption map(_.id) getOrElse create(node, childName)
+    }
+  }
+
+  /** @return the parent path for a path. */
+  def parentPath(path: String): String = {
+    val interim = path substring (0, path lastIndexOf "/")
+    if (interim == ROOTNAME) ROOTPATH else interim
+  }
+  
+  /** @return the element name for a path, ROOTNAME for the root. */
+  def nameFromPath(path: String) = if (path == ROOTPATH) ROOTNAME else path substring (1 + path lastIndexOf "/", path length)
+
+  /** @return true if the child exists. */
+  def childExists(id: Long, childName: String) = ! children(id).filter(_.name == childName).isEmpty
+  
 }
 
 object TreeDB {
   val ROOTPARENT = -1L
   val ROOTID = 0L
   val ROOTNAME = ""
-  val ROOTPATH = ""
+  val ROOTPATH = "/"
   val DELETEDROOT = -1L
   val NOTIME = -1L
   val NODATAID = -1L
@@ -59,8 +85,8 @@ object TreeSqlDB {
     """ format (NOTIME, NODATAID))
     // from http://hsqldb.org/doc/guide/databaseobjects-chapt.html
     // PRIMARY KEY, UNIQUE or FOREIGN key constraints [... create] an index automatically.
-    execUpdate(connection, "CREATE INDEX idxParent ON TreeEntries(parent);")
-    execUpdate(connection, "CREATE INDEX idxDataid ON TreeEntries(dataid);")
+    execUpdate(connection, "CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent);")
+    execUpdate(connection, "CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid);")
     execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?);", ROOTID, ROOTPARENT, ROOTNAME)
   }
 
