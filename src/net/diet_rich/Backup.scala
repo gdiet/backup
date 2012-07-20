@@ -17,11 +17,11 @@ object Backup extends App {
   val MEMORYRESERVED = 1024*1024*64
   val LARGEARRAYSIZE = 1024*1024*2
 
+  def freeMemory: Long = { val rt = Runtime.getRuntime; rt.maxMemory - (rt.totalMemory - rt.freeMemory) }
+  
   // FIXME make a real memory management
   def loanLargeByteArraysIfPossible(size: Long): List[Array[Byte]] = {
-    val runtime = Runtime.getRuntime
-    val maxFree = runtime.maxMemory - (runtime.totalMemory - runtime.freeMemory)
-    if (size > maxFree + MEMORYRESERVED) Nil else {
+    if (size > freeMemory + MEMORYRESERVED) Nil else {
       val blocks = (size - 1) / LARGEARRAYSIZE + 1
       (for (i <- 1L to blocks) yield new Array[Byte](LARGEARRAYSIZE)) toList
     }
@@ -58,47 +58,72 @@ class Backup(source: File, repository: File, target: String) {
   val STOREARRAYSIZE = 1024*1024
   val storeExecutor = SqlDBCommon.executor(4, 1) // 4 threads, do not queue
   def processSource(source: File, parentId: Long): Unit = {
-    if (source.isFile) {
-      // get print, keep bytes read
-      val bytes = new Array[Byte](STOREARRAYSIZE)
-      val sizeOfInput = source.length
-      val input = new HashCalculator(new java.io.RandomAccessFile(source, "r"), "MD5")
-      val (bytesReadForPrint, print) = PrintCalculator.print(input, bytes)
-      // if print matches
-      if (datadb.hasMatchingPrint(sizeOfInput, print)) {
-        // try to allocate enough memory
-        val (fitsToMemory, storeArrays) =
-          if (sizeOfInput >= STOREARRAYSIZE) {
-            val loaned = loanLargeByteArraysIfPossible(sizeOfInput - STOREARRAYSIZE + 1)
-            if (loaned.isEmpty) (false, List(bytes)) else (true, bytes :: loaned)
-          } else (true, List(bytes))
-        // if fits into memory
-        if (fitsToMemory) {
-          // read into memory
-          def readRecurse(startAt: Int, arrays: List[Array[Byte]]): Long = {
-            val array = arrays.head;
-            val read: Long = readFully(input, bytes, startAt, array.length - startAt)
-            read + (if (read == 0) 0 else readRecurse(0, arrays.tail))
-          }
-          readRecurse(bytesReadForPrint, storeArrays)
-          // FIXME continue
-          
-          // check hash and store if necessary
-        } else {
-          // does not fit into memory
-          // get hash, discard data
-          // check hash and store if necessary
-        }
-        returnLargeByteArrays(storeArrays.tail)
-      } else {
-        // print does not match
-        // store immediately
-      }
-      
-      treedb create (parentId, source.getName, source.lastModified) // FIXME dataid
-    } else {
+    if (!source.isFile) {
+      // assuming a directory
       val id = treedb create (parentId, source.getName)
       source.listFiles.foreach(file => storeExecutor.execute{processSource(file, id)})
+    } else {
+      // immediately start hash calculation
+      val input = new HashCalculator(new java.io.RandomAccessFile(source, "r"), "MD5")
+      
+      // get print, keep bytes read
+      // if print does not match, store immediately
+      
+      // if print matches
+      // read as much as possible to memory (one array, max 2G)
+      
+      // if fits to memory
+      // store if necessary
+      
+      // if does not fit to memory
+      // clone hash object
+      // read and discard the rest
+      // if storing is necessary
+      // store from memory
+      // seek to read position
+      // use cloned hash object on stream
+      // read and store
+      
+      // get byte array iterable, either from random access file, or from memory
+      
+      
+//      // get print, keep bytes read
+//      val bytes = new Array[Byte](STOREARRAYSIZE)
+//      val sizeOfInput = source.length
+//      val input = new HashCalculator(new java.io.RandomAccessFile(source, "r"), "MD5")
+//      val (bytesReadForPrint, print) = PrintCalculator.print(input, bytes)
+//      // if print matches
+//      if (datadb.hasMatchingPrint(sizeOfInput, print)) {
+//        // try to allocate enough memory
+//        val (fitsToMemory, storeArrays) =
+//          if (sizeOfInput >= STOREARRAYSIZE) {
+//            val loaned = loanLargeByteArraysIfPossible(sizeOfInput - STOREARRAYSIZE + 1)
+//            if (loaned.isEmpty) (false, List(bytes)) else (true, bytes :: loaned)
+//          } else (true, List(bytes))
+//        // if fits into memory
+//        if (fitsToMemory) {
+//          // read into memory
+//          def readRecurse(startAt: Int, arrays: List[Array[Byte]]): Long = {
+//            val array = arrays.head;
+//            val read: Long = readFully(input, bytes, startAt, array.length - startAt)
+//            read + (if (read == 0) 0 else readRecurse(0, arrays.tail))
+//          }
+//          readRecurse(bytesReadForPrint, storeArrays)
+//          // FIXME continue
+//          
+//          // check hash and store if necessary
+//        } else {
+//          // does not fit into memory
+//          // get hash, discard data
+//          // check hash and store if necessary
+//        }
+//        returnLargeByteArrays(storeArrays.tail)
+//      } else {
+//        // print does not match
+//        // store immediately
+//      }
+//      
+//      treedb create (parentId, source.getName, source.lastModified) // FIXME dataid
     }
   }
   processSource(source, targetId)

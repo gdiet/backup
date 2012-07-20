@@ -1,6 +1,7 @@
 package net.diet_rich.fdfs
 
 import net.diet_rich.util.io._
+import net.diet_rich.util.Bytes
 
 object PrintCalculator {
   val PRINTAREA = 2048
@@ -14,6 +15,16 @@ object PrintCalculator {
     crc.update(bytes, 0, read)
     adler.update(bytes, 0, read)
     (read, adler.getValue << 32 | crc.getValue)
+  }
+  
+  def print(input: Reader) : (Bytes, Long) = {
+    val bytes = new Array[Byte](PRINTAREA)
+    val read = readFully(input, bytes, 0, PRINTAREA)
+    val crc = new java.util.zip.CRC32
+    val adler = new java.util.zip.Adler32
+    crc.update(bytes, 0, read)
+    adler.update(bytes, 0, read)
+    (Bytes(bytes, 0, read), adler.getValue << 32 | crc.getValue)
   }
 }
 
