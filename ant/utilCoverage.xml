@@ -17,6 +17,7 @@
           <pathelement path="lib/sql/h2-1.3.163.jar" />
           <pathelement path="lib/sql/hsqldb.jar" />
           <pathelement path="lib/test/fest/fest-assert-1.4.jar;lib/test/fest/fest-util-1.1.6.jar" />
+          <pathelement path="lib/test/apacheCommons/commons-io-2.1.jar" />
           <pathelement path="${env.SCALA_HOME}/lib/scala-library.jar" />
         </classpath>
         <xmlfileset dir="ant" includes="utilTests.xml"/>

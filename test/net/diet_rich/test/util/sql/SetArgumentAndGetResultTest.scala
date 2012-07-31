@@ -1,13 +1,14 @@
 package net.diet_rich.test.util.sql
 
+import net.diet_rich.util.sql._
+import net.diet_rich.test.TestUtil.expectThat
+import net.diet_rich.test.TestHelpers
 import org.fest.assertions.Assertions.assertThat
 import org.testng.annotations.Test
-import net.diet_rich.util.sql._
-import net.diet_rich.test.TestUtil
 
-class SetArgumentAndGetResultTest {
+class SetArgumentAndGetResultTest extends TestHelpers {
 
-  lazy val con = DBConnection.h2MemoryDB(getClass getCanonicalName)
+  lazy val con = DBConnection.h2MemoryDB(className)
 
   private def testStoreAndGetForSimpleType[T](table: String, colType: String, processor: WrappedSQLResult => T, input: List[T]): Unit =
     assertThat(storeAndGetForType(table, colType, processor, input)).isEqualTo(input)
@@ -27,7 +28,7 @@ class SetArgumentAndGetResultTest {
   )
 
   @Test
-  def testUnsupportedType: Unit = TestUtil.expectThat(
+  def testUnsupportedType: Unit = expectThat(
     testStoreAndGetForSimpleType(
       "UnsupportedTypeTable", "BIGINT", {_ long 1},
       List(true)

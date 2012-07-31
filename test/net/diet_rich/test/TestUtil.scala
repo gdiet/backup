@@ -6,6 +6,21 @@ package net.diet_rich.test
 import org.testng.annotations.Test
 import org.testng.annotations.Test
 import scala.util.Random
+import java.io.File
+import org.apache.commons.io.FileUtils
+
+trait TestHelpers {
+  
+  def className: java.lang.String = getClass getCanonicalName
+    
+  def testDir(name: String = "test"): File = {
+    val dir = new File("temp/%s/%s" format (className, name))
+    dir mkdirs()
+    FileUtils cleanDirectory dir
+    dir
+  }
+  
+}
 
 class TestUtil {
   import TestUtil._
