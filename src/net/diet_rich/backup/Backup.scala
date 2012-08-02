@@ -13,6 +13,7 @@ object BackupApp extends App {
 class Backup(source: String, repository: String, target: String) {
   import Backup._
   
+  // first of all, we need the repository (at least, the database part).
   throw new UnsupportedOperationException // FIXME
 }
 
