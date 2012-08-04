@@ -27,12 +27,15 @@ object RepositoryInfoDB {
   def readSettings(connection: Connection): StringMap =
     execQuery(connection, "SELECT key, value FROM RepositoryInfo;")(r => (r string 1, r string 2)) toMap
 
-  def readSetting(connection: Connection, key: String): Option[String] =
+  def read(connection: Connection, key: String): Option[String] =
     execQuery(connection, "SELECT value FROM RepositoryInfo WHERE key = ?;", key)(_ string 1).nextOptionOnly
+
+  def add(connection: Connection, key: String, value: String) : Unit =
+    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES (?, ?);", key, value)
     
   def addOrUpdate(connection: Connection, key: String, value: String) : Unit = {
     delete(connection, key)
-    execUpdate(connection, "INSERT INTO RepositoryInfo (key, value) VALUES (?, ?);", key, value)
+    add(connection, key, value)
   }
 
   def delete(connection: Connection, key: String) : Unit =

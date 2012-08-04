@@ -3,6 +3,8 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.backup
 
+import java.io.File
+
 object BackupApp extends App {
   if (args.length < 3) throw new IllegalArgumentException("Backup needs at least source, repository and target arguments")
   if (args.length > 3) throw new IllegalArgumentException("Too many arguments")
@@ -13,7 +15,9 @@ object BackupApp extends App {
 class Backup(source: String, repository: String, target: String) {
   import Backup._
   
-  // first of all, we need the repository (at least, the database part).
+  val connection = Repository connectToDB new File(repository)
+  val hashAlgorithm = Repository readHashAlgorithm connection
+  
   throw new UnsupportedOperationException // FIXME
 }
 
