@@ -2,7 +2,7 @@ package net.diet_rich.test.util
 
 import org.fest.assertions.Assertions.assertThat
 import org.testng.annotations.Test
-import net.diet_rich.util.ScalaThreadLocal
+import net.diet_rich.util._
 
 class AnExampleUsageTest {
 
@@ -22,6 +22,14 @@ class AnExampleUsageTest {
         }
     )
     assertThat(localArray.toString) isEqualTo "optionalName"
+  }
+
+  @Test
+  def executorExample: Unit = {
+    val executor = Executor(4,4)
+    executor{ /* some code to execute in a thread pool. */ }
+    executor{ /* some code to execute in a thread pool. */ }
+    executor.shutdownAndAwaitTermination
   }
   
 }
