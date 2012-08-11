@@ -62,7 +62,7 @@ object TreeDB {
   val NOTIME = -1L
   val NODATAID = -1L
   
-  def standardDB(connection: Connection, sqlExecutor: Executor): TreeDB =
+  def standardDB(connection: Connection): TreeDB =
     new TreeSqlDB()(connection) with TreeDB
     
   def deferredInsertDB(connection: Connection, sqlExecutor: Executor): TreeDB =
