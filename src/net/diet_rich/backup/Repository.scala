@@ -30,7 +30,7 @@ object Repository {
   def datadir(dir: File) = new File(dir, DATADIR)
     
   def create(dir: File, hashAlgorithm: String) = {
-    HashProvider.digester(hashAlgorithm) // just to check, create and discard
+    HashCalcInput.digester(hashAlgorithm) // just to check, create and discard
     
     if (dbdir(dir) exists) throw new IllegalArgumentException("Repository database folder already exists.")
     if (datadir(dir) exists) throw new IllegalArgumentException("Repository data folder already exists.")

@@ -35,9 +35,17 @@ trait TreeDB extends BaseTreeDB { import TreeDB._
   def getOrMake(path: String): Long = {
     require(path.startsWith("/"), "Path <%s> does not start with '/'" format path)
     val parts = path.split("/").drop(1)
-    parts.foldLeft(0L) {(node, childName) =>
+    parts.foldLeft(ROOTID) {(node, childName) =>
       val childOption = children(node) filter (_.name == childName) headOption;
       childOption map(_.id) getOrElse create(node, childName)
+    }
+  }
+  /** @return The entry or None if no such entry. */
+  def entry(path: String): Option[TreeEntry] = {
+    require(path.startsWith("/"), "Path <%s> does not start with '/'" format path)
+    val parts = path.split("/").drop(1)
+    parts.foldLeft(entry(ROOTID)) {(node, childName) =>
+      node flatMap(node => children(node id) filter (_.name == childName) headOption);
     }
   }
   /** @return true if the child exists. */
