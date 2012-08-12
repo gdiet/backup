@@ -70,11 +70,11 @@ object TreeDB {
   val NOTIME = -1L
   val NODATAID = -1L
   
-  def standardDB(connection: Connection): TreeDB =
-    new TreeSqlDB()(connection) with TreeDB
+  def standardDB(implicit connection: Connection): TreeDB =
+    new TreeSqlDB with TreeDB
     
-  def deferredInsertDB(connection: Connection, sqlExecutor: Executor): TreeDB =
-    new TreeSqlDB()(connection) with TreeDB {
+  def deferredInsertDB(implicit connection: Connection, sqlExecutor: Executor): TreeDB =
+    new TreeSqlDB with TreeDB {
       protected override def doAddEntry(id: Long, parent: Long, name: String, time: Long, data: Long) = 
         sqlExecutor(super.doAddEntry(id, parent, name, time, data))
     }
@@ -99,8 +99,6 @@ object TreeSqlDB {
         dataid BIGINT DEFAULT %s NOT NULL
       );
     """ format (NOTIME, NODATAID))
-    // from http://hsqldb.org/doc/guide/databaseobjects-chapt.html
-    // PRIMARY KEY, UNIQUE or FOREIGN key constraints [... create] an index automatically.
     execUpdate(connection, "CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent);")
     execUpdate(connection, "CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid);")
     execUpdate(connection, "INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?);", ROOTID, ROOTPARENT, ROOTNAME)

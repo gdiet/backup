@@ -39,8 +39,6 @@ object BackupApp extends App {
 class BackupElements(val tree: TreeDB)
 
 class Backup(backup: BackupElements, hashAlgorithm: String, executor: Executor) {
-  val hashInputMarkSupported = HashCalcInput.markSupported(hashAlgorithm)
-  
   def process(source: File, reference: Option[TreeEntry], parent: Long): Unit = executor {
     if (source.isFile)
       processFile(source, reference, parent)
