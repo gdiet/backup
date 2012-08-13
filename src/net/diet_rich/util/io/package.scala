@@ -7,8 +7,14 @@ import scala.annotation.tailrec
 
 package object io {
 
+  /** closes the resource after the operation */
+  def using[Closeable <: {def close(): Unit}, ReturnType] (resource: Closeable)(operation: Closeable => ReturnType): ReturnType =
+    try { operation(resource) } finally { resource.close }
+
   type Reader = { def read(bytes: Array[Byte], offset: Int, length: Int): Int }
-    
+  
+  val emptyReader: Reader = new Object { def read(b: Array[Byte], off: Int, len: Int): Int = 0 }
+  
   def fillFrom(input: Reader, bytes: Array[Byte], offset: Int, length: Int): Int = {
     @tailrec
     def readRecurse(offset: Int): Int = {

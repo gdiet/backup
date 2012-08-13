@@ -73,7 +73,7 @@ object TreeDB {
   def standardDB(implicit connection: Connection): TreeDB =
     new TreeSqlDB with TreeDB
     
-  def deferredInsertDB(implicit connection: Connection, sqlExecutor: Executor): TreeDB =
+  def deferredInsertDB(sqlExecutor: Executor)(implicit connection: Connection): TreeDB =
     new TreeSqlDB with TreeDB {
       protected override def doAddEntry(id: Long, parent: Long, name: String, time: Long, data: Long) = 
         sqlExecutor(super.doAddEntry(id, parent, name, time, data))

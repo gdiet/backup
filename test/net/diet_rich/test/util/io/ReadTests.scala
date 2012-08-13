@@ -6,7 +6,7 @@ import org.testng.annotations.Test
 import org.testng.annotations.Test
 import java.io.ByteArrayInputStream
 
-class PkgTest {
+class ReadTests {
 
   @Test
   def readFullyNoInputMinusOne {

@@ -22,16 +22,16 @@ trait BaseDataInfoDB {
 /** Convenience features for the data info db interface. */
 trait DataInfoDB extends BaseDataInfoDB {
   /** @return the data info (exception if no such entry). */
-  def read(id: Long) : DataInfo = readOption(id) get
+  def read(id: Long): DataInfo = readOption(id) get
   /** @return ID for the new empty data info. */
   def create: Long = create(DataInfo(0, 0, Array(), 0))
 }
 
-object BaseDataInfoDB {
+object DataInfoDB {
   def standardDB(implicit connection: Connection): DataInfoDB =
     new DataInfoSqlDB with DataInfoDB
     
-  def deferredWriteDB(implicit connection: Connection, sqlExecutor: Executor): DataInfoDB =
+  def deferredWriteDB(sqlExecutor: Executor)(implicit connection: Connection): DataInfoDB =
     new DataInfoSqlDB with DataInfoDB {
       protected override def doUpdate(id: Long, info: DataInfo): Unit = 
         sqlExecutor(super.doUpdate(id, info))
