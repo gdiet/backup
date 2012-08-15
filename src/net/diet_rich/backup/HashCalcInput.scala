@@ -20,6 +20,7 @@ class HashCalcInput(input: RandomAccessFile, algorithm: String) { import HashCal
     markDigester = None
     input.seek(markPosition)
   }
+  def remaining: Long = length - position
   def length: Long = input.length
   def position: Long = input.getFilePointer
   def read(bytes: Array[Byte], offset: Int, length: Int): Int = {

@@ -5,6 +5,7 @@ package net.diet_rich.backup
 
 import java.io.File
 import net.diet_rich.util.Executor
+import net.diet_rich.util.io._
 import net.diet_rich.backup.db._
 import java.io.RandomAccessFile
 
@@ -33,16 +34,18 @@ object BackupApp extends App {
   val reference = referencePath.flatMap(tree entry _)
   if (referencePath.isDefined && reference.isEmpty) throw new IllegalArgumentException("Reference not found in repository.")
 
-  val settings = new BackupSettings(true) // FIXME configuration
-  val backup = new BackupElements(tree, data, CrcAdler8192, settings)
-  new Backup(backup, hashAlgorithm, processExecutor).process(source, reference, target)
+  val settings = new BackupSettings(true, hashAlgorithm) // FIXME printForMatch -> configuration
+  val backup = new BackupElements(tree, data, CrcAdler8192, settings) // FIXME: CrcAdler8192 -> configuration
+  new Backup(backup, processExecutor).process(source, reference, target)
 }
 
-class BackupSettings(val printForMatch: Boolean)
+class BackupSettings(val printForMatch: Boolean, val hashAlgorithm: String)
 
 class BackupElements(val tree: TreeDB, val data: DataInfoDB, val print: PrintDigester, val set: BackupSettings)
 
-class Backup(backup: BackupElements, hashAlgorithm: String, executor: Executor) {
+class Backup(backup: BackupElements, executor: Executor) { import Backup._
+  val markIsSupported = HashCalcInput.markSupported(backup.set.hashAlgorithm)
+  
   def process(source: File, reference: Option[TreeEntry], parent: Long): Unit = executor {
     if (source.isFile) {
       if (reference.isDefined)
@@ -61,22 +64,74 @@ class Backup(backup: BackupElements, hashAlgorithm: String, executor: Executor) 
     val referenceData = backup.data.read(reference.id)
     if (source.lastModified != reference.time || source.length != referenceData.length)
       processFile(source, parent)
-    else if (backup.set.printForMatch) {
-      val input = new RandomAccessFile(source, "r")
+    else if (backup.set.printForMatch) using(new RandomAccessFile(source, "r")){input => 
       val printResult = backup.print.print(input)
       if (printResult != referenceData.print) {
         input.seek(0)
-        throw new UnsupportedOperationException // FIXME
+        processInput(source, input, parent)
       } else
         backup.tree.create(parent, source.getName, reference.time, reference.dataid)
     } else
       backup.tree.create(parent, source.getName, reference.time, reference.dataid)
   }
 
-  private def processFile(source: File, parent: Long): Unit = {
+  private def processFile(source: File, parent: Long): Unit =
+    using(new RandomAccessFile(source, "r"))(processInput(source, _, parent))
+
+  private def processInput(source: File, input: RandomAccessFile, parent: Long): Unit =
+    processHashedInput(source, new HashCalcInput(input, backup.set.hashAlgorithm), parent)
+
+  private def processHashedInput(source: File, input: HashCalcInput, parent: Long): Unit = {
+    val printResult = backup.print.print(input)
+    
+    // FIXME now is the time to introduce a sized byte array
+
+    if (markIsSupported) {
+      val data, length = readAsMuchAsPossibleToMemory(input)
+    } else {
+      // FIXME the very small file case
+      val dataOption = applyForByteArray(input.remaining + 1)
+//      dataOption.foreach(f)
+      
+    }
+    // if mark is supported, read as much as possible into memory
+    // else only read into memory if full read is possible
+    
     throw new UnsupportedOperationException // FIXME
   }
+  
+}
 
+object Backup {
   
+  val MEMORYRESERVED = 1024*1024*64 // FIXME configuration
+  val MAXMEMRATIO = 0.75 // FIXME configuration
+  val MINMEMORYCHUNK = 1024 // FIXME configuration
+
+  def freeMemory: Long = { val rt = Runtime.getRuntime; rt.maxMemory - (rt.totalMemory - rt.freeMemory) }
+
+  def availableArraySize: Int = {
+    val availableMemory = math.max(0, freeMemory - MEMORYRESERVED)
+    math.min(Int.MaxValue, availableMemory * MAXMEMRATIO).toInt
+  }
   
+  /** @return A byte array, if possible of the size indicated, but at least
+   *  of the size MINMEMORYCHUNK.
+   */
+  def applyForLargeByteArray(size: Long): Array[Byte] = {
+    val sizeRestrictedToInt = math.min(Int.MaxValue, size).toInt
+    val sizeWithoutMinimum = math.min(availableArraySize, sizeRestrictedToInt)
+    val arraySize = math.max(MINMEMORYCHUNK, sizeWithoutMinimum)
+    new Array[Byte](arraySize)
+  }
+
+  /** @return A byte array of the size indicated or None. */
+  def applyForByteArray(size: Long): Option[Array[Byte]] =
+    if (availableArraySize >= size) Some(new Array[Byte](size toInt)) else None
+  
+  def readAsMuchAsPossibleToMemory(input: HashCalcInput): (Array[Byte], Int) = {
+    val data = applyForLargeByteArray(input.remaining + 1)
+    (data, fillFrom(input, data, 0, data.length))
+  }
+
 }

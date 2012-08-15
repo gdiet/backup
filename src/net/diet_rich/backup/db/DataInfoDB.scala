@@ -17,6 +17,10 @@ trait BaseDataInfoDB {
   /** @return ID for the new data info. */
   def create(info: DataInfo) : Long
   def update(id: Long, info: DataInfo): Unit
+  /** @return TRUE if a matching print is in the data info db. */
+  def hasMatchingPrint(size: Long, print: Long) : Boolean
+  /** @return matching id, None if no such entry. */
+  def findMatch(size: Long, print: Long, hash: Array[Byte]) : Option[Long]
 }
 
 /** Convenience features for the data info db interface. */
@@ -66,6 +70,17 @@ class DataInfoSqlDB(protected implicit val connection: Connection) extends BaseD
     updateEntry(info length, info print, info hash, info method, id)
   override def update(id: Long, info: DataInfo): Unit =
     doUpdate(id, info)
+    
+  protected val checkPrint = 
+    prepareQuery("SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?;")
+  override def hasMatchingPrint(size: Long, print: Long) : Boolean =
+    checkPrint(size, print)(_.long(1) > 0) next
+
+  protected val findEntry = 
+    prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?;")
+  override def findMatch(size: Long, print: Long, hash: Array[Byte]) : Option[Long] =
+    // NOTE: only the first of possibly multiple query results is used
+    findEntry(size, print, hash)(_ long 1) nextOption
 }
 
 object DataInfoSqlDB {
