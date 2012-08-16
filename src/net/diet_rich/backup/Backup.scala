@@ -8,6 +8,7 @@ import net.diet_rich.util.Executor
 import net.diet_rich.util.io._
 import net.diet_rich.backup.db._
 import java.io.RandomAccessFile
+import net.diet_rich.util.ImmutableBytes
 
 object BackupApp extends App {
   if (args.length < 3) throw new IllegalArgumentException("Backup needs at least source, repository and target arguments.")
@@ -44,37 +45,49 @@ class BackupSettings(val printForMatch: Boolean, val hashAlgorithm: String)
 class BackupElements(val tree: TreeDB, val data: DataInfoDB, val print: PrintDigester, val set: BackupSettings)
 
 class Backup(backup: BackupElements, executor: Executor) { import Backup._
-  val markIsSupported = HashCalcInput.markSupported(backup.set.hashAlgorithm)
+  HashCalcInput.digester(backup.set.hashAlgorithm).clone // making sure that the hash digester supports clone
   
   def process(source: File, reference: Option[TreeEntry], parent: Long): Unit = executor {
-    if (source.isFile) {
-      if (reference.isDefined)
-        processFileWithReference(source, reference get, parent)
-      else
-        processFile(source, parent)
-    } else {
+    if (source.isFile)
+      processFileWithOrWithoutReference(source, reference, parent)
+    else {
       val name = source.getName
       val dir = backup.tree create(parent, name)
       val ref = reference flatMap(ref => backup.tree children(ref.id) find(_.name == name))
       source.listFiles foreach(process(_, ref, dir))
     }
   }
-  
+
+  private def processFileWithOrWithoutReference(source: File, reference: Option[TreeEntry], parent: Long): Unit = {
+    if (reference.isDefined)
+      processFileWithReference(source, reference get, parent)
+    else
+      processFile(source, parent)
+  }
+
   private def processFileWithReference(source: File, reference: TreeEntry, parent: Long): Unit = {
     val referenceData = backup.data.read(reference.id)
     if (source.lastModified != reference.time || source.length != referenceData.length)
       processFile(source, parent)
-    else if (backup.set.printForMatch) using(new RandomAccessFile(source, "r")){input => 
-      val printResult = backup.print.print(input)
-      if (printResult != referenceData.print) {
-        input.seek(0)
-        processInput(source, input, parent)
-      } else
-        backup.tree.create(parent, source.getName, reference.time, reference.dataid)
+    else
+      processFileWithMatchingTimeAndSize(source, reference, referenceData.print, parent)
+  }
+
+  private def processFileWithMatchingTimeAndSize(source: File, reference: TreeEntry, referencePrint: Long, parent: Long): Unit = {
+    if (backup.set.printForMatch)
+      using(new RandomAccessFile(source, "r"))(processPrintMatchForInput(source, _, reference, referencePrint, parent))
+    else
+      backup.tree.create(parent, source.getName, reference.time, reference.dataid)
+  }
+  
+  private def processPrintMatchForInput(source: File, input: RandomAccessFile, reference: TreeEntry, referencePrint: Long, parent: Long): Unit = {
+    if (backup.print.print(input).print != referencePrint) {
+      input.seek(0)
+      processInput(source, input, parent)
     } else
       backup.tree.create(parent, source.getName, reference.time, reference.dataid)
   }
-
+  
   private def processFile(source: File, parent: Long): Unit =
     using(new RandomAccessFile(source, "r"))(processInput(source, _, parent))
 
@@ -82,21 +95,26 @@ class Backup(backup: BackupElements, executor: Executor) { import Backup._
     processHashedInput(source, new HashCalcInput(input, backup.set.hashAlgorithm), parent)
 
   private def processHashedInput(source: File, input: HashCalcInput, parent: Long): Unit = {
-    val printResult = backup.print.print(input)
+    val print = backup.print.print(input)
+    if (!print.data.isFull)
+      processInMemoryInput(source, print.print, List(print.data), input, parent)
+    else
+      processHashedInputWithPrint(source, print, input, parent)
+  }
     
-    // FIXME now is the time to introduce a sized byte array
+  private def processHashedInputWithPrint(source: File, print: PrintResult, input: HashCalcInput, parent: Long): Unit = {
+    val data = readAsMuchAsPossibleToMemory(input)
+    if (!data.isFull)
+      processInMemoryInput(source, print.print, List(print.data, data), input, parent)
+    else
+      processInputThatDoesNotFitIntoMemory(source, print.print, List(print.data, data), input, parent)
+  }
 
-    if (markIsSupported) {
-      val data, length = readAsMuchAsPossibleToMemory(input)
-    } else {
-      // FIXME the very small file case
-      val dataOption = applyForByteArray(input.remaining + 1)
-//      dataOption.foreach(f)
-      
-    }
-    // if mark is supported, read as much as possible into memory
-    // else only read into memory if full read is possible
-    
+  private def processInMemoryInput(source: File, print: Long, data: List[ImmutableBytes], input: HashCalcInput, parent: Long): Unit = {
+    throw new UnsupportedOperationException // FIXME
+  }
+
+  private def processInputThatDoesNotFitIntoMemory(source: File, print: Long, data: List[ImmutableBytes], input: HashCalcInput, parent: Long): Unit = {
     throw new UnsupportedOperationException // FIXME
   }
   
@@ -125,13 +143,9 @@ object Backup {
     new Array[Byte](arraySize)
   }
 
-  /** @return A byte array of the size indicated or None. */
-  def applyForByteArray(size: Long): Option[Array[Byte]] =
-    if (availableArraySize >= size) Some(new Array[Byte](size toInt)) else None
-  
-  def readAsMuchAsPossibleToMemory(input: HashCalcInput): (Array[Byte], Int) = {
+  def readAsMuchAsPossibleToMemory(input: HashCalcInput): ImmutableBytes = {
     val data = applyForLargeByteArray(input.remaining + 1)
-    (data, fillFrom(input, data, 0, data.length))
+    ImmutableBytes(data, fillFrom(input, data, 0, data.length))
   }
 
 }

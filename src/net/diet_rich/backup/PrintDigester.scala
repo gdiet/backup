@@ -4,18 +4,20 @@
 package net.diet_rich.backup
 
 import net.diet_rich.util.io._
+import net.diet_rich.util.ImmutableBytes
 
-class PrintResult(val print: Long, val data: Array[Byte], val size: Int)
+class PrintResult(val print: Long, val data: ImmutableBytes)
 
 trait PrintDigester {
   def zeroBytePrint: Long
+  /** If the Bytes object is not "full", the input has been read up to EOI. */
   def print(reader: Reader): PrintResult
 }
 
 object CrcAdler8192 extends PrintDigester {
   val zeroBytePrint: Long = print(emptyReader).print
 
-  def print(reader: Reader): PrintResult = {
+  override def print(reader: Reader): PrintResult = {
     val crc = new java.util.zip.CRC32
     val adler = new java.util.zip.Adler32
     val data = new Array[Byte](8192)
@@ -23,6 +25,6 @@ object CrcAdler8192 extends PrintDigester {
     crc.update(data, 0, size)
     adler.update(data, 0, size)
     val print = adler.getValue << 32 | crc.getValue
-    new PrintResult(print, data, size)
+    new PrintResult(print, ImmutableBytes(data, size))
   }
 }
