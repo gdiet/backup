@@ -112,7 +112,7 @@ object TreeSqlDB {
   def idxDataid[T](t : T) = t
 }
 
-class TreeSqlDB(protected implicit val connection: Connection) extends BaseTreeDB { import TreeDB._
+class TreeSqlDB(implicit connection: Connection) extends BaseTreeDB { import TreeDB._
 
   protected val queryEntry =
     prepareQuery("SELECT parent, name, time, dataid FROM TreeEntries WHERE id = ?;")

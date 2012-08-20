@@ -4,11 +4,11 @@
 package net.diet_rich.backup.db
 
 import java.sql.Connection
-import net.diet_rich.util.sql._
 import net.diet_rich.backup.HashCalcInput
 import net.diet_rich.util.Executor
+import net.diet_rich.util.sql._
 
-case class DataInfo (length: Long, print: Long, hash: Array[Byte], method: Int)
+case class DataInfo (length: Long, print: Long, hash: Array[Byte], method: Int = 0)
 
 /** Basic data info db interface used for data access. */
 trait BaseDataInfoDB {
@@ -44,7 +44,7 @@ object DataInfoDB {
     }
 }
 
-class DataInfoSqlDB(protected implicit val connection: Connection) extends BaseDataInfoDB {
+class DataInfoSqlDB(implicit connection: Connection) extends BaseDataInfoDB {
   protected val maxEntryId = SqlDBUtil.readAsAtomicLong("SELECT MAX(id) FROM DataInfo;")
 
   protected val readEntry = 

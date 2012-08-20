@@ -111,9 +111,23 @@ class Backup(backup: BackupElements, executor: Executor) { import Backup._
   }
 
   private def processInMemoryInput(source: File, print: Long, data: List[ImmutableBytes], input: HashCalcInput, parent: Long): Unit = {
-    throw new UnsupportedOperationException // FIXME
+    val size = data map (_.size toLong) sum
+    val hash = input.hash
+    backup.data.findMatch(size, print, hash) match {
+    case None =>
+      storeBytesAsNewDataEntry(source, DataInfo(size, print, hash), data, input, parent)
+    case Some(dataid) =>
+      backup.tree.create(parent, source.getName, source.lastModified, dataid)
+    }
   }
 
+  private def storeBytesAsNewDataEntry(source: File, dataInfo: DataInfo, data: List[ImmutableBytes], input: HashCalcInput, parent: Long): Unit = {
+    val method = 0 // FIXME decide on the backup method
+    val finalDataInfo = dataInfo.copy(method = method)
+    val dataid = backup.data.create(finalDataInfo)
+    throw new UnsupportedOperationException // FIXME continue with storing in byte store db and byte store
+  }
+  
   private def processInputThatDoesNotFitIntoMemory(source: File, print: Long, data: List[ImmutableBytes], input: HashCalcInput, parent: Long): Unit = {
     throw new UnsupportedOperationException // FIXME
   }
