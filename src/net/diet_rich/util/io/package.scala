@@ -8,14 +8,21 @@ import scala.annotation.tailrec
 package object io {
 
   /** closes the resource after the operation */
-  def using[Closeable <: {def close(): Unit}, ReturnType] (resource: Closeable)(operation: Closeable => ReturnType): ReturnType =
+  def using[Closeable <: io.Closeable, ReturnType] (resource: Closeable)(operation: Closeable => ReturnType): ReturnType =
     try { operation(resource) } finally { resource.close }
 
-  type Reader = { def read(bytes: Array[Byte], offset: Int, length: Int): Int }
+  type ByteSource = { def read(bytes: Array[Byte], offset: Int, length: Int): Int }
+  type Closeable = { def close(): Unit }
+  type Seekable = { def seek(pos: Long): Unit }
+  type Reader = ByteSource with Closeable
+  type SeekReader = Seekable with Reader
   
-  val emptyReader: Reader = new Object { def read(b: Array[Byte], off: Int, len: Int): Int = 0 }
+  val emptyReader: Reader = new Object {
+    def read(b: Array[Byte], off: Int, len: Int): Int = 0
+    def close(): Unit = Unit
+  }
   
-  def fillFrom(input: Reader, bytes: Array[Byte], offset: Int, length: Int): Int = {
+  def fillFrom(input: ByteSource, bytes: Array[Byte], offset: Int, length: Int): Int = {
     @tailrec
     def readRecurse(offset: Int): Int = {
       input.read(bytes, offset, length - offset) match {
@@ -26,7 +33,7 @@ package object io {
     readRecurse(offset) - offset
   }
 
-  def readAll(input: Reader) : Long = {
+  def readAndDiscardAll(input: ByteSource) : Long = {
     val buffer = new Array[Byte](8192)
     @tailrec
     def readRecurse(length: Long): Long =

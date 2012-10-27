@@ -29,6 +29,7 @@ class HashCalcInput(input: RandomAccessFile, algorithm: String) { import HashCal
     read
   }
   def hash: Array[Byte] = digest.digest
+  def close(): Unit = input.close()
 }
 
 object HashCalcInput {
