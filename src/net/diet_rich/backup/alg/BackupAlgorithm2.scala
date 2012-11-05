@@ -1,4 +1,4 @@
-package net.diet_rich.backup.alg
+package net.diet_rich.backup.alg2
 
 import net.diet_rich.util.io._
 
