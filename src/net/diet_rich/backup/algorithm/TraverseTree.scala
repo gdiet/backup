@@ -8,7 +8,7 @@ trait TraverseNormalTree {
   def execute(command: => Unit): Unit
   
   final def backupIntoNewNode(source: SourceEntry, targetParentId: Long, referenceId: Option[Long]): Unit =
-    startBackup(source, tree.createNode(targetParentId, source.name), referenceId)
+    startBackup(source, tree.create(targetParentId, source.name), referenceId)
   
   private def startBackup(src: SourceEntry, dst: Long, ref: Option[Long]): Unit = {
     if (src.hasData) ref.flatMap(tree.data(_)) match {
@@ -17,8 +17,8 @@ trait TraverseNormalTree {
     }
     src.children.foreach { sourceChild =>
       val childName = sourceChild.name
-      val targetChild = tree.createNode(dst, childName)
-      val referenceChild = ref.flatMap(tree.child(_, childName))
+      val targetChild = tree.create(dst, childName)
+      val referenceChild = ref.flatMap(tree.childId(_, childName))
       execute(startBackup(sourceChild, targetChild, referenceChild))
     }
   }

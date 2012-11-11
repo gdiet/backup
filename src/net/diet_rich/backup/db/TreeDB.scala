@@ -16,7 +16,7 @@ trait BaseTreeDB { import TreeDB._
   /** @return The children, empty if no such node. */
   def children(id: Long): Iterable[TreeEntry]
   /** @return The entry ID. */
-  def create(parent: Long, name: String, time: Long = NOTIME, data: Long = NODATAID): Long
+  def create(parent: Long, name: String, time: Long, data: Long): Long
   /** Does nothing if no such node. */
   def rename(id: Long, newName: String): Unit
   /** Does nothing if no such node. */
@@ -31,6 +31,10 @@ trait BaseTreeDB { import TreeDB._
 
 /** Convenience features for the tree db interface. */
 trait TreeDB extends BaseTreeDB { import TreeDB._
+  /** @return The entry ID. */
+  def create(parent: Long, name: String): Long = create(parent, name, NOTIME, NODATAID)
+  /** @return The child's entry ID if any. */
+  def childId(parentId: Long, name: String): Option[Long] = children(parentId).find(_.name == name).map(_.id)
   /** @return The entry ID. Missing path elements are created on the fly. */
   def getOrMake(path: String): Long = {
     require(path.startsWith("/"), "Path <%s> does not start with '/'" format path)
