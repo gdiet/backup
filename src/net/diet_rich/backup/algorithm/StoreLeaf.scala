@@ -1,70 +1,51 @@
 package net.diet_rich.backup.algorithm
 
-import net.diet_rich.util.io.{SeekReader, Reader, readAndDiscardAll}
+import net.diet_rich.util.io.{SeekReader, Reader, readAndDiscardAll, fillFrom}
 
 /** This implementation assumes that re-reading data from the source reader is fast.
- *  It is not optimized in terms of that the hash is calculated twice for some files
- *  although this could be avoided.
+ *  Also, it fully re-calculates the hash for large files that can't be cached,
+ *  if a file with the same size and print is already stored.
  */
-trait StoreLeafNotOptimized {
-  def tree: BackupTree
-  def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Long, ReturnType)
-  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Array[Byte], ReturnType)
-  def calculatePrintAndReset(reader: SeekReader): Long
-  
-  final def storeLeaf(src: SourceEntry, dst: Long): Unit = src.read {reader =>
-    storeLeaf(src, dst, reader, calculatePrintAndReset(reader))
-  }
-  
-  final def storeLeaf(src: SourceEntry, dst: Long, reader: SeekReader, print: Long): Unit =
-    if (tree.hasMatch(src.size, print))
-      storeWithMatch(src, dst, reader)
-    else
-      storeWithoutMatch(src, dst, reader)
-
-  private def storeWithMatch(src: SourceEntry, dst: Long, reader: SeekReader) {
-    val (print, (hash, size)) = filterPrint(reader) { reader =>
-      filterHash(reader) { reader =>
-        readAndDiscardAll(reader)
-      }
-    }
-    tree.dataid(size, print, hash) match {
-      case None => storeWithoutMatch(src, dst, reader)
-      case Some(dataid) => tree.setData(dst, Some(SimpleDataEntry(src.time, size, print, hash, dataid)))
-    }
-  }
-  
-  def storeWithoutMatch(src: SourceEntry, dst: Long, reader: SeekReader)
-}
-
-
 trait StoreLeaf {
   def tree: BackupTree
   def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Long, ReturnType)
   def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Array[Byte], ReturnType)
   def calculatePrintAndReset(reader: SeekReader): Long
-  
+  def getLargeArray(size: Long): Option[Array[Byte]]
+  def storeFromReader(src: SourceEntry, dst: Long, reader: SeekReader): Unit
+  def storeFromBytesRead(src: SourceEntry, dst: Long, bytes: Array[Byte], print: Long, size: Long, hash: Array[Byte]): Unit
+    
   final def storeLeaf(src: SourceEntry, dst: Long): Unit = src.read {reader =>
     storeLeaf(src, dst, reader, calculatePrintAndReset(reader))
   }
   
   final def storeLeaf(src: SourceEntry, dst: Long, reader: SeekReader, print: Long): Unit =
     if (tree.hasMatch(src.size, print))
-      storeWithMatch(src, dst, reader)
+      cacheWhileCalcuatingHash(src, dst, reader)
     else
-      storeWithoutMatch(src, dst, reader)
+      storeFromReader(src, dst, reader)
 
-  private def storeWithMatch(src: SourceEntry, dst: Long, reader: SeekReader) {
+  private def cacheWhileCalcuatingHash(src: SourceEntry, dst: Long, reader: SeekReader): Unit = {
+    val cacheSize = src.size + 1
+    val cache = getLargeArray(cacheSize)
     val (print, (hash, size)) = filterPrint(reader) { reader =>
       filterHash(reader) { reader =>
-        readAndDiscardAll(reader)
+        cache match {
+          case None => readAndDiscardAll(reader)
+          case Some(bytes) => fillFrom(reader, bytes, 0, bytes.length) + readAndDiscardAll(reader)
+        }
       }
     }
     tree.dataid(size, print, hash) match {
-      case None => storeWithoutMatch(src, dst, reader)
       case Some(dataid) => tree.setData(dst, Some(SimpleDataEntry(src.time, size, print, hash, dataid)))
+      case None => cache match {
+        case Some(bytes) if size+1 == cacheSize =>
+          storeFromBytesRead(src, dst, bytes, print, size, hash)
+        case _ =>
+          reader.seek(0)
+          storeFromReader(src, dst, reader)
+      }
     }
   }
   
-  def storeWithoutMatch(src: SourceEntry, dst: Long, reader: SeekReader)
 }
