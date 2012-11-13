@@ -13,7 +13,7 @@ class ReadTests {
     val input = new Object { def read(bytes: Array[Byte], offset: Int, length: Int): Int = -1 }
     val read = fillFrom(input, new Array[Byte](10), 0, 10)
     assertThat(read) isEqualTo 0
-    val skipped = readAll(input)
+    val skipped = readAndDiscardAll(input)
     assertThat(skipped) isEqualTo 0
   }
 
@@ -22,7 +22,7 @@ class ReadTests {
     val input = new Object { def read(bytes: Array[Byte], offset: Int, length: Int): Int = 0 }
     val read = fillFrom(input, new Array[Byte](10), 0, 10)
     assertThat(read) isEqualTo 0
-    val skipped = readAll(input)
+    val skipped = readAndDiscardAll(input)
     assertThat(skipped) isEqualTo 0
   }
 
@@ -38,7 +38,7 @@ class ReadTests {
     val read = fillFrom(input, new Array[Byte](10), 0, 10)
     assertThat(read) isEqualTo 3
     input.call = 3
-    val skipped = readAll(input)
+    val skipped = readAndDiscardAll(input)
     assertThat(skipped) isEqualTo 3
   }
   
