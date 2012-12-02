@@ -19,11 +19,11 @@ trait BasicTreeDB extends TreeDB {
   implicit def connection: Connection
   
   
-  protected val maxEntryId =
+  protected final val maxEntryId =
     SqlDBUtil.readAsAtomicLong("SELECT MAX(id) FROM TreeEntries")
-  protected val addEntry = 
+  protected final val addEntry = 
     prepareUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?)")
-  override def createAndGetId(parentId: Long, name: String): Long = {
+  override final def createAndGetId(parentId: Long, name: String): Long = {
     val id = maxEntryId incrementAndGet()
     addEntry(id, parentId, name) match {
       case 1 => id
@@ -32,7 +32,7 @@ trait BasicTreeDB extends TreeDB {
   }
   
   
-  protected val queryFullDataInformation = prepareQuery(
+  protected final val queryFullDataInformation = prepareQuery(
     "SELECT time, length, print, hash, dataid FROM TreeEntries JOIN DataInfo " +
     "ON TreeEntries.dataid = DataInfo.id AND TreeEntries.id = ?"
   )
@@ -42,9 +42,9 @@ trait BasicTreeDB extends TreeDB {
     ).nextOptionOnly
 
     
-  protected val changeData = 
+  protected final val changeData = 
     prepareUpdate("UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?")
-  override def setData(id: Long, time: Long, dataid: Long): Unit =
+  override final def setData(id: Long, time: Long, dataid: Long): Unit =
     changeData(time, dataid, id) match {
       case 1 => None
       case n => throw new IllegalStateException("Tree: Update data returned %s rows instead of 1".format(n))

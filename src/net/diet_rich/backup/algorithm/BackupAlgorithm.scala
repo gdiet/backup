@@ -3,7 +3,7 @@ package net.diet_rich.backup.algorithm
 import net.diet_rich.util.io.{Reader, SeekReader, fillFrom, readAndDiscardAll}
 
 trait BackupAlgorithm {
-  def ??? = throw new UnsupportedOperationException
+  def ??? = throw new UnsupportedOperationException // FIXME ???
   
   def fs: BackupFileSystem
   
@@ -83,7 +83,7 @@ trait BackupAlgorithm {
     fs.findMatch(size, print, hash) match {
       case Some(dataid) => fs.setData(dst, src.time, dataid)
       case None => cache match {
-        case Some(bytes) if size+1 == cacheSize =>
+        case Some(bytes) if size+1 <= cacheSize =>
           storeFromBytesRead(src, dst, bytes, print, size, hash)
         case _ =>
           reader.seek(0)
@@ -92,20 +92,20 @@ trait BackupAlgorithm {
     }
   }
 
-  private def storeFromReader(src: SourceEntry, dst: Long, reader: SeekReader): Unit = ??? // {
-//    val (print, (hash, (dataid, size))) = filterPrint(reader) { reader =>
-//      filterHash(reader) { reader =>
-//        fs.storeAndGetDataIdAndSize(reader)
-//      }
-//    }
-//    fs.setData(dst, Some(SimpleDataEntry(src.time, size, print, hash, dataid)))
-//  }
-//
-  private def storeFromBytesRead(src: SourceEntry, dst: Long, bytes: Array[Byte], print: Long, size: Long, hash: Array[Byte]): Unit =
-    ???
-// {
-//    val dataid = fs.storeAndGetDataId(bytes, size)
-//    fs.setData(dst, Some(SimpleDataEntry(src.time, size, print, hash, dataid)))
-//  }
+  private def storeFromReader(src: SourceEntry, dst: Long, reader: SeekReader): Unit = {
+    val (print, (hash, (dataid, size))) = filterPrint(reader) { reader =>
+      filterHash(reader) { reader =>
+        fs.storeAndGetDataIdAndSize(reader)
+      }
+    }
+    fs.createDataEntry(dataid, size, print, hash)
+    fs.setData(dst, src.time, dataid)
+  }
+
+  private def storeFromBytesRead(src: SourceEntry, dst: Long, bytes: Array[Byte], print: Long, size: Long, hash: Array[Byte]): Unit = {
+    val dataid = fs.storeAndGetDataId(bytes, size)
+    fs.createDataEntry(dataid, size, print, hash)
+    fs.setData(dst, src.time, dataid)
+  }
   
 }
