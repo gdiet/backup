@@ -2,14 +2,13 @@ package net.diet_rich.backup.algorithm
 
 import net.diet_rich.util.io.{Reader, SeekReader, fillFrom, readAndDiscardAll}
 
-trait BackupAlgorithm {
+trait StandardFileSourceBackup extends BackupIntoNewBranch[SourceEntry] {
+  
   def ??? = throw new UnsupportedOperationException // FIXME ???
   
   def fs: BackupFileSystem
-  
   /** Handle distribution to multiple threads, progress monitoring,
-   *  checking for end conditions, catching exceptions.
-   */
+   *  checking for end conditions, catching exceptions. */
   def executeTreeOperation(source: SourceEntry)(command: => Unit): Unit
   /** @return An array of the requested size or None. */
   def getLargeArray(size: Long): Option[Array[Byte]]
@@ -18,7 +17,7 @@ trait BackupAlgorithm {
   def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Array[Byte], ReturnType)
   def checkPrintForMatch: Boolean
 
-  final def backupIntoNewNode(source: SourceEntry, targetParentId: Long, referenceId: Option[Long]): Unit =
+  final def backupIntoNewBranch(source: SourceEntry, targetParentId: Long, referenceId: Option[Long]): Unit =
     processEntry(source, targetParentId, referenceId)
     
   private def processEntry(src: SourceEntry, dst: Long, ref: Option[Long]): Unit =
