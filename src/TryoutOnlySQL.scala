@@ -73,7 +73,7 @@ object TryoutOnlySQL extends App {
   
   println("starting...")
   val time = System.currentTimeMillis
-  for (i <- 1 to 100) process(root, i);
+  for (i <- 1 to 5) process(root, i);
   sqlExecutor.shutdownAndAwaitTermination
   println(System.currentTimeMillis - time);
   println("shutting down...")

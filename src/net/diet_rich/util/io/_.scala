@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util
 
+import scala.annotation.tailrec
 package object io {
   
   /** closes the resource after the operation */
@@ -15,10 +16,21 @@ package object io {
     def readRecurse(offset: Int): Int = {
       input.read(bytes, offset, length - offset) match {
         case -1 => offset
-        case  n => readRecurse(offset)
+        case  n => if (offset + n == length) offset + n else readRecurse(offset + n)
       }
     }
     readRecurse(offset) - offset
   }
-    
+
+  def readFully(input: Reader) : Long = {
+    val buffer = new Array[Byte](8192)
+    @tailrec
+    def readRecurse(length: Long): Long =
+      input.read(buffer, 0, 8192) match {
+        case -1 => length
+        case  n => readRecurse(length + n)
+      }
+    readRecurse(0)
+  }
+  
 }

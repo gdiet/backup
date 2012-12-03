@@ -29,8 +29,10 @@ object PrintCalculator {
 }
 
 class HashCalculator(input: Reader, algorithm: String) {
+  // FIXME check in advance that the MessageDigest objects are cloneable
   protected val digester = java.security.MessageDigest.getInstance(algorithm)
   def hash = digester.digest
+  def digestClone: java.security.MessageDigest = digester.clone.asInstanceOf[java.security.MessageDigest]
   def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
     val result = input.read(bytes, offset, length)
     if (result > 0) digester.update(bytes, offset, result)

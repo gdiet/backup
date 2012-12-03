@@ -4,6 +4,8 @@ import java.io.File
 import net.diet_rich.fdfs._
 import net.diet_rich.util.closureToRunnable
 import net.diet_rich.util.io.readFully
+import net.diet_rich.util.Bytes
+import java.io.RandomAccessFile
 
 
 object Backup extends App {
@@ -14,21 +16,53 @@ object Backup extends App {
   val target = args(2)
   new Backup(source, repository, target)
 
-  val MEMORYRESERVED = 1024*1024*64
-  val LARGEARRAYSIZE = 1024*1024*2
+  
+  
+  val MEMORYRESERVED = 1024*1024*64 // FIXME system configuration
+  val MAXMEMRATIO = 0.75 // FIXME system configuration
+  val MINMEMORYCHUNK = 1024 // FIXME system configuration
 
   def freeMemory: Long = { val rt = Runtime.getRuntime; rt.maxMemory - (rt.totalMemory - rt.freeMemory) }
-  
-  // FIXME make a real memory management
-  def loanLargeByteArraysIfPossible(size: Long): List[Array[Byte]] = {
-    if (size > freeMemory + MEMORYRESERVED) Nil else {
-      val blocks = (size - 1) / LARGEARRAYSIZE + 1
-      (for (i <- 1L to blocks) yield new Array[Byte](LARGEARRAYSIZE)) toList
-    }
+
+  /** @return A byte array, if possible of the size indicated, but at least
+   *  of the size MINMEMORYCHUNK.
+   */
+  def applyForLargeByteArray(size: Long): Array[Byte] = {
+    val availableMemory = math.max(0, freeMemory - MEMORYRESERVED)
+    val calculatedSize = math.min(Int.MaxValue, availableMemory * MAXMEMRATIO).toInt
+    val arraySize = math.max(MINMEMORYCHUNK, calculatedSize)
+    new Array[Byte](arraySize)
   }
 
-  def returnLargeByteArrays(arrays: List[Array[Byte]]) = Unit
+  def readAsMuchAsPossibleToMemory(input: HashCalculatorInput): Bytes = {
+    val data = applyForLargeByteArray(input.length - input.position + 1)
+    val read = readFully(input, data, 0, data.length)
+    Bytes(data, 0, read)
+  }
   
+}
+
+class HashCalculatorInput(input: RandomAccessFile, algorithm: String) {
+  import java.security.MessageDigest
+  protected var digester = MessageDigest.getInstance(algorithm)
+  protected var markDigester: Option[MessageDigest] = None
+  protected var markPosition: Long = 0
+  def mark: Unit = {
+    markPosition = input.getFilePointer;
+    markDigester = Some(digester.clone.asInstanceOf[java.security.MessageDigest])
+  }
+  def reset = {
+    digester = markDigester.get
+    input.seek(markPosition)
+  }
+  def length: Long = input.length
+  def position: Long = input.getFilePointer
+  def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
+    val read = readFully(input, bytes, offset, length)
+    digester.update(bytes, offset, read)
+    read
+  }
+  def hash: Array[Byte] = digester.digest
 }
 
 class Backup(source: File, repository: File, target: String) {
@@ -55,27 +89,62 @@ class Backup(source: File, repository: File, target: String) {
   if (treedb.childExists(targetParentId, targetName)) throw new IllegalArgumentException("Target already exists.")
   val targetId = treedb create (targetParentId, targetName)
   
-  val STOREARRAYSIZE = 1024*1024
   val storeExecutor = SqlDBCommon.executor(4, 1) // 4 threads, do not queue
+  
   def processSource(source: File, parentId: Long): Unit = {
-    if (!source.isFile) {
-      // assuming a directory
+    if (source.isFile)
+      backupFile(source, parentId) 
+    else {
       val id = treedb create (parentId, source.getName)
       source.listFiles.foreach(file => storeExecutor.execute{processSource(file, id)})
+    }
+  }
+
+  def backupFile(source: File, parentId: Long): Unit = {
+    val fileSize = source.length
+    val input = new HashCalculatorInput(new java.io.RandomAccessFile(source, "r"), "MD5")
+    val (fileHeader, print) = PrintCalculator.print(input)
+
+    val dataid = if (datadb.hasMatchingPrint(fileSize, print)) {
+      val data = readAsMuchAsPossibleToMemory(input)
+      if (data.size < data.maxSize) {
+        // if fits to memory, store if necessary
+        val size = fileHeader.size.toLong + data.size
+        val hash = input.hash
+        datadb.findMatch(size, print, hash).getOrElse {
+          val dataid = datadb.reserveID
+          val method = 0 // FIXME store here fileHeader and Bytes(data, 0, read)
+          datadb.create(dataid, DataInfo(size, print, hash, method))
+          dataid
+        }
+      } else {
+        // if does not fit to memory, clone hash object, then read and discard the rest.
+        // if storing is necessary, store from memory first, then seek to read position,
+        // use cloned hash object on stream, read and store.
+        input.mark
+        val size = readFully(input) + fileHeader.size + data.size
+        val hash = input.hash
+        datadb.findMatch(size, print, hash).getOrElse {
+          val dataid = datadb.reserveID
+          val method = 0 // FIXME store here fileHeader and Bytes(data, 0, read)
+          // then, seek to right position, use cloned digester, and store the rest
+          // this will give a new hash.
+          datadb.create(dataid, DataInfo(size, print, hash, method))
+          dataid
+        }
+        0L
+      }
     } else {
-      // immediately start hash calculation
-      val input = new HashCalculator(new java.io.RandomAccessFile(source, "r"), "MD5")
+      0L
+    }
       
+    treedb create (parentId, source.getName, source.lastModified, dataid)
       // get print, keep bytes read
       // if print does not match, store immediately
       
-      // if print matches
-      // read as much as possible to memory (one array, max 2G)
       
-      // if fits to memory
       // store if necessary
       
-      // if does not fit to memory
       // clone hash object
       // read and discard the rest
       // if storing is necessary
@@ -124,8 +193,9 @@ class Backup(source: File, repository: File, target: String) {
 //      }
 //      
 //      treedb create (parentId, source.getName, source.lastModified) // FIXME dataid
-    }
+    
   }
+
   processSource(source, targetId)
   storeExecutor.shutdownAndAwaitTermination
   sqlExecutor.shutdownAndAwaitTermination

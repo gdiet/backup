@@ -11,7 +11,9 @@ case class Bytes(data: Array[Byte], offset: Long, size: Long) {
   def dropFirst(length: Long) = copy(offset = offset + length, size = size - length)
 
   def setSize(length: Long) = copy(size = length)
-  
+
+  def maxSize: Long = data.length
+
   def copyFrom(other: Bytes, offset: Long = 0) : Bytes = {
     ASSUME(other.size + offset <= size, "failed: other.size + offset <= size: %s + %s <= %s" format (other.size, offset, size))
     System.arraycopy(other data, other intOffset, data, (this.offset + offset) toInt, other intSize)
