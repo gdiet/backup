@@ -45,7 +45,7 @@ class TestUtil {
 
 object TestUtil {
   
-  private def getThrowable[T](f: => T): Option[Throwable] = try { f; None } catch { case e => Some(e) }
+  private def getThrowable[T](f: => T): Option[Throwable] = try { f; None } catch { case e: Throwable => Some(e) }
   
   def expectThat[T](f: => T) = {
     new Object {
