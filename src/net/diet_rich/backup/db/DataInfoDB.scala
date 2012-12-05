@@ -26,7 +26,7 @@ trait BaseDataInfoDB {
 /** Convenience features for the data info db interface. */
 trait DataInfoDB extends BaseDataInfoDB {
   /** @return the data info (exception if no such entry). */
-  def read(id: Long): DataInfo = readOption(id) get
+  def read(id: Long): DataInfo = readOption(id).get
   /** @return ID for the new empty data info. */
   def create: Long = create(DataInfo(0, 0, Array(), 0))
 }
@@ -52,12 +52,12 @@ class DataInfoSqlDB(implicit connection: Connection) extends BaseDataInfoDB {
   override def readOption(id: Long): Option[DataInfo] =
     readEntry(id)(
       result => DataInfo(result long 1, result long 2, result bytes 3, result int 4)
-    ) nextOption // NOTE: only the first of possibly multiple query results is used
+    ).nextOption // NOTE: only the first of possibly multiple query results is used
   
   protected val insertNewEntry =
     prepareUpdate("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
   protected def doCreate(id: Long, info: DataInfo): Unit = 
-    insertNewEntry(id, info length, info print, info hash, info method)
+    insertNewEntry(id, info.length, info.print, info.hash, info.method)
   override def create(info: DataInfo): Long = {
     val id = maxEntryId incrementAndGet()
     doCreate(id, info)
@@ -67,20 +67,20 @@ class DataInfoSqlDB(implicit connection: Connection) extends BaseDataInfoDB {
   protected val updateEntry =
     prepareUpdate("UPDATE DataInfo SET length = ?, print = ?, hash = ?, method = ? WHERE id = ?;")
   protected def doUpdate(id: Long, info: DataInfo): Unit = 
-    updateEntry(info length, info print, info hash, info method, id)
+    updateEntry(info.length, info.print, info.hash, info.method, id)
   override def update(id: Long, info: DataInfo): Unit =
     doUpdate(id, info)
     
   protected val checkPrint = 
     prepareQuery("SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?;")
   override def hasMatchingPrint(size: Long, print: Long) : Boolean =
-    checkPrint(size, print)(_.long(1) > 0) next
+    checkPrint(size, print)(_.long(1) > 0).next
 
   protected val findEntry = 
     prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?;")
   override def findMatch(size: Long, print: Long, hash: Array[Byte]) : Option[Long] =
     // NOTE: only the first of possibly multiple query results is used
-    findEntry(size, print, hash)(_ long 1) nextOption
+    findEntry(size, print, hash)(_ long 1).nextOption
 }
 
 object DataInfoSqlDB {

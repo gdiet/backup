@@ -8,7 +8,7 @@ class AnExampleUsageTest {
 
   @Test
   def example: Unit = {
-    implicit val con = DBConnection h2MemoryDB (getClass getCanonicalName)
+    implicit val con = DBConnection h2MemoryDB (getClass.getCanonicalName)
     execUpdate(con, "CREATE TABLE table (key INT, value BIGINT);")
     val insert = prepareUpdate("INSERT INTO table VALUES (?, ?);")
     val query = prepareQuery("SELECT value FROM table ORDER BY key ASC;")

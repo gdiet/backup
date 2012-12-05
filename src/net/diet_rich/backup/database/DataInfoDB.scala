@@ -18,13 +18,13 @@ trait BasicDataInfoDB extends DataInfoDB {
   protected final val checkPrint = 
     prepareQuery("SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?")
   override final def hasMatch(size: Long, print: Long): Boolean =
-    checkPrint(size, print)(_.long(1) > 0) next
+    checkPrint(size, print)(_.long(1) > 0).next
 
   protected final val findEntry = 
     prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?")
   override final def findMatch(size: Long, print: Long, hash: Array[Byte]) : Option[Long] =
     // NOTE: only the first of possibly multiple query results is used
-    findEntry(size, print, hash)(_ long 1) nextOption
+    findEntry(size, print, hash)(_ long 1).nextOption
 
   protected final val addDataEntry = 
     prepareUpdate("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?)")

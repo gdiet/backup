@@ -60,7 +60,7 @@ class Backup(backup: BackupElements, executor: Executor) { import Backup._
 
   private def processFileWithOrWithoutReference(source: File, reference: Option[TreeEntry], parent: Long): Unit = {
     if (reference.isDefined)
-      processFileWithReference(source, reference get, parent)
+      processFileWithReference(source, reference.get, parent)
     else
       processFile(source, parent)
   }
@@ -111,7 +111,7 @@ class Backup(backup: BackupElements, executor: Executor) { import Backup._
   }
 
   private def processInMemoryInput(source: File, print: Long, data: List[ImmutableBytes], input: HashCalcInput, parent: Long): Unit = {
-    val size = data map (_.size toLong) sum
+    val size = data.map(_.size.toLong).sum
     val hash = input.hash
     backup.data.findMatch(size, print, hash) match {
     case None =>

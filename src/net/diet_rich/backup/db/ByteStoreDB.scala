@@ -40,7 +40,7 @@ object ByteStoreDB {
 class ByteStoreSqlDB(implicit connection: Connection) extends ByteStoreDB { import ByteStoreSqlDB._
   
   protected object FreeRanges {
-    private val startOfFreeArea = execQuery(connection, "SELECT MAX(fin) FROM ByteStore;")(_ long 1) next
+    private val startOfFreeArea = execQuery(connection, "SELECT MAX(fin) FROM ByteStore;")(_ long 1).next
     private val queue = new scala.collection.mutable.PriorityQueue[DataRange]()
 
     // insert ranges for gaps in queue

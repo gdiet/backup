@@ -86,7 +86,7 @@ class SetArgumentAndGetResultTest extends TestHelpers {
     val result = storeAndGetForType("BytesOptionTable", "VARBINARY(255)", {_ bytesOption 1}, input)
     assertThat(input.size) isEqualTo result.size
     output.zip(result).foreach {e =>
-      if (e._1 isEmpty) assertThat(e._2 isEmpty) isTrue else assertThat(e._1.get.sameElements(e._2.get))
+      if (e._1.isEmpty) assertThat(e._2.isEmpty).isTrue else assertThat(e._1.get.sameElements(e._2.get))
     }
   }
   

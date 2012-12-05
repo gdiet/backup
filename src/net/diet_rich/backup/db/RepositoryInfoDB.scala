@@ -25,7 +25,7 @@ object RepositoryInfoDB {
     execUpdate(connection, "DROP TABLE RepositoryInfo IF EXISTS;")
     
   def readSettings(connection: Connection): StringMap =
-    execQuery(connection, "SELECT key, value FROM RepositoryInfo;")(r => (r string 1, r string 2)) toMap
+    execQuery(connection, "SELECT key, value FROM RepositoryInfo;")(r => (r string 1, r string 2)).toMap
 
   def read(connection: Connection, key: String): Option[String] =
     execQuery(connection, "SELECT value FROM RepositoryInfo WHERE key = ?;", key)(_ string 1).nextOptionOnly

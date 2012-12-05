@@ -6,7 +6,7 @@ package net.diet_rich.util.sql
 import java.sql.ResultSet
 
 class WrappedSQLResult(resultSet: ResultSet) {
-  private def asOption[T](value: T): Option[T] = if (resultSet wasNull) None else Some(value)
+  private def asOption[T](value: T): Option[T] = if (resultSet.wasNull) None else Some(value)
   
   def int(column: Int): Int                         =           resultSet getInt    column
   def intOption(column: Int): Option[Int]           = asOption (resultSet getInt    column)
@@ -17,5 +17,5 @@ class WrappedSQLResult(resultSet: ResultSet) {
   def bytes(column: Int): Array[Byte]               =           resultSet getBytes  column
   def bytesOption(column: Int): Option[Array[Byte]] = asOption (resultSet getBytes  column)
   
-  def next: Boolean = resultSet next
+  def next: Boolean = resultSet.next
 }

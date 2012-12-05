@@ -11,7 +11,7 @@ import org.apache.commons.io.FileUtils
 
 trait TestHelpers {
   
-  def className: java.lang.String = getClass getCanonicalName
+  def className: java.lang.String = getClass.getCanonicalName
     
   def testDir(name: String = "test"): File = {
     val dir = new File("temp/%s/%s" format (className, name))
@@ -47,8 +47,11 @@ object TestUtil {
   
   private def getThrowable[T](f: => T): Option[Throwable] = try { f; None } catch { case e: Throwable => Some(e) }
   
-  def expectThat[T](f: => T) = {
-    new Object {
+  trait DoesThrow { def doesThrow(t: Throwable) }
+
+  // FIXME better return a function or something?
+  def expectThat[T](f: => T): DoesThrow = {
+    new DoesThrow {
       def doesThrow(t: Throwable) =
         getThrowable(f) match {
           case None => throw new AssertionError("expected the code to throw " + t)
@@ -64,6 +67,6 @@ object TestUtil {
 
   private val random = new Random(0)
   
-  def randomString: String = random nextLong() toString
+  def randomString: String = random.nextLong().toString
   
 }

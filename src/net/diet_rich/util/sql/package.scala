@@ -47,7 +47,7 @@ package object sql {
   }
 
   def execQuery[T](stat: PreparedStatement, args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T] = {
-    val resultSet = new WrappedSQLResult(setArguments(stat, args:_*) executeQuery)
+    val resultSet = new WrappedSQLResult(setArguments(stat, args:_*).executeQuery)
     new ResultIterator[T] {
       var hasNextIsChecked = false
       var hasNextResult = false

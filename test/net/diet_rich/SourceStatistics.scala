@@ -11,7 +11,7 @@ import scala.io.Source
 object SourceStatistics extends App {
 
   // restrict to .scala extension
-  val scalaFiles = FileUtils iterateFiles (new File("src"), Array("scala"), true) asScala
+  val scalaFiles = FileUtils.iterateFiles(new File("src"), Array("scala"), true).asScala
   
   val (nloc, ncss) = scalaFiles.foldLeft((0,0)){case ((nlocSum,ncssSum), file) =>
     val filePathToPrint = file getPath() substring(4) replaceAll("\\\\","/")
@@ -48,10 +48,10 @@ object SourceStatistics extends App {
     .map(line => if (line contains "//") line.substring(0, line.indexOf("//")) else line)
 
     val sourceLines = preparedLines
-    .map(_ trim)
+    .map(_.trim)
     .filterNot(_.isEmpty)
 
-    val statements = sourceLines flatMap (_.split("[\\s^!\"%&/(){}=+*~#<>|;,:-]")) filterNot (_ isEmpty)
+    val statements = sourceLines flatMap (_.split("[\\s^!\"%&/(){}=+*~#<>|;,:-]")) filterNot (_.isEmpty)
 
     val nloc = sourceLines.size
     val ncss = statements.size

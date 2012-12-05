@@ -23,7 +23,7 @@ case class DataRange(start: Long, fin: Long) extends Ordered[DataRange] {
 // initially, needs at least an "empty" entry in table.
 class FreeRanges(implicit connection: Connection) {
   private val blockSize = 100000000
-  private val startOfFreeArea = execQuery(connection, "SELECT MAX(fin) FROM ByteStore")(_ long 1) next
+  private val startOfFreeArea = execQuery(connection, "SELECT MAX(fin) FROM ByteStore")(_ long 1).next
   private val queue = new scala.collection.mutable.PriorityQueue[DataRange]()
   
   // insert ranges for gaps in queue

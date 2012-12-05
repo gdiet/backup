@@ -14,7 +14,7 @@ class UsingTests {
     var called = false
     val input = new Object { def close(): Unit = called = true }
     using(input) { input => }
-    assertThat(called) isTrue
+    assertThat(called).isTrue
   }
 
   @Test
@@ -24,7 +24,7 @@ class UsingTests {
     expectThat {
       using(input) { input => throw new IOException }
     } doesThrow(new IOException)
-    assertThat(called) isTrue
+    assertThat(called).isTrue
   }
   
 }

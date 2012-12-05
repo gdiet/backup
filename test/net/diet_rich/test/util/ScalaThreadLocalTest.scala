@@ -8,6 +8,6 @@ class ScalaThreadLocalTest {
 
   @Test
   def defaultNameOfThreadLocal: Unit =
-    assertThat(ScalaThreadLocal(new Array[Int](1)) toString) isEqualTo ""
+    assertThat(ScalaThreadLocal(new Array[Int](1)).toString) isEqualTo ""
   
 }

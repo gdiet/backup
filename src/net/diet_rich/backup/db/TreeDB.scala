@@ -40,7 +40,7 @@ trait TreeDB extends BaseTreeDB { import TreeDB._
     require(path.startsWith("/"), "Path <%s> does not start with '/'" format path)
     val parts = path.split("/").drop(1)
     parts.foldLeft(ROOTID) {(node, childName) =>
-      val childOption = children(node) filter (_.name == childName) headOption;
+      val childOption = children(node).filter(_.name == childName).headOption;
       childOption map(_.id) getOrElse create(node, childName)
     }
   }
@@ -49,7 +49,7 @@ trait TreeDB extends BaseTreeDB { import TreeDB._
     require(path.startsWith("/"), "Path <%s> does not start with '/'" format path)
     val parts = path.split("/").drop(1)
     parts.foldLeft(entry(ROOTID)) {(node, childName) =>
-      node flatMap(node => children(node id) filter (_.name == childName) headOption);
+      node flatMap(node => children(node.id).filter(_.name == childName).headOption);
     }
   }
   /** @return true if the child exists. */
@@ -62,7 +62,7 @@ trait TreeDB extends BaseTreeDB { import TreeDB._
     if (interim == ROOTNAME) ROOTPATH else interim
   }
   /** @return the element name for a path, ROOTNAME for the root. */
-  def nameFromPath(path: String) = if (path == ROOTPATH) ROOTNAME else path substring (1 + path lastIndexOf "/", path length)
+  def nameFromPath(path: String) = if (path == ROOTPATH) ROOTNAME else path substring (1 + path lastIndexOf "/", path.length)
 }
 
 object TreeDB {
@@ -123,14 +123,14 @@ class TreeSqlDB(implicit connection: Connection) extends BaseTreeDB { import Tre
   override def entry(id: Long): Option[TreeEntry] =
     queryEntry(id) { r =>
       TreeEntry(id, r long 1, r string 2, r long 3, r long 4)
-    } nextOptionOnly
+    }.nextOptionOnly
 
   protected val queryChildren = TreeSqlDB idxParent
     prepareQuery("SELECT id, name, time, dataid FROM TreeEntries WHERE parent = ?;")
   override def children(parent: Long): Iterable[TreeEntry] =
     queryChildren(parent) { r =>
       TreeEntry(r long 1, parent, r string 2, r long 3, r long 4)
-    } toList
+    }.toList
     
   
   protected val renameEntry =
@@ -172,7 +172,7 @@ class TreeSqlDB(implicit connection: Connection) extends BaseTreeDB { import Tre
   /** can be overridden to run in a different thread. */
   protected def doDeleteChildren(id: Long): Unit = {
     deleteEntry(id)
-    children(id) foreach { entry => doDeleteChildren(entry id) }
+    children(id) foreach { entry => doDeleteChildren(entry.id) }
   }
   override def deleteWithChildren(id: Long) : Unit = {
     deleteEntry(id)

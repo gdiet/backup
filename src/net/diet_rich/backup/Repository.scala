@@ -32,8 +32,8 @@ object Repository {
   def create(dir: File, hashAlgorithm: String) = {
     HashCalcInput.digester(hashAlgorithm) // just to check, create and discard
     
-    if (dbdir(dir) exists) throw new IllegalArgumentException("Repository database folder already exists.")
-    if (datadir(dir) exists) throw new IllegalArgumentException("Repository data folder already exists.")
+    if (dbdir(dir).exists) throw new IllegalArgumentException("Repository database folder already exists.")
+    if (datadir(dir).exists) throw new IllegalArgumentException("Repository data folder already exists.")
     
     if (!dbdir(dir).mkdirs) throw new IOException("Can't create database folder.")
     if (!datadir(dir).mkdirs) throw new IOException("Can't create data folder.")
@@ -63,6 +63,6 @@ object Repository {
   }
 
   def readHashAlgorithm(connection: Connection): String =
-    RepositoryInfoDB read (connection, DBVERSIONKEY) get
+    RepositoryInfoDB.read(connection, DBVERSIONKEY).get
   
 }
