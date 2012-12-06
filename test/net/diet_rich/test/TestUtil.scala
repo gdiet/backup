@@ -49,7 +49,6 @@ object TestUtil {
   
   trait DoesThrow { def doesThrow(t: Throwable) }
 
-  // FIXME better return a function or something?
   def expectThat[T](f: => T): DoesThrow = {
     new DoesThrow {
       def doesThrow(t: Throwable) =
