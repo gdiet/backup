@@ -5,7 +5,7 @@ package net.diet_rich.dedup.backup
 
 trait BackupMonitor {
   type Source
-  protected def monitorEntriesProcessed(entry: Source): Unit
+  protected def notifyProgressMonitor(entry: Source): Unit
 }
 
 trait BackupThreadManager {
@@ -18,7 +18,7 @@ trait BackupErrorHandler {
 }
 
 trait BackupPluginDummy extends BackupMonitor with BackupThreadManager with BackupErrorHandler {
-  protected def monitorEntriesProcessed(entry: Source): Unit = Unit
+  protected def notifyProgressMonitor(entry: Source): Unit = Unit
   protected def executeInThreadPool(f: => Unit): Unit = f
   protected def catchAndHandleException(entry: Source)(f: => Unit): Unit = f
 }

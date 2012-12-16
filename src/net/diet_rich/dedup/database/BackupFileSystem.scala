@@ -6,9 +6,10 @@ package net.diet_rich.dedup.database
 trait BackupFileSystem extends TreeDB with DataInfoDB with ByteStoreDB
 
 object StubbedFileSystem extends BackupFileSystem {
-  def createAndGetId(parentId: Long, name: String): Long = ???
-  def fullDataInformation(id: Long): Option[net.diet_rich.dedup.database.FullDataInformation] = ???
-  def setData(id: Long, time: Long, dataid: Long): Unit = ???
+  def createAndGetId(parentId: TreeEntryID, name: String): TreeEntryID = ???
+  def fullDataInformation(id: TreeEntryID): Option[net.diet_rich.dedup.database.FullDataInformation] = ???
+  def setData(id: TreeEntryID, time: Long, dataid: Long): Unit = ???
+  def childId(parent: TreeEntryID, name: String): Option[TreeEntryID] = ???
 }
 
 case class FullDataInformation (
@@ -22,11 +23,13 @@ case class FullDataInformation (
 trait TreeDB {
   /** @return The child ID.
    *  @throws Exception if the child was not created correctly. */
-  def createAndGetId(parentId: Long, name: String): Long
+  def createAndGetId(parentId: TreeEntryID, name: String): TreeEntryID
   /** @return The node's complete data information if any. */
-  def fullDataInformation(id: Long): Option[FullDataInformation]
+  def fullDataInformation(id: TreeEntryID): Option[FullDataInformation]
   /** @throws Exception if the node was not updated correctly. */
-  def setData(id: Long, time: Long, dataid: Long): Unit
+  def setData(id: TreeEntryID, time: Long, dataid: Long): Unit
+  /** @return The child's entry ID if any. */
+  def childId(parent: TreeEntryID, name: String): Option[TreeEntryID]
 }
 
 trait DataInfoDB {
