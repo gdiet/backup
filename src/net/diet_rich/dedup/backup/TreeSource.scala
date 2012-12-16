@@ -1,0 +1,25 @@
+// Copyright (c) 2012 Georg Dietrich
+// Licensed under the MIT license:
+// http://www.opensource.org/licenses/mit-license.php
+package net.diet_rich.dedup.backup
+
+import net.diet_rich.dedup.util.io._
+
+trait TreeSource[+Repr] {
+  def hasData: Boolean
+  def name: String
+  def time: Long
+  def size: Long
+  def children: Iterable[Repr]
+  def reader: SeekReader
+}
+
+class FileSource(val file: java.io.File) extends TreeSource[FileSource] {
+  def hasData: Boolean = file.isFile
+  def name: String = file.getName
+  def time: Long = file.lastModified
+  def size: Long = file.length
+  def children: Iterable[FileSource] = Nil
+  def reader: SeekReader =
+    if (hasData) new java.io.RandomAccessFile(file, "r") else emptyReader
+}

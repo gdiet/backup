@@ -4,8 +4,8 @@ import org.fest.assertions.Assertions.assertThat
 import org.testng.annotations.Test
 import net.diet_rich.util._
 import scala.concurrent.Await
-import scala.concurrent.util.Duration
 import java.util.concurrent.TimeUnit
+import scala.concurrent.duration.Duration
 
 class AnExampleUsageTest {
 
