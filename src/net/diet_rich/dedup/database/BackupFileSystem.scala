@@ -12,9 +12,16 @@ object StubbedFileSystem extends BackupFileSystem {
   def fullDataInformation(id: TreeEntryID): Option[net.diet_rich.dedup.database.FullDataInformation] = ???
   def setData(id: TreeEntryID, time: Time, dataid: DataEntryID): Unit = ???
   def childId(parent: TreeEntryID, name: String): Option[TreeEntryID] = ???
+  
   def calculatePrintAndReset(reader: SeekReader): Print = ???
   def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType) = ???
-  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Array[Byte], ReturnType) = ???
+  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Hash, ReturnType) = ???
+  
+  def hasMatch(size: Size, print: Print): Boolean = ???
+  def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit = ???
+  
+  def storeAndGetDataId(bytes: Array[Byte], size: Size): DataEntryID = ???
+  def storeAndGetDataIdAndSize(reader: Reader): (DataEntryID, Size) = ???
 }
 
 case class FullDataInformation (
@@ -28,7 +35,7 @@ case class FullDataInformation (
 trait Digesters {
   def calculatePrintAndReset(reader: SeekReader): Print
   def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType)
-  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Array[Byte], ReturnType)
+  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Hash, ReturnType)
 }
 
 trait TreeDB {
@@ -45,18 +52,17 @@ trait TreeDB {
 
 trait DataInfoDB {
   // FIXME
-//  /** @return true if at least one matching data entry is stored. */
-//  def hasMatch(size: Long, print: Long): Boolean
+  /** @return true if at least one matching data entry is stored. */
+  def hasMatch(size: Size, print: Print): Boolean
 //  /** @return The data id if a matching data entry is stored. */
 //  def findMatch(size: Long, print: Long, hash: Array[Byte]): Option[Long]
-//  /** @throws Exception if the entry was not created correctly. */
-//  def createDataEntry(dataid: Long, size: Long, print: Long, hash: Array[Byte]): Unit
+  /** @throws Exception if the entry was not created correctly. */
+  def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit
 }
 
 trait ByteStoreDB {
-  // FIXME
-//  def storeAndGetDataId(bytes: Array[Byte], size: Long): Long
-//  def storeAndGetDataIdAndSize(reader: Reader): (Long, Long)
+  def storeAndGetDataId(bytes: Array[Byte], size: Size): DataEntryID
+  def storeAndGetDataIdAndSize(reader: Reader): (DataEntryID, Size)
 }
 
 trait SignatureCalculation {
