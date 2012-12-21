@@ -5,6 +5,7 @@ package net.diet_rich.dedup.backup
 
 import net.diet_rich.dedup
 import dedup.database._
+import dedup.util._
 import dedup.util.io._
 
 

@@ -9,20 +9,6 @@ object TreeEntryID { def apply(value: Long) = new TreeEntryID(value) }
 class DataEntryID(val value: Long) extends AnyVal
 object DataEntryID { def apply(value: Long) = new DataEntryID(value) }
 
-class Size(val value: Long) extends AnyVal {
-  def +  (other: Long): Size    = Size(value + other)
-  def <  (other: Long): Boolean = value <  other
-  def <= (other: Size): Boolean = value <= other.value
-  def toInt: Int = {
-    require (value <= Int.MaxValue && value >= Int.MinValue)
-    value toInt
-  }
-}
-object Size { def apply(value: Long) = new Size(value) }
-
-class Time(val value: Long) extends AnyVal
-object Time { def apply(value: Long) = new Time(value) }
-
 class Print(val value: Long) extends AnyVal
 object Print { def apply(value: Long) = new Print(value) }
 

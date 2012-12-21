@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.backup
 
-import net.diet_rich.dedup.database.Size
+import net.diet_rich.dedup.util.Size
 
 trait BackupMonitor[SourceType <: TreeSource[SourceType]] {
   protected def notifyProgressMonitor(entry: SourceType): Unit

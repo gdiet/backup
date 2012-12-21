@@ -3,7 +3,8 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.database
 
-import net.diet_rich.dedup.util.io.{Reader,SeekReader}
+import net.diet_rich.dedup.util._
+import net.diet_rich.dedup.util.io._
 
 trait BackupFileSystem extends TreeDB with DataInfoDB with ByteStoreDB with Digesters
 

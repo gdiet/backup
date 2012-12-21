@@ -3,8 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.backup
 
-import net.diet_rich.dedup.database.Size
-import net.diet_rich.dedup.database.Time
+import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.io._
 
 trait TreeSource[+Repr] {

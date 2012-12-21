@@ -89,5 +89,4 @@ trait BasicByteStoreDB extends ByteStoreDB {
     ???
   }
   
-  
 }
