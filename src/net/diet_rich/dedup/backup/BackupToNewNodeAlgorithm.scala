@@ -5,13 +5,13 @@ package net.diet_rich.dedup.backup
 
 import net.diet_rich.dedup
 import dedup.database._
-import dedup.util.io.SeekReader
-import dedup.util.io.using
+import dedup.util.io._
 
 
 trait BackupToNewNodeAlgorithm[SourceType <: TreeSource[SourceType]]
 extends TreeHandling[SourceType]
 with BackupControl[SourceType]
+with MemoryManager
 with PrintMatchCheck[SourceType]
 with StoreData[SourceType]
 
@@ -77,6 +77,7 @@ trait NoPrintMatchCheck {
 
 
 trait StoreData[SourceType <: TreeSource[SourceType]] {
+  self : MemoryManager =>
   protected def fs: BackupFileSystem
   
   protected def storeData(source: SourceType, target: TreeEntryID): Unit = using(source.reader) { reader =>
@@ -89,29 +90,35 @@ trait StoreData[SourceType <: TreeSource[SourceType]] {
     else
       storeFromReader(source, target, reader)
 
-  private def cacheWhileCalcuatingHash(src: SourceType, target: TreeEntryID, reader: SeekReader): Unit = ??? // {
-//    val cacheSize = src.size + 1
-//    val cache = getLargeArray(cacheSize)
-//    assert(cache.map(_.length == cacheSize).getOrElse(true))
-//    val (print, (hash, size)) = filterPrint(reader) { reader =>
-//      filterHash(reader) { reader =>
-//        cache match {
-//          case None => readAndDiscardAll(reader)
-//          case Some(bytes) => fillFrom(reader, bytes, 0, bytes.length) + readAndDiscardAll(reader)
-//        }
-//      }
-//    }
-//    fs.findMatch(size, print, hash) match {
-//      case Some(dataid) => fs.setData(dst, src.time, dataid)
-//      case None => cache match {
-//        case Some(bytes) if size+1 <= cacheSize =>
-//          storeFromBytesRead(src, dst, bytes, print, size, hash)
-//        case _ =>
-//          reader.seek(0)
-//          storeFromReader(src, dst, reader)
-//      }
-//    }
-//  }
+  private def cacheWhileCalcuatingHash(source: SourceType, target: TreeEntryID, reader: SeekReader): Unit = {
+    // here, further optimization is possible: If a file is too large to cache,
+    // we could at least cache the start of the file.
+    val cache = getLargeArray(source.size + 1)
+    assume(cache.map(_.length == source.size.value + 1).getOrElse(true)) // just to make sure the array is of the requested size
+    // read whole file, if possible, into cache, and calculate print and hash
+    val (print, (hash, size)) = fs.filterPrint(reader) { reader =>
+      fs.filterHash(reader) { reader =>
+        Size( cache match {
+          case None => readAndDiscardAll(reader)
+          case Some(bytes) => fillFrom(reader, bytes, 0, bytes.length) + readAndDiscardAll(reader)
+        } )
+      }
+    }
+    // evaluate match against known entries
+    fs.findMatch(size, print, hash) match {
+      // already known
+      case Some(dataid) => fs.setData(target, source.time, dataid)
+      case None => cache match {
+        case Some(bytes) if size <= source.size =>
+          // not yet known, fully cached
+          storeFromBytesRead(source, target, bytes, print, size, hash)
+        case _ =>
+          // not yet known, not fully cached, re-read fully
+          reader.seek(0)
+          storeFromReader(source, target, reader)
+      }
+    }
+  }
 
   private def storeFromReader(source: SourceType, target: TreeEntryID, reader: SeekReader): Unit = {
     val (print, (hash, (dataid, size))) = fs.filterPrint(reader) { reader =>
@@ -128,7 +135,6 @@ trait StoreData[SourceType <: TreeSource[SourceType]] {
     fs.createDataEntry(dataid, size, print, hash)
     fs.setData(target, source.time, dataid)
   }
-
 }
 
 
@@ -136,6 +142,7 @@ object BackupToNewNodeAlgorithmTryout {
   val backup =
     new BackupToNewNodeAlgorithm[FileSource]
     with BackupControlDummy[FileSource]
+    with MemoryManagerDummy
     with PrintMatchCheck[FileSource]
     with StoreData[FileSource]
   {

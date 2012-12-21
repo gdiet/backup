@@ -18,6 +18,7 @@ object StubbedFileSystem extends BackupFileSystem {
   def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Hash, ReturnType) = ???
   
   def hasMatch(size: Size, print: Print): Boolean = ???
+  def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID] = ???
   def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit = ???
   
   def storeAndGetDataId(bytes: Array[Byte], size: Size): DataEntryID = ???
@@ -54,8 +55,8 @@ trait DataInfoDB {
   // FIXME
   /** @return true if at least one matching data entry is stored. */
   def hasMatch(size: Size, print: Print): Boolean
-//  /** @return The data id if a matching data entry is stored. */
-//  def findMatch(size: Long, print: Long, hash: Array[Byte]): Option[Long]
+  /** @return The data id if a matching data entry is stored. */
+  def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID]
   /** @throws Exception if the entry was not created correctly. */
   def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit
 }

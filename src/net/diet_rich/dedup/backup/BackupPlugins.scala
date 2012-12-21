@@ -3,6 +3,8 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.backup
 
+import net.diet_rich.dedup.database.Size
+
 trait BackupMonitor[SourceType <: TreeSource[SourceType]] {
   protected def notifyProgressMonitor(entry: SourceType): Unit
 }
@@ -22,4 +24,15 @@ trait BackupControlDummy[SourceType <: TreeSource[SourceType]] extends BackupCon
   protected def notifyProgressMonitor(entry: SourceType): Unit = Unit
   protected def executeInThreadPool(f: => Unit): Unit = f
   protected def catchAndHandleException(entry: SourceType)(f: => Unit): Unit = f
+}
+
+trait MemoryManager {
+  /** @return An array of the requested size or None. */
+  protected def getLargeArray(size: Size): Option[Array[Byte]]
+}
+
+trait MemoryManagerDummy {
+  /** @return An array of the requested size or None. */
+  protected def getLargeArray(size: Size): Option[Array[Byte]] =
+    if (size < 1000000) Some(new Array[Byte](size toInt)) else None
 }
