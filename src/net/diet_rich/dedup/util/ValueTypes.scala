@@ -5,7 +5,9 @@ package net.diet_rich.dedup.util
 
 class Size(val value: Long) extends AnyVal {
   def +  (other: Long): Size    = Size(value + other)
-  def <  (other: Long): Boolean = value <  other
+  def -  (other: Size): Size    = Size(value - other.value)
+  def <  (other: Size): Boolean = value <  other.value
+  def >  (other: Size): Boolean = value >  other.value
   def <= (other: Size): Boolean = value <= other.value
   def toInt: Int = {
     require (value <= Int.MaxValue && value >= Int.MinValue)
@@ -13,6 +15,13 @@ class Size(val value: Long) extends AnyVal {
   }
 }
 object Size { def apply(value: Long) = new Size(value) }
+
+class Position(val value: Long) extends AnyVal {
+  def + (other: Size): Position = Position(value + other.value)
+  def - (other: Position): Size = Size(value - other.value)
+  def compare (other: Position): Int = value compare other.value
+}
+object Position { def apply(value: Long) = new Position(value) }
 
 class Time(val value: Long) extends AnyVal
 object Time { def apply(value: Long) = new Time(value) }

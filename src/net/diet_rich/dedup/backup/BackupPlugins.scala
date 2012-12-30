@@ -34,5 +34,5 @@ trait MemoryManager {
 trait MemoryManagerDummy {
   /** @return An array of the requested size or None. */
   protected def getLargeArray(size: Size): Option[Array[Byte]] =
-    if (size < 1000000) Some(new Array[Byte](size toInt)) else None
+    if (size < Size(1000000)) Some(new Array[Byte](size toInt)) else None
 }
