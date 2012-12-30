@@ -1,9 +1,0 @@
-<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd" >
-
-<suite name="UtilTests" allow-return-values="true">
-  <test name="UtilTests">
-    <packages>
-      <package name="net.diet_rich.test.backup.*" />
-    </packages>
-  </test>
-</suite>

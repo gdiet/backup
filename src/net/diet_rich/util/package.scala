@@ -1,8 +1,12 @@
+// Copyright (c) 2013 Georg Dietrich
+// Licensed under the MIT license:
+// http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich
 
 package object util {
 
-  type StringMap = Map[String, String]
-  type ToString = {def toString: String}
-
+  implicit def normalizeMultilineString(string: String) = new Object {
+    def normalizeMultiline = Strings.normalizeMultiline(string)
+  }
+  
 }

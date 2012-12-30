@@ -1,22 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
 	<classpathentry kind="src" path="src"/>
-	<classpathentry kind="src" path="test"/>
 	<classpathentry kind="con" path="org.scala-ide.sdt.launching.SCALA_CONTAINER"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-1.6"/>
-	<classpathentry kind="con" path="org.testng.TESTNG_CONTAINER"/>
-	<classpathentry kind="lib" path="lib/sql/hsqldb.jar"/>
-	<classpathentry kind="lib" path="lib/sql/log4jdbc4-1.2beta2.jar"/>
-	<classpathentry kind="lib" path="lib/slf/slf4j-api-1.6.4.jar"/>
-	<classpathentry kind="lib" path="lib/slf/slf4s_2.9.1-1.0.7.jar"/>
-	<classpathentry kind="lib" path="lib/slf/avsl/avsl_2.9.1-0.3.6.jar"/>
-	<classpathentry kind="lib" path="lib/slf/avsl/grizzled-scala_2.9.1-1.0.9.jar"/>
-	<classpathentry kind="lib" path="testlib/fest-assert-1.4.jar"/>
-	<classpathentry kind="lib" path="testlib/fest-util-1.1.6.jar"/>
-	<classpathentry kind="lib" path="lib/sql/h2-1.3.163.jar"/>
-	<classpathentry kind="lib" path="lib/guava-11.0.2.jar"/>
-	<classpathentry kind="lib" path="lib/jsr305-1.3.9.jar"/>
-	<classpathentry kind="lib" path="lib/test/apacheCommons/commons-io-2.1.jar"/>
-	<classpathentry kind="lib" path="lib/test/mockito/mockito-all-1.9.5.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
