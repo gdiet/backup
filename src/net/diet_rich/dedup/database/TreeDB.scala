@@ -45,8 +45,8 @@ trait TreeDB {
 }
 
 object TreeDB {
-  def createTable(connection: WrappedConnection) : Unit = {
-    execUpdate(connection.con, """
+  def createTable(implicit connection: WrappedConnection) : Unit = {
+    execUpdate(net.diet_rich.util.Strings normalizeMultiline """
       CREATE TABLE TreeEntries (
         id     BIGINT PRIMARY KEY,
         parent BIGINT NOT NULL,
@@ -55,12 +55,12 @@ object TreeDB {
         dataid BIGINT DEFAULT NULL
       );
     """)
-    execUpdate(connection.con, "CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent);")
-    execUpdate(connection.con, "CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid);")
-    execUpdate(connection.con, "INSERT INTO TreeEntries (id, parent, name) VALUES (0, 0, '');")
+    execUpdate("CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent);")
+    execUpdate("CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid);")
+    execUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (0, 0, '');")
   }
 
-  def dropTable(connection: WrappedConnection) : Unit =
-    execUpdate(connection.con, "DROP TABLE TreeEntries IF EXISTS;")
+  def dropTable(implicit connection: WrappedConnection) : Unit =
+    execUpdate("DROP TABLE TreeEntries IF EXISTS;")
 
 }

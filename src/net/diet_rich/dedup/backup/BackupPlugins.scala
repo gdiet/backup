@@ -20,19 +20,19 @@ trait BackupErrorHandler[SourceType <: TreeSource[SourceType]] {
 trait BackupControl[SourceType <: TreeSource[SourceType]]
 extends BackupMonitor[SourceType] with BackupThreadManager with BackupErrorHandler[SourceType]
 
-trait BackupControlDummy[SourceType <: TreeSource[SourceType]] extends BackupControl[SourceType] {
-  protected def notifyProgressMonitor(entry: SourceType): Unit = Unit
-  protected def executeInThreadPool(f: => Unit): Unit = f
-  protected def catchAndHandleException(entry: SourceType)(f: => Unit): Unit = f
-}
-
 trait MemoryManager {
   /** @return An array of the requested size or None. */
   protected def getLargeArray(size: Size): Option[Array[Byte]]
 }
 
-trait MemoryManagerDummy {
+trait SimpleBackupControl extends BackupControl[FileSource] {
+  protected def notifyProgressMonitor(entry: FileSource): Unit = println("processing %s" format entry.file)
+  protected def executeInThreadPool(f: => Unit): Unit = f
+  protected def catchAndHandleException(entry: FileSource)(f: => Unit): Unit = f
+}
+
+trait SimpleMemoryManager extends MemoryManager {
   /** @return An array of the requested size or None. */
   protected def getLargeArray(size: Size): Option[Array[Byte]] =
-    if (size < Size(1000000)) Some(new Array[Byte](size.value toInt)) else None
+    if (size < Size(10000000)) Some(new Array[Byte](size.value toInt)) else None
 }

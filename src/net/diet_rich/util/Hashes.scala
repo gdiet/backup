@@ -5,11 +5,13 @@ package net.diet_rich.util
 
 import java.security.MessageDigest.getInstance
 
-object Hash {
+object Hashes {
   def checkAlgorithm(algorithm: String): String = {
     getInstance(algorithm)
     algorithm
   }
   def getLength(algorithm: String): Int =
     getInstance(algorithm).getDigestLength
+  def instance(algorithm: String) =
+    getInstance(algorithm)
 }

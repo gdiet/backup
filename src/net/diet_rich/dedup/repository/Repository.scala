@@ -3,8 +3,14 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.repository
 
-class Repository(val basedir: java.io.File) { import Repository._
-  val connection = DBConnection.forH2("%s/%s/%s" format (basedir, dbDirName, dbFileName))
+import java.io.File
+import net.diet_rich.util.sql.WrappedConnection
+import net.diet_rich.dedup.database._
+
+class Repository(val basedir: File) { import Repository._
+  def fs: BackupFileSystem = new BackupFileSystem {
+    implicit val connection = getConnection(basedir)
+  }
 }
 object Repository {
   val dbDirName = "h2db"
@@ -15,4 +21,8 @@ object Repository {
     
   val repositoryVersionKey = "repository version"
   val hashKey = "hash algorithm"
+    
+  def getConnection(basedir: File): WrappedConnection = new Object {
+    val con = DBConnection.forH2("%s/%s/%s" format (basedir, dbDirName, dbFileName))
+  }
 }

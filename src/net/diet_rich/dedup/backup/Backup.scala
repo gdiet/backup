@@ -4,6 +4,7 @@
 package net.diet_rich.dedup.backup
 
 import net.diet_rich.dedup.CmdLine._
+import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.repository.Repository
 import net.diet_rich.util.CmdApp
 
@@ -20,6 +21,12 @@ object Backup extends CmdApp {
     require(! opts("-t").isEmpty, "Target folder setting -t is mandatory.")
     val repository = new Repository(new java.io.File(opts("-r")))
     val source = new java.io.File(opts("-s")).getCanonicalFile
+    
+    val processor = new TreeHandling[FileSource] with SimpleBackupControl {
+      val fs = repository.fs
+      protected def processMatchingTimeAndSize(source: FileSource, target: TreeEntryID, referenceData: FullDataInformation) = Unit
+      protected def storeData(source: FileSource, target: TreeEntryID) = Unit
+    }
     
     println("Store file or folder: Not yet implemented.")
   }

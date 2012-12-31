@@ -10,7 +10,7 @@ object Strings {
     val leadingBlanks = lines.tail.head.indexWhere(_ != ' ')
     require (leadingBlanks >= 0, "expected non-blank in second line of multiline string <%s>" format string)
     val reverse = lines.tail.reverse
-    require (reverse.head.size == leadingBlanks, "expected only blanks in last line of multiline string <%s>" format string)
+    require (reverse.head.forall(_ == ' '), "expected only blanks in last line <%s> of multiline string <%s>" format (reverse.head, string))
     reverse.tail.reverse.map(_.substring(leadingBlanks)).mkString("\n")
   }
 }

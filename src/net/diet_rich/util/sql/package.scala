@@ -3,12 +3,12 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util
 
-import java.sql.{Connection,PreparedStatement}
+import java.sql.PreparedStatement
 
 package object sql {
 
   type WrappedConnection = {
-    def con: Connection
+    def con: java.sql.Connection
   }
   
   trait SqlQuery {
@@ -70,14 +70,14 @@ package object sql {
     }
   }
   
-  def execQuery[T](connection: Connection, command: String, args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T] =
-    execQuery(connection prepareStatement command, args:_*)(processor)
+  def execQuery[T](command: String, args: Any*)(processor: WrappedSQLResult => T)(implicit connection: WrappedConnection): ResultIterator[T] =
+    execQuery(connection.con prepareStatement command, args:_*)(processor)
 
   private def execUpdate(preparedStatement: PreparedStatement, args: Any*): Int =
     setArguments(preparedStatement, args:_*) executeUpdate()
 
-  def execUpdate(connection: Connection, command: String, args: Any*): Int =
-    setArguments(connection prepareStatement command, args:_*) executeUpdate()
+  def execUpdate(command: String, args: Any*)(implicit connection: WrappedConnection): Int =
+    setArguments(connection.con prepareStatement command, args:_*) executeUpdate()
   
   def prepareQuery(statement: String)(implicit connection: WrappedConnection): SqlQuery =
     new SqlQuery {
