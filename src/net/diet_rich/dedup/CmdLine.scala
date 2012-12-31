@@ -1,0 +1,11 @@
+// Copyright (c) 2013 Georg Dietrich
+// Licensed under the MIT license:
+// http://www.opensource.org/licenses/mit-license.php
+package net.diet_rich.dedup
+
+object CmdLine {
+  val REPOSITORY = "-r"
+  val SOURCE = "-s"
+  val TARGET = "-t"
+  val HASH = "-h"
+}

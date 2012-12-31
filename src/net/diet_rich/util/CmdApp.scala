@@ -12,7 +12,7 @@ trait CmdApp extends App {
     lines.mkString("\n")
   } catch { case e: Throwable => "Oops ... error while building usage string!" }
     
-  def main(args: Array[String])(code: Map[String, String] => Unit) = {
+  def run(args: Array[String])(code: Map[String, String] => Unit) = {
     try {
       val defaults = paramData.map(_._1).toMap
       val opts = defaults ++ Args.toMap(args)

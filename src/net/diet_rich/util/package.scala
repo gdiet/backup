@@ -4,9 +4,7 @@
 package net.diet_rich
 
 package object util {
-
   implicit def normalizeMultilineString(string: String) = new Object {
     def normalizeMultiline = Strings.normalizeMultiline(string)
   }
-  
 }
