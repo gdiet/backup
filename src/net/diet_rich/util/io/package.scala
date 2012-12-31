@@ -1,4 +1,4 @@
-// Copyright (c) 2013 Georg Dietrich
+// Copyright (c) Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util
@@ -6,7 +6,17 @@ package net.diet_rich.util
 import java.io._
 
 package object io {
+  type ByteSource = { def read(bytes: Array[Byte], offset: Int, length: Int): Int }
   type Closeable = { def close(): Unit }
+  type Seekable = { def seek(pos: Long): Unit }
+  type Reader = ByteSource with Closeable
+  type SeekReader = Seekable with Reader
+
+  val emptyReader: SeekReader = new Object {
+    def read(b: Array[Byte], off: Int, len: Int): Int = 0
+    def seek(pos: Long): Unit = Unit
+    def close(): Unit = Unit
+  }
   
   def using[Closeable <: io.Closeable, ReturnType] (resource: Closeable)(operation: Closeable => ReturnType): ReturnType =
     try { operation(resource) } finally { resource.close }
