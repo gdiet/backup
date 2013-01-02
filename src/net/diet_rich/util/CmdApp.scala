@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util
 
-trait CmdApp extends App {
+trait CmdApp {
   val usageHeader: String
   val paramData: Seq[((String, String), String)]
   

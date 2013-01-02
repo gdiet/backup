@@ -10,13 +10,15 @@ import net.diet_rich.util.io._
 import net.diet_rich.dedup.database._
 
 object Create extends CmdApp {
+  def main(args: Array[String]): Unit = run(args)(create)
+  
   val usageHeader = "Creates a dedup repository. "
   val paramData = Seq(
     REPOSITORY -> "." -> "[%s <directory>] Location of the repository to create, default '%s'",
     HASH -> "MD5" -> "[%s <algorithm>] Hash algorithm to use, default '%s'"
   )
   
-  run(args){ opts =>
+  def create(opts: Map[String, String]): Unit = {
     val repositoryFolder = new File(opts("-r"))
     require(repositoryFolder.isDirectory(), "Repository folder %s must be an existing directory" format repositoryFolder)
     require(repositoryFolder.list.isEmpty, "Repository folder %s must be empty" format repositoryFolder)

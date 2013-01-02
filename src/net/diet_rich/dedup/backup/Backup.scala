@@ -9,6 +9,8 @@ import net.diet_rich.dedup.repository.Repository
 import net.diet_rich.util.CmdApp
 
 object Backup extends CmdApp {
+  def main(args: Array[String]): Unit = run(args)(backup)
+  
   val usageHeader = "Stores a file or folder in the dedup repository. "
   val paramData = Seq(
     SOURCE -> "." -> "[%s <directory>] Source file or folder to store, default '%s'",
@@ -16,7 +18,7 @@ object Backup extends CmdApp {
     TARGET -> "" -> "[%s <path>] Mandatory: Target folder in repository"
   )
 
-  run(args){ opts =>
+  def backup(opts: Map[String, String]): Unit = {
     require(! opts("-r").isEmpty, "Repository location setting -r is mandatory.")
     require(! opts("-t").isEmpty, "Target folder setting -t is mandatory.")
     val repository = new Repository(new java.io.File(opts("-r")))
@@ -27,6 +29,8 @@ object Backup extends CmdApp {
       protected def processMatchingTimeAndSize(source: FileSource, target: TreeEntryID, referenceData: FullDataInformation) = Unit
       protected def storeData(source: FileSource, target: TreeEntryID) = Unit
     }
+    
+    processor.backup(new FileSource(source), TreeEntryID(0), None) // FIXME use parent appropriately
     
     println("Store file or folder: Not yet implemented.")
   }
