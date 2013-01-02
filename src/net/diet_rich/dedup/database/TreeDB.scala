@@ -7,9 +7,9 @@ import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
 trait TreeDB {
-  implicit def connection: WrappedConnection
+  implicit val connection: WrappedConnection
   
-  protected lazy val maxEntryId =
+  protected val maxEntryId =
     SqlDBUtil.readAsAtomicLong("SELECT MAX(id) FROM TreeEntries")
       
   /** @return The child ID.
@@ -21,13 +21,13 @@ trait TreeDB {
       case n => throw new IllegalStateException("Tree: Insert node returned %s rows instead of 1".format(n))
     }
   }
-  protected lazy val addEntry = 
+  protected val addEntry = 
     prepareUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?)")
 
   /** @return The child's entry ID if any. */
   def childId(parent: TreeEntryID, name: String): Option[TreeEntryID] =
     queryChild(parent.value, name)(q => TreeEntryID(q long 1)).nextOptionOnly
-  protected lazy val queryChild = 
+  protected val queryChild = 
     prepareQuery("SELECT id, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?")
   
   /** @return The node's complete data information if any. */
@@ -35,7 +35,7 @@ trait TreeDB {
     queryFullDataInformation(id)(
       q => FullDataInformation(Time(q long 1), Size(q long 2), Print(q long 3), Hash(q bytes 4), DataEntryID(q longOption 5))
     ).nextOptionOnly
-  protected lazy val queryFullDataInformation = prepareQuery(
+  protected val queryFullDataInformation = prepareQuery(
     "SELECT time, length, print, hash, dataid FROM TreeEntries JOIN DataInfo " +
     "ON TreeEntries.dataid = DataInfo.id AND TreeEntries.id = ?"
   )

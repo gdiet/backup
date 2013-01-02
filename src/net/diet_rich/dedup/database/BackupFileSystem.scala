@@ -4,8 +4,9 @@
 package net.diet_rich.dedup.database
 
 import net.diet_rich.util.vals._
+import net.diet_rich.util.sql.WrappedConnection
 
-trait BackupFileSystem extends TreeDB
+class BackupFileSystem(implicit val connection: WrappedConnection) extends TreeDB
 
 case class FullDataInformation (
   time: Time,
@@ -14,26 +15,6 @@ case class FullDataInformation (
   hash: Hash,
   dataid: Option[DataEntryID]
 )
-
-//with DataInfoDB with ByteStoreDB with Digesters
-//
-//object StubbedFileSystem extends BackupFileSystem {
-//  def createAndGetId(parentId: TreeEntryID, name: String): TreeEntryID = ???
-//  def fullDataInformation(id: TreeEntryID): Option[net.diet_rich.dedup.database.FullDataInformation] = ???
-//  def setData(id: TreeEntryID, time: Time, dataid: DataEntryID): Unit = ???
-//  def childId(parent: TreeEntryID, name: String): Option[TreeEntryID] = ???
-//  
-//  def calculatePrintAndReset(reader: SeekReader): Print = ???
-//  def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType) = ???
-//  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Hash, ReturnType) = ???
-//  
-//  def hasMatch(size: Size, print: Print): Boolean = ???
-//  def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID] = ???
-//  def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit = ???
-//  
-//  def storeAndGetDataId(bytes: Array[Byte], size: Size): DataEntryID = ???
-//  def storeAndGetDataIdAndSize(reader: Reader): (DataEntryID, Size) = ???
-//}
 //
 //trait Digesters {
 //  def calculatePrintAndReset(reader: SeekReader): Print

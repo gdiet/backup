@@ -8,9 +8,7 @@ import net.diet_rich.util.sql.WrappedConnection
 import net.diet_rich.dedup.database._
 
 class Repository(val basedir: File) { import Repository._
-  def fs: BackupFileSystem = new BackupFileSystem {
-    implicit val connection = getConnection(basedir)
-  }
+  val fs: BackupFileSystem = new BackupFileSystem()(getConnection(basedir))
 }
 object Repository {
   val dbDirName = "h2db"
