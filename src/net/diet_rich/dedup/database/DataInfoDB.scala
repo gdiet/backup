@@ -4,6 +4,16 @@
 package net.diet_rich.dedup.database
 
 import net.diet_rich.util.sql._
+import net.diet_rich.util.vals._
+
+trait DataInfoDB {
+  /** @return true if at least one matching data entry is stored. */
+  def hasMatch(size: Size, print: Print): Boolean = ???
+  /** @return The data id if a matching data entry is stored. */
+  def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID] = ???
+  /** @throws Exception if the entry was not created correctly. */
+  def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit = ???
+}
 
 object DataInfoDB {
   def createTable(zeroByteHash: Hash, zeroBytePrint: Print)(implicit connection: WrappedConnection) : Unit = {

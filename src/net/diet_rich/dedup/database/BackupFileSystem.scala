@@ -7,7 +7,7 @@ import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
 import net.diet_rich.util.sql.WrappedConnection
 
-class BackupFileSystem(val dig: Digesters)(implicit val connection: WrappedConnection) extends TreeDB
+class BackupFileSystem(val dig: Digesters)(implicit val connection: WrappedConnection) extends TreeDB with DataInfoDB with ByteStoreDB
 
 case class FullDataInformation (
   time: Time,
@@ -23,21 +23,6 @@ trait Digesters {
   def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Hash, ReturnType) = ??? // FIXME
 }
 
-//trait DataInfoDB {
-//  // FIXME
-//  /** @return true if at least one matching data entry is stored. */
-//  def hasMatch(size: Size, print: Print): Boolean
-//  /** @return The data id if a matching data entry is stored. */
-//  def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID]
-//  /** @throws Exception if the entry was not created correctly. */
-//  def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit
-//}
-//
-//trait ByteStoreDB {
-//  def storeAndGetDataId(bytes: Array[Byte], size: Size): DataEntryID
-//  def storeAndGetDataIdAndSize(reader: Reader): (DataEntryID, Size)
-//}
-//
 //trait SignatureCalculation {
 //  def calculatePrintAndReset(reader: SeekReader): Long
 //  def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Long, ReturnType)

@@ -28,7 +28,7 @@ trait CrcAdler8192 extends PrintDigester {
   }
   
   private def calculatePrint(bytes: Array[Byte], offset: Int, length: Int): Print = {
-    assume (length > 0, "length %s must be positive but is %s" format length)
+    assume (length > -1, "length must not be negative but is %s" format length)
     assume (offset + length <= bytes.length, "offset %s + length %s must be less or equal byte array length %s" format (offset, length, bytes.length))
     
     val crc = new java.util.zip.CRC32
@@ -37,4 +37,8 @@ trait CrcAdler8192 extends PrintDigester {
     adler.update(bytes, offset, length)
     Print(adler.getValue << 32 | crc.getValue)
   }
+}
+
+object CrcAdler8192 {
+  def zeroBytesPrint = new CrcAdler8192{}.calculatePrint(Array(), 0, 0)
 }

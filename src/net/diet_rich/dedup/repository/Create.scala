@@ -32,6 +32,7 @@ object Create extends CmdApp {
     
     implicit val connection = Repository.getConnection(repositoryFolder)
     TreeDB.createTable
-    DataInfoDB.createTable(Hash(Hashes.instance(hashAlgorithm).digest()), Print(0)) // FIXME Print(0)
+    DataInfoDB.createTable(Hash(Hashes.zeroBytesHash(hashAlgorithm)), CrcAdler8192.zeroBytesPrint)
+    ByteStoreDB.createTable
   }
 }

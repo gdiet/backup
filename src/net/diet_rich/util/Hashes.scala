@@ -14,4 +14,6 @@ object Hashes {
     getInstance(algorithm).getDigestLength
   def instance(algorithm: String) =
     getInstance(algorithm)
+  def zeroBytesHash(algorithm: String) =
+    getInstance(algorithm).digest()
 }

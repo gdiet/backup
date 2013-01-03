@@ -33,6 +33,17 @@ package object io {
     readRecurse(offset) - offset
   }
   
+  def readAndDiscardAll(input: ByteSource) : Long = {
+    val buffer = new Array[Byte](8192)
+    @tailrec
+    def readRecurse(length: Long): Long =
+      input.read(buffer, 0, 8192) match {
+        case n if n < 1 => length
+        case n => readRecurse(length + n)
+      }
+    readRecurse(0)
+  }
+
   def prependArray(data: Array[Byte], offset: Int, len: Int, reader: Reader): Reader = new Object {
     var read: Int = 0
     def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int =
