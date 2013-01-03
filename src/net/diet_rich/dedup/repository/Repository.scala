@@ -4,11 +4,13 @@
 package net.diet_rich.dedup.repository
 
 import java.io.File
+import net.diet_rich.util.io._
 import net.diet_rich.util.sql.WrappedConnection
 import net.diet_rich.dedup.database._
 
 class Repository(val basedir: File) { import Repository._
-  val digesters = new Digesters with CrcAdler8192
+  val settings = readSettingsFile(basedir.child(settingsFileName))
+  val digesters = new HashDigester(settings(hashKey)) with Digesters with CrcAdler8192
   val fs: BackupFileSystem = new BackupFileSystem(digesters)(getConnection(basedir))
 }
 object Repository {

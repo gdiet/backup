@@ -24,14 +24,15 @@ object Backup extends CmdApp {
     val repository = new Repository(new java.io.File(opts("-r")))
     val source = new java.io.File(opts("-s")).getCanonicalFile
     
-    val processor = new TreeHandling[FileSource] with SimpleBackupControl {
-      val fs = repository.fs
-      protected def processMatchingTimeAndSize(source: FileSource, target: TreeEntryID, referenceData: FullDataInformation) = Unit
-      protected def storeData(source: FileSource, target: TreeEntryID) = Unit
-    }
+    val processor =
+      new TreeHandling[FileSource] 
+      with SimpleBackupControl
+      with SimpleMemoryManager
+      with PrintMatchCheck[FileSource]
+      with StoreData[FileSource] {
+        val fs = repository.fs
+      }
     
     processor.backup(new FileSource(source), TreeEntryID(0), None) // FIXME use parent appropriately
-    
-    println("Store file or folder: Not yet implemented.")
   }
 }

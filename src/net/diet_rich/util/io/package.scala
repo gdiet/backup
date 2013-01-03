@@ -63,7 +63,7 @@ package object io {
     def close(): Unit = reader.close
   }
   
-  def readSettingsFile(path: String): Map[String, String] =
+  def readSettingsFile(path: File): Map[String, String] =
     using(scala.io.Source.fromFile(path, "UTF-8")) { source =>
       source.getLines
       .map(_.trim)

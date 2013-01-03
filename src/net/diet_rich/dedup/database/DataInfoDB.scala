@@ -7,8 +7,14 @@ import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
 trait DataInfoDB {
+  implicit val connection: WrappedConnection
+  
   /** @return true if at least one matching data entry is stored. */
-  def hasMatch(size: Size, print: Print): Boolean = ???
+  def hasMatch(size: Size, print: Print): Boolean =
+    checkPrint(size.value, print.value)(_.long(1) > 0).next
+  protected val checkPrint = 
+    prepareQuery("SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?;")
+  
   /** @return The data id if a matching data entry is stored. */
   def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID] = ???
   /** @throws Exception if the entry was not created correctly. */

@@ -20,7 +20,7 @@ case class FullDataInformation (
 trait Digesters {
   def calculatePrintAndReset(reader: SeekReader): Print
   def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType)
-  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Hash, ReturnType) = ??? // FIXME
+  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Hash, ReturnType)
 }
 
 //trait SignatureCalculation {
