@@ -4,6 +4,7 @@
 package net.diet_rich.util
 
 import java.io._
+import scala.annotation.tailrec
 
 package object io {
   type ByteSource = { def read(bytes: Array[Byte], offset: Int, length: Int): Int }
@@ -20,6 +21,36 @@ package object io {
   
   def using[Closeable <: io.Closeable, ReturnType] (resource: Closeable)(operation: Closeable => ReturnType): ReturnType =
     try { operation(resource) } finally { resource.close }
+
+  def fillFrom(input: ByteSource, bytes: Array[Byte], offset: Int, length: Int): Int = {
+    @tailrec
+    def readRecurse(offset: Int): Int = {
+      input.read(bytes, offset, length - offset) match {
+        case n if n < 1 => offset
+        case n => if (offset + n == length) offset + n else readRecurse(offset + n)
+      }
+    }
+    readRecurse(offset) - offset
+  }
+  
+  def prependArray(data: Array[Byte], offset: Int, len: Int, reader: Reader): Reader = new Object {
+    var read: Int = 0
+    def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int =
+      if (read < len)
+        if (length < len-read) {
+          Array.copy(data, offset + read, bytes, internalOffset, length)
+          read = read + length
+          length
+        } else {
+          val result = len - read
+          Array.copy(data, offset + read, bytes, internalOffset, result)
+          read = len
+          result
+        }
+      else
+        reader.read(bytes, internalOffset, length)
+    def close(): Unit = reader.close
+  }
   
   def readSettingsFile(path: String): Map[String, String] =
     using(scala.io.Source.fromFile(path, "UTF-8")) { source =>

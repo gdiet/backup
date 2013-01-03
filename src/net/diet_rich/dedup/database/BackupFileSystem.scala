@@ -3,10 +3,11 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.database
 
+import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
 import net.diet_rich.util.sql.WrappedConnection
 
-class BackupFileSystem(implicit val connection: WrappedConnection) extends TreeDB
+class BackupFileSystem(val dig: Digesters)(implicit val connection: WrappedConnection) extends TreeDB
 
 case class FullDataInformation (
   time: Time,
@@ -15,13 +16,13 @@ case class FullDataInformation (
   hash: Hash,
   dataid: Option[DataEntryID]
 )
-//
-//trait Digesters {
-//  def calculatePrintAndReset(reader: SeekReader): Print
-//  def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType)
-//  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Hash, ReturnType)
-//}
-//
+
+trait Digesters {
+  def calculatePrintAndReset(reader: SeekReader): Print
+  def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType)
+  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Hash, ReturnType) = ??? // FIXME
+}
+
 //trait DataInfoDB {
 //  // FIXME
 //  /** @return true if at least one matching data entry is stored. */

@@ -40,8 +40,14 @@ trait TreeDB {
     "ON TreeEntries.dataid = DataInfo.id AND TreeEntries.id = ?"
   )
   
-//  /** @throws Exception if the node was not updated correctly. */
-//  def setData(id: TreeEntryID, time: Time, dataid: DataEntryID): Unit
+  /** @throws Exception if the node was not updated correctly. */
+  def setData(id: TreeEntryID, time: Time, dataid: Option[DataEntryID]): Unit =
+    changeData(time.value, dataid.map(_.value), id.value) match {
+      case 1 => Unit
+      case n => throw new IllegalStateException("Tree: Update node %s returned %s rows instead of 1".format(id, n))
+    }
+  protected val changeData = 
+    prepareUpdate("UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?;")
 }
 
 object TreeDB {
