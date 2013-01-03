@@ -9,7 +9,7 @@ import net.diet_rich.util.vals._
 trait TreeDB {
   implicit val connection: WrappedConnection
   
-  protected val maxEntryId =
+  private val maxEntryId =
     SqlDBUtil.readAsAtomicLong("SELECT MAX(id) FROM TreeEntries")
       
   /** @return The child ID.

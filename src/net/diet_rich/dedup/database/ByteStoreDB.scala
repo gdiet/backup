@@ -17,6 +17,9 @@ case class DataRange(start: Position, fin: Position) extends Ordered[DataRange] 
       case x => x
     }
 }
+object DataRange {
+  val emptyRange = DataRange(Position(0), Position(0))
+}
 
 class FreeRanges(implicit connection: WrappedConnection) {
   // EVENTUALLY, it would be good to look for illegal overlaps:
@@ -49,12 +52,12 @@ class FreeRanges(implicit connection: WrappedConnection) {
 
   def next: DataRange = queue.synchronized {
     val range = queue.dequeue()
-    if (range.fin == Long.MaxValue) {
+    if (range.fin == Position(Long.MaxValue)) {
       queue.enqueue(range.withOffset(blockSize))
       range.withLength(blockSize)
     } else range
   }
-  def enqueue(range: DataRange) =
+  def enqueue(range: DataRange) = if (range.length > Size(0))
     queue.synchronized { queue.enqueue(range) }
 }
 
@@ -63,6 +66,11 @@ trait ByteStoreDB {
   implicit def connection: WrappedConnection
   
   private val freeRanges = new FreeRanges
+
+  private val maxEntryId =
+    SqlDBUtil.readAsAtomicLong(
+      "SELECT GREATEST((SELECT MAX(id) FROM DataInfo), (SELECT MAX(dataid) FROM ByteStore))"
+    )
   
   protected final val insertEntry = 
     prepareUpdate("INSERT INTO ByteStore (dataid, index, start, fin) VALUES (?, ?, ?, ?)")
@@ -84,13 +92,14 @@ trait ByteStoreDB {
   }
 
   def storeAndGetDataId(bytes: Array[Byte], size: Size): DataEntryID = {
+//    @annotation.tailrec FIXME
     def writeStep(index: Int, offset: Position, length: Size): Unit = if (length > Size(0)) {
       val range = freeRanges.next
       if (range.length > length) {
-        writeToStore(bytes, range.start, offset, length)
+        writeToStore(range.start, bytes, offset, length)
         freeRanges.enqueue(range.withOffset(length))
       } else {
-        writeToStore(bytes, range.start, offset, range.length)
+        writeToStore(range.start, bytes, offset, range.length)
         writeStep(index + 1, offset + range.length, length - range.length)
       }
       ???
@@ -99,10 +108,33 @@ trait ByteStoreDB {
     ???
   }
 
-  def storeAndGetDataIdAndSize(reader: Reader): (DataEntryID, Size) = ???
+  def storeAndGetDataIdAndSize(reader: Reader): (DataEntryID, Size) = {
+    val id = maxEntryId incrementAndGet()
+    val bytes = new Array[Byte](32768)
+    @annotation.tailrec
+    def writeStep(offset: Position, length: Size, total: Size, range: DataRange): (Size, DataRange) = {
+      if (length == Size(0)) {
+        fillFrom(reader, bytes, 0, bytes.length) match {
+          case 0 => (total, range)
+          case read => writeStep(Position(0), Size(read), total + read, range)
+        }
+      } else if (range.length == 0) {
+        writeStep(offset, length, total, freeRanges.next)
+      } else if (range.length < length) {
+        writeToStore(range.start, bytes, offset, range.length)
+        writeStep(offset + range.length, length - range.length, total, DataRange.emptyRange)
+      } else {
+        writeToStore(range.start, bytes, offset, length)
+        writeStep(Position(0), Size(0), total, range withOffset length)
+      }
+    }
+    val (size, range) = writeStep(Position(0), Size(0), Size(0), freeRanges.next)
+    freeRanges.enqueue(range)
+    (DataEntryID(id), size)
+  }
   
   // implemented in other pieces of cake
-  def writeToStore(bytes: Array[Byte], position: Position, offset: Position, size: Size) = ???
+  def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = Unit // FIXME ???
 }
 
 object ByteStoreDB {
