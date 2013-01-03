@@ -16,7 +16,12 @@ trait DataInfoDB {
     prepareQuery("SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?;")
   
   /** @return The data id if a matching data entry is stored. */
-  def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID] = ???
+  def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID] =
+    // NOTE: only the first of possibly multiple query results is used
+    findEntry(size.value, print.value, hash.value)(p => DataEntryID(p long 1)).nextOption
+  protected val findEntry = 
+    prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?;")
+  
   /** @throws Exception if the entry was not created correctly. */
   def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit = ???
 }
