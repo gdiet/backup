@@ -109,6 +109,7 @@ trait StoreData[SourceType <: TreeSource[SourceType]] {
   }
 
   private def storeFromReader(source: SourceType, target: TreeEntryID, reader: SeekReader): Unit = {
+    reader.seek(0)
     val (print, (hash, (dataid, size))) = fs.dig.filterPrint(reader) { reader =>
       fs.dig.filterHash(reader) { reader =>
         fs.storeAndGetDataIdAndSize(reader)
