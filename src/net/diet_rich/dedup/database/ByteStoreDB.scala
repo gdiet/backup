@@ -80,17 +80,11 @@ trait ByteStoreDB {
       val range = freeRanges.next
       if (length > range.length) {
         writeToStore(range.start, bytes, offset, range.length)
-        insertEntry(id.value, index, range.start.value, range.fin.value) match {
-          case 1 => range.withOffset(size)
-          case n => throw new IllegalStateException("ByteStore: Insert entry returned %s rows instead of 1".format(n))
-        }
+        insertEntry(id.value, index, range.start.value, range.fin.value)
         writeStep(index + 1, offset + range.length, length - range.length)
       } else {
         writeToStore(range.start, bytes, offset, length)
-        insertEntry(id.value, index, range.start.value, range.start.value + length.value) match {
-          case 1 => range.withOffset(size) // FIXME helper function
-          case n => throw new IllegalStateException("ByteStore: Insert entry returned %s rows instead of 1".format(n))
-        }
+        insertEntry(id.value, index, range.start.value, range.start.value + length.value)
         freeRanges.enqueue(range.withOffset(length))
       }
     }
@@ -131,18 +125,16 @@ trait ByteStoreDB {
       }
     }
     val size = writeStep(range, Position(0), Size(0), Size(0))
-    insertEntry(id.value, index, range.start.value, range.start.value + size.value) match {
-      case 1 => range.withOffset(size)
-      case n => throw new IllegalStateException("ByteStore: Insert entry returned %s rows instead of 1".format(n))
-    }
+    insertEntry(id.value, index, range.start.value, range.start.value + size.value)
+    range.withOffset(size)
   }
   protected final val insertEntry = 
-    prepareUpdate("INSERT INTO ByteStore (dataid, index, start, fin) VALUES (?, ?, ?, ?)")
+    prepareSingleRowUpdate("INSERT INTO ByteStore (dataid, index, start, fin) VALUES (?, ?, ?, ?)")
 
   
   // implemented in other pieces of cake
   def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = 
-    println("write to store: %s - %s - %s" format (position, offset, size)) // FIXME ???
+    println("write to store: %s - %s - %s" format (position, offset, size)) // FIXME stub
 }
 
 object ByteStoreDB {

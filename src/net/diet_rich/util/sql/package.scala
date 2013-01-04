@@ -18,7 +18,11 @@ package object sql {
   trait SqlUpdate {
     def apply(args: Any*): Int
   }
-    
+
+  trait SingleRowSqlUpdate {
+    def apply(args: Any*): Unit
+  }
+  
   trait ResultIterator[T] extends Iterator[T] {
     def nextOption: Option[T] =
       if (hasNext) Some(next) else None
@@ -76,6 +80,12 @@ package object sql {
   private def execUpdate(preparedStatement: PreparedStatement, args: Any*): Int =
     setArguments(preparedStatement, args:_*) executeUpdate()
 
+  private def execSingleRowUpdate(preparedStatement: PreparedStatement, args: Any*): Unit =
+    setArguments(preparedStatement, args:_*).executeUpdate() match {
+      case 1 => Unit
+      case n => throw new IllegalStateException("SQL update %s returned %s rows instead of 1".format(preparedStatement, n))
+    }
+    
   def execUpdate(command: String, args: Any*)(implicit connection: WrappedConnection): Int =
     setArguments(connection.con prepareStatement command, args:_*) executeUpdate()
   
@@ -93,5 +103,13 @@ package object sql {
         ScalaThreadLocal(connection.con prepareStatement statement, connection.con, statement)
       override def apply(args: Any*): Int =
         execUpdate(prepared, args:_*)
+    }
+  
+  def prepareSingleRowUpdate(statement: String)(implicit connection: WrappedConnection): SingleRowSqlUpdate =
+    new SingleRowSqlUpdate {
+      protected val prepared =
+        ScalaThreadLocal(connection.con prepareStatement statement, connection.con, statement)
+      override def apply(args: Any*): Unit =
+        execSingleRowUpdate(prepared, args:_*)
     }
 }

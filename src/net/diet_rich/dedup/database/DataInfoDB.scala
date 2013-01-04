@@ -24,12 +24,9 @@ trait DataInfoDB {
   
   /** @throws Exception if the entry was not created correctly. */
   def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit =
-    insertNewEntry(dataid.value, size.value, print.value, hash.value) match {
-      case 1 => Unit
-      case n => throw new IllegalStateException("DataInfo: Insert node returned %s rows instead of 1".format(n))
-    }
+    insertNewEntry(dataid.value, size.value, print.value, hash.value)
   protected val insertNewEntry =
-    prepareUpdate("INSERT INTO DataInfo (id, length, print, hash) VALUES (?, ?, ?, ?);")
+    prepareSingleRowUpdate("INSERT INTO DataInfo (id, length, print, hash) VALUES (?, ?, ?, ?);")
 }
 
 object DataInfoDB {

@@ -18,13 +18,11 @@ trait TreeDB {
    *  @throws Exception if the child was not created correctly. */
   def createAndGetId(parentId: TreeEntryID, name: String): TreeEntryID = {
     val id = maxEntryId incrementAndGet()
-    addEntry(id, parentId.value, name) match {
-      case 1 => TreeEntryID(id)
-      case n => throw new IllegalStateException("Tree: Insert node returned %s rows instead of 1".format(n))
-    }
+    addEntry(id, parentId.value, name)
+    TreeEntryID(id)
   }
   protected val addEntry = 
-    prepareUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?)")
+    prepareSingleRowUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?)")
 
   /** @return The child entry if any. */
   def child(parent: TreeEntryID, name: String): Option[TreeEntry] =
