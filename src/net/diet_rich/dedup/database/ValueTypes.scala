@@ -19,3 +19,6 @@ object Print { def apply(value: Long) = new Print(value) }
 
 class Hash(val value: Array[Byte]) extends AnyVal
 object Hash { def apply(value: Array[Byte]) = new Hash(value) }
+
+class Path(val value: String) extends AnyVal
+object Path { def apply(value: String) = new Path(value) }

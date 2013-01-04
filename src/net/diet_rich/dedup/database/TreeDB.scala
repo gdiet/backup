@@ -6,12 +6,14 @@ package net.diet_rich.dedup.database
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
+case class TreeEntry(id: TreeEntryID, name: String, time: Time, dataid: DataEntryID)
+
 trait TreeDB {
   implicit val connection: WrappedConnection
   
   private val maxEntryId =
     SqlDBUtil.readAsAtomicLong("SELECT MAX(id) FROM TreeEntries")
-      
+  
   /** @return The child ID.
    *  @throws Exception if the child was not created correctly. */
   def createAndGetId(parentId: TreeEntryID, name: String): TreeEntryID = {
@@ -24,12 +26,22 @@ trait TreeDB {
   protected val addEntry = 
     prepareUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?)")
 
-  /** @return The child's entry ID if any. */
-  def childId(parent: TreeEntryID, name: String): Option[TreeEntryID] =
-    queryChild(parent.value, name)(q => TreeEntryID(q long 1)).nextOptionOnly
+  /** @return The child entry if any. */
+  def child(parent: TreeEntryID, name: String): Option[TreeEntry] =
+    queryChild(parent.value, name)(
+      r => TreeEntry(TreeEntryID(r long 1), name, Time(r long 2), DataEntryID(r long 3))
+    ).nextOptionOnly
   protected val queryChild = 
     prepareQuery("SELECT id, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?")
-  
+
+  /** @return The children, empty if no such node. */
+  def children(parent: TreeEntryID): Iterable[TreeEntry] =
+    queryChildren(parent.value)(
+      r => TreeEntry(TreeEntryID(r long 1), r string 2, Time(r long 3), DataEntryID(r long 4))
+    ).toSeq
+  protected val queryChildren =
+    prepareQuery("SELECT id, name, time, dataid FROM TreeEntries WHERE parent = ?")
+    
   /** @return The node's complete data information if any. */
   def fullDataInformation(id: TreeEntryID): Option[FullDataInformation] =
     queryFullDataInformation(id)(
@@ -50,7 +62,35 @@ trait TreeDB {
     prepareUpdate("UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?;")
 }
 
+trait TreeDBUtils { self: TreeDB => import TreeDB._
+  def childId(parent: TreeEntryID, name: String): Option[TreeEntryID] =
+    child(parent, name).map(_.id)
+  
+  /** @return The entry ID. Missing path elements are created on the fly. */
+  def getOrMake(path: Path): TreeEntryID = if (path == ROOTPATH) ROOTID else {
+    require(path.value.startsWith(SEPARATOR), "Path <%s> is not root and does not start with '%s'" format (path, SEPARATOR))
+    val parts = path.value.split(SEPARATOR).drop(1)
+    parts.foldLeft(ROOTID) {(node, childName) =>
+      val childOption = children(node).find(_.name == childName)
+      childOption map(_.id) getOrElse createAndGetId(node, childName)
+    }
+  }
+
+  /** @return The entry or None if no such entry. */
+  def entry(path: Path): Option[TreeEntryID] = if (path == ROOTPATH) Some(ROOTID) else {
+    require(path.value.startsWith(SEPARATOR), "Path <%s> is not root and does not start with '%s'" format (path, SEPARATOR))
+    val parts = path.value.split(SEPARATOR).drop(1)
+    parts.foldLeft(Option(ROOTID)) {(node, childName) =>
+      node.flatMap(children(_).find(_.name == childName)).map(_.id)
+    }
+  }
+}
+
 object TreeDB {
+  val ROOTID = TreeEntryID(0L)
+  val ROOTPATH = Path("")
+  val SEPARATOR = "/"
+    
   def createTable(implicit connection: WrappedConnection) : Unit = {
     execUpdate(net.diet_rich.util.Strings normalizeMultiline """
       CREATE TABLE TreeEntries (

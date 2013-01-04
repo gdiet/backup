@@ -7,7 +7,8 @@ import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
 import net.diet_rich.util.sql.WrappedConnection
 
-class BackupFileSystem(val dig: Digesters)(implicit val connection: WrappedConnection) extends TreeDB with DataInfoDB with ByteStoreDB
+class BackupFileSystem(val dig: Digesters)(implicit val connection: WrappedConnection)
+extends TreeDB with TreeDBUtils with DataInfoDB with ByteStoreDB
 
 case class FullDataInformation (
   time: Time,

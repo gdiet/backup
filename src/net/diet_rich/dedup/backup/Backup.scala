@@ -19,10 +19,11 @@ object Backup extends CmdApp {
   )
 
   def backup(opts: Map[String, String]): Unit = {
-    require(! opts("-r").isEmpty, "Repository location setting -r is mandatory.")
-    require(! opts("-t").isEmpty, "Target folder setting -t is mandatory.")
-    val repository = new Repository(new java.io.File(opts("-r")))
-    val source = new java.io.File(opts("-s")).getCanonicalFile
+    require(! opts(REPOSITORY).isEmpty, "Repository location setting %s is mandatory." format REPOSITORY)
+    require(! opts(TARGET).isEmpty, "Target folder setting %s is mandatory." format TARGET)
+    val repository = new Repository(new java.io.File(opts(REPOSITORY)))
+    val source = new java.io.File(opts(SOURCE)).getCanonicalFile
+    val target = repository.fs.getOrMake(Path(opts(TARGET)))
     
     val processor =
       new TreeHandling[FileSource] 
@@ -32,7 +33,8 @@ object Backup extends CmdApp {
       with StoreData[FileSource] {
         val fs = repository.fs
       }
-    
-    processor.backup(new FileSource(source), TreeEntryID(0), None) // FIXME use parent appropriately
+
+    processor.backup(new FileSource(source), target, None) // FIXME use parent appropriately
+    // FIXME implement reference
   }
 }
