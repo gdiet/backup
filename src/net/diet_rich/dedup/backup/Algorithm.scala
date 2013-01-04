@@ -82,7 +82,7 @@ trait StoreData[SourceType <: TreeSource[SourceType]] {
     // here, further optimization is possible: If a file is too large to cache,
     // we could at least cache the start of the file. This would of course lead
     // to more complicated hash calculations.
-    val cache = getLargeArray(source.size + 1)
+    val cache = getLargeArray(source.size + Size(1))
     assume(cache.map(_.length == source.size.value + 1).getOrElse(true)) // just to make sure the array is of the requested size
     // read whole file, if possible, into cache, and calculate print and hash
     val (print, (hash, size)) = fs.dig.filterPrint(reader) { reader =>

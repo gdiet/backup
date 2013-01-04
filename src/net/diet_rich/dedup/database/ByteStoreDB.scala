@@ -9,6 +9,7 @@ import net.diet_rich.util.vals._
 
 case class DataRange(start: Position, fin: Position) extends Ordered[DataRange] {
   def length = fin - start
+  def isEmpty = fin == start
   def withLength(length: Size) = copy(fin = start + length)
   def withOffset(offset: Size) = copy(start = start + offset)
   override def compare(that: DataRange): Int =
@@ -72,69 +73,76 @@ trait ByteStoreDB {
       "SELECT GREATEST((SELECT MAX(id) FROM DataInfo), (SELECT MAX(dataid) FROM ByteStore))"
     )
   
-  protected final val insertEntry = 
-    prepareUpdate("INSERT INTO ByteStore (dataid, index, start, fin) VALUES (?, ?, ?, ?)")
-  protected def write(dataid: Long)(writeFunction: DataRange => Size): Unit = {
-    @annotation.tailrec
-    def writeStep(index: Int): Unit = {
-      val range = freeRanges.next
-      val stored = writeFunction(range)
-      if (stored > Size(0)) {
-        insertEntry(dataid, index, range.start, range.start + stored)
-        // if the range was not fully used, re-enqueue the remainder
-        if (stored < range.length) freeRanges.enqueue(range.withOffset(stored))
-        writeStep(index+1)
-      }
-      // if the range was not used up, re-enqueue it
-      else freeRanges.enqueue(range)
-    }
-    writeStep(0)
-  }
-
   def storeAndGetDataId(bytes: Array[Byte], size: Size): DataEntryID = {
-//    @annotation.tailrec FIXME
+    val id = DataEntryID(maxEntryId incrementAndGet())
+    @annotation.tailrec
     def writeStep(index: Int, offset: Position, length: Size): Unit = if (length > Size(0)) {
       val range = freeRanges.next
-      if (range.length > length) {
-        writeToStore(range.start, bytes, offset, length)
-        freeRanges.enqueue(range.withOffset(length))
-      } else {
+      if (length > range.length) {
         writeToStore(range.start, bytes, offset, range.length)
+        insertEntry(id.value, index, range.start.value, range.fin.value) match {
+          case 1 => range.withOffset(size)
+          case n => throw new IllegalStateException("ByteStore: Insert entry returned %s rows instead of 1".format(n))
+        }
         writeStep(index + 1, offset + range.length, length - range.length)
+      } else {
+        writeToStore(range.start, bytes, offset, length)
+        insertEntry(id.value, index, range.start.value, range.start.value + length.value) match {
+          case 1 => range.withOffset(size) // FIXME helper function
+          case n => throw new IllegalStateException("ByteStore: Insert entry returned %s rows instead of 1".format(n))
+        }
+        freeRanges.enqueue(range.withOffset(length))
       }
-      ???
     }
     writeStep(0, Position(0), size)
-    ???
+    id
   }
 
   def storeAndGetDataIdAndSize(reader: Reader): (DataEntryID, Size) = {
-    val id = maxEntryId incrementAndGet()
-    val bytes = new Array[Byte](32768)
+    val id = DataEntryID(maxEntryId incrementAndGet())
     @annotation.tailrec
-    def writeStep(offset: Position, length: Size, total: Size, range: DataRange): (Size, DataRange) = {
-      if (length == Size(0)) {
-        fillFrom(reader, bytes, 0, bytes.length) match {
-          case 0 => (total, range)
-          case read => writeStep(Position(0), Size(read), total + read, range)
-        }
-      } else if (range.length == 0) {
-        writeStep(offset, length, total, freeRanges.next)
-      } else if (range.length < length) {
-        writeToStore(range.start, bytes, offset, range.length)
-        writeStep(offset + range.length, length - range.length, total, DataRange.emptyRange)
-      } else {
-        writeToStore(range.start, bytes, offset, length)
-        writeStep(Position(0), Size(0), total, range withOffset length)
+    def writeStep(range: DataRange, index: Int, size: Size): Size = {
+      writeRange(id, index, reader, range) match {
+        case e if e.isEmpty =>
+          writeStep(freeRanges.next, index + 1, size + range.length)
+        case remaining =>
+          freeRanges.enqueue(remaining)
+          size + range.length - remaining.length
       }
     }
-    val (size, range) = writeStep(Position(0), Size(0), Size(0), freeRanges.next)
-    freeRanges.enqueue(range)
-    (DataEntryID(id), size)
+    (id, writeStep(freeRanges.next, 0, Size(0)))
   }
+
+  private def writeRange(id: DataEntryID, index: Int, reader: Reader, range: DataRange): DataRange = {
+    val bytes = new Array[Byte](32768)
+    @annotation.tailrec
+    def writeStep(range: DataRange, offsetInArray: Position, dataInArray: Size, alreadyRead: Size): Size = {
+      if (range.length == 0) {
+        alreadyRead
+      } else if (dataInArray == Size(0)) {
+        val bytesToRead = if (range.length < Size(bytes.length)) range.length.value.toInt else bytes.length
+        fillFrom(reader, bytes, 0, bytesToRead) match {
+          case 0 => alreadyRead
+          case read => writeStep(range, Position(0), Size(read), alreadyRead + Size(read))
+        }
+      } else {
+        writeToStore(range.start, bytes, offsetInArray, dataInArray)
+        writeStep(range.withOffset(offsetInArray asSize), Position(0), Size(0), alreadyRead)
+      }
+    }
+    val size = writeStep(range, Position(0), Size(0), Size(0))
+    insertEntry(id.value, index, range.start.value, range.start.value + size.value) match {
+      case 1 => range.withOffset(size)
+      case n => throw new IllegalStateException("ByteStore: Insert entry returned %s rows instead of 1".format(n))
+    }
+  }
+  protected final val insertEntry = 
+    prepareUpdate("INSERT INTO ByteStore (dataid, index, start, fin) VALUES (?, ?, ?, ?)")
+
   
   // implemented in other pieces of cake
-  def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = Unit // FIXME ???
+  def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = 
+    println("write to store: %s - %s - %s" format (position, offset, size)) // FIXME ???
 }
 
 object ByteStoreDB {
