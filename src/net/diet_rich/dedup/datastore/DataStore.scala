@@ -1,0 +1,64 @@
+// Copyright (c) Georg Dietrich
+// Licensed under the MIT license:
+// http://www.opensource.org/licenses/mit-license.php
+package net.diet_rich.dedup.datastore
+
+import java.io.File
+import net.diet_rich.util.io._
+import net.diet_rich.util.vals._
+
+class DataStore(baseDir: File, dataSize: Size) { import DataStore._
+  private def path(position: Position) = {
+    val fileIndex = position.value / dataSize.value
+    "%010X".format(fileIndex).grouped(2).mkString("/")
+  }
+
+  private val dataFiles = collection.mutable.Map[String, (DataFile, Int)]()
+
+  private def storeSurplusDataFile: Unit = if (dataFiles.size > concurrentDataFiles) {
+    val surplus = dataFiles.synchronized{dataFiles.find{case (_, (_, count)) => count == 0}}
+    surplus.foreach{case (dataPath, (dataFile, _)) =>
+      dataFile.write
+      dataFiles.synchronized{
+        if (dataFiles.get(dataPath).map(_._2 == 0).getOrElse(false))
+          dataFiles.remove(dataPath)
+      }
+    }
+  }
+  
+  private def withDataFile(position: Position)(code: DataFile => Long): Long = {
+    val dataPath = path(position)
+    val dataFile = dataFiles.synchronized{
+      val (dataFile, count) = dataFiles.getOrElse(dataPath,
+        (new DataFile(dataSize, baseDir.child(dataPath)), 0)
+      )
+      dataFiles.put(dataPath, (dataFile, count+1))
+      dataFile
+    }
+    storeSurplusDataFile
+    try {
+      code(dataFile)
+    } finally {
+      dataFiles.synchronized{
+        val (dataFile, count) = dataFiles(dataPath)
+        dataFiles.put(dataPath, (dataFile, count-1))
+      }
+    }
+  }
+
+  @annotation.tailrec
+  final def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = {
+    val written = Size(withDataFile(position){ dataFile =>
+      val positionInArray = position.value % dataSize.value + DataFile.headerSize
+      val bytesToCopy = math.min(dataSize.value, size.value)
+      Array.copy(bytes, offset.value toInt, dataFile.bytes, positionInArray toInt, bytesToCopy toInt)
+      bytesToCopy
+    })
+    if (written < size)
+      writeToStore(position + written, bytes, offset + written, size - written)
+  }
+}
+
+object DataStore {
+  val concurrentDataFiles = 6
+}

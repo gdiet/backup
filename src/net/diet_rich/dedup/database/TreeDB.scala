@@ -66,7 +66,7 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
   
   /** @return The entry ID. Missing path elements are created on the fly. */
   def getOrMake(path: Path): TreeEntryID = if (path == ROOTPATH) ROOTID else {
-    require(path.value.startsWith(SEPARATOR), "Path <%s> is not root and does not start with '%s'" format (path, SEPARATOR))
+    assume(path.value.startsWith(SEPARATOR), "Path <%s> is not root and does not start with '%s'" format (path, SEPARATOR))
     val parts = path.value.split(SEPARATOR).drop(1)
     parts.foldLeft(ROOTID) {(node, childName) =>
       val childOption = children(node).find(_.name == childName)
@@ -76,7 +76,7 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
 
   /** @return The entry or None if no such entry. */
   def entry(path: Path): Option[TreeEntryID] = if (path == ROOTPATH) Some(ROOTID) else {
-    require(path.value.startsWith(SEPARATOR), "Path <%s> is not root and does not start with '%s'" format (path, SEPARATOR))
+    assume(path.value.startsWith(SEPARATOR), "Path <%s> is not root and does not start with '%s'" format (path, SEPARATOR))
     val parts = path.value.split(SEPARATOR).drop(1)
     parts.foldLeft(Option(ROOTID)) {(node, childName) =>
       node.flatMap(children(_).find(_.name == childName)).map(_.id)

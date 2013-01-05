@@ -6,11 +6,11 @@ package net.diet_rich.util
 object Strings {
   def normalizeMultiline(string: String): String = {
     val lines = string.lines.toList
-    require (lines.head isEmpty, "expected empty first line in multiline string <%s>" format string)
+    assume (lines.head isEmpty, "expected empty first line in multiline string <%s>" format string)
     val leadingBlanks = lines.tail.head.indexWhere(_ != ' ')
-    require (leadingBlanks >= 0, "expected non-blank in second line of multiline string <%s>" format string)
+    assume (leadingBlanks >= 0, "expected non-blank in second line of multiline string <%s>" format string)
     val reverse = lines.tail.reverse
-    require (reverse.head.forall(_ == ' '), "expected only blanks in last line <%s> of multiline string <%s>" format (reverse.head, string))
+    assume (reverse.head.forall(_ == ' '), "expected only blanks in last line <%s> of multiline string <%s>" format (reverse.head, string))
     reverse.tail.reverse.map(_.substring(leadingBlanks)).mkString("\n")
   }
 }

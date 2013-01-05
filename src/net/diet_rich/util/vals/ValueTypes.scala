@@ -9,19 +9,23 @@ trait ValueToString extends Any {
 }
 
 class Size(val value: Long) extends AnyVal with ValueToString {
-  def +  (other: Size): Size    = Size(value + other.value)
-  def -  (other: Size): Size    = Size(value - other.value)
-  def <  (other: Size): Boolean = value <  other.value
-  def >  (other: Size): Boolean = value >  other.value
-  def <= (other: Size): Boolean = value <= other.value
+  def +  (other: Size): Size     = Size(value + other.value)
+  def -  (other: Size): Size     = Size(value - other.value)
+  def <  (other: Size): Boolean  = value <  other.value
+  def >  (other: Size): Boolean  = value >  other.value
+  def <= (other: Size): Boolean  = value <= other.value
+  def compare (other: Size): Int = value compare other.value
 }
 object Size { def apply(value: Long) = new Size(value) }
 
 class Position(val value: Long) extends AnyVal with ValueToString {
-  def + (other: Size): Position = Position(value + other.value)
-  def - (other: Position): Size = Size(value - other.value)
-  def asSize: Size = Size(value)
+  def +  (other: Size): Position     = Position(value + other.value)
+  def -  (other: Position): Size     = Size(value - other.value)
+  def >  (other: Position): Boolean  = value >  other.value
+  def <  (other: Position): Boolean  = value <  other.value
+  def <= (other: Position): Boolean  = value <= other.value
   def compare (other: Position): Int = value compare other.value
+  def asSize: Size = Size(value)
 }
 object Position { def apply(value: Long) = new Position(value) }
 

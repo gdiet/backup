@@ -10,7 +10,7 @@ trait PrintDigester {
   def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType)
 }
 
-trait CrcAdler8192 extends PrintDigester {
+trait CrcAdler8192 extends PrintDigester { import CrcAdler8192._
   private val area = 8192
   
   def calculatePrintAndReset(reader: SeekReader): Print = {
@@ -26,8 +26,12 @@ trait CrcAdler8192 extends PrintDigester {
     val paritionedInput = prependArray(data, 0, size, input)
     (print, reader(paritionedInput))
   }
+}
+
+object CrcAdler8192 {
+  def zeroBytesPrint = calculatePrint(Array(), 0, 0)
   
-  private def calculatePrint(bytes: Array[Byte], offset: Int, length: Int): Print = {
+  def calculatePrint(bytes: Array[Byte], offset: Int, length: Int): Print = {
     assume (length > -1, "length must not be negative but is %s" format length)
     assume (offset + length <= bytes.length, "offset %s + length %s must be less or equal byte array length %s" format (offset, length, bytes.length))
     
@@ -37,8 +41,4 @@ trait CrcAdler8192 extends PrintDigester {
     adler.update(bytes, offset, length)
     Print(adler.getValue << 32 | crc.getValue)
   }
-}
-
-object CrcAdler8192 {
-  def zeroBytesPrint = new CrcAdler8192{}.calculatePrint(Array(), 0, 0)
 }
