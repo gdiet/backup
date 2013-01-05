@@ -5,6 +5,7 @@ package net.diet_rich.dedup
 
 object CmdLine {
   val REPOSITORY = "-r"
+  val DIFFERENTIAL = "-d"
   val SOURCE = "-s"
   val TARGET = "-t"
   val HASH = "-h"

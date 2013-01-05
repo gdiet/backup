@@ -15,7 +15,8 @@ object Backup extends CmdApp {
   val paramData = Seq(
     SOURCE -> "." -> "[%s <directory>] Source file or folder to store, default '%s'",
     REPOSITORY -> "" -> "[%s <directory>] Mandatory: Repository location",
-    TARGET -> "" -> "[%s <path>] Mandatory: Target folder in repository"
+    TARGET -> "" -> "[%s <path>] Mandatory: Target folder in repository",
+    DIFFERENTIAL -> "" -> "[%s <path>] Base folder for differential backup in repository"
   )
 
   def backup(opts: Map[String, String]): Unit = {
@@ -23,6 +24,13 @@ object Backup extends CmdApp {
     require(! opts(TARGET).isEmpty, "Target folder setting %s is mandatory." format TARGET)
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val source = new java.io.File(opts(SOURCE)).getCanonicalFile
+    val reference = opts(DIFFERENTIAL) match {
+      case "" => None
+      case e => repository.fs.entry(Path(e)) match {
+        case None => throw new IllegalArgumentException("No path '%s' in repository for differential backup")
+        case id => id
+      }
+    }
     val target = repository.fs.getOrMake(Path(opts(TARGET)))
     
     val processor =
@@ -34,7 +42,6 @@ object Backup extends CmdApp {
         val fs = repository.fs
       }
 
-    processor.backup(new FileSource(source), target, None) // FIXME use parent appropriately
-    // FIXME implement reference
+    processor.backup(new FileSource(source), target, reference)
   }
 }
