@@ -12,14 +12,14 @@ import net.diet_rich.util.vals._
 
 class DataFileException(message: String, val data: Array[Byte]) extends java.io.IOException(message)
 
-class DataFile(dataLength: Size, file: File) { import DataFile._
+class DataFile(dataLength: Size, val file: File) { import DataFile._
   assume (dataLength > Size(0), "data length of file %s must be positive but is %s" format (file, dataLength))
-  assume (dataLength < Size(Int.MaxValue), "data length of file %s must less than MaxInt but is %s" format (file, dataLength))
+  assume (dataLength < Size(Int.MaxValue - headerSize), "data length of file %s must less than MaxInt but is %s" format (file, dataLength))
   assume (!file.exists || file.isFile, "data file %s must be a regular file if it exists" format file)
 
-  val bytes = new Array[Byte](dataLength.value toInt)
+  val bytes = new Array[Byte](dataLength.value.toInt + headerSize)
   if (file.exists()) {
-    readAndPadZeros(file, bytes)
+    readFromDataFile(file, bytes)
     val print = CrcAdler8192.calculatePrint(bytes, headerSize, bytes.length - headerSize)
     if (print != Print(readLong(bytes, 0)))
       throw new DataFileException("CRC of datafile does not match", bytes)
@@ -28,6 +28,7 @@ class DataFile(dataLength: Size, file: File) { import DataFile._
   def write: Unit = {
     val print = CrcAdler8192.calculatePrint(bytes, headerSize, bytes.length - headerSize)
     writeLong(bytes, 0, print.value)
+    file.getParentFile().mkdirs
     using(new RandomAccessFile(file, "rw")){ _ write (bytes) }
   }
 }
@@ -35,7 +36,7 @@ class DataFile(dataLength: Size, file: File) { import DataFile._
 object DataFile {
   val headerSize = 8
   
-  def readAndPadZeros(file: File, bytes: Array[Byte], offsetInFile: Position = Position(0)): Unit = {
+  def readFromDataFile(file: File, bytes: Array[Byte], offsetInFile: Position = Position(0)): Unit = {
     assume (file.isFile, "data file %s must be an existing regular file" format file)
     assume (offsetInFile > Position(-1), "offset in datafile %s must be positive but is %s" format (file, offsetInFile))
     

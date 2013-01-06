@@ -16,8 +16,8 @@ class DataStore(baseDir: File, dataSize: Size) { import DataStore._
   private val dataFiles = collection.mutable.Map[String, (DataFile, Int)]()
 
   private def storeSurplusDataFile: Unit = if (dataFiles.size > concurrentDataFiles) {
-    val surplus = dataFiles.synchronized{dataFiles.find{case (_, (_, count)) => count == 0}}
-    surplus.foreach{case (dataPath, (dataFile, _)) =>
+    val surplus = dataFiles.synchronized { dataFiles.find { case (_, (_, count)) => count == 0 } }
+    surplus.foreach { case (dataPath, (dataFile, _)) =>
       dataFile.write
       dataFiles.synchronized{
         if (dataFiles.get(dataPath).map(_._2 == 0).getOrElse(false))
@@ -28,7 +28,7 @@ class DataStore(baseDir: File, dataSize: Size) { import DataStore._
   
   private def withDataFile(position: Position)(code: DataFile => Long): Long = {
     val dataPath = path(position)
-    val dataFile = dataFiles.synchronized{
+    val dataFile = dataFiles.synchronized {
       val (dataFile, count) = dataFiles.getOrElse(dataPath,
         (new DataFile(dataSize, baseDir.child(dataPath)), 0)
       )
@@ -39,7 +39,7 @@ class DataStore(baseDir: File, dataSize: Size) { import DataStore._
     try {
       code(dataFile)
     } finally {
-      dataFiles.synchronized{
+      dataFiles.synchronized {
         val (dataFile, count) = dataFiles(dataPath)
         dataFiles.put(dataPath, (dataFile, count-1))
       }
@@ -49,16 +49,26 @@ class DataStore(baseDir: File, dataSize: Size) { import DataStore._
   @annotation.tailrec
   final def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = {
     val written = Size(withDataFile(position){ dataFile =>
-      val positionInArray = position.value % dataSize.value + DataFile.headerSize
-      val bytesToCopy = math.min(dataSize.value, size.value)
-      Array.copy(bytes, offset.value toInt, dataFile.bytes, positionInArray toInt, bytesToCopy toInt)
+      val dataOffset = position.value % dataSize.value
+      val bytesToCopy = math.min(dataSize.value - dataOffset, size.value)
+      Array.copy(bytes, offset.value toInt, dataFile.bytes, dataOffset.toInt + DataFile.headerSize, bytesToCopy toInt)
       bytesToCopy
     })
-    if (written < size)
+    if (written < size) {
       writeToStore(position + written, bytes, offset + written, size - written)
+    }
+  }
+  
+  def shutdown: Unit = dataFiles.synchronized {
+    dataFiles.values.foreach { case (dataFile, count) =>
+      if (count != 0) throw new IllegalStateException("usage count for dataFile %s is not zero" format dataFile.file)
+      dataFile.write
+    }
+    dataFiles.clear
   }
 }
 
 object DataStore {
+  val dirName = "data"
   val concurrentDataFiles = 6
 }

@@ -42,6 +42,10 @@ object Backup extends CmdApp {
         val fs = repository.fs
       }
 
-    processor.backup(new FileSource(source), target, reference)
+    try {
+      processor.backup(new FileSource(source), target, reference)
+    } finally {
+      repository.dataStore.shutdown
+    }
   }
 }

@@ -133,8 +133,7 @@ trait ByteStoreDB {
 
   
   // implemented in other pieces of cake
-  def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = 
-    println("stub - write to store: %s - %s - %s" format (position, offset, size)) // FIXME stub
+  def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit
 }
 
 object ByteStoreDB {

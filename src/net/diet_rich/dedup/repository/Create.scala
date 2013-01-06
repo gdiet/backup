@@ -15,17 +15,20 @@ object Create extends CmdApp {
   val usageHeader = "Creates a dedup repository. "
   val paramData = Seq(
     REPOSITORY -> "." -> "[%s <directory>] Location of the repository to create, default '%s'",
-    HASH -> "MD5" -> "[%s <algorithm>] Hash algorithm to use, default '%s'"
+    HASH -> "MD5" -> "[%s <algorithm>] Hash algorithm to use, default '%s'",
+    DATASIZE -> "2000000" -> "[%s <size>] Data size of the data files, default '%s'"
   )
   
   def create(opts: Map[String, String]): Unit = {
-    val repositoryFolder = new File(opts("-r"))
+    val repositoryFolder = new File(opts(REPOSITORY))
+    val dataSize = opts(DATASIZE).toLong
     require(repositoryFolder.isDirectory(), "Repository folder %s must be an existing directory" format repositoryFolder)
     require(repositoryFolder.list.isEmpty, "Repository folder %s must be empty" format repositoryFolder)
-    val hashAlgorithm = opts("-h")
+    val hashAlgorithm = opts(HASH)
     val repositorySettings = Map(
       Repository.repositoryVersionKey -> Repository.repositoryVersion,
-      Repository.hashKey -> Hashes.checkAlgorithm(hashAlgorithm)
+      Repository.hashKey -> Hashes.checkAlgorithm(hashAlgorithm),
+      Repository.dataSizeKey -> dataSize.toString
     )
     require(repositoryFolder.child(Repository.dbDirName).mkdir(), "Could not create database folder %s" format Repository.dbDirName)
     writeSettingsFile(repositoryFolder.child(Repository.settingsFileName), repositorySettings)

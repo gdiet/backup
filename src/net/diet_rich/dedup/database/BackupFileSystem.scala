@@ -7,8 +7,11 @@ import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
 import net.diet_rich.util.sql.WrappedConnection
 
-class BackupFileSystem(val dig: Digesters)(implicit val connection: WrappedConnection)
-extends TreeDB with TreeDBUtils with DataInfoDB with ByteStoreDB
+class BackupFileSystem(val dig: Digesters, val ds: net.diet_rich.dedup.datastore.DataStore)(implicit val connection: WrappedConnection)
+extends TreeDB with TreeDBUtils with DataInfoDB with ByteStoreDB {
+  def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit =
+    ds.writeToStore(position, bytes, offset, size)
+}
 
 case class FullDataInformation (
   time: Time,

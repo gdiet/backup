@@ -9,4 +9,5 @@ object CmdLine {
   val SOURCE = "-s"
   val TARGET = "-t"
   val HASH = "-h"
+  val DATASIZE = "-b"
 }
