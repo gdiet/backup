@@ -12,15 +12,17 @@ trait CmdApp {
     lines.mkString("\n")
   } catch { case e: Throwable => "Oops ... error while building usage string!" }
     
-  def run(args: Array[String])(code: Map[String, String] => Unit) = {
+  def run(args: Array[String])(code: Map[String, String] => Unit): Boolean = {
     try {
       val defaults = paramData.map(_._1).toMap
       val opts = defaults ++ Args.toMap(args)
       require(opts.keySet == defaults.keySet, "Unexpected parameter(s): %s" format (opts.keySet -- defaults.keySet).mkString(" / "))
       code(opts)
+      true
     } catch {
       case e: Throwable =>
         println("%s\n\n%s\n%s" format (usage, e, e.getStackTraceString))
+        false
     }
   }
 }

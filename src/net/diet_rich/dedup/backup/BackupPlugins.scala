@@ -18,7 +18,9 @@ trait BackupErrorHandler[SourceType <: TreeSource[SourceType]] {
 }
 
 trait BackupControl[SourceType <: TreeSource[SourceType]]
-extends BackupMonitor[SourceType] with BackupThreadManager with BackupErrorHandler[SourceType]
+extends BackupMonitor[SourceType] with BackupThreadManager with BackupErrorHandler[SourceType] {
+  def shutdown: Unit
+}
 
 trait MemoryManager {
   /** @return An array of the requested size or None. */
@@ -26,9 +28,38 @@ trait MemoryManager {
 }
 
 trait SimpleBackupControl extends BackupControl[FileSource] {
-  protected def notifyProgressMonitor(entry: FileSource): Unit = println("processing %s" format entry.file)
+  protected def notifyProgressMonitor(entry: FileSource): Unit = Unit // println("processing %s" format entry.file)
   protected def executeInThreadPool(f: => Unit): Unit = f
   protected def catchAndHandleException(entry: FileSource)(f: => Unit): Unit = f
+  def shutdown: Unit = Unit
+}
+
+trait PooledBackupControl extends BackupControl[FileSource] {
+  protected def notifyProgressMonitor(entry: FileSource): Unit = Unit // println("processing %s" format entry.file)
+  val pool = new java.util.concurrent.ThreadPoolExecutor(8, 8, 0,
+    java.util.concurrent.TimeUnit.SECONDS,
+    new java.util.concurrent.LinkedBlockingQueue[Runnable](4),
+    new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy)
+  val tasks = new java.util.concurrent.atomic.AtomicInteger(0)
+  val tasksLock = new java.util.concurrent.Semaphore(1)
+  protected def executeInThreadPool(f: => Unit): Unit = {
+    if (tasks.incrementAndGet == 1)
+      if (!tasksLock.tryAcquire()) {
+        tasks.decrementAndGet
+        throw new IllegalStateException("could not aquire tasks lock")
+      }
+    pool.execute(new Runnable { def run: Unit = try { f } finally {
+      if (tasks.decrementAndGet == 0) tasksLock.release
+    } })
+  }
+  protected def catchAndHandleException(entry: FileSource)(f: => Unit): Unit =
+    try { f } catch { case e: Throwable => println(e) }
+  def shutdown = {
+    tasksLock.acquire
+    if (!(tasks.get == 0)) throw new IllegalStateException("not all tasks have been released")
+    pool.shutdown
+    pool.awaitTermination(1, java.util.concurrent.TimeUnit.DAYS)
+  }
 }
 
 trait SimpleMemoryManager extends MemoryManager {

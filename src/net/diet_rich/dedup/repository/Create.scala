@@ -10,7 +10,8 @@ import net.diet_rich.util.io._
 import net.diet_rich.dedup.database._
 
 object Create extends CmdApp {
-  def main(args: Array[String]): Unit = run(args)(create)
+  def main(args: Array[String]): Unit =
+    if (!run(args)(create)) System.exit(-1)
   
   val usageHeader = "Creates a dedup repository. "
   val paramData = Seq(

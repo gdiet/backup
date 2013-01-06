@@ -35,7 +35,8 @@ object Backup extends CmdApp {
     
     val processor =
       new TreeHandling[FileSource] 
-      with SimpleBackupControl
+//      with SimpleBackupControl
+      with PooledBackupControl
       with SimpleMemoryManager
       with PrintMatchCheck[FileSource]
       with StoreData[FileSource] {
@@ -46,6 +47,7 @@ object Backup extends CmdApp {
       processor.backup(new FileSource(source), target, reference)
     } finally {
       repository.dataStore.shutdown
+      processor.shutdown
     }
   }
 }
