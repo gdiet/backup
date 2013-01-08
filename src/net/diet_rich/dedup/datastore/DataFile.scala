@@ -17,12 +17,16 @@ class DataFile(dataLength: Size, val file: File) { import DataFile._
   assume (dataLength < Size(Int.MaxValue - headerSize), "data length of file %s must less than MaxInt but is %s" format (file, dataLength))
   assume (!file.exists || file.isFile, "data file %s must be a regular file if it exists" format file)
 
+  val dirty = new java.util.concurrent.atomic.AtomicBoolean(false)
+  
   val bytes = new Array[Byte](dataLength.value.toInt + headerSize)
   if (file.exists()) {
     readFromDataFile(file, bytes)
     val print = CrcAdler8192.calculatePrint(bytes, headerSize, bytes.length - headerSize)
-    if (print != Print(readLong(bytes, 0)))
+    if (print != Print(readLong(bytes, 0))) {
+      println("%s crc    df: %s" format (Thread.currentThread(), file.getPath().substring(file.getPath().size - 9)))      
       throw new DataFileException("CRC of datafile does not match", bytes)
+    }
   }
   
   def write: Unit = {
@@ -45,4 +49,10 @@ object DataFile {
       fillFrom(reader, bytes, 0, bytes.length)
     }
   }
+  
+  def dataPrint(bytes: Array[Byte]): Long =
+    (0 until bytes.length).foldLeft(0L)((print, index) => print + ((index.toLong + 111) * bytes(index)))
+
+  def dataPrint(offsetInDataRange: Int, bytes: Array[Byte], offsetInBytes: Int, length: Int): Long =
+    (offsetInDataRange until offsetInDataRange + length).foldLeft(0L)((print, index) => print + ((index.toLong + 111) * bytes(index - offsetInDataRange)))
 }

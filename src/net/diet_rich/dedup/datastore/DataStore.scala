@@ -16,11 +16,15 @@ class DataStore(baseDir: File, dataSize: Size) { import DataStore._
   private val dataFiles = collection.mutable.Map[String, (DataFile, Int)]()
 
   private def storeSurplusDataFile: Unit = if (dataFiles.size > concurrentDataFiles) {
-    val surplus = dataFiles.synchronized { dataFiles.find { case (_, (_, count)) => count == 0 } }
+    val surplus = dataFiles.synchronized {
+      val found = dataFiles.find { case (_, (_, count)) => count == 0 }
+      found.foreach(_._2._1.dirty.set(false))
+      found
+    }
     surplus.foreach { case (dataPath, (dataFile, _)) =>
       dataFile.write
       dataFiles.synchronized{
-        if (dataFiles.get(dataPath).map(_._2 == 0).getOrElse(false))
+        if ((!dataFile.dirty.get()) && dataFiles.get(dataPath).map(_._2 == 0).getOrElse(false))
           dataFiles.remove(dataPath)
       }
     }
@@ -29,8 +33,9 @@ class DataStore(baseDir: File, dataSize: Size) { import DataStore._
   private def withDataFile(position: Position)(code: DataFile => Long): Long = {
     val dataPath = path(position)
     val dataFile = dataFiles.synchronized {
+      println("%s fetch  df: %s" format (Thread.currentThread(), dataPath.substring(9)))
       val (dataFile, count) = dataFiles.getOrElse(dataPath,
-        (new DataFile(dataSize, baseDir.child(dataPath)), 0)
+        ({val df = new DataFile(dataSize, baseDir.child(dataPath)); println("%s create df: %s" format (Thread.currentThread(), dataPath.substring(9))); df}, 0)
       )
       dataFiles.put(dataPath, (dataFile, count+1))
       dataFile

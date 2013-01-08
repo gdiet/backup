@@ -31,7 +31,7 @@ class FreeRanges(implicit connection: WrappedConnection) {
   // Emit warning and free the space?
   
   // Note: Initially, needs at least an "empty" entry in table.
-  private val blockSize = Size(100000000)
+  private val blockSize = Size(32000000)
   private val startOfFreeArea = execQuery("SELECT MAX(fin) FROM ByteStore")(_ long 1).next
   private val queue = new scala.collection.mutable.PriorityQueue[DataRange]()
   
