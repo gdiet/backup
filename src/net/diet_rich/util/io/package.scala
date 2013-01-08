@@ -82,14 +82,11 @@ package object io {
         .mkString("\n")
       )
     }
-  
-  implicit def enhanceFile(file: File): {
-    def child(child: String): File
-    def erase: Boolean
-  } = new Object {
-    def child(child: String): File = new File(file, child)
+
+  implicit class EnhancedFile(val value: File) extends AnyVal {
+    def child(child: String): File = new File(value, child)
     def erase: Boolean = (
-      if (file.isDirectory()) file.listFiles.forall(_.erase) else true
-    ) && file.delete
+      if (value.isDirectory()) value.listFiles.forall(_.erase) else true
+    ) && value.delete
   }
 }
