@@ -20,8 +20,8 @@ object Backup extends CmdApp {
   )
 
   def backup(opts: Map[String, String]): Unit = {
-    require(! opts(REPOSITORY).isEmpty, "Repository location setting %s is mandatory." format REPOSITORY)
-    require(! opts(TARGET).isEmpty, "Target folder setting %s is mandatory." format TARGET)
+    require(! opts(REPOSITORY).isEmpty, s"Repository location setting $REPOSITORY is mandatory.")
+    require(! opts(TARGET).isEmpty, s"Target folder setting $TARGET is mandatory.")
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val source = new java.io.File(opts(SOURCE)).getCanonicalFile
     val reference = opts(DIFFERENTIAL) match {

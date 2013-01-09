@@ -54,7 +54,7 @@ trait TreeDB {
   def setData(id: TreeEntryID, time: Time, dataid: Option[DataEntryID]): Unit =
     changeData(time.value, dataid.map(_.value), id.value) match {
       case 1 => Unit
-      case n => throw new IllegalStateException("Tree: Update node %s returned %s rows instead of 1".format(id, n))
+      case n => throw new IllegalStateException(s"Tree: Update node $id returned $n rows instead of 1")
     }
   protected val changeData = 
     prepareUpdate("UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?;")
@@ -66,7 +66,7 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
   
   /** @return The entry ID. Missing path elements are created on the fly. */
   def getOrMake(path: Path): TreeEntryID = if (path == ROOTPATH) ROOTID else {
-    assume(path.value.startsWith(SEPARATOR), "Path <%s> is not root and does not start with '%s'" format (path, SEPARATOR))
+    assume(path.value.startsWith(SEPARATOR), s"Path <$path> is not root and does not start with '$SEPARATOR'")
     val parts = path.value.split(SEPARATOR).drop(1)
     parts.foldLeft(ROOTID) {(node, childName) =>
       val childOption = children(node).find(_.name == childName)
@@ -76,7 +76,7 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
 
   /** @return The entry or None if no such entry. */
   def entry(path: Path): Option[TreeEntryID] = if (path == ROOTPATH) Some(ROOTID) else {
-    assume(path.value.startsWith(SEPARATOR), "Path <%s> is not root and does not start with '%s'" format (path, SEPARATOR))
+    assume(path.value.startsWith(SEPARATOR), s"Path <$path> is not root and does not start with '$SEPARATOR'")
     val parts = path.value.split(SEPARATOR).drop(1)
     parts.foldLeft(Option(ROOTID)) {(node, childName) =>
       node.flatMap(children(_).find(_.name == childName)).map(_.id)

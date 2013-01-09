@@ -26,25 +26,25 @@ trait DataInfoDB {
   def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit =
     insertNewEntry(dataid.value, size.value, print.value, hash.value)
   protected val insertNewEntry =
-    prepareSingleRowUpdate("INSERT INTO DataInfo (id, length, print, hash) VALUES (?, ?, ?, ?);")
+    prepareSingleRowUpdate("INSERT INTO DataInfo (id, length, print, hash) VALUES (?, ?, ?, ?)")
 }
 
 object DataInfoDB {
   def createTable(zeroByteHash: Hash, zeroBytePrint: Print)(implicit connection: WrappedConnection) : Unit = {
     // length: uncompressed entry size
     // method: store method (0 = PLAIN, 1 = DEFLATE, 2 = LZMA??)
-    execUpdate(net.diet_rich.util.Strings normalizeMultiline """
+    execUpdate(net.diet_rich.util.Strings normalizeMultiline f"""
       CREATE TABLE DataInfo (
         id     BIGINT PRIMARY KEY,
         length BIGINT NOT NULL,
         print  BIGINT NOT NULL,
-        hash   VARBINARY(%d) NOT NULL,
+        hash   VARBINARY(${zeroByteHash.value.size}%d) NOT NULL,
         method INTEGER DEFAULT 0 NOT NULL
       );
-    """ format zeroByteHash.value.size);
-    execUpdate("CREATE INDEX idxDataInfoDuplicates ON DataInfo(length, print, hash);")
-    execUpdate("CREATE INDEX idxDataInfoFastPrint ON DataInfo(length, print);")
-    execUpdate("INSERT INTO DataInfo (id, length, print, hash) VALUES (0, 0, ?, ?);", zeroBytePrint.value, zeroByteHash.value)
+    """)
+    execUpdate("CREATE INDEX idxDataInfoDuplicates ON DataInfo(length, print, hash)")
+    execUpdate("CREATE INDEX idxDataInfoFastPrint ON DataInfo(length, print)")
+    execUpdate("INSERT INTO DataInfo (id, length, print, hash) VALUES (0, 0, ?, ?)", zeroBytePrint.value, zeroByteHash.value)
   }
   
 //  def cleanupDuplicatesFromTree(connection: Connection) = {

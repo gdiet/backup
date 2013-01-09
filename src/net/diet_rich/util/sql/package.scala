@@ -49,7 +49,7 @@ package object sql {
       case (     x: Array[Byte],  index) => statement setObject (index+1, x)
       case (Some(x: Array[Byte]), index) => statement setObject (index+1, x)
       case (None, index) => statement setNull (index+1, statement.getParameterMetaData getParameterType (index+1))
-      case (e, _) => throw new IllegalArgumentException("setArguments does not support %s type arguments" format e.getClass.getCanonicalName)
+      case (e, _) => throw new IllegalArgumentException(s"setArguments does not support ${e.getClass.getCanonicalName} type arguments")
     })
     statement
   }
@@ -83,7 +83,7 @@ package object sql {
   private def execSingleRowUpdate(preparedStatement: PreparedStatement, args: Any*): Unit =
     setArguments(preparedStatement, args:_*).executeUpdate() match {
       case 1 => Unit
-      case n => throw new IllegalStateException("SQL update %s returned %s rows instead of 1".format(preparedStatement, n))
+      case n => throw new IllegalStateException(s"SQL update $preparedStatement returned $n rows instead of 1")
     }
     
   def execUpdate(command: String, args: Any*)(implicit connection: WrappedConnection): Int =

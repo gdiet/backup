@@ -78,7 +78,7 @@ package object io {
     using(new PrintWriter(file, "UTF-8")) { writer =>
       writer.write(
         settings
-        .map{case (key, value) => "%s = %s" format (key, value)}
+        .map{case (key, value) => s"$key = $value"}
         .mkString("\n")
       )
     }

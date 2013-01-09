@@ -28,6 +28,6 @@ object Repository {
   val dataSizeKey = "data size"
     
   def getConnection(basedir: File): WrappedConnection = new Object {
-    val con = DBConnection.forH2("%s/%s/%s" format (basedir, dbDirName, dbFileName))
+    val con = DBConnection.forH2(s"$basedir/$dbDirName/$dbFileName")
   }
 }

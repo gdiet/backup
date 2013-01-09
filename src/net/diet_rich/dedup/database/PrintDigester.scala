@@ -32,8 +32,8 @@ object CrcAdler8192 {
   def zeroBytesPrint = calculatePrint(Array(), 0, 0)
   
   def calculatePrint(bytes: Array[Byte], offset: Int, length: Int): Print = {
-    assume (length > -1, "length must not be negative but is %s" format length)
-    assume (offset + length <= bytes.length, "offset %s + length %s must be less or equal byte array length %s" format (offset, length, bytes.length))
+    assume (length > -1, s"length must not be negative but is $length")
+    assume (offset + length <= bytes.length, s"offset $offset + length $length must be less or equal byte array length ${bytes.length}")
     
     val crc = new java.util.zip.CRC32
     val adler = new java.util.zip.Adler32

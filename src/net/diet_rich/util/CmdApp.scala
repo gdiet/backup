@@ -16,12 +16,12 @@ trait CmdApp {
     try {
       val defaults = paramData.map(_._1).toMap
       val opts = defaults ++ Args.toMap(args)
-      require(opts.keySet == defaults.keySet, "Unexpected parameter(s): %s" format (opts.keySet -- defaults.keySet).mkString(" / "))
+      require(opts.keySet == defaults.keySet, s"Unexpected parameter(s): ${(opts.keySet -- defaults.keySet).mkString(" / ")}")
       code(opts)
       true
     } catch {
       case e: Throwable =>
-        println("%s\n\n%s\n%s" format (usage, e, e.getStackTraceString))
+        println(s"$usage\n\n$e\n${e.getStackTraceString}")
         false
     }
   }

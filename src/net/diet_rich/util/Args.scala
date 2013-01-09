@@ -5,7 +5,7 @@ package net.diet_rich.util
 
 object Args {
   def toMap(args: Array[String]): Map[String, String] = {
-    require(args.length % 2 == 0, "args must be key/value pairs (number of args found: %s)" format args.length)
+    require(args.length % 2 == 0, s"args must be key/value pairs (number of args found: ${args.length})")
     args.sliding(2, 2).map(e => e(0) -> e(1)).toMap
   }
 }

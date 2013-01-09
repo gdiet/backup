@@ -9,7 +9,7 @@ object DBConnection {
   def forH2(dbpath: String): Connection = {
     // Connection is closed by H2's built-in shutdown hook when VM exits normally.
     Class forName "org.h2.Driver"
-    val connection = DriverManager getConnection("jdbc:h2:%s" format dbpath, "sa", "")
+    val connection = DriverManager getConnection(s"jdbc:h2:$dbpath", "sa", "")
     connection setAutoCommit true
     connection
   }

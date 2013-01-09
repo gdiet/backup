@@ -23,15 +23,15 @@ object Create extends CmdApp {
   def create(opts: Map[String, String]): Unit = {
     val repositoryFolder = new File(opts(REPOSITORY))
     val dataSize = opts(DATASIZE).toLong
-    require(repositoryFolder.isDirectory(), "Repository folder %s must be an existing directory" format repositoryFolder)
-    require(repositoryFolder.list.isEmpty, "Repository folder %s must be empty" format repositoryFolder)
+    require(repositoryFolder.isDirectory(), s"Repository folder $repositoryFolder must be an existing directory")
+    require(repositoryFolder.list.isEmpty, s"Repository folder $repositoryFolder must be empty")
     val hashAlgorithm = opts(HASH)
     val repositorySettings = Map(
       Repository.repositoryVersionKey -> Repository.repositoryVersion,
       Repository.hashKey -> Hashes.checkAlgorithm(hashAlgorithm),
       Repository.dataSizeKey -> dataSize.toString
     )
-    require(repositoryFolder.child(Repository.dbDirName).mkdir(), "Could not create database folder %s" format Repository.dbDirName)
+    require(repositoryFolder.child(Repository.dbDirName).mkdir(), s"Could not create database folder ${Repository.dbDirName}")
     writeSettingsFile(repositoryFolder.child(Repository.settingsFileName), repositorySettings)
     
     implicit val connection = Repository.getConnection(repositoryFolder)

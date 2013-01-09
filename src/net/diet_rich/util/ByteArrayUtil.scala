@@ -6,7 +6,7 @@ package net.diet_rich.util
 object ByteArrayUtil {
 
   def readLong(data: Array[Byte], start: Int): Long = {
-    assume(start <= data.length - 8, "read position %s must not be behind size-8 ($%s)" format (start, data.length - 8))
+    assume(start <= data.length - 8, s"read position $start must not be behind size-8 (${data.length - 8})")
     (data(start+0).toLong & 0xff) <<  0 |
     (data(start+1).toLong & 0xff) <<  8 |
     (data(start+2).toLong & 0xff) << 16 |
@@ -18,7 +18,7 @@ object ByteArrayUtil {
   }
 
   def writeLong(data: Array[Byte], start: Int, value: Long) = {
-    assume(start <= data.length - 8, "write position %s must not be behind size-8 ($%s)" format (start, data.length - 8))
+    assume(start <= data.length - 8, s"write position $start must not be behind size-8 (${data.length - 8})")
     data(start+0) = (value >>  0).toByte
     data(start+1) = (value >>  8).toByte
     data(start+2) = (value >> 16).toByte
