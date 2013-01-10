@@ -43,11 +43,12 @@ trait PooledBackupControl extends BackupControl[FileSource] {
   val tasks = new java.util.concurrent.atomic.AtomicInteger(0)
   val tasksLock = new java.util.concurrent.Semaphore(1)
   protected def executeInThreadPool(f: => Unit): Unit = {
-    if (tasks.incrementAndGet == 1)
+    if (tasks.incrementAndGet == 1) {
       if (!tasksLock.tryAcquire()) {
         tasks.decrementAndGet
         throw new IllegalStateException("could not aquire tasks lock")
       }
+    }
     pool.execute(new Runnable { def run: Unit = try { f } finally {
       if (tasks.decrementAndGet == 0) tasksLock.release
     } })
@@ -56,7 +57,7 @@ trait PooledBackupControl extends BackupControl[FileSource] {
     try { f } catch { case e: Throwable => println(e) }
   def shutdown = {
     tasksLock.acquire
-    if (!(tasks.get == 0)) throw new IllegalStateException("not all tasks have been released")
+    if (!(tasks.get == 0)) throw new IllegalStateException("not all tasks have been released, count is ${tasks.get}")
     pool.shutdown
     pool.awaitTermination(1, java.util.concurrent.TimeUnit.DAYS)
   }
