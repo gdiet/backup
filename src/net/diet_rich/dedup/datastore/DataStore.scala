@@ -19,6 +19,12 @@ class DataStore(baseDir: File, dataSize: Size) { import DataStore._
 
   private val dataFiles = collection.mutable.Map[String, (RandomAccessFile, Int)]()
 
+  private def closeSurplusFiles: Unit = if (dataFiles.size > concurrentDataFiles)
+    dataFiles.find { case (_, (_, 0)) => true; case _ => false }
+    .foreach { case (dataPath, (dataFile, 0)) =>
+      dataFile.close(); dataFiles.remove(dataPath)
+    }
+  
   @annotation.tailrec
   final def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = {
     val dataPath = path(position)
@@ -29,8 +35,8 @@ class DataStore(baseDir: File, dataSize: Size) { import DataStore._
           (new RandomAccessFile(file(dataPath), "rw"), 0)
         }
       assume (count >= 0, s"usage count for dataFile $dataPath is negative")
-      // FIXME clean up if too many files are open
       dataFiles.put(dataPath, (dataFile, count+1))
+      closeSurplusFiles
       dataFile
     }
     val dataOffset = position.value % dataSize.value
