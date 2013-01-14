@@ -31,7 +31,7 @@ class FreeRanges(implicit connection: WrappedConnection) {
   // Emit warning and free the space?
   
   // Note: Initially, needs at least an "empty" entry in table.
-  private val blockSize = Size(32000000)
+  private val blockSize = Size(32000000) // FIXME use data file size
   private val startOfFreeArea = execQuery("SELECT MAX(fin) FROM ByteStore")(_ long 1).next
   private val queue = new scala.collection.mutable.PriorityQueue[DataRange]()
   
@@ -107,11 +107,12 @@ trait ByteStoreDB {
     (id, writeStep(freeRanges.next, 0, Size(0)))
   }
 
+  // FIXME can be massively simplified if we know the data come in the right chunks
   private def writeRange(id: DataEntryID, index: Int, reader: Reader, range: DataRange): DataRange = {
     val bytes = new Array[Byte](32768)
     @annotation.tailrec
     def writeStep(range: DataRange, offsetInArray: Position, dataInArray: Size, alreadyRead: Size): Size = {
-      if (range.length == 0) {
+      if (range.length == Size(0)) {
         alreadyRead
       } else if (dataInArray == Size(0)) {
         val bytesToRead = if (range.length < Size(bytes.length)) range.length.value.toInt else bytes.length
@@ -121,7 +122,7 @@ trait ByteStoreDB {
         }
       } else {
         writeToStore(range.start, bytes, offsetInArray, dataInArray)
-        writeStep(range.withOffset(offsetInArray asSize), Position(0), Size(0), alreadyRead)
+        writeStep(range.withOffset(dataInArray), Position(0), Size(0), alreadyRead)
       }
     }
     val size = writeStep(range, Position(0), Size(0), Size(0))

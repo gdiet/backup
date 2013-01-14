@@ -54,7 +54,7 @@ trait PrintMatchCheck[SourceType <: TreeSource[SourceType]] {
   
   protected def processMatchingTimeAndSize(source: SourceType, target: TreeEntryID, referenceData: FullDataInformation) =
     using(source.reader) { reader =>
-      fs.dig.calculatePrintAndReset(reader) match {
+      fs.dig.calculatePrint(reader) match {
         case referenceData.print => fs.setData(target, referenceData.time, referenceData.dataid)
         case print => storeData(source, target, reader, print)
       }
@@ -69,7 +69,7 @@ trait StoreData[SourceType <: TreeSource[SourceType]] {
   protected def fs: BackupFileSystem
   
   protected def storeData(source: SourceType, target: TreeEntryID): Unit = using(source.reader) { reader =>
-    storeData(source, target, reader, fs.dig.calculatePrintAndReset(reader))
+    storeData(source, target, reader, fs.dig.calculatePrint(reader))
   }
   
   protected def storeData(source: SourceType, target: TreeEntryID, reader: SeekReader, print: Print): Unit =
@@ -79,6 +79,7 @@ trait StoreData[SourceType <: TreeSource[SourceType]] {
       storeFromReader(source, target, reader)
 
   private def cacheWhileCalcuatingHash(source: SourceType, target: TreeEntryID, reader: SeekReader): Unit = {
+    reader.seek(0)
     // here, further optimization is possible: If a file is too large to cache,
     // we could at least cache the start of the file. This would of course lead
     // to more complicated hash calculations.
@@ -100,7 +101,6 @@ trait StoreData[SourceType <: TreeSource[SourceType]] {
         storeFromBytesRead(source, target, bytes, print, size, hash)
       case (None, _) =>
         // not yet known, not fully cached, re-read fully
-        reader.seek(0)
         storeFromReader(source, target, reader)
       case (dataid, _) =>
         // already known

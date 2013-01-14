@@ -6,32 +6,33 @@ package net.diet_rich.dedup.database
 import net.diet_rich.util.io._
 
 trait PrintDigester {
-  def calculatePrintAndReset(reader: SeekReader): Print
+  def calculatePrint(reader: SeekReader): Print
   def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType)
 }
 
 trait CrcAdler8192 extends PrintDigester { import CrcAdler8192._
   private val area = 8192
   
-  def calculatePrintAndReset(reader: SeekReader): Print = {
+  def calculatePrint(reader: SeekReader): Print = {
     val data = new Array[Byte](area)
     val size = fillFrom(reader, data, 0, area)
-    calculatePrint(data, 0, size)
+    reader.seek(0)
+    calculate(data, 0, size)
   }
   
   def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType) = {
     val data = new Array[Byte](area)
     val size = fillFrom(input, data, 0, area)
-    val print = calculatePrint(data, 0, size)
+    val print = calculate(data, 0, size)
     val paritionedInput = prependArray(data, 0, size, input)
     (print, reader(paritionedInput))
   }
 }
 
 object CrcAdler8192 {
-  def zeroBytesPrint = calculatePrint(Array(), 0, 0)
+  def zeroBytesPrint = calculate(Array(), 0, 0)
   
-  def calculatePrint(bytes: Array[Byte], offset: Int, length: Int): Print = {
+  def calculate(bytes: Array[Byte], offset: Int, length: Int): Print = {
     assume (length > -1, s"length must not be negative but is $length")
     assume (offset + length <= bytes.length, s"offset $offset + length $length must be less or equal byte array length ${bytes.length}")
     
