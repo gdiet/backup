@@ -13,7 +13,7 @@ import net.diet_rich.dedup.datastore.DataStore
 class Repository(val basedir: File) { import Repository._
   val settings = readSettingsFile(basedir.child(settingsFileName))
   val digesters = new HashDigester(settings(hashKey)) with Digesters with CrcAdler8192
-  val dataStore = new DataStore(basedir.child(DataStore.dirName), Size(settings(dataSizeKey).toLong))
+  val dataStore = new DataStore(basedir, Size(settings(dataSizeKey).toLong))
   val fs: BackupFileSystem = new BackupFileSystem(digesters, dataStore)(getConnection(basedir))
 }
 object Repository {
