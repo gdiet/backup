@@ -8,7 +8,7 @@ import java.util.concurrent.Semaphore
 import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
 
-class DataStore(baseDir: File, dataSize: Size) { import DataStore._
+class DataStore(baseDir: File, val dataSize: Size) { import DataStore._
   private def path(position: Position) = {
     val fileIndex = position.value / dataSize.value
     f"$fileIndex%010X".grouped(2).mkString("/")
@@ -18,12 +18,17 @@ class DataStore(baseDir: File, dataSize: Size) { import DataStore._
     baseDir.child(dirName).child(dataPath)
 
   private val dataFiles = collection.mutable.Map[String, (RandomAccessFile, Int)]()
+  private val fileQueue = collection.mutable.Queue[String]()
 
-  private def closeSurplusFiles: Unit = if (dataFiles.size > concurrentDataFiles)
-    dataFiles.find { case (_, (_, 0)) => true; case _ => false }
-    .foreach { case (dataPath, (dataFile, 0)) =>
-      dataFile.close(); dataFiles.remove(dataPath)
+  private def closeSurplusFiles: Unit = if (fileQueue.size > concurrentDataFiles) {
+    val dataPath = fileQueue.dequeue
+    if (dataFiles(dataPath)._2 == 0) {
+      dataFiles(dataPath)._1.close()
+      dataFiles.remove(dataPath)
+    } else {
+      fileQueue.enqueue(dataPath)
     }
+  }
   
   @annotation.tailrec
   final def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = {
@@ -31,6 +36,7 @@ class DataStore(baseDir: File, dataSize: Size) { import DataStore._
     val dataFile = dataFiles.synchronized {
       val (dataFile, count) =
         dataFiles.get(dataPath).getOrElse {
+          fileQueue.enqueue(dataPath)
           file(dataPath).getParentFile.mkdirs
           (new RandomAccessFile(file(dataPath), "rw"), 0)
         }
@@ -64,6 +70,6 @@ class DataStore(baseDir: File, dataSize: Size) { import DataStore._
 
 object DataStore {
   val dirName = "data"
-  val concurrentDataFiles = 20
+  val concurrentDataFiles = 15
   val headerBytes = 16
 }
