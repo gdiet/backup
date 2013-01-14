@@ -22,7 +22,7 @@ object DataRange {
   val emptyRange = DataRange(Position(0), Position(0))
 }
 
-class FreeRanges(implicit connection: WrappedConnection) {
+class FreeRanges(blockSize: Size)(implicit connection: WrappedConnection) {
   // EVENTUALLY, it would be good to look for illegal overlaps:
   // SELECT * FROM ByteStore b1 JOIN ByteStore b2 ON b1.start < b2.fin AND b1.fin > b2.fin
   // Illegal overlaps should be ignored during free space detection
@@ -31,7 +31,6 @@ class FreeRanges(implicit connection: WrappedConnection) {
   // Emit warning and free the space?
   
   // Note: Initially, needs at least an "empty" entry in table.
-  private val blockSize = Size(32000000) // FIXME use data file size
   private val startOfFreeArea = execQuery("SELECT MAX(fin) FROM ByteStore")(_ long 1).next
   private val queue = new scala.collection.mutable.PriorityQueue[DataRange]()
   
@@ -66,7 +65,7 @@ class FreeRanges(implicit connection: WrappedConnection) {
 trait ByteStoreDB {
   implicit def connection: WrappedConnection
   
-  private val freeRanges = new FreeRanges
+  private val freeRanges = new FreeRanges(ds.dataSize)
 
   private val maxEntryId =
     SqlDBUtil.readAsAtomicLong(
@@ -135,6 +134,7 @@ trait ByteStoreDB {
   
   // implemented in other pieces of cake
   def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit
+  val ds: net.diet_rich.dedup.datastore.DataStore
 }
 
 object ByteStoreDB {
