@@ -19,14 +19,14 @@ class DataStore(baseDir: File, val dataSize: Size) { import DataStore._
   private val dataFiles = collection.mutable.Map[String, DataFile]()
   private val fileQueue = collection.mutable.Queue[String]()
 
-  private def newDataFile(pathInDir: String) = {
-    val file = new DataFile(dataFile(pathInDir))
+  private def newDataFile(position: Position, pathInDir: String) = {
+    val file = new DataFile(position, dataFile(pathInDir))
     dataFiles.put(pathInDir, file)
     file
   }
 
-  private def acquireDataFile(pathInDir: String) = {
-    val file = dataFiles.get(pathInDir).getOrElse(newDataFile(pathInDir))
+  private def acquireDataFile(position: Position, pathInDir: String) = {
+    val file = dataFiles.get(pathInDir).getOrElse(newDataFile(position, pathInDir))
     file.acquire
     file
   }
@@ -54,7 +54,7 @@ class DataStore(baseDir: File, val dataSize: Size) { import DataStore._
   final def writeToSingleDataFile(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = {
     assume((position.value % dataSize.value) + size.value <= dataSize.value, f"position: $position / data size: $dataSize / size: $size")
     val path = pathInDataDir(position)
-    val file = synchronized(acquireDataFile(path))
+    val file = synchronized(acquireDataFile(position, path))
     try {
       closeSurplusFiles
       val dataOffset = position.value % dataSize.value + headerBytes
@@ -73,6 +73,6 @@ class DataStore(baseDir: File, val dataSize: Size) { import DataStore._
 
 object DataStore {
   val dirName = "data"
-  val concurrentDataFiles = 15
+  val concurrentDataFiles = 30
   val headerBytes = 16
 }

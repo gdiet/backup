@@ -7,4 +7,11 @@ package object util {
   implicit class EnhancedString(val value: String) extends AnyVal {
     def normalizeMultiline = Strings.normalizeMultiline(value)
   }
+  implicit class EnhancedLong(val value: Long) extends AnyVal {
+    def toByteArray = {
+      val data = new Array[Byte](8)
+      ByteArrayUtil.writeLong(data, 0, value)
+      data
+    }
+  }
 }
