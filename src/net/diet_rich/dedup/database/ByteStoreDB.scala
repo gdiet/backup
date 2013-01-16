@@ -53,8 +53,9 @@ class FreeRanges(blockSize: Size)(implicit connection: WrappedConnection) {
   def next: DataRange = queue.synchronized {
     val range = queue.dequeue()
     if (range.fin == Position(Long.MaxValue)) {
-      queue.enqueue(range.withOffset(blockSize))
-      range.withLength(blockSize)
+      val newLength = blockSize - Size(range.start.value % blockSize.value)
+      queue.enqueue(range.withOffset(newLength))
+      range.withLength(newLength)
     } else range
   }
   def enqueue(range: DataRange) = if (range.length > Size(0))
@@ -78,11 +79,11 @@ trait ByteStoreDB {
     def writeStep(index: Int, offset: Position, length: Size): Unit = if (length > Size(0)) {
       val range = freeRanges.next
       if (length > range.length) {
-        writeToStore(range.start, bytes, offset, range.length)
+        writeToSingleDataFile(range.start, bytes, offset, range.length)
         insertEntry(id.value, index, range.start.value, range.fin.value)
         writeStep(index + 1, offset + range.length, length - range.length)
       } else {
-        writeToStore(range.start, bytes, offset, length)
+        writeToSingleDataFile(range.start, bytes, offset, length)
         insertEntry(id.value, index, range.start.value, range.start.value + length.value)
         freeRanges.enqueue(range.withOffset(length))
       }
@@ -106,7 +107,6 @@ trait ByteStoreDB {
     (id, writeStep(freeRanges.next, 0, Size(0)))
   }
 
-  // FIXME can be massively simplified if we know the data come in the right chunks
   private def writeRange(id: DataEntryID, index: Int, reader: Reader, range: DataRange): DataRange = {
     val bytes = new Array[Byte](32768)
     @annotation.tailrec
@@ -120,12 +120,12 @@ trait ByteStoreDB {
           case read => writeStep(range, Position(0), Size(read), alreadyRead + Size(read))
         }
       } else {
-        writeToStore(range.start, bytes, offsetInArray, dataInArray)
+        writeToSingleDataFile(range.start, bytes, offsetInArray, dataInArray)
         writeStep(range.withOffset(dataInArray), Position(0), Size(0), alreadyRead)
       }
     }
     val size = writeStep(range, Position(0), Size(0), Size(0))
-    insertEntry(id.value, index, range.start.value, range.start.value + size.value)
+    if (size > Size(0)) insertEntry(id.value, index, range.start.value, range.start.value + size.value)
     range.withOffset(size)
   }
   protected final val insertEntry = 
@@ -133,7 +133,7 @@ trait ByteStoreDB {
 
   
   // implemented in other pieces of cake
-  def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit
+  def writeToSingleDataFile(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit
   val ds: net.diet_rich.dedup.datastore.DataStore
 }
 

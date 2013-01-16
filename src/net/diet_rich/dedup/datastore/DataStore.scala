@@ -51,13 +51,12 @@ class DataStore(baseDir: File, val dataSize: Size) { import DataStore._
     }
   }
   
-  // FIXME rename to show this should only write to one data file
-  final def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = {
+  final def writeToSingleDataFile(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = {
     assume((position.value % dataSize.value) + size.value <= dataSize.value, f"position: $position / data size: $dataSize / size: $size")
     val path = pathInDataDir(position)
     val file = synchronized(acquireDataFile(path))
     try {
-      // FIXME closeSurplusFiles
+      closeSurplusFiles
       val dataOffset = position.value % dataSize.value + headerBytes
       file.write(dataOffset, bytes, offset, size)
     } finally {
