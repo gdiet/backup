@@ -4,67 +4,71 @@
 package net.diet_rich.dedup.datastore
 
 import java.io._
-import java.util.concurrent.Semaphore
 import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
 
 class DataStore(baseDir: File, val dataSize: Size) { import DataStore._
-  private def path(position: Position) = {
-    val fileIndex = position.value / dataSize.value
-    f"$fileIndex%010X".grouped(2).mkString("/")
-  }
 
-  private def file(dataPath: String) =
-    baseDir.child(dirName).child(dataPath)
+  private val dataDir = baseDir.child(dirName)
+  
+  private def pathInDataDir(position: Position) =
+    f"${position.value / dataSize.value}%010X".grouped(2).mkString("/")
 
-  private val dataFiles = collection.mutable.Map[String, (RandomAccessFile, Int)]()
+  private def dataFile(pathInDir: String) = dataDir.child(pathInDir)
+
+  private val dataFiles = collection.mutable.Map[String, DataFile]()
   private val fileQueue = collection.mutable.Queue[String]()
 
-  private def closeSurplusFiles: Unit = if (fileQueue.size > concurrentDataFiles) {
-    val dataPath = fileQueue.dequeue
-    if (dataFiles(dataPath)._2 == 0) {
-      dataFiles(dataPath)._1.close()
-      dataFiles.remove(dataPath)
-    } else {
-      fileQueue.enqueue(dataPath)
+  private def newDataFile(pathInDir: String) = {
+    val file = new DataFile(dataFile(pathInDir))
+    dataFiles.put(pathInDir, file)
+    file
+  }
+
+  private def acquireDataFile(pathInDir: String) = {
+    val file = dataFiles.get(pathInDir).getOrElse(newDataFile(pathInDir))
+    file.acquire
+    file
+  }
+  
+  private def closeSurplusFiles = {
+    synchronized {
+      if (fileQueue.size > concurrentDataFiles) {
+        val path = fileQueue.dequeue
+        Some((path, dataFiles(path)))
+      } else None
+    } match {
+      case Some((path, file)) =>
+        file.closeIfUnused
+        synchronized { file.synchronized {
+          if (file.isClosedAndUnused)  {
+            dataFiles.remove(path)
+          } else {
+            fileQueue.enqueue(path)
+          }
+        } }
+      case _ => Unit
     }
   }
   
-  @annotation.tailrec
+  // FIXME rename to show this should only write to one data file
   final def writeToStore(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = {
-    val dataPath = path(position)
-    val dataFile = dataFiles.synchronized {
-      val (dataFile, count) =
-        dataFiles.get(dataPath).getOrElse {
-          fileQueue.enqueue(dataPath)
-          file(dataPath).getParentFile.mkdirs
-          (new RandomAccessFile(file(dataPath), "rw"), 0)
-        }
-      assume (count >= 0, s"usage count for dataFile $dataPath is negative")
-      dataFiles.put(dataPath, (dataFile, count+1))
-      closeSurplusFiles
-      dataFile
+    assume((position.value % dataSize.value) + size.value <= dataSize.value, f"position: $position / data size: $dataSize / size: $size")
+    val path = pathInDataDir(position)
+    val file = synchronized(acquireDataFile(path))
+    try {
+      // FIXME closeSurplusFiles
+      val dataOffset = position.value % dataSize.value + headerBytes
+      file.write(dataOffset, bytes, offset, size)
+    } finally {
+      file.release
     }
-    val dataOffset = position.value % dataSize.value
-    val bytesToCopy = Size(math.min(dataSize.value - dataOffset, size.value))
-    dataFile.synchronized{
-      dataFile.seek(dataOffset + headerBytes)
-      dataFile.write(bytes, offset.value toInt, bytesToCopy.value toInt)
-    }
-    dataFiles.synchronized {
-      val (dataFile, count) = dataFiles(dataPath)
-      dataFiles.put(dataPath, (dataFile, count-1))
-    }
-    if (bytesToCopy < size)
-      writeToStore(position + bytesToCopy, bytes, offset + bytesToCopy, size - bytesToCopy)
   }
   
-  def shutdown: Unit = dataFiles.synchronized {
-    dataFiles.foreach { case (dataPath, (dataFile, count)) =>
-      if (count != 0) throw new IllegalStateException(s"usage count for dataFile $dataPath is not zero but $count")
-      dataFile.close
-    }
+  def shutdown: Unit = synchronized {
+    dataFiles.values.foreach(_.close)
     dataFiles.clear
+    fileQueue.clear
   }
 }
 
