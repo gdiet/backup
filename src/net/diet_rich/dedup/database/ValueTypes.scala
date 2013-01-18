@@ -6,7 +6,10 @@ package net.diet_rich.dedup.database
 import net.diet_rich.util.vals.{AnyBase, ValueToString}
 
 class TreeEntryID(val value: Long) extends AnyBase with ValueToString
-object TreeEntryID { def apply(value: Long) = new TreeEntryID(value) }
+object TreeEntryID {
+  def apply(value: Long) = new TreeEntryID(value)
+  def apply(value: Option[Long]): Option[TreeEntryID] = value.map(TreeEntryID(_))
+}
 
 class DataEntryID(val value: Long) extends AnyBase with ValueToString
 object DataEntryID {

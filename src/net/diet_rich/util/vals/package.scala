@@ -8,6 +8,6 @@ package object vals {
   // workaround for https://issues.scala-lang.org/browse/SI-6943
   // use AnyRef here to look for equals problems
   // use AnyVal to have real value classes
-  type AnyBase = AnyRef
+  type AnyBase = AnyVal
 
 }
