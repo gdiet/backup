@@ -6,7 +6,7 @@ package net.diet_rich.dedup.database
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
-case class TreeEntry(id: TreeEntryID, name: String, time: Time, dataid: DataEntryID)
+case class TreeEntry(id: TreeEntryID, parent: TreeEntryID, name: String, time: Time, dataid: DataEntryID)
 
 trait TreeDB {
   implicit val connection: WrappedConnection
@@ -24,10 +24,18 @@ trait TreeDB {
   protected val addEntry = 
     prepareSingleRowUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?)")
 
+  /** @return The entry's data if any. */
+  def entry(id: TreeEntryID): Option[TreeEntry] =
+    queryEntry(id.value)(
+      r => TreeEntry(id, TreeEntryID(r long 1), r string 2, Time(r long 3), DataEntryID(r long 4))
+    ).nextOptionOnly
+  protected val queryEntry = 
+    prepareQuery("SELECT parent, name, time, dataid FROM TreeEntries WHERE id = ?")
+
   /** @return The child entry if any. */
   def child(parent: TreeEntryID, name: String): Option[TreeEntry] =
     queryChild(parent.value, name)(
-      r => TreeEntry(TreeEntryID(r long 1), name, Time(r long 2), DataEntryID(r long 3))
+      r => TreeEntry(TreeEntryID(r long 1), parent, name, Time(r long 2), DataEntryID(r long 3))
     ).nextOptionOnly
   protected val queryChild = 
     prepareQuery("SELECT id, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?")
@@ -35,14 +43,14 @@ trait TreeDB {
   /** @return The children, empty if no such node. */
   def children(parent: TreeEntryID): Iterable[TreeEntry] =
     queryChildren(parent.value)(
-      r => TreeEntry(TreeEntryID(r long 1), r string 2, Time(r long 3), DataEntryID(r long 4))
+      r => TreeEntry(TreeEntryID(r long 1), parent, r string 2, Time(r long 3), DataEntryID(r long 4))
     ).toSeq
   protected val queryChildren =
     prepareQuery("SELECT id, name, time, dataid FROM TreeEntries WHERE parent = ?")
     
   /** @return The node's complete data information if any. */
   def fullDataInformation(id: TreeEntryID): Option[FullDataInformation] =
-    queryFullDataInformation(id)(
+    queryFullDataInformation(id.value)(
       q => FullDataInformation(Time(q long 1), Size(q long 2), Print(q long 3), Hash(q bytes 4), DataEntryID(q longOption 5))
     ).nextOptionOnly
   protected val queryFullDataInformation = prepareQuery(
@@ -64,6 +72,14 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
   def childId(parent: TreeEntryID, name: String): Option[TreeEntryID] =
     child(parent, name).map(_.id)
   
+  def path(id: TreeEntryID): Option[Path] = {
+    if (id == ROOTID) Some(ROOTPATH) else {
+      entry(id) flatMap { entry =>
+        path(entry.parent).map(_ + SEPARATOR + entry.name)
+      }
+    }
+  }
+    
   /** @return The entry ID. Missing path elements are created on the fly. */
   def getOrMake(path: Path): TreeEntryID = if (path == ROOTPATH) ROOTID else {
     assume(path.value.startsWith(SEPARATOR), s"Path <$path> is not root and does not start with '$SEPARATOR'")
