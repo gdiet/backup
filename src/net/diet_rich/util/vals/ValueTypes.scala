@@ -8,7 +8,7 @@ trait ValueToString extends Any {
   override def toString() = value.toString
 }
 
-class Size(val value: Long) extends AnyVal with ValueToString {
+class Size(val value: Long) extends AnyBase with ValueToString {
   def +  (other: Size): Size     = Size(value + other.value)
   def -  (other: Size): Size     = Size(value - other.value)
   def <  (other: Size): Boolean  = value <  other.value
@@ -18,7 +18,7 @@ class Size(val value: Long) extends AnyVal with ValueToString {
 }
 object Size { def apply(value: Long) = new Size(value) }
 
-class Position(val value: Long) extends AnyVal with ValueToString {
+class Position(val value: Long) extends AnyBase with ValueToString {
   def +  (other: Size): Position     = Position(value + other.value)
   def -  (other: Position): Size     = Size(value - other.value)
   def >  (other: Position): Boolean  = value >  other.value
@@ -29,5 +29,5 @@ class Position(val value: Long) extends AnyVal with ValueToString {
 }
 object Position { def apply(value: Long) = new Position(value) }
 
-class Time(val value: Long) extends AnyVal with ValueToString
+class Time(val value: Long) extends AnyBase with ValueToString
 object Time { def apply(value: Long) = new Time(value) }
