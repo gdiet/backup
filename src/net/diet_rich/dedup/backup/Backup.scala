@@ -27,11 +27,15 @@ object Backup extends CmdApp {
     val reference = opts(DIFFERENTIAL) match {
       case "" => None
       case e => repository.fs.entry(Path(e)) match {
-        case None => throw new IllegalArgumentException("No path '%s' in repository for differential backup")
+        case None => throw new IllegalArgumentException("No path ${opts(DIFFERENTIAL)} in repository for differential backup")
         case id => id
       }
     }
     val target = repository.fs.getOrMake(Path(opts(TARGET)))
+    if (!repository.fs.children(target).isEmpty)
+      throw new IllegalArgumentException("Target folder ${opts(TARGET)} is not empty")
+    if (!repository.fs.fullDataInformation(target).isEmpty)
+      throw new IllegalArgumentException("Target ${opts(TARGET)} is a file, not a folder")
     
     val processor =
       new TreeHandling[FileSource] 
