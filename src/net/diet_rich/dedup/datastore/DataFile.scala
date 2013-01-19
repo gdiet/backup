@@ -42,24 +42,21 @@ class DataFile(position: Position, val path: File) {
     file.get
   }
   
-  def write(position: Long, bytes: Array[Byte], offset: Position, size: Size) = synchronized {
+  private def readWrite[Result](func: RandomAccessFile => Result)(position: Long, bytes: Array[Byte], offset: Position, size: Size): Result = synchronized {
     assume(usageCount >= 1)
     assume(offset.value <= Int.MaxValue)
     assume(size.value <= Int.MaxValue)
-    val out = file.getOrElse(initializeFileReadWrite)
-    out.seek(position)
-    out.write(bytes, offset.value toInt, size.value toInt)
+    val randomAccessFile = file.getOrElse(initializeFileReadOnly)
+    randomAccessFile.seek(position)
+    func(randomAccessFile)
   }
-
-  def read(position: Long, bytes: Array[Byte], offset: Position, size: Size): Int = synchronized {
-    assume(usageCount >= 1)
-    assume(offset.value <= Int.MaxValue)
-    assume(size.value <= Int.MaxValue)
-    val in = file.getOrElse(initializeFileReadOnly)
-    in.seek(position)
-    fillFrom(in, bytes, offset.value toInt, size.value toInt)
-  }
-
+  
+  def write(position: Long, bytes: Array[Byte], offset: Position, size: Size) =
+    readWrite(_.write(bytes, offset.value toInt, size.value toInt))(position, bytes, offset, size)
+    
+  def read(position: Long, bytes: Array[Byte], offset: Position, size: Size): Int =
+    readWrite(fillFrom(_, bytes, offset.value toInt, size.value toInt))(position, bytes, offset, size)
+    
   def closeIfUnused = synchronized {
     assume(usageCount == 0)
     if (!isInUse) close

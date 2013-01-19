@@ -50,20 +50,26 @@ class DataStore(baseDir: File, val dataSize: Size) { import DataStore._
       case _ => Unit
     }
   }
-  
-  final def writeToSingleDataFile(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = {
+
+  private def readWrite[Result](func: (DataFile, Long) => Result)(position: Position, bytes: Array[Byte], offset: Position, size: Size): Result = {
     assume((position.value % dataSize.value) + size.value <= dataSize.value, f"position: $position / data size: $dataSize / size: $size")
     val path = pathInDataDir(position)
     val file = synchronized(acquireDataFile(position, path))
     try {
       closeSurplusFiles
       val dataOffset = position.value % dataSize.value + headerBytes
-      file.write(dataOffset, bytes, offset, size)
+      func(file, dataOffset)
     } finally {
       file.release
     }
   }
   
+  final def writeToSingleDataFile(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit =
+    readWrite((file, dataOffset) => file.write(dataOffset, bytes, offset, size))(position, bytes, offset, size)
+
+  final def readFromSingleDataFile(position: Position, bytes: Array[Byte], offset: Position, size: Size): Int =
+    readWrite((file, dataOffset) => file.read(dataOffset, bytes, offset, size))(position, bytes, offset, size)
+    
   def shutdown: Unit = synchronized {
     dataFiles.values.foreach(_.close)
     dataFiles.clear
