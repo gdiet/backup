@@ -51,24 +51,25 @@ class DataStore(baseDir: File, val dataSize: Size) { import DataStore._
     }
   }
 
-  private def readWrite[Result](func: (DataFile, Long) => Result)(position: Position, bytes: Array[Byte], offset: Position, size: Size): Result = {
-    assume((position.value % dataSize.value) + size.value <= dataSize.value, f"position: $position / data size: $dataSize / size: $size")
-    val path = pathInDataDir(position)
-    val file = synchronized(acquireDataFile(position, path))
-    try {
-      closeSurplusFiles
-      val dataOffset = position.value % dataSize.value + headerBytes
-      func(file, dataOffset)
-    } finally {
-      file.release
+  private def readWrite[Result](func: (DataFile, Long, Array[Byte], Position, Size) => Result)
+    (position: Position, bytes: Array[Byte], offset: Position, size: Size): Result = {
+      assume((position.value % dataSize.value) + size.value <= dataSize.value, f"position: $position / data size: $dataSize / size: $size")
+      val path = pathInDataDir(position)
+      val file = synchronized(acquireDataFile(position, path))
+      try {
+        closeSurplusFiles
+        val dataOffset = position.value % dataSize.value + headerBytes
+        func(file, dataOffset, bytes, offset, size)
+      } finally {
+        file.release
+      }
     }
-  }
   
-  final def writeToSingleDataFile(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit =
-    readWrite((file, dataOffset) => file.write(dataOffset, bytes, offset, size))(position, bytes, offset, size)
+  final def writeToSingleDataFile =
+    readWrite((file, dataOffset, bytes, offset, size) => file.write(dataOffset, bytes, offset, size)) _
 
-  final def readFromSingleDataFile(position: Position, bytes: Array[Byte], offset: Position, size: Size): Int =
-    readWrite((file, dataOffset) => file.read(dataOffset, bytes, offset, size))(position, bytes, offset, size)
+  final def readFromSingleDataFile =
+    readWrite((file, dataOffset, bytes, offset, size) => file.read(dataOffset, bytes, offset, size)) _
     
   def shutdown: Unit = synchronized {
     dataFiles.values.foreach(_.close)
