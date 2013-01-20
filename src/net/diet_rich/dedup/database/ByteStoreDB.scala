@@ -72,18 +72,39 @@ trait ByteStoreDB {
     SqlDBUtil.readAsAtomicLong(
       "SELECT GREATEST((SELECT MAX(id) FROM DataInfo), (SELECT MAX(dataid) FROM ByteStore))"
     )
-  
+
+  def read(dataId: DataEntryID): ByteSource = new Object {
+    val parts = selectEntryParts(dataId.value)(r => DataRange(Position(r long 1), Position(r long 2)))
+    var rangeOpt: Option[DataRange] = None
+    def read(bytes: Array[Byte], offset: Int, length: Int): Int =
+      if (rangeOpt.isEmpty || rangeOpt.get.isEmpty) {
+        if (!parts.hasNext) 0 else {
+          rangeOpt = Some(parts.next)
+          read(bytes, offset, length)
+        }
+      } else {
+        val range = rangeOpt.get
+        assume(range.length.value <= Int.MaxValue)
+        val bytesToRead = Size(math.min(range.length.value, length))
+        val read = ds.readFromSingleDataFile(range.start, bytes, Position(offset), bytesToRead)
+        rangeOpt = Some(range.withOffset(Size(read)))
+        read
+      }
+  }
+  protected final val selectEntryParts = 
+    prepareQuery("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY index ASC")
+    
   def storeAndGetDataId(bytes: Array[Byte], size: Size): DataEntryID = {
     val id = DataEntryID(maxEntryId incrementAndGet())
     @annotation.tailrec
     def writeStep(index: Int, offset: Position, length: Size): Unit = if (length > Size(0)) {
       val range = freeRanges.next
       if (length > range.length) {
-        writeToSingleDataFile(range.start, bytes, offset, range.length)
+        ds.writeToSingleDataFile(range.start, bytes, offset, range.length)
         insertEntry(id.value, index, range.start.value, range.fin.value)
         writeStep(index + 1, offset + range.length, length - range.length)
       } else {
-        writeToSingleDataFile(range.start, bytes, offset, length)
+        ds.writeToSingleDataFile(range.start, bytes, offset, length)
         insertEntry(id.value, index, range.start.value, range.start.value + length.value)
         freeRanges.enqueue(range.withOffset(length))
       }
@@ -120,7 +141,7 @@ trait ByteStoreDB {
           case read => writeStep(range, Position(0), Size(read), alreadyRead + Size(read))
         }
       } else {
-        writeToSingleDataFile(range.start, bytes, offsetInArray, dataInArray)
+        ds.writeToSingleDataFile(range.start, bytes, offsetInArray, dataInArray)
         writeStep(range.withOffset(dataInArray), Position(0), Size(0), alreadyRead)
       }
     }
@@ -131,10 +152,8 @@ trait ByteStoreDB {
   protected final val insertEntry = 
     prepareSingleRowUpdate("INSERT INTO ByteStore (dataid, index, start, fin) VALUES (?, ?, ?, ?)")
 
-  
   // implemented in other pieces of cake
-  def writeToSingleDataFile(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit
-  val ds: net.diet_rich.dedup.datastore.DataStore
+  protected val ds: net.diet_rich.dedup.datastore.DataStore
 }
 
 object ByteStoreDB {
