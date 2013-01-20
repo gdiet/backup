@@ -99,11 +99,11 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
   }
 
   /** @return The entry or None if no such entry. */
-  def entry(path: Path): Option[TreeEntryID] = if (path == ROOTPATH) Some(ROOTID) else {
+  def entry(path: Path): Option[TreeEntry] = if (path == ROOTPATH) entry(ROOTID) else {
     assume(path.value.startsWith(SEPARATOR), s"Path <$path> is not root and does not start with '$SEPARATOR'")
     val parts = path.value.split(SEPARATOR).drop(1)
-    parts.foldLeft(Option(ROOTID)) {(node, childName) =>
-      node.flatMap(children(_).find(_.name == childName)).map(_.id)
+    parts.foldLeft(entry(ROOTID)) {(node, childName) =>
+      node.flatMap(node => children(node.id).find(_.name == childName))
     }
   }
 }

@@ -8,6 +8,7 @@ import scala.annotation.tailrec
 
 package object io {
   type ByteSource = { def read(bytes: Array[Byte], offset: Int, length: Int): Int }
+  type ByteSink = { def write(bytes: Array[Byte], offset: Int, length: Int): Unit }
   type Closeable = { def close(): Unit }
   type Seekable = { def seek(pos: Long): Unit }
   type Reader = ByteSource with Closeable
@@ -32,7 +33,7 @@ package object io {
     }
     readRecurse(offset) - offset
   }
-  
+
   def readAndDiscardAll(input: ByteSource) : Long = {
     val buffer = new Array[Byte](8192)
     @tailrec
@@ -98,11 +99,27 @@ package object io {
         case n => n
       }
   }
-  
+
   implicit class EnhancedFile(val value: File) extends AnyVal {
     def child(child: String): File = new File(value, child)
     def erase: Boolean = (
       if (value.isDirectory()) value.listFiles.forall(_.erase) else true
     ) && value.delete
+  }
+  
+  implicit class EnhancedByteSource(val value: ByteSource) extends AnyVal {
+    def copyTo(sink: ByteSink) = {
+      val bytes = new Array[Byte](32768)
+      @annotation.tailrec
+      def recurse: Unit = {
+        value.read(bytes, 0, bytes.length) match {
+          case n if (n < 1) =>
+            sink.write(bytes, 0, n)
+            recurse
+          case _ => Unit
+        }
+      }
+      recurse
+    }
   }
 }

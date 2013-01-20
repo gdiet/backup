@@ -12,8 +12,8 @@ trait TreeHandling[SourceType <: TreeSource[SourceType]] {
 
   protected def fs: BackupFileSystem
   
-  def backup(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): Unit =
-    processSourceEntry(source, parent, reference)
+  def backup(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntry]): Unit =
+    processSourceEntry(source, parent, reference.map(_.id))
 
   private def processSourceEntry(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): Unit =
     catchAndHandleException(source) {
@@ -41,8 +41,7 @@ trait TreeHandling[SourceType <: TreeSource[SourceType]] {
   protected def storeData(source: SourceType, target: TreeEntryID)
 }
 
-trait NoPrintMatchCheck {
-  type SourceType
+trait NoPrintMatchCheck[SourceType] {
   protected def fs: BackupFileSystem
   
   protected def processMatchingTimeAndSize(source: SourceType, target: TreeEntryID, referenceData: FullDataInformation) =
@@ -59,6 +58,16 @@ trait PrintMatchCheck[SourceType <: TreeSource[SourceType]] {
         case print => storeData(source, target, reader, print)
       }
     }
+
+  // implemented in other pieces of algorithm cake
+  protected def storeData(source: SourceType, target: TreeEntryID, reader: SeekReader, print: Print): Unit
+}
+
+trait IgnorePrintMatch[SourceType <: TreeSource[SourceType]] {
+  protected def fs: BackupFileSystem
+  
+  protected def processMatchingTimeAndSize(source: SourceType, target: TreeEntryID, referenceData: FullDataInformation) =
+    using(source.reader) { reader => storeData(source, target, reader, fs.dig.calculatePrint(reader)) }
 
   // implemented in other pieces of algorithm cake
   protected def storeData(source: SourceType, target: TreeEntryID, reader: SeekReader, print: Print): Unit

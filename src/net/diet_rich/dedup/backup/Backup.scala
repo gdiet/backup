@@ -15,7 +15,7 @@ object Backup extends CmdApp {
   val paramData = Seq(
     SOURCE -> "." -> "[%s <directory>] Source file or folder to store, default '%s'",
     REPOSITORY -> "" -> "[%s <directory>] Mandatory: Repository location",
-    TARGET -> "" -> "[%s <path>] Mandatory: Target folder in repository",
+    TARGET -> "" -> "[%s <path>] Mandatory: Target folder in repository (must be empty if exists)",
     DIFFERENTIAL -> "" -> "[%s <path>] Base folder for differential backup in repository"
   )
 
@@ -42,7 +42,9 @@ object Backup extends CmdApp {
 //      with SimpleBackupControl
       with PooledBackupControl
       with SimpleMemoryManager
+//      with NoPrintMatchCheck[FileSource]
       with PrintMatchCheck[FileSource]
+//      with IgnorePrintMatch[FileSource]
       with StoreData[FileSource] {
         val fs = repository.fs
       }

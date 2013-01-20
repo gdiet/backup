@@ -11,7 +11,7 @@ object FtpServer extends CmdApp {
 
   def main(args: Array[String]): Unit = run(args)(backup)
   
-  val usageHeader = "Stores a file or folder in the dedup repository. "
+  val usageHeader = "Runs an FTP server for the dedup repository, account user/user. "
   val paramData = Seq(
     REPOSITORY -> "" -> "[%s <directory>] Mandatory: Repository location"
   )
