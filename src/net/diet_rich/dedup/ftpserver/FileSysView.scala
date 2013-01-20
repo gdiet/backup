@@ -1,4 +1,3 @@
-// Copyright (c) Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.ftpserver
@@ -8,6 +7,8 @@ import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.repository.Repository
 import org.apache.ftpserver.ftplet._
 import scala.collection.JavaConversions
+import java.io.IOException
+import java.io.FileNotFoundException
 
 object Helpers {
   def log(msg: String) = System.err.println(msg)
@@ -19,12 +20,14 @@ object Helpers {
 }
 
 class FileSysView(repository: Repository) extends FileSystemView {
+  log("creating file system view")
   
   var workingDirectory = getHomeDirectory
 
   def resolvePath(path: String): Option[RepoFile] = {
-    def cdTo(currentDir: RepoFile, path: List[String]): Option[RepoFile] = {
-      path match {
+    def cdTo(currentDir: RepoFile, path: Seq[String]): Option[RepoFile] = {
+      System.err.println("---- " + path + "  -> " + (if (path.isEmpty) "xxx" else path.head))
+      path.toList match { // toList needed as workaround for https://issues.scala-lang.org/browse/SI-6996
         case Nil => Some(currentDir)
         case ""  :: tail => cdTo(currentDir, tail)
         case "." :: tail => cdTo(currentDir, tail)
@@ -34,7 +37,7 @@ class FileSysView(repository: Repository) extends FileSystemView {
     }
     val (startDir, relativeDir) =
       if (path.startsWith("/")) (getHomeDirectory, path.substring(1)) else (workingDirectory, path)
-    cdTo(startDir, relativeDir.split('/').toList)
+    cdTo(startDir, relativeDir.split('/').toSeq)
   }
   
   def changeWorkingDirectory(dir: String): Boolean = logAnd(f"cd $dir") {
@@ -57,7 +60,8 @@ class FileSysView(repository: Repository) extends FileSystemView {
 
   def getWorkingDirectory(): RepoFile = logAnd("getWorkingDirectory")(workingDirectory)
 
-  def isRandomAccessible(): Boolean = ???
+  // TODO random access can be easily implemented later on - see FtpFile.createInputStream and FtpFile.createOutputStream
+  def isRandomAccessible(): Boolean = logAnd("getWorkingDirectory")(false)
 }
 
 class RepoFile(repository: Repository, id: TreeEntryID) extends FtpFile {
@@ -108,7 +112,7 @@ class RepoFile(repository: Repository, id: TreeEntryID) extends FtpFile {
     repository.fs.entry(id).isDefined
   }
   
-  def isWritable(): Boolean = logAnd("isWritable for " + id) { false } // FIXME write
+  def isWritable(): Boolean = logAnd("isWritable for " + id) { false } // TODO implement write
 
   def getName(): String = logAnd("getLastModified for " + id) {
     repository.fs.entry(id).map(_.name).getOrElse("")
@@ -122,7 +126,16 @@ class RepoFile(repository: Repository, id: TreeEntryID) extends FtpFile {
 
   def getGroupName(): String = logAnd(f"getGroupName for $id") { "dedup" }
   
-  def createInputStream(x$1: Long): java.io.InputStream = ???
+  def createInputStream(offset: Long): java.io.InputStream = logAnd(f"createInputStream with offset $offset") {
+    if (offset != 0) throw new IOException("not random accessible")
+    repository.fs.entry(id) match {
+      case None => throw new FileNotFoundException
+      case Some(TreeEntry(_, _, _, _, None)) => throw new IOException("directory, not a file")
+      case Some(TreeEntry(_, _, _, _, Some(dataid))) =>
+        net.diet_rich.util.io.sourceAsInputStream(repository.fs.read(dataid))
+    }
+  }
+  
   def createOutputStream(x$1: Long): java.io.OutputStream = ???
   def delete(): Boolean = ???
   def isRemovable(): Boolean = ???
