@@ -6,12 +6,14 @@ package net.diet_rich.dedup.database
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
-case class TreeEntry(id: TreeEntryID, parentOption: Option[TreeEntryID], name: String, time: Time, dataid: DataEntryID) {
+case class TreeEntry(id: TreeEntryID, parentOption: Option[TreeEntryID], name: String, time: Time, dataid: Option[DataEntryID]) {
   def parent = parentOption.get
 }
 object TreeEntry {
+  def apply(id: TreeEntryID, parent: TreeEntryID, name: String): TreeEntry =
+    TreeEntry(id, Some(parent), name, Time(0), None)
   def apply(id: TreeEntryID, parent: TreeEntryID, name: String, time: Time, dataid: DataEntryID): TreeEntry =
-    TreeEntry(id, Option(parent), name, time, dataid)
+    TreeEntry(id, Some(parent), name, time, Some(dataid))
 }
 
 trait TreeDB {
@@ -30,10 +32,10 @@ trait TreeDB {
   protected val addEntry = 
     prepareSingleRowUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?)")
 
-  /** @return The entry's data if any. */
+  /** @return The entry if any. */
   def entry(id: TreeEntryID): Option[TreeEntry] =
     queryEntry(id.value)(
-      r => TreeEntry(id, TreeEntryID(r longOption 1), r string 2, Time(r long 3), DataEntryID(r long 4))
+      r => TreeEntry(id, TreeEntryID(r longOption 1), r string 2, Time(r long 3), DataEntryID(r longOption 4))
     ).nextOptionOnly
   protected val queryEntry = 
     prepareQuery("SELECT parent, name, time, dataid FROM TreeEntries WHERE id = ?")
@@ -121,12 +123,12 @@ object TreeDB {
         dataid BIGINT DEFAULT NULL
       );
     """)
-    execUpdate("CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent);")
-    execUpdate("CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid);")
-    execUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (0, NULL, '');")
+    execUpdate("CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent)")
+    execUpdate("CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid)")
+    execUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (0, NULL, '')")
   }
 
   def dropTable(implicit connection: WrappedConnection) : Unit =
-    execUpdate("DROP TABLE TreeEntries IF EXISTS;")
+    execUpdate("DROP TABLE TreeEntries IF EXISTS")
 
 }
