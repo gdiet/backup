@@ -64,7 +64,7 @@ package object sql {
           hasNextResult = resultSet.next
           hasNextIsChecked = true
         }
-        hasNextResult
+        hasNextResult // TODO if no more elements, close the result set?
       }
       override def next : T = {
         if (!hasNext) throw new NoSuchElementException

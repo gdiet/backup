@@ -43,13 +43,14 @@ object Restore extends CmdApp {
   
   private def restore(repository: Repository, source: TreeEntry, targetParent: File): Unit = {
     val target = targetParent.child(source.name)
-    val children = repository.fs.children(source.id)
+    val children = repository.fs.children(source.id).toList
     source.dataid match {
       case None =>
         require(target.mkdir(), f"Can't create ${targetParent.child(source.name)}")
         children.foreach(restore(repository, _, target))
       case Some(dataid) =>
         require(children.isEmpty, f"Expected no children for node $source with data")
+        // FIXME check hash, print and size
         using(new RandomAccessFile(target, "rw")) { sink => repository.fs.read(dataid).copyTo(sink) }
     }
   }

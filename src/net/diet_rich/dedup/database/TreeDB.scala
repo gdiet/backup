@@ -45,7 +45,8 @@ trait TreeDB {
   protected val queryChild = 
     prepareQuery("SELECT id, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?")
 
-  /** @return The children, empty if no such node. */
+  /** Note: If the children are not consumed immediately, they must be stored e.g. by calling *.toList.
+   *  @return The children, empty if no such node. */
   def children(parent: TreeEntryID): Iterable[TreeEntry] =
     queryChildren(parent.value)(
       r => TreeEntry(TreeEntryID(r long 1), Some(parent), r string 2, Time(r long 3), DataEntryID(r longOption 4))
