@@ -70,7 +70,7 @@ class RepoFile(repository: Repository, id: TreeEntryID) extends FtpFile {
   override val toString = f"RepoFile($id)"
 
   def getParent: Option[RepoFile] =
-    repository.fs.entry(id).flatMap(_.parentOption.map(new RepoFile(repository, _)))
+    repository.fs.entry(id).flatMap(_.parent.map(new RepoFile(repository, _)))
   
   def getAbsolutePath(): String = logAnd("getAbsolutePath for " + id) {
     repository.fs.path(id) match {

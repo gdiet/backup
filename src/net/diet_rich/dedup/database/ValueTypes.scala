@@ -15,6 +15,8 @@ class DataEntryID(val value: Long) extends AnyBase with ValueToString
 object DataEntryID {
   def apply(value: Long) = new DataEntryID(value)
   def apply(value: Option[Long]) = value.map(new DataEntryID(_))
+  def apply1(value: Long) = new DataEntryID(value)
+  def apply2(value: Option[Long]) = value.map(new DataEntryID(_))
 }
 
 class Print(val value: Long) extends AnyBase with ValueToString

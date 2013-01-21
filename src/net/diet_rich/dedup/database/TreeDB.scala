@@ -6,15 +6,12 @@ package net.diet_rich.dedup.database
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
-case class TreeEntry(id: TreeEntryID, parentOption: Option[TreeEntryID], name: String, time: Time, dataid: Option[DataEntryID]) {
-  def parent = parentOption.get
-}
-object TreeEntry {
-  def apply(id: TreeEntryID, parent: TreeEntryID, name: String): TreeEntry =
-    TreeEntry(id, Some(parent), name, Time(0), None)
-  def apply(id: TreeEntryID, parent: TreeEntryID, name: String, time: Time, dataid: DataEntryID): TreeEntry =
-    TreeEntry(id, Some(parent), name, time, Some(dataid))
-}
+case class TreeEntry(
+  id: TreeEntryID, 
+  parent: Option[TreeEntryID], 
+  name: String, 
+  time: Time = Time(0), 
+  dataid: Option[DataEntryID] = None)
 
 trait TreeDB {
   implicit val connection: WrappedConnection
@@ -43,7 +40,7 @@ trait TreeDB {
   /** @return The child entry if any. */
   def child(parent: TreeEntryID, name: String): Option[TreeEntry] =
     queryChild(parent.value, name)(
-      r => TreeEntry(TreeEntryID(r long 1), parent, name, Time(r long 2), DataEntryID(r long 3))
+      r => TreeEntry(TreeEntryID(r long 1), Some(parent), name, Time(r long 2), DataEntryID(r longOption 3))
     ).nextOptionOnly
   protected val queryChild = 
     prepareQuery("SELECT id, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?")
@@ -51,7 +48,7 @@ trait TreeDB {
   /** @return The children, empty if no such node. */
   def children(parent: TreeEntryID): Iterable[TreeEntry] =
     queryChildren(parent.value)(
-      r => TreeEntry(TreeEntryID(r long 1), parent, r string 2, Time(r long 3), DataEntryID(r long 4))
+      r => TreeEntry(TreeEntryID(r long 1), Some(parent), r string 2, Time(r long 3), DataEntryID(r longOption 4))
     ).toSeq
   protected val queryChildren =
     prepareQuery("SELECT id, name, time, dataid FROM TreeEntries WHERE parent = ?")
@@ -59,7 +56,7 @@ trait TreeDB {
   /** @return The node's complete data information if any. */
   def fullDataInformation(id: TreeEntryID): Option[FullDataInformation] =
     queryFullDataInformation(id.value)(
-      q => FullDataInformation(Time(q long 1), Size(q long 2), Print(q long 3), Hash(q bytes 4), DataEntryID(q longOption 5))
+      r => FullDataInformation(Time(r long 1), Size(r long 2), Print(r long 3), Hash(r bytes 4), DataEntryID(r longOption 5))
     ).nextOptionOnly
   protected val queryFullDataInformation = prepareQuery(
     "SELECT time, length, print, hash, dataid FROM TreeEntries JOIN DataInfo " +
@@ -83,7 +80,7 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
   def path(id: TreeEntryID): Option[Path] = {
     if (id == ROOTID) Some(ROOTPATH) else {
       entry(id) flatMap { entry =>
-        path(entry.parent).map(_ + SEPARATOR + entry.name)
+        path(entry.parent.get).map(_ + SEPARATOR + entry.name)
       }
     }
   }
