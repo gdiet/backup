@@ -52,6 +52,7 @@ object Restore extends CmdApp {
         require(children.isEmpty, f"Expected no children for node $source with data")
         // FIXME check hash, print and size
         using(new RandomAccessFile(target, "rw")) { sink => repository.fs.read(dataid).copyTo(sink) }
+        target.setLastModified(source.time.value)
     }
   }
 }

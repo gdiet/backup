@@ -113,7 +113,7 @@ package object io {
       @annotation.tailrec
       def recurse: Unit = {
         value.read(bytes, 0, bytes.length) match {
-          case n if (n < 1) =>
+          case n if (n > 0) =>
             sink.write(bytes, 0, n)
             recurse
           case _ => Unit
