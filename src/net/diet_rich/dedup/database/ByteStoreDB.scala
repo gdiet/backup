@@ -113,11 +113,11 @@ trait ByteStoreDB {
     id
   }
 
-  def storeAndGetDataIdAndSize(reader: Reader): (DataEntryID, Size) = {
+  def storeAndGetDataIdAndSize(source: ByteSource): (DataEntryID, Size) = {
     val id = DataEntryID(maxEntryId incrementAndGet())
     @annotation.tailrec
     def writeStep(range: DataRange, index: Int, size: Size): Size = {
-      writeRange(id, index, reader, range) match {
+      writeRange(id, index, source, range) match {
         case e if e.isEmpty =>
           writeStep(freeRanges.next, index + 1, size + range.length)
         case remaining =>
@@ -128,7 +128,7 @@ trait ByteStoreDB {
     (id, writeStep(freeRanges.next, 0, Size(0)))
   }
 
-  private def writeRange(id: DataEntryID, index: Int, reader: Reader, range: DataRange): DataRange = {
+  private def writeRange(id: DataEntryID, index: Int, source: ByteSource, range: DataRange): DataRange = {
     val bytes = new Array[Byte](32768)
     @annotation.tailrec
     def writeStep(range: DataRange, offsetInArray: Position, dataInArray: Size, alreadyRead: Size): Size = {
@@ -136,7 +136,7 @@ trait ByteStoreDB {
         alreadyRead
       } else if (dataInArray == Size(0)) {
         val bytesToRead = if (range.length < Size(bytes.length)) range.length.value.toInt else bytes.length
-        fillFrom(reader, bytes, 0, bytesToRead) match {
+        fillFrom(source, bytes, 0, bytesToRead) match {
           case 0 => alreadyRead
           case read => writeStep(range, Position(0), Size(read), alreadyRead + Size(read))
         }

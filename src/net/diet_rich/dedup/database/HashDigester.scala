@@ -7,17 +7,16 @@ import net.diet_rich.util.Hashes
 import net.diet_rich.util.io._
 
 class HashDigester(algorithm: String) {
-  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Hash, ReturnType) = {
+  def filterHash[ReturnType](source: ByteSource)(processor: ByteSource => ReturnType): (Hash, ReturnType) = {
     val digester = Hashes.instance(algorithm)
     val wrappedInput = new Object {
       def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
-        val size = input.read(bytes, offset, length)
+        val size = source.read(bytes, offset, length)
         if (size > 0) digester.update(bytes, offset, size)
         size
       }
-      def close(): Unit = input.close
     }
-    val returned = reader(wrappedInput)
+    val returned = processor(wrappedInput)
     (Hash(digester.digest()), returned)
   }
 }

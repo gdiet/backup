@@ -6,21 +6,35 @@ package net.diet_rich.dedup.database
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
+case class DataEntry (
+  id: DataEntryID,
+  size: Size,
+  print: Print,
+  hash: Hash,
+  method: Method
+)
+
 trait DataInfoDB {
   implicit val connection: WrappedConnection
   
   /** @return true if at least one matching data entry is stored. */
+  def dataEntry(id: DataEntryID): DataEntry =
+    queryDataEntry(id.value)(r => DataEntry(id, Size(r long 1), Print(r long 2), Hash(r bytes 3), Method(r int 4))).nextOnly
+  protected val queryDataEntry = 
+    prepareQuery("SELECT length, print, hash, method FROM DataInfo WHERE id = ?")
+
+  /** @return true if at least one matching data entry is stored. */
   def hasMatch(size: Size, print: Print): Boolean =
     checkPrint(size.value, print.value)(_.long(1) > 0).next
   protected val checkPrint = 
-    prepareQuery("SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?;")
+    prepareQuery("SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?")
   
   /** @return The data id if a matching data entry is stored. */
   def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID] =
     // NOTE: only the first of possibly multiple query results is used
     findEntry(size.value, print.value, hash.value)(p => DataEntryID(p long 1)).nextOption
   protected val findEntry = 
-    prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?;")
+    prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?")
   
   /** @throws Exception if the entry was not created correctly. */
   def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit =
@@ -40,7 +54,7 @@ object DataInfoDB {
         print  BIGINT NOT NULL,
         hash   VARBINARY(${zeroByteHash.value.size}%d) NOT NULL,
         method INTEGER DEFAULT 0 NOT NULL
-      );
+      )
     """)
     execUpdate("CREATE INDEX idxDataInfoDuplicates ON DataInfo(length, print, hash)")
     execUpdate("CREATE INDEX idxDataInfoFastPrint ON DataInfo(length, print)")

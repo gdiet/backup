@@ -18,14 +18,6 @@ case class FullDataInformation (
   dataid: Option[DataEntryID]
 )
 
-trait Digesters {
-  def calculatePrint(reader: SeekReader): Print
-  def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType)
-  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Hash, ReturnType)
+trait Digesters extends PrintDigester {
+  def filterHash[ReturnType](source: ByteSource)(processor: ByteSource => ReturnType): (Hash, ReturnType)
 }
-
-//trait SignatureCalculation {
-//  def calculatePrintAndReset(reader: SeekReader): Long
-//  def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Long, ReturnType)
-//  def filterHash[ReturnType](input: Reader)(reader: Reader => ReturnType): (Array[Byte], ReturnType)
-//}

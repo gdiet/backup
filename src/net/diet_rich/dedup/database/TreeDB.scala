@@ -64,6 +64,7 @@ trait TreeDB {
     "ON TreeEntries.dataid = DataInfo.id AND TreeEntries.id = ?"
   )
   
+  // FIXME update is not really needed by backup!
   /** @throws Exception if the node was not updated correctly. */
   def setData(id: TreeEntryID, time: Time, dataid: Option[DataEntryID]): Unit =
     changeData(time.value, dataid.map(_.value), id.value) match {

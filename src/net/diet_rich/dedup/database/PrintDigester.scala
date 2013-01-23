@@ -7,7 +7,7 @@ import net.diet_rich.util.io._
 
 trait PrintDigester {
   def calculatePrint(reader: SeekReader): Print
-  def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType)
+  def filterPrint[ReturnType](source: ByteSource)(processor: ByteSource => ReturnType): (Print, ReturnType)
 }
 
 trait CrcAdler8192 extends PrintDigester { import CrcAdler8192._
@@ -20,12 +20,12 @@ trait CrcAdler8192 extends PrintDigester { import CrcAdler8192._
     calculate(data, 0, size)
   }
   
-  def filterPrint[ReturnType](input: Reader)(reader: Reader => ReturnType): (Print, ReturnType) = {
+  def filterPrint[ReturnType](source: ByteSource)(processor: ByteSource => ReturnType): (Print, ReturnType) = {
     val data = new Array[Byte](area)
-    val size = fillFrom(input, data, 0, area)
+    val size = fillFrom(source, data, 0, area)
     val print = calculate(data, 0, size)
-    val paritionedInput = prependArray(data, 0, size, input)
-    (print, reader(paritionedInput))
+    val paritionedInput = prependArray(data, 0, size, source)
+    (print, processor(paritionedInput))
   }
 }
 

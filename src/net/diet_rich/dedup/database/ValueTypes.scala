@@ -22,10 +22,17 @@ object DataEntryID {
 class Print(val value: Long) extends AnyBase with ValueToString
 object Print { def apply(value: Long) = new Print(value) }
 
-class Hash(val value: Array[Byte]) extends AnyBase
+class Hash(val value: Array[Byte]) { // FIXME not a value class anymore
+  def !==(a: Hash) = ! ===(a)
+  def ===(a: Hash) = java.util.Arrays.equals(value, a.value)
+  override def equals(a: Any) = ???
+}
 object Hash { def apply(value: Array[Byte]) = new Hash(value) }
 
 class Path(val value: String) extends AnyBase {
   def +(string: String) = Path(value + string)
 }
 object Path { def apply(value: String) = new Path(value) }
+
+class Method(val value: Int) extends AnyBase with ValueToString
+object Method { def apply(value: Int) = new Method(value) }

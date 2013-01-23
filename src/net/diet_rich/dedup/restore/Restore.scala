@@ -49,9 +49,20 @@ object Restore extends CmdApp {
         require(target.mkdir(), f"Can't create ${targetParent.child(source.name)}")
         children.foreach(restore(repository, _, target))
       case Some(dataid) =>
+        val dataEntry = repository.fs.dataEntry(dataid)
+        require(dataEntry.method.value == 0, f"Storage method ${dataEntry.method} not yet supported for restore")
         require(children.isEmpty, f"Expected no children for node $source with data")
-        // FIXME check hash, print and size
-        using(new RandomAccessFile(target, "rw")) { sink => repository.fs.read(dataid).copyTo(sink) }
+        val (print, (hash, size)) = using(new RandomAccessFile(target, "rw")) { sink =>
+          val source = repository.fs.read(dataid)
+          repository.digesters.filterPrint(source)(source =>
+            repository.digesters.filterHash(source)(source =>
+              source.copyTo(sink)
+            )
+          )
+        }
+        if (size != dataEntry.size.value) System.err.println(f"ERROR: Data size $size did not match ${dataEntry.size} for $target")
+        if (print != dataEntry.print) System.err.println(f"ERROR: Data print $print did not match ${dataEntry.print} for $target")
+        if (hash !== dataEntry.hash) System.err.println(f"ERROR: Data hash did not match for $target")
         target.setLastModified(source.time.value)
     }
   }
