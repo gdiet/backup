@@ -22,6 +22,7 @@ trait CmdApp {
     } catch {
       case e: Throwable =>
         println(s"$usage\n\n$e\n${e.getStackTraceString}")
+        if (e.getCause() != null) println(s"caused by ${e.getCause().getStackTraceString}")
         false
     }
   }
