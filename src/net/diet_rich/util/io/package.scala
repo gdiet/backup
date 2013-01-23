@@ -24,9 +24,10 @@ package object io {
     try { operation(resource) } finally { resource.close }
 
   def fillFrom(input: ByteSource, bytes: Array[Byte], offset: Int, length: Int): Int = {
+    val maxPos = offset + length
     @tailrec
     def readRecurse(offset: Int): Int = {
-      input.read(bytes, offset, length - offset) match {
+      input.read(bytes, offset, maxPos - offset) match {
         case n if n < 1 => offset
         case n => if (offset + n == length) offset + n else readRecurse(offset + n)
       }
@@ -45,7 +46,7 @@ package object io {
     readRecurse(0)
   }
 
-  def prependArray(data: Array[Byte], offset: Int, len: Int, reader: Reader): Reader = new Object {
+  def prependArray(data: Array[Byte], offset: Int, len: Int, reader: ByteSource): ByteSource = new Object {
     var read: Int = 0
     def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int =
       if (read < len)
@@ -61,7 +62,6 @@ package object io {
         }
       else
         reader.read(bytes, internalOffset, length)
-    def close(): Unit = reader.close
   }
   
   def readSettingsFile(path: File): Map[String, String] =
@@ -108,18 +108,19 @@ package object io {
   }
   
   implicit class EnhancedByteSource(val value: ByteSource) extends AnyVal {
+    // FIXME return size
     def copyTo(sink: ByteSink) = {
       val bytes = new Array[Byte](32768)
       @annotation.tailrec
-      def recurse: Unit = {
+      def recurse(alreadRead: Long): Long = {
         value.read(bytes, 0, bytes.length) match {
           case n if (n > 0) =>
             sink.write(bytes, 0, n)
-            recurse
-          case _ => Unit
+            recurse(alreadRead + n)
+          case _ => alreadRead
         }
       }
-      recurse
+      recurse(0)
     }
   }
 }
