@@ -6,7 +6,8 @@ package net.diet_rich.util
 package object vals {
 
   // workaround for https://issues.scala-lang.org/browse/SI-6943
-  // use AnyRef here to look for equals problems
+  // use AnyRef here to *look for* equals problems (not all might be found)
+  // note: AnyRef breaks the == and != relations!
   // use AnyVal to have real value classes
   type AnyBase = AnyVal
 
