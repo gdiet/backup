@@ -38,15 +38,15 @@ object Backup extends CmdApp {
       throw new IllegalArgumentException("Target ${opts(TARGET)} is a file, not a folder")
     
     val processor =
-      new TreeHandling[FileSource] 
-      with SimpleMemoryManager
+      new TreeHandling
 //      with NoPrintMatchCheck[FileSource]
-      with PrintMatchCheck[FileSource]
+      with PrintMatchCheck
 //      with IgnorePrintMatch[FileSource]
-      with StoreData[FileSource] {
+      with StoreData
+      with AlgorithmCommons {
+        type SourceType = FileSource
         protected val fs = repository.fs
-        protected val control = new PooledBackupControl
-        def shutdown = control.shutdown
+        protected val control = new PooledBackupControl with SimpleMemoryManager
       }
 
     try {

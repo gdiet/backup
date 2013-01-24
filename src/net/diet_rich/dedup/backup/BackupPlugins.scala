@@ -24,7 +24,7 @@ extends BackupMonitor[SourceType] with BackupThreadManager with BackupErrorHandl
 
 trait MemoryManager {
   /** @return An array of the requested size or None. */
-  protected def getLargeArray(size: Size): Option[Array[Byte]]
+  def getLargeArray(size: Size): Option[Array[Byte]]
 }
 
 trait SimpleBackupControl extends BackupControl[FileSource] {
@@ -65,6 +65,6 @@ class PooledBackupControl extends BackupControl[FileSource] {
 
 trait SimpleMemoryManager extends MemoryManager {
   /** @return An array of the requested size or None. */
-  protected def getLargeArray(size: Size): Option[Array[Byte]] =
+  def getLargeArray(size: Size): Option[Array[Byte]] =
     if (size < Size(10000000)) Some(new Array[Byte](size.value toInt)) else None
 }

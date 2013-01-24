@@ -7,9 +7,15 @@ import net.diet_rich.dedup.database._
 import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
 
-trait TreeHandling[SourceType <: TreeSource[SourceType]] {
-  protected def control: BackupControl[SourceType]
+trait AlgorithmCommons {
+  type SourceType <: TreeSource[SourceType]
+  protected def control: BackupControl[SourceType] with MemoryManager
   protected def fs: BackupFileSystem
+  def shutdown = control.shutdown
+}
+
+trait TreeHandling {
+  self: PrintMatchCheck with StoreData with AlgorithmCommons =>
   
   def backup(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntry]): Unit =
     processSourceEntry(source, parent, reference.map(_.id))
@@ -47,7 +53,8 @@ trait NoPrintMatchCheck[SourceType] {
     fs.setData(target, referenceData.time, referenceData.dataid)
 }
 
-trait PrintMatchCheck[SourceType <: TreeSource[SourceType]] {
+trait PrintMatchCheck {
+  type SourceType <: TreeSource[SourceType]
   protected def fs: BackupFileSystem
   
   protected def processMatchingTimeAndSize(source: SourceType, target: TreeEntryID, referenceData: FullDataInformation) =
@@ -72,9 +79,8 @@ trait IgnorePrintMatch[SourceType <: TreeSource[SourceType]] {
   protected def storeData(source: SourceType, target: TreeEntryID, reader: SeekReader, print: Print): Unit
 }
 
-trait StoreData[SourceType <: TreeSource[SourceType]] {
-  self : MemoryManager =>
-  protected def fs: BackupFileSystem
+trait StoreData {
+  self: AlgorithmCommons =>
   
   protected def storeData(source: SourceType, target: TreeEntryID): Unit = using(source.reader) { reader =>
     storeData(source, target, reader, fs.dig.calculatePrint(reader))
@@ -91,7 +97,7 @@ trait StoreData[SourceType <: TreeSource[SourceType]] {
     // here, further optimization is possible: If a file is too large to cache,
     // we could at least cache the start of the file. This would of course lead
     // to more complicated hash calculations.
-    val cache = getLargeArray(source.size + Size(1))
+    val cache = control.getLargeArray(source.size + Size(1))
     assume(cache.map(_.length == source.size.value + 1).getOrElse(true)) // just to make sure the array is of the requested size
     // read whole file, if possible, into cache, and calculate print and hash
     val (print, (hash, size)) = fs.dig.filterPrint(reader) { reader =>
