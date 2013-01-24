@@ -8,22 +8,21 @@ import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
 
 trait TreeHandling[SourceType <: TreeSource[SourceType]] {
-  self: BackupControl[SourceType] =>
-
+  protected def control: BackupControl[SourceType]
   protected def fs: BackupFileSystem
   
   def backup(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntry]): Unit =
     processSourceEntry(source, parent, reference.map(_.id))
 
   private def processSourceEntry(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): Unit =
-    catchAndHandleException(source) {
-      notifyProgressMonitor(source)
+    control.catchAndHandleException(source) {
+      control.notifyProgressMonitor(source)
       // create tree node
       val target = fs.createAndGetId(parent, source.name)
       // process children
       source.children.foreach { child =>
         val childReference = reference.flatMap(fs.childId(_, child.name))
-        executeInThreadPool(processSourceEntry(child, target, childReference))
+        control.executeInThreadPool(processSourceEntry(child, target, childReference))
       }
       // process data
       if (source.hasData) reference.flatMap(fs.fullDataInformation(_)) match {
@@ -42,7 +41,7 @@ trait TreeHandling[SourceType <: TreeSource[SourceType]] {
 }
 
 trait NoPrintMatchCheck[SourceType] {
-  protected def fs: BackupFileSystem
+  protected def fs: TreeDB
   
   protected def processMatchingTimeAndSize(source: SourceType, target: TreeEntryID, referenceData: FullDataInformation) =
     fs.setData(target, referenceData.time, referenceData.dataid)

@@ -39,14 +39,14 @@ object Backup extends CmdApp {
     
     val processor =
       new TreeHandling[FileSource] 
-//      with SimpleBackupControl
-      with PooledBackupControl
       with SimpleMemoryManager
 //      with NoPrintMatchCheck[FileSource]
       with PrintMatchCheck[FileSource]
 //      with IgnorePrintMatch[FileSource]
       with StoreData[FileSource] {
-        val fs = repository.fs
+        protected val fs = repository.fs
+        protected val control = new PooledBackupControl
+        def shutdown = control.shutdown
       }
 
     try {

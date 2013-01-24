@@ -108,7 +108,6 @@ package object io {
   }
   
   implicit class EnhancedByteSource(val value: ByteSource) extends AnyVal {
-    // FIXME return size
     def copyTo(sink: ByteSink) = {
       val bytes = new Array[Byte](32768)
       @annotation.tailrec

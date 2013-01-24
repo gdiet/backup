@@ -6,15 +6,15 @@ package net.diet_rich.dedup.backup
 import net.diet_rich.util.vals._
 
 trait BackupMonitor[SourceType <: TreeSource[SourceType]] {
-  protected def notifyProgressMonitor(entry: SourceType): Unit
+  def notifyProgressMonitor(entry: SourceType): Unit
 }
 
 trait BackupThreadManager {
-  protected def executeInThreadPool(f: => Unit): Unit
+  def executeInThreadPool(f: => Unit): Unit
 }
 
 trait BackupErrorHandler[SourceType <: TreeSource[SourceType]] {
-  protected def catchAndHandleException(entry: SourceType)(f: => Unit): Unit
+  def catchAndHandleException(entry: SourceType)(f: => Unit): Unit
 }
 
 trait BackupControl[SourceType <: TreeSource[SourceType]]
@@ -28,21 +28,21 @@ trait MemoryManager {
 }
 
 trait SimpleBackupControl extends BackupControl[FileSource] {
-  protected def notifyProgressMonitor(entry: FileSource): Unit = Unit // println("processing %s" format entry.file)
-  protected def executeInThreadPool(f: => Unit): Unit = f
-  protected def catchAndHandleException(entry: FileSource)(f: => Unit): Unit = f
+  def notifyProgressMonitor(entry: FileSource): Unit = Unit // println("processing %s" format entry.file)
+  def executeInThreadPool(f: => Unit): Unit = f
+  def catchAndHandleException(entry: FileSource)(f: => Unit): Unit = f
   def shutdown: Unit = Unit
 }
 
-trait PooledBackupControl extends BackupControl[FileSource] {
-  protected def notifyProgressMonitor(entry: FileSource): Unit = Unit // println("processing %s" format entry.file)
+class PooledBackupControl extends BackupControl[FileSource] {
+  def notifyProgressMonitor(entry: FileSource): Unit = Unit // println("processing %s" format entry.file)
   val pool = new java.util.concurrent.ThreadPoolExecutor(8, 8, 0,
     java.util.concurrent.TimeUnit.SECONDS,
     new java.util.concurrent.LinkedBlockingQueue[Runnable](4),
     new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy)
   val tasks = new java.util.concurrent.atomic.AtomicInteger(0)
   val tasksLock = new java.util.concurrent.Semaphore(1)
-  protected def executeInThreadPool(f: => Unit): Unit = {
+  def executeInThreadPool(f: => Unit): Unit = {
     if (tasks.incrementAndGet == 1) {
       if (!tasksLock.tryAcquire()) {
         tasks.decrementAndGet
@@ -53,7 +53,7 @@ trait PooledBackupControl extends BackupControl[FileSource] {
       if (tasks.decrementAndGet == 0) tasksLock.release
     } })
   }
-  protected def catchAndHandleException(entry: FileSource)(f: => Unit): Unit =
+  def catchAndHandleException(entry: FileSource)(f: => Unit): Unit =
     try { f } catch { case e: Throwable => println(e) }
   def shutdown = {
     tasksLock.acquire
