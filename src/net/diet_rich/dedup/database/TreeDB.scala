@@ -21,13 +21,13 @@ trait TreeDB {
   
   /** @return The child ID.
    *  @throws Exception if the child was not created correctly. */
-  def createAndGetId(parentId: TreeEntryID, name: String): TreeEntryID = {
+  def createAndGetId(parentId: TreeEntryID, name: String, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID = {
     val id = maxEntryId incrementAndGet()
-    addEntry(id, parentId.value, name)
+    addEntry(id, parentId.value, name, time.value, dataId.map(_.value))
     TreeEntryID(id)
   }
   protected val addEntry = 
-    prepareSingleRowUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (?, ?, ?)")
+    prepareSingleRowUpdate("INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES (?, ?, ?, ?, ?)")
 
   /** @return The entry if any. */
   def entry(id: TreeEntryID): Option[TreeEntry] =
@@ -63,16 +63,16 @@ trait TreeDB {
     "SELECT time, length, print, hash, dataid FROM TreeEntries JOIN DataInfo " +
     "ON TreeEntries.dataid = DataInfo.id AND TreeEntries.id = ?"
   )
-  
-  // FIXME update is not really needed by backup!
-  /** @throws Exception if the node was not updated correctly. */
-  def setData(id: TreeEntryID, time: Time, dataid: Option[DataEntryID]): Unit =
-    changeData(time.value, dataid.map(_.value), id.value) match {
-      case 1 => Unit
-      case n => throw new IllegalStateException(s"Tree: Update node $id returned $n rows instead of 1")
-    }
-  protected val changeData = 
-    prepareUpdate("UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?;")
+
+// maybe for future use
+//  /** @throws Exception if the node was not updated correctly. */
+//  def setData(id: TreeEntryID, time: Time, dataid: Option[DataEntryID]): Unit =
+//    changeData(time.value, dataid.map(_.value), id.value) match {
+//      case 1 => Unit
+//      case n => throw new IllegalStateException(s"Tree: Update node $id returned $n rows instead of 1")
+//    }
+//  protected val changeData = 
+//    prepareUpdate("UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?;")
 }
 
 trait TreeDBUtils { self: TreeDB => import TreeDB._

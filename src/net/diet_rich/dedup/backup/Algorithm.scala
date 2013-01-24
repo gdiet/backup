@@ -23,76 +23,70 @@ trait TreeHandling {
   private def processSourceEntry(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): Unit =
     control.catchAndHandleException(source) {
       control.notifyProgressMonitor(source)
-      // create tree node
-      val target = fs.createAndGetId(parent, source.name)
+      val target = if (source.hasData) reference.flatMap(fs.fullDataInformation(_)) match {
+        // process data
+        case None => storeData(source, parent)
+        case Some(referenceData) =>
+          if (source.time == referenceData.time && source.size == referenceData.size)
+            processMatchingTimeAndSize(source, parent, referenceData)
+          else
+            storeData(source, parent)
+      } else {
+        // create directory node
+        fs.createAndGetId(parent, source.name, source.time)
+      }
       // process children
       source.children.foreach { child =>
         val childReference = reference.flatMap(fs.childId(_, child.name))
         control.executeInThreadPool(processSourceEntry(child, target, childReference))
       }
-      // process data
-      if (source.hasData) reference.flatMap(fs.fullDataInformation(_)) match {
-        case None => storeData(source, target)
-        case Some(referenceData) =>
-          if (source.time == referenceData.time && source.size == referenceData.size)
-            processMatchingTimeAndSize(source, target, referenceData)
-          else
-            storeData(source, target)
-      }
     }
-
-  // implemented in other pieces of algorithm cake
-  protected def processMatchingTimeAndSize(source: SourceType, target: TreeEntryID, referenceData: FullDataInformation)
-  protected def storeData(source: SourceType, target: TreeEntryID)
 }
 
-trait NoPrintMatchCheck[SourceType] {
-  protected def fs: TreeDB
-  
-  protected def processMatchingTimeAndSize(source: SourceType, target: TreeEntryID, referenceData: FullDataInformation) =
-    fs.setData(target, referenceData.time, referenceData.dataid)
-}
+//trait NoPrintMatchCheck[SourceType] {
+//  protected def fs: TreeDB
+//  
+//  protected def processMatchingTimeAndSize(source: SourceType, target: TreeEntryID, referenceData: FullDataInformation) =
+//    fs.setData(target, referenceData.time, referenceData.dataid)
+//}
 
+// FIXME the single method could be factored out somehow?
 trait PrintMatchCheck {
-  type SourceType <: TreeSource[SourceType]
-  protected def fs: BackupFileSystem
+  self: StoreData with AlgorithmCommons =>
   
-  protected def processMatchingTimeAndSize(source: SourceType, target: TreeEntryID, referenceData: FullDataInformation) =
+  protected def processMatchingTimeAndSize(source: SourceType, parent: TreeEntryID, referenceData: FullDataInformation): TreeEntryID =
     using(source.reader) { reader =>
       fs.dig.calculatePrint(reader) match {
-        case referenceData.print => fs.setData(target, referenceData.time, referenceData.dataid)
-        case print => storeData(source, target, reader, print)
+        case referenceData.print => fs.createAndGetId(parent, source.name, referenceData.time, referenceData.dataid)
+        case print => storeData(source, parent, reader, print)
       }
     }
-
-  // implemented in other pieces of algorithm cake
-  protected def storeData(source: SourceType, target: TreeEntryID, reader: SeekReader, print: Print): Unit
 }
 
-trait IgnorePrintMatch[SourceType <: TreeSource[SourceType]] {
-  protected def fs: BackupFileSystem
-  
-  protected def processMatchingTimeAndSize(source: SourceType, target: TreeEntryID, referenceData: FullDataInformation) =
-    using(source.reader) { reader => storeData(source, target, reader, fs.dig.calculatePrint(reader)) }
-
-  // implemented in other pieces of algorithm cake
-  protected def storeData(source: SourceType, target: TreeEntryID, reader: SeekReader, print: Print): Unit
-}
+//trait IgnorePrintMatch[SourceType <: TreeSource[SourceType]] {
+//  protected def fs: BackupFileSystem
+//  
+//  protected def processMatchingTimeAndSize(source: SourceType, parent: TreeEntryID, referenceData: FullDataInformation) =
+//    using(source.reader) { reader => storeData(source, parent, reader, fs.dig.calculatePrint(reader)) }
+//
+//  // implemented in other pieces of algorithm cake
+//  protected def storeData(source: SourceType, parent: TreeEntryID, reader: SeekReader, print: Print): Unit
+//}
 
 trait StoreData {
   self: AlgorithmCommons =>
   
-  protected def storeData(source: SourceType, target: TreeEntryID): Unit = using(source.reader) { reader =>
-    storeData(source, target, reader, fs.dig.calculatePrint(reader))
+  protected def storeData(source: SourceType, parent: TreeEntryID): TreeEntryID = using(source.reader) { reader =>
+    storeData(source, parent, reader, fs.dig.calculatePrint(reader))
   }
   
-  protected def storeData(source: SourceType, target: TreeEntryID, reader: SeekReader, print: Print): Unit =
+  protected def storeData(source: SourceType, parent: TreeEntryID, reader: SeekReader, print: Print): TreeEntryID =
     if (fs.hasMatch(source.size, print))
-      cacheWhileCalcuatingHash(source, target, reader)
+      cacheWhileCalcuatingHash(source, parent, reader)
     else
-      storeFromReader(source, target, reader)
+      storeFromReader(source, parent, reader)
 
-  private def cacheWhileCalcuatingHash(source: SourceType, target: TreeEntryID, reader: SeekReader): Unit = {
+  private def cacheWhileCalcuatingHash(source: SourceType, parent: TreeEntryID, reader: SeekReader): TreeEntryID = {
     reader.seek(0)
     // here, further optimization is possible: If a file is too large to cache,
     // we could at least cache the start of the file. This would of course lead
@@ -112,17 +106,17 @@ trait StoreData {
     (fs.findMatch(size, print, hash), cache) match {
       case (None, Some(bytes)) if size < Size(bytes.length) =>
         // not yet known, fully cached
-        storeFromBytesRead(source, target, bytes, print, size, hash)
+        storeFromBytesRead(source, parent, bytes, print, size, hash)
       case (None, _) =>
         // not yet known, not fully cached, re-read fully
-        storeFromReader(source, target, reader)
+        storeFromReader(source, parent, reader)
       case (dataid, _) =>
         // already known
-        fs.setData(target, source.time, dataid)
+        fs.createAndGetId(parent, source.name, source.time, dataid)
     }
   }
 
-  private def storeFromReader(source: SourceType, target: TreeEntryID, reader: SeekReader): Unit = {
+  private def storeFromReader(source: SourceType, parent: TreeEntryID, reader: SeekReader): TreeEntryID = {
     reader.seek(0)
     val (print, (hash, (dataid, size))) = fs.dig.filterPrint(reader) { reader =>
       fs.dig.filterHash(reader) { reader =>
@@ -130,12 +124,12 @@ trait StoreData {
       }
     }
     fs.createDataEntry(dataid, size, print, hash)
-    fs.setData(target, source.time, Some(dataid))
+    fs.createAndGetId(parent, source.name, source.time, Some(dataid))
   }
 
-  private def storeFromBytesRead(source: SourceType, target: TreeEntryID, bytes: Array[Byte], print: Print, size: Size, hash: Hash): Unit = {
+  private def storeFromBytesRead(source: SourceType, parent: TreeEntryID, bytes: Array[Byte], print: Print, size: Size, hash: Hash): TreeEntryID = {
     val dataid = fs.storeAndGetDataId(bytes, size)
     fs.createDataEntry(dataid, size, print, hash)
-    fs.setData(target, source.time, Some(dataid))
+    fs.createAndGetId(parent, source.name, source.time, Some(dataid))
   }
 }
