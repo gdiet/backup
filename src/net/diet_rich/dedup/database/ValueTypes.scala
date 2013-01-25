@@ -36,8 +36,8 @@ object Path { def apply(value: String) = new Path(value) }
 
 class NodeType(val value: Int) extends AnyBase with ValueToString
 object NodeType {
-  val FILE = NodeType(0)
-  val DIR = NodeType(1)
+  val DIR = NodeType(0)
+  val FILE = NodeType(1)
   def apply(value: Int): NodeType = {
     require(0 <= value && value <=1, s"Unsupported tree node type $value")
     new NodeType(value)
