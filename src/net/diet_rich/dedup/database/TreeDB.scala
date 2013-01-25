@@ -23,11 +23,11 @@ trait TreeDB {
    *  @throws Exception if the child was not created correctly. */
   def createAndGetId(parentId: TreeEntryID, name: String, nodeType: NodeType, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID = {
     val id = maxEntryId incrementAndGet()
-    addEntry(id, parentId.value, name, time.value, dataId.map(_.value))
+    addEntry(id, parentId.value, name, nodeType.value, time.value, dataId.map(_.value))
     TreeEntryID(id)
   }
   protected val addEntry = 
-    prepareSingleRowUpdate("INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES (?, ?, ?, ?, ?)")
+    prepareSingleRowUpdate("INSERT INTO TreeEntries (id, parent, name, type, time, dataid) VALUES (?, ?, ?, ?, ?, ?)")
 
   /** @return The entry if any. */
   def entry(id: TreeEntryID): Option[TreeEntry] =
@@ -125,7 +125,7 @@ object TreeDB {
     """)
     execUpdate("CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent)")
     execUpdate("CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid)")
-    execUpdate(s"INSERT INTO TreeEntries (id, parent, name, type) VALUES (0, NULL, '', ${NodeType.DIR})")
+    execUpdate(s"INSERT INTO TreeEntries (id, parent, name, type) VALUES (0, NULL, '', ${NodeType.DIR.value})")
   }
 
   def dropTable(implicit connection: WrappedConnection) : Unit =

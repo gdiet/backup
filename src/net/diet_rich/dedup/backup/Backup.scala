@@ -18,12 +18,14 @@ object Backup extends CmdApp {
     SOURCE -> "." -> "[%s <directory>] Source file or folder to store, default '%s'",
     REPOSITORY -> "" -> "[%s <directory>] Mandatory: Repository location",
     TARGET -> "" -> "[%s <path>] Mandatory: Target folder in repository (must be empty if exists)",
-    DIFFERENTIAL -> "" -> "[%s <path>] Base folder for differential backup in repository"
+    DIFFERENTIAL -> "" -> "[%s <path>] Base folder for differential backup in repository",
+    METHOD -> "1" -> "[%s Integer] Store method: 0 - store; 1 - deflate, default '%s'"
   )
 
   def backup(opts: Map[String, String]): Unit = {
     require(! opts(REPOSITORY).isEmpty, s"Repository location setting $REPOSITORY is mandatory.")
     require(! opts(TARGET).isEmpty, s"Target folder setting $TARGET is mandatory.")
+    val storeMethod = Method(opts(METHOD).toInt)
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val source = new java.io.File(opts(SOURCE)).getCanonicalFile
     val reference = opts(DIFFERENTIAL) match {
@@ -50,7 +52,7 @@ object Backup extends CmdApp {
         protected val fs = repository.fs
 //        protected val control = new SimpleBackupControl with SimpleMemoryManager
         protected val control = new PooledBackupControl with SimpleMemoryManager
-        protected val settings = new BackupSettings(Method.DEFLATE)
+        protected val settings = new BackupSettings(storeMethod)
       }
 
     try {

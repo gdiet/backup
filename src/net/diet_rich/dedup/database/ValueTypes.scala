@@ -38,11 +38,9 @@ class NodeType(val value: Int) extends AnyBase with ValueToString
 object NodeType {
   val FILE = NodeType(0)
   val DIR = NodeType(1)
-  val SUPPORTED = Set(FILE, DIR)
   def apply(value: Int): NodeType = {
-    val result = new NodeType(value)
-    require(SUPPORTED contains result, s"Unsupported tree node type $value")
-    result
+    require(0 <= value && value <=1, s"Unsupported tree node type $value")
+    new NodeType(value)
   }
 }
 
@@ -50,10 +48,9 @@ class Method(val value: Int) extends AnyBase with ValueToString
 object Method {
   val STORE = Method(0)
   val DEFLATE = Method(1)
-  val SUPPORTED = Set(STORE, DEFLATE)
   def apply(value: Int): Method = {
     val result = new Method(value)
-    require(SUPPORTED contains result, s"Unsupported store method $value")
+    require(0 <= value && value <=1, s"Unsupported store method $value")
     result
   }
 }

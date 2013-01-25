@@ -50,7 +50,6 @@ object Restore extends CmdApp {
         children.foreach(restore(repository, _, target))
       case Some(dataid) =>
         val dataEntry = repository.fs.dataEntry(dataid)
-        require(Method.SUPPORTED.contains(dataEntry.method), f"Storage method ${dataEntry.method} not yet supported for restore")
         require(children.isEmpty, f"Expected no children for node $source with data")
         val (print, (hash, size)) = using(new RandomAccessFile(target, "rw")) { sink =>
           val source = repository.fs.read(dataid, dataEntry.method)
