@@ -15,7 +15,7 @@ object Backup extends CmdApp {
   
   val usageHeader = "Stores a file or folder in the dedup repository. "
   val paramData = Seq(
-    SOURCE -> "." -> "[%s <directory>] Source file or folder to store, default '%s'",
+    SOURCE -> "" -> "[%s <directory>] Mandatory: Source file or folder to store",
     REPOSITORY -> "" -> "[%s <directory>] Mandatory: Repository location",
     TARGET -> "" -> "[%s <path>] Mandatory: Target folder in repository (must be empty if exists)",
     DIFFERENTIAL -> "" -> "[%s <path>] Base folder for differential backup in repository",
@@ -31,15 +31,15 @@ object Backup extends CmdApp {
     val reference = opts(DIFFERENTIAL) match {
       case "" => None
       case e => repository.fs.entry(Path(e)) match {
-        case None => throw new IllegalArgumentException("No path ${opts(DIFFERENTIAL)} in repository for differential backup")
+        case None => throw new IllegalArgumentException(s"No path ${opts(DIFFERENTIAL)} in repository for differential backup")
         case id => id
       }
     }
     val target = repository.fs.getOrMakeDir(Path(opts(TARGET)))
     if (!repository.fs.children(target).isEmpty)
-      throw new IllegalArgumentException("Target folder ${opts(TARGET)} is not empty")
+      throw new IllegalArgumentException(s"Target folder ${opts(TARGET)} is not empty")
     if (!repository.fs.fullDataInformation(target).isEmpty)
-      throw new IllegalArgumentException("Target ${opts(TARGET)} is a file, not a folder")
+      throw new IllegalArgumentException(s"Target ${opts(TARGET)} is a file, not a folder")
     
     val processor =
       new TreeHandling
@@ -55,11 +55,15 @@ object Backup extends CmdApp {
         protected val settings = new BackupSettings(storeMethod)
       }
 
+    val time = System.currentTimeMillis()
     try {
-      processor.backup(new FileSource(source), target, reference)
+      println("starting backup")
+      try { processor.backup(new FileSource(source), target, reference) }
+      finally { processor.shutdown }
+      println(s"finished backup, cleaning up. Time: ${(System.currentTimeMillis() - time)/1000d}")
     } finally {
-      processor.shutdown
       repository.shutdown(true)
+      println(s"shutdown complete. Time: ${(System.currentTimeMillis() - time)/1000d}")
     }
   }
 }

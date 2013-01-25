@@ -18,7 +18,6 @@ class Repository(val basedir: File) { import Repository._
   private val dbdir = basedir.child(dbDirName)
   private implicit val connection = getConnection(dbdir)
   private val lockfile = dbdir.child(s"$dbFileName.lock.db")
-  Thread.sleep(100)
   require(lockfile.isFile, s"Expected database lock file $lockfile to exist.")
   
   val fs: BackupFileSystem = new BackupFileSystem(digesters, dataStore)(connection)
