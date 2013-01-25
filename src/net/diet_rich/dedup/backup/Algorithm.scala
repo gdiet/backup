@@ -6,11 +6,13 @@ package net.diet_rich.dedup.backup
 import net.diet_rich.dedup.database._
 import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
+import net.diet_rich.dedup.datastore.StoreMethods
 
 trait AlgorithmCommons {
   type SourceType <: TreeSource[SourceType]
   protected def control: BackupControl[SourceType] with MemoryManager
   protected def fs: BackupFileSystem
+  protected def settings: BackupSettings
   def shutdown = control.shutdown
 }
 
@@ -50,7 +52,6 @@ trait TreeHandling {
 //    fs.setData(target, referenceData.time, referenceData.dataid)
 //}
 
-// FIXME the single method could be factored out somehow?
 trait PrintMatchCheck {
   self: StoreData with AlgorithmCommons =>
   
@@ -120,16 +121,16 @@ trait StoreData {
     reader.seek(0)
     val (print, (hash, (dataid, size))) = fs.dig.filterPrint(reader) { reader =>
       fs.dig.filterHash(reader) { reader =>
-        fs.storeAndGetDataIdAndSize(reader)
+        fs.storeAndGetDataIdAndSize(reader, settings.storeMethod)
       }
     }
-    fs.createDataEntry(dataid, size, print, hash)
+    fs.createDataEntry(dataid, size, print, hash, settings.storeMethod)
     fs.createAndGetId(parent, source.name, source.time, Some(dataid))
   }
 
   private def storeFromBytesRead(source: SourceType, parent: TreeEntryID, bytes: Array[Byte], print: Print, size: Size, hash: Hash): TreeEntryID = {
-    val dataid = fs.storeAndGetDataId(bytes, size)
-    fs.createDataEntry(dataid, size, print, hash)
+    val dataid = fs.storeAndGetDataId(bytes, size, settings.storeMethod)
+    fs.createDataEntry(dataid, size, print, hash, settings.storeMethod)
     fs.createAndGetId(parent, source.name, source.time, Some(dataid))
   }
 }

@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.database
 
+import net.diet_rich.dedup.datastore.StoreMethods
 import net.diet_rich.util.io._
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
@@ -73,7 +74,9 @@ trait ByteStoreDB {
       "SELECT GREATEST((SELECT MAX(id) FROM DataInfo), (SELECT MAX(dataid) FROM ByteStore))"
     )
 
-  def read(dataId: DataEntryID): ByteSource = new Object {
+  def read(dataId: DataEntryID, method: Method): ByteSource =
+    StoreMethods.wrapRestore(read(dataId), method)
+  private def read(dataId: DataEntryID): ByteSource = new Object {
     val parts = selectEntryParts(dataId.value)(r => DataRange(Position(r long 1), Position(r long 2)))
     var rangeOpt: Option[DataRange] = None
     def read(bytes: Array[Byte], offset: Int, length: Int): Int =
@@ -94,38 +97,35 @@ trait ByteStoreDB {
   protected final val selectEntryParts = 
     prepareQuery("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY index ASC")
     
-  def storeAndGetDataId(bytes: Array[Byte], size: Size): DataEntryID = {
-    val id = DataEntryID(maxEntryId incrementAndGet())
-    @annotation.tailrec
-    def writeStep(index: Int, offset: Position, length: Size): Unit = if (length > Size(0)) {
-      val range = freeRanges.next
-      if (length > range.length) {
-        ds.writeToSingleDataFile(range.start, bytes, offset, range.length)
-        insertEntry(id.value, index, range.start.value, range.fin.value)
-        writeStep(index + 1, offset + range.length, length - range.length)
-      } else {
-        ds.writeToSingleDataFile(range.start, bytes, offset, length)
-        insertEntry(id.value, index, range.start.value, range.start.value + length.value)
-        freeRanges.enqueue(range.withOffset(length))
+  def storeAndGetDataId(bytes: Array[Byte], size: Size, method: Method): DataEntryID =
+    storeAndGetDataIdAndSize(new java.io.ByteArrayInputStream(bytes), method)._1
+  
+  def storeAndGetDataIdAndSize(source: ByteSource, method: Method): (DataEntryID, Size) = {
+    val sourceToWrite = new Object {
+      var totalRead = 0L
+      def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
+        val localRead = source.read(bytes, offset, length)
+        if (localRead > 0) totalRead = totalRead + localRead
+        localRead
       }
     }
-    writeStep(0, Position(0), size)
-    id
+    val possiblyCompressedSource = StoreMethods.wrapStore(sourceToWrite, method)
+    (storeAndGetDataId(possiblyCompressedSource), Size(sourceToWrite.totalRead))
   }
 
-  def storeAndGetDataIdAndSize(source: ByteSource): (DataEntryID, Size) = {
+  private def storeAndGetDataId(source: ByteSource): DataEntryID = {
     val id = DataEntryID(maxEntryId incrementAndGet())
     @annotation.tailrec
-    def writeStep(range: DataRange, index: Int, size: Size): Size = {
+    def writeStep(range: DataRange, index: Int): Unit = {
       writeRange(id, index, source, range) match {
         case e if e.isEmpty =>
-          writeStep(freeRanges.next, index + 1, size + range.length)
+          writeStep(freeRanges.next, index + 1)
         case remaining =>
           freeRanges.enqueue(remaining)
-          size + range.length - remaining.length
       }
     }
-    (id, writeStep(freeRanges.next, 0, Size(0)))
+    writeStep(freeRanges.next, 0)
+    id
   }
 
   private def writeRange(id: DataEntryID, index: Int, source: ByteSource, range: DataRange): DataRange = {

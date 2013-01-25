@@ -37,10 +37,10 @@ trait DataInfoDB {
     prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?")
   
   /** @throws Exception if the entry was not created correctly. */
-  def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash): Unit =
-    insertNewEntry(dataid.value, size.value, print.value, hash.value)
+  def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash, method: Method): Unit =
+    insertNewEntry(dataid.value, size.value, print.value, hash.value, method.value)
   protected val insertNewEntry =
-    prepareSingleRowUpdate("INSERT INTO DataInfo (id, length, print, hash) VALUES (?, ?, ?, ?)")
+    prepareSingleRowUpdate("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?)")
 }
 
 object DataInfoDB {

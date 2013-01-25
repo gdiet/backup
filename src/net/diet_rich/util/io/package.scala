@@ -46,6 +46,23 @@ package object io {
     readRecurse(0)
   }
 
+  def appendByte(reader: ByteSource, byte: Byte): ByteSource = new Object {
+    var isAppended = false
+    def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int = {
+      reader.read(bytes, internalOffset, length) match {
+        case n if (n < 1) =>
+          if (isAppended)
+            n
+          else {
+            bytes(internalOffset) = byte
+            isAppended = false
+            1
+          }
+        case n => n
+      }
+    }
+  }
+  
   def prependArray(data: Array[Byte], offset: Int, len: Int, reader: ByteSource): ByteSource = new Object {
     var read: Int = 0
     def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int =
@@ -85,7 +102,7 @@ package object io {
     }
 
   def sourceAsInputStream(source: ByteSource) = new java.io.InputStream {
-    def read: Int = {
+    override def read: Int = {
       val array = new Array[Byte](1)
       read(array) match {
         case n if (n < 1) => -1

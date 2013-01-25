@@ -8,6 +8,8 @@ import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.repository.Repository
 import net.diet_rich.util.CmdApp
 
+case class BackupSettings(storeMethod: Method)
+
 object Backup extends CmdApp {
   def main(args: Array[String]): Unit = run(args)(backup)
   
@@ -46,7 +48,9 @@ object Backup extends CmdApp {
       with AlgorithmCommons {
         type SourceType = FileSource
         protected val fs = repository.fs
+//        protected val control = new SimpleBackupControl with SimpleMemoryManager
         protected val control = new PooledBackupControl with SimpleMemoryManager
+        protected val settings = new BackupSettings(Method.DEFLATE)
       }
 
     try {

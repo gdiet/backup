@@ -35,4 +35,9 @@ class Path(val value: String) extends AnyBase {
 object Path { def apply(value: String) = new Path(value) }
 
 class Method(val value: Int) extends AnyBase with ValueToString
-object Method { def apply(value: Int) = new Method(value) }
+object Method {
+  val STORE = Method(0)
+  val DEFLATE = Method(1)
+  val SUPPORTED = Set(STORE, DEFLATE)
+  def apply(value: Int) = new Method(value)
+}
