@@ -34,7 +34,8 @@ object Create extends CmdApp {
     require(repositoryFolder.child(Repository.dbDirName).mkdir(), s"Could not create database folder ${Repository.dbDirName}")
     writeSettingsFile(repositoryFolder.child(Repository.settingsFileName), repositorySettings)
     
-    implicit val connection = Repository.getConnection(repositoryFolder)
+    val dbdir = repositoryFolder.child(Repository.dbDirName)
+    implicit val connection = Repository.getConnection(dbdir)
     TreeDB.createTable
     DataInfoDB.createTable(Hash(Hashes.zeroBytesHash(hashAlgorithm)), CrcAdler8192.zeroBytesPrint)
     ByteStoreDB.createTable

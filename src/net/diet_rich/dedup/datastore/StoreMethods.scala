@@ -22,6 +22,6 @@ object StoreMethods {
       val inflater = new Inflater(true)
       // appendByte is needed as fix for a bug in Inflater, see e.g.
       // 6519463 : Unexpected end of ZLIB when using GZIP on some files
-      new InflaterInputStream(sourceAsInputStream(appendByte(source, 0)), inflater)
+      new InflaterInputStream(sourceAsInputStream(source.appendByte(0)), inflater)
   }
 }

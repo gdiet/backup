@@ -46,41 +46,6 @@ package object io {
     readRecurse(0)
   }
 
-  def appendByte(reader: ByteSource, byte: Byte): ByteSource = new Object {
-    var isAppended = false
-    def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int = {
-      reader.read(bytes, internalOffset, length) match {
-        case n if (n < 1) =>
-          if (isAppended)
-            n
-          else {
-            bytes(internalOffset) = byte
-            isAppended = false
-            1
-          }
-        case n => n
-      }
-    }
-  }
-  
-  def prependArray(data: Array[Byte], offset: Int, len: Int, reader: ByteSource): ByteSource = new Object {
-    var read: Int = 0
-    def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int =
-      if (read < len)
-        if (length < len-read) {
-          Array.copy(data, offset + read, bytes, internalOffset, length)
-          read = read + length
-          length
-        } else {
-          val result = len - read
-          Array.copy(data, offset + read, bytes, internalOffset, result)
-          read = len
-          result
-        }
-      else
-        reader.read(bytes, internalOffset, length)
-  }
-  
   def readSettingsFile(path: File): Map[String, String] =
     using(scala.io.Source.fromFile(path, "UTF-8")) { source =>
       source.getLines
@@ -124,7 +89,8 @@ package object io {
     ) && value.delete
   }
   
-  implicit class EnhancedByteSource(val value: ByteSource) extends AnyVal {
+  // TODO make value class once nested class restriction is lifted
+  implicit class EnhancedByteSource(val value: ByteSource) {
     def copyTo(sink: ByteSink) = {
       val bytes = new Array[Byte](32768)
       @annotation.tailrec
@@ -137,6 +103,41 @@ package object io {
         }
       }
       recurse(0)
+    }
+    
+    def appendByte(byte: Byte): ByteSource = new Object {
+      var isAppended = false
+      def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int = {
+        value.read(bytes, internalOffset, length) match {
+          case n if (n < 1) =>
+            if (isAppended)
+              n
+            else {
+              bytes(internalOffset) = byte
+              isAppended = false
+              1
+            }
+          case n => n
+        }
+      }
+    }
+    
+    def prependArray(data: Array[Byte], offset: Int, len: Int): ByteSource = new Object {
+      var read: Int = 0
+      def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int =
+        if (read < len)
+          if (length < len-read) {
+            Array.copy(data, offset + read, bytes, internalOffset, length)
+            read = read + length
+            length
+          } else {
+            val result = len - read
+            Array.copy(data, offset + read, bytes, internalOffset, result)
+            read = len
+            result
+          }
+        else
+          value.read(bytes, internalOffset, length)
     }
   }
 }

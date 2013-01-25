@@ -57,7 +57,7 @@ object Backup extends CmdApp {
       processor.backup(new FileSource(source), target, reference)
     } finally {
       processor.shutdown
-      repository.dataStore.shutdown
+      repository.shutdown(true)
     }
   }
 }
