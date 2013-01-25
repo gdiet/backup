@@ -21,7 +21,7 @@ trait TreeDB {
   
   /** @return The child ID.
    *  @throws Exception if the child was not created correctly. */
-  def createAndGetId(parentId: TreeEntryID, name: String, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID = {
+  def createAndGetId(parentId: TreeEntryID, name: String, nodeType: NodeType, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID = {
     val id = maxEntryId incrementAndGet()
     addEntry(id, parentId.value, name, time.value, dataId.map(_.value))
     TreeEntryID(id)
@@ -88,12 +88,12 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
   }
     
   /** @return The entry ID. Missing path elements are created on the fly. */
-  def getOrMake(path: Path): TreeEntryID = if (path == ROOTPATH) ROOTID else {
+  def getOrMakeDir(path: Path): TreeEntryID = if (path == ROOTPATH) ROOTID else {
     assume(path.value.startsWith(SEPARATOR), s"Path <$path> is not root and does not start with '$SEPARATOR'")
     val parts = path.value.split(SEPARATOR).drop(1)
     parts.foldLeft(ROOTID) {(node, childName) =>
       val childOption = children(node).find(_.name == childName)
-      childOption map(_.id) getOrElse createAndGetId(node, childName)
+      childOption map(_.id) getOrElse createAndGetId(node, childName, NodeType.DIR)
     }
   }
 
@@ -118,13 +118,14 @@ object TreeDB {
         id     BIGINT PRIMARY KEY,
         parent BIGINT NULL,
         name   VARCHAR(256) NOT NULL,
+        type   INTEGER NOT NULL,
         time   BIGINT NOT NULL DEFAULT 0,
         dataid BIGINT DEFAULT NULL
       );
     """)
     execUpdate("CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent)")
     execUpdate("CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid)")
-    execUpdate("INSERT INTO TreeEntries (id, parent, name) VALUES (0, NULL, '')")
+    execUpdate(s"INSERT INTO TreeEntries (id, parent, name, type) VALUES (0, NULL, '', ${NodeType.DIR})")
   }
 
   def dropTable(implicit connection: WrappedConnection) : Unit =

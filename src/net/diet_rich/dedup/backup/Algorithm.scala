@@ -35,7 +35,7 @@ trait TreeHandling {
             storeData(source, parent)
       } else {
         // create directory node
-        fs.createAndGetId(parent, source.name, source.time)
+        fs.createAndGetId(parent, source.name, NodeType.DIR, source.time)
       }
       // process children
       source.children.foreach { child =>
@@ -58,7 +58,7 @@ trait PrintMatchCheck {
   protected def processMatchingTimeAndSize(source: SourceType, parent: TreeEntryID, referenceData: FullDataInformation): TreeEntryID =
     using(source.reader) { reader =>
       fs.dig.calculatePrint(reader) match {
-        case referenceData.print => fs.createAndGetId(parent, source.name, referenceData.time, referenceData.dataid)
+        case referenceData.print => fs.createAndGetId(parent, source.name, NodeType.FILE, referenceData.time, referenceData.dataid)
         case print => storeData(source, parent, reader, print)
       }
     }
@@ -113,7 +113,7 @@ trait StoreData {
         storeFromReader(source, parent, reader)
       case (dataid, _) =>
         // already known
-        fs.createAndGetId(parent, source.name, source.time, dataid)
+        fs.createAndGetId(parent, source.name, NodeType.FILE, source.time, dataid)
     }
   }
 
@@ -125,12 +125,12 @@ trait StoreData {
       }
     }
     fs.createDataEntry(dataid, size, print, hash, settings.storeMethod)
-    fs.createAndGetId(parent, source.name, source.time, Some(dataid))
+    fs.createAndGetId(parent, source.name, NodeType.FILE, source.time, Some(dataid))
   }
 
   private def storeFromBytesRead(source: SourceType, parent: TreeEntryID, bytes: Array[Byte], print: Print, size: Size, hash: Hash): TreeEntryID = {
     val dataid = fs.storeAndGetDataId(bytes, size, settings.storeMethod)
     fs.createDataEntry(dataid, size, print, hash, settings.storeMethod)
-    fs.createAndGetId(parent, source.name, source.time, Some(dataid))
+    fs.createAndGetId(parent, source.name, NodeType.FILE, source.time, Some(dataid))
   }
 }

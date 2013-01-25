@@ -33,7 +33,7 @@ object Backup extends CmdApp {
         case id => id
       }
     }
-    val target = repository.fs.getOrMake(Path(opts(TARGET)))
+    val target = repository.fs.getOrMakeDir(Path(opts(TARGET)))
     if (!repository.fs.children(target).isEmpty)
       throw new IllegalArgumentException("Target folder ${opts(TARGET)} is not empty")
     if (!repository.fs.fullDataInformation(target).isEmpty)
