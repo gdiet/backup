@@ -26,8 +26,23 @@ object Backup extends CmdApp {
     require(! opts(REPOSITORY).isEmpty, s"Repository location setting $REPOSITORY is mandatory.")
     require(! opts(TARGET).isEmpty, s"Target folder setting $TARGET is mandatory.")
     val storeMethod = Method(opts(METHOD).toInt)
-    val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val source = new java.io.File(opts(SOURCE)).getCanonicalFile
+    require(source.exists(), s"Source $source does not exist.")
+    val targetString = opts(TARGET)
+    require(targetString.count('|'==) % 2 == 0, "Target string is not well-formed with respect to '|'")
+    
+    val date = new java.util.Date
+    val dateTargetString =
+      targetString.split('|')
+      .sliding(2,2)
+      .map(_.toList).map {
+        case List(a,b) => List(a, new java.text.SimpleDateFormat(b).format(date))
+        case List(a) => List(a)
+        case _ => throw new IllegalStateException
+      }.flatten.mkString
+    if (targetString.contains('|')) println(s"Storing in target $dateTargetString")
+    
+    val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val reference = opts(DIFFERENTIAL) match {
       case "" => None
       case e => repository.fs.entry(Path(e)) match {
@@ -35,7 +50,7 @@ object Backup extends CmdApp {
         case id => id
       }
     }
-    val target = repository.fs.getOrMakeDir(Path(opts(TARGET)))
+    val target = repository.fs.getOrMakeDir(Path(dateTargetString))
     if (!repository.fs.children(target).isEmpty)
       throw new IllegalArgumentException(s"Target folder ${opts(TARGET)} is not empty")
     if (!repository.fs.fullDataInformation(target).isEmpty)
