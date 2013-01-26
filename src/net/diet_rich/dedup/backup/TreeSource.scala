@@ -21,7 +21,12 @@ class FileSource(val file: java.io.File) extends TreeSource[FileSource] {
   def time: Time = Time(file.lastModified)
   def size: Size = Size(file.length)
   def children: Iterable[FileSource] =
-    if (file isDirectory) file.listFiles.map(new FileSource(_)) else Nil
+    if (file isDirectory)
+      file.listFiles
+      .filterNot(file => file.isDirectory && file.list.contains(".backupignore"))
+      .map(new FileSource(_))
+    else
+      Nil
   def reader: SeekReader =
     if (hasData) new java.io.RandomAccessFile(file, "r") else emptyReader
   override def toString: String = file.toString
