@@ -130,8 +130,8 @@ class RepoFile(repository: Repository, id: TreeEntryID) extends FtpFile {
     if (offset != 0) throw new IOException("not random accessible")
     repository.fs.entry(id) match {
       case None => throw new FileNotFoundException
-      case Some(TreeEntry(_, _, _, _, None)) => throw new IOException("directory, not a file")
-      case Some(TreeEntry(_, _, _, _, Some(dataid))) =>
+      case Some(TreeEntry(_, _, _, _, _, None)) => throw new IOException("directory, not a file")
+      case Some(TreeEntry(_, _, _, _, _, Some(dataid))) =>
         val method = repository.fs.dataEntry(dataid).method
         net.diet_rich.util.io.sourceAsInputStream(repository.fs.read(dataid, method))
     }

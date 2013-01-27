@@ -10,6 +10,7 @@ case class TreeEntry(
   id: TreeEntryID, 
   parent: Option[TreeEntryID], 
   name: String, 
+  nodeType: NodeType,
   time: Time = Time(0), 
   dataid: Option[DataEntryID] = None)
 
@@ -32,27 +33,27 @@ trait TreeDB {
   /** @return The entry if any. */
   def entry(id: TreeEntryID): Option[TreeEntry] =
     queryEntry(id.value)(
-      r => TreeEntry(id, TreeEntryID(r longOption 1), r string 2, Time(r long 3), DataEntryID(r longOption 4))
+      r => TreeEntry(id, TreeEntryID(r longOption 1), r string 2, NodeType(r int 3), Time(r long 4), DataEntryID(r longOption 5))
     ).nextOptionOnly
   protected val queryEntry = 
-    prepareQuery("SELECT parent, name, time, dataid FROM TreeEntries WHERE id = ?")
+    prepareQuery("SELECT parent, name, type, time, dataid FROM TreeEntries WHERE id = ?")
 
   /** @return The child entry if any. */
   def child(parent: TreeEntryID, name: String): Option[TreeEntry] =
     queryChild(parent.value, name)(
-      r => TreeEntry(TreeEntryID(r long 1), Some(parent), name, Time(r long 2), DataEntryID(r longOption 3))
+      r => TreeEntry(TreeEntryID(r long 1), Some(parent), name, NodeType(r int 2), Time(r long 3), DataEntryID(r longOption 4))
     ).nextOptionOnly
   protected val queryChild = 
-    prepareQuery("SELECT id, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?")
+    prepareQuery("SELECT id, type, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?")
 
   /** Note: If the children are not consumed immediately, they must be stored e.g. by calling *.toList.
    *  @return The children, empty if no such node. */
   def children(parent: TreeEntryID): Iterable[TreeEntry] =
     queryChildren(parent.value)(
-      r => TreeEntry(TreeEntryID(r long 1), Some(parent), r string 2, Time(r long 3), DataEntryID(r longOption 4))
+      r => TreeEntry(TreeEntryID(r long 1), Some(parent), r string 2, NodeType(r int 3), Time(r long 4), DataEntryID(r longOption 5))
     ).toSeq
   protected val queryChildren =
-    prepareQuery("SELECT id, name, time, dataid FROM TreeEntries WHERE parent = ?")
+    prepareQuery("SELECT id, name, type, time, dataid FROM TreeEntries WHERE parent = ?")
     
   /** @return The node's complete data information if any. */
   def fullDataInformation(id: TreeEntryID): Option[FullDataInformation] =
