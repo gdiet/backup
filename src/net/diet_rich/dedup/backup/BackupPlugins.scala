@@ -35,7 +35,19 @@ trait SimpleBackupControl extends BackupControl[FileSource] {
 }
 
 class PooledBackupControl extends BackupControl[FileSource] {
-  def notifyProgressMonitor(entry: FileSource): Unit = Unit // println("processing %s" format entry.file)
+  private val time = System.currentTimeMillis()
+  private val timer = new java.util.Timer("Progress Monitor")
+  private val fileCount = new java.util.concurrent.atomic.AtomicLong(0)
+  private val dirCount = new java.util.concurrent.atomic.AtomicLong(0)
+  timer.schedule(new java.util.TimerTask {def run = {
+    println(s"backup: ${fileCount.get} files in ${dirCount.get} directories after ${(System.currentTimeMillis() - time)/1000}s")
+  }}, 5000, 5000)
+  def notifyProgressMonitor(entry: FileSource): Unit = {
+    if (entry.file.isDirectory())
+      dirCount.incrementAndGet
+    else
+      fileCount.incrementAndGet
+  }
   val pool = new java.util.concurrent.ThreadPoolExecutor(8, 8, 0,
     java.util.concurrent.TimeUnit.SECONDS,
     new java.util.concurrent.LinkedBlockingQueue[Runnable](4),
@@ -58,6 +70,7 @@ class PooledBackupControl extends BackupControl[FileSource] {
   def shutdown = {
     tasksLock.acquire
     if (!(tasks.get == 0)) throw new IllegalStateException("not all tasks have been released, count is ${tasks.get}")
+    timer.cancel
     pool.shutdown
     pool.awaitTermination(1, java.util.concurrent.TimeUnit.DAYS)
   }
