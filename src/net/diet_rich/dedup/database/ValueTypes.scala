@@ -29,7 +29,7 @@ class Hash(val value: Array[Byte]) { // FIXME not a value class anymore
 }
 object Hash { def apply(value: Array[Byte]) = new Hash(value) }
 
-class Path(val value: String) extends AnyBase {
+class Path(val value: String) extends AnyBase with ValueToString {
   def +(string: String) = Path(value + string)
 }
 object Path { def apply(value: String) = new Path(value) }

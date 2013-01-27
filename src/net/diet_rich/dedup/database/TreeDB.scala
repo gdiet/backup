@@ -86,7 +86,7 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
       }
     }
   }
-    
+
   /** @return The entry ID. Missing path elements are created on the fly. */
   def getOrMakeDir(path: Path): TreeEntryID = if (path == ROOTPATH) ROOTID else {
     assume(path.value.startsWith(SEPARATOR), s"Path <$path> is not root and does not start with '$SEPARATOR'")
@@ -103,6 +103,26 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
     val parts = path.value.split(SEPARATOR).drop(1)
     parts.foldLeft(entry(ROOTID)) {(node, childName) =>
       node.flatMap(node => children(node.id).find(_.name == childName))
+    }
+  }
+  
+  /** @return The entry or None if no such entry. */
+  def entryWithWildcards(path: Path): Option[TreeEntry] = if (path == ROOTPATH) entry(ROOTID) else {
+    assume(path.value.startsWith(SEPARATOR), s"Path <$path> is not root and does not start with '$SEPARATOR'")
+    val parts = path.value.split(SEPARATOR).drop(1)
+    val regexpParts = {
+      parts.toSeq.map { part => 
+        require(part.count('|'==) % 2 == 0, s"Path $path is not well-formed with respect to '|'")
+        part.split('|').sliding(2,2)
+        .map(_.toList).map {
+          case List(a,b) => List(java.util.regex.Pattern.quote(a), b)
+          case List(a) => List(java.util.regex.Pattern.quote(a))
+          case _ => throw new IllegalStateException
+        }.flatten.mkString
+      }
+    }
+    regexpParts.foldLeft(entry(ROOTID)) {(node, childNameRegexp) =>
+      node.flatMap(node => children(node.id).toList.sortBy(_.name).reverse.find(_.name.matches(childNameRegexp)))
     }
   }
 }

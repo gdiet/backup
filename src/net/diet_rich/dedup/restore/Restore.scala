@@ -26,7 +26,7 @@ object Restore extends CmdApp {
     require(! opts(SOURCE).isEmpty, s"Source path setting $SOURCE is mandatory.")
     require(! opts(TARGET).isEmpty, s"Target folder setting $TARGET is mandatory.")
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
-    val source = repository.fs.entry(Path(opts(SOURCE))) match {
+    val source = repository.fs.entryWithWildcards(Path(opts(SOURCE))) match {
       case None => throw new IllegalArgumentException("Source path ${opts(SOURCE)} not in repository")
       case Some(id) => id
     }
