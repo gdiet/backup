@@ -5,6 +5,7 @@ package net.diet_rich.dedup.restore
 
 import net.diet_rich.dedup.CmdLine._
 import net.diet_rich.dedup.database._
+import net.diet_rich.dedup.plugins.ConsoleProgressOutput
 import net.diet_rich.dedup.repository.Repository
 import net.diet_rich.util.CmdApp
 import net.diet_rich.util.io._
@@ -21,10 +22,8 @@ object Restore extends CmdApp {
     TARGET -> "" -> "[%s <directory>] Mandatory: Target directory to restore to (must be empty)"
   )
 
-  private val time = System.currentTimeMillis()
-  private val timer = new java.util.Timer("Progress Monitor")
-  private val fileCount = new java.util.concurrent.atomic.AtomicLong(0)
-  private val dirCount = new java.util.concurrent.atomic.AtomicLong(0)
+  private lazy val progressOutput = new ConsoleProgressOutput(
+    "restore: %s files in %s directories after %ss", 5000, 5000)
   
   def restore(opts: Map[String, String]): Unit = {
     require(! opts(REPOSITORY).isEmpty, s"Repository location setting $REPOSITORY is mandatory.")
@@ -43,11 +42,8 @@ object Restore extends CmdApp {
       require(target.mkdirs(), "Can't create target folder.")
     }
     
-    timer.schedule(new java.util.TimerTask {def run = {
-      println(s"restore: ${fileCount.get} files in ${dirCount.get} directories after ${(System.currentTimeMillis() - time)/1000}s")
-    }}, 5000, 5000)
     restore(repository, source, target)
-    timer.cancel
+    progressOutput.cancel
   }
   
   private def restore(repository: Repository, source: TreeEntry, targetParent: File): Unit = {
@@ -55,11 +51,11 @@ object Restore extends CmdApp {
     val children = repository.fs.children(source.id).toList
     source.dataid match {
       case None =>
-        dirCount.incrementAndGet
+        progressOutput.incDirs
         require(target.mkdir(), f"Can't create ${targetParent.child(source.name)}")
         children.foreach(restore(repository, _, target))
       case Some(dataid) =>
-        fileCount.incrementAndGet
+        progressOutput.incFiles
         val dataEntry = repository.fs.dataEntry(dataid)
         require(children.isEmpty, f"Expected no children for node $source with data")
         val (print, (hash, size)) = using(new RandomAccessFile(target, "rw")) { sink =>

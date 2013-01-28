@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.backup
 
+import net.diet_rich.dedup.plugins.ConsoleProgressOutput
 import net.diet_rich.util.vals._
 
 trait BackupMonitor[SourceType <: TreeSource[SourceType]] {
@@ -35,19 +36,10 @@ trait SimpleBackupControl extends BackupControl[FileSource] {
 }
 
 class PooledBackupControl extends BackupControl[FileSource] {
-  private val time = System.currentTimeMillis()
-  private val timer = new java.util.Timer("Progress Monitor")
-  private val fileCount = new java.util.concurrent.atomic.AtomicLong(0)
-  private val dirCount = new java.util.concurrent.atomic.AtomicLong(0)
-  timer.schedule(new java.util.TimerTask {def run = {
-    println(s"backup: ${fileCount.get} files in ${dirCount.get} directories after ${(System.currentTimeMillis() - time)/1000}s")
-  }}, 5000, 5000)
-  def notifyProgressMonitor(entry: FileSource): Unit = {
-    if (entry.file.isDirectory())
-      dirCount.incrementAndGet
-    else
-      fileCount.incrementAndGet
-  }
+  private lazy val progressOutput = new ConsoleProgressOutput(
+    "backup: %s files in %s directories after %ss", 5000, 5000)
+  def notifyProgressMonitor(entry: FileSource): Unit =
+    if (entry.file.isDirectory()) progressOutput.incDirs else progressOutput.incFiles
   val pool = new java.util.concurrent.ThreadPoolExecutor(8, 8, 0,
     java.util.concurrent.TimeUnit.SECONDS,
     new java.util.concurrent.LinkedBlockingQueue[Runnable](4),
@@ -70,7 +62,7 @@ class PooledBackupControl extends BackupControl[FileSource] {
   def shutdown = {
     tasksLock.acquire
     if (!(tasks.get == 0)) throw new IllegalStateException("not all tasks have been released, count is ${tasks.get}")
-    timer.cancel
+    progressOutput.cancel
     pool.shutdown
     pool.awaitTermination(1, java.util.concurrent.TimeUnit.DAYS)
   }
