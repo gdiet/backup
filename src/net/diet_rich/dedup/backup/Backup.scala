@@ -7,6 +7,7 @@ import net.diet_rich.dedup.CmdLine._
 import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.repository.Repository
 import net.diet_rich.util.CmdApp
+import net.diet_rich.util.Strings
 
 case class BackupSettings(storeMethod: Method)
 
@@ -33,13 +34,7 @@ object Backup extends CmdApp {
     
     val date = new java.util.Date
     val dateTargetString =
-      targetString.split('|')
-      .sliding(2,2)
-      .map(_.toList).map {
-        case List(a,b) => List(a, new java.text.SimpleDateFormat(b).format(date))
-        case List(a) => List(a)
-        case _ => throw new IllegalStateException
-      }.flatten.mkString
+      Strings.processPipeSyntax(targetString, identity, new java.text.SimpleDateFormat(_).format(date))
     if (targetString.contains('|')) println(s"Storing in target $dateTargetString")
     
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))

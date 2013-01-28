@@ -5,6 +5,7 @@ package net.diet_rich.dedup.database
 
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
+import net.diet_rich.util.Strings
 
 case class TreeEntry(
   id: TreeEntryID, 
@@ -111,18 +112,8 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
   def entryWithWildcards(path: Path): Option[TreeEntry] = if (path == ROOTPATH) entry(ROOTID) else {
     assume(path.value.startsWith(SEPARATOR), s"Path <$path> is not root and does not start with '$SEPARATOR'")
     val parts = path.value.split(SEPARATOR).drop(1)
-    val regexpParts = {
-      parts.toSeq.map { part => 
-        require(part.count('|'==) % 2 == 0, s"Path $path is not well-formed with respect to '|'")
-        part.split('|').sliding(2,2)
-        .map(_.toList).map {
-          case List(a,b) => List(java.util.regex.Pattern.quote(a), b)
-          case List(a) => List(java.util.regex.Pattern.quote(a))
-          case _ => throw new IllegalStateException
-        }.flatten.mkString
-      }
-    }
-    regexpParts.foldLeft(entry(ROOTID)) {(node, childNameRegexp) =>
+    parts.foldLeft(entry(ROOTID)) {(node, pathElement) =>
+      val childNameRegexp = Strings.processPipeSyntax(pathElement, java.util.regex.Pattern.quote(_), identity)
       node.flatMap(node => children(node.id).toList.sortBy(_.name).reverse.find(_.name.matches(childNameRegexp)))
     }
   }
