@@ -25,24 +25,28 @@ trait TreeHandling {
   private def processSourceEntry(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): Unit =
     control.catchAndHandleException(source) {
       control.notifyProgressMonitor(source)
-      val target = if (source.hasData) reference.flatMap(fs.fullDataInformation(_)) match {
-        // process data
-        case None => storeData(source, parent)
-        case Some(referenceData) =>
-          if (source.time == referenceData.time && source.size == referenceData.size)
-            processMatchingTimeAndSize(source, parent, referenceData)
-          else
-            storeData(source, parent)
-      } else {
-        // create directory node
+      // store file or directory
+      val target = if (source.hasData)
+        storeFileEntry(source, parent, reference)
+      else
         fs.createAndGetId(parent, source.name, NodeType.DIR, source.time)
-      }
       // process children
       source.children.foreach { child =>
         val childReference = reference.flatMap(fs.childId(_, child.name))
         control.executeInThreadPool(processSourceEntry(child, target, childReference))
       }
     }
+  
+  private def storeFileEntry(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): TreeEntryID = {
+    reference.flatMap(fs.fullDataInformation(_)) match {
+      case None => storeData(source, parent)
+      case Some(referenceData) =>
+        if (source.time == referenceData.time && source.size == referenceData.size)
+          processMatchingTimeAndSize(source, parent, referenceData)
+        else
+          storeData(source, parent)
+    }
+  }
 }
 
 //trait NoPrintMatchCheck[SourceType] {

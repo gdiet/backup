@@ -27,9 +27,11 @@ object Create extends CmdApp {
     require(repositoryFolder.list.isEmpty, s"Repository folder $repositoryFolder must be empty")
     val hashAlgorithm = opts(HASH)
     val repositorySettings = Map(
+      Repository.repositoryIdKey -> scala.util.Random.nextLong.toString,
       Repository.repositoryVersionKey -> Repository.repositoryVersion,
       Repository.hashKey -> Hashes.checkAlgorithm(hashAlgorithm),
-      Repository.dataSizeKey -> dataSize.toString
+      Repository.dataSizeKey -> dataSize.toString,
+      Repository.dbVersionKey -> Repository.dbVersion
     )
     require(repositoryFolder.child(Repository.dbDirName).mkdir(), s"Could not create database folder ${Repository.dbDirName}")
     writeSettingsFile(repositoryFolder.child(Repository.settingsFileName), repositorySettings)
@@ -39,5 +41,6 @@ object Create extends CmdApp {
     TreeDB.createTable
     DataInfoDB.createTable(Hash(Hashes.zeroBytesHash(hashAlgorithm)), CrcAdler8192.zeroBytesPrint)
     ByteStoreDB.createTable
+    SettingsDB.createTable(repositorySettings)
   }
 }

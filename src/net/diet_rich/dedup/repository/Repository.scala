@@ -12,6 +12,11 @@ import net.diet_rich.dedup.datastore.DataStore
 
 class Repository(val basedir: File) { import Repository._
   val settings = readSettingsFile(basedir.child(settingsFileName))
+  assume(
+    settings.get(Repository.repositoryVersionKey) == Some(Repository.repositoryVersion),
+    s"Expected repository version ${Repository.repositoryVersion} but found ${settings.get(Repository.repositoryVersionKey).getOrElse("None")}."
+  )
+  
   val digesters = new HashDigester(settings(hashKey)) with Digesters with CrcAdler8192
   val dataStore = new DataStore(basedir, Size(settings(dataSizeKey).toLong))
 
@@ -21,6 +26,11 @@ class Repository(val basedir: File) { import Repository._
   require(lockfile.isFile, s"Expected database lock file $lockfile to exist.")
   
   val fs: BackupFileSystem = new BackupFileSystem(digesters, dataStore)(connection)
+  fs.checkDbVersion
+  assume(
+    settings.get(Repository.repositoryIdKey) == fs.dbSettings.get(Repository.repositoryIdKey),
+    s"Expected repository id in database ${fs.dbSettings.get(Repository.repositoryIdKey).getOrElse("None")} to match that of repository ${settings.get(Repository.repositoryIdKey).getOrElse("None")}."
+  )
   
   def shutdown(backupDb: Boolean) = {
     dataStore.shutdown
@@ -58,10 +68,14 @@ object Repository {
   val settingsFileName = "settings.txt"
     
   val repositoryVersion = "1.0"
+  val dbVersion = "1.0"
     
   val repositoryVersionKey = "repository version"
+  val repositoryIdKey = "repository id"
   val hashKey = "hash algorithm"
   val dataSizeKey = "data size"
+  val dbVersionKey = "database version"
+    
     
   def getConnection(basedir: File): WrappedConnection = new Object {
     val con = DBConnection.forH2(s"$basedir/$dbFileName")
