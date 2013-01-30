@@ -4,6 +4,7 @@
 package net.diet_rich.dedup.backup
 
 import net.diet_rich.dedup.plugins.ConsoleProgressOutput
+import net.diet_rich.util.ThreadsManager
 import net.diet_rich.util.vals._
 
 trait BackupMonitor[SourceType <: TreeSource[SourceType]] {
@@ -36,35 +37,17 @@ trait SimpleBackupControl extends BackupControl[FileSource] {
 }
 
 class PooledBackupControl extends BackupControl[FileSource] {
+  private val executor = new ThreadsManager(10, 10)
   private lazy val progressOutput = new ConsoleProgressOutput(
     "backup: %s files in %s directories after %ss", 5000, 5000)
   def notifyProgressMonitor(entry: FileSource): Unit =
     if (entry.file.isDirectory()) progressOutput.incDirs else progressOutput.incFiles
-  val pool = new java.util.concurrent.ThreadPoolExecutor(8, 8, 0,
-    java.util.concurrent.TimeUnit.SECONDS,
-    new java.util.concurrent.LinkedBlockingQueue[Runnable](4),
-    new java.util.concurrent.ThreadPoolExecutor.CallerRunsPolicy)
-  val tasks = new java.util.concurrent.atomic.AtomicInteger(0)
-  val tasksLock = new java.util.concurrent.Semaphore(1)
-  def executeInThreadPool(f: => Unit): Unit = {
-    if (tasks.incrementAndGet == 1) {
-      if (!tasksLock.tryAcquire()) {
-        tasks.decrementAndGet
-        throw new IllegalStateException("could not aquire tasks lock")
-      }
-    }
-    pool.execute(new Runnable { def run: Unit = try { f } finally {
-      if (tasks.decrementAndGet == 0) tasksLock.release
-    } })
-  }
+  def executeInThreadPool(f: => Unit): Unit = executor.execute(f)
   def catchAndHandleException(entry: FileSource)(f: => Unit): Unit =
     try { f } catch { case e: Throwable => println(e) }
   def shutdown = {
-    tasksLock.acquire
-    if (!(tasks.get == 0)) throw new IllegalStateException("not all tasks have been released, count is ${tasks.get}")
+    executor.shutdown
     progressOutput.cancel
-    pool.shutdown
-    pool.awaitTermination(1, java.util.concurrent.TimeUnit.DAYS)
   }
 }
 
