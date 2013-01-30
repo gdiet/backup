@@ -38,11 +38,14 @@ object Backup extends CmdApp {
     if (targetString.contains('|')) println(s"Storing in target $dateTargetString")
     
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
+      
     val reference = opts(DIFFERENTIAL) match {
       case "" => None
-      case e => repository.fs.entry(Path(e)) match {
+      case e => repository.fs.entryWithWildcards(Path(e)) match {
         case None => throw new IllegalArgumentException(s"No path ${opts(DIFFERENTIAL)} in repository for differential backup")
-        case id => id
+        case id =>
+          println("Backup differential to " + repository.fs.path(id.get.id))
+          id
       }
     }
     val target = repository.fs.getOrMakeDir(Path(dateTargetString))
