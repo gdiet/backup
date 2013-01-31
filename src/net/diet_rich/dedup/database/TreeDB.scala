@@ -127,12 +127,13 @@ object TreeDB {
   def createTable(implicit connection: WrappedConnection) : Unit = {
     execUpdate(net.diet_rich.util.Strings normalizeMultiline """
       CREATE TABLE TreeEntries (
-        id     BIGINT PRIMARY KEY,
-        parent BIGINT NULL,
-        name   VARCHAR(256) NOT NULL,
-        type   INTEGER NOT NULL,
-        time   BIGINT NOT NULL DEFAULT 0,
-        dataid BIGINT DEFAULT NULL
+        id      BIGINT PRIMARY KEY,
+        parent  BIGINT NULL,
+        name    VARCHAR(256) NOT NULL,
+        type    INTEGER NOT NULL,
+        time    BIGINT NOT NULL DEFAULT 0,
+        deleted BIGINT DEFAULT NULL,
+        dataid  BIGINT DEFAULT NULL
       );
     """)
     execUpdate("CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent)")

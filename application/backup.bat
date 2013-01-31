@@ -1,2 +1,2 @@
-java -cp lib/* net.diet_rich.dedup.backup.Backup %*
+java -Xmx256m -cp lib/* net.diet_rich.dedup.backup.Backup %*
 pause
