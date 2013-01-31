@@ -11,8 +11,8 @@ import java.io.IOException
 import java.io.FileNotFoundException
 
 object Helpers {
-  def log(msg: String) = System.err.println(msg)
-  def logAnd[Result](msg: String)(andThen: => Result): Result = {
+  def log(msg: => String) = Unit // System.err.println(msg)
+  def logAnd[Result](msg: => String)(andThen: => Result): Result = {
     val result = andThen
     log(msg + " -> " + result);
     result
@@ -47,7 +47,7 @@ class FileSysView(repository: Repository) extends FileSystemView {
     }
   }
   
-  def dispose(): Unit = logAnd("dispose")(System.exit(0))
+  def dispose(): Unit = log("dispose") // logAnd("dispose")(System.exit(0))
   
   def getFile(name: String): FtpFile = logAnd("getting: " + name) {
     resolvePath(name) match {
