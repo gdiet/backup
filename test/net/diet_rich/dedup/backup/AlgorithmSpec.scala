@@ -7,7 +7,4 @@ import org.scalatest._
 import org.scalatest.matchers.ShouldMatchers
 
 class AlgorithmSpec extends FlatSpec with ShouldMatchers {
-  "NoPrintMatchCheck" should "do nothing" in {
-    ???
-  }
 }

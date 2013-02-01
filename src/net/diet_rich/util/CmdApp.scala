@@ -6,28 +6,32 @@ package net.diet_rich.util
 import io.readSettingsFile
 
 trait CmdApp { import CmdApp._
-  val usageHeader: String
-  val paramData: Seq[((String, String), String)]
+  protected val usageHeader: String
+  protected val paramData: Seq[((String, String), String)]
+  protected def application(options: Map[String, String]): Unit
   
-  lazy val usage: String = try {
+  private lazy val usage: String = try {
     val paramDataForUsage = paramData :+
       (CONFIGFILESWITCH -> "" -> "[%s <file path>] Optional: Configuration file")
     val lines = (usageHeader + "Parameters:") +: paramDataForUsage.map{ case ((k, v), msg) => msg.format(k, v) }
     lines.mkString("\n")
   } catch { case e: Throwable => "Oops ... error while building usage string!" }
-    
-  def run(args: Array[String])(code: Map[String, String] => Unit): Boolean = {
+  
+  private def collectOptions(argMap: Map[String, String]): Map[String, String] = {
+    val defaults = paramData.map(_._1).toMap
+    val configFileSettings = argMap.get(CONFIGFILESWITCH).map { fileName =>
+      val file = new java.io.File(fileName)
+      require(file.isFile, s"Configuration file path $file does not denote a file.")
+      readSettingsFile(file)
+    }.getOrElse(Map())
+    val result = defaults ++ configFileSettings ++ argMap
+    require(result.keySet == defaults.keySet, s"Unexpected parameter(s): ${(result.keySet -- defaults.keySet).mkString("'", "', '", "'")}")
+    result
+  }
+  
+  def run(args: Array[String]): Boolean =
     try {
-      val argMap = Args.toMap(args)
-      val defaults = paramData.map(_._1).toMap
-      val configFileSettings = argMap.get(CONFIGFILESWITCH).map { fileName =>
-        val file = new java.io.File(fileName)
-        require(file.isFile, s"Configuration file path $file does not denote a file.")
-        readSettingsFile(file)
-      }.getOrElse(Map())
-      val opts = defaults ++ configFileSettings ++ argMap
-      require(opts.keySet == defaults.keySet, s"Unexpected parameter(s): ${(opts.keySet -- defaults.keySet).mkString(" / ")}")
-      code(opts)
+      run(argsToMap(args))
       true
     } catch {
       case e: Throwable =>
@@ -35,8 +39,18 @@ trait CmdApp { import CmdApp._
         if (e.getCause() != null) println(s"caused by ${e.getCause().getStackTraceString}")
         false
     }
+    
+  def run(argMap: Map[String, String]): Unit = {
+    val options = collectOptions(argMap)
+    application(options)
   }
 }
+
 object CmdApp {
   val CONFIGFILESWITCH = "-c"
+
+  def argsToMap(args: Array[String]): Map[String, String] = {
+    require(args.length % 2 == 0, s"args must be key/value pairs (number of args found: ${args.length})")
+    args.sliding(2, 2).map(e => e(0) -> e(1)).toMap
+  }
 }

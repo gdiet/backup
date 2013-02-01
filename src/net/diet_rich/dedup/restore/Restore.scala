@@ -13,7 +13,7 @@ import java.io.File
 import java.io.RandomAccessFile
 
 object Restore extends CmdApp {
-  def main(args: Array[String]): Unit = run(args)(restore)
+  def main(args: Array[String]): Unit = run(args)
   
   val usageHeader = "Restores a file or folder from the dedup repository. "
   val paramData = Seq(
@@ -25,7 +25,7 @@ object Restore extends CmdApp {
   private lazy val progressOutput = new ConsoleProgressOutput(
     "restore: %s files in %s directories after %ss", 5000, 5000)
   
-  def restore(opts: Map[String, String]): Unit = {
+  protected def application(opts: Map[String, String]): Unit = {
     require(! opts(REPOSITORY).isEmpty, s"Repository location setting $REPOSITORY is mandatory.")
     require(! opts(SOURCE).isEmpty, s"Source path setting $SOURCE is mandatory.")
     require(! opts(TARGET).isEmpty, s"Target folder setting $TARGET is mandatory.")
@@ -42,18 +42,18 @@ object Restore extends CmdApp {
       require(target.mkdirs(), "Can't create target folder.")
     }
     
-    restore(repository, source, target)
+    doRestore(repository, source, target)
     progressOutput.cancel
   }
   
-  private def restore(repository: Repository, source: TreeEntry, targetParent: File): Unit = {
+  private def doRestore(repository: Repository, source: TreeEntry, targetParent: File): Unit = {
     val target = targetParent.child(source.name)
     val children = repository.fs.children(source.id).toList
     source.dataid match {
       case None =>
         progressOutput.incDirs
         require(target.mkdir(), f"Can't create ${targetParent.child(source.name)}")
-        children.foreach(restore(repository, _, target))
+        children.foreach(doRestore(repository, _, target))
       case Some(dataid) =>
         progressOutput.incFiles
         val dataEntry = repository.fs.dataEntry(dataid)
