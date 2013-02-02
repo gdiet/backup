@@ -6,26 +6,41 @@ package net.diet_rich.util
 import io.readSettingsFile
 
 trait CmdApp { import CmdApp._
+  private type KeysAndHints = Seq[((String, String), String)]
+  
   protected val usageHeader: String
-  protected val paramData: Seq[((String, String), String)]
+  protected val keysAndHints: KeysAndHints
+  protected val optionalKeysAndHints: KeysAndHints = Seq()
   protected def application(options: Map[String, String]): Unit
+
+  private lazy val optionalKeys = optionalKeysAndHints.map(_._1._1)
+  private val localKeysDefaultsAndHints = Seq(
+    CONFIGFILESWITCH -> "" -> "[%s <file path>] Optional: Configuration file"
+  )
+
+  private def formatHintsForUsage(input: KeysAndHints): Seq[String] =
+    input.map{ case ((key, default), hint) => hint.format(key, default) }
   
   private lazy val usage: String = try {
-    val paramDataForUsage = paramData :+
-      (CONFIGFILESWITCH -> "" -> "[%s <file path>] Optional: Configuration file")
-    val lines = (usageHeader + "Parameters:") +: paramDataForUsage.map{ case ((k, v), msg) => msg.format(k, v) }
+    val lines =
+      usageHeader +: "Mandatory parameters:" +:
+      formatHintsForUsage(keysAndHints) +:
+      "Optional parameters:" +:
+      formatHintsForUsage(optionalKeysAndHints ++ localKeysDefaultsAndHints)
     lines.mkString("\n")
-  } catch { case e: Throwable => "Oops ... error while building usage string!" }
+  } catch { case e: Throwable => usageHeader + "\n\nOops ... error while building usage string!" }
   
   private def collectOptions(argMap: Map[String, String]): Map[String, String] = {
-    val defaults = paramData.map(_._1).toMap
+    val defaults = (keysAndHints ++ optionalKeysAndHints).map(_._1).toMap
     val configFileSettings = argMap.get(CONFIGFILESWITCH).map { fileName =>
       val file = new java.io.File(fileName)
       require(file.isFile, s"Configuration file path $file does not denote a file.")
       readSettingsFile(file)
     }.getOrElse(Map())
     val result = defaults ++ configFileSettings ++ argMap
-    require(result.keySet == defaults.keySet, s"Unexpected parameter(s): ${(result.keySet -- defaults.keySet).mkString("'", "', '", "'")}")
+    require(result.keySet - CONFIGFILESWITCH == defaults.keySet, s"Unexpected parameter(s): ${(result.keySet -- defaults.keySet).mkString("'", "', '", "'")}")
+    val emptyParameter = (result -- optionalKeys).find(_._2.isEmpty)
+    require(emptyParameter.isEmpty, s"Parameter ${emptyParameter.get._1} is mandatory, but is empty.")
     result
   }
   
@@ -35,8 +50,8 @@ trait CmdApp { import CmdApp._
       true
     } catch {
       case e: Throwable =>
-        println(s"$usage\n\n$e\n${e.getStackTraceString}")
-        if (e.getCause() != null) println(s"caused by ${e.getCause().getStackTraceString}")
+        println(s"$usage\n")
+        e.printStackTrace(System.out)
         false
     }
     

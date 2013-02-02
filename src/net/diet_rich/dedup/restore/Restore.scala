@@ -15,20 +15,17 @@ import java.io.RandomAccessFile
 object Restore extends CmdApp {
   def main(args: Array[String]): Unit = run(args)
   
-  val usageHeader = "Restores a file or folder from the dedup repository. "
-  val paramData = Seq(
+  val usageHeader = "Restores a file or folder from the dedup repository."
+  val keysAndHints = Seq(
     SOURCE -> "" -> "[%s <path>] Source file or folder to restore",
-    REPOSITORY -> "" -> "[%s <directory>] Mandatory: Repository location",
-    TARGET -> "" -> "[%s <directory>] Mandatory: Target directory to restore to (must be empty)"
+    REPOSITORY -> "" -> "[%s <directory>] Repository location",
+    TARGET -> "" -> "[%s <directory>] Target directory to restore to (must be empty)"
   )
 
   private lazy val progressOutput = new ConsoleProgressOutput(
     "restore: %s files in %s directories after %ss", 5000, 5000)
   
   protected def application(opts: Map[String, String]): Unit = {
-    require(! opts(REPOSITORY).isEmpty, s"Repository location setting $REPOSITORY is mandatory.")
-    require(! opts(SOURCE).isEmpty, s"Source path setting $SOURCE is mandatory.")
-    require(! opts(TARGET).isEmpty, s"Target folder setting $TARGET is mandatory.")
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val source = repository.fs.entryWithWildcards(Path(opts(SOURCE))) match {
       case None => throw new IllegalArgumentException("Source path ${opts(SOURCE)} not in repository")

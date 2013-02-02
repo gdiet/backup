@@ -12,11 +12,11 @@ import net.diet_rich.dedup.database._
 object Create extends CmdApp {
   def main(args: Array[String]): Unit = run(args)
   
-  protected val usageHeader = "Creates a dedup repository. "
-  protected val paramData = Seq(
-    REPOSITORY -> "." -> "[%s <directory>] Location of the repository to create, default '%s'",
+  protected val usageHeader = "Creates a dedup repository."
+  protected val keysAndHints = Seq(
+    REPOSITORY -> "" -> "[%s <directory>] Location of the repository to create",
     HASH -> "MD5" -> "[%s <algorithm>] Hash algorithm to use, default '%s'",
-    DATASIZE -> "2000000" -> "[%s <size>] Data size of the data files, default '%s'"
+    DATASIZE -> "8000000" -> "[%s <size>] Data size of the data files, default '%s'"
   )
   
   protected def application(opts: Map[String, String]): Unit = {

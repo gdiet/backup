@@ -14,19 +14,18 @@ case class BackupSettings(storeMethod: Method)
 object Backup extends CmdApp {
   def main(args: Array[String]): Unit = run(args)
   
-  protected val usageHeader = "Stores a file or folder in the dedup repository. "
-  protected val paramData = Seq(
-    SOURCE -> "" -> "[%s <directory>] Mandatory: Source file or folder to store",
-    REPOSITORY -> "" -> "[%s <directory>] Mandatory: Repository location",
-    TARGET -> "" -> "[%s <path>] Mandatory: Target folder in repository (must be empty if exists)",
-    DIFFERENTIAL -> "" -> "[%s <path>] Base folder for differential backup in repository",
+  protected val usageHeader = "Stores a file or folder in the dedup repository."
+  protected val keysAndHints = Seq(
+    SOURCE -> "" -> "[%s <directory>] Source file or folder to store",
+    REPOSITORY -> "" -> "[%s <directory>] Repository location",
+    TARGET -> "" -> "[%s <path>] Target folder in repository (must be empty if exists)",
     METHOD -> "1" -> "[%s Integer] Store method: 0 - store; 1 - deflate, default '%s'"
+  )
+  override protected val optionalKeysAndHints = Seq(
+    DIFFERENTIAL -> "" -> "[%s <path>] Optional: Base folder for differential backup in repository"
   )
 
   protected def application(opts: Map[String, String]): Unit = {
-    require(! opts(REPOSITORY).isEmpty, s"Repository location setting $REPOSITORY is mandatory.")
-    require(! opts(TARGET).isEmpty, s"Target folder setting $TARGET is mandatory.")
-    require(! opts(SOURCE).isEmpty, s"Source setting $SOURCE is mandatory.")
     val storeMethod = Method(opts(METHOD).toInt)
     val source = new java.io.File(opts(SOURCE)).getCanonicalFile
     require(source.exists(), s"Source $source does not exist.")

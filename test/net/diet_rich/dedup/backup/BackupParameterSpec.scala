@@ -29,6 +29,11 @@ class BackupParameterSpec extends FlatSpec with ShouldMatchers {
     Backup.run(minimalBackupParameters)
   }
   
+  "A backup" should "succeed with an empty config file" in {
+    clearRepository
+    Backup.run(minimalBackupParameters + ("-c" -> "testdata/emptyFile"))
+  }
+  
   "A backup" should "not succeed with less than the minimal backup parameters" in {
     clearRepository
     minimalBackupParameters.keys.foreach { key =>

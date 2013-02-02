@@ -11,13 +11,12 @@ object FtpServer extends CmdApp {
 
   def main(args: Array[String]): Unit = run(args)
   
-  val usageHeader = "Runs an FTP server for the dedup repository, account user/user. "
-  val paramData = Seq(
-    REPOSITORY -> "" -> "[%s <directory>] Mandatory: Repository location"
+  val usageHeader = "Runs an FTP server for the dedup repository, account user/user."
+  val keysAndHints = Seq(
+    REPOSITORY -> "" -> "[%s <directory>] Repository location"
   )
 
   protected def application(opts: Map[String, String]): Unit = {
-    require(! opts(REPOSITORY).isEmpty, s"Repository location setting $REPOSITORY is mandatory.")
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val server = MinaWrapper.server(repository)
     server.start()
