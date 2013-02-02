@@ -23,10 +23,10 @@ trait CmdApp { import CmdApp._
   
   private lazy val usage: String = try {
     val lines =
-      usageHeader +: "Mandatory parameters:" +:
-      formatHintsForUsage(keysAndHints) +:
-      "Optional parameters:" +:
-      formatHintsForUsage(optionalKeysAndHints ++ localKeysDefaultsAndHints)
+      (usageHeader +: "" +: "Mandatory parameters:" +:
+      formatHintsForUsage(keysAndHints)) ++
+      ("" +: "Optional parameters:" +:
+      formatHintsForUsage(optionalKeysAndHints ++ localKeysDefaultsAndHints))
     lines.mkString("\n")
   } catch { case e: Throwable => usageHeader + "\n\nOops ... error while building usage string!" }
   
