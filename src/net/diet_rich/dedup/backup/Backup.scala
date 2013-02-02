@@ -34,9 +34,10 @@ object Backup extends CmdApp {
     require(targetString.count('|'==) % 2 == 0, "Target string is not well-formed with respect to '|'")
     
     val date = new java.util.Date
-    val dateTargetString =
+    val dateTargetPath = Path(
       Strings.processSpecialSyntax(targetString, identity, new java.text.SimpleDateFormat(_).format(date))
-    if (targetString.contains('|')) println(s"Storing in target $dateTargetString")
+    )
+    if (targetString.contains('|')) println(s"Storing in target $dateTargetPath")
     
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
       
@@ -49,11 +50,11 @@ object Backup extends CmdApp {
           id
       }
     }
-    val target = repository.fs.getOrMakeDir(Path(dateTargetString))
-    if (!repository.fs.children(target).isEmpty)
-      throw new IllegalArgumentException(s"Target folder ${opts(TARGET)} is not empty")
-    if (!repository.fs.fullDataInformation(target).isEmpty)
-      throw new IllegalArgumentException(s"Target ${opts(TARGET)} is a file, not a folder")
+    if (!repository.fs.entry(dateTargetPath).isEmpty)
+      throw new IllegalArgumentException(s"Target $dateTargetPath already exists")
+    val parent = repository.fs.getOrMakeDir(dateTargetPath.parent)
+    if (!repository.fs.fullDataInformation(parent).isEmpty)
+      throw new IllegalArgumentException(s"Target's parent ${dateTargetPath.parent} is a file, not a folder")
     
     val processor =
       new TreeHandling
@@ -72,7 +73,7 @@ object Backup extends CmdApp {
     val time = System.currentTimeMillis()
     try {
       println("starting backup")
-      try { processor.backup(source.getName, new FileSource(source), target, reference) }
+      try { processor.backup(dateTargetPath.name, new FileSource(source), parent, reference) }
       finally { processor.shutdown }
       println(s"finished backup, cleaning up. Time: ${(System.currentTimeMillis() - time)/1000d}")
     } finally {

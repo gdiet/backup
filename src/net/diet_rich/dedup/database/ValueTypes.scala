@@ -31,6 +31,12 @@ object Hash { def apply(value: Array[Byte]) = new Hash(value) }
 
 class Path(val value: String) extends AnyBase with ValueToString {
   def +(string: String) = Path(value + string)
+  def parent: Path =
+    value.lastIndexOf('/') match {
+      case -1 => throw new IllegalArgumentException(s"Can't get parent for path '$value'")
+      case n  => Path(value.substring(0, n))
+    }
+  def name: String = value.substring(value.lastIndexOf('/') + 1)
 }
 object Path { def apply(value: String) = new Path(value) }
 
