@@ -113,7 +113,7 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
     assume(path.value.startsWith(SEPARATOR), s"Path <$path> is not root and does not start with '$SEPARATOR'")
     val parts = path.value.split(SEPARATOR).drop(1)
     parts.foldLeft(entry(ROOTID)) {(node, pathElement) =>
-      val childNameRegexp = Strings.processPipeSyntax(pathElement, java.util.regex.Pattern.quote(_), identity)
+      val childNameRegexp = Strings.processSpecialSyntax(pathElement, java.util.regex.Pattern.quote(_), identity)
       node.flatMap(node => children(node.id).toList.sortBy(_.name).reverse.find(_.name.matches(childNameRegexp)))
     }
   }

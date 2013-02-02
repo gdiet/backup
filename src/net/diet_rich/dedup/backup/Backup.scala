@@ -35,7 +35,7 @@ object Backup extends CmdApp {
     
     val date = new java.util.Date
     val dateTargetString =
-      Strings.processPipeSyntax(targetString, identity, new java.text.SimpleDateFormat(_).format(date))
+      Strings.processSpecialSyntax(targetString, identity, new java.text.SimpleDateFormat(_).format(date))
     if (targetString.contains('|')) println(s"Storing in target $dateTargetString")
     
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
@@ -72,7 +72,7 @@ object Backup extends CmdApp {
     val time = System.currentTimeMillis()
     try {
       println("starting backup")
-      try { processor.backup(new FileSource(source), target, reference) }
+      try { processor.backup(source.getName, new FileSource(source), target, reference) }
       finally { processor.shutdown }
       println(s"finished backup, cleaning up. Time: ${(System.currentTimeMillis() - time)/1000d}")
     } finally {

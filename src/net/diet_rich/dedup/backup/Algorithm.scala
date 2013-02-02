@@ -19,32 +19,32 @@ trait AlgorithmCommons {
 trait TreeHandling {
   self: PrintMatchCheck with StoreData with AlgorithmCommons =>
   
-  def backup(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntry]): Unit =
-    processSourceEntry(source, parent, reference.map(_.id))
+  def backup(name: String, source: SourceType, parent: TreeEntryID, reference: Option[TreeEntry]): Unit =
+    processSourceEntry(name, source, parent, reference.map(_.id))
 
-  private def processSourceEntry(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): Unit =
+  private def processSourceEntry(name: String, source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): Unit =
     control.catchAndHandleException(source) {
       control.notifyProgressMonitor(source)
       // store file or directory
       val target = if (source.hasData)
-        storeFileEntry(source, parent, reference)
+        storeFileEntry(name, source, parent, reference)
       else
-        fs.createAndGetId(parent, source.name, NodeType.DIR, source.time)
+        fs.createAndGetId(parent, name, NodeType.DIR, source.time)
       // process children
       source.children.foreach { child =>
         val childReference = reference.flatMap(fs.childId(_, child.name))
-        control.executeInThreadPool(processSourceEntry(child, target, childReference))
+        control.executeInThreadPool(processSourceEntry(child.name, child, target, childReference))
       }
     }
   
-  private def storeFileEntry(source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): TreeEntryID = {
+  private def storeFileEntry(name: String, source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): TreeEntryID = {
     reference.flatMap(fs.fullDataInformation(_)) match {
-      case None => storeData(source, parent)
+      case None => storeData(name, source, parent)
       case Some(referenceData) =>
         if (source.time == referenceData.time && source.size == referenceData.size)
-          processMatchingTimeAndSize(source, parent, referenceData)
+          processMatchingTimeAndSize(name, source, parent, referenceData)
         else
-          storeData(source, parent)
+          storeData(name, source, parent)
     }
   }
 }
@@ -59,11 +59,11 @@ trait TreeHandling {
 trait PrintMatchCheck {
   self: StoreData with AlgorithmCommons =>
   
-  protected def processMatchingTimeAndSize(source: SourceType, parent: TreeEntryID, referenceData: FullDataInformation): TreeEntryID =
+  protected def processMatchingTimeAndSize(name: String, source: SourceType, parent: TreeEntryID, referenceData: FullDataInformation): TreeEntryID =
     using(source.reader) { reader =>
       fs.dig.calculatePrint(reader) match {
-        case referenceData.print => fs.createAndGetId(parent, source.name, NodeType.FILE, referenceData.time, referenceData.dataid)
-        case print => storeData(source, parent, reader, print)
+        case referenceData.print => fs.createAndGetId(parent, name, NodeType.FILE, referenceData.time, referenceData.dataid)
+        case print => storeData(name, source, parent, reader, print)
       }
     }
 }
@@ -81,17 +81,17 @@ trait PrintMatchCheck {
 trait StoreData {
   self: AlgorithmCommons =>
   
-  protected def storeData(source: SourceType, parent: TreeEntryID): TreeEntryID = using(source.reader) { reader =>
-    storeData(source, parent, reader, fs.dig.calculatePrint(reader))
+  protected def storeData(name: String, source: SourceType, parent: TreeEntryID): TreeEntryID = using(source.reader) { reader =>
+    storeData(name, source, parent, reader, fs.dig.calculatePrint(reader))
   }
   
-  protected def storeData(source: SourceType, parent: TreeEntryID, reader: SeekReader, print: Print): TreeEntryID =
+  protected def storeData(name: String, source: SourceType, parent: TreeEntryID, reader: SeekReader, print: Print): TreeEntryID =
     if (fs.hasMatch(source.size, print))
-      cacheWhileCalcuatingHash(source, parent, reader)
+      cacheWhileCalcuatingHash(name, source, parent, reader)
     else
-      storeFromReader(source, parent, reader)
+      storeFromReader(name, source, parent, reader)
 
-  private def cacheWhileCalcuatingHash(source: SourceType, parent: TreeEntryID, reader: SeekReader): TreeEntryID = {
+  private def cacheWhileCalcuatingHash(name: String, source: SourceType, parent: TreeEntryID, reader: SeekReader): TreeEntryID = {
     reader.seek(0)
     // here, further optimization is possible: If a file is too large to cache,
     // we could at least cache the start of the file. This would of course lead
@@ -111,17 +111,17 @@ trait StoreData {
     (fs.findMatch(size, print, hash), cache) match {
       case (None, Some(bytes)) if size < Size(bytes.length) =>
         // not yet known, fully cached
-        storeFromBytesRead(source, parent, bytes, print, size, hash)
+        storeFromBytesRead(name, source, parent, bytes, print, size, hash)
       case (None, _) =>
         // not yet known, not fully cached, re-read fully
-        storeFromReader(source, parent, reader)
+        storeFromReader(name, source, parent, reader)
       case (dataid, _) =>
         // already known
-        fs.createAndGetId(parent, source.name, NodeType.FILE, source.time, dataid)
+        fs.createAndGetId(parent, name, NodeType.FILE, source.time, dataid)
     }
   }
 
-  private def storeFromReader(source: SourceType, parent: TreeEntryID, reader: SeekReader): TreeEntryID = {
+  private def storeFromReader(name: String, source: SourceType, parent: TreeEntryID, reader: SeekReader): TreeEntryID = {
     reader.seek(0)
     val (print, (hash, (dataid, size))) = fs.dig.filterPrint(reader) { reader =>
       fs.dig.filterHash(reader) { reader =>
@@ -129,12 +129,12 @@ trait StoreData {
       }
     }
     fs.createDataEntry(dataid, size, print, hash, settings.storeMethod)
-    fs.createAndGetId(parent, source.name, NodeType.FILE, source.time, Some(dataid))
+    fs.createAndGetId(parent, name, NodeType.FILE, source.time, Some(dataid))
   }
 
-  private def storeFromBytesRead(source: SourceType, parent: TreeEntryID, bytes: Array[Byte], print: Print, size: Size, hash: Hash): TreeEntryID = {
+  private def storeFromBytesRead(name: String, source: SourceType, parent: TreeEntryID, bytes: Array[Byte], print: Print, size: Size, hash: Hash): TreeEntryID = {
     val dataid = fs.storeAndGetDataId(bytes, size, settings.storeMethod)
     fs.createDataEntry(dataid, size, print, hash, settings.storeMethod)
-    fs.createAndGetId(parent, source.name, NodeType.FILE, source.time, Some(dataid))
+    fs.createAndGetId(parent, name, NodeType.FILE, source.time, Some(dataid))
   }
 }
