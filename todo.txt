@@ -1,4 +1,4 @@
-confirm before backup
+using() for repository, for progress logging in separate threads, and so on
 collect errors and warnings on restore
 collect errors and warnings on backup
 fix one-by-too-much problem in chunks

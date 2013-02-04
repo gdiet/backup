@@ -19,6 +19,7 @@ class BackupParameterSpec extends FlatSpec with ShouldMatchers {
   }
   
   val minimalBackupParameters = Map(
+    "-i" -> "n",
     "-s" -> "testdata/source1",
     "-r" -> repository.toString,
     "-t" -> "/target"
@@ -36,7 +37,7 @@ class BackupParameterSpec extends FlatSpec with ShouldMatchers {
   
   "A backup" should "not succeed with less than the minimal backup parameters" in {
     clearRepository
-    minimalBackupParameters.keys.foreach { key =>
+    (minimalBackupParameters - "-i").keys.foreach { key =>
       val thrown = evaluating{ Backup.run(minimalBackupParameters - key) } should produce[IllegalArgumentException];
       thrown.getMessage should include ("is mandatory")
     }

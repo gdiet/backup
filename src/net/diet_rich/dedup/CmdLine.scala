@@ -11,4 +11,5 @@ object CmdLine {
   val HASH = "-h"
   val DATASIZE = "-b"
   val METHOD = "-m"
+  val INTERACTIVE = "-i"
 }

@@ -26,7 +26,6 @@ class FileSysView(repository: Repository) extends FileSystemView {
 
   def resolvePath(path: String): Option[RepoFile] = {
     def cdTo(currentDir: RepoFile, path: Seq[String]): Option[RepoFile] = {
-      System.err.println("---- " + path + "  -> " + (if (path.isEmpty) "xxx" else path.head))
       path.toList match { // toList needed as workaround for https://issues.scala-lang.org/browse/SI-6996
         case Nil => Some(currentDir)
         case ""  :: tail => cdTo(currentDir, tail)
