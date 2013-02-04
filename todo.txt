@@ -1,4 +1,6 @@
+Fix restore so it respects the size in DataInfoDB, not in ByteStoreDB
 using() for repository, for progress logging in separate threads, and so on
+backup (and others) ctrl-c shutdown hook
 collect errors and warnings on restore
 collect errors and warnings on backup
 fix one-by-too-much problem in chunks
@@ -9,3 +11,5 @@ memory configuration
 restore multithreaded
 build
 ftp server subproject
+ftp server shutdown
+it should be possible to restore the tree root

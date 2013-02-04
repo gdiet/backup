@@ -97,10 +97,15 @@ trait ByteStoreDB {
   protected final val selectEntryParts = 
     prepareQuery("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY index ASC")
     
-  def storeAndGetDataId(bytes: Array[Byte], size: Size, method: Method): DataEntryID =
-    storeAndGetDataIdAndSize(new java.io.ByteArrayInputStream(bytes), method)._1
+  def storeAndGetDataId(bytes: Array[Byte], size: Size, method: Method): DataEntryID = {
+    val (dataEntryId, sizeWritten) = storeAndGetDataIdAndSize(new java.io.ByteArrayInputStream(bytes), method, size)
+    // TODO debug output for hunting the one-byte-too-long bug, including the parameter "size"
+    if (size != sizeWritten) System.err.println(s"storeAndGetDataId: size $size is not sizeWritten $sizeWritten")
+    if (size.value != bytes.length) System.err.println(s"storeAndGetDataId: size $size is not bytes.length ${bytes.length}")
+    dataEntryId
+  }
   
-  def storeAndGetDataIdAndSize(source: ByteSource, method: Method): (DataEntryID, Size) = {
+  def storeAndGetDataIdAndSize(source: ByteSource, method: Method, size: Size): (DataEntryID, Size) = {
     val sourceToWrite = new Object {
       var totalRead = 0L
       def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
@@ -110,7 +115,11 @@ trait ByteStoreDB {
       }
     }
     val possiblyCompressedSource = StoreMethods.wrapStore(sourceToWrite, method)
-    (storeAndGetDataId(possiblyCompressedSource), Size(sourceToWrite.totalRead))
+    val dataEntryId = storeAndGetDataId(possiblyCompressedSource)
+    val sizeWritten = Size(sourceToWrite.totalRead)
+    // TODO debug output for hunting the one-byte-too-long bug, including the parameter "size"
+    if (size != sizeWritten) System.err.println(s"storeAndGetDataIdAndSize: size $size is not sizeWritten $sizeWritten")
+    (dataEntryId, sizeWritten)
   }
 
   private def storeAndGetDataId(source: ByteSource): DataEntryID = {

@@ -125,7 +125,7 @@ trait StoreData {
     reader.seek(0)
     val (print, (hash, (dataid, size))) = fs.dig.filterPrint(reader) { reader =>
       fs.dig.filterHash(reader) { reader =>
-        fs.storeAndGetDataIdAndSize(reader, settings.storeMethod)
+        fs.storeAndGetDataIdAndSize(reader, settings.storeMethod, source.size)
       }
     }
     fs.createDataEntry(dataid, size, print, hash, settings.storeMethod)
