@@ -72,7 +72,7 @@ package object io {
       read(array) match {
         case n if (n < 1) => -1
         case 1 => array(0)
-        case n => throw new IOException(f"unexpected number of bytes read: $n")
+        case n => throw new IOException(s"unexpected number of bytes read: $n")
       }
     }
     override def read(bytes: Array[Byte], offset: Int, length: Int): Int =

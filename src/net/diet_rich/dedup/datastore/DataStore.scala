@@ -53,7 +53,7 @@ class DataStore(baseDir: File, val dataSize: Size) { import DataStore._
 
   private def readWrite[Result](func: (DataFile, Long, Array[Byte], Position, Size) => Result)
     (position: Position, bytes: Array[Byte], offset: Position, size: Size): Result = {
-      assume((position.value % dataSize.value) + size.value <= dataSize.value, f"position: $position / data size: $dataSize / size: $size")
+      assume((position.value % dataSize.value) + size.value <= dataSize.value, s"position: $position / data size: $dataSize / size: $size")
       val path = pathInDataDir(position)
       val file = synchronized(acquireDataFile(position, path))
       try {

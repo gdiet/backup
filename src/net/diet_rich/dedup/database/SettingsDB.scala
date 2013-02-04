@@ -33,7 +33,7 @@ trait SettingsDB {
 
 object SettingsDB {
   def createTable(initialSettings: Map[String, String])(implicit connection: WrappedConnection) : Unit = {
-    execUpdate(net.diet_rich.util.Strings normalizeMultiline f"""
+    execUpdate(net.diet_rich.util.Strings normalizeMultiline """
       CREATE TABLE Settings (
         key    VARCHAR(256) PRIMARY KEY,
         value  VARCHAR(256)

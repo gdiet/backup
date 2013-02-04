@@ -40,7 +40,7 @@ class FileSysView(repository: Repository) extends FileSystemView {
     cdTo(startDir, relativeDir.split('/').toSeq)
   }
   
-  def changeWorkingDirectory(dir: String): Boolean = logAnd(f"cd $dir") {
+  def changeWorkingDirectory(dir: String): Boolean = logAnd(s"cd $dir") {
     resolvePath(dir) match {
       case None => false
       case Some(repoFile) => workingDirectory = repoFile; true
@@ -65,9 +65,9 @@ class FileSysView(repository: Repository) extends FileSystemView {
 }
 
 class RepoFile(repository: Repository, id: TreeEntryID) extends FtpFile {
-  log(f"creating repo file for id $id")
+  log(s"creating repo file for id $id")
   
-  override val toString = f"RepoFile($id)"
+  override val toString = s"RepoFile($id)"
 
   def getParent: Option[RepoFile] =
     repository.fs.entry(id).flatMap(_.parent.map(new RepoFile(repository, _)))
@@ -122,11 +122,11 @@ class RepoFile(repository: Repository, id: TreeEntryID) extends FtpFile {
     if (doesExist) 1 else 0
   }
 
-  def getOwnerName(): String = logAnd(f"getOwnerName for $id") { "backup" }
+  def getOwnerName(): String = logAnd(s"getOwnerName for $id") { "backup" }
 
-  def getGroupName(): String = logAnd(f"getGroupName for $id") { "dedup" }
+  def getGroupName(): String = logAnd(s"getGroupName for $id") { "dedup" }
   
-  def createInputStream(offset: Long): java.io.InputStream = logAnd(f"createInputStream with offset $offset") {
+  def createInputStream(offset: Long): java.io.InputStream = logAnd(s"createInputStream with offset $offset") {
     if (offset != 0) throw new IOException("not random accessible")
     repository.fs.entry(id) match {
       case None => throw new FileNotFoundException

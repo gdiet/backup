@@ -49,12 +49,12 @@ object Restore extends CmdApp {
     source.dataid match {
       case None =>
         progressOutput.incDirs
-        require(target.mkdir(), f"Can't create ${targetParent.child(source.name)}")
+        require(target.mkdir(), s"Can't create ${targetParent.child(source.name)}")
         children.foreach(doRestore(repository, _, target))
       case Some(dataid) =>
         progressOutput.incFiles
         val dataEntry = repository.fs.dataEntry(dataid)
-        require(children.isEmpty, f"Expected no children for node $source with data")
+        require(children.isEmpty, "Expected no children for node $source with data")
         val (print, (hash, size)) = using(new RandomAccessFile(target, "rw")) { sink =>
           val source = repository.fs.read(dataid, dataEntry.method)
           repository.digesters.filterPrint(source)(source =>
@@ -63,10 +63,15 @@ object Restore extends CmdApp {
             )
           )
         }
-        if (size != dataEntry.size.value) System.err.println(f"ERROR: Data size $size did not match ${dataEntry.size} for $target")
-        if (print != dataEntry.print) System.err.println(f"ERROR: Data print $print did not match ${dataEntry.print} for $target")
-        if (hash !== dataEntry.hash) System.err.println(f"ERROR: Data hash did not match for $target")
-        target.setLastModified(source.time.value)
+        if (size != dataEntry.size.value) System.err.println(s"ERROR: Data size $size did not match ${dataEntry.size} for $target")
+        if (print != dataEntry.print) System.err.println(s"ERROR: Data print $print did not match ${dataEntry.print} for $target")
+        if (hash !== dataEntry.hash) System.err.println(s"ERROR: Data hash did not match for $target")
+        try { target.setLastModified(source.time.value) }
+        catch { case e: Throwable =>
+          // workaroud for java bug: can read, but can't set negative time stamp
+          // TODO collect problem
+          System.err.println(s"WARNING: Could not set time ${source.time} for $target - $e")
+        }
     }
   }
 }

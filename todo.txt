@@ -1,3 +1,7 @@
+confirm before backup
+collect errors and warnings on restore
+collect errors and warnings on backup
+fix one-by-too-much problem in chunks
 move store file to repository
 mailsplit
 zip split

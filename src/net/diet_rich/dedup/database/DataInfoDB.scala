@@ -47,12 +47,12 @@ object DataInfoDB {
   def createTable(zeroByteHash: Hash, zeroBytePrint: Print)(implicit connection: WrappedConnection) : Unit = {
     // length: uncompressed entry size
     // method: store method (0 = PLAIN, 1 = DEFLATE, 2 = LZMA??)
-    execUpdate(net.diet_rich.util.Strings normalizeMultiline f"""
+    execUpdate(net.diet_rich.util.Strings normalizeMultiline s"""
       CREATE TABLE DataInfo (
         id     BIGINT PRIMARY KEY,
         length BIGINT NOT NULL,
         print  BIGINT NOT NULL,
-        hash   VARBINARY(${zeroByteHash.value.size}%d) NOT NULL,
+        hash   VARBINARY(${zeroByteHash.value.size}) NOT NULL,
         method INTEGER DEFAULT 0 NOT NULL
       )
     """)
