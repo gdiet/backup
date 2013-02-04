@@ -47,7 +47,7 @@ class PooledBackupControl extends BackupControl[FileSource] {
     try { f } catch { case e: Throwable => println(e) }
   def shutdown = {
     executor.shutdown
-    progressOutput.cancel
+    progressOutput.close
   }
 }
 

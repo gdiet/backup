@@ -14,7 +14,7 @@ class ConsoleProgressOutput(message: String, startAfter: Long, interval: Long) {
   private def timeSeconds: Long = (System.currentTimeMillis() - startTime)/1000
   def incFiles: Unit = fileCount.incrementAndGet
   def incDirs: Unit = dirCount.incrementAndGet
-  def cancel: Unit = timer.cancel
+  def close(): Unit = timer.cancel
   
   timer.schedule(new java.util.TimerTask {def run = {
     println(message format(fileCount get, dirCount get, timeSeconds))

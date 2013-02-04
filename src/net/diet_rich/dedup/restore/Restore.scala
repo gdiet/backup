@@ -22,9 +22,6 @@ object Restore extends CmdApp {
     TARGET -> "" -> "[%s <directory>] Target directory to restore to (must be empty)"
   )
 
-  private lazy val progressOutput = new ConsoleProgressOutput(
-    "restore: %s files in %s directories after %ss", 5000, 5000)
-  
   protected def application(opts: Map[String, String]): Unit = {
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val source = repository.fs.entryWithWildcards(Path(opts(SOURCE))) match {
@@ -39,18 +36,19 @@ object Restore extends CmdApp {
       require(target.mkdirs(), "Can't create target folder.")
     }
     
-    doRestore(repository, source, target)
-    progressOutput.cancel
+    using(new ConsoleProgressOutput("restore: %s files in %s directories after %ss", 5000, 5000)) { progressOutput =>
+      try { doRestore(repository, source, target, progressOutput) }
+    }
   }
   
-  private def doRestore(repository: Repository, source: TreeEntry, targetParent: File): Unit = {
+  private def doRestore(repository: Repository, source: TreeEntry, targetParent: File, progressOutput: ConsoleProgressOutput): Unit = {
     val target = targetParent.child(source.name)
     val children = repository.fs.children(source.id).toList
     source.dataid match {
       case None =>
         progressOutput.incDirs
         require(target.mkdir(), s"Can't create ${targetParent.child(source.name)}")
-        children.foreach(doRestore(repository, _, target))
+        children.foreach(doRestore(repository, _, target, progressOutput))
       case Some(dataid) =>
         progressOutput.incFiles
         val dataEntry = repository.fs.dataEntry(dataid)
