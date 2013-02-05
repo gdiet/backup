@@ -19,9 +19,6 @@ case class DataRange(start: Position, fin: Position) extends Ordered[DataRange] 
       case x => x
     }
 }
-object DataRange {
-  val emptyRange = DataRange(Position(0), Position(0))
-}
 
 class FreeRanges(blockSize: Size)(implicit connection: WrappedConnection) {
   // EVENTUALLY, it would be good to look for illegal overlaps:
@@ -97,15 +94,10 @@ trait ByteStoreDB {
   protected final val selectEntryParts = 
     prepareQuery("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY index ASC")
     
-  def storeAndGetDataId(bytes: Array[Byte], size: Size, method: Method): DataEntryID = {
-    val (dataEntryId, sizeWritten) = storeAndGetDataIdAndSize(new java.io.ByteArrayInputStream(bytes), method, size)
-    // TODO debug output for hunting the one-byte-too-long bug, including the parameter "size"
-    if (size != sizeWritten) System.err.println(s"storeAndGetDataId: size $size is not sizeWritten $sizeWritten")
-    if (size.value != bytes.length) System.err.println(s"storeAndGetDataId: size $size is not bytes.length ${bytes.length}")
-    dataEntryId
-  }
+  def storeAndGetDataId(bytes: Array[Byte], size: Size, method: Method): DataEntryID =
+    storeAndGetDataIdAndSize(new java.io.ByteArrayInputStream(bytes, 0, size.value toInt), method)._1
   
-  def storeAndGetDataIdAndSize(source: ByteSource, method: Method, size: Size): (DataEntryID, Size) = {
+  def storeAndGetDataIdAndSize(source: ByteSource, method: Method): (DataEntryID, Size) = {
     val sourceToWrite = new Object {
       var totalRead = 0L
       def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
@@ -117,8 +109,6 @@ trait ByteStoreDB {
     val possiblyCompressedSource = StoreMethods.wrapStore(sourceToWrite, method)
     val dataEntryId = storeAndGetDataId(possiblyCompressedSource)
     val sizeWritten = Size(sourceToWrite.totalRead)
-    // TODO debug output for hunting the one-byte-too-long bug, including the parameter "size"
-    if (size != sizeWritten) System.err.println(s"storeAndGetDataIdAndSize: size $size is not sizeWritten $sizeWritten")
     (dataEntryId, sizeWritten)
   }
 

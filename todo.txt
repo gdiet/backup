@@ -1,4 +1,5 @@
 Fix restore so it respects the size in DataInfoDB, not in ByteStoreDB
+fix for one-byte-too-long chunk
 using() for repository, for progress logging in separate threads, and so on
 backup (and others) ctrl-c shutdown hook
 collect errors and warnings on restore

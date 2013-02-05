@@ -110,9 +110,11 @@ trait StoreData {
     // evaluate match against known entries
     (fs.findMatch(size, print, hash), cache) match {
       case (None, Some(bytes)) if size < Size(bytes.length) =>
+println(s"--> not yet known but cached: $parent/$name - $size") // FIXME
         // not yet known, fully cached
         storeFromBytesRead(name, source, parent, bytes, print, size, hash)
       case (None, _) =>
+println(s"--> not yet known and not fully cached: $parent/$name - $size") // FIXME
         // not yet known, not fully cached, re-read fully
         storeFromReader(name, source, parent, reader)
       case (dataid, _) =>
@@ -125,7 +127,7 @@ trait StoreData {
     reader.seek(0)
     val (print, (hash, (dataid, size))) = fs.dig.filterPrint(reader) { reader =>
       fs.dig.filterHash(reader) { reader =>
-        fs.storeAndGetDataIdAndSize(reader, settings.storeMethod, source.size)
+        fs.storeAndGetDataIdAndSize(reader, settings.storeMethod)
       }
     }
     fs.createDataEntry(dataid, size, print, hash, settings.storeMethod)
