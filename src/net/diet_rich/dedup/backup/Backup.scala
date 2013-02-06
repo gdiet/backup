@@ -77,8 +77,17 @@ object Backup extends CmdApp {
       val time = System.currentTimeMillis()
       try {
         println("starting backup")
-        try { processor.backup(dateTargetPath.name, new FileSource(source), parent, reference) }
-        finally { processor.shutdown }
+        try {
+          // the shutdown hook is for catching CTRL-C
+          val shutdownHook = sys.ShutdownHookThread {
+            println("Backup interrupted, shutting down...")
+            processor.shutdown
+            repository.shutdown(true)
+            println("Shutdown complete.")
+          }
+          processor.backup(dateTargetPath.name, new FileSource(source), parent, reference)
+          shutdownHook.remove
+      	} finally { processor.shutdown }
         println(s"finished backup, cleaning up. Time: ${(System.currentTimeMillis() - time)/1000d}")
       } finally {
         repository.shutdown(true)
