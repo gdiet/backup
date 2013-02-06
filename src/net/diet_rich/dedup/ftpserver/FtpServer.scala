@@ -20,6 +20,17 @@ object FtpServer extends CmdApp {
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val server = MinaWrapper.server(repository)
     server.start()
+    println("Server started.")
+    
+    val shutdownHook = sys.ShutdownHookThread {
+      server.stop()
+      repository.shutdown(false)
+      println("Server stopped.")
+    }
+    
+    while (Console.readLine("Enter 'x' to stop the server: ") != "x") {}
+    shutdownHook.remove
+    shutdownHook.run
   }
   
 }
