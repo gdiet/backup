@@ -11,9 +11,10 @@
     
     <jacoco:coverage destfile="test-output/jacoco.exec">
       <java classname="org.scalatest.tools.Runner" fork="true">
-		<arg line="-R bin -oW"/>
+		<arg line="-R bin-test -oW"/>
         <classpath>
           <pathelement path="bin" />
+          <pathelement path="bin-test" />
           <pathelement path="lib/h2-1.3.170.jar" />
           <pathelement path="lib/test/scalatest_2.10-1.9.1.jar" />
           <pathelement location="${env.SCALA_HOME}/lib/*" />

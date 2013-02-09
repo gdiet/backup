@@ -9,8 +9,9 @@
 		<delete dir="test-output" />
 
 		<java classname="org.scalatest.tools.Runner" fork="true">
-			<arg line="-R bin -oW"/>
+			<arg line="-R bin-test -oW"/>
 			<classpath>
+	            <pathelement path="bin-test" />
 				<pathelement path="bin" />
 				<pathelement path="lib/h2-1.3.170.jar" />
 				<pathelement path="lib/test/scalatest_2.10-1.9.1.jar" />
