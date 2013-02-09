@@ -7,11 +7,13 @@ import javax.swing._
 import java.awt.event._
 import java.awt.BorderLayout
 import java.awt.Color
+import javax.swing.text.DefaultCaret
 
 class SwingConsole extends Console {
 
   private val frame = new JFrame("app")
   private val textArea = new JTextArea
+  private val textCaret = new DefaultCaret
   private val progressField = new JTextField
   private val inputField = new JTextField
   private val scrollPane = new JScrollPane
@@ -19,6 +21,8 @@ class SwingConsole extends Console {
 
   progressField.setEditable(false)
   textArea.setEditable(false)
+  textArea.setCaret(textCaret)
+  textCaret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE)
   scrollPane.setViewportView(textArea)
   inputField.setEditable(false)
   
