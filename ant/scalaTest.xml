@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<project name="scalaTest" default="test" basedir="../">
+
+	<property environment="env" />
+
+	<target name="test">
+		<echo message="using scala from ${env.SCALA_HOME}" />
+		<delete dir="test-output" />
+
+		<java classname="org.scalatest.tools.Runner" fork="true">
+			<arg line="-R bin -oW"/>
+			<classpath>
+				<pathelement path="bin" />
+				<pathelement path="lib/h2-1.3.170.jar" />
+				<pathelement path="lib/test/scalatest_2.10-1.9.1.jar" />
+				<pathelement location="${env.SCALA_HOME}/lib/*" />
+			</classpath>
+		</java>
+
+	</target>
+</project>
