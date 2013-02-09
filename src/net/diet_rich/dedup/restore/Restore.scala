@@ -36,7 +36,7 @@ object Restore extends CmdApp {
       require(target.mkdirs(), "Can't create target folder.")
     }
     
-    using(new ConsoleProgressOutput("restore: %s files in %s directories after %ss", 5000, 5000)) { progressOutput =>
+    using(new ConsoleProgressOutput("restore: %s files in %s directories after %ss", 30000, 30000)) { progressOutput =>
       try { doRestore(repository, source, target, progressOutput) }
     }
   }
