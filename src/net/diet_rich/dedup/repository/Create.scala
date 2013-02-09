@@ -19,8 +19,9 @@ object Create extends CmdApp {
     DATASIZE -> "8000000" -> "[%s <size>] Data size of the data files, default '%s'"
   )
   
-  protected def application(opts: Map[String, String]): Unit = {
+  protected def application(con: Console, opts: Map[String, String]): Unit = {
     val repositoryFolder = new File(opts(REPOSITORY))
+    con.println(s"creating repository in $repositoryFolder ...")
     val dataSize = opts(DATASIZE).toLong
     require(repositoryFolder.isDirectory(), s"Repository folder $repositoryFolder must be an existing directory")
     require(repositoryFolder.list.isEmpty, s"Repository folder $repositoryFolder must be empty")
@@ -41,5 +42,7 @@ object Create extends CmdApp {
     DataInfoDB.createTable(Hash(Hashes.zeroBytesHash(hashAlgorithm)), CrcAdler8192.zeroBytesPrint)
     ByteStoreDB.createTable
     SettingsDB.createTable(repositorySettings)
+    connection.con.close()
+    con.println(s"... Success!")
   }
 }

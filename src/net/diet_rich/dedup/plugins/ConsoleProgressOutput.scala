@@ -3,8 +3,10 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.plugins
 
+import net.diet_rich.util.Console
+
 /** message gets formatted with fileCount / dirCount / timeSeconds. */
-class ConsoleProgressOutput(message: String, startAfter: Long, interval: Long) {
+class ConsoleProgressOutput(con: Console, message: String, startAfter: Long, interval: Long) {
   
   private val startTime = System.currentTimeMillis()
   private val timer = new java.util.Timer("Progress Monitor")
@@ -17,6 +19,6 @@ class ConsoleProgressOutput(message: String, startAfter: Long, interval: Long) {
   def close(): Unit = timer.cancel
   
   timer.schedule(new java.util.TimerTask {def run = {
-    println(message format(fileCount get, dirCount get, timeSeconds))
+    con.println(message format(fileCount get, dirCount get, timeSeconds))
   }}, startAfter, interval)
 }

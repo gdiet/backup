@@ -18,12 +18,14 @@ class BackupAndRestoreSpec extends FlatSpec with ShouldMatchers {
   
   val backupParameters = Map(
     "-i" -> "n",
+    "-g" -> "n",
     "-s" -> source.toString,
     "-r" -> repository.toString,
     "-t" -> "/target"
   )
 
   val restoreParameters = Map(
+    "-g" -> "n",
     "-s" -> "/target",
     "-r" -> repository.toString,
     "-t" -> restoreTo.toString

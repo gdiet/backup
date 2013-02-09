@@ -1,3 +1,4 @@
+swing or java fx console app to avoid umlaut problems
 Fix restore so it respects the size in DataInfoDB, not in ByteStoreDB
 fix for one-byte-too-long chunk
 using() for repository, for progress logging in separate threads, and so on

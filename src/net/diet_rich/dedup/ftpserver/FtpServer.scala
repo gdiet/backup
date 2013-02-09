@@ -4,7 +4,7 @@
 package net.diet_rich.dedup.ftpserver
 
 import net.diet_rich.dedup.CmdLine._
-import net.diet_rich.util.CmdApp
+import net.diet_rich.util._
 import net.diet_rich.dedup.repository.Repository
 
 object FtpServer extends CmdApp {
@@ -16,7 +16,7 @@ object FtpServer extends CmdApp {
     REPOSITORY -> "" -> "[%s <directory>] Repository location"
   )
 
-  protected def application(opts: Map[String, String]): Unit = {
+  protected def application(con: Console, opts: Map[String, String]): Unit = {
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val server = MinaWrapper.server(repository)
     server.start()
@@ -28,7 +28,7 @@ object FtpServer extends CmdApp {
       println("Server stopped.")
     }
     
-    while (Console.readLine("Enter 'x' to stop the server: ") != "x") {}
+    while (con.readln("Enter 'x' to stop the server: ") != "x") {}
     shutdownHook.remove
     shutdownHook.run
   }

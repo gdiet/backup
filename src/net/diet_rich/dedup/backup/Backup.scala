@@ -6,8 +6,7 @@ package net.diet_rich.dedup.backup
 import net.diet_rich.dedup.CmdLine._
 import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.repository.Repository
-import net.diet_rich.util.CmdApp
-import net.diet_rich.util.Strings
+import net.diet_rich.util._
 
 case class BackupSettings(storeMethod: Method)
 
@@ -26,7 +25,7 @@ object Backup extends CmdApp {
     INTERACTIVE -> "y" -> "[%s [y|n]] If not 'y', no user interaction needed, default '%s'"
   )
 
-  protected def application(opts: Map[String, String]): Unit = {
+  protected def application(con: Console, opts: Map[String, String]): Unit = {
     val storeMethod = Method(opts(METHOD).toInt)
     val source = new java.io.File(opts(SOURCE)).getCanonicalFile
     require(source.canRead(), s"Can't read source $source")
@@ -55,40 +54,40 @@ object Backup extends CmdApp {
         type SourceType = FileSource
         protected val fs = repository.fs
 //        protected val control = new SimpleBackupControl
-        val control = new PooledBackupControl
+        val control = new PooledBackupControl(con)
         protected val memoryManager = new SimpleMemoryManager {}
         protected val settings = new BackupSettings(storeMethod)
         protected val matchCheck = new PrintMatchCheck(repository.digesters.calculatePrint _)
       }
 
-    println("Backup settings:")
-    println(s"Source: $source")
-    println(s"Target: $dateTargetPath")
-    println(s"Method: $storeMethod")
+    con.println("Backup settings:")
+    con.println(s"Source: $source")
+    con.println(s"Target: $dateTargetPath")
+    con.println(s"Method: $storeMethod")
     reference match {
-      case Some(reference) => println("DiffTo: " + repository.fs.path(reference.id).getOrElse("- ERROR -"))
-      case None => println("NoDiff: ----")
+      case Some(reference) => con.println("DiffTo: " + repository.fs.path(reference.id).getOrElse("- ERROR -"))
+      case None => con.println("NoDiff: ----")
     }
     
-    if (opts(INTERACTIVE) != "y" || Console.readLine("\nStart backup? [y/n] ") == "y") {
+    if (opts(INTERACTIVE) != "y" || con.readln("\nStart backup? [y/n] ") == "y") {
       val time = System.currentTimeMillis()
       try {
-        println("starting backup")
+        con.println("starting backup")
         try {
           // the shutdown hook is for catching CTRL-C
           val shutdownHook = sys.ShutdownHookThread {
-            println("Backup interrupted, shutting down...")
+            con.println("Backup interrupted, shutting down...")
             processor.control.shutdown
             repository.shutdown(true)
-            println("Shutdown complete.")
+            con.println("Shutdown complete.")
           }
           processor.backup(dateTargetPath.name, new FileSource(source), parent, reference)
           shutdownHook.remove
       	} finally { processor.control.shutdown }
-        println(s"finished backup, cleaning up. Time: ${(System.currentTimeMillis() - time)/1000d}")
+        con.println(s"finished backup, cleaning up. Time: ${(System.currentTimeMillis() - time)/1000d}")
       } finally {
         repository.shutdown(true)
-        println(s"shutdown complete. Time: ${(System.currentTimeMillis() - time)/1000d}")
+        con.println(s"shutdown complete. Time: ${(System.currentTimeMillis() - time)/1000d}")
       }
     }
   }

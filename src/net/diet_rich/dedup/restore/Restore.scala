@@ -7,7 +7,7 @@ import net.diet_rich.dedup.CmdLine._
 import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.plugins.ConsoleProgressOutput
 import net.diet_rich.dedup.repository.Repository
-import net.diet_rich.util.CmdApp
+import net.diet_rich.util._
 import net.diet_rich.util.io._
 import java.io.File
 import java.io.RandomAccessFile
@@ -22,7 +22,7 @@ object Restore extends CmdApp {
     TARGET -> "" -> "[%s <directory>] Target directory to restore to (must be empty)"
   )
 
-  protected def application(opts: Map[String, String]): Unit = {
+  protected def application(con: Console, opts: Map[String, String]): Unit = {
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val source = repository.fs.entryWithWildcards(Path(opts(SOURCE))) match {
       case None => throw new IllegalArgumentException("Source path ${opts(SOURCE)} not in repository")
@@ -35,19 +35,19 @@ object Restore extends CmdApp {
     target.getParentFile().mkdirs()
     require(target.getParentFile().isDirectory(), "Can't create target's $target parent folder.")
     
-    using(new ConsoleProgressOutput("restore: %s files in %s directories after %ss", 30000, 30000)) { progressOutput =>
-      try { doRestore(repository, source, target.getName(), target.getParentFile(), progressOutput) }
+    using(new ConsoleProgressOutput(con, "restore: %s files in %s directories after %ss", 30000, 30000)) { progressOutput =>
+      try { doRestore(con, repository, source, target.getName(), target.getParentFile(), progressOutput) }
     }
   }
   
-  private def doRestore(repository: Repository, source: TreeEntry, name: String, targetParent: File, progressOutput: ConsoleProgressOutput): Unit = {
+  private def doRestore(con: Console, repository: Repository, source: TreeEntry, name: String, targetParent: File, progressOutput: ConsoleProgressOutput): Unit = {
     val target = targetParent.child(name)
     val children = repository.fs.children(source.id).toList
     source.dataid match {
       case None =>
         progressOutput.incDirs
         require(target.mkdir(), s"Can't create $target")
-        children.foreach(child => doRestore(repository, child, child.name, target, progressOutput))
+        children.foreach(child => doRestore(con, repository, child, child.name, target, progressOutput))
       case Some(dataid) =>
         progressOutput.incFiles
         val dataEntry = repository.fs.dataEntry(dataid)
@@ -67,7 +67,7 @@ object Restore extends CmdApp {
         catch { case e: Throwable =>
           // workaroud for java bug: can read, but can't set negative time stamp
           // TODO collect problem
-          System.err.println(s"WARNING: Could not set time ${source.time} for $target - $e")
+          con.println(s"WARNING: Could not set time ${source.time} for $target - $e")
         }
     }
   }

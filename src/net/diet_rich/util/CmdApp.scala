@@ -11,12 +11,14 @@ trait CmdApp { import CmdApp._
   protected val usageHeader: String
   protected val keysAndHints: KeysAndHints
   protected val optionalKeysAndHints: KeysAndHints = Seq()
-  protected def application(options: Map[String, String]): Unit
+  protected def application(console: Console, options: Map[String, String]): Unit
 
   private lazy val optionalKeys = optionalKeysAndHints.map(_._1._1)
   private val localKeysDefaultsAndHints = Seq(
-    CONFIGFILESWITCH -> "" -> "[%s <file path>] Optional: Configuration file"
+    CONFIGFILESWITCH -> "" -> "[%s <file path>] Configuration file",
+    GUI -> "y" -> "[%s [y|n]] If 'y', a graphical console is displayed, default '%s'"
   )
+  private val localKeys = localKeysDefaultsAndHints.map(_._1._1)
 
   private def formatHintsForUsage(input: KeysAndHints): Seq[String] =
     input.map{ case ((key, default), hint) => hint.format(key, default) }
@@ -31,15 +33,15 @@ trait CmdApp { import CmdApp._
   } catch { case e: Throwable => usageHeader + "\n\nOops ... error while building usage string!" }
   
   private def collectOptions(argMap: Map[String, String]): Map[String, String] = {
-    val defaults = (keysAndHints ++ optionalKeysAndHints).map(_._1).toMap
+    val defaults = (localKeysDefaultsAndHints ++ keysAndHints ++ optionalKeysAndHints).map(_._1).toMap
     val configFileSettings = argMap.get(CONFIGFILESWITCH).map { fileName =>
       val file = new java.io.File(fileName)
       require(file.isFile, s"Configuration file path $file does not denote a file.")
       readSettingsFile(file)
     }.getOrElse(Map())
     val result = defaults ++ configFileSettings ++ argMap
-    require(result.keySet - CONFIGFILESWITCH == defaults.keySet, s"Unexpected parameter(s): ${(result.keySet -- defaults.keySet).mkString("'", "', '", "'")}")
-    val emptyParameter = (result -- optionalKeys).find(_._2.isEmpty)
+    require(result.keySet == defaults.keySet, s"Unexpected parameter(s): ${(result.keySet -- defaults.keySet).mkString("'", "', '", "'")}")
+    val emptyParameter = (result -- optionalKeys -- localKeys).find(_._2.isEmpty)
     require(emptyParameter.isEmpty, s"Parameter ${emptyParameter.get._1} is mandatory, but is empty.")
     result
   }
@@ -57,12 +59,26 @@ trait CmdApp { import CmdApp._
     
   def run(argMap: Map[String, String]): Unit = {
     val options = collectOptions(argMap)
-    application(options)
+    val console = if (options.get(GUI) == Some("y")) new SwingConsole else Console
+    try {
+      application(console, options)
+    } catch {
+      case e: Throwable =>
+        if (console.isInstanceOf[SwingConsole]) {
+          console.println(s"$usage\n")
+          console.println(e.toString)
+	      console.println(e.getStackTraceString)
+        }
+        throw e
+    } finally {
+      console.close
+    }
   }
 }
 
 object CmdApp {
   val CONFIGFILESWITCH = "-c"
+  val GUI = "-g"
 
   def argsToMap(args: Array[String]): Map[String, String] = {
     require(args.length % 2 == 0, s"args must be key/value pairs (number of args found: ${args.length})")

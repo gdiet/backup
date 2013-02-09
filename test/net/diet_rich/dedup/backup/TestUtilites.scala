@@ -12,7 +12,7 @@ object TestUtilites extends ShouldMatchers {
 
   def clearRepository(repository: java.io.File) = {
     clearDirectory(repository)
-    net.diet_rich.dedup.repository.Create.run(Map("-r" -> repository.toString))
+    net.diet_rich.dedup.repository.Create.run(Map("-r" -> repository.toString, "-g" -> "n"))
   }
 
   def clearDirectory(directory: java.io.File) = {
