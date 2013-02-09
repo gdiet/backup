@@ -8,31 +8,11 @@ import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
 import net.diet_rich.dedup.datastore.StoreMethods
 
-trait StoreAlgorithm {
-  type SourceType <: TreeSource[SourceType]
-
-  protected val fs: BackupFileSystem
-  protected val control: BackupControl[SourceType] // TODO only MemoryManager
-  protected val memoryManager: MemoryManager
-  protected val settings: BackupSettings
-  protected val matchCheck: MatchCheck
-
-  // TODO extract
-  def backup(name: String, source: SourceType, parent: TreeEntryID, reference: Option[TreeEntry]): Unit =
-    processSourceEntry(name, source, parent, reference.map(_.id))
-
-  // TODO extract
-  private def processSourceEntry(name: String, source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): Unit =
-    control.catchAndHandleException(source) {
-      control.notifyProgressMonitor(source)
-      // store file or directory
-      val target = storeAsNewEntry(name, source, parent, reference)
-      // process children if any
-      source.children.foreach { child =>
-        val childReference = reference.flatMap(fs.childId(_, child.name))
-        control.executeInThreadPool(processSourceEntry(child.name, child, target, childReference))
-      }
-    }
+class StoreAlgorithm[SourceType <: TreeSource[SourceType]](
+  fs: BackupFileSystem,
+  memoryManager: MemoryManager,
+  storeMethod: Method,
+  matchCheck: MatchCheck) {
 
   def storeAsNewEntry(name: String, source: SourceType, parent: TreeEntryID, reference: Option[TreeEntryID]): TreeEntryID = {
     if (!source.hasData)
@@ -48,7 +28,7 @@ trait StoreAlgorithm {
       }
   }
   
-  protected def processMatchingTimeAndSize(name: String, source: SourceType, parent: TreeEntryID, referenceData: FullDataInformation): TreeEntryID =
+  private def processMatchingTimeAndSize(name: String, source: SourceType, parent: TreeEntryID, referenceData: FullDataInformation): TreeEntryID =
     matchCheck.processMatchingTimeAndSize(source.reader, referenceData) match {
       case Some((print, reader)) =>
         using(reader)(reader => storeData(name, source, parent, reader, print))
@@ -56,11 +36,11 @@ trait StoreAlgorithm {
         fs.createAndGetId(parent, name, NodeType.FILE, referenceData.time, referenceData.dataid)
     }
   
-  protected def storeData(name: String, source: SourceType, parent: TreeEntryID): TreeEntryID = using(source.reader) { reader =>
+  private def storeData(name: String, source: SourceType, parent: TreeEntryID): TreeEntryID = using(source.reader) { reader =>
     storeData(name, source, parent, reader, fs.dig.calculatePrint(reader))
   }
   
-  protected def storeData(name: String, source: SourceType, parent: TreeEntryID, reader: SeekReader, print: Print): TreeEntryID =
+  private def storeData(name: String, source: SourceType, parent: TreeEntryID, reader: SeekReader, print: Print): TreeEntryID =
     if (fs.hasMatch(source.size, print))
       cacheWhileCalcuatingHash(name, source, parent, reader)
     else
@@ -100,16 +80,16 @@ trait StoreAlgorithm {
     reader.seek(0)
     val (print, (hash, (dataid, size))) = fs.dig.filterPrint(reader) { reader =>
       fs.dig.filterHash(reader) { reader =>
-        fs.storeAndGetDataIdAndSize(reader, settings.storeMethod)
+        fs.storeAndGetDataIdAndSize(reader, storeMethod)
       }
     }
-    fs.createDataEntry(dataid, size, print, hash, settings.storeMethod)
+    fs.createDataEntry(dataid, size, print, hash, storeMethod)
     fs.createAndGetId(parent, name, NodeType.FILE, source.time, Some(dataid))
   }
 
   private def storeFromBytesRead(name: String, source: SourceType, parent: TreeEntryID, bytes: Array[Byte], print: Print, size: Size, hash: Hash): TreeEntryID = {
-    val dataid = fs.storeAndGetDataId(bytes, size, settings.storeMethod)
-    fs.createDataEntry(dataid, size, print, hash, settings.storeMethod)
+    val dataid = fs.storeAndGetDataId(bytes, size, storeMethod)
+    fs.createDataEntry(dataid, size, print, hash, storeMethod)
     fs.createAndGetId(parent, name, NodeType.FILE, source.time, Some(dataid))
   }
 }

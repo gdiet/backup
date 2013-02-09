@@ -51,7 +51,7 @@ class PooledBackupControl(con: Console) extends BackupControl[FileSource] {
   }
 }
 
-trait SimpleMemoryManager extends MemoryManager {
+object SimpleMemoryManager extends MemoryManager {
   /** @return An array of the requested size or None. */
   def getLargeArray(size: Size): Option[Array[Byte]] =
     if (size < Size(10000000)) Some(new Array[Byte](size.value toInt)) else None

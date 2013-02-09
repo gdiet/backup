@@ -49,16 +49,20 @@ object Backup extends CmdApp {
     if (!repository.fs.fullDataInformation(parent).isEmpty)
       throw new IllegalArgumentException(s"Target's parent ${dateTargetPath.parent} is a file, not a folder")
     
-    val processor =
-      new StoreAlgorithm {
-        type SourceType = FileSource
-        protected val fs = repository.fs
-//        protected val control = new SimpleBackupControl
-        val control = new PooledBackupControl(con)
-        protected val memoryManager = new SimpleMemoryManager {}
-        protected val settings = new BackupSettings(storeMethod)
-        protected val matchCheck = new PrintMatchCheck(repository.digesters.calculatePrint _)
-      }
+    val storeAlgorithm = new StoreAlgorithm[FileSource] (
+      repository.fs,
+      SimpleMemoryManager,
+      storeMethod,
+      new PrintMatchCheck(repository.digesters.calculatePrint _)
+    )
+    
+    val control = new PooledBackupControl(con)
+    
+    val processor = new BackupProcessor[FileSource] (
+      control,
+      repository.fs,
+      storeAlgorithm
+    )
 
     con.println("Backup settings:")
     con.println(s"Source: $source")
@@ -77,13 +81,13 @@ object Backup extends CmdApp {
           // the shutdown hook is for catching CTRL-C
           val shutdownHook = sys.ShutdownHookThread {
             con.println("Backup interrupted, shutting down...")
-            processor.control.shutdown
+            control.shutdown
             repository.shutdown(true)
             con.println("Shutdown complete.")
           }
           processor.backup(dateTargetPath.name, new FileSource(source), parent, reference)
           shutdownHook.remove
-      	} finally { processor.control.shutdown }
+      	} finally { control.shutdown }
         con.println(s"finished backup, cleaning up. Time: ${(System.currentTimeMillis() - time)/1000d}")
       } finally {
         repository.shutdown(true)
