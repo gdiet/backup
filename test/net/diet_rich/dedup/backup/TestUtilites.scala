@@ -18,6 +18,8 @@ object TestUtilites extends ShouldMatchers {
   def clearDirectory(directory: java.io.File) = {
     directory.erase
     directory.mkdirs()
+    directory.isDirectory() should be (true)
+    directory.list() should be === Array()
   }
 
   def readFile(file: java.io.File): Array[Byte] = {

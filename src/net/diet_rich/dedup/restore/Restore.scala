@@ -37,6 +37,7 @@ object Restore extends CmdApp {
     
     using(new ConsoleProgressOutput(con, "restore: %s files in %s directories after %ss", 30000, 30000)) { progressOutput =>
       try { doRestore(con, repository, source, target.getName(), target.getParentFile(), progressOutput) }
+      finally { repository.shutdown(false) }
     }
   }
   
