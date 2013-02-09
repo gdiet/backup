@@ -26,29 +26,28 @@ object Restore extends CmdApp {
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val source = repository.fs.entryWithWildcards(Path(opts(SOURCE))) match {
       case None => throw new IllegalArgumentException("Source path ${opts(SOURCE)} not in repository")
-      case Some(id) => id
+      case Some(entry) => entry
     }
+    if (source.dataid isDefined)
+      throw new IllegalArgumentException("Source ${opts(SOURCE)} has data but must be a pure directory")
     val target = new File(opts(TARGET))
-    if (target.exists()) {
-      require(target.isDirectory(), "Target must be a directory.")
-      require(target.list().isEmpty, "Target directory must be empty.")
-    } else {
-      require(target.mkdirs(), "Can't create target folder.")
-    }
+    require(!target.exists(), s"Target $target must not exist.")
+    target.getParentFile().mkdirs()
+    require(target.getParentFile().isDirectory(), "Can't create target's $target parent folder.")
     
     using(new ConsoleProgressOutput("restore: %s files in %s directories after %ss", 30000, 30000)) { progressOutput =>
-      try { doRestore(repository, source, target, progressOutput) }
+      try { doRestore(repository, source, target.getName(), target.getParentFile(), progressOutput) }
     }
   }
   
-  private def doRestore(repository: Repository, source: TreeEntry, targetParent: File, progressOutput: ConsoleProgressOutput): Unit = {
-    val target = targetParent.child(source.name)
+  private def doRestore(repository: Repository, source: TreeEntry, name: String, targetParent: File, progressOutput: ConsoleProgressOutput): Unit = {
+    val target = targetParent.child(name)
     val children = repository.fs.children(source.id).toList
     source.dataid match {
       case None =>
         progressOutput.incDirs
-        require(target.mkdir(), s"Can't create ${targetParent.child(source.name)}")
-        children.foreach(doRestore(repository, _, target, progressOutput))
+        require(target.mkdir(), s"Can't create $target")
+        children.foreach(child => doRestore(repository, child, child.name, target, progressOutput))
       case Some(dataid) =>
         progressOutput.incFiles
         val dataEntry = repository.fs.dataEntry(dataid)

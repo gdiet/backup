@@ -51,17 +51,14 @@ object Backup extends CmdApp {
       throw new IllegalArgumentException(s"Target's parent ${dateTargetPath.parent} is a file, not a folder")
     
     val processor =
-      new TreeHandling
-//      with NoPrintMatchCheck[FileSource]
-      with PrintMatchCheck
-//      with IgnorePrintMatch[FileSource]
-      with StoreData
-      with AlgorithmCommons {
+      new StoreAlgorithm {
         type SourceType = FileSource
         protected val fs = repository.fs
-//        protected val control = new SimpleBackupControl with SimpleMemoryManager
-        protected val control = new PooledBackupControl with SimpleMemoryManager
+//        protected val control = new SimpleBackupControl
+        val control = new PooledBackupControl
+        protected val memoryManager = new SimpleMemoryManager {}
         protected val settings = new BackupSettings(storeMethod)
+        protected val matchCheck = new PrintMatchCheck(repository.digesters.calculatePrint _)
       }
 
     println("Backup settings:")
@@ -69,7 +66,7 @@ object Backup extends CmdApp {
     println(s"Target: $dateTargetPath")
     println(s"Method: $storeMethod")
     reference match {
-      case Some(reference) => println("DiffTo: " + repository.fs.path(reference.id))
+      case Some(reference) => println("DiffTo: " + repository.fs.path(reference.id).getOrElse("- ERROR -"))
       case None => println("NoDiff: ----")
     }
     
@@ -81,13 +78,13 @@ object Backup extends CmdApp {
           // the shutdown hook is for catching CTRL-C
           val shutdownHook = sys.ShutdownHookThread {
             println("Backup interrupted, shutting down...")
-            processor.shutdown
+            processor.control.shutdown
             repository.shutdown(true)
             println("Shutdown complete.")
           }
           processor.backup(dateTargetPath.name, new FileSource(source), parent, reference)
           shutdownHook.remove
-      	} finally { processor.shutdown }
+      	} finally { processor.control.shutdown }
         println(s"finished backup, cleaning up. Time: ${(System.currentTimeMillis() - time)/1000d}")
       } finally {
         repository.shutdown(true)

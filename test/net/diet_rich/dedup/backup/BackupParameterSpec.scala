@@ -3,20 +3,13 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.backup
 
-import net.diet_rich.util.io._
-
 import org.scalatest._
 import org.scalatest.matchers.ShouldMatchers
 
 class BackupParameterSpec extends FlatSpec with ShouldMatchers {
   
   val repository = new java.io.File("temp/tests/BackupParameterSpec")
-  
-  def clearRepository = {
-    repository.erase
-    repository.mkdirs()
-    net.diet_rich.dedup.repository.Create.run(Map("-r" -> repository.toString))
-  }
+  def clearRepository = TestUtilites.clearRepository(repository)
   
   val minimalBackupParameters = Map(
     "-i" -> "n",
