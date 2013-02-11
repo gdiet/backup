@@ -1,3 +1,4 @@
+For Update with -d make sanity check
 Fix restore so it respects the size in DataInfoDB, not in ByteStoreDB
 using() for repository, for progress logging in separate threads, and so on
 ctrl-c shutdown hook everywhere

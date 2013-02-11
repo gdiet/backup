@@ -36,10 +36,8 @@ trait SimpleBackupControl extends BackupControl[FileSource] {
   def shutdown: Unit = Unit
 }
 
-class PooledBackupControl(con: Console) extends BackupControl[FileSource] {
+class PooledBackupControl(progressOutput: ConsoleProgressOutput) extends BackupControl[FileSource] {
   private val executor = new ThreadsManager(10, 10)
-  private lazy val progressOutput = new ConsoleProgressOutput(con: Console,
-    "backup: %s files in %s directories after %ss", 30000, 30000)
   def notifyProgressMonitor(entry: FileSource): Unit =
     if (entry.file.isDirectory()) progressOutput.incDirs else progressOutput.incFiles
   def executeInThreadPool(f: => Unit): Unit = executor.execute(f)

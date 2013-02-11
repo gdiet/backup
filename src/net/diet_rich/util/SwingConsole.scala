@@ -8,6 +8,7 @@ import java.awt.event._
 import java.awt.BorderLayout
 import java.awt.Color
 import javax.swing.text.DefaultCaret
+import java.awt.Font
 
 class SwingConsole extends Console {
 
@@ -18,10 +19,13 @@ class SwingConsole extends Console {
   private val inputField = new JTextField
   private val scrollPane = new JScrollPane
   private var text = ""
+  private var lastProgress = System.currentTimeMillis
 
   progressField.setEditable(false)
   textArea.setEditable(false)
+  textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13))
   textArea.setCaret(textCaret)
+  // auto-scrolls to the bottom
   textCaret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE)
   scrollPane.setViewportView(textArea)
   inputField.setEditable(false)
@@ -42,8 +46,11 @@ class SwingConsole extends Console {
   }
 
   def printProgress(string: String) = {
-    System.out.println("-> " + string)
     progressField.setText(string)
+    if (System.currentTimeMillis - 295000 > lastProgress) {
+      lastProgress = System.currentTimeMillis
+      System.out.println("-> " + string)
+    }
   }
   
   def println(string: String) = {
@@ -53,7 +60,10 @@ class SwingConsole extends Console {
   }
 
   def readln(string: String): String = {
-    if (!string.isEmpty()) println(string)
+    if (!string.isEmpty()) {
+      println(string)
+      System.out.println("Input only in the GUI console.")
+    }
     inputField.setText("")
     inputField.setEditable(true)
     val text = scala.concurrent.Promise[String]

@@ -35,7 +35,8 @@ object Restore extends CmdApp {
     target.getParentFile().mkdirs()
     require(target.getParentFile().isDirectory(), "Can't create target's $target parent folder.")
     
-    using(new ConsoleProgressOutput(con, "restore: %s files in %s directories after %ss", 30000, 30000)) { progressOutput =>
+    using(new ConsoleProgressOutput(con, "restore: %s files in %s directories after %ss")) { progressOutput =>
+      progressOutput.start
       try { doRestore(con, repository, source, target.getName(), target.getParentFile(), progressOutput) }
       finally { repository.shutdown(false) }
     }

@@ -5,6 +5,7 @@ package net.diet_rich.dedup.backup
 
 import net.diet_rich.dedup.CmdLine._
 import net.diet_rich.dedup.database._
+import net.diet_rich.dedup.plugins.ConsoleProgressOutput
 import net.diet_rich.dedup.repository.Repository
 import net.diet_rich.util._
 
@@ -35,7 +36,7 @@ object Backup extends CmdApp {
     )
     
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
-      
+    
     val reference = opts(DIFFERENTIAL) match {
       case "" => None
       case e => repository.fs.entryWithWildcards(Path(e)) match {
@@ -56,7 +57,9 @@ object Backup extends CmdApp {
       new PrintMatchCheck(repository.digesters.calculatePrint _)
     )
     
-    val control = new PooledBackupControl(con)
+    val progressOutput = new ConsoleProgressOutput(con: Console,
+      "backup: %s files in %s directories after %ss")
+    val control = new PooledBackupControl(progressOutput)
     
     val processor = new BackupProcessor[FileSource] (
       control,
@@ -77,6 +80,7 @@ object Backup extends CmdApp {
       val time = System.currentTimeMillis()
       try {
         con.println("starting backup")
+        progressOutput.start
         try {
           // the shutdown hook is for catching CTRL-C
           val shutdownHook = sys.ShutdownHookThread {
@@ -93,6 +97,9 @@ object Backup extends CmdApp {
         repository.shutdown(true)
         con.println(s"shutdown complete. Time: ${(System.currentTimeMillis() - time)/1000d}")
       }
+    } else {
+      control.shutdown
+      repository.shutdown(false)
     }
   }
 }
