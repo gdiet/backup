@@ -48,9 +48,11 @@ class SwingConsole private () extends Console { import SwingConsole._
 
   def printProgress(string: String) = runLater {
     progressField.setText(string)
-    if (System.currentTimeMillis - 295000 > lastProgress) {
+    if (System.currentTimeMillis - 29500 > lastProgress) {
       lastProgress = System.currentTimeMillis
       System.out.println("-> " + string)
+      text = text + string + "\n"
+      textArea.setText(text)
     }
   }
   

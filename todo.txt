@@ -1,11 +1,17 @@
+Should be fixed:
+
+SwingConsole: 30s-messages also to swing console
+SwingConsole: 30s-messages to sysout
+
+
+TODO:
+
 FTP server better messages
 FTP server choose port and credentials
 Backup configurable MatchCheck
 SwingConsole controlled exit on close
 Progress: start timer when progress starts
 Backup: configure threads at runtime
-SwingConsole: 30s-messages also to swing console
-SwingConsole: 30s-messages to sysout
 Fix restore so it respects the size in DataInfoDB, not in ByteStoreDB
 using() for repository, for progress logging in separate threads, and so on
 ctrl-c shutdown hook everywhere
@@ -22,43 +28,3 @@ rename "filesystem" to "database" or ...
 Restore: better messages
 Restore: target file checks
 Restore: NPE at target.getParentFile().mkdirs()
-
--> starting backup
-==> use SwingUtilities.invokeLater
-Exception in thread "AWT-EventQueue-0"
-java.lang.NullPointerException
-        at javax.swing.text.PlainView.updateMetrics(PlainView.java:205)
-        at javax.swing.text.PlainView.lineToRect(PlainView.java:615)
-        at javax.swing.text.PlainView.paint(PlainView.java:288)
-        at javax.swing.text.FieldView.paint(FieldView.java:188)
-        at javax.swing.plaf.basic.BasicTextUI$RootView.paint(BasicTextUI.java:1434)
-        at javax.swing.plaf.basic.BasicTextUI.paintSafely(BasicTextUI.java:737)
-        at javax.swing.plaf.basic.BasicTextUI.paint(BasicTextUI.java:881)
-        at javax.swing.plaf.basic.BasicTextUI.update(BasicTextUI.java:860)
-        at javax.swing.JComponent.paintComponent(JComponent.java:778)
-        at javax.swing.JComponent.paint(JComponent.java:1054)
-        at javax.swing.JComponent.paintToOffscreen(JComponent.java:5221)
-        at javax.swing.RepaintManager$PaintManager.paintDoubleBuffered(RepaintManager.java:1482)
-        at javax.swing.RepaintManager$PaintManager.paint(RepaintManager.java:1413)
-        at javax.swing.RepaintManager.paint(RepaintManager.java:1206)
-        at javax.swing.JComponent._paintImmediately(JComponent.java:5169)
-        at javax.swing.JComponent.paintImmediately(JComponent.java:4980)
-        at javax.swing.RepaintManager.paintDirtyRegions(RepaintManager.java:770)
-        at javax.swing.RepaintManager.paintDirtyRegions(RepaintManager.java:728)
-        at javax.swing.RepaintManager.prePaintDirtyRegions(RepaintManager.java:677)
-        at javax.swing.RepaintManager.access$700(RepaintManager.java:59)
-        at javax.swing.RepaintManager$ProcessingRunnable.run(RepaintManager.java:1621)
-        at java.awt.event.InvocationEvent.dispatch(InvocationEvent.java:251)
-        at java.awt.EventQueue.dispatchEventImpl(EventQueue.java:721)
-        at java.awt.EventQueue.access$200(EventQueue.java:103)
-        at java.awt.EventQueue$3.run(EventQueue.java:682)
-        at java.awt.EventQueue$3.run(EventQueue.java:680)
-        at java.security.AccessController.doPrivileged(Native Method)
-        at java.security.ProtectionDomain$1.doIntersectionPrivilege(ProtectionDomain.java:76)
-        at java.awt.EventQueue.dispatchEvent(EventQueue.java:691)
-        at java.awt.EventDispatchThread.pumpOneEventForFilters(EventDispatchThread.java:242)
-        at java.awt.EventDispatchThread.pumpEventsForFilter(EventDispatchThread.java:161)
-        at java.awt.EventDispatchThread.pumpEventsForHierarchy(EventDispatchThread.java:150)
-        at java.awt.EventDispatchThread.pumpEvents(EventDispatchThread.java:146)
-        at java.awt.EventDispatchThread.pumpEvents(EventDispatchThread.java:138)
-        at java.awt.EventDispatchThread.run(EventDispatchThread.java:91)
