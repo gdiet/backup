@@ -28,6 +28,7 @@ class SwingConsole extends Console {
   // auto-scrolls to the bottom
   textCaret.setUpdatePolicy(DefaultCaret.ALWAYS_UPDATE)
   scrollPane.setViewportView(textArea)
+  inputField.getCaret().setVisible(false);
   inputField.setEditable(false)
   
   frame.getContentPane().setLayout(new BorderLayout)
@@ -64,8 +65,11 @@ class SwingConsole extends Console {
       println(string)
       System.out.println("Input only in the GUI console.")
     }
-    inputField.setText("")
+    val background = inputField.getBackground()
+    inputField.getCaret().setVisible(true);
+    inputField.setBackground(new Color(200,255,230))
     inputField.setEditable(true)
+    inputField.setText("")
     val text = scala.concurrent.Promise[String]
     inputField.addActionListener(new ActionListener {
       override def actionPerformed(evt: ActionEvent) = {
@@ -74,6 +78,8 @@ class SwingConsole extends Console {
       }
     })
     val result = scala.concurrent.Await.result(text.future, scala.concurrent.duration.Duration.Inf)
+    inputField.getCaret().setVisible(false);
+    inputField.setBackground(background)
     inputField.setEditable(false)
     result
   }
