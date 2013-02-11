@@ -17,15 +17,18 @@ object FtpServer extends CmdApp {
   )
 
   protected def application(con: Console, opts: Map[String, String]): Unit = {
+    con.println("Starting a read-only FTP server for the backup repository.")
+    con.println("Access: ftp://localhost")
+    con.println("User: 'user', password: 'user'")
     val repository = new Repository(new java.io.File(opts(REPOSITORY)))
     val server = MinaWrapper.server(repository)
     server.start()
-    println("Server started.")
+    con.println("Server started.")
     
     val shutdownHook = sys.ShutdownHookThread {
       server.stop()
       repository.shutdown(false)
-      println("Server stopped.")
+      con.println("Server stopped.")
     }
     
     while (con.readln("Enter 'x' to stop the server: ") != "x") {}

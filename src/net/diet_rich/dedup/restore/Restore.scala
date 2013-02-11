@@ -35,6 +35,11 @@ object Restore extends CmdApp {
     target.getParentFile().mkdirs()
     require(target.getParentFile().isDirectory(), "Can't create target's $target parent folder.")
     
+    con.println(s"Restoring files:")
+    con.println(s"Repository:  ${opts(REPOSITORY)}")
+    con.println(s"Source path: ${opts(SOURCE)}")
+    con.println(s"Target path: ${opts(TARGET)}")
+    
     using(new ConsoleProgressOutput(con, "restore: %s files in %s directories after %ss")) { progressOutput =>
       progressOutput.start
       try { doRestore(con, repository, source, target.getName(), target.getParentFile(), progressOutput) }
