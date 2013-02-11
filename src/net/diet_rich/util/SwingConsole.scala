@@ -20,6 +20,7 @@ class SwingConsole private () extends Console { import SwingConsole._
   private val scrollPane = new JScrollPane
   private var text = ""
   private var lastProgress = System.currentTimeMillis
+  private var timeInterval = 29500
 
   progressField.setEditable(false)
   textArea.setEditable(false)
@@ -48,7 +49,8 @@ class SwingConsole private () extends Console { import SwingConsole._
 
   def printProgress(string: String) = runLater {
     progressField.setText(string)
-    if (System.currentTimeMillis - 29500 > lastProgress) {
+    if (System.currentTimeMillis - timeInterval > lastProgress) {
+      timeInterval = timeInterval + 10000
       lastProgress = System.currentTimeMillis
       System.out.println("-> " + string)
       text = text + string + "\n"

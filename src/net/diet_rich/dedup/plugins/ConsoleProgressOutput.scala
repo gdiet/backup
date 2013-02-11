@@ -8,7 +8,7 @@ import net.diet_rich.util._
 /** message gets formatted with fileCount / dirCount / timeSeconds. */
 class ConsoleProgressOutput(con: Console, message: String) {
   
-  private val startTime = System.currentTimeMillis()
+  @volatile private var startTime = System.currentTimeMillis()
   private val timer = new java.util.Timer("Progress Monitor")
   private val fileCount = new java.util.concurrent.atomic.AtomicLong(0)
   private val dirCount = new java.util.concurrent.atomic.AtomicLong(0)
@@ -21,8 +21,10 @@ class ConsoleProgressOutput(con: Console, message: String) {
   def incFiles: Unit = fileCount.incrementAndGet
   def incDirs: Unit = dirCount.incrementAndGet
   def close(): Unit = timer.cancel
-  def start: Unit =
+  def start: Unit = {
+    startTime = System.currentTimeMillis()
     timer.schedule(new java.util.TimerTask {def run = {
       con.printProgress(message format(fileCount get, dirCount get, timeSeconds))
     }}, interval, interval)
+  }
 }
