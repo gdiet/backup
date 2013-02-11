@@ -59,7 +59,7 @@ trait CmdApp { import CmdApp._
     
   def run(argMap: Map[String, String]): Unit = {
     val options = collectOptions(argMap)
-    val console = if (options.get(GUI) == Some("y")) new SwingConsole else Console
+    val console = if (options.get(GUI) == Some("y")) SwingConsole.create else Console
     try {
       application(console, options)
     } catch {

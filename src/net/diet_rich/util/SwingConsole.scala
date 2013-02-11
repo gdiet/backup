@@ -10,7 +10,7 @@ import java.awt.Color
 import javax.swing.text.DefaultCaret
 import java.awt.Font
 
-class SwingConsole extends Console {
+class SwingConsole private () extends Console { import SwingConsole._
 
   private val frame = new JFrame("app")
   private val textArea = new JTextArea
@@ -41,12 +41,12 @@ class SwingConsole extends Console {
   frame.setVisible(true)
   frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE)
 
-  def close = {
+  def close = runAndWait {
     textArea.setBackground(new Color(230,230,230))
     frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE)
   }
 
-  def printProgress(string: String) = {
+  def printProgress(string: String) = runLater {
     progressField.setText(string)
     if (System.currentTimeMillis - 295000 > lastProgress) {
       lastProgress = System.currentTimeMillis
@@ -54,7 +54,7 @@ class SwingConsole extends Console {
     }
   }
   
-  def println(string: String) = {
+  def println(string: String) = runLater {
     System.out.println("-> " + string)
     text = text + string + "\n"
     textArea.setText(text)
@@ -65,25 +65,41 @@ class SwingConsole extends Console {
       println(string)
       System.out.println("Input only in the GUI console.")
     }
-    val background = inputField.getBackground()
-    inputField.getCaret().setVisible(true);
-    inputField.setBackground(new Color(200,255,230))
-    inputField.setEditable(true)
-    inputField.setText("")
     val text = scala.concurrent.Promise[String]
-    inputField.addActionListener(new ActionListener {
-      override def actionPerformed(evt: ActionEvent) = {
-        inputField.removeActionListener(this)
-        text.complete(scala.util.Try(inputField.getText()))
-      }
-    })
+    val background = inputField.getBackground()
+    runAndWait {
+      inputField.getCaret().setVisible(true);
+      inputField.setBackground(new Color(200,255,230))
+      inputField.setEditable(true)
+      inputField.setText("")
+      inputField.addActionListener(new ActionListener {
+        override def actionPerformed(evt: ActionEvent) = {
+          inputField.removeActionListener(this)
+          text.complete(scala.util.Try(inputField.getText()))
+        }
+      })
+    }
     val result = scala.concurrent.Await.result(text.future, scala.concurrent.duration.Duration.Inf)
-    inputField.getCaret().setVisible(false);
-    inputField.setBackground(background)
-    inputField.setEditable(false)
+    runAndWait {
+      inputField.getCaret().setVisible(false);
+      inputField.setBackground(background)
+      inputField.setEditable(false)
+    }
     result
   }
   
+}
+
+object SwingConsole {
+  def runAndWait(task: => Unit) =
+    SwingUtilities.invokeAndWait(new Runnable { override def run = task })
+  def runLater(task: => Unit) =
+    SwingUtilities.invokeLater(new Runnable { override def run = task })
+  def create: SwingConsole = {
+    val console = scala.concurrent.Promise[SwingConsole]
+    runLater { console.complete(scala.util.Try(new SwingConsole)) }
+    scala.concurrent.Await.result(console.future, scala.concurrent.duration.Duration.Inf)
+  }
 }
 
 trait Console {
