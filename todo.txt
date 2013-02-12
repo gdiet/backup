@@ -4,14 +4,16 @@ SwingConsole: 30s-messages also to swing console
 SwingConsole: 30s-messages to sysout
 FTP server better messages
 Restore: better messages
+Progress: start timer when progress starts
 
 
 TODO:
 
+Restore: target file checks
+Restore: NPE at target.getParentFile().mkdirs()
 FTP server choose port and credentials
 Backup configurable MatchCheck
 SwingConsole controlled exit on close
-Progress: start timer when progress starts
 Backup: configure threads at runtime
 Fix restore so it respects the size in DataInfoDB, not in ByteStoreDB
 using() for repository, for progress logging in separate threads, and so on
@@ -23,8 +25,7 @@ memory configuration
 restore multithreaded
 build
 ftp server subproject
+smb or webdav server
 it should be possible to restore the tree root
 rename "filesystem" to "database" or ...
 Tabbed backup/restore file browser like Total Commander
-Restore: target file checks
-Restore: NPE at target.getParentFile().mkdirs()

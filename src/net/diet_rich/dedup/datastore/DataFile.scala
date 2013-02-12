@@ -26,7 +26,8 @@ class DataFile(position: Position, val path: File) {
 
   private def initializeFileReadWrite = {
     assume(readonly || file.isEmpty)
-    file.foreach(_.close) // if open readonly
+    file.foreach(_.close) // if opened readonly before
+    readonly = false
     path.getParentFile.mkdirs
     val alreadyExisted = path.isFile
     val result = new RandomAccessFile(path, "rw")
@@ -38,6 +39,7 @@ class DataFile(position: Position, val path: File) {
 
   private def initializeFileReadOnly = {
     assume(file.isEmpty)
+    readonly = true
     file = Some(new RandomAccessFile(path, "r"))
     file.get
   }
@@ -46,7 +48,7 @@ class DataFile(position: Position, val path: File) {
     assume(usageCount >= 1)
     assume(offset.value <= Int.MaxValue)
     assume(size.value <= Int.MaxValue)
-    val randomAccessFile = file.getOrElse(initializeFileReadWrite)
+    val randomAccessFile = if (readonly) initializeFileReadWrite else file.getOrElse(initializeFileReadWrite)
     randomAccessFile.seek(position)
     randomAccessFile.write(bytes, offset.value toInt, size.value toInt)
   }
