@@ -9,6 +9,8 @@ Progress: start timer when progress starts
 
 TODO:
 
+DataFile: checksum
+DataFile: Error resilience
 Restore: target file checks
 Restore: NPE at target.getParentFile().mkdirs()
 FTP server choose port and credentials

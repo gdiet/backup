@@ -9,7 +9,7 @@ import scala.annotation.tailrec
 package object io {
   type ByteSource = { def read(bytes: Array[Byte], offset: Int, length: Int): Int }
   type ByteSink = { def write(bytes: Array[Byte], offset: Int, length: Int): Unit }
-  type Closeable = { def close(): Unit }
+  type Closeable = { def close(): Unit } // FIXME use java.io.Closeable
   type Seekable = { def seek(pos: Long): Unit }
   type Reader = ByteSource with Closeable
   type SeekReader = Seekable with Reader
