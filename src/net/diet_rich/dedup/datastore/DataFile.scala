@@ -31,8 +31,7 @@ class DataFile(position: Position, val path: File) {
     path.getParentFile.mkdirs
     val alreadyExisted = path.isFile
     val result = new RandomAccessFile(path, "rw")
-    if (!alreadyExisted)
-      result.write(position.value.toByteArray)
+    if (!alreadyExisted) result.writeLong(position.value)
     file = Some(result)
     result
   }

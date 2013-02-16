@@ -55,6 +55,10 @@ class DataFile2(val position: Position, val file: java.io.File) extends Closeabl
   }
 }
 
+object DataFile2 {
+  val headerBytes = 16
+}
+
 trait DataFileRead {
   self: DataFile2 =>
   final def read(position: Long, bytes: Array[Byte], offset: Position, size: Size): Int = synchronized {
@@ -62,7 +66,7 @@ trait DataFileRead {
     assume(offset.value <= Int.MaxValue)
     assume(size.value <= Int.MaxValue)
     val randomAccessFile = maybeFileAccess.getOrElse(initializeFile)
-    randomAccessFile.seek(position)
+    randomAccessFile.seek(position + DataFile2.headerBytes)
     fillFrom(randomAccessFile, bytes, offset.value toInt, size.value toInt)
   }
 }
@@ -93,7 +97,7 @@ trait DataFileWrite extends Closeable {
     assume(offset.value <= Int.MaxValue)
     assume(size.value <= Int.MaxValue)
     val randomAccessFile = maybeFileAccess.getOrElse(initializeFile)
-    randomAccessFile.seek(position)
+    randomAccessFile.seek(position + DataFile2.headerBytes)
     randomAccessFile.write(bytes, offset.value toInt, size.value toInt)
   }
 }
