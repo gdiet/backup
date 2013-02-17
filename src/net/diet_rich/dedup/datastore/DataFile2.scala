@@ -22,7 +22,13 @@ class DataFile2(val position: Position, val file: java.io.File) extends Closeabl
     assume(maybeFileAccess.isEmpty)
     assume(usageCount == 1)
     val (fileAccessor, mayCheckHeader) = internalInitializeFile
-    if (mayCheckHeader) assume(fileAccessor.readLong() == position.value)
+    if (mayCheckHeader && fileAccessor.readLong() != position.value) {
+      // TODO real warning logging
+      fileAccessor.seek(0)
+      println(s"WARN: read position ${fileAccessor.readLong()} from data file but expected $position. Fixing now...")
+      fileAccessor.seek(0)
+      fileAccessor.writeLong(position.value)
+    }
     maybeFileAccessor = Some(fileAccessor)
     fileAccessor
   }
@@ -99,5 +105,8 @@ trait DataFileWrite extends Closeable {
     val randomAccessFile = maybeFileAccess.getOrElse(initializeFile)
     randomAccessFile.seek(position + DataFile2.headerBytes)
     randomAccessFile.write(bytes, offset.value toInt, size.value toInt)
-  }
+    // FIXME assumes the data file area was not written to before
+    for (n <- offset.value.toInt until offset.value.toInt + size.value.toInt)
+      dataPrint = dataPrint ^ (n + 1) * 0x1000100010001L * bytes(n)
+  }  
 }
