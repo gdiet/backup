@@ -6,15 +6,21 @@ package net.diet_rich.dedup.datastore
 import java.io._
 import net.diet_rich.util.io.fillFrom
 import net.diet_rich.util.vals._
+import DataFile2.headerBytes
 
-class DataFile2(val position: Position, val file: java.io.File) extends Closeable {
+// FIXME rename
+object DataFile2 {
+  val headerBytes = 16
+}
+
+class DataFile2(protected val position: Position, protected val file: File) {
 
   protected final def randomAccessFile: RandomAccessFile = maybeFileAccess.getOrElse(initializeFile)
   protected final def maybeFileAccess: Option[RandomAccessFile] = maybeFileAccessor 
   protected final def usageCount: Int = usageCounter
   protected final def dataPrint: Long = dataPrintVar
   
-  private final var maybeFileAccessor: Option[RandomAccessFile] = None
+  private var maybeFileAccessor: Option[RandomAccessFile] = None
   private var usageCounter: Int = 0
   private var dataPrintVar: Long = 0
 
@@ -32,13 +38,13 @@ class DataFile2(val position: Position, val file: java.io.File) extends Closeabl
     randomAccessFile
   }
 
-  final def checkDataPrint: Boolean = synchronized {
+  final def isDataPrintOK: Boolean = synchronized ({
     assume(usageCount >= 1)
-    val bytes = new Array[Byte](randomAccessFile.length().toInt - DataFile2.headerBytes)
-    randomAccessFile.seek(DataFile2.headerBytes)
+    val bytes = new Array[Byte](randomAccessFile.length().toInt - headerBytes)
+    randomAccessFile.seek(headerBytes)
     fillFrom(randomAccessFile, bytes, 0, bytes.length)
     calcDataPrint(dataPrint, bytes, 0, bytes.length) == 0
-  }
+  })
   
   protected final def calcDataPrint(seed: Long, bytes: Array[Byte], offset: Int, size: Int): Long = {
     var print = seed
@@ -61,7 +67,7 @@ class DataFile2(val position: Position, val file: java.io.File) extends Closeabl
   }
   
   // is overridden in DataFileWrite
-  override def close = synchronized {
+  def close = synchronized {
     assume(usageCount == 0)
     maybeFileAccess.foreach(_.close)
     maybeFileAccessor = None
@@ -78,25 +84,18 @@ class DataFile2(val position: Position, val file: java.io.File) extends Closeabl
   }
 }
 
-object DataFile2 {
-  val headerBytes = 16
-}
-
-trait DataFileRead {
-  self: DataFile2 =>
+trait DataFileRead extends DataFile2 {
   final def read(position: Long, bytes: Array[Byte], offset: Position, size: Size): Int = synchronized {
     assume(usageCount >= 1)
     assume(offset.value <= Int.MaxValue)
     assume(size.value <= Int.MaxValue)
-    randomAccessFile.seek(position + DataFile2.headerBytes)
+    randomAccessFile.seek(position + headerBytes)
     fillFrom(randomAccessFile, bytes, offset.value toInt, size.value toInt)
   }
 }
 
-trait DataFileWrite extends Closeable {
-  self: DataFile2 =>
-  
-  abstract final override def close = synchronized {
+trait DataFileWrite extends DataFile2 {
+  final override def close = synchronized {
     maybeFileAccess.foreach { fileAccessor =>
       fileAccessor.seek(0)
       fileAccessor.writeLong(dataPrint)
@@ -110,19 +109,18 @@ trait DataFileWrite extends Closeable {
     val fileAccessor = new RandomAccessFile(file, "rw")
     fileAccessor.seek(8)
     if (!alreadyExisted) fileAccessor.writeLong(position.value)
-    (fileAccessor, alreadyExisted)
+    fileAccessor
   }
 
-  final def writeNewData(position: Position, bytes: Array[Byte], offset: Position, size: Size): Unit = synchronized {
+  final def writeNewData(position: Long, bytes: Array[Byte], offset: Position, size: Size): Unit = synchronized {
     assume(usageCount >= 1)
     assume(offset.value <= Int.MaxValue)
     assume(size.value <= Int.MaxValue)
-    randomAccessFile.seek(position.value + DataFile2.headerBytes)
+    randomAccessFile.seek(position + headerBytes)
     randomAccessFile.write(bytes, offset.value toInt, size.value toInt)
     updateDataPrint(bytes, offset.value.toInt, size.value.toInt)
   }
   
-  // FIXME introduce IntSize and IntOffset?
   final def eraseData(position: Position, size: Size): Unit = synchronized {
     assume(usageCount >= 1)
     assume(size.value <= Int.MaxValue)
