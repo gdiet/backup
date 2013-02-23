@@ -20,7 +20,7 @@ case class DataRange(start: Position, fin: Position) extends Ordered[DataRange] 
     }
 }
 
-class FreeRanges(blockSize: Size)(implicit connection: WrappedConnection) {
+class FreeRanges(blockSize: Int)(implicit connection: WrappedConnection) {
   // EVENTUALLY, it would be good to look for illegal overlaps:
   // SELECT * FROM ByteStore b1 JOIN ByteStore b2 ON b1.start < b2.fin AND b1.fin > b2.fin
   // Illegal overlaps should be ignored during free space detection
@@ -51,7 +51,7 @@ class FreeRanges(blockSize: Size)(implicit connection: WrappedConnection) {
   def next: DataRange = queue.synchronized {
     val range = queue.dequeue()
     if (range.fin == Position(Long.MaxValue)) {
-      val newLength = blockSize - Size(range.start.value % blockSize.value)
+      val newLength = Size(blockSize - range.start.value % blockSize)
       queue.enqueue(range.withOffset(newLength))
       range.withLength(newLength)
     } else range
@@ -85,8 +85,8 @@ trait ByteStoreDB {
       } else {
         val range = rangeOpt.get
         assume(range.length.value <= Int.MaxValue)
-        val bytesToRead = Size(math.min(range.length.value, length))
-        val read = ds.readFromSingleDataFile(range.start, bytes, Position(offset), bytesToRead)
+        val bytesToRead = math.min(range.length.value, length) toInt
+        val read = ds.readFromSingleDataFile(range.start, bytes, offset, bytesToRead)
         rangeOpt = Some(range.withOffset(Size(read)))
         read
       }
@@ -130,21 +130,21 @@ trait ByteStoreDB {
   private def writeRange(id: DataEntryID, index: Int, source: ByteSource, range: DataRange): DataRange = {
     val bytes = new Array[Byte](32768)
     @annotation.tailrec
-    def writeStep(range: DataRange, offsetInArray: Position, dataInArray: Size, alreadyRead: Size): Size = {
+    def writeStep(range: DataRange, offsetInArray: Int, dataInArray: Int, alreadyRead: Size): Size = {
       if (range.length == Size(0)) {
         alreadyRead
-      } else if (dataInArray == Size(0)) {
+      } else if (dataInArray == 0) {
         val bytesToRead = if (range.length < Size(bytes.length)) range.length.value.toInt else bytes.length
         fillFrom(source, bytes, 0, bytesToRead) match {
           case 0 => alreadyRead
-          case read => writeStep(range, Position(0), Size(read), alreadyRead + Size(read))
+          case read => writeStep(range, 0, read, alreadyRead + Size(read))
         }
       } else {
-        ds.writeToSingleDataFile(range.start, bytes, offsetInArray, dataInArray)
-        writeStep(range.withOffset(dataInArray), Position(0), Size(0), alreadyRead)
+        ds.writeNewDataToSingleDataFile(range.start, bytes, offsetInArray, dataInArray)
+        writeStep(range.withOffset(Size(dataInArray)), 0, 0, alreadyRead)
       }
     }
-    val size = writeStep(range, Position(0), Size(0), Size(0))
+    val size = writeStep(range, 0, 0, Size(0))
     if (size > Size(0)) insertEntry(id.value, index, range.start.value, range.start.value + size.value)
     range.withOffset(size)
   }
@@ -152,7 +152,7 @@ trait ByteStoreDB {
     prepareSingleRowUpdate("INSERT INTO ByteStore (dataid, index, start, fin) VALUES (?, ?, ?, ?)")
 
   // implemented in other pieces of cake
-  protected val ds: net.diet_rich.dedup.datastore.DataStore
+  protected val ds: net.diet_rich.dedup.datastore.DataStore2
 }
 
 object ByteStoreDB {

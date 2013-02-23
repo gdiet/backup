@@ -29,6 +29,7 @@ class DataFile2(dataFileNumber: Long, file: File, readonly: Boolean) {
       fileAccess
     } else {
       val isNewFile = !file.exists()
+      if (isNewFile) file.getParentFile.mkdirs
       val fileAccess = new RandomAccessFile(file, "rw")
       if (isNewFile) {
         fileAccess.writeLong(dataFileNumber)

@@ -13,7 +13,7 @@ object DataStore2 {
   val concurrentDataFiles = 30
 }
 
-class DataStore2(baseDir: File, dataSize: Int, readonly: Boolean) { import DataStore2._
+class DataStore2(baseDir: File, val dataSize: Int, readonly: Boolean) { import DataStore2._
 
   private val executor = Executors.newSingleThreadExecutor()
   private def execute[T](f: => T): T = try {
@@ -75,7 +75,7 @@ class DataStore2(baseDir: File, dataSize: Int, readonly: Boolean) { import DataS
     }
   }
   
-  def readFromSingleDataFile(position: Position, bytes: Array[Byte], offsetInArray: Int, size: Int): Unit = {
+  def readFromSingleDataFile(position: Position, bytes: Array[Byte], offsetInArray: Int, size: Int): Int = {
     val (dataFileNumber, offsetInFileData) = dataFileNumberAndOffset(position, size)
     execute {
       val dataFileHandler = acquireDataFile(dataFileNumber)
