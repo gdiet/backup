@@ -4,7 +4,7 @@
 package net.diet_rich.dedup.datastore
 
 import java.io.File
-import java.util.concurrent.{Callable, ExecutionException, Executors}
+import java.util.concurrent.{Callable, ExecutionException, Executors, ExecutorService}
 import net.diet_rich.util.io._
 import net.diet_rich.util.vals.Position
 
@@ -15,11 +15,11 @@ object DataStore2 {
 
 class DataStore2(baseDir: File, val dataSize: Int, readonly: Boolean) { import DataStore2._
 
-  // TODO It seems that the single-thread approach is about 5%-10% slower than a multi-threaded approach.
-  // TODO Check whether we can get better performance with two executors, one for the even and one for the odd data files.
-  private val executor = Executors.newSingleThreadExecutor()
-  private def execute[T](f: => T): T = try {
-    executor.submit(new Callable[T] { override def call() = f }).get()
+  private val threads = 4
+  private val executors = new Array[ExecutorService](threads)
+  for (n <- 0 until threads) executors(n) = Executors.newSingleThreadExecutor()
+  private def execute[T](dataFileNumber: Long)(f: => T): T = try {
+    executors((dataFileNumber%threads).toInt).submit(new Callable[T] { override def call() = f }).get()
   } catch { case e: ExecutionException => throw e.getCause }
 
   private val dataDir: File = baseDir.child(dirName)
@@ -29,8 +29,8 @@ class DataStore2(baseDir: File, val dataSize: Int, readonly: Boolean) { import D
   private val dataFileHandlers = collection.mutable.LinkedHashMap[Long, DataFile2]()
 
   def shutdown: Unit = {
-    executor.shutdown
-    executor.awaitTermination(Long.MaxValue, java.util.concurrent.TimeUnit.DAYS)
+    executors.foreach(_.shutdown)
+    executors.foreach(_.awaitTermination(Long.MaxValue, java.util.concurrent.TimeUnit.DAYS))
     dataFileHandlers.values.foreach(_.close)
   }
 
@@ -53,7 +53,7 @@ class DataStore2(baseDir: File, val dataSize: Int, readonly: Boolean) { import D
   
   def eraseDataInSingleDataFile(position: Position, size: Int): Unit = {
     val (dataFileNumber, offsetInFileData) = dataFileNumberAndOffset(position, size)
-    execute {
+    execute(dataFileNumber) {
       val dataFileHandler = acquireDataFile(dataFileNumber, true)
       dataFileHandler.eraseData(offsetInFileData, size)
     }
@@ -62,7 +62,7 @@ class DataStore2(baseDir: File, val dataSize: Int, readonly: Boolean) { import D
   def overwriteDataInSingleDataFile(position: Position, bytes: Array[Byte], offsetInArray: Int, size: Int): Unit = {
     val (dataFileNumber, offsetInFileData) = dataFileNumberAndOffset(position, size)
     val dataPrint = DataFile2.calcDataPrint(offsetInFileData, bytes, offsetInArray, size)
-    execute {
+    execute(dataFileNumber) {
       val dataFileHandler = acquireDataFile(dataFileNumber, true)
       dataFileHandler.overwriteData(offsetInFileData, bytes, offsetInArray, size, dataPrint)
     }
@@ -71,7 +71,7 @@ class DataStore2(baseDir: File, val dataSize: Int, readonly: Boolean) { import D
   def writeNewDataToSingleDataFile(position: Position, bytes: Array[Byte], offsetInArray: Int, size: Int): Unit = {
     val (dataFileNumber, offsetInFileData) = dataFileNumberAndOffset(position, size)
     val dataPrint = DataFile2.calcDataPrint(offsetInFileData, bytes, offsetInArray, size)
-    execute {
+    execute(dataFileNumber) {
       val dataFileHandler = acquireDataFile(dataFileNumber, true)
       dataFileHandler.writeNewData(offsetInFileData, bytes, offsetInArray, size, dataPrint)
     }
@@ -79,13 +79,13 @@ class DataStore2(baseDir: File, val dataSize: Int, readonly: Boolean) { import D
   
   def readFromSingleDataFile(position: Position, bytes: Array[Byte], offsetInArray: Int, size: Int): Int = {
     val (dataFileNumber, offsetInFileData) = dataFileNumberAndOffset(position, size)
-    execute {
+    execute(dataFileNumber) {
       val dataFileHandler = acquireDataFile(dataFileNumber, true)
       dataFileHandler.read(offsetInFileData, bytes, offsetInArray, size)
     }
   }
   
-  def recreateDataFileHeader(dataFileNumber: Long): Boolean = execute {
+  def recreateDataFileHeader(dataFileNumber: Long): Boolean = execute(dataFileNumber) {
     val file = dataFile(dataFileNumber)
     if (file.exists()) {
       val dataFileHandler = acquireDataFile(dataFileNumber, false)
