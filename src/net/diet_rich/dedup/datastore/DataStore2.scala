@@ -26,21 +26,24 @@ class DataStore2(baseDir: File, val dataSize: Int, readonly: Boolean) { import D
   private def pathInDataDir(dataFileNumber: Long) = f"$dataFileNumber%010X".grouped(2).mkString("/")
   private def dataFile(dataFileNumber: Long): File = dataDir.child(pathInDataDir(dataFileNumber))
   
-  private val dataFileHandlers = collection.mutable.LinkedHashMap[Long, DataFile2]()
+  private val dataFileHandlerArray = new Array[collection.mutable.Map[Long, DataFile2]](threads)
+  for (n <- 0 until threads) dataFileHandlerArray(n) = collection.mutable.LinkedHashMap[Long, DataFile2]()
+  private def dataFileHandlers(dataFileNumber: Long) = dataFileHandlerArray((dataFileNumber%threads).toInt)
 
   def shutdown: Unit = {
     executors.foreach(_.shutdown)
     executors.foreach(_.awaitTermination(Long.MaxValue, java.util.concurrent.TimeUnit.DAYS))
-    dataFileHandlers.values.foreach(_.close)
+    dataFileHandlerArray.foreach(_.values.foreach(_.close))
   }
 
   private def acquireDataFile(dataFileNumber: Long, mayCheckHeader: Boolean) = {
+    val dfMap = dataFileHandlers(dataFileNumber)
     val dataFileHandler =
-      dataFileHandlers.remove(dataFileNumber)
+      dfMap.remove(dataFileNumber)
       .getOrElse(new DataFile2(dataFileNumber, dataFile(dataFileNumber), mayCheckHeader, readonly))
-    dataFileHandlers.put(dataFileNumber, dataFileHandler)
-    if (dataFileHandlers.size > concurrentDataFiles)
-      dataFileHandlers.remove(dataFileHandlers.keys.head).get.close
+    dfMap.put(dataFileNumber, dataFileHandler)
+    if (dfMap.size > concurrentDataFiles)
+      dfMap.remove(dataFileHandlers(dataFileNumber).keys.head).get.close
     dataFileHandler
   }
 
