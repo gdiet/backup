@@ -9,7 +9,7 @@ import scala.annotation.tailrec
 package object io {
   type ByteSource = { def read(bytes: Array[Byte], offset: Int, length: Int): Int }
   type ByteSink = { def write(bytes: Array[Byte], offset: Int, length: Int): Unit }
-  type Closeable = { def close(): Unit } // FIXME use java.io.Closeable
+  type Closeable = { def close(): Unit }
   type Seekable = { def seek(pos: Long): Unit }
   type Reader = ByteSource with Closeable
   type SeekReader = Seekable with Reader
@@ -105,39 +105,25 @@ package object io {
       recurse(0)
     }
     
-    def appendByte(byte: Byte): ByteSource = new Object {
-      var isAppended = false
-      def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int = {
-        value.read(bytes, internalOffset, length) match {
+    def appendSource(source2: ByteSource) = new Object {
+      var switched = false
+      var source = value
+      def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int =
+        source.read(bytes, internalOffset, length) match {
           case n if (n < 1) =>
-            if (isAppended)
-              n
-            else {
-              bytes(internalOffset) = byte
-              isAppended = false
-              1
+            if (switched) n else {
+              source = source2
+              switched = true
+              read(bytes, internalOffset, length)
             }
           case n => n
         }
-      }
     }
     
-    def prependArray(data: Array[Byte], offset: Int, len: Int): ByteSource = new Object {
-      var read: Int = 0
-      def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int =
-        if (read < len)
-          if (length < len-read) {
-            Array.copy(data, offset + read, bytes, internalOffset, length)
-            read = read + length
-            length
-          } else {
-            val result = len - read
-            Array.copy(data, offset + read, bytes, internalOffset, result)
-            read = len
-            result
-          }
-        else
-          value.read(bytes, internalOffset, length)
-    }
+    def appendByte(byte: Byte): ByteSource =
+      new EnhancedByteSource(value).appendSource(new java.io.ByteArrayInputStream(Array(byte)))
+    
+    def prependArray(data: Array[Byte], offset: Int, len: Int): ByteSource =
+      new EnhancedByteSource(new java.io.ByteArrayInputStream(data, offset, len)).appendSource(value)
   }
 }

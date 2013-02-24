@@ -8,7 +8,6 @@ trait ValueToString extends Any {
   override def toString() = value.toString
 }
 
-// FIXME introduce IntSize and IntPosition?
 class Size(val value: Long) extends AnyBase with ValueToString {
   def +  (other: Size): Size     = Size(value + other.value)
   def -  (other: Size): Size     = Size(value - other.value)

@@ -24,8 +24,8 @@ trait CrcAdler8192 extends PrintDigester { import CrcAdler8192._
     val data = new Array[Byte](area)
     val size = fillFrom(source, data, 0, area)
     val print = calculate(data, 0, size)
-    val paritionedInput = source.prependArray(data, 0, size)
-    (print, processor(paritionedInput))
+    val partitionedInput = source.prependArray(data, 0, size)
+    (print, processor(partitionedInput))
   }
 }
 

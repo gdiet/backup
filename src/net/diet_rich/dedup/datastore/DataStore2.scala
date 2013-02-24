@@ -28,7 +28,6 @@ class DataStore2(baseDir: File, val dataSize: Int, readonly: Boolean) { import D
   
   private val dataFileHandlerArray = new Array[collection.mutable.Map[Long, DataFile2]](threads)
   for (n <- 0 until threads) dataFileHandlerArray(n) = collection.mutable.LinkedHashMap[Long, DataFile2]()
-  private def dataFileHandlers(dataFileNumber: Long) = dataFileHandlerArray((dataFileNumber%threads).toInt)
 
   def shutdown: Unit = {
     executors.foreach(_.shutdown)
@@ -37,13 +36,13 @@ class DataStore2(baseDir: File, val dataSize: Int, readonly: Boolean) { import D
   }
 
   private def acquireDataFile(dataFileNumber: Long, mayCheckHeader: Boolean) = {
-    val dfMap = dataFileHandlers(dataFileNumber)
+    val dfMap = dataFileHandlerArray((dataFileNumber%threads).toInt)
     val dataFileHandler =
       dfMap.remove(dataFileNumber)
       .getOrElse(new DataFile2(dataFileNumber, dataFile(dataFileNumber), mayCheckHeader, readonly))
     dfMap.put(dataFileNumber, dataFileHandler)
     if (dfMap.size > concurrentDataFiles)
-      dfMap.remove(dataFileHandlers(dataFileNumber).keys.head).get.close
+      dfMap.remove(dfMap.keys.head).get.close
     dataFileHandler
   }
 
