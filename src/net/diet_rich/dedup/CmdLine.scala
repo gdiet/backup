@@ -12,4 +12,5 @@ object CmdLine {
   val DATASIZE = "-b"
   val METHOD = "-m"
   val INTERACTIVE = "-i"
+  val OPERATION = "-o"
 }

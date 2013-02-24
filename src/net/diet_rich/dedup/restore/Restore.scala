@@ -23,7 +23,7 @@ object Restore extends CmdApp {
   )
 
   protected def application(con: Console, opts: Map[String, String]): Unit = {
-    val repository = new Repository(new java.io.File(opts(REPOSITORY)))
+    val repository = new Repository(new java.io.File(opts(REPOSITORY)), true)
     val source = repository.fs.entryWithWildcards(Path(opts(SOURCE))) match {
       case None => throw new IllegalArgumentException("Source path ${opts(SOURCE)} not in repository")
       case Some(entry) => entry

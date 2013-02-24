@@ -36,7 +36,7 @@ object Backup extends CmdApp {
       Strings.processSpecialSyntax(opts(TARGET), identity, new java.text.SimpleDateFormat(_).format(new java.util.Date))
     )
     
-    val repository = new Repository(new java.io.File(opts(REPOSITORY)))
+    val repository = new Repository(new java.io.File(opts(REPOSITORY)), false)
     import repository.fs
     
     val (reference, referenceMessage) = opts(DIFFERENTIAL) match {
@@ -73,9 +73,8 @@ object Backup extends CmdApp {
       new PrintMatchCheck(repository.digesters.calculatePrint _)
     )
     
-    val progressOutput = new ConsoleProgressOutput(con: Console,
-      "backup: %s files in %s directories after %ss")
-    val control = new PooledBackupControl(progressOutput)
+    val progressOutput = new ConsoleProgressOutput(con, "backup: %s files in %s directories after %ss")
+    val control = new PooledBackupControl(con, progressOutput)
     
     val processor = new BackupProcessor[FileSource] (
       control,
@@ -113,7 +112,7 @@ object Backup extends CmdApp {
         con.println(s"finished backup, cleaning up. Time: ${(System.currentTimeMillis() - time)/1000d}")
       } finally {
         repository.shutdown(true)
-        con.println(s"shutdown complete. Time: ${(System.currentTimeMillis() - time)/1000d}")
+        con.println(s"Shutdown complete. Time: ${(System.currentTimeMillis() - time)/1000d}")
       }
     } else {
       control.shutdown

@@ -6,9 +6,10 @@ package net.diet_rich.dedup.repository
 import java.sql._
 
 object DBConnection {
-  def forH2(dbpath: String): Connection = {
+  def forH2(dbpath: String, readonly: Boolean): Connection = {
     // Connection is closed by H2's built-in shutdown hook when VM exits normally.
     Class forName "org.h2.Driver"
+    val url = s"jdbc:h2:$dbpath" + (if (readonly) ";ACCESS_MODE_DATA=r" else "")
     val connection = DriverManager getConnection(s"jdbc:h2:$dbpath", "sa", "")
     connection setAutoCommit true
     connection

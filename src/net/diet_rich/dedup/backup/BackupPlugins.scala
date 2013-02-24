@@ -36,13 +36,16 @@ trait SimpleBackupControl extends BackupControl[FileSource] {
   def shutdown: Unit = Unit
 }
 
-class PooledBackupControl(progressOutput: ConsoleProgressOutput) extends BackupControl[FileSource] {
+class PooledBackupControl(con: Console, progressOutput: ConsoleProgressOutput) extends BackupControl[FileSource] {
   private val executor = new ThreadsManager(10, 10)
   def notifyProgressMonitor(entry: FileSource): Unit =
     if (entry.file.isDirectory()) progressOutput.incDirs else progressOutput.incFiles
   def executeInThreadPool(f: => Unit): Unit = executor.execute(f)
   def catchAndHandleException(entry: FileSource)(f: => Unit): Unit =
-    try { f } catch { case e: Throwable => println(e) }
+    try { f } catch { case e: Throwable =>
+      con.println(e.toString)
+      con.println(e.getStackTraceString)
+    }
   def shutdown = {
     executor.shutdown
     progressOutput.close

@@ -37,7 +37,7 @@ object Create extends CmdApp {
     writeSettingsFile(repositoryFolder.child(Repository.settingsFileName), repositorySettings)
     
     val dbdir = repositoryFolder.child(Repository.dbDirName)
-    implicit val connection = Repository.getConnection(dbdir)
+    implicit val connection = Repository.getConnection(dbdir, false)
     TreeDB.createTable
     DataInfoDB.createTable(Hash(Hashes.zeroBytesHash(hashAlgorithm)), CrcAdler8192.zeroBytesPrint)
     ByteStoreDB.createTable

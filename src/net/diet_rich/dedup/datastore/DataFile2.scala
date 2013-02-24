@@ -18,23 +18,21 @@ object DataFile2 {
   }
 }
 
-class DataFile2(dataFileNumber: Long, file: File, readonly: Boolean) {
+class DataFile2(dataFileNumber: Long, file: File, mayCheckHeader: Boolean, readonly: Boolean) {
 
   private var print: Long = 0L
   
   protected val randomAccessFile: RandomAccessFile = {
     if (readonly) {
       val fileAccess = new RandomAccessFile(file, "r")
-      assume(dataFileNumber == fileAccess.readLong)
+      assume((!mayCheckHeader) || dataFileNumber == fileAccess.readLong)
       fileAccess
     } else {
       val isNewFile = !file.exists()
       if (isNewFile) file.getParentFile.mkdirs
       val fileAccess = new RandomAccessFile(file, "rw")
-      if (isNewFile) {
-        fileAccess.writeLong(dataFileNumber)
-      } else {
-        assume(dataFileNumber == fileAccess.readLong)
+      if (!isNewFile) {
+        assume((!mayCheckHeader) || dataFileNumber == fileAccess.readLong)
         fileAccess.seek(8)
         print = fileAccess.readLong
       }
@@ -42,9 +40,10 @@ class DataFile2(dataFileNumber: Long, file: File, readonly: Boolean) {
     }
   }
   
-  def close = {
+  def close() = {
     if (!readonly) {
-      randomAccessFile.seek(8)
+      randomAccessFile.seek(0)
+      randomAccessFile.writeLong(dataFileNumber)
       randomAccessFile.writeLong(print)
     }
     randomAccessFile.close
@@ -69,6 +68,13 @@ class DataFile2(dataFileNumber: Long, file: File, readonly: Boolean) {
   def read(offsetInFileData: Int, bytesToRead: Array[Byte], offsetInArray: Int, size: Int): Int = {
     randomAccessFile.seek(offsetInFileData + headerBytes)
     fillFrom(randomAccessFile, bytesToRead, offsetInArray, size)
+  }
+  
+  def recalculatePrint = {
+    val size = randomAccessFile.length.toInt - headerBytes
+    val bytesToRead = new Array[Byte](size)
+    read(0, bytesToRead, 0, size)
+    print = calcDataPrint(0, bytesToRead, 0, size)
   }
   
 }

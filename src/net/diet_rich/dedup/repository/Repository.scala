@@ -10,7 +10,7 @@ import net.diet_rich.util.vals._
 import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.datastore.DataStore2
 
-class Repository(val basedir: File) { import Repository._
+class Repository(val basedir: File, val readonly: Boolean) { import Repository._
   val settings = readSettingsFile(basedir.child(settingsFileName))
   assume(
     settings.get(Repository.repositoryVersionKey) == Some(Repository.repositoryVersion),
@@ -18,10 +18,10 @@ class Repository(val basedir: File) { import Repository._
   )
   
   val digesters = new HashDigester(settings(hashKey)) with Digesters with CrcAdler8192
-  val dataStore = new DataStore2(basedir, settings(dataSizeKey).toInt, false /* FIXME */)
+  val dataStore = new DataStore2(basedir, settings(dataSizeKey).toInt, readonly)
 
   private val dbdir = basedir.child(dbDirName)
-  private implicit val connection = getConnection(dbdir)
+  private implicit val connection = getConnection(dbdir, readonly)
   private val lockfile = dbdir.child(s"$dbFileName.lock.db")
   require(lockfile.isFile, s"Expected database lock file $lockfile to exist.")
   
@@ -77,7 +77,7 @@ object Repository {
   val dbVersionKey = "database version"
     
     
-  def getConnection(basedir: File): WrappedConnection = new Object {
-    val con = DBConnection.forH2(s"$basedir/$dbFileName")
+  def getConnection(basedir: File, readonly: Boolean): WrappedConnection = new Object {
+    val con = DBConnection.forH2(s"$basedir/$dbFileName", readonly)
   }
 }
