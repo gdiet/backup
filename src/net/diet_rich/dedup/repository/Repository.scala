@@ -77,7 +77,6 @@ object Repository {
   val dbVersionKey = "database version"
     
     
-  def getConnection(basedir: File, readonly: Boolean): WrappedConnection = new Object {
-    val con = DBConnection.forH2(s"$basedir/$dbFileName", readonly)
-  }
+  def getConnection(basedir: File, readonly: Boolean) =
+    DBConnection.forH2(s"$basedir/$dbFileName", readonly)
 }

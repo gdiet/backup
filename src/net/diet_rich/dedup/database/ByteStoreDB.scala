@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.database
 
+import java.sql.Connection
 import net.diet_rich.dedup.datastore.StoreMethods
 import net.diet_rich.util.io._
 import net.diet_rich.util.sql._
@@ -20,7 +21,7 @@ case class DataRange(start: Position, fin: Position) extends Ordered[DataRange] 
     }
 }
 
-class FreeRanges(blockSize: Int)(implicit connection: WrappedConnection) {
+class FreeRanges(blockSize: Int)(implicit connection: Connection) {
   // EVENTUALLY, it would be good to look for illegal overlaps:
   // SELECT * FROM ByteStore b1 JOIN ByteStore b2 ON b1.start < b2.fin AND b1.fin > b2.fin
   // Illegal overlaps should be ignored during free space detection
@@ -62,7 +63,7 @@ class FreeRanges(blockSize: Int)(implicit connection: WrappedConnection) {
 
 
 trait ByteStoreDB {
-  implicit def connection: WrappedConnection
+  implicit def connection: Connection
   
   private val freeRanges = new FreeRanges(ds.dataSize)
 
@@ -156,7 +157,7 @@ trait ByteStoreDB {
 }
 
 object ByteStoreDB {
-  def createTable(implicit connection: WrappedConnection) : Unit = {
+  def createTable(implicit connection: Connection) : Unit = {
     // index: data part index (starts at 0)
     // start: data part start position
     // fin: data part end position + 1

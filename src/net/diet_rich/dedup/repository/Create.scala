@@ -42,7 +42,7 @@ object Create extends CmdApp {
     DataInfoDB.createTable(Hash(Hashes.zeroBytesHash(hashAlgorithm)), CrcAdler8192.zeroBytesPrint)
     ByteStoreDB.createTable
     SettingsDB.createTable(repositorySettings)
-    connection.con.close()
+    connection.close()
     con.println(s"... Success!")
   }
 }

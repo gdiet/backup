@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.database
 
+import java.sql.Connection
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 import net.diet_rich.util.Strings
@@ -16,7 +17,7 @@ case class TreeEntry(
   dataid: Option[DataEntryID] = None)
 
 trait TreeDB {
-  implicit val connection: WrappedConnection
+  implicit val connection: Connection
   
   private val maxEntryId =
     SqlDBUtil.readAsAtomicLong("SELECT MAX(id) FROM TreeEntries")
@@ -124,7 +125,7 @@ object TreeDB {
   val ROOTPATH = Path("")
   val SEPARATOR = "/"
     
-  def createTable(implicit connection: WrappedConnection) : Unit = {
+  def createTable(implicit connection: Connection) : Unit = {
     execUpdate(net.diet_rich.util.Strings normalizeMultiline """
       CREATE TABLE TreeEntries (
         id      BIGINT PRIMARY KEY,
@@ -141,7 +142,7 @@ object TreeDB {
     execUpdate(s"INSERT INTO TreeEntries (id, parent, name, type) VALUES (0, NULL, '', ${NodeType.DIR.value})")
   }
 
-  def dropTable(implicit connection: WrappedConnection) : Unit =
+  def dropTable(implicit connection: Connection) : Unit =
     execUpdate("DROP TABLE TreeEntries IF EXISTS")
 
 }

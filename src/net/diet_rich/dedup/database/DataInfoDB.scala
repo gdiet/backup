@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.database
 
+import java.sql.Connection
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
@@ -15,7 +16,7 @@ case class DataEntry (
 )
 
 trait DataInfoDB {
-  implicit val connection: WrappedConnection
+  implicit val connection: Connection
   
   /** @return true if at least one matching data entry is stored. */
   def dataEntry(id: DataEntryID): DataEntry =
@@ -44,7 +45,7 @@ trait DataInfoDB {
 }
 
 object DataInfoDB {
-  def createTable(zeroByteHash: Hash, zeroBytePrint: Print)(implicit connection: WrappedConnection) : Unit = {
+  def createTable(zeroByteHash: Hash, zeroBytePrint: Print)(implicit connection: Connection) : Unit = {
     // length: uncompressed entry size
     // method: store method (0 = PLAIN, 1 = DEFLATE, 2 = LZMA??)
     execUpdate(net.diet_rich.util.Strings normalizeMultiline s"""

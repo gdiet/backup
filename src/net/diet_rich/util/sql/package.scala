@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util
 
-import java.sql.PreparedStatement
+import java.sql.{Connection, PreparedStatement}
 
 package object sql {
 
@@ -74,8 +74,8 @@ package object sql {
     }
   }
   
-  def execQuery[T](command: String, args: Any*)(processor: WrappedSQLResult => T)(implicit connection: WrappedConnection): ResultIterator[T] =
-    execQuery(connection.con prepareStatement command, args:_*)(processor)
+  def execQuery[T](command: String, args: Any*)(processor: WrappedSQLResult => T)(implicit connection: Connection): ResultIterator[T] =
+    execQuery(connection prepareStatement command, args:_*)(processor)
 
   private def execUpdate(preparedStatement: PreparedStatement, args: Any*): Int =
     setArguments(preparedStatement, args:_*) executeUpdate()
@@ -86,29 +86,29 @@ package object sql {
       case n => throw new IllegalStateException(s"SQL update $preparedStatement returned $n rows instead of 1")
     }
     
-  def execUpdate(command: String, args: Any*)(implicit connection: WrappedConnection): Int =
-    setArguments(connection.con prepareStatement command, args:_*) executeUpdate()
+  def execUpdate(command: String, args: Any*)(implicit connection: Connection): Int =
+    setArguments(connection prepareStatement command, args:_*) executeUpdate()
   
-  def prepareQuery(statement: String)(implicit connection: WrappedConnection): SqlQuery =
+  def prepareQuery(statement: String)(implicit connection: Connection): SqlQuery =
     new SqlQuery {
       protected val prepared =
-        ScalaThreadLocal(connection.con prepareStatement statement, connection.con, statement)
+        ScalaThreadLocal(connection prepareStatement statement, statement)
       override def apply[T](args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T] =
         execQuery(prepared, args:_*)(processor)
     }
 
-  def prepareUpdate(statement: String)(implicit connection: WrappedConnection): SqlUpdate =
+  def prepareUpdate(statement: String)(implicit connection: Connection): SqlUpdate =
     new SqlUpdate {
       protected val prepared =
-        ScalaThreadLocal(connection.con prepareStatement statement, connection.con, statement)
+        ScalaThreadLocal(connection prepareStatement statement, statement)
       override def apply(args: Any*): Int =
         execUpdate(prepared, args:_*)
     }
   
-  def prepareSingleRowUpdate(statement: String)(implicit connection: WrappedConnection): SingleRowSqlUpdate =
+  def prepareSingleRowUpdate(statement: String)(implicit connection: Connection): SingleRowSqlUpdate =
     new SingleRowSqlUpdate {
       protected val prepared =
-        ScalaThreadLocal(connection.con prepareStatement statement, connection.con, statement)
+        ScalaThreadLocal(connection prepareStatement statement, statement)
       override def apply(args: Any*): Unit =
         execSingleRowUpdate(prepared, args:_*)
     }

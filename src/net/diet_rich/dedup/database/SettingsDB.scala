@@ -3,12 +3,13 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.database
 
+import java.sql.Connection
 import net.diet_rich.dedup.repository.Repository
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
 trait SettingsDB {
-  implicit val connection: WrappedConnection
+  implicit val connection: Connection
 
   def checkDbVersion: Unit =
     assume(
@@ -32,7 +33,7 @@ trait SettingsDB {
 }
 
 object SettingsDB {
-  def createTable(initialSettings: Map[String, String])(implicit connection: WrappedConnection) : Unit = {
+  def createTable(initialSettings: Map[String, String])(implicit connection: Connection) : Unit = {
     execUpdate(net.diet_rich.util.Strings normalizeMultiline """
       CREATE TABLE Settings (
         key    VARCHAR(256) PRIMARY KEY,

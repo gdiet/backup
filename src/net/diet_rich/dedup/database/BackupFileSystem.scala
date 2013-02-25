@@ -3,11 +3,11 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.database
 
+import java.sql.Connection
 import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
-import net.diet_rich.util.sql.WrappedConnection
 
-class BackupFileSystem(val dig: Digesters, protected val ds: net.diet_rich.dedup.datastore.DataStore2)(implicit val connection: WrappedConnection)
+class BackupFileSystem(val dig: Digesters, protected val ds: net.diet_rich.dedup.datastore.DataStore2)(implicit val connection: Connection)
 extends TreeDB with TreeDBUtils with DataInfoDB with ByteStoreDB with SettingsDB
 
 case class FullDataInformation (
