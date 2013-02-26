@@ -137,8 +137,11 @@ class RepoFile(repository: Repository, id: TreeEntryID) extends FtpFile {
   }
   
   def createOutputStream(x$1: Long): java.io.OutputStream = ???
-  def delete(): Boolean = ???
-  def isRemovable(): Boolean = ???
+  
+  def delete(): Boolean = repository.fs.markDeleted(id)
+  
+  def isRemovable(): Boolean = id != TreeDB.ROOTID // FIXME check for read-only access
+  
   def mkdir(): Boolean = ???
   def move(x$1: org.apache.ftpserver.ftplet.FtpFile): Boolean = ???
   def setLastModified(x$1: Long): Boolean = ???

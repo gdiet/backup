@@ -20,7 +20,7 @@ object FtpServer extends CmdApp {
     con.println("Starting a read-only FTP server for the backup repository.")
     con.println("Access: ftp://localhost")
     con.println("User: 'user', password: 'user'")
-    val repository = new Repository(new java.io.File(opts(REPOSITORY)), true)
+    val repository = new Repository(new java.io.File(opts(REPOSITORY)), false) // FIXME make read-only optional
     val server = MinaWrapper.server(repository)
     server.start()
     con.println("Server started.")

@@ -17,11 +17,18 @@ object Check extends CmdApp {
     REPOSITORY -> "" -> "[%s <directory>] Location of the repository to check",
     OPERATION -> "help" -> "[%s <operation>] Check to execute or 'help' to list available checks, default '%s'"
   )
+
+  protected val listDataDuplicatesOp = "listDataDuplicates"
   
   protected def application(con: Console, opts: Map[String, String]): Unit = {
     opts(OPERATION) match {
       case "help" =>
         con.println("Available checks:")
+        con.println(s"listDataDuplicatesOp - list all duplicate data entries")
+        
+      case `listDataDuplicatesOp` =>
+        ???
+        
       case op =>
         con.println(s"'$op' is not a supported check.")
     }

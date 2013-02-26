@@ -18,8 +18,9 @@ object Fix extends CmdApp {
     OPERATION -> "help" -> "[%s <operation>] Repair operation to execute or 'help' to list available repairs, default '%s'"
   )
   
+  protected val dataFileHeadersOp = "recreateDataFileHeaders"
+   
   protected def application(con: Console, opts: Map[String, String]): Unit = {
-    val dataFileHeadersOp = "recreateDataFileHeaders"
     opts(OPERATION) match {
       
       case "help" =>

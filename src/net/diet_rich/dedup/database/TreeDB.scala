@@ -16,8 +16,28 @@ case class TreeEntry(
   time: Time = Time(0), 
   dataid: Option[DataEntryID] = None)
 
-trait TreeDB {
-  implicit val connection: Connection
+trait RespectDeleted {
+  implicit protected val connection: Connection
+  protected final val queryEntry = 
+    prepareQuery("SELECT parent, name, type, time, dataid FROM TreeEntries WHERE id = ? AND deleted IS NULL")
+  protected final val queryChild: SqlQuery = 
+    prepareQuery("SELECT id, type, time, dataid FROM TreeEntries WHERE parent = ? AND name = ? AND deleted IS NULL")
+  protected final val queryChildren =
+    prepareQuery("SELECT id, name, type, time, dataid FROM TreeEntries WHERE parent = ? AND deleted IS NULL")
+}
+
+trait IgnoreDeleted {
+  implicit protected val connection: Connection
+  protected final val queryEntry = 
+    prepareQuery("SELECT parent, name, type, time, dataid FROM TreeEntries WHERE id = ?")
+  protected final val queryChild: SqlQuery = 
+    prepareQuery("SELECT id, type, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?")
+  protected final val queryChildren =
+    prepareQuery("SELECT id, name, type, time, dataid FROM TreeEntries WHERE parent = ?")
+}
+
+trait TreeDB { import TreeDB._
+  implicit protected val connection: Connection
   
   private val maxEntryId =
     SqlDBUtil.readAsAtomicLong("SELECT MAX(id) FROM TreeEntries")
@@ -29,7 +49,7 @@ trait TreeDB {
     addEntry(id, parentId.value, name, nodeType.value, time.value, dataId.map(_.value))
     TreeEntryID(id)
   }
-  protected val addEntry = 
+  protected final val addEntry = 
     prepareSingleRowUpdate("INSERT INTO TreeEntries (id, parent, name, type, time, dataid) VALUES (?, ?, ?, ?, ?, ?)")
 
   /** @return The entry if any. */
@@ -37,25 +57,22 @@ trait TreeDB {
     queryEntry(id.value)(
       r => TreeEntry(id, TreeEntryID(r longOption 1), r string 2, NodeType(r int 3), Time(r long 4), DataEntryID(r longOption 5))
     ).nextOptionOnly
-  protected val queryEntry = 
-    prepareQuery("SELECT parent, name, type, time, dataid FROM TreeEntries WHERE id = ?")
-
+  protected val queryEntry: SqlQuery
+  
   /** @return The child entry if any. */
   def child(parent: TreeEntryID, name: String): Option[TreeEntry] =
     queryChild(parent.value, name)(
       r => TreeEntry(TreeEntryID(r long 1), Some(parent), name, NodeType(r int 2), Time(r long 3), DataEntryID(r longOption 4))
     ).nextOptionOnly
-  protected val queryChild = 
-    prepareQuery("SELECT id, type, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?")
-
+  protected val queryChild: SqlQuery
+  
   /** Note: If the children are not consumed immediately, they must be stored e.g. by calling *.toList.
    *  @return The children, empty if no such node. */
   def children(parent: TreeEntryID): Iterable[TreeEntry] =
     queryChildren(parent.value)(
       r => TreeEntry(TreeEntryID(r long 1), Some(parent), r string 2, NodeType(r int 3), Time(r long 4), DataEntryID(r longOption 5))
     ).toSeq
-  protected val queryChildren =
-    prepareQuery("SELECT id, name, type, time, dataid FROM TreeEntries WHERE parent = ?")
+  protected val queryChildren : SqlQuery
     
   /** @return The node's complete data information if any. */
   def fullDataInformation(id: TreeEntryID): Option[FullDataInformation] =
@@ -66,16 +83,17 @@ trait TreeDB {
     "SELECT time, length, print, hash, dataid FROM TreeEntries JOIN DataInfo " +
     "ON TreeEntries.dataid = DataInfo.id AND TreeEntries.id = ?"
   )
-
-// maybe for future use
-//  /** @throws Exception if the node was not updated correctly. */
-//  def setData(id: TreeEntryID, time: Time, dataid: Option[DataEntryID]): Unit =
-//    changeData(time.value, dataid.map(_.value), id.value) match {
-//      case 1 => Unit
-//      case n => throw new IllegalStateException(s"Tree: Update node $id returned $n rows instead of 1")
-//    }
-//  protected val changeData = 
-//    prepareUpdate("UPDATE TreeEntries SET time = ?, dataid = ? WHERE id = ?;")
+  
+  /** @return true if the deleted flag was set for the entry. */
+  def markDeleted(id: TreeEntryID): Boolean =
+    (id != ROOTID) && (markEntryDeleted(System.currentTimeMillis(), id.value) match {
+      case 0 => false
+      case 1 => true
+      case _ => throw new AssertionError
+    })
+  protected val markEntryDeleted = prepareUpdate(
+    "UPDATE TreeEntries SET deleted = ? where id = ?"
+  )
 }
 
 trait TreeDBUtils { self: TreeDB => import TreeDB._
