@@ -15,12 +15,20 @@ object FtpServer extends CmdApp {
   val keysAndHints = Seq(
     REPOSITORY -> "" -> "[%s <directory>] Repository location"
   )
+  override protected val optionalKeysAndHints = Seq(
+    WRITEPROTECTED -> "y" -> "[%s [y|n]] If not 'n', access is read-only, default '%s'"
+  )
 
   protected def application(con: Console, opts: Map[String, String]): Unit = {
-    con.println("Starting a read-only FTP server for the backup repository.")
+    val readonly = opts(WRITEPROTECTED) != "n"
+    if (readonly)
+      con.println("Starting a read-only FTP server.")
+    else
+      con.println("Starting an FTP server with write access.")
+    con.println(s"Backup repository: ${opts(REPOSITORY)}")
     con.println("Access: ftp://localhost")
     con.println("User: 'user', password: 'user'")
-    val repository = new Repository(new java.io.File(opts(REPOSITORY)), false) // FIXME make read-only optional
+    val repository = new Repository(new java.io.File(opts(REPOSITORY)), readonly)
     val server = MinaWrapper.server(repository)
     server.start()
     con.println("Server started.")

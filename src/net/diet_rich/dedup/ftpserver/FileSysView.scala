@@ -140,7 +140,7 @@ class RepoFile(repository: Repository, id: TreeEntryID) extends FtpFile {
   
   def delete(): Boolean = repository.fs.markDeleted(id)
   
-  def isRemovable(): Boolean = id != TreeDB.ROOTID // FIXME check for read-only access
+  def isRemovable(): Boolean = (!repository.readonly) && (id != TreeDB.ROOTID)
   
   def mkdir(): Boolean = ???
   def move(x$1: org.apache.ftpserver.ftplet.FtpFile): Boolean = ???

@@ -13,4 +13,5 @@ object CmdLine {
   val METHOD = "-m"
   val INTERACTIVE = "-i"
   val OPERATION = "-o"
+  val WRITEPROTECTED = "-w"
 }
