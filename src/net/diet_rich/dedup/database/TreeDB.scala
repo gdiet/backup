@@ -155,7 +155,7 @@ object TreeDB {
   val ROOTPATH = Path("")
   val SEPARATOR = "/"
     
-  def createTable(implicit connection: Connection) : Unit = {
+  def createTable(implicit connection: Connection): Unit = {
     execUpdate(net.diet_rich.util.Strings normalizeMultiline """
       CREATE TABLE TreeEntries (
         id      BIGINT PRIMARY KEY,
@@ -167,12 +167,21 @@ object TreeDB {
         dataid  BIGINT DEFAULT NULL
       );
     """)
-    execUpdate("CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent)")
-    execUpdate("CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid)")
+    recreateIndexes
     execUpdate(s"INSERT INTO TreeEntries (id, parent, name, type) VALUES (0, NULL, '', ${NodeType.DIR.value})")
   }
 
-  def dropTable(implicit connection: Connection) : Unit =
+  def recreateIndexes(implicit connection: Connection): Unit = {
+    execUpdate("DROP INDEX idxTreeEntriesParent IF EXISTS")
+    execUpdate("DROP INDEX idxTreeEntriesDataid IF EXISTS")
+    execUpdate("DROP INDEX idxTreeEntriesDeleted IF EXISTS")
+    
+    execUpdate("CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent)")
+    execUpdate("CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid)")
+    execUpdate("CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted)")
+  }
+  
+  def dropTable(implicit connection: Connection): Unit =
     execUpdate("DROP TABLE TreeEntries IF EXISTS")
 
 }

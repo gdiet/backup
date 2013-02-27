@@ -19,6 +19,7 @@ object Fix extends CmdApp {
   )
   
   protected val dataFileHeadersOp = "recreateDataFileHeaders"
+  protected val updateDatabaseOp = "updateDatabase"
    
   protected def application(con: Console, opts: Map[String, String]): Unit = {
     opts(OPERATION) match {
@@ -26,6 +27,26 @@ object Fix extends CmdApp {
       case "help" =>
         con.println("Available repairs:")
         con.println(s"$dataFileHeadersOp - recreate the headers of all data files")
+        con.println(s"$updateDatabaseOp - update the database if necessary")
+
+      case `updateDatabaseOp` =>
+        val repositoryFolder = new File(opts(REPOSITORY))
+        val dbdir = repositoryFolder.child(Repository.dbDirName)
+        val dbConnection = Repository.getConnection(dbdir, false)
+        val settingsDB = new SettingsDB { implicit lazy val connection = dbConnection }
+        val dbSettings = settingsDB.dbSettings
+        val versionInDB = dbSettings(Repository.dbVersionKey)
+        con.println(s"Current database version: ${Repository.dbVersion}")
+        con.println(s"Version of database in ${opts(REPOSITORY)}: $versionInDB")
+        versionInDB match {
+          case Repository.dbVersion => con.println("Database is up to date")
+          case "1.0" =>
+            TreeDB.recreateIndexes(dbConnection)
+            settingsDB.writeDbSettings(dbSettings + (Repository.dbVersionKey -> "1.1"))
+            con.println("Updated database to version 1.1")
+          case v =>
+            con.println("ERROR: Don't know how to update a database version $v")
+        }
         
       case `dataFileHeadersOp` =>
         val repository = new Repository(new java.io.File(opts(REPOSITORY)), false)

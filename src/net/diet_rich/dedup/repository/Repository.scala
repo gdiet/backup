@@ -62,20 +62,20 @@ class Repository(val basedir: File, val readonly: Boolean) { import Repository._
     }
   }
 }
+
 object Repository {
   val dbDirName = "database"
   val dbFileName = "dedup"
   val settingsFileName = "settings.txt"
     
   val repositoryVersion = "1.0"
-  val dbVersion = "1.0"
+  val dbVersion = "1.1"
     
   val repositoryVersionKey = "repository version"
   val repositoryIdKey = "repository id"
   val hashKey = "hash algorithm"
   val dataSizeKey = "data size"
   val dbVersionKey = "database version"
-    
     
   def getConnection(basedir: File, readonly: Boolean) =
     DBConnection.forH2(s"$basedir/$dbFileName", readonly)
