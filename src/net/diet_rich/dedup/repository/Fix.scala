@@ -32,18 +32,19 @@ object Fix extends CmdApp {
       case `updateDatabaseOp` =>
         val repositoryFolder = new File(opts(REPOSITORY))
         val dbdir = repositoryFolder.child(Repository.dbDirName)
-        val dbConnection = Repository.getConnection(dbdir, false)
-        val settingsDB = new SettingsDB { implicit lazy val connection = dbConnection }
-        val dbSettings = settingsDB.dbSettings
+        implicit val connection = Repository.getConnection(dbdir, false)
+        val dbSettings = SettingsDB.readDbSettings
         val versionInDB = dbSettings(Repository.dbVersionKey)
         con.println(s"Current database version: ${Repository.dbVersion}")
         con.println(s"Version of database in ${opts(REPOSITORY)}: $versionInDB")
         versionInDB match {
-          case Repository.dbVersion => con.println("Database is up to date")
+          case Repository.dbVersion => con.println("Database is up to date.")
+          
           case "1.0" =>
-            TreeDB.recreateIndexes(dbConnection)
-            settingsDB.writeDbSettings(dbSettings + (Repository.dbVersionKey -> "1.1"))
+            net.diet_rich.util.sql.execUpdate("CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted)")
+            SettingsDB.writeDbSettings(dbSettings + (Repository.dbVersionKey -> "1.1"))
             con.println("Updated database to version 1.1")
+            
           case v =>
             con.println("ERROR: Don't know how to update a database version $v")
         }

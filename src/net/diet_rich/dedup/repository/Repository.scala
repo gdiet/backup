@@ -24,12 +24,14 @@ class Repository(val basedir: File, val readonly: Boolean) { import Repository._
   private implicit val connection = getConnection(dbdir, readonly)
   private val lockfile = dbdir.child(s"$dbFileName.lock.db")
   require(lockfile.isFile, s"Expected database lock file $lockfile to exist.")
+  SettingsDB.checkDbVersion
+  private val repoIdInDbIfAny = SettingsDB.readDbSettings.get(Repository.repositoryIdKey)
+  private val repoIdInRepoIfAny = settings.get(Repository.repositoryIdKey)
   
-  val fs: BackupFileSystem = new BackupFileSystem(digesters, dataStore)(connection)
-  fs.checkDbVersion
+  val fs: BackupFileSystem = new BackupFileSystem(digesters, dataStore)
   assume(
-    settings.get(Repository.repositoryIdKey) == fs.dbSettings.get(Repository.repositoryIdKey),
-    s"Expected repository id in database ${fs.dbSettings.get(Repository.repositoryIdKey).getOrElse("None")} to match that of repository ${settings.get(Repository.repositoryIdKey).getOrElse("None")}."
+    repoIdInRepoIfAny == repoIdInDbIfAny,
+    s"Expected repository id in database ${repoIdInDbIfAny.getOrElse("None")} to match that of repository ${repoIdInRepoIfAny.getOrElse("None")}."
   )
   
   def shutdown(backupDb: Boolean) = {
