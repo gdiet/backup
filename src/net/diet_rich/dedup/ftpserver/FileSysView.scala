@@ -11,7 +11,7 @@ import java.io.IOException
 import java.io.FileNotFoundException
 
 object Helpers {
-  def log(msg: => String) = Unit // System.err.println(msg)
+  def log(msg: => String) = () // System.err.println("::: " + msg)
   def logAnd[Result](msg: => String)(andThen: => Result): Result = {
     val result = andThen
     log(msg + " -> " + result);
@@ -20,112 +20,151 @@ object Helpers {
 }
 
 class FileSysView(repository: Repository) extends FileSystemView {
-  log("creating file system view")
+  log("... creating file system view")
   
-  var workingDirectory = getHomeDirectory
+  private val rootDirectory = IsRepoFile(repository, TreeDB.ROOTID)
+  var workingDirectory: IsRepoFile = rootDirectory
 
-  def resolvePath(path: String): Option[RepoFile] = {
-    def cdTo(currentDir: RepoFile, path: Seq[String]): Option[RepoFile] = {
-      path.toList match { // toList needed as workaround for https://issues.scala-lang.org/browse/SI-6996
-        case Nil => Some(currentDir)
-        case ""  :: tail => cdTo(currentDir, tail)
-        case "." :: tail => cdTo(currentDir, tail)
-        case "..":: tail => currentDir.getParent.flatMap(cdTo(_, tail))
-        case e   :: tail => currentDir.listFilesScala.find(_.getName == e).flatMap(cdTo(_, tail))
-      }
+  def resolvePath(path: String): Option[RepoFile] =  logAnd("... resolvePath: " + path) {
+    def cdTo(currentDir: IsRepoFile, path: List[String]): Option[RepoFile] = path match {
+      case Nil => Some(currentDir)
+      case ""  :: tail => cdTo(currentDir, tail)
+      case "." :: tail => cdTo(currentDir, tail)
+      case "..":: tail => currentDir.getParent.flatMap(cdTo(_, tail))
+      case e   :: Nil  => currentDir.listFilesScala.find(_.getName == e).orElse(Some(MaybeRepoFile(repository, currentDir.id, e)))
+      case e   :: tail => currentDir.listFilesScala.find(_.getName == e).flatMap(cdTo(_, tail))
     }
     val (startDir, relativeDir) =
-      if (path.startsWith("/")) (getHomeDirectory, path.substring(1)) else (workingDirectory, path)
-    cdTo(startDir, relativeDir.split('/').toSeq)
+      if (path.startsWith("/")) (rootDirectory, path.substring(1)) else (workingDirectory, path)
+    cdTo(startDir, relativeDir.split('/').toList)
   }
   
-  def changeWorkingDirectory(dir: String): Boolean = logAnd(s"cd $dir") {
+  def changeWorkingDirectory(dir: String): Boolean = logAnd(s"... cd $dir") {
     resolvePath(dir) match {
+      case Some(repoFile) =>
+        repoFile match {
+          case repoFile: IsRepoFile => workingDirectory = repoFile; true
+          case _ => false
+        }
       case None => false
-      case Some(repoFile) => workingDirectory = repoFile; true
     }
   }
   
-  def dispose(): Unit = log("dispose") // logAnd("dispose")(System.exit(0))
+  def dispose(): Unit = log("... dispose") // logAnd("dispose")(System.exit(0))
   
-  def getFile(name: String): FtpFile = logAnd("getting: " + name) {
+  def getFile(name: String): FtpFile = logAnd("... getting: " + name) {
     resolvePath(name) match {
       case Some(repoFile) => repoFile
       case None => throw new IllegalArgumentException("could not resolve path $name")
     }
   }
   
-  def getHomeDirectory(): RepoFile = logAnd("getHomeDirectory")(new RepoFile(repository, TreeDB.ROOTID))
+  def getHomeDirectory(): RepoFile = logAnd("... getHomeDirectory")(rootDirectory)
 
-  def getWorkingDirectory(): RepoFile = logAnd("getWorkingDirectory")(workingDirectory)
+  def getWorkingDirectory(): RepoFile = logAnd("... getWorkingDirectory")(workingDirectory)
 
   // TODO random access can be easily implemented later on - see FtpFile.createInputStream and FtpFile.createOutputStream
-  def isRandomAccessible(): Boolean = logAnd("getWorkingDirectory")(false)
+  def isRandomAccessible(): Boolean = logAnd("... isRandomAccessible")(false)
 }
 
-class RepoFile(repository: Repository, id: TreeEntryID) extends FtpFile {
+trait RepoFile extends FtpFile
+
+case class MaybeRepoFile(repository: Repository, parent: TreeEntryID, name: String) extends RepoFile {
+  log(s"creating maybe repo file for id $parent/$name")
+  
+  override val toString = s"MaybeRepoFile($parent/$name)"
+
+  def getAbsolutePath(): String = logAnd(s"getAbsolutePath for $this") {
+    repository.fs.path(parent) match {
+      case Some(path) => path.value + "/" + name
+      case _ => logAnd("WARN: getAbsolutePath - node $parent does not exist")("")
+    }
+  }
+  def isFile(): Boolean = logAnd(s"isFile for $this") { false }
+  def isDirectory(): Boolean = logAnd(s"isDirectory for $this") { false }
+  def listFiles(): java.util.List[FtpFile] = logAnd(s"listFiles for $this") { JavaConversions.seqAsJavaList(Seq()) }
+  def isHidden(): Boolean = logAnd(s"isHidden for $this") { false }
+  def getSize(): Long = logAnd(s"getSize for $this") { 0L }
+  def getLastModified(): Long = logAnd(s"getLastModified for $this") { 0L }
+  def isReadable(): Boolean = logAnd(s"isReadable for $this") { false }
+  def doesExist(): Boolean = logAnd(s"doesExist for $this") { false }
+  def isWritable(): Boolean = logAnd(s"isWritable for $this") { (!repository.readonly) }
+  def getName(): String = logAnd(s"getName for $this") { name }
+  def getLinkCount(): Int = logAnd(s"getLinkCount for $this") { 0 }
+  def getOwnerName(): String = logAnd(s"getOwnerName for $this") { "backup" }
+  def getGroupName(): String = logAnd(s"getGroupName for $this") { "dedup" }
+  def createInputStream(offset: Long): java.io.InputStream = logAnd(s"createInputStream with offset $offset for $this") { throw new FileNotFoundException }
+  def createOutputStream(x$1: Long): java.io.OutputStream = logAnd(s"createOutputStream for $this") { ??? }
+  def delete(): Boolean = logAnd(s"delete $this") { false }
+  def isRemovable(): Boolean = logAnd(s"isRemovable for $this") { false }
+  def mkdir(): Boolean = logAnd(s"mkdir for $this") { ??? }
+  def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = logAnd(s"move for $this to $target") { ??? }
+  def setLastModified(x$1: Long): Boolean = logAnd(s"setLastModified for $this") { ??? }
+}
+
+case class IsRepoFile(repository: Repository, id: TreeEntryID) extends RepoFile {
   log(s"creating repo file for id $id")
   
   override val toString = s"RepoFile($id)"
 
-  def getParent: Option[RepoFile] =
-    repository.fs.entry(id).flatMap(_.parent.map(new RepoFile(repository, _)))
+  def getParent: Option[IsRepoFile] =
+    repository.fs.entry(id).flatMap(_.parent.map(IsRepoFile(repository, _)))
   
-  def getAbsolutePath(): String = logAnd("getAbsolutePath for " + id) {
+  def getAbsolutePath(): String = logAnd(s"getAbsolutePath for $this") {
     repository.fs.path(id) match {
       case Some(path) => path.value
       case _ => logAnd("WARN: getAbsolutePath - node $id does not exist")("")
     }
   }
 
-  def isFile(): Boolean = logAnd("isFile for " + id) {
+  def isFile(): Boolean = logAnd(s"isFile for $this") {
     repository.fs.fullDataInformation(id).isDefined
   }
 
-  def isDirectory(): Boolean = logAnd("isDirectory for " + id) {
+  def isDirectory(): Boolean = logAnd(s"isDirectory for $this") {
     repository.fs.entry(id).isDefined && (!isFile)
   }
 
   def listFilesScala =
-    repository.fs.children(id).map(e => new RepoFile(repository, e.id))
+    repository.fs.children(id).map(e => IsRepoFile(repository, e.id))
   
-  def listFiles(): java.util.List[FtpFile] = logAnd("listFiles for " + id) {
+  def listFiles(): java.util.List[FtpFile] = logAnd(s"listFiles for $this") {
     JavaConversions.seqAsJavaList(listFilesScala.toSeq)
   }
 
-  def isHidden(): Boolean = logAnd("isHidden for " + id) { false }
+  def isHidden(): Boolean = logAnd(s"isHidden for $this") { false }
   
-  def getSize(): Long = logAnd("getSize for " + id) {
+  def getSize(): Long = logAnd(s"getSize for $this") {
     repository.fs.fullDataInformation(id).map(_.size.value).getOrElse(0L)
   }
 
-  def getLastModified(): Long = logAnd("getLastModified for " + id) {
+  def getLastModified(): Long = logAnd(s"getLastModified for $this") {
     repository.fs.entry(id).map(_.time.value).getOrElse(0L)
   }
   
-  def isReadable(): Boolean = logAnd("isReadable for " + id) {
+  def isReadable(): Boolean = logAnd(s"isReadable for $this") {
     repository.fs.entry(id).isDefined
   }
 
-  def doesExist(): Boolean = logAnd("doesExist for " + id) {
+  def doesExist(): Boolean = logAnd(s"doesExist for $this") {
     repository.fs.entry(id).isDefined
   }
   
-  def isWritable(): Boolean = logAnd("isWritable for " + id) { false } // TODO implement write
+  def isWritable(): Boolean = logAnd(s"isWritable for $this") { false } // TODO implement write
 
-  def getName(): String = logAnd("getLastModified for " + id) {
+  def getName(): String = logAnd(s"getName for $this") {
     repository.fs.entry(id).map(_.name).getOrElse("")
   }
 
-  def getLinkCount(): Int = logAnd("getLinkCount for " + id) {
+  def getLinkCount(): Int = logAnd(s"getLinkCount for $this") {
     if (doesExist) 1 else 0
   }
 
-  def getOwnerName(): String = logAnd(s"getOwnerName for $id") { "backup" }
+  def getOwnerName(): String = logAnd(s"getOwnerName for $this") { "backup" }
 
-  def getGroupName(): String = logAnd(s"getGroupName for $id") { "dedup" }
+  def getGroupName(): String = logAnd(s"getGroupName for $this") { "dedup" }
   
-  def createInputStream(offset: Long): java.io.InputStream = logAnd(s"createInputStream with offset $offset") {
+  def createInputStream(offset: Long): java.io.InputStream = logAnd(s"createInputStream with offset $offset for $this") {
     if (offset != 0) throw new IOException("not random accessible")
     repository.fs.entry(id) match {
       case None => throw new FileNotFoundException
@@ -136,14 +175,21 @@ class RepoFile(repository: Repository, id: TreeEntryID) extends FtpFile {
     }
   }
   
-  def createOutputStream(x$1: Long): java.io.OutputStream = ???
+  def createOutputStream(x$1: Long): java.io.OutputStream = logAnd(s"createOutputStream for $this") { ??? }
   
-  def delete(): Boolean = repository.fs.markDeleted(id)
+  def delete(): Boolean = logAnd(s"delete $this") { repository.fs.markDeleted(id) }
   
-  def isRemovable(): Boolean = (!repository.readonly) && (id != TreeDB.ROOTID)
+  def isRemovable(): Boolean = logAnd(s"isRemovable for $this") { (!repository.readonly) && (id != TreeDB.ROOTID) }
   
-  def mkdir(): Boolean = ???
-  def move(x$1: org.apache.ftpserver.ftplet.FtpFile): Boolean = ???
-  def setLastModified(x$1: Long): Boolean = ???
+  def mkdir(): Boolean = logAnd(s"mkdir for $this") { ??? }
+  
+  def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = logAnd(s"move for $this to $target") {
+    target match {
+      case target: MaybeRepoFile => repository.fs.changePath(id, target.name, target.parent)
+      case _ => false
+    }
+  }
+  
+  def setLastModified(x$1: Long): Boolean = logAnd(s"setLastModified for $this") { ??? }
   
 }

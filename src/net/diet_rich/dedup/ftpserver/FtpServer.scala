@@ -19,6 +19,7 @@ object FtpServer extends CmdApp {
     WRITEPROTECTED -> "y" -> "[%s [y|n]] If not 'n', access is read-only, default '%s'"
   )
 
+  // FIXME close FTP server when clicking "x"
   protected def application(con: Console, opts: Map[String, String]): Unit = {
     val readonly = opts(WRITEPROTECTED) != "n"
     if (readonly)

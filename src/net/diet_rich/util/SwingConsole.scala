@@ -36,6 +36,11 @@ class SwingConsole private () extends Console { import SwingConsole._
   frame.add(progressField, BorderLayout.NORTH)
   frame.add(scrollPane, BorderLayout.CENTER)
   frame.add(inputField, BorderLayout.SOUTH)
+
+  frame.addWindowListener(new WindowAdapter {
+    // FIXME hook for possibly closing the window
+    override def windowClosing(e: WindowEvent): Unit = System.err.println("windowClosing")
+  })
   
   frame.setSize(500, 400)
   frame.setLocationRelativeTo(null)

@@ -92,7 +92,19 @@ trait TreeDB { import TreeDB._
       case _ => throw new AssertionError
     })
   protected val markEntryDeleted = prepareUpdate(
-    "UPDATE TreeEntries SET deleted = ? where id = ?"
+    "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
+  )
+  
+  /** @return true if the entry was updated. */
+  def changePath(id: TreeEntryID, newName: String, newParent: TreeEntryID): Boolean = {
+    (id != ROOTID) && (updatePath(newName, newParent.value, id.value) match {
+      case 0 => false
+      case 1 => true
+      case _ => throw new AssertionError
+    })
+  }
+  protected final val updatePath = prepareUpdate(
+    "UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?"
   )
 }
 
