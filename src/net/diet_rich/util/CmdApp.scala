@@ -59,7 +59,7 @@ trait CmdApp { import CmdApp._
     
   def run(argMap: Map[String, String]): Unit = {
     val options = collectOptions(argMap)
-    val console = if (options.get(GUI) == Some("y")) SwingConsole.create else Console
+    val console = if (options.get(GUI) == Some("y")) SwingConsole.create(closeRequested) else Console
     try {
       application(console, options)
     } catch {
@@ -74,6 +74,9 @@ trait CmdApp { import CmdApp._
       console.close
     }
   }
+
+  /** can be overridden by client classes */
+  protected def closeRequested: Boolean = false
 }
 
 object CmdApp {

@@ -10,7 +10,7 @@ import java.awt.Color
 import javax.swing.text.DefaultCaret
 import java.awt.Font
 
-class SwingConsole private () extends Console { import SwingConsole._
+class SwingConsole private (closeRequested: => Boolean) extends Console { import SwingConsole._
 
   private val frame = new JFrame("app")
   private val textArea = new JTextArea
@@ -21,6 +21,7 @@ class SwingConsole private () extends Console { import SwingConsole._
   private var text = ""
   private var lastProgress = System.currentTimeMillis
   private var timeInterval = 29500
+  private var interruptOnExit: Option[Thread] = None
 
   progressField.setEditable(false)
   textArea.setEditable(false)
@@ -37,10 +38,14 @@ class SwingConsole private () extends Console { import SwingConsole._
   frame.add(scrollPane, BorderLayout.CENTER)
   frame.add(inputField, BorderLayout.SOUTH)
 
-  frame.addWindowListener(new WindowAdapter {
-    // FIXME hook for possibly closing the window
-    override def windowClosing(e: WindowEvent): Unit = System.err.println("windowClosing")
-  })
+  val closeListener = new WindowAdapter {
+    override def windowClosing(e: WindowEvent): Unit =
+      if (closeRequested) {
+        frame.dispose()
+        interruptOnExit.foreach(_.interrupt)
+      }
+  }
+  frame.addWindowListener(closeListener)
   
   frame.setSize(500, 400)
   frame.setLocationRelativeTo(null)
@@ -48,6 +53,7 @@ class SwingConsole private () extends Console { import SwingConsole._
   frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE)
 
   def close = runAndWait {
+    frame.removeWindowListener(closeListener)
     textArea.setBackground(new Color(230,230,230))
     frame.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE)
   }
@@ -88,7 +94,9 @@ class SwingConsole private () extends Console { import SwingConsole._
         }
       })
     }
+    interruptOnExit = Some(Thread.currentThread)
     val result = scala.concurrent.Await.result(text.future, scala.concurrent.duration.Duration.Inf)
+    interruptOnExit = None
     runAndWait {
       inputField.getCaret().setVisible(false);
       inputField.setBackground(background)
@@ -104,9 +112,9 @@ object SwingConsole {
     SwingUtilities.invokeAndWait(new Runnable { override def run = task })
   def runLater(task: => Unit) =
     SwingUtilities.invokeLater(new Runnable { override def run = task })
-  def create: SwingConsole = {
+  def create(closeRequested: => Boolean): SwingConsole = {
     val console = scala.concurrent.Promise[SwingConsole]
-    runLater { console.complete(scala.util.Try(new SwingConsole)) }
+    runLater { console.complete(scala.util.Try(new SwingConsole(closeRequested))) }
     scala.concurrent.Await.result(console.future, scala.concurrent.duration.Duration.Inf)
   }
 }

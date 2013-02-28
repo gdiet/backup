@@ -19,7 +19,11 @@ object FtpServer extends CmdApp {
     WRITEPROTECTED -> "y" -> "[%s [y|n]] If not 'n', access is read-only, default '%s'"
   )
 
+  private var closeOperation: () => Boolean = () => false
+  
   // FIXME close FTP server when clicking "x"
+  override protected def closeRequested: Boolean = closeOperation()
+  
   protected def application(con: Console, opts: Map[String, String]): Unit = {
     val readonly = opts(WRITEPROTECTED) != "n"
     if (readonly)
@@ -39,10 +43,18 @@ object FtpServer extends CmdApp {
       repository.shutdown(false)
       con.println("Server stopped.")
     }
+
+    closeOperation = synchronized { () =>
+      closeOperation = () => false
+      true
+    }
     
-    while (con.readln("Enter 'x' to stop the server: ") != "x") {}
-    shutdownHook.remove
-    shutdownHook.run
+    try { while (con.readln("Enter 'x' to stop the server: ") != "x") {} }
+    catch { case e: InterruptedException => () }
+    finally {
+      shutdownHook.remove
+      shutdownHook.run
+    }
   }
   
 }
