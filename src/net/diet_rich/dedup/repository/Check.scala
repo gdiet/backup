@@ -18,6 +18,7 @@ object Check extends CmdApp {
     OPERATION -> "help" -> "[%s <operation>] Check to execute or 'help' to list available checks, default '%s'"
   )
 
+  protected val showVersionsOp = "showVersions"
   protected val listDataDuplicatesOp = "listDataDuplicates"
   
   protected def application(con: Console, opts: Map[String, String]): Unit = {
@@ -25,9 +26,28 @@ object Check extends CmdApp {
       case "help" =>
         con.println("Available checks:")
         con.println(s"listDataDuplicatesOp - list all duplicate data entries")
+        con.println(s"showVersionsOp - show versions and other meta data")
         
       case `listDataDuplicatesOp` =>
         ???
+
+      case `showVersionsOp` =>
+        val repositoryFolder = new File(opts(REPOSITORY))
+        val dbdir = repositoryFolder.child(Repository.dbDirName)
+        implicit val connection = Repository.getConnection(dbdir, false)
+        val dbSettings = SettingsDB.readDbSettings
+        val repoSettings = Repository.readFileSettings(repositoryFolder)
+        con.println("This is a dedup system. System data:")
+        con.println(s"${Repository.repositoryVersionKey}: ${Repository.repositoryVersion}")
+        con.println(s"${Repository.dbVersionKey}: ${Repository.dbVersion}\n")
+        if (dbSettings != repoSettings) {
+          con.println("Settings in database and in repository do not match!\n")
+          con.println("Settings in repository:")
+          con.println(s"${repoSettings.toList.mkString("\n")}\n")
+        }
+        con.println("Settings in database:")
+        con.println(s"${dbSettings.toList.mkString("\n")}\n")
+        connection.close
         
       case op =>
         con.println(s"'$op' is not a supported check.")

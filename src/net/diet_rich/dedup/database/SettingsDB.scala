@@ -19,14 +19,6 @@ object SettingsDB {
     writeDbSettings(initialSettings)
   }
   
-  def checkDbVersion(implicit connection: Connection): Unit = {
-    val dbVersionIfAny = readDbSettings.get(Repository.dbVersionKey)
-    assume(
-      dbVersionIfAny == Some(Repository.dbVersion),
-      s"Expected database version ${Repository.dbVersion} but found ${dbVersionIfAny.getOrElse("None")}."
-    )
-  }
-  
   def readDbSettings(implicit connection: Connection): Map[String, String] =
     execQuery("SELECT key, value FROM Settings"){r => (r string 1, r string 2)} toMap
 

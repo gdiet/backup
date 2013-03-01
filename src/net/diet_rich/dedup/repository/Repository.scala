@@ -12,10 +12,6 @@ import net.diet_rich.dedup.datastore.DataStore2
 
 class Repository(val basedir: File, val readonly: Boolean) { import Repository._
   val settings = readSettingsFile(basedir.child(settingsFileName))
-  assume(
-    settings.get(Repository.repositoryVersionKey) == Some(Repository.repositoryVersion),
-    s"Expected repository version ${Repository.repositoryVersion} but found ${settings.get(Repository.repositoryVersionKey).getOrElse("None")}."
-  )
   
   val digesters = new HashDigester(settings(hashKey)) with Digesters with CrcAdler8192
   val dataStore = new DataStore2(basedir, settings(dataSizeKey).toInt, readonly)
@@ -24,16 +20,14 @@ class Repository(val basedir: File, val readonly: Boolean) { import Repository._
   private implicit val connection = getConnection(dbdir, readonly)
   private val lockfile = dbdir.child(s"$dbFileName.lock.db")
   require(lockfile.isFile, s"Expected database lock file $lockfile to exist.")
-  SettingsDB.checkDbVersion
-  private val repoIdInDbIfAny = SettingsDB.readDbSettings.get(Repository.repositoryIdKey)
-  private val repoIdInRepoIfAny = settings.get(Repository.repositoryIdKey)
   
   val fs: BackupFileSystem = new BackupFileSystem(digesters, dataStore)
-  assume(
-    repoIdInRepoIfAny == repoIdInDbIfAny,
-    s"Expected repository id in database ${repoIdInDbIfAny.getOrElse("None")} to match that of repository ${repoIdInRepoIfAny.getOrElse("None")}."
-  )
-  
+
+  if (!checkSettings(basedir)) {
+    shutdown(false)
+    throw new IllegalStateException("Repository or database settings are not OK")
+  }
+
   def shutdown(backupDb: Boolean) = {
     dataStore.shutdown
     execUpdate("SHUTDOWN")
@@ -70,7 +64,11 @@ object Repository {
   val dbFileName = "dedup"
   val settingsFileName = "settings.txt"
     
-  val repositoryVersion = "1.0"
+  // initial repository version is 1.0
+  // new in repository version 1.1: changed data file header
+  val repositoryVersion = "1.1"
+  // initial database version is 1.0
+  // new in database version 1.1: CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted)
   val dbVersion = "1.1"
     
   val repositoryVersionKey = "repository version"
@@ -81,4 +79,18 @@ object Repository {
     
   def getConnection(basedir: File, readonly: Boolean) =
     DBConnection.forH2(s"$basedir/$dbFileName", readonly)
+    
+  def readFileSettings(basedir: File): Map[String, String] =
+    readSettingsFile(basedir.child(Repository.settingsFileName))
+
+  def writeFileSettings(basedir: File, repositorySettings: Map[String, String]) =
+    writeSettingsFile(basedir.child(Repository.settingsFileName), repositorySettings)
+    
+  def checkSettings(basedir: File)(implicit connection: java.sql.Connection): Boolean = {
+    val fileSettings = readFileSettings(basedir)
+    val dbSettings = SettingsDB.readDbSettings
+    fileSettings == dbSettings &&
+    dbSettings(repositoryVersionKey) == repositoryVersion &&
+    dbSettings(dbVersionKey) == dbVersion
+  }
 }

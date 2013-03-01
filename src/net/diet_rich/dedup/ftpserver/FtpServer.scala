@@ -21,7 +21,6 @@ object FtpServer extends CmdApp {
 
   private var closeOperation: () => Boolean = () => false
   
-  // FIXME close FTP server when clicking "x"
   override protected def closeRequested: Boolean = closeOperation()
   
   protected def application(con: Console, opts: Map[String, String]): Unit = {
