@@ -25,8 +25,8 @@ object Check extends CmdApp {
     opts(OPERATION) match {
       case "help" =>
         con.println("Available checks:")
-        con.println(s"listDataDuplicatesOp - list all duplicate data entries")
-        con.println(s"showVersionsOp - show versions and other meta data")
+        con.println(s"$listDataDuplicatesOp - list all duplicate data entries")
+        con.println(s"$showVersionsOp - show versions and other meta data")
         
       case `listDataDuplicatesOp` =>
         ???
