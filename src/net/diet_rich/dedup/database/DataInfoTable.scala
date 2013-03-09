@@ -15,36 +15,43 @@ case class DataEntry (
   method: Method
 )
 
-trait DataInfoDB {
+trait DataInfoTable {
   implicit val connection: Connection
+
+  implicit class ValuesFromSqlResult(r: WrappedSQLResult) {
+    def size(column: Int) = Size(r long column)
+    def print(column: Int) = Print(r long column)
+    def hash(column: Int) = Hash(r bytes column)
+    def method(column: Int) = Method(r int column)
+  }
   
   /** @return true if at least one matching data entry is stored. */
   def dataEntry(id: DataEntryID): DataEntry =
-    queryDataEntry(id.value)(r => DataEntry(id, Size(r long 1), Print(r long 2), Hash(r bytes 3), Method(r int 4))).nextOnly
+    queryDataEntry(id)(r => DataEntry(id, r size 1, r print 2, r hash 3, r method 4)).nextOnly
   protected val queryDataEntry = 
     prepareQuery("SELECT length, print, hash, method FROM DataInfo WHERE id = ?")
 
   /** @return true if at least one matching data entry is stored. */
   def hasMatch(size: Size, print: Print): Boolean =
-    checkPrint(size.value, print.value)(_.long(1) > 0).next
+    checkPrint(size, print)(_.long(1) > 0).next
   protected val checkPrint = 
     prepareQuery("SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?")
   
   /** @return The data id if a matching data entry is stored. */
   def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID] =
     // NOTE: only the first of possibly multiple query results is used
-    findEntry(size.value, print.value, hash.value)(p => DataEntryID(p long 1)).nextOption
+    findEntry(size, print, hash.value)(p => DataEntryID(p long 1)).nextOption
   protected val findEntry = 
     prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?")
   
   /** @throws Exception if the entry was not created correctly. */
   def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash, method: Method): Unit =
-    insertNewEntry(dataid.value, size.value, print.value, hash.value, method.value)
+    insertNewEntry(dataid, size, print, hash.value, method.value)
   protected val insertNewEntry =
     prepareSingleRowUpdate("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?)")
 }
 
-object DataInfoDB {
+object DataInfoTable {
   def createTable(zeroByteHash: Hash, zeroBytePrint: Print)(implicit connection: Connection) : Unit = {
     // length: uncompressed entry size
     // method: store method (0 = PLAIN, 1 = DEFLATE, 2 = LZMA??)

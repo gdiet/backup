@@ -39,7 +39,7 @@ object Create extends CmdApp {
     val dbdir = repositoryFolder.child(Repository.dbDirName)
     implicit val connection = Repository.getConnection(dbdir, false)
     TreeDB.createTable
-    DataInfoDB.createTable(Hash(Hashes.zeroBytesHash(hashAlgorithm)), CrcAdler8192.zeroBytesPrint)
+    DataInfoTable.createTable(Hash(Hashes.zeroBytesHash(hashAlgorithm)), CrcAdler8192.zeroBytesPrint)
     ByteStoreDB.createTable
     SettingsDB.createTable(repositorySettings)
     connection.close()

@@ -3,15 +3,15 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.database
 
-import net.diet_rich.util.vals.{AnyBase, ValueToString}
+import net.diet_rich.util.vals._
 
-class TreeEntryID(val value: Long) extends AnyBase with ValueToString
+class TreeEntryID(val value: Long) extends AnyBase with ValueToString with LongValue
 object TreeEntryID {
   def apply(value: Long) = new TreeEntryID(value)
   def apply(value: Option[Long]): Option[TreeEntryID] = value.map(TreeEntryID(_))
 }
 
-class DataEntryID(val value: Long) extends AnyBase with ValueToString
+class DataEntryID(val value: Long) extends AnyBase with ValueToString with LongValue
 object DataEntryID {
   def apply(value: Long) = new DataEntryID(value)
   def apply(value: Option[Long]) = value.map(new DataEntryID(_))
@@ -19,7 +19,7 @@ object DataEntryID {
   def apply2(value: Option[Long]) = value.map(new DataEntryID(_))
 }
 
-class Print(val value: Long) extends AnyBase with ValueToString
+class Print(val value: Long) extends AnyBase with ValueToString with LongValue
 object Print { def apply(value: Long) = new Print(value) }
 
 class Hash(val value: Array[Byte]) { // FIXME not a value class anymore
