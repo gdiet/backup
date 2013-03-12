@@ -40,7 +40,7 @@ object Create extends CmdApp {
     implicit val connection = Repository.getConnection(dbdir, false)
     TreeTable.createTable
     DataInfoTable.createTable(Hash(Hashes.zeroBytesHash(hashAlgorithm)), CrcAdler8192.zeroBytesPrint)
-    ByteStoreDB.createTable
+    ByteStoreTable.createTable
     SettingsTable.createTable(repositorySettings)
     connection.close()
     con.println(s"... Success!")

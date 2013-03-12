@@ -9,6 +9,10 @@ import net.diet_rich.util.io._
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
+import SqlDBUtil.ValuesFromSqlResult
+
+// FIXME try to eliminate the .toInt calls
+
 case class DataRange(start: Position, fin: Position) extends Ordered[DataRange] {
   def length = fin - start
   def isEmpty = fin == start
@@ -62,7 +66,7 @@ class FreeRanges(blockSize: Int)(implicit connection: Connection) {
 }
 
 
-trait ByteStoreDB {
+trait ByteStoreTable {
   implicit def connection: Connection
   
   private val freeRanges = new FreeRanges(ds.dataSize)
@@ -75,7 +79,7 @@ trait ByteStoreDB {
   def read(dataId: DataEntryID, method: Method): ByteSource =
     StoreMethods.wrapRestore(read(dataId), method)
   private def read(dataId: DataEntryID): ByteSource = new Object {
-    val parts = selectEntryParts(dataId.value)(r => DataRange(Position(r long 1), Position(r long 2)))
+    val parts = selectEntryParts(dataId)(r => DataRange(r position 1, r position 2))
     var rangeOpt: Option[DataRange] = None
     def read(bytes: Array[Byte], offset: Int, length: Int): Int =
       if (rangeOpt.isEmpty || rangeOpt.get.isEmpty) {
@@ -146,7 +150,7 @@ trait ByteStoreDB {
       }
     }
     val size = writeStep(range, 0, 0, Size(0))
-    if (size > Size(0)) insertEntry(id.value, index, range.start.value, range.start.value + size.value)
+    if (size > Size(0)) insertEntry(id, index, range.start, range.start + size)
     range.withOffset(size)
   }
   protected final val insertEntry = 
@@ -156,7 +160,7 @@ trait ByteStoreDB {
   protected val ds: net.diet_rich.dedup.datastore.DataStore2
 }
 
-object ByteStoreDB {
+object ByteStoreTable {
   def createTable(implicit connection: Connection) : Unit = {
     // index: data part index (starts at 0)
     // start: data part start position

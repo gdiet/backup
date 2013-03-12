@@ -17,6 +17,7 @@ object SqlDBUtil {
     def print(column: Int) = Print(r long column)
     def hash(column: Int) = Hash(r bytes column)
     def time(column: Int) = Time(r long column)
+    def position(column: Int) = Position(r long column)
     def method(column: Int) = Method(r int column)
     def nodeType(column: Int) = NodeType(r int column)
     def dataEntry(column: Int) = DataEntryID(r long column)
