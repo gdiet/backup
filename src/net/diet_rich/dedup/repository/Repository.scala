@@ -88,7 +88,7 @@ object Repository {
     
   def checkSettings(basedir: File)(implicit connection: java.sql.Connection): Boolean = {
     val fileSettings = readFileSettings(basedir)
-    val dbSettings = SettingsDB.readDbSettings
+    val dbSettings = SettingsTable.readDbSettings
     fileSettings == dbSettings &&
     dbSettings(repositoryVersionKey) == repositoryVersion &&
     dbSettings(dbVersionKey) == dbVersion

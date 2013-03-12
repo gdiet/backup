@@ -8,6 +8,8 @@ import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 import net.diet_rich.util.Strings
 
+import SqlDBUtil.ValuesFromSqlResult
+
 case class TreeEntry(
   id: TreeEntryID, 
   parent: Option[TreeEntryID], 
@@ -36,7 +38,7 @@ trait IgnoreDeleted {
     prepareQuery("SELECT id, name, type, time, dataid FROM TreeEntries WHERE parent = ?")
 }
 
-trait TreeDB { import TreeDB._
+trait TreeTable { import TreeTable._
   implicit protected val connection: Connection
   
   private val maxEntryId =
@@ -46,7 +48,7 @@ trait TreeDB { import TreeDB._
    *  @throws Exception if the child was not created correctly. */
   def createAndGetId(parentId: TreeEntryID, name: String, nodeType: NodeType, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID = {
     val id = maxEntryId incrementAndGet()
-    addEntry(id, parentId.value, name, nodeType.value, time.value, dataId.map(_.value))
+    addEntry(id, parentId, name, nodeType, time, dataId)
     TreeEntryID(id)
   }
   protected final val addEntry = 
@@ -54,30 +56,30 @@ trait TreeDB { import TreeDB._
 
   /** @return The entry if any. */
   def entry(id: TreeEntryID): Option[TreeEntry] =
-    queryEntry(id.value)(
-      r => TreeEntry(id, TreeEntryID(r longOption 1), r string 2, NodeType(r int 3), Time(r long 4), DataEntryID(r longOption 5))
+    queryEntry(id)(
+      r => TreeEntry(id, r treeEntryOption 1, r string 2, r nodeType 3, r time 4, r dataEntryOption 5)
     ).nextOptionOnly
   protected val queryEntry: SqlQuery
   
   /** @return The child entry if any. */
   def child(parent: TreeEntryID, name: String): Option[TreeEntry] =
-    queryChild(parent.value, name)(
-      r => TreeEntry(TreeEntryID(r long 1), Some(parent), name, NodeType(r int 2), Time(r long 3), DataEntryID(r longOption 4))
+    queryChild(parent, name)(
+      r => TreeEntry(r treeEntry 1, Some(parent), name, r nodeType 2, r time 3, r dataEntryOption 4)
     ).nextOptionOnly
   protected val queryChild: SqlQuery
   
   /** Note: If the children are not consumed immediately, they must be stored e.g. by calling *.toList.
    *  @return The children, empty if no such node. */
   def children(parent: TreeEntryID): Iterable[TreeEntry] =
-    queryChildren(parent.value)(
-      r => TreeEntry(TreeEntryID(r long 1), Some(parent), r string 2, NodeType(r int 3), Time(r long 4), DataEntryID(r longOption 5))
+    queryChildren(parent)(
+      r => TreeEntry(r treeEntry 1, Some(parent), r string 2, r nodeType 3, r time 4, r dataEntryOption 5)
     ).toSeq
   protected val queryChildren : SqlQuery
     
   /** @return The node's complete data information if any. */
   def fullDataInformation(id: TreeEntryID): Option[FullDataInformation] =
-    queryFullDataInformation(id.value)(
-      r => FullDataInformation(Time(r long 1), Size(r long 2), Print(r long 3), Hash(r bytes 4), DataEntryID(r longOption 5))
+    queryFullDataInformation(id)(
+      r => FullDataInformation(r time 1, r size 2, r print 3, r hash 4, r dataEntryOption 5)
     ).nextOptionOnly
   protected val queryFullDataInformation = prepareQuery(
     "SELECT time, length, print, hash, dataid FROM TreeEntries JOIN DataInfo " +
@@ -86,7 +88,7 @@ trait TreeDB { import TreeDB._
   
   /** @return true if the deleted flag was set for the entry. */
   def markDeleted(id: TreeEntryID): Boolean =
-    (id != ROOTID) && (markEntryDeleted(System.currentTimeMillis(), id.value) match {
+    (id != ROOTID) && (markEntryDeleted(System.currentTimeMillis(), id) match {
       case 0 => false
       case 1 => true
       case _ => throw new AssertionError
@@ -97,7 +99,7 @@ trait TreeDB { import TreeDB._
   
   /** @return true if the entry was updated. */
   def changePath(id: TreeEntryID, newName: String, newParent: TreeEntryID): Boolean = {
-    (id != ROOTID) && (updatePath(newName, newParent.value, id.value) match {
+    (id != ROOTID) && (updatePath(newName, newParent, id) match {
       case 0 => false
       case 1 => true
       case _ => throw new AssertionError
@@ -108,7 +110,7 @@ trait TreeDB { import TreeDB._
   )
 }
 
-trait TreeDBUtils { self: TreeDB => import TreeDB._
+trait TreeTableUtils { self: TreeTable => import TreeTable._
   def childId(parent: TreeEntryID, name: String): Option[TreeEntryID] =
     child(parent, name).map(_.id)
   
@@ -150,13 +152,13 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
   }
 }
 
-object TreeDB {
+object TreeTable {
   val ROOTID = TreeEntryID(0L)
   val ROOTPATH = Path("")
   val SEPARATOR = "/"
     
   def createTable(implicit connection: Connection): Unit = {
-    execUpdate(net.diet_rich.util.Strings normalizeMultiline """
+    execUpdate(Strings normalizeMultiline """
       CREATE TABLE TreeEntries (
         id      BIGINT PRIMARY KEY,
         parent  BIGINT NULL,
@@ -181,7 +183,6 @@ object TreeDB {
     execUpdate("CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted)")
   }
   
-  def dropTable(implicit connection: Connection): Unit =
-    execUpdate("DROP TABLE TreeEntries IF EXISTS")
-
+//  def dropTable(implicit connection: Connection): Unit =
+//    execUpdate("DROP TABLE TreeEntries IF EXISTS")
 }

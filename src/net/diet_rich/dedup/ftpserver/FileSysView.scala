@@ -22,7 +22,7 @@ object Helpers {
 class FileSysView(repository: Repository) extends FileSystemView {
   log("... creating file system view")
   
-  private val rootDirectory = IsRepoFile(repository, TreeDB.ROOTID)
+  private val rootDirectory = IsRepoFile(repository, TreeTable.ROOTID)
   var workingDirectory: IsRepoFile = rootDirectory
 
   def resolvePath(path: String): Option[RepoFile] =  logAnd("... resolvePath: " + path) {
@@ -179,7 +179,7 @@ case class IsRepoFile(repository: Repository, id: TreeEntryID) extends RepoFile 
   
   def delete(): Boolean = logAnd(s"delete $this") { repository.fs.markDeleted(id) }
   
-  def isRemovable(): Boolean = logAnd(s"isRemovable for $this") { (!repository.readonly) && (id != TreeDB.ROOTID) }
+  def isRemovable(): Boolean = logAnd(s"isRemovable for $this") { (!repository.readonly) && (id != TreeTable.ROOTID) }
   
   def mkdir(): Boolean = logAnd(s"mkdir for $this") { ??? }
   

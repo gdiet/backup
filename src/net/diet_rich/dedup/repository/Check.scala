@@ -35,7 +35,7 @@ object Check extends CmdApp {
         val repositoryFolder = new File(opts(REPOSITORY))
         val dbdir = repositoryFolder.child(Repository.dbDirName)
         implicit val connection = Repository.getConnection(dbdir, false)
-        val dbSettings = SettingsDB.readDbSettings
+        val dbSettings = SettingsTable.readDbSettings
         val repoSettings = Repository.readFileSettings(repositoryFolder)
         con.println("This is a dedup system. System data:")
         con.println(s"${Repository.repositoryVersionKey}: ${Repository.repositoryVersion}")

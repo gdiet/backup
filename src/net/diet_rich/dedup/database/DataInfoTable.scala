@@ -7,6 +7,8 @@ import java.sql.Connection
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
+import SqlDBUtil.ValuesFromSqlResult
+
 case class DataEntry (
   id: DataEntryID,
   size: Size,
@@ -18,14 +20,6 @@ case class DataEntry (
 trait DataInfoTable {
   implicit val connection: Connection
 
-  implicit class ValuesFromSqlResult(r: WrappedSQLResult) {
-    def size(column: Int) = Size(r long column)
-    def print(column: Int) = Print(r long column)
-    def hash(column: Int) = Hash(r bytes column)
-    def method(column: Int) = Method(r int column)
-    def dataEntry(column: Int) = DataEntryID(r long column)
-  }
-  
   /** @return true if at least one matching data entry is stored. */
   def dataEntry(id: DataEntryID): DataEntry =
     queryDataEntry(id)(r => DataEntry(id, r size 1, r print 2, r hash 3, r method 4)).nextOnly
@@ -41,7 +35,7 @@ trait DataInfoTable {
   /** @return The data id if a matching data entry is stored. */
   def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID] =
     // NOTE: only the first of possibly multiple query results is used
-    findEntry(size, print, hash.value)(_ dataEntry 1).nextOption
+    findEntry(size, print, hash)(_ dataEntry 1).nextOption
   protected val findEntry = 
     prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?")
   

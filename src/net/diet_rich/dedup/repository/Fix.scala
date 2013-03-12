@@ -103,15 +103,15 @@ object Fix extends CmdApp {
     val repositoryFolder = new File(opts(REPOSITORY))
     val dbdir = repositoryFolder.child(Repository.dbDirName)
     implicit val connection = Repository.getConnection(dbdir, false)
-    val dbSettings = SettingsDB.readDbSettings
+    val dbSettings = SettingsTable.readDbSettings
     val repoSettings = Repository.readFileSettings(repositoryFolder)
     (connection, repoSettings, dbSettings)
   }
 
   def updateSettings(opts: Map[String, String], newSetting: (String, String))(implicit connection: java.sql.Connection) = {
-    val dbSettings = SettingsDB.readDbSettings
+    val dbSettings = SettingsTable.readDbSettings
     val newSettings = dbSettings + newSetting
-    SettingsDB.writeDbSettings(newSettings)(connection)
+    SettingsTable.writeDbSettings(newSettings)(connection)
     Repository.writeFileSettings(new File(opts(REPOSITORY)), newSettings)
   }
   

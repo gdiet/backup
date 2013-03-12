@@ -8,7 +8,7 @@ import net.diet_rich.dedup.repository.Repository
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
-object SettingsDB {
+object SettingsTable {
   def createTable(initialSettings: Map[String, String])(implicit connection: Connection): Unit = {
     execUpdate(net.diet_rich.util.Strings normalizeMultiline """
       CREATE TABLE Settings (
@@ -24,7 +24,9 @@ object SettingsDB {
 
   def writeDbSettings(settings: Map[String, String])(implicit connection: Connection): Unit = {
     execUpdate("DELETE FROM Settings")
-    settings.foreach(entry => execUpdate("INSERT INTO Settings (key, value) VALUES (?, ?)", entry._1, entry._2))
+    settings.foreach {
+      case (key, value) => execUpdate("INSERT INTO Settings (key, value) VALUES (?, ?)", key, value)
+    }
   }
   
 }
