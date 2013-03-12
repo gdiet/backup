@@ -3,35 +3,22 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util.vals
 
-trait ValueToString extends Any {
-  def value: Any
-  override def toString() = value.toString
+trait TypedValue[T] { val value: T }
+
+trait LongValue extends TypedValue[Long]
+
+trait OrderedLongValue[Self <: LongValue] extends LongValue with Ordered[Self] { self: Self =>
+  override final def compare(other: Self): Int  = value compare other.value
 }
 
-trait LongValue extends Any {
-  def value: Long
+case class Size(value: Long) extends OrderedLongValue[Size] {
+  def +(other: Size): Size = Size(value + other.value)
+  def -(other: Size): Size = Size(value - other.value)
 }
 
-class Size(val value: Long) extends AnyBase with ValueToString with LongValue {
-  def +  (other: Size): Size     = Size(value + other.value)
-  def -  (other: Size): Size     = Size(value - other.value)
-  def <  (other: Size): Boolean  = value <  other.value
-  def >  (other: Size): Boolean  = value >  other.value
-  def <= (other: Size): Boolean  = value <= other.value
-  def compare (other: Size): Int = value compare other.value
+case class Position(value: Long) extends OrderedLongValue[Position] {
+  def +(other: Size): Position = Position(value + other.value)
+  def -(other: Position): Size = Size(value - other.value)
 }
-object Size { def apply(value: Long) = new Size(value) }
 
-class Position(val value: Long) extends AnyBase with ValueToString with LongValue {
-  def +  (other: Size): Position     = Position(value + other.value)
-  def -  (other: Position): Size     = Size(value - other.value)
-  def >  (other: Position): Boolean  = value >  other.value
-  def <  (other: Position): Boolean  = value <  other.value
-  def <= (other: Position): Boolean  = value <= other.value
-  def compare (other: Position): Int = value compare other.value
-  def asSize: Size = Size(value)
-}
-object Position { def apply(value: Long) = new Position(value) }
-
-class Time(val value: Long) extends AnyBase with ValueToString with LongValue
-object Time { def apply(value: Long) = new Time(value) }
+case class Time(value: Long) extends LongValue
