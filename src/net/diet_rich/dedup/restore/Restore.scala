@@ -69,7 +69,7 @@ object Restore extends CmdApp {
         }
         if (size != dataEntry.size.value) System.err.println(s"ERROR: Data size $size did not match ${dataEntry.size} for $target")
         if (print != dataEntry.print) System.err.println(s"ERROR: Data print $print did not match ${dataEntry.print} for $target")
-        if (hash !== dataEntry.hash) System.err.println(s"ERROR: Data hash did not match for $target")
+        if (hash != dataEntry.hash) System.err.println(s"ERROR: Data hash did not match for $target")
         try { target.setLastModified(source.time.value) }
         catch { case e: Throwable =>
           // workaroud for java bug: can read, but can't set negative time stamp

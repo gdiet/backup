@@ -6,23 +6,21 @@ package net.diet_rich.dedup.database
 import net.diet_rich.util.vals._
 
 case class TreeEntryID(value: Long) extends LongValue
-object TreeEntryID {
-  def apply(value: Option[Long]): Option[TreeEntryID] = value.map(TreeEntryID(_))
-}
+object TreeEntryID extends ApplyLongOption[TreeEntryID]
 
 case class DataEntryID(value: Long) extends LongValue
-object DataEntryID {
-  def apply(value: Option[Long]): Option[DataEntryID] = value.map(DataEntryID(_))
-}
+object DataEntryID extends ApplyLongOption[DataEntryID]
 
 case class Print(value: Long) extends LongValue
 
-class Hash(val value: Array[Byte]) { // FIXME not a value class anymore
-  def !==(a: Hash) = ! ===(a)
-  def ===(a: Hash) = java.util.Arrays.equals(value, a.value)
-  override def equals(a: Any) = ???
+case class Hash(value: Array[Byte]) extends ByteArrayValue { import java.util.Arrays
+  override def equals(a: Any) = a match {
+  	case null => false
+  	case h: Hash => Arrays.equals(value, h.value)
+  	case _ => false
+  }
+  override def hashCode() = Arrays.hashCode(value)
 }
-object Hash { def apply(value: Array[Byte]) = new Hash(value) }
 
 case class Path(value: String) {
   def +(string: String) = Path(value + string)
@@ -34,7 +32,7 @@ case class Path(value: String) {
   def name: String = value.substring(value.lastIndexOf('/') + 1)
 }
 
-case class NodeType(value: Int) {
+case class NodeType(value: Int) extends IntValue {
   require(NodeType.ALLOWED contains value, s"Unsupported tree node type $value")
 }
 object NodeType {
@@ -43,7 +41,7 @@ object NodeType {
   val FILE = NodeType(1)
 }
 
-case class Method(value: Int) {
+case class Method(value: Int) extends IntValue {
   require(Method.ALLOWED contains value, s"Unsupported store method $value")
 }
 object Method {

@@ -23,6 +23,7 @@ trait DataInfoTable {
     def print(column: Int) = Print(r long column)
     def hash(column: Int) = Hash(r bytes column)
     def method(column: Int) = Method(r int column)
+    def dataEntry(column: Int) = DataEntryID(r long column)
   }
   
   /** @return true if at least one matching data entry is stored. */
@@ -40,13 +41,13 @@ trait DataInfoTable {
   /** @return The data id if a matching data entry is stored. */
   def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID] =
     // NOTE: only the first of possibly multiple query results is used
-    findEntry(size, print, hash.value)(p => DataEntryID(p long 1)).nextOption
+    findEntry(size, print, hash.value)(_ dataEntry 1).nextOption
   protected val findEntry = 
     prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?")
   
   /** @throws Exception if the entry was not created correctly. */
   def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash, method: Method): Unit =
-    insertNewEntry(dataid, size, print, hash.value, method.value)
+    insertNewEntry(dataid, size, print, hash, method)
   protected val insertNewEntry =
     prepareSingleRowUpdate("INSERT INTO DataInfo (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?)")
 }
@@ -66,7 +67,7 @@ object DataInfoTable {
     """)
     execUpdate("CREATE INDEX idxDataInfoDuplicates ON DataInfo(length, print, hash)")
     execUpdate("CREATE INDEX idxDataInfoFastPrint ON DataInfo(length, print)")
-    execUpdate("INSERT INTO DataInfo (id, length, print, hash) VALUES (0, 0, ?, ?)", zeroBytePrint.value, zeroByteHash.value)
+    execUpdate("INSERT INTO DataInfo (id, length, print, hash) VALUES (0, 0, ?, ?)", zeroBytePrint, zeroByteHash)
   }
   
 //  def cleanupDuplicatesFromTree(connection: Connection) = {
