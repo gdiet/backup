@@ -8,23 +8,13 @@ import net.diet_rich.dedup.datastore.StoreMethods
 import net.diet_rich.util.io._
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
+import net.diet_rich.util.Numbers
 
 import SqlDBUtil.ValuesFromSqlResult
 
 // FIXME try to eliminate the .toInt calls
 
-case class DataRange(start: Position, fin: Position) extends Ordered[DataRange] {
-  def length = fin - start
-  def isEmpty = fin == start
-  def withLength(length: Size) = copy(fin = start + length)
-  def withOffset(offset: Size) = copy(start = start + offset)
-  override def compare(that: DataRange): Int =
-    that.start compare start match {
-      case 0 => that.fin compare fin
-      case x => x
-    }
-}
-
+// FIXME make blockSize an IntSize
 class FreeRanges(blockSize: Int)(implicit connection: Connection) {
   // EVENTUALLY, it would be good to look for illegal overlaps:
   // SELECT * FROM ByteStore b1 JOIN ByteStore b2 ON b1.start < b2.fin AND b1.fin > b2.fin
@@ -32,37 +22,58 @@ class FreeRanges(blockSize: Int)(implicit connection: Connection) {
 
   // EVENTUALLY, it would be good to look for orphan ByteStore entries.
   // Emit warning and free the space?
+
+  case class DataRange(start: Position, fin: Position) extends Ordered[DataRange] {
+    assume(fin-start <= Size(blockSize))
+    assume(fin-start >  Size(0))
+    assume(start.value / blockSize == (fin.value-1) / blockSize)
+    def intLength = Numbers.toInt(length)
+    def length = fin - start
+    def isEmpty = fin == start
+    def withLength(length: Size) = copy(fin = start + length)
+    def withOffset(offset: Size) = copy(start = start + offset)
+    override def compare(that: DataRange): Int =
+      that.start compare start match {
+        case 0 => that.fin compare fin
+        case x => x
+      }
+  }
+  
   
   // Note: Initially, needs at least an "empty" entry in table.
-  private val startOfFreeArea = execQuery("SELECT MAX(fin) FROM ByteStore")(_ long 1).next
+  private val startOfFreeArea = execQuery("SELECT MAX(fin) FROM ByteStore")(_ position 1).next
   private val queue = new scala.collection.mutable.PriorityQueue[DataRange]()
   
   // insert ranges for gaps in queue
   private val gapStarts = execQuery(
     "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin"
-  )(_ long 1).filterNot(_ == startOfFreeArea)
+  )(_ position 1).filterNot(_ == startOfFreeArea)
   private val gapEndsAndDataStart = execQuery(
     "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start"
-  )(_ long 1)
+  )(_ position 1)
   private val dataStart = gapEndsAndDataStart.nextOption
   
   // insert space between 0 and data start if any
-  dataStart.filterNot(_ == 0).foreach(e => queue.enqueue(DataRange(Position(0), Position(e))))
+  dataStart.filterNot(_ == Position(0)).foreach(e => queue.enqueue(DataRange(Position(0), e)))
   // insert gaps
-  gapStarts.zip(gapEndsAndDataStart).foreach(e => queue.enqueue(DataRange(Position(e._1), Position(e._2))))
+  gapStarts.zip(gapEndsAndDataStart).foreach(e => queue.enqueue(DataRange(e._1, e._2)))
   // insert upper free area
-  queue.enqueue(DataRange(Position(startOfFreeArea), Position(Long.MaxValue)))
+  enqueueUpperEnd(startOfFreeArea)
 
   def next: DataRange = queue.synchronized {
     val range = queue.dequeue()
-    if (range.fin == Position(Long.MaxValue)) {
-      val newLength = Size(blockSize - range.start.value % blockSize)
-      queue.enqueue(range.withOffset(newLength))
-      range.withLength(newLength)
-    } else range
+    if (queue.isEmpty) {
+      assume(range.fin.value % blockSize == 0)
+      enqueueUpperEnd(range.fin)
+    }
+    range
   }
   def enqueue(range: DataRange) = if (range.length > Size(0))
     queue.synchronized { queue.enqueue(range) }
+  def enqueueUpperEnd(position: Position) = queue.synchronized {
+    val length = Size(blockSize - position.value % blockSize)
+    queue.enqueue(DataRange(position, position + length))
+  }
 }
 
 
@@ -70,6 +81,7 @@ trait ByteStoreTable {
   implicit def connection: Connection
   
   private val freeRanges = new FreeRanges(ds.dataSize)
+  import freeRanges.DataRange
 
   private val maxEntryId =
     SqlDBUtil.readAsAtomicLong(
@@ -79,6 +91,7 @@ trait ByteStoreTable {
   def read(dataId: DataEntryID, method: Method): ByteSource =
     StoreMethods.wrapRestore(read(dataId), method)
   private def read(dataId: DataEntryID): ByteSource = new Object {
+    // FIXME process as list-like or stream or ...?
     val parts = selectEntryParts(dataId)(r => DataRange(r position 1, r position 2))
     var rangeOpt: Option[DataRange] = None
     def read(bytes: Array[Byte], offset: Int, length: Int): Int =
@@ -89,10 +102,10 @@ trait ByteStoreTable {
         }
       } else {
         val range = rangeOpt.get
-        assume(range.length.value <= Int.MaxValue)
-        val bytesToRead = math.min(range.length.value, length) toInt
+        val rangeLength = Numbers.toInt(range.length.value)
+        val bytesToRead = math.min(rangeLength, length)
         val read = ds.readFromSingleDataFile(range.start, bytes, offset, bytesToRead)
-        rangeOpt = Some(range.withOffset(Size(read)))
+        rangeOpt = if (read == rangeLength) None else Some(range.withOffset(Size(read)))
         read
       }
   }
@@ -100,7 +113,7 @@ trait ByteStoreTable {
     prepareQuery("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY index ASC")
     
   def storeAndGetDataId(bytes: Array[Byte], size: Size, method: Method): DataEntryID =
-    storeAndGetDataIdAndSize(new java.io.ByteArrayInputStream(bytes, 0, size.value toInt), method)._1
+    storeAndGetDataIdAndSize(new java.io.ByteArrayInputStream(bytes, 0, Numbers.toInt(size)), method)._1
   
   def storeAndGetDataIdAndSize(source: ByteSource, method: Method): (DataEntryID, Size) = {
     val sourceToWrite = new Object {
