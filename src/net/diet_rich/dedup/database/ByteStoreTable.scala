@@ -4,6 +4,7 @@
 package net.diet_rich.dedup.database
 
 import java.sql.Connection
+
 import net.diet_rich.dedup.datastore.StoreMethods
 import net.diet_rich.util.io._
 import net.diet_rich.util.sql._
@@ -33,8 +34,8 @@ class FreeRanges(blockSize: Int)(implicit connection: Connection) {
     def withLength(length: Size) = copy(fin = start + length)
     def withOffset(offset: Size) = copy(start = start + offset)
     override def compare(that: DataRange): Int =
-      that.start compare start match {
-        case 0 => that.fin compare fin
+      start compare that.start match {
+        case 0 => fin compare that.fin
         case x => x
       }
   }

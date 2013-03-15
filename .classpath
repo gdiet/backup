@@ -11,5 +11,9 @@
 	<classpathentry kind="lib" path="lib/ftpserver/slf4j-simple-1.7.2.jar"/>
 	<classpathentry kind="lib" path="lib/ftpserver/ftpserver-core-1.0.6.jar"/>
 	<classpathentry kind="lib" path="lib/test/scalatest_2.10-1.9.1.jar"/>
+	<classpathentry kind="lib" path="lib/test/specs2/specs2_2.10-1.14.jar"/>
+	<classpathentry kind="lib" path="lib/test/specs2/specs2-scalaz-concurrent_2.10-7.0.0.jar"/>
+	<classpathentry kind="lib" path="lib/test/specs2/specs2-scalaz-core_2.10-7.0.0.jar"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.junit.JUNIT_CONTAINER/4"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
