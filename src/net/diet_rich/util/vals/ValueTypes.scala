@@ -47,6 +47,8 @@ case class Position(value: Long) extends OrderedLongValue[Position] {
 
 case class Range(start: Position, end: Position) extends Ordered[Range] {
   assume(end >= start)
+  def length = end - start
+  def +/ (offset: Size) = copy(start = start + offset)
   override final def compare(that: Range): Int =
     start compare that.start match {
       case 0 => end compare that.end

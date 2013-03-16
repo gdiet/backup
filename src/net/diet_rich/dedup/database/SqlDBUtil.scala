@@ -9,9 +9,6 @@ import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
 object SqlDBUtil {
-  def readAsAtomicLong(statement: String)(implicit connection: Connection): AtomicLong =
-    new AtomicLong(execQuery(statement)(_ longOption 1).nextOnly.get)
-  
   implicit class ValuesFromSqlResult(r: WrappedSQLResult) {
     def size(column: Int) = Size(r long column)
     def print(column: Int) = Print(r long column)
@@ -24,5 +21,6 @@ object SqlDBUtil {
     def dataEntryOption(column: Int) = DataEntryID(r longOption column)
     def treeEntry(column: Int) = TreeEntryID(r long column)
     def treeEntryOption(column: Int) = TreeEntryID(r longOption column)
+    def atomicLong(column: Int) = new AtomicLong(r long column)
   }
 }

@@ -1,7 +1,7 @@
 // Copyright (c) Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-package net.diet_rich.dedup.databaseXXX
+package net.diet_rich.dedup.database
 
 import net.diet_rich.util.vals._
 import org.specs2.mutable._

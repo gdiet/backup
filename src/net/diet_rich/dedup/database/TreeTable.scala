@@ -42,7 +42,7 @@ trait TreeTable { import TreeTable._
   implicit protected val connection: Connection
   
   private val maxEntryId =
-    SqlDBUtil.readAsAtomicLong("SELECT MAX(id) FROM TreeEntries")
+    execQuery("SELECT MAX(id) FROM TreeEntries")(_ atomicLong 1).nextOnly
   
   /** @return The child ID.
    *  @throws Exception if the child was not created correctly. */
