@@ -39,6 +39,7 @@ case class Position(value: Long) extends OrderedLongValue[Position] {
   def +(other: Size): Position = Position(value + other.value)
   def +(other: IntSize): Position = Position(value + other.value)
   def -(other: Size): Position = Position(value - other.value)
+  def -(other: IntSize): Position = Position(value - other.value)
   def -(other: Position): Size = Size(value - other.value)
   def /(other: IntSize): Long = value / other.value
   def %(other: IntSize): IntSize = IntSize((value % other.value) toInt)
