@@ -29,7 +29,7 @@ trait MemoryManager {
   def getLargeArray(size: Size): Option[Array[Byte]]
 }
 
-trait SimpleBackupControl extends BackupControl[FileSource] {
+class SimpleBackupControl extends BackupControl[FileSource] {
   def notifyProgressMonitor(entry: FileSource): Unit = Unit // println("processing %s" format entry.file)
   def executeInThreadPool(f: => Unit): Unit = f
   def catchAndHandleException(entry: FileSource)(f: => Unit): Unit = f

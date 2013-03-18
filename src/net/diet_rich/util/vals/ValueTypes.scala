@@ -53,7 +53,7 @@ case class Position(value: Long) extends OrderedLongValue[Position] {
   def -(other: Size): Position = Position(value - other.value)
   def -(other: Position): Size = Size(value - other.value)
   def /(other: Size): Long = value / other.value
-  def %(other: Size): Size = Size(value / other.value)
+  def %(other: Size): Size = Size(value % other.value)
 }
 object Position extends ApplyCheckedLong[Position]
 
