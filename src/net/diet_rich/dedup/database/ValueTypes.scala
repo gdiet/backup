@@ -32,20 +32,20 @@ case class Path(value: String) {
   def name: String = value.substring(value.lastIndexOf('/') + 1)
 }
 
-case class NodeType(value: Int) extends IntValue {
+case class NodeType(value: Long) extends LongValue {
   require(NodeType.ALLOWED contains value, s"Unsupported tree node type $value")
 }
 object NodeType {
-  private val ALLOWED = Set(0, 1)
+  private val ALLOWED = Set(0L, 1L)
   val DIR = NodeType(0)
   val FILE = NodeType(1)
 }
 
-case class Method(value: Int) extends IntValue {
+case class Method(value: Long) extends LongValue {
   require(Method.ALLOWED contains value, s"Unsupported store method $value")
 }
 object Method {
-  private val ALLOWED = Set(0, 1)
+  private val ALLOWED = Set(0L, 1L)
   val STORE = Method(0)
   val DEFLATE = Method(1)
 }

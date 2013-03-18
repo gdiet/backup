@@ -14,7 +14,7 @@ object DataStore2 {
 }
 
 // FIXME double-check!!!
-class DataStore2(baseDir: File, val dataSize: IntSize, readonly: Boolean) { import DataStore2._
+class DataStore2(baseDir: File, val dataSize: Size, readonly: Boolean) { import DataStore2._
 
   private val threads = 4
   private val executors = new Array[ExecutorService](threads)
@@ -47,14 +47,14 @@ class DataStore2(baseDir: File, val dataSize: IntSize, readonly: Boolean) { impo
     dataFileHandler
   }
 
-  private def dataFileNumberAndOffset(position: Position, size: IntSize) = {
+  private def dataFileNumberAndOffset(position: Position, size: Size) = {
     val dataFileNumber = position / dataSize
-    val offsetInFileData = position %& dataSize
+    val offsetInFileData = (position % dataSize).asPosition
     assume((offsetInFileData + size).value <= dataSize.value, s"offsetInFileData: $offsetInFileData / dataSize: $dataSize / size: $size")
     (dataFileNumber, offsetInFileData)
   }
   
-  def eraseDataInSingleDataFile(position: Position, size: IntSize): Unit = {
+  def eraseDataInSingleDataFile(position: Position, size: Size): Unit = {
     val (dataFileNumber, offsetInFileData) = dataFileNumberAndOffset(position, size)
     execute(dataFileNumber) {
       val dataFileHandler = acquireDataFile(dataFileNumber, true)
@@ -62,7 +62,7 @@ class DataStore2(baseDir: File, val dataSize: IntSize, readonly: Boolean) { impo
     }
   }
   
-  def overwriteDataInSingleDataFile(position: Position, bytes: Array[Byte], offsetInArray: IntPosition, size: IntSize): Unit = {
+  def overwriteDataInSingleDataFile(position: Position, bytes: Array[Byte], offsetInArray: Position, size: Size): Unit = {
     val (dataFileNumber, offsetInFileData) = dataFileNumberAndOffset(position, size)
     val dataPrint = DataFile2.calcDataPrint(offsetInFileData, bytes, offsetInArray, size)
     execute(dataFileNumber) {
@@ -71,7 +71,7 @@ class DataStore2(baseDir: File, val dataSize: IntSize, readonly: Boolean) { impo
     }
   }
   
-  def writeNewDataToSingleDataFile(position: Position, bytes: Array[Byte], offsetInArray: IntPosition, size: IntSize): Unit = {
+  def writeNewDataToSingleDataFile(position: Position, bytes: Array[Byte], offsetInArray: Position, size: Size): Unit = {
     val (dataFileNumber, offsetInFileData) = dataFileNumberAndOffset(position, size)
     val dataPrint = DataFile2.calcDataPrint(offsetInFileData, bytes, offsetInArray, size)
     execute(dataFileNumber) {
@@ -80,7 +80,7 @@ class DataStore2(baseDir: File, val dataSize: IntSize, readonly: Boolean) { impo
     }
   }
   
-  def readFromSingleDataFile(position: Position, bytes: Array[Byte], offsetInArray: IntPosition, size: IntSize): IntSize = {
+  def readFromSingleDataFile(position: Position, bytes: Array[Byte], offsetInArray: Position, size: Size): Size = {
     val (dataFileNumber, offsetInFileData) = dataFileNumberAndOffset(position, size)
     execute(dataFileNumber) {
       val dataFileHandler = acquireDataFile(dataFileNumber, true)

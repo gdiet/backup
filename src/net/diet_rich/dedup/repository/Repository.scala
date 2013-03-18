@@ -15,7 +15,7 @@ class Repository(val basedir: File, val readonly: Boolean) { import Repository._
   val settings = readSettingsFile(basedir.child(settingsFileName))
   
   val digesters = new HashDigester(settings(hashKey)) with Digesters with CrcAdler8192
-  val dataStore = new DataStore2(basedir, IntSize(settings(dataSizeKey).toInt), readonly)
+  val dataStore = new DataStore2(basedir, Size(settings(dataSizeKey).toInt), readonly)
 
   private val dbdir = basedir.child(dbDirName)
   private implicit val connection = getConnection(dbdir, readonly)

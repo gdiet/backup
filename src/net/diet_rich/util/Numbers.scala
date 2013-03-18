@@ -7,7 +7,7 @@ import net.diet_rich.util.vals.LongValue
 
 object Numbers {
   def toInt(value: Long): Int = {
-    assume(value <= Int.MaxValue && value >= Int.MinValue)
+    assume(value <= Int.MaxValue && value >= Int.MinValue, s"value $value is not an Int")
     value toInt
   }
   def toInt(value: LongValue): Int = toInt(value.value)

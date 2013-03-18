@@ -51,8 +51,6 @@ package object sql {
       case (Some(x: Array[Byte]), index) => statement setObject (index+1, x)
       case (     x: LongValue,    index) => statement setLong   (index+1, x.value)
       case (Some(x: LongValue),   index) => statement setLong   (index+1, x.value)
-      case (     x: IntValue,     index) => statement setInt    (index+1, x.value)
-      case (Some(x: IntValue),    index) => statement setInt    (index+1, x.value)
       case (     x: ByteArrayValue,  index) => statement setObject (index+1, x.value)
       case (Some(x: ByteArrayValue), index) => statement setObject (index+1, x.value)
       case (None, index) => statement setNull (index+1, statement.getParameterMetaData getParameterType (index+1))

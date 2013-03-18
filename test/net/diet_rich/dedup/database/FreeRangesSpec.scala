@@ -8,7 +8,7 @@ import org.specs2.mutable._
 
 class FreeRangesSpec extends SpecificationWithJUnit {
   
-  val defaultBlockSize = IntSize(10)
+  val defaultBlockSize = Size(10)
 
   val defaultFreeAreaStart = Position(25)
   

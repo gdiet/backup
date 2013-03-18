@@ -45,10 +45,10 @@ trait ByteStoreTable {
       } else {
         val range = rangeOpt.get
         val rangeLength = Numbers.toInt(range.length.value)
-        val bytesToRead = IntSize(math.min(rangeLength, length))
-        val read = ds.readFromSingleDataFile(range.start, bytes, IntPosition(offset), bytesToRead)
+        val bytesToRead = Size(math.min(rangeLength, length))
+        val read = ds.readFromSingleDataFile(range.start, bytes, Position(offset), bytesToRead)
         rangeOpt = if (read.value == rangeLength) None else Some(range +/ read)
-        read.value
+        read.intValue
       }
   }
   protected final val selectEntryParts = 
@@ -90,21 +90,21 @@ trait ByteStoreTable {
   private def writeRange(id: DataEntryID, index: Int, source: ByteSource, range: Range): Option[Range] = {
     val bytes = new Array[Byte](32768)
     @annotation.tailrec
-    def writeStep(range: Range, offsetInArray: IntPosition, dataInArray: IntSize, alreadyRead: Size): Size = {
+    def writeStep(range: Range, offsetInArray: Position, dataInArray: Size, alreadyRead: Size): Size = {
       if (range.length == Size(0)) {
         alreadyRead
-      } else if (dataInArray == IntSize(0)) {
+      } else if (dataInArray == Size(0)) {
         val bytesToRead = if (range.length < Size(bytes.length)) range.length.value.toInt else bytes.length
         fillFrom(source, bytes, 0, bytesToRead) match {
           case 0 => alreadyRead
-          case read => writeStep(range, IntPosition(0), IntSize(read), alreadyRead + Size(read))
+          case read => writeStep(range, Position(0), Size(read), alreadyRead + Size(read))
         }
       } else {
         ds.writeNewDataToSingleDataFile(range.start, bytes, offsetInArray, dataInArray)
-        writeStep(range +/ dataInArray, IntPosition(0), IntSize(0), alreadyRead)
+        writeStep(range +/ dataInArray, Position(0), Size(0), alreadyRead)
       }
     }
-    val size = writeStep(range, IntPosition(0), IntSize(0), Size(0))
+    val size = writeStep(range, Position(0), Size(0), Size(0))
     if (size > Size(0)) insertEntry(id, index, range.start, range.start + size)
     if (size == range.length) None else Some(range +/ size)
   }

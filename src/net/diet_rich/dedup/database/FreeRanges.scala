@@ -9,7 +9,7 @@ import net.diet_rich.util.vals._
 import SqlDBUtil.ValuesFromSqlResult
 
 case class FreeRanges(
-  blockSize: IntSize,
+  blockSize: Size,
   startOfFreeArea: Position, 
   private val freeSlices: Set[Range]
 ) {
@@ -30,7 +30,7 @@ case class FreeRanges(
 }
 
 object FreeRanges {
-  def sliceAtStartOfFreeArea(startOfFreeArea: Position, blockSize: IntSize) =
+  def sliceAtStartOfFreeArea(startOfFreeArea: Position, blockSize: Size) =
     Range(startOfFreeArea, startOfFreeArea + blockSize - startOfFreeArea % blockSize)
   def hasOverlappingSlices(slices: Iterable[Range]): Boolean =
     slices.size > 1 &&
@@ -38,9 +38,9 @@ object FreeRanges {
       case List(Range(_, Position(end1)), Range(Position(start2), _)) => 
         end1 > start2
     }
-  def hasSlicesAcrossBlocks(slices: Iterable[Range], blockSize: IntSize) =
+  def hasSlicesAcrossBlocks(slices: Iterable[Range], blockSize: Size) =
     slices exists isSliceAcrossBlocks(blockSize)
-  def isSliceAcrossBlocks(blockSize: IntSize)(slice: Range) =
+  def isSliceAcrossBlocks(blockSize: Size)(slice: Range) =
     slice.start / blockSize != (slice.end - Size(1)) / blockSize
   def hasSlicesInFreeArea(slices: Iterable[Range], startOfFreeArea: Position) =
     slices.exists {
