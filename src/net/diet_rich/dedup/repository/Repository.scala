@@ -7,6 +7,7 @@ import java.io.File
 import net.diet_rich.util.io._
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
+import net.diet_rich.util.Numbers
 import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.datastore.DataStore2
 
@@ -14,7 +15,7 @@ class Repository(val basedir: File, val readonly: Boolean) { import Repository._
   val settings = readSettingsFile(basedir.child(settingsFileName))
   
   val digesters = new HashDigester(settings(hashKey)) with Digesters with CrcAdler8192
-  val dataStore = new DataStore2(basedir, settings(dataSizeKey).toInt, readonly)
+  val dataStore = new DataStore2(basedir, IntSize(settings(dataSizeKey).toInt), readonly)
 
   private val dbdir = basedir.child(dbDirName)
   private implicit val connection = getConnection(dbdir, readonly)

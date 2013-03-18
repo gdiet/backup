@@ -5,19 +5,22 @@ package net.diet_rich.dedup.datastore
 
 import java.io.{File, RandomAccessFile}
 import net.diet_rich.util.io.fillFrom
+import net.diet_rich.util.vals._
 import DataFile2._
+import net.diet_rich.util.Numbers
 
 object DataFile2 {
   val headerBytes = 16
   
-  def calcDataPrint(offsetInFileData: Int, bytes: Array[Byte], offsetInArray: Int, size: Int): Long = {
+  def calcDataPrint(offsetInFileData: Position, bytes: Array[Byte], offsetInArray: IntPosition, size: IntSize): Long = {
     var print: Long = 0L
-    for (n <- 0 until size)
-      print = print ^ (n + offsetInFileData + 1) * 5870203405204807807L * bytes(n + offsetInArray)
+    for (n <- 0 until size.value)
+      print = print ^ (n + offsetInFileData.value + 1) * 5870203405204807807L * bytes(n + offsetInArray.value)
     print
   }
 }
 
+// FIXME double-check!!!
 class DataFile2(dataFileNumber: Long, file: File, mayCheckHeader: Boolean, readonly: Boolean) {
 
   private var print: Long = 0L
@@ -49,32 +52,32 @@ class DataFile2(dataFileNumber: Long, file: File, mayCheckHeader: Boolean, reado
     randomAccessFile.close
   }
 
-  def writeNewData(offsetInFileData: Int, bytes: Array[Byte], offsetInArray: Int, size: Int, printOfBytes: Long): Unit = {
-    randomAccessFile.seek(offsetInFileData + headerBytes)
-    randomAccessFile.write(bytes, offsetInArray, size)
+  def writeNewData(offsetInFileData: Position, bytes: Array[Byte], offsetInArray: IntPosition, size: IntSize, printOfBytes: Long): Unit = {
+    randomAccessFile.seek(offsetInFileData.value + headerBytes)
+    randomAccessFile.write(bytes, offsetInArray.value, size.value)
     print = print ^ printOfBytes
   }
 
-  def eraseData(offsetInFileData: Int, size: Int): Unit =
-    overwriteData(offsetInFileData, new Array[Byte](size), 0, size, 0L)
+  def eraseData(offsetInFileData: Position, size: IntSize): Unit =
+    overwriteData(offsetInFileData, new Array[Byte](size.value), IntPosition(0), size, 0L)
   
-  def overwriteData(offsetInFileData: Int, bytesToWrite: Array[Byte], offsetInArray: Int, size: Int, printOfBytes: Long): Unit = {
-    val bytesToRead = new Array[Byte](size)
-    val numRead = read(offsetInFileData, bytesToRead, 0, size)
-    print = print ^ calcDataPrint(offsetInFileData, bytesToRead, 0, numRead)
-    writeNewData(offsetInArray, bytesToWrite, offsetInArray, size, printOfBytes)
+  def overwriteData(offsetInFileData: Position, bytesToWrite: Array[Byte], offsetInArray: IntPosition, size: IntSize, printOfBytes: Long): Unit = {
+    val bytesToRead = new Array[Byte](size.value)
+    val numRead = read(offsetInFileData, bytesToRead, IntPosition(0), size)
+    print = print ^ calcDataPrint(offsetInFileData, bytesToRead, IntPosition(0), numRead)
+    writeNewData(offsetInFileData, bytesToWrite, offsetInArray, size, printOfBytes)
   }
 
-  def read(offsetInFileData: Int, bytesToRead: Array[Byte], offsetInArray: Int, size: Int): Int = {
-    randomAccessFile.seek(offsetInFileData + headerBytes)
-    fillFrom(randomAccessFile, bytesToRead, offsetInArray, size)
+  def read(offsetInFileData: Position, bytesToRead: Array[Byte], offsetInArray: IntPosition, size: IntSize): IntSize = {
+    randomAccessFile.seek(offsetInFileData.value + headerBytes)
+    IntSize(fillFrom(randomAccessFile, bytesToRead, offsetInArray.value, size.value))
   }
   
   def recalculatePrint = {
-    val size = randomAccessFile.length.toInt - headerBytes
+    val size = Numbers.toInt(randomAccessFile.length) - headerBytes
     val bytesToRead = new Array[Byte](size)
-    read(0, bytesToRead, 0, size)
-    print = calcDataPrint(0, bytesToRead, 0, size)
+    read(Position(0), bytesToRead, IntPosition(0), IntSize(size))
+    print = calcDataPrint(Position(0), bytesToRead, IntPosition(0), IntSize(size))
   }
   
 }

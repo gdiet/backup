@@ -15,7 +15,7 @@ trait ByteStoreTable {
   implicit def connection: Connection
   
   private var freeRanges = // FIXME ds.dataSize as IntSize
-    FreeRanges(IntSize(ds.dataSize), FreeRanges.startOfFreeAreaInDB, FreeRanges.freeSlicesInDB)
+    FreeRanges(ds.dataSize, FreeRanges.startOfFreeAreaInDB, FreeRanges.freeSlicesInDB)
   private def getDataSlice: Range = synchronized {
     val (newFreeRanges, slice) = freeRanges.get
     freeRanges = newFreeRanges
@@ -45,10 +45,10 @@ trait ByteStoreTable {
       } else {
         val range = rangeOpt.get
         val rangeLength = Numbers.toInt(range.length.value)
-        val bytesToRead = math.min(rangeLength, length)
-        val read = ds.readFromSingleDataFile(range.start, bytes, offset, bytesToRead)
-        rangeOpt = if (read == rangeLength) None else Some(range +/ Size(read))
-        read
+        val bytesToRead = IntSize(math.min(rangeLength, length))
+        val read = ds.readFromSingleDataFile(range.start, bytes, IntPosition(offset), bytesToRead)
+        rangeOpt = if (read.value == rangeLength) None else Some(range +/ read)
+        read.value
       }
   }
   protected final val selectEntryParts = 
@@ -90,21 +90,21 @@ trait ByteStoreTable {
   private def writeRange(id: DataEntryID, index: Int, source: ByteSource, range: Range): Option[Range] = {
     val bytes = new Array[Byte](32768)
     @annotation.tailrec
-    def writeStep(range: Range, offsetInArray: Int, dataInArray: Int, alreadyRead: Size): Size = {
+    def writeStep(range: Range, offsetInArray: IntPosition, dataInArray: IntSize, alreadyRead: Size): Size = {
       if (range.length == Size(0)) {
         alreadyRead
-      } else if (dataInArray == 0) {
+      } else if (dataInArray == IntSize(0)) {
         val bytesToRead = if (range.length < Size(bytes.length)) range.length.value.toInt else bytes.length
         fillFrom(source, bytes, 0, bytesToRead) match {
           case 0 => alreadyRead
-          case read => writeStep(range, 0, read, alreadyRead + Size(read))
+          case read => writeStep(range, IntPosition(0), IntSize(read), alreadyRead + Size(read))
         }
       } else {
         ds.writeNewDataToSingleDataFile(range.start, bytes, offsetInArray, dataInArray)
-        writeStep(range +/ Size(dataInArray), 0, 0, alreadyRead)
+        writeStep(range +/ dataInArray, IntPosition(0), IntSize(0), alreadyRead)
       }
     }
-    val size = writeStep(range, 0, 0, Size(0))
+    val size = writeStep(range, IntPosition(0), IntSize(0), Size(0))
     if (size > Size(0)) insertEntry(id, index, range.start, range.start + size)
     if (size == range.length) None else Some(range +/ size)
   }

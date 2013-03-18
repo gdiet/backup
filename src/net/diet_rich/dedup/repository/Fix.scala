@@ -7,6 +7,7 @@ import java.io.File
 import net.diet_rich.dedup.CmdLine._
 import net.diet_rich.util._
 import net.diet_rich.util.io._
+import net.diet_rich.util.vals.IntSize
 import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.datastore.DataStore2
 
@@ -69,7 +70,7 @@ object Fix extends CmdApp {
             case "1.0" =>
               con.println("Recreating data file headers...")
               
-              val dataStore = new DataStore2(new File(opts(REPOSITORY)), dbSettings(Repository.dataSizeKey).toInt, false)
+              val dataStore = new DataStore2(new File(opts(REPOSITORY)), IntSize(dbSettings(Repository.dataSizeKey).toInt), false)
               try {
                 var time = System.currentTimeMillis
                 var timeDiff = 2000L

@@ -6,7 +6,6 @@ package net.diet_rich.util
 import net.diet_rich.util.vals.LongValue
 
 object Numbers {
-  // FIXME check if needed at all
   def toInt(value: Long): Int = {
     assume(value <= Int.MaxValue && value >= Int.MinValue)
     value toInt
