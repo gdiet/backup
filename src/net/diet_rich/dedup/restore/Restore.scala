@@ -63,11 +63,11 @@ object Restore extends CmdApp {
           val source = repository.fs.read(dataid, dataEntry.method)
           repository.digesters.filterPrint(source)(source =>
             repository.digesters.filterHash(source)(source =>
-              source.copyTo(sink)
+              source.copyTo(sink.asByteSink)
             )
           )
         }
-        if (size != dataEntry.size.value) System.err.println(s"ERROR: Data size $size did not match ${dataEntry.size} for $target")
+        if (size != dataEntry.size) System.err.println(s"ERROR: Data size $size did not match ${dataEntry.size} for $target")
         if (print != dataEntry.print) System.err.println(s"ERROR: Data print $print did not match ${dataEntry.print} for $target")
         if (hash != dataEntry.hash) System.err.println(s"ERROR: Data hash did not match for $target")
         try { target.setLastModified(source.time.value) }

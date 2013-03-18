@@ -44,7 +44,9 @@ case class Size(value: Long) extends OrderedLongValue[Size] {
   def -(other: Size): Size = Size(value - other.value)
   def asPosition = Position(value)
 }
-object Size extends ApplyCheckedLong[Size]
+object Size extends ApplyCheckedLong[Size] {
+  def min(a: Size, b: Size) = Size(math.min(a.value, b.value))
+}
 
 case class Position(value: Long) extends OrderedLongValue[Position] {
   def +(other: Size): Position = Position(value + other.value)
@@ -53,6 +55,7 @@ case class Position(value: Long) extends OrderedLongValue[Position] {
   def /(other: Size): Long = value / other.value
   def %(other: Size): Size = Size(value / other.value)
 }
+object Position extends ApplyCheckedLong[Position]
 
 case class Range(start: Position, end: Position) extends Ordered[Range] {
   assume(end >= start)

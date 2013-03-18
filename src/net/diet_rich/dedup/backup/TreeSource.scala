@@ -28,6 +28,6 @@ class FileSource(val file: java.io.File) extends TreeSource[FileSource] {
     else
       Nil
   def reader: SeekReader =
-    if (hasData) new java.io.RandomAccessFile(file, "r") else emptyReader
+    if (hasData) new java.io.RandomAccessFile(file, "r").asSeekReader else emptyReader
   override def toString: String = file.toString
 }

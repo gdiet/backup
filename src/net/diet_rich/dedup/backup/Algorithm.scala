@@ -47,7 +47,7 @@ class StoreAlgorithm[SourceType <: TreeSource[SourceType]](
       storeFromReader(name, source, parent, reader)
 
   private def cacheWhileCalcuatingHash(name: String, source: SourceType, parent: TreeEntryID, reader: SeekReader): TreeEntryID = {
-    reader.seek(0)
+    reader.seek(Position(0))
     // here, further optimization is possible: If a file is too large to cache,
     // we could at least cache the start of the file. This would of course lead
     // to more complicated hash calculations.
@@ -56,10 +56,10 @@ class StoreAlgorithm[SourceType <: TreeSource[SourceType]](
     // read whole file, if possible, into cache, and calculate print and hash
     val (print, (hash, size)) = fs.dig.filterPrint(reader) { reader =>
       fs.dig.filterHash(reader) { reader =>
-        Size( cache match {
+        cache match {
           case None => readAndDiscardAll(reader)
-          case Some(bytes) => fillFrom(reader, bytes, 0, bytes.length) + readAndDiscardAll(reader)
-        } )
+          case Some(bytes) => fillFrom(reader, bytes, Position(0), Size(bytes.length)) + readAndDiscardAll(reader)
+        }
       }
     }
     // evaluate match against known entries
@@ -77,7 +77,7 @@ class StoreAlgorithm[SourceType <: TreeSource[SourceType]](
   }
 
   private def storeFromReader(name: String, source: SourceType, parent: TreeEntryID, reader: SeekReader): TreeEntryID = {
-    reader.seek(0)
+    reader.seek(Position(0))
     val (print, (hash, (dataid, size))) = fs.dig.filterPrint(reader) { reader =>
       fs.dig.filterHash(reader) { reader =>
         fs.storeAndGetDataIdAndSize(reader, storeMethod)

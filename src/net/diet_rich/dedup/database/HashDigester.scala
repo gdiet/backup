@@ -5,14 +5,15 @@ package net.diet_rich.dedup.database
 
 import net.diet_rich.util.Hashes
 import net.diet_rich.util.io._
+import net.diet_rich.util.vals._
 
 class HashDigester(algorithm: String) {
   def filterHash[ReturnType](source: ByteSource)(processor: ByteSource => ReturnType): (Hash, ReturnType) = {
     val digester = Hashes.instance(algorithm)
     val wrappedInput = new Object {
-      def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
+      def read(bytes: Array[Byte], offset: Position, length: Size): Size = {
         val size = source.read(bytes, offset, length)
-        if (size > 0) digester.update(bytes, offset, size)
+        if (size > Size(0)) digester.update(bytes, offset.intValue, size.intValue)
         size
       }
     }

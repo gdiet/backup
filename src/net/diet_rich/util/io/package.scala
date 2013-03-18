@@ -4,46 +4,75 @@
 package net.diet_rich.util
 
 import java.io._
+import net.diet_rich.util.vals._
 import scala.annotation.tailrec
 
 package object io {
-  type ByteSource = { def read(bytes: Array[Byte], offset: Int, length: Int): Int }
-  type ByteSink = { def write(bytes: Array[Byte], offset: Int, length: Int): Unit }
+  type ByteSource = { def read(bytes: Array[Byte], offset: Position, length: Size): Size }
+  type ByteSink = { def write(bytes: Array[Byte], offset: Position, length: Size): Unit }
   type Closeable = { def close(): Unit }
-  type Seekable = { def seek(pos: Long): Unit }
+  type Seekable = { def seek(pos: Position): Unit }
   type Reader = ByteSource with Closeable
   type SeekReader = Seekable with Reader
+  
+  implicit class EnhancedInputStream(i: InputStream) {
+    def asReader: Reader = new Object {
+      def read(bytes: Array[Byte], offset: Position, length: Size): Size =
+        Size(i.read(bytes, offset.intValue, length.intValue))
+      def close(): Unit = i.close()
+    }
+  }
 
+  implicit class EnhancedOutputStream(o: OutputStream) {
+    def asByteSink: ByteSink = new Object {
+      def write(bytes: Array[Byte], offset: Position, length: Size): Unit =
+        o.write(bytes, offset.intValue, length.intValue)
+    }
+  }
+  
+  implicit class EnhancedRandomAccess(r: RandomAccessFile) {
+    def asSeekReader: SeekReader = new Object {
+      def read(bytes: Array[Byte], offset: Position, length: Size): Size =
+        Size(r.read(bytes, offset.intValue, length.intValue))
+      def close(): Unit = r.close()
+      def seek(pos: Position): Unit = r.seek(pos.value)
+    }
+    def asByteSink: ByteSink = new Object {
+      def write(bytes: Array[Byte], offset: Position, length: Size): Unit =
+        r.write(bytes, offset.intValue, length.intValue)
+    }
+  }
+  
   val emptyReader: SeekReader = new Object {
-    def read(b: Array[Byte], off: Int, len: Int): Int = 0
-    def seek(pos: Long): Unit = Unit
+    def read(b: Array[Byte], off: Position, len: Size): Size = Size(0)
+    def seek(pos: Position): Unit = Unit
     def close(): Unit = Unit
   }
   
   def using[Closeable <: io.Closeable, ReturnType] (resource: Closeable)(operation: Closeable => ReturnType): ReturnType =
     try { operation(resource) } finally { resource.close }
 
-  def fillFrom(input: ByteSource, bytes: Array[Byte], offset: Int, length: Int): Int = {
+  def fillFrom(input: ByteSource, bytes: Array[Byte], offset: Position, length: Size): Size = {
     val maxPos = offset + length
     @tailrec
-    def readRecurse(offset: Int): Int = {
+    def readRecurse(offset: Position): Position = {
       input.read(bytes, offset, maxPos - offset) match {
-        case n if n < 1 => offset
+        case n if n < Size(1) => offset
         case n => if (offset + n == length) offset + n else readRecurse(offset + n)
       }
     }
     readRecurse(offset) - offset
   }
 
-  def readAndDiscardAll(input: ByteSource) : Long = {
+  def readAndDiscardAll(input: ByteSource): Size = {
     val buffer = new Array[Byte](8192)
     @tailrec
-    def readRecurse(length: Long): Long =
-      input.read(buffer, 0, 8192) match {
-        case n if n < 1 => length
+    def readRecurse(length: Size): Size =
+      input.read(buffer, Position(0), Size(buffer.length)) match {
+        case n if n < Size(1) => length
         case n => readRecurse(length + n)
       }
-    readRecurse(0)
+    readRecurse(Size(0))
   }
 
   def readSettingsFile(path: File): Map[String, String] =
@@ -76,9 +105,9 @@ package object io {
       }
     }
     override def read(bytes: Array[Byte], offset: Int, length: Int): Int =
-      source.read(bytes, offset, length) match {
-        case n if (n < 1) => -1
-        case n => n
+      source.read(bytes, Position(offset), Size(length)) match {
+        case n if (n < Size(1)) => -1
+        case n => n.intValue
       }
   }
 
@@ -91,26 +120,26 @@ package object io {
   
   // TODO make value class once nested class restriction is lifted
   implicit class EnhancedByteSource(val value: ByteSource) {
-    def copyTo(sink: ByteSink) = {
-      val bytes = new Array[Byte](32768)
+    def copyTo(sink: ByteSink): Size = {
+      val buffer = new Array[Byte](32768)
       @annotation.tailrec
-      def recurse(alreadRead: Long): Long = {
-        value.read(bytes, 0, bytes.length) match {
-          case n if (n > 0) =>
-            sink.write(bytes, 0, n)
+      def recurse(alreadRead: Size): Size = {
+        value.read(buffer, Position(0), Size(buffer.length)) match {
+          case n if (n > Size(0)) =>
+            sink.write(buffer, Position(0), n)
             recurse(alreadRead + n)
           case _ => alreadRead
         }
       }
-      recurse(0)
+      recurse(Size(0))
     }
     
-    def appendSource(source2: ByteSource) = new Object {
+    def appendSource(source2: ByteSource): ByteSource = new Object {
       var switched = false
       var source = value
-      def read(bytes: Array[Byte], internalOffset: Int, length: Int): Int =
+      def read(bytes: Array[Byte], internalOffset: Position, length: Size): Size =
         source.read(bytes, internalOffset, length) match {
-          case n if (n < 1) =>
+          case n if (n < Size(1)) =>
             if (switched) n else {
               source = source2
               switched = true
@@ -121,9 +150,9 @@ package object io {
     }
     
     def appendByte(byte: Byte): ByteSource =
-      new EnhancedByteSource(value).appendSource(new java.io.ByteArrayInputStream(Array(byte)))
+      new EnhancedByteSource(value).appendSource(new java.io.ByteArrayInputStream(Array(byte)).asReader)
     
     def prependArray(data: Array[Byte], offset: Int, len: Int): ByteSource =
-      new EnhancedByteSource(new java.io.ByteArrayInputStream(data, offset, len)).appendSource(value)
+      new EnhancedByteSource(new java.io.ByteArrayInputStream(data, offset, len).asReader).appendSource(value)
   }
 }

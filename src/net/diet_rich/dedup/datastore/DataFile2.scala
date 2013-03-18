@@ -4,7 +4,7 @@
 package net.diet_rich.dedup.datastore
 
 import java.io.{File, RandomAccessFile}
-import net.diet_rich.util.io.fillFrom
+import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
 import DataFile2._
 import net.diet_rich.util.Numbers
@@ -70,7 +70,7 @@ class DataFile2(dataFileNumber: Long, file: File, mayCheckHeader: Boolean, reado
 
   def read(offsetInFileData: Position, bytesToRead: Array[Byte], offsetInArray: Position, size: Size): Size = {
     randomAccessFile.seek(offsetInFileData.value + headerBytes)
-    Size(fillFrom(randomAccessFile, bytesToRead, offsetInArray.intValue, size.intValue))
+    fillFrom(randomAccessFile.asSeekReader, bytesToRead, offsetInArray, size)
   }
   
   def recalculatePrint = {

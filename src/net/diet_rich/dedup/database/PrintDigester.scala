@@ -4,6 +4,7 @@
 package net.diet_rich.dedup.database
 
 import net.diet_rich.util.io._
+import net.diet_rich.util.vals._
 
 trait PrintDigester {
   def calculatePrint(reader: SeekReader): Print
@@ -11,20 +12,20 @@ trait PrintDigester {
 }
 
 trait CrcAdler8192 extends PrintDigester { import CrcAdler8192._
-  private val area = 8192
+  private val area = Size(8192)
   
   def calculatePrint(reader: SeekReader): Print = {
-    val data = new Array[Byte](area)
-    val size = fillFrom(reader, data, 0, area)
-    reader.seek(0)
-    calculate(data, 0, size)
+    val data = new Array[Byte](area.intValue)
+    val size = fillFrom(reader, data, Position(0), area)
+    reader.seek(Position(0))
+    calculate(data, 0, size.intValue)
   }
   
   def filterPrint[ReturnType](source: ByteSource)(processor: ByteSource => ReturnType): (Print, ReturnType) = {
-    val data = new Array[Byte](area)
-    val size = fillFrom(source, data, 0, area)
-    val print = calculate(data, 0, size)
-    val partitionedInput = source.prependArray(data, 0, size)
+    val data = new Array[Byte](area.intValue)
+    val size = fillFrom(source, data, Position(0), area)
+    val print = calculate(data, 0, size.intValue)
+    val partitionedInput = source.prependArray(data, 0, size.intValue)
     (print, processor(partitionedInput))
   }
 }

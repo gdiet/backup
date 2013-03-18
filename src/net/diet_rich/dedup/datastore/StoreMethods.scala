@@ -13,7 +13,7 @@ object StoreMethods {
     case Method.STORE => source
     case Method.DEFLATE => 
       val deflater = new Deflater(Deflater.BEST_COMPRESSION, true)
-      new DeflaterInputStream(sourceAsInputStream(source), deflater)
+      new EnhancedInputStream(new DeflaterInputStream(sourceAsInputStream(source), deflater)).asReader
   }
   
   def wrapRestore(source: ByteSource, method: Method): ByteSource = method match {
@@ -22,6 +22,6 @@ object StoreMethods {
       val inflater = new Inflater(true)
       // appendByte is needed as fix for a bug in Inflater, see e.g.
       // 6519463 : Unexpected end of ZLIB when using GZIP on some files
-      new InflaterInputStream(sourceAsInputStream(source.appendByte(0)), inflater)
+      new EnhancedInputStream(new InflaterInputStream(sourceAsInputStream(source.appendByte(0)), inflater)).asReader
   }
 }

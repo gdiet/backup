@@ -9,7 +9,7 @@ import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
 object SqlDBUtil {
-  implicit class ValuesFromSqlResult(r: WrappedSQLResult) {
+  implicit class ValuesFromSqlResult(val r: WrappedSQLResult) extends AnyVal {
     def size(column: Int) = Size(r long column)
     def print(column: Int) = Print(r long column)
     def hash(column: Int) = Hash(r bytes column)

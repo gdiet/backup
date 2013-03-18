@@ -49,7 +49,7 @@ class Repository(val basedir: File, val readonly: Boolean) { import Repository._
         } else {
           require(file.isFile())
           zipOut.putNextEntry(new ZipEntry(path))
-          using(new FileInputStream(file)) { _.copyTo(zipOut) }
+          using(new FileInputStream(file)) { _.asReader.copyTo(zipOut.asByteSink) }
           zipOut.closeEntry()
         }
       }

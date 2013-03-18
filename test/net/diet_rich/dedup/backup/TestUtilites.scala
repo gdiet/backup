@@ -4,6 +4,7 @@
 package net.diet_rich.dedup.backup
 
 import net.diet_rich.util.io._
+import net.diet_rich.util.vals._
 
 import org.scalatest._
 import org.scalatest.matchers.ShouldMatchers
@@ -25,8 +26,8 @@ object TestUtilites extends ShouldMatchers {
   def readFile(file: java.io.File): Array[Byte] = {
     using(new java.io.RandomAccessFile(file, "r")) { source =>
       val bytes = new Array[Byte](source.length toInt)
-      val read = fillFrom(source, bytes, 0, bytes.length)
-      assert(readAndDiscardAll(source) == 0, s"More bytes in file $file than expected")
+      val read = fillFrom(source.asSeekReader, bytes, Position(0), Size(bytes.length))
+      assert(readAndDiscardAll(source.asSeekReader) == Size(0), s"More bytes in file $file than expected")
       bytes
     }
   }

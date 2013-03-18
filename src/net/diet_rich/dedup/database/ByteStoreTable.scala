@@ -36,33 +36,32 @@ trait ByteStoreTable {
     // FIXME process as list-like or stream or ...?
     val parts = selectEntryParts(dataId)(r => Range(r position 1, r position 2))
     var rangeOpt: Option[Range] = None
-    def read(bytes: Array[Byte], offset: Int, length: Int): Int =
-      if (rangeOpt.isEmpty) {
-        if (!parts.hasNext) 0 else {
-          rangeOpt = Some(parts.next)
-          read(bytes, offset, length)
-        }
-      } else {
-        val range = rangeOpt.get
-        val rangeLength = Numbers.toInt(range.length.value)
-        val bytesToRead = Size(math.min(rangeLength, length))
-        val read = ds.readFromSingleDataFile(range.start, bytes, Position(offset), bytesToRead)
-        rangeOpt = if (read.value == rangeLength) None else Some(range +/ read)
-        read.intValue
+    def read(bytes: Array[Byte], offset: Position, length: Size): Size =
+      rangeOpt match {
+        case Some(range) =>
+          val bytesToRead = Size.min(range.length, length)
+          val read = ds.readFromSingleDataFile(range.start, bytes, offset, bytesToRead)
+          rangeOpt = if (read == range.length) None else Some(range +/ read)
+          read
+        case None =>
+          if (!parts.hasNext) Size(0) else {
+            rangeOpt = Some(parts.next)
+            read(bytes, offset, length)
+          }
       }
   }
   protected final val selectEntryParts = 
     prepareQuery("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY index ASC")
     
   def storeAndGetDataId(bytes: Array[Byte], size: Size, method: Method): DataEntryID =
-    storeAndGetDataIdAndSize(new java.io.ByteArrayInputStream(bytes, 0, Numbers.toInt(size)), method)._1
+    storeAndGetDataIdAndSize(new java.io.ByteArrayInputStream(bytes, 0, Numbers.toInt(size)).asReader, method)._1
   
   def storeAndGetDataIdAndSize(source: ByteSource, method: Method): (DataEntryID, Size) = {
     val sourceToWrite = new Object {
       var totalRead = 0L
-      def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
+      def read(bytes: Array[Byte], offset: Position, length: Size): Size = {
         val localRead = source.read(bytes, offset, length)
-        if (localRead > 0) totalRead = totalRead + localRead
+        if (localRead > Size(0)) totalRead = totalRead + localRead.value
         localRead
       }
     }
@@ -94,10 +93,10 @@ trait ByteStoreTable {
       if (range.length == Size(0)) {
         alreadyRead
       } else if (dataInArray == Size(0)) {
-        val bytesToRead = if (range.length < Size(bytes.length)) range.length.value.toInt else bytes.length
-        fillFrom(source, bytes, 0, bytesToRead) match {
-          case 0 => alreadyRead
-          case read => writeStep(range, Position(0), Size(read), alreadyRead + Size(read))
+        val bytesToRead = Size.min(range.length, Size(bytes.length))
+        fillFrom(source, bytes, Position(0), bytesToRead) match {
+          case Size(0) => alreadyRead
+          case read => writeStep(range, Position(0), read, alreadyRead + read)
         }
       } else {
         ds.writeNewDataToSingleDataFile(range.start, bytes, offsetInArray, dataInArray)
