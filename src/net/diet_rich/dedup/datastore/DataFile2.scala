@@ -18,6 +18,13 @@ object DataFile2 {
       print = print ^ (n + offsetInFileData.value + 1) * 5870203405204807807L * bytes(n + offsetInArray.intValue)
     print
   }
+  
+  def calcDataPrint(offsetInFileData: Long, bytes: Array[Byte], offsetInArray: Int, size: Int): Long = {
+    var print: Long = 0L
+    for (n <- 0 until size.intValue)
+      print = print ^ (n + offsetInFileData + 1) * 5870203405204807807L * bytes(n + offsetInArray.intValue)
+    print
+  }
 }
 
 // FIXME double-check!!!

@@ -11,7 +11,9 @@ object TreeEntryID extends ApplyLongOption[TreeEntryID]
 case class DataEntryID(value: Long) extends LongValue
 object DataEntryID extends ApplyLongOption[DataEntryID]
 
-case class Print(value: Long) extends LongValue
+case class Print(value: Long) extends LongValue {
+  def ^(other: Print): Print = copy(value ^ other.value)
+}
 
 case class Hash(value: Array[Byte]) extends ByteArrayValue { import java.util.Arrays
   override def equals(a: Any) = a match {

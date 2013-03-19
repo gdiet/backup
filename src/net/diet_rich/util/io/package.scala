@@ -8,6 +8,8 @@ import net.diet_rich.util.vals._
 import scala.annotation.tailrec
 
 package object io {
+  type JavaByteSource = { def read(bytes: Array[Byte], offset: Int, length: Int): Int }
+  
   type ByteSource = { def read(bytes: Array[Byte], offset: Position, length: Size): Size }
   type ByteSink = { def write(bytes: Array[Byte], offset: Position, length: Size): Unit }
   type Closeable = { def close(): Unit }
@@ -31,6 +33,7 @@ package object io {
   }
   
   implicit class EnhancedRandomAccess(r: RandomAccessFile) {
+    // FIXME needed at all? the implicit class implements the types!
     def asSeekReader: SeekReader = new Object {
       def read(bytes: Array[Byte], offset: Position, length: Size): Size =
         Size(r.read(bytes, offset.intValue, length.intValue))
@@ -41,6 +44,15 @@ package object io {
       def write(bytes: Array[Byte], offset: Position, length: Size): Unit =
         r.write(bytes, offset.intValue, length.intValue)
     }
+    
+    def seek(pos: Position): Unit = r.seek(pos.value)
+    def read(bytes: Array[Byte], offset: Position, length: Size): Size =
+      Size(r.read(bytes, offset.intValue, length.intValue))
+    def write(bytes: Array[Byte], offset: Position, length: Size): Unit =
+      r.write(bytes, offset.intValue, length.intValue)
+      
+    def writeLong(long: LongValue): Unit = r.writeLong(long.value)
+    def write(bytes: Bytes): Unit = write(bytes.bytes, bytes.offset, bytes.length)
   }
   
   val emptyReader: SeekReader = new Object {
@@ -64,6 +76,18 @@ package object io {
     readRecurse(offset) - offset
   }
 
+  def fillFrom(input: JavaByteSource, bytes: Array[Byte], offset: Int, length: Int): Int = {
+    val maxPos = offset + length
+    @tailrec
+    def readRecurse(offset: Int): Int = {
+      input.read(bytes, offset, maxPos - offset) match {
+        case n if n < 1 => offset
+        case n => if (offset + n == length) offset + n else readRecurse(offset + n)
+      }
+    }
+    readRecurse(offset) - offset
+  }
+  
   def readAndDiscardAll(input: ByteSource): Size = {
     val buffer = new Array[Byte](8192)
     @tailrec
