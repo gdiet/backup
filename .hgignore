@@ -1,8 +1,0 @@
-syntax: glob
-.cache
-bin/
-src/tryout/
-temp/
-.settings/
-syntax: regexp
-^test-output$
