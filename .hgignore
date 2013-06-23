@@ -1,0 +1,3 @@
+syntax: regexp
+^core/bin/
+^core/\.cache
