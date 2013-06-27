@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
-	<classpathentry excluding="net/diet_rich/dedup/backup/SourceFile.scala|net/diet_rich/dedup/backup/Storing.scala|net/diet_rich/dedup/vals/DataEntryID.scala|net/diet_rich/dedup/vals/Hash.scala|net/diet_rich/dedup/vals/TreeEntryID.scala|net/diet_rich/util/io/package.scala|net/diet_rich/util/vals/Bytes.scala|net/diet_rich/util/vals/ValueTraits.scala|net/diet_rich/dedup/vals/PrintObject.scala" kind="src" path="src"/>
+	<classpathentry kind="src" path="src"/>
 	<classpathentry kind="con" path="org.scala-ide.sdt.launching.SCALA_CONTAINER"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
 	<classpathentry kind="output" path="bin"/>
