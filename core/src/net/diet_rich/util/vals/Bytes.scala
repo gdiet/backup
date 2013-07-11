@@ -6,8 +6,11 @@ package net.diet_rich.util.vals
 case class Bytes (data: Array[Byte], offset: Int, length: Int) {
   override def equals(a: Any) = throw new NotImplementedError
   override def hashCode() = throw new NotImplementedError
+  def take(number: Int) = copy(length = number)
+  def drop(number: Int) = copy(data, offset + number, length - number)
 }
 
 object Bytes {
   def apply(length: Int): Bytes = Bytes(new Array(length), 0, length)
+  def empty = Bytes(0)
 }
