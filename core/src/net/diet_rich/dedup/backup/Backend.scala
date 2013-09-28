@@ -4,13 +4,12 @@
 package net.diet_rich.dedup.backup
 
 import net.diet_rich.dedup.vals._
-import net.diet_rich.util.io.BytesSource
 import net.diet_rich.util.vals._
 
 trait Backend {
   def contains(size: Size, print: Print): Boolean
   def dataEntryFor(size: Size, print: Print, hash: Hash): Option[DataEntryID]
   def addTreeEntry(parent: TreeEntryID, name: String, time: Time, dataid: DataEntryID)
-  def storeData(print: Print, source: BytesSource): DataEntryID
-  def storeData(print: Print, hash: Hash, source: BytesSource): DataEntryID
+  def storeData(print: Print, data: Traversable[Bytes], digester: HashDigester): DataEntryID
+  def storeData(print: Print, hash: Hash, size: Size, data: Traversable[Bytes]): DataEntryID
 }

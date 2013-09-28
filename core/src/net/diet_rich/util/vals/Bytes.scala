@@ -8,6 +8,8 @@ case class Bytes (data: Array[Byte], offset: Int, length: Int) {
   override def hashCode() = throw new NotImplementedError
   def take(number: Int) = copy(length = number)
   def drop(number: Int) = copy(data, offset + number, length - number)
+  def isEmpty = offset + length == data.length
+  def isFull = offset == 0 && length == data.length
 }
 
 object Bytes {
