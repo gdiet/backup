@@ -27,5 +27,6 @@ object ScalaThreadLocal {
       override def toString: String = name
     }
   
+  import language.implicitConversions
   implicit def unwrapThreadLocal[T](scalaThreadLocal: ScalaThreadLocal[T]): T = scalaThreadLocal()
 }

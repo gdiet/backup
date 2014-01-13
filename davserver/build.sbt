@@ -25,3 +25,9 @@ libraryDependencies ++= Seq (
 EclipseKeys.eclipseOutput := Some("bin")
 
 EclipseKeys.withSource := true
+
+scalacOptions ++= Seq(
+  "-deprecation",
+  "-feature",
+  "-language:postfixOps"
+)
