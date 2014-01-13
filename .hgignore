@@ -1,6 +1,14 @@
-syntax: glob
-.cache
-.project
-.classpath
-project/target/
-target/
+
+syntax: regexp
+^\.cache
+^\.classpath
+^\.project
+^bin/
+^davserver/.cache
+^davserver/.classpath
+^davserver/.project
+^davserver/bin
+^davserver/target
+^project/project
+^project/target/
+^target/
