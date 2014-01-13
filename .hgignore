@@ -1,0 +1,6 @@
+syntax: glob
+.cache
+.project
+.classpath
+project/target/
+target/
