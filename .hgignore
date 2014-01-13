@@ -9,8 +9,9 @@ syntax: regexp
 ^davserver/.classpath
 ^davserver/.project
 ^davserver/\.settings/org\.scala-ide\.sdt\.core\.prefs
-^davserver/bin
-^davserver/target
-^project/project
+^davserver/bin/
+^davserver/target/
+^lib_managed/
+^project/project/
 ^project/target/
 ^target/

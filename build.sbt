@@ -1,3 +1,5 @@
+version := "0.03-SNAPSHOT"
+
 lazy val dedup = project.in(file("."))
 
 lazy val davserver = project.dependsOn(dedup)
@@ -15,3 +17,5 @@ scalacOptions ++= Seq(
   "-feature",
   "-language:postfixOps"
 )
+
+retrieveManaged := true
