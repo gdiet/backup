@@ -5,22 +5,22 @@ package net.diet_rich.util
 
 import java.io._
 import scala.annotation.tailrec
+import scala.collection.JavaConverters
 
 package object io {
   type ByteSource = { def read(bytes: Array[Byte], offset: Int, length: Int): Int }
   type ByteSink = { def write(bytes: Array[Byte], offset: Int, length: Int): Unit }
-  type Closeable = { def close(): Unit }
   type Seekable = { def seek(pos: Long): Unit }
   type Reader = ByteSource with Closeable
   type SeekReader = Seekable with Reader
 
-  val emptyReader: SeekReader = new Object {
+  val emptyReader: SeekReader = new Closeable {
     def read(b: Array[Byte], off: Int, len: Int): Int = 0
     def seek(pos: Long): Unit = Unit
     def close(): Unit = Unit
   }
   
-  def using[Closeable <: io.Closeable, ReturnType] (resource: Closeable)(operation: Closeable => ReturnType): ReturnType =
+  def using[Closeable <: java.io.Closeable, ReturnType] (resource: Closeable)(operation: Closeable => ReturnType): ReturnType =
     try { operation(resource) } finally { resource.close }
 
   def fillFrom(input: ByteSource, bytes: Array[Byte], offset: Int, length: Int): Int = {
@@ -46,16 +46,18 @@ package object io {
     readRecurse(0)
   }
 
-  def readSettingsFile(path: File): Map[String, String] =
-    using(scala.io.Source.fromFile(path, "UTF-8")) { source =>
-      source.getLines
+  def readSettingsFile(path: File): Map[String, String] = {
+    val source = scala.io.Source.fromFile(path, "UTF-8")
+    val settings = source.getLines
       .map(_.trim)
       .filterNot(_.isEmpty)
       .filterNot(_.startsWith("#"))
       .map(_.split("[=:]", 2).map(_.trim()))
       .map{case Array(a,b) => (a,b)}
       .toMap
-    }
+    source.close
+    settings
+  }
 
   def writeSettingsFile(file: File, settings: Map[String, String]): Unit =
     using(new PrintWriter(file, "UTF-8")) { writer =>

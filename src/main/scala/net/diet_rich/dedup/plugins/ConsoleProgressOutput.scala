@@ -6,7 +6,7 @@ package net.diet_rich.dedup.plugins
 import net.diet_rich.util._
 
 /** message gets formatted with fileCount / dirCount / timeSeconds. */
-class ConsoleProgressOutput(con: Console, message: String) {
+class ConsoleProgressOutput(con: Console, message: String) extends java.io.Closeable {
   
   @volatile private var startTime = System.currentTimeMillis()
   private val timer = new java.util.Timer("Progress Monitor")

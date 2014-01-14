@@ -1,0 +1,10 @@
+// Copyright (c) Georg Dietrich
+// Licensed under the MIT license:
+// http://www.opensource.org/licenses/mit-license.php
+package net.diet_rich
+
+package object util {
+
+  def init[T](t: T)(f: T => Unit): T = { f(t); t }
+  
+}
