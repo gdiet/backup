@@ -9,7 +9,8 @@ import org.eclipse.jetty.servlet.FilterMapping
 
 object Tryout extends App {
   val filterHolder = new FilterHolder(new MiltonFilter)
-  filterHolder.setInitParameter("resource.factory.class", "com.myastronomy.AstronomyResourceFactory")
+  filterHolder.setInitParameter("milton.configurator", "webdav.Configurator")
+//  filterHolder.setInitParameter("resource.factory.class", "com.myastronomy.AstronomyResourceFactory")
   
   val servletHandler = new ServletHandler()
   servletHandler.addFilterWithMapping(filterHolder, "/*", FilterMapping.REQUEST);
