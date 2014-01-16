@@ -3,6 +3,8 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.webdav
 
+import com.myastronomy.AstronomyResourceFactory
+
 object ServerApp extends App {
   val maybeServer = for {
     fileSystem <- initFileSystem(if (args.isEmpty) Array("../target/playRepo") else args).right
@@ -22,8 +24,10 @@ object ServerApp extends App {
   import org.eclipse.jetty.server.Server
   def initServer(): Either[Error, Server] = {
     try {
-      val filterHolder = new org.eclipse.jetty.servlet.FilterHolder(new io.milton.servlet.MiltonFilter)
-      filterHolder.setInitParameter("resource.factory.class", "com.myastronomy.AstronomyResourceFactory")
+      val resourceFactory = new AstronomyResourceFactory
+      val miltonConfigurator = new LocalMiltonConfigurator(resourceFactory)
+      val miltonFilter = new LocalMiltonFilter(miltonConfigurator)
+      val filterHolder = new org.eclipse.jetty.servlet.FilterHolder(miltonFilter)
           
       val servletHandler = new org.eclipse.jetty.servlet.ServletHandler()
       servletHandler.addFilterWithMapping(filterHolder, "/*", org.eclipse.jetty.servlet.FilterMapping.REQUEST);
