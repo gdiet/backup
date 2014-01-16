@@ -10,8 +10,10 @@ syntax: regexp
 ^davserver/.project
 ^davserver/\.settings/org\.scala-ide\.sdt\.core\.prefs
 ^davserver/bin/
+^davserver/src/test/scala/tryout/
 ^davserver/target/
 ^lib_managed/
 ^project/project/
 ^project/target/
+^src/test/scala/tryout/
 ^target/
