@@ -22,6 +22,9 @@ libraryDependencies ++= Seq (
   "org.eclipse.jetty" % "jetty-servlet" % "9.1.1.v20140108"
 )
 
+
+// other settings
+
 EclipseKeys.eclipseOutput := Some("bin")
 
 EclipseKeys.withSource := true
@@ -31,3 +34,5 @@ scalacOptions ++= Seq(
   "-feature",
   "-language:postfixOps"
 )
+
+retrieveManaged := true

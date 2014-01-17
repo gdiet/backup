@@ -4,6 +4,10 @@
 package net.diet_rich.dedup.webdav
 
 trait FileSystem {
+  sys.addShutdownHook{
+    System.err.println("shutting down dedup file system")
+    Thread.sleep(1000)
+  }
 
 }
 
