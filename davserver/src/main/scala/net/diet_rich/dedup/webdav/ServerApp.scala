@@ -3,8 +3,6 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.webdav
 
-import com.myastronomy.AstronomyResourceFactory
-
 object ServerApp extends App {
   // Filesystem bei Fehler runterfahren
   val maybeServer = for {
