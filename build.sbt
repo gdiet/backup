@@ -19,3 +19,5 @@ scalacOptions ++= Seq(
 )
 
 retrieveManaged := true
+
+XitrumPackage.copy()

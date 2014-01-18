@@ -1,3 +1,6 @@
+version := "0.03-SNAPSHOT"
+
+
 // add milton webdav (see http://milton.io).
 // milton uses slf4j as logging frontend. as logging backend, use logback
 // (see http://www.slf4j.org/manual.html and http://logback.qos.ch).
@@ -36,3 +39,5 @@ scalacOptions ++= Seq(
 )
 
 retrieveManaged := true
+
+XitrumPackage.copy()
