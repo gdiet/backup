@@ -38,6 +38,4 @@ scalacOptions ++= Seq(
   "-language:postfixOps"
 )
 
-retrieveManaged := true
-
 XitrumPackage.copy()
