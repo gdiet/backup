@@ -6,7 +6,9 @@
     </encoder>
   </appender>
 
-  <root level="info">
+  <logger name="net.diet_rich" level="debug"/>
+  
+  <root level="warn">
     <appender-ref ref="STDOUT" />
   </root>
   

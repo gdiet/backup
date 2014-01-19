@@ -3,34 +3,39 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.webdav
 
-import java.util.Date
-import io.milton.http.Auth
-import io.milton.http.Request
+import io.milton.http._
 import io.milton.http.http11.auth.DigestResponse
-import io.milton.resource.DigestResource
-import io.milton.resource.PropFindableResource
+import io.milton.resource._
 
-trait AbstractResource extends DigestResource with PropFindableResource {
+import java.util.Date
+
+import net.diet_rich.util.CallLogging
+
+trait AbstractResource extends DigestResource with PropFindableResource with CallLogging {
   import AbstractResource._
   
   // DigestResource
-  def authenticate(digestRequest: DigestResponse): Object = digestRequest.getUser
-  def isDigestAllowed(): Boolean = true
+  def authenticate(digestRequest: DigestResponse): Object =
+    debug(s"authenticate(digestRequest: '$digestRequest')") { digestRequest.getUser() }
+  def isDigestAllowed(): Boolean = debug("isDigestAllowed()") { true }
   
   // PropFindableResource
-  def getCreateDate(): Date = getModifiedDate()
+  def getCreateDate(): Date = debug("getCreateDate()") { getModifiedDate() }
   
   // Resource
-  def getUniqueId(): String = null
+  def getUniqueId(): String = debug("getUniqueId()") { null }
   def getName(): String
-  def authenticate(user: String, password: String): Object = user
+  def authenticate(user: String, password: String): Object =
+    debug(s"authenticate(user: '$user', password: '$password')") { user }
   // TODO read-only for now
-  def authorise(request: Request, method: Request.Method, auth: Auth): Boolean = !method.isWrite
-  def getRealm(): String = "dedup@diet-rich.net"
+  def authorise(request: Request, method: Request.Method, auth: Auth): Boolean =
+    debug(s"authorise(request: '$request', method: '$method', auth: '$auth')") { !method.isWrite }
+  def getRealm(): String = debug("getRealm()") { "dedup@diet-rich.net" }
   // TODO for read-write, the current date would probably be the better default
-  def getModifiedDate(): Date = date
-  def checkRedirect(request: Request): String = null
+  def getModifiedDate(): Date = debug("getModifiedDate") { date }
+  def checkRedirect(request: Request): String = debug(s"checkRedirect(request: '$request')") { null }
 }
+
 object AbstractResource {
   val date = new Date()
 }
