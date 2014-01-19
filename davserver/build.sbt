@@ -30,6 +30,8 @@ libraryDependencies ++= Seq (
 
 EclipseKeys.eclipseOutput := Some("bin")
 
+EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Resource
+
 EclipseKeys.withSource := true
 
 scalacOptions ++= Seq(
