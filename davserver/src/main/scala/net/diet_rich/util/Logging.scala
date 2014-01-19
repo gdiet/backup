@@ -13,7 +13,7 @@ trait CallLogging {
       val msg = message
       try {  
         log(s"$msg >>")
-        init(code){r => log(s"$msg << r")}
+        init(code){r => log(s"$msg << $r")}
       } catch { case e: Exception =>
         logEx(s"$msg ##", e)
         throw e

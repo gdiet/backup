@@ -7,11 +7,11 @@ import io.milton.http.ResourceFactory
 import io.milton.resource.Resource
 import net.diet_rich.util.Logging
 import io.milton.resource.CollectionResource
+import net.diet_rich.util.CallLogging
 
-class DedupResourceFactory(fileSystem: FileSystem) extends ResourceFactory with Logging {
+class DedupResourceFactory(fileSystem: FileSystem) extends ResourceFactory with CallLogging {
   
-  override def getResource(host: String, path: String): Resource = {
-    log info s"getResource(path = $path)"
+  override def getResource(host: String, path: String): Resource = info(s"getResource(host: $host, path: $path)") {
     if (path == "/")
       new AbstractResource with CollectionResource {
         def getName(): String = ""
