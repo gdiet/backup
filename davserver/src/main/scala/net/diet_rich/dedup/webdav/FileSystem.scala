@@ -13,6 +13,6 @@ trait FileSystem {
 
 object FileSystem {
 
-  def apply(repositoryPath: String, storeMethod: Int): Either[Error, FileSystem] = Right(new FileSystem{})
+  def apply(repositoryPath: String, writeEnabled: Boolean, deflate: Boolean): Either[Error, FileSystem] = Right(new FileSystem{})
   
 }

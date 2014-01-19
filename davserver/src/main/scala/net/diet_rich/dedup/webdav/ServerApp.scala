@@ -14,8 +14,12 @@ object ServerApp extends App {
   
   
   def initFileSystem(args: Array[String]): Either[Error, FileSystem] =
-    if (args.isEmpty) Left("missing repository argument")
-    else FileSystem(args(0), if (args.contains("DEFLATE")) 1 else 0)
+    if (args.isEmpty) Left("usage: <java call> <repository path> [READWRITE] [DEFLATE]")
+    else FileSystem(
+      repositoryPath = args(0),
+      writeEnabled = args.contains("READWRITE"),
+      deflate = args.contains("DEFLATE")
+    )
 
   
   import org.eclipse.jetty.server.Server
