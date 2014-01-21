@@ -20,4 +20,10 @@ if "%JAVA_HOME%"=="" (
 cd ..
 call "%SBT_HOME%\bin\sbt.bat" ;xitrumPackage ;davserver/xitrumPackage
 cd davserver
-start "davserver" "%JAVA_HOME%\bin\java.exe" -cp target/xitrum/lib/* net.diet_rich.dedup.webdav.ServerApp
+
+if "%PAUSEONEXIT%"=="" (
+	start "davserver" "%JAVA_HOME%\bin\java.exe" -cp target/xitrum/lib/* net.diet_rich.dedup.webdav.ServerApp
+) else (
+	"%JAVA_HOME%\bin\java.exe" -cp target/xitrum/lib/* net.diet_rich.dedup.webdav.ServerApp
+	pause
+)
