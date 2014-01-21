@@ -21,9 +21,8 @@ cd ..
 call "%SBT_HOME%\bin\sbt.bat" ;xitrumPackage ;davserver/xitrumPackage
 cd davserver
 
-if "%PAUSEONEXIT%"=="" (
+if "%RUNINLINE%"=="" (
 	start "davserver" "%JAVA_HOME%\bin\java.exe" -cp target/xitrum/lib/* net.diet_rich.dedup.webdav.ServerApp
 ) else (
 	"%JAVA_HOME%\bin\java.exe" -cp target/xitrum/lib/* net.diet_rich.dedup.webdav.ServerApp
-	pause
 )

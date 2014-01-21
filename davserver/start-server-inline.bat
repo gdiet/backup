@@ -1,3 +1,3 @@
 @echo off
-set PAUSEONEXIT=true
+set RUNINLINE=true
 call %~dp0start-server.bat
