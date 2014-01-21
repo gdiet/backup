@@ -10,16 +10,16 @@ import net.diet_rich.util.vals._
 import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.datastore.DataStore2
 
-class Repository(val basedir: File, val readonly: Boolean) { import Repository._
+class Repository(val basedir: File, val readonly: Boolean, enableDbShutdownHook: Boolean = true) { import Repository._
   val settings = readSettingsFile(basedir.child(settingsFileName))
   
   val digesters = new HashDigester(settings(hashKey)) with Digesters with CrcAdler8192
   val dataStore = new DataStore2(basedir, settings(dataSizeKey).toInt, readonly)
 
   private val dbdir = basedir.child(dbDirName)
-  private implicit val connection = getConnection(dbdir, readonly)
+  private implicit val connection = getConnection(dbdir, readonly, enableDbShutdownHook)
   private val lockfile = dbdir.child(s"$dbFileName.lock.db")
-  require(lockfile.isFile, s"Expected database lock file $lockfile to exist.")
+  if (!readonly) require(lockfile.isFile, s"Expected database lock file $lockfile to exist.")
   
   val fs: BackupFileSystem = new BackupFileSystem(digesters, dataStore)
 
@@ -32,7 +32,7 @@ class Repository(val basedir: File, val readonly: Boolean) { import Repository._
     dataStore.shutdown
     execUpdate("SHUTDOWN")
     Thread.sleep(300)
-    require(!lockfile.exists, s"Expected database lock file $lockfile not to exist any more.")
+    if (!readonly) require(!lockfile.exists, s"Expected database lock file $lockfile not to exist any more.")
     
     if (backupDb) {
       val dateString = new java.text.SimpleDateFormat("yy-MM-dd_HH-mm-ss").format(new java.util.Date)
@@ -77,8 +77,8 @@ object Repository {
   val dataSizeKey = "data size"
   val dbVersionKey = "database version"
     
-  def getConnection(basedir: File, readonly: Boolean) =
-    DBConnection.forH2(s"$basedir/$dbFileName", readonly)
+  def getConnection(basedir: File, readonly: Boolean, enableShutdownHook: Boolean = true) =
+    DBConnection.forH2(s"$basedir/$dbFileName", readonly, enableShutdownHook)
     
   def readFileSettings(basedir: File): Map[String, String] =
     readSettingsFile(basedir.child(Repository.settingsFileName))

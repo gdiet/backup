@@ -9,6 +9,6 @@ package object vals {
   // use AnyRef here to *look for* equals problems (not all might be found)
   // note: AnyRef breaks the == and != relations!
   // use AnyVal to have real value classes
-  type AnyBase = AnyVal
+  type AnyBase = AnyVal // FIXME runtime errors with AnyRef
 
 }

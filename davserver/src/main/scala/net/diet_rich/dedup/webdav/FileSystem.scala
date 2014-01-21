@@ -20,7 +20,7 @@ trait FileSystem {
 object FileSystem {
   def apply(repositoryPath: String, writeEnabled: Boolean, deflate: Boolean): Either[Error, FileSystem] = try {
     val repositoryDir = new File(repositoryPath)
-    val repository = if (repositoryDir isDirectory) Right(new Repository(repositoryDir, !writeEnabled))
+    val repository = if (repositoryDir isDirectory) Right(new Repository(repositoryDir, !writeEnabled, false))
       else Left(s"Repository '$repositoryPath' is not a directory.")
     repository.right map (new DedupFileSystem(_, backupDbOnShutdown = writeEnabled))
   } catch { case e: Throwable => Left(e getMessage) }
