@@ -68,7 +68,7 @@ trait TreeDB { import TreeDB._
   
   /** Note: If the children are not consumed immediately, they must be stored e.g. by calling *.toList.
    *  @return The children, empty if no such node. */
-  def children(parent: TreeEntryID): Iterable[TreeEntry] =
+  def children(parent: TreeEntryID): Seq[TreeEntry] =
     queryChildren(parent.value)(
       r => TreeEntry(TreeEntryID(r long 1), Some(parent), r string 2, NodeType(r int 3), Time(r long 4), DataEntryID(r longOption 5))
     ).toSeq

@@ -4,21 +4,33 @@
 package net.diet_rich.dedup.webdav
 
 import io.milton.http.ResourceFactory
-import io.milton.resource.Resource
-import net.diet_rich.util.Logging
 import io.milton.resource.CollectionResource
-import net.diet_rich.util.CallLogging
+import io.milton.resource.Resource
 
-class DedupResourceFactory(fileSystem: FileSystem) extends ResourceFactory with CallLogging {
+import net.diet_rich.dedup.database.TreeEntry
+import net.diet_rich.dedup.database.NodeType
+import net.diet_rich.util.CallLogging
+import net.diet_rich.util.Logging
+
+class DedupResourceFactory(fileSystem: FileSystem) extends ResourceFactory with Logging with CallLogging {
   
   override def getResource(host: String, path: String): Resource = info(s"getResource(host: $host, path: $path)") {
-    if (path == "/")
-      new AbstractResource with CollectionResource {
-        def getName(): String = ""
-        def child(childName: String): Resource = null
-        def getChildren(): java.util.List[_ <: Resource] = java.util.Collections.emptyList()
-      }
-    else null
+    val treeEntry = fileSystem entry path
+    treeEntry map getResourceFromTreeEntry getOrElse null
   }
-
+  
+  private def getResourceFromTreeEntry(treeEntry: TreeEntry): Resource =
+    treeEntry.dataid match {
+      case None =>
+        if (treeEntry.nodeType != NodeType.DIR) log warn s"tree entry ${treeEntry.id} is not a directory as expected: ${fileSystem path treeEntry.id getOrElse "?"}"
+        val name: String = treeEntry.name
+        val childForName: String => Option[Resource] = childName => fileSystem child (treeEntry.id, childName) map getResourceFromTreeEntry
+        val children: () => Seq[Resource] = () => fileSystem children treeEntry.id map getResourceFromTreeEntry
+        new DirectoryResource(name, childForName, children)
+      case Some(dataid) =>
+        if (treeEntry.nodeType != NodeType.FILE) log warn s"tree entry ${treeEntry.id} is not a file as expected: ${fileSystem path treeEntry.id getOrElse "?"}"
+        // FIXME implement FileResource
+        null
+    }
+  
 }
