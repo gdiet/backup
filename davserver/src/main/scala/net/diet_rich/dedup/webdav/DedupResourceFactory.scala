@@ -13,8 +13,9 @@ import net.diet_rich.util.CallLogging
 import net.diet_rich.util.Logging
 
 class DedupResourceFactory(fileSystem: FileSystem) extends ResourceFactory with Logging with CallLogging {
+  log info "dedup resource factory created."
   
-  override def getResource(host: String, path: String): Resource = info(s"getResource(host: $host, path: $path)") {
+  override def getResource(host: String, path: String): Resource = debug(s"getResource(host: $host, path: $path)") {
     val treeEntry = fileSystem entry path
     treeEntry map getResourceFromTreeEntry getOrElse null
   }
