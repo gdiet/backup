@@ -12,8 +12,6 @@ import java.util.Date
 import net.diet_rich.util.CallLogging
 
 trait AbstractResource extends DigestResource with PropFindableResource with CallLogging {
-  import AbstractResource._
-  
   // DigestResource
   def authenticate(digestRequest: DigestResponse): Object =
     debug(s"authenticate(digestRequest: '$digestRequest')") { digestRequest.getUser() }
@@ -31,11 +29,6 @@ trait AbstractResource extends DigestResource with PropFindableResource with Cal
   def authorise(request: Request, method: Request.Method, auth: Auth): Boolean =
     debug(s"authorise(request: '$request', method: '$method', auth: '$auth')") { !method.isWrite }
   def getRealm(): String = debug("getRealm()") { "dedup@diet-rich.net" }
-  // TODO for read-write, the current date would probably be the better default
-  def getModifiedDate(): Date = debug("getModifiedDate") { date }
+  def getModifiedDate(): Date
   def checkRedirect(request: Request): String = debug(s"checkRedirect(request: '$request')") { null }
-}
-
-object AbstractResource {
-  val date = new Date()
 }

@@ -18,7 +18,7 @@ case class DataEntry (
 trait DataInfoDB {
   implicit val connection: Connection
   
-  /** @return true if at least one matching data entry is stored. */
+  /** @return the data entry for the data entry id (FIXME test: will throw an exception if not present?). */
   def dataEntry(id: DataEntryID): DataEntry =
     queryDataEntry(id.value)(r => DataEntry(id, Size(r long 1), Print(r long 2), Hash(r bytes 3), Method(r int 4))).nextOnly
   protected val queryDataEntry = 

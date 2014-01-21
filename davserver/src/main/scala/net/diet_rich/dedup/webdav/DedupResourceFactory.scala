@@ -30,8 +30,8 @@ class DedupResourceFactory(fileSystem: FileSystem) extends ResourceFactory with 
         new DirectoryResource(name, childForName, children)
       case Some(dataid) =>
         if (treeEntry.nodeType != NodeType.FILE) log warn s"tree entry ${treeEntry.id} is not a file as expected: ${fileSystem path treeEntry.id getOrElse "?"}"
-        // FIXME implement FileResource
-        null
+        val dataEntry = fileSystem.dataEntry(dataid)
+        new FileResource(treeEntry, dataEntry.size.value, fileSystem.bytes(dataid, dataEntry.method))
     }
   
 }

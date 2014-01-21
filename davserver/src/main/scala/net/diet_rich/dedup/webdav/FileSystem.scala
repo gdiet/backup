@@ -3,18 +3,19 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.webdav
 
-import net.diet_rich.dedup.database.TreeEntry
-import net.diet_rich.dedup.database.TreeEntryID
-import net.diet_rich.util.CallLogging
-import java.io.File
+import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.repository.Repository
-import net.diet_rich.dedup.database.Path
+import net.diet_rich.util.CallLogging
+import net.diet_rich.util.io.ByteSource
+import java.io.File
 
 trait FileSystem {
   def entry(path: String): Option[TreeEntry]
   def path(id: TreeEntryID): Option[String]
   def children(id: TreeEntryID): Seq[TreeEntry]
   def child(id: TreeEntryID, childName: String): Option[TreeEntry]
+  def dataEntry(dataid: DataEntryID): DataEntry
+  def bytes(dataid: DataEntryID, method: Method): ByteSource
 }
 
 object FileSystem {
@@ -35,4 +36,6 @@ class DedupFileSystem(repository: Repository, backupDbOnShutdown: Boolean) exten
   def path(id: TreeEntryID): Option[String] = debug(s"path(id: $id)") { repository.fs path id map (_.value) }
   def children(id: TreeEntryID): Seq[TreeEntry] = debug(s"children(id: $id)") { repository.fs children id }
   def child(id: TreeEntryID, childName: String): Option[TreeEntry] = debug(s"child(id: $id, childName: $childName)") { repository.fs child(id, childName) }
+  def dataEntry(dataid: DataEntryID): DataEntry = debug(s"dataEntry(dataid: $dataid)") { repository.fs.dataEntry(dataid) }
+  def bytes(dataid: DataEntryID, method: Method) = debug(s"bytes(dataid: $dataid, method: $method)") { repository.fs.read(dataid, method) }
 }
