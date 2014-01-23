@@ -3,23 +3,35 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.webdav
 
+import java.util.Date
+import java.util.{List => JavaList}
+
+import scala.collection.JavaConverters.seqAsJavaListConverter
+
 import io.milton.resource.CollectionResource
 import io.milton.resource.Resource
-import java.util.{Date, List => JavaList}
-import net.diet_rich.dedup.database.TreeEntryID
+import net.diet_rich.dedup.database.TreeEntry
 import net.diet_rich.util.CallLogging
-import scala.collection.JavaConverters._
 
 // note: extend MakeCollectionableResource to enable creating directories (and files?)
 // also have a look at FolderResource
-class DirectoryResource(name: String, childForName: String => Option[Resource], children: () => Seq[Resource]) extends AbstractResource with CollectionResource with CallLogging {
-  def getName(): String = debug("getName()") { name }
-  def child(childName: String): Resource = debug(s"child(childName: '$childName')") { childForName(childName) getOrElse null }
-  def getChildren(): JavaList[_ <: Resource] = debug("getChildren()") { children() asJava }
+class DirectoryResource(protected val fileSystem: DedupFileSystem, protected val treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) extends AbstractResource with CollectionResource with CallLogging {
+  def getName(): String = debug("getName()") { treeEntry name }
+  def child(childName: String): Resource = debug(s"child(childName: '$childName')") {
+    fileSystem child (treeEntry.id, childName) map resourceFactory.getResourceFromTreeEntry getOrElse null
+  }
+  def getChildren(): JavaList[_ <: Resource] = debug("getChildren()") {
+    fileSystem children treeEntry.id  map resourceFactory.getResourceFromTreeEntry asJava
+  }
   // TODO for read-write, the current date would probably be better?
   def getModifiedDate(): Date = debug("getModifiedDate") { DirectoryResource.date }
 }
 
 object DirectoryResource {
   val date = new Date()
+  
+  def readonly(fileSystem: DedupFileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) =
+    new DirectoryResource(fileSystem, treeEntry, resourceFactory)
+  def readwrite(fileSystem: DedupFileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) =
+    new DirectoryResource(fileSystem, treeEntry, resourceFactory) with DirectoryWriteResource
 }

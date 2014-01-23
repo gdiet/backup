@@ -4,13 +4,11 @@
 package net.diet_rich.dedup.webdav
 
 import io.milton.http._
-import io.milton.resource.DeletableResource
-
+import io.milton.resource.DeletableCollectionResource
 import net.diet_rich.dedup.database.TreeEntry
-import net.diet_rich.util.CallLogging
-import net.diet_rich.util.Logging
+import net.diet_rich.util._
 
-trait FileWriteResource extends DeletableResource with Logging with CallLogging {
+trait DirectoryWriteResource extends DeletableCollectionResource with Logging with CallLogging {
   protected val treeEntry: TreeEntry
   protected val fileSystem: DedupFileSystem
   
@@ -18,7 +16,10 @@ trait FileWriteResource extends DeletableResource with Logging with CallLogging 
     debug(s"authorise(request: '$request', method: '$method', auth: '$auth')") { true }
   
   def delete(): Unit = debug("delete()") {
-    log info s"deleting file ${treeEntry name}, ${treeEntry id}"
-    if (!fileSystem.markDeleted(treeEntry id)) log warn s"could not delete file ${treeEntry name}, ${treeEntry id}"
+    log info s"deleting directory ${treeEntry name}, ${treeEntry id}"
+    if (!fileSystem.markDeleted(treeEntry id)) log warn s"could not delete directory ${treeEntry name}, ${treeEntry id}"
+  }
+  def isLockedOutRecursive(request: Request): Boolean = debug(s"isLockedOutRecursive(request: $request) for directory ${treeEntry name}, ${treeEntry id}") {
+    false
   }
 }

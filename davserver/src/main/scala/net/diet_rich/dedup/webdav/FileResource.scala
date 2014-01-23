@@ -39,6 +39,7 @@ extends AbstractResource with GetableResource with CallLogging {
 }
 
 object FileResource {
+  // FIXME size / bytes
   def readonly(fileSystem: DedupFileSystem, treeEntry: TreeEntry, size: Long, bytes: => ByteSource) =
     new FileResource(fileSystem, treeEntry, size, bytes)
   def readwrite(fileSystem: DedupFileSystem, treeEntry: TreeEntry, size: Long, bytes: => ByteSource) =

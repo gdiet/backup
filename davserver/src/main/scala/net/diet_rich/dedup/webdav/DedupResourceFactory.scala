@@ -16,20 +16,18 @@ class DedupResourceFactory(fileSystem: DedupFileSystem, writeEnabled: Boolean) e
   log info s"write access is ${if (writeEnabled) "ENABLED" else "DISABLED"}."
   
   private val fileResourceFactory = if (writeEnabled) FileResource.readwrite _ else FileResource.readonly _
+  private val directoryResourceFactory = if (writeEnabled) DirectoryResource.readwrite _ else DirectoryResource.readonly _
   
   override def getResource(host: String, path: String): Resource = debug(s"getResource(host: $host, path: $path)") {
     val treeEntry = fileSystem entry path
     treeEntry map getResourceFromTreeEntry getOrElse null
   }
   
-  private def getResourceFromTreeEntry(treeEntry: TreeEntry): Resource =
+  def getResourceFromTreeEntry(treeEntry: TreeEntry): Resource =
     treeEntry.dataid match {
       case None =>
         if (treeEntry.nodeType != NodeType.DIR) log warn s"tree entry ${treeEntry.id} is not a directory as expected: ${fileSystem path treeEntry.id getOrElse "?"}"
-        val name: String = treeEntry.name
-        val childForName: String => Option[Resource] = childName => fileSystem child (treeEntry.id, childName) map getResourceFromTreeEntry
-        val children: () => Seq[Resource] = () => fileSystem children treeEntry.id map getResourceFromTreeEntry
-        new DirectoryResource(name, childForName, children)
+        directoryResourceFactory(fileSystem, treeEntry, this)
       case Some(dataid) =>
         if (treeEntry.nodeType != NodeType.FILE) log warn s"tree entry ${treeEntry.id} is not a file as expected: ${fileSystem path treeEntry.id getOrElse "?"}"
         val dataEntry = fileSystem.dataEntry(dataid)
