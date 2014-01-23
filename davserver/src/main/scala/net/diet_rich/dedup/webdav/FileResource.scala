@@ -18,10 +18,12 @@ import scala.collection.JavaConverters._
 
 // Note: Extend MakeCollectionableResource to enable creating directories (and files?); also have a look at FolderResource
 // Note: Currently, FileResource is immutable. Possibly, we want to reflect changes to file system entries?
-class FileResource(protected val fileSystem: DedupFileSystem, protected val treeEntry: TreeEntry, size: Long, bytes: => ByteSource) 
+class FileResource(protected val fileSystem: DedupFileSystem, protected val treeEntry: TreeEntry) 
 extends AbstractResource with GetableResource with CallLogging {
+  private val dataEntry = fileSystem.dataEntry(treeEntry.dataid get)
+
   def getName(): String = debug("getName()") { treeEntry.name }
-  def getContentLength(): JavaLong = debug("getContentLength()") { size }
+  def getContentLength(): JavaLong = debug("getContentLength()") { dataEntry.size value }
   def getContentType(accepts: String): String = debug(s"getContentType(accepts: $accepts)") {
     assume(accepts == null || accepts.split(",").contains("application/octet-stream"))
     "application/octet-stream"
@@ -34,14 +36,13 @@ extends AbstractResource with GetableResource with CallLogging {
     debug(s"sendContent(out, range: $range, params: ${params asScala}, contentType: $contentType)") {
       require(contentType == "application/octet-stream")
       require(range == null)
-      bytes copyTo out
+      fileSystem bytes (dataEntry id, dataEntry method) copyTo out
     }
 }
 
 object FileResource {
-  // FIXME size / bytes
-  def readonly(fileSystem: DedupFileSystem, treeEntry: TreeEntry, size: Long, bytes: => ByteSource) =
-    new FileResource(fileSystem, treeEntry, size, bytes)
-  def readwrite(fileSystem: DedupFileSystem, treeEntry: TreeEntry, size: Long, bytes: => ByteSource) =
-    new FileResource(fileSystem, treeEntry, size, bytes) with FileWriteResource
+  def readonly(fileSystem: DedupFileSystem, treeEntry: TreeEntry) =
+    new FileResource(fileSystem, treeEntry)
+  def readwrite(fileSystem: DedupFileSystem, treeEntry: TreeEntry) =
+    new FileResource(fileSystem, treeEntry) with FileWriteResource
 }

@@ -26,12 +26,11 @@ class DedupResourceFactory(fileSystem: DedupFileSystem, writeEnabled: Boolean) e
   def getResourceFromTreeEntry(treeEntry: TreeEntry): Resource =
     treeEntry.dataid match {
       case None =>
-        if (treeEntry.nodeType != NodeType.DIR) log warn s"tree entry ${treeEntry.id} is not a directory as expected: ${fileSystem path treeEntry.id getOrElse "?"}"
+        if (treeEntry.nodeType != NodeType.DIR) log warn s"tree entry ${treeEntry.id} is not of type directory as expected: ${fileSystem path treeEntry.id getOrElse "?"}"
         directoryResourceFactory(fileSystem, treeEntry, this)
       case Some(dataid) =>
-        if (treeEntry.nodeType != NodeType.FILE) log warn s"tree entry ${treeEntry.id} is not a file as expected: ${fileSystem path treeEntry.id getOrElse "?"}"
-        val dataEntry = fileSystem.dataEntry(dataid)
-        fileResourceFactory(fileSystem, treeEntry, dataEntry.size.value, fileSystem.bytes(dataid, dataEntry.method))
+        if (treeEntry.nodeType != NodeType.FILE) log warn s"tree entry ${treeEntry.id} is not of type file as expected: ${fileSystem path treeEntry.id getOrElse "?"}"
+        fileResourceFactory(fileSystem, treeEntry)
     }
   
 }
