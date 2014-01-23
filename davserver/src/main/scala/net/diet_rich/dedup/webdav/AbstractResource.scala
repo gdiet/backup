@@ -12,11 +12,15 @@ import io.milton.resource.DigestResource
 import io.milton.resource.PropFindableResource
 import net.diet_rich.dedup.database.TreeEntry
 import net.diet_rich.util.CallLogging
+import net.diet_rich.util.Logging
 
-trait AbstractResource extends DigestResource with PropFindableResource with CallLogging {
-  protected val treeEntry: TreeEntry
-  protected val fileSystem: DedupFileSystem
-  protected def resourcePath = fileSystem path treeEntry.id getOrElse treeEntry.toString
+trait AbstractResource extends DigestResource with PropFindableResource with Logging with CallLogging {
+  val typeIdentifier: String
+  val treeEntry: TreeEntry
+  val fileSystem: DedupFileSystem
+  
+  private def resourcePath = fileSystem path treeEntry.id getOrElse treeEntry.toString
+  override def toString() = s"$typeIdentifier($resourcePath)"
 
   // DigestResource
   def authenticate(digestRequest: DigestResponse): Object =

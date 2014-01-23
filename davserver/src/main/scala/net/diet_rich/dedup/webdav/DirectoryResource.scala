@@ -16,7 +16,7 @@ import net.diet_rich.util.CallLogging
 // note: extend MakeCollectionableResource to enable creating directories (and files?)
 // also have a look at FolderResource
 case class DirectoryResource(fileSystem: DedupFileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) extends AbstractResource with CollectionResource with CallLogging {
-  override def toString() = s"Dir($resourcePath)"
+  val typeIdentifier: String = "Dir"
   
   def getName(): String = debug("getName()") { treeEntry name }
   def child(childName: String): Resource = debug(s"child(childName: '$childName')") {
@@ -26,7 +26,7 @@ case class DirectoryResource(fileSystem: DedupFileSystem, treeEntry: TreeEntry, 
     fileSystem children treeEntry.id  map resourceFactory.getResourceFromTreeEntry asJava
   }
   // TODO for read-write, the current date would probably be better?
-  def getModifiedDate(): Date = debug("getModifiedDate") { DirectoryResource.date }
+  def getModifiedDate(): Date = debug("getModifiedDate") { DirectoryResource.date } //FIXME einfach aus treeentry nehmen (wie bei file?)
 }
 
 object DirectoryResource {

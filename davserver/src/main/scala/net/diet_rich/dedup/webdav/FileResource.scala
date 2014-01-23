@@ -3,24 +3,23 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.webdav
 
+import java.io.OutputStream
+import java.lang.{Long => JavaLong}
+import java.util.Date
+import java.util.{Map => JavaMap}
+
+import scala.collection.JavaConverters.mapAsScalaMapConverter
+
 import io.milton.http.Auth
 import io.milton.http.Range
 import io.milton.resource.GetableResource
-import java.io.OutputStream
-import java.lang.{Long => JavaLong}
-import java.util.{Date, List => JavaList, Map => JavaMap}
-import net.diet_rich.dedup.database.DataEntry
 import net.diet_rich.dedup.database.TreeEntry
-import net.diet_rich.util.CallLogging
-import net.diet_rich.util.io.ByteSource
 import net.diet_rich.util.io.EnhancedByteSource
-import scala.collection.JavaConverters._
 
 // Note: Extend MakeCollectionableResource to enable creating directories (and files?); also have a look at FolderResource
 // Note: Currently, FileResource is immutable. Possibly, we want to reflect changes to file system entries?
-case class FileResource(fileSystem: DedupFileSystem, treeEntry: TreeEntry) 
-extends AbstractResource with GetableResource with CallLogging {
-  override def toString() = s"File($resourcePath)"
+case class FileResource(fileSystem: DedupFileSystem, treeEntry: TreeEntry) extends AbstractResource with GetableResource {
+  val typeIdentifier: String = "File"
   
   private val dataEntry = fileSystem.dataEntry(treeEntry.dataid get)
 
@@ -46,5 +45,5 @@ object FileResource {
   def readonly(fileSystem: DedupFileSystem, treeEntry: TreeEntry) =
     new FileResource(fileSystem, treeEntry)
   def readwrite(fileSystem: DedupFileSystem, treeEntry: TreeEntry) =
-    new FileResource(fileSystem, treeEntry) with FileWriteResource
+    new FileResource(fileSystem, treeEntry) with AbstractWriteResource
 }
