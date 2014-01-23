@@ -16,10 +16,11 @@ trait FileSystem {
   def child(id: TreeEntryID, childName: String): Option[TreeEntry]
   def dataEntry(dataid: DataEntryID): DataEntry
   def bytes(dataid: DataEntryID, method: Method): ByteSource
+  def markDeleted(id: TreeEntryID): Boolean
 }
 
-object FileSystem {
-  def apply(repositoryPath: String, writeEnabled: Boolean, deflate: Boolean): Either[Error, FileSystem] = try {
+object DedupFileSystem {
+  def apply(repositoryPath: String, writeEnabled: Boolean, deflate: Boolean): Either[Error, DedupFileSystem] = try {
     val repositoryDir = new File(repositoryPath)
     val repository = if (repositoryDir isDirectory) Right(new Repository(repositoryDir, !writeEnabled, false))
       else Left(s"Repository '$repositoryPath' is not a directory.")
@@ -38,4 +39,5 @@ class DedupFileSystem(repository: Repository, backupDbOnShutdown: Boolean) exten
   def child(id: TreeEntryID, childName: String): Option[TreeEntry] = debug(s"child(id: $id, childName: $childName)") { repository.fs child(id, childName) }
   def dataEntry(dataid: DataEntryID): DataEntry = debug(s"dataEntry(dataid: $dataid)") { repository.fs.dataEntry(dataid) }
   def bytes(dataid: DataEntryID, method: Method) = debug(s"bytes(dataid: $dataid, method: $method)") { repository.fs.read(dataid, method) }
+  def markDeleted(id: TreeEntryID): Boolean = debug(s"markDeleted(id: $id)") { repository.fs markDeleted id } 
 }

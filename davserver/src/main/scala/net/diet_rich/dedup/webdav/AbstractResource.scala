@@ -25,7 +25,6 @@ trait AbstractResource extends DigestResource with PropFindableResource with Cal
   def getName(): String
   def authenticate(user: String, password: String): Object =
     debug(s"authenticate(user: '$user', password: '$password')") { user }
-  // TODO read-only for now
   def authorise(request: Request, method: Request.Method, auth: Auth): Boolean =
     debug(s"authorise(request: '$request', method: '$method', auth: '$auth')") { !method.isWrite }
   def getRealm(): String = debug("getRealm()") { "dedup@diet-rich.net" }

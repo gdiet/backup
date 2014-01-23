@@ -12,8 +12,10 @@ import net.diet_rich.dedup.database.NodeType
 import net.diet_rich.util.CallLogging
 import net.diet_rich.util.Logging
 
-class DedupResourceFactory(fileSystem: FileSystem) extends ResourceFactory with Logging with CallLogging {
+class DedupResourceFactory(fileSystem: DedupFileSystem, writeEnabled: Boolean) extends ResourceFactory with Logging with CallLogging {
   log info "dedup resource factory created."
+  
+  private val fileResourceFactory = if (writeEnabled) FileResource.readwrite _ else FileResource.readonly _
   
   override def getResource(host: String, path: String): Resource = debug(s"getResource(host: $host, path: $path)") {
     val treeEntry = fileSystem entry path
@@ -31,7 +33,7 @@ class DedupResourceFactory(fileSystem: FileSystem) extends ResourceFactory with 
       case Some(dataid) =>
         if (treeEntry.nodeType != NodeType.FILE) log warn s"tree entry ${treeEntry.id} is not a file as expected: ${fileSystem path treeEntry.id getOrElse "?"}"
         val dataEntry = fileSystem.dataEntry(dataid)
-        new FileResource(treeEntry, dataEntry.size.value, fileSystem.bytes(dataid, dataEntry.method))
+        fileResourceFactory(fileSystem, treeEntry, dataEntry.size.value, fileSystem.bytes(dataid, dataEntry.method))
     }
   
 }

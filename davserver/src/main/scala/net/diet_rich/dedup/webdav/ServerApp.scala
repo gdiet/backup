@@ -3,29 +3,39 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.webdav
 
-object ServerApp extends App {
-  // Filesystem bei Fehler runterfahren
+import net.diet_rich.util.Logging
+
+object ServerApp extends App with Logging {
+  val writeEnabled = args.contains("READWRITE")
+  val deflate = args.contains("DEFLATE")
+  
   val maybeServer = for {
-    fileSystem <- initFileSystem(if (args.isEmpty) Array("../target/playRepo") else args).right
+    repositoryPath <- repositoryPathFromArgs(args).right
+    fileSystem <- initFileSystem(repositoryPath).right
+    // TODO Filesystem bei Fehler runterfahren
     server <- initServer(fileSystem).right
   } yield server
   
   maybeServer.fold(println, _ join)
+
+  
+  def repositoryPathFromArgs(args: Array[String]): Either[Error, String] =
+    if (args isEmpty) Left("usage: <java call> <repository path> [READWRITE] [DEFLATE]")
+    else Right(args(0))
   
   
-  def initFileSystem(args: Array[String]): Either[Error, FileSystem] =
-    if (args.isEmpty) Left("usage: <java call> <repository path> [READWRITE] [DEFLATE]")
-    else FileSystem(
-      repositoryPath = args(0),
-      writeEnabled = args.contains("READWRITE"),
-      deflate = args.contains("DEFLATE")
+  def initFileSystem(repositoryPath: String): Either[Error, DedupFileSystem] =
+    DedupFileSystem(
+      repositoryPath = repositoryPath,
+      writeEnabled = writeEnabled,
+      deflate = deflate
     )
 
   
   import org.eclipse.jetty.server.Server
-  def initServer(fileSystem: FileSystem): Either[Error, Server] = {
+  def initServer(fileSystem: DedupFileSystem): Either[Error, Server] = {
     try {
-      val resourceFactory = new DedupResourceFactory(fileSystem)
+      val resourceFactory = new DedupResourceFactory(fileSystem, writeEnabled)
       val miltonConfigurator = new LocalMiltonConfigurator(resourceFactory)
       val miltonFilter = new LocalMiltonFilter(miltonConfigurator)
       val filterHolder = new org.eclipse.jetty.servlet.FilterHolder(miltonFilter)
@@ -36,6 +46,8 @@ object ServerApp extends App {
       val server = new Server(8080)
       server.setHandler(servletHandler)
       server.start()
+      
+      log info s"write access ${if (writeEnabled) "ENABLED" else "DISABLED"}."
       Right(server)
     } catch {
       case e: Exception => Left(e.toString)
