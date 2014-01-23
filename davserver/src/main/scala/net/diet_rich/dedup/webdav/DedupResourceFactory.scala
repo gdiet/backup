@@ -13,7 +13,7 @@ import net.diet_rich.util.CallLogging
 import net.diet_rich.util.Logging
 
 class DedupResourceFactory(fileSystem: DedupFileSystem, writeEnabled: Boolean) extends ResourceFactory with Logging with CallLogging {
-  log info "dedup resource factory created."
+  log info s"write access is ${if (writeEnabled) "ENABLED" else "DISABLED"}."
   
   private val fileResourceFactory = if (writeEnabled) FileResource.readwrite _ else FileResource.readonly _
   

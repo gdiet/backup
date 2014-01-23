@@ -70,10 +70,10 @@ public class LocalMiltonFilter implements javax.servlet.Filter { // *project spe
 //                configurator = new DefaultMiltonConfigurator();
 //            }
 // *project specific* (END)
-            log.info("Using configurator: " + configurator.getClass());
+            log.debug("Using configurator: " + configurator.getClass()); // project specific
 
             String sExcludePaths = config.getInitParameter("milton.exclude.paths");
-            log.info("init: exclude paths: " + sExcludePaths);
+            log.debug("init: exclude paths: " + sExcludePaths); // project specific
             if (sExcludePaths != null) {
                 excludeMiltonPaths = sExcludePaths.split(",");
             }

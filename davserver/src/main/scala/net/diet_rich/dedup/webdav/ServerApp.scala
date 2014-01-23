@@ -5,7 +5,7 @@ package net.diet_rich.dedup.webdav
 
 import net.diet_rich.util.Logging
 
-object ServerApp extends App with Logging {
+object ServerApp extends App {
   val writeEnabled = args.contains("READWRITE")
   val deflate = args.contains("DEFLATE")
   
@@ -46,8 +46,6 @@ object ServerApp extends App with Logging {
       val server = new Server(8080)
       server.setHandler(servletHandler)
       server.start()
-      
-      log info s"write access ${if (writeEnabled) "ENABLED" else "DISABLED"}."
       Right(server)
     } catch {
       case e: Exception => Left(e.toString)
