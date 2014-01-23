@@ -18,8 +18,10 @@ import scala.collection.JavaConverters._
 
 // Note: Extend MakeCollectionableResource to enable creating directories (and files?); also have a look at FolderResource
 // Note: Currently, FileResource is immutable. Possibly, we want to reflect changes to file system entries?
-class FileResource(protected val fileSystem: DedupFileSystem, protected val treeEntry: TreeEntry) 
+case class FileResource(fileSystem: DedupFileSystem, treeEntry: TreeEntry) 
 extends AbstractResource with GetableResource with CallLogging {
+  override def toString() = s"File($resourcePath)"
+  
   private val dataEntry = fileSystem.dataEntry(treeEntry.dataid get)
 
   def getName(): String = debug("getName()") { treeEntry.name }

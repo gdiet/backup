@@ -3,15 +3,21 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.webdav
 
-import io.milton.http._
-import io.milton.http.http11.auth.DigestResponse
-import io.milton.resource._
-
 import java.util.Date
 
+import io.milton.http.Auth
+import io.milton.http.Request
+import io.milton.http.http11.auth.DigestResponse
+import io.milton.resource.DigestResource
+import io.milton.resource.PropFindableResource
+import net.diet_rich.dedup.database.TreeEntry
 import net.diet_rich.util.CallLogging
 
 trait AbstractResource extends DigestResource with PropFindableResource with CallLogging {
+  protected val treeEntry: TreeEntry
+  protected val fileSystem: DedupFileSystem
+  protected def resourcePath = fileSystem path treeEntry.id getOrElse treeEntry.toString
+
   // DigestResource
   def authenticate(digestRequest: DigestResponse): Object =
     debug(s"authenticate(digestRequest: '$digestRequest')") { digestRequest.getUser() }
