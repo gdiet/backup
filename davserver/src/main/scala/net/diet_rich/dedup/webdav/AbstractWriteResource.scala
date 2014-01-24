@@ -15,7 +15,7 @@ trait AbstractWriteResource extends DeletableResource with MoveableResource { _:
     debug(s"authorise(request: '$request', method: '$method', auth: '$auth')") { true }
   
   def delete(): Unit = debug("delete()") {
-    log info s"deleting file ${treeEntry name}, ${treeEntry id}"
+    log info s"deleting $typeIdentifier ${treeEntry name}, ${treeEntry id}"
     if (!fileSystem.markDeleted(treeEntry id)) log warn s"could not delete $this, ${treeEntry id}"
   }
   

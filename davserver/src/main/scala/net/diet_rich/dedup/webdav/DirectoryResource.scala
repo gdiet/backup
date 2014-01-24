@@ -16,7 +16,7 @@ import net.diet_rich.util.CallLogging
 // note: extend MakeCollectionableResource to enable creating directories (and files?)
 // also have a look at FolderResource
 case class DirectoryResource(fileSystem: DedupFileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) extends AbstractResource with CollectionResource with CallLogging {
-  val typeIdentifier: String = "Dir"
+  val typeIdentifier: String = "Directory"
   
   def getName(): String = debug("getName()") { treeEntry name }
   def child(childName: String): Resource = debug(s"child(childName: '$childName')") {
