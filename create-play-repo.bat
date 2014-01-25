@@ -9,6 +9,14 @@ if "%SBT_HOME%"=="" (
 	exit /b -1
 )
 
+if "%JAVA_HOME%"=="" (
+	echo.
+	echo JAVA_HOME is not set, exiting...
+	echo.
+	pause
+	exit /b -1
+)
+
 call "%SBT_HOME%\bin\sbt.bat" xitrumPackage
 
 set repo=target\playRepo
@@ -18,7 +26,7 @@ md %repo%
 
 set classpath=target/xitrum/lib/*
 
-java -cp %classpath% net.diet_rich.dedup.repository.Create -r %repo% -g n
-java -cp %classpath% net.diet_rich.dedup.backup.Backup -r %repo% -g n -s src -t /src -i n
+"%JAVA_HOME%\bin\java.exe" -cp %classpath% net.diet_rich.dedup.repository.Create -r %repo% -g n
+"%JAVA_HOME%\bin\java.exe" -cp %classpath% net.diet_rich.dedup.backup.Backup -r %repo% -g n -s src -t /src -i n
 
 pause

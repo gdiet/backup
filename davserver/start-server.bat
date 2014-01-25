@@ -11,7 +11,7 @@ if "%SBT_HOME%"=="" (
 
 if "%JAVA_HOME%"=="" (
 	echo.
-	echo SBT_HOME is not set, exiting...
+	echo JAVA_HOME is not set, exiting...
 	echo.
 	pause
 	exit /b -1
