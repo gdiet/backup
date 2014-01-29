@@ -12,6 +12,12 @@ syntax: regexp
 ^davserver/bin/
 ^davserver/src/test/scala/tryout/
 ^davserver/target/
+^ftpserver/.cache
+^ftpserver/.classpath
+^ftpserver/.project
+^ftpserver/\.settings/org\.scala-ide\.sdt\.core\.prefs
+^ftpserver/bin/
+^ftpserver/target/
 ^lib_managed/
 ^project/project/
 ^project/target/

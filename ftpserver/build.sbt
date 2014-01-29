@@ -1,17 +1,17 @@
 version := "0.03-SNAPSHOT"
 
-lazy val dedup = project.in(file("."))
 
-lazy val davserver = project.dependsOn(dedup)
-
-lazy val ftpserver = project.dependsOn(dedup)
-
-//   "org.specs2" %% "specs2" % "2.3.7" % "test"
 libraryDependencies ++= Seq (
-  "com.h2database" % "h2" % "1.3.174"
+  "org.apache.ftpserver" % "ftpserver-core" % "1.0.6",
+  "ch.qos.logback" % "logback-classic" % "1.0.13"
 )
 
+
+// other settings
+
 EclipseKeys.eclipseOutput := Some("bin")
+
+EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Resource
 
 EclipseKeys.withSource := true
 
