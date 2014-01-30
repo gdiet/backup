@@ -6,9 +6,9 @@ lazy val davserver = project.dependsOn(dedup)
 
 lazy val ftpserver = project.dependsOn(dedup)
 
-//   "org.specs2" %% "specs2" % "2.3.7" % "test"
 libraryDependencies ++= Seq (
-  "com.h2database" % "h2" % "1.3.174"
+  "com.h2database" % "h2" % "1.3.174",
+  "org.specs2" %% "specs2" % "2.3.7" % "test"
 )
 
 EclipseKeys.eclipseOutput := Some("bin")

@@ -54,8 +54,9 @@ package object sql {
     statement
   }
 
-  private def execQuery[T](stat: PreparedStatement, args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T] = {
+  private def execQueryAka[T](stat: PreparedStatement, aka: => String, args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T] = {
     val resultSet = new WrappedSQLResult(setArguments(stat, args:_*).executeQuery)
+    // FIXME error messages for ResultIterator
     new ResultIterator[T] {
       var hasNextIsChecked = false
       var hasNextResult = false
@@ -67,15 +68,18 @@ package object sql {
         hasNextResult // TODO if no more elements, close the result set?
       }
       override def next : T = {
-        if (!hasNext) throw new NoSuchElementException
+        if (!hasNext) throw new NoSuchElementException(s"Retrieving $aka failed." format (args:_*))
         hasNextIsChecked = false
         processor(resultSet)
       }
     }
   }
   
+  private def akaString(aka: String, statement: String, args: Seq[Any]) =
+    if (aka isEmpty) s"'$statement' ${args.toList mkString ("(", ", ", ")")}" else aka
+  
   def execQuery[T](command: String, args: Any*)(processor: WrappedSQLResult => T)(implicit connection: Connection): ResultIterator[T] =
-    execQuery(connection prepareStatement command, args:_*)(processor)
+    execQueryAka(connection prepareStatement command, akaString("", command, args), args:_*)(processor)
 
   private def execUpdate(preparedStatement: PreparedStatement, args: Any*): Int =
     setArguments(preparedStatement, args:_*) executeUpdate()
@@ -89,12 +93,13 @@ package object sql {
   def execUpdate(command: String, args: Any*)(implicit connection: Connection): Int =
     setArguments(connection prepareStatement command, args:_*) executeUpdate()
   
-  def prepareQuery(statement: String)(implicit connection: Connection): SqlQuery =
+  // FIXME make aka mandatory
+  def prepareQuery(statement: String, aka: String = "")(implicit connection: Connection): SqlQuery =
     new SqlQuery {
       protected val prepared =
         ScalaThreadLocal(connection prepareStatement statement, statement)
       override def apply[T](args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T] =
-        execQuery(prepared, args:_*)(processor)
+        execQueryAka(prepared, akaString(aka, statement, args), args:_*)(processor)
     }
 
   def prepareUpdate(statement: String)(implicit connection: Connection): SqlUpdate =
