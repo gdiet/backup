@@ -4,9 +4,10 @@
 package net.diet_rich.dedup.backup
 
 import net.diet_rich.dedup.database._
+import net.diet_rich.dedup.datastore.StoreMethods
+import net.diet_rich.util.Hash
 import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
-import net.diet_rich.dedup.datastore.StoreMethods
 
 class StoreAlgorithm[SourceType <: TreeSource[SourceType]](
   fs: BackupFileSystem,

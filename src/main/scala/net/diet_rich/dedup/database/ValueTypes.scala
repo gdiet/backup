@@ -15,12 +15,6 @@ object DataEntryID {
 
 case class Print(value: Long)
 
-case class Hash(value: Array[Byte]) {
-  def !==(a: Hash) = ! ===(a)
-  def ===(a: Hash) = java.util.Arrays.equals(value, a.value)
-  override def equals(a: Any) = ???
-}
-
 case class Path(value: String) {
   def +(string: String) = Path(value + string)
   def parent: Path =

@@ -73,7 +73,7 @@ object Restore extends CmdApp {
         try { target.setLastModified(source.time.value) }
         catch { case e: Throwable =>
           // workaroud for java bug: can read, but can't set negative time stamp
-          // TODO collect problem
+          // TODO 09 collect problem
           con.println(s"WARNING: Could not set time ${source.time} for $target - $e")
         }
     }

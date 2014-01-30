@@ -56,7 +56,7 @@ package object sql {
 
   private def execQueryAka[T](stat: PreparedStatement, aka: => String, args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T] = {
     val resultSet = new WrappedSQLResult(setArguments(stat, args:_*).executeQuery)
-    // FIXME error messages for ResultIterator
+    // FIXME 3 error messages for ResultIterator
     new ResultIterator[T] {
       var hasNextIsChecked = false
       var hasNextResult = false
@@ -65,7 +65,7 @@ package object sql {
           hasNextResult = resultSet.next
           hasNextIsChecked = true
         }
-        hasNextResult // TODO if no more elements, close the result set?
+        hasNextResult // TODO 10 if no more elements, close the result set?
       }
       override def next : T = {
         if (!hasNext) throw new NoSuchElementException(s"Retrieving $aka failed." format (args:_*))
@@ -93,7 +93,7 @@ package object sql {
   def execUpdate(command: String, args: Any*)(implicit connection: Connection): Int =
     setArguments(connection prepareStatement command, args:_*) executeUpdate()
   
-  // FIXME make aka mandatory
+  // FIXME 4 make aka mandatory
   def prepareQuery(statement: String, aka: String = "")(implicit connection: Connection): SqlQuery =
     new SqlQuery {
       protected val prepared =

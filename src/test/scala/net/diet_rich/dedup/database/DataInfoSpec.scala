@@ -5,14 +5,14 @@ package net.diet_rich.dedup.database
 
 import org.specs2.SpecificationWithJUnit
 
-import net.diet_rich.util.Hashes
+import net.diet_rich.util.Hash
 import net.diet_rich.util.init
 
 class DataInfoSpec extends SpecificationWithJUnit { def is = s2"""
   When trying to retrieve a data entry that does not exist, an exception should be thrown $retrieveMissingEntry
   """
   
-  def zeroHash = Hash(Hashes zeroBytesHash "MD5") // FIXME 1 create Hash in Hashes
+  def zeroHash = Hash forEmptyData "MD5"
   def zeroPrint = CrcAdler8192.zeroBytesPrint
 
   implicit def connectionWithTable = init(TestDB.h2mem) { DataInfoDB.createTable(zeroHash, zeroPrint)(_) }

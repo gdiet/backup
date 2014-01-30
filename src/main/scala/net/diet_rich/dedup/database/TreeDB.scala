@@ -4,9 +4,9 @@
 package net.diet_rich.dedup.database
 
 import java.sql.Connection
+import net.diet_rich.util.{Hash, Strings}
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
-import net.diet_rich.util.Strings
 
 case class TreeEntry(
   id: TreeEntryID, 

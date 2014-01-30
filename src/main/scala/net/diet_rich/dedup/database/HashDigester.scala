@@ -3,12 +3,12 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.database
 
-import net.diet_rich.util.Hashes
+import net.diet_rich.util.Hash
 import net.diet_rich.util.io._
 
 class HashDigester(algorithm: String) {
   def filterHash[ReturnType](source: ByteSource)(processor: ByteSource => ReturnType): (Hash, ReturnType) = {
-    val digester = Hashes.instance(algorithm)
+    val digester = Hash instance algorithm
     val wrappedInput = new Object {
       def read(bytes: Array[Byte], offset: Int, length: Int): Int = {
         val size = source.read(bytes, offset, length)
@@ -17,6 +17,6 @@ class HashDigester(algorithm: String) {
       }
     }
     val returned = processor(wrappedInput)
-    (Hash(digester.digest()), returned)
+    (Hash(digester digest), returned)
   }
 }

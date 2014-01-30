@@ -91,7 +91,7 @@ package object io {
     ) && value.delete
   }
   
-  // TODO make value class once nested class restriction is lifted
+  // TODO 11 make value class once nested class restriction is lifted
   implicit class EnhancedByteSource(val value: ByteSource) {
     def copyTo(sink: ByteSink) = {
       val bytes = new Array[Byte](32768)

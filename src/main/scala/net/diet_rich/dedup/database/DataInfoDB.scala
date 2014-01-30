@@ -4,6 +4,7 @@
 package net.diet_rich.dedup.database
 
 import java.sql.Connection
+import net.diet_rich.util.Hash
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
@@ -18,7 +19,7 @@ case class DataEntry (
 trait DataInfoDB {
   implicit val connection: Connection
   
-  /** @return the data entry for the data entry id ( FIXME test: will throw an exception if not present?). */
+  /** @return the data entry for the data entry id. @throws NoSuchElementException */
   def dataEntry(id: DataEntryID): DataEntry =
     queryDataEntry(id.value)(r => DataEntry(id, Size(r long 1), Print(r long 2), Hash(r bytes 3), Method(r int 4))).nextOnly
   protected val queryDataEntry = 

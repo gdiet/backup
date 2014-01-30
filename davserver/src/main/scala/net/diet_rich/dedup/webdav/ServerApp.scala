@@ -6,7 +6,7 @@ package net.diet_rich.dedup.webdav
 import net.diet_rich.util.Logging
 
 // TODO 06 Webdav-Port konfigurierbar
-// TODO 07 Webdav Server Klasse (leicht programmatisch aufrufbar)
+// TODO 07 Webdav Server Klasse (leicht programmatisch aufrufbar) mit Repository-Objekt als Argument
 // TODO 08 Webdav Server Klasse: stopServer Methode
 object ServerApp extends App {
   val writeEnabled = args.contains("READWRITE")

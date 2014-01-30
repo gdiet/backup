@@ -4,6 +4,7 @@
 package net.diet_rich.dedup.database
 
 import java.sql.Connection
+import net.diet_rich.util.Hash
 import net.diet_rich.util.io._
 import net.diet_rich.util.vals._
 

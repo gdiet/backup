@@ -29,7 +29,7 @@ object Create extends CmdApp {
     val repositorySettings = Map(
       Repository.repositoryIdKey -> scala.util.Random.nextLong.toString,
       Repository.repositoryVersionKey -> Repository.repositoryVersion,
-      Repository.hashKey -> Hashes.checkAlgorithm(hashAlgorithm),
+      Repository.hashKey -> Hash.checkAlgorithm(hashAlgorithm),
       Repository.dataSizeKey -> dataSize.toString,
       Repository.dbVersionKey -> Repository.dbVersion
     )
@@ -39,7 +39,7 @@ object Create extends CmdApp {
     val dbdir = repositoryFolder.child(Repository.dbDirName)
     implicit val connection = Repository.getConnection(dbdir, false)
     TreeDB.createTable
-    DataInfoDB.createTable(Hash(Hashes.zeroBytesHash(hashAlgorithm)), CrcAdler8192.zeroBytesPrint)
+    DataInfoDB.createTable(Hash forEmptyData hashAlgorithm, CrcAdler8192.zeroBytesPrint)
     ByteStoreDB.createTable
     SettingsDB.createTable(repositorySettings)
     connection.close()

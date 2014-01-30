@@ -10,7 +10,7 @@ import org.apache.ftpserver.usermanager.PropertiesUserManagerFactory
 import org.apache.ftpserver.ftplet._
 
 // TODO 09 FTP Port konfigurierbar
-// TODO 10 FTP Server Klasse (einzeln start- und stoppbar)
+// TODO 10 FTP Server Klasse (einzeln start- und stoppbar) mit Repository-Objekt als Argument
 object MinaWrapper {
 
   val userManager = {
