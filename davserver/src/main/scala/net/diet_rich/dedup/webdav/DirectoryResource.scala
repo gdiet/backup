@@ -25,8 +25,8 @@ case class DirectoryResource(fileSystem: DedupFileSystem, treeEntry: TreeEntry, 
   def getChildren(): JavaList[_ <: Resource] = debug("getChildren()") {
     fileSystem children treeEntry.id  map resourceFactory.getResourceFromTreeEntry asJava
   }
-  // TODO for read-write, the current date would probably be better?
-  def getModifiedDate(): Date = debug("getModifiedDate") { DirectoryResource.date } //FIXME einfach aus treeentry nehmen (wie bei file?)
+  // TODO 03 for read-write, the current date would probably be better?
+  def getModifiedDate(): Date = debug("getModifiedDate") { DirectoryResource.date } // FIXME 2 einfach aus treeentry nehmen (wie bei file?)
 }
 
 object DirectoryResource {

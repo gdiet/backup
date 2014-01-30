@@ -11,6 +11,8 @@ libraryDependencies ++= Seq (
   "org.specs2" %% "specs2" % "2.3.7" % "test"
 )
 
+(testOptions in Test) += Tests.Argument(TestFrameworks.Specs2, "html")
+
 EclipseKeys.eclipseOutput := Some("bin")
 
 EclipseKeys.withSource := true

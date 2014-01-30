@@ -31,7 +31,7 @@ case class FileResource(fileSystem: DedupFileSystem, treeEntry: TreeEntry) exten
   }
   def getModifiedDate(): Date = debug("getModifiedDate()") { new Date(treeEntry.time.value) }
   def getMaxAgeSeconds(auth: Auth): JavaLong = debug(s"getMaxAgeSeconds(auth: $auth)") {
-    60*60*24 // one day TODO for read-write, it might be best to return null (no caching)?
+    60*60*24 // one day TODO 04 for read-write, it might be best to return null (no caching)?
   }
   def sendContent(out: OutputStream, range: Range, params: JavaMap[String, String], contentType: String) =
     debug(s"sendContent(out, range: $range, params: ${params asScala}, contentType: $contentType)") {

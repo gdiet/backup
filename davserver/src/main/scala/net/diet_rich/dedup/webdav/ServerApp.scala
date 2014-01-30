@@ -5,6 +5,9 @@ package net.diet_rich.dedup.webdav
 
 import net.diet_rich.util.Logging
 
+// TODO 06 Webdav-Port konfigurierbar
+// TODO 07 Webdav Server Klasse (leicht programmatisch aufrufbar)
+// TODO 08 Webdav Server Klasse: stopServer Methode
 object ServerApp extends App {
   val writeEnabled = args.contains("READWRITE")
   val deflate = args.contains("DEFLATE")
@@ -12,7 +15,7 @@ object ServerApp extends App {
   val maybeServer = for {
     repositoryPath <- repositoryPathFromArgs(args).right
     fileSystem <- initFileSystem(repositoryPath).right
-    // TODO Filesystem bei Fehler runterfahren
+    // TODO 05 Filesystem bei Fehler runterfahren
     server <- initServer(fileSystem).right
   } yield server
   
