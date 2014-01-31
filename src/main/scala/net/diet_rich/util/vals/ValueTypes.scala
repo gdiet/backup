@@ -22,4 +22,6 @@ case class Position(value: Long) {
   def asSize: Size = Size(value)
 }
 
-case class Time(val value: Long)
+case class Time(val value: Long) {
+  def asDate = new java.util.Date(value)
+}
