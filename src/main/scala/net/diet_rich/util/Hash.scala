@@ -6,6 +6,7 @@ package net.diet_rich.util
 import java.security.MessageDigest
 
 case class Hash(value: Array[Byte]) {
+  // TODO 12 sensible toString method
   def !==(a: Hash) = ! ===(a)
   def ===(a: Hash) = java.util.Arrays.equals(value, a.value)
   override def equals(a: Any) = ???

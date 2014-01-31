@@ -32,14 +32,20 @@ trait DataInfoDB {
   def hasMatch(size: Size, print: Print): Boolean =
     checkPrint(size.value, print.value)(_.long(1) > 0).next
   protected val checkPrint = 
-    prepareQuery("SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?")
+    prepareQuery(
+      "SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?",
+      "the number of data info entries for length %d and print %d"
+    )
   
   /** @return The data id if a matching data entry is stored. */
   def findMatch(size: Size, print: Print, hash: Hash): Option[DataEntryID] =
     // NOTE: only the first of possibly multiple query results is used
     findEntry(size.value, print.value, hash.value)(p => DataEntryID(p long 1)).nextOption
   protected val findEntry = 
-    prepareQuery("SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?")
+    prepareQuery(
+      "SELECT id FROM DataInfo WHERE length = ? AND print = ? AND hash = ?",
+      "the data info entry for length %d, print %d, hash %d"
+    )
   
   /** @throws Exception if the entry was not created correctly. */
   def createDataEntry(dataid: DataEntryID, size: Size, print: Print, hash: Hash, method: Method): Unit =

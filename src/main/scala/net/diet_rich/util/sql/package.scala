@@ -24,16 +24,17 @@ package object sql {
   }
   
   trait ResultIterator[T] extends Iterator[T] {
+    def resultSetName: String
     def nextOption: Option[T] =
       if (hasNext) Some(next) else None
     def nextOnly: T = {
       val result = next
-      if (hasNext) throw new IllegalStateException("Expected no further results in result set.")
+      if (hasNext) throw new IllegalStateException(s"Expected no further results for $resultSetName.")
       result
     }
     def nextOptionOnly: Option[T] = {
       val result = nextOption
-      if (hasNext) throw new IllegalStateException("Expected no further results in result set.")
+      if (hasNext) throw new IllegalStateException(s"Expected no further results for $resultSetName.")
       result
     }
   }
@@ -56,8 +57,8 @@ package object sql {
 
   private def execQueryAka[T](stat: PreparedStatement, aka: => String, args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T] = {
     val resultSet = new WrappedSQLResult(setArguments(stat, args:_*).executeQuery)
-    // FIXME 3 error messages for ResultIterator
     new ResultIterator[T] {
+      def resultSetName: String = aka format (args:_*)
       var hasNextIsChecked = false
       var hasNextResult = false
       override def hasNext : Boolean = {
@@ -68,7 +69,7 @@ package object sql {
         hasNextResult // TODO 10 if no more elements, close the result set?
       }
       override def next : T = {
-        if (!hasNext) throw new NoSuchElementException(s"Retrieving $aka failed." format (args:_*))
+        if (!hasNext) throw new NoSuchElementException(s"Retrieving element from $resultSetName failed.")
         hasNextIsChecked = false
         processor(resultSet)
       }
@@ -93,8 +94,7 @@ package object sql {
   def execUpdate(command: String, args: Any*)(implicit connection: Connection): Int =
     setArguments(connection prepareStatement command, args:_*) executeUpdate()
   
-  // FIXME 4 make aka mandatory
-  def prepareQuery(statement: String, aka: String = "")(implicit connection: Connection): SqlQuery =
+  def prepareQuery(statement: String, aka: String)(implicit connection: Connection): SqlQuery =
     new SqlQuery {
       protected val prepared =
         ScalaThreadLocal(connection prepareStatement statement, statement)

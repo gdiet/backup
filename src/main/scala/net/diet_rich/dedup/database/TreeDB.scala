@@ -19,21 +19,39 @@ case class TreeEntry(
 trait RespectDeleted {
   implicit protected val connection: Connection
   protected final val queryEntry = 
-    prepareQuery("SELECT parent, name, type, time, dataid FROM TreeEntries WHERE id = ? AND deleted IS NULL")
+    prepareQuery(
+      "SELECT parent, name, type, time, dataid FROM TreeEntries WHERE id = ? AND deleted IS NULL",
+      "the not-deleted tree entry for id %d"
+    )
   protected final val queryChild: SqlQuery = 
-    prepareQuery("SELECT id, type, time, dataid FROM TreeEntries WHERE parent = ? AND name = ? AND deleted IS NULL")
+    prepareQuery(
+      "SELECT id, type, time, dataid FROM TreeEntries WHERE parent = ? AND name = ? AND deleted IS NULL",
+      "the not-deleted tree entry for parent %d with name %s"
+    )
   protected final val queryChildren =
-    prepareQuery("SELECT id, name, type, time, dataid FROM TreeEntries WHERE parent = ? AND deleted IS NULL")
+    prepareQuery(
+      "SELECT id, name, type, time, dataid FROM TreeEntries WHERE parent = ? AND deleted IS NULL",
+      "the not-deleted children of tree entry %d"
+    )
 }
 
 trait IgnoreDeleted {
   implicit protected val connection: Connection
   protected final val queryEntry = 
-    prepareQuery("SELECT parent, name, type, time, dataid FROM TreeEntries WHERE id = ?")
+    prepareQuery(
+      "SELECT parent, name, type, time, dataid FROM TreeEntries WHERE id = ?",
+      "any tree entry for id %d"
+    )
   protected final val queryChild: SqlQuery = 
-    prepareQuery("SELECT id, type, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?")
+    prepareQuery(
+      "SELECT id, type, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?",
+      "any tree entries for parent %d with name %s"
+    )
   protected final val queryChildren =
-    prepareQuery("SELECT id, name, type, time, dataid FROM TreeEntries WHERE parent = ?")
+    prepareQuery(
+      "SELECT id, name, type, time, dataid FROM TreeEntries WHERE parent = ?",
+      "all children of tree entry %d"
+    )
 }
 
 trait TreeDB { import TreeDB._
@@ -81,7 +99,8 @@ trait TreeDB { import TreeDB._
     ).nextOptionOnly
   protected val queryFullDataInformation = prepareQuery(
     "SELECT time, length, print, hash, dataid FROM TreeEntries JOIN DataInfo " +
-    "ON TreeEntries.dataid = DataInfo.id AND TreeEntries.id = ?"
+    "ON TreeEntries.dataid = DataInfo.id AND TreeEntries.id = ?",
+    "the full data information from tree and data info for tree id %d"
   )
   
   /** @return true if the deleted flag was set for the entry. */

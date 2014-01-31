@@ -93,7 +93,10 @@ trait ByteStoreDB {
       }
   }
   protected final val selectEntryParts = 
-    prepareQuery("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY index ASC")
+    prepareQuery(
+      "SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY index ASC",
+      "the store parts for dataid %d"
+    )
     
   def storeAndGetDataId(bytes: Array[Byte], size: Size, method: Method): DataEntryID =
     storeAndGetDataIdAndSize(new java.io.ByteArrayInputStream(bytes, 0, size.value toInt), method)._1
