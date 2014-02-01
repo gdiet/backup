@@ -8,8 +8,8 @@ import org.apache.ftpserver.FtpServerFactory
 import org.apache.ftpserver.usermanager.impl.BaseUser
 import org.apache.ftpserver.usermanager.PropertiesUserManagerFactory
 import org.apache.ftpserver.ftplet._
+import org.apache.ftpserver.listener.ListenerFactory
 
-// TODO 09 FTP Port konfigurierbar
 // TODO 10 FTP Server Klasse (einzeln start- und stoppbar) mit Repository-Objekt als Argument
 object MinaWrapper {
 
@@ -27,8 +27,11 @@ object MinaWrapper {
       def createFileSystemView (user: User) = new FileSysView(repository)
     }
   
-  def server(repository: Repository) = {
+  def server(repository: Repository, ftpPort: Int) = {
+    val listenerFactory = new ListenerFactory()
+    listenerFactory setPort ftpPort
     val serverFactory = new FtpServerFactory()
+    serverFactory.addListener("default", listenerFactory createListener);
     serverFactory.setUserManager(userManager)
     serverFactory.setFileSystem(fileSystemFactory(repository))
     serverFactory.createServer()

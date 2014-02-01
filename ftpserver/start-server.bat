@@ -25,4 +25,5 @@ if "%RUNINLINE%"=="" (
 	start "ftpserver" "%JAVA_HOME%\bin\java.exe" -cp target/xitrum/lib/* net.diet_rich.dedup.ftpserver.FtpServer %*
 ) else (
 	"%JAVA_HOME%\bin\java.exe" -cp target/xitrum/lib/* net.diet_rich.dedup.ftpserver.FtpServer %*
+	pause
 )

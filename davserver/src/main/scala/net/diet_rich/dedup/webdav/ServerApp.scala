@@ -8,6 +8,7 @@ import net.diet_rich.util.Logging
 // TODO 06 Webdav-Port konfigurierbar
 // TODO 07 Webdav Server Klasse (leicht programmatisch aufrufbar) mit Repository-Objekt als Argument
 // TODO 08 Webdav Server Klasse: stopServer Methode
+// TODO 12 Sinnvolle Argument-Verarbeitung, auch für FTPServer
 object ServerApp extends App {
   val writeEnabled = args.contains("READWRITE")
   val deflate = args.contains("DEFLATE")
