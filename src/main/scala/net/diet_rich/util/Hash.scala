@@ -6,10 +6,10 @@ package net.diet_rich.util
 import java.security.MessageDigest
 
 case class Hash(value: Array[Byte]) {
-  // TODO 12 sensible toString method
   def !==(a: Hash) = ! ===(a)
   def ===(a: Hash) = java.util.Arrays.equals(value, a.value)
   override def equals(a: Any) = ???
+  override def toString = s"Hash(${value map ("%02X" format _) mkString})"
 }
 
 object Hash {
