@@ -63,7 +63,7 @@ class FileSysView(repository: Repository) extends FileSystemView {
 
   def getWorkingDirectory(): RepoFile = logAnd("... getWorkingDirectory")(workingDirectory)
 
-  // TODO random access can be easily implemented later on - see FtpFile.createInputStream and FtpFile.createOutputStream
+  // TODO 12 random access can be easily implemented later on - see FtpFile.createInputStream and FtpFile.createOutputStream
   def isRandomAccessible(): Boolean = logAnd("... isRandomAccessible")(false)
 }
 

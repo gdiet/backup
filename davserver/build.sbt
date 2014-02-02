@@ -1,3 +1,6 @@
+// Copyright (c) Georg Dietrich
+// Licensed under the MIT license:
+// http://www.opensource.org/licenses/mit-license.php
 version := "0.03-SNAPSHOT"
 
 
@@ -24,6 +27,11 @@ libraryDependencies ++= Seq (
   // TODO still needed?
   "org.eclipse.jetty" % "jetty-servlet" % "9.1.1.v20140108"
 )
+
+
+// enable JavaFX
+
+unmanagedJars in Compile += file(System.getenv("JAVA_HOME") + "/jre/lib/jfxrt.jar")
 
 
 // other settings
