@@ -4,6 +4,7 @@
 package net.diet_rich.util
 
 import java.sql.{Connection, PreparedStatement}
+import java.sql.Statement.RETURN_GENERATED_KEYS
 
 package object sql {
 
@@ -21,6 +22,10 @@ package object sql {
 
   trait SingleRowSqlUpdate {
     def apply(args: Any*): Unit
+  }
+
+  trait SqlInsertReturnKey {
+    def apply(args: Any*): Long
   }
   
   trait ResultIterator[T] extends Iterator[T] {
@@ -117,4 +122,16 @@ package object sql {
       override def apply(args: Any*): Unit =
         execSingleRowUpdate(prepared, args:_*)
     }
+
+  def prepareInsertReturnKey(statement: String)(implicit connection: Connection): SqlInsertReturnKey =
+    new SqlInsertReturnKey {
+      protected val prepared =
+        ScalaThreadLocal(connection prepareStatement (statement, RETURN_GENERATED_KEYS), statement)
+      override def apply(args: Any*): Long = {
+        val statement = prepared.apply
+        execSingleRowUpdate(statement, args:_*)
+        init(statement getGeneratedKeys) (_ next) getLong 1
+      }
+    }
+
 }
