@@ -5,12 +5,12 @@ package net.diet_rich.dedup.database
 
 case class TreeEntryID(value: Long)
 object TreeEntryID {
-  def apply(value: Option[Long]): Option[TreeEntryID] = value.map(TreeEntryID(_))
+  def apply(value: Option[Long]): Option[TreeEntryID] = value map TreeEntryID.apply
 }
 
 case class DataEntryID(value: Long)
 object DataEntryID {
-  def apply(value: Option[Long]) = value.map(new DataEntryID(_))
+  def apply(value: Option[Long]): Option[DataEntryID] = value map DataEntryID.apply
 }
 
 case class Print(value: Long)
