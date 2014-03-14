@@ -8,8 +8,8 @@ import java.sql.Statement.RETURN_GENERATED_KEYS
 
 package object sql {
 
-  type WrappedConnection = {
-    def con: java.sql.Connection
+  private class PreparedSql(statement: String)(implicit connection: Connection) {
+    val prepared = ScalaThreadLocal(connection prepareStatement statement, statement)
   }
   
   trait SqlQuery {
@@ -100,27 +100,19 @@ package object sql {
     setArguments(connection prepareStatement command, args:_*) executeUpdate()
   
   def prepareQuery(statement: String, aka: String)(implicit connection: Connection): SqlQuery =
-    new SqlQuery {
-      protected val prepared =
-        ScalaThreadLocal(connection prepareStatement statement, statement)
+    new PreparedSql(statement) with SqlQuery {
       override def apply[T](args: Any*)(processor: WrappedSQLResult => T): ResultIterator[T] =
         execQueryAka(prepared, akaString(aka, statement, args), args:_*)(processor)
     }
 
   def prepareUpdate(statement: String)(implicit connection: Connection): SqlUpdate =
-    new SqlUpdate {
-      protected val prepared =
-        ScalaThreadLocal(connection prepareStatement statement, statement)
-      override def apply(args: Any*): Int =
-        execUpdate(prepared, args:_*)
+    new PreparedSql(statement) with SqlUpdate {
+      override def apply(args: Any*): Int = execUpdate(prepared, args:_*)
     }
   
   def prepareSingleRowUpdate(statement: String)(implicit connection: Connection): SingleRowSqlUpdate =
-    new SingleRowSqlUpdate {
-      protected val prepared =
-        ScalaThreadLocal(connection prepareStatement statement, statement)
-      override def apply(args: Any*): Unit =
-        execSingleRowUpdate(prepared, args:_*)
+    new PreparedSql(statement) with SingleRowSqlUpdate {
+      override def apply(args: Any*): Unit = execSingleRowUpdate(prepared, args:_*)
     }
 
   def prepareInsertReturnKey(statement: String)(implicit connection: Connection): SqlInsertReturnKey =
