@@ -25,3 +25,6 @@ case class Position(value: Long) {
 case class Time(val value: Long) {
   def asDate = new java.util.Date(value)
 }
+object Time {
+  def apply(value: Option[Long]): Option[Time] = value map Time.apply
+}
