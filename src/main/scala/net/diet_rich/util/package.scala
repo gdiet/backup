@@ -7,4 +7,7 @@ package object util {
 
   def init[T](t: T)(f: T => Unit): T = { f(t); t }
   
+  implicit class AugmentedString(val string: String) extends AnyVal {
+    def normalizeMultiline = Strings normalizeMultiline string
+  }
 }

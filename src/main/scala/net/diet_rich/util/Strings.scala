@@ -9,6 +9,7 @@ object Strings {
     assume (lines.head isEmpty, s"expected empty first line in multiline string <$string>")
     val leadingBlanks = lines.tail.head.indexWhere(_ != ' ')
     assume (leadingBlanks >= 0, s"expected non-blank in second line of multiline string <$string>")
+    assume (lines.forall(_.take(leadingBlanks).trim isEmpty), s"expected only blanks in the first $leadingBlanks characters of a line in multiline string <$string>")
     val reverse = lines.tail.reverse
     assume (reverse.head.forall(_ == ' '), s"expected only blanks in last line <${reverse.head}> of multiline string <$string>")
     reverse.tail.reverse.map(_.substring(leadingBlanks)).mkString("\n")
