@@ -33,7 +33,7 @@ object Backup extends CmdApp {
     val fileSource = new FileSource(source)
     
     val dateTargetPath = Path(
-      Strings.processSpecialSyntax(opts(TARGET), identity, new java.text.SimpleDateFormat(_).format(new java.util.Date))
+      opts(TARGET) processSpecialSyntax (identity, new java.text.SimpleDateFormat(_).format(new java.util.Date))
     )
     
     val repository = new Repository(new java.io.File(opts(REPOSITORY)), false)

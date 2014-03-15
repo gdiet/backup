@@ -9,5 +9,6 @@ package object util {
   
   implicit class AugmentedString(val string: String) extends AnyVal {
     def normalizeMultiline = Strings normalizeMultiline string
+    def processSpecialSyntax = Strings.processSpecialSyntax(string) _
   }
 }

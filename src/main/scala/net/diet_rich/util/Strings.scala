@@ -15,7 +15,7 @@ object Strings {
     reverse.tail.reverse.map(_.substring(leadingBlanks)).mkString("\n")
   }
   
-  def processSpecialSyntax(string: String, rule1: String=>String, rule2: String=>String): String = {
+  def processSpecialSyntax(string: String)(rule1: String=>String, rule2: String=>String): String = {
     string.split('!').sliding(2, 2).map(_.toList).map{
       case List(a,b) => List(rule1(a), rule2(b))
       case List(a) => List(rule1(a))
