@@ -99,8 +99,9 @@ package object sql {
   def update(command: String, args: Any*)(implicit connection: Connection): Int =
     prepareUpdate(command) apply (args:_*)
   
-  def insertReturnKey(command: String, args: Any*)(implicit connection: Connection): Long =
-    prepareInsertReturnKey(command) apply (args:_*)
+// disabled due to h2 concurrency bug
+//  def insertReturnKey(command: String, args: Any*)(implicit connection: Connection): Long =
+//    prepareInsertReturnKey(command) apply (args:_*)
   
   def prepareQuery(statement: String, aka: String)(implicit connection: Connection): SqlQuery =
     new PreparedSql(statement) with SqlQuery {
@@ -118,15 +119,16 @@ package object sql {
       override def apply(args: Any*): Unit = updateSingleRow(prepared, args:_*)
     }
 
-  def prepareInsertReturnKey(statement: String)(implicit connection: Connection): SqlInsertReturnKey =
-    new SqlInsertReturnKey {
-      protected val prepared =
-        ScalaThreadLocal(connection prepareStatement (statement, RETURN_GENERATED_KEYS), statement)
-      override def apply(args: Any*): Long = {
-        val statement = prepared.apply
-        updateSingleRow(statement, args:_*)
-        init(statement getGeneratedKeys) (_ next) getLong 1
-      }
-    }
+// disabled due to h2 concurrency bug
+//  def prepareInsertReturnKey(statement: String)(implicit connection: Connection): SqlInsertReturnKey =
+//    new SqlInsertReturnKey {
+//      protected val prepared =
+//        ScalaThreadLocal(connection prepareStatement (statement, RETURN_GENERATED_KEYS), statement)
+//      override def apply(args: Any*): Long = {
+//        val statement = prepared.apply
+//        updateSingleRow(statement, args:_*)
+//        init(statement getGeneratedKeys) (_ next) getLong 1
+//      }
+//    }
 
 }

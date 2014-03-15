@@ -78,13 +78,15 @@ trait TreeDB { import TreeDB._
   
   /** @return The child ID.
    *  @throws Exception if the child was not created correctly. */
-  def createAndGetId(parentId: TreeEntryID, name: String, nodeType: NodeType, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID =
-    {
-  println(s"adding to ${parentId.value} child $name")
-  TreeEntryID(addEntry(parentId.value, name, nodeType.value, time.value, dataId.map(_.value)))
-    }
-  protected final val addEntry = 
-    prepareInsertReturnKey("INSERT INTO TreeEntries (parent, name, type, time, dataid) VALUES (?, ?, ?, ?, ?)")
+  def createAndGetId(parentId: TreeEntryID, name: String, nodeType: NodeType, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID = {
+    val id = nextId()(_ long 1).next
+    addEntry(id, parentId.value, name, nodeType.value, time.value, dataId.map(_.value))
+    TreeEntryID(id)
+  }
+  protected final val nextId =
+    prepareQuery("SELECT NEXT VALUE FOR treeEntriesIdSeq;", "the next tree entry ID")
+  protected final val addEntry =
+    prepareUpdate("INSERT INTO TreeEntries (id, parent, name, type, time, dataid) VALUES (?, ?, ?, ?, ?, ?)")
 
   /** @return The entry if any. */
   def entry(id: TreeEntryID): Option[TreeEntry] =
