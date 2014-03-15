@@ -9,5 +9,5 @@ import net.diet_rich.util.sql._
 
 object SqlDBUtil {
   def readAsAtomicLong(statement: String)(implicit connection: Connection): AtomicLong =
-    new AtomicLong(execQuery(statement)(_ longOption 1).nextOnly.get)
+    new AtomicLong(query(statement)(_ longOption 1).nextOnly.get)
 }

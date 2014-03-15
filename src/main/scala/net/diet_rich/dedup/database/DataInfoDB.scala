@@ -58,7 +58,7 @@ object DataInfoDB {
   def createTable(zeroByteHash: Hash, zeroBytePrint: Print)(implicit connection: Connection) : Unit = {
     // length: uncompressed entry size
     // method: store method (0 = PLAIN, 1 = DEFLATE, 2 = LZMA??)
-    execUpdate(net.diet_rich.util.Strings normalizeMultiline s"""
+    update(net.diet_rich.util.Strings normalizeMultiline s"""
       CREATE TABLE DataInfo (
         id     BIGINT PRIMARY KEY,
         length BIGINT NOT NULL,
@@ -67,9 +67,9 @@ object DataInfoDB {
         method INTEGER DEFAULT 0 NOT NULL
       )
     """)
-    execUpdate("CREATE INDEX idxDataInfoDuplicates ON DataInfo(length, print, hash)")
-    execUpdate("CREATE INDEX idxDataInfoFastPrint ON DataInfo(length, print)")
-    execUpdate("INSERT INTO DataInfo (id, length, print, hash) VALUES (0, 0, ?, ?)", zeroBytePrint.value, zeroByteHash.value)
+    update("CREATE INDEX idxDataInfoDuplicates ON DataInfo(length, print, hash)")
+    update("CREATE INDEX idxDataInfoFastPrint ON DataInfo(length, print)")
+    update("INSERT INTO DataInfo (id, length, print, hash) VALUES (0, 0, ?, ?)", zeroBytePrint.value, zeroByteHash.value)
   }
   
 //  def cleanupDuplicatesFromTree(connection: Connection) = {

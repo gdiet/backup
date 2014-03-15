@@ -84,20 +84,23 @@ package object sql {
   private def akaString(aka: String, statement: String, args: Seq[Any]) =
     if (aka isEmpty) s"'$statement' ${args.toList mkString ("(", ", ", ")")}" else aka
   
-  def execQuery[T](command: String, args: Any*)(processor: WrappedSQLResult => T)(implicit connection: Connection): ResultIterator[T] =
+  def query[T](command: String, args: Any*)(processor: WrappedSQLResult => T)(implicit connection: Connection): ResultIterator[T] =
     execQueryAka(connection prepareStatement command, akaString("", command, args), args:_*)(processor)
 
-  private def execUpdate(preparedStatement: PreparedStatement, args: Any*): Int =
+  private def update(preparedStatement: PreparedStatement, args: Any*): Int =
     setArguments(preparedStatement, args:_*) executeUpdate()
 
-  private def execSingleRowUpdate(preparedStatement: PreparedStatement, args: Any*): Unit =
+  private def updateSingleRow(preparedStatement: PreparedStatement, args: Any*): Unit =
     setArguments(preparedStatement, args:_*).executeUpdate() match {
       case 1 => Unit
       case n => throw new IllegalStateException(s"SQL update $preparedStatement returned $n rows instead of 1")
     }
     
-  def execUpdate(command: String, args: Any*)(implicit connection: Connection): Int =
-    setArguments(connection prepareStatement command, args:_*) executeUpdate()
+  def update(command: String, args: Any*)(implicit connection: Connection): Int =
+    prepareUpdate(command) apply args
+  
+  def insertReturnKey(command: String, args: Any*)(implicit connection: Connection): Long =
+    prepareInsertReturnKey(command) apply args
   
   def prepareQuery(statement: String, aka: String)(implicit connection: Connection): SqlQuery =
     new PreparedSql(statement) with SqlQuery {
@@ -107,12 +110,12 @@ package object sql {
 
   def prepareUpdate(statement: String)(implicit connection: Connection): SqlUpdate =
     new PreparedSql(statement) with SqlUpdate {
-      override def apply(args: Any*): Int = execUpdate(prepared, args:_*)
+      override def apply(args: Any*): Int = update(prepared, args:_*)
     }
   
   def prepareSingleRowUpdate(statement: String)(implicit connection: Connection): SingleRowSqlUpdate =
     new PreparedSql(statement) with SingleRowSqlUpdate {
-      override def apply(args: Any*): Unit = execSingleRowUpdate(prepared, args:_*)
+      override def apply(args: Any*): Unit = updateSingleRow(prepared, args:_*)
     }
 
   def prepareInsertReturnKey(statement: String)(implicit connection: Connection): SqlInsertReturnKey =
@@ -121,7 +124,7 @@ package object sql {
         ScalaThreadLocal(connection prepareStatement (statement, RETURN_GENERATED_KEYS), statement)
       override def apply(args: Any*): Long = {
         val statement = prepared.apply
-        execSingleRowUpdate(statement, args:_*)
+        updateSingleRow(statement, args:_*)
         init(statement getGeneratedKeys) (_ next) getLong 1
       }
     }

@@ -30,7 +30,7 @@ class Repository(val basedir: File, val readonly: Boolean, enableDbShutdownHook:
 
   def shutdown(backupDb: Boolean) = {
     dataStore.shutdown
-    execUpdate("SHUTDOWN")
+    update("SHUTDOWN")
     Thread.sleep(300)
     if (!readonly) require(!lockfile.exists, s"Expected database lock file $lockfile not to exist any more.")
     
@@ -69,7 +69,8 @@ object Repository {
   val repositoryVersion = "1.1"
   // initial database version is 1.0
   // new in database version 1.1: CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted)
-  val dbVersion = "1.1"
+  // new in database version 1.2: sequences for primary keys, FIXME describe in detail
+  val dbVersion = "1.2"
     
   val repositoryVersionKey = "repository version"
   val repositoryIdKey = "repository id"

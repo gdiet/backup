@@ -44,7 +44,7 @@ object Fix extends CmdApp {
             
             case "1.0" =>
               con.println("Adding index idxTreeEntriesDeleted...")
-              net.diet_rich.util.sql.execUpdate("CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted)")(connection)
+              net.diet_rich.util.sql.update("CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted)")(connection)
               updateSettings(opts, (Repository.dbVersionKey -> "1.1"))(connection)
               con.println("Updated database to version 1.1")
               

@@ -10,7 +10,7 @@ import net.diet_rich.util.vals._
 
 object SettingsDB {
   def createTable(initialSettings: Map[String, String])(implicit connection: Connection): Unit = {
-    execUpdate(net.diet_rich.util.Strings normalizeMultiline """
+    update(net.diet_rich.util.Strings normalizeMultiline """
       CREATE TABLE Settings (
         key    VARCHAR(256) PRIMARY KEY,
         value  VARCHAR(256)
@@ -20,11 +20,11 @@ object SettingsDB {
   }
   
   def readDbSettings(implicit connection: Connection): Map[String, String] =
-    execQuery("SELECT key, value FROM Settings"){r => (r string 1, r string 2)} toMap
+    query("SELECT key, value FROM Settings"){r => (r string 1, r string 2)} toMap
 
   def writeDbSettings(settings: Map[String, String])(implicit connection: Connection): Unit = {
-    execUpdate("DELETE FROM Settings")
-    settings.foreach(entry => execUpdate("INSERT INTO Settings (key, value) VALUES (?, ?)", entry._1, entry._2))
+    update("DELETE FROM Settings")
+    settings.foreach(entry => update("INSERT INTO Settings (key, value) VALUES (?, ?)", entry._1, entry._2))
   }
   
 }

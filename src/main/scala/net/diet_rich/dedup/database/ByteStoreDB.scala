@@ -30,14 +30,14 @@ class FreeRanges(blockSize: Int)(implicit connection: Connection) {
   // Emit warning and free the space?
   
   // Note: Initially, needs at least an "empty" entry in table.
-  private val startOfFreeArea = execQuery("SELECT MAX(fin) FROM ByteStore")(_ long 1).next
+  private val startOfFreeArea = query("SELECT MAX(fin) FROM ByteStore")(_ long 1).next
   private val queue = new scala.collection.mutable.PriorityQueue[DataRange]()
   
   // insert ranges for gaps in queue
-  private val gapStarts = execQuery(
+  private val gapStarts = query(
     "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin"
   )(_ long 1).filterNot(_ == startOfFreeArea)
-  private val gapEndsAndDataStart = execQuery(
+  private val gapEndsAndDataStart = query(
     "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start"
   )(_ long 1)
   private val dataStart = gapEndsAndDataStart.nextOption
@@ -164,7 +164,7 @@ object ByteStoreDB {
     // index: data part index (starts at 0)
     // start: data part start position
     // fin: data part end position + 1
-    execUpdate("""
+    update("""
       CREATE CACHED TABLE ByteStore (
         dataid BIGINT NOT NULL,
         index  INTEGER NOT NULL,
@@ -172,8 +172,8 @@ object ByteStoreDB {
         fin    BIGINT NOT NULL
       );
     """);
-    execUpdate("CREATE INDEX idxByteStoreData ON ByteStore(dataid);")
-    execUpdate("CREATE INDEX idxByteStoreStart ON ByteStore(start);")
-    execUpdate("CREATE INDEX idxByteStoreFin ON ByteStore(fin);")
+    update("CREATE INDEX idxByteStoreData ON ByteStore(dataid);")
+    update("CREATE INDEX idxByteStoreStart ON ByteStore(start);")
+    update("CREATE INDEX idxByteStoreFin ON ByteStore(fin);")
   }
 }
