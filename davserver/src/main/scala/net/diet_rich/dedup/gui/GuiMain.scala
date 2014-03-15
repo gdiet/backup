@@ -27,10 +27,13 @@ object GuiMain extends App {
   implicit def functionAsEventHandler[E <: Event](f: => Unit): EventHandler[E] =
     new EventHandler[E]() { override def handle(e: E) = f }
 
+  implicit def functionWithBracesAsEventHandler[E <: Event](f: () => Unit): EventHandler[E] =
+    new EventHandler[E]() { override def handle(e: E) = f() }
+  
   implicit def functionAsEventHandler[E <: Event](f: E => Unit): EventHandler[E] =
     new EventHandler[E]() { override def handle(e: E) = f(e) }
   
-  def runLater(f: => Unit): Unit =
+  def inFXApplicationThread(f: => Unit): Unit =
     Platform.runLater(new Runnable() { override def run = f })
 }
 class GuiMain extends Application { import GuiMain._
@@ -45,10 +48,18 @@ class GuiMain extends Application { import GuiMain._
     val startButton: Button    = guiMap("startServerButton").asInstanceOf[Button]
     val exitButton:  Button    = guiMap("exitButton").asInstanceOf[Button]
 
+    repoChooser setOnAction {
+      // immediately load repository
+      chooseDir(stage) foreach { dir => repoField setText dir.getPath }
+    }
     // TODO disable start server if no repository chosen
-    repoChooser setOnAction { chooseDir(stage) foreach { dir => repoField setText dir.getPath } }
-    startButton setOnAction runLater(println("I should start the server now ..."))
-    exitButton setOnAction runLater(println("I should exit now ..."))
+    startButton setOnAction { () =>
+      repoChooser setDisable true
+      startButton setDisable true
+      repoField setDisable true
+      println("I should start the server now ...")
+    }
+    exitButton setOnAction println("I should exit now ...")
     
     stage setTitle "Deduplication Backup"
     stage setScene scene
