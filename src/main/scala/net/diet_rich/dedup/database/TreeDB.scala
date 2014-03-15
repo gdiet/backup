@@ -61,18 +61,12 @@ trait TreeDB { import TreeDB._
   val ROOTID: TreeEntryID =
     TreeEntryID(query("SELECT id FROM TreeEntries WHERE id = parent")(_ long 1) nextOnly)
   
-  private val maxEntryId = // FIXME
-    SqlDBUtil.readAsAtomicLong("SELECT MAX(id) FROM TreeEntries")
-  
   /** @return The child ID.
    *  @throws Exception if the child was not created correctly. */
-  def createAndGetId(parentId: TreeEntryID, name: String, nodeType: NodeType, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID = {
-    val id = maxEntryId incrementAndGet() // FIXME
-    addEntry(id, parentId.value, name, nodeType.value, time.value, dataId.map(_.value))
-    TreeEntryID(id)
-  }
+  def createAndGetId(parentId: TreeEntryID, name: String, nodeType: NodeType, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID =
+    TreeEntryID(addEntry(parentId.value, name, nodeType.value, time.value, dataId.map(_.value)))
   protected final val addEntry = 
-    prepareSingleRowUpdate("INSERT INTO TreeEntries (id, parent, name, type, time, dataid) VALUES (?, ?, ?, ?, ?, ?)")
+    prepareInsertReturnKey("INSERT INTO TreeEntries (parent, name, type, time, dataid) VALUES (?, ?, ?, ?, ?)")
 
   /** @return The entry if any. */
   def entry(id: TreeEntryID): Option[TreeEntry] =
