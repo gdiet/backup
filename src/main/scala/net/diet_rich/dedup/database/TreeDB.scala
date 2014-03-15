@@ -9,28 +9,29 @@ import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
 case class TreeEntry(
-  id: TreeEntryID, 
-  parent: Option[TreeEntryID], 
-  name: String, 
+  id: TreeEntryID,
+  parent: Option[TreeEntryID],
+  name: String,
   nodeType: NodeType,
-  time: Time = Time(0), 
+  time: Time = Time(0),
+  deleted: Option[Time] = None,
   dataid: Option[DataEntryID] = None)
 
 trait RespectDeleted {
   implicit protected val connection: Connection
   protected final val queryEntry = 
     prepareQuery(
-      "SELECT parent, name, type, time, dataid FROM TreeEntries WHERE id = ? AND deleted IS NULL",
+      "SELECT parent, name, type, time, deleted, dataid FROM TreeEntries WHERE id = ? AND deleted IS NULL",
       "the not-deleted tree entry for id %d"
     )
   protected final val queryChild: SqlQuery = 
     prepareQuery(
-      "SELECT id, type, time, dataid FROM TreeEntries WHERE parent = ? AND name = ? AND deleted IS NULL",
+      "SELECT id, type, time, deleted, dataid FROM TreeEntries WHERE parent = ? AND name = ? AND deleted IS NULL",
       "the not-deleted tree entry for parent %d with name %s"
     )
   protected final val queryChildren =
     prepareQuery(
-      "SELECT id, name, type, time, dataid FROM TreeEntries WHERE parent = ? AND deleted IS NULL",
+      "SELECT id, name, type, time, deleted, dataid FROM TreeEntries WHERE parent = ? AND deleted IS NULL",
       "the not-deleted children of tree entry %d"
     )
 }
@@ -39,23 +40,26 @@ trait IgnoreDeleted {
   implicit protected val connection: Connection
   protected final val queryEntry = 
     prepareQuery(
-      "SELECT parent, name, type, time, dataid FROM TreeEntries WHERE id = ?",
+      "SELECT parent, name, type, time, deleted, dataid FROM TreeEntries WHERE id = ?",
       "any tree entry for id %d"
     )
   protected final val queryChild: SqlQuery = 
     prepareQuery(
-      "SELECT id, type, time, dataid FROM TreeEntries WHERE parent = ? AND name = ?",
+      "SELECT id, type, time, deleted, dataid FROM TreeEntries WHERE parent = ? AND name = ?",
       "any tree entries for parent %d with name %s"
     )
   protected final val queryChildren =
     prepareQuery(
-      "SELECT id, name, type, time, dataid FROM TreeEntries WHERE parent = ?",
+      "SELECT id, name, type, time, deleted, dataid FROM TreeEntries WHERE parent = ?",
       "all children of tree entry %d"
     )
 }
 
 trait TreeDB { import TreeDB._
   implicit protected val connection: Connection
+
+  protected val ROOTID: TreeEntryID =
+    TreeEntryID(query("SELECT id FROM TreeEntries WHERE id = parent")(_ long 1) nextOnly)
   
   private val maxEntryId =
     SqlDBUtil.readAsAtomicLong("SELECT MAX(id) FROM TreeEntries")
@@ -73,14 +77,15 @@ trait TreeDB { import TreeDB._
   /** @return The entry if any. */
   def entry(id: TreeEntryID): Option[TreeEntry] =
     queryEntry(id.value)(
-      r => TreeEntry(id, TreeEntryID(r longOption 1), r string 2, NodeType(r int 3), Time(r long 4), DataEntryID(r longOption 5))
+      r => TreeEntry(id, TreeEntryID(r longOption 1), r string 2, NodeType(r int 3), Time(r long 4), Time(r longOption 5), DataEntryID(r longOption 6))
     ).nextOptionOnly
   protected val queryEntry: SqlQuery
   
   /** @return The child entry if any. */
   def child(parent: TreeEntryID, name: String): Option[TreeEntry] =
     queryChild(parent.value, name)(
-      r => TreeEntry(TreeEntryID(r long 1), Some(parent), name, NodeType(r int 2), Time(r long 3), DataEntryID(r longOption 4))
+      // TODO use one partial function for getting a tree entry from a result set
+      r => TreeEntry(TreeEntryID(r long 1), Some(parent), name, NodeType(r int 2), Time(r long 3), Time(r longOption 4), DataEntryID(r longOption 5))
     ).nextOptionOnly
   protected val queryChild: SqlQuery
   
@@ -88,7 +93,7 @@ trait TreeDB { import TreeDB._
    *  @return The children, empty if no such node. */
   def children(parent: TreeEntryID): Seq[TreeEntry] =
     queryChildren(parent.value)(
-      r => TreeEntry(TreeEntryID(r long 1), Some(parent), r string 2, NodeType(r int 3), Time(r long 4), DataEntryID(r longOption 5))
+      r => TreeEntry(TreeEntryID(r long 1), Some(parent), r string 2, NodeType(r int 3), Time(r long 4), Time(r longOption 5), DataEntryID(r longOption 6))
     ).toSeq
   protected val queryChildren : SqlQuery
     
@@ -105,7 +110,7 @@ trait TreeDB { import TreeDB._
   
   /** @return true if the deleted flag was set for the entry. */
   def markDeleted(id: TreeEntryID): Boolean =
-    (id != ROOTID) && (markEntryDeleted(System.currentTimeMillis(), id.value) match {
+    (id != ROOTID) && (markEntryDeleted(System currentTimeMillis, id value) match {
       case 0 => false
       case 1 => true
       case n => throw new AssertionError(s"markDeleted: $n entries updated for $id")
@@ -170,16 +175,15 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
 }
 
 object TreeDB {
-  val ROOTID = TreeEntryID(0L)  // FIXME
   val ROOTPATH = Path("")
   val SEPARATOR = "/"
-    
+
   def createTable(implicit connection: Connection): Unit = {
     update("CREATE SEQUENCE treeEntriesIdSeq;")
     update("""
       CREATE TABLE TreeEntries (
         id      BIGINT DEFAULT (NEXT VALUE FOR treeEntriesIdSeq) PRIMARY KEY,
-        parent  BIGINT NULL,
+        parent  BIGINT NOT NULL,
         name    VARCHAR(256) NOT NULL,
         type    INTEGER NOT NULL,
         time    BIGINT NOT NULL DEFAULT 0,
@@ -188,7 +192,9 @@ object TreeDB {
       );
     """ normalizeMultiline)
     recreateIndexes
-    update(s"INSERT INTO TreeEntries (id, parent, name, type) VALUES (0, NULL, '', ${NodeType.DIR.value})") // FIXME
+    val rootId: Long = query("SELECT NEXT VALUE FOR treeEntriesIdSeq;")(_ long 1).next
+    update(s"INSERT INTO TreeEntries (id, parent, name, type) VALUES ($rootId, $rootId, '${ROOTPATH.value}', ${NodeType.DIR.value})")
+    // TODO use implicit conversions for e.g. NodeType to Int (useful almost everywhere)
   }
 
   def recreateIndexes(implicit connection: Connection): Unit = {
