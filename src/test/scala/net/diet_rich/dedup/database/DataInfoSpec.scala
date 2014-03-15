@@ -4,9 +4,9 @@
 package net.diet_rich.dedup.database
 
 import org.specs2.SpecificationWithJUnit
-
 import net.diet_rich.util.Hash
 import net.diet_rich.util.init
+import net.diet_rich.util.sql.TestDB
 
 class DataInfoSpec extends SpecificationWithJUnit { def is = s2"""
   When trying to retrieve a data entry that does not exist, an exception should be thrown $retrieveMissingEntry

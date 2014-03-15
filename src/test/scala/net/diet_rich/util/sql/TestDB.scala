@@ -1,13 +1,11 @@
 // Copyright (c) Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-package net.diet_rich.dedup.database
+package net.diet_rich.util.sql
 
 import java.sql.Connection
 import java.sql.DriverManager
-
 import scala.util.Random
-
 import net.diet_rich.util.init
 
 object TestDB {

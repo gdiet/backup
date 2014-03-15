@@ -97,10 +97,10 @@ package object sql {
     }
     
   def update(command: String, args: Any*)(implicit connection: Connection): Int =
-    prepareUpdate(command) apply args
+    prepareUpdate(command) apply (args:_*)
   
   def insertReturnKey(command: String, args: Any*)(implicit connection: Connection): Long =
-    prepareInsertReturnKey(command) apply args
+    prepareInsertReturnKey(command) apply (args:_*)
   
   def prepareQuery(statement: String, aka: String)(implicit connection: Connection): SqlQuery =
     new PreparedSql(statement) with SqlQuery {
