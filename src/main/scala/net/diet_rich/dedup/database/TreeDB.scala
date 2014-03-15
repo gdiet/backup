@@ -58,7 +58,7 @@ trait IgnoreDeleted {
 trait TreeDB { import TreeDB._
   implicit protected val connection: Connection
 
-  protected val ROOTID: TreeEntryID =
+  val ROOTID: TreeEntryID =
     TreeEntryID(query("SELECT id FROM TreeEntries WHERE id = parent")(_ long 1) nextOnly)
   
   private val maxEntryId =
@@ -175,7 +175,7 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
 }
 
 object TreeDB {
-  val ROOTPATH = Path("")
+  val ROOTPATH = Path("") // FIXME make or add ROOTNAME
   val SEPARATOR = "/"
 
   def createTable(implicit connection: Connection): Unit = {

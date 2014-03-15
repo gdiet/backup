@@ -3,10 +3,11 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util.sql
 
-import java.sql.Connection
-import java.sql.DriverManager
-import scala.util.Random
+import java.sql.{Connection, DriverManager}
 import net.diet_rich.util.init
+import scala.util.Random
+
+class ImplicitConnection(implicit val connection: Connection)
 
 object TestDB {
   def h2mem: Connection = {
