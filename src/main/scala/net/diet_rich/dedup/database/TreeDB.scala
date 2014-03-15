@@ -169,7 +169,8 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
 }
 
 object TreeDB {
-  val ROOTPATH = Path("") // FIXME make or add ROOTNAME
+  val ROOTNAME = ""
+  val ROOTPATH = Path(ROOTNAME)
   val SEPARATOR = "/"
 
   def createTable(implicit connection: Connection): Unit = {
@@ -187,7 +188,7 @@ object TreeDB {
     """ normalizeMultiline)
     recreateIndexes
     val rootId: Long = query("SELECT NEXT VALUE FOR treeEntriesIdSeq;")(_ long 1).next
-    update(s"INSERT INTO TreeEntries (id, parent, name, type) VALUES ($rootId, $rootId, '${ROOTPATH.value}', ${NodeType.DIR.value})")
+    update(s"INSERT INTO TreeEntries (id, parent, name, type) VALUES ($rootId, $rootId, '${ROOTNAME}', ${NodeType.DIR.value})")
     // TODO use implicit conversions for e.g. NodeType to Int (useful almost everywhere)
   }
 

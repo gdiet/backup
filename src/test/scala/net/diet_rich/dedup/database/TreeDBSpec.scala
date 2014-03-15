@@ -23,7 +23,7 @@ class TreeDBSpec extends SpecificationWithJUnit { def is = s2"""
     .should(beEmpty)
     
   def rootIsNotRootChild =
-    tree.child(tree.ROOTID, TreeDB.ROOTPATH name)
+    tree.child(tree.ROOTID, TreeDB.ROOTNAME)
     .filter(_.id == tree.ROOTID)
     .aka("child of root that is root")
     .should(beEmpty)
