@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.util
 
-object Strings {
+protected object Strings {
   def normalizeMultiline(string: String): String = {
     val lines = string.lines.toList
     assume (lines.head isEmpty, s"expected empty first line in multiline string <$string>")

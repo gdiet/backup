@@ -5,17 +5,18 @@ package net.diet_rich.dedup.database
 
 import java.sql.Connection
 import net.diet_rich.dedup.repository.Repository
+import net.diet_rich.util.AugmentedString
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
 object SettingsDB {
   def createTable(initialSettings: Map[String, String])(implicit connection: Connection): Unit = {
-    update(net.diet_rich.util.Strings normalizeMultiline """
+    update("""
       CREATE TABLE Settings (
         key    VARCHAR(256) PRIMARY KEY,
         value  VARCHAR(256)
       )
-    """)
+    """ normalizeMultiline)
     writeDbSettings(initialSettings)
   }
   
