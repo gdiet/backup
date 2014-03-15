@@ -61,13 +61,13 @@ trait TreeDB { import TreeDB._
   val ROOTID: TreeEntryID =
     TreeEntryID(query("SELECT id FROM TreeEntries WHERE id = parent")(_ long 1) nextOnly)
   
-  private val maxEntryId =
+  private val maxEntryId = // FIXME
     SqlDBUtil.readAsAtomicLong("SELECT MAX(id) FROM TreeEntries")
   
   /** @return The child ID.
    *  @throws Exception if the child was not created correctly. */
   def createAndGetId(parentId: TreeEntryID, name: String, nodeType: NodeType, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID = {
-    val id = maxEntryId incrementAndGet()
+    val id = maxEntryId incrementAndGet() // FIXME
     addEntry(id, parentId.value, name, nodeType.value, time.value, dataId.map(_.value))
     TreeEntryID(id)
   }
@@ -86,7 +86,7 @@ trait TreeDB { import TreeDB._
     queryChild(parent.value, name)(
       // TODO use one partial function for getting a tree entry from a result set
       r => TreeEntry(TreeEntryID(r long 1), Some(parent), name, NodeType(r int 2), Time(r long 3), Time(r longOption 4), DataEntryID(r longOption 5))
-    ).nextOptionOnly
+    ).toSeq filterNot(_.id == ROOTID) headOption
   protected val queryChild: SqlQuery
   
   /** Note: If the children are not consumed immediately, they must be stored e.g. by calling *.toList.
@@ -94,7 +94,7 @@ trait TreeDB { import TreeDB._
   def children(parent: TreeEntryID): Seq[TreeEntry] =
     queryChildren(parent.value)(
       r => TreeEntry(TreeEntryID(r long 1), Some(parent), r string 2, NodeType(r int 3), Time(r long 4), Time(r longOption 5), DataEntryID(r longOption 6))
-    ).toSeq
+    ).toSeq filterNot(_.id == ROOTID)
   protected val queryChildren : SqlQuery
     
   /** @return The node's complete data information if any. */
