@@ -4,7 +4,7 @@
 package net.diet_rich.dedup.database
 
 import java.sql.Connection
-import net.diet_rich.util.{Hash, Strings}
+import net.diet_rich.util.{Hash, AugmentedString}
 import net.diet_rich.util.sql._
 import net.diet_rich.util.vals._
 
@@ -163,21 +163,22 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
     assume(path.value.startsWith(SEPARATOR), s"Path <$path> is not root and does not start with '$SEPARATOR'")
     val parts = path.value.split(SEPARATOR).drop(1)
     parts.foldLeft(entry(ROOTID)) {(node, pathElement) =>
-      val childNameRegexp = Strings.processSpecialSyntax(pathElement, java.util.regex.Pattern.quote(_), identity)
+      val childNameRegexp = pathElement processSpecialSyntax (java.util.regex.Pattern.quote(_), identity)
       node.flatMap(node => children(node.id).toList.sortBy(_.name).reverse.find(_.name.matches(childNameRegexp)))
     }
   }
 }
 
 object TreeDB {
-  val ROOTID = TreeEntryID(0L)
+  val ROOTID = TreeEntryID(0L)  // FIXME
   val ROOTPATH = Path("")
   val SEPARATOR = "/"
     
   def createTable(implicit connection: Connection): Unit = {
-    execUpdate(net.diet_rich.util.Strings normalizeMultiline """
+    update("CREATE SEQUENCE treeEntriesIdSeq;")
+    update("""
       CREATE TABLE TreeEntries (
-        id      BIGINT PRIMARY KEY,
+        id      BIGINT DEFAULT (NEXT VALUE FOR treeEntriesIdSeq) PRIMARY KEY,
         parent  BIGINT NULL,
         name    VARCHAR(256) NOT NULL,
         type    INTEGER NOT NULL,
@@ -185,22 +186,24 @@ object TreeDB {
         deleted BIGINT DEFAULT NULL,
         dataid  BIGINT DEFAULT NULL
       );
-    """)
+    """ normalizeMultiline)
     recreateIndexes
-    execUpdate(s"INSERT INTO TreeEntries (id, parent, name, type) VALUES (0, NULL, '', ${NodeType.DIR.value})")
+    update(s"INSERT INTO TreeEntries (id, parent, name, type) VALUES (0, NULL, '', ${NodeType.DIR.value})") // FIXME
   }
 
   def recreateIndexes(implicit connection: Connection): Unit = {
-    execUpdate("DROP INDEX idxTreeEntriesParent IF EXISTS")
-    execUpdate("DROP INDEX idxTreeEntriesDataid IF EXISTS")
-    execUpdate("DROP INDEX idxTreeEntriesDeleted IF EXISTS")
+    update("DROP INDEX idxTreeEntriesParent IF EXISTS;")
+    update("DROP INDEX idxTreeEntriesDataid IF EXISTS;")
+    update("DROP INDEX idxTreeEntriesDeleted IF EXISTS;")
     
-    execUpdate("CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent)")
-    execUpdate("CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid)")
-    execUpdate("CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted)")
+    update("CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent);")
+    update("CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid);")
+    update("CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted);")
   }
   
-  def dropTable(implicit connection: Connection): Unit =
-    execUpdate("DROP TABLE TreeEntries IF EXISTS")
+  def dropTable(implicit connection: Connection): Unit = {
+    update("DROP TABLE TreeEntries IF EXISTS;")
+    update("DROP SEQUENCE treeEntriesIdSeq IF EXISTS;")
+  }
 
 }
