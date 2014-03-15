@@ -10,28 +10,43 @@ import net.diet_rich.util.vals._
 
 case class TreeEntry(
   id: TreeEntryID,
-  parent: Option[TreeEntryID],
+  parent: TreeEntryID,
   name: String,
   nodeType: NodeType,
   time: Time = Time(0),
   deleted: Option[Time] = None,
   dataid: Option[DataEntryID] = None)
 
+object TreeEntry {
+  def fromSqlResult: WrappedSQLResult => TreeEntry = {
+    r => TreeEntry(
+      id       = TreeEntryID(r long 1),
+      parent   = TreeEntryID(r long 2),
+      name     = r string 3,
+      nodeType = NodeType(r int 4),
+      time     = Time(r long 5),
+      deleted  = Time(r longOption 6),
+      dataid   = DataEntryID(r longOption 7)
+    )
+  }
+  val select = "SELECT id, parent, name, type, time, deleted, dataid FROM TreeEntries"
+}
+
 trait RespectDeleted {
   implicit protected val connection: Connection
   protected final val queryEntry = 
     prepareQuery(
-      "SELECT parent, name, type, time, deleted, dataid FROM TreeEntries WHERE id = ? AND deleted IS NULL",
+      s"${TreeEntry.select} WHERE id = ? AND deleted IS NULL",
       "the not-deleted tree entry for id %d"
     )
   protected final val queryChild: SqlQuery = 
     prepareQuery(
-      "SELECT id, type, time, deleted, dataid FROM TreeEntries WHERE parent = ? AND name = ? AND deleted IS NULL",
+      s"${TreeEntry.select} WHERE parent = ? AND name = ? AND deleted IS NULL",
       "the not-deleted tree entry for parent %d with name %s"
     )
   protected final val queryChildren =
     prepareQuery(
-      "SELECT id, name, type, time, deleted, dataid FROM TreeEntries WHERE parent = ? AND deleted IS NULL",
+      s"${TreeEntry.select} WHERE parent = ? AND deleted IS NULL",
       "the not-deleted children of tree entry %d"
     )
 }
@@ -40,18 +55,18 @@ trait IgnoreDeleted {
   implicit protected val connection: Connection
   protected final val queryEntry = 
     prepareQuery(
-      "SELECT parent, name, type, time, deleted, dataid FROM TreeEntries WHERE id = ?",
+      s"${TreeEntry.select} WHERE id = ?",
       "any tree entry for id %d"
     )
   protected final val queryChild: SqlQuery = 
     prepareQuery(
-      "SELECT id, type, time, deleted, dataid FROM TreeEntries WHERE parent = ? AND name = ?",
+      s"${TreeEntry.select} WHERE parent = ? AND name = ?",
       "any tree entries for parent %d with name %s"
     )
   protected final val queryChildren =
     prepareQuery(
-      "SELECT id, name, type, time, deleted, dataid FROM TreeEntries WHERE parent = ?",
-      "all children of tree entry %d"
+      s"${TreeEntry.select} WHERE parent = ?",
+      "all tree entries for parent %d"
     )
 }
 
@@ -64,31 +79,27 @@ trait TreeDB { import TreeDB._
   /** @return The child ID.
    *  @throws Exception if the child was not created correctly. */
   def createAndGetId(parentId: TreeEntryID, name: String, nodeType: NodeType, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID =
-    TreeEntryID(addEntry(parentId.value, name, nodeType.value, time.value, dataId.map(_.value)))
+    {
+  println(s"adding to ${parentId.value} child $name")
+  TreeEntryID(addEntry(parentId.value, name, nodeType.value, time.value, dataId.map(_.value)))
+    }
   protected final val addEntry = 
     prepareInsertReturnKey("INSERT INTO TreeEntries (parent, name, type, time, dataid) VALUES (?, ?, ?, ?, ?)")
 
   /** @return The entry if any. */
   def entry(id: TreeEntryID): Option[TreeEntry] =
-    queryEntry(id.value)(
-      r => TreeEntry(id, TreeEntryID(r longOption 1), r string 2, NodeType(r int 3), Time(r long 4), Time(r longOption 5), DataEntryID(r longOption 6))
-    ).nextOptionOnly
+    queryEntry (id value) (TreeEntry fromSqlResult) nextOptionOnly
   protected val queryEntry: SqlQuery
   
   /** @return The child entry if any. */
   def child(parent: TreeEntryID, name: String): Option[TreeEntry] =
-    queryChild(parent.value, name)(
-      // TODO use one partial function for getting a tree entry from a result set
-      r => TreeEntry(TreeEntryID(r long 1), Some(parent), name, NodeType(r int 2), Time(r long 3), Time(r longOption 4), DataEntryID(r longOption 5))
-    ).toSeq filterNot(_.id == ROOTID) headOption
+    queryChild (parent value, name) (TreeEntry fromSqlResult).toSeq filterNot(_.id == ROOTID) headOption
   protected val queryChild: SqlQuery
   
   /** Note: If the children are not consumed immediately, they must be stored e.g. by calling *.toList.
    *  @return The children, empty if no such node. */
   def children(parent: TreeEntryID): Seq[TreeEntry] =
-    queryChildren(parent.value)(
-      r => TreeEntry(TreeEntryID(r long 1), Some(parent), r string 2, NodeType(r int 3), Time(r long 4), Time(r longOption 5), DataEntryID(r longOption 6))
-    ).toSeq filterNot(_.id == ROOTID)
+    queryChildren (parent.value) (TreeEntry fromSqlResult).toSeq filterNot(_.id == ROOTID)
   protected val queryChildren : SqlQuery
     
   /** @return The node's complete data information if any. */
@@ -133,7 +144,7 @@ trait TreeDBUtils { self: TreeDB => import TreeDB._
   def path(id: TreeEntryID): Option[Path] = {
     if (id == ROOTID) Some(ROOTPATH) else {
       entry(id) flatMap { entry =>
-        path(entry.parent.get).map(_ + SEPARATOR + entry.name)
+        path(entry.parent).map(_ + SEPARATOR + entry.name)
       }
     }
   }

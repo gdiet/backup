@@ -8,6 +8,6 @@ import java.util.concurrent.atomic.AtomicLong
 import net.diet_rich.util.sql._
 
 object SqlDBUtil {
-  def readAsAtomicLong(statement: String)(implicit connection: Connection): AtomicLong =
+  def readAsAtomicLong(statement: String)(implicit connection: Connection): AtomicLong = // FIXME not needed anymore
     new AtomicLong(query(statement)(_ longOption 1).nextOnly.get)
 }
