@@ -21,12 +21,12 @@ class Repository(val basedir: File, val readonly: Boolean, enableDbShutdownHook:
   private val lockfile = dbdir.child(s"$dbFileName.lock.db")
   if (!readonly) require(lockfile.isFile, s"Expected database lock file $lockfile to exist.")
   
-  val fs: BackupFileSystem = new BackupFileSystem(digesters, dataStore)
-
   if (!checkSettings(basedir)) {
     shutdown(false)
     throw new IllegalStateException("Repository or database settings are not OK")
   }
+
+  val fs: BackupFileSystem = new BackupFileSystem(digesters, dataStore)
 
   def shutdown(backupDb: Boolean) = {
     dataStore.shutdown
