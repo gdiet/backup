@@ -7,6 +7,7 @@ import java.io.File
 import net.diet_rich.dedup.CmdLine._
 import net.diet_rich.util._
 import net.diet_rich.util.io._
+import net.diet_rich.util.sql._
 import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.datastore.DataStore2
 
@@ -31,7 +32,7 @@ object Fix extends CmdApp {
         con.println(s"$updateDatabaseOp - update the database if necessary")
 
       case `updateDatabaseOp` =>
-        val (connection, repoSettings, dbSettings) = getConnectionAndSettings(opts)
+        implicit val (connection, repoSettings, dbSettings) = getConnectionAndSettings(opts)
         if (dbSettings != repoSettings) {
           con.println("ERROR: Settings in repository and in database do not match.")
           con.println("Exiting...")
@@ -43,10 +44,32 @@ object Fix extends CmdApp {
             case Repository.dbVersion => con.println("Database is up to date.")
             
             case "1.0" =>
+              con.println("Updating database from version 1.0 to version 1.1")
               con.println("Adding index idxTreeEntriesDeleted...")
-              net.diet_rich.util.sql.update("CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted)")(connection)
-              updateSettings(opts, (Repository.dbVersionKey -> "1.1"))(connection)
+              update("CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted);")
+              updateSettings(opts, (Repository.dbVersionKey -> "1.1"))
               con.println("Updated database to version 1.1")
+              
+            case "1.1" =>
+              con.println("Updating database from version 1.0 to version 1.2")
+              con.println("Adding sequence treeEntriesIdSeq...")
+              update("CREATE SEQUENCE treeEntriesIdSeq START WITH SELECT MAX(id) + 1 FROM TreeEntries;")
+              con.println("Using sequence treeEntriesIdSeq as default for TreeEntries id...")
+              update("ALTER TABLE TreeEntries ALTER COLUMN id SET DEFAULT NEXT VALUE FOR treeEntriesIdSeq;")
+              con.println("Setting parent = id for TreeEntries root entry...")
+              update("UPDATE TreeEntries SET parent = id WHERE parent IS NULL;")
+              con.println("Setting TreeEntries parent to NOT NULL...")
+              update("ALTER TABLE TreeEntries ALTER COLUMN parent BIGINT NOT NULL;")
+              con.println("Recreating TreeEntries indexes...")
+              TreeDB.recreateIndexes
+              con.println("Adding sequence dataEntriesIdSeq...")
+              val dIdMax = query("SELECT MAX(id) FROM DataInfo;")(_ long 1).next
+              val bIdMax = query("SELECT MAX(dataid) FROM ByteStore;")(_ long 1).next
+              update(s"CREATE SEQUENCE dataEntriesIdSeq START ${math max (dIdMax, bIdMax)};")
+              con.println("Using sequence dataEntriesIdSeq as default for DataInfo id...")
+              update("ALTER TABLE DataInfo ALTER COLUMN id SET DEFAULT NEXT VALUE FOR dataEntriesIdSeq;")
+              updateSettings(opts, (Repository.dbVersionKey -> "1.2"))
+              con.println("Updated database to version 1.2")
               
             case v =>
               con.println("ERROR: Don't know how to update a database version $v")
