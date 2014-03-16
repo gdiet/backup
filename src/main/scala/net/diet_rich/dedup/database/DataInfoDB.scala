@@ -58,9 +58,10 @@ object DataInfoDB {
   def createTable(zeroByteHash: Hash, zeroBytePrint: Print)(implicit connection: Connection) : Unit = {
     // length: uncompressed entry size
     // method: store method (0 = PLAIN, 1 = DEFLATE, 2 = LZMA??)
+    update("CREATE SEQUENCE dataEntriesIdSeq;")
     update(s"""
       CREATE TABLE DataInfo (
-        id     BIGINT PRIMARY KEY,
+        id     BIGINT DEFAULT (NEXT VALUE FOR dataEntriesIdSeq) PRIMARY KEY,
         length BIGINT NOT NULL,
         print  BIGINT NOT NULL,
         hash   VARBINARY(${zeroByteHash.value.size}) NOT NULL,

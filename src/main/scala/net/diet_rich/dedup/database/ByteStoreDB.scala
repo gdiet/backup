@@ -67,11 +67,6 @@ trait ByteStoreDB {
   
   private val freeRanges = new FreeRanges(ds.dataSize)
 
-  private val maxEntryId =
-    SqlDBUtil.readAsAtomicLong(
-      "SELECT GREATEST((SELECT MAX(id) FROM DataInfo), (SELECT MAX(dataid) FROM ByteStore))"
-    )
-
   def read(dataId: DataEntryID, method: Method): ByteSource =
     StoreMethods.wrapRestore(read(dataId), method)
   private def read(dataId: DataEntryID): ByteSource = new Object {
@@ -116,8 +111,11 @@ trait ByteStoreDB {
     (dataEntryId, sizeWritten)
   }
 
+  protected final val nextDataId =
+    prepareQuery("SELECT NEXT VALUE FOR dataEntriesIdSeq;", "the next data entry ID")
+  
   private def storeAndGetDataId(source: ByteSource): DataEntryID = {
-    val id = DataEntryID(maxEntryId incrementAndGet())
+    val id = DataEntryID(nextDataId()(_ long 1).next)
     @annotation.tailrec
     def writeStep(range: DataRange, index: Int): Unit = {
       writeRange(id, index, source, range) match {
@@ -165,7 +163,7 @@ object ByteStoreDB {
     // start: data part start position
     // fin: data part end position + 1
     update("""
-      CREATE CACHED TABLE ByteStore (
+      CREATE TABLE ByteStore (
         dataid BIGINT NOT NULL,
         index  INTEGER NOT NULL,
         start  BIGINT NOT NULL,

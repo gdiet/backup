@@ -68,8 +68,16 @@ object Repository {
   // new in repository version 1.1: changed data file header
   val repositoryVersion = "1.1"
   // initial database version is 1.0
-  // new in database version 1.1: CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted)
-  // new in database version 1.2: sequences for primary keys, FIXME describe in detail
+  // new in database version 1.1: CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted)  (ADDED)
+  // new in database version 1.2: sequences for primary keys and other things -
+  //   CREATE SEQUENCE treeEntriesIdSeq  (ADDED, for upgrade: max(id))
+  //   TreeEntries: id BIGINT                                           PRIMARY KEY  (OLD)
+  //   TreeEntries: id BIGINT DEFAULT (NEXT VALUE FOR treeEntriesIdSeq) PRIMARY KEY  (NEW)
+  //   TreeEntries: parent BIGINT     NULL  (OLD)
+  //   TreeEntries: parent BIGINT NOT NULL  (NEW)
+  //   CREATE SEQUENCE dataEntriesIdSeq  (ADDED, for upgrade: max(id, id in ByteStore)
+  //   DataInfo: id BIGINT DEFAULT                                   PRIMARY KEY  (OLD)
+  //   DataInfo: id BIGINT DEFAULT (NEXT VALUE FOR dataEntriesIdSeq) PRIMARY KEY  (NEW)
   val dbVersion = "1.2"
     
   val repositoryVersionKey = "repository version"
