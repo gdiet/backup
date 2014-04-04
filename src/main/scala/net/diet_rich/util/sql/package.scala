@@ -43,7 +43,7 @@ package object sql {
       result
     }
   }
-  
+
   private def setArguments(statement: PreparedStatement, args: Any*): PreparedStatement = {
     args.zipWithIndex foreach(_ match {
       case (     x: Long,         index) => statement setLong   (index+1, x)
@@ -119,16 +119,17 @@ package object sql {
       override def apply(args: Any*): Unit = updateSingleRow(prepared, args:_*)
     }
 
-// disabled due to h2 concurrency bug
-//  def prepareInsertReturnKey(statement: String)(implicit connection: Connection): SqlInsertReturnKey =
-//    new SqlInsertReturnKey {
-//      protected val prepared =
-//        ScalaThreadLocal(connection prepareStatement (statement, RETURN_GENERATED_KEYS), statement)
-//      override def apply(args: Any*): Long = {
-//        val statement = prepared.apply
-//        updateSingleRow(statement, args:_*)
-//        init(statement getGeneratedKeys) (_ next) getLong 1
-//      }
-//    }
+  def prepareInsertReturnKey(statement: String)(implicit connection: Connection): SqlInsertReturnKey = {
+    assert(false, "only use if each thread uses its own sql connection. Thread-local prepared statements are not enough.")
+    new SqlInsertReturnKey {
+      protected val prepared =
+        ScalaThreadLocal(connection prepareStatement (statement, RETURN_GENERATED_KEYS), statement)
+      override def apply(args: Any*): Long = {
+        val statement = prepared.apply
+        updateSingleRow(statement, args:_*)
+        init(statement getGeneratedKeys) (_ next) getLong 1
+      }
+    }
+  }
 
 }
