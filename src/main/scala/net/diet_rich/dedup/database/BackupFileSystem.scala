@@ -11,9 +11,6 @@ import net.diet_rich.util.vals._
 class BackupFileSystem(val dig: Digesters, protected val ds: net.diet_rich.dedup.datastore.DataStore2)(implicit val connection: Connection)
 extends TreeDB with RespectDeleted with TreeDBUtils with DataInfoDB with ByteStoreDB
 
-class BackupFileSystemIgnoreDeleted(val dig: Digesters, protected val ds: net.diet_rich.dedup.datastore.DataStore2)(implicit val connection: Connection)
-extends TreeDB with IgnoreDeleted with TreeDBUtils with DataInfoDB with ByteStoreDB
-
 case class FullDataInformation (
   time: Time,
   size: Size,

@@ -51,25 +51,6 @@ trait RespectDeleted {
     )
 }
 
-trait IgnoreDeleted {
-  implicit protected val connection: Connection
-  protected final val queryEntry = 
-    prepareQuery(
-      s"${TreeEntry.select} WHERE id = ?",
-      "any tree entry for id %d"
-    )
-  protected final val queryChild: SqlQuery = 
-    prepareQuery(
-      s"${TreeEntry.select} WHERE parent = ? AND name = ?",
-      "any tree entries for parent %d with name %s"
-    )
-  protected final val queryChildren =
-    prepareQuery(
-      s"${TreeEntry.select} WHERE parent = ?",
-      "all tree entries for parent %d"
-    )
-}
-
 trait TreeDB { import TreeDB._
   implicit protected val connection: Connection
 
