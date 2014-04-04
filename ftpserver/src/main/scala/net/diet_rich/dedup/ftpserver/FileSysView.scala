@@ -22,7 +22,7 @@ object Helpers {
 class FileSysView(repository: Repository) extends FileSystemView {
   log("... creating file system view")
   
-  private val rootDirectory = IsRepoFile(repository, TreeDB.ROOTID)
+  private val rootDirectory = IsRepoFile(repository, repository.fs.ROOTID)
   var workingDirectory: IsRepoFile = rootDirectory
 
   def resolvePath(path: String): Option[RepoFile] =  logAnd("... resolvePath: " + path) {
@@ -108,7 +108,7 @@ case class IsRepoFile(repository: Repository, id: TreeEntryID) extends RepoFile 
   override val toString = s"RepoFile($id)"
 
   def getParent: Option[IsRepoFile] =
-    repository.fs.entry(id).flatMap(_.parent.map(IsRepoFile(repository, _)))
+    repository.fs.entry(id).map(entry => IsRepoFile(repository, entry.parent))
   
   def getAbsolutePath(): String = logAnd(s"getAbsolutePath for $this") {
     repository.fs.path(id) match {
@@ -168,8 +168,8 @@ case class IsRepoFile(repository: Repository, id: TreeEntryID) extends RepoFile 
     if (offset != 0) throw new IOException("not random accessible")
     repository.fs.entry(id) match {
       case None => throw new FileNotFoundException
-      case Some(TreeEntry(_, _, _, _, _, None)) => throw new IOException("directory, not a file")
-      case Some(TreeEntry(_, _, _, _, _, Some(dataid))) =>
+      case Some(TreeEntry(_, _, _, _, _, _, None)) => throw new IOException("directory, not a file")
+      case Some(TreeEntry(_, _, _, _, _, _, Some(dataid))) =>
         val method = repository.fs.dataEntry(dataid).method
         net.diet_rich.util.io.sourceAsInputStream(repository.fs.read(dataid, method))
     }
@@ -179,7 +179,7 @@ case class IsRepoFile(repository: Repository, id: TreeEntryID) extends RepoFile 
   
   def delete(): Boolean = logAnd(s"delete $this") { repository.fs.markDeleted(id) }
   
-  def isRemovable(): Boolean = logAnd(s"isRemovable for $this") { (!repository.readonly) && (id != TreeDB.ROOTID) }
+  def isRemovable(): Boolean = logAnd(s"isRemovable for $this") { (!repository.readonly) && (id != repository.fs.ROOTID) }
   
   def mkdir(): Boolean = logAnd(s"mkdir for $this") { ??? }
   
