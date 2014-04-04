@@ -16,25 +16,38 @@ case class DataEntry (
   method: Method
 )
 
+object DataEntry {
+  def fromSqlResult: WrappedSQLResult => DataEntry = {
+    r => DataEntry(
+      id     = DataEntryID(r long 1),
+      size   = Size(r long 2),
+      print  = Print(r long 3),
+      hash   = Hash(r bytes 4),
+      method = Method(r int 5)
+    )
+  }
+  val select = "SELECT id, length, print, hash, method FROM DataInfo"
+}
+
 trait DataInfoDB {
   implicit val connection: Connection
   
   /** @return the data entry for the data entry id. @throws NoSuchElementException */
   def dataEntry(id: DataEntryID): DataEntry =
-    queryDataEntry(id.value)(r => DataEntry(id, Size(r long 1), Print(r long 2), Hash(r bytes 3), Method(r int 4))).nextOnly
+    queryDataEntry(id.value)(DataEntry fromSqlResult).nextOnly
   protected val queryDataEntry = 
     prepareQuery(
-      "SELECT length, print, hash, method FROM DataInfo WHERE id = ?",
+      s"${DataEntry.select} WHERE id = ?",
       "the data info entry for id %d"
     )
 
   /** @return true if at least one matching data entry is stored. */
   def hasMatch(size: Size, print: Print): Boolean =
-    checkPrint(size.value, print.value)(_.long(1) > 0).next
-  protected val checkPrint = 
+    querySizeAndPrint(size.value, print.value)(locally).hasNext
+  protected val querySizeAndPrint = 
     prepareQuery(
-      "SELECT COUNT(*) FROM DataInfo WHERE length = ? AND print = ?",
-      "the number of data info entries for length %d and print %d"
+      s"${DataEntry.select} WHERE length = ? AND print = ?",
+      "the data info entries for length %d and print %d"
     )
   
   /** @return The data id if a matching data entry is stored. */

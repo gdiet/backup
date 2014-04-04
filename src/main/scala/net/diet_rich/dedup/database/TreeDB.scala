@@ -15,7 +15,8 @@ case class TreeEntry(
   nodeType: NodeType,
   time: Time = Time(0),
   deleted: Option[Time] = None,
-  dataid: Option[DataEntryID] = None)
+  dataid: Option[DataEntryID] = None
+)
 
 object TreeEntry {
   def fromSqlResult: WrappedSQLResult => TreeEntry = {
@@ -32,8 +33,7 @@ object TreeEntry {
   val select = "SELECT id, parent, name, type, time, deleted, dataid FROM TreeEntries"
 }
 
-trait RespectDeleted {
-  implicit protected val connection: Connection
+trait TreeDBQueries { _: TreeDB =>
   protected final val queryEntry = 
     prepareQuery(
       s"${TreeEntry.select} WHERE id = ? AND deleted IS NULL",
@@ -120,7 +120,7 @@ trait TreeDB { import TreeDB._
   )
 }
 
-trait TreeDBUtils { self: TreeDB => import TreeDB._
+trait TreeDBUtils { _: TreeDB => import TreeDB._
   def childId(parent: TreeEntryID, name: String): Option[TreeEntryID] =
     child(parent, name).map(_.id)
   

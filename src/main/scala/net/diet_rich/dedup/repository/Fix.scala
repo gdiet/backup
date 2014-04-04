@@ -63,9 +63,9 @@ object Fix extends CmdApp {
               con.println("Recreating TreeEntries indexes...")
               TreeDB.recreateIndexes
               con.println("Adding sequence dataEntriesIdSeq...")
-              val dIdMax = query("SELECT MAX(id) FROM DataInfo;")(_ long 1).next
-              val bIdMax = query("SELECT MAX(dataid) FROM ByteStore;")(_ long 1).next
-              update(s"CREATE SEQUENCE dataEntriesIdSeq START ${math max (dIdMax, bIdMax)};")
+              val maxIdInDataInfo  = query("SELECT MAX(id) FROM DataInfo;")(_ long 1).next
+              val maxIdInByteStore = query("SELECT MAX(dataid) FROM ByteStore;")(_ long 1).next
+              update(s"CREATE SEQUENCE dataEntriesIdSeq START ${math max (maxIdInDataInfo, maxIdInByteStore)};")
               con.println("Using sequence dataEntriesIdSeq as default for DataInfo id...")
               update("ALTER TABLE DataInfo ALTER COLUMN id SET DEFAULT NEXT VALUE FOR dataEntriesIdSeq;")
               updateSettings(opts, (Repository.dbVersionKey -> "1.2"))

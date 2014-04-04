@@ -14,7 +14,7 @@ class TreeDBSpec extends SpecificationWithJUnit { def is = s2"""
   """
   
   implicit lazy val connectionWithTable = init (TestDB.h2mem) (TreeDB createTable _)
-  lazy val tree = new ImplicitConnection() with TreeDB with RespectDeleted
+  lazy val tree = new ImplicitConnection() with TreeDB with TreeDBQueries
   
   def rootIsNotInRootChildren =
     tree.children(tree.ROOTID)
