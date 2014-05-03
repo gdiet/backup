@@ -8,8 +8,7 @@ import java.util.Date
 import io.milton.http.Auth
 import io.milton.http.Request
 import io.milton.http.http11.auth.DigestResponse
-import io.milton.resource.DigestResource
-import io.milton.resource.PropFindableResource
+import io.milton.resource._
 import net.diet_rich.dedup.database.TreeEntry
 import net.diet_rich.util.CallLogging
 import net.diet_rich.util.Logging

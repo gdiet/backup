@@ -7,7 +7,9 @@ import net.diet_rich.dedup.database._
 import net.diet_rich.dedup.repository.Repository
 import net.diet_rich.util.CallLogging
 import net.diet_rich.util.io.ByteSource
+import net.diet_rich.util.vals._
 import java.io.File
+import java.io.InputStream
 
 object DedupFileSystem {
   def apply(repositoryPath: String, writeEnabled: Boolean, deflate: Boolean): Either[Error, DedupFileSystem] = try {
@@ -31,4 +33,7 @@ class DedupFileSystem(repository: Repository, backupDbOnShutdown: Boolean) exten
   def bytes(dataid: DataEntryID, method: Method) = debug(s"bytes(dataid: $dataid, method: $method)") { repository.fs.read(dataid, method) }
   def markDeleted(id: TreeEntryID): Boolean = debug(s"markDeleted(id: $id)") { repository.fs markDeleted id }
   def moveRename(id: TreeEntryID, newName: String, newParent: TreeEntryID): Boolean = debug(s"moveRename(id: $id, newName: $newName, newParent: $newParent)") { repository.fs changePath (id, newName, newParent) }
+  def createFile(parent: TreeEntryID, name: String, data: InputStream, size: Long): TreeEntry = debug(s"createFile(parent: $parent, name: $name, size: $size)") { repository.fs createFile (parent, name, data, size) }
+  def createDataEntry(data: InputStream, size: Long): DataEntryID = debug(s"createDataEntry(size: $size)") { repository.fs createDataEntry (data, size) }
+  
 }

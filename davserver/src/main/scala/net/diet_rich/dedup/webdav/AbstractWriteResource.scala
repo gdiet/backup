@@ -6,9 +6,7 @@ package net.diet_rich.dedup.webdav
 import io.milton.http.Auth
 import io.milton.http.Request
 import io.milton.http.exceptions.BadRequestException
-import io.milton.resource.CollectionResource
-import io.milton.resource.DeletableResource
-import io.milton.resource.MoveableResource
+import io.milton.resource._
 
 trait AbstractWriteResource extends DeletableResource with MoveableResource { _: AbstractResource =>
   override def authorise(request: Request, method: Request.Method, auth: Auth): Boolean =

@@ -8,8 +8,7 @@ import java.util.{List => JavaList}
 
 import scala.collection.JavaConverters.seqAsJavaListConverter
 
-import io.milton.resource.CollectionResource
-import io.milton.resource.Resource
+import io.milton.resource._
 import net.diet_rich.dedup.database.TreeEntry
 import net.diet_rich.util.CallLogging
 

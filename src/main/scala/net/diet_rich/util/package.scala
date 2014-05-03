@@ -7,6 +7,8 @@ package object util {
 
   def init[T](t: T)(f: T => Unit): T = { f(t); t }
   
+  def now = System.currentTimeMillis
+  
   implicit class AugmentedString(val string: String) extends AnyVal {
     def normalizeMultiline: String = {
       val lines = string.lines.toList
