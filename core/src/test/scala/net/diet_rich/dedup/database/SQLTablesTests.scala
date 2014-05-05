@@ -5,11 +5,10 @@ package net.diet_rich.dedup.database
 
 import org.specs2.SpecificationWithJUnit
 import scala.slick.driver.H2Driver.simple._
-import net.diet_rich.dedup.values.{TreeEntryType, TreeEntryID}
+import net.diet_rich.dedup.values.TreeEntryID
 
 class SQLTablesTests extends SpecificationWithJUnit { def is = s2"""
-    A thing to test timingForReadFromTable
-    A thing to test $timingForWriteToTable
+    FIXME $failure
   """
 
   def timingForWriteToTable = {
@@ -28,7 +27,7 @@ class SQLTablesTests extends SpecificationWithJUnit { def is = s2"""
       }
       val time = System.currentTimeMillis()
       for (i <- 1 to 100000) {
-        tables.create(TreeEntryID(i), "name", TreeEntryType.DIR)
+        tables.create(TreeEntryID(i), "name")
       }
       println(System.currentTimeMillis() - time)
 

@@ -16,14 +16,12 @@ object SQLTables {
 
   implicit val setLongValue = SetParameter((v: LongValue, p) => p setLong v.value)
   implicit val setLongValueOption = SetParameter((v: Option[LongValue], p) => p setLongOption (v map (_ value)))
-  implicit val setIntValue = SetParameter((v: IntValue, p) => p setInt v.value)
 
   implicit val getTreeEntryId = GetResult(r => TreeEntryID(r nextLong))
-  implicit val getNodeTypeResult = GetResult(r => TreeEntryType(r nextInt))
   implicit val getTimeResult = GetResult(r => Time(r nextLong))
   implicit val getTimeOptionResult = GetResult(r => Time(r nextLongOption))
   implicit val getDataEntryIdOptionResult = GetResult(r => DataEntryID(r nextLongOption))
-  implicit val getTreeEntry = GetResult(r => TreeEntry(r <<, r <<, r <<, r <<, r <<, r <<, r <<))
+  implicit val getTreeEntry = GetResult(r => TreeEntry(r <<, r <<, r <<, r <<, r <<, r <<))
 
   def createTreeTable(implicit session: Session): Unit =
     StaticQuery updateNA """
@@ -32,7 +30,6 @@ object SQLTables {
       |  id      BIGINT DEFAULT (NEXT VALUE FOR treeEntriesIdSeq) PRIMARY KEY,
       |  parent  BIGINT NULL,
       |  name    VARCHAR(256) NOT NULL,
-      |  type    INTEGER NOT NULL,
       |  time    BIGINT NOT NULL DEFAULT 0,
       |  deleted BIGINT DEFAULT NULL,
       |  dataid  BIGINT DEFAULT NULL
@@ -61,8 +58,9 @@ trait SQLTables {
   def nextTreeEntryId: TreeEntryID = nextTreeEntryIdQuery first
 
   // FIXME write in one session and/or one thread only!
-  def create(parent: TreeEntryID, name: String, nodeType: TreeEntryType, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID =
+  // FIXME default values???
+  def create(parent: TreeEntryID, name: String, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID =
     init (nextTreeEntryId) {
-      id => sqlu"INSERT INTO TreeEntries (id, parent, name, type, time, dataid) VALUES ($id, $parent, $name, $nodeType, $time, $dataId);" execute
+      id => sqlu"INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES ($id, $parent, $name, $time, $dataId);" execute
     }
 }
