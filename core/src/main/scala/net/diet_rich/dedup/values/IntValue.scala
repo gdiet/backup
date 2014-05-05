@@ -1,6 +1,6 @@
 // Copyright (c) Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-version := "0.10-SNAPSHOT"
+package net.diet_rich.dedup.values
 
-lazy val core = project
+trait IntValue { val value: Int }

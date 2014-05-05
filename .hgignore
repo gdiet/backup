@@ -1,26 +1,5 @@
-
 syntax: regexp
-^\.cache
-^\.classpath
 ^\.idea
-^\.project
-^\.settings/org\.scala-ide\.sdt\.core\.prefs
-^bin/
-^davserver/.cache
-^davserver/.classpath
-^davserver/.project
-^davserver/\.settings/org\.scala-ide\.sdt\.core\.prefs
-^davserver/bin/
-^davserver/src/test/scala/tryout/
-^davserver/target/
-^ftpserver/.cache
-^ftpserver/.classpath
-^ftpserver/.project
-^ftpserver/\.settings/org\.scala-ide\.sdt\.core\.prefs
-^ftpserver/bin/
-^ftpserver/target/
-^lib_managed/
-^project/project/
+^core/target/
 ^project/target/
-^src/test/scala/tryout/
 ^target/
