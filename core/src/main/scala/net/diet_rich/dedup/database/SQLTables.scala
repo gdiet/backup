@@ -5,8 +5,9 @@ package net.diet_rich.dedup.database
 
 import scala.slick.jdbc.StaticQuery
 import scala.slick.jdbc.StaticQuery.interpolation
+
 import net.diet_rich.dedup.values._
-import net.diet_rich.dedup.util.init
+import net.diet_rich.dedup.util._
 
 object SQLTables {
   import scala.slick.jdbc.GetResult
@@ -27,12 +28,13 @@ object SQLTables {
     StaticQuery updateNA """
       |CREATE SEQUENCE treeEntriesIdSeq;
       |CREATE TABLE TreeEntries (
-      |  id      BIGINT DEFAULT (NEXT VALUE FOR treeEntriesIdSeq) PRIMARY KEY,
+      |  id      BIGINT DEFAULT (NEXT VALUE FOR treeEntriesIdSeq),
       |  parent  BIGINT NULL,
       |  name    VARCHAR(256) NOT NULL,
       |  time    BIGINT NOT NULL DEFAULT 0,
       |  deleted BIGINT DEFAULT NULL,
-      |  dataid  BIGINT DEFAULT NULL
+      |  dataid  BIGINT DEFAULT NULL,
+      |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
       |);
     """.stripMargin execute
 
@@ -49,13 +51,14 @@ object SQLTables {
 
 trait SQLTables {
   import SQLTables._
-  implicit def dbSession: Session
+  val sessions: ThreadSpecific[Session]
+  implicit private def dbSession: Session = sessions
 
-  private val treeEntryForIdQuery  = StaticQuery.query[TreeEntryID, TreeEntry]("SELECT * FROM TreeEntries WHERE id = ?;")
+  private val treeEntryForIdQuery  = StaticQuery.query[TreeEntryID, TreeEntry]("SELECT (id, parent, name, time, deleted, dataid) FROM TreeEntries WHERE id = ?;")
   private val nextTreeEntryIdQuery = StaticQuery.queryNA[TreeEntryID]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")
   
   def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id) firstOption
-  def nextTreeEntryId: TreeEntryID = nextTreeEntryIdQuery first
+  private def nextTreeEntryId: TreeEntryID = nextTreeEntryIdQuery first
 
   // FIXME write in one session and/or one thread only!
   // FIXME default values???
