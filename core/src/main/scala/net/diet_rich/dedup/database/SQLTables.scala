@@ -19,7 +19,6 @@ object SQLTables {
   implicit val setLongValueOption = SetParameter((v: Option[LongValue], p) => p setLongOption (v map (_ value)))
 
   implicit val getTreeEntryId = GetResult(r => TreeEntryID(r nextLong))
-  implicit val getTimeResult = GetResult(r => Time(r nextLong))
   implicit val getTimeOptionResult = GetResult(r => Time(r nextLongOption))
   implicit val getDataEntryIdOptionResult = GetResult(r => DataEntryID(r nextLongOption))
   implicit val getTreeEntry = GetResult(r => TreeEntry(r <<, r <<, r <<, r <<, r <<, r <<))
@@ -28,10 +27,10 @@ object SQLTables {
     StaticQuery updateNA """
       |CREATE SEQUENCE treeEntriesIdSeq;
       |CREATE TABLE TreeEntries (
-      |  id      BIGINT DEFAULT (NEXT VALUE FOR treeEntriesIdSeq),
-      |  parent  BIGINT NULL,
+      |  id      BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntriesIdSeq),
+      |  parent  BIGINT NOT NULL,
       |  name    VARCHAR(256) NOT NULL,
-      |  time    BIGINT NOT NULL DEFAULT 0,
+      |  time    BIGINT DEFAULT NULL,
       |  deleted BIGINT DEFAULT NULL,
       |  dataid  BIGINT DEFAULT NULL,
       |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
@@ -51,7 +50,12 @@ object SQLTables {
 
 trait SQLTables {
   import SQLTables._
+  import java.util.concurrent.Executors.newSingleThreadExecutor
+  import scala.concurrent.{Future, ExecutionContext}
+
   val sessions: ThreadSpecific[Session]
+
+  implicit private val dbWriteContext: ExecutionContext = ExecutionContext fromExecutor newSingleThreadExecutor
   implicit private def dbSession: Session = sessions
 
   private val treeEntryForIdQuery  = StaticQuery.query[TreeEntryID, TreeEntry]("SELECT (id, parent, name, time, deleted, dataid) FROM TreeEntries WHERE id = ?;")
@@ -60,10 +64,9 @@ trait SQLTables {
   def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id) firstOption
   private def nextTreeEntryId: TreeEntryID = nextTreeEntryIdQuery first
 
-  // FIXME write in one session and/or one thread only!
-  // FIXME default values???
-  def create(parent: TreeEntryID, name: String, time: Time = Time(0), dataId: Option[DataEntryID] = None): TreeEntryID =
-    init (nextTreeEntryId) {
+  def create(parent: TreeEntryID, name: String, time: Option[Time] = None, dataId: Option[DataEntryID] = None): Future[TreeEntryID] = Future {
+    init(nextTreeEntryId) {
       id => sqlu"INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES ($id, $parent, $name, $time, $dataId);" execute
     }
+  }
 }

@@ -14,11 +14,11 @@ class SQLTablesTests extends SpecificationWithJUnit { def is = s2"""
 
   def timingForWriteToTable = {
     val database = Database forURL (
-      url = "jdbc:h2:target/testdb",
+      url = "jdbc:h2:target/testdb;DB_CLOSE_ON_EXIT=FALSE",
       user = "sa",
       password = "",
       driver = "org.h2.Driver"
-    )
+      )
 
     database.withSession { implicit session => SQLTables.createTreeTable }
     val tables = new SQLTables {
@@ -31,7 +31,7 @@ class SQLTablesTests extends SpecificationWithJUnit { def is = s2"""
     println(System.currentTimeMillis() - time)
 
     import scala.slick.jdbc.StaticQuery.interpolation
-    sqlu"shutdown compact"
+    database.withSession { implicit session => sqlu"shutdown compact" execute }
 
     failure
   }

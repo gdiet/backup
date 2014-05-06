@@ -4,7 +4,3 @@
 package net.diet_rich.dedup.values
 
 case class TreeEntryID(value: Long) extends LongValue
-
-object TreeEntryID {
-  def apply(value: Option[Long]): Option[TreeEntryID] = value map TreeEntryID.apply
-}
