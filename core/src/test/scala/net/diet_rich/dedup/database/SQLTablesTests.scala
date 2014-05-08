@@ -20,7 +20,7 @@ class SQLTablesTests extends SpecificationWithJUnit { def is = s2"""
       driver = "org.h2.Driver"
       )
 
-    database.withSession { implicit session => SQLTables.createTreeTable }
+    database.withSession { implicit session => SQLTables.createTables(16) }
     val tables = new SQLTables {
       val sessions = ThreadSpecific[Session] { database createSession }
     }
