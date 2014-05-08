@@ -30,6 +30,7 @@ object SQLTables {
   implicit val _getTreeEntry         = GetResult(r => TreeEntry(r <<, r <<, r <<, r <<, r <<, r <<))
 
   // parameter setters
+  implicit val _setHash            = SetParameter((v: Hash, p) => p setBytes v.value)
   implicit val _setIntValue        = SetParameter((v: IntValue, p) => p setInt v.value)
   implicit val _setLongValue       = SetParameter((v: LongValue, p) => p setLong v.value)
   implicit val _setLongValueOption = SetParameter((v: Option[LongValue], p) => p setLongOption (v map (_ value)))
@@ -42,8 +43,8 @@ object SQLTables {
       |  parent  BIGINT NOT NULL,
       |  name    VARCHAR(256) NOT NULL,
       |  time    BIGINT DEFAULT NULL,
-      |  deleted BIGINT DEFAULT NULL,
       |  dataid  BIGINT DEFAULT NULL,
+      |  deleted BIGINT DEFAULT NULL,
       |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
       |);
       |CREATE SEQUENCE dataEntriesIdSeq;
@@ -94,32 +95,41 @@ trait SQLTables {
   import java.util.concurrent.Executors.newSingleThreadExecutor
   import scala.concurrent.{Future, ExecutionContext}
 
-  val sessions: ThreadSpecific[Session]
+  protected val sessions: ThreadSpecific[Session]
 
   implicit private val dbWriteContext: ExecutionContext = ExecutionContext fromExecutor newSingleThreadExecutor
   implicit private def dbSession: Session = sessions
 
   // TreeEntries
-  private val treeEntryForIdQuery = StaticQuery.query[TreeEntryID, TreeEntry]("SELECT id, parent, name, time, deleted, dataid FROM TreeEntries WHERE id = ?;")
+  private val treeEntryForIdQuery = StaticQuery.query[TreeEntryID, TreeEntry]("SELECT * FROM TreeEntries WHERE id = ?;")
+  private val treeChildrenForParentQuery = StaticQuery.query[TreeEntryID, TreeEntry]("SELECT * FROM TreeEntries WHERE parent = ?;")
   private val nextTreeEntryIdQuery = StaticQuery.queryNA[TreeEntryID]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")
   private def nextTreeEntryId: TreeEntryID = nextTreeEntryIdQuery first
 
-  // FIXME first or list?
   def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id) firstOption
-  def create(parent: TreeEntryID, name: String, time: Option[Time] = None, dataId: Option[DataEntryID] = None): Future[TreeEntryID] = Future {
+  def treeChildren(parent: TreeEntryID): List[TreeEntry] = treeChildrenForParentQuery(parent) list
+  def createTreeEntry(parent: TreeEntryID, name: String, time: Option[Time] = None, dataId: Option[DataEntryID] = None): Future[TreeEntryID] = Future {
     init(nextTreeEntryId) {
-      id => sqlu"INSERT INTO TreeEntries (id, parent, name, time, dataid) VALUES ($id, $parent, $name, $time, $dataId);" execute
+      id => sqlu"INSERT INTO TreeEntries VALUES ($id, $parent, $name, $time, $dataId);" execute
     }
   }
 
   // DataEntries
-  private val dataEntryForIdQuery = StaticQuery.query[DataEntryID, DataEntry]("SELECT id, length, print, hash, method FROM DataInfo WHERE id = ?;")
+  private val dataEntryForIdQuery = StaticQuery.query[DataEntryID, DataEntry]("SELECT * FROM DataEntries WHERE id = ?;")
+  private val dataEntriesForSizePrintHashQuery = StaticQuery.query[(Size, Print, Hash), DataEntry]("SELECT * FROM DataEntries WHERE length = ? AND print = ? AND hash = ?;")
+  private val nextDataEntryIdQuery = StaticQuery.queryNA[DataEntryID]("SELECT NEXT VALUE FOR dataEntriesIdSeq;")
+  private def nextDataEntryId: DataEntryID = nextDataEntryIdQuery first
 
-  // FIXME first or list?
   def dataEntry(id: DataEntryID): Option[DataEntry] = dataEntryForIdQuery(id) firstOption
+  def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash) list
+  def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): Future[DataEntryID] = Future (
+    init(nextDataEntryId) {
+      id => sqlu"INSERT INTO DataEntries VALUES ($id, $size, $print, $hash, $method);" execute
+    }
+  )
 
   // Settings
-  private val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT key, value FROM Settings;")
+  private val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT * FROM Settings;")
 
   def allSettings: Map[String, String] = allSettingsQuery toMap
 }

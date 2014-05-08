@@ -26,7 +26,7 @@ class SQLTablesTests extends SpecificationWithJUnit { def is = s2"""
     }
     val time = System.currentTimeMillis()
     for (i <- 1 to 100000) {
-      tables.create(TreeEntryID(i), "name")
+      tables.createTreeEntry(TreeEntryID(i), "name")
     }
     println(System.currentTimeMillis() - time)
 
