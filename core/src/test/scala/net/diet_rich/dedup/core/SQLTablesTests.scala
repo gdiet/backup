@@ -1,11 +1,11 @@
 // Copyright (c) Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-package net.diet_rich.dedup.database
+package net.diet_rich.dedup.core
 
 import org.specs2.SpecificationWithJUnit
 import scala.slick.driver.H2Driver.simple._
-import net.diet_rich.dedup.values.TreeEntryID
+import net.diet_rich.dedup.core.values.TreeEntryID
 import net.diet_rich.dedup.util.ThreadSpecific
 
 class SQLTablesTests extends SpecificationWithJUnit { def is = s2"""

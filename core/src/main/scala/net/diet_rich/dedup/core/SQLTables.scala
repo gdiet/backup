@@ -1,12 +1,12 @@
 // Copyright (c) Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-package net.diet_rich.dedup.database
+package net.diet_rich.dedup.core
 
 import scala.slick.jdbc.StaticQuery
 import scala.slick.jdbc.StaticQuery.interpolation
 
-import net.diet_rich.dedup.values._
+import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util._
 
 object SQLTables {
