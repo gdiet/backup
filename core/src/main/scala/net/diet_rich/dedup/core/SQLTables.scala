@@ -35,9 +35,9 @@ object SQLTables {
   implicit val _setLongValue       = SetParameter((v: LongValue, p) => p setLong v.value)
   implicit val _setLongValueOption = SetParameter((v: Option[LongValue], p) => p setLongOption (v map (_ value)))
 
-  def createTables(hashSize: Int)(implicit session: Session): Unit =
+  def createTables(hashSize: Int)(implicit session: Session): Unit = {
     StaticQuery updateNA s"""
-      |CREATE SEQUENCE treeEntriesIdSeq;
+      |CREATE SEQUENCE treeEntriesIdSeq START WITH 0;
       |CREATE TABLE TreeEntries (
       |  id      BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntriesIdSeq),
       |  parent  BIGINT NOT NULL,
@@ -47,6 +47,7 @@ object SQLTables {
       |  deleted BIGINT DEFAULT NULL,
       |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
       |);
+      |INSERT INTO TreeEntries (parent, name) VALUES (-1, '${FileSystem.ROOTNAME}');
       |CREATE SEQUENCE dataEntriesIdSeq;
       |CREATE TABLE DataEntries (
       |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntriesIdSeq),
@@ -68,6 +69,7 @@ object SQLTables {
       |  CONSTRAINT pk_Settings PRIMARY KEY (id)
       |);
     """.stripMargin execute
+  }
 
   def recreateIndexes(implicit session: Session): Unit =
     StaticQuery updateNA """
@@ -128,8 +130,13 @@ trait SQLTables {
     }
   )
 
+  // ByteStore
+
   // Settings
   private val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT * FROM Settings;")
 
   def allSettings: Map[String, String] = allSettingsQuery toMap
+
+  // startup checks
+  require(treeEntry(FileSystem.ROOTID) == FileSystem.ROOTENTRY)
 }

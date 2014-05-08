@@ -8,6 +8,6 @@ case class TreeEntry (
   parent: TreeEntryID,
   name: String,
   time: Option[Time],
-  deleted: Option[Time],
-  data: Option[DataEntryID]
+  data: Option[DataEntryID],
+  deleted: Option[Time]
 )
