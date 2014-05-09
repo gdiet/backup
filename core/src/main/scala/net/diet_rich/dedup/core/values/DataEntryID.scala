@@ -5,6 +5,6 @@ package net.diet_rich.dedup.core.values
 
 case class DataEntryID(value: Long) extends LongValue
 
-object DataEntryID {
-  def apply(value: Option[Long]): Option[DataEntryID] = value map DataEntryID.apply
+object DataEntryID extends (Long => DataEntryID) {
+  def apply(value: Option[Long]): Option[DataEntryID] = value map DataEntryID
 }

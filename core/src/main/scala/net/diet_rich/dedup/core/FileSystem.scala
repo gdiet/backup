@@ -11,6 +11,7 @@ trait FileSystem extends MetaFileSystem with DataFileSystem
 
 object FileSystem {
   val ROOTNAME = ""
+  val ROOTPATH = Path("")
   val SEPARATOR = "/"
   val ROOTID = TreeEntryID(0)
   val ROOTPARENTID = TreeEntryID(-1)
@@ -18,9 +19,19 @@ object FileSystem {
 }
 
 trait MetaFileSystem {
-  protected val meta: SQLTables
+  import FileSystem._
 
-  def createDir(parent: TreeEntryID, name: String): Future[TreeEntryID] = meta.createTreeEntry(parent, name)
+  protected val meta: EnrichedSQLTables
+
+  def createDir(parent: TreeEntryID, name: String): Future[TreeEntryID] = meta createTreeEntry (parent, name)
+
+  def treeEntry(path: Path): Option[TreeEntry] = if (path == ROOTPATH) meta treeEntry ROOTID else {
+    assume(path.value startsWith SEPARATOR, s"Path <$path> is not root and does not start with '$SEPARATOR'")
+    val parts = path.value split SEPARATOR drop 1
+    parts.foldLeft(Option(ROOTENTRY)) { (node, childName) =>
+      node flatMap (node => meta treeChildren node find (_.name == childName))
+    }
+  }
 }
 
 trait DataFileSystem {

@@ -7,7 +7,7 @@ case class StoreMethod (value: Int) extends IntValue {
   assume(0 <= value && value <= 1, s"Unsupported store method $value")
 }
 
-object StoreMethod {
+object StoreMethod extends (Int => StoreMethod) {
   val STORE = StoreMethod(0)
   val DEFLATE = StoreMethod(1)
 }

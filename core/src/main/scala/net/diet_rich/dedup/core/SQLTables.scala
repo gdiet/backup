@@ -140,3 +140,7 @@ trait SQLTables {
   // startup checks
   require(treeEntry(FileSystem.ROOTID) == FileSystem.ROOTENTRY)
 }
+
+trait EnrichedSQLTables extends SQLTables {
+  def treeChildren(parent: TreeEntry): List[TreeEntry] = treeChildren(parent id)
+}

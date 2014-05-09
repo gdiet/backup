@@ -5,6 +5,6 @@ package net.diet_rich.dedup.core.values
 
 case class Time(val value: Long) extends LongValue
 
-object Time {
-  def apply(value: Option[Long]): Option[Time] = value map Time.apply
+object Time extends (Long => Time) {
+  def apply(value: Option[Long]): Option[Time] = value map Time
 }
