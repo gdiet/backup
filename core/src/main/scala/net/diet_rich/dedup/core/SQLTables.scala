@@ -66,7 +66,7 @@ object SQLTables {
       |CREATE TABLE Settings (
       |  key    VARCHAR(256) NOT NULL,
       |  value  VARCHAR(256) NOT NULL,
-      |  CONSTRAINT pk_Settings PRIMARY KEY (id)
+      |  CONSTRAINT pk_Settings PRIMARY KEY (key)
       |);
     """.stripMargin execute
   }
@@ -90,6 +90,11 @@ object SQLTables {
       |CREATE INDEX idxByteStoreStart ON ByteStore(start);
       |CREATE INDEX idxByteStoreFin ON ByteStore(fin);
     """.stripMargin execute
+
+  val selectFromTreeEntries = "SELECT id, parent, name, time, dataid, deleted FROM TreeEntries"
+  val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
+  val selectFromByteStore = "SELECT dataid, index, start, fin FROM ByteStore"
+  val selectFromSettings = "SELECT key, value FROM Settings"
 }
 
 trait SQLTables {
@@ -103,8 +108,8 @@ trait SQLTables {
   implicit private def dbSession: Session = sessions
 
   // TreeEntries
-  private val treeEntryForIdQuery = StaticQuery.query[TreeEntryID, TreeEntry]("SELECT * FROM TreeEntries WHERE id = ?;")
-  private val treeChildrenForParentQuery = StaticQuery.query[TreeEntryID, TreeEntry]("SELECT * FROM TreeEntries WHERE parent = ?;")
+  private val treeEntryForIdQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")
+  private val treeChildrenForParentQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE parent = ?;")
   private val nextTreeEntryIdQuery = StaticQuery.queryNA[TreeEntryID]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")
   private def nextTreeEntryId: TreeEntryID = nextTreeEntryIdQuery first
 
@@ -117,8 +122,8 @@ trait SQLTables {
   }
 
   // DataEntries
-  private val dataEntryForIdQuery = StaticQuery.query[DataEntryID, DataEntry]("SELECT * FROM DataEntries WHERE id = ?;")
-  private val dataEntriesForSizePrintHashQuery = StaticQuery.query[(Size, Print, Hash), DataEntry]("SELECT * FROM DataEntries WHERE length = ? AND print = ? AND hash = ?;")
+  private val dataEntryForIdQuery = StaticQuery.query[DataEntryID, DataEntry](s"$selectFromDataEntries WHERE id = ?;")
+  private val dataEntriesForSizePrintHashQuery = StaticQuery.query[(Size, Print, Hash), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ? AND hash = ?;")
   private val nextDataEntryIdQuery = StaticQuery.queryNA[DataEntryID]("SELECT NEXT VALUE FOR dataEntriesIdSeq;")
   private def nextDataEntryId: DataEntryID = nextDataEntryIdQuery first
 
@@ -138,9 +143,5 @@ trait SQLTables {
   def allSettings: Map[String, String] = allSettingsQuery toMap
 
   // startup checks
-  require(treeEntry(FileSystem.ROOTID) == FileSystem.ROOTENTRY)
-}
-
-trait EnrichedSQLTables extends SQLTables {
-  def treeChildren(parent: TreeEntry): List[TreeEntry] = treeChildren(parent id)
+  require(treeEntry(FileSystem.ROOTID) == Some(FileSystem.ROOTENTRY))
 }
