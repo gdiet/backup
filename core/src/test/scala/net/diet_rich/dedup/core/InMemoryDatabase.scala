@@ -5,31 +5,29 @@ package net.diet_rich.dedup.core
 
 import scala.slick.driver.H2Driver.simple._
 
-import net.diet_rich.dedup.util.ThreadSpecific
-
-class MemoryDbWithTables {
-  import InMemoryDatabase._
-  protected lazy val database = Database forURL (
-    url = s"jdbc:h2:mem:testdb_${dbId.incrementAndGet()}};TRACE_LEVEL_SYSTEM_OUT=2",
-    user = "sa", password = "", driver = "org.h2.Driver"
-  )
-  val connection = database.createConnection() // FIXME only needed to prevent the database from closing prematurely
-  database.withSession { implicit session =>
-    SQLTables createTables 16
-    SQLTables recreateIndexes
-  }
-  protected lazy val sessions: ThreadSpecific[Session] = ThreadSpecific (database createSession)
-}
-
-trait InMemoryDatabase {
-  import InMemoryDatabase._
-  protected lazy val database = Database forURL (
-    url = s"jdbc:h2:mem:testdb_${dbId.incrementAndGet()}};TRACE_LEVEL_SYSTEM_OUT=2",
-    user = "sa", password = "", driver = "org.h2.Driver"
-  )
-  protected lazy val sessions: ThreadSpecific[Session] = ThreadSpecific (database createSession)
-}
-
 object InMemoryDatabase {
-  val dbId = new java.util.concurrent.atomic.AtomicLong()
+  private val dbId = new java.util.concurrent.atomic.AtomicLong()
+
+  def withEmptyDB[T] (f: Database => T): T = {
+    val database = Database forURL (
+      // ;TRACE_LEVEL_SYSTEM_OUT=2 or 3 for console debug output
+      url = s"jdbc:h2:mem:testdb_${dbId.incrementAndGet()}}",
+      user = "sa", password = "", driver = "org.h2.Driver"
+    )
+    val connection = database createConnection
+    val result = try {
+      f(database)
+    } finally {
+      connection close()
+    }
+    result
+  }
+
+  def withDB[T] (f: Database => T): T = withEmptyDB { database =>
+    database.withSession { implicit session =>
+      SQLTables createTables 16
+      SQLTables recreateIndexes
+    }
+    f(database)
+  }
 }
