@@ -4,3 +4,5 @@
 version := "0.10-SNAPSHOT"
 
 lazy val core = project
+
+fork in test := true

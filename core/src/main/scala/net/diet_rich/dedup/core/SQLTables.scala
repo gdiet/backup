@@ -43,7 +43,7 @@ object SQLTables {
       |  id      BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntriesIdSeq),
       |  parent  BIGINT NOT NULL,
       |  name    VARCHAR(256) NOT NULL,
-      |  time    BIGINT DEFAULT NULL,
+      |  changed BIGINT DEFAULT NULL,
       |  dataid  BIGINT DEFAULT NULL,
       |  deleted BIGINT DEFAULT NULL,
       |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
@@ -92,7 +92,7 @@ object SQLTables {
       |CREATE INDEX idxByteStoreFin ON ByteStore(fin);
     """.stripMargin execute
 
-  val selectFromTreeEntries = "SELECT id, parent, name, time, dataid, deleted FROM TreeEntries"
+  val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
   val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
   val selectFromByteStore = "SELECT dataid, index, start, fin FROM ByteStore"
   val selectFromSettings = "SELECT key, value FROM Settings"
@@ -118,7 +118,7 @@ class SQLTables(database: SQLTables.Database) {
   def treeChildren(parent: TreeEntryID): List[TreeEntry] = treeChildrenForParentQuery(parent) list
   def createTreeEntry(parent: TreeEntryID, name: String, time: Option[Time] = None, dataId: Option[DataEntryID] = None): Future[TreeEntryID] = Future {
     init(nextTreeEntryId) {
-      id => sqlu"INSERT INTO TreeEntries VALUES ($id, $parent, $name, $time, $dataId);" execute
+      id => sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $time, $dataId);" execute
     }
   }
 

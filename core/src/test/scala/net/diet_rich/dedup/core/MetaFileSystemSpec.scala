@@ -4,18 +4,27 @@
 package net.diet_rich.dedup.core
 
 import org.specs2.SpecificationWithJUnit
-import net.diet_rich.dedup.core.values.{TreeEntry, Path}
-import net.diet_rich.dedup.util.ThreadSpecific
-import org.specs2.matcher.Matcher
+
+import net.diet_rich.dedup.core.values.Path
 
 class MetaFileSystemSpec extends SpecificationWithJUnit with ValueMatchers { def is = s2"""
-    The root node should be a directory $rootIsDirectory
+    ${"Tests for the directory tree".title}
+
+    The root node should be a directory $rootIsDirectory.
+    A newly created directory should be available in the tree $createAndCheckDirectory.
   """
 
-  def rootIsDirectory = InMemoryDatabase.withDB { database =>
-    val fileSystem = new MetaFileSystem { override val sqlTables = new SQLTables(database) }
-    val root = fileSystem.treeEntry(Path(""))
-    root should beSomeDirectory
+  private def withEmptyFileSystem[T] (f: MetaFileSystem => T) = InMemoryDatabase.withDB { database =>
+    f(new MetaFileSystem { override val sqlTables = new SQLTables(database) })
   }
 
+  def rootIsDirectory = withEmptyFileSystem {
+    _.treeEntry(Path("")) should beSomeDirectory
+  }
+
+  def createAndCheckDirectory = withEmptyFileSystem { fileSystem =>
+    val createResult = fileSystem createDir (FileSystem ROOTID, "child")
+    val childId = waitFor(createResult)
+    fileSystem.treeEntry(Path("/child")) should (beSomeDirectory and haveSomeId(childId))
+  }
 }
