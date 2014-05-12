@@ -8,10 +8,11 @@ import org.specs2.SpecificationWithJUnit
 import net.diet_rich.dedup.core.values.Path
 
 class MetaFileSystemSpec extends SpecificationWithJUnit with ValueMatchers { def is = s2"""
-    ${"Tests for the directory tree".title}
+${"Tests for the directory tree".title}
 
-    The root node should be a directory $rootIsDirectory.
-    A newly created directory should be available in the tree $createAndCheckDirectory.
+The root node should be a directory $rootIsDirectory
+A newly created directory should be available in the tree $createAndCheckDirectory
+Looking up a path where only parts exist yields None $pathWithoutTreeEntry
   """
 
   private def withEmptyFileSystem[T] (f: MetaFileSystem => T) = InMemoryDatabase.withDB { database =>
@@ -23,8 +24,12 @@ class MetaFileSystemSpec extends SpecificationWithJUnit with ValueMatchers { def
   }
 
   def createAndCheckDirectory = withEmptyFileSystem { fileSystem =>
-    val createResult = fileSystem createDir (FileSystem ROOTID, "child")
-    val childId = waitFor(createResult)
+    val childId = waitFor(fileSystem createDir (FileSystem ROOTID, "child"))
     fileSystem.treeEntry(Path("/child")) should (beSomeDirectory and haveSomeId(childId))
+  }
+
+  def pathWithoutTreeEntry = withEmptyFileSystem { fileSystem =>
+    waitFor(fileSystem createDir (FileSystem ROOTID, "child"))
+    fileSystem.treeEntry(Path("/child/doesNotExist")) should beNone
   }
 }
