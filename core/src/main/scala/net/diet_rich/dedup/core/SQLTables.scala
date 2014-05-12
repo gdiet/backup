@@ -48,7 +48,7 @@ object SQLTables {
       |  deleted BIGINT DEFAULT NULL,
       |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
       |);
-      |INSERT INTO TreeEntries (parent, name) VALUES (-1, '${FileSystem.ROOTNAME}');
+      |INSERT INTO TreeEntries (parent, name) VALUES (-1, '${Path.ROOTNAME}');
       |CREATE SEQUENCE dataEntriesIdSeq;
       |CREATE TABLE DataEntries (
       |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntriesIdSeq),
