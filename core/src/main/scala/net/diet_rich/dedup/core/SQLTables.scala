@@ -13,6 +13,7 @@ object SQLTables {
   import scala.slick.jdbc.GetResult
   import scala.slick.jdbc.SetParameter
 
+  type Database = scala.slick.driver.JdbcDriver#Backend#Database
   type Session = scala.slick.driver.JdbcDriver#Backend#Session
 
   // atomic results
@@ -97,12 +98,12 @@ object SQLTables {
   val selectFromSettings = "SELECT key, value FROM Settings"
 }
 
-trait SQLTables {
+class SQLTables(database: SQLTables.Database) {
   import SQLTables._
   import java.util.concurrent.Executors.newSingleThreadExecutor
   import scala.concurrent.{Future, ExecutionContext}
 
-  protected val sessions: ThreadSpecific[Session]
+  private val sessions = ThreadSpecific(database createSession)
 
   implicit private val dbWriteContext: ExecutionContext = ExecutionContext fromExecutor newSingleThreadExecutor
   implicit private def dbSession: Session = sessions

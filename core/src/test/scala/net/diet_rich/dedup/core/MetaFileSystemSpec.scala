@@ -4,19 +4,18 @@
 package net.diet_rich.dedup.core
 
 import org.specs2.SpecificationWithJUnit
-import net.diet_rich.dedup.core.values.Path
+import net.diet_rich.dedup.core.values.{TreeEntry, Path}
 import net.diet_rich.dedup.util.ThreadSpecific
+import org.specs2.matcher.Matcher
 
-class MetaFileSystemSpec extends SpecificationWithJUnit { def is = s2"""
+class MetaFileSystemSpec extends SpecificationWithJUnit with ValueMatchers { def is = s2"""
     The root node should be a directory $rootIsDirectory
   """
 
   def rootIsDirectory = InMemoryDatabase.withDB { database =>
-    val tables = new SQLTables { override lazy val sessions = ThreadSpecific(database createSession) } // FIXME lazy should not be necessary
-    val fileSystem = new MetaFileSystem { override val sqlTables = tables }
-    println("********** read root entry")
+    val fileSystem = new MetaFileSystem { override val sqlTables = new SQLTables(database) }
     val root = fileSystem.treeEntry(Path(""))
-    root.get.isDirectory === true // FIXME matcher
+    root should beSomeDirectory
   }
 
 }
