@@ -10,7 +10,4 @@ case class TreeEntry (
   changed: Option[Time],
   data: Option[DataEntryID],
   deleted: Option[Time]
-) {
-  def isDirectory = data.isEmpty
-  def isFile = data.isDefined
-}
+)

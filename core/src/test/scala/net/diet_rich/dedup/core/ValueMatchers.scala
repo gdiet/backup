@@ -7,10 +7,12 @@ import org.specs2.matcher.{Matcher, Matchers}
 import net.diet_rich.dedup.core.values.{TreeEntryID, TreeEntry}
 
 trait ValueMatchers { _: Matchers =>
-  def beADirectory: Matcher[TreeEntry] = beTrue ^^ ((_:TreeEntry).isDirectory aka "treeEntry.isDirectory")
-  def beAFile: Matcher[TreeEntry] = beTrue ^^ ((_:TreeEntry).isFile aka "treeEntry.isFile")
-  def beSomeDirectory: Matcher[Option[TreeEntry]] = beSome(beADirectory) ^^ ((_:Option[TreeEntry]) aka "Option[TreeEntry]")
-  def beSomeFile: Matcher[Option[TreeEntry]] = beSome(beAFile) ^^ ((_:Option[TreeEntry]) aka "Option[TreeEntry]")
+  def beADirectory: Matcher[TreeEntry] = beNone ^^ ((_:TreeEntry).data aka "treeEntry.data")
+  def beAFile: Matcher[TreeEntry] = beSome ^^ ((_:TreeEntry).data aka "treeEntry.data")
   def haveTheId(id: TreeEntryID): Matcher[TreeEntry] = beTypedEqualTo(id) ^^ ((_:TreeEntry).id aka "treeEntry.id")
-  def haveSomeId(id: TreeEntryID): Matcher[Option[TreeEntry]] = beSome(haveTheId(id)) ^^ ((_:Option[TreeEntry]) aka "Option[TreeEntry]")
 }
+
+// FIXME remove once it's clear we don't need this anymore
+//def beSomeDirectory: Matcher[Option[TreeEntry]] = beSome(beADirectory) ^^ ((_:Option[TreeEntry]) aka "Option[TreeEntry]")
+//def beSomeFile: Matcher[Option[TreeEntry]] = beSome(beAFile) ^^ ((_:Option[TreeEntry]) aka "Option[TreeEntry]")
+//def haveSomeId(id: TreeEntryID): Matcher[Option[TreeEntry]] = beSome(haveTheId(id)) ^^ ((_:Option[TreeEntry]) aka "Option[TreeEntry]")

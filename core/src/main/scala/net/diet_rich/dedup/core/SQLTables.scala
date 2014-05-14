@@ -108,6 +108,9 @@ class SQLTables(database: SQLTables.Database) {
   implicit private val dbWriteContext: ExecutionContext = ExecutionContext fromExecutor newSingleThreadExecutor
   implicit private def dbSession: Session = sessions
 
+  private val writeThread = resultOf(Future(Thread.currentThread))
+  def inWriteContext[T] (f: => T): T = if (Thread.currentThread == writeThread) f else resultOf(Future(f))
+
   // TreeEntries
   private val treeEntryForIdQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")
   private val treeChildrenForParentQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE parent = ?;")
@@ -116,9 +119,9 @@ class SQLTables(database: SQLTables.Database) {
 
   def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id) firstOption
   def treeChildren(parent: TreeEntryID): List[TreeEntry] = treeChildrenForParentQuery(parent) list
-  def createTreeEntry(parent: TreeEntryID, name: String, time: Option[Time] = None, dataId: Option[DataEntryID] = None): Future[TreeEntryID] = Future {
+  def createTreeEntry(parent: TreeEntryID, name: String, time: Option[Time], dataid: Option[DataEntryID]): TreeEntryID = inWriteContext {
     init(nextTreeEntryId) {
-      id => sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $time, $dataId);" execute
+      id => sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $time, $dataid);" execute
     }
   }
 
@@ -130,7 +133,7 @@ class SQLTables(database: SQLTables.Database) {
 
   def dataEntry(id: DataEntryID): Option[DataEntry] = dataEntryForIdQuery(id) firstOption
   def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash) list
-  def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): Future[DataEntryID] = Future (
+  def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryID = inWriteContext (
     init(nextDataEntryId) {
       id => sqlu"INSERT INTO DataEntries VALUES ($id, $size, $print, $hash, $method);" execute
     }

@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
+import java.io.IOException
 import scala.concurrent.Future
 
 import net.diet_rich.dedup.core.values._
@@ -17,29 +18,38 @@ object FileSystem {
 }
 
 trait MetaFileSystem {
-  import Path._
   import FileSystem._
 
   protected val sqlTables: SQLTables
 
-  def children(parent: TreeEntryID): List[TreeEntry] = sqlTables treeChildren parent
+  def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = sqlTables treeChildren parent
+  def children(parent: TreeEntryID): List[TreeEntry] = childrenWithDeleted(parent) filter (_.deleted isEmpty)
 
-  def createDir(parent: TreeEntryID, name: String): Future[TreeEntryID] = sqlTables createTreeEntry (parent, name)
-
-  def getOrMakeDir(path: Path): Future[TreeEntryID] = ??? // FIXME continue if (path == ROOTPATH) Future successful ROOTID else {
-//    val parts = path.value.split(SEPARATOR).drop(1)
-//    parts.foldLeft(ROOTID) {(node, childName) =>
-//      val childOption = children(node).find(_.name == childName)
-//      childOption map(_.id) getOrElse createAndGetId(node, childName, NodeType.DIR)
-//    }
-//  }
-
-  def treeEntry(path: Path): Option[TreeEntry] = if (path == ROOTPATH) sqlTables treeEntry ROOTID else {
-    val parts = path.value split SEPARATOR drop 1
-    parts.foldLeft(Option(ROOTENTRY)) { (node, childName) =>
-      node flatMap (children(_) find (_.name == childName))
+  def createUnchecked(parent: TreeEntryID, name: String, time: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID =
+    sqlTables createTreeEntry (parent, name, time, dataid)
+  def create(parent: TreeEntryID, name: String, time: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID = sqlTables inWriteContext {
+    children(parent) find (_.name == name) match {
+      case Some(entry) => throw new IOException(s"entry $entry already exists")
+      case None => createUnchecked(parent, name, time, dataid)
     }
   }
+  def createWithPath(path: Path, time: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID = sqlTables inWriteContext {
+    val elements = path.elements
+    if(elements.size == 0) throw new IOException("can't create the root entry")
+    val parent = elements.dropRight(1).foldLeft(ROOTID) { (node, childName) =>
+      children(node) filter (_.name == childName) match {
+        case Nil => createUnchecked(node, childName, time, dataid)
+        case List(entry) => entry.id
+        case entries => throw new IOException(s"ambiguous path; §entries")
+      }
+    }
+    create(parent, elements.last, time, dataid)
+  }
+
+  def entries(path: Path): List[TreeEntry] =
+    path.elements.foldLeft(List(ROOTENTRY)) { (node, childName) =>
+      node flatMap (children(_) filter (_.name == childName))
+    }
 }
 
 trait DataFileSystem {
