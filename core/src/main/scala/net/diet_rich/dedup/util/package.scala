@@ -9,4 +9,5 @@ import scala.concurrent.duration._
 package object util {
   def init[T](t: T)(f: T => Unit): T = { f(t); t }
   def resultOf[T](f: Future[T]): T = Await result (f, 1 seconds)
+  type Bytes = Array[Byte]
 }
