@@ -8,8 +8,8 @@ import org.specs2.SpecificationWithJUnit
 
 import net.diet_rich.dedup.core.values.Path
 
-class MetaFileSystemSpec extends SpecificationWithJUnit with ValueMatchers { def is = s2"""
-${"Tests for the directory tree".title}
+class FileSystemTreeSpec extends SpecificationWithJUnit with ValueMatchers { def is = s2"""
+${"Tests for the file system tree".title}
 
 The root node should be a directory $rootIsDirectory
 A directory should be available in the tree even if its newly crested $createAndCheckDirectory
@@ -18,8 +18,8 @@ Create throws an exception if a child with the name already exists $createExisti
 getOrMakeDir $todo
   """
 
-  private def withEmptyFileSystem[T] (f: MetaFileSystem => T) = InMemoryDatabase.withDB { database =>
-    f(new MetaFileSystem { override val sqlTables = new SQLTables(database) })
+  private def withEmptyFileSystem[T] (f: FileSystemTree => T) = InMemoryDatabase.withDB { database =>
+    f(new FileSystemTree { override val sqlTables = new SQLTables(database) })
   }
 
   def createExisting = withEmptyFileSystem { fileSystem =>

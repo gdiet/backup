@@ -35,6 +35,7 @@ object SQLTables {
   implicit val _setIntValue        = SetParameter((v: IntValue, p) => p setInt v.value)
   implicit val _setLongValue       = SetParameter((v: LongValue, p) => p setLong v.value)
   implicit val _setLongValueOption = SetParameter((v: Option[LongValue], p) => p setLongOption (v map (_ value)))
+  implicit val _setDataRange       = SetParameter((v: DataRange, p) => { p setLong v.start.value; p setLong v.fin.value }) // FIXME more elegant implementation possible?
 
   def createTables(hashSize: Int)(implicit session: Session): Unit = {
     StaticQuery updateNA s"""
@@ -127,11 +128,13 @@ class SQLTables(database: SQLTables.Database) {
 
   // DataEntries
   private val dataEntryForIdQuery = StaticQuery.query[DataEntryID, DataEntry](s"$selectFromDataEntries WHERE id = ?;")
+  private val dataEntriesForSizePrintQuery = StaticQuery.query[(Size, Print), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ?;")
   private val dataEntriesForSizePrintHashQuery = StaticQuery.query[(Size, Print, Hash), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ? AND hash = ?;")
   private val nextDataEntryIdQuery = StaticQuery.queryNA[DataEntryID]("SELECT NEXT VALUE FOR dataEntriesIdSeq;")
   private def nextDataEntryId: DataEntryID = nextDataEntryIdQuery first
 
   def dataEntry(id: DataEntryID): Option[DataEntry] = dataEntryForIdQuery(id) firstOption
+  def dataEntries(size: Size, print: Print): List[DataEntry] = dataEntriesForSizePrintQuery(size, print) list
   def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash) list
   def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryID = inWriteContext (
     init(nextDataEntryId) {
@@ -140,6 +143,9 @@ class SQLTables(database: SQLTables.Database) {
   )
 
   // ByteStore
+  def createByteStoreEntry(dataid: DataEntryID, index: Int, range: DataRange): Unit = inWriteContext (
+    sqlu"INSERT INTO ByteStore VALUES ($dataid, $index, $range);" execute
+  )
 
   // Settings
   private val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT * FROM Settings;")

@@ -8,16 +8,30 @@ import scala.concurrent.Future
 
 import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.core.values.Implicits._
+import net.diet_rich.dedup.util._
+import net.diet_rich.dedup.core.values.DataEntry
+import net.diet_rich.dedup.core.values.TreeEntry
+import scala.Some
+import net.diet_rich.dedup.core.values.Size
+import net.diet_rich.dedup.util.MemoryReserved
+import net.diet_rich.dedup.core.values.TreeEntryID
 
-trait FileSystem extends MetaFileSystem with DataFileSystem
+trait FileSystem extends FileSystemTree with FileSystemStoreLogic with FileSystemData
 
 object FileSystem {
   val ROOTID = TreeEntryID(0)
   val ROOTPARENTID = TreeEntryID(-1)
   val ROOTENTRY = TreeEntry(ROOTID, ROOTPARENTID, Path.ROOTNAME, None, None, None)
+  val PRINTSIZE = 8192
 }
 
-trait MetaFileSystem {
+trait SystemSettings {
+  def hashAlgorithm = "MD5"
+  def threadPoolSize = 4
+  def storeMethod = StoreMethod.DEFLATE
+}
+
+trait FileSystemTree {
   import FileSystem._
 
   protected val sqlTables: SQLTables
@@ -52,6 +66,89 @@ trait MetaFileSystem {
     }
 }
 
-trait DataFileSystem {
+trait FileSystemStoreLogic { _: FileSystem =>
+  import FileSystem._
 
+  import net.diet_rich.dedup.util.Bytes
+  import java.util.concurrent._
+  import scala.concurrent.{Future, ExecutionContext}
+
+  protected val settings: SystemSettings
+  import settings._
+
+  private val executorQueue = new ArrayBlockingQueue[Runnable](threadPoolSize)
+  private val rejectHandler = new RejectedExecutionHandler {
+    override def rejectedExecution(r: Runnable, e: ThreadPoolExecutor): Unit = executorQueue put r
+  }
+  private val threadPool = new ThreadPoolExecutor(threadPoolSize, threadPoolSize, 0, TimeUnit.SECONDS, executorQueue, rejectHandler)
+  private val storeContext: ExecutionContext = ExecutionContext fromExecutorService threadPool
+  private def inStoreContext[T] (f: => T): T = resultOf(Future(f)(storeContext))
+
+  def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntryID = inStoreContext {
+    createUnchecked(parent, name, Some(time), Some(dataEntry(source)))
+  }
+
+  private[core] def dataEntry(source: Source): DataEntryID = {
+    val (print, printData) = printFromSource(source)
+    if (hasSizeAndPrint(source size, print))
+      tryPreloadToGetDataEntry(printData, print, source)
+    else
+      storeData(printData, print, source)
+  }
+
+  private[core] def tryPreloadToGetDataEntry(printData: Bytes, print: Print, source: Source): DataEntryID = Memory.reserved(source.size.value) {
+    case _: MemoryReserved => preloadToGetDataEntry(printData, print, source)
+    case _: MemoryNotAvailable => readTwiceIfNecessaryToGetDataEntry(printData, print, source)
+  }
+
+  private[core] def readTwiceIfNecessaryToGetDataEntry(printData: Bytes, print: Print, source: Source): DataEntryID = {
+    val data: Iterator[Bytes] = Iterator(printData) ++ source.allData
+    val (hash, size) = Hash.calculate(hashAlgorithm)(data)
+    dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
+      source.reset
+      val (print, printData) = printFromSource(source)
+      storeData(printData, print, source)
+    }
+  }
+
+  private[core] def preloadToGetDataEntry(printData: Bytes, print: Print, source: Source): DataEntryID = {
+    val data: List[Bytes] = printData :: source.allData.toList
+    val (hash, size) = Hash.calculate(hashAlgorithm)(data.iterator)
+    dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse storeData(data, size, print, hash)
+  }
+
+  private[core] def storeData(printData: Bytes, print: Print, source: Source): DataEntryID = {
+    val data: Iterator[Bytes] = Iterator(printData) ++ source.allData
+    val (hash, size) = Hash.calculate(hashAlgorithm)(data)
+    ???
+  }
+
+  private[core] def storeData(data: List[Bytes], size: Size, print: Print, hash: Hash): DataEntryID =
+    createDataEntry(size, print, hash, settings.storeMethod) match {
+      case ExistingEntryMatches(dataid) => dataid
+      case DataEntryCreated(dataid) =>
+        ??? // FIXME implement the actual store process
+        dataid
+    }
+
+  private def printFromSource(source: Source): (Print, Bytes) = {
+    val printData = source read PRINTSIZE
+    (Print(printData), printData)
+  }
+
+}
+
+sealed trait DataEntryCreateResult { val id: DataEntryID }
+case class DataEntryCreated(id: DataEntryID) extends DataEntryCreateResult
+case class ExistingEntryMatches(id: DataEntryID) extends DataEntryCreateResult
+
+trait FileSystemData {
+  protected val sqlTables: SQLTables
+  private[core] def hasSizeAndPrint(size: Size, print: Print): Boolean = !(sqlTables dataEntries(size, print) isEmpty)
+  private[core] def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry] = sqlTables dataEntries(size, print, hash)
+  private[core] def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryCreateResult = sqlTables.inWriteContext {
+    sqlTables.dataEntries(size, print, hash).headOption
+      .map(e => ExistingEntryMatches(e.id))
+      .getOrElse(DataEntryCreated(sqlTables.createDataEntry(size, print, hash, method)))
+  }
 }
