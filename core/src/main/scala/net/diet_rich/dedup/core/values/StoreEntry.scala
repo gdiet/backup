@@ -3,6 +3,8 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.values
 
-case class Size(val value: Long) extends LongValue {
-  def -(other: Size): Size = Size(value - other.value)
-}
+case class StoreEntry (
+  id: DataEntryID,
+  index: Int,
+  range: DataRange
+)

@@ -15,6 +15,7 @@ import scala.Some
 import net.diet_rich.dedup.core.values.Size
 import net.diet_rich.dedup.util.MemoryReserved
 import net.diet_rich.dedup.core.values.TreeEntryID
+import scala.collection.mutable
 
 trait FileSystem extends FileSystemTree with FileSystemStoreLogic with FileSystemData
 
@@ -25,10 +26,14 @@ object FileSystem {
   val PRINTSIZE = 8192
 }
 
-trait SystemSettings {
+trait StoreSettings {
   def hashAlgorithm = "MD5"
   def threadPoolSize = 4
   def storeMethod = StoreMethod.DEFLATE
+}
+
+trait DataSettings {
+  def blocksize: Size = Size(0x800000L)
 }
 
 trait FileSystemTree {
@@ -73,8 +78,8 @@ trait FileSystemStoreLogic { _: FileSystem =>
   import java.util.concurrent._
   import scala.concurrent.{Future, ExecutionContext}
 
-  protected val settings: SystemSettings
-  import settings._
+  protected val storeSettings: StoreSettings
+  import storeSettings._
 
   private val executorQueue = new ArrayBlockingQueue[Runnable](threadPoolSize)
   private val rejectHandler = new RejectedExecutionHandler {
@@ -124,7 +129,7 @@ trait FileSystemStoreLogic { _: FileSystem =>
   }
 
   private[core] def storeData(data: List[Bytes], size: Size, print: Print, hash: Hash): DataEntryID =
-    createDataEntry(size, print, hash, settings.storeMethod) match {
+    createDataEntry(size, print, hash, storeSettings.storeMethod) match {
       case ExistingEntryMatches(dataid) => dataid
       case DataEntryCreated(dataid) =>
         ??? // FIXME implement the actual store process
@@ -143,7 +148,11 @@ case class DataEntryCreated(id: DataEntryID) extends DataEntryCreateResult
 case class ExistingEntryMatches(id: DataEntryID) extends DataEntryCreateResult
 
 trait FileSystemData {
+
   protected val sqlTables: SQLTables
+  protected val dataSettings: DataSettings
+  import dataSettings.blocksize
+
   private[core] def hasSizeAndPrint(size: Size, print: Print): Boolean = !(sqlTables dataEntries(size, print) isEmpty)
   private[core] def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry] = sqlTables dataEntries(size, print, hash)
   private[core] def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryCreateResult = sqlTables.inWriteContext {
@@ -151,4 +160,24 @@ trait FileSystemData {
       .map(e => ExistingEntryMatches(e.id))
       .getOrElse(DataEntryCreated(sqlTables.createDataEntry(size, print, hash, method)))
   }
+
+  private[core] val freeRangesQueue = mutable.Queue[DataRange](DataRange(sqlTables.startOfFreeDataArea, Position(Long MaxValue)))
+
+  // queue gaps in byte store
+  if (sqlTables.illegalDataAreaOverlapsValue.isEmpty) {
+    val dataAreaStarts = sqlTables.dataAreaStarts
+    if (!dataAreaStarts.isEmpty) {
+      val (firstArea :: gapStarts) = dataAreaStarts
+      if (firstArea > Position(0L)) freeRangesQueue enqueue DataRange(Position(0L), firstArea)
+      freeRangesQueue enqueue ((gapStarts zip sqlTables.dataAreaEnds).map(DataRange.tupled):_*)
+    }
+  }
+
+  private[core] def requestFreeRange: DataRange = synchronized {
+    val (range, rest) = freeRangesQueue.dequeue().blockPartition(blocksize)
+    rest foreach (freeRangesQueue.enqueue(_))
+    range
+  }
+  private[core] def returnFreeRange (range: DataRange): Unit = synchronized { freeRangesQueue enqueue range }
+
 }

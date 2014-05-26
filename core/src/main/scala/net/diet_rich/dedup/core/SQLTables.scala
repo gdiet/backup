@@ -20,6 +20,7 @@ object SQLTables {
   implicit val _getDataEntryId       = GetResult(r => DataEntryID(r nextLong))
   implicit val _getDataEntryIdOption = GetResult(r => DataEntryID(r nextLongOption))
   implicit val _getHash              = GetResult(r => Hash(r nextBytes))
+  implicit val _getPosition          = GetResult(r => Position(r nextLong))
   implicit val _getPrint             = GetResult(r => Print(r nextLong))
   implicit val _getSize              = GetResult(r => Size(r nextLong))
   implicit val _getStoreMethod       = GetResult(r => StoreMethod(r nextInt))
@@ -31,11 +32,11 @@ object SQLTables {
   implicit val _getTreeEntry         = GetResult(r => TreeEntry(r <<, r <<, r <<, r <<, r <<, r <<))
 
   // parameter setters
+  implicit val _setDataRange       = SetParameter((v: DataRange, p) => { p setLong v.start.value; p setLong v.fin.value }) // FIXME more elegant implementation based on LongValue?
   implicit val _setHash            = SetParameter((v: Hash, p) => p setBytes v.value)
   implicit val _setIntValue        = SetParameter((v: IntValue, p) => p setInt v.value)
   implicit val _setLongValue       = SetParameter((v: LongValue, p) => p setLong v.value)
   implicit val _setLongValueOption = SetParameter((v: Option[LongValue], p) => p setLongOption (v map (_ value)))
-  implicit val _setDataRange       = SetParameter((v: DataRange, p) => { p setLong v.start.value; p setLong v.fin.value }) // FIXME more elegant implementation possible?
 
   def createTables(hashSize: Int)(implicit session: Session): Unit = {
     StaticQuery updateNA s"""
@@ -143,6 +144,17 @@ class SQLTables(database: SQLTables.Database) {
   )
 
   // ByteStore
+  def startOfFreeDataArea = StaticQuery.queryNA[Position]("SELECT MAX(fin) FROM ByteStore;").firstOption getOrElse Position(0)
+  def dataAreaEnds: List[Position] = StaticQuery.queryNA[Position](
+    "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin"
+  ).list
+  def dataAreaStarts: List[Position] = StaticQuery.queryNA[Position](
+    "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start"
+  ).list
+  lazy val illegalDataAreaOverlapsValue: List[(StoreEntry, StoreEntry)] = StaticQuery.queryNA[(StoreEntry, StoreEntry)](
+    "SELECT * FROM ByteStore b1 JOIN ByteStore b2 ON b1.start < b2.fin AND b1.fin > b2.fin"
+  ).list
+
   def createByteStoreEntry(dataid: DataEntryID, index: Int, range: DataRange): Unit = inWriteContext (
     sqlu"INSERT INTO ByteStore VALUES ($dataid, $index, $range);" execute
   )
