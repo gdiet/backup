@@ -169,7 +169,7 @@ trait FileSystemData {
     if (!dataAreaStarts.isEmpty) {
       val (firstArea :: gapStarts) = dataAreaStarts
       if (firstArea > Position(0L)) freeRangesQueue enqueue DataRange(Position(0L), firstArea)
-      freeRangesQueue enqueue ((gapStarts zip sqlTables.dataAreaEnds).map(DataRange.tupled):_*)
+      freeRangesQueue enqueue ((sqlTables.dataAreaEnds zip gapStarts).map(DataRange.tupled):_*)
     }
   }
 
