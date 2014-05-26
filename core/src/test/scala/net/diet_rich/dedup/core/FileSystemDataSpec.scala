@@ -29,13 +29,13 @@ Illegal overlaps: inclusions are correctly detected $inclusions
   def inclusions = withEmptySqlTables { sqlTables =>
     sqlTables.createByteStoreEntry(DataEntryID(0), 0, DataRange(Position(10), Position(50)))
     sqlTables.createByteStoreEntry(DataEntryID(0), 1, DataRange(Position(20), Position(30)))
-    sqlTables.illegalDataAreaOverlapsValue must not beEmpty
+    sqlTables.illegalDataAreaOverlaps must not beEmpty
   }
 
   def partialOverlap = withEmptySqlTables { sqlTables =>
     sqlTables.createByteStoreEntry(DataEntryID(0), 0, DataRange(Position(10), Position(30)))
     sqlTables.createByteStoreEntry(DataEntryID(0), 1, DataRange(Position(20), Position(50)))
-    sqlTables.illegalDataAreaOverlapsValue must not beEmpty
+    sqlTables.illegalDataAreaOverlaps must not beEmpty
   }
 
   def gapAndOverlap = withEmptySqlTables { sqlTables =>

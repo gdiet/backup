@@ -152,7 +152,7 @@ class SQLTables(database: SQLTables.Database) {
   def dataAreaStarts: List[Position] = StaticQuery.queryNA[Position](
     "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start;"
   ).list
-  lazy val illegalDataAreaOverlapsValue: List[(StoreEntry, StoreEntry)] = StaticQuery.queryNA[(StoreEntry, StoreEntry)](
+  def illegalDataAreaOverlaps: List[(StoreEntry, StoreEntry)] = StaticQuery.queryNA[(StoreEntry, StoreEntry)](
     "SELECT * FROM ByteStore b1 JOIN ByteStore b2 ON b1.start < b2.fin AND b1.fin > b2.fin;"
   ).list
 
