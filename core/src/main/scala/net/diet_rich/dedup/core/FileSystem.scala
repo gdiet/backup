@@ -161,7 +161,7 @@ trait FileSystemData {
       .getOrElse(DataEntryCreated(sqlTables.createDataEntry(size, print, hash, method)))
   }
 
-  val initialDataOverlapProblems = sqlTables.illegalDataAreaOverlaps
+  val initialDataOverlapProblems = sqlTables.problemDataAreaOverlaps
 
   private[core] val freeRangesQueue = mutable.Queue[DataRange](DataRange(sqlTables.startOfFreeDataArea, Position(Long MaxValue)))
 

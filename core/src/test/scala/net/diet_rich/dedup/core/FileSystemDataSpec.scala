@@ -17,70 +17,78 @@ If entries with gaps are present, the queue should contain appropriate entries $
 If gaps and illegal overlaps are present, the queue should contain only one entry $gapAndOverlap
 Illegal overlaps: partial overlap are correctly detected $partialOverlap
 Illegal overlaps: inclusions are correctly detected $inclusions
+Illegal overlaps: identical entries are correctly detected $identical
+Illegal overlaps: partially identical entries are correctly detected $partiallyIdentical
   """
 
   private class TestFileSystemData(val sqlTables: SQLTables) extends FileSystemData {
     val dataSettings = new DataSettings { override def blocksize = Size(100) }
   }
   private def withEmptySqlTables[T](f: SQLTables => T) = InMemoryDatabase.withDB { db => f(new SQLTables(db))}
-  private def withDataSystem[T](sqlTables: SQLTables)(f: FileSystemData => T) = f(new TestFileSystemData(sqlTables))
+  private def withDataSystem[T](f: FileSystemData => T)(implicit sqlTables: SQLTables) = f(new TestFileSystemData(sqlTables))
+  private def range(start: Long, fin: Long = Long.MaxValue) = DataRange(Position(start), Position(fin))
+  private def addRangeEntry(start: Long, fin: Long)(implicit sqlTables: SQLTables) =
+    sqlTables.createByteStoreEntry(DataEntryID(0), range(start, fin))
 
   // FIXME implement good matchers
-  def inclusions = withEmptySqlTables { sqlTables =>
-    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(10), Position(50)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(20), Position(30)))
-    sqlTables.illegalDataAreaOverlaps must not beEmpty
+  def partiallyIdentical = withEmptySqlTables { implicit sqlTables =>
+    addRangeEntry(10,50)
+    addRangeEntry(10,30)
+    sqlTables.problemDataAreaOverlaps must not beEmpty
   }
 
-  def partialOverlap = withEmptySqlTables { sqlTables =>
-    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(10), Position(30)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(20), Position(50)))
-    sqlTables.illegalDataAreaOverlaps must not beEmpty
+  def identical = withEmptySqlTables { implicit sqlTables =>
+    addRangeEntry(10,50)
+    addRangeEntry(10,50)
+    sqlTables.problemDataAreaOverlaps must not beEmpty
   }
 
-  def gapAndOverlap = withEmptySqlTables { sqlTables =>
-    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(10), Position(50)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(20), Position(30)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(60), Position(110)))
-    withDataSystem(sqlTables) { dataSystem =>
+  def inclusions = withEmptySqlTables { implicit sqlTables =>
+    addRangeEntry(10,50)
+    addRangeEntry(20,40)
+    sqlTables.problemDataAreaOverlaps must not beEmpty
+  }
+
+  def partialOverlap = withEmptySqlTables { implicit sqlTables =>
+    addRangeEntry(10,30)
+    addRangeEntry(20,40)
+    sqlTables.problemDataAreaOverlaps must not beEmpty
+  }
+
+  def gapAndOverlap = withEmptySqlTables { implicit sqlTables =>
+    addRangeEntry(10,50)
+    addRangeEntry(20,40)
+    addRangeEntry(60,110)
+    withDataSystem { dataSystem =>
       dataSystem.freeRangesQueue.toList.reverse should beEqualTo(
-        List(
-          DataRange(Position(110), Position(Long.MaxValue))
-        )
+        List(range(110))
       )
     }
   }
 
-  def gap = withEmptySqlTables { sqlTables =>
-    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(0), Position(50)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(60), Position(110)))
-    withDataSystem(sqlTables) { dataSystem =>
+  def gap = withEmptySqlTables { implicit sqlTables =>
+    addRangeEntry( 0,50)
+    addRangeEntry(60,110)
+    withDataSystem { dataSystem =>
       dataSystem.freeRangesQueue.toList.reverse should beEqualTo(
-        List(
-          DataRange(Position(50), Position(60)),
-          DataRange(Position(110), Position(Long.MaxValue))
-        )
+        List(range(50,60),range(110))
       )
     }
   }
 
-  def entryNotAtStart = withEmptySqlTables { sqlTables =>
-    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(10), Position(60)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(60), Position(110)))
-    withDataSystem(sqlTables) { dataSystem =>
+  def entryNotAtStart = withEmptySqlTables { implicit sqlTables =>
+    addRangeEntry(10,60)
+    addRangeEntry(60,110)
+    withDataSystem { dataSystem =>
       dataSystem.freeRangesQueue.toList.reverse should beEqualTo(
-        List(
-          DataRange(Position(0), Position(10)),
-          DataRange(Position(110), Position(Long.MaxValue))
-        )
+        List(range(0,10),range(110))
       )
     }
   }
 
-  // FIXME implement good matchers
-  def emptyDatabase = withEmptySqlTables { sqlTables =>
-    withDataSystem(sqlTables) { dataSystem =>
-      dataSystem.freeRangesQueue.toList.reverse should beEqualTo(List(DataRange(Position(0), Position(Long.MaxValue))))
+  def emptyDatabase = withEmptySqlTables { implicit sqlTables =>
+    withDataSystem { dataSystem =>
+      dataSystem.freeRangesQueue.toList.reverse should beEqualTo(List(range(0)))
     }
   }
 
