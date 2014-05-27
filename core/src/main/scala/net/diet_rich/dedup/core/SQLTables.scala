@@ -23,6 +23,7 @@ object SQLTables {
   implicit val _getPosition          = GetResult(r => Position(r nextLong))
   implicit val _getPrint             = GetResult(r => Print(r nextLong))
   implicit val _getSize              = GetResult(r => Size(r nextLong))
+  implicit val _getStoreEntryId      = GetResult(r => StoreEntryID(r nextLong))
   implicit val _getStoreMethod       = GetResult(r => StoreMethod(r nextInt))
   implicit val _getTimeOption        = GetResult(r => Time(r nextLongOption))
   implicit val _getTreeEntryId       = GetResult(r => TreeEntryID(r nextLong))
@@ -61,11 +62,13 @@ object SQLTables {
       |  method INTEGER DEFAULT 0 NOT NULL,
       |  CONSTRAINT pk_DataEntries PRIMARY KEY (id)
       |);
+      |CREATE SEQUENCE byteStoreIdSeq START WITH 0;
       |CREATE TABLE ByteStore (
+      |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR byteStoreIdSeq),
       |  dataid BIGINT NOT NULL,
-      |  index  INTEGER NOT NULL,
       |  start  BIGINT NOT NULL,
-      |  fin    BIGINT NOT NULL
+      |  fin    BIGINT NOT NULL,
+      |  CONSTRAINT pk_ByteStore PRIMARY KEY (id)
       |);
       |CREATE TABLE Settings (
       |  key    VARCHAR(256) NOT NULL,
@@ -97,7 +100,7 @@ object SQLTables {
 
   val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
   val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
-  val selectFromByteStore = "SELECT dataid, index, start, fin FROM ByteStore"
+  val selectFromByteStore = "SELECT id, dataid, start, fin FROM ByteStore"
   val selectFromSettings = "SELECT key, value FROM Settings"
 }
 
@@ -140,7 +143,7 @@ class SQLTables(database: SQLTables.Database) {
   def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash) list
   def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryID = inWriteContext (
     init(nextDataEntryId) {
-      id => sqlu"INSERT INTO DataEntries VALUES ($id, $size, $print, $hash, $method);" execute
+      id => sqlu"INSERT INTO DataEntries (id, length, print, hash, method) VALUES ($id, $size, $print, $hash, $method);" execute
     }
   )
 
@@ -156,8 +159,8 @@ class SQLTables(database: SQLTables.Database) {
     "SELECT * FROM ByteStore b1 JOIN ByteStore b2 ON b1.start < b2.fin AND b1.fin > b2.fin;"
   ).list
 
-  def createByteStoreEntry(dataid: DataEntryID, index: Int, range: DataRange): Unit = inWriteContext (
-    sqlu"INSERT INTO ByteStore VALUES ($dataid, $index, ${range.start}, ${range.fin});" execute // TODO can be use range directly here?
+  def createByteStoreEntry(dataid: DataEntryID, range: DataRange): Unit = inWriteContext (
+    sqlu"INSERT INTO ByteStore (dataid, start, fin) VALUES ($dataid, ${range.start}, ${range.fin});" execute // TODO can we use range directly here?
   )
 
   // Settings

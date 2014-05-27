@@ -27,21 +27,21 @@ Illegal overlaps: inclusions are correctly detected $inclusions
 
   // FIXME implement good matchers
   def inclusions = withEmptySqlTables { sqlTables =>
-    sqlTables.createByteStoreEntry(DataEntryID(0), 0, DataRange(Position(10), Position(50)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), 1, DataRange(Position(20), Position(30)))
+    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(10), Position(50)))
+    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(20), Position(30)))
     sqlTables.illegalDataAreaOverlaps must not beEmpty
   }
 
   def partialOverlap = withEmptySqlTables { sqlTables =>
-    sqlTables.createByteStoreEntry(DataEntryID(0), 0, DataRange(Position(10), Position(30)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), 1, DataRange(Position(20), Position(50)))
+    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(10), Position(30)))
+    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(20), Position(50)))
     sqlTables.illegalDataAreaOverlaps must not beEmpty
   }
 
   def gapAndOverlap = withEmptySqlTables { sqlTables =>
-    sqlTables.createByteStoreEntry(DataEntryID(0), 0, DataRange(Position(10), Position(50)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), 1, DataRange(Position(20), Position(30)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), 2, DataRange(Position(60), Position(110)))
+    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(10), Position(50)))
+    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(20), Position(30)))
+    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(60), Position(110)))
     withDataSystem(sqlTables) { dataSystem =>
       dataSystem.freeRangesQueue.toList.reverse should beEqualTo(
         List(
@@ -52,8 +52,8 @@ Illegal overlaps: inclusions are correctly detected $inclusions
   }
 
   def gap = withEmptySqlTables { sqlTables =>
-    sqlTables.createByteStoreEntry(DataEntryID(0), 0, DataRange(Position(0), Position(50)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), 1, DataRange(Position(60), Position(110)))
+    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(0), Position(50)))
+    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(60), Position(110)))
     withDataSystem(sqlTables) { dataSystem =>
       dataSystem.freeRangesQueue.toList.reverse should beEqualTo(
         List(
@@ -65,8 +65,8 @@ Illegal overlaps: inclusions are correctly detected $inclusions
   }
 
   def entryNotAtStart = withEmptySqlTables { sqlTables =>
-    sqlTables.createByteStoreEntry(DataEntryID(0), 0, DataRange(Position(10), Position(60)))
-    sqlTables.createByteStoreEntry(DataEntryID(0), 1, DataRange(Position(60), Position(110)))
+    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(10), Position(60)))
+    sqlTables.createByteStoreEntry(DataEntryID(0), DataRange(Position(60), Position(110)))
     withDataSystem(sqlTables) { dataSystem =>
       dataSystem.freeRangesQueue.toList.reverse should beEqualTo(
         List(
