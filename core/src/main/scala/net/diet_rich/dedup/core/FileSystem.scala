@@ -108,7 +108,7 @@ trait FileSystemStoreLogic { _: FileSystem =>
 
   private[core] def readTwiceIfNecessaryToGetDataEntry(printData: Bytes, print: Print, source: Source): DataEntryID = {
     val data: Iterator[Bytes] = Iterator(printData) ++ source.allData
-    val (hash, size) = Hash.calculate(hashAlgorithm)(data)
+    val (hash, size) = Hash.calculate(hashAlgorithm, data)
     dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
       source.reset
       val (print, printData) = printFromSource(source)
@@ -118,23 +118,46 @@ trait FileSystemStoreLogic { _: FileSystem =>
 
   private[core] def preloadToGetDataEntry(printData: Bytes, print: Print, source: Source): DataEntryID = {
     val data: List[Bytes] = printData :: source.allData.toList
-    val (hash, size) = Hash.calculate(hashAlgorithm)(data.iterator)
+    val (hash, size) = Hash.calculate(hashAlgorithm, data.iterator)
     dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse storeData(data, size, print, hash)
   }
 
-  private[core] def storeData(printData: Bytes, print: Print, source: Source): DataEntryID = {
-    val data: Iterator[Bytes] = Iterator(printData) ++ source.allData
-    val (hash, size) = Hash.calculate(hashAlgorithm)(data)
-    ???
+  // FIXME test separately
+  @annotation.tailrec
+  private[core] final def storeBytes(bytes: Bytes, offset: Position = Position(0), acc: List[DataRange] = Nil): List[DataRange] = {
+    val remainingSize = Position(bytes.length) - offset
+    val (block, rest) = nextFreeRange partitionAtSize remainingSize
+    writeData(bytes, offset, block)
+    if (block.size < remainingSize) {
+      assert (rest isEmpty) // FIXME remove when properly tested
+      storeBytes(bytes, offset + block.size, block :: acc)
+    } else {
+      rest foreach requeueFreeRange
+      block :: acc
+    }
   }
 
   private[core] def storeData(data: List[Bytes], size: Size, print: Print, hash: Hash): DataEntryID =
     createDataEntry(size, print, hash, storeSettings.storeMethod) match {
       case ExistingEntryMatches(dataid) => dataid
       case DataEntryCreated(dataid) =>
-        ??? // FIXME implement the actual store process
+        val rangesStored = data flatMap { storeBytes(_) }
+        rangesStored.reverse foreach (sqlTables.createByteStoreEntry(dataid, _))
         dataid
     }
+
+  private[core] def storeData(printData: Bytes, print: Print, source: Source): DataEntryID = {
+    val data: Iterator[Bytes] = Iterator(printData) ++ source.allData
+    val (hash, size, rangesStored) = Hash.calculate(hashAlgorithm, data, storeBytes(_).reverse)
+    createDataEntry(size, print, hash, storeSettings.storeMethod) match {
+      case ExistingEntryMatches(dataid) =>
+        rangesStored.flatten foreach requeueFreeRange
+        dataid
+      case DataEntryCreated(dataid) =>
+        rangesStored.flatten foreach (sqlTables.createByteStoreEntry(dataid, _))
+        dataid
+    }
+  }
 
   private def printFromSource(source: Source): (Print, Bytes) = {
     val printData = source read PRINTSIZE
@@ -175,11 +198,15 @@ trait FileSystemData {
     }
   }
 
-  private[core] def requestFreeRange: DataRange = synchronized {
-    val (range, rest) = freeRangesQueue.dequeue().blockPartition(blocksize)
+  private[core] def nextFreeRange: DataRange = synchronized {
+    val (range, rest) = freeRangesQueue.dequeue().partitionAtBlockLimit(blocksize)
     rest foreach (freeRangesQueue.enqueue(_))
     range
   }
-  private[core] def returnFreeRange (range: DataRange): Unit = synchronized { freeRangesQueue enqueue range }
+  private[core] def requeueFreeRange (range: DataRange): Unit = synchronized { freeRangesQueue enqueue range }
+
+  private[core] def writeData(data: Bytes, offset: Position, range: DataRange): Unit = {
+    // FIXME implementation missing
+  }
 
 }

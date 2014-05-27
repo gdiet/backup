@@ -148,6 +148,8 @@ class SQLTables(database: SQLTables.Database) {
   )
 
   // ByteStore
+  private val storeEntriesForIdQuery = StaticQuery.query[DataEntryID, StoreEntry](s"$selectFromByteStore WHERE dataid = ? ORDER BY id ASC;")
+
   def startOfFreeDataArea = StaticQuery.queryNA[Position]("SELECT MAX(fin) FROM ByteStore;").firstOption getOrElse Position(0)
   def dataAreaEnds: List[Position] = StaticQuery.queryNA[Position](
     "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin;"
@@ -162,6 +164,7 @@ class SQLTables(database: SQLTables.Database) {
        |    (b1.start < b2.fin AND b1.fin > b2.fin);""".stripMargin
   ).list
 
+  def storeEntries(id: DataEntryID): List[StoreEntry] = storeEntriesForIdQuery(id) list
   def createByteStoreEntry(dataid: DataEntryID, range: DataRange): Unit = inWriteContext (
     sqlu"INSERT INTO ByteStore (dataid, start, fin) VALUES ($dataid, ${range.start}, ${range.fin});" execute // TODO can we use range directly here?
   )

@@ -15,15 +15,25 @@ case class Hash(value: Array[Byte]) {
 }
 
 object Hash extends (Array[Byte] => Hash) {
+
   def algorithmChecked(algorithm: String): String = {
     MessageDigest getInstance algorithm
     algorithm
   }
+
   def digestLength(algorithm: String): Int =
     MessageDigest getInstance algorithm getDigestLength
-  def calculate(algorithm: String)(data: Iterator[Bytes]): (Hash, Size) = {
+
+  def calculate(algorithm: String, data: Iterator[Bytes]): (Hash, Size) = {
     val digester = MessageDigest getInstance algorithm
     val numberOfBytes = data map { bytes => digester update bytes; bytes.length.toLong } sum;
     (Hash(digester.digest), Size(numberOfBytes))
   }
+
+  def calculate[T](algorithm: String, data: Iterator[Bytes], withBytes: Bytes => T): (Hash, Size, List[T]) = {
+    val digester = MessageDigest getInstance algorithm
+    val (result, sizes) = data.map { bytes => digester update bytes; (withBytes(bytes), bytes.length.toLong) }.toList.unzip
+    (Hash(digester.digest), Size(sizes.sum), result)
+  }
+  
 }
