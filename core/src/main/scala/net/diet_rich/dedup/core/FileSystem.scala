@@ -17,7 +17,11 @@ import net.diet_rich.dedup.util.MemoryReserved
 import net.diet_rich.dedup.core.values.TreeEntryID
 import scala.collection.mutable
 
-trait FileSystem extends FileSystemTree with FileSystemStoreLogic with FileSystemData
+class FileSystem(
+  protected val data: FileSystemData,
+  protected val storeSettings: StoreSettings,
+  protected val sqlTables: SQLTables
+) extends SQLTablesComponent with FileSystemTree with FileSystemStoreLogic
 
 object FileSystem {
   val ROOTID = TreeEntryID(0)
@@ -36,49 +40,16 @@ trait DataSettings {
   def blocksize: Size = Size(0x800000L)
 }
 
-trait FileSystemTree {
-  import FileSystem._
-
-  protected val sqlTables: SQLTables
-
-  def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = sqlTables treeChildren parent
-  def children(parent: TreeEntryID): List[TreeEntry] = childrenWithDeleted(parent) filter (_.deleted isEmpty)
-
-  def createUnchecked(parent: TreeEntryID, name: String, time: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID =
-    sqlTables createTreeEntry (parent, name, time, dataid)
-  def create(parent: TreeEntryID, name: String, time: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID = sqlTables inWriteContext {
-    children(parent) find (_.name == name) match {
-      case Some(entry) => throw new IOException(s"entry $entry already exists")
-      case None => createUnchecked(parent, name, time, dataid)
-    }
-  }
-  def createWithPath(path: Path, time: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID = sqlTables inWriteContext {
-    val elements = path.elements
-    if(elements.size == 0) throw new IOException("can't create the root entry")
-    val parent = elements.dropRight(1).foldLeft(ROOTID) { (node, childName) =>
-      children(node) filter (_.name == childName) match {
-        case Nil => createUnchecked(node, childName, time, dataid)
-        case List(entry) => entry.id
-        case entries => throw new IOException(s"ambiguous path; §entries")
-      }
-    }
-    create(parent, elements.last, time, dataid)
-  }
-
-  def entries(path: Path): List[TreeEntry] =
-    path.elements.foldLeft(List(ROOTENTRY)) { (node, childName) =>
-      node flatMap (children(_) filter (_.name == childName))
-    }
-}
-
-trait FileSystemStoreLogic { _: FileSystem =>
+trait FileSystemStoreLogic { _: FileSystemTree =>
   import FileSystem._
 
   import net.diet_rich.dedup.util.Bytes
   import java.util.concurrent._
   import scala.concurrent.{Future, ExecutionContext}
 
+  protected val data: FileSystemData
   protected val storeSettings: StoreSettings
+  import data._
   import storeSettings._
 
   private val executorQueue = new ArrayBlockingQueue[Runnable](threadPoolSize)
@@ -129,7 +100,7 @@ trait FileSystemStoreLogic { _: FileSystem =>
     val (block, rest) = nextFreeRange partitionAtSize remainingSize
     writeData(bytes, offset, block)
     if (block.size < remainingSize) {
-      assert (rest isEmpty) // FIXME remove when properly tested
+      assume (rest isEmpty) // FIXME remove when properly tested?
       storeBytes(bytes, offset + block.size, block :: acc)
     } else {
       rest foreach requeueFreeRange
@@ -142,7 +113,7 @@ trait FileSystemStoreLogic { _: FileSystem =>
       case ExistingEntryMatches(dataid) => dataid
       case DataEntryCreated(dataid) =>
         val rangesStored = data flatMap { storeBytes(_) }
-        rangesStored.reverse foreach (sqlTables.createByteStoreEntry(dataid, _))
+        rangesStored.reverse foreach (createByteStoreEntry(dataid, _)) // FIXME don't use sqlTables here, make it impossible to use them
         dataid
     }
 
@@ -154,7 +125,7 @@ trait FileSystemStoreLogic { _: FileSystem =>
         rangesStored.flatten foreach requeueFreeRange
         dataid
       case DataEntryCreated(dataid) =>
-        rangesStored.flatten foreach (sqlTables.createByteStoreEntry(dataid, _))
+        rangesStored.flatten foreach (createByteStoreEntry(dataid, _))
         dataid
     }
   }
@@ -169,44 +140,3 @@ trait FileSystemStoreLogic { _: FileSystem =>
 sealed trait DataEntryCreateResult { val id: DataEntryID }
 case class DataEntryCreated(id: DataEntryID) extends DataEntryCreateResult
 case class ExistingEntryMatches(id: DataEntryID) extends DataEntryCreateResult
-
-trait FileSystemData {
-
-  protected val sqlTables: SQLTables
-  protected val dataSettings: DataSettings
-  import dataSettings.blocksize
-
-  private[core] def hasSizeAndPrint(size: Size, print: Print): Boolean = !(sqlTables dataEntries(size, print) isEmpty)
-  private[core] def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry] = sqlTables dataEntries(size, print, hash)
-  private[core] def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryCreateResult = sqlTables.inWriteContext {
-    sqlTables.dataEntries(size, print, hash).headOption
-      .map(e => ExistingEntryMatches(e.id))
-      .getOrElse(DataEntryCreated(sqlTables.createDataEntry(size, print, hash, method)))
-  }
-
-  val initialDataOverlapProblems = sqlTables.problemDataAreaOverlaps
-
-  private[core] val freeRangesQueue = mutable.Queue[DataRange](DataRange(sqlTables.startOfFreeDataArea, Position(Long MaxValue)))
-
-  // queue gaps in byte store
-  if (initialDataOverlapProblems.isEmpty) {
-    val dataAreaStarts = sqlTables.dataAreaStarts
-    if (!dataAreaStarts.isEmpty) {
-      val (firstArea :: gapStarts) = dataAreaStarts
-      if (firstArea > Position(0L)) freeRangesQueue enqueue DataRange(Position(0L), firstArea)
-      freeRangesQueue enqueue ((sqlTables.dataAreaEnds zip gapStarts).map(DataRange.tupled):_*)
-    }
-  }
-
-  private[core] def nextFreeRange: DataRange = synchronized {
-    val (range, rest) = freeRangesQueue.dequeue().partitionAtBlockLimit(blocksize)
-    rest foreach (freeRangesQueue.enqueue(_))
-    range
-  }
-  private[core] def requeueFreeRange (range: DataRange): Unit = synchronized { freeRangesQueue enqueue range }
-
-  private[core] def writeData(data: Bytes, offset: Position, range: DataRange): Unit = {
-    // FIXME implementation missing
-  }
-
-}

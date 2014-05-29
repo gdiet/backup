@@ -19,7 +19,7 @@ getOrMakeDir $todo
   """
 
   private def withEmptyFileSystem[T] (f: FileSystemTree => T) = InMemoryDatabase.withDB { database =>
-    f(new FileSystemTree { override val sqlTables = new SQLTables(database) })
+    f(new FileSystemTree with SQLTablesComponent { override val sqlTables = new SQLTables(database) })
   }
 
   def createExisting = withEmptyFileSystem { fileSystem =>

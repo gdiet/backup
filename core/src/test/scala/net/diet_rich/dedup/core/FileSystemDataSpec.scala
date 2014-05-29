@@ -21,11 +21,13 @@ Illegal overlaps: identical entries are correctly detected $identical
 Illegal overlaps: partially identical entries are correctly detected $partiallyIdentical
   """
 
-  private class TestFileSystemData(val sqlTables: SQLTables) extends FileSystemData {
-    val dataSettings = new DataSettings { override def blocksize = Size(100) }
+  private class TestFileSystemData(val sqlTables: SQLTables)
+    extends FileSystemData(sqlTables, new DataSettings { override def blocksize = Size(100) }) {
+    val freeRangesQueueInTest = freeRangesQueue
   }
+
   private def withEmptySqlTables[T](f: SQLTables => T) = InMemoryDatabase.withDB { db => f(new SQLTables(db))}
-  private def withDataSystem[T](f: FileSystemData => T)(implicit sqlTables: SQLTables) = f(new TestFileSystemData(sqlTables))
+  private def withDataSystem[T](f: TestFileSystemData => T)(implicit sqlTables: SQLTables) = f(new TestFileSystemData(sqlTables))
   private def range(start: Long, fin: Long = Long.MaxValue) = DataRange(Position(start), Position(fin))
   private def addRangeEntry(start: Long, fin: Long)(implicit sqlTables: SQLTables) =
     sqlTables.createByteStoreEntry(DataEntryID(0), range(start, fin))
@@ -60,7 +62,7 @@ Illegal overlaps: partially identical entries are correctly detected $partiallyI
     addRangeEntry(20,40)
     addRangeEntry(60,110)
     withDataSystem { dataSystem =>
-      dataSystem.freeRangesQueue.toList.reverse should beEqualTo(
+      dataSystem.freeRangesQueueInTest.toList.reverse should beEqualTo(
         List(range(110))
       )
     }
@@ -70,7 +72,7 @@ Illegal overlaps: partially identical entries are correctly detected $partiallyI
     addRangeEntry( 0,50)
     addRangeEntry(60,110)
     withDataSystem { dataSystem =>
-      dataSystem.freeRangesQueue.toList.reverse should beEqualTo(
+      dataSystem.freeRangesQueueInTest.toList.reverse should beEqualTo(
         List(range(50,60),range(110))
       )
     }
@@ -80,7 +82,7 @@ Illegal overlaps: partially identical entries are correctly detected $partiallyI
     addRangeEntry(10,60)
     addRangeEntry(60,110)
     withDataSystem { dataSystem =>
-      dataSystem.freeRangesQueue.toList.reverse should beEqualTo(
+      dataSystem.freeRangesQueueInTest.toList.reverse should beEqualTo(
         List(range(0,10),range(110))
       )
     }
@@ -88,7 +90,7 @@ Illegal overlaps: partially identical entries are correctly detected $partiallyI
 
   def emptyDatabase = withEmptySqlTables { implicit sqlTables =>
     withDataSystem { dataSystem =>
-      dataSystem.freeRangesQueue.toList.reverse should beEqualTo(List(range(0)))
+      dataSystem.freeRangesQueueInTest.toList.reverse should beEqualTo(List(range(0)))
     }
   }
 

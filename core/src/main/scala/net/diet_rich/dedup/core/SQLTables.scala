@@ -104,6 +104,10 @@ object SQLTables {
   val selectFromSettings = "SELECT key, value FROM Settings"
 }
 
+trait SQLTablesComponent {
+  protected val sqlTables: SQLTables
+}
+
 class SQLTables(database: SQLTables.Database) {
   import SQLTables._
   import java.util.concurrent.Executors.newSingleThreadExecutor
@@ -111,9 +115,9 @@ class SQLTables(database: SQLTables.Database) {
 
   private val sessions = ThreadSpecific(database createSession)
 
-  implicit private val dbWriteContext: ExecutionContext = ExecutionContext fromExecutor newSingleThreadExecutor
   implicit private def dbSession: Session = sessions
 
+  implicit private val dbWriteContext: ExecutionContext = ExecutionContext fromExecutor newSingleThreadExecutor
   private val writeThread = resultOf(Future(Thread.currentThread))
   def inWriteContext[T] (f: => T): T = if (Thread.currentThread == writeThread) f else resultOf(Future(f))
 
@@ -125,9 +129,9 @@ class SQLTables(database: SQLTables.Database) {
 
   def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id) firstOption
   def treeChildren(parent: TreeEntryID): List[TreeEntry] = treeChildrenForParentQuery(parent) list
-  def createTreeEntry(parent: TreeEntryID, name: String, time: Option[Time], dataid: Option[DataEntryID]): TreeEntryID = inWriteContext {
+  def createTreeEntry(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntryID = inWriteContext {
     init(nextTreeEntryId) {
-      id => sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $time, $dataid);" execute
+      id => sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $changed, $dataid);" execute
     }
   }
 
