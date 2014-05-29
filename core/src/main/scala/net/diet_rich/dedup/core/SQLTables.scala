@@ -10,6 +10,8 @@ import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util._
 
 object SQLTables {
+  trait Component { protected val sqlTables: SQLTables }
+
   import scala.slick.jdbc.GetResult
   import scala.slick.jdbc.SetParameter
 
@@ -98,62 +100,60 @@ object SQLTables {
       |CREATE INDEX idxByteStoreFin ON ByteStore(fin);
     """.stripMargin execute
 
+  // basic select statements
   val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
   val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
   val selectFromByteStore = "SELECT id, dataid, start, fin FROM ByteStore"
   val selectFromSettings = "SELECT key, value FROM Settings"
-}
 
-trait SQLTablesComponent {
-  protected val sqlTables: SQLTables
+  // TreeEntries
+  val treeEntryForIdQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")
+  val treeChildrenForParentQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE parent = ?;")
+  val nextTreeEntryIdQuery = StaticQuery.queryNA[TreeEntryID]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")
+
+  // DataEntries
+  val dataEntryForIdQuery = StaticQuery.query[DataEntryID, DataEntry](s"$selectFromDataEntries WHERE id = ?;")
+  val dataEntriesForSizePrintQuery = StaticQuery.query[(Size, Print), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ?;")
+  val dataEntriesForSizePrintHashQuery = StaticQuery.query[(Size, Print, Hash), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ? AND hash = ?;")
+  val nextDataEntryIdQuery = StaticQuery.queryNA[DataEntryID]("SELECT NEXT VALUE FOR dataEntriesIdSeq;")
+
+  // ByteStore
+  val storeEntriesForIdQuery = StaticQuery.query[DataEntryID, StoreEntry](s"$selectFromByteStore WHERE dataid = ? ORDER BY id ASC;")
+
+  // Settings
+  val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT * FROM Settings;")
 }
 
 class SQLTables(database: SQLTables.Database) {
   import SQLTables._
-  import java.util.concurrent.Executors.newSingleThreadExecutor
-  import scala.concurrent.{Future, ExecutionContext}
 
   private val sessions = ThreadSpecific(database createSession)
-
   implicit private def dbSession: Session = sessions
 
-  implicit private val dbWriteContext: ExecutionContext = ExecutionContext fromExecutor newSingleThreadExecutor
-  private val writeThread = resultOf(Future(Thread.currentThread))
-  def inWriteContext[T] (f: => T): T = if (Thread.currentThread == writeThread) f else resultOf(Future(f))
+  implicit private val dbWriteContext = concurrent.ExecutionContext fromExecutor java.util.concurrent.Executors.newSingleThreadExecutor
+  private val writeThread = resultOf(concurrent.Future(Thread.currentThread))
+  def inWriteContext[T] (f: => T): T = if (Thread.currentThread == writeThread) f else resultOf(concurrent.Future(f))
 
   // TreeEntries
-  private val treeEntryForIdQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")
-  private val treeChildrenForParentQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE parent = ?;")
-  private val nextTreeEntryIdQuery = StaticQuery.queryNA[TreeEntryID]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")
-  private def nextTreeEntryId: TreeEntryID = nextTreeEntryIdQuery first
-
   def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id) firstOption
   def treeChildren(parent: TreeEntryID): List[TreeEntry] = treeChildrenForParentQuery(parent) list
   def createTreeEntry(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntryID = inWriteContext {
-    init(nextTreeEntryId) {
+    init(nextTreeEntryIdQuery first) {
       id => sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $changed, $dataid);" execute
     }
   }
 
   // DataEntries
-  private val dataEntryForIdQuery = StaticQuery.query[DataEntryID, DataEntry](s"$selectFromDataEntries WHERE id = ?;")
-  private val dataEntriesForSizePrintQuery = StaticQuery.query[(Size, Print), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ?;")
-  private val dataEntriesForSizePrintHashQuery = StaticQuery.query[(Size, Print, Hash), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ? AND hash = ?;")
-  private val nextDataEntryIdQuery = StaticQuery.queryNA[DataEntryID]("SELECT NEXT VALUE FOR dataEntriesIdSeq;")
-  private def nextDataEntryId: DataEntryID = nextDataEntryIdQuery first
-
   def dataEntry(id: DataEntryID): Option[DataEntry] = dataEntryForIdQuery(id) firstOption
   def dataEntries(size: Size, print: Print): List[DataEntry] = dataEntriesForSizePrintQuery(size, print) list
   def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash) list
   def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryID = inWriteContext (
-    init(nextDataEntryId) {
+    init(nextDataEntryIdQuery first) {
       id => sqlu"INSERT INTO DataEntries (id, length, print, hash, method) VALUES ($id, $size, $print, $hash, $method);" execute
     }
   )
 
   // ByteStore
-  private val storeEntriesForIdQuery = StaticQuery.query[DataEntryID, StoreEntry](s"$selectFromByteStore WHERE dataid = ? ORDER BY id ASC;")
-
   def startOfFreeDataArea = StaticQuery.queryNA[Position]("SELECT MAX(fin) FROM ByteStore;").firstOption getOrElse Position(0)
   def dataAreaEnds: List[Position] = StaticQuery.queryNA[Position](
     "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin;"
@@ -174,8 +174,6 @@ class SQLTables(database: SQLTables.Database) {
   )
 
   // Settings
-  private val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT * FROM Settings;")
-
   def allSettings: Map[String, String] = allSettingsQuery toMap
 
   // startup checks

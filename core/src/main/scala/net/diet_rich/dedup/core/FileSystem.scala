@@ -21,7 +21,7 @@ class FileSystem(
   protected val data: FileSystemData,
   protected val storeSettings: StoreSettings,
   protected val sqlTables: SQLTables
-) extends SQLTablesComponent with FileSystemTree with FileSystemStoreLogic
+) extends SQLTables.Component with FileSystemTree with FileSystemStoreLogic
 
 object FileSystem {
   val ROOTID = TreeEntryID(0)
