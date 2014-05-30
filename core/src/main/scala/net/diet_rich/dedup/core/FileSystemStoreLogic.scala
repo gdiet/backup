@@ -61,7 +61,7 @@ trait FileSystemStoreLogic { _: FileSystemTree =>
     createDataEntry(size, print, hash, storeSettings.storeMethod) match {
       case ExistingEntryMatches(dataid) => dataid
       case DataEntryCreated(dataid) =>
-        val rangesStored = storeMethod.pack(data.iterator) flatMap { storeBytes(_).reverse }
+        val rangesStored = storeMethod pack data.iterator flatMap { storeBytes(_).reverse }
         rangesStored foreach (createByteStoreEntry(dataid, _))
         dataid
     }

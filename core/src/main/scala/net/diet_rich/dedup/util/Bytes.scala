@@ -10,8 +10,22 @@ sealed trait Bytes {
 }
 
 object Bytes {
+  def apply(length: Int): Bytes = new SimpleBytes(new Array[Byte](length))
+  def apply(data: Array[Byte], offset: Int, length: Int): Bytes = new FullBytes(data, offset, length)
+  def unapply(bytes: Bytes) = Some((bytes.data, bytes.offset, bytes.length))
+
+  private class SimpleBytes(val data: Array[Byte]) extends Bytes {
+    val offset = 0
+    def length = data.length
+  }
+
+  private class FullBytes(val data: Array[Byte], val offset: Int, val length: Int) extends Bytes
+
+  import scala.language.reflectiveCalls
   implicit class UpdateBytes(val u: { def update(data: Array[Byte], offset: Int, length: Int) }) extends AnyVal {
-    import scala.language.reflectiveCalls
     def update(bytes: Bytes) = u.update(bytes.data, bytes.offset, bytes.length)
+  }
+  implicit class SetInputBytes(val u: { def setInput(data: Array[Byte], offset: Int, length: Int) }) extends AnyVal {
+    def setInput(bytes: Bytes) = u.setInput(bytes.data, bytes.offset, bytes.length)
   }
 }
