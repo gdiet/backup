@@ -30,10 +30,11 @@ object Hash extends (Array[Byte] => Hash) {
     (Hash(digester.digest), Size(numberOfBytes))
   }
 
-  def calculate[T](algorithm: String, data: Iterator[Bytes], withBytes: Bytes => T): (Hash, Size, List[T]) = {
+  def calculate[T](algorithm: String, data: Iterator[Bytes], withData: Iterator[Bytes] => T): (Hash, Size, T) = {
     val digester = MessageDigest getInstance algorithm
-    val (result, sizes) = data.map { bytes => digester update bytes; (withBytes(bytes), bytes.length.toLong) }.toList.unzip
-    (Hash(digester.digest), Size(sizes.sum), result)
+    var size = 0L
+    val result = withData(data.map { bytes => digester update bytes; size = size + bytes.length; bytes })
+    (Hash(digester.digest), Size(size), result)
   }
   
 }

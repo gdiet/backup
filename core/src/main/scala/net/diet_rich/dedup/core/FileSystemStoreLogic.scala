@@ -3,15 +3,13 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
-import net.diet_rich.dedup.util._
+import java.util.concurrent._
+
+import net.diet_rich.dedup.core.FileSystem._
 import net.diet_rich.dedup.core.values._
+import net.diet_rich.dedup.util._
 
 trait FileSystemStoreLogic { _: FileSystemTree =>
-  import FileSystem._
-
-  import net.diet_rich.dedup.util.Bytes
-  import java.util.concurrent._
-  import scala.concurrent.{Future, ExecutionContext}
 
   protected val data: FileSystemData
   protected val storeSettings: StoreSettings
@@ -23,8 +21,8 @@ trait FileSystemStoreLogic { _: FileSystemTree =>
     override def rejectedExecution(r: Runnable, e: ThreadPoolExecutor): Unit = executorQueue put r
   }
   private val threadPool = new ThreadPoolExecutor(threadPoolSize, threadPoolSize, 0, TimeUnit.SECONDS, executorQueue, rejectHandler)
-  private val storeContext: ExecutionContext = ExecutionContext fromExecutorService threadPool
-  private def inStoreContext[T] (f: => T): T = resultOf(Future(f)(storeContext))
+  private val storeContext = scala.concurrent.ExecutionContext fromExecutorService threadPool
+  private def inStoreContext[T] (f: => T): T = resultOf(scala.concurrent.Future(f)(storeContext))
 
   def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntryID = inStoreContext {
     createUnchecked(parent, name, Some(time), Some(dataEntry(source)))
@@ -59,6 +57,28 @@ trait FileSystemStoreLogic { _: FileSystemTree =>
     dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse storeData(data, size, print, hash)
   }
 
+  private[core] def storeData(data: List[Bytes], size: Size, print: Print, hash: Hash): DataEntryID =
+    createDataEntry(size, print, hash, storeSettings.storeMethod) match {
+      case ExistingEntryMatches(dataid) => dataid
+      case DataEntryCreated(dataid) =>
+        val rangesStored = storeMethod.pack(data.iterator) flatMap { storeBytes(_).reverse }
+        rangesStored foreach (createByteStoreEntry(dataid, _))
+        dataid
+    }
+
+  private[core] def storeData(printData: Bytes, print: Print, source: Source): DataEntryID = {
+    val data: Iterator[Bytes] = Iterator(printData) ++ source.allData
+    val (hash, size, rangesStored) = Hash.calculate(hashAlgorithm, data, storeMethod pack _ flatMap { storeBytes(_).reverse } toList)
+    createDataEntry(size, print, hash, storeSettings.storeMethod) match {
+      case ExistingEntryMatches(dataid) =>
+        rangesStored foreach requeueFreeRange
+        dataid
+      case DataEntryCreated(dataid) =>
+        rangesStored.reverse foreach (createByteStoreEntry(dataid, _))
+        dataid
+    }
+  }
+
   // FIXME test separately
   @annotation.tailrec
   private[core] final def storeBytes(bytes: Bytes, offset: Position = Position(0), acc: List[DataRange] = Nil): List[DataRange] = {
@@ -71,28 +91,6 @@ trait FileSystemStoreLogic { _: FileSystemTree =>
     } else {
       rest foreach requeueFreeRange
       block :: acc
-    }
-  }
-
-  private[core] def storeData(data: List[Bytes], size: Size, print: Print, hash: Hash): DataEntryID =
-    createDataEntry(size, print, hash, storeSettings.storeMethod) match {
-      case ExistingEntryMatches(dataid) => dataid
-      case DataEntryCreated(dataid) =>
-        val rangesStored = data flatMap { storeBytes(_) }
-        rangesStored.reverse foreach (createByteStoreEntry(dataid, _)) // FIXME don't use sqlTables here, make it impossible to use them
-        dataid
-    }
-
-  private[core] def storeData(printData: Bytes, print: Print, source: Source): DataEntryID = {
-    val data: Iterator[Bytes] = Iterator(printData) ++ source.allData
-    val (hash, size, rangesStored) = Hash.calculate(hashAlgorithm, data, storeBytes(_).reverse)
-    createDataEntry(size, print, hash, storeSettings.storeMethod) match {
-      case ExistingEntryMatches(dataid) =>
-        rangesStored.flatten foreach requeueFreeRange
-        dataid
-      case DataEntryCreated(dataid) =>
-        rangesStored.flatten foreach (createByteStoreEntry(dataid, _))
-        dataid
     }
   }
 
