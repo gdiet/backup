@@ -45,10 +45,10 @@ object StoreMethod {
     }
 
     class InflatePacker extends Packer {
-      private val inflater = new Inflater
+      private val inflater = new Inflater(true)
       override def setInput(data: Bytes) = inflater setInput data
       override def needsInput = inflater needsInput
-      override def finish = Unit
+      override def finish = inflater setInput Array[Byte](0) // see javadoc of public Inflater(boolean nowrap)
       override def finished = inflater finished
       override def getOutput(data: Array[Byte], offset: Int, length: Int) = inflater inflate (data, offset, length)
     }
