@@ -11,9 +11,15 @@ trait InMemoryDataBackend { _: FileSystemData =>
 
   val disk = new Array[Byte](0x100000)
 
-  def writeData(data: Bytes, offset: Position, range: DataRange): Unit = {
-    assume(range.start.value / blocksize.value == (range.fin.value - 1) / blocksize.value, s"range $range across block of size $blocksize")
-    // FIXME implementation missing
+  def int(long: LongValue) = {
+    assert (long.value <= Int.MaxValue)
+    long.value.toInt
+  }
+
+  def writeData(data: Bytes, range: DataRange): Unit = {
+    assert(range.start.value / blocksize.value == (range.fin.value - 1) / blocksize.value, s"range $range across block of size $blocksize")
+    assert(range.size.value <= data.length, s"range $range is longer than the data length ${data.length}")
+    System.arraycopy(data.data, data.offset, disk, int(range.start), int(range.size))
   }
 
 }

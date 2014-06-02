@@ -43,6 +43,6 @@ abstract class FileSystemData(sqlTables: SQLTables, protected val dataSettings: 
     freeRangesQueue enqueue range
   }
 
-  def writeData(data: Bytes, offset: Position, range: DataRange): Unit
+  def writeData(data: Bytes, range: DataRange): Unit
 
 }

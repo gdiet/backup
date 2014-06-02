@@ -19,8 +19,8 @@ case class DataRange(start: Position, fin: Position) extends Ordered[DataRange] 
       (withLength(newSize), Some(withOffset(newSize)))
     }
 
-  def partitionAtSize(size: Size): (DataRange, Option[DataRange]) =
-    if (size >= fin-start) (this, None) else (withLength(size), Some(withOffset(size)))
+  def partitionAtLimit(limit: Size): (DataRange, Option[DataRange]) =
+    if (limit >= size) (this, None) else (withLength(limit), Some(withOffset(limit)))
 
   override def compare(that: DataRange): Int =
     that.start compare start match {

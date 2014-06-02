@@ -7,6 +7,7 @@ import java.util.concurrent._
 
 import net.diet_rich.dedup.core.FileSystem._
 import net.diet_rich.dedup.core.values._
+import net.diet_rich.dedup.core.values.Implicits.EnrichedBytes
 import net.diet_rich.dedup.util._
 
 trait FileSystemStoreLogic { _: FileSystemTree =>
@@ -81,13 +82,12 @@ trait FileSystemStoreLogic { _: FileSystemTree =>
 
   // FIXME test separately
   @annotation.tailrec
-  private[core] final def storeBytes(bytes: Bytes, offset: Position = Position(0), acc: List[DataRange] = Nil): List[DataRange] = {
-    val remainingSize = Position(bytes.length) - offset
-    val (block, rest) = nextFreeRange partitionAtSize remainingSize
-    writeData(bytes, offset, block)
-    if (block.size < remainingSize) {
-      assume (rest isEmpty) // FIXME remove when properly tested?
-      storeBytes(bytes, offset + block.size, block :: acc)
+  private[core] final def storeBytes(bytes: Bytes, acc: List[DataRange] = Nil): List[DataRange] = {
+    val (block, rest) = nextFreeRange partitionAtLimit bytes.size
+    writeData(bytes, block)
+    if (block.size < bytes.size) {
+      assume (rest isEmpty)
+      storeBytes(bytes withOffset block.size, block :: acc)
     } else {
       rest foreach requeueFreeRange
       block :: acc

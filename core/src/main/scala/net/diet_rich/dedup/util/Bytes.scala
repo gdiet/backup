@@ -7,6 +7,11 @@ sealed trait Bytes {
   def data: Array[Byte]
   def offset: Int
   def length: Int
+
+  def withOffset(off: Int) = {
+    assume(off <= length)
+    Bytes(data, offset + off, length - off)
+  }
 }
 
 object Bytes {
