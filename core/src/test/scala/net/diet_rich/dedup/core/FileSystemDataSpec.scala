@@ -23,75 +23,36 @@ Illegal overlaps: partially identical entries are correctly detected $partiallyI
 
   private class TestFileSystemData(val sqlTables: SQLTables)
     extends FileSystemData(sqlTables, new DataSettings { override def blocksize = Size(100) }) {
-    val freeRangesQueueInTest = freeRangesQueue
+    val freeRangesQueueInTest = freeRangesQueue.reverse
   }
 
-  private def withEmptySqlTables[T](f: SQLTables => T) = InMemoryDatabase.withDB { db => f(new SQLTables(db))}
-  private def withDataSystem[T](f: TestFileSystemData => T)(implicit sqlTables: SQLTables) = f(new TestFileSystemData(sqlTables))
-  private def range(start: Long, fin: Long = Long.MaxValue) = DataRange(Position(start), Position(fin))
-  private def addRangeEntry(start: Long, fin: Long)(implicit sqlTables: SQLTables) =
-    sqlTables.createByteStoreEntry(DataEntryID(0), range(start, fin))
+  def withEmptySqlTables[T](f: SQLTables => T) = InMemoryDatabase.withDB { db => f(new SQLTables(db))}
+  def withDataSystem[T](f: TestFileSystemData => T)(implicit sqlTables: SQLTables) = f(new TestFileSystemData(sqlTables))
+  def ranges(elems: Seq[(Long, Long)]) = elems map { case (start, fin) => DataRange(Position(start), Position(fin)) }
 
-  // FIXME implement good matchers
-  def partiallyIdentical = withEmptySqlTables { implicit sqlTables =>
-    addRangeEntry(10,50)
-    addRangeEntry(10,30)
-    sqlTables.problemDataAreaOverlaps must not beEmpty
+  def problemDataAreaCheck(elems: (Long, Long)*) = withEmptySqlTables { implicit sqlTables =>
+    ranges(elems) foreach { sqlTables.createByteStoreEntry(DataEntryID(0), _) }
+    sqlTables.problemDataAreaOverlaps aka "data overlap problem list" must not beEmpty
   }
 
-  def identical = withEmptySqlTables { implicit sqlTables =>
-    addRangeEntry(10,50)
-    addRangeEntry(10,50)
-    sqlTables.problemDataAreaOverlaps must not beEmpty
-  }
+  def partiallyIdentical = problemDataAreaCheck((10,50), (10,30))
+  def identical = problemDataAreaCheck((10,50), (10,50))
+  def inclusions = problemDataAreaCheck((10,50), (20,40))
+  def partialOverlap = problemDataAreaCheck((10,30), (20,40))
 
-  def inclusions = withEmptySqlTables { implicit sqlTables =>
-    addRangeEntry(10,50)
-    addRangeEntry(20,40)
-    sqlTables.problemDataAreaOverlaps must not beEmpty
-  }
-
-  def partialOverlap = withEmptySqlTables { implicit sqlTables =>
-    addRangeEntry(10,30)
-    addRangeEntry(20,40)
-    sqlTables.problemDataAreaOverlaps must not beEmpty
-  }
-
-  def gapAndOverlap = withEmptySqlTables { implicit sqlTables =>
-    addRangeEntry(10,50)
-    addRangeEntry(20,40)
-    addRangeEntry(60,110)
-    withDataSystem { dataSystem =>
-      dataSystem.freeRangesQueueInTest.toList.reverse should beEqualTo(
-        List(range(110))
-      )
+  def freeRangesCheck(input: (Long, Long)*) = new {
+    def expecting (expected: (Long, Long)*) = withEmptySqlTables { implicit sqlTables =>
+      ranges(input) foreach { sqlTables.createByteStoreEntry(DataEntryID(0), _) }
+      withDataSystem { dataSystem =>
+        dataSystem.freeRangesQueueInTest should contain(eachOf(ranges(expected):_*).inOrder)
+      }
     }
   }
 
-  def gap = withEmptySqlTables { implicit sqlTables =>
-    addRangeEntry( 0,50)
-    addRangeEntry(60,110)
-    withDataSystem { dataSystem =>
-      dataSystem.freeRangesQueueInTest.toList.reverse should beEqualTo(
-        List(range(50,60),range(110))
-      )
-    }
-  }
-
-  def entryNotAtStart = withEmptySqlTables { implicit sqlTables =>
-    addRangeEntry(10,60)
-    addRangeEntry(60,110)
-    withDataSystem { dataSystem =>
-      dataSystem.freeRangesQueueInTest.toList.reverse should beEqualTo(
-        List(range(0,10),range(110))
-      )
-    }
-  }
-
-  def emptyDatabase = withEmptySqlTables { implicit sqlTables =>
-    withDataSystem { dataSystem =>
-      dataSystem.freeRangesQueueInTest.toList.reverse should beEqualTo(List(range(0)))
-    }
-  }
+  import language.reflectiveCalls
+  def gapAndOverlap = freeRangesCheck ((10,50), (20,40), (60,110)) expecting ((110,Long.MaxValue))
+  def gap = freeRangesCheck ((0,50), (60,110)) expecting ((50,60), (110,Long.MaxValue))
+  def entryNotAtStart = freeRangesCheck ((10,60), (60,110)) expecting ((0,10),(110,Long.MaxValue))
+  def emptyDatabase = freeRangesCheck () expecting ((0,Long.MaxValue))
 
 }
