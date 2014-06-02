@@ -7,7 +7,7 @@ import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util._
 
 /** public: needed by other parts of the backup system; protected: access needed for testing */
-class FileSystemData(sqlTables: SQLTables, dataSettings: DataSettings) {
+abstract class FileSystemData(sqlTables: SQLTables, protected val dataSettings: DataSettings) {
   import dataSettings.blocksize
 
   def hasSizeAndPrint(size: Size, print: Print): Boolean = !(sqlTables dataEntries(size, print) isEmpty)
@@ -43,9 +43,6 @@ class FileSystemData(sqlTables: SQLTables, dataSettings: DataSettings) {
     freeRangesQueue enqueue range
   }
 
-  def writeData(data: Bytes, offset: Position, range: DataRange): Unit = {
-    assume(range.start.value / blocksize.value == (range.fin.value - 1) / blocksize.value, s"range $range across block of size $blocksize")
-    // FIXME implementation missing
-  }
+  def writeData(data: Bytes, offset: Position, range: DataRange): Unit
 
 }

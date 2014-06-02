@@ -7,6 +7,7 @@ import org.specs2.SpecificationWithJUnit
 import scala.slick.driver.H2Driver.simple._
 
 import net.diet_rich.dedup.core.values._
+import net.diet_rich.dedup.util.Bytes
 
 class FileSystemDataSpec extends SpecificationWithJUnit with ValueMatchers { def is = s2"""
 ${"Tests for the file system data area".title}
@@ -24,6 +25,7 @@ Illegal overlaps: partially identical entries are correctly detected $partiallyI
   private class TestFileSystemData(val sqlTables: SQLTables)
     extends FileSystemData(sqlTables, new DataSettings { override def blocksize = Size(100) }) {
     val freeRangesQueueInTest = freeRangesQueue.reverse
+    def writeData(data: Bytes, offset: Position, range: DataRange) = Unit
   }
 
   def withEmptySqlTables[T](f: SQLTables => T) = InMemoryDatabase.withDB { db => f(new SQLTables(db))}

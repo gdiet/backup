@@ -15,7 +15,6 @@ The root node should be a directory $rootIsDirectory
 A directory should be available in the tree even if its newly crested $createAndCheckDirectory
 Looking up a path where only parts exist yields None $pathWithoutTreeEntry
 Create throws an exception if a child with the name already exists $createExisting
-getOrMakeDir $todo
   """
 
   private def withEmptyFileSystem[T] (f: FileSystemTree => T) = InMemoryDatabase.withDB { database =>
