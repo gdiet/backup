@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.values
 
-import net.diet_rich.dedup.util.{Bytes, init}
+import net.diet_rich.dedup.util.init
 
 case class Print(val value: Long) extends LongValue
 

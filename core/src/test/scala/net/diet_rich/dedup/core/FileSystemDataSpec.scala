@@ -7,7 +7,6 @@ import org.specs2.SpecificationWithJUnit
 import scala.slick.driver.H2Driver.simple._
 
 import net.diet_rich.dedup.core.values._
-import net.diet_rich.dedup.util.Bytes
 
 class FileSystemDataSpec extends SpecificationWithJUnit with ValueMatchers { def is = s2"""
 ${"Tests for the file system data area".title}

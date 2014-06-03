@@ -5,8 +5,6 @@ package net.diet_rich.dedup.core.values
 
 import java.security.MessageDigest
 
-import net.diet_rich.dedup.util.Bytes
-
 case class Hash(value: Array[Byte]) {
   def !==(a: Hash) = ! ===(a)
   def ===(a: Hash) = java.util.Arrays.equals(value, a.value)

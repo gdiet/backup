@@ -4,7 +4,6 @@
 package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.core.values._
-import net.diet_rich.dedup.util._
 
 /** public: needed by other parts of the backup system; protected: access needed for testing */
 abstract class FileSystemData(private[core] val sqlTables: SQLTables, private[core] val dataSettings: DataSettings) {

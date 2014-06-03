@@ -7,7 +7,6 @@ import java.util.concurrent._
 
 import net.diet_rich.dedup.core.FileSystem._
 import net.diet_rich.dedup.core.values._
-import net.diet_rich.dedup.core.values.Implicits.EnrichedBytes
 import net.diet_rich.dedup.util._
 
 trait FileSystemStoreLogic { _: FileSystemTree =>

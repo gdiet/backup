@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.util
 
-import net.diet_rich.dedup.core.values.Size
+import net.diet_rich.dedup.core.values.{Bytes, Size}
 
 trait Source {
   def size: Size

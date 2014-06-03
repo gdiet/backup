@@ -4,7 +4,6 @@
 package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.core.values._
-import net.diet_rich.dedup.util.Bytes
 
 trait InMemoryDataBackend { _: FileSystemData =>
   import dataSettings.blocksize
