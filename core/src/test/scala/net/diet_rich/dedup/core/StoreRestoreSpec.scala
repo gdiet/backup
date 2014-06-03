@@ -6,7 +6,6 @@ package net.diet_rich.dedup.core
 import org.specs2.SpecificationWithJUnit
 
 import net.diet_rich.dedup.core.values._
-import net.diet_rich.dedup.util.Source
 
 class StoreRestoreSpec extends SpecificationWithJUnit { def is = s2"""
 ${"Tests for storing and restoring data".title}
