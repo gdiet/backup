@@ -80,7 +80,6 @@ trait FileSystemStoreLogic { _: FileSystemTree =>
     }
   }
 
-  // FIXME test separately
   @annotation.tailrec
   private[core] final def storeBytes(bytes: Bytes, acc: List[DataRange] = Nil): List[DataRange] = {
     val (block, rest) = nextFreeRange partitionAtLimit bytes.size

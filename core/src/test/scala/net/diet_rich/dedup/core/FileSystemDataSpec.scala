@@ -22,7 +22,7 @@ Illegal overlaps: identical entries are correctly detected $identical
 Illegal overlaps: partially identical entries are correctly detected $partiallyIdentical
   """
 
-  private class TestFileSystemData(val sqlTables: SQLTables)
+  private class TestFileSystemData(sqlTables: SQLTables)
     extends FileSystemData(sqlTables, new DataSettings { override def blocksize = Size(100) }) {
     val freeRangesQueueInTest = freeRangesQueue.reverse
     def writeData(data: Bytes, range: DataRange) = Unit
