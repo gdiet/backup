@@ -11,7 +11,7 @@ abstract class FileSystemData(private[core] val sqlTables: SQLTables, private[co
 
   def hasSizeAndPrint(size: Size, print: Print): Boolean = !(sqlTables dataEntries(size, print) isEmpty)
   def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry] = sqlTables dataEntries(size, print, hash)
-  def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryCreateResult = sqlTables.inWriteContext {
+  def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryCreateResult = sqlTables.inTransaction {
     sqlTables.dataEntries(size, print, hash).headOption
       .map(e => ExistingEntryMatches(e.id))
       .getOrElse(DataEntryCreated(sqlTables.createDataEntry(size, print, hash, method)))

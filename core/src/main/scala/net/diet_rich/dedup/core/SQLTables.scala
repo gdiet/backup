@@ -128,14 +128,12 @@ class SQLTables(database: SQLTables.Database) {
   private val sessions = ThreadSpecific(database createSession)
   implicit private def dbSession: Session = sessions
 
-  implicit private val dbWriteContext = concurrent.ExecutionContext fromExecutor java.util.concurrent.Executors.newSingleThreadExecutor
-  private val writeThread = resultOf(concurrent.Future(Thread.currentThread))
-  def inWriteContext[T] (f: => T): T = if (Thread.currentThread == writeThread) f else resultOf(concurrent.Future(f))
+  def inTransaction[T] (f: => T): T = synchronized(f)
 
   // TreeEntries
   def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id) firstOption
   def treeChildren(parent: TreeEntryID): List[TreeEntry] = treeChildrenForParentQuery(parent) list
-  def createTreeEntry(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntryID = inWriteContext {
+  def createTreeEntry(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntryID = inTransaction {
     init(nextTreeEntryIdQuery first) {
       id => sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $changed, $dataid);" execute
     }
@@ -145,7 +143,7 @@ class SQLTables(database: SQLTables.Database) {
   def dataEntry(id: DataEntryID): Option[DataEntry] = dataEntryForIdQuery(id) firstOption
   def dataEntries(size: Size, print: Print): List[DataEntry] = dataEntriesForSizePrintQuery(size, print) list
   def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash) list
-  def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryID = inWriteContext (
+  def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryID = inTransaction (
     init(nextDataEntryIdQuery first) {
       id => sqlu"INSERT INTO DataEntries (id, length, print, hash, method) VALUES ($id, $size, $print, $hash, $method);" execute
     }
@@ -167,7 +165,7 @@ class SQLTables(database: SQLTables.Database) {
   ).list
 
   def storeEntries(id: DataEntryID): List[StoreEntry] = storeEntriesForIdQuery(id) list
-  def createByteStoreEntry(dataid: DataEntryID, range: DataRange): Unit = inWriteContext (
+  def createByteStoreEntry(dataid: DataEntryID, range: DataRange): Unit = inTransaction (
     sqlu"INSERT INTO ByteStore (dataid, start, fin) VALUES ($dataid, ${range.start}, ${range.fin});" execute // TODO can we use range directly here?
   )
 
