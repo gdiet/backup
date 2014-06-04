@@ -8,7 +8,7 @@ libraryDependencies ++= Seq (
   "com.h2database" % "h2" % "1.3.176",
   "com.typesafe.slick" %% "slick" % "2.0.2",
   "ch.qos.logback" % "logback-classic" % "1.1.2",
-  "org.specs2" %% "specs2" % "2.3.11" % "test"
+  "org.specs2" %% "specs2" % "2.3.12" % "test"
 )
 
 (testOptions in Test) += Tests.Argument(TestFrameworks.Specs2, "html", "console")

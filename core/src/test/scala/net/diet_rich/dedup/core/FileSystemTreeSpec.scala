@@ -18,7 +18,7 @@ Create throws an exception if a child with the name already exists $createExisti
   """
 
   private def withEmptyFileSystem[T] (f: FileSystemTree => T) = InMemoryDatabase.withDB { database =>
-    f(new FileSystemTree with SQLTables.Component { override val sqlTables = new SQLTables(database) })
+    f(new FileSystemTree { override val sqlTables = new SQLTables(database) })
   }
 
   def createExisting = withEmptyFileSystem { fileSystem =>

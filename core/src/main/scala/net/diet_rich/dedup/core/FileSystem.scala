@@ -8,7 +8,7 @@ import net.diet_rich.dedup.core.values._
 class FileSystem(
   protected val data: FileSystemData,
   protected val storeSettings: StoreSettings
-) extends SQLTables.Component with FileSystemTree with FileSystemStoreLogic {
+) extends FileSystemTree with FileSystemStoreLogic {
   protected val sqlTables = data.sqlTables
 }
 

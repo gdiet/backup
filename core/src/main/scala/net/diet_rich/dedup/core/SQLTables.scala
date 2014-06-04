@@ -10,8 +10,6 @@ import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util._
 
 object SQLTables {
-  trait Component { protected val sqlTables: SQLTables }
-
   import scala.slick.jdbc.GetResult
   import scala.slick.jdbc.SetParameter
 
