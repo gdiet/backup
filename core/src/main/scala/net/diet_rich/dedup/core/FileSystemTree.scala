@@ -9,8 +9,7 @@ import net.diet_rich.dedup.core.FileSystem._
 import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.core.values.Implicits.treeEntryToID
 
-trait FileSystemTree {
-  protected val sqlTables: SQLTables
+trait FileSystemTree { _: {val sqlTables: SQLTables} =>
 
   def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = sqlTables treeChildren parent
   def children(parent: TreeEntryID): List[TreeEntry] = childrenWithDeleted(parent) filter (_.deleted isEmpty)
