@@ -7,6 +7,8 @@ import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 
 package object util {
+  class Before[T](t: T) { def before(f: => Unit) = { f; t } }
+  def valueOf[T](t: T) = new Before(t)
   def init[T](t: T)(f: T => Unit): T = { f(t); t }
   def resultOf[T](f: Future[T]): T = Await result (f, 1 seconds)
 }
