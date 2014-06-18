@@ -2,11 +2,11 @@
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
 
-scalaVersion := "2.10.4"
+scalaVersion := "2.11.1"
 
 libraryDependencies ++= Seq (
-  "com.h2database" % "h2" % "1.3.176",
-  "com.typesafe.slick" %% "slick" % "2.0.2",
+  "com.h2database" % "h2" % "1.4.178",
+  "com.typesafe.slick" %% "slick" % "2.1.0-M2",
   "ch.qos.logback" % "logback-classic" % "1.1.2",
   "org.specs2" %% "specs2" % "2.3.12" % "test"
 )
