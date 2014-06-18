@@ -8,7 +8,7 @@ import org.specs2.SpecificationWithJUnit
 
 import net.diet_rich.dedup.core.values.Path
 
-class FileSystemTreeSpec extends SpecificationWithJUnit with ValueMatchers { def is = s2"""
+class FileSystemTreeSpec extends SpecificationWithJUnit with TreeMatchers { def is = s2"""
 ${"Tests for the file system tree".title}
 
 The root node should be a directory $rootIsDirectory

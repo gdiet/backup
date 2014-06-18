@@ -6,6 +6,7 @@ package net.diet_rich.dedup.core
 import org.specs2.SpecificationWithJUnit
 
 import net.diet_rich.dedup.core.values._
+import net.diet_rich.dedup.util.init
 
 class StoreRestoreSpec extends SpecificationWithJUnit { def is = s2"""
 ${"Tests for storing and restoring data".title}
@@ -20,7 +21,8 @@ Simple store and subsequent restore should be possible $storeRestore
   }
 
   def storeRestore = withEmptyFileSystem { fileSystem =>
-    val source = ???
+    val sourceData = init(Bytes.zero(10000)){ b => new util.Random(43) nextBytes b.data }
+    val source = new InMemorySource(sourceData)
     fileSystem storeUnchecked (FileSystem ROOTID, "child", source, Time(0))
     todo
   }

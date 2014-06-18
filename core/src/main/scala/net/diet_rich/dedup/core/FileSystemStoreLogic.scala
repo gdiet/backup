@@ -24,6 +24,8 @@ trait FileSystemStoreLogic { _: FileSystemTree =>
   private val storeContext = scala.concurrent.ExecutionContext fromExecutorService threadPool
   private def inStoreContext[T] (f: => T): T = resultOf(scala.concurrent.Future(f)(storeContext))
 
+  def read(entry: DataEntryID): Iterator[Bytes] = data readData entry
+
   def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntryID = inStoreContext {
     createUnchecked(parent, name, Some(time), Some(dataEntry(source)))
   }

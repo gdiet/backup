@@ -42,6 +42,11 @@ abstract class FileSystemData(private[core] val sqlTables: SQLTables, private[co
     freeRangesQueue enqueue range
   }
 
+  def readData(entry: DataEntryID): Iterator[Bytes] =
+    sqlTables.storeEntries(entry).iterator.flatMap(readData)
+
+  def readData(entry: StoreEntry): Iterator[Bytes]
+
   def writeData(data: Bytes, range: DataRange): Unit
 
 }

@@ -4,9 +4,9 @@
 package net.diet_rich.dedup.core
 
 import org.specs2.matcher.{Matcher, Matchers}
-import net.diet_rich.dedup.core.values.{TreeEntryID, TreeEntry}
+import net.diet_rich.dedup.core.values.{Bytes, TreeEntryID, TreeEntry}
 
-trait ValueMatchers { _: Matchers =>
+trait TreeMatchers { _: Matchers =>
   def beADirectory: Matcher[TreeEntry] = beNone ^^ ((_:TreeEntry).data aka "treeEntry.data")
   def beAFile: Matcher[TreeEntry] = beSome ^^ ((_:TreeEntry).data aka "treeEntry.data")
   def haveTheId(id: TreeEntryID): Matcher[TreeEntry] = beTypedEqualTo(id) ^^ ((_:TreeEntry).id aka "treeEntry.id")

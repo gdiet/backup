@@ -6,13 +6,13 @@ package net.diet_rich.dedup.core.values
 import net.diet_rich.dedup.core.Source
 import net.diet_rich.dedup.util.valueOf
 
-class ByteArrayTestSource(data: Array[Byte]) extends Source {
-  private var position: Int = 0
-  def size: Size = Size(data.length)
+class InMemorySource(data: Bytes) extends Source {
+  private var position: Int = data.offset
+  def size: Size = data.size
   def read(count: Int): Bytes = {
     val length = math.min(count, data.length - position)
-    valueOf(Bytes(data, position, length)) before { position = position + length }
+    valueOf(data.copy(offset = position, length = length)) before { position = position + length }
   }
-  def reset: Unit = { position = 0 }
+  def reset: Unit = { position = data.offset }
   def close = Unit
 }

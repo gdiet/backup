@@ -22,4 +22,7 @@ trait InMemoryDataBackend { _: FileSystemData =>
     System.arraycopy(data.data, data.offset, disk, int(range.start), int(range.size))
   }
 
+  def readData(entry: StoreEntry): Iterator[Bytes] =
+    Iterator(Bytes(disk, entry.range.start.value.toInt, entry.range.size.value.toInt))
+
 }
