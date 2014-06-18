@@ -17,13 +17,16 @@ Simple store and subsequent restore should be possible $storeRestore
   private def withEmptyFileSystem[T] (f: FileSystem => T) = InMemoryDatabase.withDB { database =>
     val tables = new SQLTables(database)
     val data = new FileSystemData(tables, new DataSettings { override def blocksize = Size(100) }) with InMemoryDataBackend
-    f(new FileSystem(data, new StoreSettings{}) with FileSystemTree)
+    f(new FileSystem(data, new StoreSettings{override def storeMethod = StoreMethod.STORE}) with FileSystemTree)
   }
 
   def storeRestore = withEmptyFileSystem { fileSystem =>
     val sourceData = init(Bytes.zero(10000)){ b => new util.Random(43) nextBytes b.data }
     val source = new InMemorySource(sourceData)
     fileSystem storeUnchecked (FileSystem ROOTID, "child", source, Time(0))
+    val dataid = fileSystem.entries(Path("/child")).head.data.get
+    val data = fileSystem.read(dataid)
+    data foreach println
     todo
   }
 

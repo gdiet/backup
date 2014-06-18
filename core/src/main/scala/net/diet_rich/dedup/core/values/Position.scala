@@ -6,7 +6,5 @@ package net.diet_rich.dedup.core.values
 case class Position(val value: Long) extends LongValue with Ordered[Position] {
   def +(size: Size): Position = Position(value + size.value)
   def -(other: Position): Size = Size(value - other.value)
-  def block(blocksize: Size): Long = (value / blocksize.value)
-  def blockOffset(blocksize: Size): Size = Size(value % blocksize.value)
   override def compare(that: Position): Int = value compareTo that.value
 }

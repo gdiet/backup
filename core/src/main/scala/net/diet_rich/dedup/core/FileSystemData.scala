@@ -21,6 +21,7 @@ abstract class FileSystemData(private[core] val sqlTables: SQLTables, private[co
 
   val initialDataOverlapProblems = sqlTables.problemDataAreaOverlaps
 
+  // we could use a PriorityQueue here - however, it is not really necessary
   protected val freeRangesQueue = scala.collection.mutable.Queue[DataRange](DataRange(sqlTables.startOfFreeDataArea, Position(Long MaxValue)))
 
   // queue gaps in byte store
@@ -33,12 +34,12 @@ abstract class FileSystemData(private[core] val sqlTables: SQLTables, private[co
     }
   }
 
-  def nextFreeRange: DataRange = synchronized {
+  def nextFreeRange: DataRange = freeRangesQueue.synchronized {
     val (range, rest) = freeRangesQueue.dequeue().partitionAtBlockLimit(blocksize)
     rest foreach (freeRangesQueue.enqueue(_))
     range
   }
-  def requeueFreeRange (range: DataRange): Unit = synchronized {
+  def requeueFreeRange (range: DataRange): Unit = freeRangesQueue.synchronized {
     freeRangesQueue enqueue range
   }
 
