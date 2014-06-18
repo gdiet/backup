@@ -16,6 +16,7 @@ trait InMemoryDataBackend { _: FileSystemData =>
   }
 
   def writeData(data: Bytes, range: DataRange): Unit = {
+    assert(range.size.value > 0, s"empty range $range")
     assert(range.start.value / blocksize.value == (range.fin.value - 1) / blocksize.value, s"range $range across block of size $blocksize")
     assert(range.size.value <= data.length, s"range $range is longer than the data length ${data.length}")
     System.arraycopy(data.data, data.offset, disk, int(range.start), int(range.size))

@@ -61,7 +61,7 @@ object StoreMethod {
       @annotation.tailrec
       def read(chunk: Option[Bytes]): Option[Bytes] =
         if (packer finished) chunk else chunk match {
-          case None => read(Some(Bytes(compressorChunkSize)))
+          case None => read(Some(Bytes.empty(compressorChunkSize)))
           case result @ Some(Bytes(_, _, `compressorChunkSize`)) => result
           case Some(Bytes(data, 0, length)) =>
             refill
@@ -70,12 +70,12 @@ object StoreMethod {
           case _ => sys.error(s"chunk did not match: $chunk")
         }
 
-      def hasNext: Boolean = {
+      def hasNext: Boolean = nextBytes.isDefined || {
         nextBytes = read(None)
         nextBytes.isDefined
       }
 
-      def next(): Bytes = nextBytes.get
+      def next(): Bytes = valueOf (nextBytes.get) before { nextBytes = None }
     }
 
     override def pack(data: Iterator[Bytes]) = process(new DeflatePacker, data)

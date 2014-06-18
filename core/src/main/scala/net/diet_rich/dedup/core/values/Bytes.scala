@@ -13,7 +13,8 @@ case class Bytes(data: Array[Byte], offset: Int, length: Int) {
 }
 
 object Bytes extends ((Array[Byte], Int, Int) => Bytes) {
-  def apply(length: Int): Bytes = Bytes(new Array[Byte](length), 0, length)
+  def empty(length: Int): Bytes = Bytes(new Array[Byte](length), 0, 0)
+  def zero(length: Int): Bytes = Bytes(new Array[Byte](length), 0, length)
 
   import scala.language.reflectiveCalls
   implicit class UpdateBytes(val u: { def update(data: Array[Byte], offset: Int, length: Int) }) extends AnyVal {
