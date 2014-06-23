@@ -26,8 +26,8 @@ Simple store and subsequent restore should be possible $storeRestore
     fileSystem storeUnchecked (FileSystem ROOTID, "child", source, Time(0))
     val dataid = fileSystem.entries(Path("/child")).head.data.get
     val data = fileSystem.read(dataid)
-    data foreach println
-    todo
+    val flat = data.flatMap(b => b.data.drop(b.offset).take(b.length)).toList
+    flat === sourceData.data.toList
   }
 
 }

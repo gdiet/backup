@@ -76,7 +76,7 @@ trait FileSystemStoreLogic { _: FileSystemTree =>
         rangesStored foreach requeueFreeRange
         dataid
       case DataEntryCreated(dataid) =>
-        rangesStored.reverse foreach (createByteStoreEntry(dataid, _))
+        rangesStored foreach (createByteStoreEntry(dataid, _))
         dataid
     }
   }
