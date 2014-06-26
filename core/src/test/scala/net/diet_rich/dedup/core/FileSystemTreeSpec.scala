@@ -17,9 +17,11 @@ Looking up a path where only parts exist yields None $pathWithoutTreeEntry
 Create throws an exception if a child with the name already exists $createExisting
   """
 
-  private def withEmptyFileSystem[T] (f: FileSystemTree => T) = InMemoryDatabase.withDB { database =>
-    class FileSystemTreeForTest(val sqlTables: SQLTables) extends FileSystemTree
-    f(new FileSystemTreeForTest(new SQLTables(database)))
+  private def withEmptyFileSystem[T] (f: FileSystemTree => T) = InMemoryDatabase.withDB { db =>
+    class FileSystemTreeForTest extends FileSystemTree with sql.TablesSlice with sql.DatabasePart {
+      protected val database = db
+    }
+    f(new FileSystemTreeForTest())
   }
 
   def createExisting = withEmptyFileSystem { fileSystem =>

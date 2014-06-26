@@ -17,7 +17,7 @@ Simple store and subsequent restore should be possible $storeRestore
   private def withEmptyFileSystem[T] (f: FileSystem => T) = InMemoryDatabase.withDB { database =>
     val tables = new SQLTables(database)
     val data = new FileSystemData(tables, new DataSettings { override def blocksize = Size(100) }) with InMemoryDataBackend
-    f(new FileSystem(data, new StoreSettings{override def storeMethod = StoreMethod.STORE}) with FileSystemTree)
+    f(new FileSystem(data, new StoreSettings{override def storeMethod = StoreMethod.STORE}, database) with FileSystemTree)
   }
 
   def storeRestore = withEmptyFileSystem { fileSystem =>

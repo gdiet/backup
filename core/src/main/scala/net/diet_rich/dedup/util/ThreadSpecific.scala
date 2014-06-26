@@ -5,7 +5,8 @@ package net.diet_rich.dedup.util
 
 class ThreadSpecific[T](f: => T) {
   private val local = new ThreadLocal[T] { override def initialValue = f }
-  def apply(): T = local.get
+  def threadInstance: T = local.get
+  def apply(): T = threadInstance
 }
 
 object ThreadSpecific {

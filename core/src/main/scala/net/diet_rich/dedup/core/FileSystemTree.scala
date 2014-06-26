@@ -7,22 +7,21 @@ import java.io.IOException
 
 import net.diet_rich.dedup.core.FileSystem._
 import net.diet_rich.dedup.core.values._
-import net.diet_rich.dedup.core.values.Implicits.treeEntryToID
 
-trait FileSystemTree { _: {val sqlTables: SQLTables} =>
+trait FileSystemTree { _: sql.TablesSlice =>
 
-  def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = sqlTables treeChildren parent
+  def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = tables treeChildren parent
   def children(parent: TreeEntryID): List[TreeEntry] = childrenWithDeleted(parent) filter (_.deleted isEmpty)
 
   def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID =
-    sqlTables createTreeEntry (parent, name, changed, dataid)
-  def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID = sqlTables inTransaction {
+    tables createTreeEntry (parent, name, changed, dataid)
+  def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID = tables inTransaction {
     children(parent) find (_.name == name) match {
       case Some(entry) => throw new IOException(s"entry $entry already exists")
       case None => createUnchecked(parent, name, changed, dataid)
     }
   }
-  def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID = sqlTables inTransaction {
+  def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID = tables inTransaction {
     val elements = path.elements
     if(elements.size == 0) throw new IOException("can't create the root entry")
     val parent = elements.dropRight(1).foldLeft(ROOTID) { (node, childName) =>
@@ -36,7 +35,7 @@ trait FileSystemTree { _: {val sqlTables: SQLTables} =>
   }
 
   def entries(path: Path): List[TreeEntry] =
-    path.elements.foldLeft(List(ROOTENTRY)) { (node, childName) =>
-      node flatMap (children(_) filter (_.name == childName))
+    path.elements.foldLeft(List(FileSystem ROOTENTRY)) { (nodes, childName) =>
+      nodes flatMap (node => children(node.id) filter (_.name == childName))
     }
 }
