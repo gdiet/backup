@@ -7,7 +7,7 @@ import java.io.IOException
 
 import net.diet_rich.dedup.core.values._
 
-trait TreeSlice extends TreeInterface { _: sql.TablesSlice =>
+trait TreeSlice extends TreeInterface with sql.TablesSlice {
   override final def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = tables treeChildren parent
   override final def children(parent: TreeEntryID): List[TreeEntry] = childrenWithDeleted(parent) filter (_.deleted isEmpty)
 

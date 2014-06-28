@@ -9,7 +9,7 @@ import net.diet_rich.dedup.core.FileSystem
 import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util.init
 
-trait TablesSlice { _: DatabasePart =>
+trait TablesSlice extends DatabasePart {
   protected final object tables {
     // atomic results
     private implicit val _getDataEntryId       = GetResult(r => DataEntryID(r nextLong))

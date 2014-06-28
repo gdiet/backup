@@ -4,7 +4,7 @@ import scala.slick.jdbc.StaticQuery
 
 import net.diet_rich.dedup.core.values.Path
 
-object SQLUtilities {
+object DBUtilities {
 
   type Database = scala.slick.driver.JdbcDriver#Backend#Database
   type Session = scala.slick.driver.JdbcDriver#Backend#Session

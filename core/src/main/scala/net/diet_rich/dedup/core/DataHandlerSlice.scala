@@ -5,7 +5,7 @@ package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.core.values._
 
-trait DataHandlerSlice { _: sql.TablesSlice with DataBackendPart =>
+trait DataHandlerSlice extends sql.TablesSlice with DataBackendPart {
   protected sealed trait DataEntryCreateResult { val id: DataEntryID }
   protected case class DataEntryCreated(id: DataEntryID) extends DataEntryCreateResult
   protected case class ExistingEntryMatches(id: DataEntryID) extends DataEntryCreateResult

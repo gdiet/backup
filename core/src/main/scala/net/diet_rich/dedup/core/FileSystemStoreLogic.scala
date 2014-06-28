@@ -9,7 +9,7 @@ import net.diet_rich.dedup.core.FileSystem._
 import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util._
 
-trait FileSystemStoreLogic extends StoreInterface { _: TreeInterface with DataHandlerSlice with DataBackendPart =>
+trait FileSystemStoreLogic extends StoreInterface with TreeInterface with DataHandlerSlice {
 
   protected val storeSettings: StoreSettings
   import data._
