@@ -9,9 +9,8 @@ import net.diet_rich.dedup.core.FileSystem._
 import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util._
 
-trait FileSystemStoreLogic { _: FileSystemTree =>
+trait FileSystemStoreLogic extends StoreInterface { _: TreeInterface with DataHandlerSlice with DataBackendPart =>
 
-  protected val data: FileSystemData
   protected val storeSettings: StoreSettings
   import data._
   import storeSettings._
@@ -24,9 +23,9 @@ trait FileSystemStoreLogic { _: FileSystemTree =>
   private val storeContext = scala.concurrent.ExecutionContext fromExecutorService threadPool
   private def inStoreContext[T] (f: => T): T = resultOf(scala.concurrent.Future(f)(storeContext))
 
-  def read(entry: DataEntryID): Iterator[Bytes] = data readData entry
+  override final def read(entry: DataEntryID): Iterator[Bytes] = data readData entry
 
-  def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntryID = inStoreContext {
+  override final def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntryID = inStoreContext {
     createUnchecked(parent, name, Some(time), Some(dataEntry(source)))
   }
 
@@ -84,7 +83,7 @@ trait FileSystemStoreLogic { _: FileSystemTree =>
   @annotation.tailrec
   private[core] final def storeBytes(bytes: Bytes, acc: List[DataRange] = Nil): List[DataRange] = {
     val (block, rest) = nextFreeRange partitionAtLimit bytes.size
-    writeData(bytes, block)
+    dataBackend.write(bytes, block)
     if (block.size < bytes.size) {
       assume (rest isEmpty)
       storeBytes(bytes withOffset block.size, block :: acc)
