@@ -11,8 +11,3 @@ trait TreeMatchers { _: Matchers =>
   def beAFile: Matcher[TreeEntry] = beSome ^^ ((_:TreeEntry).data aka "treeEntry.data")
   def haveTheId(id: TreeEntryID): Matcher[TreeEntry] = beTypedEqualTo(id) ^^ ((_:TreeEntry).id aka "treeEntry.id")
 }
-
-// FIXME remove once it's clear we don't need this anymore
-//def beSomeDirectory: Matcher[Option[TreeEntry]] = beSome(beADirectory) ^^ ((_:Option[TreeEntry]) aka "Option[TreeEntry]")
-//def beSomeFile: Matcher[Option[TreeEntry]] = beSome(beAFile) ^^ ((_:Option[TreeEntry]) aka "Option[TreeEntry]")
-//def haveSomeId(id: TreeEntryID): Matcher[Option[TreeEntry]] = beSome(haveTheId(id)) ^^ ((_:Option[TreeEntry]) aka "Option[TreeEntry]")

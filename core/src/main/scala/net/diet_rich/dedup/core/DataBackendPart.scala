@@ -9,7 +9,7 @@ trait DataBackendPart {
   protected val dataBackend: DataBackend
 
   trait DataBackend {
-    def read(entry: StoreEntry): Iterator[Bytes] // FIXME DataRange
+    def read(entry: DataRange): Iterator[Bytes]
     def write(data: Bytes, range: DataRange): Unit
   }
 }

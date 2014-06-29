@@ -23,14 +23,14 @@ trait DataHandlerSlice extends sql.TablesSlice with DataBackendPart {
 
     val initialDataOverlapProblems = tables.problemDataAreaOverlaps
 
-    // we could use a PriorityQueue here - however, it is not really necessary
+    // Note: We could use a PriorityQueue here - however, it is not really necessary, an ordinary queue 'heals' itself here, too
     protected val freeRangesQueue = scala.collection.mutable.Queue[DataRange](DataRange(tables.startOfFreeDataArea, Position(Long MaxValue)))
 
     // FIXME chunk partitioning in the data backend
     val blocksize = Size(0x800000L)
 
     // queue gaps in byte store
-    if (initialDataOverlapProblems.isEmpty) { // FIXME hier nur aus settings etwas nehmen, und die data overlaps in die utilities packen
+    if (initialDataOverlapProblems.isEmpty) {
       val dataAreaStarts = tables.dataAreaStarts
       if (!dataAreaStarts.isEmpty) {
         val (firstArea :: gapStarts) = dataAreaStarts
@@ -49,6 +49,6 @@ trait DataHandlerSlice extends sql.TablesSlice with DataBackendPart {
     }
 
     def readData(entry: DataEntryID): Iterator[Bytes] =
-      tables.storeEntries(entry).iterator.flatMap(dataBackend.read)
+      tables.storeEntries(entry).iterator.flatMap(dataEntry => dataBackend read dataEntry.range)
   }
 }

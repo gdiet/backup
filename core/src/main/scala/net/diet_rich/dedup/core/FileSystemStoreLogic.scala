@@ -11,7 +11,7 @@ import net.diet_rich.dedup.util._
 
 trait FileSystemStoreLogic extends StoreInterface with TreeInterface with DataHandlerSlice {
 
-  protected val storeSettings: StoreSettings
+  protected val storeSettings: StoreSettings // FIXME make a slice or part
   import data._
   import storeSettings._
 
