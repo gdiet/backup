@@ -3,6 +3,10 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.values
 
+import scala.collection.mutable.MutableList
+
+import net.diet_rich.dedup.util.valueOf
+
 case class Bytes(data: Array[Byte], offset: Int, length: Int) {
   def size: Size = Size(length)
   def withOffset(offset: Size): Bytes = withOffset(offset.value.toInt)
@@ -13,6 +17,18 @@ case class Bytes(data: Array[Byte], offset: Int, length: Int) {
 }
 
 object Bytes extends ((Array[Byte], Int, Int) => Bytes) {
+  val EMPTY = empty(0)
+
+  // Note: MutableList allows in-place replacement when applying the store method to minimize memory impact
+  def consumingIterator(data: MutableList[Bytes]): Iterator[Bytes] = new Iterator[Bytes] {
+    var index = 0
+    def hasNext: Boolean = index < data.size
+    def next: Bytes = valueOf(data(index)) before {
+      data.update(index, EMPTY)
+      index += 1
+    }
+  }
+
   def empty(length: Int): Bytes = Bytes(new Array[Byte](length), 0, 0)
   def zero(length: Int): Bytes = Bytes(new Array[Byte](length), 0, length)
 

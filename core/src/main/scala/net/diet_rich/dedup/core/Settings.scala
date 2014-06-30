@@ -11,6 +11,10 @@ trait StoreSettings {
   def storeMethod = StoreMethod.DEFLATE
 }
 
+trait StoreSettingsSlice {
+  protected val storeSettings: StoreSettings
+}
+
 trait DataSettings {
   def blocksize: Size = Size(0x800000L)
 }

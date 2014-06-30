@@ -69,10 +69,11 @@ trait TablesSlice extends DatabasePart {
     def dataEntries(size: Size, print: Print): List[DataEntry] = dataEntriesForSizePrintQuery(size, print) list
     def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash) list
     def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryID = inTransaction (
-      init(nextDataEntryIdQuery first) {
+      init(nextDataID) {
         id => sqlu"INSERT INTO DataEntries (id, length, print, hash, method) VALUES ($id, $size, $print, $hash, $method);" execute
       }
     )
+    def nextDataID: DataEntryID = nextDataEntryIdQuery first
 
     // ByteStore
     def startOfFreeDataArea = StaticQuery.queryNA[Position]("SELECT MAX(fin) FROM ByteStore;").firstOption getOrElse Position(0)
