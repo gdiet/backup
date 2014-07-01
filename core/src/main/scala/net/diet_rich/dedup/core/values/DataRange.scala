@@ -6,7 +6,7 @@ package net.diet_rich.dedup.core.values
 sealed trait RangePartitionResult
 case class WithRest(range: DataRange, rest: DataRange) extends RangePartitionResult
 case class ExactMatch(range: DataRange) extends RangePartitionResult
-case class NotLargeEnough(range: DataRange, missing: Size) extends  RangePartitionResult
+case class NeedsMore(range: DataRange, missing: Size) extends  RangePartitionResult
 
 case class DataRange(start: Position, fin: Position) {
 
@@ -30,6 +30,6 @@ case class DataRange(start: Position, fin: Position) {
 
   def partitionAt(limit: Size): RangePartitionResult =
     if (size == limit) ExactMatch(this) else
-    if (size > limit) NotLargeEnough(this, size - limit) else
+    if (size > limit) NeedsMore(this, size - limit) else
     WithRest(withLength(limit), withOffset(limit))
 }

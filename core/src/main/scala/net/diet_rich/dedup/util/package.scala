@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup
 
+import java.util.concurrent._
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 
@@ -12,4 +13,12 @@ package object util {
   def init[T](t: T)(f: T => Unit): T = { f(t); t }
   def resultOf[T](f: Future[T]): T = Await result (f, 1 day)
   def !!![T]: T = sys.error("this code should have never been reached.")
+
+  def BlockingThreadPoolExecutor(threadPoolSize: Int): ThreadPoolExecutor = {
+    val executorQueue = new ArrayBlockingQueue[Runnable](threadPoolSize)
+    val rejectHandler = new RejectedExecutionHandler {
+      override def rejectedExecution(r: Runnable, e: ThreadPoolExecutor): Unit = executorQueue put r
+    }
+    new ThreadPoolExecutor(threadPoolSize, threadPoolSize, 0, TimeUnit.SECONDS, executorQueue, rejectHandler)
+  }
 }

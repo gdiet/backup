@@ -19,16 +19,8 @@ trait StoreLogic extends StoreInterface { _: StoreSettingsSlice with TreeInterfa
     createUnchecked(parent, name, Some(time), Some(dataID))
   }
 
-  private val storeContext: ExecutionContext = {
-    import java.util.concurrent._
-    import storeSettings._
-    val executorQueue = new ArrayBlockingQueue[Runnable](threadPoolSize)
-    val rejectHandler = new RejectedExecutionHandler {
-      override def rejectedExecution(r: Runnable, e: ThreadPoolExecutor): Unit = executorQueue put r
-    }
-    val threadPool = new ThreadPoolExecutor(threadPoolSize, threadPoolSize, 0, TimeUnit.SECONDS, executorQueue, rejectHandler)
-    ExecutionContext fromExecutorService threadPool
-  }
+  private val storeContext: ExecutionContext =
+    ExecutionContext fromExecutorService BlockingThreadPoolExecutor(storeSettings.threadPoolSize)
 
   private def inStoreContext[T] (f: => T): T = resultOf(Future(f)(storeContext))
 

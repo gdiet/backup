@@ -31,7 +31,7 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: sql.Tab
     override def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry] = tables dataEntries(size, print, hash)
 
     override def storePackedData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
-      val storeRanges = freeRanges(size)
+      val storeRanges = freeRanges dequeue size
       @annotation.tailrec
       def storeOneChunk(bytes: Bytes, ranges: List[DataRange]): List[DataRange] = ranges.head.partitionAt(bytes.size) match {
         case WithRest(range, rest) =>
@@ -40,21 +40,11 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: sql.Tab
         case ExactMatch(range) =>
           dataBackend.write(bytes, range.start)
           ranges.tail
-        case NotLargeEnough(range, missing) =>
+        case NeedsMore(range, missing) =>
           dataBackend.write(bytes.withSize(range.size), range.start)
           storeOneChunk(bytes.withOffset(range.size), ranges.tail)
       }
-//        bytes.size match {
-//        case Size(0) => ranges
-//        case size if size == ranges.head.size =>
-//          dataBackend.write(bytes, ranges.head)
-//          ranges.tail
-//        case size if size <= ranges.head.size =>
-//          ranges.head.partitionAt(size)
-//
-//          ???
-//        case _ => ???
-//      }
+      // FIXME continue
 
       val reservedDataID = tables.nextDataID
       ???
@@ -64,25 +54,7 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: sql.Tab
 
     override def storeSourceData(printData: Bytes, print: Print, data: Iterator[Bytes]): DataEntryID = ???
 
-    // Note: We could use a PriorityQueue here - however, it is not really necessary, an ordinary queue 'heals' itself here, too
-    val freeRangesQueue = scala.collection.mutable.Queue[DataRange](DataRange(tables.startOfFreeDataArea, Position(Long MaxValue)))
-
-    def freeRanges(size: Size): List[DataRange] = freeRangesQueue.synchronized {
-      @annotation.tailrec
-      def collectFreeRanges(size: Size, ranges: List[DataRange]): List[DataRange] = {
-        freeRangesQueue dequeue() partitionAt size match {
-          case ExactMatch(range) =>
-            range :: ranges
-          case NotLargeEnough(range, remainingSize) =>
-            collectFreeRanges(remainingSize, range :: ranges)
-          case WithRest(range, rest) =>
-            freeRangesQueue enqueue rest
-            range :: ranges
-        }
-      }
-      if (size == Size(0)) Nil else collectFreeRanges(size, Nil)
-    }
-
+    val freeRanges = RangesQueue(DataRange(tables.startOfFreeDataArea, Position(Long MaxValue)))
 
     //    def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryCreateResult = tables.inTransaction {
     //      tables.dataEntries(size, print, hash).headOption
