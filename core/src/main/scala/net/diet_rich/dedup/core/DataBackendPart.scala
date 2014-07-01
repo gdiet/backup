@@ -10,6 +10,6 @@ trait DataBackendPart {
 
   trait DataBackend {
     def read(entry: DataRange): Iterator[Bytes]
-    def write(data: Bytes, range: DataRange): Unit
+    def write(data: Bytes, start: Position): Unit
   }
 }

@@ -3,7 +3,6 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
-// FIXME check imports
 import scala.collection.mutable.MutableList
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -13,14 +12,14 @@ import net.diet_rich.dedup.util._
 
 trait StoreLogic extends StoreInterface { _: StoreSettingsSlice with TreeInterface with DataHandlerSlice =>
 
-  override final def read(entry: DataEntryID): Iterator[Bytes] = data readData entry
+  override final def read(entry: DataEntryID): Iterator[Bytes] = dataHandler readData entry
 
   override final def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntryID = inStoreContext {
     val dataID = dataEntryFor(source)
     createUnchecked(parent, name, Some(time), Some(dataID))
   }
 
-  private val storeContext = {
+  private val storeContext: ExecutionContext = {
     import java.util.concurrent._
     import storeSettings._
     val executorQueue = new ArrayBlockingQueue[Runnable](threadPoolSize)
@@ -36,10 +35,10 @@ trait StoreLogic extends StoreInterface { _: StoreSettingsSlice with TreeInterfa
   protected def dataEntryFor(source: Source): DataEntryID = {
     val printData = source read PRINTSIZE
     val print = Print(printData)
-    if (data hasSizeAndPrint (source size, print))
+    if (dataHandler hasSizeAndPrint (source size, print))
       tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
     else
-      storeDataThatIsKnownToBeNew(printData, print, source)
+      dataHandler storeSourceData (printData, print, source.allData)
   }
 
   protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = Memory.reserved(source.size.value) {
@@ -48,53 +47,22 @@ trait StoreLogic extends StoreInterface { _: StoreSettingsSlice with TreeInterfa
   }
 
   protected def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = {
-    val bytes = (printData :: source.allData.toList).to[MutableList] // FIXME manual test that memory consumption is OK
+    val bytes = (printData :: source.allData.toList).to[MutableList]
     val (hash, size) = Hash calculate (storeSettings hashAlgorithm, bytes iterator)
-    data.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse storeDataFullyPreloaded(bytes, size, print, hash)
+    dataHandler.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse storeDataFullyPreloaded(bytes, size, print, hash)
   }
 
   protected def storeDataFullyPreloaded(bytes: MutableList[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
-    val packedData = storeSettings.storeMethod.pack(Bytes.consumingIterator(bytes)).toList
-    data storeData packedData // FIXME needs print and hash
+    val packedData = storeSettings.storeMethod.pack(Bytes.consumingIterator(bytes)).to[MutableList] // FIXME manual test that memory consumption is OK
+    dataHandler storePackedData (Bytes consumingIterator packedData, size, print, hash)
   }
-
 
   protected def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Print, source: Source): DataEntryID = {
     val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData
     val (hash, size) = Hash.calculate(storeSettings hashAlgorithm, bytes)
-    data.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
+    dataHandler.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
       source.reset
-      val printData = source read PRINTSIZE
-      val print = Print(printData)
-      storeData(print, Iterator(printData) ++ source.allData)
+      dataHandler storeSourceData source.allData
     }
   }
-
-  protected def storeDataThatIsKnownToBeNew(printData: Bytes, print: Print, source: Source): DataEntryID = {
-    ???
-//    val data: Iterator[Bytes] = Iterator(printData) ++ source.allData
-//    val (hash, size, rangesStored) = Hash.calculate(hashAlgorithm, data, storeMethod pack _ flatMap { storeBytes(_).reverse } toList)
-//    createDataEntry(size, print, hash, storeSettings.storeMethod) match {
-//      case ExistingEntryMatches(dataid) =>
-//        rangesStored foreach requeueFreeRange
-//        dataid
-//      case DataEntryCreated(dataid) =>
-//        rangesStored foreach (createByteStoreEntry(dataid, _))
-//        dataid
-//    }
-  }
-
-//  @annotation.tailrec
-//  protected final def storeBytes(bytes: Bytes, acc: List[DataRange] = Nil): List[DataRange] = {
-//    val (block, rest) = nextFreeRange partitionAtLimit bytes.size
-//    dataBackend.write(bytes, block)
-//    if (block.size < bytes.size) {
-//      assume (rest isEmpty)
-//      storeBytes(bytes withOffset block.size, block :: acc)
-//    } else {
-//      rest foreach requeueFreeRange
-//      block :: acc
-//    }
-//  }
-
 }
