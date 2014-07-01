@@ -22,7 +22,7 @@ object Hash extends (Array[Byte] => Hash) {
   def digestLength(algorithm: String): Int =
     MessageDigest getInstance algorithm getDigestLength
 
-  def calculate(algorithm: String, data: Seq[Bytes]): (Hash, Size) = {
+  def calculate(algorithm: String, data: Iterator[Bytes]): (Hash, Size) = {
     val digester = MessageDigest getInstance algorithm
     val numberOfBytes = data.foldLeft(Size(0)){ case (sum, bytes) => digester update bytes; sum + bytes.size }
     (Hash(digester.digest), numberOfBytes)

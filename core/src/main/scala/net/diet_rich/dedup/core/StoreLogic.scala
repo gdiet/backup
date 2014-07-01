@@ -49,25 +49,25 @@ trait StoreLogic extends StoreInterface { _: StoreSettingsSlice with TreeInterfa
 
   protected def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = {
     val bytes = (printData :: source.allData.toList).to[MutableList] // FIXME manual test that memory consumption is OK
-    val (hash, size) = Hash calculate (storeSettings hashAlgorithm, bytes)
+    val (hash, size) = Hash calculate (storeSettings hashAlgorithm, bytes iterator)
     data.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse storeDataFullyPreloaded(bytes, size, print, hash)
   }
 
   protected def storeDataFullyPreloaded(bytes: MutableList[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
     val packedData = storeSettings.storeMethod.pack(Bytes.consumingIterator(bytes)).toList
-    data storeData packedData
+    data storeData packedData // FIXME needs print and hash
   }
 
 
   protected def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Print, source: Source): DataEntryID = {
-    ???
-//    val data: Iterator[Bytes] = Iterator(printData) ++ source.allData
-//    val (hash, size) = Hash.calculate(hashAlgorithm, data)
-//    dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
-//      source.reset
-//      val (print, printData) = printFromSource(source)
-//      storeData(printData, print, source)
-//    }
+    val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData
+    val (hash, size) = Hash.calculate(storeSettings hashAlgorithm, bytes)
+    data.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
+      source.reset
+      val printData = source read PRINTSIZE
+      val print = Print(printData)
+      storeData(print, Iterator(printData) ++ source.allData)
+    }
   }
 
   protected def storeDataThatIsKnownToBeNew(printData: Bytes, print: Print, source: Source): DataEntryID = {
