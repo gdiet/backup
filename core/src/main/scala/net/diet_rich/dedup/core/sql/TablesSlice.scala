@@ -68,10 +68,8 @@ trait TablesSlice extends DatabasePart {
     def dataEntry(id: DataEntryID): Option[DataEntry] = dataEntryForIdQuery(id) firstOption
     def dataEntries(size: Size, print: Print): List[DataEntry] = dataEntriesForSizePrintQuery(size, print) list
     def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash) list
-    def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryID = inTransaction (
-      init(nextDataID) {
-        id => sqlu"INSERT INTO DataEntries (id, length, print, hash, method) VALUES ($id, $size, $print, $hash, $method);" execute
-      }
+    def createDataEntry(reservedID: DataEntryID, size: Size, print: Print, hash: Hash, method: StoreMethod): Unit = inTransaction (
+        sqlu"INSERT INTO DataEntries (id, length, print, hash, method) VALUES ($reservedID, $size, $print, $hash, $method);" execute
     )
     def nextDataID: DataEntryID = nextDataEntryIdQuery first
 

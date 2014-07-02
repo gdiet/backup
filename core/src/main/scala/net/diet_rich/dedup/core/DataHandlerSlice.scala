@@ -10,16 +10,16 @@ trait DataHandlerSlice {
     def readData(entry: DataEntryID): Iterator[Bytes] // FIXME remove and make this a data store slice?
     def hasSizeAndPrint(size: Size, print: Print): Boolean
     def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry]
-    def storePackedData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID
+    def storePackedNewData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID
     def storeSourceData(data: Iterator[Bytes]): DataEntryID
     def storeSourceData(printData: Bytes, print: Print, data: Iterator[Bytes]): DataEntryID
   }
   protected val dataHandler: DataHandler
 }
 
-trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: sql.TablesSlice =>
-  private sealed trait DataEntryCreateResult { val id: DataEntryID }
-  private case class DataEntryCreated(id: DataEntryID) extends DataEntryCreateResult
+trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: StoreSettingsSlice with sql.TablesSlice =>
+  private sealed trait DataEntryCreateResult
+  private object DataEntryCreated extends DataEntryCreateResult
   private case class ExistingEntryMatches(id: DataEntryID) extends DataEntryCreateResult
 
   override protected val dataHandler = new DataHandler() {
@@ -30,24 +30,31 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: sql.Tab
 
     override def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry] = tables dataEntries(size, print, hash)
 
-    override def storePackedData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
+    override def storePackedNewData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
       val storeRanges = freeRanges dequeue size
       @annotation.tailrec
       def storeOneChunk(bytes: Bytes, ranges: List[DataRange]): List[DataRange] = ranges.head.partitionAt(bytes.size) match {
         case WithRest(range, rest) =>
+          assert(range.size == bytes.size) // FIXME remove eventually?
           dataBackend.write(bytes, range.start)
           rest :: ranges.tail
         case ExactMatch(range) =>
+          assert(range.size == bytes.size) // FIXME remove eventually?
           dataBackend.write(bytes, range.start)
           ranges.tail
         case NeedsMore(range, missing) =>
+          assert(range.size == bytes.size) // FIXME remove eventually?
           dataBackend.write(bytes.withSize(range.size), range.start)
           storeOneChunk(bytes.withOffset(range.size), ranges.tail)
       }
-      // FIXME continue
+      val remainingRanges = data.foldLeft(storeRanges){ case (ranges, bytes) => storeOneChunk(bytes, ranges) }
+      assert (remainingRanges isEmpty) // FIXME remove eventually?
 
       val reservedDataID = tables.nextDataID
-      ???
+      storeRanges foreach { range => tables.createByteStoreEntry(reservedDataID, range) }
+
+      tables.createDataEntry(reservedDataID, size, print, hash, storeSettings.storeMethod)
+      reservedDataID
     }
 
     override def storeSourceData(data: Iterator[Bytes]): DataEntryID = ???
@@ -56,11 +63,6 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: sql.Tab
 
     val freeRanges = RangesQueue(DataRange(tables.startOfFreeDataArea, Position(Long MaxValue)))
 
-    //    def createDataEntry(size: Size, print: Print, hash: Hash, method: StoreMethod): DataEntryCreateResult = tables.inTransaction {
-    //      tables.dataEntries(size, print, hash).headOption
-    //        .map(e => ExistingEntryMatches(e.id))
-    //        .getOrElse(DataEntryCreated(tables.createDataEntry(size, print, hash, method)))
-    //    }
     //
     //    def storeData(data: Seq[Bytes]): DataEntryID = ??? // FIXME
     //    //  val packedSize = packedData.foldLeft(Size(0)) { case (size, bytes) => size + bytes.size }
