@@ -6,7 +6,6 @@ package net.diet_rich.dedup.core
 import scala.collection.mutable.MutableList
 import scala.concurrent.{ExecutionContext, Future}
 
-import net.diet_rich.dedup.core.FileSystem._
 import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util._
 
@@ -25,12 +24,12 @@ trait StoreLogic extends StoreInterface { _: StoreSettingsSlice with TreeInterfa
   private def inStoreContext[T] (f: => T): T = resultOf(Future(f)(storeContext))
 
   protected def dataEntryFor(source: Source): DataEntryID = {
-    val printData = source read PRINTSIZE
+    val printData = source read FileSystem.PRINTSIZE
     val print = Print(printData)
     if (dataHandler hasSizeAndPrint (source size, print))
       tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
     else
-      dataHandler storeSourceData (printData, print, source.allData)
+      dataHandler storeSourceData (printData, print, source.allData, source.size)
   }
 
   protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = Memory.reserved(source.size.value) {
@@ -54,7 +53,7 @@ trait StoreLogic extends StoreInterface { _: StoreSettingsSlice with TreeInterfa
     val (hash, size) = Hash.calculate(storeSettings hashAlgorithm, bytes)
     dataHandler.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
       source.reset
-      dataHandler storeSourceData source.allData
+      dataHandler storeSourceData source
     }
   }
 }
