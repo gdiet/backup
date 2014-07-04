@@ -14,16 +14,17 @@ class RangesQueue {
   def dequeue(size: Size): List[DataRange] = freeRangesQueue synchronized {
     @annotation.tailrec
     def collectFreeRanges(size: Size, ranges: List[DataRange]): List[DataRange] = {
-      freeRangesQueue dequeue() partitionAt size match {
-        case WithRest(range, rest) => freeRangesQueue enqueue rest; range :: ranges
+      freeRangesQueue dequeue() limitAt size match {
+        case RangeNotLargeEnough(range, remainingSize) => collectFreeRanges(remainingSize, range :: ranges)
         case ExactMatch(range) => range :: ranges
-        case NeedsMore(range, remainingSize) => collectFreeRanges(remainingSize, range :: ranges)
+        case RangeIsLarger(range, rest) => freeRangesQueue enqueue rest; range :: ranges
       }
     }
     if (size isZero) Nil else collectFreeRanges(size, Nil)
   }
 
   def enqueue(range: DataRange) = freeRangesQueue synchronized { freeRangesQueue enqueue range }
+  def enqueue(ranges: Seq[DataRange]) = freeRangesQueue synchronized { freeRangesQueue.enqueue(ranges:_*) }
 }
 
 object RangesQueue {

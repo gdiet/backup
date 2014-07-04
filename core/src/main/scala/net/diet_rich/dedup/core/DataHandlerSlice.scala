@@ -30,10 +30,14 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: StoreSe
 
     override def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry] = tables dataEntries(size, print, hash)
 
+    private sealed trait RangesOrUnstored
+    private case class Ranges (ranges: List[DataRange]) extends RangesOrUnstored
+    private case class Unstored (unstored: List[Bytes]) extends RangesOrUnstored
+
     override def storePackedNewData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
       val storeRanges = freeRanges dequeue size
-      val remainingRanges = None // FIXME data.foldLeft(storeRanges){case (ranges, bytes) => storeOneChunk(bytes, ranges)}
-      assert (remainingRanges isEmpty) // FIXME remove eventually?
+      val remainingRanges = data.foldLeft[RangesOrUnstored](Ranges(storeRanges)){case (ranges, bytes) => storeOneChunk(bytes, ranges)}
+      assert (remainingRanges.asInstanceOf[Ranges].ranges isEmpty) // FIXME remove eventually?
 
       val reservedDataID = tables.nextDataID
       storeRanges foreach { range => tables.createByteStoreEntry(reservedDataID, range) }
@@ -46,23 +50,23 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: StoreSe
       reservedDataID
     }
 
+    // FIXME needs test!
     @annotation.tailrec
-    private def storeOneChunk(bytes: Bytes, ranges: List[DataRange]): Either[Size, List[DataRange]] = ranges.head.partitionAt(bytes.size) match {
-      case WithRest(range, rest) =>
-        assert(range.size == bytes.size) // FIXME remove eventually? - yes, if partitionAt is tested
-        dataBackend.write(bytes, range.start)
-        Right(rest :: ranges.tail)
-      case ExactMatch(range) =>
-        assert(range.size == bytes.size) // FIXME remove eventually? - yes, if partitionAt is tested
-        dataBackend.write(bytes, range.start)
-        Right(ranges.tail)
-      case NeedsMore(range, missing) =>
-        assert(range.size == bytes.size) // FIXME remove eventually? - yes, if partitionAt is tested
-        dataBackend.write(bytes.withSize(range.size), range.start)
-        if (ranges.tail isEmpty)
-          Left(missing)
-        else
-          storeOneChunk(bytes.withOffset(range.size), ranges.tail)
+    private def storeOneChunk(bytes: Bytes, ranges: RangesOrUnstored): RangesOrUnstored = ranges match {
+      case Unstored(data) => Unstored(bytes :: data)
+      case Ranges(Nil) => Unstored(List(bytes))
+      case Ranges(head::tail) =>
+        head.size - bytes.size match {
+          case Size.Negative(_) =>
+            dataBackend.write (bytes withSize head.size, head.start)
+            storeOneChunk(bytes withOffset head.size, Ranges(tail))
+          case Size.Zero =>
+            dataBackend.write (bytes, head.start)
+            Ranges (tail)
+          case _ =>
+            dataBackend.write (bytes, head.start)
+            Ranges((head withOffset bytes.size) :: tail)
+      }
     }
 
     override def storeSourceData(source: Source): DataEntryID = {
@@ -72,25 +76,31 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: StoreSe
     }
 
     override def storeSourceData(printData: Bytes, print: Print, data: Iterator[Bytes], estimatedSize: Size): DataEntryID = {
-      Hash calculate (storeSettings.hashAlgorithm, Iterator(printData) ++ data, data => {
+      val (hash, size, dataID) = Hash calculate (storeSettings.hashAlgorithm, Iterator(printData) ++ data, data => {
         val packedData = storeSettings.storeMethod pack data
-        val storeRanges = freeRanges dequeue estimatedSize
+        val storeRanges = freeRanges dequeue estimatedSize // FIXME extract into same method
+        val remainingRanges = data.foldLeft[RangesOrUnstored](Ranges(storeRanges)){case (ranges, bytes) => storeOneChunk(bytes, ranges)} // FIXME extract method
+
+        remainingRanges match { // FIXME include into method
+          case Ranges(Nil) => /* NOP */
+          case Ranges(ranges) => freeRanges enqueue ranges
+          case Unstored(data) =>
+            val size = data.map(_.size).reduce(_+_) // FIXME or foldLeft(Size.Zero)(_+_) - this would also work if list is empty
+            val storeRanges = freeRanges dequeue size
+            val remainingRanges = data.foldLeft[RangesOrUnstored](Ranges(storeRanges)){case (ranges, bytes) => storeOneChunk(bytes, ranges)} // FIXME extract method
+        }
+        val reservedDataID = tables.nextDataID
+        storeRanges foreach { range => tables.createByteStoreEntry(reservedDataID, range) }
+
+        reservedDataID
       })
 
-//      val remainingRanges = data.foldLeft(storeRanges){case (ranges, bytes) => storeOneChunk(bytes, ranges)}
-//      assert (remainingRanges isEmpty) // FIXME remove eventually?
-//
-//      val reservedDataID = tables.nextDataID
-//      storeRanges foreach { range => tables.createByteStoreEntry(reservedDataID, range) }
-//
-//      // Note: In theory, a different thread might just have finished storing the same data and we create a data
-//      // duplicate here. I think however that is is preferrable to clean up data duplicates with a utility from
-//      // time to time and not care about them here. Only if we could be sure the utility is NOT needed, I'd go
-//      // for taking care about them here.
-//      tables.createDataEntry(reservedDataID, size, print, hash, storeSettings.storeMethod)
-//      reservedDataID
-
-      ???
+      // Note: In theory, a different thread might just have finished storing the same data and we create a data
+      // duplicate here. I think however that is is preferrable to clean up data duplicates with a utility from
+      // time to time and not care about them here. Only if we could be sure the utility is NOT needed, I'd go
+      // for taking care about them here.
+      tables.createDataEntry(dataID, size, print, hash, storeSettings.storeMethod)
+      dataID
     }
 
     // FIXME it should be possible to initialize the free ranges with free slots read from the database

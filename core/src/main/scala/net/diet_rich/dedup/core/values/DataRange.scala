@@ -3,10 +3,10 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.values
 
-sealed trait RangePartitionResult
-case class WithRest(range: DataRange, rest: DataRange) extends RangePartitionResult
-case class ExactMatch(range: DataRange) extends RangePartitionResult
-case class NeedsMore(range: DataRange, missing: Size) extends  RangePartitionResult
+sealed trait RangeLimitResult
+case class RangeNotLargeEnough(range: DataRange, missing: Size) extends RangeLimitResult
+case class ExactMatch(range: DataRange) extends RangeLimitResult
+case class RangeIsLarger(range: DataRange, rest: DataRange) extends  RangeLimitResult
 
 case class DataRange(start: Position, fin: Position) {
 
@@ -28,8 +28,8 @@ case class DataRange(start: Position, fin: Position) {
       (withLength(newSize), Some(withOffset(newSize)))
     }
 
-  def partitionAt(limit: Size): RangePartitionResult =
+  def limitAt(limit: Size): RangeLimitResult =
     if (size == limit) ExactMatch(this) else
-    if (size > limit) NeedsMore(this, size - limit) else
-    WithRest(withLength(limit), withOffset(limit))
+    if (size > limit) RangeIsLarger(withLength(limit), withOffset(limit)) else
+    RangeNotLargeEnough(this, limit - size)
 }

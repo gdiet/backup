@@ -7,5 +7,13 @@ case class Size(val value: Long) extends LongValue with Ordered[Size] {
   def -(other: Size): Size = Size(value - other.value)
   def +(other: Size): Size = Size(value + other.value)
   def isZero: Boolean = value == 0L
+  def isNegative: Boolean = value < 0L
   override def compare(that: Size): Int = value compareTo that.value
+}
+
+object Size extends (Long => Size) {
+  val Zero = Size(0L)
+  object Negative {
+    def unapply(size: Size): Option[Size] = if (size.isNegative) Some(size) else None
+  }
 }
