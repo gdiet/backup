@@ -13,8 +13,8 @@ case class DataRange(start: Position, fin: Position) {
   def size = fin - start
 
   def withLength(length: Size) = copy(fin = start + length)
-
   def withOffset(offset: Size) = copy(start = start + offset)
+  def shortenBy(length: Size) = copy(fin = fin - size)
 
   private def startBlock(blocksize: Size) = start.value / blocksize.value
   private def finBlock(blocksize: Size) = (fin.value - 1) / blocksize.value

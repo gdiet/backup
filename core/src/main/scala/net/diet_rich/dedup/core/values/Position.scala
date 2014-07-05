@@ -5,6 +5,7 @@ package net.diet_rich.dedup.core.values
 
 case class Position(val value: Long) extends LongValue with Ordered[Position] {
   def +(size: Size): Position = Position(value + size.value)
+  def -(size: Size): Position = Position(value - size.value)
   def -(other: Position): Size = Size(value - other.value)
   override def compare(that: Position): Int = value compareTo that.value
 }

@@ -7,7 +7,7 @@ import net.diet_rich.dedup.core.values._
 
 trait DataHandlerSlice {
   trait DataHandler {
-    def readData(entry: DataEntryID): Iterator[Bytes] // FIXME remove and make this a data store slice?
+    def readData(entry: DataEntryID): Iterator[Bytes]
     def hasSizeAndPrint(size: Size, print: Print): Boolean
     def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry]
     def storePackedNewData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID
@@ -31,13 +31,13 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: StoreSe
     override def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry] = tables dataEntries(size, print, hash)
 
     private sealed trait RangesOrUnstored
-    private case class Ranges (ranges: List[DataRange]) extends RangesOrUnstored
+    private case class Ranges (remaining: List[DataRange]) extends RangesOrUnstored
     private case class Unstored (unstored: List[Bytes]) extends RangesOrUnstored
 
     override def storePackedNewData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
       val storeRanges = freeRanges dequeue size
       val remainingRanges = data.foldLeft[RangesOrUnstored](Ranges(storeRanges)){case (ranges, bytes) => storeOneChunk(bytes, ranges)}
-      assert (remainingRanges.asInstanceOf[Ranges].ranges isEmpty) // FIXME remove eventually?
+      assert (remainingRanges.asInstanceOf[Ranges].remaining isEmpty) // FIXME remove eventually?
 
       val reservedDataID = tables.nextDataID
       storeRanges foreach { range => tables.createByteStoreEntry(reservedDataID, range) }
@@ -48,6 +48,24 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: StoreSe
       // for taking care about them here.
       tables.createDataEntry(reservedDataID, size, print, hash, storeSettings.storeMethod)
       reservedDataID
+    }
+
+    // FIXME needs test!
+    private def storeData(data: Iterator[Bytes], estimatedSize: Size): List[DataRange] = {
+      val storeRanges = freeRanges dequeue estimatedSize
+      data.foldLeft[RangesOrUnstored](Ranges(storeRanges)){case (ranges, bytes) => storeOneChunk(bytes, ranges)} match {
+        case Ranges(remaining) =>
+          remaining foreach freeRanges.enqueue
+          remaining match {
+            case Nil => storeRanges
+            case partialRange :: fullUnstoredRanges =>
+              val fullyStored :+ partiallyStored = storeRanges dropRight fullUnstoredRanges.size
+              fullyStored :+ (partiallyStored shortenBy partialRange.size)
+          }
+        case Unstored(additionalData) =>
+          val size = additionalData.map(_.size).foldLeft(Size.Zero)(_+_)
+          storeRanges ::: storeData(additionalData.iterator, size)
+      }
     }
 
     // FIXME needs test!
