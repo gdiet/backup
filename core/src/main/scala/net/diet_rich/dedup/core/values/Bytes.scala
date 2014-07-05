@@ -33,6 +33,10 @@ object Bytes extends ((Array[Byte], Int, Int) => Bytes) {
   def empty(length: Int): Bytes = Bytes(new Array[Byte](length), 0, 0)
   def zero(length: Int): Bytes = Bytes(new Array[Byte](length), 0, length)
 
+  implicit class SizeOfBytesList(val data: Iterable[Bytes]) extends AnyVal {
+    def totalSize: Size = data.map(_.size).foldLeft(Size.Zero)(_+_)
+  }
+  
   import scala.language.reflectiveCalls
   implicit class UpdateBytes(val u: { def update(data: Array[Byte], offset: Int, length: Int) }) extends AnyVal {
     def update(bytes: Bytes) = u.update(bytes.data, bytes.offset, bytes.length)

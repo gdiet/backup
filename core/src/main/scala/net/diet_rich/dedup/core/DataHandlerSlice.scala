@@ -4,6 +4,7 @@
 package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.core.values._
+import net.diet_rich.dedup.util.init
 
 trait DataHandlerSlice {
   trait DataHandler {
@@ -30,41 +31,57 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: StoreSe
 
     override def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry] = tables dataEntries(size, print, hash)
 
+    override def storeSourceData(source: Source): DataEntryID = {
+      val printData = source read FileSystem.PRINTSIZE
+      storeSourceData(printData, Print(printData), source.allData, source.size)
+    }
+
+    override def storeSourceData(printData: Bytes, print: Print, data: Iterator[Bytes], estimatedSize: Size): DataEntryID = {
+      val (hash, size, dataID) = Hash calculate (storeSettings.hashAlgorithm, Iterator(printData) ++ data, { data =>
+        val packedData = storeSettings.storeMethod pack data
+        storeDataWithByteStoreEntries(packedData, estimatedSize)
+      })
+      createDataTableEntry(dataID, size, print, hash)
+      dataID
+    }
+
+    override def storePackedNewData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID =
+      init(storeDataWithByteStoreEntries(data, size)) { dataID =>
+        createDataTableEntry(dataID, size, print, hash)
+      }
+
+    // Note: In theory, a different thread might just have finished storing the same data and we create a data
+    // duplicate here. I think however that is is preferrable to clean up data duplicates with a utility from
+    // time to time and not care about them here. Only if we could be sure the utility is NOT needed, I'd go
+    // for taking care about them here.
+    private def createDataTableEntry(dataID: DataEntryID, size: Size, print: Print, hash: Hash) =
+      tables.createDataEntry(dataID, size, print, hash, storeSettings.storeMethod)
+
+    private def storeDataWithByteStoreEntries(data: Iterator[Bytes], estimatedSize: Size): DataEntryID = {
+      val storedRanges = storeData(data, estimatedSize)
+      init(tables.nextDataID) { dataID =>
+        storedRanges foreach { tables.createByteStoreEntry(dataID, _) }
+      }
+    }
+
     private sealed trait RangesOrUnstored
     private case class Ranges (remaining: List[DataRange]) extends RangesOrUnstored
     private case class Unstored (unstored: List[Bytes]) extends RangesOrUnstored
-
-    override def storePackedNewData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
-      val storeRanges = freeRanges dequeue size
-      val remainingRanges = data.foldLeft[RangesOrUnstored](Ranges(storeRanges)){case (ranges, bytes) => storeOneChunk(bytes, ranges)}
-      assert (remainingRanges.asInstanceOf[Ranges].remaining isEmpty) // FIXME remove eventually?
-
-      val reservedDataID = tables.nextDataID
-      storeRanges foreach { range => tables.createByteStoreEntry(reservedDataID, range) }
-
-      // Note: In theory, a different thread might just have finished storing the same data and we create a data
-      // duplicate here. I think however that is is preferrable to clean up data duplicates with a utility from
-      // time to time and not care about them here. Only if we could be sure the utility is NOT needed, I'd go
-      // for taking care about them here.
-      tables.createDataEntry(reservedDataID, size, print, hash, storeSettings.storeMethod)
-      reservedDataID
-    }
 
     // FIXME needs test!
     private def storeData(data: Iterator[Bytes], estimatedSize: Size): List[DataRange] = {
       val storeRanges = freeRanges dequeue estimatedSize
       data.foldLeft[RangesOrUnstored](Ranges(storeRanges)){case (ranges, bytes) => storeOneChunk(bytes, ranges)} match {
+        case Unstored(additionalData) =>
+          storeRanges ::: storeData(additionalData.iterator, additionalData.totalSize)
         case Ranges(remaining) =>
           remaining foreach freeRanges.enqueue
           remaining match {
             case Nil => storeRanges
-            case partialRange :: fullUnstoredRanges =>
-              val fullyStored :+ partiallyStored = storeRanges dropRight fullUnstoredRanges.size
-              fullyStored :+ (partiallyStored shortenBy partialRange.size)
+            case partialRestRange :: unstoredRanges =>
+              val fullyStored :+ partiallyStored = storeRanges dropRight unstoredRanges.size
+              fullyStored :+ (partiallyStored shortenBy partialRestRange.size)
           }
-        case Unstored(additionalData) =>
-          val size = additionalData.map(_.size).foldLeft(Size.Zero)(_+_)
-          storeRanges ::: storeData(additionalData.iterator, size)
       }
     }
 
@@ -87,97 +104,7 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendPart { _: StoreSe
       }
     }
 
-    override def storeSourceData(source: Source): DataEntryID = {
-      val printData = source read FileSystem.PRINTSIZE
-      val print = Print(printData)
-      storeSourceData(printData, print, source.allData, source.size)
-    }
-
-    override def storeSourceData(printData: Bytes, print: Print, data: Iterator[Bytes], estimatedSize: Size): DataEntryID = {
-      val (hash, size, dataID) = Hash calculate (storeSettings.hashAlgorithm, Iterator(printData) ++ data, data => {
-        val packedData = storeSettings.storeMethod pack data
-        val storeRanges = freeRanges dequeue estimatedSize // FIXME extract into same method
-        val remainingRanges = data.foldLeft[RangesOrUnstored](Ranges(storeRanges)){case (ranges, bytes) => storeOneChunk(bytes, ranges)} // FIXME extract method
-
-        remainingRanges match { // FIXME include into method
-          case Ranges(Nil) => /* NOP */
-          case Ranges(ranges) => freeRanges enqueue ranges
-          case Unstored(data) =>
-            val size = data.map(_.size).reduce(_+_) // FIXME or foldLeft(Size.Zero)(_+_) - this would also work if list is empty
-            val storeRanges = freeRanges dequeue size
-            val remainingRanges = data.foldLeft[RangesOrUnstored](Ranges(storeRanges)){case (ranges, bytes) => storeOneChunk(bytes, ranges)} // FIXME extract method
-        }
-        val reservedDataID = tables.nextDataID
-        storeRanges foreach { range => tables.createByteStoreEntry(reservedDataID, range) }
-
-        reservedDataID
-      })
-
-      // Note: In theory, a different thread might just have finished storing the same data and we create a data
-      // duplicate here. I think however that is is preferrable to clean up data duplicates with a utility from
-      // time to time and not care about them here. Only if we could be sure the utility is NOT needed, I'd go
-      // for taking care about them here.
-      tables.createDataEntry(dataID, size, print, hash, storeSettings.storeMethod)
-      dataID
-    }
-
-    // FIXME it should be possible to initialize the free ranges with free slots read from the database
+    // FIXME private?; it should be possible to initialize the free ranges with free slots read from the database
     val freeRanges = RangesQueue(DataRange(tables.startOfFreeDataArea, Position(Long MaxValue)))
-
-    //
-    //    def storeData(data: Seq[Bytes]): DataEntryID = ??? // FIXME
-    //    //  val packedSize = packedData.foldLeft(Size(0)) { case (size, bytes) => size + bytes.size }
-    //    //  val dataId = data.reserveDataID
-    //    //  val dataRanges = data freeRanges packedSize // FIXME move to DataHandlerSlice
-    //    //  // store bytes
-    //    //  // store ranges
-    //    //  // store dataid
-    //    //  ???
-    //    //    createDataEntry(size, print, hash, storeSettings.storeMethod) match {
-    //    //      case ExistingEntryMatches(dataid) => dataid
-    //    //      case DataEntryCreated(dataid) =>
-    //    //        val rangesStored = storeMethod pack data.iterator flatMap { storeBytes(_).reverse }
-    //    //        rangesStored foreach (createByteStoreEntry(dataid, _))
-    //    //        dataid
-    //    //    }
-    //    //
-    //    //    @annotation.tailrec
-    //    //    protected final def storeBytes(bytes: Bytes, acc: List[DataRange] = Nil): List[DataRange] = {
-    //    //      val (block, rest) = nextFreeRange partitionAtLimit bytes.size
-    //    //      dataBackend.write(bytes, block)
-    //    //      if (block.size < bytes.size) {
-    //    //        assume (rest isEmpty)
-    //    //        storeBytes(bytes withOffset block.size, block :: acc)
-    //    //      } else {
-    //    //        rest foreach requeueFreeRange
-    //    //        block :: acc
-    //    //      }
-    //    //    }
-    //
-    //    def createByteStoreEntry(dataid: DataEntryID, range: DataRange): Unit = tables.createByteStoreEntry(dataid, range)
-    //
-    //    val initialDataOverlapProblems = tables.problemDataAreaOverlaps
-    //
-    //    // FIXME chunk partitioning in the data backend
-    //    val blocksize = Size(0x800000L)
-    //
-    //    // queue gaps in byte store
-    //    if (initialDataOverlapProblems.isEmpty) {
-    //      val dataAreaStarts = tables.dataAreaStarts
-    //      if (!dataAreaStarts.isEmpty) {
-    //        val (firstArea :: gapStarts) = dataAreaStarts
-    //        if (firstArea > Position(0L)) freeRangesQueue enqueue DataRange(Position(0L), firstArea)
-    //        freeRangesQueue enqueue ((tables.dataAreaEnds zip gapStarts).map(DataRange.tupled):_*)
-    //      }
-    //    }
-    //
-    //    def nextFreeRange: DataRange = freeRangesQueue.synchronized {
-    //      val (range, rest) = freeRangesQueue.dequeue().partitionAtBlockLimit(blocksize)
-    //      rest foreach (freeRangesQueue.enqueue(_))
-    //      range
-    //    }
-    //    def requeueFreeRange (range: DataRange): Unit = freeRangesQueue.synchronized {
-    //      freeRangesQueue enqueue range
-    //    }
   }
 }
