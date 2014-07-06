@@ -18,6 +18,7 @@ Create throws an exception if a child with the name already exists $createExisti
 
   private def withEmptyTree[T] (f: TreeInterface => T): T = {
     object tree extends TreeSlice with sql.InMemoryDatabaseSlice {
+      def tables = new sql.Tables(this) // FIXME
       sql.DBUtilities createTables 16
       sql.DBUtilities recreateIndexes
     }

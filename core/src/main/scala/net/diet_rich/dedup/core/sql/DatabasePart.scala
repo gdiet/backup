@@ -5,9 +5,13 @@ package net.diet_rich.dedup.core.sql
 
 import net.diet_rich.dedup.util.ThreadSpecific
 
-trait DatabasePart {
+trait SessionProvider {
+  implicit def session: Session
+}
+
+trait DatabasePart extends SessionProvider { // FIXME
   protected val database: Database
   
   private val sessions = ThreadSpecific(database createSession)
-  protected implicit final def session: Session = sessions.threadInstance
+  implicit final def session: Session = sessions.threadInstance
 }

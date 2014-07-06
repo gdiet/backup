@@ -5,16 +5,12 @@ package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.core.values._
 
-trait StoreSettings {
-  def hashAlgorithm = "MD5"
-  def threadPoolSize = 4
-  def storeMethod = StoreMethod.DEFLATE
-}
+case class StoreSettings(
+  hashAlgorithm: String = "MD5",
+  threadPoolSize: Int = 4,
+  storeMethod: StoreMethod = StoreMethod.DEFLATE
+)
 
-trait StoreSettingsSlice {
-  protected val storeSettings: StoreSettings
-}
-
-trait DataSettings {
+trait DataSettings { // FIXME
   def blocksize: Size = Size(0x800000L)
 }

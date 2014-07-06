@@ -1,14 +1,37 @@
 package net.diet_rich.dedup.core.sql
 
-import scala.slick.jdbc.StaticQuery
+import scala.slick.jdbc.{SetParameter, GetResult, StaticQuery}
 
-import net.diet_rich.dedup.core.values.Path
+import net.diet_rich.dedup.core.values._
 
 object DBUtilities {
-
   type Database = scala.slick.driver.JdbcDriver#Backend#Database
   type Session = scala.slick.driver.JdbcDriver#Backend#Session
 
+  // atomic results
+  implicit val _getDataEntryId       = GetResult(r => DataEntryID(r nextLong))
+  implicit val _getDataEntryIdOption = GetResult(r => DataEntryID(r nextLongOption))
+  implicit val _getHash              = GetResult(r => Hash(r nextBytes))
+  implicit val _getPosition          = GetResult(r => Position(r nextLong))
+  implicit val _getPrint             = GetResult(r => Print(r nextLong))
+  implicit val _getSize              = GetResult(r => Size(r nextLong))
+  implicit val _getStoreEntryId      = GetResult(r => StoreEntryID(r nextLong))
+  implicit val _getStoreMethod       = GetResult(r => StoreMethod(r nextInt))
+  implicit val _getTimeOption        = GetResult(r => Time(r nextLongOption))
+  implicit val _getTreeEntryId       = GetResult(r => TreeEntryID(r nextLong))
+
+  // compound results - order of definition is important
+  implicit val _getDataEntry         = GetResult(r => DataEntry(r <<, r <<, r <<, r <<, r <<))
+  implicit val _getDataRange         = GetResult(r => DataRange(r <<, r <<))
+  implicit val _getStoreEntry        = GetResult(r => StoreEntry(r <<, r <<, r <<))
+  implicit val _getTreeEntry         = GetResult(r => TreeEntry(r <<, r <<, r <<, r <<, r <<, r <<))
+
+  // parameter setters
+  implicit val _setHash            = SetParameter((v: Hash, p) => p setBytes v.value)
+  implicit val _setIntValue        = SetParameter((v: IntValue, p) => p setInt v.value)
+  implicit val _setLongValue       = SetParameter((v: LongValue, p) => p setLong v.value)
+  implicit val _setLongValueOption = SetParameter((v: Option[LongValue], p) => p setLongOption (v map (_ value)))
+  
   def createTables(hashSize: Int)(implicit session: Session): Unit =
     StaticQuery updateNA s"""
       |CREATE SEQUENCE treeEntriesIdSeq START WITH 0;
@@ -66,7 +89,31 @@ object DBUtilities {
       |CREATE INDEX idxByteStoreFin ON ByteStore(fin);
     """.stripMargin execute session
 
-  private val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT * FROM Settings;")
-
+  // Settings
+  private val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT key, value FROM Settings;")
   def allSettings(implicit session: Session): Map[String, String] = allSettingsQuery.toMap
+
+  // ByteStore
+  private def startOfFreeDataArea(implicit session: Session) = StaticQuery.queryNA[Position]("SELECT MAX(fin) FROM ByteStore;").firstOption getOrElse Position(0)
+  private def dataAreaEnds(implicit session: Session): List[Position] = StaticQuery.queryNA[Position](
+    "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin;"
+  ).list
+  private def dataAreaStarts(implicit session: Session): List[Position] = StaticQuery.queryNA[Position](
+    "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start;"
+  ).list
+  private def problemDataAreaOverlaps(implicit session: Session): List[(StoreEntry, StoreEntry)] = StaticQuery.queryNA[(StoreEntry, StoreEntry)](
+    """|SELECT b1.id, b1.dataid, b1.start, b1.fin, b2.id, b2.dataid, b2.start, b2.fin
+      |  FROM ByteStore b1 JOIN ByteStore b2 ON
+      |    (b1.id != b2.id AND (b1.start = b2.start OR b1.fin = b2.fin)) OR
+      |    (b1.start < b2.fin AND b1.fin > b2.fin);""".stripMargin
+  ).list
+  def freeRangeAtEndOfDataArea(implicit session: Session): DataRange = DataRange(startOfFreeDataArea, Position(Long.MaxValue))
+  def freeRangesInDataArea(implicit session: Session): List[DataRange] = {
+    dataAreaStarts match {
+      case Nil => Nil
+      case firstArea :: gapStarts =>
+        val tail = (dataAreaEnds zip gapStarts).map(DataRange.tupled)
+        if (firstArea > Position(0L)) DataRange(Position(0L), firstArea) :: tail else tail
+    }
+  }
 }

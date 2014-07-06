@@ -9,7 +9,10 @@ import scala.concurrent.{ExecutionContext, Future}
 import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util._
 
-trait StoreLogic extends StoreInterface { _: StoreSettingsSlice with TreeInterface with DataHandlerSlice =>
+trait StoreLogic extends StoreInterface { _: TreeInterface =>
+
+  def dataHandler: DataHandlerInterface // FIXME
+  def storeSettings: StoreSettings // FIXME
 
   override final def read(entry: DataEntryID): Iterator[Bytes] = dataHandler readData entry
 
@@ -45,7 +48,7 @@ trait StoreLogic extends StoreInterface { _: StoreSettingsSlice with TreeInterfa
 
   protected def storeDataFullyPreloaded(bytes: MutableList[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
     val packedData = storeSettings.storeMethod.pack(Bytes.consumingIterator(bytes)).to[MutableList] // FIXME manual test that memory consumption is OK
-    dataHandler storePackedNewData (Bytes consumingIterator packedData, size, print, hash)
+    dataHandler storePackedData (Bytes consumingIterator packedData, size, print, hash)
   }
 
   protected def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Print, source: Source): DataEntryID = {

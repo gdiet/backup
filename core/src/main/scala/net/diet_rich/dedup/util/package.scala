@@ -14,6 +14,11 @@ package object util {
   def resultOf[T](f: Future[T]): T = Await result (f, 1 day)
   def !!![T]: T = sys.error("this code should have never been reached.")
 
+  // Note: Idea taken from scalaz
+  implicit class Equal[A](val a: A) extends AnyVal {
+    def ===(b: A) = a == b
+  }
+
   def BlockingThreadPoolExecutor(threadPoolSize: Int): ThreadPoolExecutor = {
     val executorQueue = new ArrayBlockingQueue[Runnable](threadPoolSize)
     val rejectHandler = new RejectedExecutionHandler {
