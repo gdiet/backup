@@ -3,9 +3,9 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
+import net.diet_rich.dedup.core.sql.InMemoryDBPartWithTables
 import org.specs2.SpecificationWithJUnit
 
-import net.diet_rich.dedup.core.sql.InMemoryDB
 import net.diet_rich.dedup.core.values.Path
 
 class FileSystemTreeSpec extends SpecificationWithJUnit with TreeMatchers { def is = s2"""
@@ -18,12 +18,8 @@ Create throws an exception if a child with the name already exists $createExisti
   """
 
   private def withEmptyTree[T] (f: TreeInterface => T): T = {
-    InMemoryDB.providing { sessionProvider =>
-      object tree extends TreeSlice {
-        def tables = new sql.Tables(sessionProvider)
-      }
-      f(tree)
-    }
+    object tree extends TreeSlice with InMemoryDBPartWithTables
+    f(tree)
   }
 
   def createExisting = withEmptyTree { tree =>

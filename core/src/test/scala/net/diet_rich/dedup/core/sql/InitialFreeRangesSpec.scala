@@ -33,10 +33,12 @@ Illegal overlaps: Partial overlaps are correctly detected $identical
   def identical = dataAreaProblemCheck((10,50), (10,50)) expecting (false)
   def partialOverlap = dataAreaProblemCheck((10,30), (20,40)) expecting (false)
 
-  def testSetup[T](dbContents: Seq[(Long, Long)])(f: Session => T): T = InMemoryDB providing { sessionProvider =>
-    val tables = new Tables(sessionProvider)
-    ranges(dbContents) foreach { tables.createByteStoreEntry(DataEntryID(0), _) }
-    f(sessionProvider.session)
+  def testSetup[T](dbContents: Seq[(Long, Long)])(f: Session => T): T = {
+    object world extends TablesPart with InMemoryDBPartWithTables
+    world inLifeCycle {
+      ranges(dbContents) foreach { world.tables.createByteStoreEntry(DataEntryID(0), _) }
+      f(world.session)
+    }
   }
 
   def freeRangesCheck(dbContents: (Long, Long)*) = new {

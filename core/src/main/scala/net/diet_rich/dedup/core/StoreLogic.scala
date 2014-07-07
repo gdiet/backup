@@ -9,10 +9,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util._
 
-trait StoreLogic extends StoreInterface { _: TreeInterface =>
-
-  def dataHandler: DataHandlerInterface // FIXME
-  def storeSettings: StoreSettings // FIXME
+trait StoreLogic extends StoreInterface with StoreSettingsSlice with DataHandlerSlice { _: TreeInterface =>
 
   override final def read(entry: DataEntryID): Iterator[Bytes] = dataHandler readData entry
 

@@ -6,6 +6,10 @@ package net.diet_rich.dedup.core
 import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util.init
 
+trait FreeRangesSlice {
+  def freeRanges: RangesQueue
+}
+
 class RangesQueue {
   // Note: We could use a PriorityQueue here - however, it is not really necessary,
   // in our use case, an ordinary queue 'heals' itself here, too.

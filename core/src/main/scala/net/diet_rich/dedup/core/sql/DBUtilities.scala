@@ -5,9 +5,6 @@ import scala.slick.jdbc.{SetParameter, GetResult, StaticQuery}
 import net.diet_rich.dedup.core.values._
 
 object DBUtilities {
-  type Database = scala.slick.driver.JdbcDriver#Backend#Database
-  type Session = scala.slick.driver.JdbcDriver#Backend#Session
-
   // atomic results
   implicit val _getDataEntryId       = GetResult(r => DataEntryID(r nextLong))
   implicit val _getDataEntryIdOption = GetResult(r => DataEntryID(r nextLongOption))
