@@ -5,30 +5,8 @@ import scala.slick.jdbc.{SetParameter, GetResult, StaticQuery}
 import net.diet_rich.dedup.core.values._
 
 object DBUtilities {
-  // atomic results
-  implicit val _getDataEntryId       = GetResult(r => DataEntryID(r nextLong))
-  implicit val _getDataEntryIdOption = GetResult(r => DataEntryID(r nextLongOption))
-  implicit val _getHash              = GetResult(r => Hash(r nextBytes))
-  implicit val _getPosition          = GetResult(r => Position(r nextLong))
-  implicit val _getPrint             = GetResult(r => Print(r nextLong))
-  implicit val _getSize              = GetResult(r => Size(r nextLong))
-  implicit val _getStoreEntryId      = GetResult(r => StoreEntryID(r nextLong))
-  implicit val _getStoreMethod       = GetResult(r => StoreMethod(r nextInt))
-  implicit val _getTimeOption        = GetResult(r => Time(r nextLongOption))
-  implicit val _getTreeEntryId       = GetResult(r => TreeEntryID(r nextLong))
+  import TableUtilities._
 
-  // compound results - order of definition is important
-  implicit val _getDataEntry         = GetResult(r => DataEntry(r <<, r <<, r <<, r <<, r <<))
-  implicit val _getDataRange         = GetResult(r => DataRange(r <<, r <<))
-  implicit val _getStoreEntry        = GetResult(r => StoreEntry(r <<, r <<, r <<))
-  implicit val _getTreeEntry         = GetResult(r => TreeEntry(r <<, r <<, r <<, r <<, r <<, r <<))
-
-  // parameter setters
-  implicit val _setHash            = SetParameter((v: Hash, p) => p setBytes v.value)
-  implicit val _setIntValue        = SetParameter((v: IntValue, p) => p setInt v.value)
-  implicit val _setLongValue       = SetParameter((v: LongValue, p) => p setLong v.value)
-  implicit val _setLongValueOption = SetParameter((v: Option[LongValue], p) => p setLongOption (v map (_ value)))
-  
   def createTables(hashSize: Int)(implicit session: Session): Unit =
     StaticQuery updateNA s"""
       |CREATE SEQUENCE treeEntriesIdSeq START WITH 0;

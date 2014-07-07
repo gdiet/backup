@@ -33,6 +33,21 @@ Illegal overlaps: Partial overlaps are correctly detected $identical
   def identical = dataAreaProblemCheck((10,50), (10,50)) expecting (false)
   def partialOverlap = dataAreaProblemCheck((10,30), (20,40)) expecting (false)
 
+  def freeRangesCheck(dbContents: (Long, Long)*) = new {
+    def expecting (expectedRanges: (Long, Long)*) = testSetup(dbContents) { session =>
+      val actualRanges = DBUtilities.freeRangesInDataArea(session)
+      actualRanges should contain(eachOf(ranges(expectedRanges):_*).inOrder)
+    }
+  }
+
+  def dataAreaProblemCheck(dbContents: (Long, Long)*) = new {
+    def expecting (noProblems: Boolean) = testSetup(dbContents) { session =>
+      DBUtilities.problemDataAreaOverlaps(session) aka "data overlap problem list" should (
+        if (noProblems) beEmpty else not(beEmpty)
+        )
+    }
+  }
+
   def testSetup[T](dbContents: Seq[(Long, Long)])(f: Session => T): T = {
     object world extends TablesPart with InMemoryDBPartWithTables
     world inLifeCycle {
@@ -41,21 +56,6 @@ Illegal overlaps: Partial overlaps are correctly detected $identical
     }
   }
 
-  def freeRangesCheck(dbContents: (Long, Long)*) = new {
-    def expecting (expectedRanges: (Long, Long)*) = testSetup(dbContents) { session =>
-      val actualRanges = DBUtilities.freeRangesInDataArea(session)
-      actualRanges should contain(eachOf(ranges(expectedRanges):_*).inOrder)
-    }
-  }
-
   def ranges(elems: Seq[(Long, Long)]) = elems map { case (start, fin) => DataRange(Position(start), Position(fin)) }
-
-  def dataAreaProblemCheck(dbContents: (Long, Long)*) = new {
-    def expecting (noProblems: Boolean) = testSetup(dbContents) { session =>
-      DBUtilities.problemDataAreaOverlaps(session) aka "data overlap problem list" should (
-        if (noProblems) beEmpty else not(beEmpty)
-      )
-    }
-  }
 
 }

@@ -13,7 +13,3 @@ trait StoreSettingsSlice {
   }
   def storeSettings: StoreSettings
 }
-
-trait DataSettings { // FIXME
-  def blocksize: Size = Size(0x800000L)
-}
