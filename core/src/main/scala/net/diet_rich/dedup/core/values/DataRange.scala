@@ -20,14 +20,6 @@ case class DataRange(start: Position, fin: Position) {
   private def finBlock(blocksize: Size) = (fin.value - 1) / blocksize.value
   private def blockOffset(position: Position, blocksize: Size) = Size(position.value % blocksize.value)
 
-  def partitionAtBlockLimit(blocksize: Size): (DataRange, Option[DataRange]) =
-    if (startBlock(blocksize) == finBlock(blocksize))
-      (this, None)
-    else {
-      val newSize = blocksize - blockOffset(start, blocksize)
-      (withLength(newSize), Some(withOffset(newSize)))
-    }
-
   def limitAt(limit: Size): RangeLimitResult =
     if (size == limit) ExactMatch(this) else
     if (size > limit) RangeIsLarger(withLength(limit), withOffset(limit)) else
