@@ -53,5 +53,7 @@ class Tables(sessionProvider: SessionProvider) {
   def inTransaction[T] (f: => T): T = synchronized(f)
 
   // startup checks
-  require(treeEntry(FileSystem.ROOTID) === Some(FileSystem.ROOTENTRY))
+  def runChecks = {
+    require(treeEntry(FileSystem.ROOTID) === Some(FileSystem.ROOTENTRY))
+  }
 }
