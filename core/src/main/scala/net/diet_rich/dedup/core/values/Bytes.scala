@@ -9,8 +9,12 @@ import net.diet_rich.dedup.util.valueOf
 
 case class Bytes(data: Array[Byte], offset: Int, length: Int) {
   def size: Size = Size(length)
-  def withSize(size: Size): Bytes = ???
-  def withOffset(offset: Size): Bytes = withOffset(offset.value.toInt)
+  def withSize(size: Size): Bytes = withSize(size.value toInt)
+  def withSize(length: Int): Bytes = {
+    assume(length > 0 && length <= this.length) // or length <= data.length - offset ?
+    copy(length = length)
+  }
+  def withOffset(offset: Size): Bytes = withOffset(offset.value toInt)
   def withOffset(off: Int): Bytes = {
     assume(off >= 0 && off <= length)
     Bytes(data, offset + off, length - off)
