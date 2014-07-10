@@ -3,15 +3,20 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
-import net.diet_rich.dedup.core.values._
-import net.diet_rich.dedup.core.values.TreeEntry
-import net.diet_rich.dedup.core.values.TreeEntryID
+import net.diet_rich.dedup.core.values.{Path, TreeEntry, TreeEntryID}
 
-trait FileSystem extends TreeInterface with StoreInterface
+trait FileSystem extends TreeInterface with StoreInterface with Lifecycle
 
 object FileSystem {
   val ROOTID = TreeEntryID(0)
   val ROOTPARENTID = TreeEntryID(-1)
   val ROOTENTRY = TreeEntry(ROOTID, ROOTPARENTID, Path.ROOTNAME, None, None, None)
   val PRINTSIZE = 8192
+
+  trait BasicPart
+    extends StoreLogic
+    with Tree
+    with DataHandlerPart
+    with sql.TablesPart
+    with FreeRangesPart
 }

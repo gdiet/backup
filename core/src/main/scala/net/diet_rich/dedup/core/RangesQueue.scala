@@ -10,6 +10,13 @@ trait FreeRangesSlice {
   def freeRanges: RangesQueue
 }
 
+trait FreeRangesPart { _: sql.SessionSlice =>
+  final val freeRanges = {
+    val freeInData = if (sql.DBUtilities.problemDataAreaOverlaps isEmpty) sql.DBUtilities.freeRangesInDataArea else Nil
+    RangesQueue(freeInData ::: List(sql.DBUtilities.freeRangeAtEndOfDataArea))
+  }
+}
+
 class RangesQueue {
   // Note: We could use a PriorityQueue here - however, it is not really necessary,
   // in our use case, an ordinary queue 'heals' itself here, too.
@@ -27,10 +34,11 @@ class RangesQueue {
     if (size isZero) Nil else collectFreeRanges(size, Nil)
   }
 
-  def enqueue(range: DataRange) = freeRangesQueue synchronized { freeRangesQueue enqueue range }
-  def enqueue(ranges: Seq[DataRange]) = freeRangesQueue synchronized { freeRangesQueue.enqueue(ranges:_*) }
+  def enqueue(range: DataRange): Unit = freeRangesQueue synchronized { freeRangesQueue enqueue range }
+  def enqueue(ranges: Seq[DataRange]): Unit = freeRangesQueue synchronized { freeRangesQueue.enqueue(ranges:_*) }
 }
 
 object RangesQueue {
   def apply(initialRange: DataRange): RangesQueue = init(new RangesQueue) {_.enqueue(initialRange)}
+  def apply(initialRanges: Seq[DataRange]): RangesQueue = init(new RangesQueue) {_.enqueue(initialRanges)}
 }

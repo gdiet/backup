@@ -8,7 +8,7 @@ import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util.{Equal, init}
 
 trait TablesPart extends SessionSlice with Lifecycle {
-  object tables {
+  final object tables {
     import TableUtilities._
 
     // TreeEntries

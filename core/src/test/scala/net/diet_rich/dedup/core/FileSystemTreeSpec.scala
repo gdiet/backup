@@ -4,9 +4,8 @@
 package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.core.sql.InMemoryDBPartWithTables
-import org.specs2.SpecificationWithJUnit
-
 import net.diet_rich.dedup.core.values.Path
+import org.specs2.SpecificationWithJUnit
 
 class FileSystemTreeSpec extends SpecificationWithJUnit with TreeMatchers { def is = s2"""
 ${"Tests for the file system tree".title}
@@ -18,7 +17,7 @@ Create throws an exception if a child with the name already exists $createExisti
   """
 
   private def withEmptyTree[T] (f: TreeInterface => T): T = {
-    object tree extends TreeSlice with InMemoryDBPartWithTables
+    object tree extends Tree with InMemoryDBPartWithTables
     f(tree)
   }
 

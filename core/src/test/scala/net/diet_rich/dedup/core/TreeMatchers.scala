@@ -3,8 +3,8 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
+import net.diet_rich.dedup.core.values.{TreeEntry, TreeEntryID}
 import org.specs2.matcher.{Matcher, Matchers}
-import net.diet_rich.dedup.core.values.{Bytes, TreeEntryID, TreeEntry}
 
 trait TreeMatchers { _: Matchers =>
   def beADirectory: Matcher[TreeEntry] = beNone ^^ ((_:TreeEntry).data aka "treeEntry.data")

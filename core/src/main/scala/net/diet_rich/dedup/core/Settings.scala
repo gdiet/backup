@@ -6,10 +6,6 @@ package net.diet_rich.dedup.core
 import net.diet_rich.dedup.core.values._
 
 trait StoreSettingsSlice {
-  trait StoreSettings {
-    def hashAlgorithm: String
-    def threadPoolSize: Int
-    def storeMethod: StoreMethod
-  }
+  case class StoreSettings (hashAlgorithm: String, threadPoolSize: Int, storeMethod: StoreMethod)
   def storeSettings: StoreSettings
 }
