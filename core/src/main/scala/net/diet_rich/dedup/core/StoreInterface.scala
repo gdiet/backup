@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
-import net.diet_rich.dedup.core.values._
+import net.diet_rich.dedup.core.values.{TreeEntryID, Bytes, DataEntryID, Time}
 
 trait StoreInterface {
   def read(entry: DataEntryID): Iterator[Bytes]

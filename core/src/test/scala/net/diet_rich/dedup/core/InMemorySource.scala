@@ -5,7 +5,7 @@ package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.util.valueOf
 
-import values._
+import net.diet_rich.dedup.core.values.{Size, Bytes}
 
 class InMemorySource(data: Bytes) extends Source {
   private var position: Int = data.offset

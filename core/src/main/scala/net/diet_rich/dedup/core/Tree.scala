@@ -5,7 +5,7 @@ package net.diet_rich.dedup.core
 
 import java.io.IOException
 
-import net.diet_rich.dedup.core.values._
+import net.diet_rich.dedup.core.values.{DataEntryID, TreeEntryID, TreeEntry, Time, Path}
 
 trait Tree extends TreeInterface with sql.TablesPart {
   override final def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = tables treeChildren parent

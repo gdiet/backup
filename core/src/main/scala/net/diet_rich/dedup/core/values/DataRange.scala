@@ -3,12 +3,8 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.values
 
-sealed trait RangeLimitResult
-case class RangeNotLargeEnough(range: DataRange, missing: Size) extends RangeLimitResult
-case class ExactMatch(range: DataRange) extends RangeLimitResult
-case class RangeIsLarger(range: DataRange, rest: DataRange) extends  RangeLimitResult
-
 case class DataRange(start: Position, fin: Position) {
+  import DataRange._
 
   def size = fin - start
 
@@ -22,6 +18,13 @@ case class DataRange(start: Position, fin: Position) {
 
   def limitAt(limit: Size): RangeLimitResult =
     if (size == limit) ExactMatch(this) else
-    if (size > limit) RangeIsLarger(withLength(limit), withOffset(limit)) else
-    RangeNotLargeEnough(this, limit - size)
+    if (size > limit) IsLarger(withLength(limit), withOffset(limit)) else
+    NotLargeEnough(this, limit - size)
+}
+
+object DataRange extends ((Position, Position) => DataRange) {
+  sealed trait RangeLimitResult
+  case class NotLargeEnough(range: DataRange, missing: Size) extends RangeLimitResult
+  case class ExactMatch(range: DataRange) extends RangeLimitResult
+  case class IsLarger(range: DataRange, rest: DataRange) extends  RangeLimitResult
 }

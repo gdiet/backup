@@ -5,7 +5,7 @@ package net.diet_rich.dedup.core.values
 
 import java.util.zip.{Deflater, Inflater}
 
-import net.diet_rich.dedup.util._
+import net.diet_rich.dedup.util.valueOf
 
 trait StoreMethod extends IntValue {
   def pack(data: Iterator[Bytes]): Iterator[Bytes]

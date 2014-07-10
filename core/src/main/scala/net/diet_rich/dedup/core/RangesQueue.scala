@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
-import net.diet_rich.dedup.core.values._
+import net.diet_rich.dedup.core.values.{DataRange, Size}
 import net.diet_rich.dedup.util.init
 
 trait FreeRangesSlice {
@@ -25,10 +25,11 @@ class RangesQueue {
   def dequeue(size: Size): List[DataRange] = freeRangesQueue synchronized {
     @annotation.tailrec
     def collectFreeRanges(size: Size, ranges: List[DataRange]): List[DataRange] = {
+      import DataRange._
       freeRangesQueue dequeue() limitAt size match {
-        case RangeNotLargeEnough(range, remainingSize) => collectFreeRanges(remainingSize, range :: ranges)
+        case NotLargeEnough(range, remainingSize) => collectFreeRanges(remainingSize, range :: ranges)
         case ExactMatch(range) => range :: ranges
-        case RangeIsLarger(range, rest) => freeRangesQueue enqueue rest; range :: ranges
+        case IsLarger(range, rest) => freeRangesQueue enqueue rest; range :: ranges
       }
     }
     if (size isZero) Nil else collectFreeRanges(size, Nil)

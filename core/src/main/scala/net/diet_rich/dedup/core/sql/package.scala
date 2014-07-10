@@ -4,6 +4,6 @@
 package net.diet_rich.dedup.core
 
 package object sql {
-  type Database = scala.slick.driver.JdbcDriver#Backend#Database
-  type Session = scala.slick.driver.JdbcDriver#Backend#Session
+  type CurrentDatabase = scala.slick.driver.JdbcDriver#Backend#Database
+  type CurrentSession = scala.slick.driver.JdbcDriver#Backend#Session
 }

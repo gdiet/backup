@@ -8,7 +8,7 @@ import org.specs2.SpecificationWithJUnit
 import net.diet_rich.dedup.core.values.{Bytes, Position, DataRange, Path, StoreMethod, Time}
 import net.diet_rich.dedup.util.init
 
-import FileSystem._
+import FileSystem.{BasicPart, ROOTID}
 
 class StoreRestoreSpec extends SpecificationWithJUnit { def is = s2"""
 ${"Tests for storing and restoring data".title}

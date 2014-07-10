@@ -8,8 +8,8 @@ import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util.{Equal, init}
 
 trait TablesPart extends SessionSlice with Lifecycle {
-  final object tables {
-    import TableUtilities._
+  object tables {
+    import TableQueries._
 
     // TreeEntries
     def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id) firstOption
@@ -43,10 +43,9 @@ trait TablesPart extends SessionSlice with Lifecycle {
     super.setup
     require(tables.treeEntry(FileSystem.ROOTID) === Some(FileSystem.ROOTENTRY))
   }
-
 }
 
-object TableUtilities {
+object TableQueries {
   // atomic results
   implicit val _getDataEntryId       = GetResult(r => DataEntryID(r nextLong))
   implicit val _getDataEntryIdOption = GetResult(r => DataEntryID(r nextLongOption))
@@ -65,16 +64,16 @@ object TableUtilities {
   implicit val _getStoreEntry        = GetResult(r => StoreEntry(r <<, r <<, r <<))
   implicit val _getTreeEntry         = GetResult(r => TreeEntry(r <<, r <<, r <<, r <<, r <<, r <<))
 
-  // parameter setters
-  implicit val _setHash            = SetParameter((v: Hash, p) => p setBytes v.value)
-  implicit val _setIntValue        = SetParameter((v: IntValue, p) => p setInt v.value)
-  implicit val _setLongValue       = SetParameter((v: LongValue, p) => p setLong v.value)
-  implicit val _setLongValueOption = SetParameter((v: Option[LongValue], p) => p setLongOption (v map (_ value)))
+  // parameter Setters
+  implicit val _setHash              = SetParameter((v: Hash, p) => p setBytes v.value)
+  implicit val _setIntValue          = SetParameter((v: IntValue, p) => p setInt v.value)
+  implicit val _setLongValue         = SetParameter((v: LongValue, p) => p setLong v.value)
+  implicit val _setLongValueOption   = SetParameter((v: Option[LongValue], p) => p setLongOption (v map (_ value)))
 
   // basic select statements
-  val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
-  val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
-  val selectFromByteStore = "SELECT id, dataid, start, fin FROM ByteStore"
+  private val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
+  private val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
+  private val selectFromByteStore = "SELECT id, dataid, start, fin FROM ByteStore"
 
   // TreeEntries
   val treeEntryForIdQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")

@@ -6,8 +6,8 @@ package net.diet_rich.dedup.core
 import scala.collection.mutable.MutableList
 import scala.concurrent.{ExecutionContext, Future}
 
-import net.diet_rich.dedup.core.values._
-import net.diet_rich.dedup.util._
+import net.diet_rich.dedup.core.values.{TreeEntryID, Bytes, DataEntryID, Time, Print, Hash, Size}
+import net.diet_rich.dedup.util.{BlockingThreadPoolExecutor, Memory, resultOf}
 
 trait StoreLogic extends StoreInterface with StoreSettingsSlice with DataHandlerSlice { _: TreeInterface =>
 
@@ -32,9 +32,10 @@ trait StoreLogic extends StoreInterface with StoreSettingsSlice with DataHandler
       dataHandler storeSourceData (printData, print, source.allData, source.size)
   }
 
+  import Memory._
   protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = Memory.reserved(source.size.value) {
-    case MemoryReserved(_) => preloadDataThatMayBeAlreadyKnown(printData, print, source)
-    case MemoryNotAvailable(_) => readMaybeKnownDataTwiceIfNecessary(printData, print, source)
+    case Reserved(_) => preloadDataThatMayBeAlreadyKnown(printData, print, source)
+    case NotAvailable(_) => readMaybeKnownDataTwiceIfNecessary(printData, print, source)
   }
 
   protected def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = {

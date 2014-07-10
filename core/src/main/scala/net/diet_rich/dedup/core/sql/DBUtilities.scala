@@ -2,12 +2,12 @@ package net.diet_rich.dedup.core.sql
 
 import scala.slick.jdbc.{SetParameter, GetResult, StaticQuery}
 
-import net.diet_rich.dedup.core.values._
+import net.diet_rich.dedup.core.values.{DataRange, Path, Position, StoreEntry}
 
 object DBUtilities {
-  import TableUtilities._
+  import TableQueries._
 
-  def createTables(hashSize: Int)(implicit session: Session): Unit =
+  def createTables(hashSize: Int)(implicit session: CurrentSession): Unit =
     StaticQuery updateNA s"""
       |CREATE SEQUENCE treeEntriesIdSeq START WITH 0;
       |CREATE TABLE TreeEntries (
@@ -44,7 +44,7 @@ object DBUtilities {
       |);
     """.stripMargin execute session
 
-  def recreateIndexes(implicit session: Session): Unit =
+  def recreateIndexes(implicit session: CurrentSession): Unit =
     StaticQuery updateNA """
       |DROP INDEX idxTreeEntriesParent IF EXISTS;
       |DROP INDEX idxTreeEntriesDataid IF EXISTS;
@@ -66,24 +66,24 @@ object DBUtilities {
 
   // Settings
   private val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT key, value FROM Settings;")
-  def allSettings(implicit session: Session): Map[String, String] = allSettingsQuery.toMap
+  def allSettings(implicit session: CurrentSession): Map[String, String] = allSettingsQuery.toMap
 
   // ByteStore
-  private def startOfFreeDataArea(implicit session: Session) = StaticQuery.queryNA[Position]("SELECT MAX(fin) FROM ByteStore;").firstOption getOrElse Position(0)
-  private def dataAreaEnds(implicit session: Session): List[Position] = StaticQuery.queryNA[Position](
+  private def startOfFreeDataArea(implicit session: CurrentSession) = StaticQuery.queryNA[Position]("SELECT MAX(fin) FROM ByteStore;").firstOption getOrElse Position(0)
+  private def dataAreaEnds(implicit session: CurrentSession): List[Position] = StaticQuery.queryNA[Position](
     "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin;"
   ).list
-  private def dataAreaStarts(implicit session: Session): List[Position] = StaticQuery.queryNA[Position](
+  private def dataAreaStarts(implicit session: CurrentSession): List[Position] = StaticQuery.queryNA[Position](
     "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start;"
   ).list
-  def problemDataAreaOverlaps(implicit session: Session): List[(StoreEntry, StoreEntry)] = StaticQuery.queryNA[(StoreEntry, StoreEntry)](
+  def problemDataAreaOverlaps(implicit session: CurrentSession): List[(StoreEntry, StoreEntry)] = StaticQuery.queryNA[(StoreEntry, StoreEntry)](
     """|SELECT b1.id, b1.dataid, b1.start, b1.fin, b2.id, b2.dataid, b2.start, b2.fin
       |  FROM ByteStore b1 JOIN ByteStore b2 ON
       |    (b1.id != b2.id AND (b1.start = b2.start OR b1.fin = b2.fin)) OR
       |    (b1.start < b2.fin AND b1.fin > b2.fin);""".stripMargin
   ).list
-  def freeRangeAtEndOfDataArea(implicit session: Session): DataRange = DataRange(startOfFreeDataArea, Position(Long.MaxValue))
-  def freeRangesInDataArea(implicit session: Session): List[DataRange] = {
+  def freeRangeAtEndOfDataArea(implicit session: CurrentSession): DataRange = DataRange(startOfFreeDataArea, Position(Long.MaxValue))
+  def freeRangesInDataArea(implicit session: CurrentSession): List[DataRange] = {
     dataAreaStarts match {
       case Nil => Nil
       case firstArea :: gapStarts =>

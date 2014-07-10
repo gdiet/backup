@@ -3,9 +3,9 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup
 
-import java.util.concurrent._
+import java.util.concurrent.{TimeUnit, RejectedExecutionHandler, ArrayBlockingQueue, ThreadPoolExecutor}
 import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
+import scala.concurrent.duration.DurationInt
 
 package object util {
   class Before[T](t: T) { def before(f: => Unit) = { f; t } }

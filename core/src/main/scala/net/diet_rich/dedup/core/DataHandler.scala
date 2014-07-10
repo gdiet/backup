@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
-import net.diet_rich.dedup.core.values._
+import net.diet_rich.dedup.core.values.{Print, Size, Hash, DataEntry, DataEntryID, DataRange, Bytes}
 import net.diet_rich.dedup.util.init
 
 trait DataHandlerSlice {
@@ -65,12 +65,9 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendSlice with StoreS
     }
 
     private sealed trait RangesOrUnstored
-
     private case class Ranges(remaining: List[DataRange]) extends RangesOrUnstored
-
     private case class Unstored(unstored: List[Bytes]) extends RangesOrUnstored
 
-    // FIXME needs test!
     private def storePackedData(data: Iterator[Bytes], estimatedSize: Size): List[DataRange] = {
       val storeRanges = freeRanges dequeue estimatedSize
       data.foldLeft[RangesOrUnstored](Ranges(storeRanges)) { case (ranges, bytes) => storeOneChunk(bytes, ranges)} match {
@@ -87,7 +84,6 @@ trait DataHandlerPart extends DataHandlerSlice with DataBackendSlice with StoreS
       }
     }
 
-    // FIXME needs test!
     @annotation.tailrec
     private def storeOneChunk(bytes: Bytes, ranges: RangesOrUnstored): RangesOrUnstored = ranges match {
       case Unstored(data) => Unstored(bytes :: data)

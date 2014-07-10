@@ -48,7 +48,7 @@ Illegal overlaps: Partial overlaps are correctly detected $identical
     }
   }
 
-  def testSetup[T](dbContents: Seq[(Long, Long)])(f: Session => T): T = {
+  def testSetup[T](dbContents: Seq[(Long, Long)])(f: CurrentSession => T): T = {
     object world extends TablesPart with InMemoryDBPartWithTables
     world inLifeCycle {
       ranges(dbContents) foreach { world.tables.createByteStoreEntry(DataEntryID(0), _) }
