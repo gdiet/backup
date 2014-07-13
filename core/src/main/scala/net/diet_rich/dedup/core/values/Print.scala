@@ -5,7 +5,7 @@ package net.diet_rich.dedup.core.values
 
 import net.diet_rich.dedup.util.init
 
-case class Print(val value: Long) extends LongValue
+case class Print(value: Long) extends LongValue
 
 object Print extends (Long => Print) {
   import java.util.zip.{Adler32, CRC32}

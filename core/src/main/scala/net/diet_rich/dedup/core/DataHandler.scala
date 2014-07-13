@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
+import net.diet_rich.dedup.core.data.DataBackendSlice
 import net.diet_rich.dedup.core.values.{Print, Size, Hash, DataEntry, DataEntryID, DataRange, Bytes}
 import net.diet_rich.dedup.util.init
 
@@ -18,7 +19,7 @@ trait DataHandlerSlice {
   def dataHandler: DataHandler
 }
 
-trait DataHandlerPart extends DataHandlerSlice with DataBackendSlice with StoreSettingsSlice with FreeRangesSlice with sql.TablesPart {
+trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreSettingsSlice with FreeRangesSlice with sql.TablesPart =>
   final object dataHandler extends DataHandler {
     override def readData(entry: DataEntryID): Iterator[Bytes] =
       tables.storeEntries(entry).iterator.flatMap(dataEntry => dataBackend read dataEntry.range)

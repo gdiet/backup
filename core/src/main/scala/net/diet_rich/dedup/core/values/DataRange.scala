@@ -12,10 +12,6 @@ case class DataRange(start: Position, fin: Position) {
   def withOffset(offset: Size) = copy(start = start + offset)
   def shortenBy(length: Size) = copy(fin = fin - size)
 
-  private def startBlock(blocksize: Size) = start.value / blocksize.value
-  private def finBlock(blocksize: Size) = (fin.value - 1) / blocksize.value
-  private def blockOffset(position: Position, blocksize: Size) = Size(position.value % blocksize.value)
-
   def limitAt(limit: Size): RangeLimitResult =
     if (size == limit) ExactMatch(this) else
     if (size > limit) IsLarger(withLength(limit), withOffset(limit)) else
@@ -23,6 +19,8 @@ case class DataRange(start: Position, fin: Position) {
 }
 
 object DataRange extends ((Position, Position) => DataRange) {
+  def apply(start: Position, size: Size): DataRange = DataRange(start, start + size)
+
   sealed trait RangeLimitResult
   case class NotLargeEnough(range: DataRange, missing: Size) extends RangeLimitResult
   case class ExactMatch(range: DataRange) extends RangeLimitResult

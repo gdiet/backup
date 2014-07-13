@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
+import net.diet_rich.dedup.core.data.DataBackendSlice
 import net.diet_rich.dedup.core.values.{Path, TreeEntry, TreeEntryID}
 
 trait FileSystem extends TreeInterface with StoreInterface with Lifecycle
@@ -18,5 +19,5 @@ object FileSystem {
     with Tree
     with DataHandlerPart
     with sql.TablesPart
-    with FreeRangesPart
+    with FreeRangesPart { _: StoreSettingsSlice with DataBackendSlice => }
 }

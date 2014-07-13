@@ -10,9 +10,9 @@ trait FreeRangesSlice {
   def freeRanges: RangesQueue
 }
 
-trait FreeRangesPart { _: sql.SessionSlice =>
-  final val freeRanges = {
-    val freeInData = if (sql.DBUtilities.problemDataAreaOverlaps isEmpty) sql.DBUtilities.freeRangesInDataArea else Nil
+trait FreeRangesPart extends FreeRangesSlice { _: sql.SessionSlice =>
+  override final val freeRanges = {
+    val freeInData = if (sql.DBUtilities.problemDataAreaOverlaps.isEmpty) sql.DBUtilities.freeRangesInDataArea else Nil
     RangesQueue(freeInData ::: List(sql.DBUtilities.freeRangeAtEndOfDataArea))
   }
 }
@@ -32,7 +32,7 @@ class RangesQueue {
         case IsLarger(range, rest) => freeRangesQueue enqueue rest; range :: ranges
       }
     }
-    if (size isZero) Nil else collectFreeRanges(size, Nil)
+    if (size.isZero) Nil else collectFreeRanges(size, Nil)
   }
 
   def enqueue(range: DataRange): Unit = freeRangesQueue synchronized { freeRangesQueue enqueue range }

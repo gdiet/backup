@@ -9,7 +9,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import net.diet_rich.dedup.core.values.{TreeEntryID, Bytes, DataEntryID, Time, Print, Hash, Size}
 import net.diet_rich.dedup.util.{BlockingThreadPoolExecutor, Memory, resultOf}
 
-trait StoreLogic extends StoreInterface with StoreSettingsSlice with DataHandlerSlice { _: TreeInterface =>
+trait StoreLogic extends StoreInterface { _: TreeInterface with StoreSettingsSlice with DataHandlerSlice =>
 
   override final def read(entry: DataEntryID): Iterator[Bytes] = dataHandler readData entry
 

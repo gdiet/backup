@@ -12,25 +12,25 @@ trait TablesPart extends SessionSlice with Lifecycle {
     import TableQueries._
 
     // TreeEntries
-    def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id) firstOption
-    def treeChildren(parent: TreeEntryID): List[TreeEntry] = treeChildrenForParentQuery(parent) list
+    def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id).firstOption
+    def treeChildren(parent: TreeEntryID): List[TreeEntry] = treeChildrenForParentQuery(parent).list
     def createTreeEntry(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntryID = inTransaction {
       init(nextTreeEntryIdQuery first) {
-        id => sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $changed, $dataid);" execute
+        id => sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $changed, $dataid);".execute
       }
     }
 
     // DataEntries
-    def dataEntry(id: DataEntryID): Option[DataEntry] = dataEntryForIdQuery(id) firstOption
-    def dataEntries(size: Size, print: Print): List[DataEntry] = dataEntriesForSizePrintQuery(size, print) list
-    def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash) list
+    def dataEntry(id: DataEntryID): Option[DataEntry] = dataEntryForIdQuery(id).firstOption
+    def dataEntries(size: Size, print: Print): List[DataEntry] = dataEntriesForSizePrintQuery(size, print).list
+    def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash).list
     def createDataEntry(reservedID: DataEntryID, size: Size, print: Print, hash: Hash, method: StoreMethod): Unit = inTransaction(
       sqlu"INSERT INTO DataEntries (id, length, print, hash, method) VALUES ($reservedID, $size, $print, $hash, $method);" execute
     )
-    def nextDataID: DataEntryID = nextDataEntryIdQuery first
+    def nextDataID: DataEntryID = nextDataEntryIdQuery.first
 
     // ByteStore
-    def storeEntries(id: DataEntryID): List[StoreEntry] = storeEntriesForIdQuery(id) list
+    def storeEntries(id: DataEntryID): List[StoreEntry] = storeEntriesForIdQuery(id).list
     def createByteStoreEntry(dataid: DataEntryID, range: DataRange): Unit = inTransaction(
       sqlu"INSERT INTO ByteStore (dataid, start, fin) VALUES ($dataid, ${range.start}, ${range.fin});" execute // TODO can we use range directly here?
     )
@@ -47,20 +47,20 @@ trait TablesPart extends SessionSlice with Lifecycle {
 
 object TableQueries {
   // atomic results
-  implicit val _getDataEntryId       = GetResult(r => DataEntryID(r nextLong))
-  implicit val _getDataEntryIdOption = GetResult(r => DataEntryID(r nextLongOption))
-  implicit val _getHash              = GetResult(r => Hash(r nextBytes))
-  implicit val _getPosition          = GetResult(r => Position(r nextLong))
-  implicit val _getPrint             = GetResult(r => Print(r nextLong))
-  implicit val _getSize              = GetResult(r => Size(r nextLong))
-  implicit val _getStoreEntryId      = GetResult(r => StoreEntryID(r nextLong))
-  implicit val _getStoreMethod       = GetResult(r => StoreMethod(r nextInt))
-  implicit val _getTimeOption        = GetResult(r => Time(r nextLongOption))
-  implicit val _getTreeEntryId       = GetResult(r => TreeEntryID(r nextLong))
+  implicit val _getDataEntryId       = GetResult(r => DataEntryID(r nextLong()))
+  implicit val _getDataEntryIdOption = GetResult(r => DataEntryID(r nextLongOption()))
+  implicit val _getHash              = GetResult(r => Hash(r nextBytes()))
+  implicit val _getPosition          = GetResult(r => Position(r nextLong()))
+  implicit val _getPrint             = GetResult(r => Print(r nextLong()))
+  implicit val _getSize              = GetResult(r => Size(r nextLong()))
+  implicit val _getStoreEntryId      = GetResult(r => StoreEntryID(r nextLong()))
+  implicit val _getStoreMethod       = GetResult(r => StoreMethod(r nextInt()))
+  implicit val _getTimeOption        = GetResult(r => Time(r nextLongOption()))
+  implicit val _getTreeEntryId       = GetResult(r => TreeEntryID(r nextLong()))
 
   // compound results - order of definition is important
   implicit val _getDataEntry         = GetResult(r => DataEntry(r <<, r <<, r <<, r <<, r <<))
-  implicit val _getDataRange         = GetResult(r => DataRange(r <<, r <<))
+  implicit val _getDataRange         = GetResult(r => new DataRange(r <<, r <<))
   implicit val _getStoreEntry        = GetResult(r => StoreEntry(r <<, r <<, r <<))
   implicit val _getTreeEntry         = GetResult(r => TreeEntry(r <<, r <<, r <<, r <<, r <<, r <<))
 
