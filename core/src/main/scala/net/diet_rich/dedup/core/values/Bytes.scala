@@ -36,6 +36,7 @@ object Bytes extends ((Array[Byte], Int, Int) => Bytes) {
 
   def empty(length: Int): Bytes = Bytes(new Array[Byte](length), 0, 0)
   def zero(length: Int): Bytes = Bytes(new Array[Byte](length), 0, length)
+  def zero(size: Size): Bytes = zero(size.value toInt)
 
   implicit class SizeOfBytesList(val data: Iterable[Bytes]) extends AnyVal {
     def totalSize: Size = data.map(_.size).foldLeft(Size.Zero)(_+_)
