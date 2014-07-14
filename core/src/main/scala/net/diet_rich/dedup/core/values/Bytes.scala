@@ -41,12 +41,30 @@ object Bytes extends ((Array[Byte], Int, Int) => Bytes) {
   implicit class SizeOfBytesList(val data: Iterable[Bytes]) extends AnyVal {
     def totalSize: Size = data.map(_.size).foldLeft(Size.Zero)(_+_)
   }
-  
-  import scala.language.reflectiveCalls
-  implicit class UpdateBytes(val u: { def update(data: Array[Byte], offset: Int, length: Int) }) extends AnyVal {
+
+  implicit class UpdateChecksum(val u: java.util.zip.Checksum) extends AnyVal {
     def update(bytes: Bytes) = u.update(bytes.data, bytes.offset, bytes.length)
   }
-  implicit class SetInputBytes(val u: { def setInput(data: Array[Byte], offset: Int, length: Int) }) extends AnyVal {
+  implicit class UpdateMessageDigest(val u: java.security.MessageDigest) extends AnyVal {
+    def update(bytes: Bytes) = u.update(bytes.data, bytes.offset, bytes.length)
+  }
+  implicit class UpdateDeflater(val u: java.util.zip.Deflater) extends AnyVal {
     def setInput(bytes: Bytes) = u.setInput(bytes.data, bytes.offset, bytes.length)
+  }
+  implicit class UpdateInflater(val u: java.util.zip.Inflater) extends AnyVal {
+    def setInput(bytes: Bytes) = u.setInput(bytes.data, bytes.offset, bytes.length)
+  }
+
+  implicit class BytesReader(val bytes: Bytes) extends AnyVal {
+    def fillFrom(input: java.io.RandomAccessFile): Bytes = {
+      import bytes._
+      @annotation.tailrec
+      def readRecurse(offset: Int, length: Int): Int =
+        input.read(data, offset, length) match {
+          case n if n < 1 => offset
+          case n => if (n == length) offset + n else readRecurse(offset + n, length - n)
+        }
+      withSize(readRecurse(offset, length) - offset)
+    }
   }
 }

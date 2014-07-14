@@ -6,7 +6,6 @@ package net.diet_rich.dedup.core.data
 import java.io.{IOException, File, RandomAccessFile}
 
 import net.diet_rich.dedup.core.values.Bytes
-import net.diet_rich.dedup.core.values.BytesReader
 import net.diet_rich.dedup.util.init
 
 object DataFile {

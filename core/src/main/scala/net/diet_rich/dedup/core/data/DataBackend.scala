@@ -6,8 +6,6 @@ package net.diet_rich.dedup.core.data
 import java.io.File
 import java.util.concurrent.Executors
 
-import net.diet_rich.dedup.core.values.Size.Negative
-
 import scala.concurrent.{ExecutionContext, Future}
 
 import net.diet_rich.dedup.core.values.{Bytes, DataRange, Position, Size}
@@ -45,6 +43,8 @@ trait DataStorePart extends DataBackendSlice { _: DataSettingsSlice =>
     private val executors = Array.fill(dataSettings storeThreads)(Executors.newSingleThreadExecutor)
     private def executor(dataFileNumber: Long) = executors((dataFileNumber % dataSettings.storeThreads) toInt)
     private def execute[T](dataFileNumber: Long)(f: => T): T = resultOf(Future(f)(ExecutionContext fromExecutorService executor(dataFileNumber)))
+
+    private val dataFiles = Array.fill(dataSettings storeThreads)(scala.collection.mutable.LinkedHashMap[Long, DataFile]())
 
     @annotation.tailrec
     private def dataFileDistributionFor(dataFileNumber: Long, start: Position, size: Size, acc: List[(Long, Position, Size)]): List[(Long, Position, Size)] = {
