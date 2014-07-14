@@ -22,8 +22,8 @@ trait ThreadSpecificSessionsPart extends SessionSlice with DatabaseSlice with Li
   private val allSessions = new SynchronizedQueue[CurrentSession]()
   private val sessions = ThreadSpecific(init(database createSession){allSessions add})
   implicit final def session: CurrentSession = sessions.threadInstance
-  abstract override def teardown = {
-    allSessions.asScala foreach (_.close())
-    super.teardown
+  abstract override def teardown() = {
+    super.teardown()
+    allSessions.asScala foreach (_ close())
   }
 }

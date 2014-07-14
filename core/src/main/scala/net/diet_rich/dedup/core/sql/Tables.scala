@@ -39,8 +39,8 @@ trait TablesPart extends SessionSlice with Lifecycle {
     def inTransaction[T](f: => T): T = synchronized(f)
   }
 
-  abstract override def setup = {
-    super.setup
+  abstract override def setup() = {
+    super.setup()
     require(tables.treeEntry(FileSystem.ROOTID) === Some(FileSystem.ROOTENTRY))
   }
 }

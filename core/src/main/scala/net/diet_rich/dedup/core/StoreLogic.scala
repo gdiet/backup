@@ -3,13 +3,21 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
+import java.util.concurrent.TimeUnit.DAYS
+
 import scala.collection.mutable.MutableList
 import scala.concurrent.{ExecutionContext, Future}
 
 import net.diet_rich.dedup.core.values.{TreeEntryID, Bytes, DataEntryID, Time, Print, Hash, Size}
 import net.diet_rich.dedup.util.{BlockingThreadPoolExecutor, Memory, resultOf}
 
-trait StoreLogic extends StoreInterface { _: TreeInterface with StoreSettingsSlice with DataHandlerSlice =>
+trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with StoreSettingsSlice with DataHandlerSlice =>
+
+  override abstract def teardown() = {
+    super.teardown()
+    storeExecutor shutdown()
+    storeExecutor awaitTermination(1, DAYS)
+  }
 
   override final def read(entry: DataEntryID): Iterator[Bytes] = dataHandler readData entry
 
@@ -18,8 +26,9 @@ trait StoreLogic extends StoreInterface { _: TreeInterface with StoreSettingsSli
     createUnchecked(parent, name, Some(time), Some(dataID))
   }
 
+  private val storeExecutor = BlockingThreadPoolExecutor(storeSettings.threadPoolSize)
   private val storeContext: ExecutionContext =
-    ExecutionContext fromExecutorService BlockingThreadPoolExecutor(storeSettings.threadPoolSize)
+    ExecutionContext fromExecutorService storeExecutor
 
   private def inStoreContext[T] (f: => T): T = resultOf(Future(f)(storeContext))
 

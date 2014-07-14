@@ -4,7 +4,7 @@
 package net.diet_rich.dedup.core
 
 trait Lifecycle {
-  def setup: Unit = {}
-  def teardown: Unit = {}
-  final def inLifeCycle[T](f: => T): T = try { setup ; f } finally teardown
+  def setup(): Unit = {}
+  def teardown(): Unit = {}
+  final def inLifeCycle[T](f: => T): T = try { setup() ; f } finally teardown()
 }

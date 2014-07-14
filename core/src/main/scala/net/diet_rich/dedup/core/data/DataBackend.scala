@@ -5,9 +5,11 @@ package net.diet_rich.dedup.core.data
 
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit.DAYS
 
 import scala.concurrent.{ExecutionContext, Future}
 
+import net.diet_rich.dedup.core.Lifecycle
 import net.diet_rich.dedup.core.values.{Bytes, DataRange, Position, Size}
 import net.diet_rich.dedup.util.resultOf
 
@@ -20,11 +22,16 @@ trait DataBackendSlice {
 }
 
 trait DataSettingsSlice {
-  case class DataSettings(blocksize: Size, dataDir: File, storeThreads: Int)
+  case class DataSettings(blocksize: Size, dataDir: File, storeThreads: Int, fileHandlesPerThread: Int)
   def dataSettings: DataSettings
 }
 
-trait DataStorePart extends DataBackendSlice { _: DataSettingsSlice =>
+trait DataStorePart extends DataBackendSlice with Lifecycle { _: DataSettingsSlice =>
+  abstract override def teardown() = {
+    super.teardown()
+    dataBackend teardown()
+  }
+
   object dataBackend extends DataBackend {
     override def read(entry: DataRange): Iterator[Bytes] = {
       ???
@@ -40,11 +47,29 @@ trait DataStorePart extends DataBackendSlice { _: DataSettingsSlice =>
       }
     }
 
+    private[DataStorePart] def teardown() = {
+      executors foreach {_ shutdown()}
+      executors foreach {_ awaitTermination(1, DAYS)}
+      dataFiles flatMap (_ values) foreach (_ close())
+    }
+
     private val executors = Array.fill(dataSettings storeThreads)(Executors.newSingleThreadExecutor)
-    private def executor(dataFileNumber: Long) = executors((dataFileNumber % dataSettings.storeThreads) toInt)
+    private def threadNumber(dataFileNumber: Long): Int = (dataFileNumber % dataSettings.storeThreads) toInt
+    private def executor(dataFileNumber: Long) = executors(threadNumber(dataFileNumber))
     private def execute[T](dataFileNumber: Long)(f: => T): T = resultOf(Future(f)(ExecutionContext fromExecutorService executor(dataFileNumber)))
 
+//    private val dataDir: File = baseDir.child(dirName)
+//    private def pathInDataDir(dataFileNumber: Long) = f"$dataFileNumber%010X".grouped(2).mkString("/")
+//    private def dataFile(dataFileNumber: Long): File = dataDir.child(pathInDataDir(dataFileNumber))
+
     private val dataFiles = Array.fill(dataSettings storeThreads)(scala.collection.mutable.LinkedHashMap[Long, DataFile]())
+    private def dataFile(dataFileNumber: Long) = {
+      val dataFilesMap = dataFiles(threadNumber(dataFileNumber))
+      val dataFileHandler = dataFilesMap remove dataFileNumber getOrElse new DataFile(dataFileNumber, ???, ???)
+      if (dataFilesMap.size >= dataSettings.fileHandlesPerThread) dataFilesMap.remove(dataFilesMap.keys.head).get.close
+      dataFilesMap.put(dataFileNumber, dataFileHandler)
+      dataFileHandler
+    }
 
     @annotation.tailrec
     private def dataFileDistributionFor(dataFileNumber: Long, start: Position, size: Size, acc: List[(Long, Position, Size)]): List[(Long, Position, Size)] = {
