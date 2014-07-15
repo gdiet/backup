@@ -17,3 +17,14 @@ trait Source {
   def reset: Unit
   def close: Unit
 }
+
+object Source {
+  implicit class RandomAccessFileSource(val f: java.io.RandomAccessFile) extends AnyVal {
+    def asSource = new Source {
+      override def size: Size = Size(f length())
+      override def close: Unit = f close()
+      override def read(count: Int): Bytes = Bytes zero count fillFrom f
+      override def reset: Unit = f seek 0
+    }
+  }
+}
