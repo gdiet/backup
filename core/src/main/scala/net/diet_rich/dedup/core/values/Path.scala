@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.values
 
-case class Path(value: String) {
+final case class Path(value: String) {
   import Path._
   assume((value == ROOTNAME) || (value startsWith SEPARATOR), s"Path string '$value' is not root and does not start with '$SEPARATOR'")
 

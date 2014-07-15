@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.values
 
-case class DataRange(start: Position, fin: Position) {
+final case class DataRange(start: Position, fin: Position) {
   import DataRange._
 
   def size = fin - start
@@ -22,7 +22,7 @@ object DataRange extends ((Position, Position) => DataRange) {
   def apply(start: Position, size: Size): DataRange = DataRange(start, start + size)
 
   sealed trait RangeLimitResult
-  case class NotLargeEnough(range: DataRange, missing: Size) extends RangeLimitResult
-  case class ExactMatch(range: DataRange) extends RangeLimitResult
-  case class IsLarger(range: DataRange, rest: DataRange) extends  RangeLimitResult
+  final case class NotLargeEnough(range: DataRange, missing: Size) extends RangeLimitResult
+  final case class ExactMatch(range: DataRange) extends RangeLimitResult
+  final case class IsLarger(range: DataRange, rest: DataRange) extends  RangeLimitResult
 }

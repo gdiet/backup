@@ -7,7 +7,7 @@ import java.util.zip.{Adler32, CRC32}
 
 import net.diet_rich.dedup.util.init
 
-case class Print(value: Long) extends LongValue
+final case class Print(value: Long) extends LongValue
 
 object Print extends (Long => Print) {
   def apply(bytes: Bytes): Print =

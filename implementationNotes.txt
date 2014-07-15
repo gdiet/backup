@@ -1,0 +1,8 @@
+1) Why make case classes final?
+
+Generally, extending case classes is a bad idea. In addition to that, see answer to
+http://stackoverflow.com/questions/21966378/why-can-i-have-an-impossible-case-in-the-scala-match
+
+Inner case classes should be avoided since they should not be made final - see
+http://stackoverflow.com/questions/16450008/typesafe-swing-events-the-outer-reference-in-this-type-test-cannot-be-checked-a
+Instead, they can either be put in a companion object if they are context specific, or they can be made outer classes.

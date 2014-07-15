@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.values
 
-case class StoreEntry (
+final case class StoreEntry (
   id: StoreEntryID,
   dataid: DataEntryID,
   range: DataRange

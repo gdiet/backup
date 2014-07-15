@@ -7,7 +7,7 @@ import scala.collection.mutable.MutableList
 
 import net.diet_rich.dedup.util.valueOf
 
-case class Bytes(data: Array[Byte], offset: Int, length: Int) {
+final case class Bytes(data: Array[Byte], offset: Int, length: Int) {
   def size: Size = Size(length)
   def withSize(size: Size): Bytes = withSize(size.value toInt)
   def withSize(length: Int): Bytes = {

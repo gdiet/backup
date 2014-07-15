@@ -16,5 +16,6 @@ libraryDependencies ++= Seq (
 scalacOptions ++= Seq(
   "-deprecation",
   "-feature",
+  "-unchecked",
   "-language:postfixOps,implicitConversions"
 )

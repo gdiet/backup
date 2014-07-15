@@ -22,9 +22,10 @@ trait DataBackendSlice {
 }
 
 trait DataSettingsSlice {
-  case class DataSettings(blocksize: Size, dataDir: File, storeThreads: Int, fileHandlesPerThread: Int, readonly: Boolean)
   def dataSettings: DataSettings
 }
+
+final case class DataSettings(blocksize: Size, dataDir: File, storeThreads: Int, fileHandlesPerThread: Int, readonly: Boolean)
 
 trait DataStorePart extends DataBackendSlice with Lifecycle { _: DataSettingsSlice =>
   abstract override def teardown() = {
@@ -60,9 +61,8 @@ trait DataStorePart extends DataBackendSlice with Lifecycle { _: DataSettingsSli
 
     private val executors = Array.fill(dataSettings storeThreads)(Executors.newSingleThreadExecutor)
     private def threadNumber(dataFileNumber: Long): Int = (dataFileNumber % dataSettings.storeThreads).toInt
-    private def executor(dataFileNumber: Long) = executors(threadNumber(dataFileNumber))
     private def execute[T](dataFileNumber: Long)(f: DataFile => T): T =
-      resultOf(Future(f(dataFileHandler(dataFileNumber)))(ExecutionContext fromExecutorService executor(dataFileNumber)))
+      resultOf(Future(f(dataFileHandler(dataFileNumber)))(ExecutionContext fromExecutorService executors(threadNumber(dataFileNumber))))
 
     private def pathInDataDir(dataFileNumber: Long) = f"$dataFileNumber%010X" grouped 2 mkString "/"
     private def dataFile(dataFileNumber: Long): File = new File(dataSettings.dataDir, pathInDataDir(dataFileNumber))

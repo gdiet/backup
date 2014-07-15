@@ -22,6 +22,6 @@ object Memory {
   }
 
   sealed trait ReserveResult
-  case class Reserved(size: Long) extends ReserveResult
-  case class NotAvailable(maxAvailable: Long) extends ReserveResult
+  final case class Reserved(size: Long) extends ReserveResult
+  final case class NotAvailable(maxAvailable: Long) extends ReserveResult
 }

@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.values
 
-case class DataEntry (
+final case class DataEntry (
   id: DataEntryID,
   size: Size,
   print: Print,

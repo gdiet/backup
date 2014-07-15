@@ -21,6 +21,7 @@ trait DataHandlerSlice {
 
 trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreSettingsSlice with FreeRangesSlice with sql.TablesPart =>
   final object dataHandler extends DataHandler {
+    import DataHandlerPart._
     override def readData(entry: DataEntryID): Iterator[Bytes] =
       tables.storeEntries(entry).iterator.flatMap(dataEntry => dataBackend read dataEntry.range)
 
@@ -65,10 +66,6 @@ trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreS
       }
     }
 
-    private sealed trait RangesOrUnstored
-    private case class Ranges(remaining: List[DataRange]) extends RangesOrUnstored
-    private case class Unstored(unstored: List[Bytes]) extends RangesOrUnstored
-
     private def storePackedData(data: Iterator[Bytes], estimatedSize: Size): List[DataRange] = {
       val storeRanges = freeRanges dequeue estimatedSize
       data.foldLeft[RangesOrUnstored](Ranges(storeRanges)) { case (ranges, bytes) => storeOneChunk(bytes, ranges)} match {
@@ -103,4 +100,10 @@ trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreS
         }
     }
   }
+}
+
+object DataHandlerPart {
+  private sealed trait RangesOrUnstored
+  private final case class Ranges(remaining: List[DataRange]) extends RangesOrUnstored
+  private final case class Unstored(unstored: List[Bytes]) extends RangesOrUnstored
 }

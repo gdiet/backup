@@ -5,7 +5,7 @@ package net.diet_rich.dedup.core.values
 
 import java.security.MessageDigest
 
-case class Hash(value: Array[Byte]) {
+final case class Hash(value: Array[Byte]) {
   def !==(a: Hash) = ! ===(a)
   def ===(a: Hash) = java.util.Arrays.equals(value, a.value)
   override def equals(a: Any) = throw new UnsupportedOperationException("use === to compare hash contents")

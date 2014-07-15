@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.values
 
-case class TreeEntry (
+final case class TreeEntry (
   id: TreeEntryID,
   parent: TreeEntryID,
   name: String,
