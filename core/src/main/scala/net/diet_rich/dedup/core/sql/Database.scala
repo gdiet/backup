@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.sql
 
+import java.io.File
 import java.util.concurrent.{ConcurrentLinkedQueue => SynchronizedQueue}
 
 import scala.collection.JavaConverters.collectionAsScalaIterableConverter
@@ -26,4 +27,16 @@ trait ThreadSpecificSessionsPart extends SessionSlice with DatabaseSlice with Li
     super.teardown()
     allSessions.asScala foreach (_ close())
   }
+}
+
+object ProductionDatabase {
+  import scala.slick.driver.H2Driver.simple.Database
+
+  def fromFile(file: File, readonly: Boolean): CurrentDatabase =
+    Database forURL (
+      url = s"jdbc:h2:$file${if (readonly) ";ACCESS_MODE_DATA=r" else ""}",
+      user = "sa",
+      password = "",
+      driver = "org.h2.Driver"
+    )
 }

@@ -66,7 +66,13 @@ object DBUtilities {
 
   // Settings
   private val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT key, value FROM Settings;")
+  private val deleteSettingsQuery = StaticQuery updateNA "DELETE FROM Settings;"
+  private val insertSettingsQuery = StaticQuery.update[(String, String)]("INSERT INTO Settings (key, value) VALUES (?, ?);")
   def allSettings(implicit session: CurrentSession): Map[String, String] = allSettingsQuery.toMap
+  def replaceSettings(newSettings: Map[String, String])(implicit session: CurrentSession): Unit = {
+    deleteSettingsQuery execute session
+    newSettings foreach { insertSettingsQuery(_) execute session }
+  }
 
   // ByteStore
   private def startOfFreeDataArea(implicit session: CurrentSession) = StaticQuery.queryNA[Position]("SELECT MAX(fin) FROM ByteStore;").firstOption getOrElse Position(0)

@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup
 
+import java.io.File
 import java.util.concurrent.{TimeUnit, RejectedExecutionHandler, ArrayBlockingQueue, ThreadPoolExecutor}
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration.DurationInt
@@ -25,5 +26,9 @@ package object util {
       override def rejectedExecution(r: Runnable, e: ThreadPoolExecutor): Unit = executorQueue put r
     }
     new ThreadPoolExecutor(threadPoolSize, threadPoolSize, 0, TimeUnit.SECONDS, executorQueue, rejectHandler)
+  }
+
+  implicit class EnhancedFile(val file: File) extends AnyVal {
+    def / (child: String) = new File(file, child)
   }
 }
