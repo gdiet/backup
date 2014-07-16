@@ -24,7 +24,7 @@ object Repository {
     storeThreadPoolSize: Int = 8,
     fileHandlesPerStoreThread: Int = 4
   )(application: FileSystem => T): T = {
-    val fileSystemX = new sql.ThreadSpecificSessionsPart with StoreSettingsSlice with data.DataSettingsSlice {
+    trait ConfigurationPart extends sql.ThreadSpecificSessionsPart with StoreSettingsSlice with data.DataSettingsSlice {
       override val database: CurrentDatabase = productionDatabase(repositoryDirectory, readonly)
       private val settingsFromDatabase = database withSession (sql.DBUtilities.allSettings(_))
       override val storeSettings = StoreSettings(settingsFromDatabase(hashAlgorithmKey), processingThreadPoolSize, storeMethod)
@@ -36,8 +36,8 @@ object Repository {
       require(settingsFromDatabase(sql.databaseVersionKey) == sql.databaseVersionValue, s"${sql.databaseVersionKey} in database has value ${settingsFromDatabase(sql.databaseVersionKey)} but expected ${sql.databaseVersionValue}")
       require(settingsFromDatabase(data.versionKey) == data.versionValue, s"${data.versionKey} in database has value ${settingsFromDatabase(data.versionValue)} but expected ${data.versionValue}")
     }
-    println(fileSystemX)
-    def fileSystem: FileSystem = ???
+    val fileSystem = new FileSystem with ConfigurationPart with FileSystem.BasicPart
+
     fileSystem.inLifeCycle(application(fileSystem))
   }
 
