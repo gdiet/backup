@@ -36,7 +36,7 @@ object Repository {
       require(settingsFromDatabase(sql.databaseVersionKey) == sql.databaseVersionValue, s"${sql.databaseVersionKey} in database has value ${settingsFromDatabase(sql.databaseVersionKey)} but expected ${sql.databaseVersionValue}")
       require(settingsFromDatabase(data.versionKey) == data.versionValue, s"${data.versionKey} in database has value ${settingsFromDatabase(data.versionValue)} but expected ${data.versionValue}")
     }
-    val fileSystem = new FileSystem with ConfigurationPart with FileSystem.BasicPart
+    val fileSystem = new FileSystem with ConfigurationPart with FileSystem.BasicPart with data.DataStorePart
 
     fileSystem.inLifeCycle(application(fileSystem))
   }
