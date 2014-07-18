@@ -8,13 +8,16 @@ import java.io.File
 import net.diet_rich.dedup.core.data.DataSettings
 import net.diet_rich.dedup.core.sql.{CurrentDatabase, DatabaseSlice}
 import net.diet_rich.dedup.core.values.{Size, StoreMethod, Hash}
-import net.diet_rich.dedup.util.EnhancedFile
+import net.diet_rich.dedup.util.io.{EnhancedFile, readSettingsFile, writeSettingsFile}
 
 object Repository {
-  def databaseDirectory(repositoryDirectory: File) = repositoryDirectory / "database"
-  def datafilesDirectory(repositoryDirectory: File) = repositoryDirectory / "datafiles"
-  def productionDatabase(repositoryDirectory: File, readonly: Boolean) =
-    sql.ProductionDatabase fromFile (databaseDirectory(repositoryDirectory) / "dedup", readonly)
+  def repositoryContents(repositoryDirectory: File) = new {
+    val databaseDirectory = repositoryDirectory / "database"
+    val datafilesDirectory = repositoryDirectory / "datafiles"
+    val settingsFile = repositoryDirectory / "settings.txt"
+    def productionDatabase(readonly: Boolean) =
+      sql.ProductionDatabase fromFile (databaseDirectory / "dedup", readonly)
+  }
 
   def apply[T](
     repositoryDirectory: File,
@@ -24,19 +27,22 @@ object Repository {
     storeThreadPoolSize: Int = 8,
     fileHandlesPerStoreThread: Int = 4
   )(application: FileSystem => T): T = {
+    val repo = repositoryContents(repositoryDirectory); import repo._
+    val settingsFromFile = readSettingsFile(settingsFile)
     trait ConfigurationPart extends sql.ThreadSpecificSessionsPart with StoreSettingsSlice with data.DataSettingsSlice {
-      override val database: CurrentDatabase = productionDatabase(repositoryDirectory, readonly)
+      override val database: CurrentDatabase = productionDatabase(readonly)
       private val settingsFromDatabase = database withSession (sql.DBUtilities.allSettings(_))
       override val storeSettings = StoreSettings(settingsFromDatabase(hashAlgorithmKey), processingThreadPoolSize, storeMethod)
       override val dataSettings = data.DataSettings(
         Size(settingsFromDatabase(data.blocksizeKey).toLong),
-        datafilesDirectory(repositoryDirectory),
+        datafilesDirectory,
         storeThreadPoolSize, fileHandlesPerStoreThread, readonly
       )
       require(settingsFromDatabase(sql.databaseVersionKey) == sql.databaseVersionValue, s"${sql.databaseVersionKey} in database has value ${settingsFromDatabase(sql.databaseVersionKey)} but expected ${sql.databaseVersionValue}")
       require(settingsFromDatabase(data.versionKey) == data.versionValue, s"${data.versionKey} in database has value ${settingsFromDatabase(data.versionValue)} but expected ${data.versionValue}")
+      require(settingsFromDatabase == settingsFromFile, s"settings from file $settingsFile do not match settings from database.\nsettings from file: $settingsFromFile\nsettings from database: $settingsFromDatabase")
     }
-    val fileSystem = new FileSystem with ConfigurationPart with FileSystem.BasicPart with data.DataStorePart
+    val fileSystem = new FileSystem with ConfigurationPart with FileSystem.BasicPart
 
     fileSystem.inLifeCycle(application(fileSystem))
   }
@@ -46,9 +52,10 @@ object Repository {
     hashAlgorithm: String = "MD5",
     dataBlockSize: Size = Size(0x4000000) // 64MB
   ) = {
+    val repo = repositoryContents(repositoryDirectory); import repo._
     require(repositoryDirectory.isDirectory, s"$repositoryDirectory is not a directory")
     require(repositoryDirectory.list.size == 0, s"$repositoryDirectory is not empty")
-    require(databaseDirectory(repositoryDirectory) mkdir(), s"could not create database directory in $repositoryDirectory")
+    require(databaseDirectory mkdir(), s"could not create database directory in $repositoryDirectory")
 
     val settingsToWrite = Map(
       hashAlgorithmKey -> hashAlgorithm,
@@ -56,7 +63,8 @@ object Repository {
       data.versionKey -> data.versionValue,
       sql.databaseVersionKey -> sql.databaseVersionValue
     )
-    productionDatabase(repositoryDirectory, false) withSession { implicit session =>
+    writeSettingsFile(settingsFile, settingsToWrite)
+    productionDatabase(readonly = false) withSession { implicit session =>
       sql.DBUtilities.createTables(Hash digestLength hashAlgorithm)
       sql.DBUtilities.recreateIndexes
       sql.DBUtilities.replaceSettings(settingsToWrite)

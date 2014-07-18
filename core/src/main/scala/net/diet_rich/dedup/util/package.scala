@@ -27,8 +27,4 @@ package object util {
     }
     new ThreadPoolExecutor(threadPoolSize, threadPoolSize, 0, TimeUnit.SECONDS, executorQueue, rejectHandler)
   }
-
-  implicit class EnhancedFile(val file: File) extends AnyVal {
-    def / (child: String) = new File(file, child)
-  }
 }

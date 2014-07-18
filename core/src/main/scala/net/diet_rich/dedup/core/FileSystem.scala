@@ -19,5 +19,6 @@ object FileSystem {
     with Tree
     with DataHandlerPart
     with sql.TablesPart
-    with FreeRangesPart { _: StoreSettingsSlice with DataBackendSlice => }
+    with FreeRangesPart
+    with data.DataStorePart { _: StoreSettingsSlice with DataBackendSlice with data.DataSettingsSlice => }
 }

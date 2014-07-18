@@ -20,7 +20,11 @@ Simple store and subsequent restore should be possible $storeRestore
     val fs: FileSystem = new FileSystem
       with sql.InMemoryDBPartWithTables
       with InMemoryDataBackendPart
-      with BasicPart
+      with StoreLogic
+      with Tree
+      with DataHandlerPart
+      with sql.TablesPart
+      with FreeRangesPart
       with StoreSettingsSlice {
       def storeSettings = StoreSettings ("MD5", 4, StoreMethod.STORE)
     }
