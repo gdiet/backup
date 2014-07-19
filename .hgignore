@@ -1,6 +1,8 @@
 syntax: regexp
 ^\.idea
 ^core/target/
+^davserver/target/
+^davserver/project/target/
 ^project/project/
 ^project/target/
 ^target/
