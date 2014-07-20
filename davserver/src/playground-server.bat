@@ -1,23 +1,33 @@
 @echo off
 pushd %~dp0
 
-set RUNINLINE=true
-
 if "%JAVA_HOME%"=="" (
-	echo.
 	echo JAVA_HOME is not set, exiting...
-	echo.
 	pause
 	exit /b -1
 )
 
-cd ..\..
-call sbt.bat davserver/xitrumPackage
+set RUNINLINE=true
+set REPODIR=./target/playRepo
+set CLASSPATH=davserver/target/xitrum/lib/*
+set JAVACALL="%JAVA_HOME%\bin\java.exe" -cp %CLASSPATH%
+set CREATEREPOCALL= %JAVACALL% net.diet_rich.dedup.core.CreateRepository %REPODIR%
+set DAVSERVERCALL= %JAVACALL% net.diet_rich.dedup.webdav.ServerApp %REPODIR% READWRITE
 
+cd ..\..
+call sbt.bat core/package ;davserver/xitrumPackage
+
+if not exist target/playRepo (
+    echo *** creating repository ...
+    mkdir target\playRepo
+    %CREATEREPOCALL%
+)
+
+echo *** starting webdav server ...
 if "%RUNINLINE%"=="" (
-	start "davserver" "%JAVA_HOME%\bin\java.exe" -cp target/xitrum/lib/* net.diet_rich.dedup.webdav.ServerApp ../target/playRepo READWRITE
+	start "davserver" %DAVSERVERCALL%
 ) else (
-	"%JAVA_HOME%\bin\java.exe" -cp target/xitrum/lib/* net.diet_rich.dedup.webdav.ServerApp ../target/playRepo READWRITE
+	%DAVSERVERCALL%
 )
 
 popd

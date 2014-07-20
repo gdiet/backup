@@ -11,7 +11,7 @@ import net.diet_rich.dedup.core.values.{Size, StoreMethod, Hash}
 import net.diet_rich.dedup.util.io.{EnhancedFile, readSettingsFile, writeSettingsFile}
 
 object Repository {
-  def repositoryContents(repositoryDirectory: File) = new {
+  private def repositoryContents(repositoryDirectory: File) = new {
     val databaseDirectory = repositoryDirectory / "database"
     val datafilesDirectory = repositoryDirectory / "datafiles"
     val settingsFile = repositoryDirectory / "settings.txt"
@@ -19,14 +19,14 @@ object Repository {
       sql.ProductionDatabase fromFile (databaseDirectory / "dedup", readonly)
   }
 
-  def apply[T](
+  def fileSystem(
     repositoryDirectory: File,
     storeMethod: StoreMethod = StoreMethod.DEFLATE,
     readonly: Boolean = false,
     processingThreadPoolSize: Int = 8,
     storeThreadPoolSize: Int = 8,
     fileHandlesPerStoreThread: Int = 4
-  )(application: FileSystem => T): T = {
+  ): FileSystem = {
     val repo = repositoryContents(repositoryDirectory); import repo._
     val settingsFromFile = readSettingsFile(settingsFile)
     trait ConfigurationPart extends sql.ThreadSpecificSessionsPart with StoreSettingsSlice with data.DataSettingsSlice {
@@ -42,9 +42,19 @@ object Repository {
       require(settingsFromDatabase(data.versionKey) == data.versionValue, s"${data.versionKey} in database has value ${settingsFromDatabase(data.versionValue)} but expected ${data.versionValue}")
       require(settingsFromDatabase == settingsFromFile, s"settings from file $settingsFile do not match settings from database.\nsettings from file: $settingsFromFile\nsettings from database: $settingsFromDatabase")
     }
-    val fileSystem = new FileSystem with ConfigurationPart with FileSystem.BasicPart
+    new FileSystem with ConfigurationPart with FileSystem.BasicPart
+  }
 
-    fileSystem.inLifeCycle(application(fileSystem))
+  def apply[T](
+    repositoryDirectory: File,
+    storeMethod: StoreMethod = StoreMethod.DEFLATE,
+    readonly: Boolean = false,
+    processingThreadPoolSize: Int = 8,
+    storeThreadPoolSize: Int = 8,
+    fileHandlesPerStoreThread: Int = 4
+  )(application: FileSystem => T): T = {
+    val fs = fileSystem(repositoryDirectory, storeMethod, readonly, processingThreadPoolSize, storeThreadPoolSize, fileHandlesPerStoreThread)
+    fs.inLifeCycle(application(fs))
   }
 
   def create(

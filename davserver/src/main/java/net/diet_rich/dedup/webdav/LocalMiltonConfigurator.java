@@ -69,6 +69,7 @@ public class LocalMiltonConfigurator implements MiltonConfigurator { // *project
     protected HttpManager httpManager;
 
     // *project specific* (START)
+    // FIXME it should be possible to configure everything needed with in the Config instead!
     private final ResourceFactory resourceFactory;
     public LocalMiltonConfigurator(ResourceFactory resourceFactory) {
         this.resourceFactory = resourceFactory;

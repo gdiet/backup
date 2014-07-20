@@ -38,6 +38,7 @@ import org.slf4j.LoggerFactory;
 public class LocalMiltonFilter implements Filter { // *project specific*
 
     // *project specific* (START)
+    // FIXME it should be possible to configure everything needed with in the Config instead!
     private final MiltonConfigurator configurator;
     public LocalMiltonFilter(MiltonConfigurator miltonConfigurator) {
         configurator = miltonConfigurator;

@@ -12,7 +12,7 @@ import net.diet_rich.dedup.util.{init, Logging}
 
 object ServerApp extends App with Logging {
 
-  require(!(args isEmpty), "parameters: <repository path> [READWRITE] [DEFLATE] [port:<serverport>(default: 8080)]")
+  require(!(args isEmpty), "parameters: <repository path> [READWRITE] [DEFLATE] [port:(8080)]")
 
   val repositoryPath :: options = args.toList
   val writeEnabled = options contains "READWRITE"
@@ -24,7 +24,7 @@ object ServerApp extends App with Logging {
 
   def initServer(serverPort: Int): Either[Error, Server] = {
     try {
-      val resourceFactory = new DedupResourceFactory(writeEnabled)
+      val resourceFactory = new DedupResourceFactory(repositoryPath, writeEnabled = writeEnabled, deflate = deflate)
       val miltonConfigurator = new LocalMiltonConfigurator(resourceFactory)
       val miltonFilter = new LocalMiltonFilter(miltonConfigurator)
       val filterHolder = new FilterHolder(miltonFilter)
@@ -38,27 +38,4 @@ object ServerApp extends App with Logging {
       case NonFatal(e) => Left(e)
     }
   }
-
-//  val maybeServer = for {
-//    repositoryPath <- repositoryPathFromArgs(args).right
-//    fileSystem <- initFileSystem(repositoryPath).right
-//    // TODO 05 Filesystem bei Fehler runterfahren
-//    server <- initServer(fileSystem, serverPort).right
-//  } yield server
-//
-//  maybeServer.fold(println, _ join)
-//
-//
-//  def repositoryPathFromArgs(args: Array[String]): Either[Error, String] =
-//    if (args isEmpty) Left("usage: <java call> <repository path> [READWRITE] [DEFLATE]")
-//    else Right(args(0))
-//
-//
-//  def initFileSystem(repositoryPath: String): Either[Error, DedupFileSystem] =
-//    DedupFileSystem(
-//      repositoryPath = repositoryPath,
-//      writeEnabled = writeEnabled,
-//      deflate = deflate
-//    )
-
 }
