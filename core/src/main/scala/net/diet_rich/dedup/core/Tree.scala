@@ -6,10 +6,12 @@ package net.diet_rich.dedup.core
 import java.io.IOException
 
 import net.diet_rich.dedup.core.values.{DataEntryID, TreeEntryID, TreeEntry, Time, Path}
+import net.diet_rich.dedup.util.Equal
 
 trait TreeInterface {
   def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry]
   def children(parent: TreeEntryID): List[TreeEntry]
+  def children(parent: TreeEntryID, name: String): List[TreeEntry]
   def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID
   def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID
   def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID
@@ -19,20 +21,21 @@ trait TreeInterface {
 trait Tree extends TreeInterface with sql.TablesPart {
   override final def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = tables treeChildren parent
   override final def children(parent: TreeEntryID): List[TreeEntry] = childrenWithDeleted(parent) filter (_.deleted isEmpty)
+  override final def children(parent: TreeEntryID, name: String): List[TreeEntry] = children(parent) filter (_.name === name)
 
   override final def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID =
     tables createTreeEntry (parent, name, changed, dataid)
   override final def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID = tables inTransaction {
-    children(parent) find (_.name == name) match {
+    children(parent) find (_.name === name) match {
       case Some(entry) => throw new IOException(s"entry $entry already exists")
       case None => createUnchecked(parent, name, changed, dataid)
     }
   }
   override final def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntryID = tables inTransaction {
     val elements = path.elements
-    if(elements.size == 0) throw new IOException("can't create the root entry")
+    if(elements.size === 0) throw new IOException("can't create the root entry")
     val parent = elements.dropRight(1).foldLeft(FileSystem ROOTID) { (node, childName) =>
-      children(node) filter (_.name == childName) match {
+      children(node) filter (_.name === childName) match {
         case Nil => createUnchecked(node, childName, changed, dataid)
         case List(entry) => entry.id
         case entries => throw new IOException(s"ambiguous path; §entries")
@@ -43,6 +46,6 @@ trait Tree extends TreeInterface with sql.TablesPart {
 
   override final def entries(path: Path): List[TreeEntry] =
     path.elements.foldLeft(List(FileSystem ROOTENTRY)) { (nodes, childName) =>
-      nodes flatMap (node => children(node.id) filter (_.name == childName))
+      nodes flatMap (node => children(node.id) filter (_.name === childName))
     }
 }
