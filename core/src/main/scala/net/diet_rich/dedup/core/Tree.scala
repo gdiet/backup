@@ -5,7 +5,7 @@ package net.diet_rich.dedup.core
 
 import java.io.IOException
 
-import net.diet_rich.dedup.core.values.{DataEntryID, TreeEntryID, TreeEntry, Time, Path}
+import net.diet_rich.dedup.core.values.{DataEntryID, TreeEntryID, TreeEntry, Time, Path, Size}
 import net.diet_rich.dedup.util.Equal
 
 trait TreeInterface {
@@ -17,6 +17,7 @@ trait TreeInterface {
   def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def markDeleted(id: TreeEntryID, deletionTime: Option[Time] = Some(Time now())): Boolean
   def moveRename(id: TreeEntryID, newParent: TreeEntryID, newName: String): Boolean
+  def sizeOf(id: DataEntryID): Option[Size]
   def entries(path: Path): List[TreeEntry]
 }
 
@@ -26,6 +27,7 @@ trait Tree extends TreeInterface with sql.TablesPart {
   override final def children(parent: TreeEntryID, name: String): List[TreeEntry] = children(parent) filter (_.name === name)
   override final def markDeleted(id: TreeEntryID, deletionTime: Option[Time]): Boolean = tables markDeleted (id, deletionTime)
   override final def moveRename(id: TreeEntryID, newParent: TreeEntryID, newName: String): Boolean = tables moveRename (id, newParent, newName)
+  override final def sizeOf(id: DataEntryID): Option[Size] = tables dataEntry id map (_.size)
 
   override final def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry =
     tables createTreeEntry (parent, name, changed, dataid)

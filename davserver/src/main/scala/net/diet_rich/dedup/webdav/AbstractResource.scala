@@ -27,6 +27,7 @@ trait AbstractResource extends DigestResource with PropFindableResource with Log
   override def getCreateDate: Date = debug("getCreateDate()") { getModifiedDate() }
   
   // Resource
+  override def getName(): String = debug("getName()") { treeEntry.name }
   override def getUniqueId: String = debug("getUniqueId()") { null }
   override def authenticate(user: String, password: String): Object =
     debug(s"authenticate(user: '$user', password: '$password')") { user }

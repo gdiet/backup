@@ -12,10 +12,8 @@ import net.diet_rich.dedup.core.FileSystem
 import net.diet_rich.dedup.core.values.TreeEntry
 import net.diet_rich.dedup.util.CallLogging
 
-// note: extend MakeCollectionableResource to enable creating directories (and files?)
-// also have a look at FolderResource
+// TODO have a look at FolderResource
 case class DirectoryResource(fileSystem: FileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) extends AbstractResource with CollectionResource with CallLogging {
-  def getName(): String = debug("getName()") { treeEntry.name }
   def child(childName: String): Resource = debug(s"child(childName: '$childName')") {
     // FIXME utiliy method firstChild
     fileSystem.children(treeEntry.id, childName).headOption.map(resourceFactory.getResourceFromTreeEntry).orNull
@@ -28,8 +26,6 @@ case class DirectoryResource(fileSystem: FileSystem, treeEntry: TreeEntry, resou
 }
 
 object DirectoryResource {
-  val date = new Date()
-  
   def readonly(fileSystem: FileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) =
     new DirectoryResource(fileSystem, treeEntry, resourceFactory)
   def readwrite(fileSystem: FileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) =

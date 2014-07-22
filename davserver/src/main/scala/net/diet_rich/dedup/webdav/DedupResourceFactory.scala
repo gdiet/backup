@@ -34,7 +34,7 @@ class DedupResourceFactory(repositoryPath: String, writeEnabled: Boolean, deflat
   def getResourceFromTreeEntry(treeEntry: TreeEntry): Resource =
     treeEntry.data match {
       case None => directoryResourceFactory(fileSystem, treeEntry, this)
-      case Some(dataid) => ??? // fileResourceFactory(fileSystem, treeEntry)
+      case Some(dataid) => fileResourceFactory(fileSystem, treeEntry)
     }
 
   def getDirectoryResourceFromTreeEntry(treeEntry: TreeEntry): DirectoryResource = {
@@ -42,6 +42,7 @@ class DedupResourceFactory(repositoryPath: String, writeEnabled: Boolean, deflat
     directoryResourceFactory(fileSystem, treeEntry, this)
   }
 
+  // TODO check whether this is as concise as it can be
   private val directoryResourceFactory = if (writeEnabled) DirectoryResource.readwrite _ else DirectoryResource.readonly _
-
+  private val fileResourceFactory = if (writeEnabled) FileResource.readwrite _ else FileResource.readonly _
 }
