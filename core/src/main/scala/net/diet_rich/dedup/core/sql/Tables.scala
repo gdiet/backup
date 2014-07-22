@@ -1,7 +1,6 @@
 package net.diet_rich.dedup.core.sql
 
 import scala.slick.jdbc.{SetParameter, GetResult, StaticQuery}
-import scala.slick.jdbc.StaticQuery.interpolation
 
 import net.diet_rich.dedup.core.{Lifecycle, FileSystem}
 import net.diet_rich.dedup.core.values._
@@ -16,7 +15,7 @@ trait TablesPart extends SessionSlice with Lifecycle {
     def treeChildren(parent: TreeEntryID): List[TreeEntry] = treeChildrenForParentQuery(parent).list
     def createTreeEntry(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntry = inTransaction {
       val id = nextTreeEntryIdQuery.first
-      sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $changed, $dataid);".execute
+      createTreeEntryUpdate(id, parent, name, changed, dataid).execute
       TreeEntry(id, parent, name, changed, dataid, None)
     }
 
@@ -25,14 +24,14 @@ trait TablesPart extends SessionSlice with Lifecycle {
     def dataEntries(size: Size, print: Print): List[DataEntry] = dataEntriesForSizePrintQuery(size, print).list
     def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash).list
     def createDataEntry(reservedID: DataEntryID, size: Size, print: Print, hash: Hash, method: StoreMethod): Unit = inTransaction(
-      sqlu"INSERT INTO DataEntries (id, length, print, hash, method) VALUES ($reservedID, $size, $print, $hash, $method);" execute
+      createDataEntryUpdate(reservedID, size, print, hash, method).execute
     )
     def nextDataID: DataEntryID = nextDataEntryIdQuery.first
 
     // ByteStore
     def storeEntries(id: DataEntryID): List[StoreEntry] = storeEntriesForIdQuery(id).list
     def createByteStoreEntry(dataid: DataEntryID, range: DataRange): Unit = inTransaction(
-      sqlu"INSERT INTO ByteStore (dataid, start, fin) VALUES ($dataid, ${range.start}, ${range.fin});" execute // TODO can we use range directly here?
+      createStoreEntryUpdate(dataid, range.start, range.fin).execute
     )
 
     // general
@@ -79,13 +78,16 @@ object TableQueries {
   val treeEntryForIdQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")
   val treeChildrenForParentQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE parent = ?;")
   val nextTreeEntryIdQuery = StaticQuery.queryNA[TreeEntryID]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")
+  val createTreeEntryUpdate = StaticQuery.update[(TreeEntryID, TreeEntryID, String, Option[Time], Option[DataEntryID])]("INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?);")
 
   // DataEntries
   val dataEntryForIdQuery = StaticQuery.query[DataEntryID, DataEntry](s"$selectFromDataEntries WHERE id = ?;")
   val dataEntriesForSizePrintQuery = StaticQuery.query[(Size, Print), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ?;")
   val dataEntriesForSizePrintHashQuery = StaticQuery.query[(Size, Print, Hash), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ? AND hash = ?;")
   val nextDataEntryIdQuery = StaticQuery.queryNA[DataEntryID]("SELECT NEXT VALUE FOR dataEntriesIdSeq;")
+  val createDataEntryUpdate = StaticQuery.update[(DataEntryID, Size, Print, Hash, StoreMethod)]("INSERT INTO DataEntries (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
 
   // ByteStore
   val storeEntriesForIdQuery = StaticQuery.query[DataEntryID, StoreEntry](s"$selectFromByteStore WHERE dataid = ? ORDER BY id ASC;")
+  val createStoreEntryUpdate = StaticQuery.update[(DataEntryID, Position, Position)]("INSERT INTO ByteStore (dataid, start, fin) VALUES (?, ?, ?);")
 }
