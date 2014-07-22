@@ -9,4 +9,5 @@ final case class Time(value: Long) extends LongValue {
 
 object Time extends (Long => Time) {
   def apply(value: Option[Long]): Option[Time] = value map Time
+  def now(): Time = Time(System currentTimeMillis())
 }

@@ -15,12 +15,8 @@ import net.diet_rich.dedup.core.values.TreeEntry
 import net.diet_rich.dedup.util.{CallLogging, Logging}
 
 trait AbstractResource extends DigestResource with PropFindableResource with Logging with CallLogging {
-  val typeIdentifier: String
   val treeEntry: TreeEntry
   val fileSystem: FileSystem
-
-  // for debug output
-  override def toString: String = s"$typeIdentifier: $treeEntry"
 
   // DigestResource
   override def authenticate(digestRequest: DigestResponse): Object =
