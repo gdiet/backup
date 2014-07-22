@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit.DAYS
 import scala.collection.mutable.MutableList
 import scala.concurrent.{ExecutionContext, Future}
 
-import net.diet_rich.dedup.core.values.{TreeEntryID, Bytes, DataEntryID, Time, Print, Hash, Size}
+import net.diet_rich.dedup.core.values.{TreeEntryID, TreeEntry, Bytes, DataEntryID, Time, Print, Hash, Size}
 import net.diet_rich.dedup.util.{BlockingThreadPoolExecutor, Memory, resultOf}
 
 trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with StoreSettingsSlice with DataHandlerSlice =>
@@ -21,7 +21,7 @@ trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with S
 
   override final def read(entry: DataEntryID): Iterator[Bytes] = dataHandler readData entry
 
-  override final def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntryID = inStoreContext {
+  override final def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntry = inStoreContext {
     val dataID = dataEntryFor(source)
     createUnchecked(parent, name, Some(time), Some(dataID))
   }

@@ -14,10 +14,10 @@ trait TablesPart extends SessionSlice with Lifecycle {
     // TreeEntries
     def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id).firstOption
     def treeChildren(parent: TreeEntryID): List[TreeEntry] = treeChildrenForParentQuery(parent).list
-    def createTreeEntry(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntryID = inTransaction {
-      init(nextTreeEntryIdQuery first) {
-        id => sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $changed, $dataid);".execute
-      }
+    def createTreeEntry(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntry = inTransaction {
+      val id = nextTreeEntryIdQuery.first
+      sqlu"INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES ($id, $parent, $name, $changed, $dataid);".execute
+      TreeEntry(id, parent, name, changed, dataid, None)
     }
 
     // DataEntries

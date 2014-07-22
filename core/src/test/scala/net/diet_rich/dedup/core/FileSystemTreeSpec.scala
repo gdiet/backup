@@ -32,8 +32,8 @@ Create throws an exception if a child with the name already exists $createExisti
   }
 
   def createAndCheckDirectory = withEmptyTree { tree =>
-    val childId = tree create (FileSystem ROOTID, "child")
-    tree.entries(Path("/child")) should contain(exactly(beADirectory and haveTheId(childId)))
+    val child = tree create (FileSystem ROOTID, "child")
+    tree.entries(Path("/child")) should contain(exactly(beADirectory and haveTheId(child id)))
   }
 
   def rootIsDirectory = withEmptyTree {

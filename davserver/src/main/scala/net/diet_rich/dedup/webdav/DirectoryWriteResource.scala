@@ -4,10 +4,15 @@
 package net.diet_rich.dedup.webdav
 
 import io.milton.http.Request
-import io.milton.resource.DeletableCollectionResource
+import io.milton.resource.{CollectionResource, MakeCollectionableResource, DeletableCollectionResource}
 
-trait DirectoryWriteResource extends DeletableCollectionResource with AbstractWriteResource { _: AbstractResource =>
+trait DirectoryWriteResource extends DeletableCollectionResource with AbstractWriteResource with MakeCollectionableResource { _: DirectoryResource =>
   def isLockedOutRecursive(request: Request): Boolean = debug(s"isLockedOutRecursive(request: $request) for directory ${treeEntry name}, ${treeEntry id}") {
     false
+  }
+
+  def createCollection(newName: String): CollectionResource = {
+    val newEntry = fileSystem.createUnchecked(treeEntry.id, newName)
+    resourceFactory getDirectoryResourceFromTreeEntry newEntry
   }
 }
