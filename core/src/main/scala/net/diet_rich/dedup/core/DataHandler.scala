@@ -22,8 +22,10 @@ trait DataHandlerSlice {
 trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreSettingsSlice with FreeRangesSlice with sql.TablesPart =>
   final object dataHandler extends DataHandler {
     import DataHandlerPart._
-    override def readData(entry: DataEntryID): Iterator[Bytes] =
-      tables.storeEntries(entry).iterator.flatMap(dataEntry => dataBackend read dataEntry.range)
+    override def readData(dataEntryID: DataEntryID): Iterator[Bytes] =
+      tables.dataEntry(dataEntryID).iterator flatMap {
+        _.method unpack (tables.storeEntries(dataEntryID).iterator flatMap (dataBackend read _.range))
+      }
 
     override def hasSizeAndPrint(size: Size, print: Print): Boolean =
       !(tables dataEntries(size, print) isEmpty)

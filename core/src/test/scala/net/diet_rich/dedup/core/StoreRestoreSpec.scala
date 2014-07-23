@@ -26,7 +26,8 @@ Simple store and subsequent restore should be possible $storeRestore
       with sql.TablesPart
       with FreeRangesPart
       with StoreSettingsSlice {
-      def storeSettings = StoreSettings ("MD5", 4, StoreMethod.STORE)
+      def storeSettings = StoreSettings ("MD5", 4, StoreMethod.DEFLATE)
+      // TODO tests for STORE and DEFLATE
     }
 
     fs.inLifeCycle {
