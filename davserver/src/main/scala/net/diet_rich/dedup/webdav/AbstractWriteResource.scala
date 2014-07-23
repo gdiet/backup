@@ -11,15 +11,15 @@ import io.milton.resource.DeletableResource
 import io.milton.resource.MoveableResource
 
 trait AbstractWriteResource extends DeletableResource with MoveableResource { _: AbstractResource =>
-  override def authorise(request: Request, method: Request.Method, auth: Auth): Boolean =
+  override final def authorise(request: Request, method: Request.Method, auth: Auth): Boolean =
     debug(s"authorise(request: '$request', method: '$method', auth: '$auth')") { true }
-  
-  def delete(): Unit = debug("delete()") {
+
+  override final def delete(): Unit = debug("delete()") {
     log info s"deleting $treeEntry"
     if (!fileSystem.markDeleted(treeEntry id)) log warn s"could not mark deleted $treeEntry"
   }
-  
-  def moveTo(destination: CollectionResource, newName: String): Unit = debug(s"moveTo(destination: $destination, newName: $newName)") {
+
+  override final def moveTo(destination: CollectionResource, newName: String): Unit = debug(s"moveTo(destination: $destination, newName: $newName)") {
     destination match {
       case DirectoryResource(`fileSystem`, dir, _) =>
         if (newName isEmpty) throw new BadRequestException("Rename not possible: New name is empty.")
@@ -28,5 +28,4 @@ trait AbstractWriteResource extends DeletableResource with MoveableResource { _:
       case other => throw new BadRequestException(s"Can't move $this to $other.")
     }
   }
-  
 }

@@ -19,20 +19,21 @@ trait AbstractResource extends DigestResource with PropFindableResource with Log
   val fileSystem: FileSystem
 
   // DigestResource
-  override def authenticate(digestRequest: DigestResponse): Object =
+  override final def authenticate(digestRequest: DigestResponse): Object =
     debug(s"authenticate(digestRequest: '$digestRequest')") { digestRequest getUser() }
-  override def isDigestAllowed: Boolean = debug("isDigestAllowed()") { true }
+  override final def isDigestAllowed: Boolean = debug("isDigestAllowed()") { true }
   
   // PropFindableResource
-  override def getCreateDate: Date = debug("getCreateDate()") { getModifiedDate() }
+  override final def getCreateDate: Date = debug("getCreateDate()") { getModifiedDate() }
   
   // Resource
-  override def getName(): String = debug("getName()") { treeEntry.name }
-  override def getUniqueId: String = debug("getUniqueId()") { null }
-  override def authenticate(user: String, password: String): Object =
+  override final def getName(): String = debug("getName()") { treeEntry.name }
+  override final def getUniqueId: String = debug("getUniqueId()") { null }
+  override final def authenticate(user: String, password: String): Object =
     debug(s"authenticate(user: '$user', password: '$password')") { user }
+  // is overridden in AbstractWriteResource, TODO more elegant way to do this?
   override def authorise(request: Request, method: Request.Method, auth: Auth): Boolean =
     debug(s"authorise(request: '$request', method: '$method', auth: '$auth')") { !method.isWrite }
-  override def getRealm: String = debug("getRealm()") { "dedup@diet-rich.net" }
-  override def checkRedirect(request: Request): String = debug(s"checkRedirect(request: '$request')") { null }
+  override final def getRealm: String = debug("getRealm()") { "dedup@diet-rich.net" }
+  override final def checkRedirect(request: Request): String = debug(s"checkRedirect(request: '$request')") { null }
 }

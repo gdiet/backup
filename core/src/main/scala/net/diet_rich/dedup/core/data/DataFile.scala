@@ -5,7 +5,7 @@ package net.diet_rich.dedup.core.data
 
 import java.io.{IOException, File, RandomAccessFile}
 
-import net.diet_rich.dedup.core.values.Bytes
+import net.diet_rich.dedup.core.values.{Size, Bytes}
 import net.diet_rich.dedup.util.init
 
 object DataFile {
@@ -38,15 +38,15 @@ class DataFile(dataFileNumber: Long, file: File, readonly: Boolean) {
       init(new RandomAccessFile(file, "rw")){_ writeLong dataFileNumber}
     }
 
-  private def openAndCheckHeader(accessType: String): RandomAccessFile = {
-    val fileNumberRead = fileAccess.readLong
-    print = fileAccess.readLong
-    if (dataFileNumber != fileNumberRead) {
-      fileAccess close()
-      throw new IOException(s"Data file number read $fileNumberRead is not $dataFileNumber")
+  private def openAndCheckHeader(accessType: String): RandomAccessFile =
+    init(new RandomAccessFile(file, accessType)) { fileAccess =>
+      val fileNumberRead = fileAccess.readLong
+      print = fileAccess.readLong
+      if (dataFileNumber != fileNumberRead) {
+        fileAccess close()
+        throw new IOException(s"Data file number read $fileNumberRead is not $dataFileNumber")
+      }
     }
-    fileAccess
-  }
 
   def close() = {
     if (!readonly) {
@@ -69,19 +69,20 @@ class DataFile(dataFileNumber: Long, file: File, readonly: Boolean) {
   }
 
   def overwriteData(offsetInFileData: Long, bytesToWrite: Bytes, printOfBytes: Long): Unit = {
-    val bytesRead = read(offsetInFileData, Bytes zero (bytesToWrite size))
+    val bytesRead = read(offsetInFileData, bytesToWrite size)
     print = print ^ calcDataPrint(offsetInFileData, bytesRead)
     writeNewData(offsetInFileData, bytesToWrite, printOfBytes)
   }
 
-  def read(offsetInFileData: Long, bytes: Bytes): Bytes = {
-    fileAccess seek (offsetInFileData + headerBytes)
-    bytes fillFrom fileAccess
-  }
+  def read(offsetInFileData: Long, size: Size): Bytes =
+    init(Bytes zero size) { bytes =>
+      fileAccess seek (offsetInFileData + headerBytes)
+      bytes fillFrom fileAccess
+    }
 
   def recalculatePrint(): Unit = {
-    val size = fileAccess.length.toInt - headerBytes
-    val bytesRead = read(0, Bytes zero size)
+    val size = Size(fileAccess.length - headerBytes)
+    val bytesRead = read(0, size)
     print = calcDataPrint(0, bytesRead)
   }
 }

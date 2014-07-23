@@ -1,0 +1,24 @@
+// Copyright (c) Georg Dietrich
+// Licensed under the MIT license:
+// http://www.opensource.org/licenses/mit-license.php
+package net.diet_rich.dedup
+
+import java.io.File
+
+import net.diet_rich.dedup.core.values.Bytes
+import net.diet_rich.dedup.util.init
+import net.diet_rich.dedup.util.io.EnhancedFile
+
+package object testutil {
+  val testData = init(new File("target/testData"))(_.mkdirs)
+
+  def newTestFile(relativePath: String): File =
+    init(testData / relativePath){ file =>
+      file.getParentFile mkdirs()
+      file delete()
+    }
+
+  implicit class ByteArrayView(val b: Array[Byte]) extends AnyVal {
+    def asBytes = Bytes(b, 0, b.length)
+  }
+}

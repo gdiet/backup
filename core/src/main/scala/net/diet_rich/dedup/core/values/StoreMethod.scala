@@ -61,8 +61,8 @@ object StoreMethod {
       @annotation.tailrec
       def read(chunk: Option[Bytes]): Option[Bytes] =
         if (packer finished) chunk else chunk match {
-          case None => read(Some(Bytes.empty(compressorChunkSize)))
-          case result @ Some(Bytes(_, _, `compressorChunkSize`)) => result
+          case None => read(Some(Bytes zero compressorChunkSize withSize 0))
+          case result @ Some(Bytes(_, 0, `compressorChunkSize`)) => result
           case Some(Bytes(data, 0, length)) =>
             refill
             val sizeRead = packer getOutput (data, length, compressorChunkSize - length)

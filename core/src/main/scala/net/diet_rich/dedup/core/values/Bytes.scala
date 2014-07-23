@@ -5,13 +5,13 @@ package net.diet_rich.dedup.core.values
 
 import scala.collection.mutable.MutableList
 
-import net.diet_rich.dedup.util.valueOf
+import net.diet_rich.dedup.util.{!!!, valueOf}
 
 final case class Bytes(data: Array[Byte], offset: Int, length: Int) {
   def size: Size = Size(length)
   def withSize(size: Size): Bytes = withSize(size.value toInt)
   def withSize(length: Int): Bytes = {
-    assume(length > 0 && length <= this.length) // or length <= data.length - offset ?
+    assume(length >= 0 && length <= this.length) // or length <= data.length - offset ?
     copy(length = length)
   }
   def withOffset(offset: Size): Bytes = withOffset(offset.value toInt)
@@ -19,10 +19,15 @@ final case class Bytes(data: Array[Byte], offset: Int, length: Int) {
     assume(off >= 0 && off <= length)
     Bytes(data, offset + off, length - off)
   }
+  // Note: Overridden so it is not used unwillingly, e.g. in matches
+  override def equals(other: Any) = !!!
+  private def theData = data drop offset take length
+  // Note: Possibly slow, use with care
+  def fullyEquals(other: Bytes) = length == other.length && java.util.Arrays.equals(theData, other.theData)
 }
 
 object Bytes extends ((Array[Byte], Int, Int) => Bytes) {
-  val EMPTY = empty(0)
+  val EMPTY = zero(0)
 
   // Note: MutableList allows in-place replacement when applying the store method to minimize memory impact
   def consumingIterator(data: MutableList[Bytes]): Iterator[Bytes] = new Iterator[Bytes] {
@@ -34,14 +39,16 @@ object Bytes extends ((Array[Byte], Int, Int) => Bytes) {
     }
   }
 
-  def empty(length: Int): Bytes = Bytes(new Array[Byte](length), 0, 0)
   def zero(length: Int): Bytes = Bytes(new Array[Byte](length), 0, length)
   def zero(size: Size): Bytes = zero(size.value toInt)
 
   implicit class SizeOfBytesList(val data: Iterable[Bytes]) extends AnyVal {
-    def totalSize: Size = data.map(_.size).foldLeft(Size.Zero)(_+_)
+    def sizeInBytes: Size = data.map(_.size).foldLeft(Size.Zero)(_+_)
   }
 
+  implicit class WriteOutputStream(val u: java.io.OutputStream) extends AnyVal {
+    def write(bytes: Bytes) = u.write(bytes.data, bytes.offset, bytes.length)
+  }
   implicit class UpdateChecksum(val u: java.util.zip.Checksum) extends AnyVal {
     def update(bytes: Bytes) = u.update(bytes.data, bytes.offset, bytes.length)
   }

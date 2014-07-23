@@ -38,7 +38,7 @@ trait DataStorePart extends DataBackendSlice with Lifecycle { _: DataSettingsSli
       val initialDataFileNumber = entry.start / dataSettings.blocksize
       dataFileDistributionFor(initialDataFileNumber, entry.start, entry.size, Nil).iterator.map {
         case (dataFileNumber, offsetInFile, currentSize) =>
-          execute(dataFileNumber){ _ read (offsetInFile.value, Bytes zero currentSize) }
+          execute(dataFileNumber){ _ read (offsetInFile.value, currentSize) }
       }
     }
 

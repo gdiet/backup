@@ -70,7 +70,7 @@ trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreS
       val storeRanges = freeRanges dequeue estimatedSize
       data.foldLeft[RangesOrUnstored](Ranges(storeRanges)) { case (ranges, bytes) => storeOneChunk(bytes, ranges)} match {
         case Unstored(additionalData) =>
-          storeRanges ::: storePackedData(additionalData.iterator, additionalData.totalSize)
+          storeRanges ::: storePackedData(additionalData.iterator, additionalData.sizeInBytes)
         case Ranges(remaining) =>
           remaining foreach freeRanges.enqueue
           remaining match {
