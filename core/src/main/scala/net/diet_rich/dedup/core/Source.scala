@@ -4,6 +4,7 @@
 package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.core.values.{Bytes, Size}
+import net.diet_rich.dedup.util.io.{EnhancedRandomAccessFile, EnhancedInputStream}
 import net.diet_rich.dedup.util.valueOf
 
 trait Source {
@@ -26,8 +27,14 @@ object Source {
     def asSource = new ResettableSource {
       override def size: Size = Size(f length())
       override def close: Unit = f close()
-      override def read(count: Int): Bytes = Bytes zero count fillFrom f
+      override def read(count: Int): Bytes = Bytes zero count fillFrom f.readMethod
       override def reset: Unit = f seek 0
     }
+  }
+
+  def fromInputStream(in: java.io.InputStream, expectedSize: Size): Source = new Source {
+    def size: Size = expectedSize
+    def read(count: Int): Bytes = Bytes zero count fillFrom in.readMethod
+    def close: Unit = in close()
   }
 }

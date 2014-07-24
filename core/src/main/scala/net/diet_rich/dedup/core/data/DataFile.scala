@@ -7,6 +7,7 @@ import java.io.{IOException, File, RandomAccessFile}
 
 import net.diet_rich.dedup.core.values.{Size, Bytes}
 import net.diet_rich.dedup.util.init
+import net.diet_rich.dedup.util.io.EnhancedRandomAccessFile
 
 object DataFile {
   val headerBytes = 16
@@ -77,7 +78,7 @@ class DataFile(dataFileNumber: Long, file: File, readonly: Boolean) {
   def read(offsetInFileData: Long, size: Size): Bytes =
     init(Bytes zero size) { bytes =>
       fileAccess seek (offsetInFileData + headerBytes)
-      bytes fillFrom fileAccess
+      bytes fillFrom fileAccess.readMethod
     }
 
   def recalculatePrint(): Unit = {

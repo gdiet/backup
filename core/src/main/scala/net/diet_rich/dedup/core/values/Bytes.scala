@@ -63,11 +63,11 @@ object Bytes extends ((Array[Byte], Int, Int) => Bytes) {
   }
 
   implicit class BytesReader(val bytes: Bytes) extends AnyVal {
-    def fillFrom(input: java.io.RandomAccessFile): Bytes = {
+    def fillFrom(input: (Array[Byte], Int, Int) => Int): Bytes = {
       import bytes._
       @annotation.tailrec
       def readRecurse(offset: Int, length: Int): Int =
-        input.read(data, offset, length) match {
+        input(data, offset, length) match {
           case n if n < 1 => offset
           case n => if (n == length) offset + n else readRecurse(offset + n, length - n)
         }

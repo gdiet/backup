@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.util
 
-import java.io.{PrintWriter, File}
+import java.io.{InputStream, RandomAccessFile, PrintWriter, File}
 import scala.io.Source
 
 package object io {
@@ -37,5 +37,11 @@ package object io {
 
   implicit class EnhancedFile(val file: File) extends AnyVal {
     def / (child: String) = new File(file, child)
+  }
+  implicit class EnhancedRandomAccessFile(val file: RandomAccessFile) extends AnyVal {
+    def readMethod = file read (_: Array[Byte], _: Int, _: Int)
+  }
+  implicit class EnhancedInputStream(val in: InputStream) extends AnyVal {
+    def readMethod = in read (_: Array[Byte], _: Int, _: Int)
   }
 }

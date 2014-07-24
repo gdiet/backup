@@ -37,10 +37,8 @@ class DedupResourceFactory(repositoryPath: String, writeEnabled: Boolean, deflat
       case Some(dataid) => fileResourceFactory(fileSystem, treeEntry)
     }
 
-  def getDirectoryResourceFromTreeEntry(treeEntry: TreeEntry): DirectoryResource = {
-    require(treeEntry.data isEmpty, s"trying to get a directory resource for the file $treeEntry")
+  def getDirectoryResourceFromTreeEntry(treeEntry: TreeEntry): DirectoryResource =
     directoryResourceFactory(fileSystem, treeEntry, this)
-  }
 
   // TODO check whether this is as concise as it can be
   private val directoryResourceFactory = if (writeEnabled) DirectoryResource.readwrite _ else DirectoryResource.readonly _
