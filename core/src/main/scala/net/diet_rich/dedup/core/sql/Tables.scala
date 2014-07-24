@@ -36,7 +36,7 @@ trait TablesPart extends SessionSlice with Lifecycle {
       createStoreEntryUpdate(dataid, range.start, range.fin).execute
     )
 
-    // general
+    // Note: Writing is synchronized, so "create only if not exists" can be implemented.
     def inTransaction[T](f: => T): T = synchronized(f)
   }
 

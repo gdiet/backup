@@ -40,6 +40,7 @@ object Repository {
       )
       require(settingsFromDatabase(sql.databaseVersionKey) == sql.databaseVersionValue, s"${sql.databaseVersionKey} in database has value ${settingsFromDatabase(sql.databaseVersionKey)} but expected ${sql.databaseVersionValue}")
       require(settingsFromDatabase(data.versionKey) == data.versionValue, s"${data.versionKey} in database has value ${settingsFromDatabase(data.versionValue)} but expected ${data.versionValue}")
+      // TODO blocksize may differ, no problem in that. Separate settings file only for the data files settings?
       require(settingsFromDatabase == settingsFromFile, s"settings from file $settingsFile do not match settings from database.\nsettings from file: $settingsFromFile\nsettings from database: $settingsFromDatabase")
     }
     new FileSystem with ConfigurationPart with FileSystem.BasicPart

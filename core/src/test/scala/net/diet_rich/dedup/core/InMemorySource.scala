@@ -7,7 +7,7 @@ import net.diet_rich.dedup.util.valueOf
 
 import net.diet_rich.dedup.core.values.{Size, Bytes}
 
-class InMemorySource(data: Bytes) extends Source {
+class InMemorySource(data: Bytes) extends ResettableSource {
   private var position: Int = data.offset
   def size: Size = data.size
   def read(count: Int): Bytes = {
