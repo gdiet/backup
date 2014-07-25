@@ -22,7 +22,7 @@ trait DirectoryWriteResource extends DeletableCollectionResource with AbstractWr
     resourceFactory getDirectoryResourceFromTreeEntry newEntry
   }
 
-  final def createNew(newName: String, inputStream: InputStream, length: LongJ, contentType: String): Resource = debug(s"createNew($newName, in, $length, $contentType)"){
+  override final def createNew(newName: String, inputStream: InputStream, length: LongJ, contentType: String): Resource = debug(s"createNew($newName, in, $length, $contentType)"){
     val source = Source fromInputStream (inputStream, Size(length))
     // FIXME needs create-or-overwrite
     val newEntry = fileSystem storeUnchecked (treeEntry.id, newName, source, Time now())

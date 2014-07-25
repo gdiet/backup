@@ -11,6 +11,11 @@ import scala.concurrent.{ExecutionContext, Future}
 import net.diet_rich.dedup.core.values.{TreeEntryID, TreeEntry, Bytes, DataEntryID, Time, Print, Hash, Size}
 import net.diet_rich.dedup.util.{BlockingThreadPoolExecutor, Memory, resultOf}
 
+trait StoreInterface {
+  def read(entry: DataEntryID): Iterator[Bytes]
+  def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntry
+}
+
 trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with StoreSettingsSlice with DataHandlerSlice =>
 
   override abstract def teardown() = {

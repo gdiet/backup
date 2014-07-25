@@ -16,7 +16,7 @@ trait TreeInterface {
   def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def markDeleted(id: TreeEntryID, deletionTime: Option[Time] = Some(Time now())): Boolean
-  def moveRename(id: TreeEntryID, newParent: TreeEntryID, newName: String): Boolean
+  def change(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID]): Option[TreeEntry]
   def sizeOf(id: DataEntryID): Option[Size]
   def entries(path: Path): List[TreeEntry]
 }
@@ -25,8 +25,8 @@ trait Tree extends TreeInterface with sql.TablesPart {
   override final def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = tables treeChildren parent
   override final def children(parent: TreeEntryID): List[TreeEntry] = childrenWithDeleted(parent) filter (_.deleted isEmpty)
   override final def children(parent: TreeEntryID, name: String): List[TreeEntry] = children(parent) filter (_.name === name)
-  override final def markDeleted(id: TreeEntryID, deletionTime: Option[Time]): Boolean = tables markDeleted (id, deletionTime)
-  override final def moveRename(id: TreeEntryID, newParent: TreeEntryID, newName: String): Boolean = tables moveRename (id, newParent, newName)
+  override final def markDeleted(id: TreeEntryID, deletionTime: Option[Time]): Boolean = tables markDeleted (id, deletionTime) // TODO can be written shorter using function values?
+  override final def change(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID]): Option[TreeEntry] = tables updateTreeEntry (id, newParent, newName, newTime, newData)
   override final def sizeOf(id: DataEntryID): Option[Size] = tables dataEntry id map (_.size)
 
   override final def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry =
@@ -34,6 +34,12 @@ trait Tree extends TreeInterface with sql.TablesPart {
   override final def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry = tables inTransaction {
     children(parent) find (_.name === name) match {
       case Some(entry) => throw new IOException(s"entry $entry already exists")
+      case None => createUnchecked(parent, name, changed, dataid)
+    }
+  }
+  final def createOrReplace(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry = tables inTransaction {
+    children(parent) find (_.name === name) match {
+      case Some(entry) => change(entry id, parent, name, changed, dataid); entry
       case None => createUnchecked(parent, name, changed, dataid)
     }
   }

@@ -65,6 +65,7 @@ object DBUtilities {
     """.stripMargin execute session
 
   // Settings
+  // TODO use MERGE to update settings?
   private val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT key, value FROM Settings;")
   private val deleteSettingsQuery = StaticQuery updateNA "DELETE FROM Settings;"
   private val insertSettingsQuery = StaticQuery.update[(String, String)]("INSERT INTO Settings (key, value) VALUES (?, ?);")

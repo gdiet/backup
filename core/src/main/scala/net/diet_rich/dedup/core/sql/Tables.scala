@@ -19,7 +19,10 @@ trait TablesPart extends SessionSlice with Lifecycle {
       TreeEntry(id, parent, name, changed, dataid, None)
     }
     def markDeleted(id: TreeEntryID, deletionTime: Option[Time]): Boolean = setTreeEntryDeletedUpdate(deletionTime, id).first === 1
-    def moveRename(id: TreeEntryID, newParent: TreeEntryID, newName: String): Boolean = setTreeEntryPathUpdate(newName, newParent, id).first === 1
+    def updateTreeEntry(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID]): Option[TreeEntry] =
+      if (updateTreeEntryUpdate(newParent, newName, newTime, newData, id).first === 1)
+        Some(TreeEntry(id, newParent, newName, newTime, newData, None))
+      else None
 
     // DataEntries
     def dataEntry(id: DataEntryID): Option[DataEntry] = dataEntryForIdQuery(id).firstOption
@@ -81,7 +84,7 @@ object TableQueries {
   val treeChildrenForParentQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE parent = ?;")
   val nextTreeEntryIdQuery = StaticQuery.queryNA[TreeEntryID]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")
   val setTreeEntryDeletedUpdate = StaticQuery.update[(Option[Time], TreeEntryID)]("UPDATE TreeEntries SET deleted = ? WHERE id = ?;")
-  val setTreeEntryPathUpdate = StaticQuery.update[(String, TreeEntryID, TreeEntryID)]("UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?;")
+  val updateTreeEntryUpdate = StaticQuery.update[(TreeEntryID, String, Option[Time], Option[DataEntryID], TreeEntryID)]("UPDATE TreeEntries SET parent = ?, name = ?, changed = ?, dataid = ? WHERE id = ? AND deleted IS NULL;")
   val createTreeEntryUpdate = StaticQuery.update[(TreeEntryID, TreeEntryID, String, Option[Time], Option[DataEntryID])]("INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?);")
 
   // DataEntries

@@ -24,7 +24,7 @@ trait AbstractWriteResource extends DeletableResource with MoveableResource { _:
       case DirectoryResource(`fileSystem`, dir, _) =>
         if (newName isEmpty) throw new BadRequestException("Rename not possible: New name is empty.")
         if (newName matches ".*[\\?\\*\\/\\\\].*") throw new BadRequestException(s"Rename not possible: New name '$newName' contains illegal characters, one of [?*/\\].")
-        if (!fileSystem.moveRename(treeEntry id, dir id, newName)) log warn s"Could not move $treeEntry to $dir."
+        if (fileSystem.change(treeEntry id, dir id, newName, treeEntry changed, treeEntry data) isEmpty) log warn s"Could not move $treeEntry to $dir."
       case other => throw new BadRequestException(s"Can't move $this to $other.")
     }
   }
