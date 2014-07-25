@@ -17,6 +17,7 @@ class DedupResourceFactory(repositoryPath: String, writeEnabled: Boolean, deflat
 
   private val fileSystem = init(Repository.fileSystem(
     new File(repositoryPath),
+    // TODO StoreMethod fromString instead
     if (deflate) StoreMethod.DEFLATE else StoreMethod.STORE,
     readonly = !writeEnabled
   ))(_.setup())

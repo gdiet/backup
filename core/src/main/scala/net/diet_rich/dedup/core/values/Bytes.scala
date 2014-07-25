@@ -21,9 +21,9 @@ final case class Bytes(data: Array[Byte], offset: Int, length: Int) {
   }
   // Note: Overridden so it is not used unwillingly, e.g. in matches
   override def equals(other: Any) = !!!
-  private def theData = data drop offset take length
+  def toByteArray: Array[Byte] = data drop offset take length
   // Note: Possibly slow, use with care
-  def fullyEquals(other: Bytes) = length == other.length && java.util.Arrays.equals(theData, other.theData)
+  def fullyEquals(other: Bytes) = length == other.length && java.util.Arrays.equals(toByteArray, other.toByteArray)
 }
 
 object Bytes extends ((Array[Byte], Int, Int) => Bytes) {

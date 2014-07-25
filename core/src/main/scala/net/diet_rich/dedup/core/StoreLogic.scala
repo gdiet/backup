@@ -32,8 +32,9 @@ trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with S
 
   private def inStoreContext[T] (f: => T): T = resultOf(Future(f)(storeContext))
 
-  protected def dataEntryFor(source: Source): DataEntryID = {
+  private def dataEntryFor(source: Source): DataEntryID = {
     val printData = source read FileSystem.PRINTSIZE
+    // FIXME check printData size == 0
     val print = Print(printData)
     if (dataHandler hasSizeAndPrint (source size, print))
       tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
@@ -42,7 +43,7 @@ trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with S
   }
 
   import Memory._
-  protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = Memory.reserved(source.size.value) {
+  private def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = Memory.reserved(source.size.value) {
     case Reserved(_) => preloadDataThatMayBeAlreadyKnown(printData, print, source)
     case NotAvailable(_) => source match {
       case source: ResettableSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
@@ -50,19 +51,19 @@ trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with S
     }
   }
 
-  protected def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = {
+  private def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = {
     val bytes = (printData :: source.allData.toList).to[MutableList]
     val (hash, size) = Hash calculate (storeSettings hashAlgorithm, bytes iterator)
     dataHandler.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse storeDataFullyPreloaded(bytes, size, print, hash)
   }
 
-  protected def storeDataFullyPreloaded(bytes: MutableList[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
+  private def storeDataFullyPreloaded(bytes: MutableList[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
     // TODO why don't we call storeSourceData here and let it do the packing?
     val packedData = storeSettings.storeMethod.pack(Bytes.consumingIterator(bytes)).to[MutableList] // FIXME manual test that memory consumption is OK
     dataHandler storePackedData (Bytes consumingIterator packedData, size, print, hash)
   }
 
-  protected def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Print, source: ResettableSource): DataEntryID = {
+  private def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Print, source: ResettableSource): DataEntryID = {
     val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData
     val (hash, size) = Hash.calculate(storeSettings hashAlgorithm, bytes)
     dataHandler.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {

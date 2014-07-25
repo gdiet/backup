@@ -10,12 +10,22 @@ import net.diet_rich.dedup.util.init
 import net.diet_rich.dedup.util.io.EnhancedFile
 
 package object testutil {
-  val testData = init(new File("target/testData"))(_.mkdirs)
+  val testData = init(new File("./target/testData"))(_.mkdirs)
 
   def newTestFile(relativePath: String): File =
     init(testData / relativePath){ file =>
       file.getParentFile mkdirs()
       file delete()
+    }
+
+  def newTestDir(relativePath: String): File =
+    init(testData / relativePath){ file =>
+      def deleteTree(file: File): Boolean = {
+        Option(file.listFiles).toSeq.flatten foreach deleteTree
+        file delete()
+      }
+      deleteTree(file)
+      file mkdirs()
     }
 
   implicit class ByteArrayView(val b: Array[Byte]) extends AnyVal {

@@ -68,10 +68,13 @@ trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreS
       }
     }
 
-    // FIXME was passiert bei estimatedSize = 0 (und/oder bei dataSize = 0)?
     private def storePackedData(data: Iterator[Bytes], estimatedSize: Size): List[DataRange] = {
       val storeRanges = freeRanges dequeue estimatedSize
-      data.foldLeft[RangesOrUnstored](Ranges(storeRanges)) { case (ranges, bytes) => storeOneChunk(bytes, ranges)} match {
+      val remaining = data.foldLeft[RangesOrUnstored](Ranges(storeRanges)) {
+        case (ranges, Bytes(_, _, 0)) => ranges
+        case (ranges, bytes) => storeOneChunk(bytes, ranges)
+      }
+      remaining match {
         case Unstored(additionalData) =>
           storeRanges ::: storePackedData(additionalData.iterator, additionalData.sizeInBytes)
         case Ranges(remaining) =>

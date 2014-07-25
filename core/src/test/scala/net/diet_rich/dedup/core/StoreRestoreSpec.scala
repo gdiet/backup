@@ -5,16 +5,30 @@ package net.diet_rich.dedup.core
 
 import org.specs2.SpecificationWithJUnit
 
-import net.diet_rich.dedup.core.values.{Bytes, Position, DataRange, Path, StoreMethod, Time}
+import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util.init
+import net.diet_rich.dedup.testutil.newTestDir
 
 import FileSystem.{BasicPart, ROOTID}
 
 class StoreRestoreSpec extends SpecificationWithJUnit { def is = s2"""
 ${"Tests for storing and restoring data".title}
 
-Simple store and subsequent restore should be possible $storeRestore
+Simple store and subsequent restore should be possible storeRestore $storeRestore
+Storing empty files should be possible $storeZeroBytes
   """
+
+  // TODO merge these two tests
+
+  def storeZeroBytes = {
+    val repository = newTestDir("StoreRestoreSpec.storeZeroBytes")
+    Repository.create(repository)
+    Repository(repository, storeMethod = StoreMethod.STORE){ fileSystem =>
+      val source = Source fromInputStream (new java.io.ByteArrayInputStream(Array()), Size(0))
+      fileSystem storeUnchecked (FileSystem.ROOTID, "name", source, Time now())
+      success
+    }
+  }
 
   def storeRestore = {
     val fs: FileSystem = new FileSystem
