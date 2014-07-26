@@ -17,7 +17,7 @@ import net.diet_rich.dedup.core.values.TreeEntry
 // TODO check whether we want CallLogging at all and why not here
 
 // TODO: FileResource is immutable. Do  we want to reflect changes to file system entries?
-case class FileResource(fileSystem: FileSystem, treeEntry: TreeEntry) extends AbstractResource with GetableResource {
+trait FileResource extends AbstractResource with GetableResource {
   override final def getContentLength(): JavaLong = debug("getContentLength()") { treeEntry.data flatMap fileSystem.sizeOf map (_.value) getOrElse[Long] 0L }
   override final def getContentType(accepts: String): String = debug(s"getContentType(accepts: $accepts)") {
     assume(accepts == null || accepts.split(",").contains("application/octet-stream")) // TODO remove?
@@ -38,9 +38,5 @@ case class FileResource(fileSystem: FileSystem, treeEntry: TreeEntry) extends Ab
     }
 }
 
-object FileResource {
-  def readonly(fileSystem: FileSystem, treeEntry: TreeEntry) =
-    new FileResource(fileSystem, treeEntry)
-  def readwrite(fileSystem: FileSystem, treeEntry: TreeEntry) =
-    new FileResource(fileSystem, treeEntry) with AbstractWriteResource
-}
+case class FileResourceReadOnly(fileSystem: FileSystem, treeEntry: TreeEntry) extends FileResource with AbstractReadResource
+case class FileResourceReadWrite(fileSystem: FileSystem, treeEntry: TreeEntry) extends FileResource with AbstractWriteResource

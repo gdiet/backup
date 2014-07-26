@@ -35,6 +35,6 @@ class DedupResourceFactory(repository: File, writeEnabled: Boolean, storeMethod:
   def getDirectoryResourceFromTreeEntry(treeEntry: TreeEntry): DirectoryResource =
     directoryResourceFactory(fileSystem, treeEntry, this)
 
-  private val directoryResourceFactory = if (writeEnabled) DirectoryResource.readwrite _ else DirectoryResource.readonly _
-  private val fileResourceFactory = if (writeEnabled) FileResource.readwrite _ else FileResource.readonly _
+  private val directoryResourceFactory = if (writeEnabled) DirectoryResourceReadWrite.apply _ else DirectoryResourceReadOnly.apply _
+  private val fileResourceFactory = if (writeEnabled) FileResourceReadWrite.apply _ else FileResourceReadOnly.apply _
 }

@@ -13,7 +13,8 @@ import net.diet_rich.dedup.core.values.TreeEntry
 import net.diet_rich.dedup.util.CallLogging
 
 // TODO have a look at FolderResource
-case class DirectoryResource(fileSystem: FileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) extends AbstractResource with CollectionResource with CallLogging {
+trait DirectoryResource extends AbstractResource with CollectionResource {
+  val resourceFactory: DedupResourceFactory
   override final def child(childName: String): Resource = debug(s"child(childName: '$childName')") {
     // FIXME utiliy method firstChild
     fileSystem.children(treeEntry.id, childName).headOption.map(resourceFactory.getResourceFromTreeEntry).orNull
@@ -25,9 +26,5 @@ case class DirectoryResource(fileSystem: FileSystem, treeEntry: TreeEntry, resou
   override final def getModifiedDate(): Date = debug("getModifiedDate") { treeEntry.changed.map(_.asDate).orNull }
 }
 
-object DirectoryResource {
-  def readonly(fileSystem: FileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) =
-    new DirectoryResource(fileSystem, treeEntry, resourceFactory)
-  def readwrite(fileSystem: FileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) =
-    new DirectoryResource(fileSystem, treeEntry, resourceFactory) with DirectoryWriteResource
-}
+case class DirectoryResourceReadOnly (fileSystem: FileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) extends DirectoryResource with AbstractReadResource
+case class DirectoryResourceReadWrite(fileSystem: FileSystem, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory) extends DirectoryResource with DirectoryWriteResource
