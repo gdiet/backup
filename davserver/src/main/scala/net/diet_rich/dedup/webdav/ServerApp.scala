@@ -3,6 +3,8 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.webdav
 
+import net.diet_rich.dedup.core.values.StoreMethod
+
 import scala.util.control.NonFatal
 
 import org.eclipse.jetty.server.Server
@@ -16,7 +18,7 @@ object ServerApp extends App with Logging {
 
   val repositoryPath :: options = args.toList
   val writeEnabled = options contains "READWRITE"
-  val deflate = options contains "DEFLATE"
+  val storeMethod = if (options contains "DEFLATE") StoreMethod.DEFLATE else StoreMethod.STORE
   val serverPort = options find (_ startsWith "port:") map (_ substring 5) getOrElse "8080" toInt
 
   val maybeServer = initServer(serverPort)
@@ -24,7 +26,7 @@ object ServerApp extends App with Logging {
 
   def initServer(serverPort: Int): Either[Error, Server] = {
     try {
-      val resourceFactory = new DedupResourceFactory(repositoryPath, writeEnabled = writeEnabled, deflate = deflate)
+      val resourceFactory = new DedupResourceFactory(repositoryPath, writeEnabled = writeEnabled, storeMethod)
       val miltonConfigurator = new LocalMiltonConfigurator(resourceFactory)
       val miltonFilter = new LocalMiltonFilter(miltonConfigurator)
       val filterHolder = new FilterHolder(miltonFilter)
