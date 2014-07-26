@@ -21,4 +21,10 @@ object FileSystem {
     with sql.TablesPart
     with FreeRangesPart
     with data.DataStorePart { _: StoreSettingsSlice with DataBackendSlice with data.DataSettingsSlice => }
+
+  implicit class FileSystemUtilities(val fs: FileSystem) extends AnyVal {
+    def firstChild(parent: TreeEntryID, name: String): Option[TreeEntry] = fs.children(parent, name).headOption
+    def firstChildren(parent: TreeEntryID): List[TreeEntry] = fs.children(parent).groupBy(_.name).values.flatMap(_.headOption).toList
+  }
 }
+

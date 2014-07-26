@@ -19,12 +19,10 @@ import net.diet_rich.dedup.core.values.{Time, Size, TreeEntry}
 trait DirectoryResource extends AbstractResource with CollectionResource {
   val resourceFactory: DedupResourceFactory
   override final def child(childName: String): Resource = debug(s"child(childName: '$childName')") {
-    // FIXME utiliy method firstChild
-    fileSystem.children(treeEntry.id, childName).headOption.map(resourceFactory.resourceFromTreeEntry).orNull
+    fileSystem.firstChild(treeEntry.id, childName).map(resourceFactory.resourceFromTreeEntry).orNull
   }
   override final def getChildren(): ListJ[_ <: Resource] = debug("getChildren()") {
-    // FIXME utiliy method firstChildren
-    fileSystem.children(treeEntry.id).groupBy(_.name).flatMap(_._2.headOption).map(resourceFactory.resourceFromTreeEntry).toSeq.asJava
+    fileSystem.firstChildren(treeEntry.id).map(resourceFactory.resourceFromTreeEntry).asJava
   }
   override final def getModifiedDate(): Date = debug("getModifiedDate()") { treeEntry.changed.map(_.asDate).orNull }
 }
