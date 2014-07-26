@@ -6,6 +6,7 @@ package net.diet_rich.dedup.webdav
 import java.io.OutputStream
 import java.lang.{Long => JavaLong}
 import java.util.{Date, Map => JavaMap}
+
 import scala.collection.JavaConverters.mapAsScalaMapConverter
 
 import io.milton.http.{Auth, Range}
@@ -13,8 +14,6 @@ import io.milton.resource.GetableResource
 
 import net.diet_rich.dedup.core.FileSystem
 import net.diet_rich.dedup.core.values.TreeEntry
-
-// TODO check whether we want CallLogging at all and why not here
 
 // TODO: FileResource is immutable. Do  we want to reflect changes to file system entries?
 trait FileResource extends AbstractResource with GetableResource {

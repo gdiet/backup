@@ -23,16 +23,16 @@ class DedupResourceFactory(repository: File, writeEnabled: Boolean, storeMethod:
   }
 
   override def getResource(host: String, path: String): Resource = debug(s"getResource(host: $host, path: $path)") {
-    fileSystem.entries(Path(path)).headOption.map(getResourceFromTreeEntry).orNull
+    fileSystem.entries(Path(path)).headOption.map(resourceFromTreeEntry).orNull
   }
 
-  def getResourceFromTreeEntry(treeEntry: TreeEntry): Resource =
+  def resourceFromTreeEntry(treeEntry: TreeEntry): Resource =
     treeEntry.data match {
       case None => directoryResourceFactory(fileSystem, treeEntry, this)
       case Some(dataid) => fileResourceFactory(fileSystem, treeEntry)
     }
 
-  def getDirectoryResourceFromTreeEntry(treeEntry: TreeEntry): DirectoryResource =
+  def directoryResourceFromTreeEntry(treeEntry: TreeEntry): DirectoryResource =
     directoryResourceFactory(fileSystem, treeEntry, this)
 
   private val directoryResourceFactory = if (writeEnabled) DirectoryResourceReadWrite.apply _ else DirectoryResourceReadOnly.apply _
