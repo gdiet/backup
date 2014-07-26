@@ -3,13 +3,13 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.webdav
 
-import net.diet_rich.dedup.core.values.StoreMethod
-
+import java.io.File
 import scala.util.control.NonFatal
 
 import org.eclipse.jetty.server.Server
 import org.eclipse.jetty.servlet.{FilterMapping, ServletHandler, FilterHolder}
 
+import net.diet_rich.dedup.core.values.StoreMethod
 import net.diet_rich.dedup.util.{init, Logging}
 
 object ServerApp extends App with Logging {
@@ -26,7 +26,7 @@ object ServerApp extends App with Logging {
 
   def initServer(serverPort: Int): Either[Error, Server] = {
     try {
-      val resourceFactory = new DedupResourceFactory(repositoryPath, writeEnabled = writeEnabled, storeMethod)
+      val resourceFactory = new DedupResourceFactory(new File(repositoryPath), writeEnabled = writeEnabled, storeMethod)
       val miltonConfigurator = new LocalMiltonConfigurator(resourceFactory)
       val miltonFilter = new LocalMiltonFilter(miltonConfigurator)
       val filterHolder = new FilterHolder(miltonFilter)

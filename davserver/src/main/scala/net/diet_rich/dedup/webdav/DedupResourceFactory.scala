@@ -12,10 +12,10 @@ import net.diet_rich.dedup.core.Repository
 import net.diet_rich.dedup.core.values.{TreeEntry, Path, StoreMethod}
 import net.diet_rich.dedup.util.{init, CallLogging, Logging}
 
-class DedupResourceFactory(repositoryPath: String, writeEnabled: Boolean, storeMethod: StoreMethod) extends ResourceFactory with Logging with CallLogging {
+class DedupResourceFactory(repository: File, writeEnabled: Boolean, storeMethod: StoreMethod) extends ResourceFactory with Logging with CallLogging {
   log info s"file system write access is ${if (writeEnabled) "enabled" else "disabled"}"
 
-  private val fileSystem = init(Repository.fileSystem(new File(repositoryPath), storeMethod, readonly = !writeEnabled))(_ setup())
+  private val fileSystem = init(Repository.fileSystem(repository, storeMethod, readonly = !writeEnabled))(_ setup())
 
   sys.addShutdownHook {
     log info "shutting down file system ..."
@@ -35,7 +35,6 @@ class DedupResourceFactory(repositoryPath: String, writeEnabled: Boolean, storeM
   def getDirectoryResourceFromTreeEntry(treeEntry: TreeEntry): DirectoryResource =
     directoryResourceFactory(fileSystem, treeEntry, this)
 
-  // TODO check whether this is as concise as it can be
   private val directoryResourceFactory = if (writeEnabled) DirectoryResource.readwrite _ else DirectoryResource.readonly _
   private val fileResourceFactory = if (writeEnabled) FileResource.readwrite _ else FileResource.readonly _
 }
