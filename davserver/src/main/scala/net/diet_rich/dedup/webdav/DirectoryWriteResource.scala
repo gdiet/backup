@@ -22,6 +22,7 @@ trait DirectoryWriteResource extends DeletableCollectionResource with AbstractWr
     resourceFactory getDirectoryResourceFromTreeEntry newEntry
   }
 
+  // TODO check ReplaceableResource
   override final def createNew(newName: String, inputStream: InputStream, length: LongJ, contentType: String): Resource = debug(s"createNew($newName, in, $length, $contentType)"){
     val source = Source fromInputStream (inputStream, Size(length))
     val newEntry = fileSystem createOrReplace (treeEntry.id, newName, source, Time now())

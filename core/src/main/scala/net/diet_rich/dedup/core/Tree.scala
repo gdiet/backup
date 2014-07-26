@@ -12,7 +12,6 @@ trait TreeInterface {
   def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry]
   def children(parent: TreeEntryID): List[TreeEntry]
   def children(parent: TreeEntryID, name: String): List[TreeEntry]
-  // TODO default in the interface or in the implementation?
   def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
@@ -31,21 +30,21 @@ trait Tree extends TreeInterface with sql.TablesPart {
   override final def change(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID]): Option[TreeEntry] = tables updateTreeEntry (id, newParent, newName, newTime, newData)
   override final def sizeOf(id: DataEntryID): Option[Size] = tables dataEntry id map (_.size)
 
-  override final def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry =
+  override final def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntry =
     tables createTreeEntry (parent, name, changed, dataid)
-  override final def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry = tables inTransaction {
+  override final def create(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntry = tables inTransaction {
     children(parent) find (_.name === name) match {
       case Some(entry) => throw new IOException(s"entry $entry already exists")
       case None => createUnchecked(parent, name, changed, dataid)
     }
   }
-  override final def createOrReplace(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry = tables inTransaction {
+  override final def createOrReplace(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntry = tables inTransaction {
     children(parent) find (_.name === name) match {
       case Some(entry) => change(entry id, parent, name, changed, dataid); entry
       case None => createUnchecked(parent, name, changed, dataid)
     }
   }
-  override final def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry = tables inTransaction {
+  override final def createWithPath(path: Path, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntry = tables inTransaction {
     val elements = path.elements
     if(elements.size === 0) throw new IOException("can't create the root entry")
     val parent = elements.dropRight(1).foldLeft(FileSystem ROOTID) { (node, childName) =>
