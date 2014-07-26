@@ -12,11 +12,13 @@ trait TreeInterface {
   def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry]
   def children(parent: TreeEntryID): List[TreeEntry]
   def children(parent: TreeEntryID, name: String): List[TreeEntry]
+  // TODO default in the interface or in the implementation?
   def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def markDeleted(id: TreeEntryID, deletionTime: Option[Time] = Some(Time now())): Boolean
   def change(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID]): Option[TreeEntry]
+  def createOrReplace(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def sizeOf(id: DataEntryID): Option[Size]
   def entries(path: Path): List[TreeEntry]
 }
@@ -37,7 +39,7 @@ trait Tree extends TreeInterface with sql.TablesPart {
       case None => createUnchecked(parent, name, changed, dataid)
     }
   }
-  final def createOrReplace(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry = tables inTransaction {
+  override final def createOrReplace(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry = tables inTransaction {
     children(parent) find (_.name === name) match {
       case Some(entry) => change(entry id, parent, name, changed, dataid); entry
       case None => createUnchecked(parent, name, changed, dataid)

@@ -18,6 +18,8 @@ package object testutil {
       file delete()
     }
 
+  def testDir(relativePath: String): File = testData / relativePath
+
   def newTestDir(relativePath: String): File =
     init(testData / relativePath){ file =>
       def deleteTree(file: File): Boolean = {

@@ -14,6 +14,7 @@ import net.diet_rich.dedup.util.{BlockingThreadPoolExecutor, Memory, resultOf}
 trait StoreInterface {
   def read(entry: DataEntryID): Iterator[Bytes]
   def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntry
+  def createOrReplace(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntry
 }
 
 trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with StoreSettingsSlice with DataHandlerSlice =>
@@ -29,6 +30,11 @@ trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with S
   override final def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntry = inStoreContext {
     val dataID = dataEntryFor(source)
     createUnchecked(parent, name, Some(time), Some(dataID))
+  }
+
+  override final def createOrReplace(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntry = inStoreContext {
+    val dataID = dataEntryFor(source)
+    createOrReplace(parent, name, Some(time), Some(dataID))
   }
 
   private val storeExecutor = BlockingThreadPoolExecutor(storeSettings.threadPoolSize)

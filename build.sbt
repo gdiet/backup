@@ -16,6 +16,6 @@ scalacOptions in ThisBuild ++= Seq(
 
 lazy val core = project
 
-lazy val davserver = project dependsOn core
+lazy val davserver = project dependsOn (core  % "test->test;compile->compile")
 
 XitrumPackage.copy()
