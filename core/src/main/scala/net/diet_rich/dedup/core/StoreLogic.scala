@@ -9,7 +9,7 @@ import scala.collection.mutable.MutableList
 import scala.concurrent.{ExecutionContext, Future}
 
 import net.diet_rich.dedup.core.values.{TreeEntryID, TreeEntry, Bytes, DataEntryID, Time, Print, Hash, Size}
-import net.diet_rich.dedup.util.{BlockingThreadPoolExecutor, Memory, resultOf}
+import net.diet_rich.dedup.util.{Equal, BlockingThreadPoolExecutor, Memory, resultOf}
 
 trait StoreInterface {
   def read(entry: DataEntryID): Iterator[Bytes]
@@ -45,9 +45,10 @@ trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with S
 
   private def dataEntryFor(source: Source): DataEntryID = {
     val printData = source read FileSystem.PRINTSIZE
-    // FIXME check printData size == 0
     val print = Print(printData)
-    if (dataHandler hasSizeAndPrint (source size, print))
+    if (printData.size === Size(0))
+      dataHandler storePackedData(Iterator(), Size(0), print, Hash.calculate(storeSettings hashAlgorithm, Iterator())._1)
+    else if (dataHandler hasSizeAndPrint (source size, print))
       tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
     else
       dataHandler storeSourceData (printData, print, source.allData, source.size)

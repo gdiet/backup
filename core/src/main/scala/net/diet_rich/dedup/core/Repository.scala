@@ -63,17 +63,18 @@ object Repository {
     hashAlgorithm: String = "MD5",
     dataBlockSize: Size = Size(0x4000000) // 64MB
   ) = {
+    val settingsToWrite = Map(
+      hashAlgorithmKey -> (Hash algorithmChecked hashAlgorithm),
+      data.blocksizeKey -> dataBlockSize.value.toString,
+      data.versionKey -> data.versionValue,
+      sql.databaseVersionKey -> sql.databaseVersionValue
+    )
+
     val repo = repositoryContents(repositoryDirectory); import repo._
     require(repositoryDirectory.isDirectory, s"$repositoryDirectory is not a directory")
     require(repositoryDirectory.list.size == 0, s"$repositoryDirectory is not empty")
     require(databaseDirectory mkdir(), s"could not create database directory in $repositoryDirectory")
 
-    val settingsToWrite = Map(
-      hashAlgorithmKey -> hashAlgorithm,
-      data.blocksizeKey -> dataBlockSize.value.toString,
-      data.versionKey -> data.versionValue,
-      sql.databaseVersionKey -> sql.databaseVersionValue
-    )
     writeSettingsFile(settingsFile, settingsToWrite)
     productionDatabase(readonly = false) withSession { implicit session =>
       sql.DBUtilities.createTables(Hash digestLength hashAlgorithm)

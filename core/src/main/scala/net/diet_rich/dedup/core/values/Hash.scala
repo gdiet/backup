@@ -5,6 +5,8 @@ package net.diet_rich.dedup.core.values
 
 import java.security.MessageDigest
 
+import net.diet_rich.dedup.util.init
+
 final case class Hash(value: Array[Byte]) {
   def !==(a: Hash) = ! ===(a)
   def ===(a: Hash) = java.util.Arrays.equals(value, a.value)
@@ -13,14 +15,9 @@ final case class Hash(value: Array[Byte]) {
 }
 
 object Hash extends (Array[Byte] => Hash) {
-
-  def algorithmChecked(algorithm: String): String = {
-    MessageDigest getInstance algorithm
-    algorithm
-  }
-
-  def digestLength(algorithm: String): Int =
-    MessageDigest getInstance algorithm getDigestLength
+  def algorithmChecked(algorithm: String): String = init(algorithm)(MessageDigest getInstance _)
+  def digestLength(algorithm: String): Int = MessageDigest getInstance algorithm getDigestLength()
+  def empty(algorithm: String): Hash = Hash(MessageDigest getInstance algorithm digest)
 
   def calculate(algorithm: String, data: Iterator[Bytes]): (Hash, Size) = {
     val digester = MessageDigest getInstance algorithm
@@ -34,5 +31,4 @@ object Hash extends (Array[Byte] => Hash) {
     val result = withData(data.map { bytes => digester update bytes; size = size + bytes.length; bytes })
     (Hash(digester.digest), Size(size), result)
   }
-  
 }
