@@ -6,12 +6,13 @@ package net.diet_rich.dedup.core
 import java.io.File
 
 import net.diet_rich.dedup.core.values.Size
+import net.diet_rich.dedup.util.ConsoleApp
 
-object CreateRepository extends App {
-  // FIXME copy/paste, see also ServerApp
-  require(!(args isEmpty), "parameters: <repository path> [hashAlgorithm:(MD5)] [dataBlockSize:(67108864)]")
-  val repositoryPath :: options = args.toList
-  val hashAlgorithm: String = options find (_ startsWith "hashAlgorithm:") map (_ substring 14) getOrElse "MD5"
-  val dataBlockSize: Long = (options find (_ startsWith "dataBlockSize:") map (_ substring 14) getOrElse "67108864").toLong
-  Repository.create(new File(repositoryPath), hashAlgorithm, Size(dataBlockSize))
+object CreateRepository extends ConsoleApp {
+  checkUsage("parameters: <repository path> [hashAlgorithm:(MD5)] [dataBlockSize:(67108864)]")
+  Repository.create(
+    new File(repositoryPath),
+    option("hashAlgorithm:", "MD5"),
+    Size(option("dataBlockSize:", "67108864").toLong)
+  )
 }

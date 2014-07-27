@@ -20,7 +20,6 @@ libraryDependencies ++= Seq (
 
 libraryDependencies ++= Seq (
   "org.eclipse.jetty" % "jetty-server" % "9.2.1.v20140609",
-  // TODO still needed?
   "org.eclipse.jetty" % "jetty-servlet" % "9.2.1.v20140609"
 )
 

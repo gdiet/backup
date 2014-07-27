@@ -72,6 +72,7 @@ object DBUtilities {
   def allSettings(implicit session: CurrentSession): Map[String, String] = allSettingsQuery.toMap
   def replaceSettings(newSettings: Map[String, String])(implicit session: CurrentSession): Unit = {
     deleteSettingsQuery execute session
+    // FIXME can StaticQuery be precompiled?
     newSettings foreach { insertSettingsQuery(_) execute session }
   }
 

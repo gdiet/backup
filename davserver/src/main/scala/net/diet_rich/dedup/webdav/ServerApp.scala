@@ -10,18 +10,14 @@ import org.eclipse.jetty.server.Server
 import org.eclipse.jetty.servlet.{FilterMapping, ServletHandler, FilterHolder}
 
 import net.diet_rich.dedup.core.values.StoreMethod
-import net.diet_rich.dedup.util.{init, Logging}
+import net.diet_rich.dedup.util.{init, Logging,ConsoleApp}
 
-object ServerApp extends App with Logging {
-
-  require(!(args isEmpty), "parameters: <repository path> [READWRITE] [DEFLATE] [port:(8080)]")
-
-  val repositoryPath :: options = args.toList
+object ServerApp extends ConsoleApp with Logging {
+  checkUsage("parameters: <repository path> [READWRITE] [DEFLATE] [port:(8080)]")
   val writeEnabled = options contains "READWRITE"
   val storeMethod = if (options contains "DEFLATE") StoreMethod.DEFLATE else StoreMethod.STORE
-  val serverPort = options find (_ startsWith "port:") map (_ substring 5) getOrElse "8080" toInt
 
-  val maybeServer = initServer(serverPort)
+  val maybeServer = initServer(option("port:", "8080") toInt)
   maybeServer.fold(throw _, _ join)
 
   def initServer(serverPort: Int): Either[Error, Server] = {
