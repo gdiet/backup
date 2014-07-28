@@ -23,10 +23,10 @@ trait AbstractResource extends DigestResource with PropFindableResource with Log
   override final def isDigestAllowed: Boolean = debug("isDigestAllowed()") { true }
   
   // PropFindableResource
-  override final def getCreateDate: Date = debug("getCreateDate()") { getModifiedDate() }
+  override final def getCreateDate: Date = debug("getCreateDate()") { getModifiedDate }
   
   // Resource
-  override final def getName(): String = debug("getName()") { treeEntry.name }
+  override final def getName: String = debug("getName()") { treeEntry.name }
   override final def getUniqueId: String = debug("getUniqueId()") { null }
   override final def authenticate(user: String, password: String): Object = debug(s"authenticate(user: '$user', password: '$password')") { user }
   override final def getRealm: String = debug("getRealm()") { "dedup@diet-rich.net" }
@@ -42,12 +42,11 @@ trait AbstractWriteResource extends DeletableResource with MoveableResource { _:
   override final def delete(): Unit = { info(s"deleting $treeEntry"); if (!fileSystem.markDeleted(treeEntry id)) log warn s"could not mark deleted $treeEntry" }
 
   override final def moveTo(destination: CollectionResource, newName: String): Unit = debug(s"moveTo(destination: $destination, newName: $newName)") {
-    if (newName isEmpty) throw new BadRequestException("Rename not possible: New name is empty.")
+    if (newName.isEmpty) throw new BadRequestException("Rename not possible: New name is empty.")
     if (newName matches ".*[\\?\\*\\/\\\\].*") throw new BadRequestException(s"Rename not possible: New name '$newName' contains illegal characters, one of [?*/\\].")
     destination match {
-      case dirResource: DirectoryResource if dirResource.fileSystem == fileSystem => // TODO how to do this with unapply?
-        val dir = dirResource.treeEntry
-        if (fileSystem.change(treeEntry id, dir id, newName, treeEntry changed, treeEntry data) isEmpty) log warn s"Could not move $treeEntry to $dir."
+      case DirectoryResource(`fileSystem`, directory) =>
+        if (fileSystem.change(treeEntry id, directory id, newName, treeEntry changed, treeEntry data).isEmpty) log warn s"Could not move $treeEntry to $directory."
       case other => throw new BadRequestException(s"Can't move $this to $other.")
     }
   }

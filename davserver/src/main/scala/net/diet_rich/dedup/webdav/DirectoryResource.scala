@@ -27,6 +27,10 @@ trait DirectoryResource extends AbstractResource with CollectionResource {
   override final def getModifiedDate(): Date = debug("getModifiedDate()") { treeEntry.changed.map(_.asDate).orNull }
 }
 
+object DirectoryResource {
+  def unapply(directoryResource: DirectoryResource): Option[(FileSystem, TreeEntry)] = Some(directoryResource.fileSystem, directoryResource.treeEntry)
+}
+
 trait DirectoryWriteResource extends DeletableCollectionResource with AbstractWriteResource with MakeCollectionableResource with PutableResource { _: DirectoryResource =>
   override final def isLockedOutRecursive(request: Request): Boolean = debug(s"isLockedOutRecursive(request: $request) for directory ${treeEntry name}, ${treeEntry id}") { false }
 
