@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 version in ThisBuild := "0.10-SNAPSHOT"
 
-scalaVersion in ThisBuild := "2.11.1"
+scalaVersion in ThisBuild := "2.11.2"
 
 fork in Test in ThisBuild := true
 
