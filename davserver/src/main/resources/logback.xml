@@ -11,7 +11,10 @@
   <!-- suppress warnings about properties that can't be set, e.g. Win32FileAttributes -->
   <!-- TODO investigate whether these properties are relevant and how they can be retrieved -->
   <logger name="io.milton.http.webdav.PropertySourcePatchSetter" level="error"/>
-  
+
+  <!-- suppress warning from DefaultMiltonConfigurator about missing custom ResourceFactory name -->
+  <logger name="io.milton.servlet.DefaultMiltonConfigurator" level="error"/>
+
   <root level="warn">
     <appender-ref ref="STDOUT" />
   </root>

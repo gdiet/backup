@@ -23,8 +23,8 @@ object ServerApp extends ConsoleApp with Logging {
   def initServer(serverPort: Int): Either[Error, Server] = {
     try {
       val resourceFactory = new DedupResourceFactory(new File(repositoryPath), writeEnabled = writeEnabled, storeMethod)
-      val miltonConfigurator = new LocalMiltonConfigurator(resourceFactory)
-      val miltonFilter = new LocalMiltonFilter(miltonConfigurator)
+      val miltonConfigurator = new DedupMiltonConfigurator(resourceFactory)
+      val miltonFilter = new DedupMiltonFilter(miltonConfigurator)
       val filterHolder = new FilterHolder(miltonFilter)
       val servletHandler = init(new ServletHandler()){ _ addFilterWithMapping (filterHolder, "/*", FilterMapping.REQUEST) }
       val server = init(new Server(serverPort)){ _ setHandler servletHandler }
