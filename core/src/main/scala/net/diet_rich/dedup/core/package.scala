@@ -4,5 +4,5 @@
 package net.diet_rich.dedup
 
 package object core {
-  val hashAlgorithmKey = "StoreSettings.hashAlgorithm"
+  val hashAlgorithmKey = "hash algorithm"
 }

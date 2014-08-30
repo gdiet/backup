@@ -27,12 +27,8 @@ package object io {
   }
 
   def writeSettingsFile(file: File, settings: Map[String, String]): Unit =
-    using(new PrintWriter(file, "UTF-8")){
-      _.write(
-        settings
-          .map { case (key, value) => s"$key = $value" }
-          .mkString("\n")
-      )
+    using(new PrintWriter(file, "UTF-8")){ writer =>
+      settings map { case (key, value) => s"$key = $value" } foreach writer.println
     }
 
   implicit class EnhancedFile(val file: File) extends AnyVal {

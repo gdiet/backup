@@ -4,7 +4,7 @@
 package net.diet_rich.dedup.core
 
 package object data {
-  val versionKey = "Version.DataBackend"
+  val versionKey = "datastore version"
   val versionValue = "2.0"
-  val blocksizeKey = "DataBackendSettings.blocksize"
+  val blocksizeKey = "blocksize"
 }

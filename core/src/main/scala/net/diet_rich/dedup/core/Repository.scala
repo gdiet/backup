@@ -14,7 +14,7 @@ object Repository {
   private def repositoryContents(repositoryDirectory: File) = new {
     val databaseDirectory = repositoryDirectory / "database"
     val datafilesDirectory = repositoryDirectory / "datafiles"
-    val settingsFile = repositoryDirectory / "settings.txt"
+    val dataSettingsFile = datafilesDirectory / "settings.txt"
     def productionDatabase(readonly: Boolean) =
       sql.ProductionDatabase fromFile (databaseDirectory / "dedup", readonly)
   }
@@ -28,20 +28,18 @@ object Repository {
     fileHandlesPerStoreThread: Int = 4
   ): FileSystem = {
     val repo = repositoryContents(repositoryDirectory); import repo._
-    val settingsFromFile = readSettingsFile(settingsFile)
     trait ConfigurationPart extends sql.ThreadSpecificSessionsPart with StoreSettingsSlice with data.DataSettingsSlice {
-      override val database: CurrentDatabase = productionDatabase(readonly)
-      private val settingsFromDatabase = database withSession (sql.DBUtilities.allSettings(_))
-      override val storeSettings = StoreSettings(settingsFromDatabase(hashAlgorithmKey), processingThreadPoolSize, storeMethod)
-      override val dataSettings = data.DataSettings(
-        Size(settingsFromDatabase(data.blocksizeKey).toLong),
-        datafilesDirectory,
-        storeThreadPoolSize, fileHandlesPerStoreThread, readonly
-      )
-      require(settingsFromDatabase(sql.databaseVersionKey) == sql.databaseVersionValue, s"${sql.databaseVersionKey} in database has value ${settingsFromDatabase(sql.databaseVersionKey)} but expected ${sql.databaseVersionValue}")
-      require(settingsFromDatabase(data.versionKey) == data.versionValue, s"${data.versionKey} in database has value ${settingsFromDatabase(data.versionValue)} but expected ${data.versionValue}")
-      // TODO blocksize may differ, no problem in that. Separate settings file only for the data files settings?
-      require(settingsFromDatabase == settingsFromFile, s"settings from file $settingsFile do not match settings from database.\nsettings from file: $settingsFromFile\nsettings from database: $settingsFromDatabase")
+      override val database = productionDatabase(readonly)
+      override val storeSettings = {
+        val databaseSettings = database withSession (sql.DBUtilities.allSettings(_))
+        require(databaseSettings(sql.databaseVersionKey) == sql.databaseVersionValue, s"${sql.databaseVersionKey} in database has value ${databaseSettings(sql.databaseVersionKey)} but expected ${sql.databaseVersionValue}")
+        StoreSettings(databaseSettings(hashAlgorithmKey), processingThreadPoolSize, storeMethod)
+      }
+      override val dataSettings = {
+        val datafilesSettings = readSettingsFile(dataSettingsFile)
+        require(datafilesSettings(data.versionKey) == data.versionValue, s"${data.versionKey} in database has value ${datafilesSettings(data.versionValue)} but expected ${data.versionValue}")
+        data.DataSettings(Size(datafilesSettings(data.blocksizeKey) toLong), datafilesDirectory, storeThreadPoolSize, fileHandlesPerStoreThread, readonly)
+      }
     }
     new FileSystem with ConfigurationPart with FileSystem.BasicPart
   }
@@ -63,23 +61,26 @@ object Repository {
     hashAlgorithm: String = "MD5",
     dataBlockSize: Size = Size(0x4000000) // 64MB
   ) = {
-    val settingsToWrite = Map(
+    val databaseSettingsToWrite = Map(
       hashAlgorithmKey -> (Hash algorithmChecked hashAlgorithm),
-      data.blocksizeKey -> dataBlockSize.value.toString,
-      data.versionKey -> data.versionValue,
       sql.databaseVersionKey -> sql.databaseVersionValue
+    )
+    val dataSettingsToWrite = Map(
+      data.blocksizeKey -> dataBlockSize.value.toString,
+      data.versionKey -> data.versionValue
     )
 
     val repo = repositoryContents(repositoryDirectory); import repo._
     require(repositoryDirectory.isDirectory, s"$repositoryDirectory is not a directory")
     require(repositoryDirectory.list.size == 0, s"$repositoryDirectory is not empty")
-    require(databaseDirectory mkdir(), s"could not create database directory in $repositoryDirectory")
+    require(databaseDirectory mkdir(), s"could not create database directory $databaseDirectory")
+    require(datafilesDirectory mkdir(), s"could not create data directory $datafilesDirectory")
 
-    writeSettingsFile(settingsFile, settingsToWrite)
     productionDatabase(readonly = false) withSession { implicit session =>
       sql.DBUtilities.createTables(Hash digestLength hashAlgorithm)
       sql.DBUtilities.recreateIndexes
-      sql.DBUtilities.replaceSettings(settingsToWrite)
+      sql.DBUtilities.replaceSettings(databaseSettingsToWrite)
     }
+    writeSettingsFile(dataSettingsFile, dataSettingsToWrite)
   }
 }
