@@ -5,6 +5,7 @@ package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.core.data.DataBackendSlice
 import net.diet_rich.dedup.core.values.{Path, TreeEntry, TreeEntryID}
+import net.diet_rich.dedup.util.Equal
 
 trait FileSystem extends TreeInterface with StoreInterface with Lifecycle
 
@@ -25,6 +26,11 @@ object FileSystem {
   implicit class FileSystemUtilities(val fs: FileSystem) extends AnyVal {
     def firstChild(parent: TreeEntryID, name: String): Option[TreeEntry] = fs.children(parent, name).headOption
     def firstChildren(parent: TreeEntryID): List[TreeEntry] = fs.children(parent).groupBy(_.name).values.flatMap(_.headOption).toList
+
+    def path(id: TreeEntryID): Option[Path] = {
+      if (id === ROOTID) Some(Path.ROOTPATH) else {
+        fs.entry(id) flatMap {entry => path(entry.parent) map (_ / entry.name)}
+      }
+    }
   }
 }
-

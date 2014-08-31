@@ -10,7 +10,7 @@ import org.eclipse.jetty.server.Server
 import org.eclipse.jetty.servlet.{FilterMapping, ServletHandler, FilterHolder}
 
 import net.diet_rich.dedup.core.values.StoreMethod
-import net.diet_rich.dedup.util.{init, Logging,ConsoleApp}
+import net.diet_rich.dedup.util.{ConsoleApp, init, Logging}
 
 object ServerApp extends ConsoleApp with Logging {
   checkUsage("parameters: <repository path> [READWRITE] [DEFLATE] [port:(8080)]")

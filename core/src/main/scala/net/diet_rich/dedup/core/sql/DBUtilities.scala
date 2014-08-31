@@ -1,6 +1,6 @@
 package net.diet_rich.dedup.core.sql
 
-import scala.slick.jdbc.{SetParameter, GetResult, StaticQuery}
+import scala.slick.jdbc.StaticQuery
 
 import net.diet_rich.dedup.core.values.{DataRange, Path, Position, StoreEntry}
 

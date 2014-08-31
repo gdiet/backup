@@ -9,6 +9,7 @@ import net.diet_rich.dedup.core.values.{DataEntryID, TreeEntryID, TreeEntry, Tim
 import net.diet_rich.dedup.util.Equal
 
 trait TreeInterface {
+  def entry(id: TreeEntryID): Option[TreeEntry]
   def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry]
   def children(parent: TreeEntryID): List[TreeEntry]
   def children(parent: TreeEntryID, name: String): List[TreeEntry]
@@ -23,6 +24,7 @@ trait TreeInterface {
 }
 
 trait Tree extends TreeInterface with sql.TablesPart {
+  override final def entry(id: TreeEntryID): Option[TreeEntry] = tables treeEntry id
   override final def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = tables treeChildren parent
   override final def children(parent: TreeEntryID): List[TreeEntry] = childrenWithDeleted(parent) filter (_.deleted isEmpty)
   override final def children(parent: TreeEntryID, name: String): List[TreeEntry] = children(parent) filter (_.name === name)
