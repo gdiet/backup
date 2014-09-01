@@ -1,7 +1,7 @@
 // Copyright (c) Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-version in ThisBuild := "0.10-SNAPSHOT"
+version in ThisBuild := "0.1-SNAPSHOT"
 
 scalaVersion in ThisBuild := "2.11.2"
 
@@ -17,5 +17,7 @@ scalacOptions in ThisBuild ++= Seq(
 lazy val core = project
 
 lazy val davserver = project dependsOn (core  % "test->test;compile->compile")
+
+lazy val ftpserver = project dependsOn (core  % "test->test;compile->compile")
 
 XitrumPackage.copy()
