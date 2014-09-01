@@ -5,11 +5,12 @@ package net.diet_rich.dedup.core
 
 import java.io.IOException
 
-import net.diet_rich.dedup.core.values.{DataEntryID, TreeEntryID, TreeEntry, Time, Path, Size}
+import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util.Equal
 
 trait TreeInterface {
   def entry(id: TreeEntryID): Option[TreeEntry]
+  def dataEntry(id: DataEntryID): Option[DataEntry]
   def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry]
   def children(parent: TreeEntryID): List[TreeEntry]
   def children(parent: TreeEntryID, name: String): List[TreeEntry]
@@ -25,6 +26,7 @@ trait TreeInterface {
 
 trait Tree extends TreeInterface with sql.TablesPart {
   override final def entry(id: TreeEntryID): Option[TreeEntry] = tables treeEntry id
+  override final def dataEntry(id: DataEntryID): Option[DataEntry] = tables dataEntry id
   override final def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = tables treeChildren parent
   override final def children(parent: TreeEntryID): List[TreeEntry] = childrenWithDeleted(parent) filter (_.deleted isEmpty)
   override final def children(parent: TreeEntryID, name: String): List[TreeEntry] = children(parent) filter (_.name === name)
