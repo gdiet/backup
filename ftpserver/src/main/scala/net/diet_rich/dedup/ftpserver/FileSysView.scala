@@ -2,26 +2,29 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.ftpserver
 
+import java.io.IOException
+import java.io.FileNotFoundException
+import scala.collection.JavaConversions
+
+import org.apache.ftpserver.ftplet._
+
 import net.diet_rich.dedup.core.FileSystem
 import net.diet_rich.dedup.core.values.{TreeEntry, TreeEntryID}
 import net.diet_rich.dedup.util.{CallLogging, Logging}
-import org.apache.ftpserver.ftplet._
-import scala.collection.JavaConversions
-import java.io.IOException
-import java.io.FileNotFoundException
 
-class FileSysView(filesystem: FileSystem) extends FileSystemView with Logging with CallLogging {
+class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSystemView with Logging with CallLogging {
   log info "creating ftp file system view"
   
   private val rootDirectory = IsRepoFile(FileSystem.ROOTID)
   private var workingDirectory: IsRepoFile = rootDirectory
 
-  private def resolvePath(path: String): Option[RepoFile] = info(s"resolvePath($path)") {
+  private def resolvePath(path: String): Option[RepoFile] = debug(s"... resolvePath($path)") {
     def resolve(currentDir: IsRepoFile, path: List[String]): Option[RepoFile] = path match {
       case Nil          => Some(currentDir)
       case ""   :: tail => resolve(currentDir, tail)
       case "."  :: tail => resolve(currentDir, tail)
       case ".." :: tail => currentDir.parent flatMap (resolve(_, tail))
+      // this case is needed for creating new files
       case name :: Nil  => currentDir child name orElse Some(MaybeRepoFile(currentDir.id, name))
       case name :: tail => currentDir child name flatMap (resolve(_, tail))
     }
@@ -29,88 +32,86 @@ class FileSysView(filesystem: FileSystem) extends FileSystemView with Logging wi
     resolve(startDir, relativeDir split '/' toList)
   }
   
-  override def changeWorkingDirectory(dir: String): Boolean = info(s"... cd $dir") {
+  override def changeWorkingDirectory(dir: String): Boolean = info(s"... cd($dir)") {
     resolvePath(dir) match {
-      case Some(repoFile) =>
-        repoFile match {
-          case repoFile: IsRepoFile => workingDirectory = repoFile; true
-          case _ => false
-        }
-      case None => false
+      case Some(repoFile: IsRepoFile) => workingDirectory = repoFile; true
+      case _ => false
     }
   }
 
-  override def dispose(): Unit = info("... dispose"){/**/} // TODO info("dispose")(System.exit(0)) ???
+  override def dispose(): Unit = log info "... dispose()" // TODO info("dispose")(System.exit(0)) ???
 
-  override def getFile(name: String): FtpFile = info("... getting: " + name) {
+  override def getFile(name: String): FtpFile = info(s"... getFile($name)") {
     resolvePath(name) match {
       case Some(repoFile) => repoFile
-      case None => throw new IllegalArgumentException("could not resolve path $name")
+      case None => throw new IllegalArgumentException(s"could not resolve $workingDirectory / $name")
     }
   }
 
-  override def getHomeDirectory(): RepoFile = info("... getHomeDirectory")(rootDirectory)
+  override def getHomeDirectory: RepoFile = info("... getHomeDirectory()")(rootDirectory)
 
-  override def getWorkingDirectory(): RepoFile = info("... getWorkingDirectory")(workingDirectory)
+  override def getWorkingDirectory: RepoFile = info("... getWorkingDirectory()")(workingDirectory)
 
   // TODO random access can be easily implemented later on - see FtpFile.createInputStream and FtpFile.createOutputStream
-  override def isRandomAccessible(): Boolean = info("... isRandomAccessible")(false)
+  override def isRandomAccessible: Boolean = info("... isRandomAccessible()")(false)
+
+  // ******** end of implementation of FileSystemView interface ********
 
   sealed trait RepoFile extends FtpFile
 
+  /** A not-yet-existing ftp repo file used when creating new files or directories. */
   case class MaybeRepoFile(parent: TreeEntryID, name: String) extends RepoFile with Logging with CallLogging {
-    log.info(s"creating maybe repo file for id $parent/$name")
-
     override val toString = s"MaybeRepoFile($parent/$name)"
+    log debug s"creating $this"
 
-    def getAbsolutePath(): String = info(s"getAbsolutePath for $this") {
+    override def getAbsolutePath: String = debug(s"getAbsolutePath for $this") {
       filesystem.path(parent) match {
         case Some(path) => path.value + "/" + name
-        case _ => info("WARN: getAbsolutePath - node $parent does not exist")("")
+        case _ => debug("WARN: getAbsolutePath - node $parent does not exist")("")
       }
     }
-    def isFile(): Boolean = info(s"isFile for $this") { false }
-    def isDirectory(): Boolean = info(s"isDirectory for $this") { false }
-    def listFiles(): java.util.List[FtpFile] = info(s"listFiles for $this") { JavaConversions.seqAsJavaList(Seq()) }
-    def isHidden(): Boolean = info(s"isHidden for $this") { false }
-    def getSize(): Long = info(s"getSize for $this") { 0L }
-    def getLastModified(): Long = info(s"getLastModified for $this") { 0L }
-    def isReadable(): Boolean = info(s"isReadable for $this") { false }
-    def doesExist(): Boolean = info(s"doesExist for $this") { false }
-    def isWritable(): Boolean = info(s"isWritable for $this") { ??? }
-    def getName(): String = info(s"getName for $this") { name }
-    def getLinkCount(): Int = info(s"getLinkCount for $this") { 0 }
-    def getOwnerName(): String = info(s"getOwnerName for $this") { "backup" }
-    def getGroupName(): String = info(s"getGroupName for $this") { "dedup" }
-    def createInputStream(offset: Long): java.io.InputStream = info(s"createInputStream with offset $offset for $this") { throw new FileNotFoundException }
-    def createOutputStream(x$1: Long): java.io.OutputStream = info(s"createOutputStream for $this") { ??? }
-    def delete(): Boolean = info(s"delete $this") { false }
-    def isRemovable(): Boolean = info(s"isRemovable for $this") { false }
-    def mkdir(): Boolean = info(s"mkdir for $this") { ??? }
-    def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = info(s"move for $this to $target") { ??? }
-    def setLastModified(x$1: Long): Boolean = info(s"setLastModified for $this") { ??? }
+    override def isFile: Boolean = debug(s"isFile for $this") { false }
+    override def isDirectory: Boolean = debug(s"isDirectory for $this") { false }
+    override def listFiles: java.util.List[FtpFile] = debug(s"listFiles for $this") { java.util.Collections emptyList() }
+    override def isHidden: Boolean = debug(s"isHidden for $this") { false }
+    override def getSize: Long = debug(s"getSize for $this") { 0L }
+    override def getLastModified: Long = debug(s"getLastModified for $this") { 0L }
+    override def isReadable: Boolean = debug(s"isReadable for $this") { false }
+    override def doesExist: Boolean = debug(s"doesExist for $this") { false }
+    override def isWritable: Boolean = debug(s"isWritable for $this") { writeEnabled }
+    override def getName: String = debug(s"getName for $this") { name }
+    override def getLinkCount: Int = debug(s"getLinkCount for $this") { 0 }
+    override def getOwnerName: String = debug(s"getOwnerName for $this") { "backup" }
+    override def getGroupName: String = debug(s"getGroupName for $this") { "dedup" }
+    override def createInputStream(offset: Long): java.io.InputStream = debug(s"createInputStream with offset $offset for $this") { throw new FileNotFoundException }
+    override def createOutputStream(x$1: Long): java.io.OutputStream = debug(s"createOutputStream for $this") { ??? }
+    override def delete(): Boolean = debug(s"delete $this") { false }
+    override def isRemovable: Boolean = debug(s"isRemovable for $this") { false }
+    override def mkdir(): Boolean = debug(s"mkdir for $this") { ??? }
+    override def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = debug(s"move for $this to $target") { ??? }
+    override def setLastModified(x$1: Long): Boolean = debug(s"setLastModified for $this") { ??? }
   }
 
   case class IsRepoFile(id: TreeEntryID) extends RepoFile with Logging with CallLogging {
-    log.info(s"creating repo file for id $id")
+    log.debug(s"creating repo file for id $id")
 
     override val toString = s"RepoFile($id)"
 
     def parent: Option[IsRepoFile] =
       filesystem.entry(id).map(entry => IsRepoFile(entry.parent))
 
-    def getAbsolutePath(): String = info(s"getAbsolutePath for $this") {
+    def getAbsolutePath(): String = debug(s"getAbsolutePath for $this") {
       filesystem.path(id) match {
         case Some(path) => path.value
-        case _ => info("WARN: getAbsolutePath - node $id does not exist")("")
+        case _ => debug("WARN: getAbsolutePath - node $id does not exist")("")
       }
     }
 
-    def isFile(): Boolean = info(s"isFile for $this") {
+    def isFile(): Boolean = debug(s"isFile for $this") {
       filesystem.entry(id).flatMap(_.data).isDefined
     }
 
-    def isDirectory(): Boolean = info(s"isDirectory for $this") {
+    def isDirectory(): Boolean = debug(s"isDirectory for $this") {
       val entry = filesystem.entry(id)
       entry.isDefined && entry.flatMap(_.data).isEmpty
     }
@@ -121,13 +122,13 @@ class FileSysView(filesystem: FileSystem) extends FileSystemView with Logging wi
     def children =
       filesystem.children(id).map(e => IsRepoFile(e.id))
 
-    def listFiles(): java.util.List[FtpFile] = info(s"listFiles for $this") {
-      JavaConversions.seqAsJavaList(children.toSeq)
+    def listFiles(): java.util.List[FtpFile] = debug(s"listFiles for $this") {
+      JavaConversions seqAsJavaList children
     }
 
-    def isHidden(): Boolean = info(s"isHidden for $this") { false }
+    def isHidden(): Boolean = debug(s"isHidden for $this") { false }
 
-    def getSize(): Long = info(s"getSize for $this") {
+    def getSize(): Long = debug(s"getSize for $this") {
       ( for {
         treeEntry <- filesystem entry id
         dataid    <- treeEntry.data
@@ -135,36 +136,36 @@ class FileSysView(filesystem: FileSystem) extends FileSystemView with Logging wi
       } yield dataEntry.size.value) getOrElse 0L
     }
 
-    def getLastModified(): Long = info(s"getLastModified for $this") {
+    def getLastModified(): Long = debug(s"getLastModified for $this") {
       ( for {
         treeEntry <- filesystem entry id
         changed   <- treeEntry.changed
       } yield changed.value) getOrElse 0L
     }
 
-    def isReadable(): Boolean = info(s"isReadable for $this") {
+    def isReadable(): Boolean = debug(s"isReadable for $this") {
       filesystem.entry(id).isDefined
     }
 
-    def doesExist(): Boolean = info(s"doesExist for $this") {
+    def doesExist(): Boolean = debug(s"doesExist for $this") {
       filesystem.entry(id).isDefined
     }
 
-    def isWritable(): Boolean = info(s"isWritable for $this") { false } // TODO implement write
+    def isWritable(): Boolean = debug(s"isWritable for $this") { false } // TODO implement write
 
-    def getName(): String = info(s"getName for $this") {
+    def getName(): String = debug(s"getName for $this") {
       filesystem.entry(id).map(_.name).getOrElse("")
     }
 
-    def getLinkCount(): Int = info(s"getLinkCount for $this") {
+    def getLinkCount(): Int = debug(s"getLinkCount for $this") {
       if (doesExist) 1 else 0
     }
 
-    def getOwnerName(): String = info(s"getOwnerName for $this") { "backup" }
+    def getOwnerName(): String = debug(s"getOwnerName for $this") { "backup" }
 
-    def getGroupName(): String = info(s"getGroupName for $this") { "dedup" }
+    def getGroupName(): String = debug(s"getGroupName for $this") { "dedup" }
 
-    def createInputStream(offset: Long): java.io.InputStream = info(s"createInputStream with offset $offset for $this") {
+    def createInputStream(offset: Long): java.io.InputStream = debug(s"createInputStream with offset $offset for $this") {
       if (offset != 0) throw new IOException("not random accessible")
       filesystem.entry(id) match {
         case None => throw new FileNotFoundException
@@ -179,22 +180,22 @@ class FileSysView(filesystem: FileSystem) extends FileSystemView with Logging wi
       }
     }
 
-    def createOutputStream(x$1: Long): java.io.OutputStream = info(s"createOutputStream for $this") { ??? }
+    def createOutputStream(x$1: Long): java.io.OutputStream = debug(s"createOutputStream for $this") { ??? }
 
-    def delete(): Boolean = info(s"delete $this") { filesystem.markDeleted(id) }
+    def delete(): Boolean = debug(s"delete $this") { filesystem.markDeleted(id) }
 
-    def isRemovable(): Boolean = info(s"isRemovable for $this") { (??? == true) && (id != FileSystem.ROOTID) }
+    def isRemovable(): Boolean = debug(s"isRemovable for $this") { (??? == true) && (id != FileSystem.ROOTID) }
 
-    def mkdir(): Boolean = info(s"mkdir for $this") { ??? }
+    def mkdir(): Boolean = debug(s"mkdir for $this") { ??? }
 
-    def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = info(s"move for $this to $target") {
+    def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = debug(s"move for $this to $target") {
       target match {
         case target: MaybeRepoFile => ??? // filesystem.changePath(id, target.name, target.parent)
         case _ => false
       }
     }
 
-    def setLastModified(x$1: Long): Boolean = info(s"setLastModified for $this") { ??? }
+    def setLastModified(x$1: Long): Boolean = debug(s"setLastModified for $this") { ??? }
   }
 
 }

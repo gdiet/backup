@@ -23,7 +23,7 @@ object FtpServerApp extends ConsoleApp {
   val filesystem = init(Repository.fileSystem(new File(repositoryPath), storeMethod, readonly = !writeEnabled))(_ setup())
 
   val listener = init(new ListenerFactory()){_ setPort ftpPort} createListener()
-  val fileSystemFactory = new FileSystemFactory { def createFileSystemView (user: User) = new FileSysView(filesystem) }
+  val fileSystemFactory = new FileSystemFactory { def createFileSystemView (user: User) = new FileSysView(filesystem, writeEnabled) }
   val userManager = init(new PropertiesUserManagerFactory() createUserManager()) {
     _ save init(new BaseUser()){user => user setName "user"; user setPassword "user"}
   }
