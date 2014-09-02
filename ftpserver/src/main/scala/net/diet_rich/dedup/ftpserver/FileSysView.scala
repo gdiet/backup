@@ -96,62 +96,59 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
   case class IsRepoFile(id: TreeEntryID) extends RepoFile {
     log debug s"creating $this"
 
+    def child(name: String) = filesystem.firstChild(id, name).map(e => IsRepoFile(e.id))
     def parent: Option[IsRepoFile] = filesystem entry id map (entry => IsRepoFile(entry.parent))
 
-    override def getAbsolutePath(): String = debug(s"getAbsolutePath for $this") {
+    private def entry: Option[TreeEntry] = filesystem entry id
+
+    override def getAbsolutePath: String = debug(s"getAbsolutePath for $this") {
       filesystem path id map (_.value) getOrElse { log.warn(s"getAbsolutePath for $id failed"); "" }
     }
 
-    def isFile(): Boolean = debug(s"isFile for $this") {
-      filesystem dataid id isDefined
+    override def isFile: Boolean = debug(s"isFile for $this") {
+      filesystem.dataid(id).isDefined
     }
 
-    def isDirectory(): Boolean = debug(s"isDirectory for $this") {
-      filesystem entry id map (_.data isEmpty) getOrElse(false)
+    override def isDirectory: Boolean = debug(s"isDirectory for $this") {
+      entry exists (_.data isEmpty)
     }
 
-    def child(name: String) =
-      filesystem.firstChild(id, name).map(e => IsRepoFile(e.id))
-
-    def children =
-      filesystem.children(id).map(e => IsRepoFile(e.id))
-
-    def listFiles(): java.util.List[FtpFile] = debug(s"listFiles for $this") {
-      JavaConversions seqAsJavaList children
+    override def listFiles(): java.util.List[FtpFile] = debug(s"listFiles for $this") {
+      JavaConversions seqAsJavaList (filesystem children id map (e => IsRepoFile(e.id)))
     }
 
-    def getSize(): Long = debug(s"getSize for $this") {
+    override def getSize: Long = debug(s"getSize for $this") {
       filesystem dataEntry id map (_.size value) getOrElse 0L
     }
 
-    def getLastModified(): Long = debug(s"getLastModified for $this") {
-      filesystem entry id flatMap (_.changed) map (_.value) getOrElse 0L
+    override def getLastModified: Long = debug(s"getLastModified for $this") {
+      entry flatMap (_.changed) map (_.value) getOrElse 0L
     }
 
-    def isReadable(): Boolean = debug(s"isReadable for $this") {
-      filesystem.entry(id).isDefined
+    override def isReadable: Boolean = debug(s"isReadable for $this") {
+      doesExist()
     }
 
-    def doesExist(): Boolean = debug(s"doesExist for $this") {
-      filesystem.entry(id).isDefined
+    override def doesExist(): Boolean = debug(s"doesExist for $this") {
+      entry.isDefined
     }
 
-    def getName(): String = debug(s"getName for $this") {
-      filesystem.entry(id).map(_.name).getOrElse("")
+    override def getName: String = debug(s"getName for $this") {
+      entry map (_.name) getOrElse ""
     }
 
-    def getLinkCount(): Int = debug(s"getLinkCount for $this") {
-      if (doesExist) 1 else 0
+    override def getLinkCount: Int = debug(s"getLinkCount for $this") {
+      if (doesExist()) 1 else 0
     }
 
-    def createInputStream(offset: Long): java.io.InputStream = debug(s"createInputStream with offset $offset for $this") {
+    override def createInputStream(offset: Long): java.io.InputStream = debug(s"createInputStream with offset $offset for $this") {
       if (offset != 0) throw new IOException("not random accessible")
-      filesystem.entry(id) match {
-        case None => throw new FileNotFoundException
-        case Some(TreeEntry(_, _, _, _, None, _)) => throw new IOException("directory, not a file")
+      entry match {
+        case None => throw new FileNotFoundException(s"no entry in file system for $this")
+        case Some(TreeEntry(_, _, _, _, None, _)) => throw new IOException(s"$this is a directory, not a file")
         case Some(TreeEntry(_, _, _, _, Some(dataid), _)) =>
           filesystem.dataEntry(dataid).fold{
-            throw new IOException(s"no data entry found for $dataid")
+            throw new IOException(s"no data entry found for $dataid in $this")
           }{ dataEntry =>
             filesystem.read(dataid)
             ???
@@ -159,22 +156,21 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
       }
     }
 
-    def createOutputStream(x$1: Long): java.io.OutputStream = debug(s"createOutputStream for $this") { ??? }
+    override def createOutputStream(x$1: Long): java.io.OutputStream = debug(s"createOutputStream for $this") { ??? }
 
-    def delete(): Boolean = debug(s"delete $this") { filesystem.markDeleted(id) }
+    override def delete(): Boolean = debug(s"delete $this") { filesystem markDeleted id }
 
-    def isRemovable(): Boolean = debug(s"isRemovable for $this") { (??? == true) && (id != FileSystem.ROOTID) }
+    override def isRemovable: Boolean = debug(s"isRemovable for $this") { writeEnabled && (id != FileSystem.ROOTID) }
 
-    def mkdir(): Boolean = debug(s"mkdir for $this") { ??? }
+    override def mkdir(): Boolean = debug(s"mkdir for $this") { ??? }
 
-    def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = debug(s"move for $this to $target") {
+    override def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = debug(s"move for $this to $target") {
       target match {
         case target: MaybeRepoFile => ??? // filesystem.changePath(id, target.name, target.parent)
         case _ => false
       }
     }
 
-    def setLastModified(x$1: Long): Boolean = debug(s"setLastModified for $this") { ??? }
+    override def setLastModified(x$1: Long): Boolean = debug(s"setLastModified for $this") { ??? }
   }
-
 }
