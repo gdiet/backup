@@ -87,7 +87,7 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     override def createOutputStream(x$1: Long): java.io.OutputStream = debug(s"createOutputStream for $this") { ??? }
     override def delete(): Boolean = debug(s"delete $this") { false }
     override def isRemovable: Boolean = debug(s"isRemovable for $this") { false }
-    override def mkdir(): Boolean = debug(s"mkdir for $this") { ??? }
+    override def mkdir(): Boolean = debug(s"mkdir for $this") { filesystem.createUnchecked(parent, name); true }
     override def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = debug(s"move for $this to $target") { ??? }
     override def setLastModified(x$1: Long): Boolean = debug(s"setLastModified for $this") { ??? }
   }
