@@ -21,10 +21,9 @@ trait DirectoryResource extends AbstractResource with CollectionResource {
   override final def child(childName: String): Resource = debug(s"child(childName: '$childName')") {
     fileSystem.firstChild(treeEntry.id, childName).map(resourceFactory.resourceFromTreeEntry).orNull
   }
-  override final def getChildren(): ListJ[_ <: Resource] = debug("getChildren()") {
+  override final def getChildren(): ListJ[_ <: Resource] = debug("getChildren") {
     fileSystem.firstChildren(treeEntry.id).map(resourceFactory.resourceFromTreeEntry).asJava
   }
-  override final def getModifiedDate(): Date = debug("getModifiedDate()") { treeEntry.changed.map(_.asDate).orNull }
 }
 
 object DirectoryResource {

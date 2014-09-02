@@ -17,12 +17,11 @@ import net.diet_rich.dedup.core.values.{Time, Size, TreeEntry}
 
 // TODO: FileResource is immutable. Do  we want to reflect changes to file system entries?
 trait FileResource extends AbstractResource with GetableResource {
-  override final def getContentLength(): LongJ = debug("getContentLength()") { treeEntry.data flatMap fileSystem.sizeOf map (_.value) getOrElse[Long] 0L }
+  override final def getContentLength(): LongJ = debug("getContentLength") { treeEntry.data flatMap fileSystem.sizeOf map (_.value) getOrElse[Long] 0L }
   override final def getContentType(accepts: String): String = debug(s"getContentType(accepts: $accepts)") {
     assume(accepts == null || accepts.split(",").contains("application/octet-stream")) // TODO remove?
     "application/octet-stream"
   }
-  override final def getModifiedDate(): Date = debug("getModifiedDate()") { new Date(treeEntry.changed map (_.value) getOrElse 0L) }
   override final def getMaxAgeSeconds(auth: Auth): LongJ = debug(s"getMaxAgeSeconds(auth: $auth)") {
     // TODO check:
     // Cache for 24 hours. If we have problems with outdated content cached in read/write mode,
