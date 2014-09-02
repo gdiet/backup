@@ -12,13 +12,20 @@ ${"Tests for the file system tree".title}
 
 The root node should be a directory $rootIsDirectory
 A directory should be available in the tree even if its newly crested $createAndCheckDirectory
-Looking up a path where only parts exist yields None $pathWithoutTreeEntry
-Create throws an exception if a child with the name already exists $createExisting
+Looking up a path where only parts exist should yield None $pathWithoutTreeEntry
+Create should throw an exception if a child with the name already exists $createExisting
+Creating a child where a deleted child with the same name already exists should succeed $createReplacement
   """
 
   private def withEmptyTree[T] (f: TreeInterface => T): T = {
     object tree extends Tree with InMemoryDBPartWithTables
     f(tree)
+  }
+
+  def createReplacement = withEmptyTree { tree =>
+    val child = tree create (FileSystem ROOTID, "child")
+    tree markDeleted child.id
+    tree create (FileSystem ROOTID, "child") should beADirectory
   }
 
   def createExisting = withEmptyTree { tree =>

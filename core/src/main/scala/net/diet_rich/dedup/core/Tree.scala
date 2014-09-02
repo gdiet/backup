@@ -28,7 +28,7 @@ trait Tree extends TreeInterface with sql.TablesPart {
   override final def entry(id: TreeEntryID): Option[TreeEntry] = tables treeEntry id
   override final def dataEntry(id: DataEntryID): Option[DataEntry] = tables dataEntry id
   override final def childrenWithDeleted(parent: TreeEntryID): List[TreeEntry] = tables treeChildren parent
-  override final def children(parent: TreeEntryID): List[TreeEntry] = childrenWithDeleted(parent) filter (_.deleted isEmpty)
+  override final def children(parent: TreeEntryID): List[TreeEntry] = tables treeChildrenNotDeleted parent
   override final def children(parent: TreeEntryID, name: String): List[TreeEntry] = children(parent) filter (_.name === name)
   override final def markDeleted(id: TreeEntryID, deletionTime: Option[Time]): Boolean = tables markDeleted (id, deletionTime)
   override final def change(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID]): Option[TreeEntry] = tables updateTreeEntry (id, newParent, newName, newTime, newData)
