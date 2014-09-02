@@ -39,7 +39,7 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     }
   }
 
-  override def dispose(): Unit = log info "... dispose()" // TODO info("dispose")(System.exit(0)) ???
+  override def dispose(): Unit = log info "... dispose" // TODO info("dispose")(System.exit(0)) ???
 
   override def getFile(name: String): FtpFile = info(s"... getFile($name)") {
     resolvePath(name) match {
@@ -48,12 +48,12 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     }
   }
 
-  override def getHomeDirectory: RepoFile = info("... getHomeDirectory()")(rootDirectory)
+  override def getHomeDirectory: RepoFile = info("... getHomeDirectory")(rootDirectory)
 
-  override def getWorkingDirectory: RepoFile = info("... getWorkingDirectory()")(workingDirectory)
+  override def getWorkingDirectory: RepoFile = info("... getWorkingDirectory")(workingDirectory)
 
   // TODO random access can be easily implemented later on - see FtpFile.createInputStream and FtpFile.createOutputStream
-  override def isRandomAccessible: Boolean = info("... isRandomAccessible()")(false)
+  override def isRandomAccessible: Boolean = info("... isRandomAccessible")(false)
 
   // ******** end of implementation of FileSystemView interface ********
 
@@ -85,7 +85,7 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     override def getName: String = debug(s"getName for $this") { name }
     override def getLinkCount: Int = debug(s"getLinkCount for $this") { 0 }
     override def createInputStream(offset: Long): java.io.InputStream = debug(s"createInputStream with offset $offset for $this") { throw new FileNotFoundException }
-    override def createOutputStream(x$1: Long): java.io.OutputStream = debug(s"createOutputStream for $this") { ??? }
+    override def createOutputStream(x$1: Long): java.io.OutputStream = debug(s"createOutputStream for $this") { ??? } // FIXME implement
     override def delete(): Boolean = debug(s"delete $this") { false }
     override def isRemovable: Boolean = debug(s"isRemovable for $this") { false }
     override def mkdir(): Boolean = debug(s"mkdir for $this") { filesystem.createUnchecked(parent, name); true }
@@ -94,27 +94,20 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
   }
 
   case class IsRepoFile(id: TreeEntryID) extends RepoFile {
-    log.debug(s"creating repo file for id $id")
+    log debug s"creating $this"
 
-    override val toString = s"RepoFile($id)"
+    def parent: Option[IsRepoFile] = filesystem entry id map (entry => IsRepoFile(entry.parent))
 
-    def parent: Option[IsRepoFile] =
-      filesystem.entry(id).map(entry => IsRepoFile(entry.parent))
-
-    def getAbsolutePath(): String = debug(s"getAbsolutePath for $this") {
-      filesystem.path(id) match {
-        case Some(path) => path.value
-        case _ => debug("WARN: getAbsolutePath - node $id does not exist")("")
-      }
+    override def getAbsolutePath(): String = debug(s"getAbsolutePath for $this") {
+      filesystem path id map (_.value) getOrElse { log.warn(s"getAbsolutePath for $id failed"); "" }
     }
 
     def isFile(): Boolean = debug(s"isFile for $this") {
-      filesystem.entry(id).flatMap(_.data).isDefined
+      filesystem dataid id isDefined
     }
 
     def isDirectory(): Boolean = debug(s"isDirectory for $this") {
-      val entry = filesystem.entry(id)
-      entry.isDefined && entry.flatMap(_.data).isEmpty
+      filesystem entry id map (_.data isEmpty) getOrElse(false)
     }
 
     def child(name: String) =
@@ -128,18 +121,11 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     }
 
     def getSize(): Long = debug(s"getSize for $this") {
-      ( for {
-        treeEntry <- filesystem entry id
-        dataid    <- treeEntry.data
-        dataEntry <- filesystem dataEntry dataid
-      } yield dataEntry.size.value) getOrElse 0L
+      filesystem dataEntry id map (_.size value) getOrElse 0L
     }
 
     def getLastModified(): Long = debug(s"getLastModified for $this") {
-      ( for {
-        treeEntry <- filesystem entry id
-        changed   <- treeEntry.changed
-      } yield changed.value) getOrElse 0L
+      filesystem entry id flatMap (_.changed) map (_.value) getOrElse 0L
     }
 
     def isReadable(): Boolean = debug(s"isReadable for $this") {
