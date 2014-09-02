@@ -57,10 +57,15 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
 
   // ******** end of implementation of FileSystemView interface ********
 
-  sealed trait RepoFile extends FtpFile
+  sealed trait RepoFile extends FtpFile with Logging with CallLogging {
+    override final def getOwnerName: String = debug(s"getOwnerName for $this") { "backup" }
+    override final def getGroupName: String = debug(s"getGroupName for $this") { "dedup" }
+    override final def isHidden: Boolean = debug(s"isHidden for $this") { false }
+    override final def isWritable: Boolean = debug(s"isWritable for $this") { writeEnabled }
+  }
 
   /** A not-yet-existing ftp repo file used when creating new files or directories. */
-  case class MaybeRepoFile(parent: TreeEntryID, name: String) extends RepoFile with Logging with CallLogging {
+  case class MaybeRepoFile(parent: TreeEntryID, name: String) extends RepoFile {
     override val toString = s"MaybeRepoFile($parent/$name)"
     log debug s"creating $this"
 
@@ -73,26 +78,22 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     override def isFile: Boolean = debug(s"isFile for $this") { false }
     override def isDirectory: Boolean = debug(s"isDirectory for $this") { false }
     override def listFiles: java.util.List[FtpFile] = debug(s"listFiles for $this") { java.util.Collections emptyList() }
-    override def isHidden: Boolean = debug(s"isHidden for $this") { false }
     override def getSize: Long = debug(s"getSize for $this") { 0L }
     override def getLastModified: Long = debug(s"getLastModified for $this") { 0L }
     override def isReadable: Boolean = debug(s"isReadable for $this") { false }
     override def doesExist: Boolean = debug(s"doesExist for $this") { false }
-    override def isWritable: Boolean = debug(s"isWritable for $this") { writeEnabled }
     override def getName: String = debug(s"getName for $this") { name }
     override def getLinkCount: Int = debug(s"getLinkCount for $this") { 0 }
-    override def getOwnerName: String = debug(s"getOwnerName for $this") { "backup" }
-    override def getGroupName: String = debug(s"getGroupName for $this") { "dedup" }
     override def createInputStream(offset: Long): java.io.InputStream = debug(s"createInputStream with offset $offset for $this") { throw new FileNotFoundException }
     override def createOutputStream(x$1: Long): java.io.OutputStream = debug(s"createOutputStream for $this") { ??? }
     override def delete(): Boolean = debug(s"delete $this") { false }
     override def isRemovable: Boolean = debug(s"isRemovable for $this") { false }
     override def mkdir(): Boolean = debug(s"mkdir for $this") { filesystem.createUnchecked(parent, name); true }
-    override def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = debug(s"move for $this to $target") { ??? }
-    override def setLastModified(x$1: Long): Boolean = debug(s"setLastModified for $this") { ??? }
+    override def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = debug(s"move for $this to $target") { false }
+    override def setLastModified(time: Long): Boolean = debug(s"setLastModified for $this") { false }
   }
 
-  case class IsRepoFile(id: TreeEntryID) extends RepoFile with Logging with CallLogging {
+  case class IsRepoFile(id: TreeEntryID) extends RepoFile {
     log.debug(s"creating repo file for id $id")
 
     override val toString = s"RepoFile($id)"
@@ -126,8 +127,6 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
       JavaConversions seqAsJavaList children
     }
 
-    def isHidden(): Boolean = debug(s"isHidden for $this") { false }
-
     def getSize(): Long = debug(s"getSize for $this") {
       ( for {
         treeEntry <- filesystem entry id
@@ -151,8 +150,6 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
       filesystem.entry(id).isDefined
     }
 
-    def isWritable(): Boolean = debug(s"isWritable for $this") { false } // TODO implement write
-
     def getName(): String = debug(s"getName for $this") {
       filesystem.entry(id).map(_.name).getOrElse("")
     }
@@ -160,10 +157,6 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     def getLinkCount(): Int = debug(s"getLinkCount for $this") {
       if (doesExist) 1 else 0
     }
-
-    def getOwnerName(): String = debug(s"getOwnerName for $this") { "backup" }
-
-    def getGroupName(): String = debug(s"getGroupName for $this") { "dedup" }
 
     def createInputStream(offset: Long): java.io.InputStream = debug(s"createInputStream with offset $offset for $this") {
       if (offset != 0) throw new IOException("not random accessible")
