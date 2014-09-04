@@ -9,7 +9,7 @@ import scala.collection.JavaConversions
 import org.apache.ftpserver.ftplet._
 
 import net.diet_rich.dedup.core.FileSystem
-import net.diet_rich.dedup.core.values.{Time, TreeEntry, TreeEntryID}
+import net.diet_rich.dedup.core.values.{Bytes, Time, TreeEntry, TreeEntryID}
 import net.diet_rich.dedup.util.{CallLogging, Logging}
 
 class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSystemView with Logging with CallLogging {
@@ -118,11 +118,11 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
 
     override def move(target: FtpFile): Boolean = debug(s"move for $this to $target") {
       target match {
-        case target: MaybeRepoFile =>
-          // FIXME transaction
-          if (filesystem.children(target.parent, target.name).isEmpty) {
-            entry map (_ copy(parent = target.parent, name = target.name)) flatMap (filesystem change _) isDefined;
-          } else false
+        case target: MaybeRepoFile => filesystem inTransaction {
+            if (filesystem.children(target.parent, target.name).isEmpty) {
+              entry map (_ copy(parent = target.parent, name = target.name)) flatMap (filesystem change _) isDefined;
+            } else false
+          }
         case _ => false
       }
     }
@@ -136,8 +136,37 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
           filesystem.dataEntry(dataid).fold{
             throw new IOException(s"no data entry found for $dataid in $this")
           }{ dataEntry =>
-            filesystem.read(dataid)
-            ???
+            // FIXME extract utility method
+            val data = filesystem.read(dataid)
+            new java.io.InputStream {
+              var currentOffset: Int = 0
+              var currentLength: Int = 0
+              var currentBytes: Array[Byte] = Array()
+              def refill() = if (data.hasNext) {
+                val current = data.next()
+                currentBytes = current.data
+                currentOffset = current.offset
+                currentLength = current.length
+              } else currentLength = 0
+              refill()
+              override def read(bytes: Array[Byte], offset: Int, length: Int): Int = if (currentLength == 0) -1 else {
+                val actualLength = math.min(currentLength, length)
+                System.arraycopy(currentBytes, currentOffset, bytes, offset, actualLength)
+                if (currentLength == actualLength) refill() else {
+                  currentLength -= actualLength
+                  currentOffset += actualLength
+                }
+                actualLength
+              }
+              override def read: Int = {
+                val array = new Array[Byte](1)
+                read(array, 0, 1) match {
+                  case n if (n < 1) => -1
+                  case 1 => array(0)
+                  case n => throw new IOException(s"unexpected number of bytes read: $n")
+                }
+              }
+            }
           }
       }
     }
