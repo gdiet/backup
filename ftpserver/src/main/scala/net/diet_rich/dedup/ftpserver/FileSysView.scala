@@ -9,7 +9,7 @@ import scala.collection.JavaConversions
 import org.apache.ftpserver.ftplet._
 
 import net.diet_rich.dedup.core.FileSystem
-import net.diet_rich.dedup.core.values.{TreeEntry, TreeEntryID}
+import net.diet_rich.dedup.core.values.{Time, TreeEntry, TreeEntryID}
 import net.diet_rich.dedup.util.{CallLogging, Logging}
 
 class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSystemView with Logging with CallLogging {
@@ -101,44 +101,30 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
 
     private def entry: Option[TreeEntry] = filesystem entry id
 
-    override def getAbsolutePath: String = debug(s"getAbsolutePath for $this") {
-      filesystem path id map (_.value) getOrElse { log.warn(s"getAbsolutePath for $id failed"); "" }
-    }
+    override def getAbsolutePath: String = debug(s"getAbsolutePath for $this") { filesystem path id map (_.value) getOrElse { log.warn(s"getAbsolutePath for $id failed"); "" } }
+    override def isFile: Boolean = debug(s"isFile for $this") { filesystem.dataid(id).isDefined }
+    override def isDirectory: Boolean = debug(s"isDirectory for $this") { entry exists (_.data isEmpty) }
+    override def listFiles(): java.util.List[FtpFile] = debug(s"listFiles for $this") { JavaConversions seqAsJavaList (filesystem children id map (e => IsRepoFile(e.id))) }
+    override def getSize: Long = debug(s"getSize for $this") { filesystem dataEntry id map (_.size value) getOrElse 0L }
+    override def getLastModified: Long = debug(s"getLastModified for $this") { entry flatMap (_.changed) map (_.value) getOrElse 0L }
+    override def isReadable: Boolean = debug(s"isReadable for $this") { doesExist() }
+    override def doesExist(): Boolean = debug(s"doesExist for $this") { entry.isDefined }
+    override def getName: String = debug(s"getName for $this") { entry map (_.name) getOrElse "" }
+    override def getLinkCount: Int = debug(s"getLinkCount for $this") { if (doesExist()) 1 else 0 }
+    override def delete(): Boolean = debug(s"delete $this") { filesystem markDeleted id }
+    override def isRemovable: Boolean = debug(s"isRemovable for $this") { writeEnabled && (id != FileSystem.ROOTID) }
+    override def mkdir(): Boolean = debug(s"mkdir for $this") { false }
+    override def setLastModified(newTime: Long): Boolean = debug(s"setLastModified for $this") { entry map (_ copy(changed = Some(Time(newTime)))) flatMap (filesystem change _) isDefined; }
 
-    override def isFile: Boolean = debug(s"isFile for $this") {
-      filesystem.dataid(id).isDefined
-    }
-
-    override def isDirectory: Boolean = debug(s"isDirectory for $this") {
-      entry exists (_.data isEmpty)
-    }
-
-    override def listFiles(): java.util.List[FtpFile] = debug(s"listFiles for $this") {
-      JavaConversions seqAsJavaList (filesystem children id map (e => IsRepoFile(e.id)))
-    }
-
-    override def getSize: Long = debug(s"getSize for $this") {
-      filesystem dataEntry id map (_.size value) getOrElse 0L
-    }
-
-    override def getLastModified: Long = debug(s"getLastModified for $this") {
-      entry flatMap (_.changed) map (_.value) getOrElse 0L
-    }
-
-    override def isReadable: Boolean = debug(s"isReadable for $this") {
-      doesExist()
-    }
-
-    override def doesExist(): Boolean = debug(s"doesExist for $this") {
-      entry.isDefined
-    }
-
-    override def getName: String = debug(s"getName for $this") {
-      entry map (_.name) getOrElse ""
-    }
-
-    override def getLinkCount: Int = debug(s"getLinkCount for $this") {
-      if (doesExist()) 1 else 0
+    override def move(target: FtpFile): Boolean = debug(s"move for $this to $target") {
+      target match {
+        case target: MaybeRepoFile =>
+          // FIXME transaction
+          if (filesystem.children(target.parent, target.name).isEmpty) {
+            entry map (_ copy(parent = target.parent, name = target.name)) flatMap (filesystem change _) isDefined;
+          } else false
+        case _ => false
+      }
     }
 
     override def createInputStream(offset: Long): java.io.InputStream = debug(s"createInputStream with offset $offset for $this") {
@@ -157,20 +143,5 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     }
 
     override def createOutputStream(x$1: Long): java.io.OutputStream = debug(s"createOutputStream for $this") { ??? }
-
-    override def delete(): Boolean = debug(s"delete $this") { filesystem markDeleted id }
-
-    override def isRemovable: Boolean = debug(s"isRemovable for $this") { writeEnabled && (id != FileSystem.ROOTID) }
-
-    override def mkdir(): Boolean = debug(s"mkdir for $this") { ??? }
-
-    override def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = debug(s"move for $this to $target") {
-      target match {
-        case target: MaybeRepoFile => ??? // filesystem.changePath(id, target.name, target.parent)
-        case _ => false
-      }
-    }
-
-    override def setLastModified(x$1: Long): Boolean = debug(s"setLastModified for $this") { ??? }
   }
 }
