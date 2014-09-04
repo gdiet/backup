@@ -18,7 +18,7 @@ trait TreeInterface {
   def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def markDeleted(id: TreeEntryID, deletionTime: Option[Time] = Some(Time now())): Boolean
-  def change(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID]): Option[TreeEntry]
+  def change(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID], newDeletionTime: Option[Time] = None): Option[TreeEntry]
   def createOrReplace(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def sizeOf(id: DataEntryID): Option[Size]
   def entries(path: Path): List[TreeEntry]
@@ -31,7 +31,7 @@ trait Tree extends TreeInterface with sql.TablesPart {
   override final def children(parent: TreeEntryID): List[TreeEntry] = tables treeChildrenNotDeleted parent
   override final def children(parent: TreeEntryID, name: String): List[TreeEntry] = children(parent) filter (_.name === name)
   override final def markDeleted(id: TreeEntryID, deletionTime: Option[Time]): Boolean = tables markDeleted (id, deletionTime)
-  override final def change(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID]): Option[TreeEntry] = tables updateTreeEntry (id, newParent, newName, newTime, newData)
+  override final def change(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID], newDeletionTime: Option[Time]): Option[TreeEntry] = tables updateTreeEntry (id, newParent, newName, newTime, newData, newDeletionTime)
   override final def sizeOf(id: DataEntryID): Option[Size] = tables dataEntry id map (_.size)
 
   override final def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntry =

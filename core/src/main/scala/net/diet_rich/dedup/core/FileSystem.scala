@@ -28,6 +28,7 @@ object FileSystem {
     def firstChildren(parent: TreeEntryID): List[TreeEntry] = fs.children(parent).groupBy(_.name).values.flatMap(_.headOption).toList
     def dataEntry(id: TreeEntryID): Option[DataEntry] = dataid(id) flatMap fs.dataEntry
     def dataid(id: TreeEntryID): Option[DataEntryID] = fs entry id flatMap (_.data)
+    def change(e: TreeEntry): Option[TreeEntry] = fs change (e.id, e.parent, e.name, e.changed, e.data, e.deleted)
 
     def path(id: TreeEntryID): Option[Path] = {
       if (id === ROOTID) Some(Path.ROOTPATH) else {

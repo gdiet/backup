@@ -20,9 +20,9 @@ trait TablesPart extends SessionSlice with Lifecycle {
       TreeEntry(id, parent, name, changed, dataid, None)
     }
     def markDeleted(id: TreeEntryID, deletionTime: Option[Time]): Boolean = setTreeEntryDeletedUpdate(deletionTime, id).first === 1
-    def updateTreeEntry(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID]): Option[TreeEntry] =
-      if (updateTreeEntryUpdate(newParent, newName, newTime, newData, id).first === 1)
-        Some(TreeEntry(id, newParent, newName, newTime, newData, None))
+    def updateTreeEntry(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID], newDeleted: Option[Time]): Option[TreeEntry] =
+      if (updateTreeEntryUpdate(newParent, newName, newTime, newData, newDeleted, id).first === 1)
+        Some(TreeEntry(id, newParent, newName, newTime, newData, newDeleted))
       else None
 
     // DataEntries
@@ -86,7 +86,7 @@ object TableQueries {
   val treeChildrenNotDeletedForParentQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE parent = ? and deleted is NULL;")
   val nextTreeEntryIdQuery = StaticQuery.queryNA[TreeEntryID]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")
   val setTreeEntryDeletedUpdate = StaticQuery.update[(Option[Time], TreeEntryID)]("UPDATE TreeEntries SET deleted = ? WHERE id = ?;")
-  val updateTreeEntryUpdate = StaticQuery.update[(TreeEntryID, String, Option[Time], Option[DataEntryID], TreeEntryID)]("UPDATE TreeEntries SET parent = ?, name = ?, changed = ?, dataid = ? WHERE id = ? AND deleted IS NULL;")
+  val updateTreeEntryUpdate = StaticQuery.update[(TreeEntryID, String, Option[Time], Option[DataEntryID], Option[Time], TreeEntryID)]("UPDATE TreeEntries SET parent = ?, name = ?, changed = ?, dataid = ?, deleted = ? WHERE id = ? AND deleted IS NULL;")
   val createTreeEntryUpdate = StaticQuery.update[(TreeEntryID, TreeEntryID, String, Option[Time], Option[DataEntryID])]("INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?);")
 
   // DataEntries
