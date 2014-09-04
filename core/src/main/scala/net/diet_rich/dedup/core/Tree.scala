@@ -22,6 +22,7 @@ trait TreeInterface {
   def createOrReplace(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def sizeOf(id: DataEntryID): Option[Size]
   def entries(path: Path): List[TreeEntry]
+  def inTransaction[T](f: => T): T
 }
 
 trait Tree extends TreeInterface with sql.TablesPart {
@@ -65,4 +66,6 @@ trait Tree extends TreeInterface with sql.TablesPart {
     path.elements.foldLeft(List(FileSystem ROOTENTRY)) { (nodes, childName) =>
       nodes flatMap (node => children(node.id) filter (_.name === childName))
     }
+
+  override final def inTransaction[T](f: => T): T = tables.inTransaction(f)
 }

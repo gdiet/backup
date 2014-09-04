@@ -19,26 +19,23 @@ trait TablesPart extends SessionSlice with Lifecycle {
       createTreeEntryUpdate(id, parent, name, changed, dataid).execute
       TreeEntry(id, parent, name, changed, dataid, None)
     }
-    def markDeleted(id: TreeEntryID, deletionTime: Option[Time]): Boolean = setTreeEntryDeletedUpdate(deletionTime, id).first === 1
-    def updateTreeEntry(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID], newDeleted: Option[Time]): Option[TreeEntry] =
+    def markDeleted(id: TreeEntryID, deletionTime: Option[Time]): Boolean = inTransaction { setTreeEntryDeletedUpdate(deletionTime, id).first === 1 }
+    def updateTreeEntry(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID], newDeleted: Option[Time]): Option[TreeEntry] = inTransaction {
       if (updateTreeEntryUpdate(newParent, newName, newTime, newData, newDeleted, id).first === 1)
         Some(TreeEntry(id, newParent, newName, newTime, newData, newDeleted))
       else None
+    }
 
     // DataEntries
     def dataEntry(id: DataEntryID): Option[DataEntry] = dataEntryForIdQuery(id).firstOption
     def dataEntries(size: Size, print: Print): List[DataEntry] = dataEntriesForSizePrintQuery(size, print).list
     def dataEntries(size: Size, print: Print, hash: Hash): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash).list
-    def createDataEntry(reservedID: DataEntryID, size: Size, print: Print, hash: Hash, method: StoreMethod): Unit = inTransaction(
-      createDataEntryUpdate(reservedID, size, print, hash, method).execute
-    )
+    def createDataEntry(reservedID: DataEntryID, size: Size, print: Print, hash: Hash, method: StoreMethod): Unit = inTransaction { createDataEntryUpdate(reservedID, size, print, hash, method).execute }
     def nextDataID: DataEntryID = nextDataEntryIdQuery.first
 
     // ByteStore
     def storeEntries(id: DataEntryID): List[StoreEntry] = storeEntriesForIdQuery(id).list
-    def createByteStoreEntry(dataid: DataEntryID, range: DataRange): Unit = inTransaction(
-      createStoreEntryUpdate(dataid, range.start, range.fin).execute
-    )
+    def createByteStoreEntry(dataid: DataEntryID, range: DataRange): Unit = inTransaction { createStoreEntryUpdate(dataid, range.start, range.fin).execute }
 
     // Note: Writing is synchronized, so "create only if not exists" can be implemented.
     def inTransaction[T](f: => T): T = synchronized(f)
