@@ -5,13 +5,11 @@ package net.diet_rich.dedup.core
 
 import java.io.File
 
-import net.diet_rich.dedup.core.data.DataSettings
-import net.diet_rich.dedup.core.sql.{CurrentDatabase, DatabaseSlice}
 import net.diet_rich.dedup.core.values.{Size, StoreMethod, Hash}
 import net.diet_rich.dedup.util.io.{EnhancedFile, readSettingsFile, writeSettingsFile}
 
 object Repository {
-  private def repositoryContents(repositoryDirectory: File) = new {
+  def repositoryContents(repositoryDirectory: File) = new {
     val databaseDirectory = repositoryDirectory / "database"
     val datafilesDirectory = repositoryDirectory / "datafiles"
     val dataSettingsFile = datafilesDirectory / "settings.txt"

@@ -141,6 +141,9 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
       }
     }
 
-    override def createOutputStream(x$1: Long): java.io.OutputStream = debug(s"createOutputStream for $this") { ??? }
+    override def createOutputStream(offset: Long): java.io.OutputStream = debug(s"createOutputStream for $this") {
+      if (offset != 0) throw new IOException("not random accessible")
+      ???
+    }
   }
 }
