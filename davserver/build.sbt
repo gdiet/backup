@@ -19,8 +19,8 @@ libraryDependencies ++= Seq (
 // Add jetty server (see http://www.eclipse.org/jetty).
 
 libraryDependencies ++= Seq (
-  "org.eclipse.jetty" % "jetty-server" % "9.2.2.v20140723",
-  "org.eclipse.jetty" % "jetty-servlet" % "9.2.2.v20140723"
+  "org.eclipse.jetty" % "jetty-server" % "9.2.3.v20140905",
+  "org.eclipse.jetty" % "jetty-servlet" % "9.2.3.v20140905"
 )
 
 XitrumPackage.copy()
