@@ -9,6 +9,8 @@ import net.diet_rich.dedup.core.values.{Size, StoreMethod, Hash}
 import net.diet_rich.dedup.util.io.{EnhancedFile, readSettingsFile, writeSettingsFile}
 
 object Repository {
+  val repositoryIdKey = "repository id"
+
   def repositoryContents(repositoryDirectory: File) = new {
     val databaseDirectory = repositoryDirectory / "database"
     val datafilesDirectory = repositoryDirectory / "datafiles"
@@ -28,15 +30,16 @@ object Repository {
     val repo = repositoryContents(repositoryDirectory); import repo._
     trait ConfigurationPart extends sql.ThreadSpecificSessionsPart with StoreSettingsSlice with data.DataSettingsSlice {
       override val database = productionDatabase(readonly)
-      override val storeSettings = {
+      override val (storeSettings, dataSettings) = {
         val databaseSettings = database withSession (sql.DBUtilities.allSettings(_))
         require(databaseSettings(sql.databaseVersionKey) == sql.databaseVersionValue, s"${sql.databaseVersionKey} in database has value ${databaseSettings(sql.databaseVersionKey)} but expected ${sql.databaseVersionValue}")
-        StoreSettings(databaseSettings(hashAlgorithmKey), processingThreadPoolSize, storeMethod)
-      }
-      override val dataSettings = {
         val datafilesSettings = readSettingsFile(dataSettingsFile)
         require(datafilesSettings(data.versionKey) == data.versionValue, s"${data.versionKey} in database has value ${datafilesSettings(data.versionValue)} but expected ${data.versionValue}")
-        data.DataSettings(Size(datafilesSettings(data.blocksizeKey) toLong), datafilesDirectory, storeThreadPoolSize, fileHandlesPerStoreThread, readonly)
+        require(datafilesSettings(repositoryIdKey) == databaseSettings(repositoryIdKey), s"$repositoryIdKey in database and in datastore differ")
+
+        val storeSettings = StoreSettings(databaseSettings(hashAlgorithmKey), processingThreadPoolSize, storeMethod)
+        val dataSettings = data.DataSettings(Size(datafilesSettings(data.blocksizeKey) toLong), datafilesDirectory, storeThreadPoolSize, fileHandlesPerStoreThread, readonly)
+        (storeSettings, dataSettings)
       }
     }
     new FileSystem with ConfigurationPart with FileSystem.BasicPart
@@ -59,13 +62,16 @@ object Repository {
     hashAlgorithm: String = "MD5",
     dataBlockSize: Size = Size(0x4000000) // 64MB
   ) = {
+    val repositoryID = s"${util.Random.nextLong()}"
     val databaseSettingsToWrite = Map(
       hashAlgorithmKey -> (Hash algorithmChecked hashAlgorithm),
-      sql.databaseVersionKey -> sql.databaseVersionValue
+      sql.databaseVersionKey -> sql.databaseVersionValue,
+      repositoryIdKey -> repositoryID
     )
     val dataSettingsToWrite = Map(
       data.blocksizeKey -> dataBlockSize.value.toString,
-      data.versionKey -> data.versionValue
+      data.versionKey -> data.versionValue,
+      repositoryIdKey -> repositoryID
     )
 
     val repo = repositoryContents(repositoryDirectory); import repo._

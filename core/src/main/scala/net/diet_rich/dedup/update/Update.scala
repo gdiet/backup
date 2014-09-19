@@ -69,7 +69,7 @@ object Update extends ConsoleApp {
       "database version" -> "2.0",
       "hash algorithm" -> hashAlgorithm,
       "hash size" -> s"$hashSize", // FIXME include in create repository
-      "repository id" -> repositoryID // FIXME include in create repository
+      "repository id" -> repositoryID
     )
 
     val oldStoreEntries = selectOldStoreEntries list oldSession groupBy (_.dataid)
