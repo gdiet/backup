@@ -6,7 +6,7 @@ package net.diet_rich.dedup.core
 import java.io.File
 
 import net.diet_rich.dedup.core.values.{Size, StoreMethod, Hash}
-import net.diet_rich.dedup.util.io.{EnhancedFile, readSettingsFile, writeSettingsFile}
+import net.diet_rich.dedup.util.io.{RichFile, readSettingsFile, writeSettingsFile}
 
 object Repository {
   val repositoryIdKey = "repository id"

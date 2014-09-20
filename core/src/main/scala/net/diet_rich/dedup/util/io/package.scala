@@ -31,13 +31,13 @@ package object io {
       settings map { case (key, value) => s"$key = $value" } foreach writer.println
     }
 
-  implicit class EnhancedFile(val file: File) extends AnyVal {
+  implicit class RichFile(val file: File) extends AnyVal {
     def / (child: String) = new File(file, child)
   }
-  implicit class EnhancedRandomAccessFile(val file: RandomAccessFile) extends AnyVal {
+  implicit class RichRandomAccessFile(val file: RandomAccessFile) extends AnyVal {
     def readMethod = file read (_: Array[Byte], _: Int, _: Int)
   }
-  implicit class EnhancedInputStream(val in: InputStream) extends AnyVal {
+  implicit class RichInputStream(val in: InputStream) extends AnyVal {
     def readMethod = in read (_: Array[Byte], _: Int, _: Int)
   }
 }

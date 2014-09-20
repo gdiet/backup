@@ -7,7 +7,7 @@ import java.io.{IOException, File, RandomAccessFile}
 
 import net.diet_rich.dedup.core.values.{Size, Bytes}
 import net.diet_rich.dedup.util.init
-import net.diet_rich.dedup.util.io.EnhancedRandomAccessFile
+import net.diet_rich.dedup.util.io.RichRandomAccessFile
 
 object DataFile {
   val headerBytes = 16

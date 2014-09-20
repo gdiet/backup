@@ -4,7 +4,7 @@
 package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.core.values.{Bytes, Size}
-import net.diet_rich.dedup.util.io.{EnhancedRandomAccessFile, EnhancedInputStream}
+import net.diet_rich.dedup.util.io.{RichRandomAccessFile, RichInputStream}
 import net.diet_rich.dedup.util.valueOf
 
 trait Source {

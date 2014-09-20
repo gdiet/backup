@@ -7,7 +7,7 @@ import java.io.File
 
 import net.diet_rich.dedup.core.values.Bytes
 import net.diet_rich.dedup.util.init
-import net.diet_rich.dedup.util.io.EnhancedFile
+import net.diet_rich.dedup.util.io.RichFile
 
 package object testutil {
   val testData = init(new File("./target/testData"))(_.mkdirs)
