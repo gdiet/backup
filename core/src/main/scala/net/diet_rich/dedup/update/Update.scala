@@ -113,7 +113,7 @@ object Update extends ConsoleApp {
   Thread sleep 1000 // wait for database shutdown and file lock release
 
   val oldDbFile = databaseDirectory / "dedup.h2.db"
-  zipBackup(oldDbFile, repositoryDirectory, "DBbackup_%s")
+  zipBackup(oldDbFile, repositoryDirectory, "DBbackup_%s.zip")
   oldDbFile.delete()
 
   val backupDirectory = repositoryDirectory / "database_version_1.1"

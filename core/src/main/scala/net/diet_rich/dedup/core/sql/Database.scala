@@ -34,7 +34,8 @@ object ProductionDatabase {
 
   def fromFile(file: File, readonly: Boolean): CurrentDatabase =
     Database forURL (
-      url = s"jdbc:h2:$file${if (readonly) ";ACCESS_MODE_DATA=r" else ""}",
+      // MV_STORE and MVCC disabled, see http://code.google.com/p/h2database/issues/detail?id=542
+      url = s"jdbc:h2:$file${if (readonly) ";ACCESS_MODE_DATA=r" else ""};MV_STORE=FALSE;MVCC=FALSE",
       user = "sa",
       password = "",
       driver = "org.h2.Driver"
