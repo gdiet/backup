@@ -15,6 +15,8 @@ object FileSystem {
   val ROOTENTRY = TreeEntry(ROOTID, ROOTPARENTID, Path.ROOTNAME, None, None, None)
   val PRINTSIZE = 8192
 
+  type Diagnostics = FileSystem with sql.SessionSlice with StoreSettingsSlice
+
   trait BasicPart
     extends StoreLogic
     with Tree

@@ -73,9 +73,9 @@ object TableQueries {
   implicit val _setLongValueOption   = SetParameter((v: Option[LongValue], p) => p setLongOption (v map (_ value)))
 
   // basic select statements
-  private val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
-  private val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
-  private val selectFromByteStore = "SELECT id, dataid, start, fin FROM ByteStore"
+  val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
+  val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
+  val selectFromByteStore = "SELECT id, dataid, start, fin FROM ByteStore"
 
   // TreeEntries
   val treeEntryForIdQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")

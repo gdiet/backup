@@ -13,20 +13,24 @@ trait StoreMethod extends IntValue {
 }
 
 object StoreMethod {
-  private abstract class Valued(val value: Int) extends StoreMethod
-  private val compressorChunkSize = 0x10000
-
   def apply(value: Int) = value match {
     case 0 => STORE
     case 1 => DEFLATE
   }
 
-  val STORE: StoreMethod = new Valued(0) {
+  case object STORE extends StoreMethod {
+    override val value = 0
     override def pack(data: Iterator[Bytes]) = data
     override def unpack(data: Iterator[Bytes]) = data
   }
 
-  val DEFLATE: StoreMethod = new Valued(1) {
+  case object DEFLATE extends StoreMethod {
+    override val value = 1
+    override def pack(data: Iterator[Bytes]) = process(new DeflatePacker, data)
+    override def unpack(data: Iterator[Bytes]) = process(new InflatePacker ,data)
+
+    private val compressorChunkSize = 0x10000
+
     trait Packer {
       def setInput(data: Bytes): Unit
       def needsInput: Boolean
@@ -77,8 +81,5 @@ object StoreMethod {
 
       def next(): Bytes = valueOf (nextBytes.get) before { nextBytes = None }
     }
-
-    override def pack(data: Iterator[Bytes]) = process(new DeflatePacker, data)
-    override def unpack(data: Iterator[Bytes]) = process(new InflatePacker ,data)
   }
 }

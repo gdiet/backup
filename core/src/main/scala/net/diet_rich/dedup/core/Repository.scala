@@ -27,6 +27,17 @@ object Repository {
     storeThreadPoolSize: Int = 8,
     fileHandlesPerStoreThread: Int = 4
   ): FileSystem = {
+    diagnosticFileSystem(repositoryDirectory, storeMethod, readonly, processingThreadPoolSize, storeThreadPoolSize, fileHandlesPerStoreThread)
+  }
+
+  def diagnosticFileSystem(
+                  repositoryDirectory: File,
+                  storeMethod: StoreMethod = StoreMethod.DEFLATE,
+                  readonly: Boolean = false,
+                  processingThreadPoolSize: Int = 8,
+                  storeThreadPoolSize: Int = 8,
+                  fileHandlesPerStoreThread: Int = 4
+                  ): FileSystem.Diagnostics = {
     val repo = repositoryContents(repositoryDirectory); import repo._
     trait ConfigurationPart extends sql.ThreadSpecificSessionsPart with StoreSettingsSlice with data.DataSettingsSlice {
       override val database = productionDatabase(readonly)
