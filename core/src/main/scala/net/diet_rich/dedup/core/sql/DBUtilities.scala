@@ -82,12 +82,13 @@ object DBUtilities {
   private def dataAreaStarts(implicit session: CurrentSession): List[Position] = StaticQuery.queryNA[Position](
     "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start;"
   ).list
-  def problemDataAreaOverlaps(implicit session: CurrentSession): List[(StoreEntry, StoreEntry)] = StaticQuery.queryNA[(StoreEntry, StoreEntry)](
-    """|SELECT b1.id, b1.dataid, b1.start, b1.fin, b2.id, b2.dataid, b2.start, b2.fin
-      |  FROM ByteStore b1 JOIN ByteStore b2 ON
-      |    (b1.id != b2.id AND (b1.start = b2.start OR b1.fin = b2.fin)) OR
-      |    (b1.start < b2.fin AND b1.fin > b2.fin);""".stripMargin
-  ).list
+  def problemDataAreaOverlaps(implicit session: CurrentSession): List[(StoreEntry, StoreEntry)] = {
+    // Note: H2 (1.3.176) does not create a good plan if the three queries are packed into one, and the execution is too slow (two nested table scans)
+    val select = "SELECT b1.id, b1.dataid, b1.start, b1.fin, b2.id, b2.dataid, b2.start, b2.fin FROM ByteStore b1 JOIN ByteStore b2"
+    StaticQuery.queryNA[(StoreEntry, StoreEntry)](s"$select ON b1.start < b2.fin AND b1.fin > b2.fin;").list :::
+    StaticQuery.queryNA[(StoreEntry, StoreEntry)](s"$select ON b1.id != b2.id AND b1.start = b2.start;").list :::
+    StaticQuery.queryNA[(StoreEntry, StoreEntry)](s"$select ON b1.id != b2.id AND b1.fin = b2.fin;").list
+  }
   def freeRangeAtEndOfDataArea(implicit session: CurrentSession): DataRange = DataRange(startOfFreeDataArea, Position(Long.MaxValue))
   def freeRangesInDataArea(implicit session: CurrentSession): List[DataRange] = {
     dataAreaStarts match {
