@@ -13,13 +13,13 @@ object CheckRepositoryApp extends ConsoleApp {
   checkUsage("parameters: <repository path> [continueAt:(dataid)]")
   val startId = option("continueAt:", "0").toLong
 
+  import scala.language.reflectiveCalls
   val progressBar = {
     import javax.swing._
     val frame = new JFrame("Repository check progress")
     init(new JProgressBar() {
-      def dispose = frame dispose()
       def write(string: String) = runLater { setString(string) }
-      }) { bar =>
+    }) { bar =>
       bar setString ""
       bar setStringPainted true
       frame.getContentPane add bar
