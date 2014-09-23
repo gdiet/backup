@@ -122,6 +122,6 @@ object Update extends ConsoleApp {
     file.renameTo(backupDirectory / file.getName)
   }
 
-  (databaseDirectory / "dedup-new.mv.db") renameTo (databaseDirectory / "dedup.mv.db")
+  (databaseDirectory / "dedup-new.h2.db") renameTo (databaseDirectory / "dedup.h2.db")
   (repositoryDirectory / "data") renameTo (repositoryDirectory / "datafiles")
 }
