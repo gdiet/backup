@@ -11,8 +11,8 @@ set RUNINLINE=true
 set REPODIR=./target/playRepo
 set CLASSPATH=davserver/target/xitrum/lib/*
 set JAVACALL="%JAVA_HOME%\bin\java.exe" -cp %CLASSPATH%
-set CREATEREPOCALL= %JAVACALL% net.diet_rich.dedup.core.CreateRepository %REPODIR%
-set DAVSERVERCALL= %JAVACALL% net.diet_rich.dedup.webdav.ServerApp %REPODIR% READWRITE
+set CREATEREPOCALL= %JAVACALL% net.diet_rich.dedup.core.CreateRepositoryApp %REPODIR%
+set DAVSERVERCALL= %JAVACALL% net.diet_rich.dedup.webdav.DavServerApp %REPODIR% READWRITE
 
 cd ..\..
 call sbt.bat core/package ;davserver/xitrumPackage

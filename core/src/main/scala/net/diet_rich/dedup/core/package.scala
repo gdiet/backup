@@ -28,9 +28,9 @@ package object core {
 
   def backupDatabase(repositoryDirectory: File): Unit = {
     val databaseFile = repositoryDirectory / "database" / "dedup.h2.db"
-    require(databaseFile exists(), s"database file $databaseFile does not exist")
-    val targetDir = init(repositoryDirectory / "database" / "backups")(_ mkdir)
-    zipBackup(databaseFile, targetDir, "dedup-db_%s.zip", new Date(databaseFile lastModified()))
+    if (databaseFile exists()) {
+      val targetDir = init(repositoryDirectory / "database" / "backups")(_ mkdir)
+      zipBackup(databaseFile, targetDir, "dedup-db_%s.zip", new Date(databaseFile lastModified()))
+    }
   }
-
 }
