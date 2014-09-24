@@ -1,7 +1,6 @@
 package net.diet_rich.dedup.core
 
 import java.awt.Color
-import java.io.File
 import javax.swing.SwingUtilities
 
 import net.diet_rich.dedup.core.values._
@@ -31,7 +30,7 @@ object CheckRepositoryApp extends ConsoleApp {
   }
 
   progressBar write "initializing backup file system..."
-  val fileSystem = init(Repository.diagnosticFileSystem(new File(repositoryPath), readonly = true))(_ setup())
+  val fileSystem = init(Repository.diagnosticFileSystem(repositoryDirectory, readonly = true))(_ setup())
   import fileSystem.session
 
   progressBar write "checking database..."

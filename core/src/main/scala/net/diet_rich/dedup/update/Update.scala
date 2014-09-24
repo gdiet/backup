@@ -29,7 +29,6 @@ case class OldStoreEntry(dataid: Long, index: Int, start: Long, fin: Long)
 
 object Update extends ConsoleApp {
   checkUsage("parameters: <repository path>")
-  val repositoryDirectory = new File(repositoryPath)
   val repoContents = Repository repositoryContents repositoryDirectory; import repoContents._
 
   implicit val _getHash = GetResult(r => r nextBytes())
