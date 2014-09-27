@@ -74,7 +74,7 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
           val in = new ByteArrayInputStream(buf, 0, count)
           val source = Source.fromInputStream(in, Size(count)) // FIXME store bytes directly instead of from stream
           filesystem.createOrReplace(parentID, name, source, Time now)
-        }
+        } // FIXME overwriting existing files with new content fails - why?
       }
     }
   }
