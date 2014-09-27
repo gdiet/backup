@@ -9,7 +9,7 @@ if "%JAVA_HOME%"=="" (
 
 set RUNINLINE=true
 set REPODIR=./target/playRepo
-set CLASSPATH=ftpserver/target/xitrum/lib/*
+set CLASSPATH=ftpserver/target/xitrum/lib/*;ftpserver/src/main/resources
 set JAVACALL="%JAVA_HOME%\bin\java.exe" -cp %CLASSPATH%
 set CREATEREPOCALL= %JAVACALL% net.diet_rich.dedup.core.CreateRepositoryApp %REPODIR%
 set FTPSERVERCALL= %JAVACALL% net.diet_rich.dedup.ftpserver.FtpServerApp %REPODIR% READWRITE

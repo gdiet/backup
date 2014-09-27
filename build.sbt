@@ -14,6 +14,8 @@ scalacOptions in ThisBuild ++= Seq(
   "-language:postfixOps,implicitConversions"
 )
 
+excludeFilter in (ThisBuild, Compile, unmanagedResources) := "logback.xml"
+
 lazy val core = project
 
 lazy val davserver = project dependsOn (core  % "test->test;compile->compile")

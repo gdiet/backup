@@ -9,7 +9,7 @@ if "%JAVA_HOME%"=="" (
 
 set RUNINLINE=true
 set REPODIR=./target/playRepo
-set CLASSPATH=davserver/target/xitrum/lib/*
+set CLASSPATH=davserver/target/xitrum/lib/*;davserver/src/main/resources
 set JAVACALL="%JAVA_HOME%\bin\java.exe" -cp %CLASSPATH%
 set CREATEREPOCALL= %JAVACALL% net.diet_rich.dedup.core.CreateRepositoryApp %REPODIR%
 set DAVSERVERCALL= %JAVACALL% net.diet_rich.dedup.webdav.DavServerApp %REPODIR% READWRITE
