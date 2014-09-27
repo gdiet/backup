@@ -2,14 +2,15 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.ftpserver
 
-import java.io.IOException
-import java.io.FileNotFoundException
+import java.io._
+import java.util.concurrent.atomic.AtomicBoolean
+
 import scala.collection.JavaConversions
 
 import org.apache.ftpserver.ftplet._
 
-import net.diet_rich.dedup.core.FileSystem
-import net.diet_rich.dedup.core.values.{Bytes, Time, TreeEntry, TreeEntryID}
+import net.diet_rich.dedup.core.{Source, FileSystem}
+import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util.{CallLogging, Logging}
 
 class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSystemView with Logging with CallLogging {
@@ -39,7 +40,7 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     }
   }
 
-  override def dispose(): Unit = log info "... dispose" // TODO info("dispose")(System.exit(0)) ???
+  override def dispose(): Unit = log info "... dispose"
 
   override def getFile(name: String): FtpFile = info(s"... getFile($name)") {
     resolvePath(name) match {
@@ -62,15 +63,29 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     override final def getGroupName: String = debug(s"getGroupName for $this") { "dedup" }
     override final def isHidden: Boolean = debug(s"isHidden for $this") { false }
     override final def isWritable: Boolean = debug(s"isWritable for $this") { writeEnabled }
+
+    protected def name: String
+    protected def parentID: TreeEntryID
+    override def createOutputStream(offset: Long): java.io.OutputStream = debug(s"createOutputStream for $this") {
+      if (offset != 0) throw new IOException("not random accessible")
+      new ByteArrayOutputStream() { // FIXME check available memory. if out of memory, store in temp file
+      val open = new AtomicBoolean(true)
+        override def close = if (open getAndSet false) {
+          val in = new ByteArrayInputStream(buf, 0, count)
+          val source = Source.fromInputStream(in, Size(count)) // FIXME store bytes directly instead of from stream
+          filesystem.createOrReplace(parentID, name, source, Time now)
+        }
+      }
+    }
   }
 
   /** A not-yet-existing ftp repo file used when creating new files or directories. */
-  case class MaybeRepoFile(parent: TreeEntryID, name: String) extends RepoFile {
-    override val toString = s"MaybeRepoFile($parent/$name)"
+  case class MaybeRepoFile(parentID: TreeEntryID, name: String) extends RepoFile {
+    override val toString = s"MaybeRepoFile($parentID/$name)"
     log debug s"creating $this"
 
     override def getAbsolutePath: String = debug(s"getAbsolutePath for $this") {
-      filesystem.path(parent) match {
+      filesystem.path(parentID) match {
         case Some(path) => path.value + "/" + name
         case _ => debug("WARN: getAbsolutePath - node $parent does not exist")("")
       }
@@ -85,10 +100,9 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     override def getName: String = debug(s"getName for $this") { name }
     override def getLinkCount: Int = debug(s"getLinkCount for $this") { 0 }
     override def createInputStream(offset: Long): java.io.InputStream = debug(s"createInputStream with offset $offset for $this") { throw new FileNotFoundException }
-    override def createOutputStream(x$1: Long): java.io.OutputStream = debug(s"createOutputStream for $this") { ??? } // FIXME implement
     override def delete(): Boolean = debug(s"delete $this") { false }
     override def isRemovable: Boolean = debug(s"isRemovable for $this") { false }
-    override def mkdir(): Boolean = debug(s"mkdir for $this") { filesystem.createUnchecked(parent, name); true }
+    override def mkdir(): Boolean = debug(s"mkdir for $this") { filesystem.createUnchecked(parentID, name); true }
     override def move(target: org.apache.ftpserver.ftplet.FtpFile): Boolean = debug(s"move for $this to $target") { false }
     override def setLastModified(time: Long): Boolean = debug(s"setLastModified for $this") { false }
   }
@@ -96,10 +110,12 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
   case class IsRepoFile(id: TreeEntryID) extends RepoFile {
     log debug s"creating $this"
 
-    def child(name: String) = filesystem.firstChild(id, name).map(e => IsRepoFile(e.id))
-    def parent: Option[IsRepoFile] = filesystem entry id map (entry => IsRepoFile(entry.parent))
-
     private def entry: Option[TreeEntry] = filesystem entry id
+
+    override protected def name = entry map (_.name) getOrElse(throw new FileNotFoundException(s"$id not found"))
+    override protected def parentID = entry map (_.id) getOrElse(throw new FileNotFoundException(s"$id not found"))
+    def parent: Option[IsRepoFile] = entry map (entry => IsRepoFile(entry.parent))
+    def child(name: String) = filesystem.firstChild(id, name).map(e => IsRepoFile(e.id))
 
     override def getAbsolutePath: String = debug(s"getAbsolutePath for $this") { filesystem path id map (_.value) getOrElse { log.warn(s"getAbsolutePath for $id failed"); "" } }
     override def isFile: Boolean = debug(s"isFile for $this") { filesystem.dataid(id).isDefined }
@@ -119,8 +135,8 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
     override def move(target: FtpFile): Boolean = debug(s"move for $this to $target") {
       target match {
         case target: MaybeRepoFile => filesystem inTransaction {
-            if (filesystem.children(target.parent, target.name).isEmpty) {
-              entry map (_ copy(parent = target.parent, name = target.name)) flatMap (filesystem change _) isDefined;
+            if (filesystem.children(target.parentID, target.name).isEmpty) {
+              entry map (_ copy(parent = target.parentID, name = target.name)) flatMap (filesystem change _) isDefined;
             } else false
           }
         case _ => false
@@ -139,11 +155,6 @@ class FileSysView(filesystem: FileSystem, writeEnabled: Boolean) extends FileSys
             filesystem read dataid asInputStream;
           }
       }
-    }
-
-    override def createOutputStream(offset: Long): java.io.OutputStream = debug(s"createOutputStream for $this") {
-      if (offset != 0) throw new IOException("not random accessible")
-      ???
     }
   }
 }
