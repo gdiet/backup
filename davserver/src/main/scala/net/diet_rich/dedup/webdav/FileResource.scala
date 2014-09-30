@@ -41,6 +41,6 @@ case class FileResourceReadOnly(fileSystem: FileSystem, treeEntry: TreeEntry) ex
 case class FileResourceReadWrite(fileSystem: FileSystem, treeEntry: TreeEntry) extends FileResource with AbstractWriteResource with ReplaceableResource {
   override final def replaceContent(inputStream: InputStream, length: LongJ): Unit = debug(s"replaceContent(in, $length)") {
     val source = Source fromInputStream (inputStream, Size(length))
-    fileSystem createOrReplace (treeEntry.parent, treeEntry.name, source, Time now())
+    fileSystem createOrReplace (treeEntry.parent, treeEntry.name, source, Time now)
   }
 }

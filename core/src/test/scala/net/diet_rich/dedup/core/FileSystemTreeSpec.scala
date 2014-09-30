@@ -15,11 +15,18 @@ A directory should be available in the tree even if its newly crested $createAnd
 Looking up a path where only parts exist should yield None $pathWithoutTreeEntry
 Create should throw an exception if a child with the name already exists $createExisting
 Creating a child where a deleted child with the same name already exists should succeed $createReplacement
+Creating paths should succeed even if they already exist partially $createPaths
   """
 
   private def withEmptyTree[T] (f: TreeInterface => T): T = {
     object tree extends Tree with InMemoryDBPartWithTables
     f(tree)
+  }
+
+  def createPaths = withEmptyTree { tree =>
+    tree createWithPath (Path("/some/path"))
+    tree createWithPath (Path("/some/other/path"))
+    success
   }
 
   def createReplacement = withEmptyTree { tree =>

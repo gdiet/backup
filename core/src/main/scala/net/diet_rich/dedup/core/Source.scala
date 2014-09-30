@@ -7,7 +7,7 @@ import net.diet_rich.dedup.core.values.{Bytes, Size}
 import net.diet_rich.dedup.util.io.{RichRandomAccessFile, RichInputStream}
 import net.diet_rich.dedup.util.valueOf
 
-trait Source {
+trait Source extends java.io.Closeable {
   def size: Size
   def read(count: Int): Bytes
   final def allData: Iterator[Bytes] = new Iterator[Bytes] {

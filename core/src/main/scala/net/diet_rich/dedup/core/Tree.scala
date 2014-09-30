@@ -17,7 +17,7 @@ trait TreeInterface {
   def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
-  def markDeleted(id: TreeEntryID, deletionTime: Option[Time] = Some(Time now())): Boolean
+  def markDeleted(id: TreeEntryID, deletionTime: Option[Time] = Some(Time now)): Boolean
   def change(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID], newDeletionTime: Option[Time] = None): Option[TreeEntry]
   def createOrReplace(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def sizeOf(id: DataEntryID): Option[Size]
@@ -54,7 +54,7 @@ trait Tree extends TreeInterface with sql.TablesPart {
     if(elements.size === 0) throw new IOException("can't create the root entry")
     val parent = elements.dropRight(1).foldLeft(FileSystem ROOTID) { (node, childName) =>
       children(node) filter (_.name === childName) match {
-        case Nil => createUnchecked(node, childName, changed, dataid).id
+        case Nil => createUnchecked(node, childName, changed, None).id
         case List(entry) => entry.id
         case entries => throw new IOException(s"ambiguous path; §entries")
       }

@@ -12,5 +12,7 @@ trait ConsoleApp extends App {
     init(new File(repositoryPath)) { repositoryDirectory =>
       require(repositoryDirectory.isDirectory, s"$repositoryDirectory is not a directory")
     }
-  def option(key: String, default: String): String = options find (_ startsWith key) map (_ substring key.length) getOrElse default
+  def optional(key: String): Option[String] = options find (_ startsWith key)
+  def option(key: String, default: => String): String = optional(key) map (_ substring key.length) getOrElse default
+  def option(key: String): String = option(key, throw new IllegalArgumentException(s"option $key is mandatory"))
 }

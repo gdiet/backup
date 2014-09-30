@@ -4,7 +4,10 @@
 package net.diet_rich.dedup.util
 
 import java.io.{InputStream, RandomAccessFile, PrintWriter, File}
+
 import scala.io.Source
+
+import net.diet_rich.dedup.core.values.Time
 
 package object io {
 
@@ -33,6 +36,7 @@ package object io {
 
   implicit class RichFile(val file: File) extends AnyVal {
     def / (child: String) = new File(file, child)
+    def changed: Time = Time(file lastModified)
   }
   implicit class RichRandomAccessFile(val file: RandomAccessFile) extends AnyVal {
     def readMethod = file read (_: Array[Byte], _: Int, _: Int)

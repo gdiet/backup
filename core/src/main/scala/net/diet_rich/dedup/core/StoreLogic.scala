@@ -14,6 +14,7 @@ import net.diet_rich.dedup.util.{Equal, BlockingThreadPoolExecutor, Memory, resu
 trait StoreInterface {
   def read(entry: DataEntryID): Iterator[Bytes]
   def storeUnchecked(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntry
+  def storeUnchecked(parent: TreeEntryID, name: String, printData: Bytes, print: Print, source: Source, time: Time): TreeEntry
   def createOrReplace(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntry
 }
 
@@ -32,6 +33,11 @@ trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with S
     createUnchecked(parent, name, Some(time), Some(dataID))
   }
 
+  override final def storeUnchecked(parent: TreeEntryID, name: String, printData: Bytes, print: Print, source: Source, time: Time): TreeEntry = inStoreContext {
+    val dataID = dataEntryFor(printData, print, source)
+    createUnchecked(parent, name, Some(time), Some(dataID))
+  }
+
   override final def createOrReplace(parent: TreeEntryID, name: String, source: Source, time: Time): TreeEntry = inStoreContext {
     val dataID = dataEntryFor(source)
     createOrReplace(parent, name, Some(time), Some(dataID))
@@ -45,7 +51,10 @@ trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with S
 
   private def dataEntryFor(source: Source): DataEntryID = {
     val printData = source read FileSystem.PRINTSIZE
-    val print = Print(printData)
+    dataEntryFor(printData, Print(printData), source)
+  }
+
+  private def dataEntryFor(printData: Bytes, print: Print, source: Source): DataEntryID = {
     if (printData.size === Size(0))
       dataHandler storePackedData(Iterator(), Size(0), print, Hash.calculate(storeSettings hashAlgorithm, Iterator())._1)
     else if (dataHandler hasSizeAndPrint (source size, print))

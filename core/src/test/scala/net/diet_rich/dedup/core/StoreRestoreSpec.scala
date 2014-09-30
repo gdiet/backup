@@ -23,10 +23,10 @@ Storing empty files should be possible $storeZeroBytes
   def storeZeroBytes = {
     val repository = newTestDir("StoreRestoreSpec.storeZeroBytes")
     Repository.create(repository)
-    Repository(repository, storeMethod = StoreMethod.STORE){ fileSystem =>
+    Repository(repository, storeMethod = StoreMethod.DEFLATE){ fileSystem => // FIXME both store methods
       val source = Source fromInputStream (new java.io.ByteArrayInputStream(Array()), Size(0))
-      fileSystem storeUnchecked (FileSystem.ROOTID, "name", source, Time now())
-      success
+      val stored = fileSystem storeUnchecked (FileSystem.ROOTID, "name", source, Time now)
+      fileSystem.read(stored.data.get).toList should beEmpty
     }
   }
 
