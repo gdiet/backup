@@ -54,14 +54,11 @@ trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with S
     dataEntryFor(printData, Print(printData), source)
   }
 
-  private def dataEntryFor(printData: Bytes, print: Print, source: Source): DataEntryID = {
-    if (printData.size === Size(0))
-      dataHandler storePackedData(Iterator(), Size(0), print, Hash.calculate(storeSettings hashAlgorithm, Iterator())._1)
-    else if (dataHandler hasSizeAndPrint (source size, print))
+  private def dataEntryFor(printData: Bytes, print: Print, source: Source): DataEntryID =
+    if (dataHandler hasSizeAndPrint (source size, print))
       tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
     else
       dataHandler storeSourceData (printData, print, source.allData, source.size)
-  }
 
   import Memory._
   private def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = Memory.reserved(source.size.value) {
