@@ -92,9 +92,9 @@ object Repository {
     require(datafilesDirectory mkdir(), s"could not create data directory $datafilesDirectory")
 
     productionDatabase(readonly = false) withSession { implicit session =>
-      sql.DBUtilities.createTables(Hash digestLength hashAlgorithm)
+      sql.DBUtilities createTables hashAlgorithm
       sql.DBUtilities.recreateIndexes
-      sql.DBUtilities.replaceSettings(databaseSettingsToWrite)
+      sql.DBUtilities replaceSettings databaseSettingsToWrite
     }
     writeSettingsFile(dataSettingsFile, dataSettingsToWrite)
   }

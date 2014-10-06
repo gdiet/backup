@@ -2,12 +2,12 @@ package net.diet_rich.dedup.core.sql
 
 import scala.slick.jdbc.StaticQuery
 
-import net.diet_rich.dedup.core.values.{DataRange, Path, Position, StoreEntry}
+import net.diet_rich.dedup.core.values._
 
 object DBUtilities {
   import TableQueries._
 
-  def createTables(hashSize: Int)(implicit session: CurrentSession): Unit =
+  def createTables(hashAlgorithm: String)(implicit session: CurrentSession): Unit = {
     StaticQuery updateNA s"""
       |CREATE SEQUENCE treeEntriesIdSeq START WITH 0;
       |CREATE TABLE TreeEntries (
@@ -19,13 +19,13 @@ object DBUtilities {
       |  deleted BIGINT DEFAULT NULL,
       |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
       |);
-      |INSERT INTO TreeEntries (parent, name) VALUES (-1, '${Path.ROOTNAME}');
+      |INSERT INTO TreeEntries (parent, name) VALUES (-1, '${Path ROOTNAME}');
       |CREATE SEQUENCE dataEntriesIdSeq;
       |CREATE TABLE DataEntries (
       |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntriesIdSeq),
       |  length BIGINT NOT NULL,
       |  print  BIGINT NOT NULL,
-      |  hash   VARBINARY($hashSize) NOT NULL,
+      |  hash   VARBINARY(${Hash digestLength hashAlgorithm}) NOT NULL,
       |  method INTEGER DEFAULT 0 NOT NULL,
       |  CONSTRAINT pk_DataEntries PRIMARY KEY (id)
       |);
@@ -43,6 +43,10 @@ object DBUtilities {
       |  CONSTRAINT pk_Settings PRIMARY KEY (key)
       |);
     """.stripMargin execute session
+    // Note: By inserting the empty entry manually, we avoid to have it stored deflated
+    StaticQuery.update[(Print, Hash, StoreMethod)]("INSERT INTO DataEntries (length, print, hash, method) VALUES (0, ?, ?, ?);")
+      .apply(Print(Bytes EMPTY), Hash empty hashAlgorithm, StoreMethod STORE) execute session
+  }
 
   def recreateIndexes(implicit session: CurrentSession): Unit =
     StaticQuery updateNA """

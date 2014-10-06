@@ -58,7 +58,6 @@ object Update extends ConsoleApp {
     require(oldSettings("repository version") == "1.1", "repository version not 1.1")
 
     val hashAlgorithm = oldSettings("hash algorithm")
-    val hashSize = Hash digestLength hashAlgorithm
     val repositoryID = oldSettings("repository id")
     val blockSize = oldSettings("data size")
 
@@ -84,7 +83,7 @@ object Update extends ConsoleApp {
     }.flatten
 
     newDb withSession { newSession =>
-      DBUtilities.createTables(hashSize)(newSession)
+      DBUtilities.createTables(hashAlgorithm)(newSession)
       DBUtilities.recreateIndexes(newSession)
       DBUtilities.replaceSettings(newDatabaseSettings)(newSession)
 

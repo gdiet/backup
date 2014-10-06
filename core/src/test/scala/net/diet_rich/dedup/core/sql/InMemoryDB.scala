@@ -18,6 +18,6 @@ object InMemoryDbPart {
 }
 
 trait InMemoryDBPartWithTables extends InMemoryDbPart {
-  DBUtilities createTables 16
+  DBUtilities createTables "MD5"
   DBUtilities recreateIndexes
 }
