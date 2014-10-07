@@ -9,17 +9,30 @@ import java.util.concurrent.{ConcurrentLinkedQueue => SynchronizedQueue}
 import scala.collection.JavaConverters.collectionAsScalaIterableConverter
 
 import net.diet_rich.dedup.core.Lifecycle
-import net.diet_rich.dedup.util.{init, ThreadSpecific}
+import net.diet_rich.dedup.util.{Memory, init, ThreadSpecific}
 
-trait DatabaseSlice {
+trait DatabaseSlice extends Lifecycle {
+  import DatabaseSlice.memoryToReserve
   def database: CurrentDatabase
+  abstract override def setup() = {
+    super.setup()
+    require(Memory.reserve(memoryToReserve).isInstanceOf[Memory.Reserved], s"could not reserve $memoryToReserve bytes of memory for database etc.")
+  }
+  abstract override def teardown() = {
+    super.teardown()
+    Memory free memoryToReserve
+  }
+}
+
+object DatabaseSlice {
+  private val memoryToReserve = 0x2000000 // 0x2000000 = 32 MB
 }
 
 trait SessionSlice {
   implicit def session: CurrentSession
 }
 
-trait ThreadSpecificSessionsPart extends SessionSlice with DatabaseSlice with Lifecycle {
+trait ThreadSpecificSessionsPart extends SessionSlice with DatabaseSlice {
   private val allSessions = new SynchronizedQueue[CurrentSession]()
   private val sessions = ThreadSpecific(init(database createSession){allSessions add})
   implicit final def session: CurrentSession = sessions.threadInstance
