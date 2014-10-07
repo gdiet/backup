@@ -5,10 +5,11 @@ package net.diet_rich.dedup.core.data
 
 import org.specs2.SpecificationWithJUnit
 
-import net.diet_rich.dedup.core.values.Size
+import net.diet_rich.dedup.core.values.{BasicValuesMatchers, Bytes, TreeEntry, Size}
 import net.diet_rich.dedup.testutil.{newTestFile, ByteArrayView}
+import org.specs2.matcher.Matcher
 
-class DataFileSpec extends SpecificationWithJUnit { def is = s2"""
+class DataFileSpec extends SpecificationWithJUnit with BasicValuesMatchers { def is = s2"""
 ${"Data file tests".title}
 
 The standard use case create - store - close - reopen - read should be supported $standardUseCase
@@ -24,7 +25,6 @@ The standard use case create - store - close - reopen - read should be supported
     val read = openedAgain.read(8L, Size(8))
     openedAgain close()
     val expected = Array[Byte](0, 0, 65, 66, 67, 68, 0, 0).asBytes
-    read.fullyEquals(expected) should beTrue // FIXME matcher
+    read should beTheSameAs(expected)
   }
-
 }
