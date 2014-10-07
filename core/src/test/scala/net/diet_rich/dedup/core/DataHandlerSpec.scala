@@ -28,10 +28,9 @@ Storing zero bytes should be possible $storeZeroBytes
 
     // TODO check against StoreRestoreSpec
     dataHandler.inLifeCycle {
-      val source = Source.fromInputStream(new ByteArrayInputStream(Array()), Size(0))
-      dataHandler.dataHandler.storeSourceData(source)
-      // TODO also test this
-//      dataHandler.dataHandler.storePackedData(Iterator(), Size(0), Print(0), Hash(Array()))
+      val source = Source fromInputStream (new ByteArrayInputStream(Array()), Size(0))
+      dataHandler.dataHandler storeSourceData source
+      // TODO check something
       success
     }
   }

@@ -16,7 +16,7 @@ trait TreeInterface {
   def children(parent: TreeEntryID, name: String): List[TreeEntry]
   def createUnchecked(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
   def create(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
-  def createWithPath(path: Path, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry
+  def createWithPath(path: Path, changed: Option[Time] = Some(Time now), dataid: Option[DataEntryID] = None): TreeEntry
   def markDeleted(id: TreeEntryID, deletionTime: Option[Time] = Some(Time now)): Boolean
   def change(id: TreeEntryID, newParent: TreeEntryID, newName: String, newTime: Option[Time], newData: Option[DataEntryID], newDeletionTime: Option[Time] = None): Option[TreeEntry]
   def createOrReplace(parent: TreeEntryID, name: String, changed: Option[Time] = None, dataid: Option[DataEntryID] = None): TreeEntry

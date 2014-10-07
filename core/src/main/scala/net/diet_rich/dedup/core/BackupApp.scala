@@ -20,7 +20,7 @@ object BackupApp extends ConsoleApp {
   Repository(repositoryDirectory, storeMethod, readonly = false) { filesystem =>
     val reference = referencePath flatMap (filesystem.entries(_).headOption)
     if (referencePath.isDefined) require (reference isDefined, s"reference $referencePath not found in file system.")
-    val parent = filesystem.entries(target parent).headOption getOrElse filesystem.createWithPath(target parent, Some(Time now)) // FIXME Some(Time now) as default?
+    val parent = filesystem.entries(target parent).headOption getOrElse filesystem.createWithPath(target parent)
     val name = target.name
 
     store(parent, name, source, reference)

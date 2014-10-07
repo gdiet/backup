@@ -12,9 +12,9 @@ trait DataHandlerSlice {
     def readData(entry: DataEntryID): Iterator[Bytes]
     def hasSizeAndPrint(size: Size, print: Print): Boolean
     def dataEntriesFor(size: Size, print: Print, hash: Hash): List[DataEntry]
-    def storePackedData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID
     def storeSourceData(data: Source): DataEntryID
     def storeSourceData(printData: Bytes, print: Print, data: Iterator[Bytes], estimatedSize: Size): DataEntryID
+    def storeSourceData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID
   }
   def dataHandler: DataHandler
 }
@@ -47,10 +47,12 @@ trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreS
       dataID
     }
 
-    override def storePackedData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID =
+    override def storeSourceData(data: Iterator[Bytes], size: Size, print: Print, hash: Hash): DataEntryID = {
+      val packedData = storeSettings.storeMethod.pack(data)
       init(storePackedDataAndCreateByteStoreEntries(data, size)) { dataID =>
         createDataTableEntry(dataID, size, print, hash)
       }
+    }
 
     // Note: In theory, a different thread might just have finished storing the same data and we create a data
     // duplicate here. I think however that is is preferrable to clean up data duplicates with a utility from

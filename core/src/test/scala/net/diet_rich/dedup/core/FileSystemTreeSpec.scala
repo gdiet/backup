@@ -24,9 +24,10 @@ Creating paths should succeed even if they already exist partially $createPaths
   }
 
   def createPaths = withEmptyTree { tree =>
-    tree createWithPath (Path("/some/path"))
-    tree createWithPath (Path("/some/other/path"))
-    success
+    val branch = Path("/some")
+    tree createWithPath (branch / "path")
+    tree createWithPath (branch / "other/path")
+    tree entries branch should haveSize(1)
   }
 
   def createReplacement = withEmptyTree { tree =>
