@@ -9,8 +9,8 @@
 resolvers += "ettrema-repo" at "http://milton.io/maven"
 
 libraryDependencies ++= Seq (
-  "io.milton" % "milton-api" % "2.6.2.4" withSources(),
-  "io.milton" % "milton-server-ce" % "2.6.2.4" withSources(),
+  "io.milton" % "milton-api" % "2.6.3.2",
+  "io.milton" % "milton-server-ce" % "2.6.3.2",
   "commons-lang" % "commons-lang" % "2.6", // Needed but not included automatically
   "org.slf4j" % "slf4j-api" % "1.7.7",
   "ch.qos.logback" % "logback-classic" % "1.1.2"
