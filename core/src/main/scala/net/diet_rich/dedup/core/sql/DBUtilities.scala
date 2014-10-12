@@ -20,7 +20,7 @@ object DBUtilities {
       |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
       |);
       |INSERT INTO TreeEntries (parent, name) VALUES (-1, '${Path ROOTNAME}');
-      |CREATE SEQUENCE dataEntriesIdSeq;
+      |CREATE SEQUENCE dataEntriesIdSeq START WITH 0;
       |CREATE TABLE DataEntries (
       |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntriesIdSeq),
       |  length BIGINT NOT NULL,
@@ -44,7 +44,6 @@ object DBUtilities {
       |);
     """.stripMargin execute session
     // Note: By inserting the empty entry manually, we avoid to have it stored deflated
-    // FIXME why is this inserted with ID 1, not ID 0?
     StaticQuery.update[(Print, Hash, StoreMethod)]("INSERT INTO DataEntries (length, print, hash, method) VALUES (0, ?, ?, ?);")
       .apply(Print(Bytes EMPTY), Hash empty hashAlgorithm, StoreMethod STORE) execute session
   }
