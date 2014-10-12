@@ -25,8 +25,11 @@ object BackupApp extends ConsoleApp {
 
     store(parent, name, source, reference)
 
+    // FIXME multi-threaded store?
+    // FIXME store progress
+    // FIXME stopping store (shutdown hook)
     def store(parent: TreeEntry, name: String, source: File, reference: Option[TreeEntry]): Unit = {
-      println(s"------ storing $parent $name $source $reference")
+      println(s"------ storing $parent $name $source $reference") // FIXME
       if (source.isDirectory) {
         val newParent = filesystem.create(parent.id, name, Some(Time now))
         source.listFiles foreach { child =>
@@ -46,7 +49,7 @@ object BackupApp extends ConsoleApp {
               store(parent, name, source, None)
           }
         case _ =>
-          println(s"****** storing $source")
+          println(s"****** storing $source") // FIXME
           using(new RandomAccessFile(source, "r").asSource) { sourceData =>
             filesystem.storeUnchecked(parent id, name, sourceData, source changed)
           }
@@ -59,13 +62,13 @@ object BackupApp extends ConsoleApp {
         val print = Print(header)
         if (print === expectedPrint) link(parent, name, source changed, dataid)
         else {
-          println(s"****** storing because of print mismatch: $source")
+          println(s"****** storing because of print mismatch: $source") // FIXME
           filesystem.storeUnchecked(parent id, name, header, print, sourceData, source changed)
         }
       }
 
     def link(parent: TreeEntry, name: String, time: Time, dataid: DataEntryID): Unit = {
-      println(s"****** linking $dataid to $source")
+      println(s"****** linking $dataid to $source") // FIXME
       filesystem.create(parent id, name, Some(time), Some(dataid))
     }
   }
