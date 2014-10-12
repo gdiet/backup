@@ -39,9 +39,9 @@ object Repository {
                   fileHandlesPerStoreThread: Int = 4
                   ): FileSystem.Diagnostics = {
     val repo = repositoryContents(repositoryDirectory); import repo._
-    trait ConfigurationPart extends sql.ThreadSpecificSessionsPart with StoreSettingsSlice with data.DataSettingsSlice {
+    trait ConfigurationPart extends sql.ThreadSpecificSessionsPart with StoreSettingsSlice with data.DataSettingsSlice with data.BlockSizeSlice {
       override val database = productionDatabase(readonly)
-      override val (storeSettings, dataSettings) = {
+      override val (storeSettings, dataSettings, dataBlockSize) = {
         val databaseSettings = database withSession (sql.DBUtilities.allSettings(_))
         require(databaseSettings(sql.databaseVersionKey) == sql.databaseVersionValue, s"${sql.databaseVersionKey} in database has value ${databaseSettings(sql.databaseVersionKey)} but expected ${sql.databaseVersionValue}")
         val datafilesSettings = readSettingsFile(dataSettingsFile)
@@ -49,8 +49,9 @@ object Repository {
         require(datafilesSettings(repositoryIdKey) == databaseSettings(repositoryIdKey), s"$repositoryIdKey in database and in datastore differ")
 
         val storeSettings = StoreSettings(databaseSettings(hashAlgorithmKey), processingThreadPoolSize, storeMethod)
-        val dataSettings = data.DataSettings(Size(datafilesSettings(data.blocksizeKey) toLong), datafilesDirectory, storeThreadPoolSize, fileHandlesPerStoreThread, readonly)
-        (storeSettings, dataSettings)
+        val dataSettings = data.DataSettings(datafilesDirectory, storeThreadPoolSize, fileHandlesPerStoreThread, readonly)
+        val dataBlockSize = Size(datafilesSettings(data.blocksizeKey) toLong)
+        (storeSettings, dataSettings, dataBlockSize)
       }
     }
     new FileSystem with ConfigurationPart with FileSystem.BasicPart

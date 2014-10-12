@@ -8,7 +8,6 @@ import org.specs2.SpecificationWithJUnit
 
 import net.diet_rich.dedup.core.values._
 import net.diet_rich.dedup.util.init
-import net.diet_rich.dedup.testutil.newTestDir
 
 import FileSystem.{BasicPart, ROOTID}
 
@@ -34,8 +33,10 @@ Store and subsequent restore should be possible $storeRestoreCombinations
         with DataHandlerPart
         with sql.TablesPart
         with FreeRangesPart
-        with StoreSettingsSlice {
+        with StoreSettingsSlice
+        with data.BlockSizeSlice {
         def storeSettings = StoreSettings ("MD5", 4, method)
+        def dataBlockSize = Size(300)
       }
       fs.inLifeCycle {
         val sourceData = init(Bytes.zero(size)){ b => new util.Random(43) nextBytes b.data }
@@ -44,7 +45,9 @@ Store and subsequent restore should be possible $storeRestoreCombinations
         val dataid = fs.entries(Path("/child")).head.data.get
         val data = fs read dataid
         val flat = data.flatMap(b => b.data.drop(b.offset).take(b.length)).toList
-        flat === sourceData.data.toList
+        val flatSource = sourceData.data.toList
+        (flat.size === flatSource.size) and
+          ((flat == flatSource) === true)
       }
     }
   }

@@ -23,7 +23,7 @@ object FileSystem {
     with DataHandlerPart
     with sql.TablesPart
     with FreeRangesPart
-    with data.DataStorePart { _: StoreSettingsSlice with DataBackendSlice with data.DataSettingsSlice => }
+    with data.DataStorePart { _: StoreSettingsSlice with DataBackendSlice with data.DataSettingsSlice with data.BlockSizeSlice => }
 
   implicit class FileSystemUtilities(val fs: FileSystem) extends AnyVal {
     def firstChild(parent: TreeEntryID, name: String): Option[TreeEntry] = fs.children(parent, name).headOption

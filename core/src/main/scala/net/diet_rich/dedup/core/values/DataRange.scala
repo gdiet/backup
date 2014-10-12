@@ -14,7 +14,7 @@ final case class DataRange(start: Position, fin: Position) {
 
   def limitAt(limit: Size): RangeLimitResult =
     if (size == limit) ExactMatch(this) else
-    if (size > limit) IsLarger(withLength(limit), withOffset(limit)) else
+    if (size > limit) IsLarger(this) else
     NotLargeEnough(this, limit - size)
 }
 
@@ -24,5 +24,5 @@ object DataRange extends ((Position, Position) => DataRange) {
   sealed trait RangeLimitResult
   final case class NotLargeEnough(range: DataRange, missing: Size) extends RangeLimitResult
   final case class ExactMatch(range: DataRange) extends RangeLimitResult
-  final case class IsLarger(range: DataRange, rest: DataRange) extends  RangeLimitResult
+  final case class IsLarger(range: DataRange) extends  RangeLimitResult
 }

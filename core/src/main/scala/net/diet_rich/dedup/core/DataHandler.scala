@@ -63,6 +63,7 @@ trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreS
 
     private def storePackedDataAndCreateByteStoreEntries(data: Iterator[Bytes], estimatedSize: Size): DataEntryID = {
       val storedRanges = storePackedData(data, estimatedSize)
+      // FIXME normalize storedRanges (join neighbours)
       init(tables.nextDataID) { dataID =>
         storedRanges foreach {
           tables.createByteStoreEntry(dataID, _)
@@ -71,40 +72,35 @@ trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreS
     }
 
     private def storePackedData(data: Iterator[Bytes], estimatedSize: Size): List[DataRange] = {
-      val storeRanges = freeRanges dequeue estimatedSize
-      val remaining = data.foldLeft[RangesOrUnstored](Ranges(storeRanges)) {
+      val storeRanges = freeRanges dequeueAtLeast estimatedSize
+      val protocol = data.foldLeft[RangesOrUnstored](Ranges(Nil, storeRanges)) {
         case (ranges, Bytes(_, _, 0)) => ranges
         case (ranges, bytes) => storeOneChunk(bytes, ranges)
       }
-      remaining match {
+      protocol match {
         case Unstored(additionalData) =>
           storeRanges ::: storePackedData(additionalData.iterator, additionalData.sizeInBytes)
-        case Ranges(remaining) =>
+        case Ranges(stored, remaining) =>
           remaining foreach freeRanges.enqueue
-          remaining match {
-            case Nil => storeRanges
-            case partialRestRange :: unstoredRanges =>
-              val fullyStored :+ partiallyStored = storeRanges dropRight unstoredRanges.size
-              fullyStored :+ (partiallyStored shortenBy partialRestRange.size)
-          }
+          stored.reverse
       }
     }
 
     @annotation.tailrec
     private def storeOneChunk(bytes: Bytes, ranges: RangesOrUnstored): RangesOrUnstored = ranges match {
       case Unstored(data) => Unstored(bytes :: data)
-      case Ranges(Nil) => Unstored(List(bytes))
-      case Ranges(head :: tail) =>
+      case Ranges(_, Nil) => Unstored(List(bytes))
+      case Ranges(stored, head :: tail) =>
         head.size - bytes.size match {
           case Size.Negative(_) =>
             dataBackend.write(bytes withSize head.size, head.start)
-            storeOneChunk(bytes withOffset head.size, Ranges(tail))
+            storeOneChunk(bytes withOffset head.size, Ranges(head :: stored, tail))
           case Size.Zero =>
             dataBackend.write(bytes, head.start)
-            Ranges(tail)
+            Ranges(head :: stored, tail)
           case _ =>
             dataBackend.write(bytes, head.start)
-            Ranges((head withOffset bytes.size) :: tail)
+            Ranges((head withLength bytes.size) :: stored, (head withOffset bytes.size) :: tail)
         }
     }
   }
@@ -112,6 +108,6 @@ trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreS
 
 object DataHandlerPart {
   private sealed trait RangesOrUnstored
-  private final case class Ranges(remaining: List[DataRange]) extends RangesOrUnstored
+  private final case class Ranges(stored: List[DataRange], remaining: List[DataRange]) extends RangesOrUnstored
   private final case class Unstored(unstored: List[Bytes]) extends RangesOrUnstored
 }

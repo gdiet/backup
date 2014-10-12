@@ -21,13 +21,17 @@ trait DataBackendSlice {
   def dataBackend: DataBackend
 }
 
+trait BlockSizeSlice {
+  def dataBlockSize: Size
+}
+
 trait DataSettingsSlice {
   def dataSettings: DataSettings
 }
 
-final case class DataSettings(blocksize: Size, dataDir: File, storeThreads: Int, fileHandlesPerThread: Int, readonly: Boolean)
+final case class DataSettings(dataDir: File, storeThreads: Int, fileHandlesPerThread: Int, readonly: Boolean)
 
-trait DataStorePart extends DataBackendSlice with Lifecycle { _: DataSettingsSlice =>
+trait DataStorePart extends DataBackendSlice with Lifecycle { _: DataSettingsSlice with BlockSizeSlice =>
   abstract override def teardown() = {
     super.teardown()
     dataBackend teardown()
@@ -35,7 +39,7 @@ trait DataStorePart extends DataBackendSlice with Lifecycle { _: DataSettingsSli
 
   object dataBackend extends DataBackend {
     override def read(entry: DataRange): Iterator[Bytes] = {
-      val initialDataFileNumber = entry.start / dataSettings.blocksize
+      val initialDataFileNumber = entry.start / dataBlockSize
       dataFileDistributionFor(initialDataFileNumber, entry.start, entry.size, Nil).iterator.map {
         case (dataFileNumber, offsetInFile, currentSize) =>
           execute(dataFileNumber){ _ read (offsetInFile.value, currentSize) }
@@ -43,7 +47,7 @@ trait DataStorePart extends DataBackendSlice with Lifecycle { _: DataSettingsSli
     }
 
     override def write(data: Bytes, start: Position): Unit = {
-      val initialDataFileNumber = start / dataSettings.blocksize
+      val initialDataFileNumber = start / dataBlockSize
       dataFileDistributionFor(initialDataFileNumber, start, data.size, Nil).foldLeft (data) {
         case (remainingData, (dataFileNumber, offsetInFile, currentSize)) =>
           val currentChunk = remainingData withSize currentSize
@@ -78,8 +82,8 @@ trait DataStorePart extends DataBackendSlice with Lifecycle { _: DataSettingsSli
 
     @annotation.tailrec
     private def dataFileDistributionFor(dataFileNumber: Long, start: Position, size: Size, acc: List[(Long, Position, Size)]): List[(Long, Position, Size)] = {
-      val offsetInFile = start % dataSettings.blocksize
-      val maxSizeInFile = dataSettings.blocksize - offsetInFile
+      val offsetInFile = start % dataBlockSize
+      val maxSizeInFile = dataBlockSize - offsetInFile
       val currentSize = if (size > maxSizeInFile) maxSizeInFile else size
       val currentPart = (dataFileNumber, offsetInFile.asPosition, currentSize)
       if (size <= maxSizeInFile) (currentPart :: acc).reverse

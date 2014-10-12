@@ -44,6 +44,7 @@ object DBUtilities {
       |);
     """.stripMargin execute session
     // Note: By inserting the empty entry manually, we avoid to have it stored deflated
+    // FIXME why is this inserted with ID 1, not ID 0?
     StaticQuery.update[(Print, Hash, StoreMethod)]("INSERT INTO DataEntries (length, print, hash, method) VALUES (0, ?, ?, ?);")
       .apply(Print(Bytes EMPTY), Hash empty hashAlgorithm, StoreMethod STORE) execute session
   }
