@@ -55,7 +55,7 @@ trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with S
   }
 
   private def dataEntryFor(printData: Bytes, print: Print, source: Source): DataEntryID =
-    if (dataHandler hasSizeAndPrint (source size, print))
+    if (dataHandler hasSizeAndPrint (source.size, print))
       tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
     else
       dataHandler storeSourceData (printData, print, source.allData, source.size)
@@ -65,18 +65,18 @@ trait StoreLogic extends StoreInterface with Lifecycle { _: TreeInterface with S
     case Reserved(_) => preloadDataThatMayBeAlreadyKnown(printData, print, source)
     case NotAvailable(_) => source match {
       case source: ResettableSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
-      case source => dataHandler storeSourceData (printData, print, source.allData, source.size)
+      case _ => dataHandler storeSourceData (printData, print, source.allData, source.size)
     }
   }
 
   private def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): DataEntryID = {
     val bytes = (printData :: source.allData.toList).to[MutableList]
-    val (hash, size) = Hash calculate (storeSettings hashAlgorithm, bytes iterator)
+    val (hash, size) = Hash calculate (storeSettings.hashAlgorithm, bytes.iterator)
     dataHandler.dataEntriesFor(size, print, hash).headOption.map(_.id)
-    .getOrElse(storeDataFullyPreloaded(bytes, size, print, hash)) // FIXME manual test that memory consumption is OK
+    .getOrElse(storeDataFullyPreloaded(bytes, size, print, hash))
   }
 
-  private def storeDataFullyPreloaded(bytes: MutableList[Bytes], size: Size, print: Print, hash: Hash): DataEntryID =
+  protected def storeDataFullyPreloaded(bytes: MutableList[Bytes], size: Size, print: Print, hash: Hash): DataEntryID =
     dataHandler storeSourceData (Bytes consumingIterator bytes, size, print, hash)
 
   private def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Print, source: ResettableSource): DataEntryID = {
