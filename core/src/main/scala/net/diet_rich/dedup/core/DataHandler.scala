@@ -5,7 +5,7 @@ package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.core.data.DataBackendSlice
 import net.diet_rich.dedup.core.values.{Print, Size, Hash, DataEntry, DataEntryID, DataRange, Bytes}
-import net.diet_rich.dedup.util.init
+import net.diet_rich.dedup.util.{Equal, init}
 
 trait DataHandlerSlice {
   trait DataHandler {
@@ -63,9 +63,14 @@ trait DataHandlerPart extends DataHandlerSlice { _: DataBackendSlice with StoreS
 
     private def storePackedDataAndCreateByteStoreEntries(data: Iterator[Bytes], estimatedSize: Size): DataEntryID = {
       val storedRanges = storePackedData(data, estimatedSize)
-      // FIXME normalize storedRanges (join neighbours)
+      // FIXME make a utility method and test
+      val normalizedRanges = storedRanges.foldLeft(List.empty[DataRange]) {
+        case (Nil, range) => List(range)
+        case (head :: tail, range) if head.fin === range.start => DataRange(head.start, range.fin) :: tail
+        case (ranges, range) => range :: ranges
+      }.reverse
       init(tables.nextDataID) { dataID =>
-        storedRanges foreach {
+        normalizedRanges foreach {
           tables.createByteStoreEntry(dataID, _)
         }
       }

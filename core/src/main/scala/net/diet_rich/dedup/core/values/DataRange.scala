@@ -10,7 +10,6 @@ final case class DataRange(start: Position, fin: Position) {
 
   def withLength(length: Size) = copy(fin = start + length)
   def withOffset(offset: Size) = copy(start = start + offset)
-  def shortenBy(length: Size) = copy(fin = fin - size)
 
   def limitAt(limit: Size): RangeLimitResult =
     if (size == limit) ExactMatch(this) else
