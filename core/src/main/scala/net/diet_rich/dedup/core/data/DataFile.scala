@@ -13,13 +13,11 @@ object DataFile {
   val headerBytes = 16
 
   def calcDataPrint(offsetInFileData: Long, bytes: Bytes): Long = {
-    val time = System.nanoTime()
     import bytes._
     // Performance optimized.
     var print: Long = 0L
     for (n <- 0 until length)
       print = print ^ (n + 1 + offsetInFileData) * 5870203405204807807L * data(n + offset)
-    println(System.nanoTime() - time)
     print
   }
 }
