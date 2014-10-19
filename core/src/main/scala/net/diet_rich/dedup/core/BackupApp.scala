@@ -19,13 +19,31 @@ object BackupApp extends ConsoleApp {
 
   Repository(repositoryDirectory, storeMethod, readonly = false) { filesystem =>
     val reference = referencePath flatMap filesystem.firstEntryWithWildcards
-    if (referencePath.isDefined) require (reference isDefined, s"reference $referencePath not found in file system.")
+    if (referencePath.isDefined) {
+      require (reference isDefined, s"reference $referencePath not found in file system.")
+      reference foreach { referenceNode =>
+        println(s"using reference ${filesystem path referenceNode.id}")
+        if (source.isDirectory) {
+          require(referenceNode.data isEmpty, "source is a directory, but reference is not")
+          val sourceChildren = source.list().toSet
+          val referenceChildren = filesystem.children(referenceNode.id).map(_.name).toSet
+          println(s"matching source / reference entries on 1st level: ${sourceChildren & referenceChildren}")
+          println(s"entries in source, not in reference on 1st level: ${sourceChildren &~ referenceChildren}")
+          println(s"entries in reference, not in source on 1st level: ${referenceChildren &~ sourceChildren}")
+        } else {
+          require(referenceNode.data isDefined, "source is a file, but reference is not")
+        }
+      }
+    }
+
     val parent = filesystem.entries(target parent).headOption getOrElse filesystem.createWithPath(target parent)
     val name = target.name
 
+    println("start backup? [y/n]")
+    require(scala.io.StdIn.readChar == 'y', "aborted")
+
     store(parent, name, source, reference)
 
-    // FIXME check for reference validity
     // FIXME multi-threaded store?
     // FIXME store progress
     // FIXME stopping store (shutdown hook)
