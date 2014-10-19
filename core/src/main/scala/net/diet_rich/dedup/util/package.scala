@@ -27,4 +27,16 @@ package object util {
     }
     new ThreadPoolExecutor(threadPoolSize, threadPoolSize, 0, TimeUnit.SECONDS, executorQueue, rejectHandler)
   }
+
+  implicit class RichString(val string: String) extends AnyVal {
+    private def processSpecialSyntax(rule1: String => String, rule2: String => String): String = {
+      string.split('!').sliding(2, 2).map(_.toList).map {
+        case List(a, b) => List(rule1(a), rule2(b))
+        case List(a) => List(rule1(a))
+        case _ => throw new IllegalStateException
+      }.flatten.mkString
+    }
+    def preparedForRegexpMatch = processSpecialSyntax(java.util.regex.Pattern quote, identity)
+    def withDateStringReplaced = processSpecialSyntax(identity, new java.text.SimpleDateFormat(_) format new java.util.Date)
+  }
 }

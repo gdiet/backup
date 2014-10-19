@@ -3,7 +3,7 @@ package net.diet_rich.dedup.core
 import java.io.{RandomAccessFile, File}
 
 import net.diet_rich.dedup.core.values._
-import net.diet_rich.dedup.util.{init, Equal, ConsoleApp}
+import net.diet_rich.dedup.util.{init, Equal, ConsoleApp, RichString}
 import net.diet_rich.dedup.util.io.{RichFile, using}
 
 import Source.RandomAccessFileSource
@@ -11,14 +11,14 @@ import Source.RandomAccessFileSource
 object BackupApp extends ConsoleApp {
   checkUsage("parameters: <repository path> <source:path> <target:path> [reference:path] [DEFLATE] [FASTREFERENCECHECK]")
   val source = new File(option("source:"))
-  val target = Path(option("target:"))
+  val target = Path(option("target:").withDateStringReplaced)
   val referencePath = optional("reference:") map Path.apply
   val storeMethod = if (options contains "DEFLATE") StoreMethod.DEFLATE else StoreMethod.STORE
   val ignorePrint = options contains "FASTREFERENCECHECK"
   require(source canRead, s"can't read source $source")
 
   Repository(repositoryDirectory, storeMethod, readonly = false) { filesystem =>
-    val reference = referencePath flatMap (filesystem.entries(_).headOption)
+    val reference = referencePath flatMap filesystem.firstEntryWithWildcards
     if (referencePath.isDefined) require (reference isDefined, s"reference $referencePath not found in file system.")
     val parent = filesystem.entries(target parent).headOption getOrElse filesystem.createWithPath(target parent)
     val name = target.name

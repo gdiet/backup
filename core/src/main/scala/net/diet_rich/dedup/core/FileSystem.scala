@@ -5,7 +5,7 @@ package net.diet_rich.dedup.core
 
 import net.diet_rich.dedup.core.data.DataBackendSlice
 import net.diet_rich.dedup.core.values._
-import net.diet_rich.dedup.util.Equal
+import net.diet_rich.dedup.util.{Equal, RichString}
 
 trait FileSystem extends TreeInterface with StoreInterface with Lifecycle
 
@@ -31,6 +31,18 @@ object FileSystem {
     def dataEntry(id: TreeEntryID): Option[DataEntry] = dataid(id) flatMap fs.dataEntry
     def dataid(id: TreeEntryID): Option[DataEntryID] = fs entry id flatMap (_.data)
     def change(e: TreeEntry): Option[TreeEntry] = fs change (e.id, e.parent, e.name, e.changed, e.data, e.deleted)
+    import Path.{ROOTPATH, SEPARATOR}
+    def firstEntryWithWildcards(path: Path): Option[TreeEntry] = if (path == ROOTPATH) Some(ROOTENTRY) else {
+      // FIXME make sure handling of the separator requirement is consistent
+      require(path.value startsWith SEPARATOR, s"Path <$path> is not root and does not start with '${SEPARATOR}'")
+      val parts = path.value split SEPARATOR drop 1
+      parts.foldLeft(Option(ROOTENTRY)) {
+        case (None, _) => None
+        case (Some(node), pathElement) =>
+          val childNameRegexp = pathElement.preparedForRegexpMatch
+          firstChildren(node.id).toList.sortBy(_.name).reverse find (_.name matches childNameRegexp)
+      }
+    }
 
     def path(id: TreeEntryID): Option[Path] = {
       if (id === ROOTID) Some(Path.ROOTPATH) else {
