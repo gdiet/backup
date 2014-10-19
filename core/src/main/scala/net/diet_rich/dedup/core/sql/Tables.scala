@@ -78,6 +78,7 @@ object TableQueries {
   val selectFromByteStore = "SELECT id, dataid, start, fin FROM ByteStore"
 
   // TreeEntries
+  val sortedTreeEntriesQuery = StaticQuery.queryNA[TreeEntry](s"$selectFromTreeEntries ORDER BY id;")
   val treeEntryForIdQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")
   val treeChildrenForParentQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE parent = ?;")
   val treeChildrenNotDeletedForParentQuery = StaticQuery.query[TreeEntryID, TreeEntry](s"$selectFromTreeEntries WHERE parent = ? and deleted is NULL;")

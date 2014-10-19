@@ -34,20 +34,59 @@ object CheckRepositoryApp extends ConsoleApp {
   import fileSystem.session
 
   progressBar write "checking database..."
-  if (startId == 0) checkTables
+  if (startId == 0) checkTables()
   progressBar write "checking datastore..."
-  checkData
+  checkData()
   progressBar write "shutting down..."
   fileSystem teardown()
   progressBar write "finished."
 
   def runLater(f: => Unit) = SwingUtilities invokeLater new Runnable {override def run() = {f}}
 
-  def checkTables = {
-    // TODO
+  def error(string: String) = {
+    println(string)
+    runLater {
+      progressBar.setBackground(Color.orange)
+      progressBar.setForeground(Color.red)
+    }
   }
 
-  def checkData = {
+  def cyclicParentRelations(treeEntries: Iterator[TreeEntry]): List[TreeEntry] =
+    treeEntries.foldLeft(List.empty[TreeEntry]) {
+      case (unresolved, entry) if entry.parent.value >= entry.id.value || unresolved.exists(_.id == entry.parent) =>
+        entry :: unresolved
+      case (unresolved, entry) =>
+        def clearUnresoved(node: TreeEntry, unresolved: List[TreeEntry]): List[TreeEntry] = {
+          val (children, other) = unresolved.partition(_.parent == node.id)
+          children.foldLeft(other) { case (rest, child) => clearUnresoved(child, rest) }
+        }
+        clearUnresoved(entry, unresolved)
+    }
+
+  def checkTables() = {
+    val (rootList, nodesWithoutParent) = StaticQuery.queryNA[Long](
+      "SELECT ta.id FROM TreeEntries ta LEFT JOIN TreeEntries tb ON ta.parent = tb.id WHERE tb.id IS NULL;"
+    ).list.partition(_ == 0L)
+    if (rootList != List(0L)) error("tree root 0 not found when looking for entries without parent")
+    if (nodesWithoutParent.nonEmpty) error(s"tree nodes without parent: $nodesWithoutParent")
+
+    val missingDataEntries = StaticQuery.queryNA[(Long, Long)](
+      "SELECT t.id, t.dataid FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataid = d.id WHERE d.id IS NULL;"
+    ).list
+    if (missingDataEntries.nonEmpty) error(s"missing data entries (tree entry id / data id): $nodesWithoutParent")
+
+    val (emptyEntry, missingByteStoreEntries) = StaticQuery.queryNA[Long](
+      "SELECT d.id FROM DataEntries d LEFT JOIN ByteStore b ON d.id = b.dataid WHERE b.dataid IS NULL;"
+    ).list.partition(_ == 0L)
+    if (emptyEntry != List(0L)) error("empty data entry 0 not found when looking for entries without byte store entries")
+    if (missingByteStoreEntries.nonEmpty) error(s"data entries without byte store entries: $missingByteStoreEntries")
+
+    val treeEntries = sql.TableQueries.sortedTreeEntriesQuery.iterator
+    val cyclicRelations = cyclicParentRelations(treeEntries)
+    if (cyclicRelations.nonEmpty) error(s"tree entries with cyclic relations: $cyclicRelations")
+  }
+
+  def checkData() = {
     val (maxId, dataEntries) = {
       import sql.TableQueries._
       (StaticQuery.queryNA[Long]("SELECT MAX(id) FROM DataEntries;").first,
@@ -57,13 +96,6 @@ object CheckRepositoryApp extends ConsoleApp {
     val shutdownHook = sys.addShutdownHook {
       println(s"shutting down... next id to check: ${nextId.get}")
       fileSystem.teardown()
-    }
-    def error(string: String) = {
-      println(string)
-      runLater {
-        progressBar.setBackground(Color.orange)
-        progressBar.setForeground(Color.red)
-      }
     }
     dataEntries.foreach { entry =>
       nextId set entry.id.value

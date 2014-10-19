@@ -25,6 +25,7 @@ object BackupApp extends ConsoleApp {
 
     store(parent, name, source, reference)
 
+    // FIXME check for reference validity
     // FIXME multi-threaded store?
     // FIXME store progress
     // FIXME stopping store (shutdown hook)
