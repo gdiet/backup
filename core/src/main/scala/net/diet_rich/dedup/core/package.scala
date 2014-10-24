@@ -18,8 +18,9 @@ package object core {
   def zipBackup(sourceFile: File, targetDir: File, namePattern: String, date: Date = new Date): Unit = {
     val dateString = new SimpleDateFormat("yy-MM-dd_HH-mm-ss") format date
     val targetFile = targetDir / (namePattern format dateString)
+    // Note: This might be cleaned by using the nio zip file system
     using(new ZipOutputStream(new FileOutputStream(targetFile))) { zipOut =>
-      zipOut setLevel 9 // TODO the nio zip file system should do this for us as well
+      zipOut setLevel 9
       zipOut putNextEntry new ZipEntry(sourceFile getName)
       Files copy (sourceFile toPath(), zipOut)
       zipOut closeEntry()

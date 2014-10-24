@@ -5,7 +5,7 @@ package net.diet_rich.dedup.core.values
 
 final case class Path(value: String) {
   import Path._
-  assume((value == ROOTNAME) || (value startsWith SEPARATOR), s"Path string '$value' is not root and does not start with '$SEPARATOR'")
+  require((value startsWith SEPARATOR) || (value == ROOTNAME), s"Path string '$value' is not root and does not start with '$SEPARATOR'")
 
   def / (string: String) = Path(value + SEPARATOR + string)
   def parent: Path = value lastIndexOf SEPARATORCHAR match {

@@ -33,8 +33,6 @@ object FileSystem {
     def change(e: TreeEntry): Option[TreeEntry] = fs change (e.id, e.parent, e.name, e.changed, e.data, e.deleted)
     import Path.{ROOTPATH, SEPARATOR}
     def firstEntryWithWildcards(path: Path): Option[TreeEntry] = if (path == ROOTPATH) Some(ROOTENTRY) else {
-      // FIXME make sure handling of the separator requirement is consistent
-      require(path.value startsWith SEPARATOR, s"Path <$path> is not root and does not start with '${SEPARATOR}'")
       val parts = path.value split SEPARATOR drop 1
       parts.foldLeft(Option(ROOTENTRY)) {
         case (None, _) => None
