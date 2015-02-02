@@ -1,29 +1,17 @@
 // Copyright (c) Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-version := "0.03-SNAPSHOT"
+version in ThisBuild := "0.1-SNAPSHOT"
 
-lazy val dedup = project.in(file("."))
+scalaVersion in ThisBuild := "2.11.5"
 
-lazy val davserver = project.dependsOn(dedup)
+fork in ThisBuild := true
 
-lazy val ftpserver = project.dependsOn(dedup)
-
-libraryDependencies ++= Seq (
-  "com.h2database" % "h2" % "1.3.175",
-  "org.specs2" %% "specs2" % "2.3.10" % "test"
-)
-
-(testOptions in Test) += Tests.Argument(TestFrameworks.Specs2, "html")
-
-EclipseKeys.eclipseOutput := Some("bin")
-
-EclipseKeys.withSource := true
-
-scalacOptions ++= Seq(
+scalacOptions in ThisBuild ++= Seq(
   "-deprecation",
   "-feature",
-  "-language:postfixOps"
+  "-unchecked",
+  "-language:postfixOps,implicitConversions"
 )
 
 XitrumPackage.copy()
