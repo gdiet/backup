@@ -11,7 +11,7 @@ scalacOptions in ThisBuild ++= Seq(
   "-deprecation",
   "-feature",
   "-unchecked",
-  "-language:postfixOps,implicitConversions"
+  "-language:postfixOps"
 )
 
 XitrumPackage.copy()
