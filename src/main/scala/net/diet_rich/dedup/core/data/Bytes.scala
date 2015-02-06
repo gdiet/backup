@@ -1,4 +1,4 @@
-package net.diet_rich.dedup.core
+package net.diet_rich.dedup.core.data
 
 case class Bytes (data: Array[Byte], offset: Int, length: Int) {
   def addOffset(offset: Int) = copy(data, this.offset + offset, length - offset)

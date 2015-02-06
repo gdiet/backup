@@ -1,9 +1,5 @@
 package net.diet_rich.dedup.core.data
 
-import java.io.File
-
-import net.diet_rich.dedup.core.Bytes
-
 trait DataBackend {
   def nextBlockStart(position: Long): Long
   def read(start: Long, size: Long): Iterator[Bytes]

@@ -1,4 +1,4 @@
-package net.diet_rich.dedup.core.meta
+package net.diet_rich.dedup.core.tree
 
 package object sql {
   type CurrentDatabase = scala.slick.driver.JdbcDriver#Backend#Database

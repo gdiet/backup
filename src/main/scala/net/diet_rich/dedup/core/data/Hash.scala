@@ -1,8 +1,6 @@
-package net.diet_rich.dedup.core.meta
+package net.diet_rich.dedup.core.data
 
 import java.security.MessageDigest
-
-import net.diet_rich.dedup.core.Bytes
 
 object Hash {
   def digestLength(algorithm: String): Int = MessageDigest getInstance algorithm getDigestLength()

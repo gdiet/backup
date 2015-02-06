@@ -2,7 +2,7 @@ package net.diet_rich.dedup.core.data.file
 
 import java.io.{File, IOException, RandomAccessFile}
 
-import net.diet_rich.dedup.core._
+import net.diet_rich.dedup.core.data.Bytes
 import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.io._
 

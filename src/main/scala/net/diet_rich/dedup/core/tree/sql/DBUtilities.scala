@@ -1,7 +1,7 @@
-package net.diet_rich.dedup.core.meta.sql
+package net.diet_rich.dedup.core.tree.sql
 
 import net.diet_rich.dedup.core._
-import net.diet_rich.dedup.core.meta._
+import net.diet_rich.dedup.core.data.{StoreMethod, Hash, Print}
 
 import scala.slick.jdbc.{GetResult, SetParameter, StaticQuery}
 

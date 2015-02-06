@@ -1,8 +1,7 @@
-package net.diet_rich.dedup.core.meta
+package net.diet_rich.dedup.core.data
 
-import java.util.zip.{CRC32, Adler32}
+import java.util.zip.{Adler32, CRC32}
 
-import net.diet_rich.dedup.core.Bytes
 import net.diet_rich.dedup.util._
 
 object Print {
