@@ -25,10 +25,10 @@ class FileBackend private(dataDir: File, repositoryId: String, readonly: Boolean
 
   private object DataFiles {
     private val dataFiles = mutable.LinkedHashMap.empty[Long, DataFile]
-    def apply(dataFileNumber: Long): DataFile = synchronized {
-      init(dataFiles.remove(dataFileNumber) getOrElse new DataFile(dataFileNumber, dataDir, readonly)) { dataFile =>
+    def apply(fileNumber: Long): DataFile = synchronized {
+      init(dataFiles.remove(fileNumber) getOrElse new DataFile(fileNumber, fileNumber * blocksize, dataDir, readonly)) { dataFile =>
         if (dataFiles.size >= maxNumberOfOpenFiles) dataFiles.remove(dataFiles.keys.head).get.close()
-        dataFiles += (dataFileNumber -> dataFile)
+        dataFiles += (fileNumber -> dataFile)
       }
     }
     def apply(f: mutable.LinkedHashMap[Long, DataFile] => Unit): Unit = synchronized { f }
