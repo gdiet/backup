@@ -7,7 +7,7 @@ import net.diet_rich.dedup.core.data._
 import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.io._
 
-import scala.collection.mutable.LinkedHashMap
+import scala.collection.mutable
 
 class FileBackend(dataDir: File, repositoryId: String, readonly: Boolean) extends DataBackend {
   private val blocksize: Int = { // int to avoid problems with byte array size
@@ -19,20 +19,20 @@ class FileBackend(dataDir: File, repositoryId: String, readonly: Boolean) extend
   private val maxReadSize: Int = math.min(blocksize, 65536)
   private val maxNumberOfOpenFiles: Int = 64
 
-  private var dataFiles = LinkedHashMap.empty[Long, DataFile]
-
-  private def dataFile(dataFileNumber: Long): DataFile =
-    init(dataFiles.remove(dataFileNumber) getOrElse new DataFile(dataFileNumber, dataDir, readonly)) { dataFile =>
-      if (dataFiles.size >= maxNumberOfOpenFiles) dataFiles.remove(dataFiles.keys.head).get.close()
-      dataFiles += (dataFileNumber -> dataFile)
+  object DataFiles {
+    private val dataFiles = mutable.LinkedHashMap.empty[Long, DataFile]
+    def apply(dataFileNumber: Long): DataFile = synchronized {
+      init(dataFiles.remove(dataFileNumber) getOrElse new DataFile(dataFileNumber, dataDir, readonly)) { dataFile =>
+        if (dataFiles.size >= maxNumberOfOpenFiles) dataFiles.remove(dataFiles.keys.head).get.close()
+        dataFiles += (dataFileNumber -> dataFile)
+      }
     }
-
-  override def blockAligned(position: Long): Long = position % blocksize match {
-    case 0L => position
-    case modulo => position + blocksize - modulo
+    def apply(f: mutable.LinkedHashMap[Long, DataFile] => Unit): Unit = synchronized { f }
   }
 
-  override def read(start: Long, size: Long): Iterator[Bytes] = synchronized {
+  override def nextBlockStart(position: Long): Long = position + blocksize - position % blocksize
+
+  override def read(start: Long, size: Long): Iterator[Bytes] = {
     def blockStream(start: Long, size: Long): Stream[(Long, Int, Int)] = size match {
       case 0L => Stream.empty
       case remaining =>
@@ -44,19 +44,19 @@ class FileBackend(dataDir: File, repositoryId: String, readonly: Boolean) extend
     }
     blockStream(start, size)
       .iterator
-      .map {case ((fileNumber, offset, length)) => dataFile(fileNumber).read(offset, length)}
+      .map {case ((fileNumber, offset, length)) => DataFiles(fileNumber).read(offset, length)}
   }
 
-  override def write(data: Bytes, start: Long): Unit = synchronized {
+  override def write(data: Bytes, start: Long): Unit = {
     val dataFileNumber = start / blocksize
     val offsetInFile = start % blocksize toInt
     val bytesToWriteInDataFile = math.min(blocksize - offsetInFile, data.length)
-    dataFile(dataFileNumber).writeData(offsetInFile, data setLength bytesToWriteInDataFile)
+    DataFiles(dataFileNumber).writeData(offsetInFile, data setLength bytesToWriteInDataFile)
     if (data.length > bytesToWriteInDataFile) write(data addOffset bytesToWriteInDataFile, start + bytesToWriteInDataFile)
   }
 
-  override def close(): Unit = synchronized {
-    dataFiles.values foreach (_.close())
-    dataFiles.clear()
+  override def close(): Unit = DataFiles { all =>
+    all.values foreach (_.close())
+    all.clear()
   }
 }

@@ -31,15 +31,15 @@ class DataFile(dataFileNumber: Long, dataDir: File, readonly: Boolean) {
       }
     }
 
-  def close() = fileAccess close()
+  def close() = synchronized { fileAccess close() }
 
-  def writeData(offsetInFileData: Long, bytes: Bytes): Unit = {
+  def writeData(offsetInFileData: Long, bytes: Bytes): Unit = synchronized {
     fileAccess seek (offsetInFileData + headerBytes)
     fileAccess write (bytes.data, bytes.offset, bytes.length)
   }
 
-  def read(offsetInFileData: Long, size: Int): Bytes = init(Bytes zero size) { bytes =>
+  def read(offsetInFileData: Long, size: Int): Bytes = init(Bytes zero size) { bytes => synchronized {
     fileAccess seek (offsetInFileData + headerBytes)
     fileAccess readFully (bytes.data, bytes.offset, bytes.length)
-  }
+  } }
 }
