@@ -9,7 +9,11 @@ import net.diet_rich.dedup.util.io._
 
 import scala.collection.mutable
 
-class FileBackend(dataDir: File, repositoryId: String, readonly: Boolean) extends DataBackend {
+object FileBackend {
+  def apply(dataDir: File, repositoryId: String, readonly: Boolean): DataBackend = new FileBackend(dataDir, repositoryId, readonly)
+}
+
+class FileBackend private(dataDir: File, repositoryId: String, readonly: Boolean) extends DataBackend {
   private val blocksize: Int = { // int to avoid problems with byte array size
     val settings = readSettingsFile(dataDir / settingsFile)
     require(settings(versionKey) == versionValue)
@@ -19,7 +23,7 @@ class FileBackend(dataDir: File, repositoryId: String, readonly: Boolean) extend
   private val maxReadSize: Int = math.min(blocksize, 65536)
   private val maxNumberOfOpenFiles: Int = 64
 
-  object DataFiles {
+  private object DataFiles {
     private val dataFiles = mutable.LinkedHashMap.empty[Long, DataFile]
     def apply(dataFileNumber: Long): DataFile = synchronized {
       init(dataFiles.remove(dataFileNumber) getOrElse new DataFile(dataFileNumber, dataDir, readonly)) { dataFile =>
