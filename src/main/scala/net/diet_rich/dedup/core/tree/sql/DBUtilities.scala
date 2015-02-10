@@ -1,14 +1,12 @@
 package net.diet_rich.dedup.core.tree.sql
 
-import net.diet_rich.dedup.core._
+import net.diet_rich.dedup.core.tree._
 import net.diet_rich.dedup.core.data.{StoreMethod, Hash, Print}
 
-import scala.slick.jdbc.{GetResult, SetParameter, StaticQuery}
+import scala.slick.jdbc.StaticQuery
 
 object DBUtilities {
-  implicit val _setByteArray = SetParameter((v: Array[Byte], p) => p setBytes v)
-  implicit val _getStoreEntry = GetResult(r => StoreEntry(r <<, r <<, r <<, r <<))
-
+  import SQLConverters._
   def createTables(hashAlgorithm: String)(implicit session: CurrentSession): Unit = {
     StaticQuery updateNA s"""
       |CREATE SEQUENCE treeEntriesIdSeq START WITH 0;
@@ -21,7 +19,7 @@ object DBUtilities {
       |  deleted BIGINT DEFAULT NULL,
       |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
       |);
-      |INSERT INTO TreeEntries (parent, name) VALUES ($rootParent, '$rootPath');
+      |INSERT INTO TreeEntries (parent, name) VALUES (${rootEntry.parent}, '${rootEntry.name}');
       |CREATE SEQUENCE dataEntriesIdSeq START WITH 0;
       |CREATE TABLE DataEntries (
       |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntriesIdSeq),

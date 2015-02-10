@@ -5,8 +5,10 @@ import net.diet_rich.dedup.core.tree.{DataEntry, TreeEntry}
 import scala.slick.jdbc.StaticQuery
 
 object Tables {
-//  // TreeEntries
-//  def treeEntry(id: TreeEntryID): Option[TreeEntry] = treeEntryForIdQuery(id).firstOption
+  import SQLConverters._
+
+  // TreeEntries
+  def treeEntry(id: Long)(implicit session: CurrentSession): Option[TreeEntry] = treeEntryForIdQuery(id).firstOption
 //  def treeChildren(parent: TreeEntryID): List[TreeEntry] = treeChildrenForParentQuery(parent).list
 //  def treeChildrenNotDeleted(parent: TreeEntryID): List[TreeEntry] = treeChildrenNotDeletedForParentQuery(parent).list
 //  def createTreeEntry(parent: TreeEntryID, name: String, changed: Option[Time], dataid: Option[DataEntryID]): TreeEntry = inTransaction {
@@ -32,14 +34,14 @@ object Tables {
 //  def storeEntries(id: DataEntryID): List[StoreEntry] = storeEntriesForIdQuery(id).list
   def createByteStoreEntry(dataid: Long, start: Long, fin: Long)(implicit session: CurrentSession): Unit = inTransaction { createStoreEntryUpdate(dataid, start, fin).execute }
 
-//  // basic select statements
-//  val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
+  // basic select statements
+  val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
 //  val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
 //  val selectFromByteStore = "SELECT id, dataid, start, fin FROM ByteStore"
 //
-//  // TreeEntries
+  // TreeEntries
 //  val sortedTreeEntriesQuery = StaticQuery.queryNA[TreeEntry](s"$selectFromTreeEntries ORDER BY id;")
-//  val treeEntryForIdQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")
+  val treeEntryForIdQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")
 //  val treeChildrenForParentQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE parent = ?;")
 //  val treeChildrenNotDeletedForParentQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE parent = ? and deleted is NULL;")
 //  val nextTreeEntryIdQuery = StaticQuery.queryNA[Long]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")

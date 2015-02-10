@@ -1,9 +1,12 @@
 package net.diet_rich.dedup.core.tree.sql
 
-import net.diet_rich.dedup.core.tree.{DataEntry, TreeEntry, TreeBackend}
+import net.diet_rich.dedup.core.tree._
 
 class SQLTreeBackend(sessionFactory: SQLSession) extends TreeBackend {
   private implicit def session: CurrentSession = sessionFactory.session
+
+  require(entry(rootEntry.id) == Some(rootEntry))
+
   override def entry(id: Long): Option[TreeEntry] = ???
   override def markDeleted(id: Long, deletionTime: Option[Long]): Boolean = ???
   override def dataEntry(dataid: Long): Option[DataEntry] = ???
