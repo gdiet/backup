@@ -17,4 +17,5 @@ trait TreeBackend {
   def sizeOf(dataid: Long): Option[Long]
   def entries(path: String): List[TreeEntry]
   def inTransaction[T](f: => T): T
+  def close(): Unit
 }
