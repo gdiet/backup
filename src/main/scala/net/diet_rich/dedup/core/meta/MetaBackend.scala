@@ -1,6 +1,6 @@
 package net.diet_rich.dedup.core.meta
 
-trait TreeBackend {
+trait MetaBackend { // FIXME check whether all are used
   private def now = Some(System.currentTimeMillis())
 
   def entry(id: Long): Option[TreeEntry]

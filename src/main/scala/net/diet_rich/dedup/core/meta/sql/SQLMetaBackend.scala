@@ -2,12 +2,12 @@ package net.diet_rich.dedup.core.meta.sql
 
 import java.io.IOException
 
-import net.diet_rich.dedup.core.meta._
-
 import scala.slick.jdbc.StaticQuery
 
-class SQLTreeBackend(sessionFactory: SQLSession) extends TreeBackend {
-  import SQLTreeBackend._
+import net.diet_rich.dedup.core.meta._
+
+class SQLMetaBackend(sessionFactory: SQLSession) extends MetaBackend {
+  import SQLMetaBackend._
   private implicit def session: CurrentSession = sessionFactory.session
 
   require(entry(rootEntry.id) == Some(rootEntry))
@@ -16,8 +16,8 @@ class SQLTreeBackend(sessionFactory: SQLSession) extends TreeBackend {
   override def children(parent: Long): List[TreeEntry] = treeChildrenNotDeletedForParentQuery(parent).list
   override def children(parent: Long, name: String): List[TreeEntry] = treeChildrenNotDeletedForParentAndNameQuery(parent, name).list
   override def childrenWithDeleted(parent: Long): List[TreeEntry] = treeChildrenForParentQuery(parent).list
-  override def entries(path: String): List[TreeEntry] = ???
-
+  override def entries(path: String): List[TreeEntry] =
+    pathElements(path).foldLeft(List(rootEntry)){(nodes, name) => nodes.flatMap(node => children(node.id) filter (_.name == name))}
   override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): TreeEntry = inTransaction {
     val id = nextTreeEntryIdQuery.first
     createTreeEntryUpdate(id, parent, name, changed, dataid).execute
@@ -29,7 +29,18 @@ class SQLTreeBackend(sessionFactory: SQLSession) extends TreeBackend {
       case None => createUnchecked(parent, name, changed, dataid)
     }
   }
-  override def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): TreeEntry = ???
+  override def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): TreeEntry = inTransaction {
+    val elements = pathElements(path)
+    if (elements.size == 0) throw new IOException("can't create the root entry")
+    val parent = elements.dropRight(1).foldLeft(rootEntry.id) { (node, childName) =>
+      children(node) filter (_.name == childName) match {
+        case Nil => createUnchecked(node, childName, changed, None).id
+        case List(entry) => entry.id
+        case entries => throw new IOException(s"ambiguous path; §entries")
+      }
+    }
+    create(parent, elements.last, changed, dataid)
+  }
   override def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): TreeEntry = inTransaction {
     children(parent) find (_.name == name) match {
       case Some(entry) => change(entry id, parent, name, changed, dataid); entry
@@ -49,11 +60,11 @@ class SQLTreeBackend(sessionFactory: SQLSession) extends TreeBackend {
   override def dataEntry(dataid: Long): Option[DataEntry] = dataEntryForIdQuery(dataid).firstOption
   override def sizeOf(dataid: Long): Option[Long] = dataEntry(dataid) map (_ size)
 
-  override def inTransaction[T](f: => T): T = SQLTreeBackend inTransaction f
+  override def inTransaction[T](f: => T): T = SQLMetaBackend inTransaction f
   override def close(): Unit = sessionFactory.close()
 }
 
-object SQLTreeBackend {
+object SQLMetaBackend {
   import SQLConverters._
 
   // TreeEntries - FIXME check whether all are used
