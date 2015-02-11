@@ -1,4 +1,4 @@
-package net.diet_rich.dedup.core.tree.sql
+package net.diet_rich.dedup.core.meta.sql
 
 import java.util.concurrent.atomic.AtomicLong
 

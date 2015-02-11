@@ -1,7 +1,7 @@
 // Copyright (c) Georg Dietrich
 // Licensed under the MIT license:
 // http://www.opensource.org/licenses/mit-license.php
-package net.diet_rich.dedup.core.tree.sql
+package net.diet_rich.dedup.core.meta.sql
 
 import org.specs2.Specification
 
@@ -49,7 +49,7 @@ Illegal overlaps: Partial overlaps are correctly detected $identical
   def testSetup[T](dbContents: Seq[(Long, Long)])(f: CurrentSession => T): T = {
     implicit val session = Testutil.memoryDB.session
     DBUtilities.createTables("MD5")
-    dbContents foreach { case (start, fin) => Tables.createByteStoreEntry(0, start, fin) }
+    dbContents foreach { case (start, fin) => SQLByteStoreBackend.createByteStoreEntry(0, start, fin) }
     f(session)
   }
 }

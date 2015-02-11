@@ -1,4 +1,4 @@
-package net.diet_rich.dedup.core.tree.sql
+package net.diet_rich.dedup.core.meta.sql
 
 import java.io.File
 import java.util.concurrent.{ConcurrentLinkedQueue => SynchronizedQueue}
