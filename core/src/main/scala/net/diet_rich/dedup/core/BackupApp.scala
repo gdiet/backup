@@ -1,12 +1,15 @@
 package net.diet_rich.dedup.core
 
 import java.io.{RandomAccessFile, File}
+import java.util.concurrent.Executors
 
 import net.diet_rich.dedup.core.values._
-import net.diet_rich.dedup.util.{init, Equal, ConsoleApp, RichString}
+import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.io.{RichFile, using}
 
 import Source.RandomAccessFileSource
+
+import scala.concurrent.{Future, ExecutionContext}
 
 object BackupApp extends ConsoleApp {
   checkUsage("parameters: <repository path> <source:path> <target:path> [reference:path] [DEFLATE] [FASTREFERENCECHECK]")
@@ -39,15 +42,23 @@ object BackupApp extends ConsoleApp {
     val parent = filesystem.entries(target parent).headOption getOrElse filesystem.createWithPath(target parent)
     val name = target.name
 
-    println("start backup? [y/n]")
-    require(scala.io.StdIn.readChar == 'y', "aborted")
+//    println("start backup? [y/n]")
+//    require(scala.io.StdIn.readChar == 'y', "aborted")
 
+    val readThreads = 4
+    val executor = Executors.newFixedThreadPool(readThreads)
+    implicit val executionContext = ExecutionContext fromExecutorService executor
+    def wrapped(f: => Unit) = resultOf(Future(f))
+
+    val time = System.currentTimeMillis()
     store(parent, name, source, reference)
+    println(s"time: ${System.currentTimeMillis() - time} ms")
+    executor.shutdown()
 
     // FIXME multi-threaded store?
     // FIXME store progress
     // FIXME stopping store (shutdown hook)
-    def store(parent: TreeEntry, name: String, source: File, reference: Option[TreeEntry]): Unit = {
+    def store(parent: TreeEntry, name: String, source: File, reference: Option[TreeEntry]): Unit = wrapped {
       if (source.isDirectory) {
         val newParent = filesystem.create(parent.id, name, Some(Time now))
         source.listFiles foreach { child =>
