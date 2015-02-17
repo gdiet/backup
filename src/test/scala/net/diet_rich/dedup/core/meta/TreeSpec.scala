@@ -1,9 +1,8 @@
 package net.diet_rich.dedup.core.meta
 
 import org.specs2.Specification
-import org.specs2.matcher.Matcher
 
-class TreeSpec extends Specification {def is = s2"""
+class TreeSpec extends Specification with MetaMatchers { def is = s2"""
 ${"Tests for the file system tree".title}
 
 The root node should be a directory $rootIsDirectory
@@ -20,16 +19,13 @@ Creating paths should succeed even if they already exist partially $createPaths
     f(new sql.SQLMetaBackend(sessionFactory))
   }
 
-  def beADirectory: Matcher[TreeEntry] = beNone ^^ ((_:TreeEntry).data aka "treeEntry.data")
-  def haveTheId(id: Long): Matcher[TreeEntry] = beTypedEqualTo(id) ^^ ((_:TreeEntry).id aka "treeEntry.id")
-
   def rootIsDirectory = withEmptyTree { tree =>
-    tree.entries("") should contain(exactly(beADirectory))
+    tree.entries("") should contain(exactly(haveNoData))
   }
 
   def createAndCheckDirectory = withEmptyTree { tree =>
     val child = tree create (rootEntry.id, "child")
-    tree.entries("/child") should contain(exactly(beADirectory and haveTheId(child id)))
+    tree.entries("/child") should contain(exactly(haveNoData and haveTheId(child id)))
   }
 
   def pathWithoutTreeEntry = withEmptyTree { tree =>
@@ -45,12 +41,12 @@ Creating paths should succeed even if they already exist partially $createPaths
   def createReplacement = withEmptyTree { tree =>
     val child = tree create (rootEntry.id, "child")
     tree markDeleted child.id
-    tree create (rootEntry.id, "child") should beADirectory
+    tree create (rootEntry.id, "child") should haveNoData
   }
 
   def createPaths = withEmptyTree { tree =>
-    tree createWithPath ("/some/path")
-    tree createWithPath ("/some/other/path")
+    tree createWithPath "/some/path"
+    tree createWithPath "/some/other/path"
     tree entries "/some" should haveSize(1)
   }
 }
