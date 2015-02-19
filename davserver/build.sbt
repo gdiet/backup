@@ -9,18 +9,18 @@
 resolvers += "ettrema-repo" at "http://milton.io/maven"
 
 libraryDependencies ++= Seq (
-  "io.milton" % "milton-api" % "2.6.3.2",
-  "io.milton" % "milton-server-ce" % "2.6.3.2",
+  "io.milton" % "milton-api" % "2.6.4.1",
+  "io.milton" % "milton-server-ce" % "2.6.4.1",
   "commons-lang" % "commons-lang" % "2.6", // Needed but not included automatically
-  "org.slf4j" % "slf4j-api" % "1.7.7",
+  "org.slf4j" % "slf4j-api" % "1.7.10",
   "ch.qos.logback" % "logback-classic" % "1.1.2"
 )
 
 // Add jetty server (see http://www.eclipse.org/jetty).
 
 libraryDependencies ++= Seq (
-  "org.eclipse.jetty" % "jetty-server" % "9.2.3.v20140905",
-  "org.eclipse.jetty" % "jetty-servlet" % "9.2.3.v20140905"
+  "org.eclipse.jetty" % "jetty-server" % "9.3.0.M1",
+  "org.eclipse.jetty" % "jetty-servlet" % "9.3.0.M1"
 )
 
 XitrumPackage.copy()
