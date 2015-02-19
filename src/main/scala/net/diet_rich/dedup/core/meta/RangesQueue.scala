@@ -20,7 +20,6 @@ class RangesQueue(initialRanges: Seq[(Long, Long)], nextBlockStart: Long => Long
         case `size`        => (start, fin) :: ranges
         case n if n < size => collectFreeRanges(size - n, (start, fin) :: ranges)
         case n =>
-          println(s"*** $size -> ${nextBlockStart(start + size)}")
           nextBlockStart(start + size) match {
             case newFin if newFin <= fin =>
               freeRangesQueue enqueue ((newFin, fin))
@@ -29,7 +28,7 @@ class RangesQueue(initialRanges: Seq[(Long, Long)], nextBlockStart: Long => Long
           }
       }
     }
-    if (size == 0L) Nil else collectFreeRanges(size, Nil)
+    if (size == 0L) Nil else collectFreeRanges(size, Nil).reverse
   }
 
   def enqueue(range: (Long, Long)): Unit = synchronized { freeRangesQueue enqueue range }
