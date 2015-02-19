@@ -11,6 +11,11 @@ import scala.collection.mutable
 
 object FileBackend {
   def apply(dataDir: File, repositoryId: String, readonly: Boolean): DataBackend = new FileBackend(dataDir, repositoryId, readonly)
+
+  def nextBlockStart(position: Long, blocksize: Long): Long = position % blocksize match {
+    case 0 => position
+    case n => position + blocksize - n
+  }
 }
 
 class FileBackend private(dataDir: File, repositoryId: String, readonly: Boolean) extends DataBackend {
@@ -34,7 +39,7 @@ class FileBackend private(dataDir: File, repositoryId: String, readonly: Boolean
     def apply(f: mutable.LinkedHashMap[Long, DataFile] => Unit): Unit = synchronized { f }
   }
 
-  override def nextBlockStart(position: Long): Long = position + blocksize - position % blocksize
+  override def nextBlockStart(position: Long): Long = FileBackend.nextBlockStart(position, blocksize)
 
   override def read(start: Long, size: Long): Iterator[Bytes] = {
     def blockStream(start: Long, size: Long): Stream[(Long, Int, Int)] = size match {

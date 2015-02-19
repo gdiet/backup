@@ -1,8 +1,8 @@
 package net.diet_rich.dedup.core.meta
 
-import scala.collection.mutable
-
 import net.diet_rich.dedup.util._
+
+import scala.collection.mutable
 
 class RangesQueue(initialRanges: Seq[(Long, Long)], nextBlockStart: Long => Long) {
   assert(initialRanges.last._2 == Long.MaxValue)
@@ -20,7 +20,8 @@ class RangesQueue(initialRanges: Seq[(Long, Long)], nextBlockStart: Long => Long
         case `size`        => (start, fin) :: ranges
         case n if n < size => collectFreeRanges(size - n, (start, fin) :: ranges)
         case n =>
-          nextBlockStart(start + n) match {
+          println(s"*** $size -> ${nextBlockStart(start + size)}")
+          nextBlockStart(start + size) match {
             case newFin if newFin <= fin =>
               freeRangesQueue enqueue ((newFin, fin))
               (start, newFin) :: ranges
