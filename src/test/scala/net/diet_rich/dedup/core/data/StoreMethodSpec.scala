@@ -23,7 +23,7 @@ Compression and decompression should return the original data $compressDecompres
 
   def compressDecompress =
     (unpacked should haveSize(1)) and
-      (unpacked.head.data.toList.take(1000) === randomData.data.toList) and
       (unpacked.head.length === 6000) and
-      (unpacked.head.data.toList.drop(1000).toSet === Set(0 toByte))
+      (unpacked.head.data.take(1000) === randomData.data) and
+      (unpacked.head.data.drop(1000).take(5000) === zeroData.data)
 }
