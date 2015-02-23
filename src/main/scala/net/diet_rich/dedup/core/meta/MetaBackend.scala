@@ -20,7 +20,7 @@ trait MetaBackend { // FIXME check whether all are used
   def dataEntry(dataid: Long): Option[DataEntry]
   def sizeOf(dataid: Long): Option[Long]
 
-  def storeEntries(dataid: Long): List[StoreEntry]
+  def storeEntries(dataid: Long): List[(Long, Long)]
   def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit
 
   def inTransaction[T](f: => T): T

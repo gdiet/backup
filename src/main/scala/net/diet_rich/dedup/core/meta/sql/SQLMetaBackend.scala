@@ -60,7 +60,7 @@ class SQLMetaBackend(sessionFactory: SQLSession) extends MetaBackend {
   override def dataEntry(dataid: Long): Option[DataEntry] = dataEntryForIdQuery(dataid).firstOption
   override def sizeOf(dataid: Long): Option[Long] = dataEntry(dataid) map (_ size)
 
-  override def storeEntries(dataid: Long): List[StoreEntry] = storeEntriesForIdQuery(dataid).list
+  override def storeEntries(dataid: Long): List[(Long, Long)] = storeEntriesForIdQuery(dataid).list
   // FIXME in transaction?
   override def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit = createStoreEntryUpdate(dataid, start, fin).execute
 
@@ -93,6 +93,6 @@ object SQLMetaBackend {
 //  private val createDataEntryUpdate = StaticQuery.update[(Long, Long, Long, Array[Byte], Int)]("INSERT INTO DataEntries (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
 
   // ByteStore
-  private val storeEntriesForIdQuery = StaticQuery.query[Long, StoreEntry](s"SELECT id, dataid, start, fin FROM ByteStore WHERE dataid = ? ORDER BY id ASC;")
+  private val storeEntriesForIdQuery = StaticQuery.query[Long, (Long, Long)](s"SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY id ASC;")
   private val createStoreEntryUpdate = StaticQuery.update[(Long, Long, Long)]("INSERT INTO ByteStore (dataid, start, fin) VALUES (?, ?, ?);")
 }
