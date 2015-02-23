@@ -60,7 +60,12 @@ class SQLMetaBackend(sessionFactory: SQLSession) extends MetaBackend {
   override def dataEntry(dataid: Long): Option[DataEntry] = dataEntryForIdQuery(dataid).firstOption
   override def sizeOf(dataid: Long): Option[Long] = dataEntry(dataid) map (_ size)
 
-  override def inTransaction[T](f: => T): T = SQLMetaBackend inTransaction f
+  override def storeEntries(dataid: Long): List[StoreEntry] = storeEntriesForIdQuery(dataid).list
+  // FIXME in transaction?
+  override def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit = createStoreEntryUpdate(dataid, start, fin).execute
+
+  // Note: Writing is synchronized, so "create only if not exists" can be implemented.
+  override def inTransaction[T](f: => T): T = synchronized(f)
   override def close(): Unit = sessionFactory.close()
 }
 
@@ -68,25 +73,26 @@ object SQLMetaBackend {
   import SQLConverters._
 
   // TreeEntries - FIXME check whether all are used
-  val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
-  val sortedTreeEntriesQuery = StaticQuery.queryNA[TreeEntry](s"$selectFromTreeEntries ORDER BY id;")
-  val treeEntryForIdQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")
-  val treeChildrenForParentQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE parent = ?;")
-  val treeChildrenNotDeletedForParentQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE parent = ? AND deleted IS NULL;")
-  val treeChildrenNotDeletedForParentAndNameQuery = StaticQuery.query[(Long, String), TreeEntry](s"$selectFromTreeEntries WHERE parent = ? AND name = ? AND deleted IS NULL;")
-  val nextTreeEntryIdQuery = StaticQuery.queryNA[Long]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")
-  val setTreeEntryDeletedUpdate = StaticQuery.update[(Option[Long], Long)]("UPDATE TreeEntries SET deleted = ? WHERE id = ?;")
-  val updateTreeEntryUpdate = StaticQuery.update[(Long, String, Option[Long], Option[Long], Option[Long], Long)]("UPDATE TreeEntries SET parent = ?, name = ?, changed = ?, dataid = ?, deleted = ? WHERE id = ? AND deleted IS NULL;")
-  val createTreeEntryUpdate = StaticQuery.update[(Long, Long, String, Option[Long], Option[Long])]("INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?);")
+  private val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
+//  private val sortedTreeEntriesQuery = StaticQuery.queryNA[TreeEntry](s"$selectFromTreeEntries ORDER BY id;")
+  private val treeEntryForIdQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")
+  private val treeChildrenForParentQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE parent = ?;")
+  private val treeChildrenNotDeletedForParentQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE parent = ? AND deleted IS NULL;")
+  private val treeChildrenNotDeletedForParentAndNameQuery = StaticQuery.query[(Long, String), TreeEntry](s"$selectFromTreeEntries WHERE parent = ? AND name = ? AND deleted IS NULL;")
+  private val nextTreeEntryIdQuery = StaticQuery.queryNA[Long]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")
+  private val setTreeEntryDeletedUpdate = StaticQuery.update[(Option[Long], Long)]("UPDATE TreeEntries SET deleted = ? WHERE id = ?;")
+  private val updateTreeEntryUpdate = StaticQuery.update[(Long, String, Option[Long], Option[Long], Option[Long], Long)]("UPDATE TreeEntries SET parent = ?, name = ?, changed = ?, dataid = ?, deleted = ? WHERE id = ? AND deleted IS NULL;")
+  private val createTreeEntryUpdate = StaticQuery.update[(Long, Long, String, Option[Long], Option[Long])]("INSERT INTO TreeEntries (id, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?);")
 
   // DataEntries - FIXME check whether all are used
-  val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
-  val dataEntryForIdQuery = StaticQuery.query[Long, DataEntry](s"$selectFromDataEntries WHERE id = ?;")
-  val dataEntriesForSizePrintQuery = StaticQuery.query[(Long, Long), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ?;")
-  val dataEntriesForSizePrintHashQuery = StaticQuery.query[(Long, Long, Array[Byte]), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ? AND hash = ?;")
-  val nextDataEntryIdQuery = StaticQuery.queryNA[Long]("SELECT NEXT VALUE FOR dataEntriesIdSeq;")
-  val createDataEntryUpdate = StaticQuery.update[(Long, Long, Long, Array[Byte], Int)]("INSERT INTO DataEntries (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
+  private val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
+  private val dataEntryForIdQuery = StaticQuery.query[Long, DataEntry](s"$selectFromDataEntries WHERE id = ?;")
+//  private val dataEntriesForSizePrintQuery = StaticQuery.query[(Long, Long), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ?;")
+//  private val dataEntriesForSizePrintHashQuery = StaticQuery.query[(Long, Long, Array[Byte]), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ? AND hash = ?;")
+//  private val nextDataEntryIdQuery = StaticQuery.queryNA[Long]("SELECT NEXT VALUE FOR dataEntriesIdSeq;")
+//  private val createDataEntryUpdate = StaticQuery.update[(Long, Long, Long, Array[Byte], Int)]("INSERT INTO DataEntries (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?);")
 
-  // Note: Writing is synchronized, so "create only if not exists" can be implemented.
-  def inTransaction[T](f: => T): T = synchronized(f)
+  // ByteStore
+  private val storeEntriesForIdQuery = StaticQuery.query[Long, StoreEntry](s"SELECT id, dataid, start, fin FROM ByteStore WHERE dataid = ? ORDER BY id ASC;")
+  private val createStoreEntryUpdate = StaticQuery.update[(Long, Long, Long)]("INSERT INTO ByteStore (dataid, start, fin) VALUES (?, ?, ?);")
 }

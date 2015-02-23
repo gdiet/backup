@@ -1,6 +1,6 @@
 package net.diet_rich.dedup.core.meta.sql
 
-import net.diet_rich.dedup.core.meta.{DataEntry, TreeEntry}
+import net.diet_rich.dedup.core.meta.{StoreEntry, DataEntry, TreeEntry}
 
 import scala.slick.jdbc.{GetResult, SetParameter}
 

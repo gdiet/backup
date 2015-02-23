@@ -25,11 +25,11 @@ Illegal overlaps: Partial overlaps are correctly detected $identical
   def entriesNotAtStart = freeRangesCheck ((10,60), (60,110)) expecting ((0,10))
   def gaps = freeRangesCheck ((0,50), (60,110), (120, 130)) expecting ((50,60), (110,120))
 
-  def noProblems = dataAreaProblemCheck((10,60), (60,110)) expecting (true)
-  def partiallyIdentical = dataAreaProblemCheck((10,50), (10,30)) expecting (false)
-  def inclusions = dataAreaProblemCheck((10,50), (20,40)) expecting (false)
-  def identical = dataAreaProblemCheck((10,50), (10,50)) expecting (false)
-  def partialOverlap = dataAreaProblemCheck((10,30), (20,40)) expecting (false)
+  def noProblems = dataAreaProblemCheck((10,60), (60,110)) expecting true
+  def partiallyIdentical = dataAreaProblemCheck((10,50), (10,30)) expecting false
+  def inclusions = dataAreaProblemCheck((10,50), (20,40)) expecting false
+  def identical = dataAreaProblemCheck((10,50), (10,50)) expecting false
+  def partialOverlap = dataAreaProblemCheck((10,30), (20,40)) expecting false
 
   def freeRangesCheck(dbContents: (Long, Long)*) = new {
     def expecting (expectedRanges: (Long, Long)*) = testSetup(dbContents) { session =>
@@ -47,9 +47,10 @@ Illegal overlaps: Partial overlaps are correctly detected $identical
   }
 
   def testSetup[T](dbContents: Seq[(Long, Long)])(f: CurrentSession => T): T = {
-    implicit val session = Testutil.memoryDB.session
-    DBUtilities.createTables("MD5")
-    dbContents foreach { case (start, fin) => SQLByteStoreBackend.createByteStoreEntry(0, start, fin) }
-    f(session)
+    val db = Testutil.memoryDB
+    DBUtilities.createTables("MD5")(db session)
+    val meta = new SQLMetaBackend(db)
+    dbContents foreach { case (start, fin) => meta.createByteStoreEntry(0, start, fin) }
+    f(db session)
   }
 }
