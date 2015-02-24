@@ -60,7 +60,7 @@ class FileBackend private(dataDir: File, repositoryId: String, readonly: Boolean
     val dataFileNumber = start / blocksize
     val offsetInFile = start % blocksize toInt
     val bytesToWriteInDataFile = math.min(blocksize - offsetInFile, data.length)
-    DataFiles(dataFileNumber).writeData(offsetInFile, data setLength bytesToWriteInDataFile)
+    DataFiles(dataFileNumber).writeData(offsetInFile, data copy (length = bytesToWriteInDataFile))
     if (data.length > bytesToWriteInDataFile) write(data addOffset bytesToWriteInDataFile, start + bytesToWriteInDataFile)
   }
 

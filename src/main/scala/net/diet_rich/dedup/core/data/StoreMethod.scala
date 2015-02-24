@@ -56,7 +56,7 @@ object StoreMethod {
     @annotation.tailrec
     def read(chunk: Option[Bytes]): Option[Bytes] =
       if (packer finished) chunk else chunk match {
-        case None => read(Some(Bytes zero compressorChunkSize setLength 0))
+        case None => read(Some(Bytes zero compressorChunkSize copy(length = 0)))
         case result @ Some(Bytes(_, 0, `compressorChunkSize`)) => result
         case Some(Bytes(data, 0, length)) =>
           refill
@@ -70,7 +70,7 @@ object StoreMethod {
       nextBytes.isDefined
     }
 
-    def next(): Bytes = init(nextBytes.get) { _ => nextBytes = None }
+    def next(): Bytes = valueOf(nextBytes.get) before { nextBytes = None }
   }
 
 }
