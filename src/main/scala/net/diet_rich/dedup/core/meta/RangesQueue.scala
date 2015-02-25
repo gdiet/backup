@@ -11,7 +11,7 @@ class RangesQueue(initialRanges: Seq[(Long, Long)], nextBlockStart: Long => Long
   // because here, an ordinary queue 'heals', quickly getting into the right order.
   private val freeRangesQueue = init(mutable.Queue[(Long, Long)]())(_ enqueue (initialRanges:_*))
 
-  /** Dequeues the required size plus padding up to the next end-of-block. */
+  /** Dequeue the required size plus padding up to the next end-of-block. */
   def dequeueAtLeast(size: Long): List[(Long, Long)] = synchronized {
     @annotation.tailrec
     def collectFreeRanges(size: Long, ranges: List[(Long, Long)]): List[(Long, Long)] = {

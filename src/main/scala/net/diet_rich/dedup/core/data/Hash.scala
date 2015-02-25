@@ -9,7 +9,7 @@ object Hash {
   def calculate(algorithm: String, data: Iterator[Bytes]): (Array[Byte], Long) = {
     val digester = MessageDigest getInstance algorithm
     val size = data.foldLeft(0L){ case (sum, bytes) =>
-      digester.update(bytes.data, bytes.offset, bytes.length)
+      digester update (bytes.data, bytes.offset, bytes.length)
       sum + bytes.length
     }
     (digester.digest, size)
@@ -19,7 +19,7 @@ object Hash {
     val digester = MessageDigest getInstance algorithm
     var size = 0L
     val result = withData(data.map { bytes =>
-      digester.update(bytes.data, bytes.offset, bytes.length)
+      digester update (bytes.data, bytes.offset, bytes.length)
       bytes
     })
     (digester.digest, size, result)
