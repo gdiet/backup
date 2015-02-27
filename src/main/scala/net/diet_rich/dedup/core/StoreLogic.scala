@@ -14,20 +14,34 @@ trait StoreLogicBackend {
   def close(): Unit
 }
 
-class StoreLogic(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, storeThreads: Int) extends StoreLogicBackend {
-
+class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, freeRanges: RangesQueue,
+                 hashAlgorithm: String, storeMethod: Int, storeThreads: Int) extends StoreLogicBackend {
   private val storeExecutor = BlockingThreadPoolExecutor(storeThreads)
   private val storeContext = ExecutionContext fromExecutorService storeExecutor
   private def inStoreContext[T] (f: => T): T = Await result (Future(f)(storeContext), 1 day)
 
-  def close(): Unit = storeExecutor shutdownAndAwaitTermination()
+  private val internalStoreLogic = new InternalStoreLogic(metaBackend, writeData, freeRanges, hashAlgorithm, storeMethod)
 
-  def dataidFor(source: Source): Long = inStoreContext {
+  override def dataidFor(source: Source): Long = inStoreContext { internalStoreLogic dataidFor source }
+  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = inStoreContext { internalStoreLogic dataidFor (printData, print, source) }
+  override def close(): Unit = storeExecutor shutdownAndAwaitTermination()
+}
+
+class InternalStoreLogic(val metaBackend: MetaBackend, val writeData: (Bytes, Long) => Unit,
+                         val freeRanges: RangesQueue, val hashAlgorithm: String,
+                         val storeMethod: Int) extends StoreLogicDataChecks with StorePackedDataLogic
+
+trait StoreLogicDataChecks {
+  val metaBackend: MetaBackend
+  val hashAlgorithm: String
+  val storeMethod: Int
+
+  def dataidFor(source: Source): Long = {
     val printData = source read Repository.PRINTSIZE
     dataidFor(printData, Print(printData), source)
   }
 
-  def dataidFor(printData: Bytes, print: Long, source: Source): Long = inStoreContext {
+  def dataidFor(printData: Bytes, print: Long, source: Source): Long = {
     if (metaBackend hasSizeAndPrint (source.size, print))
       tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
     else
@@ -49,6 +63,7 @@ class StoreLogic(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges:
       .getOrElse(storeDataFullyPreloaded(bytes, size, print, hash))
   }
 
+  // FIXME check if this is really necessary for efficient GC: document or refactor
   protected def storeDataFullyPreloaded(bytes: mutable.MutableList[Bytes], size: Long, print: Long, hash: Array[Byte]): Long =
     storeSourceData (Bytes consumingIterator bytes, size, print, hash)
 
@@ -97,6 +112,13 @@ class StoreLogic(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges:
     case (results, range) => results :+ range
   }
 
+  protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges
+}
+
+trait StorePackedDataLogic {
+  protected def writeData: (Bytes, Long) => Unit
+  protected def freeRanges: RangesQueue
+
   protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges = {
     val storeRanges = freeRanges.dequeueAtLeast(estimatedSize).to[mutable.ArrayStack]
     @annotation.tailrec
@@ -106,10 +128,10 @@ class StoreLogic(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges:
       assert(fin - start <= Int.MaxValue, s"range too large: $start .. $fin")
       val length = (fin - start).toInt
       if (length < bytes.length) {
-        dataBackend write (bytes copy (length = length), start)
+        writeData (bytes copy (length = length), start)
         write((start, length.toLong) :: protocol)(bytes.addOffset(length))
       } else {
-        dataBackend write (bytes, start)
+        writeData (bytes, start)
         if (length > bytes.length) storeRanges push ((start + length, fin))
         (start, length.toLong) :: protocol
       }
