@@ -91,15 +91,13 @@ class StoreLogic(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges:
   }
 
   // Note: storePackedData splits ranges at block borders. In the byte store table, these ranges should be stored contiguously
-  // FIXME check whether this is still the case
-  // FIXME other collection that does not need reversal
-  protected def normalize(ranges: List[StartFin]): List[StartFin] = ranges.foldLeft(List.empty[StartFin]) {
-    case (Nil, range) => List(range)
-    case ((headStart, headFin) :: tail, (rangeStart, rangeFin)) if headFin == rangeStart => (headStart, rangeFin) :: tail
-    case (results, range) => range :: results
-  }.reverse
+  protected def normalize(ranges: Ranges): Ranges = ranges.foldLeft(RangesNil) {
+    case (RangesNil, range) => Vector(range)
+    case ((headStart, headFin) +: tail, (rangeStart, rangeFin)) if headFin == rangeStart => (headStart, rangeFin) +: tail
+    case (results, range) => results :+ range
+  }
 
-  protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): List[StartFin] = {
+  protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges = {
     val storeRanges = freeRanges.dequeueAtLeast(estimatedSize).to[mutable.ArrayStack]
     @annotation.tailrec
     def write(protocol: List[StartFin])(bytes: Bytes): List[StartFin] = {
@@ -116,6 +114,6 @@ class StoreLogic(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges:
         (start, length.toLong) :: protocol
       }
     }
-    valueOf(data flatMap write(Nil) toList) before (freeRanges enqueue storeRanges)
+    valueOf(data flatMap write(Nil) toVector) before (freeRanges enqueue storeRanges)
   }
 }
