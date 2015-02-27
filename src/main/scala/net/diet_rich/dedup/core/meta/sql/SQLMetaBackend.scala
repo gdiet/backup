@@ -43,7 +43,7 @@ class SQLMetaBackend(sessionFactory: SQLSession) extends MetaBackend {
   }
   override def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): TreeEntry = inTransaction {
     children(parent) find (_.name == name) match {
-      case Some(entry) => change(entry id, parent, name, changed, dataid); entry
+      case Some(entry) => change(entry id, parent, name, changed, dataid) getOrElse (throw new IOException("failed to update existing entry"))
       case None => createUnchecked(parent, name, changed, dataid)
     }
   }
