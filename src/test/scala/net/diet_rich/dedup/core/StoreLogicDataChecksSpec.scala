@@ -2,19 +2,23 @@ package net.diet_rich.dedup.core
 
 import java.io.ByteArrayInputStream
 
-import net.diet_rich.dedup.core.data.{Print, Bytes}
-import net.diet_rich.dedup.core.meta.MetaBackend
+import scala.collection.mutable
+import scala.language.reflectiveCalls
+
+import net.diet_rich.dedup.core.data.{Hash, Print, Bytes}
+import net.diet_rich.dedup.core.meta.{DataEntry, MetaBackend}
 import org.specs2.Specification
 
 class StoreLogicDataChecksSpec extends Specification { def is = s2"""
 ${"Tests for the main part of the store logic".title}
 
 If the size/print combination is not yet known, the data is immediately stored $sizePrintNotKnown
-If the size/print combination is already known, data pre-loading is attempted $todo
-The data is preloaded only if there is enough main memory available $todo
+If the size/print combination is already known, data pre-loading is attempted $attemptPreload
+The data is preloaded if there is enough main memory available $preloadIfMemoryAvailable
+The data is not preloaded if there is not enough main memory available $dontPreloadIfMemoryNotAvailable
 If the data has been preloaded,
-  it is stored if the size/print/hash combination is not yet known $todo
-  it is referenced if the size/print/hash combination is already known $todo
+  it is stored if the size/print/hash combination is not yet known $storeUnknownPreloaded
+  it is referenced if the size/print/hash combination is already known $referenceKnownPreloaded
 If preloaded data is stored, the memory is freed as the data is written $todo
 If not enough memory is available for pre-loading,
   and the source is resettable, the data is pre-scanned before storing $todo
@@ -24,7 +28,7 @@ If the data is pre-scanned before storing,
   and no matching size/print/hash combination is found, the source is reset and stored $todo
 Hash, size, print are stored correctly and the data is correctly packed
   when storing source data directly or with pre-calculated print $todo
-  when storing source data with pre-calculaed size, print and hash $todo
+  when storing source data with pre-calculated size, print and hash $todo
 Packed data is stored correctly with the correct data entries $todo
 """
 
@@ -44,7 +48,7 @@ Packed data is stored correctly with the correct data entries $todo
     def sizeOf(dataid: Long) = ???
     def change(id: Long, newParent: Long, newName: String, newTime: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]) = ???
     def close() = ???
-    def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]) = ???
+    def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = ???
     def entries(path: String) = ???
     def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
     def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
@@ -52,8 +56,14 @@ Packed data is stored correctly with the correct data entries $todo
     def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]) = ???
   }
 
-  class LogicStub(val metaBackend: MetaBackend, val storeMethod: Int = 1, val hashAlgorithm: String = "MD5") extends StoreLogicDataChecks {
+  class LogicStub(val metaBackend: MetaBackend = new MetaStub, val storeMethod: Int = 1, val hashAlgorithm: String = "MD5") extends StoreLogicDataChecks {
     def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges = ???
+  }
+
+  class SourceStub extends Source {
+    def size: Long = ???
+    def read(count: Int): Bytes = ???
+    def close(): Unit = ???
   }
 
   def emptySource = Source.from(new ByteArrayInputStream(Array()), 0)
@@ -71,4 +81,63 @@ Packed data is stored correctly with the correct data entries $todo
     logic.dataidFor(emptySource) === 42
   }
 
+  def attemptPreload = {
+    val meta = new MetaStub {
+      override def hasSizeAndPrint(size: Long, print: Long) = {
+        require(size  == 0L && print == Print.empty, s"size: $size, print: $print")
+        true
+      }
+    }
+    val logic = new LogicStub(meta) {
+      override def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = 43
+    }
+    logic.dataidFor(emptySource) === 43
+  }
+
+  def preloadIfMemoryAvailable = {
+    val logic = new LogicStub() {
+      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadDataThatMayBeAlreadyKnown _
+      override def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = 44
+    }
+    logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 0L, emptySource) === 44
+  }
+
+  def dontPreloadIfMemoryNotAvailable = {
+    val source = new SourceStub { override def size = Long.MaxValue ; override def read(count: Int) = Bytes.empty }
+    val logic = new LogicStub() {
+      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadDataThatMayBeAlreadyKnown _
+      override def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes], estimatedSize: Long): Long = 45
+    }
+    logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 0L, source) === 45
+  }
+
+  def storeUnknownPreloaded = {
+    val meta = new MetaStub {
+      override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = {
+        require(size  == 0L && print == 1234, s"size: $size, print: $print")
+        require(hash.deep == Hash.empty("MD5").deep)
+        Nil
+      }
+    }
+    val logic = new LogicStub(meta) {
+      val _preloadDataThatMayBeAlreadyKnown = preloadDataThatMayBeAlreadyKnown _
+      override def storeDataFullyPreloaded(bytes: mutable.MutableList[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = 46
+    }
+    logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 46
+  }
+
+  def referenceKnownPreloaded = {
+    val result = DataEntry(47,1,2,Array(),3)
+    val meta = new MetaStub {
+      override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = {
+        require(size  == 0L && print == 1234, s"size: $size, print: $print")
+        require(hash.deep == Hash.empty("MD5").deep)
+        List(result)
+      }
+    }
+    val logic = new LogicStub(meta) {
+      val _preloadDataThatMayBeAlreadyKnown = preloadDataThatMayBeAlreadyKnown _
+    }
+    logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 47
+  }
 }

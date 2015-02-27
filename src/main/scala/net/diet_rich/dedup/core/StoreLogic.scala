@@ -63,7 +63,7 @@ trait StoreLogicDataChecks {
       .getOrElse(storeDataFullyPreloaded(bytes, size, print, hash))
   }
 
-  // FIXME check if this is really necessary for efficient GC: document or refactor
+  // FIXME check if this is really necessary for efficient garbage collection: document or refactor
   protected def storeDataFullyPreloaded(bytes: mutable.MutableList[Bytes], size: Long, print: Long, hash: Array[Byte]): Long =
     storeSourceData (Bytes consumingIterator bytes, size, print, hash)
 
