@@ -1,5 +1,7 @@
 package net.diet_rich.dedup.core.meta
 
+import net.diet_rich.dedup.core.StartFin
+
 trait MetaBackend { // FIXME check whether all are used
   private def now = Some(System.currentTimeMillis())
 
@@ -24,7 +26,7 @@ trait MetaBackend { // FIXME check whether all are used
   def hasSizeAndPrint(size: Long, print: Long): Boolean
   def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry]
 
-  def storeEntries(dataid: Long): List[(Long, Long)]
+  def storeEntries(dataid: Long): List[StartFin]
   def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit
 
   def inTransaction[T](f: => T): T

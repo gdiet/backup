@@ -1,5 +1,6 @@
 package net.diet_rich.dedup.core.meta.sql
 
+import net.diet_rich.dedup.core.StartFin
 import net.diet_rich.dedup.core.meta._
 import net.diet_rich.dedup.core.data.{StoreMethod, Hash, Print}
 
@@ -95,7 +96,7 @@ object DBUtilities {
     StaticQuery.queryNA[(StoreEntry, StoreEntry)](s"$select ON b1.id != b2.id AND b1.start = b2.start;").list :::
     StaticQuery.queryNA[(StoreEntry, StoreEntry)](s"$select ON b1.id != b2.id AND b1.fin = b2.fin;").list
   }
-  def freeRangesInDataArea(implicit session: CurrentSession): List[(Long, Long)] = {
+  def freeRangesInDataArea(implicit session: CurrentSession): List[StartFin] = {
     dataAreaStarts match {
       case Nil => Nil
       case firstArea :: gapStarts =>

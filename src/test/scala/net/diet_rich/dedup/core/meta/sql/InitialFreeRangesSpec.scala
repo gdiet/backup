@@ -3,6 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core.meta.sql
 
+import net.diet_rich.dedup.core._
 import org.specs2.Specification
 
 import scala.language.reflectiveCalls
@@ -31,14 +32,14 @@ Illegal overlaps: Partial overlaps are correctly detected $identical
   def identical = dataAreaProblemCheck((10,50), (10,50)) expecting false
   def partialOverlap = dataAreaProblemCheck((10,30), (20,40)) expecting false
 
-  def freeRangesCheck(dbContents: (Long, Long)*) = new {
-    def expecting (expectedRanges: (Long, Long)*) = testSetup(dbContents) { session =>
+  def freeRangesCheck(dbContents: StartFin*) = new {
+    def expecting (expectedRanges: StartFin*) = testSetup(dbContents) { session =>
       val actualRanges = DBUtilities.freeRangesInDataArea(session)
       actualRanges should beEqualTo(expectedRanges.toList)
     }
   }
 
-  def dataAreaProblemCheck(dbContents: (Long, Long)*) = new {
+  def dataAreaProblemCheck(dbContents: StartFin*) = new {
     def expecting (noProblems: Boolean) = testSetup(dbContents) { session =>
       DBUtilities.problemDataAreaOverlaps(session) aka "data overlap problem list" should (
         if (noProblems) beEmpty else not(beEmpty)
@@ -46,7 +47,7 @@ Illegal overlaps: Partial overlaps are correctly detected $identical
     }
   }
 
-  def testSetup[T](dbContents: Seq[(Long, Long)])(f: CurrentSession => T): T = {
+  def testSetup[T](dbContents: Seq[StartFin])(f: CurrentSession => T): T = {
     val db = Testutil.memoryDB
     DBUtilities.createTables("MD5")(db session)
     val meta = new SQLMetaBackend(db)

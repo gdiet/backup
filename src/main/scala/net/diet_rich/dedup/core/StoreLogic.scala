@@ -1,13 +1,10 @@
 package net.diet_rich.dedup.core
 
-import net.diet_rich.dedup.core.values.Bytes
-import net.diet_rich.dedup.core.values.DataRange
-
 import scala.collection.mutable
 import scala.concurrent.{Future, Await, ExecutionContext}
 import scala.concurrent.duration.DurationInt
 
-import net.diet_rich.dedup.core.data.{StoreMethod, Hash, Bytes, Print}
+import net.diet_rich.dedup.core.data._
 import net.diet_rich.dedup.core.meta.{RangesQueue, MetaBackend}
 import net.diet_rich.dedup.util._
 
@@ -17,7 +14,7 @@ trait StoreLogicBackend {
   def close(): Unit
 }
 
-class StoreLogic(metaBackend: MetaBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, storeThreads: Int) extends StoreLogicBackend {
+class StoreLogic(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, storeThreads: Int) extends StoreLogicBackend {
 
   private val storeExecutor = BlockingThreadPoolExecutor(storeThreads)
   private val storeContext = ExecutionContext fromExecutorService storeExecutor
@@ -94,51 +91,31 @@ class StoreLogic(metaBackend: MetaBackend, freeRanges: RangesQueue, hashAlgorith
   }
 
   // Note: storePackedData splits ranges at block borders. In the byte store table, these ranges should be stored contiguously
-  protected def normalize(ranges: List[(Long, Long)]): List[(Long, Long)] = ranges.foldLeft(List.empty[(Long, Long)]) {
+  // FIXME check whether this is still the case
+  // FIXME other collection that does not need reversal
+  protected def normalize(ranges: List[StartFin]): List[StartFin] = ranges.foldLeft(List.empty[StartFin]) {
     case (Nil, range) => List(range)
     case ((headStart, headFin) :: tail, (rangeStart, rangeFin)) if headFin == rangeStart => (headStart, rangeFin) :: tail
-    case (ranges, range) => range :: ranges
+    case (results, range) => range :: results
   }.reverse
 
-  protected sealed trait RangesOrUnstored
-  protected final case class Ranges(stored: List[(Long, Long)], remaining: List[(Long, Long)]) extends RangesOrUnstored
-  protected final case class Unstored(unstored: List[Bytes]) extends RangesOrUnstored
-
-  protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): List[(Long, Long)] = {
-    // FIXME store everything that fits with estimated size, then continue chunk by chunk
-    ???
+  protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): List[StartFin] = {
+    val storeRanges = freeRanges.dequeueAtLeast(estimatedSize).to[mutable.ArrayStack]
+    @annotation.tailrec
+    def write(protocol: List[StartFin])(bytes: Bytes): List[StartFin] = {
+      if (storeRanges.isEmpty) freeRanges.dequeueAtLeast(1) foreach storeRanges.push
+      val (start, fin) = storeRanges pop()
+      assert(fin - start <= Int.MaxValue, s"range too large: $start .. $fin")
+      val length = (fin - start).toInt
+      if (length < bytes.length) {
+        dataBackend write (bytes copy (length = length), start)
+        write((start, length.toLong) :: protocol)(bytes.addOffset(length))
+      } else {
+        dataBackend write (bytes, start)
+        if (length > bytes.length) storeRanges push ((start + length, fin))
+        (start, length.toLong) :: protocol
+      }
+    }
+    valueOf(data flatMap write(Nil) toList) before (freeRanges enqueue storeRanges)
   }
-//    val storeRanges = freeRanges dequeueAtLeast estimatedSize
-//    val protocol = data.foldLeft[RangesOrUnstored](Ranges(Nil, storeRanges)) {
-//      case (ranges, Bytes(_, _, 0)) => ranges
-//      case (ranges, bytes) => storeOneChunk(bytes, ranges)
-//    }
-//    protocol match {
-//      case Unstored(additionalData) =>
-//        storeRanges ::: storePackedData(additionalData.iterator, additionalData.sizeInBytes)
-//      case Ranges(stored, remaining) =>
-//        remaining foreach freeRanges.enqueue
-//        stored.reverse
-//    }
-//  }
-//
-//  @annotation.tailrec
-//  protected final def storeOneChunk(bytes: Bytes, ranges: RangesOrUnstored): RangesOrUnstored = ranges match {
-//    case Unstored(data) => Unstored(bytes :: data)
-//    case Ranges(_, Nil) => Unstored(List(bytes))
-//    case Ranges(stored, head :: tail) =>
-//      head.size - bytes.size match {
-//        case Size.Negative(_) =>
-//          dataBackend.write(bytes withSize head.size, head.start)
-//          storeOneChunk(bytes withOffset head.size, Ranges(head :: stored, tail))
-//        case Size.Zero =>
-//          dataBackend.write(bytes, head.start)
-//          Ranges(head :: stored, tail)
-//        case _ =>
-//          dataBackend.write(bytes, head.start)
-//          Ranges((head withLength bytes.size) :: stored, (head withOffset bytes.size) :: tail)
-//      }
-//    }
-//  }
-
 }

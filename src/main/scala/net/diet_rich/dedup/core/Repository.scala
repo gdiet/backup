@@ -9,7 +9,7 @@ object Repository {
 
 class Repository(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, storeThreads: Int) {
 
-  val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, freeRanges, hashAlgorithm, storeMethod, storeThreads)
+  val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, ???, freeRanges, hashAlgorithm, storeMethod, storeThreads)
 
   def close(): Unit = {
     storeLogic close()
