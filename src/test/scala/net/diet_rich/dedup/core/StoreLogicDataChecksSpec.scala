@@ -19,7 +19,7 @@ The data is not preloaded if there is not enough main memory available $dontPrel
 If the data has been preloaded,
   it is stored if the size/print/hash combination is not yet known $storeUnknownPreloaded
   it is referenced if the size/print/hash combination is already known $referenceKnownPreloaded
-If preloaded data is stored, the memory is freed as the data is written $todo
+If preloaded data is stored, the memory is freed as the data is written $memoryFreedPreloaded
 If not enough memory is available for pre-loading,
   and the source is resettable, the data is pre-scanned before storing $todo
   and the source is not resettable, the data is stored immediately (even if it is a duplicate) $todo
@@ -139,5 +139,45 @@ Packed data is stored correctly with the correct data entries $todo
       val _preloadDataThatMayBeAlreadyKnown = preloadDataThatMayBeAlreadyKnown _
     }
     logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 47
+  }
+
+  def memoryFreedPreloaded = {
+    val memoryForTest = 300000000
+    def freeMemory = Runtime.getRuntime.maxMemory() - (Runtime.getRuntime.totalMemory() - Runtime.getRuntime.freeMemory())
+    require(freeMemory > memoryForTest, s"required free memory $memoryForTest not availabe. Free memory is $freeMemory")
+    def source = new SourceStub {
+      var count = 0
+      override val size: Long = memoryForTest
+      override def read(size: Int) = {
+        val currentSize = math.min(size, memoryForTest - count)
+        count += currentSize
+        Bytes.zero(currentSize)
+      }
+    }
+    val expectedHash = Hash.calculate("MD5", source.allData)._1
+    val meta = new MetaStub {
+      override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = {
+        require(size  == memoryForTest && print == 1234, s"size: $size, print: $print")
+        require(hash.deep == expectedHash.deep)
+        Nil
+      }
+    }
+    val logic = new LogicStub(meta) {
+      var memoryProtocol = List[Long]()
+      val _preloadDataThatMayBeAlreadyKnown = preloadDataThatMayBeAlreadyKnown _
+      override def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = {
+        data.grouped(3000).map { _ =>
+          Runtime.getRuntime.gc()
+          memoryProtocol = memoryProtocol :+ freeMemory
+        }.toList
+        48
+      }
+    }
+    val result = logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, source)
+    val memoryFreed = logic.memoryProtocol.sliding(2,1).map{case (a::b::Nil) => b - a; case _ => ???}
+    (result === 48) and
+      (memoryFreed should haveSize(3)) and
+      (memoryFreed should contain(be_>( 90000000L)).foreach) and
+      (memoryFreed should contain(be_<(110000000L)).foreach)
   }
 }
