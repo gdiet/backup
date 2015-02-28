@@ -15,16 +15,12 @@ trait StoreLogicBackend {
 }
 
 class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, freeRanges: RangesQueue,
-                 hashAlgorithm: String, storeMethod: Int, storeThreads: Int) extends StoreLogicBackend {
-  private val storeExecutor = BlockingThreadPoolExecutor(storeThreads)
-  private val storeContext = ExecutionContext fromExecutorService storeExecutor
-  private def inStoreContext[T] (f: => T): T = Await result (Future(f)(storeContext), 1 day)
-
+                 hashAlgorithm: String, storeMethod: Int, val executionThreads: Int) extends StoreLogicBackend with ThreadExecutor {
   private val internalStoreLogic = new InternalStoreLogic(metaBackend, writeData, freeRanges, hashAlgorithm, storeMethod)
 
-  override def dataidFor(source: Source): Long = inStoreContext { internalStoreLogic dataidFor source }
-  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = inStoreContext { internalStoreLogic dataidFor (printData, print, source) }
-  override def close(): Unit = storeExecutor shutdownAndAwaitTermination()
+  override def dataidFor(source: Source): Long = execute { internalStoreLogic dataidFor source }
+  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = execute { internalStoreLogic dataidFor (printData, print, source) }
+  override def close(): Unit = shutdownExecutor()
 }
 
 class InternalStoreLogic(val metaBackend: MetaBackend, val writeData: (Bytes, Long) => Unit,

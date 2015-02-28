@@ -28,7 +28,7 @@ object Repository {
   }
 }
 
-class Repository(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, storeThreads: Int) {
+class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, storeThreads: Int) {
 
   protected val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, dataBackend.write _, freeRanges, hashAlgorithm, storeMethod, storeThreads)
 

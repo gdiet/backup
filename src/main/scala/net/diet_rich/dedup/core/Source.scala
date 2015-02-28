@@ -3,6 +3,8 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
+import java.io.{InputStream, RandomAccessFile, File}
+
 import net.diet_rich.dedup.core.data.Bytes
 import net.diet_rich.dedup.util._
 
@@ -33,14 +35,16 @@ object Source {
     Bytes(data, 0, readRecurse(0, length))
   }
 
-  def from(file: java.io.RandomAccessFile): ResettableSource = new ResettableSource {
+  def from(file: File): ResettableSource = from(new RandomAccessFile(file, "r"))
+
+  def from(file: RandomAccessFile): ResettableSource = new ResettableSource {
     override def size = file length()
     override def close = file close()
     override def read(count: Int) = readBytes(file read (_,_,_), count)
     override def reset: Unit = file seek 0
   }
 
-  def from(in: java.io.InputStream, expectedSize: Long): Source = new Source {
+  def from(in: InputStream, expectedSize: Long): Source = new Source {
     override def size = expectedSize
     override def read(count: Int): Bytes = readBytes(in read (_,_,_), count)
     override def close() : Unit = in close()

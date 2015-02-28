@@ -1,0 +1,24 @@
+package net.diet_rich.dedup.core
+
+import java.io.{IOException, File}
+
+import net.diet_rich.dedup.util.ThreadExecutor
+
+class BackupAlgorithm(repository: Repository, val executionThreads: Int = 4) extends ThreadExecutor {
+  import repository.metaBackend
+  def backup(source: File, target: String): Unit = {
+    metaBackend.entries(target) match {
+      case List(parent) =>
+        if (metaBackend.children(parent.id, source.getName) isEmpty) backup(source, parent.id)
+        else throw new IOException(s"File ${source.getName} is already present in repository directory $target")
+      case Nil  => throw new IOException(s"Target $target not found in repository")
+      case list => throw new IOException(s"Multiple entries found for target $target in repository: $list")
+    }
+  }
+  protected def backup(source: File, parentid: Long): Unit = execute {
+    if (source.isDirectory) {
+      val newParentid = metaBackend.createUnchecked(parentid, source.getName).id
+      source.listFiles() foreach (backup(_, newParentid))
+    } else repository.createUnchecked(parentid, source.getName, Some(Source from source), Some(source.lastModified()))
+  }
+}
