@@ -8,7 +8,7 @@ import scala.collection.JavaConverters.collectionAsScalaIterableConverter
 import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.io._
 
-case class SQLSession(database: CurrentDatabase) {
+case class SQLSession(database: CurrentDatabase) extends AutoCloseable {
   private val allSessions = new SynchronizedQueue[CurrentSession]()
   private val sessions = new ThreadLocal[CurrentSession] {
     override def initialValue = init(database createSession()){allSessions add}

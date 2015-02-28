@@ -10,6 +10,16 @@ import net.diet_rich.dedup.util.io._
 import scala.collection.mutable
 
 object FileBackend {
+  def create(dataDir: File, repositoryID: String, blocksize: Int) = {
+    require(dataDir mkdir(), s"Can't create data directory $dataDir")
+    val settings = Map(
+      dataVersionKey -> dataVersionValue,
+      repositoryIDKey -> repositoryID,
+      dataBlocksizeKey -> s"$blocksize"
+    )
+    writeSettingsFile(dataDir / dataSettingsFile, settings)
+  }
+
   def apply(dataDir: File, repositoryId: String, readonly: Boolean): DataBackend = new FileBackend(dataDir, repositoryId, readonly)
 
   def nextBlockStart(position: Long, blocksize: Long): Long = position % blocksize match {
@@ -20,10 +30,10 @@ object FileBackend {
 
 class FileBackend private(dataDir: File, repositoryId: String, readonly: Boolean) extends DataBackend {
   private val blocksize: Int = { // int to avoid problems with byte array size
-    val settings = readSettingsFile(dataDir / settingsFile)
-    require(settings(versionKey) == versionValue)
+    val settings = readSettingsFile(dataDir / dataSettingsFile)
+    require(settings(dataVersionKey) == dataVersionValue)
     require(settings(repositoryIDKey) == repositoryId)
-    settings(blocksizeKey).toInt
+    settings(dataBlocksizeKey).toInt
   }
   private val maxReadSize: Int = math.min(blocksize, 65536)
   private val maxNumberOfOpenFiles: Int = 64

@@ -1,13 +1,30 @@
 package net.diet_rich.dedup.core
 
-import java.io.IOException
+import java.io.{File, IOException}
+
+import net.diet_rich.dedup.core.data.file.FileBackend
+import net.diet_rich.dedup.core.meta.sql.CreateSQLMetaBackend
 
 import net.diet_rich.dedup.core.data._
 import net.diet_rich.dedup.core.meta.{TreeEntry, RangesQueue, MetaBackend}
 import net.diet_rich.dedup.util.now
+import net.diet_rich.dedup.util.io.RichFile
 
 object Repository {
   val PRINTSIZE = 8192
+
+  def create(root: File, repositoryID: String = s"${util.Random.nextLong()}", hashAlgorithm: String = "MD5", storeBlockSize: Int = 64000000): Unit = {
+    require(root.isDirectory, s"Root $root must be a directory")
+    require(root.listFiles().isEmpty, s"Root $root must be empty")
+    CreateSQLMetaBackend(root / "meta", repositoryID, hashAlgorithm)
+    FileBackend.create(root / "data", repositoryID, storeBlockSize)
+  }
+
+  def apply(root: File, storeMethod: Int = StoreMethod.STORE, storeThreads: Int = 4): Repository = {
+    val metaRoot = root / "meta"
+    val dataRoot = root / "data"
+    new Repository(???, ???, ???, ???, storeMethod, storeThreads)
+  }
 }
 
 class Repository(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, storeThreads: Int) {
