@@ -60,12 +60,8 @@ trait StoreLogicDataChecks {
     val bytes = (printData :: source.allData.toList).to[mutable.MutableList]
     val (hash, size) = Hash calculate (hashAlgorithm, bytes iterator)
     metaBackend.dataEntriesFor(size, print, hash).headOption.map(_.id)
-      .getOrElse(storeDataFullyPreloaded(bytes, size, print, hash))
+      .getOrElse(storeSourceData (Bytes consumingIterator bytes, size, print, hash))
   }
-
-  // FIXME check if this is really necessary for efficient garbage collection: document or refactor
-  protected def storeDataFullyPreloaded(bytes: mutable.MutableList[Bytes], size: Long, print: Long, hash: Array[Byte]): Long =
-    storeSourceData (Bytes consumingIterator bytes, size, print, hash)
 
   protected def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Long, source: ResettableSource): Long = {
     val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData

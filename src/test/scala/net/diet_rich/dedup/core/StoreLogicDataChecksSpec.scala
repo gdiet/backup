@@ -121,7 +121,7 @@ Packed data is stored correctly with the correct data entries $todo
     }
     val logic = new LogicStub(meta) {
       val _preloadDataThatMayBeAlreadyKnown = preloadDataThatMayBeAlreadyKnown _
-      override def storeDataFullyPreloaded(bytes: mutable.MutableList[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = 46
+      override def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = 46
     }
     logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 46
   }
