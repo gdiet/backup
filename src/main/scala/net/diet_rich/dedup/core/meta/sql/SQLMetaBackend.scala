@@ -17,7 +17,7 @@ class SQLMetaBackend(sessionFactory: SQLSession) extends MetaBackend {
   override def children(parent: Long, name: String): List[TreeEntry] = treeChildrenNotDeletedForParentAndNameQuery(parent, name).list
   override def childrenWithDeleted(parent: Long): List[TreeEntry] = treeChildrenForParentQuery(parent).list
   override def entries(path: String): List[TreeEntry] =
-    pathElements(path).foldLeft(List(rootEntry)){(nodes, name) => nodes.flatMap(node => children(node.id) filter (_.name == name))}
+    pathElements(path).foldLeft(List(rootEntry)){(nodes, name) => nodes.flatMap(node => children(node.id, name))}
   override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): TreeEntry = inTransaction {
     val id = nextTreeEntryIdQuery.first
     createTreeEntryUpdate(id, parent, name, changed, dataid).execute
