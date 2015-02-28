@@ -13,11 +13,12 @@ import net.diet_rich.dedup.util.io.RichFile
 object Repository {
   val PRINTSIZE = 8192
 
-  def create(root: File, repositoryID: String = s"${util.Random.nextLong()}", hashAlgorithm: String = "MD5", storeBlockSize: Int = 64000000): Unit = {
+  def create(root: File, repositoryID: Option[String] = None, hashAlgorithm: Option[String] = None, storeBlockSize: Option[Int] = None): Unit = {
+    val actualRepositoryID = repositoryID getOrElse s"${util.Random.nextLong()}"
     require(root.isDirectory, s"Root $root must be a directory")
     require(root.listFiles().isEmpty, s"Root $root must be empty")
-    CreateSQLMetaBackend(root / "meta", repositoryID, hashAlgorithm)
-    FileBackend.create(root / "data", repositoryID, storeBlockSize)
+    CreateSQLMetaBackend(root / "meta", actualRepositoryID, hashAlgorithm getOrElse "MD5")
+    FileBackend.create(root / "data", actualRepositoryID, storeBlockSize getOrElse 64000000)
   }
 
   def apply(root: File, storeMethod: Int = StoreMethod.STORE, storeThreads: Int = 4): Repository = {
