@@ -21,7 +21,7 @@ If the data has been preloaded,
   it is referenced if the size/print/hash combination is already known $referenceKnownPreloaded
 If preloaded data is stored, the memory is freed as the data is written $memoryFreedPreloaded
 If not enough memory is available for pre-loading,
-  and the source is resettable, the data is pre-scanned before storing $todo
+  and the source is resettable, the data is pre-scanned before storing $prescanResettableSource
   and the source is not resettable, the data is stored immediately (even if it is a duplicate) $todo
 If the data is pre-scanned before storing,
   and a matching size/print/hash combination is found, it is referenced $todo
@@ -30,6 +30,8 @@ Hash, size, print are stored correctly and the data is correctly packed
   when storing source data directly or with pre-calculated print $todo
   when storing source data with pre-calculated size, print and hash $todo
 Packed data is stored correctly with the correct data entries $todo
+
+The store process itself should be tested $todo
 """
 
   class MetaStub extends MetaBackend {
@@ -141,7 +143,7 @@ Packed data is stored correctly with the correct data entries $todo
     logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 47
   }
 
-  def memoryFreedPreloaded = {
+  def memoryFreedPreloaded: org.specs2.execute.Result = if (!sys.env.contains("tests.include.longRunning")) skipped("- to include this test, set tests.include.longRunning") else {
     val memoryForTest = 300000000
     def freeMemory = Runtime.getRuntime.maxMemory() - (Runtime.getRuntime.totalMemory() - Runtime.getRuntime.freeMemory())
     require(freeMemory > memoryForTest, s"required free memory $memoryForTest not availabe. Free memory is $freeMemory")
@@ -179,5 +181,29 @@ Packed data is stored correctly with the correct data entries $todo
       (memoryFreed should haveSize(3)) and
       (memoryFreed should contain(be_>( 90000000L)).foreach) and
       (memoryFreed should contain(be_<(110000000L)).foreach)
+  }
+
+  def prescanResettableSource = {
+    val sourceSize = Runtime.getRuntime.maxMemory() * 2
+    val sourceBytes = Bytes(Array(50.toByte), 0, 1)
+    def source = new SourceStub with ResettableSource {
+      var firstCall = true
+      override val size: Long = sourceSize
+      override def read(size: Int) = if (firstCall) { firstCall = false; sourceBytes } else Bytes.empty
+      def reset = Unit
+    }
+    val expectedHash = Hash.calculate("MD5", source.allData)._1
+    val meta = new MetaStub {
+      override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = {
+        require(size  == 1 && print == 4321, s"size: $size, print: $print")
+        require(hash.deep == expectedHash.deep)
+        Nil
+      }
+    }
+    val logic = new LogicStub(meta) {
+      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadDataThatMayBeAlreadyKnown _
+      override def storeSourceData(source: Source): Long = 49
+    }
+    logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 4321, source) === 49
   }
 }
