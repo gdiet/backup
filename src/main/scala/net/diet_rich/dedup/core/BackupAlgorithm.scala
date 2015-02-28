@@ -4,8 +4,11 @@ import java.io.{IOException, File}
 
 import net.diet_rich.dedup.util.ThreadExecutor
 
-class BackupAlgorithm(repository: Repository, val executionThreads: Int = 4) extends ThreadExecutor {
+class BackupAlgorithm(repository: Repository, backupThreads: Option[Int] = None) extends ThreadExecutor {
+  override val executionThreads = backupThreads getOrElse 4
   import repository.metaBackend
+
+  // backup assumes that, once it starts, it has exclusive write access to its target branch in the tree
   def backup(source: File, target: String): Unit = {
     metaBackend.entries(target) match {
       case List(parent) =>

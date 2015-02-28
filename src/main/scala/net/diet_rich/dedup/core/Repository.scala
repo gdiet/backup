@@ -21,18 +21,18 @@ object Repository {
     FileBackend.create(root / "data", actualRepositoryID, storeBlockSize getOrElse 64000000)
   }
 
-  def apply(root: File, storeMethod: Int = StoreMethod.STORE, storeThreads: Int = 4): Repository = {
+  def apply(root: File, storeMethod: Option[Int] = None, storeThreads: Option[Int] = None): Repository = {
     val metaRoot = root / "meta"
     val dataRoot = root / "data"
-    new Repository(???, ???, ???, ???, storeMethod, storeThreads)
+    new Repository(???, ???, ???, ???, storeMethod getOrElse StoreMethod.STORE, storeThreads getOrElse 4)
   }
 }
 
-class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, storeThreads: Int) {
+class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, storeThreads: Int) extends AutoCloseable {
 
   protected val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, dataBackend.write _, freeRanges, hashAlgorithm, storeMethod, storeThreads)
 
-  def close(): Unit = {
+  override def close(): Unit = {
     storeLogic close()
     metaBackend close()
     dataBackend close()

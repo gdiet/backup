@@ -8,10 +8,10 @@ import net.diet_rich.dedup.core.data._
 import net.diet_rich.dedup.core.meta.{RangesQueue, MetaBackend}
 import net.diet_rich.dedup.util._
 
-trait StoreLogicBackend {
+trait StoreLogicBackend extends AutoCloseable {
   def dataidFor(source: Source): Long
   def dataidFor(printData: Bytes, print: Long, source: Source): Long
-  def close(): Unit
+  override def close(): Unit
 }
 
 class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, freeRanges: RangesQueue,
@@ -20,7 +20,6 @@ class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, fre
 
   override def dataidFor(source: Source): Long = execute { internalStoreLogic dataidFor source }
   override def dataidFor(printData: Bytes, print: Long, source: Source): Long = execute { internalStoreLogic dataidFor (printData, print, source) }
-  override def close(): Unit = shutdownExecutor()
 }
 
 class InternalStoreLogic(val metaBackend: MetaBackend, val writeData: (Bytes, Long) => Unit,

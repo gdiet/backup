@@ -7,6 +7,10 @@ import net.diet_rich.dedup.util._
 object StoreMethod {
   val STORE = 0
   val DEFLATE = 1
+  val named = Map (
+    "store" -> STORE,
+    "deflate" -> DEFLATE
+  )
 
   type Coder = Iterator[Bytes] => Iterator[Bytes]
 
