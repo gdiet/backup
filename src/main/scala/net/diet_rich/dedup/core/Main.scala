@@ -3,7 +3,8 @@ package net.diet_rich.dedup.core
 import java.io.File
 
 import net.diet_rich.dedup.core.data.StoreMethod
-import net.diet_rich.dedup.util.io.using
+import net.diet_rich.dedup.core.meta.TreeEntry
+import net.diet_rich.dedup.util.io._
 
 object Main extends App {
   if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else {
@@ -32,6 +33,34 @@ object Main extends App {
             backupAlgorithm.backup(source, target)
           }
         }
+
+      case "restore" =>
+        val source = required("source")
+        val target = new File(required("target"))
+        require(target.isDirectory, s"Target $target must be a directory")
+        require(target.listFiles.isEmpty, s"Target directory $target must be empty")
+        using(Repository open (new File(repoPath), readonly = true)) { repository =>
+          // FIXME move to RestoreAlgorithm
+          val metaBackend = repository.metaBackend
+          metaBackend.entries(source) match {
+            case List(entry) =>
+              def restore(target: File, entry: TreeEntry): Unit = {
+                val file = target / entry.name
+                (metaBackend children entry.id, entry.data) match {
+                  case (Nil, Some(dataid)) =>
+                    repository read dataid
+                  case (children, data) =>
+                    if (data isDefined) warn(s"Data entry for directory $file is ignored")
+                    if (file.mkdir()) children foreach (restore(file, _))
+                    else warn(s"Could not create directory $file its children during restore")
+                }
+              }
+              restore(target, entry)
+            case Nil => require(requirement = false, s"Source $source not found in repository")
+            case list => require(requirement = false, s"Multiple entries found in repository for source $source")
+          }
+        }
+
 
       case _ => println(s"unknown command $command")
     }

@@ -35,6 +35,7 @@ object Repository {
   }
 }
 
+// FIXME the read-only repository does not need all arguments
 class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, storeThreads: Int) extends AutoCloseable {
 
   protected val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, dataBackend.write _, freeRanges, hashAlgorithm, storeMethod, storeThreads)
@@ -48,7 +49,11 @@ class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend, freeRan
     suppressExceptions(dataBackend close())
     suppressExceptions(Memory.free(memoryToReserve))
   }
-  
+
+  def read(dataid: Long): Iterator[Bytes] =
+    ???
+
+  // FIXME still needed?
   def read(dataid: Long, storeMethod: Int): Iterator[Bytes] =
     StoreMethod.restoreCoder(storeMethod)(readRaw(dataid))
 
