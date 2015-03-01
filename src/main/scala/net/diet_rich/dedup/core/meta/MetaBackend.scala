@@ -19,8 +19,8 @@ trait MetaBackend { // FIXME check whether all are used
 
   def dataEntry(dataid: Long): Option[DataEntry]
   def sizeOf(dataid: Long): Option[Long]
-  def createDataTableEntry(reservedID: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit
-  def nextDataID: Long
+  def createDataTableEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit
+  def nextDataid: Long
 
   def hasSizeAndPrint(size: Long, print: Long): Boolean
   def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry]

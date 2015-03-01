@@ -38,14 +38,14 @@ The store process itself should be tested $todo
     def entry(id: Long) = ???
     def hasSizeAndPrint(size: Long, print: Long): Boolean = ???
     def markDeleted(id: Long, deletionTime: Option[Long]) = ???
-    def createDataTableEntry(reservedID: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int) = ???
+    def createDataTableEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int) = ???
     def dataEntry(dataid: Long) = ???
     def children(parent: Long) = ???
     def children(parent: Long, name: String) = ???
     def childrenWithDeleted(parent: Long) = ???
     def storeEntries(dataid: Long) = ???
     def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
-    def nextDataID = ???
+    def nextDataid = ???
     def createByteStoreEntry(dataid: Long, start: Long, fin: Long) = ???
     def sizeOf(dataid: Long) = ???
     def change(id: Long, newParent: Long, newName: String, newTime: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]) = ???

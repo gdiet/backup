@@ -11,12 +11,12 @@ import scala.util.control.NonFatal
 import net.diet_rich.dedup.core.data.Hash
 
 object SQLMetaBackendUtils {
-  def create(metaRoot: File, repositoryID: String, hashAlgorithm: String) = {
+  def create(metaRoot: File, repositoryid: String, hashAlgorithm: String) = {
     try { Hash digestLength hashAlgorithm } catch { case NonFatal(e) => require(false, s"Hash for $hashAlgorithm can't be computed: $e")}
     require(metaRoot mkdir(), s"Can't create meta directory $metaRoot")
     val settings = Map(
       metaVersionKey        -> metaVersionValue,
-      repositoryidKey       -> repositoryID,
+      repositoryidKey       -> repositoryid,
       metaHashAlgorithmKey  -> hashAlgorithm
     )
     writeSettingsFile(metaRoot / metaSettingsFile, settings)

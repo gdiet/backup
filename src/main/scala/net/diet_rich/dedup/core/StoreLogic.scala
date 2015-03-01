@@ -93,8 +93,8 @@ trait StoreLogicDataChecks {
   protected def storePackedDataAndCreateByteStoreEntries(data: Iterator[Bytes], estimatedSize: Long): Long = {
     // first store, so if something bad happens while storing no table entries are created
     val storedRanges = normalize(storePackedData(data, estimatedSize))
-    init(metaBackend nextDataID) { dataID =>
-      storedRanges foreach { case (start, fin) => metaBackend createByteStoreEntry (dataID, start, fin) }
+    init(metaBackend nextDataid) { dataid =>
+      storedRanges foreach { case (start, fin) => metaBackend createByteStoreEntry (dataid, start, fin) }
     }
   }
 

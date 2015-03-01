@@ -8,32 +8,27 @@ import net.diet_rich.dedup.util.io.using
 object Main extends App {
   if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else {
     val command :: repoPath :: options = args.toList
+
     def optional(key: String): Option[String] = options find (_ startsWith s"$key:") map (_ substring key.length+1)
     def required(key: String): String = optional(key) getOrElse (throw new IllegalArgumentException(s"option '$key' is mandatory"))
-    def option(key: String, default: => String): String = optional(key) getOrElse default
-    command match {
+    def intOptional(key: String) = optional(key) map (_ toInt)
 
-      case "create" => Repository.create(
-        new File(repoPath),
-        optional("repositoryID"),
-        optional("hashAlgorithm"),
-        optional("storeBlockSize") map (_ toInt)
-      )
+    command match {
+      case "create" =>
+        Repository.create(
+          new File(repoPath),
+          optional("repositoryid"),
+          optional("hashAlgorithm"),
+          intOptional("storeBlockSize")
+        )
 
       case "backup" =>
         val source = new File(required("source"))
         val target = required("target")
-        val threads = optional("storeThreads") map (_ toInt)
-        using(Repository(
-          new File(repoPath),
-          false,
-          optional("storeMethod") map StoreMethod.named,
-          threads
-        )) { repository =>
-          using(new BackupAlgorithm(
-            repository,
-            threads
-          )) { backupAlgorithm =>
+        val threads = intOptional("storeThreads")
+        val storeMethod = optional("storeMethod") map StoreMethod.named
+        using(Repository(new File(repoPath), readonly = false, storeMethod, threads)) { repository =>
+          using(new BackupAlgorithm(repository, threads)) { backupAlgorithm =>
             backupAlgorithm.backup(source, target)
           }
         }

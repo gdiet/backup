@@ -61,8 +61,8 @@ class SQLMetaBackend(val sessionFactory: SQLSession) extends MetaBackend {
   override def sizeOf(dataid: Long): Option[Long] = dataEntry(dataid) map (_ size)
   // Note: In theory, a different thread might just have finished storing the same data and we create a data duplicate here.
   // However, is is preferable to clean up data duplicates with a utility from time to time and not care about them here.
-  override def createDataTableEntry(reservedID: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = createDataEntryUpdate(reservedID, size, print, hash, storeMethod).execute
-  override def nextDataID: Long = nextDataEntryIdQuery.first
+  override def createDataTableEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = createDataEntryUpdate(reservedid, size, print, hash, storeMethod).execute
+  override def nextDataid: Long = nextDataEntryIdQuery.first
 
   override def hasSizeAndPrint(size: Long, print: Long): Boolean = dataEntriesNumberForSizePrintQuery(size, print).first > 0
   override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash).list
