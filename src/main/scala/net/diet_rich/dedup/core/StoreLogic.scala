@@ -11,15 +11,17 @@ import net.diet_rich.dedup.util._
 trait StoreLogicBackend extends AutoCloseable {
   def dataidFor(source: Source): Long
   def dataidFor(printData: Bytes, print: Long, source: Source): Long
-  override def close(): Unit
+  def close(): Unit
 }
 
 class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, freeRanges: RangesQueue,
-                 hashAlgorithm: String, storeMethod: Int, val executionThreads: Int) extends StoreLogicBackend with ThreadExecutor {
+                 hashAlgorithm: String, storeMethod: Int, val executionThreads: Int) extends StoreLogicBackend {
   private val internalStoreLogic = new InternalStoreLogic(metaBackend, writeData, freeRanges, hashAlgorithm, storeMethod)
+  private val executor = new ThreadExecutor(executionThreads)
 
-  override def dataidFor(source: Source): Long = execute { internalStoreLogic dataidFor source }
-  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = execute { internalStoreLogic dataidFor (printData, print, source) }
+  override def dataidFor(source: Source): Long = executor { internalStoreLogic dataidFor source }
+  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = executor { internalStoreLogic dataidFor (printData, print, source) }
+  override def close(): Unit = executor close()
 }
 
 class InternalStoreLogic(val metaBackend: MetaBackend, val writeData: (Bytes, Long) => Unit,
