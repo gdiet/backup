@@ -94,7 +94,9 @@ trait StoreLogicDataChecks {
     // first store, so if something bad happens while storing no table entries are created
     val storedRanges = normalize(storePackedData(data, estimatedSize))
     init(metaBackend nextDataid) { dataid =>
-      storedRanges foreach { case (start, fin) => metaBackend createByteStoreEntry (dataid, start, fin) }
+      storedRanges foreach { case (start, fin) =>
+        assert (fin > start, s"$start - $fin")
+        metaBackend createByteStoreEntry (dataid, start, fin) }
     }
   }
 
@@ -113,22 +115,23 @@ trait StorePackedDataLogic {
   protected def freeRanges: RangesQueue
 
   protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges = {
+    // FIXME always dequeue only one block - simplifies the code here
     val storeRanges = freeRanges.dequeueAtLeast(estimatedSize).to[mutable.ArrayStack]
     @annotation.tailrec
-    def write(protocol: List[StartFin])(bytes: Bytes): List[StartFin] = {
+    def write(protocol: Ranges)(bytes: Bytes): Ranges = {
       if (storeRanges.isEmpty) freeRanges.dequeueAtLeast(1) foreach storeRanges.push
       val (start, fin) = storeRanges pop()
       assert(fin - start <= Int.MaxValue, s"range too large: $start .. $fin")
       val length = (fin - start).toInt
       if (length < bytes.length) {
         writeData (bytes copy (length = length), start)
-        write((start, length.toLong) :: protocol)(bytes.addOffset(length))
+        write(protocol :+ (start, start + length))(bytes addOffset length)
       } else {
         writeData (bytes, start)
-        if (length > bytes.length) storeRanges push ((start + length, fin))
-        (start, length.toLong) :: protocol
+        if (length > bytes.length) storeRanges push ((start + bytes.length, fin))
+        protocol :+ (start, start + bytes.length)
       }
     }
-    valueOf(data flatMap write(Nil) toVector) before (freeRanges enqueue storeRanges)
+    valueOf(data flatMap write(RangesNil) toVector) before (freeRanges pushBack storeRanges)
   }
 }
