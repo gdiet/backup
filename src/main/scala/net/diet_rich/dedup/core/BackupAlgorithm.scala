@@ -5,7 +5,8 @@ import java.io.{IOException, File}
 import net.diet_rich.dedup.util.ThreadExecutor
 
 class BackupAlgorithm(repository: Repository, backupThreads: Option[Int] = None) extends ThreadExecutor {
-  override val executionThreads = backupThreads getOrElse 4
+  // FIXME lazy initialization needed - it seems the code has become bad
+  override lazy val executionThreads = backupThreads getOrElse 4
   import repository.metaBackend
 
   // backup assumes that, once it starts, it has exclusive write access to its target branch in the tree

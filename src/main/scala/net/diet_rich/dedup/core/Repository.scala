@@ -2,11 +2,10 @@ package net.diet_rich.dedup.core
 
 import java.io.{File, IOException}
 
-import net.diet_rich.dedup.core.data.file.FileBackend
-import net.diet_rich.dedup.core.meta.sql.CreateSQLMetaBackend
-
 import net.diet_rich.dedup.core.data._
-import net.diet_rich.dedup.core.meta.{TreeEntry, RangesQueue, MetaBackend}
+import net.diet_rich.dedup.core.data.file.FileBackend
+import net.diet_rich.dedup.core.meta._
+import net.diet_rich.dedup.core.meta.sql.{DBUtilities, SQLMetaBackendUtils}
 import net.diet_rich.dedup.util.now
 import net.diet_rich.dedup.util.io.RichFile
 
@@ -17,14 +16,26 @@ object Repository {
     val actualRepositoryID = repositoryID getOrElse s"${util.Random.nextLong()}"
     require(root.isDirectory, s"Root $root must be a directory")
     require(root.listFiles().isEmpty, s"Root $root must be empty")
-    CreateSQLMetaBackend(root / "meta", actualRepositoryID, hashAlgorithm getOrElse "MD5")
+    SQLMetaBackendUtils.create(root / "meta", actualRepositoryID, hashAlgorithm getOrElse "MD5")
     FileBackend.create(root / "data", actualRepositoryID, storeBlockSize getOrElse 64000000)
   }
 
-  def apply(root: File, storeMethod: Option[Int] = None, storeThreads: Option[Int] = None): Repository = {
-    val metaRoot = root / "meta"
-    val dataRoot = root / "data"
-    new Repository(???, ???, ???, ???, storeMethod getOrElse StoreMethod.STORE, storeThreads getOrElse 4)
+  def apply(root: File, readonly: Boolean, storeMethod: Option[Int] = None, storeThreads: Option[Int] = None): Repository = {
+    SQLMetaBackendUtils.use(root / "meta", readonly) { case (metaBackend, metaSettings) =>
+      val fileBackend = new FileBackend(root / "data", metaSettings(repositoryidKey), readonly)
+      implicit val session = metaBackend.sessionFactory.session
+      val problemRanges = DBUtilities.problemDataAreaOverlaps
+      val freeInData = if (problemRanges isEmpty) DBUtilities.freeRangesInDataArea else Nil
+      val rangesQueue = new RangesQueue(freeInData :+ DBUtilities.freeRangeAtEndOfDataArea, FileBackend.nextBlockStart(_, fileBackend.blocksize))
+      new Repository(
+        metaBackend,
+        fileBackend,
+        rangesQueue,
+        metaSettings(metaHashAlgorithmKey),
+        storeMethod getOrElse StoreMethod.STORE,
+        storeThreads getOrElse 4
+      )
+    }
   }
 }
 

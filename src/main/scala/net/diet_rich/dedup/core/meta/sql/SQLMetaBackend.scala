@@ -6,7 +6,7 @@ import scala.slick.jdbc.StaticQuery
 
 import net.diet_rich.dedup.core.meta._
 
-class SQLMetaBackend(sessionFactory: SQLSession) extends MetaBackend {
+class SQLMetaBackend(val sessionFactory: SQLSession) extends MetaBackend {
   import SQLMetaBackend._
   private implicit def session: CurrentSession = sessionFactory.session
 

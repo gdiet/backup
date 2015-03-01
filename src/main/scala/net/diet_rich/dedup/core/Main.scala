@@ -9,7 +9,7 @@ object Main extends App {
   if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else {
     val command :: repoPath :: options = args.toList
     def optional(key: String): Option[String] = options find (_ startsWith s"$key:") map (_ substring key.length+1)
-    def required(key: String): String = optional(key) getOrElse (throw new IllegalArgumentException(s"option $key is mandatory"))
+    def required(key: String): String = optional(key) getOrElse (throw new IllegalArgumentException(s"option '$key' is mandatory"))
     def option(key: String, default: => String): String = optional(key) getOrElse default
     command match {
 
@@ -23,14 +23,16 @@ object Main extends App {
       case "backup" =>
         val source = new File(required("source"))
         val target = required("target")
-        using(Repository.apply(
+        val threads = optional("storeThreads") map (_ toInt)
+        using(Repository(
           new File(repoPath),
+          false,
           optional("storeMethod") map StoreMethod.named,
-          optional("storeThreads") map (_ toInt)
+          threads
         )) { repository =>
           using(new BackupAlgorithm(
             repository,
-            optional("storeThreads") map (_ toInt)
+            threads
           )) { backupAlgorithm =>
             backupAlgorithm.backup(source, target)
           }

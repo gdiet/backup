@@ -104,4 +104,5 @@ object DBUtilities {
         if (firstArea > 0L) (0L, firstArea) :: tail else tail
     }
   }
+  def freeRangeAtEndOfDataArea(implicit session: CurrentSession): StartFin = (startOfFreeDataArea, Long.MaxValue)
 }

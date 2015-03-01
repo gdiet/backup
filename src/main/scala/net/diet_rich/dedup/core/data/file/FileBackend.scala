@@ -14,13 +14,11 @@ object FileBackend {
     require(dataDir mkdir(), s"Can't create data directory $dataDir")
     val settings = Map(
       dataVersionKey -> dataVersionValue,
-      repositoryIDKey -> repositoryID,
+      repositoryidKey -> repositoryID,
       dataBlocksizeKey -> s"$blocksize"
     )
     writeSettingsFile(dataDir / dataSettingsFile, settings)
   }
-
-  def apply(dataDir: File, repositoryId: String, readonly: Boolean): DataBackend = new FileBackend(dataDir, repositoryId, readonly)
 
   def nextBlockStart(position: Long, blocksize: Long): Long = position % blocksize match {
     case 0 => position
@@ -28,11 +26,11 @@ object FileBackend {
   }
 }
 
-class FileBackend private(dataDir: File, repositoryId: String, readonly: Boolean) extends DataBackend {
-  private val blocksize: Int = { // int to avoid problems with byte array size
+class FileBackend (dataDir: File, repositoryId: String, readonly: Boolean) extends DataBackend {
+  val blocksize: Int = { // int to avoid problems with byte array size
     val settings = readSettingsFile(dataDir / dataSettingsFile)
     require(settings(dataVersionKey) == dataVersionValue)
-    require(settings(repositoryIDKey) == repositoryId)
+    require(settings(repositoryidKey) == repositoryId)
     settings(dataBlocksizeKey).toInt
   }
   private val maxReadSize: Int = math.min(blocksize, 65536)
