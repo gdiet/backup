@@ -21,22 +21,17 @@ object Repository {
   }
 
   def open(root: File, readonly: Boolean, storeMethod: Option[Int] = None, storeThreads: Option[Int] = None): Repository = {
-    // FIXME metaBackend escapes its defining context!
-    SQLMetaBackendManager.provideInstance(root / metaDir, readonly) { case (metaBackend, metaSettings) =>
-      val fileBackend = new FileBackend(root / dataDir, metaSettings(repositoryidKey), readonly)
-      implicit val session = metaBackend.sessionFactory.session
-      val problemRanges = DBUtilities.problemDataAreaOverlaps
-      val freeInData = if (problemRanges isEmpty) DBUtilities.freeRangesInDataArea else Nil
-      val rangesQueue = new RangesQueue(freeInData :+ DBUtilities.freeRangeAtEndOfDataArea, FileBackend.nextBlockStart(_, fileBackend.blocksize))
-      new Repository(
-        metaBackend,
-        fileBackend,
-        rangesQueue,
-        metaSettings(metaHashAlgorithmKey),
-        storeMethod getOrElse StoreMethod.STORE,
-        storeThreads getOrElse 4
-      )
-    }
+    val (metaBackend, freeRanges) = SQLMetaBackendManager openInstance(root / metaDir, readonly)
+    val fileBackend = new FileBackend(root / dataDir, metaBackend settings repositoryidKey, readonly)
+    val rangesQueue = new RangesQueue(freeRanges, FileBackend.nextBlockStart(_, fileBackend.blocksize))
+    new Repository(
+      metaBackend,
+      fileBackend,
+      rangesQueue,
+      metaBackend settings metaHashAlgorithmKey,
+      storeMethod getOrElse StoreMethod.STORE,
+      storeThreads getOrElse 4
+    )
   }
 }
 

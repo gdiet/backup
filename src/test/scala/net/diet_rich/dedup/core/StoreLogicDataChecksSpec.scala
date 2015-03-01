@@ -56,6 +56,8 @@ The store process itself should be tested $todo
     def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
     def inTransaction[T](f: => T) = ???
     def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]) = ???
+    def settings = ???
+    def replaceSettings(newSettings: Map[String, String]) = ???
   }
 
   class LogicStub(val metaBackend: MetaBackend = new MetaStub, val storeMethod: Int = 1, val hashAlgorithm: String = "MD5") extends StoreLogicDataChecks {

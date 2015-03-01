@@ -4,6 +4,7 @@ import java.io.File
 
 import net.diet_rich.dedup.core._
 import net.diet_rich.dedup.core.meta._
+import net.diet_rich.dedup.util.init
 import net.diet_rich.dedup.util.io._
 
 import scala.util.control.NonFatal
@@ -20,16 +21,26 @@ object SQLMetaBackendManager {
       metaHashAlgorithmKey  -> hashAlgorithm
     )
     writeSettingsFile(metaRoot / metaSettingsFile, settings)
-    using(SQLSession.withH2(metaRoot, readonly = false)) { dbSessions =>
-      implicit val session = dbSessions.session
-      DBUtilities.createTables(hashAlgorithm)
-      DBUtilities.recreateIndexes
-      DBUtilities.replaceSettings(settings)
+    using(SessionFactory productionDB (metaRoot, readonly = false)) { sessionFactory =>
+      DBUtilities.createTables(hashAlgorithm)(sessionFactory.session)
+      DBUtilities.recreateIndexes(sessionFactory.session)
+      new SQLMetaBackend(sessionFactory) replaceSettings settings
     }
   }
 
-  def provideInstance[T](metaRoot: File, readonly: Boolean)(withBody: (SQLMetaBackend, String Map String) => T): T =
-    using(SQLSession.withH2(metaRoot, readonly)) { dbSessions =>
-      withBody(new SQLMetaBackend(dbSessions), DBUtilities.allSettings(dbSessions.session))
+  def openInstance(metaRoot: File, readonly: Boolean): (MetaBackend, Ranges) = {
+    val settings = readSettingsFile(metaRoot / metaSettingsFile)
+    val sessionFactory = SessionFactory productionDB (metaRoot, readonly = false)
+    val problemRanges = DBUtilities.problemDataAreaOverlaps(sessionFactory.session)
+    val freeInData = if (problemRanges isEmpty) DBUtilities.freeRangesInDataArea(sessionFactory.session) else Nil
+    val freeRanges = freeInData.toVector :+ DBUtilities.freeRangeAtEndOfDataArea(sessionFactory.session)
+    if (problemRanges nonEmpty) warn (s"Found data area overlaps: $problemRanges")
+    val metaBackend = new SQLMetaBackend(sessionFactory)
+    val settingsFromDB = metaBackend.settings
+    if (settings != settingsFromDB) {
+      metaBackend close()
+      require(requirement = false, s"The settings in the database ${metaBackend settings} did not match with the expected settings $settings")
     }
+    (metaBackend, freeRanges)
+  }
 }

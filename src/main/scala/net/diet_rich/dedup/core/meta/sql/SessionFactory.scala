@@ -8,7 +8,7 @@ import scala.collection.JavaConverters.collectionAsScalaIterableConverter
 import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.io._
 
-case class SQLSession(database: CurrentDatabase) extends AutoCloseable {
+case class SessionFactory(database: CurrentDatabase) extends AutoCloseable {
   private val allSessions = new SynchronizedQueue[CurrentSession]()
   private val sessions = new ThreadLocal[CurrentSession] {
     override def initialValue = init(database createSession()){allSessions add}
@@ -17,8 +17,8 @@ case class SQLSession(database: CurrentDatabase) extends AutoCloseable {
   def close() = allSessions.asScala foreach (_ close())
 }
 
-object SQLSession {
-  def withH2(dbFolder: File, readonly: Boolean) = SQLSession(
+object SessionFactory {
+  def productionDB(dbFolder: File, readonly: Boolean) = SessionFactory(
     scala.slick.driver.H2Driver.simple.Database forURL (
       // MV_STORE and MVCC disabled, see http://code.google.com/p/h2database/issues/detail?id=542
       url = s"jdbc:h2:${dbFolder/"dedup"}${if (readonly) ";ACCESS_MODE_DATA=r" else ""};MV_STORE=FALSE;MVCC=FALSE",

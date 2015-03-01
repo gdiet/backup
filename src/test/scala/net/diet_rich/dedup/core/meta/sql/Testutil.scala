@@ -7,7 +7,7 @@ import scala.slick.driver.H2Driver.simple.Database
 object Testutil {
   private val dbid = new AtomicLong(0L)
 
-  def memoryDB: SQLSession = SQLSession(
+  def memoryDB: SessionFactory = SessionFactory(
     Database forURL(
       // ;TRACE_LEVEL_SYSTEM_OUT=2 or 3 for console debug output
       url = s"jdbc:h2:mem:testdb_${dbid incrementAndGet}",

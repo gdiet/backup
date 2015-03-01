@@ -3,7 +3,7 @@ package net.diet_rich.dedup.core.meta
 import net.diet_rich.dedup.core.StartFin
 import net.diet_rich.dedup.util.now
 
-trait MetaBackend { // FIXME check whether all are used
+trait MetaBackend extends AutoCloseable { // FIXME check whether all are used
   def entry(id: Long): Option[TreeEntry]
   def childrenWithDeleted(parent: Long): List[TreeEntry]
   def children(parent: Long): List[TreeEntry]
@@ -27,6 +27,9 @@ trait MetaBackend { // FIXME check whether all are used
 
   def storeEntries(dataid: Long): List[StartFin]
   def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit
+
+  def settings: String Map String
+  def replaceSettings(newSettings: String Map String): Unit
 
   def inTransaction[T](f: => T): T
   def close(): Unit

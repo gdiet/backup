@@ -6,7 +6,7 @@ import scala.slick.jdbc.StaticQuery
 
 import net.diet_rich.dedup.core.meta._
 
-class SQLMetaBackend(val sessionFactory: SQLSession) extends MetaBackend {
+class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
   import SQLMetaBackend._
   private implicit def session: CurrentSession = sessionFactory.session
 
@@ -70,6 +70,12 @@ class SQLMetaBackend(val sessionFactory: SQLSession) extends MetaBackend {
   override def storeEntries(dataid: Long): List[(Long, Long)] = storeEntriesForIdQuery(dataid).list
   override def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit = createStoreEntryUpdate(dataid, start, fin).execute
 
+  def settings: String Map String = allSettingsQuery.toMap
+  def replaceSettings(newSettings: String Map String): Unit = {
+    deleteSettingsQuery execute session
+    newSettings foreach { insertSettingsQuery(_) execute session }
+  }
+
   // Note: Writing the tree structure is synchronized, so "create only if not exists" can be implemented.
   override def inTransaction[T](f: => T): T = synchronized(f)
 
@@ -101,4 +107,9 @@ object SQLMetaBackend {
   // ByteStore
   private val storeEntriesForIdQuery = StaticQuery.query[Long, (Long, Long)](s"SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY id ASC;")
   private val createStoreEntryUpdate = StaticQuery.update[(Long, Long, Long)]("INSERT INTO ByteStore (dataid, start, fin) VALUES (?, ?, ?);")
+
+  // Settings
+  private val allSettingsQuery = StaticQuery.queryNA[(String, String)]("SELECT key, value FROM Settings;")
+  private val deleteSettingsQuery = StaticQuery updateNA "DELETE FROM Settings;"
+  private val insertSettingsQuery = StaticQuery.update[(String, String)]("INSERT INTO Settings (key, value) VALUES (?, ?);")
 }

@@ -5,6 +5,8 @@ package object core {
   val metaDir = "meta"
   val dataDir = "data"
 
+  def warn(message: => Any) = println(s"WARN: $message")
+
   type StartFin = (Long, Long)
   type Ranges = Vector[StartFin]
   val RangesNil = Vector[StartFin]()
