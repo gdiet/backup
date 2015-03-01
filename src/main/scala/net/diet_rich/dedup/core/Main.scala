@@ -27,7 +27,7 @@ object Main extends App {
         val target = required("target")
         val threads = intOptional("storeThreads")
         val storeMethod = optional("storeMethod") map StoreMethod.named
-        using(Repository(new File(repoPath), readonly = false, storeMethod, threads)) { repository =>
+        using(Repository open (new File(repoPath), readonly = false, storeMethod, threads)) { repository =>
           using(new BackupAlgorithm(repository, threads)) { backupAlgorithm =>
             backupAlgorithm.backup(source, target)
           }

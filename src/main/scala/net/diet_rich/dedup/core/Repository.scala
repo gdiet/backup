@@ -5,7 +5,7 @@ import java.io.{File, IOException}
 import net.diet_rich.dedup.core.data._
 import net.diet_rich.dedup.core.data.file.FileBackend
 import net.diet_rich.dedup.core.meta._
-import net.diet_rich.dedup.core.meta.sql.{DBUtilities, SQLMetaBackendUtils}
+import net.diet_rich.dedup.core.meta.sql.{DBUtilities, SQLMetaBackendManager}
 import net.diet_rich.dedup.util.now
 import net.diet_rich.dedup.util.io.RichFile
 
@@ -14,15 +14,16 @@ object Repository {
 
   def create(root: File, repositoryid: Option[String] = None, hashAlgorithm: Option[String] = None, storeBlockSize: Option[Int] = None): Unit = {
     val actualRepositoryid = repositoryid getOrElse s"${util.Random.nextLong()}"
-    require(root.isDirectory, s"Root $root must be a directory")
-    require(root.listFiles().isEmpty, s"Root $root must be empty")
-    SQLMetaBackendUtils.create(root / "meta", actualRepositoryid, hashAlgorithm getOrElse "MD5")
-    FileBackend.create(root / "data", actualRepositoryid, storeBlockSize getOrElse 64000000)
+    require(root isDirectory, s"Root $root must be a directory")
+    require(root.listFiles() isEmpty, s"Root $root must be empty")
+    SQLMetaBackendManager create (root / metaDir, actualRepositoryid, hashAlgorithm getOrElse "MD5")
+    FileBackend create (root / dataDir, actualRepositoryid, storeBlockSize getOrElse 64000000)
   }
 
-  def apply(root: File, readonly: Boolean, storeMethod: Option[Int] = None, storeThreads: Option[Int] = None): Repository = {
-    SQLMetaBackendUtils.use(root / "meta", readonly) { case (metaBackend, metaSettings) =>
-      val fileBackend = new FileBackend(root / "data", metaSettings(repositoryidKey), readonly)
+  def open(root: File, readonly: Boolean, storeMethod: Option[Int] = None, storeThreads: Option[Int] = None): Repository = {
+    // FIXME metaBackend escapes its defining context!
+    SQLMetaBackendManager.provideInstance(root / metaDir, readonly) { case (metaBackend, metaSettings) =>
+      val fileBackend = new FileBackend(root / dataDir, metaSettings(repositoryidKey), readonly)
       implicit val session = metaBackend.sessionFactory.session
       val problemRanges = DBUtilities.problemDataAreaOverlaps
       val freeInData = if (problemRanges isEmpty) DBUtilities.freeRangesInDataArea else Nil
