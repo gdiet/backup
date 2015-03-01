@@ -1,6 +1,6 @@
 package net.diet_rich.dedup.core.meta
 
-import net.diet_rich.dedup.core.{Ranges, StartFin}
+import net.diet_rich.dedup.core._
 import net.diet_rich.dedup.util._
 
 import scala.collection.mutable
@@ -13,7 +13,7 @@ class RangesQueue(initialRanges: Seq[StartFin], nextBlockStart: Long => Long) {
   private val freeRangesQueue = init(mutable.Queue[StartFin]())(_ enqueue (initialRanges:_*))
 
   /** Dequeue the required size plus padding up to the next end-of-block. */
-  def dequeueAtLeast(size: Long): Ranges = if (size == 0L) Vector() else synchronized {
+  def dequeueAtLeast(size: Long): Ranges = if (size == 0L) RangesNil else synchronized {
     @annotation.tailrec
     def collectFreeRanges(size: Long, ranges: Ranges): Ranges = {
       val (start, fin) = freeRangesQueue dequeue()
@@ -23,7 +23,7 @@ class RangesQueue(initialRanges: Seq[StartFin], nextBlockStart: Long => Long) {
         case _ =>
           nextBlockStart(start + size) match {
             case newFin if newFin <= fin =>
-              freeRangesQueue enqueue ((newFin, fin))
+              (newFin, fin) +=: freeRangesQueue
               ranges :+ (start, newFin)
             case _ => ranges :+ (start, fin)
           }
@@ -32,6 +32,5 @@ class RangesQueue(initialRanges: Seq[StartFin], nextBlockStart: Long => Long) {
     collectFreeRanges(size, Vector())
   }
 
-  def enqueue(range: StartFin): Unit = synchronized { freeRangesQueue enqueue range }
-  def enqueue(ranges: Seq[StartFin]): Unit = if (!ranges.isEmpty) synchronized { freeRangesQueue.enqueue(ranges:_*) }
+  def pushBack(ranges: Seq[StartFin]): Unit = if (!ranges.isEmpty) synchronized { ranges.reverse foreach (_ +=: freeRangesQueue) }
 }
