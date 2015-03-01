@@ -6,7 +6,7 @@ import net.diet_rich.dedup.core.data._
 import net.diet_rich.dedup.core.data.file.FileBackend
 import net.diet_rich.dedup.core.meta._
 import net.diet_rich.dedup.core.meta.sql.{DBUtilities, SQLMetaBackendManager}
-import net.diet_rich.dedup.util.now
+import net.diet_rich.dedup.util.{Memory, now}
 import net.diet_rich.dedup.util.io.RichFile
 
 object Repository {
@@ -39,10 +39,14 @@ class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend, freeRan
 
   protected val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, dataBackend.write _, freeRanges, hashAlgorithm, storeMethod, storeThreads)
 
+  private val memoryToReserve = 30000000
+  require(Memory.reserve(memoryToReserve).isInstanceOf[Memory.Reserved], s"Could not reserve ${memoryToReserve/1000000} MB RAM for repository")
+
   override def close(): Unit = {
-    storeLogic close()
-    metaBackend close()
-    dataBackend close()
+    suppressExceptions(storeLogic close())
+    suppressExceptions(metaBackend close())
+    suppressExceptions(dataBackend close())
+    suppressExceptions(Memory.free(memoryToReserve))
   }
   
   def read(dataid: Long, storeMethod: Int): Iterator[Bytes] =
