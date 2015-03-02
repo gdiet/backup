@@ -1,6 +1,6 @@
 package net.diet_rich.dedup.core
 
-import java.io.File
+import java.io.{FileOutputStream, File}
 
 import net.diet_rich.dedup.core.data.StoreMethod
 import net.diet_rich.dedup.core.meta.TreeEntry
@@ -26,7 +26,7 @@ object Main extends App {
       case "backup" =>
         val source = new File(required("source"))
         val target = required("target")
-        val threads = intOptional("storeThreads")
+        val threads = intOptional("storeThreads") // FIXME rename to parallel (everywhere)
         val storeMethod = optional("storeMethod") map StoreMethod.named
         using(Repository open (new File(repoPath), readonly = false, storeMethod, threads)) { repository =>
           using(new BackupAlgorithm(repository, threads)) { backupAlgorithm =>
@@ -40,7 +40,7 @@ object Main extends App {
         require(target.isDirectory, s"Target $target must be a directory")
         require(target.listFiles.isEmpty, s"Target directory $target must be empty")
         using(Repository open (new File(repoPath), readonly = true)) { repository =>
-          // FIXME move to RestoreAlgorithm
+          // FIXME move to RestoreAlgorithm and introduce parallel option
           val metaBackend = repository.metaBackend
           metaBackend.entries(source) match {
             case List(entry) =>
@@ -48,7 +48,10 @@ object Main extends App {
                 val file = target / entry.name
                 (metaBackend children entry.id, entry.data) match {
                   case (Nil, Some(dataid)) =>
-                    repository read dataid
+                    using(new FileOutputStream(file)) { out =>
+                      repository read dataid foreach { b => out.write(b.data, b.offset, b.length) }
+                    }
+                    entry.changed foreach file.setLastModified
                   case (children, data) =>
                     if (data isDefined) warn(s"Data entry for directory $file is ignored")
                     if (file.mkdir()) children foreach (restore(file, _))

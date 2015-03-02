@@ -51,11 +51,10 @@ class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend, freeRan
   }
 
   def read(dataid: Long): Iterator[Bytes] =
-    ???
-
-  // FIXME still needed?
-  def read(dataid: Long, storeMethod: Int): Iterator[Bytes] =
-    StoreMethod.restoreCoder(storeMethod)(readRaw(dataid))
+    metaBackend.dataEntry(dataid) match {
+      case None => throw new IOException(s"No data entry found for id $dataid")
+      case Some(entry) => StoreMethod.restoreCoder(entry.method)(readRaw(dataid))
+    }
 
   private def readRaw(dataid: Long): Iterator[Bytes] =
     metaBackend.storeEntries(dataid).iterator
