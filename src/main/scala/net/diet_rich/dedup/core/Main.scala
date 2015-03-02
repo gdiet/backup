@@ -36,6 +36,7 @@ object Main extends App {
 
       case "restore" =>
         val source = required("source")
+        require(source != "/", "Cannot restore starting at root")
         val target = new File(required("target"))
         require(target.isDirectory, s"Target $target must be a directory")
         require(target.listFiles.isEmpty, s"Target directory $target must be empty")
@@ -55,7 +56,7 @@ object Main extends App {
                   case (children, data) =>
                     if (data isDefined) warn(s"Data entry for directory $file is ignored")
                     if (file.mkdir()) children foreach (restore(file, _))
-                    else warn(s"Could not create directory $file its children during restore")
+                    else warn(s"Could not create directory $file and its children during restore")
                 }
               }
               restore(target, entry)
