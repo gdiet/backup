@@ -20,6 +20,7 @@ object Hash {
     var size = 0L
     val result = withData(data.map { bytes =>
       digester update (bytes.data, bytes.offset, bytes.length)
+      size += bytes.length
       bytes
     })
     (digester.digest, size, result)
