@@ -15,9 +15,9 @@ trait StoreLogicBackend extends AutoCloseable {
 }
 
 class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, freeRanges: RangesQueue,
-                 hashAlgorithm: String, storeMethod: Int, val executionThreads: Int) extends StoreLogicBackend {
+                 hashAlgorithm: String, storeMethod: Int, val parallel: Int) extends StoreLogicBackend {
   private val internalStoreLogic = new InternalStoreLogic(metaBackend, writeData, freeRanges, hashAlgorithm, storeMethod)
-  private val executor = new ThreadExecutor(executionThreads)
+  private val executor = new ThreadExecutor(parallel)
 
   override def dataidFor(source: Source): Long = executor { internalStoreLogic dataidFor source }
   // FIXME needed at all?

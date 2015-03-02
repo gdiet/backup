@@ -26,10 +26,10 @@ object Main extends App {
       case "backup" =>
         val source = new File(required("source"))
         val target = required("target")
-        val threads = intOptional("storeThreads") // FIXME rename to parallel (everywhere)
+        val parallel = intOptional("parallel")
         val storeMethod = optional("storeMethod") map StoreMethod.named
-        using(Repository open (new File(repoPath), readonly = false, storeMethod, threads)) { repository =>
-          using(new BackupAlgorithm(repository, threads)) { backupAlgorithm =>
+        using(Repository open (new File(repoPath), readonly = false, storeMethod, parallel)) { repository =>
+          using(new BackupAlgorithm(repository, parallel)) { backupAlgorithm =>
             backupAlgorithm.backup(source, target)
           }
         }
