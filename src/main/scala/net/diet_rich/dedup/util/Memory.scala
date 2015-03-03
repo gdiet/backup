@@ -9,12 +9,13 @@ import java.util.concurrent.atomic.AtomicLong
 object Memory {
   require((runtime maxMemory) != Long.MaxValue)
 
-  private val memory = new AtomicLong(runtime maxMemory)
+  private var memory = runtime maxMemory
 
-  def reserve(size: Long): ReserveResult =
-    if ((memory addAndGet -size) >= 0) Reserved(size) else { free(size); NotAvailable(memory get) }
+  def reserve(size: Long): ReserveResult = synchronized {
+    if (memory >= size) { memory -= size; Reserved(size) } else NotAvailable(memory)
+  }
 
-  def free(size: Long): Unit = memory addAndGet size
+  def free(size: Long): Unit = synchronized { memory += size }
 
   def reserved[T](size: Long)(pf: PartialFunction[ReserveResult, T]): T = reserve(size) match {
     case reserved: Reserved => try { pf(reserved) } finally { free(size) }
