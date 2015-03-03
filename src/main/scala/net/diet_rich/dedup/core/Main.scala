@@ -29,42 +29,18 @@ object Main extends App {
         val parallel = intOptional("parallel")
         val storeMethod = optional("storeMethod") map StoreMethod.named
         using(Repository readWrite (new File(repoPath), storeMethod, parallel)) { repository =>
-          using(new BackupAlgorithm(repository, parallel)) { backupAlgorithm =>
-            backupAlgorithm.backup(source, target)
-          }
+          using(new BackupAlgorithm(repository, parallel)) { _ backup (source, target) }
         }
 
       case "restore" =>
         val source = required("source")
-        require(source != "/", "Cannot restore starting at root")
         val target = new File(required("target"))
+        require(source != "/", "Cannot restore starting at root")
         require(target.isDirectory, s"Target $target must be a directory")
         require(target.listFiles.isEmpty, s"Target directory $target must be empty")
         using(Repository readOnly new File(repoPath)) { repository =>
-          // FIXME move to RestoreAlgorithm and introduce parallel option
-          val metaBackend = repository.metaBackend
-          metaBackend.entries(source) match {
-            case List(entry) =>
-              def restore(target: File, entry: TreeEntry): Unit = {
-                val file = target / entry.name
-                (metaBackend children entry.id, entry.data) match {
-                  case (Nil, Some(dataid)) =>
-                    using(new FileOutputStream(file)) { out =>
-                      repository read dataid foreach { b => out.write(b.data, b.offset, b.length) }
-                    }
-                    entry.changed foreach file.setLastModified
-                  case (children, data) =>
-                    if (data isDefined) warn(s"Data entry for directory $file is ignored")
-                    if (file.mkdir()) children foreach (restore(file, _))
-                    else warn(s"Could not create directory $file and its children during restore")
-                }
-              }
-              restore(target, entry)
-            case Nil => require(requirement = false, s"Source $source not found in repository")
-            case list => require(requirement = false, s"Multiple entries found in repository for source $source")
-          }
+          using(new RestoreAlgorithm(repository)) { _ restore(source, target) }
         }
-
 
       case _ => println(s"unknown command $command")
     }

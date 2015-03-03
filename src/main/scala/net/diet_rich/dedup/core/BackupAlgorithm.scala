@@ -4,8 +4,8 @@ import java.io.{IOException, File}
 
 import net.diet_rich.dedup.util.ThreadExecutor
 
-class BackupAlgorithm(repository: Repository, backupThreads: Option[Int] = None) extends AutoCloseable {
-  private val executor = new ThreadExecutor(backupThreads getOrElse 4)
+class BackupAlgorithm(repository: Repository, parallel: Option[Int] = None) extends AutoCloseable {
+  private val executor = new ThreadExecutor(parallel getOrElse 4)
   import repository.metaBackend
 
   // backup assumes that, once it starts, it has exclusive write access to its target branch in the tree
@@ -21,7 +21,7 @@ class BackupAlgorithm(repository: Repository, backupThreads: Option[Int] = None)
 
   protected def backup(source: File, parentid: Long): Unit = executor {
     if (source.isDirectory) {
-      val newParentid = metaBackend.createUnchecked(parentid, source.getName).id
+      val newParentid = metaBackend.createUnchecked(parentid, source.getName, Some(source lastModified())).id
       source.listFiles() foreach (backup(_, newParentid))
     } else repository.createUnchecked(parentid, source.getName, Some(Source from source), Some(source.lastModified()))
   }
