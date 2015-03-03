@@ -49,7 +49,8 @@ class FileBackend (dataDir: File, repositoryid: String, readonly: Boolean) exten
 
   override def nextBlockStart(position: Long): Long = FileBackend.nextBlockStart(position, blocksize)
 
-  override def read(start: Long, fin: Long): Iterator[Bytes] = {
+  override def read(range: StartFin): Iterator[Bytes] = {
+    // FIXME use Vector or an Iterator builder instead of Stream, because it's not used as a stream
     def blockStream(start: Long, size: Long): Stream[(Long, Int, Int)] = // returns: data file number / offset in file / bytes to read
       if (size <= 0L) { assert (size == 0L); Stream.empty }
       else {
@@ -58,6 +59,7 @@ class FileBackend (dataDir: File, repositoryid: String, readonly: Boolean) exten
         val bytesToRead = math.min(maxReadSize, math.min(blocksize - offsetInFile, size).toInt)
         (dataFileNumber, offsetInFile, bytesToRead) #:: blockStream(start + bytesToRead, size - bytesToRead)
       }
+    val (start, fin) = range
     blockStream(start, fin - start).iterator
       .map {case ((fileNumber, offset, length)) => DataFiles(fileNumber).read(offset, length)}
   }

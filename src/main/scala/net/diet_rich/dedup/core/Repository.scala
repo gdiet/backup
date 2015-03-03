@@ -58,7 +58,7 @@ class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend, freeRan
 
   private def readRaw(dataid: Long): Iterator[Bytes] =
     metaBackend.storeEntries(dataid).iterator
-      .flatMap { case (start, fin) => dataBackend read (start, fin) } // FIXME use StartFin in data backend
+      .flatMap (dataBackend read)
 
   def createUnchecked(parent: Long, name: String, source: Option[Source] = None, time: Option[Long] = Some(now)): TreeEntry =
     metaBackend.createUnchecked(parent, name, time, source map storeLogic.dataidFor)
