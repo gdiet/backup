@@ -20,9 +20,9 @@ object Repository {
     FileBackend create (root / dataDir, actualRepositoryid, storeBlockSize getOrElse 64000000)
   }
 
-  def open(root: File, readonly: Boolean, storeMethod: Option[Int] = None, parallel: Option[Int] = None): Repository = {
-    val (metaBackend, freeRanges) = SQLMetaBackendManager openInstance(root / metaDir, readonly)
-    val fileBackend = new FileBackend(root / dataDir, metaBackend settings repositoryidKey, readonly)
+  def readWrite(root: File, storeMethod: Option[Int] = None, parallel: Option[Int] = None): Repository = {
+    val (metaBackend, freeRanges) = SQLMetaBackendManager openInstance(root / metaDir, false)
+    val fileBackend = new FileBackend(root / dataDir, metaBackend settings repositoryidKey, false)
     val rangesQueue = new RangesQueue(freeRanges, FileBackend.nextBlockStart(_, fileBackend.blocksize))
     new Repository(
       metaBackend,
@@ -33,18 +33,19 @@ object Repository {
       parallel getOrElse 4
     )
   }
+
+  def readOnly(root: File): RepositoryReadOnly = {
+    val (metaBackend, _) = SQLMetaBackendManager openInstance(root / metaDir, true)
+    val fileBackend = new FileBackend(root / dataDir, metaBackend settings repositoryidKey, true)
+    new RepositoryReadOnly(metaBackend, fileBackend)
+  }
 }
 
-// FIXME the read-only repository does not need all arguments
-class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, parallel: Int) extends AutoCloseable {
-
-  protected val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, dataBackend.write _, freeRanges, hashAlgorithm, storeMethod, parallel)
-
+class RepositoryReadOnly(val metaBackend: MetaBackend, dataBackend: DataBackend) extends AutoCloseable {
   private val memoryToReserve = 30000000
   require(Memory.reserve(memoryToReserve).isInstanceOf[Memory.Reserved], s"Could not reserve ${memoryToReserve/1000000} MB RAM for repository")
 
   override def close(): Unit = {
-    suppressExceptions(storeLogic close())
     suppressExceptions(metaBackend close())
     suppressExceptions(dataBackend close())
     suppressExceptions(Memory.free(memoryToReserve))
@@ -59,6 +60,13 @@ class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend, freeRan
   private def readRaw(dataid: Long): Iterator[Bytes] =
     metaBackend.storeEntries(dataid).iterator
       .flatMap (dataBackend read)
+}
+
+class Repository(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, parallel: Int) extends RepositoryReadOnly(metaBackend, dataBackend) {
+
+  protected val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, dataBackend.write, freeRanges, hashAlgorithm, storeMethod, parallel)
+
+  override def close(): Unit = { suppressExceptions(storeLogic close()); super.close() }
 
   def createUnchecked(parent: Long, name: String, source: Option[Source] = None, time: Option[Long] = Some(now)): TreeEntry =
     metaBackend.createUnchecked(parent, name, time, source map storeLogic.dataidFor)

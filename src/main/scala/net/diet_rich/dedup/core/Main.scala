@@ -28,7 +28,7 @@ object Main extends App {
         val target = required("target")
         val parallel = intOptional("parallel")
         val storeMethod = optional("storeMethod") map StoreMethod.named
-        using(Repository open (new File(repoPath), readonly = false, storeMethod, parallel)) { repository =>
+        using(Repository readWrite (new File(repoPath), storeMethod, parallel)) { repository =>
           using(new BackupAlgorithm(repository, parallel)) { backupAlgorithm =>
             backupAlgorithm.backup(source, target)
           }
@@ -40,7 +40,7 @@ object Main extends App {
         val target = new File(required("target"))
         require(target.isDirectory, s"Target $target must be a directory")
         require(target.listFiles.isEmpty, s"Target directory $target must be empty")
-        using(Repository open (new File(repoPath), readonly = true)) { repository =>
+        using(Repository readOnly new File(repoPath)) { repository =>
           // FIXME move to RestoreAlgorithm and introduce parallel option
           val metaBackend = repository.metaBackend
           metaBackend.entries(source) match {

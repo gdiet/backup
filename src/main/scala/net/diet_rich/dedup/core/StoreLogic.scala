@@ -20,7 +20,6 @@ class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, fre
   private val executor = new ThreadExecutor(parallel)
 
   override def dataidFor(source: Source): Long = executor { internalStoreLogic dataidFor source }
-  // FIXME needed at all?
   override def dataidFor(printData: Bytes, print: Long, source: Source): Long = executor { internalStoreLogic dataidFor (printData, print, source) }
   override def close(): Unit = executor close()
 }
