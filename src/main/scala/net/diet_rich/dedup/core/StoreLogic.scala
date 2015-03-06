@@ -17,10 +17,12 @@ trait StoreLogicBackend extends AutoCloseable {
 class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, freeRanges: RangesQueue,
                  hashAlgorithm: String, storeMethod: Int, val parallel: Int) extends StoreLogicBackend {
   private val internalStoreLogic = new InternalStoreLogic(metaBackend, writeData, freeRanges, hashAlgorithm, storeMethod)
-  private val executor = new ThreadExecutor(parallel)
+  private val executor = ThreadExecutors.blockingThreadPoolExecutor(parallel)
+  private val executionContext = ExecutionContext fromExecutorService executor
+  private def resultOf[T] (f: => T): T = Await result (Future(f)(executionContext), 1 day)
 
-  override def dataidFor(source: Source): Long = executor { internalStoreLogic dataidFor source }
-  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = executor { internalStoreLogic dataidFor (printData, print, source) }
+  override def dataidFor(source: Source): Long = resultOf { internalStoreLogic dataidFor source }
+  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = resultOf { internalStoreLogic dataidFor (printData, print, source) }
   override def close(): Unit = executor close()
 }
 

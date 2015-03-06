@@ -3,11 +3,9 @@ package net.diet_rich.dedup.core
 import java.io.{FileOutputStream, File}
 
 import net.diet_rich.dedup.core.meta.TreeEntry
-import net.diet_rich.dedup.util.ThreadExecutor
 import net.diet_rich.dedup.util.io._
 
 class RestoreAlgorithm(repository: RepositoryReadOnly, parallel: Option[Int] = None) extends AutoCloseable {
-  private val executor = new ThreadExecutor(parallel getOrElse 4)
   import repository.metaBackend
 
   def restore(source: String, target: File): Unit = {
@@ -18,7 +16,7 @@ class RestoreAlgorithm(repository: RepositoryReadOnly, parallel: Option[Int] = N
     }
   }
 
-  protected def restore(target: File, entry: TreeEntry): Unit = executor {
+  protected def restore(target: File, entry: TreeEntry): Unit = { // FIXME run in parallel
     val file = target / entry.name
     (metaBackend children entry.id, entry.data) match {
       case (Nil, Some(dataid)) =>
@@ -35,5 +33,5 @@ class RestoreAlgorithm(repository: RepositoryReadOnly, parallel: Option[Int] = N
     }
   }
 
-  override def close() = executor close()
+  override def close() = Unit // FIXME close executor
 }
