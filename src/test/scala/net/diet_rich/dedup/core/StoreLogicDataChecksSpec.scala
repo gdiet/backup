@@ -9,6 +9,7 @@ import net.diet_rich.dedup.core.data.{Hash, Print, Bytes}
 import net.diet_rich.dedup.core.meta.{DataEntry, MetaBackend}
 import org.specs2.Specification
 
+// FIXME try to use the specs 3.0 Spec trait instead
 class StoreLogicDataChecksSpec extends Specification { def is = s2"""
 ${"Tests for the main part of the store logic".title}
 
@@ -145,6 +146,15 @@ The store process itself should be tested $todo
     logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 47
   }
 
+  // FIXME try org.specs.specification.core.Env, maybe like
+  /*
+  class MySpec extends Specification with CommandLineArguments { def is(args: CommandLine) = s2"""
+    Do something here with a command line parameter ${args.valueOr("parameter1", "not found")}
+  """
+  see http://etorreborre.blogspot.de/
+  maybe not before specs 3.0
+  }
+   */
   def memoryFreedPreloaded: org.specs2.execute.Result = if (!sys.env.contains("tests.include.longRunning")) skipped("- to include this test, set tests.include.longRunning") else {
     val memoryForTest = 300000000
     def freeMemory = Runtime.getRuntime.maxMemory() - (Runtime.getRuntime.totalMemory() - Runtime.getRuntime.freeMemory())
