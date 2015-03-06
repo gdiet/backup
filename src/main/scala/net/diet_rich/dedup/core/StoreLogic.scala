@@ -101,11 +101,12 @@ trait StoreLogicDataChecks {
   }
 
   // Note: storePackedData splits ranges at block borders. In the byte store table, these ranges should be stored contiguously
-  protected def normalize(ranges: Ranges): Ranges = ranges.foldLeft(RangesNil) {
-    case (RangesNil, range) => Vector(range)
-    case ((headStart, headFin) +: tail, (rangeStart, rangeFin)) if headFin == rangeStart => (headStart, rangeFin) +: tail
-    case (results, range) => results :+ range
-  }
+  // FIXME operate on Vector
+  protected def normalize(ranges: Ranges): Ranges = ranges.foldLeft(List[StartFin]()) {
+    case (Nil, range) => List(range)
+    case ((headStart, headFin) :: tail, (rangeStart, rangeFin)) if headFin == rangeStart => (headStart, rangeFin) :: tail
+    case (results, range) => range :: results
+  }.reverse.toVector
 
   protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges
 }
