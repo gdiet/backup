@@ -110,7 +110,7 @@ The store process itself should be tested $todo
   }
 
   def dontPreloadIfMemoryNotAvailable = {
-    val source = new SourceStub { override def size = Long.MaxValue ; override def read(count: Int) = Bytes.empty }
+    val source = new SourceStub { override def size = Long.MaxValue / 200 ; override def read(count: Int) = Bytes.empty }
     val logic = new LogicStub() {
       val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadDataThatMayBeAlreadyKnown _
       override def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes], estimatedSize: Long): Long = 45

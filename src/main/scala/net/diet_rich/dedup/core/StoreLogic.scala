@@ -45,7 +45,7 @@ trait StoreLogicDataChecks {
       storeSourceData (printData, print, source.allData, source.size)
   }
 
-  protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = Memory.reserved(source.size) {
+  protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = Memory.reserved(source.size * 105 / 100) {
     case Memory.Reserved    (_) => preloadDataThatMayBeAlreadyKnown(printData, print, source)
     case Memory.NotAvailable(_) => source match {
       case source: ResettableSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
