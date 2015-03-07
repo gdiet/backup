@@ -118,25 +118,29 @@ trait StorePackedDataLogic {
   protected def freeRanges: FreeRanges
 
   protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges = {
-    // FIXME use functional style???
-    // FIXME normalize already here???
-    val storeRanges = mutable.ArrayStack[StartFin]()
-    @annotation.tailrec
-    def write(protocol: Ranges)(bytes: Bytes): Ranges = {
-      assert(bytes.length > 0)
-      if (storeRanges.isEmpty) storeRanges.push(freeRanges.nextBlock)
-      val (start, fin) = storeRanges pop()
-      assert(fin - start <= Int.MaxValue, s"range too large: $start .. $fin")
-      val length = (fin - start).toInt
-      if (length < bytes.length) {
-        writeData (bytes copy (length = length), start)
-        write(protocol :+ (start, start + length))(bytes addOffset length)
-      } else {
-        writeData (bytes, start)
-        if (length > bytes.length) storeRanges push ((start + bytes.length, fin))
-        protocol :+ (start, start + bytes.length)
-      }
+    val (finalProtocol, remaining) = data.foldLeft((RangesNil, Option.empty[StartFin])) { case ((protocol, range), bytes) =>
+      assert (bytes.length > 0)
+      write(bytes, protocol, range getOrElse freeRanges.nextBlock)
     }
-    valueOf(data flatMap write(RangesNil) toVector) before (freeRanges pushBack storeRanges)
+    remaining foreach freeRanges.pushBack
+    finalProtocol
+  }
+
+  @annotation.tailrec
+  protected final def write(bytes: Bytes, protocol: Ranges, free: StartFin): (Ranges, Option[StartFin]) = {
+    val (start, fin) = free
+    assert(fin - start <= Int.MaxValue, s"range too large: $start .. $fin")
+    val length = (fin - start).toInt
+    if (length >= bytes.length) {
+      writeData (bytes, start)
+      val rest = if (length == bytes.length) None else Some((start + bytes.length, fin))
+      // FIXME normalize
+      (protocol :+ (start, start + bytes.length), rest)
+    } else {
+      writeData (bytes copy (length = length), start)
+      // FIXME normalize
+      val newProtocol = protocol :+ (start, start + length)
+      write(bytes addOffset length, newProtocol, freeRanges.nextBlock)
+    }
   }
 }

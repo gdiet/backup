@@ -22,7 +22,7 @@ Fetching free ranges should return the correct results
 
   def afterPushBack = {
     val freeRanges = new FreeRanges(ranges, FileBackend.nextBlockStart(_, 1000L))
-    freeRanges.pushBack(List((3800L, 4200L), (20L, 50L)))
+    List((20L, 50L), (3800L, 4200L)) foreach freeRanges.pushBack
     List.fill(8)(freeRanges.nextBlock) ===
       List(
         (3800L, 4000L),

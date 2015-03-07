@@ -20,7 +20,5 @@ class FreeRanges(initialRanges: Seq[StartFin], nextBlockStart: Long => Long) {
     }
   }
 
-  def pushBack(ranges: Seq[StartFin]): Unit = if (!ranges.isEmpty) synchronized {
-    freeRanges pushAll ranges.reverse
-  }
+  def pushBack(range: StartFin): Unit = synchronized { freeRanges push range }
 }
