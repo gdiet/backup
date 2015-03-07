@@ -5,13 +5,12 @@ import java.io.{IOException, File}
 import scala.concurrent.{Await, Future, ExecutionContext}
 import scala.concurrent.duration.DurationInt
 
-import net.diet_rich.dedup.util._
-
+import net.diet_rich.dedup.util.{ThreadExecutors, systemCores}
 
 class BackupAlgorithm(repository: Repository, parallel: Option[Int] = None) extends AutoCloseable {
   import repository.metaBackend
 
-  private val executor = ThreadExecutors.blockingThreadPoolExecutor(parallel getOrElse 4)
+  private val executor = ThreadExecutors.threadPoolOrInlineExecutor(parallel getOrElse systemCores)
   private implicit val executionContext = ExecutionContext fromExecutorService executor
 
   // backup assumes that, once it starts, it has exclusive write access to its target branch in the tree

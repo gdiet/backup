@@ -5,4 +5,5 @@ package object util {
   def valueOf[T](t: T) = new Before(t)
   def init[T](t: T)(f: T => Unit): T = { f(t); t }
   def now = System.currentTimeMillis()
+  def systemCores = Runtime.getRuntime.availableProcessors()
 }

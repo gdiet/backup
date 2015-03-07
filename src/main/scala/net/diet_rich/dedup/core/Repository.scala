@@ -6,7 +6,7 @@ import net.diet_rich.dedup.core.data._
 import net.diet_rich.dedup.core.data.file.FileBackend
 import net.diet_rich.dedup.core.meta._
 import net.diet_rich.dedup.core.meta.sql.{DBUtilities, SQLMetaBackendManager}
-import net.diet_rich.dedup.util.{Memory, now}
+import net.diet_rich.dedup.util.{Memory, now, systemCores}
 import net.diet_rich.dedup.util.io.RichFile
 
 object Repository {
@@ -30,7 +30,7 @@ object Repository {
       freeRanges,
       metaBackend settings metaHashAlgorithmKey,
       storeMethod getOrElse StoreMethod.STORE,
-      parallel getOrElse 4
+      parallel getOrElse systemCores
     )
   }
 
