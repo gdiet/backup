@@ -3,7 +3,7 @@ package net.diet_rich.dedup.core.meta
 import net.diet_rich.dedup.core.StartFin
 import net.diet_rich.dedup.util.now
 
-trait MetaBackend extends AutoCloseable { // FIXME check whether all are used
+trait MetaBackend extends AutoCloseable { // TODO check whether all are used
   def entry(id: Long): Option[TreeEntry]
   def childrenWithDeleted(parent: Long): List[TreeEntry]
   def children(parent: Long): List[TreeEntry]
