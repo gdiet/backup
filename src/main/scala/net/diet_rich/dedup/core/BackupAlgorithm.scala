@@ -18,18 +18,22 @@ class BackupAlgorithm(repository: Repository, parallel: Option[Int] = None) exte
   def backup(source: File, target: String): Unit = {
     metaBackend.entries(target) match {
       case List(parent) =>
-        if (metaBackend.children(parent.id, source.getName) isEmpty) Await.result(backup(source, parent.id), 1 day)
+        if (metaBackend.children(parent.id, source.getName) isEmpty) awaitBackup(source, parent.id)
         else new IOException(s"File ${source.getName} is already present in repository directory $target")
-      case Nil  => throw new IOException(s"Target $target not found in repository")
+      case Nil  =>
+        awaitBackup(source, metaBackend createWithPath target id)
       case list => throw new IOException(s"Multiple entries found for target $target in repository: $list")
     }
   }
+
+  protected def awaitBackup(source: File, parentid: Long) =
+    Await.result(backup(source, parentid), 1 day)
 
   protected def backup(source: File, parentid: Long): Future[Unit] =
     if (source.isDirectory) {
       val futureid = Future { metaBackend.createUnchecked(parentid, source.getName, Some(source lastModified())).id }
       val futures = futureid map { newParentid => source.listFiles() map (backup(_, newParentid)) }
-      futures flatMap { Future sequence _.toList map (_ => ()) } // FIXME utility method noFailures???
+      futures flatMap { Future sequence _.toList map (_ => ()) } // TODO utility method noFailures???
     } else Future {
       repository.createUnchecked(parentid, source.getName, Some(Source from source), Some(source.lastModified()))
     }
