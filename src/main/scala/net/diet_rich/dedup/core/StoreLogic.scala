@@ -93,22 +93,14 @@ trait StoreLogicDataChecks {
   }
 
   protected def storePackedDataAndCreateByteStoreEntries(data: Iterator[Bytes], estimatedSize: Long): Long = {
-    // first store, so if something bad happens while storing no table entries are created
-    val storedRanges = normalize(storePackedData(data, estimatedSize))
+    // first store everything, so if something bad happens while storing no table entries are created
+    val storedRanges = storePackedData(data, estimatedSize)
     init(metaBackend nextDataid) { dataid =>
       storedRanges foreach { case (start, fin) =>
         assert (fin > start, s"$start - $fin")
         metaBackend createByteStoreEntry (dataid, start, fin) }
     }
   }
-
-  // Note: storePackedData splits ranges at block borders. In the byte store table, these ranges should be stored contiguously
-  // FIXME operate on Vector
-  protected def normalize(ranges: Ranges): Ranges = ranges.foldLeft(List[StartFin]()) {
-    case (Nil, range) => List(range)
-    case ((headStart, headFin) :: tail, (rangeStart, rangeFin)) if headFin == rangeStart => (headStart, rangeFin) :: tail
-    case (results, range) => range :: results
-  }.reverse.toVector
 
   protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges
 }
@@ -134,13 +126,16 @@ trait StorePackedDataLogic {
     if (length >= bytes.length) {
       writeData (bytes, start)
       val rest = if (length == bytes.length) None else Some((start + bytes.length, fin))
-      // FIXME normalize
-      (protocol :+ (start, start + bytes.length), rest)
+      (normalizedAdd(protocol, start, start + bytes.length), rest)
     } else {
       writeData (bytes copy (length = length), start)
-      // FIXME normalize
-      val newProtocol = protocol :+ (start, start + length)
-      write(bytes addOffset length, newProtocol, freeRanges.nextBlock)
+      write(bytes addOffset length, normalizedAdd(protocol, start, fin), freeRanges.nextBlock)
     }
   }
+
+  protected def normalizedAdd(protocol: Ranges, start: Long, fin: Long): Ranges =
+    protocol match {
+      case heads :+ ((lastStart, `start`)) => heads :+ (lastStart, fin)
+      case _ => protocol :+ (start, fin)
+    }
 }

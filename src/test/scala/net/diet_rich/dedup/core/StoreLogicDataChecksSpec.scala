@@ -32,7 +32,7 @@ Hash, size, print are stored correctly and the data is correctly packed
   when storing source data with pre-calculated size, print and hash $todo
 Packed data is stored correctly with the correct data entries $todo
 
-Normalizing data ranges should concatenate adjacent ranges $normalizeDataRanges
+Normalizing data ranges should concatenate adjacent ranges $todo
 
 The store process itself should be tested $todo
 """
@@ -219,13 +219,5 @@ The store process itself should be tested $todo
       override def storeSourceData(source: Source): Long = 49
     }
     logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 4321, source) === 49
-  }
-
-  def normalizeDataRanges = {
-    val ranges = Vector((0L,0L), (2L,3L), (3L,3L), (3L,5L), (7L,8L))
-    val normalized = new LogicStub() {
-      override def normalize(ranges: Ranges): Ranges = super.normalize(ranges)
-    }.normalize(ranges)
-    normalized should beEqualTo(Vector((0L,0L), (2L,5L), (7L,8L)))
   }
 }
