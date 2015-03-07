@@ -21,13 +21,13 @@ object Repository {
   }
 
   def readWrite(root: File, storeMethod: Option[Int] = None, parallel: Option[Int] = None): Repository = {
-    val (metaBackend, freeRanges) = SQLMetaBackendManager openInstance(root / metaDir, false)
+    val (metaBackend, initialFreeRanges) = SQLMetaBackendManager openInstance(root / metaDir, false)
     val fileBackend = new FileBackend(root / dataDir, metaBackend settings repositoryidKey, false)
-    val rangesQueue = new RangesQueue(freeRanges, FileBackend.nextBlockStart(_, fileBackend.blocksize))
+    val freeRanges = new FreeRanges(initialFreeRanges, FileBackend.nextBlockStart(_, fileBackend.blocksize))
     new Repository(
       metaBackend,
       fileBackend,
-      rangesQueue,
+      freeRanges,
       metaBackend settings metaHashAlgorithmKey,
       storeMethod getOrElse StoreMethod.STORE,
       parallel getOrElse 4
@@ -62,7 +62,7 @@ class RepositoryReadOnly(val metaBackend: MetaBackend, dataBackend: DataBackend)
       .flatMap (dataBackend read)
 }
 
-class Repository(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: RangesQueue, hashAlgorithm: String, storeMethod: Int, parallel: Int) extends RepositoryReadOnly(metaBackend, dataBackend) {
+class Repository(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: FreeRanges, hashAlgorithm: String, storeMethod: Int, parallel: Int) extends RepositoryReadOnly(metaBackend, dataBackend) {
 
   protected val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, dataBackend.write, freeRanges, hashAlgorithm, storeMethod, parallel)
 

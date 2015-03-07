@@ -5,7 +5,7 @@ import scala.concurrent.{Future, Await, ExecutionContext}
 import scala.concurrent.duration.DurationInt
 
 import net.diet_rich.dedup.core.data._
-import net.diet_rich.dedup.core.meta.{RangesQueue, MetaBackend}
+import net.diet_rich.dedup.core.meta.{FreeRanges, MetaBackend}
 import net.diet_rich.dedup.util._
 
 trait StoreLogicBackend extends AutoCloseable {
@@ -14,7 +14,7 @@ trait StoreLogicBackend extends AutoCloseable {
   def close(): Unit
 }
 
-class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, freeRanges: RangesQueue,
+class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, freeRanges: FreeRanges,
                  hashAlgorithm: String, storeMethod: Int, val parallel: Int) extends StoreLogicBackend {
   private val internalStoreLogic = new InternalStoreLogic(metaBackend, writeData, freeRanges, hashAlgorithm, storeMethod)
   private val executor = ThreadExecutors.blockingThreadPoolExecutor(parallel)
@@ -27,7 +27,7 @@ class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, fre
 }
 
 class InternalStoreLogic(val metaBackend: MetaBackend, val writeData: (Bytes, Long) => Unit,
-                         val freeRanges: RangesQueue, val hashAlgorithm: String,
+                         val freeRanges: FreeRanges, val hashAlgorithm: String,
                          val storeMethod: Int) extends StoreLogicDataChecks with StorePackedDataLogic
 
 trait StoreLogicDataChecks {
@@ -115,14 +115,16 @@ trait StoreLogicDataChecks {
 
 trait StorePackedDataLogic {
   protected def writeData: (Bytes, Long) => Unit
-  protected def freeRanges: RangesQueue
+  protected def freeRanges: FreeRanges
 
   protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges = {
-    // FIXME always dequeue only one block - simplifies the code here
-    val storeRanges = freeRanges.dequeueAtLeast(estimatedSize).to[mutable.ArrayStack]
+    // FIXME use functional style???
+    // FIXME normalize already here???
+    val storeRanges = mutable.ArrayStack[StartFin]()
     @annotation.tailrec
     def write(protocol: Ranges)(bytes: Bytes): Ranges = {
-      if (storeRanges.isEmpty) freeRanges.dequeueAtLeast(1) foreach storeRanges.push
+      assert(bytes.length > 0)
+      if (storeRanges.isEmpty) storeRanges.push(freeRanges.nextBlock)
       val (start, fin) = storeRanges pop()
       assert(fin - start <= Int.MaxValue, s"range too large: $start .. $fin")
       val length = (fin - start).toInt
