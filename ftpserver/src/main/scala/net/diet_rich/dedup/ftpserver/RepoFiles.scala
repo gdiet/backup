@@ -46,6 +46,9 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
     override def getLastModified: Long = now
     override def listFiles(): util.List[FtpFile] = util.Collections emptyList()
     override def createInputStream(offset: Long): InputStream = throw new FileNotFoundException(s"file $getAbsolutePath is virtual")
+    override def mkdir(): Boolean = log.call(s"mkdir $getName in $parentid") {
+      isWritable && { metaBackend.create(parentid, getName); true }
+    }
   }
 
   object ActualRepoFile {
@@ -101,6 +104,9 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
   }
 
   class ActualRepoFileReadWrite(treeEntry: TreeEntry) extends ActualRepoFileReadOnly(treeEntry) {
+    override def move(destination: FtpFile): Boolean = ???
+    override def setLastModified(time: Long): Boolean = ???
+    override def createOutputStream(offset: Long): OutputStream = ???
     override def delete(): Boolean = log.call(s"delete: $treeEntry") {
       metaBackend.markDeleted(treeEntry id)
     }
