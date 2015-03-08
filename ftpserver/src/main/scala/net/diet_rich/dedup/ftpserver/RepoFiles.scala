@@ -106,7 +106,7 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
     override def getName: String = log.call(s"getName: $treeEntry") { treeEntry.name }
     override def getLinkCount: Int = log.call(s"getLinkCount: $treeEntry") { 1 }
     override def getSize: Long = log.call(s"getSize: $treeEntry") {
-      treeEntry.data flatMap metaBackend.dataEntry map (_.size) getOrElse 0L
+      treeEntry.data flatMap metaBackend.sizeOf getOrElse 0L
     }
     override def doesExist(): Boolean = log.call(s"doesExist: $treeEntry") { true }
     override def isRemovable: Boolean = log.call(s"isRemovable: $treeEntry") { isWritable }

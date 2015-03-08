@@ -38,39 +38,38 @@ The store process itself should be tested $todo
 """
 
   class MetaStub extends MetaBackend {
-    def entry(id: Long) = ???
-    def hasSizeAndPrint(size: Long, print: Long): Boolean = ???
-    def markDeleted(id: Long, deletionTime: Option[Long]) = ???
-    def createDataTableEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int) = ???
-    def dataEntry(dataid: Long) = ???
-    def children(parent: Long) = ???
-    def children(parent: Long, name: String) = ???
-    def childrenWithDeleted(parent: Long) = ???
-    def storeEntries(dataid: Long) = ???
-    def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
-    def nextDataid = ???
-    def createByteStoreEntry(dataid: Long, start: Long, fin: Long) = ???
-    def sizeOf(dataid: Long) = ???
-    def change(id: Long, newParent: Long, newName: String, newTime: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]) = ???
-    def close() = ???
-    def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = ???
-    def entries(path: String) = ???
-    def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
-    def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
-    def inTransaction[T](f: => T) = ???
-    def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]) = ???
-    def settings = ???
-    def replaceSettings(newSettings: Map[String, String]) = ???
+    override def entry(id: Long) = ???
+    override def hasSizeAndPrint(size: Long, print: Long): Boolean = ???
+    override def markDeleted(id: Long, deletionTime: Option[Long]) = ???
+    override def createDataTableEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int) = ???
+    override def dataEntry(dataid: Long) = ???
+    override def children(parent: Long) = ???
+    override def children(parent: Long, name: String) = ???
+    override def storeEntries(dataid: Long) = ???
+    override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
+    override def nextDataid = ???
+    override def createByteStoreEntry(dataid: Long, start: Long, fin: Long) = ???
+    override def sizeOf(dataid: Long) = ???
+    override def change(id: Long, newParent: Long, newName: String, newTime: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]) = ???
+    override def close() = ???
+    override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = ???
+    override def entries(path: String) = ???
+    override def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
+    override def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
+    override def inTransaction[T](f: => T) = ???
+    override def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]) = ???
+    override def settings = ???
+    override def replaceSettings(newSettings: Map[String, String]) = ???
   }
 
   class LogicStub(val metaBackend: MetaBackend = new MetaStub, val storeMethod: Int = 1, val hashAlgorithm: String = "MD5") extends StoreLogicDataChecks {
-    def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges = ???
+    override def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges = ???
   }
 
   class SourceStub extends Source {
-    def size: Long = ???
-    def read(count: Int): Bytes = ???
-    def close(): Unit = ???
+    override def size: Long = ???
+    override def read(count: Int): Bytes = ???
+    override def close(): Unit = ???
   }
 
   def emptySource = Source.from(new ByteArrayInputStream(Array()), 0)
@@ -150,7 +149,7 @@ The store process itself should be tested $todo
 
   // TODO try org.specs.specification.core.Env, maybe like
   /*
-  class MySpec extends Specification with CommandLineArguments { def is(args: CommandLine) = s2"""
+  class MySpec extends Specification with CommandLineArguments { override def is(args: CommandLine) = s2"""
     Do something here with a command line parameter ${args.valueOr("parameter1", "not found")}
   """
   see http://etorreborre.blogspot.de/
@@ -204,7 +203,7 @@ The store process itself should be tested $todo
       var firstCall = true
       override val size: Long = sourceSize
       override def read(size: Int) = if (firstCall) { firstCall = false; sourceBytes } else Bytes.empty
-      def reset = Unit
+      override def reset = Unit
     }
     val expectedHash = Hash.calculate("MD5", source.allData)._1
     val meta = new MetaStub {
