@@ -41,10 +41,10 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
       if (isDirectory) throw new IOException("directory - can't write data")
       val repository = writeAccess getOrElse (throw new IOException("file system is read-only"))
       val maxBytesToCache = 250000000 // FIXME configurable
-      println("**** available: " + Memory.available) // FIXME
       new OutputStream() { // FIXME extract class
         var sink: Either[ExtendedByteArrayOutputStream, RandomAccessFile] = Left(new ExtendedByteArrayOutputStream())
         var tempFile: Option[File] = None
+        var open = true
         var writeOK = true
         override def write(i: Int): Unit = write(Array(i.toByte), 0, 1)
         override def write(data: Array[Byte]): Unit = write(data, 0, data.length)
@@ -77,10 +77,13 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
             if (!writeDataid(dataid)) throw new IOException("could not write data")
           }
         } finally {
-          sink.fold(
-            out => Memory.free(out.size * memoryConsumptionFactor),
-            out => {out.close(); tempFile foreach (_ delete())}
-          )
+          if (open) {
+            open = false
+            sink.fold(
+              out => Memory.free(out.size * memoryConsumptionFactor),
+              out => {out.close(); tempFile foreach (_ delete())}
+            )
+          }
         }
       }
     }
