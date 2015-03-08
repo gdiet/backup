@@ -18,8 +18,6 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
   protected val metaBackend = readAccess.metaBackend
   assert(writeAccess.isEmpty || writeAccess == Some(readAccess))
 
-  private val memoryConsumptionFactor = 4 // determined experimentally
-
   trait RepoFile extends FtpFile {
     def parentid: Long
     final def parent: Option[ActualRepoFile] = metaBackend entry parentid map ActualRepoFile.apply
@@ -41,51 +39,11 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
       if (isDirectory) throw new IOException("directory - can't write data")
       val repository = writeAccess getOrElse (throw new IOException("file system is read-only"))
       val maxBytesToCache = 250000000 // FIXME configurable
-      new OutputStream() { // FIXME extract class
-        var sink: Either[ExtendedByteArrayOutputStream, RandomAccessFile] = Left(new ExtendedByteArrayOutputStream())
-        var tempFile: Option[File] = None
-        var open = true
-        var writeOK = true
-        override def write(i: Int): Unit = write(Array(i.toByte), 0, 1)
-        override def write(data: Array[Byte]): Unit = write(data, 0, data.length)
-        override def write(data: Array[Byte], offset: Int, length: Int): Unit = try {
-          assert(writeOK)
-          sink.fold({ out =>
-            if (out.size > maxBytesToCache) switchToTempFile(data, offset, length) else {
-              Memory.reserve(length * memoryConsumptionFactor) match {
-                case _: Memory.Reserved => out.write(data, offset, length)
-                case _: Memory.NotAvailable => switchToTempFile(data, offset, length)
-              }
-            }
-          }, _.write(data, offset, length))
-        } catch { case e: Throwable => writeOK = false; throw e }
-        def switchToTempFile(data: Array[Byte], offset: Int, length: Int): Unit = sink match {
-          case Right(_) => throw new IllegalStateException
-          case Left(out) =>
-            val file = init(File createTempFile ("ftpserver_", ".tmp"))(_ deleteOnExit())
-            println("**** switching: " + file) // FIXME
-            val access = init(new RandomAccessFile(file, "rw"))(_ write (out.data, 0, out.size))
-            sink = Right(access)
-            tempFile = Some(file)
-            Memory.free(out.size * memoryConsumptionFactor)
-        }
-        override def close(): Unit = try {
-          if (writeOK) {
-            val source = sink.fold(out => Source from (out.data, 0, out.size), out => init(Source from out)(_ reset))
-            val dataid = repository.storeLogic.dataidFor(source)
-            // FIXME utility to clean up orphan data entries (and orphan byte store entries)
-            if (!writeDataid(dataid)) throw new IOException("could not write data")
-          }
-        } finally {
-          if (open) {
-            open = false
-            sink.fold(
-              out => Memory.free(out.size * memoryConsumptionFactor),
-              out => {out.close(); tempFile foreach (_ delete())}
-            )
-          }
-        }
-      }
+      new CachingOutputStream(maxBytesToCache, source => {
+        val dataid = repository.storeLogic.dataidFor(source)
+        // FIXME utility to clean up orphan data entries (and orphan byte store entries)
+        if (!writeDataid(dataid)) throw new IOException("could not write data")
+      })
     }
   }
 
