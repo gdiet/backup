@@ -33,4 +33,8 @@ trait MetaBackend extends AutoCloseable { // TODO check whether all are used
 
   def inTransaction[T](f: => T): T
   def close(): Unit
+
+  final def path(id: Long): Option[String] =
+    if (id == rootEntry.id) Some(rootPath)
+    else entry(id) flatMap {entry => path(entry.parent) map (_ + "/" + entry.name)}
 }

@@ -7,6 +7,7 @@ package object meta {
   val metaHashAlgorithmKey  = "hash algorithm"
 
   val rootEntry = TreeEntry(0L, -1L, "")
+  val rootPath = ""
   val separator = "/"
   def pathElements(path: String) = {
     require(path == "" || path.startsWith("/"), s"malformed path: $path")

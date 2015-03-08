@@ -11,6 +11,8 @@ scalacOptions in ThisBuild ++= Seq(
   "-language:postfixOps"
 )
 
+lazy val backup = project in file(".") dependsOn ftpserver
+
 lazy val core = project
 
 lazy val ftpserver = project dependsOn core

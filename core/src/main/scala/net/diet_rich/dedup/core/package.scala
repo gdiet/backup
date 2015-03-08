@@ -7,6 +7,7 @@ package object core {
   val metaDir = "meta"
   val dataDir = "data"
 
+  // FIXME use logger
   def warn(message: => Any) = println(s"WARN: $message")
   def warn(message: => Any, e: Throwable) = {
     println(s"WARN: $message")
