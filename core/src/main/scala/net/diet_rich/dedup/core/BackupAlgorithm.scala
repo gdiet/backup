@@ -14,14 +14,14 @@ class BackupAlgorithm(repository: Repository, val parallel: Option[Int] = None) 
         if (metaBackend.children(parent.id, source.getName) isEmpty) awaitForever(backup(source, parent.id))
         else new IOException(s"File ${source.getName} is already present in repository directory $target")
       case Nil  =>
-        awaitForever(backup(source, metaBackend createWithPath target id))
+        awaitForever(backup(source, metaBackend createWithPath target))
       case list => throw new IOException(s"Multiple entries found for target $target in repository: $list")
     }
   }
 
   protected def backup(source: File, parentid: Long): Future[Unit] =
     if (source.isDirectory) {
-      val futureid = Future { metaBackend.createUnchecked(parentid, source.getName, Some(source lastModified())).id }
+      val futureid = Future { metaBackend.createUnchecked(parentid, source.getName, Some(source lastModified())) }
       futureid map { newParentid => source.listFiles().toList map (backup(_, newParentid)) } flatMap combine
     } else Future {
       repository.createUnchecked(parentid, source.getName, Some(Source from source), Some(source.lastModified()))

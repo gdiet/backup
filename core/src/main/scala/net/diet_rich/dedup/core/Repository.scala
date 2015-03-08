@@ -6,7 +6,7 @@ import net.diet_rich.dedup.core.data._
 import net.diet_rich.dedup.core.data.file.FileBackend
 import net.diet_rich.dedup.core.meta._
 import net.diet_rich.dedup.core.meta.sql.{DBUtilities, SQLMetaBackendManager}
-import net.diet_rich.dedup.util.{Memory, now, systemCores}
+import net.diet_rich.dedup.util.{init, Memory, now, systemCores}
 import net.diet_rich.dedup.util.io.RichFile
 
 object Repository {
@@ -68,21 +68,22 @@ class Repository(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges:
 
   override def close(): Unit = { suppressExceptions(storeLogic close()); super.close() }
 
-  def createUnchecked(parent: Long, name: String, source: Option[Source] = None, time: Option[Long] = Some(now)): TreeEntry =
+  def createUnchecked(parent: Long, name: String, source: Option[Source] = None, time: Option[Long] = Some(now)): Long =
     metaBackend.createUnchecked(parent, name, time, source map storeLogic.dataidFor)
 
-  def create(parent: Long, name: String, source: Option[Source] = None, time: Option[Long] = Some(now)): TreeEntry = metaBackend.inTransaction {
-    val created = metaBackend.create(parent, name, time)
-    try {
-      metaBackend.change(created.id, parent, name, time, source map storeLogic.dataidFor)
-      .getOrElse(throw new IOException("failed to update created file with data entry"))
-    } catch {
-      case e: IOException =>
-        if (metaBackend.markDeleted(created.id)) throw e
-        else throw new IOException("failed to delete partially created file", e)
+  def create(parent: Long, name: String, source: Option[Source] = None, time: Option[Long] = Some(now)): Long = metaBackend.inTransaction {
+    init(metaBackend.create(parent, name, time)) { id =>
+      try {
+        if (!metaBackend.change(id, parent, name, time, source map storeLogic.dataidFor))
+          throw new IOException("failed to update created file with data entry")
+      } catch {
+        case e: IOException =>
+          if (metaBackend.markDeleted(id)) throw e
+          else throw new IOException("failed to delete partially created file", e)
+      }
     }
   }
 
-  def createOrReplace(parent: Long, name: String, source: Option[Source] = None, time: Option[Long] = Some(now)): TreeEntry =
+  def createOrReplace(parent: Long, name: String, source: Option[Source] = None, time: Option[Long] = Some(now)): Long =
     metaBackend.createOrReplace(parent, name, time, source map storeLogic.dataidFor)
 }

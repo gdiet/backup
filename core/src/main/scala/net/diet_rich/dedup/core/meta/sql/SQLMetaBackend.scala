@@ -5,6 +5,7 @@ import java.io.IOException
 import scala.slick.jdbc.StaticQuery
 
 import net.diet_rich.dedup.core.meta._
+import net.diet_rich.dedup.util.init
 
 class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
   import SQLMetaBackend._
@@ -18,41 +19,36 @@ class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
   override def childrenWithDeleted(parent: Long): List[TreeEntry] = treeChildrenForParentQuery(parent).list
   override def entries(path: String): List[TreeEntry] =
     pathElements(path).foldLeft(List(rootEntry)){(nodes, name) => nodes.flatMap(node => children(node.id, name))}
-  override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): TreeEntry = inTransaction {
-    val id = nextTreeEntryIdQuery.first
-    createTreeEntryUpdate(id, parent, name, changed, dataid).execute
-    TreeEntry(id, parent, name, changed, dataid)
+  override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
+    init(nextTreeEntryIdQuery.first)(createTreeEntryUpdate(_, parent, name, changed, dataid).execute)
   }
-  override def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): TreeEntry = inTransaction {
+  override def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
     children(parent) find (_.name == name) match {
       case Some(entry) => throw new IOException(s"entry $entry already exists")
       case None => createUnchecked(parent, name, changed, dataid)
     }
   }
-  override def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): TreeEntry = inTransaction {
+  override def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
     val elements = pathElements(path)
     if (elements.size == 0) throw new IOException("can't create the root entry")
     val parent = elements.dropRight(1).foldLeft(rootEntry.id) { (node, childName) =>
       children(node) filter (_.name == childName) match {
-        case Nil => createUnchecked(node, childName, changed, None).id
+        case Nil => createUnchecked(node, childName, changed, None)
         case List(entry) => entry.id
         case entries => throw new IOException(s"ambiguous path; §entries")
       }
     }
     create(parent, elements.last, changed, dataid)
   }
-  override def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): TreeEntry = inTransaction {
+  override def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
     children(parent) find (_.name == name) match {
-      case Some(entry) => change(entry id, parent, name, changed, dataid) getOrElse (throw new IOException("failed to update existing entry"))
+      case Some(entry) => if (change(entry id, parent, name, changed, dataid)) entry.id else throw new IOException("failed to update existing entry")
       case None => createUnchecked(parent, name, changed, dataid)
     }
   }
 
-  // FIXME do we really need the new entry somewhere, or should we just return Boolean?
-  override def change(id: Long, newParent: Long, newName: String, newChanged: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]): Option[TreeEntry] = inTransaction {
-    if (updateTreeEntryUpdate(newParent, newName, newChanged, newData, newDeletionTime, id).first == 1)
-      Some(TreeEntry(id, newParent, newName, newChanged, newData, newDeletionTime))
-    else None
+  override def change(id: Long, newParent: Long, newName: String, newChanged: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]): Boolean = inTransaction {
+    updateTreeEntryUpdate(newParent, newName, newChanged, newData, newDeletionTime, id).first == 1
   }
   override def markDeleted(id: Long, deletionTime: Option[Long]): Boolean = inTransaction {
     // FIXME purge tool that propagates deletion to children and then frees space

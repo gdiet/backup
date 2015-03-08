@@ -10,11 +10,11 @@ trait MetaBackend extends AutoCloseable { // TODO check whether all are used
   def children(parent: Long, name: String): List[TreeEntry]
   def entries(path: String): List[TreeEntry]
 
-  def createUnchecked(parent: Long, name: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): TreeEntry
-  def create(parent: Long, name: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): TreeEntry
-  def createWithPath(path: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): TreeEntry
-  def createOrReplace(parent: Long, name: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): TreeEntry
-  def change(id: Long, newParent: Long, newName: String, newChanged: Option[Long], newData: Option[Long], newDeletionTime: Option[Long] = None): Option[TreeEntry]
+  def createUnchecked(parent: Long, name: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): Long
+  def create(parent: Long, name: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): Long
+  def createWithPath(path: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): Long
+  def createOrReplace(parent: Long, name: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): Long
+  def change(id: Long, newParent: Long, newName: String, newChanged: Option[Long], newData: Option[Long], newDeletionTime: Option[Long] = None): Boolean
   def markDeleted(id: Long, deletionTime: Option[Long] = Some(now)): Boolean
 
   def dataEntry(dataid: Long): Option[DataEntry]

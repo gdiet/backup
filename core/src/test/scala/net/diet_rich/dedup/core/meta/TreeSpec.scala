@@ -25,7 +25,7 @@ Creating paths should succeed even if they already exist partially $createPaths
 
   def createAndCheckDirectory = withEmptyTree { tree =>
     val child = tree create (rootEntry.id, "child")
-    tree.entries("/child") should contain(exactly(haveNoData and haveTheId(child id)))
+    tree.entries("/child") should contain(exactly(haveNoData and haveTheId(child)))
   }
 
   def pathWithoutTreeEntry = withEmptyTree { tree =>
@@ -40,8 +40,9 @@ Creating paths should succeed even if they already exist partially $createPaths
 
   def createReplacement = withEmptyTree { tree =>
     val child = tree create (rootEntry.id, "child")
-    tree markDeleted child.id
-    tree create (rootEntry.id, "child") should haveNoData
+    tree markDeleted child
+    val newChild = tree create (rootEntry.id, "child")
+    tree.entry(child).get should haveNoData
   }
 
   def createPaths = withEmptyTree { tree =>
