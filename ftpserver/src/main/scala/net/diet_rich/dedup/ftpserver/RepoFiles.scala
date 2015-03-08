@@ -15,6 +15,8 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
   protected val metaBackend = readAccess.metaBackend
   assert(writeAccess.isEmpty || writeAccess == Some(readAccess))
 
+  private val memoryConsumptionFactor = 4 // determined experimentally
+
   trait RepoFile extends FtpFile {
     def parentid: Long
     final def parent: Option[ActualRepoFile] = metaBackend entry parentid map ActualRepoFile.apply
@@ -35,15 +37,19 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
       if (isDirectory) throw new IOException("directory - can't write data")
       val repository = writeAccess getOrElse (throw new IOException("file system is read-only"))
       // TODO use FilterOutputStream to divert data to temp file if memory runs low
+      // FIXME max use 250MB in memory (configurable)
       new ByteArrayOutputStream() {
+        @volatile var memoryFreed = false
         override def write(i: Int): Unit = write(Array(i.toByte), 0, 1)
         override def write(data: Array[Byte]): Unit = write(data, 0, data.length)
         override def write(data: Array[Byte], offset: Int, length: Int): Unit = {
-          Memory.reserve(length * 2) match {
+          assert(!memoryFreed)
+          Memory.reserve(length * memoryConsumptionFactor) match {
             case _: Memory.Reserved =>
               super.write(data, offset, length)
             case _: Memory.NotAvailable =>
-              Memory.free(count * 2)
+              Memory.free(count * memoryConsumptionFactor)
+              memoryFreed = true
               throw new IOException("out of memory, can't buffer")
           }
         }
@@ -53,8 +59,7 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
           // FIXME utility to clean up orphan data entries (and orphan byte store entries)
           if (!writeDataid(dataid)) throw new IOException("could not write data")
         } finally {
-          // FIXME this might free the memory a second time, see above...
-          Memory.free(count * 2)
+          if (!memoryFreed) Memory.free(count * memoryConsumptionFactor)
         }
       }
     }

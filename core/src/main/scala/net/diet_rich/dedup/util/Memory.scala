@@ -4,7 +4,6 @@
 package net.diet_rich.dedup.util
 
 import java.lang.Runtime.{getRuntime => runtime}
-import java.util.concurrent.atomic.AtomicLong
 
 object Memory {
   require((runtime maxMemory) != Long.MaxValue)
