@@ -1,6 +1,6 @@
 package net.diet_rich.dedup.ftpserver
 
-import java.io.{InputStream, OutputStream}
+import java.io.{IOException, FileNotFoundException, InputStream, OutputStream}
 import java.util
 
 import scala.collection.JavaConversions.seqAsJavaList
@@ -26,7 +26,6 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
     override final def isWritable: Boolean = writeAccess isDefined
     override final def getAbsolutePath: String = (metaBackend path parentid getOrElse "???") + "/" + getName
     override def move(destination: FtpFile): Boolean = ???
-    override def createInputStream(offset: Long): InputStream = ???
     override def delete(): Boolean = ???
     override def setLastModified(time: Long): Boolean = ???
     override def createOutputStream(offset: Long): OutputStream = ???
@@ -45,6 +44,7 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
     override def isRemovable: Boolean = false
     override def getLastModified: Long = now
     override def listFiles(): util.List[FtpFile] = util.Collections emptyList()
+    override def createInputStream(offset: Long): InputStream = throw new FileNotFoundException(s"file $getAbsolutePath is virtual")
   }
 
   case class ActualRepoFile(treeEntry: TreeEntry) extends RepoFile {
@@ -84,6 +84,11 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
     }
     override def listFiles(): util.List[FtpFile] = log.call(s"listFiles: $treeEntry") {
       seqAsJavaList (metaBackend children treeEntry.id map ActualRepoFile)
+    }
+    override def createInputStream(offset: Long): InputStream = log.call(s"createInputStream: $treeEntry") {
+      if (offset != 0) throw new IOException("not random accessible")
+      val data = treeEntry.data getOrElse (throw new IOException(s"$treeEntry is a directory, not a file"))
+      readAccess read data asInputStream
     }
   }
 }
