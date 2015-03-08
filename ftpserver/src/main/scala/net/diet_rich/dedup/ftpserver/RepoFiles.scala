@@ -40,9 +40,10 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
       // FIXME max use 250MB in memory (configurable)
       new ByteArrayOutputStream() {
         @volatile var memoryFreed = false
+        @volatile var writeOK = true
         override def write(i: Int): Unit = write(Array(i.toByte), 0, 1)
         override def write(data: Array[Byte]): Unit = write(data, 0, data.length)
-        override def write(data: Array[Byte], offset: Int, length: Int): Unit = {
+        override def write(data: Array[Byte], offset: Int, length: Int): Unit = try {
           assert(!memoryFreed)
           Memory.reserve(length * memoryConsumptionFactor) match {
             case _: Memory.Reserved =>
@@ -52,12 +53,14 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
               memoryFreed = true
               throw new IOException("out of memory, can't buffer")
           }
-        }
+        } catch { case e: Throwable => writeOK = false; throw e }
         override def close(): Unit = try {
-          val source = Source.from(new ByteArrayInputStream(buf, 0, count), count)
-          val dataid = repository.storeLogic.dataidFor(source)
-          // FIXME utility to clean up orphan data entries (and orphan byte store entries)
-          if (!writeDataid(dataid)) throw new IOException("could not write data")
+          if (writeOK) {
+            val source = Source.from(new ByteArrayInputStream(buf, 0, count), count)
+            val dataid = repository.storeLogic.dataidFor(source)
+            // FIXME utility to clean up orphan data entries (and orphan byte store entries)
+            if (!writeDataid(dataid)) throw new IOException("could not write data")
+          }
         } finally {
           if (!memoryFreed) Memory.free(count * memoryConsumptionFactor)
         }
