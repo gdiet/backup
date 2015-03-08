@@ -17,7 +17,7 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
 
   trait RepoFile extends FtpFile {
     def parentid: Long
-    final def parent: Option[ActualRepoFile] = metaBackend entry parentid map ActualRepoFile
+    final def parent: Option[ActualRepoFile] = metaBackend entry parentid map ActualRepoFile.apply
     def child(name: String): Option[ActualRepoFile]
 
     override final def getOwnerName: String = "backup"
@@ -25,11 +25,12 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
     override final def isHidden: Boolean = false
     override final def isWritable: Boolean = writeAccess isDefined
     override final def getAbsolutePath: String = (metaBackend path parentid getOrElse "???") + "/" + getName
-    override def move(destination: FtpFile): Boolean = ???
-    override def delete(): Boolean = ???
-    override def setLastModified(time: Long): Boolean = ???
-    override def createOutputStream(offset: Long): OutputStream = ???
-    override def mkdir(): Boolean = ???
+
+    override def move(destination: FtpFile): Boolean = false
+    override def setLastModified(time: Long): Boolean = false
+    override def createOutputStream(offset: Long): OutputStream = throw new IOException("file system is read-only")
+    override def mkdir(): Boolean = false
+    override def delete(): Boolean = false
   }
 
   case class VirtualRepoFile(override val parentid: Long, override val getName: String) extends RepoFile {
@@ -47,12 +48,19 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
     override def createInputStream(offset: Long): InputStream = throw new FileNotFoundException(s"file $getAbsolutePath is virtual")
   }
 
-  case class ActualRepoFile(treeEntry: TreeEntry) extends RepoFile {
+  object ActualRepoFile {
+    def apply(treeEntry: TreeEntry) =
+      if (writeAccess isDefined) new ActualRepoFileReadWrite(treeEntry) else new ActualRepoFileReadOnly(treeEntry)
+  }
+
+  trait ActualRepoFile extends RepoFile { def treeEntry: TreeEntry }
+
+  class ActualRepoFileReadOnly(val treeEntry: TreeEntry) extends ActualRepoFile {
     override def parentid: Long = if (treeEntry == rootEntry) treeEntry.id else treeEntry.parent
     override def child(name: String): Option[ActualRepoFile] = {
       val children = metaBackend.children(treeEntry id, name)
       if (children.size > 1) log.warn(s"$treeEntry has multiple children with the same name $name, taking the first")
-      children.headOption map ActualRepoFile
+      children.headOption map ActualRepoFile.apply
     }
 
     override def isReadable: Boolean = log.call(s"isReadable: $treeEntry") {
@@ -83,7 +91,7 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
       treeEntry.changed getOrElse now
     }
     override def listFiles(): util.List[FtpFile] = log.call(s"listFiles: $treeEntry") {
-      seqAsJavaList (metaBackend children treeEntry.id map ActualRepoFile)
+      seqAsJavaList (metaBackend children treeEntry.id map ActualRepoFile.apply)
     }
     override def createInputStream(offset: Long): InputStream = log.call(s"createInputStream: $treeEntry") {
       if (offset != 0) throw new IOException("not random accessible")
@@ -91,4 +99,11 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
       readAccess read data asInputStream
     }
   }
+
+  class ActualRepoFileReadWrite(treeEntry: TreeEntry) extends ActualRepoFileReadOnly(treeEntry) {
+    override def delete(): Boolean = log.call(s"delete: $treeEntry") {
+      metaBackend.markDeleted(treeEntry id)
+    }
+  }
+
 }

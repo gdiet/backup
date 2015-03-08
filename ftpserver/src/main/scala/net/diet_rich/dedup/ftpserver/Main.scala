@@ -17,18 +17,24 @@ object Main extends App {
   if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else new CommandLineUtils(args) {
     require(command == "ftpserver")
 
-    val writable = optional("writable")
+    val writable = optional("writable") getOrElse "false" toBoolean
     val ftpPort = intOptional("port") getOrElse 21
     val parallel = intOptional("parallel")
     val storeMethod = optional("storeMethod") map StoreMethod.named
 
-    using(Repository readOnly repositoryDir) { repository =>
-      val listener = init(new ListenerFactory()) {
-        _ setPort ftpPort
-      } createListener()
-      val fileSystemFactory = new FileSystemFactory {
-        override def createFileSystemView (user: User) = FileSysViewReadOnly(repository)
+    if (writable)
+      using(Repository readWrite (repositoryDir, storeMethod, parallel)) { repository =>
+        run(FileSysView(repository, Some(repository)))
       }
+    else
+      using(Repository readOnly repositoryDir) { repository =>
+        run(FileSysView(repository, None))
+      }
+    println("dedup ftp server stopped.")
+
+    def run(fileSysView: FileSysView) = {
+      val listener = init(new ListenerFactory()) { _ setPort ftpPort } createListener()
+      val fileSystemFactory = new FileSystemFactory { override def createFileSystemView (user: User) = fileSysView }
       val userManager = init(new PropertiesUserManagerFactory() createUserManager()) {
         _ save init(new BaseUser()){user => user setName "user"; user setPassword "user"}
       }
@@ -40,6 +46,7 @@ object Main extends App {
 
       server.start()
       println(s"started dedup ftp server at ftp://localhost${if (ftpPort == 21) "" else s":$ftpPort"}")
+      println("write access is " + (if (writable) "ENABLED" else "OFF"))
       println("User: 'user', password: 'user'")
 
       val latch = new CountDownLatch(1)
@@ -50,6 +57,5 @@ object Main extends App {
       }
       latch.await()
     }
-    println("dedup ftp server stopped.")
   }
 }
