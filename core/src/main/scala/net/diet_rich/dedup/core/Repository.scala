@@ -6,7 +6,7 @@ import net.diet_rich.dedup.core.data._
 import net.diet_rich.dedup.core.data.file.FileBackend
 import net.diet_rich.dedup.core.meta._
 import net.diet_rich.dedup.core.meta.sql.{DBUtilities, SQLMetaBackendManager}
-import net.diet_rich.dedup.util.{init, Memory, now, systemCores}
+import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.io.RichFile
 
 object Repository {
@@ -41,14 +41,14 @@ object Repository {
   }
 }
 
-class RepositoryReadOnly(val metaBackend: MetaBackend, dataBackend: DataBackend) extends AutoCloseable {
+class RepositoryReadOnly(val metaBackend: MetaBackend, dataBackend: DataBackend) extends AutoCloseable with Logging {
   private val memoryToReserve = 30000000
   require(Memory.reserve(memoryToReserve).isInstanceOf[Memory.Reserved], s"Could not reserve ${memoryToReserve/1000000} MB RAM for repository")
 
   override def close(): Unit = {
-    suppressExceptions(metaBackend close())
-    suppressExceptions(dataBackend close())
-    suppressExceptions(Memory.free(memoryToReserve))
+    log.warnOnException(metaBackend close())
+    log.warnOnException(dataBackend close())
+    log.warnOnException(Memory.free(memoryToReserve))
   }
 
   def read(dataid: Long): Iterator[Bytes] =
@@ -66,7 +66,7 @@ class Repository(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges:
 
   val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, dataBackend.write, freeRanges, hashAlgorithm, storeMethod, parallel)
 
-  override def close(): Unit = { suppressExceptions(storeLogic close()); super.close() }
+  override def close(): Unit = { log.warnOnException(storeLogic close()); super.close() }
 
   def createUnchecked(parent: Long, name: String, source: Option[Source] = None, time: Option[Long] = Some(now)): Long =
     metaBackend.createUnchecked(parent, name, time, source map storeLogic.dataidFor)

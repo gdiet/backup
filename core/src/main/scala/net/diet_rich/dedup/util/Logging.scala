@@ -2,6 +2,8 @@ package net.diet_rich.dedup.util
 
 import org.slf4j.{Logger, LoggerFactory}
 
+import scala.util.control.NonFatal
+
 trait Logging {
   protected val log = new Logging.LogAdapter(LoggerFactory getLogger (this getClass))
 }
@@ -32,5 +34,7 @@ object Logging {
         }
       }
     }
+
+    def warnOnException(code: => Unit) = try { code } catch { case NonFatal(e) => warn(s"an exception has been suppressed", e) }
   }
 }

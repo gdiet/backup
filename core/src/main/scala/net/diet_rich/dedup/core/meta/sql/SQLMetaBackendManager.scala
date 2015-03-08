@@ -4,14 +4,14 @@ import java.io.File
 
 import net.diet_rich.dedup.core._
 import net.diet_rich.dedup.core.meta._
-import net.diet_rich.dedup.util.init
+import net.diet_rich.dedup.util.{Logging, init}
 import net.diet_rich.dedup.util.io._
 
 import scala.util.control.NonFatal
 
 import net.diet_rich.dedup.core.data.Hash
 
-object SQLMetaBackendManager {
+object SQLMetaBackendManager extends Logging {
   def create(metaRoot: File, repositoryid: String, hashAlgorithm: String) = {
     try { Hash digestLength hashAlgorithm } catch { case NonFatal(e) => require(false, s"Hash for $hashAlgorithm can't be computed: $e")}
     require(metaRoot mkdir(), s"Can't create meta directory $metaRoot")
@@ -34,7 +34,7 @@ object SQLMetaBackendManager {
     val problemRanges = DBUtilities.problemDataAreaOverlaps(sessionFactory.session)
     val freeInData = if (problemRanges isEmpty) DBUtilities.freeRangesInDataArea(sessionFactory.session) else Nil
     val freeRanges = freeInData.toVector :+ DBUtilities.freeRangeAtEndOfDataArea(sessionFactory.session)
-    if (problemRanges nonEmpty) warn (s"Found data area overlaps: $problemRanges")
+    if (problemRanges nonEmpty) log.warn (s"Found data area overlaps: $problemRanges")
     val metaBackend = new SQLMetaBackend(sessionFactory)
     val settingsFromDB = metaBackend.settings
     if (settings != settingsFromDB) {

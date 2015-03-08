@@ -5,9 +5,10 @@ import java.io.{FileOutputStream, File}
 import scala.concurrent.Future
 
 import net.diet_rich.dedup.core.meta.TreeEntry
+import net.diet_rich.dedup.util.Logging
 import net.diet_rich.dedup.util.io.{RichFile, using}
 
-class RestoreAlgorithm(repository: RepositoryReadOnly, val parallel: Option[Int] = None) extends ParallelExecution {
+class RestoreAlgorithm(repository: RepositoryReadOnly, val parallel: Option[Int] = None) extends ParallelExecution with Logging {
   import repository.metaBackend
 
   def restore(source: String, target: File): Unit = {
@@ -28,12 +29,12 @@ class RestoreAlgorithm(repository: RepositoryReadOnly, val parallel: Option[Int]
         entry.changed foreach file.setLastModified
       }
       case (children, data) =>
-        if (data isDefined) warn(s"Data entry for directory $file is ignored")
+        if (data isDefined) log.warn(s"Data entry for directory $file is ignored")
         if (file.mkdir()) {
           entry.changed foreach file.setLastModified
           combine(children map (restore(file, _)))
         } else {
-          warn(s"Could not create directory $file and its children during restore")
+          log.warn(s"Could not create directory $file and its children during restore")
           Future.successful(())
         }
     }
