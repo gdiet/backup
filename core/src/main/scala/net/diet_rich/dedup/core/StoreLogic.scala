@@ -42,9 +42,23 @@ trait StoreLogicDataChecks {
 
   def dataidFor(printData: Bytes, print: Long, source: Source): Long = {
     if (metaBackend hasSizeAndPrint (source.size, print))
-      tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
+      handleCachedSource(printData, print, source)
     else
       storeSourceData (printData, print, source.allData, source.size)
+  }
+
+  // FIXME test
+  protected def handleCachedSource(printData: Bytes, print: Long, source: Source): Long = source match {
+    case cached: CachedSource =>
+      val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData
+      val (hash, size) = Hash.calculate(hashAlgorithm, bytes)
+      assert(size == source.size)
+      metaBackend.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
+        cached.reset
+        storeSourceData(source.allData, size, print, hash)
+      }
+    case _ =>
+      tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
   }
 
   protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = Memory.reserved(source.size * 105 / 100) {

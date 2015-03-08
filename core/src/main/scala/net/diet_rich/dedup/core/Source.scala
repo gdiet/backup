@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
-import java.io.{InputStream, RandomAccessFile, File}
+import java.io.{ByteArrayInputStream, InputStream, RandomAccessFile, File}
 
 import net.diet_rich.dedup.core.data.Bytes
 import net.diet_rich.dedup.util._
@@ -23,6 +23,8 @@ trait ResettableSource extends Source {
   def reset: Unit
 }
 
+trait CachedSource extends ResettableSource
+
 object Source {
   private def readBytes(input: (Array[Byte], Int, Int) => Int, length: Int): Bytes = {
     val data = new Array[Byte](length)
@@ -40,13 +42,22 @@ object Source {
   def from(file: RandomAccessFile): ResettableSource = new ResettableSource {
     override def size = file length()
     override def close = file close()
-    override def read(count: Int) = readBytes(file read (_,_,_), count)
+    override def read(count: Int) = readBytes(file.read, count)
     override def reset: Unit = file seek 0
   }
 
   def from(in: InputStream, expectedSize: Long): Source = new Source {
     override def size = expectedSize
-    override def read(count: Int): Bytes = readBytes(in read (_,_,_), count)
+    override def read(count: Int): Bytes = readBytes(in.read, count)
     override def close() : Unit = in close()
+  }
+
+  def from(data: Array[Byte], offset: Int, length: Int): Source = new CachedSource {
+    var source = newInput
+    def newInput = new ByteArrayInputStream(data, offset, length)
+    override def reset: Unit = { source close(); source = newInput }
+    override def size = length
+    override def read(count: Int): Bytes = readBytes(source.read, count)
+    override def close() : Unit = source close()
   }
 }

@@ -56,7 +56,7 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
         } catch { case e: Throwable => writeOK = false; throw e }
         override def close(): Unit = try {
           if (writeOK) {
-            val source = Source.from(new ByteArrayInputStream(buf, 0, count), count)
+            val source = Source.from(buf, 0, count)
             val dataid = repository.storeLogic.dataidFor(source)
             // FIXME utility to clean up orphan data entries (and orphan byte store entries)
             if (!writeDataid(dataid)) throw new IOException("could not write data")
