@@ -14,21 +14,24 @@ import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.io._
 
 object Main extends App {
-  if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else new CommandLineUtils(args) {
+  if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else {
+    val commandLineUtils = CommandLineUtils(args)
+    import commandLineUtils._
     require(command == "ftpserver")
 
     val writable = optional("writable") getOrElse "false" toBoolean
     val ftpPort = intOptional("port") getOrElse 21
     val parallel = intOptional("parallel")
     val storeMethod = optional("storeMethod") map StoreMethod.named
+    val maxBytesToCache = intOptional("maxBytesToCache") getOrElse 250000000
 
     if (writable)
       using(Repository readWrite (repositoryDir, storeMethod, parallel)) { repository =>
-        run(FileSysView(repository, Some(repository)))
+        run(FileSysView(repository, Some(repository), maxBytesToCache))
       }
     else
       using(Repository readOnly repositoryDir) { repository =>
-        run(FileSysView(repository, None))
+        run(FileSysView(repository, None, maxBytesToCache))
       }
     println("dedup ftp server stopped.")
 

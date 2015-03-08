@@ -7,7 +7,9 @@ import net.diet_rich.dedup.util.CommandLineUtils
 import net.diet_rich.dedup.util.io._
 
 object Main extends App {
-  if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else new CommandLineUtils(args) {
+  if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else {
+    val commandLineUtils = CommandLineUtils(args)
+    import commandLineUtils._
     command match {
       case "create" =>
         Repository.create(

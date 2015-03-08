@@ -3,18 +3,15 @@ package net.diet_rich.dedup.ftpserver
 import java.io._
 import java.util
 
-import net.diet_rich.dedup.util.init
-import net.diet_rich.dedup.util.io.ExtendedByteArrayOutputStream
-
 import scala.collection.JavaConversions.seqAsJavaList
 
 import org.apache.ftpserver.ftplet.FtpFile
 
-import net.diet_rich.dedup.core.{ResettableSource, Source, Repository, RepositoryReadOnly}
+import net.diet_rich.dedup.core.{Repository, RepositoryReadOnly}
 import net.diet_rich.dedup.core.meta.{rootEntry, TreeEntry}
-import net.diet_rich.dedup.util.{Memory, Logging, now}
+import net.diet_rich.dedup.util.{Logging, now}
 
-class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository]) extends Logging {
+class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository], maxBytesToCache: Int) extends Logging {
   protected val metaBackend = readAccess.metaBackend
   assert(writeAccess.isEmpty || writeAccess == Some(readAccess))
 
@@ -38,10 +35,9 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
       if (offset != 0) throw new IOException("not random accessible")
       if (isDirectory) throw new IOException("directory - can't write data")
       val repository = writeAccess getOrElse (throw new IOException("file system is read-only"))
-      val maxBytesToCache = 250000000 // FIXME configurable
       new CachingOutputStream(maxBytesToCache, source => {
         val dataid = repository.storeLogic.dataidFor(source)
-        // FIXME utility to clean up orphan data entries (and orphan byte store entries)
+        // TODO utility to clean up orphan data entries (and orphan byte store entries)
         if (!writeDataid(dataid)) throw new IOException("could not write data")
       })
     }

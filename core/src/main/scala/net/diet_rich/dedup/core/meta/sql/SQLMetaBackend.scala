@@ -50,7 +50,7 @@ class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
     updateTreeEntryUpdate(newParent, newName, newChanged, newData, newDeletionTime, id).first == 1
   }
   override def markDeleted(id: Long, deletionTime: Option[Long]): Boolean = inTransaction {
-    // FIXME purge tool that propagates deletion to children and then frees space
+    // TODO purge tool that propagates deletion to children and then frees space
     setTreeEntryDeletedUpdate(deletionTime, id).first == 1
   }
 
