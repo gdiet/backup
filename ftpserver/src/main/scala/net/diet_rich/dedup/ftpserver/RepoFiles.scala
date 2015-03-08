@@ -18,7 +18,7 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
   trait RepoFile extends FtpFile {
     def parentid: Long
     final def parent: Option[ActualRepoFile] = metaBackend entry parentid map ActualRepoFile
-    def child(name: String): Option[ActualRepoFile] = ???
+    def child(name: String): Option[ActualRepoFile]
 
     override final def getOwnerName: String = "backup"
     override final def getGroupName: String = "dedup"
@@ -34,6 +34,8 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
   }
 
   case class VirtualRepoFile(override val parentid: Long, override val getName: String) extends RepoFile {
+    override def child(name: String): Option[ActualRepoFile] = None
+
     override def isReadable: Boolean = false
     override def isFile: Boolean = false
     override def isDirectory: Boolean = false
@@ -47,6 +49,11 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
 
   case class ActualRepoFile(treeEntry: TreeEntry) extends RepoFile {
     override def parentid: Long = if (treeEntry == rootEntry) treeEntry.id else treeEntry.parent
+    override def child(name: String): Option[ActualRepoFile] = {
+      val children = metaBackend.children(treeEntry id, name)
+      if (children.size > 1) log.warn(s"$treeEntry has multiple children with the same name $name, taking the first")
+      children.headOption map ActualRepoFile
+    }
 
     override def isReadable: Boolean = log.call(s"isReadable: $treeEntry") {
       true
