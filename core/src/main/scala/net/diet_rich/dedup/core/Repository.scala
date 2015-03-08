@@ -64,7 +64,7 @@ class RepositoryReadOnly(val metaBackend: MetaBackend, dataBackend: DataBackend)
 
 class Repository(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: FreeRanges, hashAlgorithm: String, storeMethod: Int, parallel: Int) extends RepositoryReadOnly(metaBackend, dataBackend) {
 
-  protected val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, dataBackend.write, freeRanges, hashAlgorithm, storeMethod, parallel)
+  val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, dataBackend.write, freeRanges, hashAlgorithm, storeMethod, parallel)
 
   override def close(): Unit = { suppressExceptions(storeLogic close()); super.close() }
 

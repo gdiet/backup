@@ -48,6 +48,7 @@ class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
     }
   }
 
+  // FIXME do we really need the new entry somewhere, or should we just return Boolean?
   override def change(id: Long, newParent: Long, newName: String, newChanged: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]): Option[TreeEntry] = inTransaction {
     if (updateTreeEntryUpdate(newParent, newName, newChanged, newData, newDeletionTime, id).first == 1)
       Some(TreeEntry(id, newParent, newName, newChanged, newData, newDeletionTime))

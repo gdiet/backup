@@ -1,15 +1,15 @@
 package net.diet_rich.dedup.ftpserver
 
-import java.io.{IOException, FileNotFoundException, InputStream, OutputStream}
+import java.io._
 import java.util
 
 import scala.collection.JavaConversions.seqAsJavaList
 
 import org.apache.ftpserver.ftplet.FtpFile
 
-import net.diet_rich.dedup.core.{Repository, RepositoryReadOnly}
+import net.diet_rich.dedup.core.{Source, Repository, RepositoryReadOnly}
 import net.diet_rich.dedup.core.meta.{rootEntry, TreeEntry}
-import net.diet_rich.dedup.util.{Logging, now}
+import net.diet_rich.dedup.util.{Memory, Logging, now}
 
 class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository]) extends Logging {
   protected val metaBackend = readAccess.metaBackend
@@ -53,7 +53,7 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
 
   object ActualRepoFile {
     def apply(treeEntry: TreeEntry) =
-      if (writeAccess isDefined) new ActualRepoFileReadWrite(treeEntry) else new ActualRepoFileReadOnly(treeEntry)
+      writeAccess.fold(new ActualRepoFileReadOnly(treeEntry))(new ActualRepoFileReadWrite(treeEntry, _))
   }
 
   trait ActualRepoFile extends RepoFile { def treeEntry: TreeEntry }
@@ -103,21 +103,50 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
     }
   }
 
-  class ActualRepoFileReadWrite(treeEntry: TreeEntry) extends ActualRepoFileReadOnly(treeEntry) {
+  class ActualRepoFileReadWrite(treeEntry: TreeEntry, repository: Repository) extends ActualRepoFileReadOnly(treeEntry) {
     override def move(destination: FtpFile): Boolean = log.call(s"move: $treeEntry to $destination") {
-      destination match {
+      treeEntry != rootEntry && (destination match {
         case VirtualRepoFile(parentid, newName) => metaBackend inTransaction {
           if (metaBackend children (parentid, newName) isEmpty)
             metaBackend change (treeEntry id, parentid, newName, treeEntry changed, treeEntry data) isDefined
           else false
         }
         case _ => false
-      }
+      })
     }
-    override def setLastModified(time: Long): Boolean = ???
-    override def createOutputStream(offset: Long): OutputStream = ???
+    override def setLastModified(time: Long): Boolean = log.call(s"setLastModified: $treeEntry") {
+      treeEntry != rootEntry && metaBackend.change(treeEntry id, parentid, treeEntry name, Some(time), treeEntry data).isDefined
+    }
     override def delete(): Boolean = log.call(s"delete: $treeEntry") {
-      metaBackend.markDeleted(treeEntry id)
+      treeEntry != rootEntry && metaBackend.markDeleted(treeEntry.id)
+    }
+    override def createOutputStream(offset: Long): OutputStream = log.call(s"createOutputStream: $treeEntry") {
+      if (offset != 0) throw new IOException("not random accessible")
+      if (isDirectory) throw new IOException("directory - can't write data")
+      // TODO use FilterOutputStream to divert data to temp file if memory runs low
+      new ByteArrayOutputStream() {
+        override def write(i: Int): Unit = write(Array(i.toByte), 0, 1)
+        override def write(data: Array[Byte]): Unit = write(data, 0, data.length)
+        override def write(data: Array[Byte], offset: Int, length: Int): Unit = {
+          Memory.reserve(length * 2) match {
+            case _: Memory.Reserved =>
+              super.write(data, offset, length)
+            case _: Memory.NotAvailable =>
+              Memory.free(count * 2)
+              throw new IOException("out of memory, can't buffer")
+          }
+        }
+        override def close(): Unit = try {
+          val source = Source.from(new ByteArrayInputStream(buf, 0, count), count)
+          val dataid = repository.storeLogic.dataidFor(source)
+          // FIXME utility to clean up orphan data entries (and orphan byte store entries)
+          if (metaBackend.change(treeEntry id, treeEntry parent, treeEntry name, Some(now), Some(dataid)).isEmpty)
+            throw new IOException("could not write data")
+        } finally {
+          // FIXME this might free the memory a second time, see above...
+          Memory.free(count * 2)
+        }
+      }
     }
   }
 
