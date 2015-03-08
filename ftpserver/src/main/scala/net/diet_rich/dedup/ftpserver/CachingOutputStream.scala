@@ -30,10 +30,13 @@ class CachingOutputStream(maxBytesToCache: Int, closeAction: Source => Unit) ext
     case Right(_) => throw new IllegalStateException
     case Left(out) =>
       val file = init(File createTempFile ("ftpserver_", ".tmp"))(_ deleteOnExit())
-      val access = init(new RandomAccessFile(file, "rw"))(_ write (out.data, 0, out.size))
-      sink = Right(access)
+      val access = new RandomAccessFile(file, "rw")
       tempFile = Some(file)
-      Memory.free(out.size * memoryConsumptionFactor)
+      sink = Right(access)
+      try {
+        access write (out.data, 0, out.size)
+        access write (data, offset, length)
+      } finally Memory.free(out.size * memoryConsumptionFactor)
   }
   override def close(): Unit = if (open) {
     open = false

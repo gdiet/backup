@@ -7,7 +7,7 @@
   </appender>
 
   <logger name="net.diet_rich"        level="info"/>
-  <logger name="org.apache.ftpserver" level="info"/>
+  <logger name="org.apache.ftpserver" level="warn"/>
 
   <root level="info">
     <appender-ref ref="STDOUT" />
