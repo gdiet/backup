@@ -10,6 +10,8 @@ object Memory {
 
   private var memory = runtime maxMemory
 
+  def available = synchronized(memory)
+
   def reserve(size: Long): ReserveResult = synchronized {
     if (memory >= size) { memory -= size; Reserved(size) } else NotAvailable(memory)
   }

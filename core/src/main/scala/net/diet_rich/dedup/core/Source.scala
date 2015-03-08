@@ -52,7 +52,7 @@ object Source {
     override def close() : Unit = in close()
   }
 
-  def from(data: Array[Byte], offset: Int, length: Int): Source = new CachedSource {
+  def from(data: Array[Byte], offset: Int, length: Int): CachedSource = new CachedSource {
     var source = newInput
     def newInput = new ByteArrayInputStream(data, offset, length)
     override def reset: Unit = { source close(); source = newInput }
