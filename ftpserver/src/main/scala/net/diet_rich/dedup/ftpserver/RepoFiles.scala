@@ -104,7 +104,16 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository])
   }
 
   class ActualRepoFileReadWrite(treeEntry: TreeEntry) extends ActualRepoFileReadOnly(treeEntry) {
-    override def move(destination: FtpFile): Boolean = ???
+    override def move(destination: FtpFile): Boolean = log.call(s"move: $treeEntry to $destination") {
+      destination match {
+        case VirtualRepoFile(parentid, newName) => metaBackend inTransaction {
+          if (metaBackend children (parentid, newName) isEmpty)
+            metaBackend change (treeEntry id, parentid, newName, treeEntry changed, treeEntry data) isDefined
+          else false
+        }
+        case _ => false
+      }
+    }
     override def setLastModified(time: Long): Boolean = ???
     override def createOutputStream(offset: Long): OutputStream = ???
     override def delete(): Boolean = log.call(s"delete: $treeEntry") {

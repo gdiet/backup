@@ -48,9 +48,9 @@ class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
     }
   }
 
-  override def change(id: Long, newParent: Long, newName: String, newTime: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]): Option[TreeEntry] = inTransaction {
-    if (updateTreeEntryUpdate(newParent, newName, newTime, newData, newDeletionTime, id).first == 1)
-      Some(TreeEntry(id, newParent, newName, newTime, newData, newDeletionTime))
+  override def change(id: Long, newParent: Long, newName: String, newChanged: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]): Option[TreeEntry] = inTransaction {
+    if (updateTreeEntryUpdate(newParent, newName, newChanged, newData, newDeletionTime, id).first == 1)
+      Some(TreeEntry(id, newParent, newName, newChanged, newData, newDeletionTime))
     else None
   }
   override def markDeleted(id: Long, deletionTime: Option[Long]): Boolean = inTransaction {
