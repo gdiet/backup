@@ -14,8 +14,8 @@ class RestoreAlgorithm(repository: RepositoryReadOnly, val parallel: Option[Int]
   def restore(source: String, target: File): Unit = {
     metaBackend.entries(source) match {
       case List(entry) => awaitForever(restore(target, entry))
-      case Nil => require(requirement = false, s"Source $source not found in repository")
-      case list => require(requirement = false, s"Multiple entries found in repository for source $source")
+      case Nil => throw new IllegalArgumentException(s"Source $source not found in repository")
+      case list => throw new IllegalArgumentException(s"Multiple entries found in repository for source $source")
     }
   }
 

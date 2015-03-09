@@ -14,7 +14,7 @@ import net.diet_rich.dedup.util.io._
 
 object SQLMetaBackendManager extends Logging {
   def create(metaRoot: File, repositoryid: String, hashAlgorithm: String) = {
-    try { Hash digestLength hashAlgorithm } catch { case NonFatal(e) => require(false, s"Hash for $hashAlgorithm can't be computed: $e")}
+    try { Hash digestLength hashAlgorithm } catch { case NonFatal(e) => throw new IllegalArgumentException(s"Hash for $hashAlgorithm can't be computed", e)}
     require(metaRoot mkdir(), s"Can't create meta directory $metaRoot")
     val settings = Map(
       metaVersionKey        -> metaVersionValue,
@@ -78,8 +78,7 @@ object SQLMetaBackendManager extends Logging {
     val settingsFromDB = metaBackend.settings
     if (settings != settingsFromDB) {
       metaBackend close()
-      // FIXME simplify (everywhere)
-      require(requirement = false, s"The settings in the database ${metaBackend settings} did not match with the expected settings $settings")
+      throw new IllegalArgumentException(s"The settings in the database ${metaBackend settings} did not match with the expected settings $settings")
     }
     if (!readonly) {
       val statusFile = metaRoot / metaStatusFile
