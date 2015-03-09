@@ -2,6 +2,10 @@ package net.diet_rich.dedup.core
 
 package object meta {
   val metaSettingsFile      = "metasettings.txt"
+  val metaStatusFile        = "metastatus.txt"
+  val metaBackupDir         = "backup"
+  val metaTimestampKey      = "last changed"
+  val metaCommentKey        = "change comment"
   val metaVersionKey        = "database version"
   val metaVersionValue      = "2.1"
   val metaHashAlgorithmKey  = "hash algorithm"

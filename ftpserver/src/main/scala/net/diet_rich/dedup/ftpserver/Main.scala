@@ -24,9 +24,10 @@ object Main extends App {
     val parallel = intOptional("parallel")
     val storeMethod = optional("storeMethod") map StoreMethod.named
     val maxBytesToCache = intOptional("maxBytesToCache") getOrElse 250000000
+    val versionComment = optional("versionComment")
 
     if (writable)
-      using(Repository readWrite (repositoryDir, storeMethod, parallel)) { repository =>
+      using(Repository readWrite (repositoryDir, storeMethod, parallel, versionComment)) { repository =>
         run(FileSysView(repository, Some(repository), maxBytesToCache))
       }
     else

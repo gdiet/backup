@@ -24,7 +24,8 @@ object Main extends App {
         val target = required("target")
         val parallel = intOptional("parallel")
         val storeMethod = optional("storeMethod") map StoreMethod.named
-        using(Repository readWrite (repositoryDir, storeMethod, parallel)) { repository =>
+        val versionComment = optional("versionComment")
+        using(Repository readWrite (repositoryDir, storeMethod, parallel, versionComment)) { repository =>
           using(new BackupAlgorithm(repository, parallel)) { _ backup (source, target) }
         }
 
