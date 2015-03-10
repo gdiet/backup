@@ -14,6 +14,7 @@ class StoreLogicDataChecksSpec extends Specification { def is = s2"""
 ${"Tests for the main part of the store logic".title}
 
 If the size/print combination is not yet known, the data is immediately stored $sizePrintNotKnown
+Cached sources are read twice if necessary, but without calculating the hash twice $cachedSourceHashOnlyOnce
 If the size/print combination is already known, data pre-loading is attempted $attemptPreload
 The data is preloaded if there is enough main memory available $preloadIfMemoryAvailable
 The data is not preloaded if there is not enough main memory available $dontPreloadIfMemoryNotAvailable
@@ -86,6 +87,8 @@ The store process itself should be tested $todo
     }
     logic.dataidFor(emptySource) === 42
   }
+
+  def cachedSourceHashOnlyOnce = todo
 
   def attemptPreload = {
     val meta = new MetaStub {

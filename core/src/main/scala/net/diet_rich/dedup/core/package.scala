@@ -8,7 +8,7 @@ package object core {
   val metaDir = "meta"
   val dataDir = "data"
 
-  val dateFormat = new SimpleDateFormat("yyyy.MM.dd_HH-mm.ss")
+  val dateFormat = new SimpleDateFormat("yyyy.MM.dd_HH.mm.ss")
   def dateStringNow = dateFormat format new Date
 
   type StartFin = (Long, Long)

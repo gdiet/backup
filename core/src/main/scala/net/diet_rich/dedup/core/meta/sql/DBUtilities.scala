@@ -1,6 +1,6 @@
 package net.diet_rich.dedup.core.meta.sql
 
-import net.diet_rich.dedup.core.StartFin
+import net.diet_rich.dedup.core.{Ranges, StartFin}
 import net.diet_rich.dedup.core.meta._
 import net.diet_rich.dedup.core.data.{StoreMethod, Hash, Print}
 
@@ -95,4 +95,10 @@ object DBUtilities {
     }
   }
   def freeRangeAtEndOfDataArea(implicit session: CurrentSession): StartFin = (startOfFreeDataArea, Long.MaxValue)
+  def freeAndProblemRanges(implicit session: CurrentSession): (Ranges, List[(StoreEntry, StoreEntry)]) = {
+    val problemRanges = DBUtilities.problemDataAreaOverlaps
+    val freeInData = if (problemRanges isEmpty) DBUtilities.freeRangesInDataArea else Nil
+    val freeRanges = freeInData.toVector :+ DBUtilities.freeRangeAtEndOfDataArea
+    (freeRanges, problemRanges)
+  }
 }

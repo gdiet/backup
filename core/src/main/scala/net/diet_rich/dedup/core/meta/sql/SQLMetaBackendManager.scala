@@ -31,21 +31,43 @@ object SQLMetaBackendManager extends Logging {
     writeSettingsFile(metaRoot / metaStatusFile, status)
   }
 
+  def openInstance(metaRoot: File, readonly: Boolean, versionComment: Option[String]): (MetaBackend, Ranges) = {
+    val settings = readSettingsFile(metaRoot / metaSettingsFile)
+    val sessionFactory = SessionFactory productionDB (metaRoot, readonly = false) // FIXME introduce enum for readonly
+    val (freeRanges, problemRanges) = DBUtilities.freeAndProblemRanges(sessionFactory.session)
+    if (problemRanges nonEmpty) log.warn (s"Found data area overlaps: $problemRanges")
+    val metaBackend = createBackend(metaRoot, sessionFactory, versionComment getOrElse "no comment", readonly)
+    val settingsFromDB = metaBackend.settings
+    if (settings != settingsFromDB) {
+      metaBackend close()
+      throw new IllegalArgumentException(s"The settings in the database ${settingsFromDB} did not match with the expected settings $settings")
+    }
+    if (!readonly) {
+      val statusFile = metaRoot / metaStatusFile
+      val statusSettings = readSettingsFile(statusFile)
+      val fileNameOfBackup = backupFileName(statusSettings(metaTimestampKey), statusSettings(metaCommentKey))
+      backupDatabase(metaRoot, fileNameOfBackup)
+      statusFile setWritable true
+      if (!statusFile.delete()) log warn s"could not delete status file $statusFile"
+    }
+    (metaBackend, freeRanges)
+  }
+
+  protected def createBackend(metaRoot: File, sessionFactory: SessionFactory, versionComment: String, readonly: Boolean) =
+    new SQLMetaBackend(sessionFactory) {
+      override def close(): Unit = {
+        super.close()
+        if (!readonly) {
+          val status = Map(metaTimestampKey -> dateStringNow, metaCommentKey -> versionComment)
+          writeSettingsFile(metaRoot / metaStatusFile, status)
+        }
+      }
+    }
+  
   protected def backupFileName(timestamp: String, comment: String): String = {
     val commentForFileName = comment.replaceAll("\\W", "_").replaceAll("_+", "_")
     s"${timestamp}_$commentForFileName.zip"
   }
-
-  protected def zipFilesInto(target: File, files: Seq[File]): Unit =
-    // TODO: Eventually, use the nio zip file system instead?
-    using(new ZipOutputStream(new FileOutputStream(target))) { zipOut =>
-      zipOut setLevel 9
-      files foreach { file =>
-        zipOut putNextEntry new ZipEntry(file getName)
-        Files copy (file toPath, zipOut)
-        zipOut closeEntry()
-      }
-    }
 
   protected def backupDatabase(metaRoot: File, backupFileName: String): Unit = {
     val databaseFile = metaRoot / "dedup.h2.db"
@@ -59,35 +81,13 @@ object SQLMetaBackendManager extends Logging {
     zipFilesInto(backupFile, Seq(statusFile, databaseFile))
   }
 
-  def openInstance(metaRoot: File, readonly: Boolean, versionComment: Option[String]): (MetaBackend, Ranges) = {
-    val settings = readSettingsFile(metaRoot / metaSettingsFile)
-    val sessionFactory = SessionFactory productionDB (metaRoot, readonly = false)
-    val problemRanges = DBUtilities.problemDataAreaOverlaps(sessionFactory.session)
-    val freeInData = if (problemRanges isEmpty) DBUtilities.freeRangesInDataArea(sessionFactory.session) else Nil
-    val freeRanges = freeInData.toVector :+ DBUtilities.freeRangeAtEndOfDataArea(sessionFactory.session)
-    if (problemRanges nonEmpty) log.warn (s"Found data area overlaps: $problemRanges")
-    val metaBackend = new SQLMetaBackend(sessionFactory) {
-      override def close(): Unit = {
-        super.close()
-        if (!readonly) {
-          val status = Map(metaTimestampKey -> dateStringNow, metaCommentKey -> "no comment")
-          writeSettingsFile(metaRoot / metaStatusFile, status)
-        }
+  protected def zipFilesInto(target: File, files: Seq[File]): Unit =
+    using(new ZipOutputStream(new FileOutputStream(target))) { zipOut =>
+      zipOut setLevel 9
+      files foreach { file =>
+        zipOut putNextEntry new ZipEntry(file getName)
+        Files copy (file toPath, zipOut)
+        zipOut closeEntry()
       }
     }
-    val settingsFromDB = metaBackend.settings
-    if (settings != settingsFromDB) {
-      metaBackend close()
-      throw new IllegalArgumentException(s"The settings in the database ${metaBackend settings} did not match with the expected settings $settings")
-    }
-    if (!readonly) {
-      val statusFile = metaRoot / metaStatusFile
-      val statusSettings = readSettingsFile(statusFile)
-      val fileNameOfBackup = backupFileName(statusSettings(metaTimestampKey), statusSettings(metaCommentKey))
-      backupDatabase(metaRoot, fileNameOfBackup)
-      statusFile setWritable true
-      require(statusFile delete(), s"could not delete status file $statusFile")
-    }
-    (metaBackend, freeRanges)
-  }
 }

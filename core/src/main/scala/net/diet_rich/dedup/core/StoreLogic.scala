@@ -47,7 +47,6 @@ trait StoreLogicDataChecks {
       storeSourceData (printData, print, source.allData, source.size)
   }
 
-  // FIXME test
   protected def handleCachedSource(printData: Bytes, print: Long, source: Source): Long = source match {
     case cached: CachedSource =>
       val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData
