@@ -12,6 +12,7 @@ object Testutil {
       // ;TRACE_LEVEL_SYSTEM_OUT=2 or 3 for console debug output
       url = s"jdbc:h2:mem:testdb_${dbid incrementAndGet}",
       user = "sa", driver = "org.h2.Driver"
-    )
+    ),
+    readonly = false
   )
 }

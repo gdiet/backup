@@ -8,13 +8,16 @@ import scala.collection.JavaConverters.collectionAsScalaIterableConverter
 import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.io._
 
-case class SessionFactory(database: CurrentDatabase) extends AutoCloseable {
+case class SessionFactory(database: CurrentDatabase, readonly: Boolean) extends AutoCloseable {
   private val allSessions = new SynchronizedQueue[CurrentSession]()
   private val sessions = new ThreadLocal[CurrentSession] {
     override def initialValue = init(database createSession()){allSessions add}
   }
   def session: CurrentSession = sessions.get()
-  def close() = allSessions.asScala foreach (_ close())
+  def close() = {
+    session.conn prepareStatement (if (readonly) "SHUTDOWN;" else "SHUTDOWN DEFRAG;") execute()
+    allSessions.asScala foreach (_ close())
+  }
 }
 
 object SessionFactory {
@@ -23,6 +26,7 @@ object SessionFactory {
       // MV_STORE and MVCC disabled, see http://code.google.com/p/h2database/issues/detail?id=542
       url = s"jdbc:h2:${dbFolder/"dedup"}${if (readonly) ";ACCESS_MODE_DATA=r" else ""};MV_STORE=FALSE;MVCC=FALSE",
       user = "sa", driver = "org.h2.Driver"
-    )
+    ),
+    readonly
   )
 }
