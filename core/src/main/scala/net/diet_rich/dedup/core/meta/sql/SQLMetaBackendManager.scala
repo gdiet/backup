@@ -9,7 +9,7 @@ import scala.util.control.NonFatal
 import net.diet_rich.dedup.core._
 import net.diet_rich.dedup.core.data.Hash
 import net.diet_rich.dedup.core.meta._
-import net.diet_rich.dedup.util.Logging
+import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.io._
 
 object SQLMetaBackendManager extends Logging {
@@ -22,7 +22,7 @@ object SQLMetaBackendManager extends Logging {
       metaHashAlgorithmKey  -> hashAlgorithm
     )
     writeSettingsFile(metaRoot / metaSettingsFile, settings)
-    using(SessionFactory productionDB (metaRoot, readonly = false)) { sessionFactory =>
+    using(SessionFactory productionDB (metaRoot, readWrite)) { sessionFactory =>
       DBUtilities.createTables(hashAlgorithm)(sessionFactory.session)
       DBUtilities.recreateIndexes(sessionFactory.session)
       new SQLMetaBackend(sessionFactory) replaceSettings settings
@@ -31,18 +31,18 @@ object SQLMetaBackendManager extends Logging {
     writeSettingsFile(metaRoot / metaStatusFile, status)
   }
 
-  def openInstance(metaRoot: File, readonly: Boolean, versionComment: Option[String]): (MetaBackend, Ranges) = {
+  def openInstance(metaRoot: File, writable: Writable, versionComment: Option[String]): (MetaBackend, Ranges) = {
     val settings = readSettingsFile(metaRoot / metaSettingsFile)
-    val sessionFactory = SessionFactory productionDB (metaRoot, readonly = false) // FIXME introduce enum for readonly
+    val sessionFactory = SessionFactory productionDB (metaRoot, writable)
     val (freeRanges, problemRanges) = DBUtilities.freeAndProblemRanges(sessionFactory.session)
     if (problemRanges nonEmpty) log.warn (s"Found data area overlaps: $problemRanges")
-    val metaBackend = createBackend(metaRoot, sessionFactory, versionComment getOrElse "no comment", readonly)
+    val metaBackend = createBackend(metaRoot, sessionFactory, versionComment getOrElse "no comment", writable)
     val settingsFromDB = metaBackend.settings
     if (settings != settingsFromDB) {
       metaBackend close()
       throw new IllegalArgumentException(s"The settings in the database ${settingsFromDB} did not match with the expected settings $settings")
     }
-    if (!readonly) {
+    if (writable) {
       val statusFile = metaRoot / metaStatusFile
       val statusSettings = readSettingsFile(statusFile)
       val fileNameOfBackup = backupFileName(statusSettings(metaTimestampKey), statusSettings(metaCommentKey))
@@ -53,11 +53,11 @@ object SQLMetaBackendManager extends Logging {
     (metaBackend, freeRanges)
   }
 
-  protected def createBackend(metaRoot: File, sessionFactory: SessionFactory, versionComment: String, readonly: Boolean) =
+  protected def createBackend(metaRoot: File, sessionFactory: SessionFactory, versionComment: String, writable: Writable) =
     new SQLMetaBackend(sessionFactory) {
       override def close(): Unit = {
         super.close()
-        if (!readonly) {
+        if (writable) {
           val status = Map(metaTimestampKey -> dateStringNow, metaCommentKey -> versionComment)
           writeSettingsFile(metaRoot / metaStatusFile, status)
         }

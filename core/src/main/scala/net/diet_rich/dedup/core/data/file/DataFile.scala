@@ -12,13 +12,13 @@ object DataFile {
   val headerBytes = 16
 }
 
-class DataFile(fileNumber: Long, startPosition: Long, dataDir: File, readonly: Boolean) {
+class DataFile(fileNumber: Long, startPosition: Long, dataDir: File, writable: Writable) {
   import net.diet_rich.dedup.core.data.file.DataFile._
 
   private val file = dataDir / (f"$fileNumber%010X" grouped 2 mkString "/") // 00/00/00/00/00 (hex), max 10^12 files
 
   private val fileAccess: RandomAccessFile =
-    if (readonly) openAndCheckHeader("r")
+    if (!writable) openAndCheckHeader("r")
     else if (file exists()) openAndCheckHeader("rw")
     else init(new RandomAccessFile(file.withParentsMade(), "rw")){_ writeLong startPosition}
 

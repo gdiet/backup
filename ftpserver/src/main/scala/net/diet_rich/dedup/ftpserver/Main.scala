@@ -27,11 +27,11 @@ object Main extends App {
     val versionComment = optional("versionComment")
 
     if (writable)
-      using(Repository readWrite (repositoryDir, storeMethod, parallel, versionComment)) { repository =>
+      using(Repository openReadWrite (repositoryDir, storeMethod, parallel, versionComment)) { repository =>
         run(FileSysView(repository, Some(repository), maxBytesToCache))
       }
     else
-      using(Repository readOnly repositoryDir) { repository =>
+      using(Repository openReadOnly repositoryDir) { repository =>
         run(FileSysView(repository, None, maxBytesToCache))
       }
     println("dedup ftp server stopped.")

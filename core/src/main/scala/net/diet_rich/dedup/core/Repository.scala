@@ -5,7 +5,7 @@ import java.io.{File, IOException}
 import net.diet_rich.dedup.core.data._
 import net.diet_rich.dedup.core.data.file.FileBackend
 import net.diet_rich.dedup.core.meta._
-import net.diet_rich.dedup.core.meta.sql.{DBUtilities, SQLMetaBackendManager}
+import net.diet_rich.dedup.core.meta.sql.SQLMetaBackendManager
 import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.io.RichFile
 
@@ -20,9 +20,9 @@ object Repository {
     FileBackend create (root / dataDir, actualRepositoryid, storeBlockSize getOrElse 64000000)
   }
 
-  def readWrite(root: File, storeMethod: Option[Int], parallel: Option[Int], versionComment: Option[String]): Repository = {
-    val (metaBackend, initialFreeRanges) = SQLMetaBackendManager openInstance(root / metaDir, false, versionComment)
-    val fileBackend = new FileBackend(root / dataDir, metaBackend settings repositoryidKey, false)
+  def openReadWrite(root: File, storeMethod: Option[Int], parallel: Option[Int], versionComment: Option[String]): Repository = {
+    val (metaBackend, initialFreeRanges) = SQLMetaBackendManager openInstance(root / metaDir, readWrite, versionComment)
+    val fileBackend = new FileBackend(root / dataDir, metaBackend settings repositoryidKey, readWrite)
     val freeRanges = new FreeRanges(initialFreeRanges, FileBackend.nextBlockStart(_, fileBackend.blocksize))
     new Repository(
       metaBackend,
@@ -34,9 +34,9 @@ object Repository {
     )
   }
 
-  def readOnly(root: File): RepositoryReadOnly = {
-    val (metaBackend, _) = SQLMetaBackendManager openInstance(root / metaDir, true, None)
-    val fileBackend = new FileBackend(root / dataDir, metaBackend settings repositoryidKey, true)
+  def openReadOnly(root: File): RepositoryReadOnly = {
+    val (metaBackend, _) = SQLMetaBackendManager openInstance(root / metaDir, readOnly, None)
+    val fileBackend = new FileBackend(root / dataDir, metaBackend settings repositoryidKey, readOnly)
     new RepositoryReadOnly(metaBackend, fileBackend)
   }
 }

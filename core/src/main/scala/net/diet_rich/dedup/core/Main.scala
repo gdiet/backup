@@ -25,7 +25,7 @@ object Main extends App {
         val parallel = intOptional("parallel")
         val storeMethod = optional("storeMethod") map StoreMethod.named
         val versionComment = optional("versionComment")
-        using(Repository readWrite (repositoryDir, storeMethod, parallel, versionComment)) { repository =>
+        using(Repository openReadWrite (repositoryDir, storeMethod, parallel, versionComment)) { repository =>
           using(new BackupAlgorithm(repository, parallel)) { _ backup (source, target) }
         }
 
@@ -35,7 +35,7 @@ object Main extends App {
         require(source != "/", "Cannot restore starting at root")
         require(target.isDirectory, s"Target $target must be a directory")
         require(target.listFiles.isEmpty, s"Target directory $target must be empty")
-        using(Repository readOnly repositoryDir) { repository =>
+        using(Repository openReadOnly repositoryDir) { repository =>
           using(new RestoreAlgorithm(repository)) { _ restore(source, target) }
         }
 

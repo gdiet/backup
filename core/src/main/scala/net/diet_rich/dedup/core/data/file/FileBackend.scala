@@ -26,7 +26,7 @@ object FileBackend {
   }
 }
 
-class FileBackend (dataDir: File, repositoryid: String, readonly: Boolean) extends DataBackend {
+class FileBackend (dataDir: File, repositoryid: String, writable: Writable) extends DataBackend {
   val blocksize: Int = { // int to avoid problems with byte array size
     val settings = readSettingsFile(dataDir / dataSettingsFile)
     require(settings(dataVersionKey) == dataVersionValue)
@@ -39,7 +39,7 @@ class FileBackend (dataDir: File, repositoryid: String, readonly: Boolean) exten
   private object DataFiles {
     private val dataFiles = mutable.LinkedHashMap.empty[Long, DataFile]
     def apply(fileNumber: Long): DataFile = synchronized {
-      init(dataFiles.remove(fileNumber) getOrElse new DataFile(fileNumber, fileNumber * blocksize, dataDir, readonly)) { dataFile =>
+      init(dataFiles.remove(fileNumber) getOrElse new DataFile(fileNumber, fileNumber * blocksize, dataDir, writable)) { dataFile =>
         if (dataFiles.size >= maxNumberOfOpenFiles) dataFiles.remove(dataFiles.keys.head).get.close()
         dataFiles += (fileNumber -> dataFile)
       }

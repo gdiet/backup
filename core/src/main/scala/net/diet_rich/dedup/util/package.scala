@@ -6,4 +6,9 @@ package object util {
   def init[T](t: T)(f: T => Unit): T = { f(t); t }
   def now = System.currentTimeMillis()
   def systemCores = Runtime.getRuntime.availableProcessors()
+  val readOnly = Writable.readOnly
+  val readWrite = Writable.readWrite
+
+  import scala.language.implicitConversions
+  implicit def writableAsBoolean(writable: Writable): Boolean = writable == readWrite
 }
