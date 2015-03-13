@@ -11,9 +11,12 @@ import net.diet_rich.dedup.core.{Repository, RepositoryReadOnly}
 import net.diet_rich.dedup.core.meta.{rootEntry, TreeEntry}
 import net.diet_rich.dedup.util.{Logging, now}
 
-class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository], maxBytesToCache: Int) extends Logging {
+class RepoFiles[R <: RepositoryReadOnly](readAccess: RepositoryReadOnly, maxBytesToCache: Int) extends Logging {
   protected val metaBackend = readAccess.metaBackend
-  assert(writeAccess.isEmpty || writeAccess == Some(readAccess))
+  protected val (writeEnabled, writeAccess) = readAccess match {
+    case r: Repository => (true, () => r)
+    case _ => (false, () => throw new IOException("file system is read-only"))
+  }
 
   trait RepoFile extends FtpFile {
     def parentid: Long
@@ -34,9 +37,8 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository],
     override def createOutputStream(offset: Long): OutputStream = log.call(s"createOutputStream: $parentid/$getName") {
       if (offset != 0) throw new IOException("not random accessible")
       if (isDirectory) throw new IOException("directory - can't write data")
-      val repository = writeAccess getOrElse (throw new IOException("file system is read-only"))
       new CachingOutputStream(maxBytesToCache, source => {
-        val dataid = repository.storeLogic.dataidFor(source)
+        val dataid = writeAccess().storeLogic.dataidFor(source)
         // TODO utility to clean up orphan data entries (and orphan byte store entries)
         if (!writeDataid(dataid)) throw new IOException("could not write data")
       })
@@ -51,7 +53,7 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository],
     }
 
     override def isReadable: Boolean = false
-    override def isWritable: Boolean = writeAccess isDefined
+    override def isWritable: Boolean = writeEnabled
     override def isFile: Boolean = false
     override def isDirectory: Boolean = false
     override def getLinkCount: Int = 0
@@ -68,7 +70,7 @@ class RepoFiles(readAccess: RepositoryReadOnly, writeAccess: Option[Repository],
 
   object ActualRepoFile {
     def apply(treeEntry: TreeEntry) =
-      if (writeAccess isEmpty) new ActualRepoFileReadOnly(treeEntry) else new ActualRepoFileReadWrite(treeEntry)
+      if (writeEnabled) new ActualRepoFileReadWrite(treeEntry) else new ActualRepoFileReadOnly(treeEntry)
   }
 
   trait ActualRepoFile extends RepoFile { def treeEntry: TreeEntry }

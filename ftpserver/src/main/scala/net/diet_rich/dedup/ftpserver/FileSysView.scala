@@ -5,8 +5,8 @@ import org.apache.ftpserver.ftplet.{FtpFile, FileSystemView}
 import net.diet_rich.dedup.core.{Repository, RepositoryReadOnly}
 import net.diet_rich.dedup.core.meta.rootEntry
 
-case class FileSysView(readAccess: RepositoryReadOnly, writeAccess: Option[Repository], maxBytesToCache: Int) extends FileSystemView {
-  protected val repoFiles = new RepoFiles(readAccess, writeAccess, maxBytesToCache)
+case class FileSysView[R <: RepositoryReadOnly](repository: R, maxBytesToCache: Int) extends FileSystemView {
+  protected val repoFiles = new RepoFiles(repository, maxBytesToCache)
   import repoFiles._
 
   protected val rootDirectory: ActualRepoFile = ActualRepoFile(rootEntry)
