@@ -32,23 +32,23 @@ object SQLMetaBackendManager extends Logging {
   }
 
   def openInstance(metaRoot: File, writable: Writable, versionComment: Option[String]): (MetaBackend, Ranges) = {
+    val statusSettings = readSettingsFile(metaRoot / metaStatusFile)
+    require(statusSettings(metaTimestampKey) != "running", s"The status file reports the database status as already running")
     val settings = readSettingsFile(metaRoot / metaSettingsFile)
     val sessionFactory = SessionFactory productionDB (metaRoot, writable)
     val (freeRanges, problemRanges) = DBUtilities.freeAndProblemRanges(sessionFactory.session)
     if (problemRanges nonEmpty) log.warn (s"Found data area overlaps: $problemRanges")
-    val metaBackend = createBackend(metaRoot, sessionFactory, versionComment getOrElse "no comment", writable)
+    val comment = versionComment getOrElse "no comment"
+    val metaBackend = createBackend(metaRoot, sessionFactory, comment, writable)
     val settingsFromDB = metaBackend.settings
     if (settings != settingsFromDB) {
       metaBackend close()
-      throw new IllegalArgumentException(s"The settings in the database ${settingsFromDB} did not match with the expected settings $settings")
+      throw new IllegalArgumentException(s"The settings in the database $settingsFromDB did not match with the expected settings $settings")
     }
     if (writable) {
-      val statusFile = metaRoot / metaStatusFile
-      val statusSettings = readSettingsFile(statusFile)
       val fileNameOfBackup = backupFileName(statusSettings(metaTimestampKey), statusSettings(metaCommentKey))
       backupDatabase(metaRoot, fileNameOfBackup)
-      statusFile setWritable true
-      if (!statusFile.delete()) log warn s"could not delete status file $statusFile"
+      writeSettingsFile(metaRoot / metaStatusFile, Map(metaTimestampKey -> "running", metaCommentKey -> comment))
     }
     (metaBackend, freeRanges)
   }
@@ -57,10 +57,7 @@ object SQLMetaBackendManager extends Logging {
     new SQLMetaBackend(sessionFactory) {
       override def close(): Unit = {
         super.close()
-        if (writable) {
-          val status = Map(metaTimestampKey -> dateStringNow, metaCommentKey -> versionComment)
-          writeSettingsFile(metaRoot / metaStatusFile, status)
-        }
+        if (writable) writeSettingsFile(metaRoot / metaStatusFile, Map(metaTimestampKey -> dateStringNow, metaCommentKey -> versionComment))
       }
     }
   

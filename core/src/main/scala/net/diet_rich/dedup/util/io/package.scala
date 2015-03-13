@@ -24,10 +24,11 @@ package object io {
   }
 
   def writeSettingsFile(file: File, settings: Map[String, String]): Unit = {
+    file setWritable (true, true)
     using(new PrintWriter(file, "UTF-8")){ writer =>
       settings map { case (key, value) => s"$key = $value" } foreach writer.println
     }
-    file.setReadOnly()
+    file setWritable (false, false)
   }
 
   implicit class RichFile(val file: File) extends AnyVal {
