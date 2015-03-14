@@ -36,7 +36,7 @@ object Main extends App {
       println(s"started dedup ftp server at ftp://localhost${if (ftpPort == 21) "" else s":$ftpPort"}")
       println("write access is " + (if (writable) "ENABLED" else "OFF"))
       println("User: 'user', password: 'user'")
-      sys.ShutdownHookThread {
+      sys addShutdownHook {
         println("dedup ftp server stopping...")
         server.stop()
         repository.close()

@@ -26,6 +26,11 @@ object Main extends App {
         val storeMethod = optional("storeMethod") map StoreMethod.named
         val versionComment = optional("versionComment")
         using(Repository openReadWrite (repositoryDir, storeMethod, parallel, versionComment)) { repository =>
+          sys addShutdownHook {
+            println("shutdown requested - shutting down dedup system before backup is complete")
+            repository close()
+            println("shutdown of dedup system complete")
+          }
           using(new BackupAlgorithm(repository, parallel)) { _ backup (source, target) }
         }
 
@@ -36,6 +41,11 @@ object Main extends App {
         require(target.isDirectory, s"Target $target must be a directory")
         require(target.listFiles.isEmpty, s"Target directory $target must be empty")
         using(Repository openReadOnly repositoryDir) { repository =>
+          sys addShutdownHook {
+            println("shutdown requested - shutting down dedup system before restore is complete")
+            repository close()
+            println("shutdown of dedup system complete")
+          }
           using(new RestoreAlgorithm(repository)) { _ restore(source, target) }
         }
 
