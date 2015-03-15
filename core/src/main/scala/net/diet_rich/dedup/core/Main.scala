@@ -52,7 +52,6 @@ object Main extends App with Logging {
     val hook = sys addShutdownHook {
       log warn "shutdown requested - shutting down dedup system before job is completed"
       closable close()
-      log info "shutdown of dedup system complete"
     }
     try task
     finally hook remove()
