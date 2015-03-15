@@ -24,7 +24,7 @@ object SessionFactory {
   def productionDB(dbFolder: File, writable: Writable) = SessionFactory(
     scala.slick.driver.H2Driver.simple.Database forURL (
       // MV_STORE and MVCC disabled, see http://code.google.com/p/h2database/issues/detail?id=542
-      url = s"jdbc:h2:${dbFolder/"dedup"};DB_CLOSE_ON_EXIT=FALSE${if (writable) "" else ";ACCESS_MODE_DATA=r"};MV_STORE=FALSE;MVCC=FALSE",
+      url = s"jdbc:h2:${dbFolder.getAbsoluteFile/"dedup"};DB_CLOSE_ON_EXIT=FALSE${if (writable) "" else ";ACCESS_MODE_DATA=r"};MV_STORE=FALSE;MVCC=FALSE",
       user = "sa", driver = "org.h2.Driver"
     ),
     writable
