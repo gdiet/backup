@@ -7,14 +7,14 @@ import scala.collection.JavaConversions.seqAsJavaList
 
 import org.apache.ftpserver.ftplet.FtpFile
 
-import net.diet_rich.dedup.core.{Repository, RepositoryReadOnly}
+import net.diet_rich.dedup.core.{RepositoryReadWrite, Repository}
 import net.diet_rich.dedup.core.meta.{rootEntry, TreeEntry}
 import net.diet_rich.dedup.util.{Logging, now}
 
-class RepoFiles[R <: RepositoryReadOnly](readAccess: RepositoryReadOnly, maxBytesToCache: Int) extends Logging {
+class RepoFiles[R <: Repository](readAccess: Repository, maxBytesToCache: Int) extends Logging {
   protected val metaBackend = readAccess.metaBackend
   protected val (writeEnabled, writeAccess) = readAccess match {
-    case r: Repository => (true, () => r)
+    case r: RepositoryReadWrite => (true, () => r)
     case _ => (false, () => throw new IOException("file system is read-only"))
   }
 

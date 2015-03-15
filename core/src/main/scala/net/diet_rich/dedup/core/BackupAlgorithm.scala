@@ -4,7 +4,7 @@ import java.io.{IOException, File}
 
 import scala.concurrent.Future
 
-class BackupAlgorithm(repository: Repository, val parallel: Option[Int] = None) extends ParallelExecution {
+class BackupAlgorithm(repository: RepositoryReadWrite, val parallel: Option[Int] = None) extends ParallelExecution {
   import repository.metaBackend
 
   // backup assumes that, once it starts, it has exclusive write access to its target branch in the tree

@@ -1,17 +1,14 @@
 package net.diet_rich.dedup.ftpserver
 
-import java.util.concurrent.CountDownLatch
-
 import org.apache.ftpserver.{FtpServer, FtpServerFactory}
 import org.apache.ftpserver.ftplet.{User, FileSystemFactory}
 import org.apache.ftpserver.listener.ListenerFactory
 import org.apache.ftpserver.usermanager.PropertiesUserManagerFactory
 import org.apache.ftpserver.usermanager.impl.BaseUser
 
-import net.diet_rich.dedup.core.{RepositoryReadOnly, Repository}
+import net.diet_rich.dedup.core.Repository
 import net.diet_rich.dedup.core.data.StoreMethod
 import net.diet_rich.dedup.util._
-import net.diet_rich.dedup.util.io._
 
 object Main extends App {
   if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else {
@@ -31,7 +28,7 @@ object Main extends App {
     else
       serverLifeCycle(Repository openReadOnly repositoryDir)
 
-    def serverLifeCycle[R <: RepositoryReadOnly](repository: R) {
+    def serverLifeCycle[R <: Repository](repository: R) {
       val server = ftpServer(FileSysView(repository, maxBytesToCache))
       println(s"started dedup ftp server at ftp://localhost${if (ftpPort == 21) "" else s":$ftpPort"}")
       println("write access is " + (if (writable) "ENABLED" else "OFF"))
@@ -45,7 +42,7 @@ object Main extends App {
       Thread sleep Long.MaxValue
     }
 
-    def ftpServer(fileSysView: FileSysView[_ <: RepositoryReadOnly]): FtpServer = {
+    def ftpServer(fileSysView: FileSysView[_ <: Repository]): FtpServer = {
       val listener = init(new ListenerFactory()) { _ setPort ftpPort } createListener()
       val fileSystemFactory = new FileSystemFactory { override def createFileSystemView (user: User) = fileSysView }
       val userManager = init(new PropertiesUserManagerFactory() createUserManager()) {

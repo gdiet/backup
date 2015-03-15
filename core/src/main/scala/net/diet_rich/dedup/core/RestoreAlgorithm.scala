@@ -8,7 +8,7 @@ import net.diet_rich.dedup.core.meta.TreeEntry
 import net.diet_rich.dedup.util.Logging
 import net.diet_rich.dedup.util.io.{RichFile, using}
 
-class RestoreAlgorithm(repository: RepositoryReadOnly, val parallel: Option[Int] = None) extends ParallelExecution with Logging {
+class RestoreAlgorithm(repository: Repository, val parallel: Option[Int] = None) extends ParallelExecution with Logging {
   import repository.metaBackend
 
   def restore(source: String, target: File): Unit = {

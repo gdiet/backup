@@ -2,10 +2,10 @@ package net.diet_rich.dedup.ftpserver
 
 import org.apache.ftpserver.ftplet.{FtpFile, FileSystemView}
 
-import net.diet_rich.dedup.core.{Repository, RepositoryReadOnly}
+import net.diet_rich.dedup.core.{RepositoryReadWrite$, Repository}
 import net.diet_rich.dedup.core.meta.rootEntry
 
-case class FileSysView[R <: RepositoryReadOnly](repository: R, maxBytesToCache: Int) extends FileSystemView {
+case class FileSysView[R <: Repository](repository: R, maxBytesToCache: Int) extends FileSystemView {
   protected val repoFiles = new RepoFiles(repository, maxBytesToCache)
   import repoFiles._
 

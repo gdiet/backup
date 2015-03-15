@@ -12,7 +12,7 @@ object Main extends App {
     import commandLineUtils._
     command match {
       case "create" =>
-        Repository.create(
+        Repository create (
           repositoryDir,
           optional("repositoryid"),
           optional("hashAlgorithm"),
