@@ -2,17 +2,17 @@ package net.diet_rich.dedup.util
 
 import java.io.{PrintWriter, File}
 
-import scala.io.Source
+import scala.io.{Source => ScalaSource}
 
 package object io {
   def using[Closeable <: AutoCloseable, ReturnType] (resource: Closeable)(operation: Closeable => ReturnType): ReturnType =
     try { operation(resource) } finally { resource close() }
 
-  def using[T] (resource: Source)(operation: Source => T): T =
+  def using[ReturnType] (resource: ScalaSource)(operation: ScalaSource => ReturnType): ReturnType =
     try { operation(resource) } finally { resource close() }
 
   def readSettingsFile(file: File): Map[String, String] = {
-    using(Source fromFile (file, "UTF-8")){
+    using(ScalaSource fromFile (file, "UTF-8")){
       _ .getLines()
         .map(_ trim)
         .filterNot(_ isEmpty)

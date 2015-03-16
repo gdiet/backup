@@ -18,4 +18,7 @@ case class CommandLineUtils(args: Array[String]) extends Logging {
 
   def intOptional(key: String) =
     optional(key) map (_ toInt)
+
+  def booleanOptional(key: String) =
+    optional(key) map (_ toBoolean)
 }

@@ -37,7 +37,6 @@ object Main extends App {
         println("dedup ftp server stopping...")
         server.stop()
         repository.close()
-        println("dedup ftp server stopped.")
       }
       Thread sleep Long.MaxValue
     }

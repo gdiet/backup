@@ -8,7 +8,7 @@ import java.io.{ByteArrayInputStream, InputStream, RandomAccessFile, File}
 import net.diet_rich.dedup.core.data.Bytes
 import net.diet_rich.dedup.util._
 
-trait Source {
+trait Source extends AutoCloseable {
   def size: Long
   def read(count: Int): Bytes
   final def allData: Iterator[Bytes] = new Iterator[Bytes] {

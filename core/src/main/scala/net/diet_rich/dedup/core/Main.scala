@@ -23,12 +23,13 @@ object Main extends App with Logging {
         val source = new File(required("source"))
         val target = required("target")
         val reference = optional("reference")
+        val versionComment = optional("versionComment")
+        val checkPrint = booleanOptional("checkPrint")
         val parallel = intOptional("parallel")
         val storeMethod = optional("storeMethod") map StoreMethod.named
-        val versionComment = optional("versionComment")
         using(Repository openReadWrite (repositoryDir, storeMethod, parallel, versionComment)) { repository =>
           wrapInShutdownHook(repository) {
-            using(new BackupAlgorithm(repository, parallel)) { _ backup (source, target, reference) }
+            using(new BackupAlgorithm(repository, checkPrint, parallel)) { _ backup (source, target, reference) }
           }
         }
 
