@@ -13,6 +13,8 @@ import net.diet_rich.dedup.util.io._
 class BackupAlgorithm(repository: RepositoryReadWrite, checkPrintOption: Option[Boolean], val parallel: Option[Int]) extends ParallelExecution {
   import repository.metaBackend
 
+  // TODO tests for backup algorithm
+
   val checkPrint = checkPrintOption getOrElse false
 
   def backup(source: File, target: String, reference: Option[String]): Unit =
@@ -88,7 +90,7 @@ class BackupAlgorithm(repository: RepositoryReadWrite, checkPrintOption: Option[
         val printData = byteSource read Repository.PRINTSIZE
         val print = Print(printData)
         if (reference.print != print) {
-          val dataid = repository.storeLogic.dataidFor(printData, print, byteSource)
+          val dataid = repository.storeLogic dataidFor (printData, print, byteSource)
           metaBackend createUnchecked(targetid, source.getName, Some(source.lastModified()), Some(dataid))
         } else { }
       } else { }

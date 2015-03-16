@@ -66,12 +66,10 @@ class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend) extends
 
 class RepositoryReadWrite(metaBackend: MetaBackend, dataBackend: DataBackend, freeRanges: FreeRanges, hashAlgorithm: String, storeMethod: Int, parallel: Int) extends Repository(metaBackend, dataBackend) {
 
-  // FIXME make protected
   val storeLogic: StoreLogicBackend = new StoreLogic(metaBackend, dataBackend.write, freeRanges, hashAlgorithm, storeMethod, parallel)
 
   override def close(): Unit = { log.warnOnException(storeLogic close()); super.close() }
 
-  // FIXME usage?
   def createUnchecked(parent: Long, name: String, time: Long, source: Option[Source] = None): Long =
     metaBackend.createUnchecked(parent, name, Some(time), source map storeLogic.dataidFor)
 
