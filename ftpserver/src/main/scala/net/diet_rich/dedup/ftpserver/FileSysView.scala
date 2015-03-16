@@ -1,13 +1,16 @@
 package net.diet_rich.dedup.ftpserver
 
+import net.diet_rich.dedup.util.Logging
 import org.apache.ftpserver.ftplet.{FtpFile, FileSystemView}
 
-import net.diet_rich.dedup.core.{RepositoryReadWrite$, Repository}
+import net.diet_rich.dedup.core.Repository
 import net.diet_rich.dedup.core.meta.rootEntry
 
-case class FileSysView[R <: Repository](repository: R, maxBytesToCache: Int) extends FileSystemView {
+case class FileSysView[R <: Repository](repository: R, maxBytesToCache: Int) extends FileSystemView with Logging {
   protected val repoFiles = new RepoFiles(repository, maxBytesToCache)
   import repoFiles._
+
+  log info "created ftp dedup file system view"
 
   protected val rootDirectory: ActualRepoFile = ActualRepoFile(rootEntry)
   protected var workingDirectory: ActualRepoFile = rootDirectory
@@ -31,7 +34,7 @@ case class FileSysView[R <: Repository](repository: R, maxBytesToCache: Int) ext
       case _ => false
     }
 
-  override def dispose(): Unit = Unit
+  override def dispose(): Unit = log info "closed ftp dedup file system view"
   override def getFile(name: String): FtpFile = resolvePath(name) getOrElse (throw new IllegalArgumentException(s"could not resolve $workingDirectory/$name"))
   override def getHomeDirectory: FtpFile = rootDirectory
   override def getWorkingDirectory: FtpFile = workingDirectory

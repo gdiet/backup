@@ -29,7 +29,7 @@ object Main extends App {
       serverLifeCycle(Repository openReadOnly repositoryDir)
 
     def serverLifeCycle[R <: Repository](repository: R) {
-      val server = ftpServer(FileSysView(repository, maxBytesToCache))
+      val server = ftpServer(() => FileSysView(repository, maxBytesToCache))
       println(s"started dedup ftp server at ftp://localhost${if (ftpPort == 21) "" else s":$ftpPort"}")
       println("write access is " + (if (writable) "ENABLED" else "OFF"))
       println("User: 'user', password: 'user'")
@@ -41,9 +41,9 @@ object Main extends App {
       Thread sleep Long.MaxValue
     }
 
-    def ftpServer(fileSysView: FileSysView[_ <: Repository]): FtpServer = {
+    def ftpServer(fileSysView: () => FileSysView[_ <: Repository]): FtpServer = {
       val listener = init(new ListenerFactory()) { _ setPort ftpPort } createListener()
-      val fileSystemFactory = new FileSystemFactory { override def createFileSystemView (user: User) = fileSysView }
+      val fileSystemFactory = new FileSystemFactory { override def createFileSystemView (user: User) = fileSysView() }
       val userManager = init(new PropertiesUserManagerFactory() createUserManager()) {
         _ save init(new BaseUser()){user => user setName "user"; user setPassword "user"}
       }
