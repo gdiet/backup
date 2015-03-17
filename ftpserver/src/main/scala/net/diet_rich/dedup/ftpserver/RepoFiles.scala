@@ -78,8 +78,8 @@ class RepoFiles[R <: Repository](readAccess: Repository, maxBytesToCache: Int) e
   class ActualRepoFileReadOnly(val treeEntry: TreeEntry) extends ActualRepoFile {
     override def parentid: Long = if (treeEntry == rootEntry) treeEntry.id else treeEntry.parent
     override def child(name: String): Option[ActualRepoFile] = {
-      val children = metaBackend.children(treeEntry id, name)
-      if (children.size > 1) log.warn(s"$treeEntry has multiple children with the same name $name, taking the first")
+      val children = metaBackend children (treeEntry id, name)
+      if (children.size > 1) log warn s"Taking the first of multiple children with the same name $name in $treeEntry, all entries are: $children"
       children.headOption map ActualRepoFile.apply
     }
     override def writeDataid(dataid: Long): Boolean = false

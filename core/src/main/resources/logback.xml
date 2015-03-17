@@ -6,8 +6,21 @@
     </encoder>
   </appender>
 
-  <logger name="net.diet_rich"        level="info"/>
+  <!-- core -->
+  <logger name="net.diet_rich" level="info"/>
+
+  <!-- ftpserver -->
   <logger name="org.apache.ftpserver" level="warn"/>
+
+  <!-- davserver -->
+  <!-- suppress warnings about properties that can't be set, e.g. Win32FileAttributes -->
+  <!-- TODO investigate whether these properties are relevant and how they can be retrieved -->
+  <logger name="io.milton.http.webdav.PropertySourcePatchSetter" level="error"/>
+  <!-- suppress warning from DefaultMiltonConfigurator about missing custom ResourceFactory name -->
+  <logger name="io.milton.servlet.DefaultMiltonConfigurator" level="error"/>
+  <!-- suppress other log messages -->
+  <logger name="io.milton" level="warn"/>
+  <logger name="org.eclipse.jetty" level="warn"/>
 
   <root level="info">
     <appender-ref ref="STDOUT" />
