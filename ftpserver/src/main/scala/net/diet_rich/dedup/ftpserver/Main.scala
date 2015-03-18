@@ -1,6 +1,6 @@
 package net.diet_rich.dedup.ftpserver
 
-import org.apache.ftpserver.{FtpServer, FtpServerFactory}
+import org.apache.ftpserver.FtpServerFactory
 import org.apache.ftpserver.ftplet.{User, FileSystemFactory}
 import org.apache.ftpserver.listener.ListenerFactory
 import org.apache.ftpserver.usermanager.PropertiesUserManagerFactory
@@ -18,42 +18,44 @@ object Main extends App {
 
     val writable = optional("writable") getOrElse "false" toBoolean
     val ftpPort = intOptional("port") getOrElse 21
-    val parallel = intOptional("parallel")
-    val storeMethod = optional("storeMethod") map StoreMethod.named
-    val maxBytesToCache = intOptional("maxBytesToCache") getOrElse 250000000
-    val versionComment = optional("versionComment")
 
-    if (writable)
-      serverLifeCycle(Repository openReadWrite (repositoryDir, storeMethod, parallel, versionComment))
-    else
-      serverLifeCycle(Repository openReadOnly repositoryDir)
-
-    def serverLifeCycle[R <: Repository](repository: R) {
-      val server = ftpServer(() => FileSysView(repository, maxBytesToCache))
-      println(s"started dedup ftp server at ftp://localhost${if (ftpPort == 21) "" else s":$ftpPort"}")
-      println("write access is " + (if (writable) "ENABLED" else "OFF"))
-      println("User: 'user', password: 'user'")
-      sys addShutdownHook {
-        println("dedup ftp server stopping...")
-        server.stop()
-        repository.close()
+    val (repository, fileSystemViewFactory) =
+      if (writable) {
+        val storeMethod = optional("storeMethod") map StoreMethod.named
+        val parallel = intOptional("parallel")
+        val maxBytesToCache = intOptional("maxBytesToCache") getOrElse 250000000
+        val versionComment = optional("versionComment")
+        val repository = Repository openReadWrite (repositoryDir, storeMethod, parallel, versionComment)
+        (repository, () => FileSysViewReadWrite(repository, maxBytesToCache))
       }
-      Thread sleep Long.MaxValue
-    }
-
-    def ftpServer(fileSysView: () => FileSysView[_ <: Repository]): FtpServer = {
-      val listener = init(new ListenerFactory()) { _ setPort ftpPort } createListener()
-      val fileSystemFactory = new FileSystemFactory { override def createFileSystemView (user: User) = fileSysView() }
-      val userManager = init(new PropertiesUserManagerFactory() createUserManager()) {
-        _ save init(new BaseUser()){user => user setName "user"; user setPassword "user"}
+      else {
+        val repository = Repository openReadOnly repositoryDir
+        (repository, () => FileSysViewReadOnly(repository))
       }
-      val server = init(new FtpServerFactory()) { serverFactory =>
-        serverFactory addListener ("default", listener)
-        serverFactory setFileSystem fileSystemFactory
-        serverFactory setUserManager userManager
-      } createServer()
 
-      init(server)(_ start())
+    val listener = init(new ListenerFactory()) { _ setPort ftpPort } createListener()
+    val fileSystemFactory = new FileSystemFactory {
+      override def createFileSystemView (user: User) = fileSystemViewFactory()
     }
+    val userManager = init(new PropertiesUserManagerFactory() createUserManager()) {
+      _ save init(new BaseUser()){user => user setName "user"; user setPassword "user"}
+    }
+    val server = init(new FtpServerFactory()) { serverFactory =>
+      serverFactory addListener ("default", listener)
+      serverFactory setFileSystem fileSystemFactory
+      serverFactory setUserManager userManager
+    } createServer()
+    server.start()
+
+    // FIXME use logging instead of println
+    println(s"started dedup ftp server at ftp://localhost${if (ftpPort == 21) "" else s":$ftpPort"}")
+    println("write access is " + (if (writable) "ENABLED" else "OFF"))
+    println("User: 'user', password: 'user'")
+    sys addShutdownHook {
+      println("dedup ftp server stopping...")
+      server stop()
+      repository close()
+    }
+    Thread sleep Long.MaxValue
   }
 }
