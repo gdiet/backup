@@ -19,7 +19,7 @@ trait RepoFile[R <: Repository] extends FtpFile with Logging {
 
   final def metaBackend: MetaBackend = repository.metaBackend
   final def parent: Option[ActualRepoFile[R]] = metaBackend entry parentid map factory
-  final def pathByParent: String = (metaBackend path parentid getOrElse "???") + "/" + getName
+  final def pathByParent: String = (metaBackend path parentid getOrElse "???") + "/" + getName // FIXME looks like it yields //name for child of root - why doesn't it???
 
   override final def getOwnerName: String = "backup"
   override final def getGroupName: String = "dedup"
@@ -85,8 +85,7 @@ case class VirtualRepoFileReadWrite(repository: RepositoryReadWrite, getName: St
 trait ActualRepoFile[R <: Repository] extends RepoFile[R] {
   def treeEntry: TreeEntry
 
-  // FIXME onlyChild utility instead of headOption
-  final def child(name: String): Option[ActualRepoFile[R]] = (metaBackend children (treeEntry.id, name) headOption) map factory
+  final def child(name: String): Option[ActualRepoFile[R]] = metaBackend childWarn (treeEntry.id, name) map factory
 
   override final def parentid: Long = treeEntry.parent
 
@@ -104,7 +103,7 @@ trait ActualRepoFile[R <: Repository] extends RepoFile[R] {
     val data = treeEntry.data getOrElse (throw new IOException(s"$treeEntry is a directory, not a file"))
     repository read data asInputStream
   }
-  override final def getAbsolutePath: String = if (treeEntry == rootEntry) "/" else pathByParent
+  override final def getAbsolutePath: String = log.call(s"getAbsolutePath for $treeEntry") { if (treeEntry == rootEntry) "/" else pathByParent }
 }
 
 case class ActualRepoFileReadOnly(repository: Repository, treeEntry: TreeEntry)

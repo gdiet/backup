@@ -69,7 +69,7 @@ class BackupAlgorithm(repository: RepositoryReadWrite, checkPrintOption: Option[
     if (source.isDirectory) combine {
       val newParentid = repository createUnchecked (targetid, source.getName, source lastModified())
       source.listFiles().toList.map { child =>
-        val childReference = reference map (_.id) flatMap (metaBackend.children(_, source.getName) headOption)
+        val childReference = reference map (_.id) flatMap (metaBackend.childWarn(_, source.getName))
         backup(child, newParentid, childReference)
       }
     } else Future(reference.fold (backupFile(source, targetid)) (backupFile(source, targetid, _)))

@@ -1,9 +1,11 @@
 package net.diet_rich.dedup.core.meta
 
-import net.diet_rich.dedup.core.StartFin
-import net.diet_rich.dedup.util.now
+import java.io.IOException
 
-trait MetaBackend extends AutoCloseable {
+import net.diet_rich.dedup.core.StartFin
+import net.diet_rich.dedup.util.{Logging, now}
+
+trait MetaBackend extends AutoCloseable with Logging {
   def entry(id: Long): Option[TreeEntry]
   def children(parent: Long): List[TreeEntry]
   def children(parent: Long, name: String): List[TreeEntry]
@@ -36,4 +38,16 @@ trait MetaBackend extends AutoCloseable {
   final def path(id: Long): Option[String] =
     if (id == rootEntry.id) Some(rootPath)
     else entry(id) flatMap {entry => path(entry.parent) map (_ + "/" + entry.name)}
+
+  private def childChecked(parent: Long, name: String, check: => Unit): Option[TreeEntry] =
+    children(parent, name) match {
+      case Nil => None
+      case entry :: rest =>
+        if (rest nonEmpty) check
+        Some(entry)
+    }
+
+  final def childWarn (parent: Long, name: String): Option[TreeEntry] = childChecked(parent, name, log warn s"Tree entry $parent has multiple children with name $name - taking the first one.")
+  // FIXME never used?
+  final def childError(parent: Long, name: String): Option[TreeEntry] = childChecked(parent, name, throw new IOException(s"Tree entry $parent has multiple children with name $name"))
 }
