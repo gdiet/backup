@@ -10,7 +10,7 @@ import net.diet_rich.dedup.core.Repository
 import net.diet_rich.dedup.core.data.StoreMethod
 import net.diet_rich.dedup.util._
 
-object Main extends App {
+object Main extends App with Logging {
   if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else {
     val commandLineUtils = CommandLineUtils(args)
     import commandLineUtils._
@@ -47,12 +47,11 @@ object Main extends App {
     } createServer()
     server.start()
 
-    // FIXME use logging instead of println
-    println(s"started dedup ftp server at ftp://localhost${if (ftpPort == 21) "" else s":$ftpPort"}")
-    println("write access is " + (if (writable) "ENABLED" else "OFF"))
-    println("User: 'user', password: 'user'")
+    log info s"started dedup ftp server at ftp://localhost${if (ftpPort == 21) "" else s":$ftpPort"}"
+    log info s"write access is ${if (writable) "ENABLED" else "OFF"}"
+    log info s"User: 'user', password: 'user'"
     sys addShutdownHook {
-      println("dedup ftp server stopping...")
+      log info s"dedup ftp server stopping..."
       server stop()
       repository close()
     }
