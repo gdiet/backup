@@ -41,11 +41,11 @@ object Main extends App with Logging {
     } createServer()
     server.start()
 
-    log info s"started dedup ftp server at ftp://localhost${if (ftpPort == 21) "" else s":$ftpPort"}"
-    log info s"write access is ${if (writable) "ENABLED" else "OFF"}"
+    log info s"Started dedup ftp server at ftp://localhost${if (ftpPort == 21) "" else s":$ftpPort"}"
+    log info s"Write access is ${if (writable) "ENABLED" else "OFF"}"
     log info s"User: 'user', password: 'user'"
     sys addShutdownHook {
-      log info s"dedup ftp server stopping..."
+      log info s"Dedup ftp server stopping..."
       server stop()
       repository close()
     }
