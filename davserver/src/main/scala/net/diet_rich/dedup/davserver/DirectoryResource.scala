@@ -4,28 +4,24 @@ import java.util.{List => ListJ}
 
 import scala.collection.JavaConverters.seqAsJavaListConverter
 
-import io.milton.resource.{CollectionResource, Resource}
+import io.milton.resource.{PropFindableResource, DigestResource, CollectionResource, Resource}
 
 import net.diet_rich.dedup.core.meta.{TreeEntry, MetaBackend}
 
+trait DirectoryResource extends DigestResource with PropFindableResource with CollectionResource
+
 // TODO have a look at FolderResource
-class DirectoryResourceReadOnly(val treeEntry: TreeEntry, resourceFactory: TreeEntry => Resource, metaBackend: MetaBackend) extends AbstractResource with CollectionResource {
+class DirectoryResourceReadOnly(val treeEntry: TreeEntry, resourceFactory: TreeEntry => Resource, metaBackend: MetaBackend) extends AbstractResource with DirectoryResource {
   override val writeEnabled = false
 
   override final def child(childName: String): Resource = log.call(s"child(childName: '$childName')") {
     metaBackend childWarn(treeEntry.id, childName) map resourceFactory orNull
   }
   override final def getChildren: ListJ[_ <: Resource] = log.call("getChildren") {
-    // FIXME check for name duplicates - utiltiy method needed, use it in the rest of the project as well
-    metaBackend.children(treeEntry.id).map(resourceFactory).asJava
+    metaBackend.childrenWarn(treeEntry.id).map(resourceFactory).asJava
   }
 }
 
-//object DirectoryResource {
-//  // FIXME usage?
-//  def unapply(directoryResource: DirectoryResource): Option[(Repository, TreeEntry)] = Some(directoryResource.repository, directoryResource.treeEntry)
-//}
-//
 //trait DirectoryWriteResource extends DeletableCollectionResource with AbstractWriteResource with MakeCollectionableResource with PutableResource { _: DirectoryResource =>
 //  import repository.metaBackend
 //
@@ -42,6 +38,3 @@ class DirectoryResourceReadOnly(val treeEntry: TreeEntry, resourceFactory: TreeE
 //    resourceFactory resourceFromTreeEntry newEntry
 //  }
 //}
-//
-//case class DirectoryResourceReadOnly[R <: Repository] (repository: Repository, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory[R]) extends DirectoryResource[R] with AbstractReadResource
-//case class DirectoryResourceReadWrite[R <: Repository](repository: Repository, treeEntry: TreeEntry, resourceFactory: DedupResourceFactory[R]) extends DirectoryResource[R] with DirectoryWriteResource

@@ -18,6 +18,8 @@
   <logger name="io.milton.http.webdav.PropertySourcePatchSetter" level="error"/>
   <!-- suppress warning from DefaultMiltonConfigurator about missing custom ResourceFactory name -->
   <logger name="io.milton.servlet.DefaultMiltonConfigurator" level="error"/>
+  <!-- suppress warning that no method handler for LOCK is available without dav level 2 -->
+  <logger name="io.milton.http.StandardFilter" level="error"/>
   <!-- suppress other log messages -->
   <logger name="io.milton" level="warn"/>
   <logger name="org.eclipse.jetty" level="warn"/>
