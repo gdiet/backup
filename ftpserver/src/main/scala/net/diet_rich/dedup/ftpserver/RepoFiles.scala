@@ -19,7 +19,7 @@ trait RepoFile[R <: Repository] extends FtpFile with Logging {
 
   final def metaBackend: MetaBackend = repository.metaBackend
   final def parent: Option[ActualRepoFile[R]] = metaBackend entry parentid map factory
-  final def pathByParent: String = (metaBackend path parentid getOrElse "???") + "/" + getName // FIXME looks like it yields //name for child of root - why doesn't it???
+  final def pathByParent: String = (metaBackend path parentid getOrElse "???") + "/" + getName
 
   override final def getOwnerName: String = "backup"
   override final def getGroupName: String = "dedup"
