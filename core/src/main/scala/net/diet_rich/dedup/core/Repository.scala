@@ -44,13 +44,13 @@ object Repository {
 class Repository(val metaBackend: MetaBackend, dataBackend: DataBackend) extends AutoCloseable with Logging {
   private val memoryToReserve = 30000000
   require(Memory.reserve(memoryToReserve).isInstanceOf[Memory.Reserved], s"Could not reserve ${memoryToReserve/1000000} MB RAM for repository")
-  log.info("dedup repository created")
+  log.info("Dedup repository opened")
 
   override def close(): Unit = {
     log.warnOnException(metaBackend close())
     log.warnOnException(dataBackend close())
     log.warnOnException(Memory.free(memoryToReserve))
-    log.info("dedup repository shut down")
+    log.info("Dedup repository closed")
   }
 
   def read(dataid: Long): Iterator[Bytes] =

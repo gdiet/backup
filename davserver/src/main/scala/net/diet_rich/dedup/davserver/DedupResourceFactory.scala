@@ -1,30 +1,38 @@
 package net.diet_rich.dedup.davserver
 
 import io.milton.http.ResourceFactory
-import io.milton.resource.Resource
+import io.milton.resource._
 
-import net.diet_rich.dedup.core.Repository
+import net.diet_rich.dedup.core.{Repository, RepositoryReadWrite}
 import net.diet_rich.dedup.core.meta.TreeEntry
-import net.diet_rich.dedup.util.{init, Logging}
+import net.diet_rich.dedup.util.Logging
 
-class DedupResourceFactory[R <: Repository](repository: R) extends ResourceFactory with Logging {
+class DedupResourceFactoryReadOnly(repository: Repository) extends ResourceFactory with Logging {
   import repository.metaBackend
-
+  
   override def getResource(host: String, path: String): Resource = log.call(s"getResource(host: $host, path: $path)") {
     val entries = metaBackend entries path
     if (entries.size > 1) log warn s"Taking the first of multiple entries for path $path, all entries are: $entries"
-    entries.headOption map resourceFromTreeEntry orNull
+    entries.headOption map resource orNull
   }
 
-  def resourceFromTreeEntry(treeEntry: TreeEntry): Resource =
+  def resource(treeEntry: TreeEntry): Resource = // FIXME protected?
     treeEntry.data match {
-      case None => ??? // directoryResourceFactory(fileSystem, treeEntry, this)
-      case Some(dataid) => ??? // fileResourceFactory(fileSystem, treeEntry)
+      case None => directory(treeEntry)
+      case Some(dataid) => file(treeEntry)
     }
 
-//  def directoryResourceFromTreeEntry(treeEntry: TreeEntry): DirectoryResource =
-//    directoryResourceFactory(fileSystem, treeEntry, this)
-//
-//  private val directoryResourceFactory = if (writeEnabled) DirectoryResourceReadWrite.apply _ else DirectoryResourceReadOnly.apply _
-//  private val fileResourceFactory = if (writeEnabled) FileResourceReadWrite.apply _ else FileResourceReadOnly.apply _
+  protected def directory(treeEntry: TreeEntry): DirectoryResource = ???
+  protected def file(treeEntry: TreeEntry): FileResource = ???
+
+  def close() = repository close()
 }
+
+class DedupResourceFactoryReadWrite(repository: RepositoryReadWrite) extends DedupResourceFactoryReadOnly(repository) {
+  override protected def directory(treeEntry: TreeEntry): DirectoryResource = ???
+  override protected def file(treeEntry: TreeEntry): FileResource = ???
+}
+
+trait DirectoryResource extends DigestResource with PropFindableResource with CollectionResource
+
+trait FileResource extends DigestResource with PropFindableResource with GetableResource

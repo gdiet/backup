@@ -11,24 +11,18 @@ import net.diet_rich.dedup.core.data.StoreMethod
 import net.diet_rich.dedup.util._
 
 object Main extends App with Logging {
-  if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else {
-    val commandLineUtils = CommandLineUtils(args)
-    import commandLineUtils._
+  CommandLineUtils.forArgs(args) { argDetails => import argDetails._
     require(command == "ftpserver")
 
-    val writable = optional("writable") getOrElse "false" toBoolean
-    val ftpPort = intOptional("port") getOrElse 21
-
+    val ftpPort = port getOrElse 21
     val (repository, fileSystemViewFactory) =
       if (writable) {
-        val storeMethod = optional("storeMethod") map StoreMethod.named
-        val parallel = intOptional("parallel")
-        val maxBytesToCache = intOptional("maxBytesToCache") getOrElse 250000000
-        val versionComment = optional("versionComment")
+        checkOptionUse(storeMethod, parallel, versionComment, maxBytesToCache)
         val repository = Repository openReadWrite (repositoryDir, storeMethod, parallel, versionComment)
-        (repository, () => FileSysViewReadWrite(repository, maxBytesToCache))
+        (repository, () => FileSysViewReadWrite(repository, maxBytesToCache getOrElse 250000000))
       }
       else {
+        checkOptionUse()
         val repository = Repository openReadOnly repositoryDir
         (repository, () => FileSysViewReadOnly(repository))
       }

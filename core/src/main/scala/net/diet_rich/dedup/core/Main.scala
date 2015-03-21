@@ -1,49 +1,36 @@
 package net.diet_rich.dedup.core
 
-import java.io.File
-
-import net.diet_rich.dedup.core.data.StoreMethod
 import net.diet_rich.dedup.util.{Logging, CommandLineUtils}
 import net.diet_rich.dedup.util.io._
 
 object Main extends App with Logging {
-  if (args.length < 2) println("arguments: <command> <repository> [key:value options]") else {
-    val commandLineUtils = CommandLineUtils(args)
-    import commandLineUtils._
+  CommandLineUtils.forArgs(args) { argDetails => import argDetails._
     command match {
       case "create" =>
-        Repository create (
-          repositoryDir,
-          optional("repositoryid"),
-          optional("hashAlgorithm"),
-          intOptional("storeBlockSize")
-        )
+        checkOptionUse(repositoryid, hashAlgorithm, storeBlockSize)
+        Repository create (repositoryDir, repositoryid, hashAlgorithm, storeBlockSize)
+        log info s"Repository in $repositoryDir created."
 
       case "backup" =>
-        val source = new File(required("source"))
-        val target = required("target")
-        val reference = optional("reference")
-        val versionComment = optional("versionComment")
-        val checkPrint = booleanOptional("checkPrint")
-        val parallel = intOptional("parallel")
-        val storeMethod = optional("storeMethod") map StoreMethod.named
+        checkOptionUse(storeMethod, parallel, versionComment, checkPrint, sourceFile, target, reference)
         using(Repository openReadWrite (repositoryDir, storeMethod, parallel, versionComment)) { repository =>
           wrapInShutdownHook(repository) {
-            using(new BackupAlgorithm(repository, checkPrint, parallel)) { _ backup (source, target, reference) }
+            using(new BackupAlgorithm(repository, checkPrint, parallel)) { _ backup (sourceFile, target, reference) }
           }
         }
+        log info s"Backup of $sourceFile in repository $repositoryDir finished."
 
       case "restore" =>
-        val source = required("source")
-        val target = new File(required("target"))
+        checkOptionUse(source, targetFile)
         require(source != "/", "Cannot restore starting at root")
-        require(target.isDirectory, s"Target $target must be a directory")
-        require(target.listFiles.isEmpty, s"Target directory $target must be empty")
+        require(targetFile.isDirectory, s"Target $targetFile must be a directory")
+        require(targetFile.listFiles.isEmpty, s"Target directory $targetFile must be empty")
         using(Repository openReadOnly repositoryDir) { repository =>
           wrapInShutdownHook(repository) {
-            using(new RestoreAlgorithm(repository)) { _ restore(source, target) }
+            using(new RestoreAlgorithm(repository)) { _ restore(source, targetFile) }
           }
         }
+        log info s"Restore of $source from repository $repositoryDir finished."
 
       case _ => println(s"unknown command $command")
     }
