@@ -45,12 +45,9 @@ trait RepoFileWriteFile extends RepoFile[RepositoryReadWrite] {
 
   override final def factory = ActualRepoFileReadWrite(repository, _: TreeEntry, maxBytesToCache)
 
-  final def outputStream(offset: Long): OutputStream = log.call(s"createOutputStream: $parentid/$getName") {
+  final def outputStream(offset: Long, whenWritten: Long => Unit): OutputStream = log.call(s"createOutputStream: $parentid/$getName") {
     if (offset != 0) throw new IOException("not random accessible")
-    new CachingOutputStream(maxBytesToCache, source => {
-      val dataid = storeLogic.dataidFor(source)
-      metaBackend create (parentid, getName, dataid = Some(dataid))
-    })
+    new CachingOutputStream(maxBytesToCache, source => whenWritten(storeLogic dataidFor source))
   }
 }
 
@@ -79,7 +76,9 @@ case class VirtualRepoFileReadWrite(repository: RepositoryReadWrite, getName: St
   override def move(destination: FtpFile): Boolean = false
   override def setLastModified(time: Long): Boolean = false
   override def mkdir(): Boolean = log.call(s"mkdir $getName in $parentid") { metaBackend.create(parentid, getName); true }
-  override def createOutputStream(offset: Long): OutputStream = outputStream(offset)
+  override def createOutputStream(offset: Long): OutputStream = outputStream(offset, {
+    dataid => metaBackend create (parentid, getName, dataid = Some(dataid))
+  })
 }
 
 trait ActualRepoFile[R <: Repository] extends RepoFile[R] {
@@ -112,11 +111,13 @@ case class ActualRepoFileReadOnly(repository: Repository, treeEntry: TreeEntry)
 case class ActualRepoFileReadWrite(repository: RepositoryReadWrite, treeEntry: TreeEntry, maxBytesToCache: Int)
   extends ActualRepoFile[RepositoryReadWrite] with RepoFileWriteFile {
   override def isWritable: Boolean = treeEntry != rootEntry
+  override def isRemovable: Boolean = isWritable
   override def mkdir(): Boolean = false
-  override def isRemovable: Boolean = treeEntry != rootEntry
   override def createOutputStream(offset: Long): OutputStream = {
     if (treeEntry == rootEntry) throw new IOException(s"cannot write to root entry")
-    outputStream(offset)
+    outputStream(offset, {
+      dataid => metaBackend change (treeEntry.id, parentid, getName, Some(now), Some(dataid))
+    })
   }
   override def setLastModified(time: Long): Boolean = log.call(s"setLastModified: $treeEntry") {
     treeEntry != rootEntry && metaBackend.change(treeEntry id, parentid, treeEntry name, Some(time), treeEntry data)
