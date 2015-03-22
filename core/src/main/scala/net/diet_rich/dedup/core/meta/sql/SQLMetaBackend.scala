@@ -13,12 +13,16 @@ class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
 
   require(entry(rootEntry.id) == Some(rootEntry))
 
+  private def writeCheck[T](id: Long)(body: T): T =
+    if (id == rootEntry.id) throw new IOException("Root entry is read-only") else inTransaction(body)
+
   override def entry(id: Long): Option[TreeEntry] = treeEntryForIdQuery(id).firstOption
   override def children(parent: Long): List[TreeEntry] = treeChildrenNotDeletedForParentQuery(parent).list
   override def children(parent: Long, name: String): List[TreeEntry] = treeChildrenNotDeletedForParentAndNameQuery(parent, name).list
   override def entries(path: String): List[TreeEntry] =
     pathElements(path).foldLeft(List(rootEntry)){(nodes, name) => nodes.flatMap(node => children(node.id, name))}
   override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
+    if (parent == rootEntry.parent) throw new IOException("Cannot create a sibling of the root entry")
     init(nextTreeEntryIdQuery.first)(createTreeEntryUpdate(_, parent, name, changed, dataid).execute)
   }
   override def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
@@ -46,10 +50,11 @@ class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
     }
   }
 
-  override def change(id: Long, newParent: Long, newName: String, newChanged: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]): Boolean = inTransaction {
+  override def change(id: Long, newParent: Long, newName: String, newChanged: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]): Boolean = writeCheck(id) {
     updateTreeEntryUpdate(newParent, newName, newChanged, newData, newDeletionTime, id).first == 1
   }
-  override def markDeleted(id: Long, deletionTime: Option[Long]): Boolean = inTransaction {
+  override def markDeleted(id: Long, deletionTime: Option[Long]): Boolean = writeCheck(id) {
+    // FIXME make root node read-only here
     // TODO purge tool that propagates deletion to children and then frees space
     setTreeEntryDeletedUpdate(deletionTime, id).first == 1
   }
