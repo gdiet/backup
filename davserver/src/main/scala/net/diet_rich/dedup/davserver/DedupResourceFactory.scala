@@ -16,19 +16,20 @@ class DedupResourceFactoryReadOnly(repository: Repository) extends ResourceFacto
     entries.headOption map resource orNull
   }
 
-  protected def resource(treeEntry: TreeEntry): Resource =
+  final def resource(treeEntry: TreeEntry): Resource =
     treeEntry.data match {
       case None => directory(treeEntry)
       case Some(dataid) => file(treeEntry)
     }
 
-  protected def directory(treeEntry: TreeEntry): DirectoryResource = new DirectoryResourceReadOnly(treeEntry, resource, metaBackend)
+  // FIXME not final - use traits?
+  def directory(treeEntry: TreeEntry): DirectoryResource = new DirectoryResourceReadOnly(treeEntry, resource, metaBackend)
   protected def file(treeEntry: TreeEntry): FileResource = new FileResourceReadOnly(treeEntry, repository)
 
   def close() = repository close()
 }
 
 class DedupResourceFactoryReadWrite(repository: RepositoryReadWrite) extends DedupResourceFactoryReadOnly(repository) {
-  override protected def directory(treeEntry: TreeEntry): DirectoryResource = ???
+  override def directory(treeEntry: TreeEntry): DirectoryResource = new DirectoryResourceReadWrite(treeEntry, this, repository)
   override protected def file(treeEntry: TreeEntry): FileResource = ???
 }

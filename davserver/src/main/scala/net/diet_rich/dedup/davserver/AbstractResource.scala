@@ -2,16 +2,18 @@ package net.diet_rich.dedup.davserver
 
 import java.util.Date
 
+import io.milton.http.exceptions.BadRequestException
 import io.milton.http.{Auth, Request}
 import io.milton.http.http11.auth.DigestResponse
-import io.milton.resource.{DigestResource, PropFindableResource}
-import net.diet_rich.dedup.core.meta.TreeEntry
+import io.milton.resource._
+import net.diet_rich.dedup.core.RepositoryReadWrite
+import net.diet_rich.dedup.core.meta.{rootEntry, TreeEntry}
 
 import net.diet_rich.dedup.util.Logging
 
 trait AbstractResource extends DigestResource with PropFindableResource with Logging {
   val treeEntry: TreeEntry
-  val writeEnabled: Boolean
+  def writeEnabled: Boolean
 
   // DigestResource
   override final def authenticate(digestRequest: DigestResponse): Object = log.call(s"authenticate(digestRequest: '$digestRequest')") { digestRequest getUser() }
@@ -30,19 +32,24 @@ trait AbstractResource extends DigestResource with PropFindableResource with Log
   override final def getUniqueId: String = log.call("getUniqueId") { null }
 }
 
-//trait AbstractWriteResource extends DeletableResource with MoveableResource { _: AbstractResource =>
-//  val writeAccess: RepositoryReadWrite
-//
-//  override final def delete(): Unit = { log info s"deleting $treeEntry"; if (!writeAccess.metaBackend.markDeleted(treeEntry id)) log warn s"could not mark deleted $treeEntry" }
-//
-//  override final def moveTo(destination: CollectionResource, newName: String): Unit = log.call(s"moveTo(destination: $destination, newName: $newName)") {
-//    if (newName.isEmpty) throw new BadRequestException("Rename not possible: New name is empty.")
-//    if (newName matches ".*[\\?\\*\\/\\\\].*") throw new BadRequestException(s"Rename not possible: New name '$newName' contains illegal characters, one of [?*/\\].")
-//    destination match {
-//// FIXME
-////      case DirectoryResource(`fileSystem`, directory) =>
-////        if (fileSystem.change(treeEntry id, directory id, newName, treeEntry changed, treeEntry data).isEmpty) log warn s"Could not move $treeEntry to $directory."
-//      case other => throw new BadRequestException(s"Can't move $this to $other.")
-//    }
-//  }
-//}
+trait AbstractWriteResource extends AbstractResource with DeletableResource with MoveableResource with Logging {
+  override def writeEnabled = true
+  val repository: RepositoryReadWrite
+
+  override final def delete(): Unit = log.call(s"delete $treeEntry") {
+    if (!repository.metaBackend.markDeleted(treeEntry id)) log warn s"could not mark deleted $treeEntry"
+  }
+
+  override final def moveTo(destination: CollectionResource, newName: String): Unit = log.call(s"moveTo(destination: $destination, newName: $newName)") {
+    if (treeEntry == rootEntry) throw new BadRequestException("Cannot move the root entry.")
+    if (newName.isEmpty) throw new BadRequestException("Rename not possible: New name is empty.")
+    // FIXME exclude special characters in names in SQL meta backend
+    if (newName matches ".*[\\?\\*\\/\\\\].*") throw new BadRequestException(s"Rename not possible: New name '$newName' contains illegal characters, one of [?*/\\].")
+    destination match {
+      case DirectoryResourceReadWrite(directory, _, _) =>
+        if (!repository.metaBackend.change(treeEntry id, directory id, newName, treeEntry changed, treeEntry data))
+          throw new BadRequestException(s"Could not move $treeEntry to $directory.")
+      case other => throw new BadRequestException(s"Can't move $this to $other.")
+    }
+  }
+}

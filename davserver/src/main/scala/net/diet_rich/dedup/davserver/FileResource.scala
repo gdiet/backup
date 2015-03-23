@@ -13,7 +13,7 @@ import net.diet_rich.dedup.core.meta.TreeEntry
 trait FileResource extends DigestResource with PropFindableResource with GetableResource
 
 class FileResourceReadOnly(val treeEntry: TreeEntry, repository: Repository) extends AbstractResource with FileResource {
-  override val writeEnabled: Boolean = false // FIXME use enum
+  override def writeEnabled: Boolean = false // FIXME use enum
 
   // Cache for 24 hours. If we have problems with outdated content cached in read/write mode,
   // this is the place to look first. (return null if caching is not allowed.)
