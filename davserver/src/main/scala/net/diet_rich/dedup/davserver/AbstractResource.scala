@@ -24,7 +24,7 @@ trait AbstractResource extends DigestResource with PropFindableResource with Log
 
   // Resource
   override final def authenticate(user: String, password: String): Object = log.call(s"authenticate(user: '$user', password: '$password')") { user }
-  override final def authorise(request: Request, method: Request.Method, auth: Auth): Boolean = log.call(s"authorise(request: '$request', method: '$method', auth: '$auth')") { !writeEnabled || !method.isWrite }
+  override final def authorise(request: Request, method: Request.Method, auth: Auth): Boolean = log.call(s"authorise(request: '$request', method: '$method', auth: '$auth')") { writeEnabled || !method.isWrite }
   override final def checkRedirect(request: Request): String = log.call(s"checkRedirect(request: '$request')") { null }
   override final def getModifiedDate: Date = log.call("getModifiedDate") { treeEntry.changed map (new Date(_)) getOrElse new Date() }
   override final def getName: String = log.call("getName") { treeEntry.name }
