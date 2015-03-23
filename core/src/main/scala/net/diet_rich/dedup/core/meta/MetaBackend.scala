@@ -3,7 +3,7 @@ package net.diet_rich.dedup.core.meta
 import java.io.IOException
 
 import net.diet_rich.dedup.core.StartFin
-import net.diet_rich.dedup.util.{Logging, now}
+import net.diet_rich.dedup.util.{Logging, someNow}
 
 trait MetaBackend extends AutoCloseable with Logging {
   def entry(id: Long): Option[TreeEntry]
@@ -11,12 +11,12 @@ trait MetaBackend extends AutoCloseable with Logging {
   def children(parent: Long, name: String): List[TreeEntry]
   def entries(path: String): List[TreeEntry]
 
-  def createUnchecked(parent: Long, name: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): Long
-  def create(parent: Long, name: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): Long
-  def createWithPath(path: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): Long
-  def createOrReplace(parent: Long, name: String, changed: Option[Long] = Some(now), dataid: Option[Long] = None): Long
+  def createUnchecked(parent: Long, name: String, changed: Option[Long] = someNow, dataid: Option[Long] = None): Long
+  def create(parent: Long, name: String, changed: Option[Long] = someNow, dataid: Option[Long] = None): Long
+  def createWithPath(path: String, changed: Option[Long] = someNow, dataid: Option[Long] = None): Long
+  def createOrReplace(parent: Long, name: String, changed: Option[Long] = someNow, dataid: Option[Long] = None): Long
   def change(id: Long, newParent: Long, newName: String, newChanged: Option[Long], newData: Option[Long], newDeletionTime: Option[Long] = None): Boolean
-  def markDeleted(id: Long, deletionTime: Option[Long] = Some(now)): Boolean
+  def markDeleted(id: Long, deletionTime: Option[Long] = someNow): Boolean
 
   def dataEntry(dataid: Long): Option[DataEntry]
   def sizeOf(dataid: Long): Option[Long]

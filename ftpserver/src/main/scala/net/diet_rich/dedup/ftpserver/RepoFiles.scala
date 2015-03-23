@@ -9,7 +9,7 @@ import org.apache.ftpserver.ftplet.FtpFile
 
 import net.diet_rich.dedup.core.{RepositoryReadWrite, Repository}
 import net.diet_rich.dedup.core.meta.{MetaBackend, rootEntry, TreeEntry}
-import net.diet_rich.dedup.util.{Logging, now}
+import net.diet_rich.dedup.util.{Logging, now, someNow}
 
 // TODO utility to clean up orphan data entries and orphan byte store entries
 trait RepoFile[R <: Repository] extends FtpFile with Logging {
@@ -116,7 +116,7 @@ case class ActualRepoFileReadWrite(repository: RepositoryReadWrite, treeEntry: T
   override def createOutputStream(offset: Long): OutputStream = {
     if (treeEntry == rootEntry) throw new IOException(s"cannot write to root entry")
     outputStream(offset, {
-      dataid => metaBackend change (treeEntry.id, parentid, getName, Some(now), Some(dataid))
+      dataid => metaBackend change (treeEntry.id, parentid, getName, someNow, Some(dataid))
     })
   }
   override def setLastModified(time: Long): Boolean = log.call(s"setLastModified: $treeEntry") {
