@@ -11,7 +11,7 @@ class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
   import SQLMetaBackend._
   private implicit def session: CurrentSession = sessionFactory.session
 
-  require(entry(rootEntry.id) == Some(rootEntry))
+  require(entry(rootEntry.id) == Some(rootEntry), s"The root entry ${entry(rootEntry.id)} seems corrupt, it was expected to be $rootEntry.")
 
   private def writeCheck[T](id: Long)(body: T): T =
     if (id == rootEntry.id) throw new IOException("Root entry is read-only") else inTransaction(body)

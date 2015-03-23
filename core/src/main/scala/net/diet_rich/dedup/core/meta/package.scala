@@ -10,7 +10,7 @@ package object meta {
   val metaVersionValue      = "2.1"
   val metaHashAlgorithmKey  = "hash algorithm"
 
-  val rootEntry = TreeEntry(0L, -1L, "")
+  val rootEntry = TreeEntry(0L, -1L, "", None)
   val rootPath = ""
   val separator = "/"
   def pathElements(path: String) = {
