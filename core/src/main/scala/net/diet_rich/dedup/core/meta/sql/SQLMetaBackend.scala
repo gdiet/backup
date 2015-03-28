@@ -34,14 +34,14 @@ class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
   override def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
     val elements = pathElements(path)
     if (elements.size == 0) throw new IOException("can't create the root entry")
-    val parent = elements.dropRight(1).foldLeft(rootEntry.id) { (node, childName) =>
+    val parentid = elements.dropRight(1).foldLeft(rootEntry.id) { (node, childName) =>
       children(node) filter (_.name == childName) match {
         case Nil => createUnchecked(node, childName, changed, None)
         case List(entry) => entry.id
         case entries => throw new IOException(s"ambiguous path; §entries")
       }
     }
-    create(parent, elements.last, changed, dataid)
+    create(parentid, elements.last, changed, dataid)
   }
   override def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
     children(parent) find (_.name == name) match {
@@ -54,7 +54,6 @@ class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
     updateTreeEntryUpdate(newParent, newName, newChanged, newData, newDeletionTime, id).first == 1
   }
   override def markDeleted(id: Long, deletionTime: Option[Long]): Boolean = writeCheck(id) {
-    // FIXME make root node read-only here
     // TODO purge tool that propagates deletion to children and then frees space
     setTreeEntryDeletedUpdate(deletionTime, id).first == 1
   }

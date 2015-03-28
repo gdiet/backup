@@ -14,7 +14,7 @@ package object meta {
   val rootPath = ""
   val separator = "/"
   def pathElements(path: String) = {
-    require(path == "" || path.startsWith("/"), s"malformed path: $path")
+    require(path == rootPath || path.startsWith(separator), s"malformed path: $path")
     path split separator drop 1
   }
 }
