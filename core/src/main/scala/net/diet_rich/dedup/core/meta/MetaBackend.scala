@@ -39,22 +39,15 @@ trait MetaBackend extends AutoCloseable with Logging {
     if (id == rootEntry.id) Some(rootPath)
     else entry(id) flatMap {entry => path(entry.parent) map (_ + "/" + entry.name)}
 
-  private def childrenWarning(parent: Long, name: String) = log warn s"Tree entry $parent has multiple children with name $name - taking the first one."
-  private def childChecked(parent: Long, name: String, check: => Unit): Option[TreeEntry] =
-    children(parent, name) match {
-      case Nil => None
-      case entry :: rest =>
-        if (rest nonEmpty) check
-        Some(entry)
-    }
+  private def firstChild(parent: Long, name: String, children: List[TreeEntry]): Option[TreeEntry] = {
+    if (children.size > 1)
+      log warn s"Tree entry $parent has multiple children with name $name - taking the first one."
+    children.headOption
+  }
 
-  final def childWarn (parent: Long, name: String): Option[TreeEntry] = childChecked(parent, name, childrenWarning(parent, name))
+  final def childWarn (parent: Long, name: String): Option[TreeEntry] =
+    firstChild(parent, name, children(parent, name))
+
   final def childrenWarn(parent: Long): List[TreeEntry] =
-    children(parent) groupBy (_ name) flatMap { case (name, entries) =>
-      if (entries.size > 1) childrenWarning(parent, name)
-      entries.headOption
-    } toList
-
-  // FIXME never used?
-  final def childError(parent: Long, name: String): Option[TreeEntry] = childChecked(parent, name, throw new IOException(s"Tree entry $parent has multiple children with name $name"))
+    children(parent) groupBy (_ name) flatMap { case (name, children) => firstChild(parent, name, children) } toList
 }
