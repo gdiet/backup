@@ -31,5 +31,5 @@ class DedupResourceFactoryReadOnly(repository: Repository) extends ResourceFacto
 
 class DedupResourceFactoryReadWrite(repository: RepositoryReadWrite) extends DedupResourceFactoryReadOnly(repository) {
   override def directory(treeEntry: TreeEntry): DirectoryResource = new DirectoryResourceReadWrite(treeEntry, this, repository)
-  override protected def file(treeEntry: TreeEntry): FileResource = ???
+  override protected def file(treeEntry: TreeEntry): FileResource = new FileResourceReadOnly(treeEntry, repository) // ???
 }

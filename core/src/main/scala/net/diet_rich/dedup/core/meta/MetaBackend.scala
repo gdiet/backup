@@ -1,7 +1,5 @@
 package net.diet_rich.dedup.core.meta
 
-import java.io.IOException
-
 import net.diet_rich.dedup.core.StartFin
 import net.diet_rich.dedup.util.{Logging, someNow}
 

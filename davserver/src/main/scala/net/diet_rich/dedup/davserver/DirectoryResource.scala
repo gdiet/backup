@@ -33,7 +33,7 @@ case class DirectoryResourceReadWrite(treeEntry: TreeEntry, resourceFactory: Ded
   extends AbstractWriteResource with DirectoryResource with DeletableCollectionResource with MakeCollectionableResource with PutableResource {
   override def metaBackend: MetaBackend = repository.metaBackend
   override def makeResource: TreeEntry => Resource = resourceFactory.resource
-  override val writeEnabled: Boolean = true
+  override val writeEnabled: Boolean = true // FIXME already in AbstractWriteResource
 
   override def isLockedOutRecursive(request: Request): Boolean = false
 
