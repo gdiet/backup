@@ -159,7 +159,7 @@ The store process itself should be tested $todo
   maybe not before specs 3.0
   }
    */
-  def memoryFreedPreloaded: org.specs2.execute.Result = if (!sys.env.contains("tests.include.longRunning")) skipped("- to include this test, set tests.include.longRunning") else {
+  def memoryFreedPreloaded: org.specs2.execute.Result = if (!sys.env.contains("tests.include.longRunning")) skipped("- skipped: to include this test, set tests.include.longRunning") else {
     val memoryForTest = 300000000
     def freeMemory = Runtime.getRuntime.maxMemory() - (Runtime.getRuntime.totalMemory() - Runtime.getRuntime.freeMemory())
     require(freeMemory > memoryForTest, s"required free memory $memoryForTest not availabe. Free memory is $freeMemory")

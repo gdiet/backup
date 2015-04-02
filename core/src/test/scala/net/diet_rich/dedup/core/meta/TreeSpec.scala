@@ -2,7 +2,7 @@ package net.diet_rich.dedup.core.meta
 
 import org.specs2.Specification
 
-class TreeSpec extends Specification with MetaMatchers { def is = s2"""
+class TreeSpec extends Specification with MetaMatchers with MetaUtils { def is = s2"""
 ${"Tests for the file system tree".title}
 
 The root node should be a directory $rootIsDirectory
@@ -13,39 +13,33 @@ Creating a child where a deleted child with the same name already exists should 
 Creating paths should succeed even if they already exist partially $createPaths
 """
 
-  private def withEmptyTree[T] (f: MetaBackend => T): T = {
-    val sessionFactory = sql.Testutil.memoryDB
-    sql.DBUtilities.createTables("MD5")(sessionFactory.session)
-    f(new sql.SQLMetaBackend(sessionFactory))
-  }
-
-  def rootIsDirectory = withEmptyTree { tree =>
+  def rootIsDirectory = withEmptyMetaBackend { tree =>
     tree.entries("") should contain(exactly(haveNoData))
   }
 
-  def createAndCheckDirectory = withEmptyTree { tree =>
+  def createAndCheckDirectory = withEmptyMetaBackend { tree =>
     val child = tree create (rootEntry.id, "child")
     tree.entries("/child") should contain(exactly(haveNoData and haveTheId(child)))
   }
 
-  def pathWithoutTreeEntry = withEmptyTree { tree =>
+  def pathWithoutTreeEntry = withEmptyMetaBackend { tree =>
     tree create (rootEntry.id, "child")
     tree.entries("/child/doesNotExist") should beEmpty
   }
 
-  def createExisting = withEmptyTree { tree =>
+  def createExisting = withEmptyMetaBackend { tree =>
     tree create (rootEntry.id, "child")
     tree create (rootEntry.id, "child") should throwA[java.io.IOException]
   }
 
-  def createReplacement = withEmptyTree { tree =>
+  def createReplacement = withEmptyMetaBackend { tree =>
     val child = tree create (rootEntry.id, "child")
     tree markDeleted child
     val newChild = tree create (rootEntry.id, "child")
     tree.entry(child).get should haveNoData
   }
 
-  def createPaths = withEmptyTree { tree =>
+  def createPaths = withEmptyMetaBackend { tree =>
     tree createWithPath "/some/path"
     tree createWithPath "/some/other/path"
     tree entries "/some" should haveSize(1)

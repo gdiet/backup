@@ -9,21 +9,19 @@ import net.diet_rich.dedup.core.data.Bytes
 import net.diet_rich.dedup.util._
 
 trait Source extends AutoCloseable {
-  def size: Long
+  def size: Long // FIXME only if known
   def read(count: Int): Bytes
   final def allData: Iterator[Bytes] = new Iterator[Bytes] {
     var currentBytes = read(0x8000)
     def hasNext = currentBytes.length > 0
     def next = valueOf(currentBytes) before {currentBytes = read(0x8000)}
   }
-  def close(): Unit
+  def close(): Unit // FIXME why make all sources closable?
 }
 
 trait ResettableSource extends Source {
   def reset: Unit
 }
-
-trait CachedSource extends ResettableSource
 
 object Source {
   private def readBytes(input: (Array[Byte], Int, Int) => Int, length: Int): Bytes = {
@@ -50,14 +48,5 @@ object Source {
     override def size = expectedSize
     override def read(count: Int): Bytes = readBytes(in.read, count)
     override def close() : Unit = in close()
-  }
-
-  def from(data: Array[Byte], offset: Int, length: Int): CachedSource = new CachedSource {
-    var source = newInput
-    def newInput = new ByteArrayInputStream(data, offset, length)
-    override def reset: Unit = { source close(); source = newInput }
-    override def size = length
-    override def read(count: Int): Bytes = readBytes(source.read, count)
-    override def close() : Unit = source close()
   }
 }

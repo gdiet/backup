@@ -6,6 +6,7 @@ import scala.collection.mutable.MutableList
 
 case class Bytes (data: Array[Byte], offset: Int, length: Int) {
   def addOffset(offset: Int) = copy(data, this.offset + offset, length - offset)
+  def asByteArray = data drop offset take length
 }
 
 object Bytes extends ((Array[Byte], Int, Int) => Bytes) {

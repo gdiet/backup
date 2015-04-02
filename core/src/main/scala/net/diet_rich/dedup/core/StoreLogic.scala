@@ -9,6 +9,7 @@ import net.diet_rich.dedup.core.meta.{FreeRanges, MetaBackend}
 import net.diet_rich.dedup.util._
 
 trait StoreLogicBackend extends AutoCloseable {
+  def store(source: Source): Future[Long] // FIXME naming
   def dataidFor(source: Source): Long
   def dataidFor(printData: Bytes, print: Long, source: Source): Long
   def close(): Unit
@@ -18,11 +19,12 @@ class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, fre
                  hashAlgorithm: String, storeMethod: Int, val parallel: Int) extends StoreLogicBackend {
   private val internalStoreLogic = new InternalStoreLogic(metaBackend, writeData, freeRanges, hashAlgorithm, storeMethod)
   private val executor = ThreadExecutors.blockingThreadPoolExecutor(parallel)
-  private val executionContext = ExecutionContext fromExecutorService executor
-  private def resultOf[T] (f: => T): T = Await result (Future(f)(executionContext), 1 day)
+  private implicit val executionContext = ExecutionContext fromExecutorService executor
+  private def resultOf[T] (f: => T): T = Await result (Future(f), 1 day)
 
-  override def dataidFor(source: Source): Long = resultOf { internalStoreLogic dataidFor source }
-  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = resultOf { internalStoreLogic dataidFor (printData, print, source) }
+  override def store(source: Source): Future[Long] = Future(internalStoreLogic dataidFor source)
+  override def dataidFor(source: Source): Long = resultOf(internalStoreLogic dataidFor source)
+  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = resultOf(internalStoreLogic dataidFor (printData, print, source))
   override def close(): Unit = executor close()
 }
 
@@ -42,22 +44,9 @@ trait StoreLogicDataChecks {
 
   def dataidFor(printData: Bytes, print: Long, source: Source): Long = {
     if (metaBackend hasSizeAndPrint (source.size, print))
-      handleCachedSource(printData, print, source)
+      tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
     else
       storeSourceData (printData, print, source.allData, source.size)
-  }
-
-  protected def handleCachedSource(printData: Bytes, print: Long, source: Source): Long = source match {
-    case cached: CachedSource =>
-      val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData
-      val (hash, size) = Hash.calculate(hashAlgorithm, bytes)
-      assert(size == source.size)
-      metaBackend.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
-        cached.reset
-        storeSourceData(source.allData, size, print, hash)
-      }
-    case _ =>
-      tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
   }
 
   protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = Memory.reserved(source.size * 105 / 100) {
@@ -122,7 +111,7 @@ trait StorePackedDataLogic {
   protected def writeData: (Bytes, Long) => Unit
   protected def freeRanges: FreeRanges
 
-  protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges = {
+  protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long /*FIXME not used?*/): Ranges = {
     val (finalProtocol, remaining) = data.foldLeft((RangesNil, Option.empty[StartFin])) { case ((protocol, range), bytes) =>
       assert (bytes.length > 0)
       write(bytes, protocol, range getOrElse freeRanges.nextBlock)

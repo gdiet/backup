@@ -7,7 +7,7 @@ import scala.collection.JavaConversions.seqAsJavaList
 
 import org.apache.ftpserver.ftplet.FtpFile
 
-import net.diet_rich.dedup.core.{RepositoryReadWrite, Repository}
+import net.diet_rich.dedup.core.{StoreOutputStream, RepositoryReadWrite, Repository}
 import net.diet_rich.dedup.core.meta.{MetaBackend, rootEntry, TreeEntry}
 import net.diet_rich.dedup.util.{Logging, now, someNow}
 
@@ -47,7 +47,7 @@ trait RepoFileWriteFile extends RepoFile[RepositoryReadWrite] {
 
   final def outputStream(offset: Long, whenWritten: Long => Unit): OutputStream = log.call(s"createOutputStream: $parentid/$getName") {
     if (offset != 0) throw new IOException("not random accessible")
-    new CachingOutputStream(maxBytesToCache, source => whenWritten(storeLogic dataidFor source))
+    new StoreOutputStream(storeLogic, whenWritten)
   }
 }
 
@@ -113,7 +113,7 @@ case class ActualRepoFileReadWrite(repository: RepositoryReadWrite, treeEntry: T
   override def isWritable: Boolean = treeEntry != rootEntry
   override def isRemovable: Boolean = isWritable
   override def mkdir(): Boolean = false
-  override def createOutputStream(offset: Long): OutputStream = {
+  override def createOutputStream(offset: Long): OutputStream = { // FIXME duplicate code with VirtualRepoFile
     if (treeEntry == rootEntry) throw new IOException(s"cannot write to root entry")
     outputStream(offset, {
       dataid => metaBackend change (treeEntry.id, parentid, getName, someNow, Some(dataid))
