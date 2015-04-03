@@ -70,10 +70,10 @@ class RepositoryReadWrite(metaBackend: MetaBackend, dataBackend: DataBackend, fr
 
   override def close(): Unit = { log.warnOnException(storeLogic close()); super.close() }
 
-  def createUnchecked(parent: Long, name: String, time: Long, source: Option[Source] = None): Long =
+  def createUnchecked(parent: Long, name: String, time: Long, source: Option[SizedSource] = None): Long =
     metaBackend.createUnchecked(parent, name, Some(time), source map storeLogic.dataidFor)
 
-  def create(parent: Long, name: String, source: Option[Source] = None, time: Option[Long] = someNow): Long = metaBackend.inTransaction {
+  def create(parent: Long, name: String, source: Option[SizedSource] = None, time: Option[Long] = someNow): Long = metaBackend.inTransaction {
     init(metaBackend.create(parent, name, time)) { id =>
       try {
         if (!metaBackend.change(id, parent, name, time, source map storeLogic.dataidFor))
@@ -86,6 +86,6 @@ class RepositoryReadWrite(metaBackend: MetaBackend, dataBackend: DataBackend, fr
     }
   }
 
-  def createOrReplace(parent: Long, name: String, source: Option[Source] = None, time: Option[Long] = someNow): Long =
+  def createOrReplace(parent: Long, name: String, source: Option[SizedSource] = None, time: Option[Long] = someNow): Long =
     metaBackend.createOrReplace(parent, name, time, source map storeLogic.dataidFor)
 }

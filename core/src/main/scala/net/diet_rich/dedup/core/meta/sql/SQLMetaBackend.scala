@@ -65,7 +65,8 @@ class SQLMetaBackend(sessionFactory: SessionFactory) extends MetaBackend {
   override def createDataTableEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = createDataEntryUpdate(reservedid, size, print, hash, storeMethod).execute
   override def nextDataid: Long = nextDataEntryIdQuery.first
 
-  override def hasSizeAndPrint(size: Long, print: Long): Boolean = dataEntriesNumberForSizePrintQuery(size, print).first > 0
+  override def dataEntryExists(print: Long): Boolean = dataEntriesNumberForPrintQuery(print).first > 0
+  override def dataEntryExists(size: Long, print: Long): Boolean = dataEntriesNumberForSizePrintQuery(size, print).first > 0
   override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = dataEntriesForSizePrintHashQuery(size, print, hash).list
 
   override def storeEntries(dataid: Long): List[(Long, Long)] = storeEntriesForIdQuery(dataid).list
@@ -89,7 +90,6 @@ object SQLMetaBackend {
   // TreeEntries
   private val selectFromTreeEntries = "SELECT id, parent, name, changed, dataid, deleted FROM TreeEntries"
   private val treeEntryForIdQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE id = ?;")
-  private val treeChildrenForParentQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE parent = ?;")
   private val treeChildrenNotDeletedForParentQuery = StaticQuery.query[Long, TreeEntry](s"$selectFromTreeEntries WHERE parent = ? AND deleted IS NULL;")
   private val treeChildrenNotDeletedForParentAndNameQuery = StaticQuery.query[(Long, String), TreeEntry](s"$selectFromTreeEntries WHERE parent = ? AND name = ? AND deleted IS NULL;")
   private val nextTreeEntryIdQuery = StaticQuery.queryNA[Long]("SELECT NEXT VALUE FOR treeEntriesIdSeq;")
@@ -100,6 +100,7 @@ object SQLMetaBackend {
   // DataEntries
   private val selectFromDataEntries = "SELECT id, length, print, hash, method FROM DataEntries"
   private val dataEntryForIdQuery = StaticQuery.query[Long, DataEntry](s"$selectFromDataEntries WHERE id = ?;")
+  private val dataEntriesNumberForPrintQuery = StaticQuery.query[Long, Long](s"SELECT count(id) FROM DataEntries WHERE print = ?;")
   private val dataEntriesNumberForSizePrintQuery = StaticQuery.query[(Long, Long), Long](s"SELECT count(id) FROM DataEntries WHERE length = ? AND print = ?;")
   private val dataEntriesForSizePrintHashQuery = StaticQuery.query[(Long, Long, Array[Byte]), DataEntry](s"$selectFromDataEntries WHERE length = ? AND print = ? AND hash = ?;")
   private val nextDataEntryIdQuery = StaticQuery.queryNA[Long]("SELECT NEXT VALUE FOR dataEntriesIdSeq;")

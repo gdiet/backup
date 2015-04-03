@@ -9,7 +9,6 @@ import net.diet_rich.dedup.core.data.Bytes
 import net.diet_rich.dedup.util._
 
 trait Source {
-  def size: Long // FIXME only if known
   def read(count: Int): Bytes
   final def allData: Iterator[Bytes] = new Iterator[Bytes] {
     var currentBytes = read(0x8000)
@@ -18,7 +17,11 @@ trait Source {
   }
 }
 
-trait FileLikeSource extends Source with AutoCloseable {
+trait SizedSource extends Source {
+  def size: Long // FIXME only if known
+}
+
+trait FileLikeSource extends SizedSource with AutoCloseable {
   def reset: Unit
 }
 
@@ -43,7 +46,7 @@ object Source {
     override def reset: Unit = file seek 0
   }
 
-  def from(in: InputStream, expectedSize: Long): Source = new Source with AutoCloseable {
+  def from(in: InputStream, expectedSize: Long): SizedSource = new SizedSource with AutoCloseable {
     override def size = expectedSize
     override def read(count: Int): Bytes = readBytes(in.read, count)
     override def close() : Unit = in close()

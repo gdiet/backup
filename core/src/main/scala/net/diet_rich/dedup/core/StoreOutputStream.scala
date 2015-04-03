@@ -31,7 +31,7 @@ class StoreOutputStream(storeLogic: StoreLogicBackend, processDataid: Long => Un
 
   protected val dataid = storeLogic futureDataidFor theSource
 
-  object theSource extends Source {
+  object theSource extends SizedSource {
     protected var pool: Option[Array[Byte]] = Some(Array())
     var size: Long = 0 // FIXME size only for sources with known size (different subtypes)
     @annotation.tailrec

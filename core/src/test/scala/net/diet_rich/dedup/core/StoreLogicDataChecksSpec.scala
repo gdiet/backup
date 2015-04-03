@@ -40,7 +40,8 @@ The store process itself should be tested $todo
 
   class MetaStub extends MetaBackend {
     override def entry(id: Long) = ???
-    override def hasSizeAndPrint(size: Long, print: Long): Boolean = ???
+    override def dataEntryExists(print: Long): Boolean = ???
+    override def dataEntryExists(size: Long, print: Long): Boolean = ???
     override def markDeleted(id: Long, deletionTime: Option[Long]) = ???
     override def createDataTableEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int) = ???
     override def dataEntry(dataid: Long) = ???
@@ -67,7 +68,7 @@ The store process itself should be tested $todo
     override def storePackedData(data: Iterator[Bytes]): Ranges = ???
   }
 
-  class SourceStub extends Source {
+  class SourceStub extends SizedSource {
     override def size: Long = ???
     override def read(count: Int): Bytes = ???
   }
@@ -76,7 +77,7 @@ The store process itself should be tested $todo
 
   def sizePrintNotKnown = {
     val meta = new MetaStub {
-      override def hasSizeAndPrint(size: Long, print: Long) = {
+      override def dataEntryExists(size: Long, print: Long) = {
         require(size  == 0L && print == Print.empty, s"size: $size, print: $print")
         false
       }
@@ -91,13 +92,13 @@ The store process itself should be tested $todo
 
   def attemptPreload = {
     val meta = new MetaStub {
-      override def hasSizeAndPrint(size: Long, print: Long) = {
+      override def dataEntryExists(size: Long, print: Long) = {
         require(size  == 0L && print == Print.empty, s"size: $size, print: $print")
         true
       }
     }
     val logic = new LogicStub(meta) {
-      override def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = 43
+      override def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = 43
     }
     logic.dataidFor(emptySource) === 43
   }
@@ -105,7 +106,7 @@ The store process itself should be tested $todo
   def preloadIfMemoryAvailable = {
     val logic = new LogicStub() {
       val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadDataThatMayBeAlreadyKnown _
-      override def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = 44
+      override def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = 44
     }
     logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 0L, emptySource) === 44
   }
@@ -218,7 +219,7 @@ The store process itself should be tested $todo
     }
     val logic = new LogicStub(meta) {
       val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadDataThatMayBeAlreadyKnown _
-      override def storeSourceData(source: Source): Long = 49
+      override def storeSourceData(source: SizedSource): Long = 49
     }
     logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 4321, source) === 49
   }

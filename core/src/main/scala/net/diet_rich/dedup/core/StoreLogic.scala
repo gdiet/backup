@@ -9,9 +9,9 @@ import net.diet_rich.dedup.core.meta.{FreeRanges, MetaBackend}
 import net.diet_rich.dedup.util._
 
 trait StoreLogicBackend extends AutoCloseable {
-  def futureDataidFor(source: Source): Future[Long]
-  def dataidFor(source: Source): Long
-  def dataidFor(printData: Bytes, print: Long, source: Source): Long
+  def futureDataidFor(source: SizedSource): Future[Long]
+  def dataidFor(source: SizedSource): Long
+  def dataidFor(printData: Bytes, print: Long, source: SizedSource): Long
   def close(): Unit
 }
 
@@ -22,9 +22,9 @@ class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, fre
   private implicit val executionContext = ExecutionContext fromExecutorService executor
   private def resultOf[T] (f: => T): T = Await result (Future(f), 1 day)
 
-  override def futureDataidFor(source: Source): Future[Long] = Future(internalStoreLogic dataidFor source)
-  override def dataidFor(source: Source): Long = resultOf(internalStoreLogic dataidFor source)
-  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = resultOf(internalStoreLogic dataidFor (printData, print, source))
+  override def futureDataidFor(source: SizedSource): Future[Long] = Future(internalStoreLogic dataidFor source)
+  override def dataidFor(source: SizedSource): Long = resultOf(internalStoreLogic dataidFor source)
+  override def dataidFor(printData: Bytes, print: Long, source: SizedSource): Long = resultOf(internalStoreLogic dataidFor (printData, print, source))
   override def close(): Unit = executor close()
 }
 
@@ -37,19 +37,19 @@ trait StoreLogicDataChecks {
   val hashAlgorithm: String
   val storeMethod: Int
 
-  def dataidFor(source: Source): Long = {
+  def dataidFor(source: SizedSource): Long = {
     val printData = source read Repository.PRINTSIZE
     dataidFor(printData, Print(printData), source)
   }
 
-  def dataidFor(printData: Bytes, print: Long, source: Source): Long = {
-    if (metaBackend hasSizeAndPrint (source.size, print))
+  def dataidFor(printData: Bytes, print: Long, source: SizedSource): Long = {
+    if (metaBackend dataEntryExists (source.size, print))
       tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
     else
       storeSourceData (printData, print, source.allData)
   }
 
-  protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = Memory.reserved(source.size * 105 / 100) {
+  protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = Memory.reserved(source.size * 105 / 100) {
     case Memory.Reserved    (_) => preloadDataThatMayBeAlreadyKnown(printData, print, source)
     case Memory.NotAvailable(_) => source match {
       case source: FileLikeSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
@@ -57,7 +57,7 @@ trait StoreLogicDataChecks {
     }
   }
 
-  protected def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = {
+  protected def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = {
     val bytes = (printData :: source.allData.toList).to[mutable.MutableList]
     val (hash, size) = Hash calculate (hashAlgorithm, bytes iterator)
     metaBackend.dataEntriesFor(size, print, hash).headOption.map(_.id)
@@ -73,7 +73,7 @@ trait StoreLogicDataChecks {
     }
   }
 
-  protected def storeSourceData(source: Source): Long = {
+  protected def storeSourceData(source: SizedSource): Long = {
     val printData = source read Repository.PRINTSIZE
     storeSourceData(printData, Print(printData), source.allData)
   }
