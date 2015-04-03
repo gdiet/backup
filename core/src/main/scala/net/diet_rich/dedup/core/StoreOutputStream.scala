@@ -1,7 +1,7 @@
 package net.diet_rich.dedup.core
 
 import java.io.{IOException, OutputStream}
-import java.util.concurrent.{SynchronousQueue, Semaphore}
+import java.util.concurrent.ArrayBlockingQueue
 
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
@@ -14,7 +14,8 @@ class StoreOutputStream(storeLogic: StoreLogicBackend, processDataid: Long => Un
   override def write(byte: Int): Unit = write(Array(byte.toByte), 0, 1)
   override def write(data: Array[Byte]): Unit = write(data, 0, data.length)
 
-  protected val transfer = new SynchronousQueue[Bytes]() // FIXME without buffering, this is too slow??
+  // TODO get an estimate of the block size in FTP server and reserve memory. Also, make the buffer size configurable?
+  protected val transfer = new ArrayBlockingQueue[Bytes](8)
   protected var closed = false
   override def write(data: Array[Byte], offset: Int, length: Int): Unit = {
     if (closed) throw new IOException("Output stream is already closed")
