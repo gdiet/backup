@@ -28,7 +28,7 @@ class StoreOutputStream(storeLogic: StoreLogicBackend, processDataid: Long => Un
     processDataid(result)
   }
 
-  protected val dataid = storeLogic store theSource
+  protected val dataid = storeLogic futureDataidFor theSource
 
   object theSource extends Source {
     protected var pool: Option[Array[Byte]] = Some(Array())

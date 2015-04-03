@@ -9,7 +9,7 @@ import net.diet_rich.dedup.core.meta.{FreeRanges, MetaBackend}
 import net.diet_rich.dedup.util._
 
 trait StoreLogicBackend extends AutoCloseable {
-  def store(source: Source): Future[Long] // FIXME naming
+  def futureDataidFor(source: Source): Future[Long]
   def dataidFor(source: Source): Long
   def dataidFor(printData: Bytes, print: Long, source: Source): Long
   def close(): Unit
@@ -22,7 +22,7 @@ class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, fre
   private implicit val executionContext = ExecutionContext fromExecutorService executor
   private def resultOf[T] (f: => T): T = Await result (Future(f), 1 day)
 
-  override def store(source: Source): Future[Long] = Future(internalStoreLogic dataidFor source)
+  override def futureDataidFor(source: Source): Future[Long] = Future(internalStoreLogic dataidFor source)
   override def dataidFor(source: Source): Long = resultOf(internalStoreLogic dataidFor source)
   override def dataidFor(printData: Bytes, print: Long, source: Source): Long = resultOf(internalStoreLogic dataidFor (printData, print, source))
   override def close(): Unit = executor close()

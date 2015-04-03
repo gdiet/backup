@@ -113,7 +113,7 @@ case class ActualRepoFileReadWrite(repository: RepositoryReadWrite, treeEntry: T
   override def isWritable: Boolean = treeEntry != rootEntry
   override def isRemovable: Boolean = isWritable
   override def mkdir(): Boolean = false
-  override def createOutputStream(offset: Long): OutputStream = { // FIXME duplicate code with VirtualRepoFile
+  override def createOutputStream(offset: Long): OutputStream = {
     if (treeEntry == rootEntry) throw new IOException(s"cannot write to root entry")
     outputStream(offset, {
       dataid => metaBackend change (treeEntry.id, parentid, getName, someNow, Some(dataid))
