@@ -9,7 +9,7 @@ import scala.concurrent.duration.DurationInt
 import net.diet_rich.dedup.core.data.Bytes
 import net.diet_rich.dedup.util.valueOf
 
-// TODO check reactive streams
+// TODO eventually check reactive streams
 class StoreOutputStream(storeLogic: StoreLogicBackend, processDataid: Long => Unit) extends OutputStream {
   def write(bytes: Bytes): Unit = write(bytes.data, bytes.offset, bytes.length)
   override def write(byte: Int): Unit = write(Array(byte.toByte), 0, 1)
@@ -31,9 +31,8 @@ class StoreOutputStream(storeLogic: StoreLogicBackend, processDataid: Long => Un
 
   protected val dataid = storeLogic futureDataidFor theSource
 
-  object theSource extends SizedSource {
+  object theSource extends Source {
     protected var pool: Option[Array[Byte]] = Some(Array())
-    var size: Long = 0 // FIXME size only for sources with known size (different subtypes)
     @annotation.tailrec
     override final def read(count: Int): Bytes = pool match {
       case None => Bytes.empty
@@ -46,7 +45,6 @@ class StoreOutputStream(storeLogic: StoreLogicBackend, processDataid: Long => Un
               pool = None
               Bytes(bytes, 0, bytes.length)
             case newData =>
-              size += newData.length
               pool = Some(bytes ++ newData.asByteArray)
               read(count)
           }

@@ -1,6 +1,3 @@
-// Copyright (c) Georg Dietrich
-// Licensed under the MIT license:
-// http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
 import java.io.{InputStream, RandomAccessFile, File}
@@ -12,8 +9,8 @@ trait Source {
   def read(count: Int): Bytes
   final def allData: Iterator[Bytes] = new Iterator[Bytes] {
     var currentBytes = read(0x8000)
-    def hasNext = currentBytes.length > 0
-    def next = valueOf(currentBytes) before {currentBytes = read(0x8000)}
+    override def hasNext = currentBytes.length > 0
+    override def next() = valueOf(currentBytes) before {currentBytes = read(0x8000)}
   }
 }
 
@@ -22,7 +19,7 @@ trait SizedSource extends Source {
 }
 
 trait FileLikeSource extends SizedSource with AutoCloseable {
-  def reset: Unit
+  def reset(): Unit
 }
 
 object Source {
@@ -41,9 +38,9 @@ object Source {
 
   def from(file: RandomAccessFile): FileLikeSource = new FileLikeSource {
     override def size = file length()
-    override def close = file close()
+    override def close() = file close()
     override def read(count: Int) = readBytes(file.read, count)
-    override def reset: Unit = file seek 0
+    override def reset(): Unit = file seek 0
   }
 
   def from(in: InputStream, expectedSize: Long): SizedSource = new SizedSource with AutoCloseable {
