@@ -3,7 +3,7 @@
 // http://www.opensource.org/licenses/mit-license.php
 package net.diet_rich.dedup.core
 
-import java.io.{ByteArrayInputStream, InputStream, RandomAccessFile, File}
+import java.io.{InputStream, RandomAccessFile, File}
 
 import net.diet_rich.dedup.core.data.Bytes
 import net.diet_rich.dedup.util._

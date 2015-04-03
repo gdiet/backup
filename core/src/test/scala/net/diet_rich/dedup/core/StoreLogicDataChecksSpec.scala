@@ -98,15 +98,15 @@ The store process itself should be tested $todo
       }
     }
     val logic = new LogicStub(meta) {
-      override def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = 43
+      override def tryPreloadSizedDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = 43
     }
     logic.dataidFor(emptySource) === 43
   }
 
   def preloadIfMemoryAvailable = {
     val logic = new LogicStub() {
-      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadDataThatMayBeAlreadyKnown _
-      override def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = 44
+      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadSizedDataThatMayBeAlreadyKnown _
+      override def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = 44
     }
     logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 0L, emptySource) === 44
   }
@@ -114,7 +114,7 @@ The store process itself should be tested $todo
   def dontPreloadIfMemoryNotAvailable = {
     val source = new SourceStub { override def size = Long.MaxValue / 200 ; override def read(count: Int) = Bytes.empty }
     val logic = new LogicStub() {
-      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadDataThatMayBeAlreadyKnown _
+      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadSizedDataThatMayBeAlreadyKnown _
       override def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long = 45
     }
     logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 0L, source) === 45
@@ -218,7 +218,7 @@ The store process itself should be tested $todo
       }
     }
     val logic = new LogicStub(meta) {
-      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadDataThatMayBeAlreadyKnown _
+      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadSizedDataThatMayBeAlreadyKnown _
       override def storeSourceData(source: SizedSource): Long = 49
     }
     logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 4321, source) === 49
