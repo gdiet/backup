@@ -64,7 +64,7 @@ The store process itself should be tested $todo
   }
 
   class LogicStub(val metaBackend: MetaBackend = new MetaStub, val storeMethod: Int = 1, val hashAlgorithm: String = "MD5") extends StoreLogicDataChecks {
-    override def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges = ???
+    override def storePackedData(data: Iterator[Bytes]): Ranges = ???
   }
 
   class SourceStub extends Source {
@@ -83,7 +83,7 @@ The store process itself should be tested $todo
       }
     }
     val logic = new LogicStub(meta) {
-      override protected def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes], estimatedSize: Long): Long = 42
+      override protected def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long = 42
     }
     logic.dataidFor(emptySource) === 42
   }
@@ -115,7 +115,7 @@ The store process itself should be tested $todo
     val source = new SourceStub { override def size = Long.MaxValue / 200 ; override def read(count: Int) = Bytes.empty }
     val logic = new LogicStub() {
       val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadDataThatMayBeAlreadyKnown _
-      override def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes], estimatedSize: Long): Long = 45
+      override def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long = 45
     }
     logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 0L, source) === 45
   }

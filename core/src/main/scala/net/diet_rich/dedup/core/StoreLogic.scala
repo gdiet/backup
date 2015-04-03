@@ -46,14 +46,14 @@ trait StoreLogicDataChecks {
     if (metaBackend hasSizeAndPrint (source.size, print))
       tryPreloadDataThatMayBeAlreadyKnown(printData, print, source)
     else
-      storeSourceData (printData, print, source.allData, source.size)
+      storeSourceData (printData, print, source.allData)
   }
 
   protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = Memory.reserved(source.size * 105 / 100) {
     case Memory.Reserved    (_) => preloadDataThatMayBeAlreadyKnown(printData, print, source)
     case Memory.NotAvailable(_) => source match {
       case source: ResettableSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
-      case _ => storeSourceData (printData, print, source.allData, source.size)
+      case _ => storeSourceData (printData, print, source.allData)
     }
   }
 
@@ -75,13 +75,13 @@ trait StoreLogicDataChecks {
 
   protected def storeSourceData(source: Source): Long = {
     val printData = source read Repository.PRINTSIZE
-    storeSourceData(printData, Print(printData), source.allData, source.size)
+    storeSourceData(printData, Print(printData), source.allData)
   }
 
-  protected def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes], estimatedSize: Long): Long = {
+  protected def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long = {
     val (hash, size, dataid) = Hash calculate(hashAlgorithm, Iterator(printData) ++ data, { data =>
       val packedData = StoreMethod.storeCoder(storeMethod)(data)
-      storePackedDataAndCreateByteStoreEntries(packedData, estimatedSize)
+      storePackedDataAndCreateByteStoreEntries(packedData)
     })
     metaBackend createDataTableEntry (dataid, size, print, hash, storeMethod)
     dataid
@@ -89,14 +89,14 @@ trait StoreLogicDataChecks {
 
   protected def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = {
     val packedData = StoreMethod.storeCoder(storeMethod)(data)
-    init(storePackedDataAndCreateByteStoreEntries(data, size)) { dataid =>
+    init(storePackedDataAndCreateByteStoreEntries(data)) { dataid =>
       metaBackend createDataTableEntry(dataid, size, print, hash, storeMethod)
     }
   }
 
-  protected def storePackedDataAndCreateByteStoreEntries(data: Iterator[Bytes], estimatedSize: Long): Long = {
+  protected def storePackedDataAndCreateByteStoreEntries(data: Iterator[Bytes]): Long = {
     // first store everything, so if something bad happens while storing no table entries are created
-    val storedRanges = storePackedData(data, estimatedSize)
+    val storedRanges = storePackedData(data)
     init(metaBackend nextDataid) { dataid =>
       storedRanges foreach { case (start, fin) =>
         assert (fin > start, s"$start - $fin")
@@ -104,14 +104,14 @@ trait StoreLogicDataChecks {
     }
   }
 
-  protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long): Ranges
+  protected def storePackedData(data: Iterator[Bytes]): Ranges
 }
 
 trait StorePackedDataLogic {
   protected def writeData: (Bytes, Long) => Unit
   protected def freeRanges: FreeRanges
 
-  protected def storePackedData(data: Iterator[Bytes], estimatedSize: Long /*FIXME not used?*/): Ranges = {
+  protected def storePackedData(data: Iterator[Bytes]): Ranges = {
     val (finalProtocol, remaining) = data.foldLeft((RangesNil, Option.empty[StartFin])) { case ((protocol, range), bytes) =>
       assert (bytes.length > 0)
       write(bytes, protocol, range getOrElse freeRanges.nextBlock)
