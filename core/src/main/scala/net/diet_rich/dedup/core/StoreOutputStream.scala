@@ -9,6 +9,7 @@ import scala.concurrent.duration.DurationInt
 import net.diet_rich.dedup.core.data.Bytes
 import net.diet_rich.dedup.util.valueOf
 
+// TODO check reactive streams
 class StoreOutputStream(storeLogic: StoreLogicBackend, processDataid: Long => Unit) extends OutputStream {
   def write(bytes: Bytes): Unit = write(bytes.data, bytes.offset, bytes.length)
   override def write(byte: Int): Unit = write(Array(byte.toByte), 0, 1)
@@ -51,6 +52,5 @@ class StoreOutputStream(storeLogic: StoreLogicBackend, processDataid: Long => Un
           }
         }
       }
-    override def close = ()
   }
 }

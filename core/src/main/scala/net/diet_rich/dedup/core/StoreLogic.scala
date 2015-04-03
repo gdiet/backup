@@ -52,7 +52,7 @@ trait StoreLogicDataChecks {
   protected def tryPreloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = Memory.reserved(source.size * 105 / 100) {
     case Memory.Reserved    (_) => preloadDataThatMayBeAlreadyKnown(printData, print, source)
     case Memory.NotAvailable(_) => source match {
-      case source: ResettableSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
+      case source: FileLikeSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
       case _ => storeSourceData (printData, print, source.allData)
     }
   }
@@ -64,7 +64,7 @@ trait StoreLogicDataChecks {
       .getOrElse(storeSourceData (Bytes consumingIterator bytes, size, print, hash))
   }
 
-  protected def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Long, source: ResettableSource): Long = {
+  protected def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Long, source: FileLikeSource): Long = {
     val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData
     val (hash, size) = Hash.calculate(hashAlgorithm, bytes)
     metaBackend.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {

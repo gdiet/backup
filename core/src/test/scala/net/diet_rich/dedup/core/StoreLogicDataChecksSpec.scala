@@ -70,7 +70,6 @@ The store process itself should be tested $todo
   class SourceStub extends Source {
     override def size: Long = ???
     override def read(count: Int): Bytes = ???
-    override def close(): Unit = ???
   }
 
   def emptySource = Source.from(new ByteArrayInputStream(Array()), 0)
@@ -202,11 +201,12 @@ The store process itself should be tested $todo
   def prescanResettableSource = {
     val sourceSize = Runtime.getRuntime.maxMemory() * 2
     val sourceBytes = Bytes(Array(50.toByte), 0, 1)
-    def source = new SourceStub with ResettableSource {
+    def source = new SourceStub with FileLikeSource {
       var firstCall = true
       override val size: Long = sourceSize
       override def read(size: Int) = if (firstCall) { firstCall = false; sourceBytes } else Bytes.empty
       override def reset = Unit
+      override def close(): Unit = ???
     }
     val expectedHash = Hash.calculate("MD5", source.allData)._1
     val meta = new MetaStub {

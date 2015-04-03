@@ -8,7 +8,7 @@ import java.io.{ByteArrayInputStream, InputStream, RandomAccessFile, File}
 import net.diet_rich.dedup.core.data.Bytes
 import net.diet_rich.dedup.util._
 
-trait Source extends AutoCloseable {
+trait Source {
   def size: Long // FIXME only if known
   def read(count: Int): Bytes
   final def allData: Iterator[Bytes] = new Iterator[Bytes] {
@@ -16,10 +16,9 @@ trait Source extends AutoCloseable {
     def hasNext = currentBytes.length > 0
     def next = valueOf(currentBytes) before {currentBytes = read(0x8000)}
   }
-  def close(): Unit // FIXME why make all sources closable?
 }
 
-trait ResettableSource extends Source {
+trait FileLikeSource extends Source with AutoCloseable {
   def reset: Unit
 }
 
@@ -35,16 +34,16 @@ object Source {
     Bytes(data, 0, readRecurse(0, length))
   }
 
-  def from(file: File): ResettableSource = from(new RandomAccessFile(file, "r"))
+  def from(file: File): FileLikeSource = from(new RandomAccessFile(file, "r"))
 
-  def from(file: RandomAccessFile): ResettableSource = new ResettableSource {
+  def from(file: RandomAccessFile): FileLikeSource = new FileLikeSource {
     override def size = file length()
     override def close = file close()
     override def read(count: Int) = readBytes(file.read, count)
     override def reset: Unit = file seek 0
   }
 
-  def from(in: InputStream, expectedSize: Long): Source = new Source {
+  def from(in: InputStream, expectedSize: Long): Source = new Source with AutoCloseable {
     override def size = expectedSize
     override def read(count: Int): Bytes = readBytes(in.read, count)
     override def close() : Unit = in close()
