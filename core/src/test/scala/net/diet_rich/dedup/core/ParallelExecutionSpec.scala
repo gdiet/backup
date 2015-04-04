@@ -6,6 +6,7 @@ import scala.concurrent.Future
 
 import org.specs2.Specification
 
+import net.diet_rich.dedup.util.resultOf
 import net.diet_rich.dedup.util.io.using
 
 class ParallelExecutionSpec extends Specification { def is = s2"""
@@ -17,7 +18,7 @@ The "combine" utility should wait for all futures to finish, even if one fails $
   def combineWaitsForAll = {
     val count = new AtomicInteger(0)
     class Parallel(val parallel: Option[Int]) extends ParallelExecution {
-      def futureEval() = awaitForever(combine(List.fill(20)(Future {
+      def futureEval() = resultOf(combine(List.fill(20)(Future {
         Thread sleep 1
         count.incrementAndGet()
         throw new IllegalStateException

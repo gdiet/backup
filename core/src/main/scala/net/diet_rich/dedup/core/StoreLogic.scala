@@ -1,19 +1,17 @@
 package net.diet_rich.dedup.core
 
-import net.diet_rich.dedup.util.Memory.{Reserved, NotAvailable}
-
 import scala.collection.mutable
-import scala.concurrent.{Future, Await, ExecutionContext}
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Future, ExecutionContext}
 
 import net.diet_rich.dedup.core.data._
 import net.diet_rich.dedup.core.meta.{FreeRanges, MetaBackend}
 import net.diet_rich.dedup.util._
+import net.diet_rich.dedup.util.Memory.{Reserved, NotAvailable}
 
 trait StoreLogicBackend extends AutoCloseable {
-  def futureDataidFor(source: Source): Future[Long]
-  def dataidFor(source: Source): Long
   def dataidFor(printData: Bytes, print: Long, source: Source): Long
+  def dataidFor(source: Source): Long
+  def futureDataidFor(source: Source): Future[Long]
   def close(): Unit
 }
 
@@ -22,11 +20,10 @@ class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, fre
   private val internalStoreLogic = new InternalStoreLogic(metaBackend, writeData, freeRanges, hashAlgorithm, storeMethod)
   private val executor = ThreadExecutors.blockingThreadPoolExecutor(parallel)
   private implicit val executionContext = ExecutionContext fromExecutorService executor
-  private def resultOf[T] (f: => T): T = Await result (Future(f), 1 day)
 
+  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = resultOf(Future(internalStoreLogic dataidFor (printData, print, source)))
+  override def dataidFor(source: Source): Long = resultOf(futureDataidFor(source))
   override def futureDataidFor(source: Source): Future[Long] = Future(internalStoreLogic dataidFor source)
-  override def dataidFor(source: Source): Long = resultOf(internalStoreLogic dataidFor source)
-  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = resultOf(internalStoreLogic dataidFor (printData, print, source))
   override def close(): Unit = executor close()
 }
 

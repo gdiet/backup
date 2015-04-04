@@ -1,5 +1,8 @@
 package net.diet_rich.dedup
 
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, Future}
+
 package object util {
   class Before[T](val t: T) extends AnyVal { def before(f: => Unit) = { f; t } }
   def valueOf[T](t: T) = new Before(t)
@@ -7,6 +10,8 @@ package object util {
   def now = System.currentTimeMillis()
   def someNow = Some(now)
   def systemCores = Runtime.getRuntime.availableProcessors()
+  def resultOf[T](future: Future[T]): T = Await result (future, Duration.Inf)
+
   val readOnly = Writable.readOnly
   val readWrite = Writable.readWrite
 

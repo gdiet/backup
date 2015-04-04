@@ -2,11 +2,11 @@ package net.diet_rich.dedup.core
 
 import java.io.{IOException, File}
 
-import net.diet_rich.dedup.core.data.Print
-
 import scala.concurrent.Future
 
+import net.diet_rich.dedup.core.data.Print
 import net.diet_rich.dedup.core.meta._
+import net.diet_rich.dedup.util.resultOf
 import net.diet_rich.dedup.util.io._
 
 // backup assumes that, once it starts, it has exclusive write access to its target branch in the tree
@@ -18,7 +18,7 @@ class BackupAlgorithm(repository: RepositoryReadWrite, checkPrintOption: Option[
   val checkPrint = checkPrintOption getOrElse false
 
   def backup(source: File, target: String, reference: Option[String]): Unit =
-    awaitForever(backup(source, targetid(source, target), referenceEntry(source, target, reference)))
+    resultOf(backup(source, targetid(source, target), referenceEntry(source, target, reference)))
 
   protected def targetid(source: File, target: String): Long = {
     metaBackend.entries(target) match {
@@ -51,7 +51,7 @@ class BackupAlgorithm(repository: RepositoryReadWrite, checkPrintOption: Option[
       println(s"Of the ${referencesToCheck.size} entries checked in reference $reference,")
       println(s"${misses.size} could not be found in the source $source.")
       println(s"If a incorrect reference is given, backup performance may degrade.")
-      val answer = Option(io.StdIn.readLine(s"Continue backup anyway? (y/n) "))
+      val answer = Option(scala.io.StdIn.readLine(s"Continue backup anyway? (y/n) "))
       require(answer == Some("y"), "Aborted by user request")
     }
     reference

@@ -11,7 +11,6 @@ import net.diet_rich.dedup.core.{StoreOutputStream, RepositoryReadWrite, Reposit
 import net.diet_rich.dedup.core.meta.{MetaBackend, rootEntry, TreeEntry}
 import net.diet_rich.dedup.util.{Logging, now, someNow}
 
-// TODO utility to clean up orphan data entries and orphan byte store entries
 trait RepoFile[R <: Repository] extends FtpFile with Logging {
   def repository: R
   def factory: TreeEntry => ActualRepoFile[R]

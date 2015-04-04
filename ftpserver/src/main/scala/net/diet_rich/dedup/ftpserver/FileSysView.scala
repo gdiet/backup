@@ -1,10 +1,10 @@
 package net.diet_rich.dedup.ftpserver
 
-import net.diet_rich.dedup.util.Logging
 import org.apache.ftpserver.ftplet.{FtpFile, FileSystemView}
 
 import net.diet_rich.dedup.core.{RepositoryReadWrite, Repository}
 import net.diet_rich.dedup.core.meta.{TreeEntry, rootEntry}
+import net.diet_rich.dedup.util.Logging
 
 case class FileSysViewReadOnly(repository: Repository) extends FileSysView[Repository] {
   override def virtualFile(parentid: Long, name: String): VirtualRepoFile[Repository] = VirtualRepoFileReadOnly(repository, name, parentid)
@@ -50,5 +50,5 @@ trait FileSysView[R <: Repository] extends FileSystemView with Logging {
   override def getFile(name: String): FtpFile = resolvePath(name) getOrElse (throw new IllegalArgumentException(s"could not resolve $workingDirectory/$name"))
   override def getHomeDirectory: FtpFile = rootDirectory
   override def getWorkingDirectory: FtpFile = workingDirectory
-  override def isRandomAccessible: Boolean = false // TODO random access - see FtpFile.createInputStream and FtpFile.createOutputStream
+  override def isRandomAccessible: Boolean = false
 }
