@@ -1,6 +1,7 @@
 package net.diet_rich.dedup.core
 
 import java.io.{IOException, OutputStream}
+import java.util.Arrays.copyOfRange
 import java.util.concurrent.ArrayBlockingQueue
 
 import scala.concurrent.Await
@@ -9,7 +10,7 @@ import scala.concurrent.duration.DurationInt
 import net.diet_rich.dedup.core.data.Bytes
 import net.diet_rich.dedup.util.valueOf
 
-// TODO eventually check reactive streams
+// TODO eventually check reactive streams or reactive stream like logic
 class StoreOutputStream(storeLogic: StoreLogicBackend, processDataid: Long => Unit) extends OutputStream {
   def write(bytes: Bytes): Unit = write(bytes.data, bytes.offset, bytes.length)
   override def write(byte: Int): Unit = write(Array(byte.toByte), 0, 1)
@@ -20,7 +21,7 @@ class StoreOutputStream(storeLogic: StoreLogicBackend, processDataid: Long => Un
   protected var closed = false
   override def write(data: Array[Byte], offset: Int, length: Int): Unit = {
     if (closed) throw new IOException("Output stream is already closed")
-    if (length > 0) transfer put Bytes(data, offset, length)
+    if (length > 0) transfer put Bytes(copyOfRange(data, offset, offset+length), 0, length)
   }
   override def close(): Unit = if (!closed) {
     closed = true
