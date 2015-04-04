@@ -15,7 +15,7 @@ trait Source {
 }
 
 trait SizedSource extends Source {
-  def size: Long // FIXME only if known
+  def size: Long
 }
 
 trait FileLikeSource extends SizedSource with AutoCloseable {

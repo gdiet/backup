@@ -95,7 +95,7 @@ trait StoreLogicDataChecks {
     }
   }
 
-  protected def storeSourceData(source: SizedSource): Long = {
+  protected def storeSourceData(source: Source): Long = {
     val printData = source read Repository.PRINTSIZE
     storeSourceData(printData, Print(printData), source.allData)
   }

@@ -70,7 +70,7 @@ The store process itself should be tested $todo
     override def freeRanges: FreeRanges = ???
   }
 
-  class SourceStub extends SizedSource {
+  class SizedSourceStub extends SizedSource {
     override def size: Long = ???
     override def read(count: Int): Bytes = ???
   }
@@ -114,7 +114,7 @@ The store process itself should be tested $todo
   }
 
   def dontPreloadIfMemoryNotAvailable = {
-    val source = new SourceStub { override def size = Long.MaxValue / 200 ; override def read(count: Int) = Bytes.empty }
+    val source = new SizedSourceStub { override def size = Long.MaxValue / 200 ; override def read(count: Int) = Bytes.empty }
     val logic = new LogicStub() {
       val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadSizedDataThatMayBeAlreadyKnown _
       override def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long = 45
@@ -166,7 +166,7 @@ The store process itself should be tested $todo
     def freeMemory = Runtime.getRuntime.maxMemory() - (Runtime.getRuntime.totalMemory() - Runtime.getRuntime.freeMemory())
     require(freeMemory > memoryForTest, s"required free memory $memoryForTest not availabe. Free memory is $freeMemory")
     Memory.reserved(Memory.available - memoryForTest/2) { case _ =>
-      def source = new SourceStub {
+      def source = new SizedSourceStub {
         var count = 0
         override val size: Long = memoryForTest
         override def read(size: Int) = {
@@ -207,7 +207,7 @@ The store process itself should be tested $todo
   def prescanResettableSource = {
     val sourceSize = Runtime.getRuntime.maxMemory() * 2
     val sourceBytes = Bytes(Array(50.toByte), 0, 1)
-    def source = new SourceStub with FileLikeSource {
+    def source = new SizedSourceStub with FileLikeSource {
       var firstCall = true
       override val size: Long = sourceSize
       override def read(size: Int) = if (firstCall) { firstCall = false; sourceBytes } else Bytes.empty
@@ -224,7 +224,7 @@ The store process itself should be tested $todo
     }
     val logic = new LogicStub(meta) {
       val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadSizedDataThatMayBeAlreadyKnown _
-      override def storeSourceData(source: SizedSource): Long = 49
+      override def storeSourceData(source: Source): Long = 49
     }
     logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 4321, source) === 49
   }
