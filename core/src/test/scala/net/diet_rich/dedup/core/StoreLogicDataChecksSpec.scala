@@ -2,7 +2,8 @@ package net.diet_rich.dedup.core
 
 import java.io.ByteArrayInputStream
 
-import scala.collection.mutable
+import net.diet_rich.dedup.util.Memory
+
 import scala.language.reflectiveCalls
 
 import net.diet_rich.dedup.core.data.{Hash, Print, Bytes}
@@ -160,44 +161,47 @@ The store process itself should be tested $todo
   maybe not before specs 3.0
   }
    */
-  def memoryFreedPreloaded: org.specs2.execute.Result = if (!sys.env.contains("tests.include.longRunning")) skipped("- skipped: to include this test, set tests.include.longRunning") else {
-    val memoryForTest = 300000000
+  def memoryFreedPreloaded: org.specs2.execute.Result = {
+    val memoryForTest = 30000000
     def freeMemory = Runtime.getRuntime.maxMemory() - (Runtime.getRuntime.totalMemory() - Runtime.getRuntime.freeMemory())
     require(freeMemory > memoryForTest, s"required free memory $memoryForTest not availabe. Free memory is $freeMemory")
-    def source = new SourceStub {
-      var count = 0
-      override val size: Long = memoryForTest
-      override def read(size: Int) = {
-        val currentSize = math.min(size, memoryForTest - count)
-        count += currentSize
-        Bytes.zero(currentSize)
+    Memory.reserved(Memory.available - memoryForTest/2) { case _ =>
+      def source = new SourceStub {
+        var count = 0
+        override val size: Long = memoryForTest
+        override def read(size: Int) = {
+          val currentSize = math.min(size, memoryForTest - count)
+          count += currentSize
+          Bytes.zero(currentSize)
+        }
       }
-    }
-    val expectedHash = Hash.calculate("MD5", source.allData)._1
-    val meta = new MetaStub {
-      override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = {
-        require(size  == memoryForTest && print == 1234, s"size: $size, print: $print")
-        require(hash.deep == expectedHash.deep)
-        Nil
+      val expectedHash = Hash.calculate("MD5", source.allData)._1
+      val meta = new MetaStub {
+        override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = {
+          require(size  == memoryForTest && print == 1234, s"size: $size, print: $print")
+          require(hash.deep == expectedHash.deep)
+          Nil
+        }
       }
-    }
-    val logic = new LogicStub(meta) {
-      var memoryProtocol = List[Long]()
-      val _preloadDataThatMayBeAlreadyKnown = preloadDataThatMayBeAlreadyKnown _
-      override def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = {
-        data.grouped(3000).map { _ =>
-          Runtime.getRuntime.gc()
-          memoryProtocol = memoryProtocol :+ freeMemory
-        }.toList
-        48
+      val logic = new LogicStub(meta) {
+        var memoryProtocol = List[Long]()
+        val _preloadDataThatMayBeAlreadyKnown = preloadDataThatMayBeAlreadyKnown _
+        override def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = {
+          data.grouped(300).foreach { _ =>
+            Runtime.getRuntime.gc()
+            memoryProtocol = memoryProtocol :+ freeMemory
+          }
+          48
+        }
       }
+      val result = logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, source)
+      val memoryFreed = logic.memoryProtocol.sliding(2,1).map{case (a::b::Nil) => b - a; case _ => ???}.toList
+      println(memoryFreed)
+      (result === 48) and
+        (memoryFreed should haveSize(3)) and
+        (memoryFreed should contain(be_>( 9000000L)).foreach) and
+        (memoryFreed should contain(be_<(11000000L)).foreach)
     }
-    val result = logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, source)
-    val memoryFreed = logic.memoryProtocol.sliding(2,1).map{case (a::b::Nil) => b - a; case _ => ???}
-    (result === 48) and
-      (memoryFreed should haveSize(3)) and
-      (memoryFreed should contain(be_>( 90000000L)).foreach) and
-      (memoryFreed should contain(be_<(110000000L)).foreach)
   }
 
   def prescanResettableSource = {
@@ -207,7 +211,7 @@ The store process itself should be tested $todo
       var firstCall = true
       override val size: Long = sourceSize
       override def read(size: Int) = if (firstCall) { firstCall = false; sourceBytes } else Bytes.empty
-      override def reset = Unit
+      override def reset() = ()
       override def close(): Unit = ???
     }
     val expectedHash = Hash.calculate("MD5", source.allData)._1

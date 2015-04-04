@@ -90,7 +90,7 @@ trait StoreLogicDataChecks {
     val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData
     val (hash, size) = Hash.calculate(hashAlgorithm, bytes)
     metaBackend.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
-      source.reset
+      source reset()
       storeSourceData(source)
     }
   }
