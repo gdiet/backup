@@ -63,7 +63,7 @@ trait StoreLogicDataChecks {
     val read = try source read 0x100000 catch { case e: Throwable => Memory free reserved; throw e }
     if (read.length == 0) try preloadAndStore(data, print) finally Memory free reserved
     else Memory reserve read.length match {
-      case NotAvailable(_) => try storeSourceData(print, data.iterator) finally Memory free reserved
+      case NotAvailable(_) => try storeSourceData(print, (data:+read).iterator ++ source.allData) finally Memory free reserved
       case Reserved(mem) => tryPreLoadDataThatMayBeAlreadyKnown(data :+ read, print, source, reserved + mem)
     }
   }

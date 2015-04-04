@@ -29,7 +29,8 @@ object Logging {
           debug(s"$msg >>")
           init(code){r => debug(s"$msg << $r")}
         } catch { case e: Throwable =>
-          debug(s"$msg ##", e)
+          if (logger.isDebugEnabled) debug(s"$msg ##", e)
+          else info(s"$msg has thrown an exception", e)
           throw e
         }
       }
