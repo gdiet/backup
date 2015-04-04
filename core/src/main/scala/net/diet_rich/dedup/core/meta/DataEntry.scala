@@ -1,3 +1,5 @@
 package net.diet_rich.dedup.core.meta
 
-case class DataEntry (id: Long, size: Long, print: Long, hash: Array[Byte], method: Int)
+import net.diet_rich.dedup.core.data.Print
+
+case class DataEntry (id: Long, size: Long, print: Print, hash: Array[Byte], method: Int)

@@ -45,7 +45,7 @@ object DBUtilities {
       |);
     """.stripMargin execute session
     // Note: By inserting the empty entry manually, we avoid to have it stored deflated
-    StaticQuery.update[(Long, Array[Byte], Int)]("INSERT INTO DataEntries (length, print, hash, method) VALUES (0, ?, ?, ?);")
+    StaticQuery.update[(Print, Array[Byte], Int)]("INSERT INTO DataEntries (length, print, hash, method) VALUES (0, ?, ?, ?);")
       .apply(Print empty, Hash empty hashAlgorithm, StoreMethod.STORE) execute session
   }
 

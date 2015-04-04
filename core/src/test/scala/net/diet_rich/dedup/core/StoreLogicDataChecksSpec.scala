@@ -41,10 +41,10 @@ The store process itself should be tested $todo
 
   class MetaStub extends MetaBackend {
     override def entry(id: Long) = ???
-    override def dataEntryExists(print: Long): Boolean = ???
-    override def dataEntryExists(size: Long, print: Long): Boolean = ???
+    override def dataEntryExists(print: Print): Boolean = ???
+    override def dataEntryExists(size: Long, print: Print): Boolean = ???
     override def markDeleted(id: Long, deletionTime: Option[Long]) = ???
-    override def createDataTableEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int) = ???
+    override def createDataTableEntry(reservedid: Long, size: Long, print: Print, hash: Array[Byte], storeMethod: Int) = ???
     override def dataEntry(dataid: Long) = ???
     override def children(parent: Long) = ???
     override def children(parent: Long, name: String) = ???
@@ -55,7 +55,7 @@ The store process itself should be tested $todo
     override def sizeOf(dataid: Long) = ???
     override def change(id: Long, newParent: Long, newName: String, newTime: Option[Long], newData: Option[Long], newDeletionTime: Option[Long]) = ???
     override def close() = ???
-    override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = ???
+    override def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): List[DataEntry] = ???
     override def entries(path: String) = ???
     override def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
     override def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]) = ???
@@ -79,13 +79,13 @@ The store process itself should be tested $todo
 
   def sizePrintNotKnown = {
     val meta = new MetaStub {
-      override def dataEntryExists(size: Long, print: Long) = {
+      override def dataEntryExists(size: Long, print: Print) = {
         require(size  == 0L && print == Print.empty, s"size: $size, print: $print")
         false
       }
     }
     val logic = new LogicStub(meta) {
-      override def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long = 42
+      override def storeSourceData(printData: Bytes, print: Print, data: Iterator[Bytes]): Long = 42
     }
     logic.dataidFor(emptySource) === 42
   }
@@ -94,57 +94,57 @@ The store process itself should be tested $todo
 
   def attemptPreload = {
     val meta = new MetaStub {
-      override def dataEntryExists(size: Long, print: Long) = {
+      override def dataEntryExists(size: Long, print: Print) = {
         require(size  == 0L && print == Print.empty, s"size: $size, print: $print")
         true
       }
     }
     val logic = new LogicStub(meta) {
-      override def tryPreloadSizedDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = 43
+      override def tryPreloadSizedDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: SizedSource): Long = 43
     }
     logic.dataidFor(emptySource) === 43
   }
 
   def preloadIfMemoryAvailable = {
     val logic = new LogicStub() {
-      override def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = 44
+      override def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): Long = 44
     }
-    logic.tryPreloadSizedDataThatMayBeAlreadyKnown(Bytes.empty, 0L, emptySource) === 44
+    logic.tryPreloadSizedDataThatMayBeAlreadyKnown(Bytes.empty, Print(0), emptySource) === 44
   }
 
   def dontPreloadIfMemoryNotAvailable = {
     val source = new SizedSourceStub { override def size = Long.MaxValue / 200 ; override def read(count: Int) = Bytes.empty }
     val logic = new LogicStub() {
-      override def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long = 45
+      override def storeSourceData(printData: Bytes, print: Print, data: Iterator[Bytes]): Long = 45
     }
-    logic.tryPreloadSizedDataThatMayBeAlreadyKnown(Bytes.empty, 0L, source) === 45
+    logic.tryPreloadSizedDataThatMayBeAlreadyKnown(Bytes.empty, Print(0), source) === 45
   }
 
   def storeUnknownPreloaded = {
     val meta = new MetaStub {
-      override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = {
-        require(size  == 0L && print == 1234, s"size: $size, print: $print")
+      override def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): List[DataEntry] = {
+        require(size  == 0L && print == Print(1234), s"size: $size, print: $print")
         require(hash.deep == Hash.empty("MD5").deep)
         Nil
       }
     }
     val logic = new LogicStub(meta) {
-      override def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = 46
+      override def storeSourceData(data: Iterator[Bytes], size: Long, print: Print, hash: Array[Byte]): Long = 46
     }
-    logic.preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 46
+    logic.preloadDataThatMayBeAlreadyKnown(Bytes.empty, Print(1234), emptySource) === 46
   }
 
   def referenceKnownPreloaded = {
-    val result = DataEntry(47,1,2,Array(),3)
+    val result = DataEntry(47,1,Print(2),Array(),3)
     val meta = new MetaStub {
-      override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = {
-        require(size  == 0L && print == 1234, s"size: $size, print: $print")
+      override def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): List[DataEntry] = {
+        require(size  == 0L && print == Print(1234), s"size: $size, print: $print")
         require(hash.deep == Hash.empty("MD5").deep)
         List(result)
       }
     }
     val logic = new LogicStub(meta)
-    logic.preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 47
+    logic.preloadDataThatMayBeAlreadyKnown(Bytes.empty, Print(1234), emptySource) === 47
   }
 
   // TODO try org.specs.specification.core.Env, maybe like
@@ -172,15 +172,15 @@ The store process itself should be tested $todo
       }
       val expectedHash = Hash.calculate("MD5", source.allData)._1
       val meta = new MetaStub {
-        override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = {
-          require(size  == memoryForTest && print == 1234, s"size: $size, print: $print")
+        override def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): List[DataEntry] = {
+          require(size  == memoryForTest && print == Print(1234), s"size: $size, print: $print")
           require(hash.deep == expectedHash.deep)
           Nil
         }
       }
       val logic = new LogicStub(meta) {
         var memoryProtocol = List[Long]()
-        override def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = {
+        override def storeSourceData(data: Iterator[Bytes], size: Long, print: Print, hash: Array[Byte]): Long = {
           data.grouped(300).foreach { _ =>
             Runtime.getRuntime.gc()
             memoryProtocol = memoryProtocol :+ freeMemory
@@ -188,7 +188,7 @@ The store process itself should be tested $todo
           48
         }
       }
-      val result = logic.preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, source)
+      val result = logic.preloadDataThatMayBeAlreadyKnown(Bytes.empty, Print(1234), source)
       val memoryFreed = logic.memoryProtocol.sliding(2,1).map{case (a::b::Nil) => b - a; case _ => ???}.toList
       println(memoryFreed)
       (result === 48) and
@@ -210,8 +210,8 @@ The store process itself should be tested $todo
     }
     val expectedHash = Hash.calculate("MD5", source.allData)._1
     val meta = new MetaStub {
-      override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry] = {
-        require(size  == 1 && print == 4321, s"size: $size, print: $print")
+      override def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): List[DataEntry] = {
+        require(size  == 1 && print == Print(4321), s"size: $size, print: $print")
         require(hash.deep == expectedHash.deep)
         Nil
       }
@@ -219,6 +219,6 @@ The store process itself should be tested $todo
     val logic = new LogicStub(meta) {
       override def storeSourceData(source: Source): Long = 49
     }
-    logic.tryPreloadSizedDataThatMayBeAlreadyKnown(Bytes.empty, 4321, source) === 49
+    logic.tryPreloadSizedDataThatMayBeAlreadyKnown(Bytes.empty, Print(4321), source) === 49
   }
 }

@@ -1,6 +1,7 @@
 package net.diet_rich.dedup.core.meta
 
 import net.diet_rich.dedup.core.StartFin
+import net.diet_rich.dedup.core.data.Print
 import net.diet_rich.dedup.util.{Logging, someNow}
 
 trait MetaBackend extends AutoCloseable with Logging {
@@ -18,12 +19,12 @@ trait MetaBackend extends AutoCloseable with Logging {
 
   def dataEntry(dataid: Long): Option[DataEntry]
   def sizeOf(dataid: Long): Option[Long]
-  def createDataTableEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit
+  def createDataTableEntry(reservedid: Long, size: Long, print: Print, hash: Array[Byte], storeMethod: Int): Unit
   def nextDataid: Long
 
-  def dataEntryExists(print: Long): Boolean // TODO typed print
-  def dataEntryExists(size: Long, print: Long): Boolean
-  def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): List[DataEntry]
+  def dataEntryExists(print: Print): Boolean // TODO typed print
+  def dataEntryExists(size: Long, print: Print): Boolean
+  def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): List[DataEntry]
 
   def storeEntries(dataid: Long): List[StartFin]
   def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit

@@ -9,7 +9,7 @@ import net.diet_rich.dedup.util._
 import net.diet_rich.dedup.util.Memory.{Reserved, NotAvailable}
 
 trait StoreLogicBackend extends AutoCloseable {
-  def dataidFor(printData: Bytes, print: Long, source: Source): Long
+  def dataidFor(printData: Bytes, print: Print, source: Source): Long
   def dataidFor(source: Source): Long
   def futureDataidFor(source: Source): Future[Long]
   def close(): Unit
@@ -21,7 +21,7 @@ class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, fre
   private val executor = ThreadExecutors.blockingThreadPoolExecutor(parallel)
   private implicit val executionContext = ExecutionContext fromExecutorService executor
 
-  override def dataidFor(printData: Bytes, print: Long, source: Source): Long = resultOf(Future(internalStoreLogic dataidFor (printData, print, source)))
+  override def dataidFor(printData: Bytes, print: Print, source: Source): Long = resultOf(Future(internalStoreLogic dataidFor (printData, print, source)))
   override def dataidFor(source: Source): Long = resultOf(futureDataidFor(source))
   override def futureDataidFor(source: Source): Future[Long] = Future(internalStoreLogic dataidFor source)
   override def close(): Unit = executor close()
@@ -42,7 +42,7 @@ trait StoreLogicDataChecks {
     dataidFor(printData, Print(printData), source)
   }
 
-  def dataidFor(printData: Bytes, print: Long, source: Source): Long = source match {
+  def dataidFor(printData: Bytes, print: Print, source: Source): Long = source match {
     case sized: SizedSource =>
       if (metaBackend dataEntryExists(sized size, print))
         tryPreloadSizedDataThatMayBeAlreadyKnown(printData, print, sized)
@@ -56,7 +56,7 @@ trait StoreLogicDataChecks {
   }
 
   @annotation.tailrec
-  final def tryPreLoadDataThatMayBeAlreadyKnown(data: Vector[Bytes], print: Long, source: Source, reserved: Long): Long = {
+  final def tryPreLoadDataThatMayBeAlreadyKnown(data: Vector[Bytes], print: Print, source: Source, reserved: Long): Long = {
     val read = try source read 0x100000 catch { case e: Throwable => Memory free reserved; throw e }
     if (read.length == 0) try preloadAndStore(data, print) finally Memory free reserved
     else Memory reserve read.length match {
@@ -65,7 +65,7 @@ trait StoreLogicDataChecks {
     }
   }
 
-  def tryPreloadSizedDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = Memory.reserved(source.size * 105 / 100) {
+  def tryPreloadSizedDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: SizedSource): Long = Memory.reserved(source.size * 105 / 100) {
     case Memory.Reserved    (_) => preloadDataThatMayBeAlreadyKnown(printData, print, source)
     case Memory.NotAvailable(_) => source match {
       case source: FileLikeSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
@@ -73,17 +73,17 @@ trait StoreLogicDataChecks {
     }
   }
 
-  def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long =
+  def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: Source): Long =
     preloadAndStore(Iterator(printData) ++ source.allData, print)
 
-  def preloadAndStore(data: TraversableOnce[Bytes], print: Long): Long = {
+  def preloadAndStore(data: TraversableOnce[Bytes], print: Print): Long = {
     val bytes = data.to[mutable.MutableList]
     val (hash, size) = Hash calculate (hashAlgorithm, bytes iterator)
     metaBackend.dataEntriesFor(size, print, hash).headOption.map(_.id)
       .getOrElse(storeSourceData (Bytes consumingIterator bytes, size, print, hash))
   }
 
-  def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Long, source: FileLikeSource): Long = {
+  def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Print, source: FileLikeSource): Long = {
     val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData
     val (hash, size) = Hash.calculate(hashAlgorithm, bytes)
     metaBackend.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
@@ -97,15 +97,15 @@ trait StoreLogicDataChecks {
     storeSourceData(printData, Print(printData), source.allData)
   }
 
-  def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long =
+  def storeSourceData(printData: Bytes, print: Print, data: Iterator[Bytes]): Long =
     storeSourceData(print, Iterator(printData) ++ data)
 
-  def storeSourceData(print: Long, data: Iterator[Bytes]): Long = {
+  def storeSourceData(print: Print, data: Iterator[Bytes]): Long = {
     val (hash, size, storedRanges) = Hash calculate(hashAlgorithm, data, writeSourceData)
     finishStoringData(print, hash, size, storedRanges)
   }
 
-  def finishStoringData(print: Long, hash: Array[Byte], size: Long, storedRanges: Ranges): Long = {
+  def finishStoringData(print: Print, hash: Array[Byte], size: Long, storedRanges: Ranges): Long = {
     metaBackend inTransaction {
       metaBackend dataEntriesFor(size, print, hash) match {
         case Nil =>
@@ -123,7 +123,7 @@ trait StoreLogicDataChecks {
     }
   }
 
-  def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long =
+  def storeSourceData(data: Iterator[Bytes], size: Long, print: Print, hash: Array[Byte]): Long =
     finishStoringData(print, hash, size, writeSourceData(data))
 
   def writeSourceData(data: Iterator[Bytes]): Ranges =
