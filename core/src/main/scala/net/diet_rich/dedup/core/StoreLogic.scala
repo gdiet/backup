@@ -35,9 +35,10 @@ class InternalStoreLogic(val metaBackend: MetaBackend, val writeData: (Bytes, Lo
                          val storeMethod: Int) extends StoreLogicDataChecks with StorePackedDataLogic
 
 trait StoreLogicDataChecks {
-  val metaBackend: MetaBackend
+  val metaBackend: MetaBackend // TODO make all protected?
   val hashAlgorithm: String
   val storeMethod: Int
+  protected def freeRanges: FreeRanges
 
   def dataidFor(source: Source): Long = {
     val printData = source read Repository.PRINTSIZE
@@ -103,30 +104,33 @@ trait StoreLogicDataChecks {
     storeSourceData(print, Iterator(printData) ++ data)
 
   protected def storeSourceData(print: Long, data: Iterator[Bytes]): Long = {
-    val (hash, size, dataid) = Hash calculate(hashAlgorithm, data, { data =>
-      val packedData = StoreMethod.storeCoder(storeMethod)(data)
-      storePackedDataAndCreateByteStoreEntries(packedData)
-    })
-    metaBackend createDataTableEntry (dataid, size, print, hash, storeMethod)
-    dataid
+    val (hash, size, storedRanges) = Hash calculate(hashAlgorithm, data, writeSourceData)
+    finishStoringData(print, hash, size, storedRanges)
   }
 
-  protected def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = {
-    val packedData = StoreMethod.storeCoder(storeMethod)(data)
-    init(storePackedDataAndCreateByteStoreEntries(data)) { dataid =>
-      metaBackend createDataTableEntry(dataid, size, print, hash, storeMethod)
+  protected def finishStoringData(print: Long, hash: Array[Byte], size: Long, storedRanges: Ranges): Long = {
+    metaBackend inTransaction {
+      metaBackend dataEntriesFor(size, print, hash) match {
+        case Nil =>
+          init(metaBackend nextDataid) { dataid =>
+            storedRanges foreach { case (start, fin) =>
+              assert(fin > start, s"$start - $fin")
+              metaBackend createByteStoreEntry(dataid, start, fin)
+            }
+            metaBackend createDataTableEntry(dataid, size, print, hash, storeMethod)
+          }
+        case dataEntry :: rest =>
+          storedRanges foreach freeRanges.pushBack
+          dataEntry.id
+      }
     }
   }
 
-  protected def storePackedDataAndCreateByteStoreEntries(data: Iterator[Bytes]): Long = {
-    // first store everything, so if something bad happens while storing no table entries are created
-    val storedRanges = storePackedData(data)
-    init(metaBackend nextDataid) { dataid =>
-      storedRanges foreach { case (start, fin) =>
-        assert (fin > start, s"$start - $fin")
-        metaBackend createByteStoreEntry (dataid, start, fin) }
-    }
-  }
+  protected def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long =
+    finishStoringData(print, hash, size, writeSourceData(data))
+
+  protected def writeSourceData(data: Iterator[Bytes]): Ranges =
+    storePackedData(StoreMethod.storeCoder(storeMethod)(data))
 
   protected def storePackedData(data: Iterator[Bytes]): Ranges
 }

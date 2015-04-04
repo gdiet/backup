@@ -6,7 +6,7 @@ import scala.collection.mutable
 import scala.language.reflectiveCalls
 
 import net.diet_rich.dedup.core.data.{Hash, Print, Bytes}
-import net.diet_rich.dedup.core.meta.{DataEntry, MetaBackend}
+import net.diet_rich.dedup.core.meta.{FreeRanges, DataEntry, MetaBackend}
 import org.specs2.Specification
 
 // TODO try to use the specs 3.0 Spec trait instead
@@ -66,6 +66,7 @@ The store process itself should be tested $todo
 
   class LogicStub(val metaBackend: MetaBackend = new MetaStub, val storeMethod: Int = 1, val hashAlgorithm: String = "MD5") extends StoreLogicDataChecks {
     override def storePackedData(data: Iterator[Bytes]): Ranges = ???
+    override def freeRanges: FreeRanges = ???
   }
 
   class SourceStub extends SizedSource {
