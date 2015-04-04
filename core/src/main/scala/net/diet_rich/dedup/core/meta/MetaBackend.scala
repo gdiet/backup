@@ -22,7 +22,7 @@ trait MetaBackend extends AutoCloseable with Logging {
   def createDataTableEntry(reservedid: Long, size: Long, print: Print, hash: Array[Byte], storeMethod: Int): Unit
   def nextDataid: Long
 
-  def dataEntryExists(print: Print): Boolean // TODO typed print
+  def dataEntryExists(print: Print): Boolean
   def dataEntryExists(size: Long, print: Print): Boolean
   def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): List[DataEntry]
 
