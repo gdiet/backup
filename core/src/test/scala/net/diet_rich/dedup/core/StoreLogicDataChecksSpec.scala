@@ -85,7 +85,7 @@ The store process itself should be tested $todo
       }
     }
     val logic = new LogicStub(meta) {
-      override protected def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long = 42
+      override def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long = 42
     }
     logic.dataidFor(emptySource) === 42
   }
@@ -107,19 +107,17 @@ The store process itself should be tested $todo
 
   def preloadIfMemoryAvailable = {
     val logic = new LogicStub() {
-      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadSizedDataThatMayBeAlreadyKnown _
       override def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long = 44
     }
-    logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 0L, emptySource) === 44
+    logic.tryPreloadSizedDataThatMayBeAlreadyKnown(Bytes.empty, 0L, emptySource) === 44
   }
 
   def dontPreloadIfMemoryNotAvailable = {
     val source = new SizedSourceStub { override def size = Long.MaxValue / 200 ; override def read(count: Int) = Bytes.empty }
     val logic = new LogicStub() {
-      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadSizedDataThatMayBeAlreadyKnown _
       override def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long = 45
     }
-    logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 0L, source) === 45
+    logic.tryPreloadSizedDataThatMayBeAlreadyKnown(Bytes.empty, 0L, source) === 45
   }
 
   def storeUnknownPreloaded = {
@@ -131,10 +129,9 @@ The store process itself should be tested $todo
       }
     }
     val logic = new LogicStub(meta) {
-      val _preloadDataThatMayBeAlreadyKnown = preloadDataThatMayBeAlreadyKnown _
       override def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = 46
     }
-    logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 46
+    logic.preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 46
   }
 
   def referenceKnownPreloaded = {
@@ -146,10 +143,8 @@ The store process itself should be tested $todo
         List(result)
       }
     }
-    val logic = new LogicStub(meta) {
-      val _preloadDataThatMayBeAlreadyKnown = preloadDataThatMayBeAlreadyKnown _
-    }
-    logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 47
+    val logic = new LogicStub(meta)
+    logic.preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, emptySource) === 47
   }
 
   // TODO try org.specs.specification.core.Env, maybe like
@@ -185,7 +180,6 @@ The store process itself should be tested $todo
       }
       val logic = new LogicStub(meta) {
         var memoryProtocol = List[Long]()
-        val _preloadDataThatMayBeAlreadyKnown = preloadDataThatMayBeAlreadyKnown _
         override def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = {
           data.grouped(300).foreach { _ =>
             Runtime.getRuntime.gc()
@@ -194,7 +188,7 @@ The store process itself should be tested $todo
           48
         }
       }
-      val result = logic._preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, source)
+      val result = logic.preloadDataThatMayBeAlreadyKnown(Bytes.empty, 1234, source)
       val memoryFreed = logic.memoryProtocol.sliding(2,1).map{case (a::b::Nil) => b - a; case _ => ???}.toList
       println(memoryFreed)
       (result === 48) and
@@ -223,9 +217,8 @@ The store process itself should be tested $todo
       }
     }
     val logic = new LogicStub(meta) {
-      val _tryPreloadDataThatMayBeAlreadyKnown = tryPreloadSizedDataThatMayBeAlreadyKnown _
       override def storeSourceData(source: Source): Long = 49
     }
-    logic._tryPreloadDataThatMayBeAlreadyKnown(Bytes.empty, 4321, source) === 49
+    logic.tryPreloadSizedDataThatMayBeAlreadyKnown(Bytes.empty, 4321, source) === 49
   }
 }

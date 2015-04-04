@@ -16,7 +16,7 @@ trait StoreLogicBackend extends AutoCloseable {
 }
 
 class StoreLogic(metaBackend: MetaBackend, writeData: (Bytes, Long) => Unit, freeRanges: FreeRanges,
-                 hashAlgorithm: String, storeMethod: Int, val parallel: Int) extends StoreLogicBackend {
+                 hashAlgorithm: String, storeMethod: Int, parallel: Int) extends StoreLogicBackend {
   private val internalStoreLogic = new InternalStoreLogic(metaBackend, writeData, freeRanges, hashAlgorithm, storeMethod)
   private val executor = ThreadExecutors.blockingThreadPoolExecutor(parallel)
   private implicit val executionContext = ExecutionContext fromExecutorService executor
@@ -32,10 +32,10 @@ class InternalStoreLogic(val metaBackend: MetaBackend, val writeData: (Bytes, Lo
                          val storeMethod: Int) extends StoreLogicDataChecks with StorePackedDataLogic
 
 trait StoreLogicDataChecks {
-  val metaBackend: MetaBackend // TODO make all protected?
+  val metaBackend: MetaBackend
   val hashAlgorithm: String
   val storeMethod: Int
-  protected def freeRanges: FreeRanges
+  def freeRanges: FreeRanges
 
   def dataidFor(source: Source): Long = {
     val printData = source read Repository.PRINTSIZE
@@ -56,7 +56,7 @@ trait StoreLogicDataChecks {
   }
 
   @annotation.tailrec
-  protected final def tryPreLoadDataThatMayBeAlreadyKnown(data: Vector[Bytes], print: Long, source: Source, reserved: Long): Long = {
+  final def tryPreLoadDataThatMayBeAlreadyKnown(data: Vector[Bytes], print: Long, source: Source, reserved: Long): Long = {
     val read = try source read 0x100000 catch { case e: Throwable => Memory free reserved; throw e }
     if (read.length == 0) try preloadAndStore(data, print) finally Memory free reserved
     else Memory reserve read.length match {
@@ -65,7 +65,7 @@ trait StoreLogicDataChecks {
     }
   }
 
-  protected def tryPreloadSizedDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = Memory.reserved(source.size * 105 / 100) {
+  def tryPreloadSizedDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = Memory.reserved(source.size * 105 / 100) {
     case Memory.Reserved    (_) => preloadDataThatMayBeAlreadyKnown(printData, print, source)
     case Memory.NotAvailable(_) => source match {
       case source: FileLikeSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
@@ -73,17 +73,17 @@ trait StoreLogicDataChecks {
     }
   }
 
-  protected def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long =
+  def preloadDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: Source): Long =
     preloadAndStore(Iterator(printData) ++ source.allData, print)
 
-  protected def preloadAndStore(data: TraversableOnce[Bytes], print: Long): Long = {
+  def preloadAndStore(data: TraversableOnce[Bytes], print: Long): Long = {
     val bytes = data.to[mutable.MutableList]
     val (hash, size) = Hash calculate (hashAlgorithm, bytes iterator)
     metaBackend.dataEntriesFor(size, print, hash).headOption.map(_.id)
       .getOrElse(storeSourceData (Bytes consumingIterator bytes, size, print, hash))
   }
 
-  protected def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Long, source: FileLikeSource): Long = {
+  def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Long, source: FileLikeSource): Long = {
     val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData
     val (hash, size) = Hash.calculate(hashAlgorithm, bytes)
     metaBackend.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
@@ -92,20 +92,20 @@ trait StoreLogicDataChecks {
     }
   }
 
-  protected def storeSourceData(source: Source): Long = {
+  def storeSourceData(source: Source): Long = {
     val printData = source read Repository.PRINTSIZE
     storeSourceData(printData, Print(printData), source.allData)
   }
 
-  protected def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long =
+  def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long =
     storeSourceData(print, Iterator(printData) ++ data)
 
-  protected def storeSourceData(print: Long, data: Iterator[Bytes]): Long = {
+  def storeSourceData(print: Long, data: Iterator[Bytes]): Long = {
     val (hash, size, storedRanges) = Hash calculate(hashAlgorithm, data, writeSourceData)
     finishStoringData(print, hash, size, storedRanges)
   }
 
-  protected def finishStoringData(print: Long, hash: Array[Byte], size: Long, storedRanges: Ranges): Long = {
+  def finishStoringData(print: Long, hash: Array[Byte], size: Long, storedRanges: Ranges): Long = {
     metaBackend inTransaction {
       metaBackend dataEntriesFor(size, print, hash) match {
         case Nil =>
@@ -123,20 +123,20 @@ trait StoreLogicDataChecks {
     }
   }
 
-  protected def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long =
+  def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long =
     finishStoringData(print, hash, size, writeSourceData(data))
 
-  protected def writeSourceData(data: Iterator[Bytes]): Ranges =
+  def writeSourceData(data: Iterator[Bytes]): Ranges =
     storePackedData(StoreMethod.storeCoder(storeMethod)(data))
 
-  protected def storePackedData(data: Iterator[Bytes]): Ranges
+  def storePackedData(data: Iterator[Bytes]): Ranges
 }
 
 trait StorePackedDataLogic {
-  protected def writeData: (Bytes, Long) => Unit
-  protected def freeRanges: FreeRanges
+  def writeData: (Bytes, Long) => Unit
+  def freeRanges: FreeRanges
 
-  protected def storePackedData(data: Iterator[Bytes]): Ranges = {
+  def storePackedData(data: Iterator[Bytes]): Ranges = {
     val (finalProtocol, remaining) = data.foldLeft((RangesNil, Option.empty[StartFin])) { case ((protocol, range), bytes) =>
       assert (bytes.length > 0)
       write(bytes, protocol, range getOrElse freeRanges.nextBlock)
@@ -146,7 +146,7 @@ trait StorePackedDataLogic {
   }
 
   @annotation.tailrec
-  protected final def write(bytes: Bytes, protocol: Ranges, free: StartFin): (Ranges, Option[StartFin]) = {
+  final def write(bytes: Bytes, protocol: Ranges, free: StartFin): (Ranges, Option[StartFin]) = {
     val (start, fin) = free
     assert(fin - start <= Int.MaxValue, s"range too large: $start .. $fin")
     val length = (fin - start).toInt
@@ -160,7 +160,7 @@ trait StorePackedDataLogic {
     }
   }
 
-  protected def normalizedAdd(protocol: Ranges, start: Long, fin: Long): Ranges =
+  def normalizedAdd(protocol: Ranges, start: Long, fin: Long): Ranges =
     protocol match {
       case heads :+ ((lastStart, `start`)) => heads :+ (lastStart, fin)
       case _ => protocol :+ (start, fin)
