@@ -3,3 +3,5 @@ syntax: regexp
 ^project/project/
 ^target/
 ^.*/target/
+^fusejna/c/bin/Debug/
+^fusejna/c/obj/

@@ -1,0 +1,35 @@
+# depslib dependency file v1.0
+1435127137 source:/home/georg/fusewrapper/main.c
+	<fuse.h>
+	<string.h>
+	<errno.h>
+	<stdio.h>
+
+1405961963 /home/georg/bin/fuse-2.9.4/include/fuse.h
+	"fuse_common.h"
+	<fcntl.h>
+	<time.h>
+	<utime.h>
+	<sys/types.h>
+	<sys/stat.h>
+	<sys/statvfs.h>
+	<sys/uio.h>
+	"fuse_compat.h"
+
+1404476434 /home/georg/bin/fuse-2.9.4/include/fuse_common.h
+	"fuse_opt.h"
+	<stdint.h>
+	<sys/types.h>
+	"fuse_common_compat.h"
+
+1404476434 /home/georg/bin/fuse-2.9.4/include/fuse_opt.h
+
+1372664439 /home/georg/bin/fuse-2.9.4/include/fuse_common_compat.h
+
+1404476434 /home/georg/bin/fuse-2.9.4/include/fuse_compat.h
+	<sys/statfs.h>
+
+1435979922 source:/home/georg/fusejna/c/main.c
+	<fuse.h>
+	<string.h>
+

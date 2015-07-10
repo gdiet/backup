@@ -11,12 +11,16 @@ scalacOptions in ThisBuild ++= Seq(
   "-language:postfixOps"
 )
 
-lazy val backup = project in file(".") dependsOn (core, ftpserver, davserver)
+lazy val backup = project in file(".") dependsOn (core) // , ftpserver, davserver)
 
 lazy val core = project
 
-lazy val ftpserver = project dependsOn core
+lazy val fusejna = project
 
-lazy val davserver = project dependsOn core
+lazy val fuseserver = project dependsOn (fusejna, core)
+
+//lazy val ftpserver = project dependsOn core
+
+//lazy val davserver = project dependsOn core
 
 XitrumPackage.copy()
