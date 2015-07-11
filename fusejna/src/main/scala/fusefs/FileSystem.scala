@@ -4,8 +4,8 @@ import com.sun.jna.Pointer
 
 import fusewrapper.Fuse
 import fusewrapper.Fuse._
-import fusewrapper.cconst.Errno
-import fusewrapper.ctype.{Size_t, Off_t}
+import fusewrapper.cconst.{Stat, Errno}
+import fusewrapper.ctype.{Mode_t, Size_t, Off_t}
 import fusewrapper.struct.{FuseFileInfoReference, StatReference, FuseWrapperOperations}
 
 sealed trait Entry {
@@ -53,9 +53,11 @@ object FileSystem {
         fileSystem.entryFor(path) match {
           case Some(File(_, _, size)) =>
             // FIXME set inode to ID?
+            fileInfo.st_mode = new Mode_t(Stat.S_IFREG | Integer.decode("0777"))
             fileInfo.st_size = new Off_t(size)
             -Errno.OK
           case Some(Dir(_, _)) =>
+            fileInfo.st_mode = new Mode_t(Stat.S_IFDIR | Integer.decode("0444"))
             -Errno.OK
           case None =>
             -Errno.ENOENT
