@@ -1,3 +1,8 @@
+# File level deduplication file system for backup purposes #
+
+This project provides a virtual file system where files with identical content are deduplicated, together with tools for backup and restore of large numbers of files and folders.
+
+----
 # README #
 
 This README would normally document whatever steps are necessary to get your application up and running.
