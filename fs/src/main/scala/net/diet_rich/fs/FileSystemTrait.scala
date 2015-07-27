@@ -7,6 +7,10 @@ trait FileSystemTrait { self =>
   trait NodeTrait extends AnyNode { def fileSystem: FileSystemTrait = self }
   trait DirTrait[Node <: NodeTrait] extends AnyDir[Node] with NodeTrait
   trait FileTrait extends AnyFile with NodeTrait
+  object DirTrait {
+    def unapply(node: NodeTrait): Option[DirTrait[NodeTrait]] =
+      if (node.isInstanceOf[DirTrait[NodeTrait]]) Some(node.asInstanceOf[DirTrait[NodeTrait]]) else None
+  }
 }
 
 trait AnyNode {
