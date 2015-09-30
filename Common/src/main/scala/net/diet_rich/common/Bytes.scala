@@ -1,0 +1,15 @@
+package net.diet_rich.common
+
+case class Bytes (data: Array[Byte], offset: Int, length: Int) {
+  require(length >= 0, s"negative length: $length")
+  require(offset >= 0, s"negative offset: $offset")
+  require(data.length - offset >= length, s"not enough data (${data.length} bytes) for length $length at offset $offset")
+  def withOffset(offset: Int) = copy(data, this.offset + offset, length - offset)
+  def withLength(length: Int) = copy(length = length)
+  def asByteArray = data slice (offset, offset+length)
+}
+
+object Bytes extends ((Array[Byte], Int, Int) => Bytes) {
+  val empty = Bytes(Array.empty, 0, 0)
+  def zero(length: Int) = Bytes(new Array(length), 0, length)
+}
