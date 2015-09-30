@@ -1,5 +1,7 @@
 package net.diet_rich.common
 
+import java.util
+
 case class Bytes (data: Array[Byte], offset: Int, length: Int) {
   require(length >= 0, s"negative length: $length")
   require(offset >= 0, s"negative offset: $offset")
@@ -7,6 +9,10 @@ case class Bytes (data: Array[Byte], offset: Int, length: Int) {
   def withOffset(offset: Int) = copy(data, this.offset + offset, length - offset)
   def withLength(length: Int) = copy(length = length)
   def asByteArray = data slice (offset, offset+length)
+  override def equals(other: Any): Boolean = other match {
+    case other @ Bytes(_, _, `length`) => util.Arrays equals (asByteArray, other.asByteArray)
+    case _ => false
+  }
 }
 
 object Bytes extends ((Array[Byte], Int, Int) => Bytes) {

@@ -3,16 +3,18 @@ package net.diet_rich.bytestore.file
 import java.io.File
 
 import org.specs2.Specification
+import org.specs2.specification.AfterAll
 
 import net.diet_rich.common._, io._
 
-class FileBackendSpec extends Specification {
+class FileBackendSpec extends Specification with AfterAll {
   args(sequential = true)
   def is = s2"""
 Tests for the byte store file backend, starting with an empty store
 
 Read from the empty store
-${store.read(0, 1) === Seq(bytes(0))}
+ ${eg{ store.read(0, 1) === Seq(bytes(0)) }}
+ ${eg{ 1 === 1 }}
   """
 
   // FIXME test utilities
@@ -33,4 +35,6 @@ ${store.read(0, 1) === Seq(bytes(0))}
     initializeDirectory(dataDirectory, "emptyStore", 4)
     readWrite(dataDirectory, "emptyStore")
   }
+
+  override def afterAll(): Unit = store.close()
 }

@@ -26,8 +26,9 @@ object FileBackend { val version = "3.0"
   }
 
   def read(dataDirectory: File, name: String): ByteStoreRead = new FileBackendRead(dataDirectory, name)
-  def readRaw(dataDirectory: File, name: String): ByteStoreReadRaw = new FileBackendReadRaw(dataDirectory, name)
   def readWrite(dataDirectory: File, name: String): ByteStore = new FileBackendReadWrite(dataDirectory, name)
+  // FIXME raw is needed with write to allow for backend-with-underlying-backend
+  def readRaw(dataDirectory: File, name: String): ByteStoreReadRaw = new FileBackendReadRaw(dataDirectory, name)
 
   private trait Common[DataFileType <: AutoCloseable] {
     val dataDirectory: File

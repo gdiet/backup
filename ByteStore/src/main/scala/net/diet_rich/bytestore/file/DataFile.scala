@@ -23,11 +23,16 @@ private[file] object DataFile {
     final val file = dataDirectory / (f"$fileNumber%010X" grouped 2 mkString "/") // 00/00/00/00/00 (hex), max 10^12 files
 
     final def openAndCheckHeader(): RandomAccessFile =
-      init(new RandomAccessFile(file, accessType)) { fileAccess =>
-        val startPositionRead = fileAccess.readLong
-        if (startPosition != startPositionRead) {
-          fileAccess close()
-          throw new IOException(s"Data file $fileNumber: Start position read $startPositionRead is not $startPosition")
+      if (!file.exists()) {
+        file.getParentFile mkdirs()
+        init(new RandomAccessFile(file, accessType)) {_ writeLong startPosition}
+      } else {
+        init(new RandomAccessFile(file, accessType)) { fileAccess =>
+          val startPositionRead = fileAccess.readLong
+          if (startPosition != startPositionRead) {
+            fileAccess close()
+            throw new IOException(s"Data file $fileNumber: Start position read $startPositionRead is not $startPosition")
+          }
         }
       }
   }
@@ -72,6 +77,7 @@ private[file] object DataFile {
   final class ReadWrite(val dataDirectory: File, val fileNumber: Long, val startPosition: Long)
         extends Common with CommonRead {
     val accessType = "rw"
+    // FIXME var fileAccess allows for lazy construction, so trying to read files does not create them
     val fileAccess: Option[RandomAccessFile] = Some(openAndCheckHeader())
     def setLength(offsetInFile: Long): Unit = fileAccess foreach (_ setLength (offsetInFile + headerBytes))
     def write(offsetInFile: Long, bytes: Bytes): Unit = fileAccess foreach { access =>
