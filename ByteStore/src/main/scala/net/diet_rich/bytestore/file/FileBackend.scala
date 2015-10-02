@@ -36,6 +36,8 @@ object FileBackend { val version = "3.0"
     val name: String
     def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): DataFileType
 
+    final val namePrint: Long = printOf(name)
+
     final val blocksize: Long = {
       val settings = readSettingsFile(dataDirectory / configFileName)
       require(settings(versionKey) == version, s"Version mismatch in file byte store: Actual ${settings(versionKey)}, required $version")
@@ -95,13 +97,13 @@ object FileBackend { val version = "3.0"
   private final class FileBackendRead(val dataDirectory: File, val name: String) extends CommonRead[FileRead]
   with ByteStoreRead {
     override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileRead =
-      new FileRead(dataDirectory, startPosition, fileNumber)
+      new FileRead(namePrint, dataDirectory, startPosition, fileNumber)
   }
 
   private final class FileBackendReadWriteRaw(val dataDirectory: File, val name: String) extends CommonRead[FileReadWriteRaw]
   with ByteStore with ByteStoreReadRaw {
     override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileReadWriteRaw =
-      new FileReadWriteRaw(dataDirectory, startPosition, fileNumber)
+      new FileReadWriteRaw(namePrint, dataDirectory, startPosition, fileNumber)
     @annotation.tailrec
     override def write(data: Bytes, at: Long): Unit = {
       val offsetInFile = at % blocksize

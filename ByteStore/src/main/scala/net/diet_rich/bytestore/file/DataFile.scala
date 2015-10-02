@@ -7,12 +7,13 @@ import net.diet_rich.common._, io._
 // Note: Synchronization is done in FileBackend.
 private[file] object DataFile {
   //  1 -  8: (Long) Position of the first data byte in the data store
-  //  9 - 16: (Long) Reserved for future data print extension FIXME implement
-  // 17 - 24: (Long) Reserved for future name print extension FIXME implement
-  // 25 - 32: (Long) Reserved for future extension
+  //  9 - 16: (Long) Byte store name print
+  // 17 - 24: (Long) Reserved for future extension
+  // 25 - 32: (Long) Reserved for future data print extension FIXME implement
   val headerBytes = 32
 
   trait Common extends AutoCloseable {
+    val namePrint: Long
     val dataDirectory: File
     val fileNumber: Long
     val startPosition: Long
@@ -26,14 +27,17 @@ private[file] object DataFile {
     final def openAndCheckHeader(): RandomAccessFile =
       if (!file.exists()) {
         file.getParentFile mkdirs()
-        init(new RandomAccessFile(file, accessType)) {_ writeLong startPosition}
+        init(new RandomAccessFile(file, accessType)) { access =>
+          access writeLong startPosition
+          access writeLong namePrint
+        }
       } else {
         init(new RandomAccessFile(file, accessType)) { fileAccess =>
-          val startPositionRead = fileAccess.readLong
-          if (startPosition != startPositionRead) {
-            fileAccess close()
-            throw new IOException(s"Data file $fileNumber: Start position read $startPositionRead is not $startPosition")
+          def exceptionIfDifferent(expected: Long, what: String) = init(fileAccess.readLong) { read =>
+            if (read != expected) { fileAccess close(); throw new IOException(s"Data file $fileNumber: $what read $read is not $expected") }
           }
+          exceptionIfDifferent(startPosition, "Start position")
+          exceptionIfDifferent(namePrint, "Name print")
         }
       }
   }
@@ -51,12 +55,12 @@ private[file] object DataFile {
     }
   }
 
-  final class FileRead(val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
+  final class FileRead(val namePrint: Long, val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
     val accessType = "r"
     val fileAccess: Option[RandomAccessFile] = if (file isFile()) Some(openAndCheckHeader()) else None
   }
 
-  final class FileReadWriteRaw(val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
+  final class FileReadWriteRaw(val namePrint: Long, val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
     val accessType = "rw"
     val fileAccess: Option[RandomAccessFile] = Some(openAndCheckHeader())
     def setLength(offsetInFile: Long): Unit = fileAccess foreach (_ setLength (offsetInFile + headerBytes))
