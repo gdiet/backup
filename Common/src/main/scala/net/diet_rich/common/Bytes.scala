@@ -13,6 +13,7 @@ case class Bytes (data: Array[Byte], offset: Int, length: Int) {
     case other @ Bytes(_, _, `length`) => util.Arrays equals (asByteArray, other.asByteArray)
     case _ => false
   }
+  override def toString() = s"Bytes(Byte[${data.length}}],$offset,$length)"
 }
 
 object Bytes extends ((Array[Byte], Int, Int) => Bytes) {

@@ -12,6 +12,14 @@ private[file] object DataFile {
   // 25 - 32: (Long) Reserved for future data print extension FIXME implement
   val headerBytes = 32
 
+  // Performance optimized.
+  def calcDataPrint(offsetInFileData: Long, bytes: Bytes): Long = internalCalcDataPrint(offsetInFileData + 1, bytes)
+  private def internalCalcDataPrint(offsetInFileData: Long, bytes: Bytes): Long = {
+    var print: Long = 0L
+    for (n <- 0 until bytes.length) print ^= (n + offsetInFileData) * 5870203405204807807L * bytes.data(n + bytes.offset)
+    print
+  }
+
   trait Common extends AutoCloseable {
     val namePrint: Long
     val dataDirectory: File
