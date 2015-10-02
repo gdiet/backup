@@ -4,6 +4,7 @@ import java.io.{IOException, RandomAccessFile, File}
 
 import net.diet_rich.common._, io._
 
+// Note: Synchronization is done in FileBackend.
 private[file] object DataFile {
   //  1 -  8: (Long) Position of the first data byte in the data store
   //  9 - 16: (Long) Reserved for future data print extension FIXME implement
@@ -37,7 +38,7 @@ private[file] object DataFile {
       }
   }
 
-  trait CommonRead extends Common {
+  trait FileCommonRead extends Common {
     final def read(offsetInFileData: Long, size: Int): Bytes = init(Bytes zero size) { bytes =>
       fileAccess foreach { access =>
         val availableData = access.length() - headerBytes
@@ -50,34 +51,13 @@ private[file] object DataFile {
     }
   }
 
-  trait CommonReadOnly { _: Common =>
-    final val accessType = "r"
-    final val fileAccess: Option[RandomAccessFile] = if (file isFile()) Some(openAndCheckHeader()) else None
+  final class FileRead(val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
+    val accessType = "r"
+    val fileAccess: Option[RandomAccessFile] = if (file isFile()) Some(openAndCheckHeader()) else None
   }
 
-  final class Read(val dataDirectory: File, val fileNumber: Long, val startPosition: Long)
-        extends CommonRead with CommonReadOnly
-
-  final class ReadRaw(val dataDirectory: File, val fileNumber: Long, val startPosition: Long)
-        extends Common with CommonReadOnly {
-    def readRaw(offsetInFileData: Long, size: Int): Seq[Either[Int, Bytes]] =
-      fileAccess.map { access =>
-        val availableData = access.length() - headerBytes
-        if (availableData <= offsetInFileData) Seq(Left(size))
-        else {
-          val dataToRead = math.min(size, availableData - offsetInFileData).toInt // size is Int
-          access seek (offsetInFileData + headerBytes)
-          val bytes = Bytes.zero(dataToRead)
-          access readFully (bytes.data, bytes.offset, dataToRead)
-          if (dataToRead < size) Seq(Right(bytes), Left(size - dataToRead)) else Seq(Right(bytes))
-        }
-      } getOrElse Seq(Left(size))
-  }
-
-  final class ReadWrite(val dataDirectory: File, val fileNumber: Long, val startPosition: Long)
-        extends Common with CommonRead {
+  final class FileReadWriteRaw(val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
     val accessType = "rw"
-    // FIXME var fileAccess allows for lazy construction, so trying to read files does not create them
     val fileAccess: Option[RandomAccessFile] = Some(openAndCheckHeader())
     def setLength(offsetInFile: Long): Unit = fileAccess foreach (_ setLength (offsetInFile + headerBytes))
     def write(offsetInFile: Long, bytes: Bytes): Unit = fileAccess foreach { access =>
@@ -94,5 +74,17 @@ private[file] object DataFile {
         }
       }
     }
+    def readRaw(offsetInFileData: Long, size: Int): Seq[Either[Int, Bytes]] =
+      fileAccess.map { access =>
+        val availableData = access.length() - headerBytes
+        if (availableData <= offsetInFileData) Seq(Left(size))
+        else {
+          val dataToRead = math.min(size, availableData - offsetInFileData).toInt // size is Int
+          access seek (offsetInFileData + headerBytes)
+          val bytes = Bytes.zero(dataToRead)
+          access readFully (bytes.data, bytes.offset, dataToRead)
+          if (dataToRead < size) Seq(Right(bytes), Left(size - dataToRead)) else Seq(Right(bytes))
+        }
+      } getOrElse Seq(Left(size))
   }
 }

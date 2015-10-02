@@ -7,6 +7,8 @@ import scala.collection.mutable
 import net.diet_rich.bytestore._
 import net.diet_rich.common._, io._
 
+import DataFile._
+
 object FileBackend { val version = "3.0"
 
   private val configFileName = "config.txt"
@@ -26,9 +28,8 @@ object FileBackend { val version = "3.0"
   }
 
   def read(dataDirectory: File, name: String): ByteStoreRead = new FileBackendRead(dataDirectory, name)
-  def readWrite(dataDirectory: File, name: String): ByteStore = new FileBackendReadWrite(dataDirectory, name)
-  // FIXME raw is needed with write to allow for backend-with-underlying-backend
-  def readRaw(dataDirectory: File, name: String): ByteStoreReadRaw = new FileBackendReadRaw(dataDirectory, name)
+  def readWrite(dataDirectory: File, name: String): ByteStore = readWriteRaw(dataDirectory, name)
+  def readWriteRaw(dataDirectory: File, name: String): ByteStore with ByteStoreReadRaw = new FileBackendReadWriteRaw(dataDirectory, name)
 
   private trait Common[DataFileType <: AutoCloseable] {
     val dataDirectory: File
@@ -62,8 +63,7 @@ object FileBackend { val version = "3.0"
           if (dataFiles.size >= maxNumberOfOpenFiles)
             (dataFiles remove dataFiles.keys.head) foreach { case (oldDataFile, _) => oldDataFile close()}
           dataFiles += (fileNumber -> (file, lock))
-          lock lock() // important: acquire the data file lock *before* leaving the synchronized block
-          (file, lock)
+          (file, init(lock)(_ lock())) // important: acquire the data file lock *before* leaving the synchronized block
         }
         try f(file) finally lock unlock() // important: execute f *after* leaving the synchronized block
       }
@@ -84,7 +84,7 @@ object FileBackend { val version = "3.0"
     final def close(): Unit = dataFiles close()
   }
 
-  private trait CommonRead[DataFileType <: DataFile.CommonRead] extends Common[DataFileType] {
+  private trait CommonRead[DataFileType <: FileCommonRead] extends Common[DataFileType] {
     final def read(from: Long, to: Long): Iterator[Bytes] =
       blockStream(from, to - from, dataChunkMaxSize).iterator map {
         case (dataFileNumber, offset, length) =>
@@ -92,24 +92,16 @@ object FileBackend { val version = "3.0"
       }
   }
 
-  private final class FileBackendRead(val dataDirectory: File, val name: String) extends CommonRead[DataFile.Read] with ByteStoreRead {
-    override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): DataFile.Read =
-      new DataFile.Read(dataDirectory, startPosition, fileNumber)
+  private final class FileBackendRead(val dataDirectory: File, val name: String) extends CommonRead[FileRead]
+  with ByteStoreRead {
+    override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileRead =
+      new FileRead(dataDirectory, startPosition, fileNumber)
   }
 
-  private final class FileBackendReadRaw(val dataDirectory: File, val name: String) extends Common[DataFile.ReadRaw] with ByteStoreReadRaw {
-    override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): DataFile.ReadRaw =
-      new DataFile.ReadRaw(dataDirectory, startPosition, fileNumber)
-    override def readRaw(from: Long, to: Long): Iterator[Either[Int, Bytes]] =
-      blockStream(from, to - from, dataChunkMaxSize).iterator flatMap {
-        case (dataFileNumber, offset, length) =>
-          dataFiles(dataFileNumber)(_ readRaw(offset, length.toInt)) // toInt: dataChunkMaxSize is Int
-      }
-  }
-
-  private final class FileBackendReadWrite(val dataDirectory: File, val name: String) extends CommonRead[DataFile.ReadWrite] with ByteStore {
-    override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): DataFile.ReadWrite =
-      new DataFile.ReadWrite(dataDirectory, startPosition, fileNumber)
+  private final class FileBackendReadWriteRaw(val dataDirectory: File, val name: String) extends CommonRead[FileReadWriteRaw]
+  with ByteStore with ByteStoreReadRaw {
+    override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileReadWriteRaw =
+      new FileReadWriteRaw(dataDirectory, startPosition, fileNumber)
     @annotation.tailrec
     override def write(data: Bytes, at: Long): Unit = {
       val offsetInFile = at % blocksize
@@ -122,6 +114,11 @@ object FileBackend { val version = "3.0"
         case (dataFileNumber, offset, length) => dataFiles(dataFileNumber) { dataFile =>
           if (offset + length == blocksize) dataFile setLength offset else dataFile clear(offset, length)
         }
+      }
+    override def readRaw(from: Long, to: Long): Iterator[Either[Int, Bytes]] =
+      blockStream(from, to - from, dataChunkMaxSize).iterator flatMap {
+        case (dataFileNumber, offset, length) =>
+          dataFiles(dataFileNumber)(_ readRaw(offset, length.toInt)) // toInt: dataChunkMaxSize is Int
       }
   }
 }
