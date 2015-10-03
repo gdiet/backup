@@ -26,27 +26,19 @@ private[file] object DataFile {
     val fileNumber: Long
     val startPosition: Long
     val accessType: String
-    val fileAccess: Option[RandomAccessFile]
+    protected def fileAccess: Option[RandomAccessFile]
 
     final def close(): Unit = fileAccess foreach (_ close())
 
     final val file = dataDirectory / (f"$fileNumber%010X" grouped 2 mkString "/") // 00/00/00/00/00 (hex), max 10^12 files
 
-    final def openAndCheckHeader(): RandomAccessFile =
-      if (!file.exists()) {
-        file.getParentFile mkdirs()
-        init(new RandomAccessFile(file, accessType)) { access =>
-          access writeLong startPosition
-          access writeLong namePrint
+    final protected def openAndCheckHeader(): RandomAccessFile =
+      init(new RandomAccessFile(file, accessType)) { fileAccess =>
+        def exceptionIfDifferent(expected: Long, what: String) = init(fileAccess.readLong) { read =>
+          if (read != expected) { fileAccess close(); throw new IOException(s"Data file $fileNumber: $what read $read is not $expected") }
         }
-      } else {
-        init(new RandomAccessFile(file, accessType)) { fileAccess =>
-          def exceptionIfDifferent(expected: Long, what: String) = init(fileAccess.readLong) { read =>
-            if (read != expected) { fileAccess close(); throw new IOException(s"Data file $fileNumber: $what read $read is not $expected") }
-          }
-          exceptionIfDifferent(startPosition, "Start position")
-          exceptionIfDifferent(namePrint, "Name print")
-        }
+        exceptionIfDifferent(startPosition, "Start position")
+        exceptionIfDifferent(namePrint, "Name print")
       }
   }
 
@@ -65,24 +57,37 @@ private[file] object DataFile {
 
   final class FileRead(val namePrint: Long, val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
     val accessType = "r"
-    val fileAccess: Option[RandomAccessFile] = if (file isFile()) Some(openAndCheckHeader()) else None
+    protected val fileAccess: Option[RandomAccessFile] = if (file isFile()) Some(openAndCheckHeader()) else None
   }
 
   final class FileReadWriteRaw(val namePrint: Long, val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
     val accessType = "rw"
-    val fileAccess: Option[RandomAccessFile] = Some(openAndCheckHeader())
-    def setLength(offsetInFile: Long): Unit = fileAccess foreach (_ setLength (offsetInFile + headerBytes))
-    def write(offsetInFile: Long, bytes: Bytes): Unit = fileAccess foreach { access =>
+    protected var fileAccess: Option[RandomAccessFile] = if (file isFile()) Some(openAndCheckHeader()) else None
+    protected def writeAccess: RandomAccessFile = fileAccess getOrElse {
+      file.getParentFile mkdirs()
+      init(new RandomAccessFile(file, accessType)) { access =>
+        access writeLong startPosition
+        access writeLong namePrint
+        fileAccess = Some(access)
+      }
+    }
+    def write(offsetInFile: Long, bytes: Bytes): Unit = {
+      val access = writeAccess
       access seek (offsetInFile + headerBytes)
       access write (bytes.data, bytes.offset, bytes.length)
     }
-    def clear(offsetInFile: Long, size: Long): Unit = fileAccess foreach { access =>
-      if (access.length() <= headerBytes + offsetInFile + size) setLength(offsetInFile)
-      else {
-        access seek (offsetInFile + headerBytes)
-        for (position <- 0L to size by FileBackend.dataChunkMaxSize) {
-          val sizeToWrite = math.min(FileBackend.dataChunkMaxSize, size - position).toInt
-          access write new Array[Byte](sizeToWrite)
+    def clear(offsetInFile: Long, size: Long): Unit = {
+      val access = writeAccess
+      val dataLength = access.length() - headerBytes
+      if (dataLength > offsetInFile) { // otherwise, no need to change
+        if (dataLength <= offsetInFile + size) {
+          access setLength offsetInFile + headerBytes
+        } else {
+          access seek (offsetInFile + headerBytes)
+          for (position <- 0L to size by FileBackend.dataChunkMaxSize) {
+            val sizeToWrite = math.min(FileBackend.dataChunkMaxSize, size - position).toInt
+            access write new Array[Byte](sizeToWrite)
+          }
         }
       }
     }

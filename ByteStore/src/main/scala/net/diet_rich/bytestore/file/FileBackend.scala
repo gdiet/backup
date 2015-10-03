@@ -113,9 +113,7 @@ object FileBackend { val version = "3.0"
     }
     override def clear(from: Long, to: Long): Unit =
       blockStream(from, to - from, blocksize) foreach {
-        case (dataFileNumber, offset, length) => dataFiles(dataFileNumber) { dataFile =>
-          if (offset + length == blocksize) dataFile setLength offset else dataFile clear(offset, length)
-        }
+        case (dataFileNumber, offset, length) => dataFiles(dataFileNumber) { _ clear (offset, length) }
       }
     override def readRaw(from: Long, to: Long): Iterator[Either[Int, Bytes]] =
       blockStream(from, to - from, dataChunkMaxSize).iterator flatMap {
