@@ -11,5 +11,5 @@ scalacOptions in ThisBuild ++= Seq(
 libraryDependencies in ThisBuild ++= Seq("org.specs2" %% "specs2-core" % "3.6.4" % "test")
 scalacOptions in Test in ThisBuild ++= Seq("-Yrangepos")
 
-lazy val ByteStore = project dependsOn Common
+lazy val ByteStore = project dependsOn (Common % "compile->compile;test->test")
 lazy val Common = project
