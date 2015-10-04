@@ -4,7 +4,7 @@ import java.io.{IOException, RandomAccessFile, File}
 
 import net.diet_rich.common._, io._
 
-// Note: Synchronization is done in FileBackend.
+// Note: Synchronization and partitioning of data chunks is done in FileBackend.
 private[file] object DataFile {
   //  0 -  7: (Long) Position of the first data byte in the data store
   //  8 - 15: (Long) Byte store name print

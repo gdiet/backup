@@ -108,6 +108,7 @@ object FileBackend { val version = "3.0"
 
   private final class FileBackendReadWriteRaw(val dataDirectory: File, val name: String) extends CommonRead[FileReadWrite]
   with ByteStore {
+    // FIXME clean closed flag and lock file
     override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileReadWrite =
       new FileReadWrite(namePrint, dataDirectory, startPosition, fileNumber)
     // Note: In the current implementation of DataFile, up to data.length bytes of RAM may be additionally allocated while writing
