@@ -27,7 +27,8 @@ object FileBackend { val version = "3.0"
     ))
   }
 
-  def read(dataDirectory: File, name: String): ByteStoreRead = new FileBackendRead(dataDirectory, name)
+  def read(dataDirectory: File, name: String): ByteStoreRead = readRaw(dataDirectory, name)
+  def readRaw(dataDirectory: File, name: String): ByteStoreRead with ByteStoreReadRaw = new FileBackendRead(dataDirectory, name)
   def readWrite(dataDirectory: File, name: String): ByteStore = readWriteRaw(dataDirectory, name)
   def readWriteRaw(dataDirectory: File, name: String): ByteStore with ByteStoreReadRaw = new FileBackendReadWriteRaw(dataDirectory, name)
 
@@ -46,13 +47,13 @@ object FileBackend { val version = "3.0"
     }
 
     /** @return data file number / offset in file / number of bytes */
-    final def blockStream(from: Long, size: Long, chunkMaxSize: Long): Stream[(Long, Long, Long)] =
+    final def blockStream(from: Long, size: Long): Stream[(Long, Long, Int)] =
       if (size <= 0L) { require (size == 0L, s"Tried to use a negative number of bytes: $size"); Stream.empty }
       else {
         val dataFileNumber = from / blocksize
         val offsetInFile = from % blocksize
-        val bytesToRead = math.min(chunkMaxSize, math.min(blocksize - offsetInFile, size))
-        (dataFileNumber, offsetInFile, bytesToRead) #:: blockStream(from + bytesToRead, size - bytesToRead, chunkMaxSize)
+        val bytesToRead = math.min(dataChunkMaxSize, math.min(blocksize - offsetInFile, size)).toInt
+        (dataFileNumber, offsetInFile, bytesToRead) #:: blockStream(from + bytesToRead, size - bytesToRead)
       }
 
     object dataFiles {
@@ -86,11 +87,16 @@ object FileBackend { val version = "3.0"
     final def close(): Unit = dataFiles close()
   }
 
-  private trait CommonRead[DataFileType <: FileCommonRead] extends Common[DataFileType] {
+  private trait CommonRead[DataFileType <: FileCommonRead] extends Common[DataFileType] with ByteStoreReadRaw {
     final def read(from: Long, to: Long): Iterator[Bytes] =
-      blockStream(from, to - from, dataChunkMaxSize).iterator map {
+      blockStream(from, to - from).iterator map {
         case (dataFileNumber, offset, length) =>
           dataFiles(dataFileNumber)(_ read(offset, length.toInt)) // toInt: dataChunkMaxSize is Int
+      }
+    final def readRaw(from: Long, to: Long): Iterator[Either[Int, Bytes]] =
+      blockStream(from, to - from).iterator flatMap {
+        case (dataFileNumber, offset, length) =>
+          dataFiles(dataFileNumber)(_ readRaw(offset, length.toInt)) // toInt: dataChunkMaxSize is Int
       }
   }
 
@@ -100,10 +106,11 @@ object FileBackend { val version = "3.0"
       new FileRead(namePrint, dataDirectory, startPosition, fileNumber)
   }
 
-  private final class FileBackendReadWriteRaw(val dataDirectory: File, val name: String) extends CommonRead[FileReadWriteRaw]
-  with ByteStore with ByteStoreReadRaw {
-    override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileReadWriteRaw =
-      new FileReadWriteRaw(namePrint, dataDirectory, startPosition, fileNumber)
+  private final class FileBackendReadWriteRaw(val dataDirectory: File, val name: String) extends CommonRead[FileReadWrite]
+  with ByteStore {
+    override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileReadWrite =
+      new FileReadWrite(namePrint, dataDirectory, startPosition, fileNumber)
+    // Note: In the current implementation of DataFile, up to data.length bytes of RAM may be additionally allocated while writing
     @annotation.tailrec
     override def write(data: Bytes, at: Long): Unit = {
       val offsetInFile = at % blocksize
@@ -112,13 +119,8 @@ object FileBackend { val version = "3.0"
       if (data.length > bytesToWriteInDataFile) write(data withOffset bytesToWriteInDataFile, at + bytesToWriteInDataFile)
     }
     override def clear(from: Long, to: Long): Unit =
-      blockStream(from, to - from, blocksize) foreach {
+      blockStream(from, to - from).reverse foreach { // reverse makes clear more efficient
         case (dataFileNumber, offset, length) => dataFiles(dataFileNumber) { _ clear (offset, length) }
-      }
-    override def readRaw(from: Long, to: Long): Iterator[Either[Int, Bytes]] =
-      blockStream(from, to - from, dataChunkMaxSize).iterator flatMap {
-        case (dataFileNumber, offset, length) =>
-          dataFiles(dataFileNumber)(_ readRaw(offset, length.toInt)) // toInt: dataChunkMaxSize is Int
       }
   }
 }

@@ -17,6 +17,7 @@ case class Bytes (data: Array[Byte], offset: Int, length: Int) {
 }
 
 object Bytes extends ((Array[Byte], Int, Int) => Bytes) {
+  def apply(data: Array[Byte]): Bytes = Bytes(data, 0, data.length)
   val empty = Bytes(Array.empty, 0, 0)
   def zero(length: Int) = Bytes(new Array(length), 0, length)
 }

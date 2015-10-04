@@ -6,15 +6,15 @@ import net.diet_rich.common._, io._
 
 // Note: Synchronization is done in FileBackend.
 private[file] object DataFile {
-  //  1 -  8: (Long) Position of the first data byte in the data store
-  //  9 - 16: (Long) Byte store name print
-  // 17 - 24: (Long) Reserved for future extension
-  // 25 - 32: (Long) Reserved for future data print extension FIXME implement
+  //  0 -  7: (Long) Position of the first data byte in the data store
+  //  8 - 15: (Long) Byte store name print
+  // 16 - 23: (Long) File data print
+  // 24 - 31: (Long) Reserved for future extension
   val headerBytes = 32
 
   // Performance optimized.
-  def calcDataPrint(offsetInFileData: Long, bytes: Bytes): Long = internalCalcDataPrint(offsetInFileData + 1, bytes)
-  private def internalCalcDataPrint(offsetInFileData: Long, bytes: Bytes): Long = {
+  private def calculateDataPrint(offsetInFileData: Long, bytes: Bytes): Long = internalDataPrint(offsetInFileData + 1, bytes)
+  private def internalDataPrint(offsetInFileData: Long, bytes: Bytes): Long = {
     var print: Long = 0L
     for (n <- 0 until bytes.length) print ^= (n + offsetInFileData) * 5870203405204807807L * bytes.data(n + bytes.offset)
     print
@@ -27,8 +27,6 @@ private[file] object DataFile {
     val startPosition: Long
     val accessType: String
     protected def fileAccess: Option[RandomAccessFile]
-
-    final def close(): Unit = fileAccess foreach (_ close())
 
     final val file = dataDirectory / (f"$fileNumber%010X" grouped 2 mkString "/") // 00/00/00/00/00 (hex), max 10^12 files
 
@@ -53,45 +51,7 @@ private[file] object DataFile {
         }
       }
     }
-  }
-
-  final class FileRead(val namePrint: Long, val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
-    val accessType = "r"
-    protected val fileAccess: Option[RandomAccessFile] = if (file isFile()) Some(openAndCheckHeader()) else None
-  }
-
-  final class FileReadWriteRaw(val namePrint: Long, val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
-    val accessType = "rw"
-    protected var fileAccess: Option[RandomAccessFile] = if (file isFile()) Some(openAndCheckHeader()) else None
-    protected def writeAccess: RandomAccessFile = fileAccess getOrElse {
-      file.getParentFile mkdirs()
-      init(new RandomAccessFile(file, accessType)) { access =>
-        access writeLong startPosition
-        access writeLong namePrint
-        fileAccess = Some(access)
-      }
-    }
-    def write(offsetInFile: Long, bytes: Bytes): Unit = {
-      val access = writeAccess
-      access seek (offsetInFile + headerBytes)
-      access write (bytes.data, bytes.offset, bytes.length)
-    }
-    def clear(offsetInFile: Long, size: Long): Unit = {
-      val access = writeAccess
-      val dataLength = access.length() - headerBytes
-      if (dataLength > offsetInFile) { // otherwise, no need to change
-        if (dataLength <= offsetInFile + size) {
-          access setLength offsetInFile + headerBytes
-        } else {
-          access seek (offsetInFile + headerBytes)
-          for (position <- 0L to size by FileBackend.dataChunkMaxSize) {
-            val sizeToWrite = math.min(FileBackend.dataChunkMaxSize, size - position).toInt
-            access write new Array[Byte](sizeToWrite)
-          }
-        }
-      }
-    }
-    def readRaw(offsetInFileData: Long, size: Int): Seq[Either[Int, Bytes]] =
+    final def readRaw(offsetInFileData: Long, size: Int): Seq[Either[Int, Bytes]] =
       fileAccess.map { access =>
         val availableData = access.length() - headerBytes
         if (availableData <= offsetInFileData) Seq(Left(size))
@@ -103,5 +63,58 @@ private[file] object DataFile {
           if (dataToRead < size) Seq(Right(bytes), Left(size - dataToRead)) else Seq(Right(bytes))
         }
       } getOrElse Seq(Left(size))
+  }
+
+  final class FileRead(val namePrint: Long, val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
+    val accessType = "r"
+    protected val fileAccess: Option[RandomAccessFile] = if (file isFile()) Some(openAndCheckHeader()) else None
+    override def close(): Unit = fileAccess foreach (_ close())
+  }
+
+  final class FileReadWrite(val namePrint: Long, val dataDirectory: File, val fileNumber: Long, val startPosition: Long) extends FileCommonRead {
+    val accessType = "rw"
+    private var dataPrint: Long = 0
+    protected var fileAccess: Option[RandomAccessFile] = if (!file.isFile) None else Some (
+      init(openAndCheckHeader()) { access => assert (access.getFilePointer == 16); dataPrint = access readLong() }
+    )
+    private def writeAccess: RandomAccessFile = fileAccess getOrElse {
+      file.getParentFile mkdirs()
+      init(new RandomAccessFile(file, accessType)) { access =>
+        access writeLong startPosition
+        access writeLong namePrint
+        fileAccess = Some(access)
+      }
+    }
+    override def close(): Unit = fileAccess foreach { access =>
+      access seek 16
+      access writeLong dataPrint
+      access close()
+    }
+    private def reverseDataPrint(access: RandomAccessFile, dataLength: Long, offsetInFile: Long, size: Int): Unit = {
+      val effectiveSizeOverwritten = math.min(size, dataLength - offsetInFile).toInt
+      access seek (offsetInFile + headerBytes)
+      val data = init(new Array[Byte](effectiveSizeOverwritten))(access.readFully)
+      dataPrint ^= calculateDataPrint(offsetInFile, Bytes(data))
+    }
+    def write(offsetInFile: Long, bytes: Bytes): Unit = {
+      val access = writeAccess
+      val dataLength = access.length() - headerBytes
+      if (dataLength > offsetInFile) reverseDataPrint(access, dataLength, offsetInFile, bytes.length)
+      access seek (offsetInFile + headerBytes)
+      access write (bytes.data, bytes.offset, bytes.length)
+      dataPrint ^= calculateDataPrint(offsetInFile, bytes)
+    }
+    def clear(offsetInFile: Long, size: Int): Unit = {
+      val access = writeAccess
+      val dataLength = access.length() - headerBytes
+      if (dataLength > offsetInFile) { // otherwise, no need to change
+        reverseDataPrint(access, dataLength, offsetInFile, size)
+        if (dataLength <= offsetInFile + size) access setLength offsetInFile + headerBytes
+        else {
+          access seek (offsetInFile + headerBytes)
+          access write new Array[Byte](size)
+        }
+      }
+    }
   }
 }
