@@ -86,9 +86,11 @@ private[file] object DataFile {
       }
     }
     override def close(): Unit = fileAccess foreach { access =>
+      val onlyHeader = access.length() <= headerBytes
       access seek 16
       access writeLong dataPrint
       access close()
+      if (onlyHeader) file.delete()
     }
     private def reverseDataPrint(access: RandomAccessFile, dataLength: Long, offsetInFile: Long, size: Int): Unit = {
       val effectiveSizeOverwritten = math.min(size, dataLength - offsetInFile).toInt
