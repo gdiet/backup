@@ -12,7 +12,9 @@ import DataFile._
 object FileBackend { val version = "3.0"
 
   private val configFileName = "config.txt"
+  private val statusFileName = "status.txt"
   private val (nameKey, versionKey, blocksizeKey) = ("name", "version", "blocksize")
+  private val (isClosedKey, isCleanKey) = ("isClosed", "isClean")
   private val maxNumberOfOpenFiles = 64
   private[file] val dataChunkMaxSize: Int = 65536 // Int to avoid problems with byte array size
 
@@ -25,12 +27,27 @@ object FileBackend { val version = "3.0"
       nameKey -> name,
       blocksizeKey -> s"$blocksize"
     ))
+    writeSettingsFile(dataDirectory / statusFileName, Map(isClosedKey -> "true", isCleanKey -> "true"))
   }
 
   def read(dataDirectory: File, name: String): ByteStoreRead = readRaw(dataDirectory, name)
   def readRaw(dataDirectory: File, name: String): ByteStoreRead with ByteStoreReadRaw = new FileBackendRead(dataDirectory, name)
   def readWrite(dataDirectory: File, name: String): ByteStore = readWriteRaw(dataDirectory, name)
   def readWriteRaw(dataDirectory: File, name: String): ByteStore with ByteStoreReadRaw = new FileBackendReadWriteRaw(dataDirectory, name)
+
+  def forceClose(dataDirectory: File, name: String): Unit = {
+    checkSettingsReturningBlocksize(dataDirectory, name)
+    val status = readSettingsFile(dataDirectory / statusFileName)
+    require(!status(isClosedKey).toBoolean, s"Status file $statusFileName signals the file byte store is already closed")
+    writeSettingsFile(dataDirectory / statusFileName, Map(isClosedKey -> "true", isCleanKey -> "false"))
+  }
+
+  private def checkSettingsReturningBlocksize(dataDirectory: File, name: String): Long = {
+    val settings = readSettingsFile(dataDirectory / configFileName)
+    require(settings(versionKey) == version, s"Version mismatch in file byte store: Actual ${settings(versionKey)}, required $version")
+    require(settings(nameKey) == name, s"Name mismatch in file byte store: Actual ${settings(nameKey)}, expected $name")
+    settings(blocksizeKey).toLong
+  }
 
   private trait Common[DataFileType <: AutoCloseable] {
     val dataDirectory: File
@@ -39,12 +56,13 @@ object FileBackend { val version = "3.0"
 
     final val namePrint: Long = printOf(name)
 
-    final val blocksize: Long = {
-      val settings = readSettingsFile(dataDirectory / configFileName)
-      require(settings(versionKey) == version, s"Version mismatch in file byte store: Actual ${settings(versionKey)}, required $version")
-      require(settings(nameKey) == name, s"Name mismatch in file byte store: Actual ${settings(nameKey)}, expected $name")
-      settings(blocksizeKey).toLong
+    final val isClean: Boolean = {
+      val status = readSettingsFile(dataDirectory / statusFileName)
+      require(status(isClosedKey).toBoolean, s"Status file $statusFileName signals the file byte store is already opened")
+      status(isCleanKey).toBoolean
     }
+
+    final val blocksize: Long = checkSettingsReturningBlocksize(dataDirectory, name)
 
     /** @return data file number / offset in file / number of bytes */
     final def blockStream(from: Long, size: Long): Stream[(Long, Long, Int)] =
@@ -84,7 +102,6 @@ object FileBackend { val version = "3.0"
       case 0 => position
       case n => position + blocksize - n
     }
-    final def close(): Unit = dataFiles close()
   }
 
   private trait CommonRead[DataFileType <: FileCommonRead] extends Common[DataFileType] with ByteStoreReadRaw {
@@ -104,11 +121,12 @@ object FileBackend { val version = "3.0"
   with ByteStoreRead {
     override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileRead =
       new FileRead(namePrint, dataDirectory, startPosition, fileNumber)
+    override def close(): Unit = dataFiles close()
   }
 
   private final class FileBackendReadWriteRaw(val dataDirectory: File, val name: String) extends CommonRead[FileReadWrite]
   with ByteStore {
-    // FIXME clean closed flag and lock file, prevent use after close?
+    writeSettingsFile(dataDirectory / statusFileName, Map(isClosedKey -> "false", isCleanKey -> s"$isClean"))
     override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileReadWrite =
       new FileReadWrite(namePrint, dataDirectory, startPosition, fileNumber)
     // Note: In the current implementation of DataFile, up to data.length bytes of RAM may be additionally allocated while writing
@@ -123,5 +141,9 @@ object FileBackend { val version = "3.0"
       blockStream(from, to - from).reverse foreach { // reverse makes clear more efficient
         case (dataFileNumber, offset, length) => dataFiles(dataFileNumber) { _ clear (offset, length) }
       }
+    override def close(): Unit = {
+      dataFiles close()
+      writeSettingsFile(dataDirectory / statusFileName, Map(isClosedKey -> "true", isCleanKey -> s"$isClean"))
+    }
   }
 }
