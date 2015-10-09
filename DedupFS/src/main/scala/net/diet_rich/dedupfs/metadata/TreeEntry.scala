@@ -7,8 +7,7 @@ case class TreeEntry (
   parent: Long,
   name: String,
   changed: Option[Long] = someNow,
-  data: Option[Long] = None,
-  deleted: Option[Long] = None
+  data: Option[Long] = None
 )
 
 object TreeEntry {

@@ -9,30 +9,33 @@ import sql.WrappedSQLResult
 import TreeEntry.root
 
 object Database {
+  // Note: All tables are designed for create-only operation,
+  // never for update, and delete only when purging to free space.
+  // To get the current tree state, a clause like
+  //   WHERE id IN (SELECT MAX(id) from TreeEntries GROUP BY key);
+  // is needed.
   def tableDefinitions(hashAlgorithm: String): Array[String] =
     s"""|CREATE SEQUENCE treeEntryIdSeq START WITH 0;
         |CREATE SEQUENCE treeEntryKeySeq START WITH 0;
         |CREATE TABLE TreeEntries (
-        |  id      BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryIdSeq),
-        |  key     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryKeySeq),
-        |  parent  BIGINT NOT NULL,
-        |  name    VARCHAR(256) NOT NULL,
-        |  changed BIGINT DEFAULT NULL,
-        |  dataid  BIGINT DEFAULT NULL,
-        |  deleted BIGINT DEFAULT NULL,
+        |  id        BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryIdSeq),
+        |  key       BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryKeySeq),
+        |  parent    BIGINT NOT NULL,
+        |  name      VARCHAR(256) NOT NULL,
+        |  changed   BIGINT DEFAULT NULL,
+        |  dataid    BIGINT DEFAULT NULL,
+        |  deleted   BOOLEAN NOT NULL DEFAULT FALSE,
+        |  timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
         |);
-        |INSERT INTO TreeEntries (parent, name) VALUES (${root.parent}, '${root.name}');
-        |CREATE VIEW TreeEntriesView AS
-        |  SELECT (key, parent, name, changed, dataid, deleted) FROM TreeEntries
-        |    WHERE id IN (SELECT MAX(id) from TreeEntries GROUP BY key);
+        |INSERT INTO TreeEntries (parent, name, timestamp) VALUES (${root.parent}, '${root.name}', 0);
         |CREATE SEQUENCE dataEntryIdSeq START WITH 0;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),
         |  length BIGINT NOT NULL,
         |  print  BIGINT NOT NULL,
         |  hash   VARBINARY(${Hash digestLength hashAlgorithm}) NOT NULL,
-        |  method INTEGER DEFAULT 0 NOT NULL,
+        |  method INTEGER NOT NULL,
         |  CONSTRAINT pk_DataEntries PRIMARY KEY (id)
         |);
         |CREATE SEQUENCE byteStoreIdSeq START WITH 0;
@@ -71,12 +74,38 @@ object Database {
     tableDefinitions(hashAlgorithm) foreach (sql.update(_))
     indexDefinitions foreach (sql.update(_))
     // Make sure the empty data entry is stored plain by inserting it manually
-    sql update ("INSERT INTO DataEntries (length, print, hash, method) VALUES (?, ?, ?, ?);",
-      0, printOf(Bytes.empty), Hash empty hashAlgorithm, StoreMethod.STORE)
+    sql.update("INSERT INTO DataEntries (length, print, hash, method) VALUES (?, ?, ?, ?);")
+      .run(0, printOf(Bytes.empty), Hash empty hashAlgorithm, StoreMethod.STORE)
   }
 
+  val currentNotDeletedTreeEntry = "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
+
+
   def startOfFreeDataArea(implicit connection: Connection): Long =
-    sql.query("SELECT MAX(fin) FROM ByteStore;")(_ long 1) nextOptionOnly() getOrElse 0
+    sql.query("SELECT MAX(fin) FROM ByteStore;").runv()(_ long 1) nextOptionOnly() getOrElse 0
+}
+
+class TreeDatabase(treeCondition: String)(implicit connectionFactory: ScalaThreadLocal[Connection]) {
+  assert(treeCondition.nonEmpty)
+  private implicit def connection: Connection = connectionFactory()
+  import scala.language.implicitConversions
+  private implicit def productToSeq(product: Product): Seq[Any] = product.productIterator.toSeq
+
+  private val prepTreeChildrenOf =
+    sql query s"SELECT (id, parent, name, changed, data) FROM TreeEntries WHERE parent = ? AND $treeCondition"
+  def treeChildrenOf(parentKey: Long): Seq[TreeEntry] =
+    prepTreeChildrenOf.runv(parentKey)(r => TreeEntry(r.long(1), r.long(2), r.string(3), r.longOption(4), r.longOption(5))).toSeq
+
+  private val prepTreeUpdate =
+    sql update s"INSERT INTO TreeEntries(id, parent, name, changed, data) VALUES (?, ?, ?, ?, ?)"
+  def treeUpdate(treeEntry: TreeEntry): Unit =
+    prepTreeUpdate.run(treeEntry)
+
+  private val prepTreeDelete =
+    sql update s"INSERT INTO TreeEntries(id, parent, name, changed, data, deleted) VALUES (?, ?, ?, ?, ?, TRUE)"
+  def treeDelete(treeEntry: TreeEntry): Unit =
+    prepTreeDelete.run(treeEntry)
+}
 
   /*
     private def startOfFreeDataArea(implicit session: CurrentSession) = StaticQuery.queryNA[Long](
@@ -175,4 +204,3 @@ object Database {
   }
 
      */
-}

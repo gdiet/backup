@@ -4,32 +4,26 @@ import java.sql.{ResultSet, Connection, PreparedStatement}
 import java.sql.Statement.RETURN_GENERATED_KEYS
 
 package object sql {
-  def query[T](sql: String, args: Any*)(processor: ResultSet => T)(implicit connection: Connection): ResultIterator[T] =
-    prepareQuery(sql).apply(args)(processor)
-
-  def prepareQuery(sql: String, aka: String = "")(implicit connection: Connection): SqlQuery =
+  def query(sql: String, aka: String = "")(implicit connection: Connection): SqlQuery =
     new PreparedSql(sql, aka) with SqlQuery {
-      override def apply[T](args: Any*)(processor: ResultSet => T): ResultIterator[T] =
+      override def runv[T](args: Any*)(processor: ResultSet => T): ResultIterator[T] =
         execQueryAka(prepared(), args, akaString(sql, args, aka), processor)
     }
 
-  def update(sql: String, args: Any*)(implicit connection: Connection): Int =
-    prepareUpdate(sql) apply (args:_*)
-
-  def prepareUpdate(sql: String)(implicit connection: Connection): SqlUpdate =
+  def update(sql: String)(implicit connection: Connection): SqlUpdate =
     new PreparedSql(sql) with SqlUpdate {
-      override def apply(args: Any*): Int = setArguments(prepared(), args) executeUpdate()
+      override def run(args: Seq[Any]): Int = setArguments(prepared(), args) executeUpdate()
     }
 
-  def prepareSingleRowUpdate(sql: String)(implicit connection: Connection): SingleRowSqlUpdate =
+  def singleRowUpdate(sql: String)(implicit connection: Connection): SingleRowSqlUpdate =
     new PreparedSql(sql) with SingleRowSqlUpdate {
-      override def apply(args: Any*): Unit = updateSingleRow(prepared(), args, sql)
+      override def run(args: Seq[Any]): Unit = updateSingleRow(prepared(), args, sql)
     }
 
-  def prepareInsertReturnsKey(sql: String, indexOfKey: Int)(implicit connection: ScalaThreadLocal[Connection]): SqlInsertReturnKey = {
+  def insertReturnsKey(sql: String, indexOfKey: Int)(implicit connectionFactory: ScalaThreadLocal[Connection]): SqlInsertReturnKey = {
     new SqlInsertReturnKey {
-      protected val prepared = ScalaThreadLocal(connection() prepareStatement (sql, Array(indexOfKey)))
-      override def apply(args: Any*): Long = {
+      protected val prepared = ScalaThreadLocal(connectionFactory() prepareStatement (sql, Array(indexOfKey)))
+      override def run(args: Seq[Any]): Long = {
         val statement = prepared()
         updateSingleRow(statement, args, sql)
         init(statement getGeneratedKeys()) (_ next()) long 1
@@ -37,10 +31,16 @@ package object sql {
     }
   }
 
-  sealed trait SqlQuery { def apply[T](args: Any*)(processor: ResultSet => T): ResultIterator[T] }
-  sealed trait SqlUpdate { def apply(args: Any*): Int }
-  sealed trait SingleRowSqlUpdate { def apply(args: Any*): Unit }
-  sealed trait SqlInsertReturnKey { def apply(args: Any*): Long }
+  sealed trait RunArgs[T] {
+    def run(args: Seq[Any]): T
+    final def runv(args: Any*): T = run(args)
+    final def run(args: Product): T = run(args.productIterator.toSeq)
+  }
+
+  sealed trait SqlQuery { def runv[T](args: Any*)(processor: ResultSet => T): ResultIterator[T] } // FIXME runv and run
+  sealed trait SqlUpdate extends RunArgs[Int] { def run(args: Seq[Any]): Int }
+  sealed trait SingleRowSqlUpdate extends RunArgs[Unit] { def run(args: Seq[Any]): Unit }
+  sealed trait SqlInsertReturnKey extends RunArgs[Long] { def run(args: Seq[Any]): Long }
 
   trait ResultIterator[T] extends Iterator[T] {
     protected def resultSetName: String
