@@ -26,13 +26,13 @@ package object sql {
       override def apply(args: Any*): Unit = updateSingleRow(prepared(), args, sql)
     }
 
-  def prepareInsertReturnKey(sql: String)(implicit connection: ScalaThreadLocal[Connection]): SqlInsertReturnKey = {
+  def prepareInsertReturnsKey(sql: String, indexOfKey: Int)(implicit connection: ScalaThreadLocal[Connection]): SqlInsertReturnKey = {
     new SqlInsertReturnKey {
-      protected val prepared = ScalaThreadLocal(connection() prepareStatement (sql, RETURN_GENERATED_KEYS))
+      protected val prepared = ScalaThreadLocal(connection() prepareStatement (sql, Array(indexOfKey)))
       override def apply(args: Any*): Long = {
         val statement = prepared()
         updateSingleRow(statement, args, sql)
-        init(statement getGeneratedKeys()) (_ next()) getLong 1
+        init(statement getGeneratedKeys()) (_ next()) long 1
       }
     }
   }
