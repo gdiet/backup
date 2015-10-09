@@ -1,13 +1,13 @@
 package net.diet_rich.common
 
 import java.sql.{ResultSet, Connection, PreparedStatement}
-import java.sql.Statement.RETURN_GENERATED_KEYS
 
 package object sql {
-  def query(sql: String, aka: String = "")(implicit connection: Connection): SqlQuery =
-    new PreparedSql(sql, aka) with SqlQuery {
-      override def runv[T](args: Any*)(processor: ResultSet => T): ResultIterator[T] =
-        execQueryAka(prepared(), args, akaString(sql, args, aka), processor)
+
+  def query[T](sql: String)(implicit processor: ResultSet => T, connection: Connection): SqlQuery[ResultIterator[T]] =
+    new PreparedSql(sql) with SqlQuery[ResultIterator[T]] {
+      override def run(args: Seq[Any]): ResultIterator[T] =
+        execQuery(prepared(), args, sql)
     }
 
   def update(sql: String)(implicit connection: Connection): SqlUpdate =
@@ -20,9 +20,9 @@ package object sql {
       override def run(args: Seq[Any]): Unit = updateSingleRow(prepared(), args, sql)
     }
 
-  def insertReturnsKey(sql: String, indexOfKey: Int)(implicit connectionFactory: ScalaThreadLocal[Connection]): SqlInsertReturnKey = {
+  def insertReturnsKey(sql: String, keyToReturn: String)(implicit connectionFactory: ScalaThreadLocal[Connection]): SqlInsertReturnKey = {
     new SqlInsertReturnKey {
-      protected val prepared = ScalaThreadLocal(connectionFactory() prepareStatement (sql, Array(indexOfKey)))
+      protected val prepared = ScalaThreadLocal(connectionFactory() prepareStatement (sql, Array(keyToReturn)))
       override def run(args: Seq[Any]): Long = {
         val statement = prepared()
         updateSingleRow(statement, args, sql)
@@ -33,19 +33,20 @@ package object sql {
 
   sealed trait RunArgs[T] {
     def run(args: Seq[Any]): T
+    final def run(): T = run(Seq())
     final def runv(args: Any*): T = run(args)
     final def run(args: Product): T = run(args.productIterator.toSeq)
   }
 
-  sealed trait SqlQuery { def runv[T](args: Any*)(processor: ResultSet => T): ResultIterator[T] } // FIXME runv and run
+  sealed trait SqlQuery[T] extends RunArgs[T] { def run(args: Seq[Any]): T }
   sealed trait SqlUpdate extends RunArgs[Int] { def run(args: Seq[Any]): Int }
   sealed trait SingleRowSqlUpdate extends RunArgs[Unit] { def run(args: Seq[Any]): Unit }
   sealed trait SqlInsertReturnKey extends RunArgs[Long] { def run(args: Seq[Any]): Long }
 
   trait ResultIterator[T] extends Iterator[T] {
-    protected def resultSetName: String
+    protected def iteratorName: String
     protected def expectNoMoreResults = { _: Any =>
-      if (hasNext) throw new IllegalStateException(s"Expected no further results for $resultSetName.")
+      if (hasNext) throw new IllegalStateException(s"Expected no further results for $iteratorName.")
     }
     def nextOption(): Option[T] = if (hasNext) Some(next()) else None
     def nextOnly(): T = init(next())(expectNoMoreResults)
@@ -64,16 +65,15 @@ package object sql {
     def bytesOption(column: Int): Option[Array[Byte]] = asOption (resultSet getBytes  column)
   }
 
-  private class PreparedSql(val sql: String, val aka: String = "")(implicit connection: Connection) {
+  private class PreparedSql(val sql: String)(implicit connection: Connection) {
     val prepared = ScalaThreadLocal(connection prepareStatement sql)
   }
 
-  private def akaString(sql: String, args: Seq[Any], aka: String = "") =
-    if (aka isEmpty()) s"'$sql' ${args.toList mkString ("(", ", ", ")")}" else aka
+  private def sqlWithArgsString(sql: String, args: Seq[Any]) = s"'$sql' ${args.toList mkString ("(", ", ", ")")}"
 
-  private def execQueryAka[T](stat: PreparedStatement, args: Seq[Any], aka: => String, processor: ResultSet => T): ResultIterator[T] =
+  private def execQuery[T](stat: PreparedStatement, args: Seq[Any], sql: String)(implicit processor: ResultSet => T): ResultIterator[T] =
     new ResultIterator[T] {
-      override def resultSetName: String = aka format (args:_*)
+      def iteratorName = sqlWithArgsString(sql, args)
       val resultSet = setArguments(stat, args) executeQuery()
       var (hasNextIsChecked, hasNextResult) = (false, false)
       override def hasNext : Boolean = {
@@ -85,7 +85,7 @@ package object sql {
         hasNextResult
       }
       override def next() : T = {
-        if (!hasNext) throw new NoSuchElementException(s"Retrieving element from $resultSetName failed.")
+        if (!hasNext) throw new NoSuchElementException(s"Retrieving next element from $iteratorName failed.")
         hasNextIsChecked = false
         processor(resultSet)
       }
@@ -110,7 +110,7 @@ package object sql {
   private def updateSingleRow(preparedStatement: PreparedStatement, args: Seq[Any], sql: String): Unit =
     setArguments(preparedStatement, args).executeUpdate() match {
       case 1 => ()
-      case n => throw new IllegalStateException(s"SQL update ${akaString(sql, args)} returned $n rows instead of 1")
+      case n => throw new IllegalStateException(s"SQL update ${sqlWithArgsString(sql, args)} returned $n rows instead of 1")
     }
 
 }

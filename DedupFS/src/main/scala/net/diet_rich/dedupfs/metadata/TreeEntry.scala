@@ -3,7 +3,7 @@ package net.diet_rich.dedupfs.metadata
 import net.diet_rich.common.someNow
 
 case class TreeEntry (
-  id: Long,
+  key: Long,
   parent: Long,
   name: String,
   changed: Option[Long] = someNow,
