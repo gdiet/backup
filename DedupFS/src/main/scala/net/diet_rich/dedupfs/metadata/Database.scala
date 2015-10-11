@@ -72,8 +72,8 @@ object Database {
        |CREATE INDEX idxByteStoreFin ON ByteStore(fin);""".stripMargin split ";"
 
   def create(hashAlgorithm: String)(implicit connection: Connection): Unit = {
-    tableDefinitions(hashAlgorithm) foreach sql.update
-    indexDefinitions foreach sql.update
+    tableDefinitions(hashAlgorithm) foreach (sql.update(_).run())
+    indexDefinitions foreach (sql.update(_).run())
     // Make sure the empty data entry is stored plain by inserting it manually
     sql.update("INSERT INTO DataEntries (length, print, hash, method) VALUES (?, ?, ?, ?);")
       .run(0, printOf(Bytes.empty), Hash empty hashAlgorithm, StoreMethod.STORE)
@@ -81,8 +81,6 @@ object Database {
 
   def startOfFreeDataArea(implicit connection: Connection): Long =
     sql.query[Long]("SELECT MAX(fin) FROM ByteStore;").run() nextOptionOnly() getOrElse 0
-
-  val currentNotDeletedTreeEntry = "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
 
   implicit val longFromResultSet = {(_: ResultSet) long 1}
   implicit val treeEntryFromResultSet = { r: ResultSet => TreeEntry(r.long(1), r.long(2), r.string(3), r.longOption(4), r.longOption(5)) }
@@ -94,7 +92,7 @@ trait TreeDatabaseRead {
   assert(treeCondition.nonEmpty)
 
   private val prepTreeChildrenOf =
-    sql.query[TreeEntry](s"SELECT (key, parent, name, changed, data) FROM TreeEntries WHERE parent = ? AND $treeCondition")
+    sql.query[TreeEntry](s"SELECT key, parent, name, changed, dataid FROM TreeEntries WHERE parent = ? AND $treeCondition")
   def treeChildrenOf(parentKey: Long): Seq[TreeEntry] =
     prepTreeChildrenOf.runv(parentKey).toSeq
 }
@@ -102,22 +100,22 @@ trait TreeDatabaseRead {
 trait TreeDatabaseWrite {
   protected implicit def connectionFactory: ScalaThreadLocal[Connection]
   protected implicit final def connection: Connection = connectionFactory()
-  protected final val treeCondition = currentNotDeletedTreeEntry
+  protected final val treeCondition = "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
 
   private val prepTreeUpdate =
-    sql singleRowUpdate s"INSERT INTO TreeEntries(key, parent, name, changed, data) VALUES (?, ?, ?, ?, ?)"
+    sql singleRowUpdate s"INSERT INTO TreeEntries (key, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?)"
   def treeUpdate(treeEntry: TreeEntry): Unit =
     prepTreeUpdate.run(treeEntry)
 
   private val prepTreeDelete =
-    sql singleRowUpdate s"INSERT INTO TreeEntries(key, parent, name, changed, data, deleted) VALUES (?, ?, ?, ?, ?, TRUE)"
+    sql singleRowUpdate s"INSERT INTO TreeEntries (key, parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, ?, TRUE)"
   def treeDelete(treeEntry: TreeEntry): Unit =
     prepTreeDelete.run(treeEntry)
 
   private val prepTreeInsert =
-    sql insertReturnsKey (s"INSERT INTO TreeEntries(key, parent, name, changed, data, deleted) VALUES (?, ?, ?, ?, ?, TRUE)", "key")
-  def treeInsert(treeEntry: TreeEntry): Long =
-    prepTreeInsert.run(treeEntry)
+    sql insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
+  def treeInsert(parent: Long, name: String, changed: Option[Long], data: Option[Long]): Long =
+    prepTreeInsert.runv(parent, name, changed, data)
 }
 
   /*
