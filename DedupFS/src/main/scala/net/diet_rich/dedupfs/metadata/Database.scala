@@ -5,7 +5,6 @@ import java.sql.{ResultSet, Connection}
 import net.diet_rich.common._
 import net.diet_rich.dedupfs.StoreMethod
 
-import Database._
 import TreeEntry.root
 import sql.WrappedSQLResult
 
@@ -82,25 +81,33 @@ object Database {
   def startOfFreeDataArea(implicit connection: Connection): Long =
     sql.query[Long]("SELECT MAX(fin) FROM ByteStore;").run() nextOptionOnly() getOrElse 0
 
-  implicit val longFromResultSet = {(_: ResultSet) long 1}
-  implicit val treeEntryFromResultSet = { r: ResultSet => TreeEntry(r.long(1), r.long(2), r.string(3), r.longOption(4), r.longOption(5)) }
+  implicit val longResult = {(_: ResultSet) long 1}
+  implicit val treeEntryResult = { r: ResultSet => TreeEntry(r long 1, r long 2 , r string 3, r longOption 4, r longOption 5) }
+  implicit val treeQueryResult = { r: ResultSet => (treeEntryResult(r), r boolean 6, r long 7) }
 }
 
-trait TreeDatabaseRead {
+trait TreeDatabaseRead { import Database._
   protected implicit def connection: Connection
-  protected def treeCondition: String
-  assert(treeCondition.nonEmpty)
 
+  // Note: Ideally, here an SQL condition like
+  // "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
+  // would be used in the SELECT statement.
+  // However, H2 does not run such queries fast enough.
   private val prepTreeChildrenOf =
-    sql.query[TreeEntry](s"SELECT key, parent, name, changed, dataid FROM TreeEntries WHERE parent = ? AND $treeCondition")
-  def treeChildrenOf(parentKey: Long): Seq[TreeEntry] =
-    prepTreeChildrenOf.runv(parentKey).toSeq
+    sql.query[(TreeEntry, Boolean, Long)](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE parent = ?")
+  def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
+    prepTreeChildrenOf.runv(parentKey)
+      .filter { case (_, _, id) => id <= upToId }
+      .toSeq
+      .groupBy { case (treeEntry, _, _) => treeEntry.key }
+      .map { case (key, entries) => entries.maxBy { case (_, _, id) => id } }
+      .filter { case (_, deleted, _) => deleted == isDeleted }
+      .map { case (treeEntry, _, _) => treeEntry }
 }
 
 trait TreeDatabaseWrite {
   protected implicit def connectionFactory: ScalaThreadLocal[Connection]
   protected implicit final def connection: Connection = connectionFactory()
-  protected final val treeCondition = "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
 
   private val prepTreeUpdate =
     sql singleRowUpdate s"INSERT INTO TreeEntries (key, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?)"

@@ -1,6 +1,7 @@
 package net.diet_rich.common
 
 import java.sql.{ResultSet, Connection, PreparedStatement}
+import java.util.Date
 
 package object sql {
 
@@ -55,14 +56,16 @@ package object sql {
 
   implicit class WrappedSQLResult(val resultSet: ResultSet) extends AnyVal {
     private def asOption[T](value: T): Option[T] = if (resultSet.wasNull) None else Some(value)
-    def int(column: Int): Int                         =           resultSet getInt    column
-    def intOption(column: Int): Option[Int]           = asOption (resultSet getInt    column)
-    def long(column: Int): Long                       =           resultSet getLong   column
-    def longOption(column: Int): Option[Long]         = asOption (resultSet getLong   column)
-    def string(column: Int): String                   =           resultSet getString column
-    def stringOption(column: Int): Option[String]     = asOption (resultSet getString column)
-    def bytes(column: Int): Array[Byte]               =           resultSet getBytes  column
-    def bytesOption(column: Int): Option[Array[Byte]] = asOption (resultSet getBytes  column)
+    def boolean(column: Int): Boolean                 =           resultSet getBoolean   column
+    def bytes(column: Int): Array[Byte]               =           resultSet getBytes     column
+    def bytesOption(column: Int): Option[Array[Byte]] = asOption (resultSet getBytes     column)
+    def date(column: Int): Date                       =           resultSet getTimestamp column
+    def int(column: Int): Int                         =           resultSet getInt       column
+    def intOption(column: Int): Option[Int]           = asOption (resultSet getInt       column)
+    def long(column: Int): Long                       =           resultSet getLong      column
+    def longOption(column: Int): Option[Long]         = asOption (resultSet getLong      column)
+    def string(column: Int): String                   =           resultSet getString    column
+    def stringOption(column: Int): Option[String]     = asOption (resultSet getString    column)
   }
 
   private class PreparedSql(val sql: String)(implicit connection: Connection) {
