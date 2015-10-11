@@ -44,16 +44,6 @@ package object sql {
   sealed trait SingleRowSqlUpdate extends RunArgs[Unit] { def run(args: Seq[Any]): Unit }
   sealed trait SqlInsertReturnKey extends RunArgs[Long] { def run(args: Seq[Any]): Long }
 
-  trait ResultIterator[T] extends Iterator[T] {
-    protected def iteratorName: String
-    protected def expectNoMoreResults = { _: Any =>
-      if (hasNext) throw new IllegalStateException(s"Expected no further results for $iteratorName.")
-    }
-    def nextOption(): Option[T] = if (hasNext) Some(next()) else None
-    def nextOnly(): T = init(next())(expectNoMoreResults)
-    def nextOptionOnly(): Option[T] = init(nextOption())(expectNoMoreResults)
-  }
-
   implicit class WrappedSQLResult(val resultSet: ResultSet) extends AnyVal {
     private def asOption[T](value: T): Option[T] = if (resultSet.wasNull) None else Some(value)
     def boolean(column: Int): Boolean                 =           resultSet getBoolean   column
