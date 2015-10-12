@@ -11,7 +11,9 @@ object H2 {
 
   def fileFactory(parentDir: File, dbName: String): ConnectionFactory =
     new ConnectionFactory(
-      DriverManager.getConnection(s"jdbc:h2:${parentDir.getAbsolutePath}/$dbName;DB_CLOSE_ON_EXIT=FALSE", "sa", ""),
+    // TODO Eventually check whether the old format ;MV_STORE=FALSE;MVCC=FALSE is still way more compact or not.
+    // For details see http://code.google.com/p/h2database/issues/detail?id=542
+    DriverManager.getConnection(s"jdbc:h2:${parentDir.getAbsolutePath}/$dbName;DB_CLOSE_ON_EXIT=FALSE", "sa", ""),
       { _.createStatement() execute "SHUTDOWN COMPACT" }
     )
 }

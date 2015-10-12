@@ -106,7 +106,7 @@ trait TreeDatabaseRead { import Database._
 }
 
 trait TreeDatabaseWrite {
-  protected implicit def connectionFactory: ScalaThreadLocal[Connection]
+  protected implicit val connectionFactory: ScalaThreadLocal[Connection]
   protected implicit final def connection: Connection = connectionFactory()
 
   private val prepTreeUpdate =

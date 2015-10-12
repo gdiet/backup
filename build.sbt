@@ -15,4 +15,4 @@ scalacOptions in Test in ThisBuild ++= Seq("-Yrangepos")
 
 lazy val Common = project
 lazy val ByteStore = project dependsOn (Common % "compile->compile;test->test")
-lazy val DedupFS = project dependsOn ByteStore
+lazy val DedupFS = project dependsOn (ByteStore, Common % "test->test")
