@@ -1,12 +1,10 @@
-package net.diet_rich.dedupfs.metadata
+package net.diet_rich.dedupfs.metadata.sql
 
-import java.sql.{ResultSet, Connection}
+import java.sql.{Connection, ResultSet}
 
-import net.diet_rich.common._
+import net.diet_rich.common._, sql._
 import net.diet_rich.dedupfs.StoreMethod
-
-import TreeEntry.root
-import sql.WrappedSQLResult
+import net.diet_rich.dedupfs.metadata.TreeEntry, TreeEntry._
 
 object Database {
   // Note: All tables are designed for create-only operation,

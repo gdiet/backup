@@ -1,7 +1,5 @@
 package net.diet_rich.dedupfs.metadata
 
-import net.diet_rich.common.someNow
-
 case class TreeEntry (key: Long, parent: Long, name: String, changed: Option[Long], data: Option[Long])
 
 object TreeEntry {

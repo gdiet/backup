@@ -1,9 +1,10 @@
-package net.diet_rich.dedupfs.metadata
+package net.diet_rich.dedupfs.metadata.sql
 
 import org.specs2.Specification
 import org.specs2.specification.AfterAll
 
 import net.diet_rich.common._, sql._, test._
+import net.diet_rich.dedupfs.metadata.TreeEntry
 
 class TreeStandardOpsSpec extends Specification with AfterAll with SpecHelper {
   def is = sequential ^ s2"""

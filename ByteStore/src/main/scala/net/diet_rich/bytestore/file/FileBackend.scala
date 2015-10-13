@@ -9,45 +9,22 @@ import net.diet_rich.common._, io._
 
 import DataFile._
 
-object FileBackend { val version = "3.0"
-
-  private val configFileName = "config.txt"
-  private val statusFileName = "status.txt"
-  private val (nameKey, versionKey, blocksizeKey) = ("name", "version", "blocksize")
-  private val (isClosedKey, isCleanKey) = ("isClosed", "isClean")
+object FileBackend extends DirWithConfig {
+  override val objectName = "file byte store"
+  override val version = "3.0"
+  private val blocksizeKey = "blocksize"
   private val maxNumberOfOpenFiles = 64
   private[file] val dataChunkMaxSize: Int = 65536 // Int to avoid problems with byte array size
 
   def initializeDirectory(dataDirectory: File, name: String, blocksize: Long): Unit = {
-    require(!dataDirectory.exists(), s"byte store data directory already exists: $dataDirectory")
-    require(dataDirectory mkdir(), s"can't create byte store data directory $dataDirectory")
     require(blocksize > 0, "block size must be positive")
-    writeSettingsFile(dataDirectory / configFileName, Map(
-      versionKey -> version,
-      nameKey -> name,
-      blocksizeKey -> s"$blocksize"
-    ))
-    writeSettingsFile(dataDirectory / statusFileName, Map(isClosedKey -> "true", isCleanKey -> "true"))
+    initializeDirectory(dataDirectory, name, Map(blocksizeKey -> s"$blocksize"))
   }
 
   def read(dataDirectory: File, name: String): ByteStoreRead = readRaw(dataDirectory, name)
   def readRaw(dataDirectory: File, name: String): ByteStoreRead with ByteStoreReadRaw = new FileBackendRead(dataDirectory, name)
   def readWrite(dataDirectory: File, name: String): ByteStore = readWriteRaw(dataDirectory, name)
   def readWriteRaw(dataDirectory: File, name: String): ByteStore with ByteStoreReadRaw = new FileBackendReadWriteRaw(dataDirectory, name)
-
-  def forceClose(dataDirectory: File, name: String): Unit = {
-    checkSettingsReturningBlocksize(dataDirectory, name)
-    val status = readSettingsFile(dataDirectory / statusFileName)
-    require(!status(isClosedKey).toBoolean, s"Status file $statusFileName signals the file byte store is already closed")
-    writeSettingsFile(dataDirectory / statusFileName, Map(isClosedKey -> "true", isCleanKey -> "false"))
-  }
-
-  private def checkSettingsReturningBlocksize(dataDirectory: File, name: String): Long = {
-    val settings = readSettingsFile(dataDirectory / configFileName)
-    require(settings(versionKey) == version, s"Version mismatch in file byte store: Actual ${settings(versionKey)}, required $version")
-    require(settings(nameKey) == name, s"Name mismatch in file byte store: Actual ${settings(nameKey)}, expected $name")
-    settings(blocksizeKey).toLong
-  }
 
   private trait Common[DataFileType <: AutoCloseable] {
     val dataDirectory: File
@@ -62,7 +39,7 @@ object FileBackend { val version = "3.0"
       status(isCleanKey).toBoolean
     }
 
-    final val blocksize: Long = checkSettingsReturningBlocksize(dataDirectory, name)
+    final val blocksize: Long = settingsChecked(dataDirectory, name)(blocksizeKey).toLong
 
     /** @return data file number / offset in file / number of bytes */
     final def blockStream(from: Long, size: Long): Stream[(Long, Long, Int)] =
