@@ -2,5 +2,6 @@ syntax: regexp
 ^\.idea
 ^target/
 ^.*/target/
+^test/*
 ^test\..*\.db
 /Tryout.scala
