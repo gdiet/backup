@@ -15,7 +15,7 @@ object SQLBackend extends DirWithConfig {
   def initialize(directory: File, name: String, hashAlgorithm: String): Unit = {
     val (driver, user, password, onShutdown) = (H2.driver, H2.user, H2.password, H2.onShutdown)
     val url = s"jdbc:h2:${directory.getAbsolutePath}/dedupfs;DB_CLOSE_ON_EXIT=FALSE"
-    initializeDirectory(directory, name, Map(
+    initialize(directory, name, Map(
       dbDriverKey -> driver,
       dbUrlKey -> url,
       dbUserKey -> user,

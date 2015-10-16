@@ -11,7 +11,7 @@ trait Common extends SpecHelper with AfterAll {
     val dataDirectory = testDataDirectory / "emptyStore"
     delete(dataDirectory)
     dataDirectory.getParentFile.mkdirs()
-    initializeDirectory(dataDirectory, "emptyStore", 4)
+    initialize(dataDirectory, "emptyStore", 4)
     openStore()
   }
   def openStore() = {

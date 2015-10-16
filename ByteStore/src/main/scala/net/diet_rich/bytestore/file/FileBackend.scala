@@ -16,9 +16,9 @@ object FileBackend extends DirWithConfig {
   private val maxNumberOfOpenFiles = 64
   private[file] val dataChunkMaxSize: Int = 65536 // Int to avoid problems with byte array size
 
-  def initializeDirectory(dataDirectory: File, name: String, blocksize: Long): Unit = {
+  def initialize(dataDirectory: File, name: String, blocksize: Long): Unit = {
     require(blocksize > 0, "block size must be positive")
-    initializeDirectory(dataDirectory, name, Map(blocksizeKey -> s"$blocksize"))
+    initialize(dataDirectory, name, Map(blocksizeKey -> s"$blocksize"))
   }
 
   def read(dataDirectory: File, name: String): ByteStoreRead = readRaw(dataDirectory, name)

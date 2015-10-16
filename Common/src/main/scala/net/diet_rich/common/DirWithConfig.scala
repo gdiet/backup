@@ -11,7 +11,7 @@ trait DirWithConfig {
   protected val (nameKey, versionKey) = ("name", "version")
   protected val (isClosedKey, isCleanKey) = ("isClosed", "isClean")
 
-  protected def initializeDirectory(directory: File, name: String, additionalSettings: StringMap): Unit = {
+  protected def initialize(directory: File, name: String, additionalSettings: StringMap): Unit = {
     require(!directory.exists(), s"$objectName directory already exists: $directory")
     require(directory mkdir(), s"can't create $objectName directory $directory")
     writeSettingsFile(directory / configFileName, Map(
