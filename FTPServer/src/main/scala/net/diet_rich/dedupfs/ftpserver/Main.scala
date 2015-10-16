@@ -10,4 +10,7 @@ object Main extends App with Logging {
   val writable = arguments booleanOptional "writable" getOrElse false
   val storeMethod = arguments optional "storeMethod" map StoreMethod.named getOrElse StoreMethod.STORE
   val versionComment = if (writable) arguments optional "comment" else None
+  arguments withSettingsChecked {
+    ???
+  }
 }

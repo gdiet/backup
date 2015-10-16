@@ -3,7 +3,7 @@ package net.diet_rich.dedupfs.metadata.sql
 import java.io.File
 
 import net.diet_rich.common._, io._, sql._
-import net.diet_rich.dedupfs.metadata.{Ranges, TreeEntry, DataEntry, Metadata}
+import net.diet_rich.dedupfs.metadata._
 
 object SQLBackend extends DirWithConfig {
   override val objectName = "sql metadata store"
@@ -31,60 +31,36 @@ object SQLBackend extends DirWithConfig {
   }
 }
 
-private class SQLBackend extends Metadata {
-  override def entry(key: Long): Option[TreeEntry] = ???
+private class SQLBackendRead extends MetadataRead {
+  override final def entry(key: Long): Option[TreeEntry] = ???
+  override final def dataEntry(dataid: Long): Option[DataEntry] = ???
+  override final def children(parent: Long): Seq[TreeEntry] = ???
+  override final def storeEntries(dataid: Long): Ranges = ???
+  override final def entry(path: String): Seq[TreeEntry] = ???
+  override final def sizeOf(dataid: Long): Option[Long] = ???
+  override final def allChildren(parent: Long): Seq[TreeEntry] = ???
+  override final def allChildren(parent: Long, name: String): Seq[TreeEntry] = ???
+  override final def child(parent: Long, name: String): Seq[TreeEntry] = ???
+  override final def allEntries(path: String): Seq[TreeEntry] = ???
+  override final def close(): Unit = ???
+  override final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] = ???
+  override final def settings: Map[String, String] = ???
+  override final def dataEntryExists(print: Long): Boolean = ???
+  override final def dataEntryExists(size: Long, print: Long): Boolean = ???
+  override final def path(id: Long): Option[String] = ???
+}
 
-  override def dataEntry(dataid: Long): Option[DataEntry] = ???
-
+private class SQLBackendReadWrite extends SQLBackendRead with MetadataReadWrite {
   override def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = ???
-
-  override def children(parent: Long): Seq[TreeEntry] = ???
-
-  override def storeEntries(dataid: Long): Ranges = ???
-
   override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
-
-  override def entry(path: String): Seq[TreeEntry] = ???
-
   override def replaceSettings(newSettings: Map[String, String]): Unit = ???
-
   override def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit = ???
-
-  override def sizeOf(dataid: Long): Option[Long] = ???
-
   override def delete(key: Long): Boolean = ???
-
   override def delete(entry: TreeEntry): Boolean = ???
-
-  override def allChildren(parent: Long): Seq[TreeEntry] = ???
-
-  override def allChildren(parent: Long, name: String): Seq[TreeEntry] = ???
-
   override def change(changed: TreeEntry): Boolean = ???
-
-  override def child(parent: Long, name: String): Seq[TreeEntry] = ???
-
-  override def allEntries(path: String): Seq[TreeEntry] = ???
-
-  override def close(): Unit = ???
-
-  override def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] = ???
-
-  override def settings: Map[String, String] = ???
-
-  override def dataEntryExists(print: Long): Boolean = ???
-
-  override def dataEntryExists(size: Long, print: Long): Boolean = ???
-
   override def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
-
   override def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
-
-  override def path(id: Long): Option[String] = ???
-
   override def nextDataid: Long = ???
-
   override def inTransaction[T](f: => T): T = ???
-
   override def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long = ???
 }
