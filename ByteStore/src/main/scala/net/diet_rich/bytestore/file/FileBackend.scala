@@ -9,6 +9,7 @@ import net.diet_rich.common._, io._
 
 import DataFile._
 
+// FIXME fully use utility methods from DirWithConfig
 object FileBackend extends DirWithConfig {
   override val objectName = "file byte store"
   override val version = "3.0"
@@ -112,7 +113,7 @@ object FileBackend extends DirWithConfig {
       val offsetInFile = at % blocksize
       val bytesToWriteInDataFile = math.min(blocksize - offsetInFile, data.length).toInt // Int because data.length is Int
       dataFiles(at / blocksize)(_ write(offsetInFile, data withLength bytesToWriteInDataFile))
-      if (data.length > bytesToWriteInDataFile) write(data withOffset bytesToWriteInDataFile, at + bytesToWriteInDataFile)
+      if (data.length > bytesToWriteInDataFile) write(data addOffset bytesToWriteInDataFile, at + bytesToWriteInDataFile)
     }
     override def clear(from: Long, to: Long): Unit =
       blockStream(from, to - from).reverse foreach { // reverse makes clear more efficient

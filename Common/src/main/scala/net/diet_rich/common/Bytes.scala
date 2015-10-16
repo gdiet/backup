@@ -6,7 +6,7 @@ case class Bytes (data: Array[Byte], offset: Int, length: Int) {
   require(length >= 0, s"negative length: $length")
   require(offset >= 0, s"negative offset: $offset")
   require(data.length - offset >= length, s"not enough data (${data.length} bytes) for length $length at offset $offset")
-  def withOffset(offset: Int) = copy(data, this.offset + offset, length - offset)
+  def addOffset(offset: Int) = copy(data, this.offset + offset, length - offset)
   def withLength(length: Int) = copy(length = length)
   def asByteArray = data slice (offset, offset+length)
   override def equals(other: Any): Boolean = other match {

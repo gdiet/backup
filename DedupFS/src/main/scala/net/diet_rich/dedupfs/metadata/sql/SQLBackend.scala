@@ -29,6 +29,9 @@ object SQLBackend extends DirWithConfig {
     }
     setStatus(directory, isClosed = true, isClean = true)
   }
+
+  def read(directory: File, repositoryid: String): MetadataRead = ???
+  def readWrite(directory: File, repositoryid: String): MetadataReadWrite = ???
 }
 
 private class SQLBackendRead extends MetadataRead {

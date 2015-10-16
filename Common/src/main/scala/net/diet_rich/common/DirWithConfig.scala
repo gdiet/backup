@@ -24,8 +24,8 @@ trait DirWithConfig {
   protected def setStatus(directory: File, isClosed: Boolean, isClean: Boolean): Unit =
     writeSettingsFile(directory / statusFileName, Map(isClosedKey -> s"$isClosed", isCleanKey -> s"$isClean"))
 
-  protected def settingsChecked(dataDirectory: File, name: String): StringMap =
-    init(readSettingsFile(dataDirectory / configFileName)) { settings =>
+  protected def settingsChecked(directory: File, name: String): StringMap =
+    init(readSettingsFile(directory / configFileName)) { settings =>
       require(settings(versionKey) == version, s"Version mismatch in $objectName: Actual ${settings(versionKey)}, required $version")
       require(settings(nameKey) == name, s"Name mismatch in $objectName: Actual ${settings(nameKey)}, expected $name")
     }
