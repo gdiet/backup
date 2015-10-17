@@ -4,7 +4,7 @@ import java.io.File
 import net.diet_rich.bytestore.{ByteStore, ByteStoreRead}
 import net.diet_rich.bytestore.file.FileBackend
 import net.diet_rich.common._, io._
-import net.diet_rich.dedupfs.metadata.{MetadataRead, MetadataReadWrite}
+import net.diet_rich.dedupfs.metadata.{MetadataRead, Metadata}
 import net.diet_rich.dedupfs.metadata.sql.SQLBackend
 
 import scala.util.Random
@@ -34,34 +34,30 @@ object Repository extends DirWithConfig {
     FileBackend initialize (directory / settings(dataDirKey), actualRepositoryid, actualBlockSize)
   }
 
-  def openReadOnly(directory: File): RepositoryReadOnly = {
+  def openReadOnly(directory: File): ReadOnly = {
     val settings = settingsChecked(directory, objectName)
     require(settings(bytestoreDriverKey) == "FileBackend", s"As $bytestoreDriverKey, only FileBackend is supported, not ${settings(bytestoreDriverKey)}")
     require(settings(metaDriverKey) == "SQLBackend", s"As $metaDriverKey, only SQLBackend is supported, not ${settings(metaDriverKey)}")
     val fileBackend = FileBackend.read(directory / settings(dataDirKey), settings(repositoryidKey))
     val metaBackend = SQLBackend.read(directory / settings(metaDirKey), settings(repositoryidKey))
-    new RepositoryReadOnly(metaBackend, fileBackend)
+    new RepositoryRead(metaBackend, fileBackend)
   }
 
-  def openReadWrite(directory: File): RepositoryReadWrite = {
+  def openReadWrite(directory: File): Repository = {
     val settings = settingsChecked(directory, objectName)
     require(settings(bytestoreDriverKey) == "FileBackend", s"As $bytestoreDriverKey, only FileBackend is supported, not ${settings(bytestoreDriverKey)}")
     require(settings(metaDriverKey) == "SQLBackend", s"As $metaDriverKey, only SQLBackend is supported, not ${settings(metaDriverKey)}")
     val fileBackend = FileBackend.readWrite(directory / settings(dataDirKey), settings(repositoryidKey))
     val metaBackend = SQLBackend.readWrite(directory / settings(metaDirKey), settings(repositoryidKey))
-    new RepositoryReadWrite(metaBackend, fileBackend)
+    new Repository(metaBackend, fileBackend)
   }
+
+  type ReadOnly = RepositoryRead[MetadataRead, ByteStoreRead]
+  type Any = RepositoryRead[_ <: MetadataRead, _ <: ByteStoreRead]
 }
 
-// FIXME is this still needed?
-trait BasicRepository[Meta <: MetadataRead, Data <: ByteStoreRead] {
-  def metaBackend: Meta
-  def dataBackend: Data
+class RepositoryRead[Meta <: MetadataRead, Data <: ByteStoreRead](val metaBackend: Meta, val dataBackend: Data) {
 }
 
-// FIXME same pattern for readonly and rw as in file backend
-class RepositoryReadOnly(val metaBackend: MetadataRead, val dataBackend: ByteStoreRead) extends BasicRepository[MetadataRead, ByteStoreRead] {
-}
-
-class RepositoryReadWrite(override val metaBackend: MetadataReadWrite, override val dataBackend: ByteStore) extends BasicRepository[MetadataReadWrite, ByteStore] {
+class Repository(metaBackend: Metadata, dataBackend: ByteStore) extends RepositoryRead(metaBackend, dataBackend) {
 }

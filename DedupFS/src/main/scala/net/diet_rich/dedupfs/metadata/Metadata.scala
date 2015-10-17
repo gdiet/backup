@@ -27,7 +27,7 @@ trait MetadataRead extends AutoCloseable {
   def close(): Unit
 }
 
-trait MetadataReadWrite extends MetadataRead {
+trait Metadata extends MetadataRead {
   def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long
   def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long
   def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long

@@ -5,7 +5,6 @@ import java.io.File
 import net.diet_rich.common._, io._, sql._
 import net.diet_rich.dedupfs.metadata._
 
-// FIXME same pattern for readonly and rw as in file backend
 object SQLBackend extends DirWithConfig {
   override val objectName = "sql metadata store"
   override val version = "3.0"
@@ -32,7 +31,7 @@ object SQLBackend extends DirWithConfig {
   }
 
   def read(directory: File, repositoryid: String): MetadataRead = ???
-  def readWrite(directory: File, repositoryid: String): MetadataReadWrite = ???
+  def readWrite(directory: File, repositoryid: String): Metadata = ???
 }
 
 private class SQLBackendRead extends MetadataRead {
@@ -54,7 +53,7 @@ private class SQLBackendRead extends MetadataRead {
   override final def path(id: Long): Option[String] = ???
 }
 
-private class SQLBackendReadWrite extends SQLBackendRead with MetadataReadWrite {
+private class SQLBackend extends SQLBackendRead with Metadata {
   override def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = ???
   override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
   override def replaceSettings(newSettings: Map[String, String]): Unit = ???
