@@ -4,7 +4,7 @@ import java.io.File
 
 import net.diet_rich.common.io._
 
-trait DirWithConfig {
+trait DirWithConfigHelper {
   protected val objectName: String
   protected val version: String
   protected val (configFileName, statusFileName) = ("config.txt", "status.txt")
@@ -19,6 +19,11 @@ trait DirWithConfig {
       nameKey -> name
     ) ++ additionalSettings)
     setStatus(directory, isClosed = true, isClean = true)
+  }
+
+  protected def closedCleanStatus(directory: File): (Boolean, Boolean) = {
+    val statusMap = readSettingsFile(directory / statusFileName)
+    (statusMap(isClosedKey).toBoolean, statusMap(isCleanKey).toBoolean)
   }
 
   protected def setStatus(directory: File, isClosed: Boolean, isClean: Boolean): Unit =

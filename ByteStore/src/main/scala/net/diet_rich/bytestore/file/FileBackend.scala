@@ -9,7 +9,7 @@ import net.diet_rich.common._, io._
 
 import DataFile._
 
-object FileBackend extends DirWithConfig {
+object FileBackend extends DirWithConfigHelper {
   override val objectName = "file byte store"
   override val version = "3.0"
   private val blocksizeKey = "blocksize"
@@ -30,15 +30,8 @@ object FileBackend extends DirWithConfig {
     val dataDirectory: File
     val name: String
     def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): DataFileType
-
     final val namePrint: Long = printOf(name)
-
-    final val isClean: Boolean = {
-      val status = readSettingsFile(dataDirectory / statusFileName)
-      require(status(isClosedKey).toBoolean, s"Status file $statusFileName signals the file byte store is already opened")
-      status(isCleanKey).toBoolean
-    }
-
+    final val (wasClosed, isClean) = closedCleanStatus(dataDirectory)
     final val blocksize: Long = settingsChecked(dataDirectory, name)(blocksizeKey).toLong
 
     /** @return data file number / offset in file / number of bytes */
@@ -103,7 +96,7 @@ object FileBackend extends DirWithConfig {
 
   private final class FileBackendReadWriteRaw(val dataDirectory: File, val name: String) extends CommonRead[FileReadWrite]
   with ByteStore {
-
+    require(wasClosed, s"Status file $statusFileName signals the file byte store is already open")
     setStatus(dataDirectory, isClosed = false, isClean = isClean)
     override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileReadWrite =
       new FileReadWrite(namePrint, dataDirectory, startPosition, fileNumber)
@@ -119,9 +112,11 @@ object FileBackend extends DirWithConfig {
       blockStream(from, to - from).reverse foreach { // reverse makes clear more efficient
         case (dataFileNumber, offset, length) => dataFiles(dataFileNumber) { _ clear (offset, length) }
       }
-    override def close(): Unit = {
-      dataFiles close()
-      setStatus(dataDirectory, isClosed = true, isClean = isClean)
-    }
+    override def close(): Unit =
+      try {
+        dataFiles close(); setStatus(dataDirectory, isClosed = true, isClean = isClean)
+      } catch {
+        case e: Throwable => setStatus(dataDirectory, isClosed = true, isClean = false); throw e
+      }
   }
 }

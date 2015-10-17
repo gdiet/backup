@@ -1,7 +1,9 @@
 package net.diet_rich.dedupfs.ftpserver
 
+import java.io.File
+
 import net.diet_rich.common._
-import net.diet_rich.dedupfs.StoreMethod
+import net.diet_rich.dedupfs.{FileSystem, Repository, StoreMethod}
 
 object Main extends App with Logging {
   val arguments = new Arguments(args, 1)
@@ -11,6 +13,9 @@ object Main extends App with Logging {
   val storeMethod = arguments optional "storeMethod" map StoreMethod.named getOrElse StoreMethod.STORE
   val versionComment = if (writable) arguments optional "comment" else None
   arguments withSettingsChecked {
+    val directory = new File(repoPath)
+    val repository = if (writable) Repository openReadWrite directory else Repository openReadOnly directory
+    val fileSystem = new FileSystem(repository)
     ???
   }
 }

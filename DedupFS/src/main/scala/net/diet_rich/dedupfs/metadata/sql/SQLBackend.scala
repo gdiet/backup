@@ -5,7 +5,7 @@ import java.io.File
 import net.diet_rich.common._, io._, sql._
 import net.diet_rich.dedupfs.metadata._
 
-object SQLBackend extends DirWithConfig {
+object SQLBackend extends DirWithConfigHelper {
   override val objectName = "sql metadata store"
   override val version = "3.0"
   private val (dbDriverKey, dbUrlKey, dbUserKey, dbPasswordKey) = ("database driver", "database URL", "database user", "database password")

@@ -9,7 +9,7 @@ import net.diet_rich.dedupfs.metadata.sql.SQLBackend
 
 import scala.util.Random
 
-object Repository extends DirWithConfig {
+object Repository extends DirWithConfigHelper {
   override val objectName = "dedup file system repository"
   override val version = "3.0"
   private val (metaDirKey, dataDirKey) = ("metadata directory", "data directory")
@@ -34,6 +34,7 @@ object Repository extends DirWithConfig {
     FileBackend initialize (directory / settings(dataDirKey), actualRepositoryid, actualBlockSize)
   }
 
+  // FIXME copy/paste
   def openReadOnly(directory: File): ReadOnly = {
     val settings = settingsChecked(directory, objectName)
     require(settings(bytestoreDriverKey) == "FileBackend", s"As $bytestoreDriverKey, only FileBackend is supported, not ${settings(bytestoreDriverKey)}")
@@ -49,6 +50,7 @@ object Repository extends DirWithConfig {
     require(settings(metaDriverKey) == "SQLBackend", s"As $metaDriverKey, only SQLBackend is supported, not ${settings(metaDriverKey)}")
     val fileBackend = FileBackend.readWrite(directory / settings(dataDirKey), settings(repositoryidKey))
     val metaBackend = SQLBackend.readWrite(directory / settings(metaDirKey), settings(repositoryidKey))
+    setStatus(directory, false, ???) // FIXME use pattern from other places
     new Repository(metaBackend, fileBackend)
   }
 
@@ -56,7 +58,8 @@ object Repository extends DirWithConfig {
   type Any = RepositoryRead[_ <: MetadataRead, _ <: ByteStoreRead]
 }
 
-class RepositoryRead[Meta <: MetadataRead, Data <: ByteStoreRead](val metaBackend: Meta, val dataBackend: Data) {
+class RepositoryRead[Meta <: MetadataRead, Data <: ByteStoreRead](val metaBackend: Meta, val dataBackend: Data) extends AutoCloseable {
+  override final def close(): Unit = try metaBackend.close() finally dataBackend.close()
 }
 
 class Repository(metaBackend: Metadata, dataBackend: ByteStore) extends RepositoryRead(metaBackend, dataBackend) {
