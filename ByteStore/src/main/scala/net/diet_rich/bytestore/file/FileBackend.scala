@@ -9,7 +9,6 @@ import net.diet_rich.common._, io._
 
 import DataFile._
 
-// FIXME fully use utility methods from DirWithConfig
 object FileBackend extends DirWithConfig {
   override val objectName = "file byte store"
   override val version = "3.0"
@@ -104,7 +103,8 @@ object FileBackend extends DirWithConfig {
 
   private final class FileBackendReadWriteRaw(val dataDirectory: File, val name: String) extends CommonRead[FileReadWrite]
   with ByteStore {
-    writeSettingsFile(dataDirectory / statusFileName, Map(isClosedKey -> "false", isCleanKey -> s"$isClean"))
+
+    setStatus(dataDirectory, isClosed = false, isClean = isClean)
     override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileReadWrite =
       new FileReadWrite(namePrint, dataDirectory, startPosition, fileNumber)
     // Note: In the current implementation of DataFile, up to data.length bytes of RAM may be additionally allocated while writing
@@ -121,7 +121,7 @@ object FileBackend extends DirWithConfig {
       }
     override def close(): Unit = {
       dataFiles close()
-      writeSettingsFile(dataDirectory / statusFileName, Map(isClosedKey -> "true", isCleanKey -> s"$isClean"))
+      setStatus(dataDirectory, isClosed = true, isClean = isClean)
     }
   }
 }
