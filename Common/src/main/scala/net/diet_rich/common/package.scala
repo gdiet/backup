@@ -17,6 +17,7 @@ package object common {
   def printOf(string: String): Long = printOf(string getBytes "UTF-8")
 
   def now = System.currentTimeMillis()
+  def someNow = Some(now)
 
   type StringMap = String Map String
 }

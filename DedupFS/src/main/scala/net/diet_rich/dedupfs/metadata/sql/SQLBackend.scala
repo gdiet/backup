@@ -5,6 +5,7 @@ import java.io.File
 import net.diet_rich.common._, io._, sql._
 import net.diet_rich.dedupfs.metadata._
 
+// FIXME same pattern for readonly and rw as in file backend
 object SQLBackend extends DirWithConfig {
   override val objectName = "sql metadata store"
   override val version = "3.0"
@@ -39,12 +40,12 @@ private class SQLBackendRead extends MetadataRead {
   override final def dataEntry(dataid: Long): Option[DataEntry] = ???
   override final def children(parent: Long): Seq[TreeEntry] = ???
   override final def storeEntries(dataid: Long): Ranges = ???
-  override final def entry(path: String): Seq[TreeEntry] = ???
+  override final def entry(path: Array[String]): Option[TreeEntry] = ???
   override final def sizeOf(dataid: Long): Option[Long] = ???
   override final def allChildren(parent: Long): Seq[TreeEntry] = ???
   override final def allChildren(parent: Long, name: String): Seq[TreeEntry] = ???
   override final def child(parent: Long, name: String): Seq[TreeEntry] = ???
-  override final def allEntries(path: String): Seq[TreeEntry] = ???
+  override final def allEntries(path: Array[String]): Seq[TreeEntry] = ???
   override final def close(): Unit = ???
   override final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] = ???
   override final def settings: Map[String, String] = ???

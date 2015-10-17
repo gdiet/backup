@@ -6,8 +6,13 @@ object TreeEntry {
   val root = TreeEntry(0L, -1L, "", None, None)
   val rootPath = ""
   val pathSeparator = "/"
+  // FIXME tests for pathelements, in particular for root
   def pathElements(path: String): Array[String] = {
     require(path == rootPath || path.startsWith(pathSeparator), s"malformed path: $path")
     path split pathSeparator drop 1
+  }
+
+  implicit class RichPath(val path: String) extends AnyVal {
+    def / (child: String): String = s"$path$pathSeparator$child"
   }
 }

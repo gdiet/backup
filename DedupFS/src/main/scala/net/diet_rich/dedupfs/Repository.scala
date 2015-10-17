@@ -53,11 +53,13 @@ object Repository extends DirWithConfig {
   }
 }
 
+// FIXME is this still needed?
 trait BasicRepository[Meta <: MetadataRead, Data <: ByteStoreRead] {
   def metaBackend: Meta
   def dataBackend: Data
 }
 
+// FIXME same pattern for readonly and rw as in file backend
 class RepositoryReadOnly(val metaBackend: MetadataRead, val dataBackend: ByteStoreRead) extends BasicRepository[MetadataRead, ByteStoreRead] {
 }
 
