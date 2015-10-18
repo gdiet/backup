@@ -59,8 +59,8 @@ class RepositoryRead[Meta <: MetadataRead, Data <: ByteStoreRead](val metaBacken
   override def close(): Unit = try metaBackend.close() finally dataBackend.close()
 }
 
-class Repository(val directory: File, metaBackend: Metadata, dataBackend: ByteStore) extends RepositoryRead(metaBackend, dataBackend) with DirWithConfig {
-  protected val baseObject = Repository
-  markOpen()
-  override final def close(): Unit = { super.close(); markClosed() }
+class Repository(val directory: File, metaBackend: Metadata, dataBackend: ByteStore) extends RepositoryRead(metaBackend, dataBackend) {
+  val dirHelper = new DirWithConfig(Repository, directory)
+  dirHelper markOpen()
+  override final def close(): Unit = { super.close(); dirHelper markClosed() }
 }

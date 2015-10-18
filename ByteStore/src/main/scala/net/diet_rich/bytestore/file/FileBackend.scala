@@ -23,8 +23,7 @@ object FileBackend extends DirWithConfigHelper { import DataFile._
   def readWriteRaw(dataDirectory: File, name: String): ByteStore with ByteStoreReadRaw = new FileBackendReadWriteRaw(dataDirectory, name)
 
 
-  private trait Common[DataFileType <: FileCommonRead] extends ByteStoreRead with ByteStoreReadRaw with DirWithConfig {
-    val baseObject = FileBackend
+  private trait Common[DataFileType <: FileCommonRead] extends ByteStoreRead with ByteStoreReadRaw {
     val directory: File
     val name: String
     def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): DataFileType
@@ -94,7 +93,8 @@ object FileBackend extends DirWithConfigHelper { import DataFile._
 
   private final class FileBackendReadWriteRaw(val directory: File, val name: String) extends Common[FileReadWrite]
   with ByteStore {
-    markOpen()
+    val dirHelper = new DirWithConfig(FileBackend, directory)
+    dirHelper markOpen()
     override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileReadWrite =
       new FileReadWrite(namePrint, dataDirectory, startPosition, fileNumber)
     // Note: In the current implementation of DataFile, up to data.length bytes of RAM may be additionally allocated while writing
@@ -109,6 +109,6 @@ object FileBackend extends DirWithConfigHelper { import DataFile._
       blockStream(from, to - from).reverse foreach { // reverse makes clear more efficient
         case (dataFileNumber, offset, length) => dataFiles(dataFileNumber) { _ clear (offset, length) }
       }
-    override def close(): Unit = { dataFiles close(); markClosed() }
+    override def close(): Unit = { dataFiles close(); dirHelper markClosed() }
   }
 }

@@ -38,18 +38,17 @@ trait DirWithConfigHelper {
   }
 }
 
-trait DirWithConfig {
-  protected val baseObject: DirWithConfigHelper; import baseObject._
-  protected def directory: File
-
-  protected val (initiallyClosed, initiallyClean) = {
+class DirWithConfig(baseObject: DirWithConfigHelper, directory: File) { import baseObject._
+  val (initiallyClosed, initiallyClean) = {
     val status = readSettingsFile(directory / statusFileName)
     (status(isClosedKey).toBoolean, status(isCleanKey).toBoolean)
   }
 
-  protected def markOpen() = {
+  def markOpen() = {
     require(initiallyClosed, s"Status file $statusFileName signals the $objectName is already open")
     setStatus(directory, isClosed = false, isClean = initiallyClean)
   }
-  protected def markClosed(isClean: Boolean = initiallyClean) = setStatus(directory, isClosed = true, isClean = initiallyClean)
+
+  def markClosed(isClean: Boolean = initiallyClean) =
+    setStatus(directory, isClosed = true, isClean = initiallyClean)
 }

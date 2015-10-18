@@ -1,6 +1,7 @@
 package net.diet_rich.dedupfs.metadata.sql
 
 import java.io.File
+import java.sql.Connection
 
 import net.diet_rich.common._, io._, sql._
 import net.diet_rich.dedupfs.metadata._
@@ -30,11 +31,15 @@ object SQLBackend extends DirWithConfigHelper {
     setStatus(directory, isClosed = true, isClean = true)
   }
 
-  def read(directory: File, repositoryid: String): MetadataRead = ???
+  def read(directory: File, repositoryid: String): MetadataRead = {
+    val conf = settingsChecked(directory, repositoryid)
+    val connections = connectionFactory(conf(dbDriverKey), conf(dbUrlKey), conf(dbUserKey), conf(dbPasswordKey), None)
+    new SQLBackendRead(connections())
+  }
   def readWrite(directory: File, repositoryid: String): Metadata = ???
 }
 
-private class SQLBackendRead extends MetadataRead {
+private class SQLBackendRead(val connection: Connection) extends MetadataRead with TreeDatabaseRead {
   override final def entry(key: Long): Option[TreeEntry] = ???
   override final def dataEntry(dataid: Long): Option[DataEntry] = ???
   override final def children(parent: Long): Seq[TreeEntry] = ???
@@ -45,15 +50,15 @@ private class SQLBackendRead extends MetadataRead {
   override final def allChildren(parent: Long, name: String): Seq[TreeEntry] = ???
   override final def child(parent: Long, name: String): Seq[TreeEntry] = ???
   override final def allEntries(path: Array[String]): Seq[TreeEntry] = ???
-  override final def close(): Unit = ???
   override final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] = ???
   override final def settings: Map[String, String] = ???
   override final def dataEntryExists(print: Long): Boolean = ???
   override final def dataEntryExists(size: Long, print: Long): Boolean = ???
   override final def path(id: Long): Option[String] = ???
+  override final def close(): Unit = connection.close()
 }
 
-private class SQLBackend extends SQLBackendRead with Metadata {
+private class SQLBackend(val directory: File, val connectionFactory: ConnectionFactory) extends SQLBackendRead(connectionFactory()) with Metadata {
   override def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = ???
   override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
   override def replaceSettings(newSettings: Map[String, String]): Unit = ???
