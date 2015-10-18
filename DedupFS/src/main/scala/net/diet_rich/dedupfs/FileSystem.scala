@@ -5,8 +5,11 @@ import java.io.IOException
 import net.diet_rich.common._
 import net.diet_rich.dedupfs.metadata.TreeEntry, TreeEntry.RichPath
 
-class FileSystem(repository: Repository.Any) { import repository._
+class FileSystem(repository: Repository.Any) extends AutoCloseable { import repository._
   val maybeRepositoryReadWrite = repository match { case r: Repository => Some(r); case _ => None }
+  val isReadOnly = maybeRepositoryReadWrite.isEmpty
+  val root = new ActualFile(this, TreeEntry.rootPath, TreeEntry.root)
+
   def write[T](f: Repository => T): T =
     maybeRepositoryReadWrite match {
       case None => throw new IOException("File system is read-only")
@@ -22,17 +25,36 @@ class FileSystem(repository: Repository.Any) { import repository._
     }
   }
 
-  def list(path: String): Seq[VirtualFile] =
+  def list(path: String): Seq[DedupFile] =
     metaBackend entry path match {
       case None => Seq()
-      case Some(parent) => metaBackend children parent.key map { entry => new VirtualFile(this, path / entry.name) }
+      case Some(parent) => metaBackend children parent.key map { entry => new ActualFile(this, path / entry.name, entry) }
     }
 
-  def getFile(path: String) = new VirtualFile(this, path)
+  def getFile(path: String): DedupFile =
+    metaBackend entry path match {
+      case None => new VirtualFile(this, path)
+      case Some(entry) => new ActualFile(this, path, entry)
+    }
+
+  override def close(): Unit = repository.close()
 }
 
-// FIXME also introduce ActualFile and RepoFile trait
-class VirtualFile(repository: FileSystem, path: String) {
+trait DedupFile {
+  def name: String
+  def path: String
+  def mkDir(): Boolean
+  def parent: Option[DedupFile] = ???
+  def child(name: String): DedupFile = ???
+  def isDirectory: Boolean = ???
+}
+
+class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
   def name: String = (TreeEntry pathElements path).last
-  def mkDir(): Boolean = repository mkDir path
+  def mkDir(): Boolean = fs mkDir path
+}
+
+class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) extends DedupFile {
+  override def name: String = entry.name
+  override def mkDir(): Boolean = false
 }
