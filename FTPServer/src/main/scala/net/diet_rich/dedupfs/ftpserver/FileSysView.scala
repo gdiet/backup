@@ -51,12 +51,12 @@ class FileSysFile(private[ftpserver] val file: DedupFile) extends FtpFile {
   override def isRemovable: Boolean = file.isWritable
   override def getSize: Long = file.size
   override def getLastModified: Long = file.lastModified
+  override def getAbsolutePath: String = file.path
+  override def mkdir(): Boolean = file mkDir()
   override def move(destination: FtpFile): Boolean = ???
   override def createInputStream(offset: Long): InputStream = ???
   override def listFiles(): util.List[FtpFile] = ???
   override def delete(): Boolean = ???
   override def setLastModified(time: Long): Boolean = ???
-  override def getAbsolutePath: String = ???
   override def createOutputStream(offset: Long): OutputStream = ???
-  override def mkdir(): Boolean = ???
 }

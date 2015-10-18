@@ -46,7 +46,7 @@ trait DedupFile {
   def path: String
   def mkDir(): Boolean
   def parent: Option[DedupFile] = ???
-  def child(name: String): DedupFile = ???
+  def child(name: String): DedupFile
   def isDirectory: Boolean
   def isFile: Boolean
   def exists: Boolean
@@ -64,6 +64,7 @@ class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
   override def isWritable: Boolean = ! fs.isReadOnly
   override def size: Long = 0L
   override def lastModified: Long = 0L
+  override def child(name: String): DedupFile = new VirtualFile(fs, path / name)
 }
 
 class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) extends DedupFile {
@@ -75,4 +76,8 @@ class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) extends Ded
   override def isWritable: Boolean = !fs.isReadOnly && !(entry == TreeEntry.root)
   override def size: Long = entry.data flatMap fs.repository.metaBackend.sizeOf getOrElse 0L
   override def lastModified: Long = entry.changed getOrElse 0L
+  override def child(name: String): DedupFile = fs.repository.metaBackend.child(entry.key, name) match {
+    case None => new VirtualFile(fs, path / name)
+    case Some(child) => new ActualFile(fs, path / name, child)
+  }
 }

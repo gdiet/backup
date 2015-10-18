@@ -105,7 +105,7 @@ trait TreeDatabaseRead { import Database._
 
 trait TreeDatabaseWrite {
   protected implicit val connectionFactory: ScalaThreadLocal[Connection]
-  protected implicit final def connection: Connection = connectionFactory()
+  protected implicit val connection: Connection
 
   private val prepTreeUpdate =
     sql singleRowUpdate s"INSERT INTO TreeEntries (key, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?)"

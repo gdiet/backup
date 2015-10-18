@@ -1,5 +1,7 @@
 package net.diet_rich.dedupfs.metadata.sql
 
+import java.sql.Connection
+
 import org.specs2.Specification
 import org.specs2.specification.AfterAll
 
@@ -28,6 +30,7 @@ General tests for the tree database, starting with a newly initialized database
 
   lazy val db = new {
     override val connectionFactory: ConnectionFactory = H2.memoryFactory(className)
+    override implicit val connection: Connection = connectionFactory() // FIXME why here implicit, but not above?
   } with TreeDatabaseRead with TreeDatabaseWrite {
     Database create "MD5"
   }
