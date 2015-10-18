@@ -1,6 +1,7 @@
 package net.diet_rich.dedupfs.ftpserver
 
 import java.io.File
+import scala.io.StdIn
 
 import org.apache.ftpserver.FtpServerFactory
 import org.apache.ftpserver.ftplet.{User, FileSystemFactory}
@@ -43,7 +44,9 @@ object Main extends App with Logging {
         server stop()
         fileSystem close()
       }
-      Thread sleep Long.MaxValue
+      System.err.println("Enter 'exit' to exit.")
+      while(StdIn.readLine() != "exit") { }
+      System.exit(0)
     }
   }
 }

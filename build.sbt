@@ -9,6 +9,7 @@ scalacOptions in ThisBuild ++= Seq(
 )
 
 fork in run in ThisBuild := true
+connectInput in run in ThisBuild := true
 
 libraryDependencies in ThisBuild ++= Seq("org.specs2" %% "specs2-core" % "3.6.4" % "test")
 scalacOptions in Test in ThisBuild ++= Seq("-Yrangepos")
