@@ -37,28 +37,25 @@ class FileSysView(fs: FileSystem) extends FileSystemView with Logging {
 }
 
 class FileSysFile(private[ftpserver] val file: DedupFile) extends FtpFile {
-//  private[ftpserver] def parent: Option[FileSysFile] = ???
-//  private[ftpserver] def child(name: String): Option[FileSysFile] = ???
-
-  override def getLinkCount: Int = ???
+  override def doesExist(): Boolean = file.exists
+  override def isFile: Boolean = file.isFile
+  override def isDirectory: Boolean = file.isDirectory
+  override def isHidden: Boolean = false
+  override def isReadable: Boolean = true
+  override def isWritable: Boolean = file.isWritable
+  override def getLinkCount: Int = 1
+  override def getOwnerName: String = "user"
+  override def getGroupName: String = "user"
+  override def getName: String = file.name
+  override def isRemovable: Boolean = file.isWritable
+  override def getSize: Long = file.size
+  override def getLastModified: Long = file.lastModified
   override def move(destination: FtpFile): Boolean = ???
-  override def isReadable: Boolean = ???
-  override def getGroupName: String = ???
-  override def isFile: Boolean = ???
   override def createInputStream(offset: Long): InputStream = ???
-  override def getName: String = ???
-  override def getSize: Long = ???
   override def listFiles(): util.List[FtpFile] = ???
-  override def isHidden: Boolean = ???
-  override def doesExist(): Boolean = ???
-  override def getLastModified: Long = ???
   override def delete(): Boolean = ???
   override def setLastModified(time: Long): Boolean = ???
-  override def isDirectory: Boolean = ???
   override def getAbsolutePath: String = ???
-  override def isWritable: Boolean = ???
   override def createOutputStream(offset: Long): OutputStream = ???
-  override def isRemovable: Boolean = ???
-  override def getOwnerName: String = ???
   override def mkdir(): Boolean = ???
 }

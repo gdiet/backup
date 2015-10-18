@@ -5,11 +5,12 @@ import java.io.IOException
 import net.diet_rich.common._
 import net.diet_rich.dedupfs.metadata.TreeEntry, TreeEntry.RichPath
 
-class FileSystem(repository: Repository.Any) extends AutoCloseable { import repository._
+class FileSystem(val repository: Repository.Any) extends AutoCloseable { import repository._
   val maybeRepositoryReadWrite = repository match { case r: Repository => Some(r); case _ => None }
   val isReadOnly = maybeRepositoryReadWrite.isEmpty
   val root = new ActualFile(this, TreeEntry.rootPath, TreeEntry.root)
 
+  // FIXME check where to implement - here or in the files
   def write[T](f: Repository => T): T =
     maybeRepositoryReadWrite match {
       case None => throw new IOException("File system is read-only")
@@ -46,15 +47,32 @@ trait DedupFile {
   def mkDir(): Boolean
   def parent: Option[DedupFile] = ???
   def child(name: String): DedupFile = ???
-  def isDirectory: Boolean = ???
+  def isDirectory: Boolean
+  def isFile: Boolean
+  def exists: Boolean
+  def isWritable: Boolean
+  def size: Long
+  def lastModified: Long
 }
 
 class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
-  def name: String = (TreeEntry pathElements path).last
-  def mkDir(): Boolean = fs mkDir path
+  override def name: String = (TreeEntry pathElements path).last
+  override def mkDir(): Boolean = fs mkDir path
+  override def exists: Boolean = false
+  override def isDirectory: Boolean = false
+  override def isFile: Boolean = false
+  override def isWritable: Boolean = ! fs.isReadOnly
+  override def size: Long = 0L
+  override def lastModified: Long = 0L
 }
 
 class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) extends DedupFile {
   override def name: String = entry.name
   override def mkDir(): Boolean = false
+  override def exists: Boolean = true
+  override def isDirectory: Boolean = entry.data.nonEmpty
+  override def isFile: Boolean = entry.data.isEmpty
+  override def isWritable: Boolean = !fs.isReadOnly && !(entry == TreeEntry.root)
+  override def size: Long = entry.data flatMap fs.repository.metaBackend.sizeOf getOrElse 0L
+  override def lastModified: Long = entry.changed getOrElse 0L
 }
