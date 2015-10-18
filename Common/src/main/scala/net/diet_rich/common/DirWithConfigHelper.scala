@@ -5,11 +5,11 @@ import java.io.File
 import net.diet_rich.common.io._
 
 trait DirWithConfigHelper {
-  protected val objectName: String
-  protected val version: String
-  protected val (configFileName, statusFileName) = ("config.txt", "status.txt")
-  protected val (nameKey, versionKey) = ("name", "version")
-  protected val (isClosedKey, isCleanKey) = ("isClosed", "isClean")
+  private[common] val objectName: String
+  private[common] val version: String
+  private[common] val (configFileName, statusFileName) = ("config.txt", "status.txt")
+  private[common] val (nameKey, versionKey) = ("name", "version")
+  private[common] val (isClosedKey, isCleanKey) = ("isClosed", "isClean")
 
   protected def initialize(directory: File, name: String, additionalSettings: StringMap): Unit = {
     require(!directory.exists(), s"$objectName directory already exists: $directory")
@@ -21,12 +21,7 @@ trait DirWithConfigHelper {
     setStatus(directory, isClosed = true, isClean = true)
   }
 
-  protected def closedCleanStatus(directory: File): (Boolean, Boolean) = {
-    val statusMap = readSettingsFile(directory / statusFileName)
-    (statusMap(isClosedKey).toBoolean, statusMap(isCleanKey).toBoolean)
-  }
-
-  protected def setStatus(directory: File, isClosed: Boolean, isClean: Boolean): Unit =
+  protected[common] def setStatus(directory: File, isClosed: Boolean, isClean: Boolean): Unit =
     writeSettingsFile(directory / statusFileName, Map(isClosedKey -> s"$isClosed", isCleanKey -> s"$isClean"))
 
   protected def settingsChecked(directory: File, name: String): StringMap =
@@ -41,4 +36,20 @@ trait DirWithConfigHelper {
     require(!status(isClosedKey).toBoolean, s"Status file $statusFileName signals that $objectName is already closed")
     setStatus(directory, isClosed = true, isClean = false)
   }
+}
+
+trait DirWithConfig {
+  protected val baseObject: DirWithConfigHelper; import baseObject._
+  protected def directory: File
+
+  protected val (initiallyClosed, initiallyClean) = {
+    val status = readSettingsFile(directory / statusFileName)
+    (status(isClosedKey).toBoolean, status(isCleanKey).toBoolean)
+  }
+
+  protected def markOpen() = {
+    require(initiallyClosed, s"Status file $statusFileName signals the $objectName is already open")
+    setStatus(directory, isClosed = false, isClean = initiallyClean)
+  }
+  protected def markClosed(isClean: Boolean = initiallyClean) = setStatus(directory, isClosed = true, isClean = initiallyClean)
 }

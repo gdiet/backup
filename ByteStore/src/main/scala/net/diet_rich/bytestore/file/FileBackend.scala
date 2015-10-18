@@ -5,20 +5,16 @@ import java.util.concurrent.locks.ReentrantLock
 import scala.collection.mutable
 
 import net.diet_rich.bytestore._
-import net.diet_rich.common._, io._
+import net.diet_rich.common._
 
-import DataFile._
+object FileBackend extends DirWithConfigHelper { import DataFile._
+  override val (objectName, version) = ("file byte store", "3.0")
+  private val (blocksizeKey, maxNumberOfOpenFiles) = ("block size", 64)
+  private val dataChunkMaxSize: Int = 65536 // Int to avoid problems with byte array size
 
-object FileBackend extends DirWithConfigHelper {
-  override val objectName = "file byte store"
-  override val version = "3.0"
-  private val blocksizeKey = "blocksize"
-  private val maxNumberOfOpenFiles = 64
-  private[file] val dataChunkMaxSize: Int = 65536 // Int to avoid problems with byte array size
-
-  def initialize(dataDirectory: File, name: String, blocksize: Long): Unit = {
-    require(blocksize > 0, "block size must be positive")
-    initialize(dataDirectory, name, Map(blocksizeKey -> s"$blocksize"))
+  def initialize(directory: File, name: String, blocksize: Long): Unit = {
+    require(blocksize > 0, "Block size must be positive")
+    initialize(directory, name, Map(blocksizeKey -> s"$blocksize"))
   }
 
   def read(dataDirectory: File, name: String): ByteStoreRead = readRaw(dataDirectory, name)
@@ -26,13 +22,15 @@ object FileBackend extends DirWithConfigHelper {
   def readWrite(dataDirectory: File, name: String): ByteStore = readWriteRaw(dataDirectory, name)
   def readWriteRaw(dataDirectory: File, name: String): ByteStore with ByteStoreReadRaw = new FileBackendReadWriteRaw(dataDirectory, name)
 
-  private trait Common[DataFileType <: AutoCloseable] {
-    val dataDirectory: File
+
+  private trait Common[DataFileType <: FileCommonRead] extends ByteStoreRead with ByteStoreReadRaw with DirWithConfig {
+    val baseObject = FileBackend
+    val directory: File
     val name: String
     def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): DataFileType
+
     final val namePrint: Long = printOf(name)
-    final val (wasClosed, isClean) = closedCleanStatus(dataDirectory)
-    final val blocksize: Long = settingsChecked(dataDirectory, name)(blocksizeKey).toLong
+    final val blocksize: Long = settingsChecked(directory, name)(blocksizeKey).toLong
 
     /** @return data file number / offset in file / number of bytes */
     final def blockStream(from: Long, size: Long): Stream[(Long, Long, Int)] =
@@ -50,7 +48,7 @@ object FileBackend extends DirWithConfigHelper {
       def apply[T](fileNumber: Long)(f: DataFileType => T): T = {
         val (file, lock) = dataFiles synchronized {
           val (file, lock) = dataFiles.remove(fileNumber)
-                .getOrElse((dataFile(dataDirectory, fileNumber, fileNumber * blocksize), new ReentrantLock()))
+                .getOrElse((dataFile(directory, fileNumber, fileNumber * blocksize), new ReentrantLock()))
           if (dataFiles.size >= maxNumberOfOpenFiles)
             (dataFiles remove dataFiles.keys.head) foreach { case (oldDataFile, _) => oldDataFile close()}
           dataFiles += (fileNumber -> (file, lock))
@@ -72,9 +70,7 @@ object FileBackend extends DirWithConfigHelper {
       case 0 => position
       case n => position + blocksize - n
     }
-  }
 
-  private trait CommonRead[DataFileType <: FileCommonRead] extends Common[DataFileType] with ByteStoreReadRaw {
     final def read(from: Long, to: Long): Iterator[Bytes] =
       blockStream(from, to - from).iterator map {
         case (dataFileNumber, offset, length) =>
@@ -87,17 +83,18 @@ object FileBackend extends DirWithConfigHelper {
       }
   }
 
-  private final class FileBackendRead(val dataDirectory: File, val name: String) extends CommonRead[FileRead]
+
+  private final class FileBackendRead(val directory: File, val name: String) extends Common[FileRead]
   with ByteStoreRead {
     override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileRead =
       new FileRead(namePrint, dataDirectory, startPosition, fileNumber)
     override def close(): Unit = dataFiles close()
   }
 
-  private final class FileBackendReadWriteRaw(val dataDirectory: File, val name: String) extends CommonRead[FileReadWrite]
+
+  private final class FileBackendReadWriteRaw(val directory: File, val name: String) extends Common[FileReadWrite]
   with ByteStore {
-    require(wasClosed, s"Status file $statusFileName signals the file byte store is already open")
-    setStatus(dataDirectory, isClosed = false, isClean = isClean)
+    markOpen()
     override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileReadWrite =
       new FileReadWrite(namePrint, dataDirectory, startPosition, fileNumber)
     // Note: In the current implementation of DataFile, up to data.length bytes of RAM may be additionally allocated while writing
@@ -112,11 +109,6 @@ object FileBackend extends DirWithConfigHelper {
       blockStream(from, to - from).reverse foreach { // reverse makes clear more efficient
         case (dataFileNumber, offset, length) => dataFiles(dataFileNumber) { _ clear (offset, length) }
       }
-    override def close(): Unit =
-      try {
-        dataFiles close(); setStatus(dataDirectory, isClosed = true, isClean = isClean)
-      } catch {
-        case e: Throwable => setStatus(dataDirectory, isClosed = true, isClean = false); throw e
-      }
+    override def close(): Unit = { dataFiles close(); markClosed() }
   }
 }

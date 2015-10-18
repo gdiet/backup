@@ -1,13 +1,13 @@
 package net.diet_rich.dedupfs
 
 import java.io.File
+import scala.util.Random
+
 import net.diet_rich.bytestore.{ByteStore, ByteStoreRead}
 import net.diet_rich.bytestore.file.FileBackend
 import net.diet_rich.common._, io._
 import net.diet_rich.dedupfs.metadata.{MetadataRead, Metadata}
 import net.diet_rich.dedupfs.metadata.sql.SQLBackend
-
-import scala.util.Random
 
 object Repository extends DirWithConfigHelper {
   override val objectName = "dedup file system repository"
@@ -34,24 +34,21 @@ object Repository extends DirWithConfigHelper {
     FileBackend initialize (directory / settings(dataDirKey), actualRepositoryid, actualBlockSize)
   }
 
-  // FIXME copy/paste
-  def openReadOnly(directory: File): ReadOnly = {
-    val settings = settingsChecked(directory, objectName)
-    require(settings(bytestoreDriverKey) == "FileBackend", s"As $bytestoreDriverKey, only FileBackend is supported, not ${settings(bytestoreDriverKey)}")
-    require(settings(metaDriverKey) == "SQLBackend", s"As $metaDriverKey, only SQLBackend is supported, not ${settings(metaDriverKey)}")
-    val fileBackend = FileBackend.read(directory / settings(dataDirKey), settings(repositoryidKey))
-    val metaBackend = SQLBackend.read(directory / settings(metaDirKey), settings(repositoryidKey))
-    new RepositoryRead(metaBackend, fileBackend)
-  }
+  def openReadOnly(directory: File): ReadOnly =
+    openAny(directory, { case (metaDir, storeDir, repositoryid) =>
+      new RepositoryRead(SQLBackend.read(metaDir, repositoryid), FileBackend.read(storeDir, repositoryid))
+    })
 
-  def openReadWrite(directory: File): Repository = {
+  def openReadWrite(directory: File): Repository =
+    openAny(directory, { case (metaDir, storeDir, repositoryid) =>
+      new Repository(directory, SQLBackend.readWrite(metaDir, repositoryid), FileBackend.readWrite(storeDir, repositoryid))
+    })
+
+  private def openAny[Repo <: Any](directory: File, repositoryFactory: (File, File, String) => Repo): Repo = {
     val settings = settingsChecked(directory, objectName)
     require(settings(bytestoreDriverKey) == "FileBackend", s"As $bytestoreDriverKey, only FileBackend is supported, not ${settings(bytestoreDriverKey)}")
     require(settings(metaDriverKey) == "SQLBackend", s"As $metaDriverKey, only SQLBackend is supported, not ${settings(metaDriverKey)}")
-    val fileBackend = FileBackend.readWrite(directory / settings(dataDirKey), settings(repositoryidKey))
-    val metaBackend = SQLBackend.readWrite(directory / settings(metaDirKey), settings(repositoryidKey))
-    setStatus(directory, false, ???) // FIXME use pattern from other places
-    new Repository(metaBackend, fileBackend)
+    repositoryFactory(directory / settings(metaDirKey), directory / settings(dataDirKey), settings(repositoryidKey))
   }
 
   type ReadOnly = RepositoryRead[MetadataRead, ByteStoreRead]
@@ -59,8 +56,11 @@ object Repository extends DirWithConfigHelper {
 }
 
 class RepositoryRead[Meta <: MetadataRead, Data <: ByteStoreRead](val metaBackend: Meta, val dataBackend: Data) extends AutoCloseable {
-  override final def close(): Unit = try metaBackend.close() finally dataBackend.close()
+  override def close(): Unit = try metaBackend.close() finally dataBackend.close()
 }
 
-class Repository(metaBackend: Metadata, dataBackend: ByteStore) extends RepositoryRead(metaBackend, dataBackend) {
+class Repository(val directory: File, metaBackend: Metadata, dataBackend: ByteStore) extends RepositoryRead(metaBackend, dataBackend) with DirWithConfig {
+  protected val baseObject = Repository
+  markOpen()
+  override final def close(): Unit = { super.close(); markClosed() }
 }

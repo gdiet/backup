@@ -16,6 +16,7 @@ trait ByteStoreRead extends AutoCloseable {
   def read(from: Long, to: Long): Iterator[Bytes]
 }
 
+/** Extension allowing to convert byte stores on the fly. */
 trait ByteStoreReadRaw extends AutoCloseable {
   /** @return The bytes that are in fact available in the store and the sizes of the gaps in between */
   def readRaw(from: Long, to: Long): Iterator[Either[Int, Bytes]]
