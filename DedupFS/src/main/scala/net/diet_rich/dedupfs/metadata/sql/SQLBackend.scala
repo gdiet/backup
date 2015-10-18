@@ -10,20 +10,21 @@ object SQLBackend extends DirWithConfigHelper {
   override val objectName = "sql metadata store"
   override val version = "3.0"
   private val (dbDriverKey, dbUrlKey, dbUserKey, dbPasswordKey) = ("database driver", "database URL", "database user", "database password")
+  private val (readonlyUrlKey, readonlyUserKey, readonlyPasswordKey) = ("database URL read-only", "database user read-only", "database password read-only")
   private val hashAlgorithmKey = "hash algorithm"
   private val onDbShutdownKey = "on database shutdown"
 
   def initialize(directory: File, name: String, hashAlgorithm: String): Unit = {
     val (driver, user, password, onShutdown) = (H2.driver, H2.user, H2.password, H2.onShutdown)
     val url = s"jdbc:h2:${directory.getAbsolutePath}/dedupfs;DB_CLOSE_ON_EXIT=FALSE"
-    initialize(directory, name, Map(
+    val options =  Map(
       dbDriverKey -> driver,
-      dbUrlKey -> url,
-      dbUserKey -> user,
-      dbPasswordKey -> password,
+      dbUrlKey -> url, dbUserKey -> user, dbPasswordKey -> password,
+      readonlyUrlKey -> s"$url;ACCESS_MODE_DATA=r", readonlyUserKey -> user, readonlyPasswordKey -> password,
       onDbShutdownKey -> onShutdown,
       hashAlgorithmKey -> hashAlgorithm
-    ))
+    )
+    initialize(directory, name, options)
     setStatus(directory, isClosed = false, isClean = true)
     using(connectionFactory(driver, url, user, password, Some(onShutdown))) {
       cf => Database.create(hashAlgorithm)(cf())
@@ -33,10 +34,14 @@ object SQLBackend extends DirWithConfigHelper {
 
   def read(directory: File, repositoryid: String): MetadataRead = {
     val conf = settingsChecked(directory, repositoryid)
-    val connections = connectionFactory(conf(dbDriverKey), conf(dbUrlKey), conf(dbUserKey), conf(dbPasswordKey), None)
+    val connections = connectionFactory(conf(dbDriverKey), conf(readonlyUrlKey), conf(readonlyUserKey), conf(readonlyPasswordKey), None)
     new SQLBackendRead(connections())
   }
-  def readWrite(directory: File, repositoryid: String): Metadata = ???
+  def readWrite(directory: File, repositoryid: String): Metadata = {
+    val conf = settingsChecked(directory, repositoryid)
+    val connections = connectionFactory(conf(dbDriverKey), conf(dbUrlKey), conf(dbUserKey), conf(dbPasswordKey), conf get onDbShutdownKey)
+    new SQLBackend(directory, connections)
+  }
 }
 
 private class SQLBackendRead(val connection: Connection) extends MetadataRead with TreeDatabaseRead {
@@ -55,10 +60,12 @@ private class SQLBackendRead(val connection: Connection) extends MetadataRead wi
   override final def dataEntryExists(print: Long): Boolean = ???
   override final def dataEntryExists(size: Long, print: Long): Boolean = ???
   override final def path(id: Long): Option[String] = ???
-  override final def close(): Unit = connection.close()
+  override def close(): Unit = connection close()
 }
 
 private class SQLBackend(val directory: File, val connectionFactory: ConnectionFactory) extends SQLBackendRead(connectionFactory()) with Metadata {
+  private val dirHelper = new DirWithConfig(SQLBackend, directory)
+  dirHelper markOpen()
   override def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = ???
   override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
   override def replaceSettings(newSettings: Map[String, String]): Unit = ???
@@ -71,4 +78,8 @@ private class SQLBackend(val directory: File, val connectionFactory: ConnectionF
   override def nextDataid: Long = ???
   override def inTransaction[T](f: => T): T = ???
   override def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long = ???
+  override def close(): Unit = {
+    connectionFactory close()
+    dirHelper markClosed()
+  }
 }

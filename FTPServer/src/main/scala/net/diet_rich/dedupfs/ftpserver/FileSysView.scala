@@ -8,6 +8,7 @@ import org.apache.ftpserver.ftplet.{FtpFile, FileSystemView}
 import net.diet_rich.common.Logging
 import net.diet_rich.dedupfs.{DedupFile, FileSystem}
 
+// FIXME in file list, display ".." and "." as usual (".." not in root)
 class FileSysView(fs: FileSystem) extends FileSystemView with Logging {
   protected var workingDirectory: FileSysFile = getHomeDirectory
   override def isRandomAccessible: Boolean = false
