@@ -37,26 +37,26 @@ class FileSysView(fs: FileSystem) extends FileSystemView with Logging {
   }
 }
 
-class FileSysFile(private[ftpserver] val file: DedupFile) extends FtpFile {
-  override def doesExist(): Boolean = file.exists
-  override def isFile: Boolean = file.isFile
-  override def isDirectory: Boolean = file.isDirectory
-  override def isHidden: Boolean = false
-  override def isReadable: Boolean = true
-  override def isWritable: Boolean = file.isWritable
-  override def getLinkCount: Int = 1
-  override def getOwnerName: String = "user"
-  override def getGroupName: String = "user"
-  override def getName: String = file.name
-  override def isRemovable: Boolean = file.isWritable
-  override def getSize: Long = file.size
-  override def getLastModified: Long = file.lastModified
-  override def getAbsolutePath: String = file.path
-  override def mkdir(): Boolean = file mkDir()
-  override def move(destination: FtpFile): Boolean = ???
-  override def createInputStream(offset: Long): InputStream = ???
-  override def listFiles(): util.List[FtpFile] = ???
-  override def delete(): Boolean = ???
-  override def setLastModified(time: Long): Boolean = ???
-  override def createOutputStream(offset: Long): OutputStream = ???
+class FileSysFile(private[ftpserver] val file: DedupFile) extends FtpFile with Logging { import log.call
+  override def doesExist(): Boolean = call(s"${file.path} doesExist") { file.exists }
+  override def isFile: Boolean = call(s"${file.path} isFile") { file.isFile }
+  override def isDirectory: Boolean = call(s"${file.path} isDirectory") { file.isDirectory }
+  override def isHidden: Boolean = call(s"${file.path} isHidden") { false }
+  override def isReadable: Boolean = call(s"${file.path} isReadable") { true }
+  override def isWritable: Boolean = call(s"${file.path} isWritable") { file.isWritable }
+  override def getLinkCount: Int = call(s"${file.path} getLinkCount") { 1 }
+  override def getOwnerName: String = call(s"${file.path} getOwnerName") { "user" }
+  override def getGroupName: String = call(s"${file.path} getGroupName") { "user" }
+  override def getName: String = call(s"${file.path} getName") { file.name }
+  override def isRemovable: Boolean = call(s"${file.path} isRemovable") { file.isWritable }
+  override def getSize: Long = call(s"${file.path} getSize") { file.size }
+  override def getLastModified: Long = call(s"${file.path} getLastModified") { file.lastModified }
+  override def getAbsolutePath: String = call(s"${file.path} getAbsolutePath") { file.path }
+  override def mkdir(): Boolean = call(s"${file.path} mkdir") { file mkDir() }
+  override def move(destination: FtpFile): Boolean = call(s"${file.path} move") { ??? }
+  override def createInputStream(offset: Long): InputStream = call(s"${file.path} createInputStream") { ??? }
+  override def listFiles(): util.List[FtpFile] = call(s"${file.path} listFiles") { ??? }
+  override def delete(): Boolean = call(s"${file.path} delete") { ??? }
+  override def setLastModified(time: Long): Boolean = call(s"${file.path} setLastModified") { ??? }
+  override def createOutputStream(offset: Long): OutputStream =call(s"${file.path} createOutputStream") { ??? }
 }

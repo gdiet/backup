@@ -6,9 +6,9 @@
     </encoder>
   </appender>
 
-  <logger name="org.apache.ftpserver" level="warn"/>
+  <logger name="org.apache" level="warn"/>
 
-  <root level="info">
+  <root level="debug">
     <appender-ref ref="STDOUT" />
   </root>
 

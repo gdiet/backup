@@ -71,8 +71,8 @@ class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) extends Ded
   override def name: String = entry.name
   override def mkDir(): Boolean = false
   override def exists: Boolean = true
-  override def isDirectory: Boolean = entry.data.nonEmpty
-  override def isFile: Boolean = entry.data.isEmpty
+  override def isDirectory: Boolean = entry.data.isEmpty
+  override def isFile: Boolean = entry.data.nonEmpty
   override def isWritable: Boolean = !fs.isReadOnly && !(entry == TreeEntry.root)
   override def size: Long = entry.data flatMap fs.repository.metaBackend.sizeOf getOrElse 0L
   override def lastModified: Long = entry.changed getOrElse 0L
