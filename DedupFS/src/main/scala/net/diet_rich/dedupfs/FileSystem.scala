@@ -45,8 +45,9 @@ trait DedupFile {
   def name: String
   def path: String
   def mkDir(): Boolean
-  def parent: Option[DedupFile] = ???
+  def parent: Option[DedupFile]
   def child(name: String): DedupFile
+  def children: Seq[DedupFile]
   def isDirectory: Boolean
   def isFile: Boolean
   def exists: Boolean
@@ -55,7 +56,9 @@ trait DedupFile {
   def lastModified: Long
 }
 
-class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
+// FIXME only allow virtual files for known parent ID
+final class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
+  override def toString: String = s"virtual:$path"
   override def name: String = (TreeEntry pathElements path).last
   override def mkDir(): Boolean = fs mkDir path
   override def exists: Boolean = false
@@ -65,9 +68,12 @@ class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
   override def size: Long = 0L
   override def lastModified: Long = 0L
   override def child(name: String): DedupFile = new VirtualFile(fs, path / name)
+  override def children: Seq[DedupFile] = Seq()
+  override def parent: Option[DedupFile] = ???
 }
 
-class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) extends DedupFile {
+final class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) extends DedupFile {
+  override def toString: String = s"$entry - $path"
   override def name: String = entry.name
   override def mkDir(): Boolean = false
   override def exists: Boolean = true
@@ -80,4 +86,7 @@ class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) extends Ded
     case None => new VirtualFile(fs, path / name)
     case Some(child) => new ActualFile(fs, path / name, child)
   }
+  override def children: Seq[DedupFile] =
+    fs.repository.metaBackend.children(entry.key) map (child => new ActualFile(fs, path / child.name, child))
+  override def parent: Option[DedupFile] = ???
 }
