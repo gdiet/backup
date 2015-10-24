@@ -45,7 +45,7 @@ object SQLBackend extends DirWithConfigHelper {
 }
 
 private class SQLBackendRead(val connection: Connection) extends MetadataRead with TreeDatabaseRead {
-  override final def entry(key: Long): Option[TreeEntry] = ???
+  override final def entry(key: Long): Option[TreeEntry] = treeEntryFor(key)
   override final def dataEntry(dataid: Long): Option[DataEntry] = ???
   override final def children(parent: Long): Seq[TreeEntry] =
     allChildren(parent).groupBy(_.name).map{ case (_, entries) => entries.head }.toSeq
@@ -61,7 +61,10 @@ private class SQLBackendRead(val connection: Connection) extends MetadataRead wi
   override final def settings: Map[String, String] = ???
   override final def dataEntryExists(print: Long): Boolean = ???
   override final def dataEntryExists(size: Long, print: Long): Boolean = ???
-  override final def path(id: Long): Option[String] = ???
+  override final def path(key: Long): Option[String] =
+    if (key == TreeEntry.root.key) Some(TreeEntry.rootPath)
+    else entry(key) flatMap {entry => path(entry.parent) map (_ + "/" + entry.name)}
+
   override def close(): Unit = connection close()
 }
 

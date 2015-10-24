@@ -101,6 +101,13 @@ trait TreeDatabaseRead { import Database._
       .map { case (key, entries) => entries.maxBy { case (_, _, id) => id } }
       .filter { case (_, deleted, _) => deleted == isDeleted }
       .map { case (treeEntry, _, _) => treeEntry }
+
+  private val prepTreeEntryFor =
+    sql.query[(TreeEntry, Boolean, Long)](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
+  def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry] =
+    prepTreeEntryFor.runv(key)
+      .find { case (_, deleted, id) => deleted == isDeleted && id <= upToId }
+      .map { case (treeEntry, _, _) => treeEntry }
 }
 
 trait TreeDatabaseWrite {

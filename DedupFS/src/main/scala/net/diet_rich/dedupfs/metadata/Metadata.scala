@@ -11,7 +11,7 @@ trait MetadataRead extends AutoCloseable {
   final def entry(path: String): Option[TreeEntry] = entry(TreeEntry pathElements path)
   def allEntries(path: Array[String]): Seq[TreeEntry]
   final def allEntries(path: String): Seq[TreeEntry] = allEntries(TreeEntry pathElements path)
-  def path(id: Long): Option[String]
+  def path(key: Long): Option[String]
 
   def dataEntry(dataid: Long): Option[DataEntry]
   def sizeOf(dataid: Long): Option[Long]
