@@ -43,7 +43,7 @@ object FileSysFile {
 }
 
 class FileSysFile(private[ftpserver] val file: DedupFile, name: String) extends FtpFile with Logging { import log.call
-  override def toString: String = file.toString
+  override def toString: String = s"FtpFile(name=$name,file=$file)"
 
   override def doesExist(): Boolean = call(s"${file.path} doesExist") { file.exists }
   override def isFile: Boolean = call(s"${file.path} isFile") { file.isFile }
@@ -54,7 +54,7 @@ class FileSysFile(private[ftpserver] val file: DedupFile, name: String) extends 
   override def getLinkCount: Int = call(s"${file.path} getLinkCount") { 1 }
   override def getOwnerName: String = call(s"${file.path} getOwnerName") { "user" }
   override def getGroupName: String = call(s"${file.path} getGroupName") { "user" }
-  override def getName: String = call(s"${file.path} getName") { file.name }
+  override def getName: String = call(s"${file.path} getName") { name }
   override def isRemovable: Boolean = call(s"${file.path} isRemovable") { file.isWritable }
   override def getSize: Long = call(s"${file.path} getSize") { file.size }
   override def getLastModified: Long = call(s"${file.path} getLastModified") { file.lastModified }
@@ -63,8 +63,11 @@ class FileSysFile(private[ftpserver] val file: DedupFile, name: String) extends 
   override def move(destination: FtpFile): Boolean = call(s"${file.path} move") { ??? }
   override def createInputStream(offset: Long): InputStream = call(s"${file.path} createInputStream") { ??? }
   override def listFiles(): util.List[FtpFile] = call(s"${file.path} listFiles") {
-    // FIXME add ".."
-    (Seq(new FileSysFile(file, ".")) ++ file.children.map(FileSysFile(_): FtpFile)).asJava
+    (
+      Seq(new FileSysFile(file, ".")) ++
+      file.parent.map(new FileSysFile(_, "..")).toSeq ++
+      file.children.map(FileSysFile(_): FtpFile)
+    ).asJava
   }
   override def delete(): Boolean = call(s"${file.path} delete") { ??? }
   override def setLastModified(time: Long): Boolean = call(s"${file.path} setLastModified") { ??? }

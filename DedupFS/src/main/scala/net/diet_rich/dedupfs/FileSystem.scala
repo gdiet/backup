@@ -38,6 +38,11 @@ class FileSystem(val repository: Repository.Any) extends AutoCloseable { import 
       case Some(entry) => new ActualFile(this, path, entry)
     }
 
+  def getFile(key: Long): Option[DedupFile] =
+    metaBackend.entry(key) flatMap { parent =>
+      metaBackend.path(parent.key) map (new ActualFile(this, _, parent))
+    }
+
   override def close(): Unit = repository.close()
 }
 
@@ -88,5 +93,5 @@ final class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) exten
   }
   override def children: Seq[DedupFile] =
     fs.repository.metaBackend.children(entry.key) map (child => new ActualFile(fs, path / child.name, child))
-  override def parent: Option[DedupFile] = ???
+  override def parent: Option[DedupFile] = fs.getFile(entry.parent)
 }
