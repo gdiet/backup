@@ -1,5 +1,7 @@
 package net.diet_rich.dedupfs.metadata
 
+import TreeEntry.RichPath
+
 trait MetadataRead extends AutoCloseable {
   def entry(key: Long): Option[TreeEntry]
   def allChildren(parent: Long): Seq[TreeEntry]
@@ -8,9 +10,9 @@ trait MetadataRead extends AutoCloseable {
   def child(parent: Long, name: String): Option[TreeEntry]
 
   def entry(path: Array[String]): Option[TreeEntry]
-  final def entry(path: String): Option[TreeEntry] = entry(TreeEntry pathElements path)
+  final def entry(path: String): Option[TreeEntry] = entry(path.pathElements)
   def allEntries(path: Array[String]): Seq[TreeEntry]
-  final def allEntries(path: String): Seq[TreeEntry] = allEntries(TreeEntry pathElements path)
+  final def allEntries(path: String): Seq[TreeEntry] = allEntries(path.pathElements)
   def path(key: Long): Option[String]
 
   def dataEntry(dataid: Long): Option[DataEntry]

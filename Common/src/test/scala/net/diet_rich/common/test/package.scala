@@ -8,4 +8,5 @@ package object test {
     dir.delete()
   }
   def bytes(b: Byte*) = Bytes(Array(b:_*), 0, b.size)
+  val unit = () // use in specs2 for ===
 }

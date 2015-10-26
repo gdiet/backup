@@ -10,15 +10,14 @@ class FileSystem(val repository: Repository.Any) extends AutoCloseable { import 
   val isReadOnly = maybeRepositoryReadWrite.isEmpty
   val root = new ActualFile(this, TreeEntry.rootPath, TreeEntry.root)
 
-  // FIXME check where to implement - here or in the files
-  def write[T](f: Repository => T): T =
+  private def write[T](f: Repository => T): T =
     maybeRepositoryReadWrite match {
       case None => throw new IOException("File system is read-only")
       case Some(repositoryReadWrite) => f(repositoryReadWrite)
     }
 
   def mkDir(path: String): Boolean = write { write =>
-    val pathElements = TreeEntry pathElements path
+    val pathElements = path.pathElements
     val (parentPath, Array(name)) = pathElements splitAt (pathElements.length - 1)
     metaBackend entry parentPath match {
       case Some(parent) => write.metaBackend create (parent.key, name, someNow, None); true
@@ -27,12 +26,6 @@ class FileSystem(val repository: Repository.Any) extends AutoCloseable { import 
   }
 
   def delete(entry: TreeEntry): Unit = write { _.metaBackend.delete(entry) }
-
-  def list(path: String): Seq[DedupFile] =
-    metaBackend entry path match {
-      case None => Seq()
-      case Some(parent) => metaBackend children parent.key map { entry => new ActualFile(this, path / entry.name, entry) }
-    }
 
   def getFile(path: String): DedupFile =
     metaBackend entry path match {
@@ -64,10 +57,9 @@ trait DedupFile {
   def delete(): Boolean
 }
 
-// FIXME only allow virtual files for known parent ID? - no, allow any
 final class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
   override def toString: String = s"virtual:$path"
-  override def name: String = (TreeEntry pathElements path).last
+  override def name: String = path.pathElements.last
   override def mkDir(): Boolean = fs mkDir path
   override def exists: Boolean = false
   override def isDirectory: Boolean = false
@@ -77,7 +69,7 @@ final class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
   override def lastModified: Long = 0L
   override def child(name: String): DedupFile = new VirtualFile(fs, path / name)
   override def children: Seq[DedupFile] = Seq()
-  override def parent: Option[DedupFile] = ??? // FIXME
+  override def parent: Option[DedupFile] = Some(fs getFile path.parent)
   override def delete(): Boolean = false
 }
 
@@ -97,6 +89,6 @@ final class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) exten
     case Some(child) => new ActualFile(fs, path / name, child)
   }
   override def children: Seq[DedupFile] = meta.children(entry.key) map (child => new ActualFile(fs, path / child.name, child))
-  override def parent: Option[DedupFile] = fs.getFile(entry.parent)
+  override def parent: Option[DedupFile] = fs getFile entry.parent
   override def delete(): Boolean = { fs delete entry; true }
 }

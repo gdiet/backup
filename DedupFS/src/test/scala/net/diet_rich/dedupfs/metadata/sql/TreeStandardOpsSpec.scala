@@ -17,7 +17,7 @@ General tests for the tree database, starting with a newly initialized database
   ${eg{ db.treeInsert(1, "grandChild", None, None) === 2 }}
   ${eg{ db.treeChildrenOf(0) === List(child) }}
   ${eg{ db.treeChildrenOf(0, isDeleted = true) === List() }}
-  ${eg{ db.treeDelete(child) === (()) }}
+  ${eg{ db.treeDelete(child) === unit }}
   ${eg{ db.treeChildrenOf(0) === List() }}
   ${eg{ db.treeChildrenOf(0, isDeleted = true) === List(child) }}
   ${eg{ db.treeChildrenOf(0, upToId = 0) === List() }}
@@ -29,9 +29,9 @@ General tests for the tree database, starting with a newly initialized database
   val child = TreeEntry(1, 0, "child", None, None)
 
   lazy val db = new {
-    override val connectionFactory: ConnectionFactory = H2.memoryFactory(className)
-    override implicit val connection: Connection = connectionFactory() // FIXME why here implicit, but not above?
+    override implicit val connectionFactory: ConnectionFactory = H2.memoryFactory(className)
   } with TreeDatabaseRead with TreeDatabaseWrite {
+    override implicit def connection: Connection = connectionFactory()
     Database create "MD5"
   }
   def afterAll(): Unit = db.connectionFactory close()
