@@ -34,7 +34,7 @@ trait Metadata extends MetadataRead {
   def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long
   def change(changed: TreeEntry): Boolean
   def delete(key: Long): Boolean
-  def delete(entry: TreeEntry): Boolean
+  def delete(entry: TreeEntry): Unit
 
   def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit
   def nextDataid: Long

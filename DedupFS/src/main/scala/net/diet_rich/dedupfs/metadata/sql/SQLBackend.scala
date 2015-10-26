@@ -78,8 +78,8 @@ private class SQLBackend(val directory: File, val connectionFactory: ConnectionF
   }
   override def replaceSettings(newSettings: Map[String, String]): Unit = ???
   override def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit = ???
-  override def delete(key: Long): Boolean = ???
-  override def delete(entry: TreeEntry): Boolean = ???
+  override def delete(key: Long): Boolean = inTransaction { entry(key).map(delete).isDefined }
+  override def delete(entry: TreeEntry): Unit = inTransaction { treeDelete(entry) }
   override def change(changed: TreeEntry): Boolean = ???
   override def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
     children(parent) find (_.name == name) match {

@@ -69,7 +69,7 @@ class FileSysFile(private[ftpserver] val file: DedupFile, name: String) extends 
       file.children.map(FileSysFile(_): FtpFile)
     ).asJava
   }
-  override def delete(): Boolean = call(s"${file.path} delete") { ??? }
+  override def delete(): Boolean = call(s"${file.path} delete") { file.delete() }
   override def setLastModified(time: Long): Boolean = call(s"${file.path} setLastModified") { ??? }
   override def createOutputStream(offset: Long): OutputStream =call(s"${file.path} createOutputStream") { ??? }
 }

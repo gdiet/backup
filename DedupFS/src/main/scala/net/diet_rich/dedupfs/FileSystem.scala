@@ -26,6 +26,8 @@ class FileSystem(val repository: Repository.Any) extends AutoCloseable { import 
     }
   }
 
+  def delete(entry: TreeEntry): Unit = write { _.metaBackend.delete(entry) }
+
   def list(path: String): Seq[DedupFile] =
     metaBackend entry path match {
       case None => Seq()
@@ -59,9 +61,10 @@ trait DedupFile {
   def isWritable: Boolean
   def size: Long
   def lastModified: Long
+  def delete(): Boolean
 }
 
-// FIXME only allow virtual files for known parent ID
+// FIXME only allow virtual files for known parent ID? - no, allow any
 final class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
   override def toString: String = s"virtual:$path"
   override def name: String = (TreeEntry pathElements path).last
@@ -74,10 +77,12 @@ final class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
   override def lastModified: Long = 0L
   override def child(name: String): DedupFile = new VirtualFile(fs, path / name)
   override def children: Seq[DedupFile] = Seq()
-  override def parent: Option[DedupFile] = ???
+  override def parent: Option[DedupFile] = ??? // FIXME
+  override def delete(): Boolean = false
 }
 
 final class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) extends DedupFile {
+  import fs.repository.{metaBackend => meta}
   override def toString: String = s"$entry - $path"
   override def name: String = entry.name
   override def mkDir(): Boolean = false
@@ -85,13 +90,13 @@ final class ActualFile(fs: FileSystem, val path: String, entry: TreeEntry) exten
   override def isDirectory: Boolean = entry.data.isEmpty
   override def isFile: Boolean = entry.data.nonEmpty
   override def isWritable: Boolean = !fs.isReadOnly && !(entry == TreeEntry.root)
-  override def size: Long = entry.data flatMap fs.repository.metaBackend.sizeOf getOrElse 0L
+  override def size: Long = entry.data flatMap meta.sizeOf getOrElse 0L
   override def lastModified: Long = entry.changed getOrElse 0L
-  override def child(name: String): DedupFile = fs.repository.metaBackend.child(entry.key, name) match {
+  override def child(name: String): DedupFile = meta.child(entry.key, name) match {
     case None => new VirtualFile(fs, path / name)
     case Some(child) => new ActualFile(fs, path / name, child)
   }
-  override def children: Seq[DedupFile] =
-    fs.repository.metaBackend.children(entry.key) map (child => new ActualFile(fs, path / child.name, child))
+  override def children: Seq[DedupFile] = meta.children(entry.key) map (child => new ActualFile(fs, path / child.name, child))
   override def parent: Option[DedupFile] = fs.getFile(entry.parent)
+  override def delete(): Boolean = { fs delete entry; true }
 }
