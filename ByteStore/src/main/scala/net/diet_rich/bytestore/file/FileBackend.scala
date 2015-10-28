@@ -22,6 +22,11 @@ object FileBackend extends DirWithConfigHelper { import DataFile._
   def readWrite(dataDirectory: File, name: String): ByteStore = readWriteRaw(dataDirectory, name)
   def readWriteRaw(dataDirectory: File, name: String): ByteStore with ByteStoreReadRaw = new FileBackendReadWriteRaw(dataDirectory, name)
 
+  def nextBlockStart(blocksize: Long, position: Long): Long = position % blocksize match {
+    case 0 => position
+    case n => position + blocksize - n
+  }
+
 
   private trait Common[DataFileType <: FileCommonRead] extends ByteStoreRead with ByteStoreReadRaw {
     val directory: File
@@ -65,10 +70,7 @@ object FileBackend extends DirWithConfigHelper { import DataFile._
       }
     }
 
-    final def nextBlockStart(position: Long): Long = position % blocksize match {
-      case 0 => position
-      case n => position + blocksize - n
-    }
+    final def nextBlockStart(position: Long): Long = FileBackend.nextBlockStart(blocksize, position)
 
     final def read(from: Long, to: Long): Iterator[Bytes] =
       blockStream(from, to - from).iterator map {
