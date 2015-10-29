@@ -8,7 +8,7 @@ import org.specs2.specification.AfterAll
 import net.diet_rich.common._, sql._, test._
 import net.diet_rich.dedupfs.metadata.TreeEntry
 
-class TreeStandardOpsSpec extends Specification with AfterAll with SpecHelper {
+class TreeStandardOpsSpec extends Specification with AfterAll with TestsHelper {
   def is = sequential ^ s2"""
 General tests for the tree database, starting with a newly initialized database
   where child is TreeEntry(1, 0, "child", None, None):

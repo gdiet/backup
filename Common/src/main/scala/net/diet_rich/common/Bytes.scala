@@ -22,4 +22,15 @@ object Bytes extends ((Array[Byte], Int, Int) => Bytes) {
   def apply(data: Array[Byte]): Bytes = Bytes(data, 0, data.length)
   val empty = Bytes(Array.empty, 0, 0)
   def zero(length: Int) = Bytes(new Array(length), 0, length)
+
+  /** @return An iterator replacing each element with Bytes.empty after use to free memory.
+    *         Note that the iterator changes the original array! */
+  def consumingIterator(data: Array[Bytes]): Iterator[Bytes] = new Iterator[Bytes] {
+    var index = 0
+    override def hasNext: Boolean = index < data.length
+    override def next(): Bytes = valueOf(data(index)) before {
+      data(index) = empty
+      index += 1
+    }
+  }
 }

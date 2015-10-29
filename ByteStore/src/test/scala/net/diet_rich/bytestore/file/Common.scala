@@ -4,7 +4,7 @@ import org.specs2.specification.AfterAll
 
 import net.diet_rich.common._, io._, test._
 
-trait Common extends SpecHelper with AfterAll {
+trait Common extends TestsHelper with AfterAll {
   var store = createStore()
   def createStore() = {
     import FileBackend._
