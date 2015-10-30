@@ -19,5 +19,9 @@ package object common {
   def now = System.currentTimeMillis()
   def someNow = Some(now)
 
+  implicit class RichIterator[T] (val iterator: Iterator[T]) extends AnyVal {
+    def +: (elem: T): Iterator[T] = Iterator(elem) ++ iterator
+  }
+
   type StringMap = String Map String
 }

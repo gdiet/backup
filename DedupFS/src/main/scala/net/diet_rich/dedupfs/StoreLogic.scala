@@ -27,14 +27,15 @@ class InternalStoreLogic(metaBackend: Metadata, protected val writeData: (Bytes,
       if (metaBackend dataEntryExists(sized.size, print))
         tryPreloadSizedDataThatMayBeAlreadyKnown(printData, print, sized)
       else
-        storeSourceData (printData, print, source.allData)
+        storeSourceData (print, printData +: source.allData)
     case _ =>
       if (metaBackend dataEntryExists print)
         tryPreLoadDataThatMayBeAlreadyKnown(Seq(printData), print, source, 0L)
       else
-        storeSourceData (printData, print, source.allData)
+        storeSourceData (print, printData +: source.allData)
   }
 
+  // FIXME reorder method parameters to make this uniform
   @annotation.tailrec
   private def tryPreLoadDataThatMayBeAlreadyKnown(data: Seq[Bytes], print: Long, source: Source, reserved: Long): Long = {
     Memory reserve preloadBlockSize match {
@@ -49,13 +50,14 @@ class InternalStoreLogic(metaBackend: Metadata, protected val writeData: (Bytes,
     }
   }
 
-  private def tryPreloadSizedDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long = Memory.reserved(source.size * 105 / 100) {
-    case Reserved(_) => storePreloadedIfNotKnown(Iterator(printData) ++ source.allData, print)
-    case NotAvailable(_) => source match {
-      case source: FileLikeSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
-      case _ => storeSourceData (printData, print, source.allData)
+  private def tryPreloadSizedDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long =
+    Memory.reserved(source.size * 105 / 100) {
+      case Reserved(_) => storePreloadedIfNotKnown(printData +: source.allData, print)
+      case NotAvailable(_) => source match {
+        case source: FileLikeSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
+        case _ => storeSourceData (print, printData +: source.allData)
+      }
     }
-  }
 
   private def storePreloadedIfNotKnown(data: TraversableOnce[Bytes], print: Long): Long = {
     val bytes = data.toArray
@@ -64,51 +66,44 @@ class InternalStoreLogic(metaBackend: Metadata, protected val writeData: (Bytes,
       .getOrElse(storeSourceData (Bytes consumingIterator bytes, size, print, hash))
   }
 
-  def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Long, source: FileLikeSource): Long = ??? // {
-//    val bytes: Iterator[Bytes] = Iterator(printData) ++ source.allData
-//    val (hash, size) = Hash.calculate(hashAlgorithm, bytes)
-//    metaBackend.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
-//      source reset()
-//      storeSourceData(source)
-//    }
-//  }
-//
-//  def storeSourceData(source: Source): Long = {
-//    val printData = source read Repository.PRINTSIZE
-//    storeSourceData(printData, Print(printData), source.allData)
-//  }
-//
-  def storeSourceData(printData: Bytes, print: Long, data: Iterator[Bytes]): Long = ???
-//    storeSourceData(print, Iterator(printData) ++ data)
-//
-  def storeSourceData(print: Long, data: Iterator[Bytes]): Long = ??? // {
-//    val (hash, size, storedRanges) = Hash calculate(hashAlgorithm, data, writeSourceData)
-//    finishStoringData(print, hash, size, storedRanges)
-//  }
-//
-//  def finishStoringData(print: Print, hash: Array[Byte], size: Long, storedRanges: Ranges): Long = {
-//    metaBackend inTransaction {
-//      metaBackend dataEntriesFor(size, print, hash) match {
-//        case Nil =>
-//          init(metaBackend nextDataid) { dataid =>
-//            storedRanges foreach { case (start, fin) =>
-//              assert(fin > start, s"$start - $fin")
-//              metaBackend createByteStoreEntry(dataid, start, fin)
-//            }
-//            metaBackend createDataTableEntry(dataid, size, print, hash, storeMethod)
-//          }
-//        case dataEntry :: rest =>
-//          storedRanges foreach freeRanges.pushBack
-//          dataEntry.id
-//      }
-//    }
-//  }
-//
-  def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long = ???
-//    finishStoringData(print, hash, size, writeSourceData(data))
-//
-//  def writeSourceData(data: Iterator[Bytes]): Ranges =
-//    storePackedData(StoreMethod.storeCoder(storeMethod)(data))
+  private def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Long, source: FileLikeSource): Long = {
+    val bytes: Iterator[Bytes] = printData +: source.allData
+    val (hash, size) = Hash.calculate(hashAlgorithm, bytes)
+    metaBackend.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
+      source reset()
+      val printData = source read Repository.PRINTSIZE
+      storeSourceData(printOf(printData), printData +: source.allData)
+    }
+  }
+
+  private def storeSourceData(print: Long, data: Iterator[Bytes]): Long = {
+    val (hash, size, storedRanges) = Hash calculate(hashAlgorithm, data, writeSourceData)
+    finishStoringData(print, hash, size, storedRanges)
+  }
+
+  private def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long =
+    finishStoringData(print, hash, size, writeSourceData(data))
+
+  private def writeSourceData(data: Iterator[Bytes]): Ranges =
+    storePackedData(StoreMethod.storeCoder(storeMethod)(data))
+
+  private def finishStoringData(print: Long, hash: Array[Byte], size: Long, storedRanges: Ranges): Long = {
+    metaBackend inTransaction {
+      metaBackend dataEntriesFor(size, print, hash) match {
+        case Seq() =>
+          init(metaBackend.nextDataid) { dataid =>
+            storedRanges foreach { case (start, fin) =>
+              assert(fin > start, s"$start - $fin")
+              metaBackend createByteStoreEntry(dataid, start, fin)
+            }
+            metaBackend createDataEntry(dataid, size, print, hash, storeMethod)
+          }
+        case dataEntry +: _ =>
+          storedRanges foreach freeRanges.pushBack
+          dataEntry.id
+      }
+    }
+  }
 }
 
 

@@ -15,10 +15,9 @@ object Memory {
 
   def free(size: Long): Unit = synchronized { memory += size }
 
-  // FIXME why PartialFunction and not simply ReserveResult => T?
-  def reserved[T](size: Long)(pf: PartialFunction[ReserveResult, T]): T = reserve(size) match {
-    case reserved: Reserved => try { pf(reserved) } finally { free(size) }
-    case notAvailable: NotAvailable => pf(notAvailable)
+  def reserved[T](size: Long)(f: ReserveResult => T): T = reserve(size) match {
+    case reserved: Reserved => try { f(reserved) } finally { free(size) }
+    case notAvailable: NotAvailable => f(notAvailable)
   }
 
   sealed trait ReserveResult
