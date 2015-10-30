@@ -6,7 +6,7 @@ import net.diet_rich.common._
 import net.diet_rich.dedupfs.metadata.TreeEntry, TreeEntry.RichPath
 
 class FileSystem(val repository: Repository.Any) extends AutoCloseable { import repository._
-  val maybeRepositoryReadWrite = repository match { case r: Repository => Some(r); case _ => None }
+  private val maybeRepositoryReadWrite = repository match { case r: Repository => Some(r); case _ => None }
   val isReadOnly = maybeRepositoryReadWrite.isEmpty
   val root = new ActualFile(this, TreeEntry.rootPath, TreeEntry.root)
 

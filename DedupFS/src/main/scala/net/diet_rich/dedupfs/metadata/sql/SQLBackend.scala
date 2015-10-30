@@ -35,16 +35,16 @@ object SQLBackend extends DirWithConfigHelper {
   def read(directory: File, repositoryid: String): MetadataRead = {
     val conf = settingsChecked(directory, repositoryid)
     val connections = connectionFactory(conf(dbDriverKey), conf(readonlyUrlKey), conf(readonlyUserKey), conf(readonlyPasswordKey), None)
-    new SQLBackendRead(connections())
+    new SQLBackendRead(connections(), conf(hashAlgorithmKey))
   }
   def readWrite(directory: File, repositoryid: String): Metadata = {
     val conf = settingsChecked(directory, repositoryid)
     val connections = connectionFactory(conf(dbDriverKey), conf(dbUrlKey), conf(dbUserKey), conf(dbPasswordKey), conf get onDbShutdownKey)
-    new SQLBackend(directory, connections)
+    new SQLBackend(directory, connections, conf(hashAlgorithmKey))
   }
 }
 
-private class SQLBackendRead(val connection: Connection) extends MetadataRead with TreeDatabaseRead {
+private class SQLBackendRead(val connection: Connection, override final val hashAlgorithm: String) extends MetadataRead with TreeDatabaseRead {
   override final def entry(key: Long): Option[TreeEntry] = treeEntryFor(key)
   override final def dataEntry(dataid: Long): Option[DataEntry] = ???
   override final def children(parent: Long): Seq[TreeEntry] =
@@ -68,7 +68,8 @@ private class SQLBackendRead(val connection: Connection) extends MetadataRead wi
   override def close(): Unit = connection close()
 }
 
-private class SQLBackend(val directory: File, val connectionFactory: ConnectionFactory) extends SQLBackendRead(connectionFactory()) with Metadata with TreeDatabaseWrite {
+private class SQLBackend(val directory: File, val connectionFactory: ConnectionFactory, hashAlgorithm: String)
+              extends SQLBackendRead(connectionFactory(), hashAlgorithm) with Metadata with TreeDatabaseWrite {
   private val dirHelper = new DirWithConfig(SQLBackend, directory)
   dirHelper markOpen()
   override def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = ???

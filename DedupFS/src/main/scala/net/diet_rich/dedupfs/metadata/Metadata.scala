@@ -25,6 +25,7 @@ trait MetadataRead extends AutoCloseable {
   def storeEntries(dataid: Long): Ranges
 
   def settings: String Map String
+  def hashAlgorithm: String
 
   def close(): Unit
 }

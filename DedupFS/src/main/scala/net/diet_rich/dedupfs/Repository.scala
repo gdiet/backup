@@ -61,6 +61,7 @@ class RepositoryRead[Meta <: MetadataRead, Data <: ByteStoreRead](val metaBacken
 
 class Repository(val directory: File, metaBackend: Metadata, dataBackend: ByteStore) extends RepositoryRead(metaBackend, dataBackend) {
   val dirHelper = new DirWithConfig(Repository, directory)
+  val storeLogic: StoreLogic = StoreLogic(metaBackend, dataBackend.write, ???, metaBackend.hashAlgorithm, ???, ???)
   dirHelper markOpen()
   override final def close(): Unit = { super.close(); dirHelper markClosed() }
 }
