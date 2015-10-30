@@ -1,18 +1,29 @@
 package net.diet_rich.dedupfs
 
-import net.diet_rich.common._, Memory._
+import scala.concurrent.Future
+
+import net.diet_rich.common._, Executors._, Memory._
 import net.diet_rich.common.io._
 import net.diet_rich.dedupfs.metadata._
 
-class StoreLogic {
-
+trait StoreLogic extends AutoCloseable {
+  def dataidFor(printData: Bytes, print: Long, source: Source): Long
+  def dataidFor(source: Source): Long
+  def futureDataidFor(source: Source): Future[Long]
+  def close(): Unit
 }
 
 object StoreLogic {
   val preloadBlockSize = 0x100000
+  def apply(metaBackend: Metadata, writeData: (Bytes, Long) => Unit, freeRanges: FreeRanges, hashAlgorithm: String, storeMethod: Int, parallel: Int): StoreLogic =
+    new SingleThreadedStoreLogic(metaBackend, writeData, freeRanges, hashAlgorithm, storeMethod) with StoreLogic {
+      private implicit val context = blockingThreadPoolExecutionContext(parallel)
+      override def futureDataidFor(source: Source): Future[Long] = Future(dataidFor(source))
+      override def close(): Unit = { context close() }
+    }
 }
 
-class InternalStoreLogic(metaBackend: Metadata, protected val writeData: (Bytes, Long) => Unit,
+class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (Bytes, Long) => Unit,
                          protected val freeRanges: FreeRanges, hashAlgorithm: String,
                          storeMethod: Int) extends StorePackedDataLogic {
   import StoreLogic._
