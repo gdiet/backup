@@ -27,19 +27,18 @@ class InternalStoreLogic(metaBackend: Metadata, protected val writeData: (Bytes,
       if (metaBackend dataEntryExists(sized.size, print))
         tryPreloadSizedDataThatMayBeAlreadyKnown(printData, print, sized)
       else
-        storeSourceData (print, printData +: source.allData)
+        storeSourceData(printData +: source.allData, print)
     case _ =>
       if (metaBackend dataEntryExists print)
         tryPreLoadDataThatMayBeAlreadyKnown(Seq(printData), print, source, 0L)
       else
-        storeSourceData (print, printData +: source.allData)
+        storeSourceData(printData +: source.allData, print)
   }
 
-  // FIXME reorder method parameters to make this uniform
   @annotation.tailrec
   private def tryPreLoadDataThatMayBeAlreadyKnown(data: Seq[Bytes], print: Long, source: Source, reserved: Long): Long = {
     Memory reserve preloadBlockSize match {
-      case NotAvailable(_) => try storeSourceData(print, data.iterator ++ source.allData) finally Memory free reserved
+      case NotAvailable(_) => try storeSourceData(data.iterator ++ source.allData, print) finally Memory free reserved
       case Reserved(_) =>
         val read = try source read preloadBlockSize catch { case e: Throwable => Memory free reserved; throw e }
         if (read.length < preloadBlockSize) Memory free (preloadBlockSize - read.length)
@@ -55,7 +54,7 @@ class InternalStoreLogic(metaBackend: Metadata, protected val writeData: (Bytes,
       case Reserved(_) => storePreloadedIfNotKnown(printData +: source.allData, print)
       case NotAvailable(_) => source match {
         case source: FileLikeSource => readMaybeKnownDataTwiceIfNecessary (printData, print, source)
-        case _ => storeSourceData (print, printData +: source.allData)
+        case _ => storeSourceData(printData +: source.allData, print)
       }
     }
 
@@ -72,22 +71,22 @@ class InternalStoreLogic(metaBackend: Metadata, protected val writeData: (Bytes,
     metaBackend.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
       source reset()
       val printData = source read Repository.PRINTSIZE
-      storeSourceData(printOf(printData), printData +: source.allData)
+      storeSourceData(printData +: source.allData, printOf(printData))
     }
   }
 
-  private def storeSourceData(print: Long, data: Iterator[Bytes]): Long = {
+  private def storeSourceData(data: Iterator[Bytes], print: Long): Long = {
     val (hash, size, storedRanges) = Hash calculate(hashAlgorithm, data, writeSourceData)
-    finishStoringData(print, hash, size, storedRanges)
+    finishStoringData(storedRanges, size, print, hash)
   }
 
   private def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long =
-    finishStoringData(print, hash, size, writeSourceData(data))
+    finishStoringData(writeSourceData(data), size, print, hash)
 
   private def writeSourceData(data: Iterator[Bytes]): Ranges =
     storePackedData(StoreMethod.storeCoder(storeMethod)(data))
 
-  private def finishStoringData(print: Long, hash: Array[Byte], size: Long, storedRanges: Ranges): Long = {
+  private def finishStoringData(storedRanges: Ranges, size: Long, print: Long, hash: Array[Byte]): Long = {
     metaBackend inTransaction {
       metaBackend dataEntriesFor(size, print, hash) match {
         case Seq() =>
