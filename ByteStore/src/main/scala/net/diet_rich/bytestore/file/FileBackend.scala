@@ -70,8 +70,6 @@ object FileBackend extends DirWithConfigHelper { import DataFile._
       }
     }
 
-    final def nextBlockStart(position: Long): Long = FileBackend.nextBlockStart(blocksize, position)
-
     final def read(from: Long, to: Long): Iterator[Bytes] =
       blockStream(from, to - from).iterator map {
         case (dataFileNumber, offset, length) =>
@@ -99,7 +97,8 @@ object FileBackend extends DirWithConfigHelper { import DataFile._
     dirHelper markOpen()
     override def dataFile(dataDirectory: File, fileNumber: Long, startPosition: Long): FileReadWrite =
       new FileReadWrite(namePrint, dataDirectory, startPosition, fileNumber)
-    // Note: In the current implementation of DataFile, up to data.length bytes of RAM may be additionally allocated while writing
+    override def nextBlockStart(position: Long): Long = FileBackend.nextBlockStart(blocksize, position)
+    /** Note: In the current implementation of DataFile, up to data.length bytes of RAM may be additionally allocated while writing. */
     @annotation.tailrec
     override def write(data: Bytes, at: Long): Unit = {
       val offsetInFile = at % blocksize
