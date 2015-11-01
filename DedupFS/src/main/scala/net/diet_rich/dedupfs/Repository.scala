@@ -39,9 +39,9 @@ object Repository extends DirWithConfigHelper {
       new RepositoryRead(SQLBackend.read(metaDir, repositoryid), FileBackend.read(storeDir, repositoryid))
     })
 
-  def openReadWrite(directory: File): Repository =
+  def openReadWrite(directory: File, storeMethod: Int): Repository =
     openAny(directory, { case (metaDir, storeDir, repositoryid) =>
-      new Repository(directory, SQLBackend.readWrite(metaDir, repositoryid), FileBackend.readWrite(storeDir, repositoryid))
+      new Repository(directory, SQLBackend.readWrite(metaDir, repositoryid), FileBackend.readWrite(storeDir, repositoryid), storeMethod)
     })
 
   private def openAny[Repo <: Any](directory: File, repositoryFactory: (File, File, String) => Repo): Repo = {
@@ -59,9 +59,9 @@ class RepositoryRead[Meta <: MetadataRead, Data <: ByteStoreRead](val metaBacken
   override def close(): Unit = try metaBackend.close() finally dataBackend.close()
 }
 
-class Repository(val directory: File, metaBackend: Metadata, dataBackend: ByteStore) extends RepositoryRead(metaBackend, dataBackend) {
+class Repository(val directory: File, metaBackend: Metadata, dataBackend: ByteStore, storeMethod: Int) extends RepositoryRead(metaBackend, dataBackend) {
   val dirHelper = new DirWithConfig(Repository, directory)
-  val storeLogic: StoreLogic = StoreLogic(metaBackend, dataBackend.write, ???, metaBackend.hashAlgorithm, ???, ???)
+  val storeLogic: StoreLogic = StoreLogic(metaBackend, dataBackend.write, ???, metaBackend.hashAlgorithm, storeMethod, systemCores)
   dirHelper markOpen()
   override final def close(): Unit = { super.close(); dirHelper markClosed() }
 }

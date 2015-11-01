@@ -4,7 +4,7 @@ import java.sql.{Connection, ResultSet}
 
 import net.diet_rich.common._, sql._
 import net.diet_rich.dedupfs.StoreMethod
-import net.diet_rich.dedupfs.metadata.TreeEntry, TreeEntry._
+import net.diet_rich.dedupfs.metadata.{Ranges, StoreEntry, TreeEntry}, TreeEntry._
 
 object Database {
   // Note: All tables are designed for create-only operation,
@@ -12,7 +12,7 @@ object Database {
   // To get the current tree state, a clause like
   //   WHERE id IN (SELECT MAX(id) from TreeEntries GROUP BY key);
   // is needed.
-  def tableDefinitions(hashAlgorithm: String): Array[String] =
+  private def tableDefinitions(hashAlgorithm: String): Array[String] =
     s"""|CREATE SEQUENCE treeEntryIdSeq START WITH 0;
         |CREATE SEQUENCE treeEntryKeySeq START WITH 0;
         |CREATE TABLE TreeEntries (
@@ -50,7 +50,7 @@ object Database {
         |  CONSTRAINT pk_Settings PRIMARY KEY (key)
         |);""".stripMargin split ";"
 
-  val indexDefinitions: Array[String] = // TODO review index definitions with regard to TreeEntry id and to combined indexes
+  private val indexDefinitions: Array[String] = // TODO review index definitions with regard to TreeEntry id and to combined indexes
     """|DROP INDEX idxTreeEntriesParent IF EXISTS;
        |DROP INDEX idxTreeEntriesDataid IF EXISTS;
        |DROP INDEX idxTreeEntriesDeleted IF EXISTS;
@@ -76,12 +76,50 @@ object Database {
       .run(0, printOf(Bytes.empty), Hash empty hashAlgorithm, StoreMethod.STORE)
   }
 
-  def startOfFreeDataArea(implicit connection: Connection): Long =
+  private def startOfFreeDataArea(implicit connection: Connection): Long =
     sql.query[Long]("SELECT MAX(fin) FROM ByteStore;").run() nextOptionOnly() getOrElse 0
+
+  private def dataAreaStarts(implicit connection: Connection): List[Long] =
+    sql.query[Long](
+      "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 " +
+      "ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start;"
+    ).run().toList
+  private def dataAreaEnds(implicit connection: Connection): List[Long] =
+    sql.query[Long](
+      "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 " +
+      "ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin;"
+    ).run().toList
+
+  type DataOverlap = (StoreEntry, StoreEntry)
+  private def problemDataAreaOverlaps(implicit connection: Connection): Seq[DataOverlap] = {
+    // Note: H2 (1.3.176) does not create a good plan if the three queries are packed into one, and the execution is too slow (two nested table scans)
+    val select =
+      "SELECT b1.id, b1.dataid, b1.start, b1.fin, b2.id, b2.dataid, b2.start, b2.fin FROM ByteStore b1 JOIN ByteStore b2"
+    sql.query[DataOverlap](s"$select ON b1.start < b2.fin AND b1.fin > b2.fin;").run().toSeq ++:
+    sql.query[DataOverlap](s"$select ON b1.id != b2.id AND b1.start = b2.start;").run().toSeq ++:
+    sql.query[DataOverlap](s"$select ON b1.id != b2.id AND b1.fin = b2.fin;").run().toSeq
+  }
+  private def freeRangesInDataArea(implicit connection: Connection): Ranges = {
+    dataAreaStarts match {
+      case Nil => Nil
+      case firstArea :: gapStarts =>
+        val tail = dataAreaEnds zip gapStarts
+        if (firstArea > 0L) (0L, firstArea) :: tail else tail
+    }
+  }
+
+  def freeAndProblemRanges(implicit connection: Connection): (Ranges, Seq[DataOverlap]) = {
+    val problemRanges = problemDataAreaOverlaps
+    val freeInData = if (problemRanges.isEmpty) freeRangesInDataArea else Nil
+    val freeRanges = freeInData :+ (startOfFreeDataArea, Long.MaxValue)
+    (freeRanges, problemRanges)
+  }
 
   implicit val longResult = {(_: ResultSet) long 1}
   implicit val treeEntryResult = { r: ResultSet => TreeEntry(r long 1, r long 2 , r string 3, r longOption 4, r longOption 5) }
   implicit val treeQueryResult = { r: ResultSet => (treeEntryResult(r), r boolean 6, r long 7) }
+  implicit val storeEntryResult = { r: ResultSet => StoreEntry(r long 1, r long 2, r long 3, r long 4)}
+  implicit val dataAreaResult = { r: ResultSet => (storeEntryResult(r), StoreEntry(r long 5, r long 6, r long 7, r long 8))}
 }
 
 trait TreeDatabaseRead { import Database._

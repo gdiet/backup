@@ -21,7 +21,7 @@ object Main extends App with Logging {
   val versionComment = if (writable) arguments optional "comment" else None
   arguments withSettingsChecked {
     val directory = new File(repoPath)
-    val repository = if (writable) Repository openReadWrite directory else Repository openReadOnly directory
+    val repository = if (writable) Repository openReadWrite(directory, storeMethod) else Repository openReadOnly directory
     using(new FileSystem(repository)) { fileSystem =>
       val fileSystemViewFactory = () => new FileSysView(fileSystem)
       val listener = init(new ListenerFactory()) { _ setPort ftpPort } createListener()

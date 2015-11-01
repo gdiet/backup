@@ -19,6 +19,8 @@ package object common {
   def now = System.currentTimeMillis()
   def someNow = Some(now)
 
+  def systemCores = Runtime.getRuntime.availableProcessors()
+
   implicit class RichIterator[T] (val iterator: Iterator[T]) extends AnyVal {
     def +: (elem: T): Iterator[T] = Iterator(elem) ++ iterator
   }
