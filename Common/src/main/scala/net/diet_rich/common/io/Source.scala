@@ -7,6 +7,7 @@ object Source {
 }
 
 trait Source { import Source._
+  /** Reads up to (but not necessarily exactly) count bytes. */
   def read(count: Int): Bytes
   final def allData: Iterator[Bytes] = new Iterator[Bytes] {
     var currentBytes = read(readBlockSize)

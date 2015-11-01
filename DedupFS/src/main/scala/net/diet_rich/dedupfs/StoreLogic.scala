@@ -49,6 +49,7 @@ class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (
   @annotation.tailrec
   private def tryPreLoadDataThatMayBeAlreadyKnown(data: Seq[Bytes], print: Long, source: Source, reserved: Long): Long = {
     Memory reserve preloadBlockSize match {
+      // FIXME try to use fewer Memory free operations
       case NotAvailable(_) => try storeSourceData(data.iterator ++ source.allData, print) finally Memory free reserved
       case Reserved(_) =>
         val read = try source read preloadBlockSize catch { case e: Throwable => Memory free reserved; throw e }
