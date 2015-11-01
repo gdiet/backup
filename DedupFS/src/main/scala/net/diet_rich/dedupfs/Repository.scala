@@ -6,7 +6,7 @@ import scala.util.Random
 import net.diet_rich.bytestore.{ByteStore, ByteStoreRead}
 import net.diet_rich.bytestore.file.FileBackend
 import net.diet_rich.common._, io._
-import net.diet_rich.dedupfs.metadata.{MetadataRead, Metadata}
+import net.diet_rich.dedupfs.metadata.{FreeRanges, MetadataRead, Metadata}
 import net.diet_rich.dedupfs.metadata.sql.SQLBackend
 
 object Repository extends DirWithConfigHelper {
@@ -41,7 +41,9 @@ object Repository extends DirWithConfigHelper {
 
   def openReadWrite(directory: File, storeMethod: Int): Repository =
     openAny(directory, { case (metaDir, storeDir, repositoryid) =>
-      new Repository(directory, SQLBackend.readWrite(metaDir, repositoryid), FileBackend.readWrite(storeDir, repositoryid), storeMethod)
+      val (metadata, freeRanges) = SQLBackend.readWrite(metaDir, repositoryid)
+      val byteStore = FileBackend.readWrite(storeDir, repositoryid)
+      new Repository(directory, metadata, byteStore, new FreeRanges(freeRanges, byteStore.nextBlockStart), storeMethod)
     })
 
   private def openAny[Repo <: Any](directory: File, repositoryFactory: (File, File, String) => Repo): Repo = {
@@ -59,9 +61,9 @@ class RepositoryRead[Meta <: MetadataRead, Data <: ByteStoreRead](val metaBacken
   override def close(): Unit = try metaBackend.close() finally dataBackend.close()
 }
 
-class Repository(val directory: File, metaBackend: Metadata, dataBackend: ByteStore, storeMethod: Int) extends RepositoryRead(metaBackend, dataBackend) {
+class Repository(val directory: File, metaBackend: Metadata, dataBackend: ByteStore, freeRanges: FreeRanges, storeMethod: Int) extends RepositoryRead(metaBackend, dataBackend) {
   val dirHelper = new DirWithConfig(Repository, directory)
-  val storeLogic: StoreLogic = StoreLogic(metaBackend, dataBackend.write, ???, metaBackend.hashAlgorithm, storeMethod, systemCores)
+  val storeLogic: StoreLogic = StoreLogic(metaBackend, dataBackend.write, freeRanges, metaBackend.hashAlgorithm, storeMethod, systemCores)
   dirHelper markOpen()
   override final def close(): Unit = { super.close(); dirHelper markClosed() }
 }

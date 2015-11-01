@@ -37,10 +37,11 @@ object SQLBackend extends DirWithConfigHelper {
     val connections = connectionFactory(conf(dbDriverKey), conf(readonlyUrlKey), conf(readonlyUserKey), conf(readonlyPasswordKey), None)
     new SQLBackendRead(connections(), conf(hashAlgorithmKey))
   }
-  def readWrite(directory: File, repositoryid: String): Metadata = {
+  def readWrite(directory: File, repositoryid: String): (Metadata, Ranges) = {
     val conf = settingsChecked(directory, repositoryid)
     val connections = connectionFactory(conf(dbDriverKey), conf(dbUrlKey), conf(dbUserKey), conf(dbPasswordKey), conf get onDbShutdownKey)
-    new SQLBackend(directory, connections, conf(hashAlgorithmKey))
+    val freeRanges = Database.freeRanges(connections())
+    (new SQLBackend(directory, connections, conf(hashAlgorithmKey)), freeRanges)
   }
 }
 

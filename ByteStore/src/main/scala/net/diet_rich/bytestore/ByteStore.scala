@@ -10,6 +10,7 @@ trait ByteStore extends ByteStoreRead {
 }
 
 trait ByteStoreRead extends AutoCloseable {
+  // FIXME why for read? maybe this is only needed for writing...
   /** @return The current position if at a block start, else the position of the next block start */
   def nextBlockStart(position: Long): Long
   /** @return Data, where bytes not available in the store are set to zero */

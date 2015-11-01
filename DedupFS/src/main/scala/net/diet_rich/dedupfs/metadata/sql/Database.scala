@@ -108,11 +108,9 @@ object Database {
     }
   }
 
-  def freeAndProblemRanges(implicit connection: Connection): (Ranges, Seq[DataOverlap]) = {
-    val problemRanges = problemDataAreaOverlaps
-    val freeInData = if (problemRanges.isEmpty) freeRangesInDataArea else Nil
-    val freeRanges = freeInData :+ (startOfFreeDataArea, Long.MaxValue)
-    (freeRanges, problemRanges)
+  def freeRanges(implicit connection: Connection): Ranges = {
+    require(problemDataAreaOverlaps.isEmpty, "found data area overlaps")
+    freeRangesInDataArea :+ (startOfFreeDataArea, Long.MaxValue)
   }
 
   implicit val longResult = {(_: ResultSet) long 1}
