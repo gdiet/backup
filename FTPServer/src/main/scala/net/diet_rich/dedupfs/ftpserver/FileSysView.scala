@@ -69,6 +69,6 @@ class FileSysFile(private[ftpserver] val file: DedupFile, name: String) extends 
     ).asJava
   }
   override def delete(): Boolean = call(s"${file.path} delete") { file.delete() }
-  override def setLastModified(time: Long): Boolean = call(s"${file.path} setLastModified") { ??? }
-  override def createOutputStream(offset: Long): OutputStream = call(s"${file.path} createOutputStream") { ??? }
+  override def setLastModified(time: Long): Boolean = call(s"${file.path} setLastModified") { /* FIXME */ true }
+  override def createOutputStream(offset: Long): OutputStream = call(s"${file.path} createOutputStream") { file.ouputStream() }
 }

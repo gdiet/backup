@@ -53,7 +53,7 @@ package object sql {
   sealed trait SqlInsertReturnKey extends RunArgs[Long] { def run(args: Seq[Any]): Long }
 
   implicit class WrappedSQLResult(val resultSet: ResultSet) extends AnyVal {
-    private def asOption[T](value: T): Option[T] = if (resultSet.wasNull) None else Some(value)
+    private def asOption[T](value: T): Option[T] = if (resultSet.wasNull) None else Some(value) // Note: 'value' must be used by-value
     def boolean(column: Int): Boolean                 =           resultSet getBoolean   column
     def bytes(column: Int): Array[Byte]               =           resultSet getBytes     column
     def bytesOption(column: Int): Option[Array[Byte]] = asOption (resultSet getBytes     column)

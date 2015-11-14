@@ -4,7 +4,7 @@ import java.sql.{Connection, ResultSet}
 
 import net.diet_rich.common._, sql._
 import net.diet_rich.dedupfs.StoreMethod
-import net.diet_rich.dedupfs.metadata.{Ranges, StoreEntry, TreeEntry}, TreeEntry._
+import net.diet_rich.dedupfs.metadata.{DataEntry, Ranges, StoreEntry, TreeEntry}, TreeEntry._
 
 object Database {
   // Note: All tables are designed for create-only operation,
@@ -114,10 +114,12 @@ object Database {
   }
 
   implicit val longResult = {(_: ResultSet) long 1}
+  implicit val boolResult = {(_: ResultSet) boolean 1}
   implicit val treeEntryResult = { r: ResultSet => TreeEntry(r long 1, r long 2 , r string 3, r longOption 4, r longOption 5) }
   implicit val treeQueryResult = { r: ResultSet => (treeEntryResult(r), r boolean 6, r long 7) }
-  implicit val storeEntryResult = { r: ResultSet => StoreEntry(r long 1, r long 2, r long 3, r long 4)}
-  implicit val dataAreaResult = { r: ResultSet => (storeEntryResult(r), StoreEntry(r long 5, r long 6, r long 7, r long 8))}
+  implicit val storeEntryResult = { r: ResultSet => StoreEntry(r long 1, r long 2, r long 3, r long 4) }
+  implicit val dataEntryResult = { r: ResultSet => DataEntry(r long 1, r long 2, r long 3, r bytes 4, r int 5) }
+  implicit val dataAreaResult = { r: ResultSet => (storeEntryResult(r), StoreEntry(r long 5, r long 6, r long 7, r long 8)) }
 }
 
 trait TreeDatabaseRead { import Database._
@@ -139,11 +141,28 @@ trait TreeDatabaseRead { import Database._
       .map { case (treeEntry, _, _) => treeEntry }
 
   private val prepTreeEntryFor =
-    sql.query[(TreeEntry, Boolean, Long)](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
+    sql.query[(TreeEntry, Boolean, Long)]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
   def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry] =
     prepTreeEntryFor.runv(key)
       .find { case (_, deleted, id) => deleted == isDeleted && id <= upToId }
       .map { case (treeEntry, _, _) => treeEntry }
+
+  // TODO check performance of alternative query "SELECT EXISTS (SELECT 1 FROM DataEntries WHERE print = ?);"
+  private val prepDataEntryExistsForPrint =
+    sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? LIMIT 1;")
+  final def dataEntryExists(print: Long): Boolean =
+    prepDataEntryExistsForPrint.runv(print) nextOption() getOrElse false
+
+  // TODO performance see above
+  private val prepDataEntryExistsForPrintAndSize =
+    sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? AND size = ? LIMIT 1;")
+  final def dataEntryExists(print: Long, size: Long): Boolean =
+    prepDataEntryExistsForPrintAndSize.runv(print, size) nextOption() getOrElse false
+
+  private val prepDataEntriesFor =
+    sql.query[DataEntry]("SELECT id, length, print, hash, method FROM DataEntries WHERE length = ? AND print = ? and hash = ?;")
+  final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] =
+    prepDataEntriesFor.runv(size, print, hash).toSeq
 }
 
 trait TreeDatabaseWrite {

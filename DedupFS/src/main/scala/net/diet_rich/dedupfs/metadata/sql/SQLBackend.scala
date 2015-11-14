@@ -46,7 +46,7 @@ object SQLBackend extends DirWithConfigHelper {
 }
 
 private class SQLBackendRead(val connection: Connection, override final val hashAlgorithm: String) extends MetadataRead with TreeDatabaseRead {
-  override final def entry(key: Long): Option[TreeEntry] = treeEntryFor(key)
+  override final def entry(key: Long): Option[TreeEntry] = treeEntryFor(key) // FIXME explicit delegate
   override final def dataEntry(dataid: Long): Option[DataEntry] = ???
   override final def children(parent: Long): Seq[TreeEntry] =
     allChildren(parent).groupBy(_.name).map{ case (_, entries) => entries.head }.toSeq
@@ -58,10 +58,10 @@ private class SQLBackendRead(val connection: Connection, override final val hash
   override final def allChildren(parent: Long, name: String): Seq[TreeEntry] = ???
   override final def child(parent: Long, name: String): Option[TreeEntry] = treeChildrenOf(parent) find (_.name == name)
   override final def allEntries(path: Array[String]): Seq[TreeEntry] = ???
-  override final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] = ???
   override final def settings: Map[String, String] = ???
-  override final def dataEntryExists(print: Long): Boolean = ???
-  override final def dataEntryExists(size: Long, print: Long): Boolean = ???
+//  override final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] = ???
+//  override final def dataEntryExists(print: Long): Boolean = dataEntryExistsForPrint(print)
+//  override final def dataEntryExists(size: Long, print: Long): Boolean = dataEntryExistsForPrintAndSize(print, size)
   override final def path(key: Long): Option[String] =
     if (key == TreeEntry.root.key) Some(TreeEntry.rootPath)
     else entry(key) flatMap {entry => path(entry.parent) map (_ + "/" + entry.name)}
