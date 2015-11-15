@@ -29,9 +29,11 @@ General tests for the tree database, starting with a newly initialized database
   val child = TreeEntry(1, 0, "child", None, None)
 
   lazy val db = new {
-    override implicit val connectionFactory: ConnectionFactory = H2.memoryFactory(className)
-  } with TreeDatabaseRead with TreeDatabaseWrite {
-    override implicit def connection: Connection = connectionFactory()
+    override implicit final val connectionFactory: ConnectionFactory = H2.memoryFactory(className)
+    override final val hashAlgorithm = "MD5"
+  } with DatabaseRead with DatabaseWrite {
+    override implicit final def connection: Connection = connectionFactory()
+    override final def close() = !!!
     Database create "MD5"
   }
   def afterAll(): Unit = db.connectionFactory close()

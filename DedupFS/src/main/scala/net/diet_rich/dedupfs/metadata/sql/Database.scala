@@ -125,7 +125,8 @@ object Database {
   implicit val dataAreaResult = { r: ResultSet => (storeEntryResult(r), StoreEntry(r long 5, r long 6, r long 7, r long 8)) }
 }
 
-trait TreeDatabaseRead extends MetadataRead { import Database._
+
+trait DatabaseRead extends MetadataRead { import Database._
   protected implicit def connection: Connection // TODO common "WithConnection" trait that uses the connection factory
 
   // Note: Ideally, here an SQL condition like
@@ -170,10 +171,6 @@ trait TreeDatabaseRead extends MetadataRead { import Database._
 
   private val prepSizeOfDataEntry = sql.query[Long]("SELECT length FROM DataEntries WHERE id = ?;")
   override final def sizeOf(dataid: Long): Option[Long] = prepSizeOfDataEntry runv dataid nextOption()
-}
-
-trait StoreDatabaseRead extends MetadataRead { import Database._
-  protected implicit def connection: Connection // TODO common "WithConnection" trait that uses the connection factory
 
   private val prepDataEntriesFor = sql.query[DataEntry]("SELECT * FROM DataEntries WHERE length = ? AND print = ? and hash = ?;")
   override final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] = prepDataEntriesFor.runv(size, print, hash).toSeq
@@ -188,60 +185,46 @@ trait StoreDatabaseRead extends MetadataRead { import Database._
 }
 
 
-trait TreeDatabaseWrite extends Metadata { import Database._
+trait DatabaseWrite extends Metadata { import Database._
   protected implicit val connectionFactory: ScalaThreadLocal[Connection]
   protected implicit def connection: Connection // TODO common "WithConnection" trait that uses the connection factory
 
-  private val prepTreeUpdate =
-    sql singleRowUpdate s"INSERT INTO TreeEntries (key, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?)"
-  def treeUpdate(treeEntry: TreeEntry): Unit =
-    prepTreeUpdate.run(treeEntry)
-
-  private val prepTreeDelete =
-    sql singleRowUpdate s"INSERT INTO TreeEntries (key, parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, ?, TRUE)"
-  def treeDelete(treeEntry: TreeEntry): Unit =
-    prepTreeDelete.run(treeEntry)
-
-  private val prepTreeInsert =
-    sql insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
-  def treeInsert(parent: Long, name: String, changed: Option[Long], data: Option[Long]): Long =
-    prepTreeInsert.runv(parent, name, changed, data)
-
-  private val prepNextDataid =
-    sql.query[Long]("SELECT NEXT VALUE FOR dataEntryIdSeq;")
-  override final def nextDataid() =
-    prepNextDataid.run().next()
-
-  override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
+  private val prepTreeInsert = sql insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
+  private[sql] final def treeInsert(parent: Long, name: String, changed: Option[Long], data: Option[Long]): Long = prepTreeInsert runv(parent, name, changed, data)
+  override final def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
     if (parent == TreeEntry.root.parent) throw new IOException("Cannot create a sibling of the root entry")
     treeInsert(parent, name, changed, dataid)
   }
-  override def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
+  override final def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
     children(parent) find (_.name == name) match {
       case Some(entry) => throw new IOException(s"entry $entry already exists")
       case None => createUnchecked(parent, name, changed, dataid)
     }
   }
-  override def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
-  override def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long = ???
+  override final def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
+  override final def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long = ???
 
-  override def delete(key: Long): Boolean = inTransaction { entry(key).map(delete).isDefined } // FIXME check warning
-  override def delete(entry: TreeEntry): Unit = inTransaction { treeDelete(entry) }
-  override def change(changed: TreeEntry): Boolean = ???
+  private val prepTreeUpdate = sql singleRowUpdate s"INSERT INTO TreeEntries (key, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?)"
+  final def changeUnchecked(treeEntry: TreeEntry): Unit = inTransaction { prepTreeUpdate run treeEntry }
+  override def change(changed: TreeEntry): Boolean = inTransaction { init(entry(changed.key).isDefined){ if (_) changeUnchecked(changed) } }
 
-  // Note: Writing the tree structure is synchronized, so "create only if not exists" can be implemented.
-  override def inTransaction[T](f: => T): T = synchronized(f)
-}
+  private val prepTreeDelete = sql singleRowUpdate s"INSERT INTO TreeEntries (key, parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, ?, TRUE)"
+  private[sql] final def treeDelete(treeEntry: TreeEntry): Unit = prepTreeDelete run treeEntry
+  override final def delete(entry: TreeEntry): Unit = inTransaction { treeDelete(entry) }
+  override final def delete(key: Long): Boolean = inTransaction { init(entry(key)){_ foreach delete}.isDefined }
 
-trait StoreDatabaseWrite extends Metadata { import Database._
-  protected implicit val connectionFactory: ScalaThreadLocal[Connection]
-  protected implicit def connection: Connection // TODO common "WithConnection" trait that uses the connection factory
+  private val prepNextDataid = sql.query[Long]("SELECT NEXT VALUE FOR dataEntryIdSeq;")
+  override final def nextDataid() = prepNextDataid run() next()
 
   override def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = ???
   override def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit = ???
 
   override def replaceSettings(newSettings: Map[String, String]): Unit = ???
+
+  // Note: Writing the tree structure is synchronized, so "create only if not exists" can be implemented.
+  override def inTransaction[T](f: => T): T = synchronized(f)
 }
+
   /*
     private def startOfFreeDataArea(implicit session: CurrentSession) = StaticQuery.queryNA[Long](
       "SELECT MAX(fin) FROM ByteStore;"

@@ -45,16 +45,16 @@ object SQLBackend extends DirWithConfigHelper {
   }
 }
 
-private class SQLBackendRead(val connection: Connection, override final val hashAlgorithm: String)
-      extends TreeDatabaseRead with StoreDatabaseRead {
-  override def close(): Unit = connection close()
+private class SQLBackendRead(val connection: Connection, override final val hashAlgorithm: String) extends DatabaseRead {
+  override final def close(): Unit = connection close()
 }
 
-private class SQLBackend(val directory: File, val connectionFactory: ConnectionFactory, hashAlgorithm: String)
-              extends SQLBackendRead(connectionFactory(), hashAlgorithm) with TreeDatabaseWrite with StoreDatabaseWrite {
+private class SQLBackend(val directory: File, val connectionFactory: ConnectionFactory, val hashAlgorithm: String)
+      extends { val connection = connectionFactory() }
+      with DatabaseRead with DatabaseWrite {
   private val dirHelper = new DirWithConfig(SQLBackend, directory)
   dirHelper markOpen()
-  override def close(): Unit = {
+  override final def close(): Unit = {
     connectionFactory close()
     dirHelper markClosed()
   }

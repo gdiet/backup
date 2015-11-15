@@ -9,4 +9,5 @@ package object test {
   }
   def bytes(b: Byte*) = Bytes(Array(b:_*), 0, b.size)
   val unit = () // use in specs2 for ===
+  def !!! : Nothing = throw new NotImplementedError("This code should not have been executed")
 }
