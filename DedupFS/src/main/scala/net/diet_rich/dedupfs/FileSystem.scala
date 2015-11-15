@@ -63,7 +63,7 @@ trait DedupFile {
   def mkDir(): Boolean
   def parent: Option[DedupFile]
   def child(name: String): DedupFile
-  def children: Seq[DedupFile]
+  def children: Iterable[DedupFile]
   def isDirectory: Boolean
   def isFile: Boolean
   def exists: Boolean
@@ -85,7 +85,7 @@ final class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
   override def size: Long = 0L
   override def lastModified: Long = 0L
   override def child(name: String): DedupFile = new VirtualFile(fs, path / name)
-  override def children: Seq[DedupFile] = Seq()
+  override def children: Iterable[DedupFile] = Seq()
   override def parent: Option[DedupFile] = Some(fs getFile path.parent)
   override def delete(): Boolean = false
   override def ouputStream(): OutputStream = parent match {
@@ -109,7 +109,7 @@ final class ActualFile(fs: FileSystem, val path: String, private[dedupfs] val en
     case None => new VirtualFile(fs, path / name)
     case Some(child) => new ActualFile(fs, path / name, child)
   }
-  override def children: Seq[DedupFile] = meta.children(entry.key) map (child => new ActualFile(fs, path / child.name, child))
+  override def children: Iterable[DedupFile] = meta.children(entry.key) map (child => new ActualFile(fs, path / child.name, child))
   override def parent: Option[DedupFile] = fs getFile entry.parent
   override def delete(): Boolean = { fs delete entry; true }
   override def ouputStream(): OutputStream =

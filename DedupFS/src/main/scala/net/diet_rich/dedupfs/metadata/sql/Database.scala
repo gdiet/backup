@@ -1,5 +1,6 @@
 package net.diet_rich.dedupfs.metadata.sql
 
+import java.io.IOException
 import java.sql.{Connection, ResultSet}
 
 import net.diet_rich.common._, net.diet_rich.common.sql._
@@ -116,6 +117,7 @@ object Database {
 
   implicit val longResult = {(_: ResultSet) long 1}
   implicit val boolResult = {(_: ResultSet) boolean 1}
+  implicit val rangeResult = { r: ResultSet => (r long 1, r long 2) }
   implicit val treeEntryResult = { r: ResultSet => TreeEntry(r long 1, r long 2 , r string 3, r longOption 4, r longOption 5) }
   implicit val treeQueryResult = { r: ResultSet => (treeEntryResult(r), r boolean 6, r long 7) }
   implicit val storeEntryResult = { r: ResultSet => StoreEntry(r long 1, r long 2, r long 3, r long 4) }
@@ -124,7 +126,7 @@ object Database {
 }
 
 trait TreeDatabaseRead extends MetadataRead { import Database._
-  protected implicit def connection: Connection
+  protected implicit def connection: Connection // TODO common "WithConnection" trait that uses the connection factory
 
   // Note: Ideally, here an SQL condition like
   // "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
@@ -132,7 +134,7 @@ trait TreeDatabaseRead extends MetadataRead { import Database._
   // However, H2 does not run such queries fast enough.
   private val prepTreeChildrenOf =
     sql.query[(TreeEntry, Boolean, Long)](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE parent = ?")
-  final def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
+  private[sql] final def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
     prepTreeChildrenOf.runv(parentKey)
       .filter { case (_, _, id) => id <= upToId }
       .toSeq
@@ -140,6 +142,12 @@ trait TreeDatabaseRead extends MetadataRead { import Database._
       .map { case (key, entries) => entries.maxBy { case (_, _, id) => id } }
       .filter { case (_, deleted, _) => deleted == isDeleted }
       .map { case (treeEntry, _, _) => treeEntry }
+  override final def allChildren(parent: Long): Iterable[TreeEntry] = treeChildrenOf(parent)
+  override final def children(parent: Long): Iterable[TreeEntry] = allChildren(parent).groupBy(_.name).map{ case (_, entries) => entries.head }
+  override final def allChildren(parent: Long, name: String): Iterable[TreeEntry] = treeChildrenOf(parent)
+  override final def child(parent: Long, name: String): Option[TreeEntry] = treeChildrenOf(parent) find (_.name == name)
+  override final def allEntries(path: Array[String]): Iterable[TreeEntry] = path.foldLeft(Iterable(TreeEntry.root)) { (nodes, name) => nodes flatMap (node => allChildren(node.key, name)) }
+  override final def entry(path: Array[String]): Option[TreeEntry] = path.foldLeft(Option(TreeEntry.root)) { (nodes, name) => nodes flatMap (node => child(node.key, name)) }
 
   private val prepTreeEntryFor =
     sql.query[(TreeEntry, Boolean, Long)]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
@@ -148,33 +156,41 @@ trait TreeDatabaseRead extends MetadataRead { import Database._
       .find { case (_, deleted, id) => deleted == isDeleted && id <= upToId }
       .map { case (treeEntry, _, _) => treeEntry }
   override final def entry(key: Long) = treeEntryFor(key)
+  override final def path(key: Long): Option[String] =
+    if (key == TreeEntry.root.key) Some(TreeEntry.rootPath)
+    else entry(key) flatMap {entry => path(entry.parent) map (_ + "/" + entry.name)}
 
   // TODO check performance of alternative query "SELECT EXISTS (SELECT 1 FROM DataEntries WHERE print = ?);"
-  private val prepDataEntryExistsForPrint =
-    sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? LIMIT 1;")
-  override final def dataEntryExists(print: Long): Boolean =
-    prepDataEntryExistsForPrint runv print nextOption() getOrElse false
+  private val prepDataEntryExistsForPrint = sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? LIMIT 1;")
+  override final def dataEntryExists(print: Long): Boolean = prepDataEntryExistsForPrint runv print nextOption() getOrElse false
 
-  // TODO performance see above
-  private val prepDataEntryExistsForPrintAndSize =
-    sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? AND length = ? LIMIT 1;")
-  override final def dataEntryExists(print: Long, size: Long): Boolean =
-    prepDataEntryExistsForPrintAndSize runv (print, size) nextOption() getOrElse false
+  // TODO check performance of alternative query (see above)
+  private val prepDataEntryExistsForPrintAndSize = sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? AND length = ? LIMIT 1;")
+  override final def dataEntryExists(print: Long, size: Long): Boolean = prepDataEntryExistsForPrintAndSize runv (print, size) nextOption() getOrElse false
 
-  private val prepDataEntriesFor =
-    sql.query[DataEntry]("SELECT id, length, print, hash, method FROM DataEntries WHERE length = ? AND print = ? and hash = ?;")
-  override final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] =
-    prepDataEntriesFor.runv(size, print, hash).toSeq
-
-  private val prepSizeOfDataEntry =
-    sql.query[Long]("SELECT length FROM DataEntries WHERE id = ?;")
-  override final def sizeOf(dataid: Long): Option[Long] =
-    prepSizeOfDataEntry runv dataid nextOption()
+  private val prepSizeOfDataEntry = sql.query[Long]("SELECT length FROM DataEntries WHERE id = ?;")
+  override final def sizeOf(dataid: Long): Option[Long] = prepSizeOfDataEntry runv dataid nextOption()
 }
+
+trait StoreDatabaseRead extends MetadataRead { import Database._
+  protected implicit def connection: Connection // TODO common "WithConnection" trait that uses the connection factory
+
+  private val prepDataEntriesFor = sql.query[DataEntry]("SELECT * FROM DataEntries WHERE length = ? AND print = ? and hash = ?;")
+  override final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] = prepDataEntriesFor.runv(size, print, hash).toSeq
+
+  private val prepDataEntryFor = sql.query[DataEntry]("SELECT * FROM DataEntries WHERE id = ?;")
+  override final def dataEntry(dataid: Long): Option[DataEntry] = prepDataEntryFor runv dataid nextOption()
+
+  private val prepStoreEntriesFor = sql.query[Range]("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY id ASC;")
+  override final def storeEntries(dataid: Long): Ranges = prepStoreEntriesFor.runv(dataid).toSeq
+
+  override final def settings: Map[String, String] = ???
+}
+
 
 trait TreeDatabaseWrite extends Metadata { import Database._
   protected implicit val connectionFactory: ScalaThreadLocal[Connection]
-  protected implicit def connection: Connection
+  protected implicit def connection: Connection // TODO common "WithConnection" trait that uses the connection factory
 
   private val prepTreeUpdate =
     sql singleRowUpdate s"INSERT INTO TreeEntries (key, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?)"
@@ -195,8 +211,37 @@ trait TreeDatabaseWrite extends Metadata { import Database._
     sql.query[Long]("SELECT NEXT VALUE FOR dataEntryIdSeq;")
   override final def nextDataid() =
     prepNextDataid.run().next()
+
+  override def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
+    if (parent == TreeEntry.root.parent) throw new IOException("Cannot create a sibling of the root entry")
+    treeInsert(parent, name, changed, dataid)
+  }
+  override def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
+    children(parent) find (_.name == name) match {
+      case Some(entry) => throw new IOException(s"entry $entry already exists")
+      case None => createUnchecked(parent, name, changed, dataid)
+    }
+  }
+  override def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
+  override def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long = ???
+
+  override def delete(key: Long): Boolean = inTransaction { entry(key).map(delete).isDefined } // FIXME check warning
+  override def delete(entry: TreeEntry): Unit = inTransaction { treeDelete(entry) }
+  override def change(changed: TreeEntry): Boolean = ???
+
+  // Note: Writing the tree structure is synchronized, so "create only if not exists" can be implemented.
+  override def inTransaction[T](f: => T): T = synchronized(f)
 }
 
+trait StoreDatabaseWrite extends Metadata { import Database._
+  protected implicit val connectionFactory: ScalaThreadLocal[Connection]
+  protected implicit def connection: Connection // TODO common "WithConnection" trait that uses the connection factory
+
+  override def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = ???
+  override def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit = ???
+
+  override def replaceSettings(newSettings: Map[String, String]): Unit = ???
+}
   /*
     private def startOfFreeDataArea(implicit session: CurrentSession) = StaticQuery.queryNA[Long](
       "SELECT MAX(fin) FROM ByteStore;"

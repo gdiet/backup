@@ -4,15 +4,24 @@ import TreeEntry.RichPath
 
 trait MetadataRead extends AutoCloseable {
   def entry(key: Long): Option[TreeEntry]
-  def allChildren(parent: Long): Seq[TreeEntry]
-  def children(parent: Long): Seq[TreeEntry]
-  def allChildren(parent: Long, name: String): Seq[TreeEntry]
+  /** @return all children, may include multiple children with the same name. */
+  def allChildren(parent: Long): Iterable[TreeEntry]
+  /** @return children with unique names. */
+  def children(parent: Long): Iterable[TreeEntry]
+  /** @return all children with the name provided. */
+  def allChildren(parent: Long, name: String): Iterable[TreeEntry]
+  /** @return one child with the name provided (if any). */
   def child(parent: Long, name: String): Option[TreeEntry]
 
-  def entry(path: Array[String]): Option[TreeEntry]
+  /** @return one entry with the path provided (if any). */
   final def entry(path: String): Option[TreeEntry] = entry(path.pathElements)
-  def allEntries(path: Array[String]): Seq[TreeEntry]
-  final def allEntries(path: String): Seq[TreeEntry] = allEntries(path.pathElements)
+  /** @return one entry with the path provided (if any). */
+  def entry(path: Array[String]): Option[TreeEntry]
+  /** @return all entries with the path provided, possibly including multiple path elements with the same names. */
+  final def allEntries(path: String): Iterable[TreeEntry] = allEntries(path.pathElements)
+  /** @return all entries with the path provided, possibly including multiple path elements with the same names. */
+  def allEntries(path: Array[String]): Iterable[TreeEntry]
+
   def path(key: Long): Option[String]
 
   def dataEntry(dataid: Long): Option[DataEntry]
