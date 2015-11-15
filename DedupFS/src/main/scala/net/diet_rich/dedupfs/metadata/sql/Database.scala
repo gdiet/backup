@@ -2,9 +2,10 @@ package net.diet_rich.dedupfs.metadata.sql
 
 import java.sql.{Connection, ResultSet}
 
-import net.diet_rich.common._, sql._
+import net.diet_rich.common._, net.diet_rich.common.sql._
+import net.diet_rich.common.sql
 import net.diet_rich.dedupfs.StoreMethod
-import net.diet_rich.dedupfs.metadata.{DataEntry, Ranges, StoreEntry, TreeEntry}, TreeEntry._
+import net.diet_rich.dedupfs.metadata._, TreeEntry._
 
 object Database {
   // Note: All tables are designed for create-only operation,
@@ -122,7 +123,7 @@ object Database {
   implicit val dataAreaResult = { r: ResultSet => (storeEntryResult(r), StoreEntry(r long 5, r long 6, r long 7, r long 8)) }
 }
 
-trait TreeDatabaseRead { import Database._
+trait TreeDatabaseRead extends MetadataRead { import Database._
   protected implicit def connection: Connection
 
   // Note: Ideally, here an SQL condition like
@@ -131,7 +132,7 @@ trait TreeDatabaseRead { import Database._
   // However, H2 does not run such queries fast enough.
   private val prepTreeChildrenOf =
     sql.query[(TreeEntry, Boolean, Long)](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE parent = ?")
-  def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
+  final def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
     prepTreeChildrenOf.runv(parentKey)
       .filter { case (_, _, id) => id <= upToId }
       .toSeq
@@ -142,30 +143,36 @@ trait TreeDatabaseRead { import Database._
 
   private val prepTreeEntryFor =
     sql.query[(TreeEntry, Boolean, Long)]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
-  def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry] =
+  final def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry] =
     prepTreeEntryFor.runv(key)
       .find { case (_, deleted, id) => deleted == isDeleted && id <= upToId }
       .map { case (treeEntry, _, _) => treeEntry }
+  override final def entry(key: Long) = treeEntryFor(key)
 
   // TODO check performance of alternative query "SELECT EXISTS (SELECT 1 FROM DataEntries WHERE print = ?);"
   private val prepDataEntryExistsForPrint =
     sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? LIMIT 1;")
-  final def dataEntryExists(print: Long): Boolean =
-    prepDataEntryExistsForPrint.runv(print) nextOption() getOrElse false
+  override final def dataEntryExists(print: Long): Boolean =
+    prepDataEntryExistsForPrint runv print nextOption() getOrElse false
 
   // TODO performance see above
   private val prepDataEntryExistsForPrintAndSize =
-    sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? AND size = ? LIMIT 1;")
-  final def dataEntryExists(print: Long, size: Long): Boolean =
-    prepDataEntryExistsForPrintAndSize.runv(print, size) nextOption() getOrElse false
+    sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? AND length = ? LIMIT 1;")
+  override final def dataEntryExists(print: Long, size: Long): Boolean =
+    prepDataEntryExistsForPrintAndSize runv (print, size) nextOption() getOrElse false
 
   private val prepDataEntriesFor =
     sql.query[DataEntry]("SELECT id, length, print, hash, method FROM DataEntries WHERE length = ? AND print = ? and hash = ?;")
-  final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] =
+  override final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] =
     prepDataEntriesFor.runv(size, print, hash).toSeq
+
+  private val prepSizeOfDataEntry =
+    sql.query[Long]("SELECT length FROM DataEntries WHERE id = ?;")
+  override final def sizeOf(dataid: Long): Option[Long] =
+    prepSizeOfDataEntry runv dataid nextOption()
 }
 
-trait TreeDatabaseWrite {
+trait TreeDatabaseWrite extends Metadata { import Database._
   protected implicit val connectionFactory: ScalaThreadLocal[Connection]
   protected implicit def connection: Connection
 
@@ -183,6 +190,11 @@ trait TreeDatabaseWrite {
     sql insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
   def treeInsert(parent: Long, name: String, changed: Option[Long], data: Option[Long]): Long =
     prepTreeInsert.runv(parent, name, changed, data)
+
+  private val prepNextDataid =
+    sql.query[Long]("SELECT NEXT VALUE FOR dataEntryIdSeq;")
+  override final def nextDataid() =
+    prepNextDataid.run().next()
 }
 
   /*

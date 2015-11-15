@@ -40,7 +40,7 @@ trait Metadata extends MetadataRead {
   def delete(entry: TreeEntry): Unit
 
   def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit
-  def nextDataid: Long
+  def nextDataid(): Long
 
   def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit
 

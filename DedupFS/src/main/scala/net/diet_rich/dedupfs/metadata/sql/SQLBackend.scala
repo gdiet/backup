@@ -45,23 +45,18 @@ object SQLBackend extends DirWithConfigHelper {
   }
 }
 
-private class SQLBackendRead(val connection: Connection, override final val hashAlgorithm: String) extends MetadataRead with TreeDatabaseRead {
-  override final def entry(key: Long): Option[TreeEntry] = treeEntryFor(key) // FIXME explicit delegate
+private class SQLBackendRead(val connection: Connection, override final val hashAlgorithm: String) extends TreeDatabaseRead {
   override final def dataEntry(dataid: Long): Option[DataEntry] = ???
   override final def children(parent: Long): Seq[TreeEntry] =
     allChildren(parent).groupBy(_.name).map{ case (_, entries) => entries.head }.toSeq
   override final def storeEntries(dataid: Long): Ranges = ???
   override final def entry(path: Array[String]): Option[TreeEntry] =
     path.foldLeft(Option(TreeEntry.root)) { (nodes, name) => nodes flatMap (node => child(node.key, name)) }
-  override final def sizeOf(dataid: Long): Option[Long] = ???
-  override final def allChildren(parent: Long): Seq[TreeEntry] = treeChildrenOf(parent).toSeq
+  override final def allChildren(parent: Long): Seq[TreeEntry] = treeChildrenOf(parent).toSeq // FIXME implement directly in trait as TraversableOnce
   override final def allChildren(parent: Long, name: String): Seq[TreeEntry] = ???
   override final def child(parent: Long, name: String): Option[TreeEntry] = treeChildrenOf(parent) find (_.name == name)
   override final def allEntries(path: Array[String]): Seq[TreeEntry] = ???
   override final def settings: Map[String, String] = ???
-//  override final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] = ???
-//  override final def dataEntryExists(print: Long): Boolean = dataEntryExistsForPrint(print)
-//  override final def dataEntryExists(size: Long, print: Long): Boolean = dataEntryExistsForPrintAndSize(print, size)
   override final def path(key: Long): Option[String] =
     if (key == TreeEntry.root.key) Some(TreeEntry.rootPath)
     else entry(key) flatMap {entry => path(entry.parent) map (_ + "/" + entry.name)}
@@ -70,7 +65,7 @@ private class SQLBackendRead(val connection: Connection, override final val hash
 }
 
 private class SQLBackend(val directory: File, val connectionFactory: ConnectionFactory, hashAlgorithm: String)
-              extends SQLBackendRead(connectionFactory(), hashAlgorithm) with Metadata with TreeDatabaseWrite {
+              extends SQLBackendRead(connectionFactory(), hashAlgorithm) with TreeDatabaseWrite {
   private val dirHelper = new DirWithConfig(SQLBackend, directory)
   dirHelper markOpen()
   override def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = ???
@@ -90,7 +85,7 @@ private class SQLBackend(val directory: File, val connectionFactory: ConnectionF
     }
   }
   override def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
-  override def nextDataid: Long = ???
+//  override def nextDataid(): Long = db nextDataid()
   override def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long = ???
   // Note: Writing the tree structure is synchronized, so "create only if not exists" can be implemented.
   override def inTransaction[T](f: => T): T = synchronized(f)
