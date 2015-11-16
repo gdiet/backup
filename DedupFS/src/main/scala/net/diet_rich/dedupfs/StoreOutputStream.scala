@@ -18,10 +18,10 @@ class StoreOutputStream(storeLogic: StoreLogic, processDataid: Long => Unit) ext
   override def close(): Unit = if (!closed) {
     closed = true
     transfer put Bytes.empty
-    processDataid(storeLogic dataidFor theSource)
+    processDataid(resultOf(dataid))
   }
 
-  protected val dataid = storeLogic futureDataidFor theSource
+  private val dataid = storeLogic futureDataidFor theSource
 
   private object theSource extends Source {
     protected var pool: Array[Byte] = Array()

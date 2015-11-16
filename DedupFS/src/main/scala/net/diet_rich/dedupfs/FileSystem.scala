@@ -7,7 +7,7 @@ import net.diet_rich.dedupfs.metadata.TreeEntry, TreeEntry.RichPath
 
 /** FileSystem is a convenience wrapper for the repository providing methods
   * that resemble more the standard file system API methods. */
-class FileSystem(val repository: Repository.Any) extends AutoCloseable { import repository._
+class FileSystem(val repository: Repository.Any) extends Logging with AutoCloseable { import repository._
   private val maybeRepositoryReadWrite = repository match { case r: Repository => Some(r); case _ => None }
   val isReadOnly = maybeRepositoryReadWrite.isEmpty
   val root = new ActualFile(this, TreeEntry.rootPath, TreeEntry.root)
@@ -44,6 +44,7 @@ class FileSystem(val repository: Repository.Any) extends AutoCloseable { import 
   def createWithOutputStream(parentKey: Long, name: String, changed: Option[Long] = someNow): OutputStream = write { write =>
     new StoreOutputStream(write.storeLogic, { dataid =>
       write.metaBackend.create(parentKey, name, changed, Some(dataid))
+      log debug s"created entry for $parentKey: $name - $dataid"
     })
   }
 
