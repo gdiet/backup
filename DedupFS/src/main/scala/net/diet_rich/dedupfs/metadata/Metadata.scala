@@ -2,25 +2,15 @@ package net.diet_rich.dedupfs.metadata
 
 import TreeEntry.RichPath
 
-trait MetadataRead extends AutoCloseable {
+trait MetadataRead extends MetadataReadBasic with MetadataReadExtended
+
+trait MetadataReadBasic extends AutoCloseable {
   def entry(key: Long): Option[TreeEntry]
-  /** @return all children, may include multiple children with the same name. */
-  def allChildren(parent: Long): Iterable[TreeEntry]
-  /** @return children with unique names. */
   def children(parent: Long): Iterable[TreeEntry]
-  /** @return all children with the name provided. */
-  def allChildren(parent: Long, name: String): Iterable[TreeEntry]
-  /** @return one child with the name provided (if any). */
   def child(parent: Long, name: String): Option[TreeEntry]
 
-  /** @return one entry with the path provided (if any). */
   final def entry(path: String): Option[TreeEntry] = entry(path.pathElements)
-  /** @return one entry with the path provided (if any). */
   def entry(path: Array[String]): Option[TreeEntry]
-  /** @return all entries with the path provided, possibly including multiple path elements with the same names. */
-  final def allEntries(path: String): Iterable[TreeEntry] = allEntries(path.pathElements)
-  /** @return all entries with the path provided, possibly including multiple path elements with the same names. */
-  def allEntries(path: Array[String]): Iterable[TreeEntry]
 
   def path(key: Long): Option[String]
 
@@ -35,8 +25,21 @@ trait MetadataRead extends AutoCloseable {
 
   def settings: String Map String
   def hashAlgorithm: String
+}
 
-  def close(): Unit
+trait MetadataReadExtended {
+  /** @return all children, may include multiple children with the same name. */
+  def allChildren(parent: Long): Iterable[TreeEntry]
+  /** @return all children with the name provided. */
+  def allChildren(parent: Long, name: String): Iterable[TreeEntry]
+  /** @return all entries with the path provided, possibly including multiple path elements with the same names. */
+  final def allEntries(path: String): Iterable[TreeEntry] = allEntries(path.pathElements)
+  /** @return all entries with the path provided, possibly including multiple path elements with the same names. */
+  def allEntries(path: Array[String]): Iterable[TreeEntry]
+  /** @return deleted and/or historical entries */
+  def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry]
+  /** @return deleted and/or historical entries */
+  def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry]
 }
 
 trait Metadata extends MetadataRead {

@@ -111,7 +111,7 @@ object Database {
   }
 
   def freeRanges(implicit connection: Connection): Ranges = {
-    require(problemDataAreaOverlaps.isEmpty, "found data area overlaps")
+    require(problemDataAreaOverlaps.isEmpty, s"found data area overlaps: $problemDataAreaOverlaps")
     freeRangesInDataArea :+ (startOfFreeDataArea, Long.MaxValue)
   }
 
@@ -127,7 +127,7 @@ object Database {
 
 
 trait DatabaseRead extends MetadataRead { import Database._
-  protected implicit def connection: Connection
+  private[sql] implicit def connection: Connection
 
   // Note: Ideally, here an SQL condition like
   // "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
@@ -135,7 +135,7 @@ trait DatabaseRead extends MetadataRead { import Database._
   // However, H2 does not run such queries fast enough.
   private val prepTreeChildrenOf =
     sql.query[(TreeEntry, Boolean, Long)](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE parent = ?")
-  private[sql] final def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
+  override final def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
     prepTreeChildrenOf.runv(parentKey)
       .filter { case (_, _, id) => id <= upToId }
       .toSeq
@@ -152,7 +152,7 @@ trait DatabaseRead extends MetadataRead { import Database._
 
   private val prepTreeEntryFor =
     sql.query[(TreeEntry, Boolean, Long)]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
-  final def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry] =
+  override final def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry] =
     prepTreeEntryFor.runv(key)
       .find { case (_, deleted, id) => deleted == isDeleted && id <= upToId }
       .map { case (treeEntry, _, _) => treeEntry }
@@ -186,8 +186,8 @@ trait DatabaseRead extends MetadataRead { import Database._
 
 
 trait DatabaseWrite extends Metadata { import Database._
-  protected implicit val connectionFactory: ScalaThreadLocal[Connection]
-  protected implicit def connection: Connection
+  private[sql] implicit val connectionFactory: ScalaThreadLocal[Connection]
+  private[sql] implicit def connection: Connection
 
   private val prepTreeInsert = sql insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
   private[sql] final def treeInsert(parent: Long, name: String, changed: Option[Long], data: Option[Long]): Long = prepTreeInsert runv(parent, name, changed, data)
@@ -224,43 +224,11 @@ trait DatabaseWrite extends Metadata { import Database._
 
   override def replaceSettings(newSettings: Map[String, String]): Unit = ???
 
-  // Note: Writing the tree structure is synchronized, so "create only if not exists" can be implemented.
+  /** In the API, (only) writing the tree structure is synchronized, so "create only if not exists" can be implemented. */
   override def inTransaction[T](f: => T): T = synchronized(f)
 }
 
-  /*
-    private def startOfFreeDataArea(implicit session: CurrentSession) = StaticQuery.queryNA[Long](
-      "SELECT MAX(fin) FROM ByteStore;"
-    ).firstOption getOrElse 0L
-    private def dataAreaEnds(implicit session: CurrentSession): List[Long] = StaticQuery.queryNA[Long](
-      "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin;"
-    ).list
-    private def dataAreaStarts(implicit session: CurrentSession): List[Long] = StaticQuery.queryNA[Long](
-      "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start;"
-    ).list
-    def problemDataAreaOverlaps(implicit session: CurrentSession): List[(StoreEntry, StoreEntry)] = {
-      // Note: H2 (1.3.176) does not create a good plan if the three queries are packed into one, and the execution is too slow (two nested table scans)
-      val select = "SELECT b1.id, b1.dataid, b1.start, b1.fin, b2.id, b2.dataid, b2.start, b2.fin FROM ByteStore b1 JOIN ByteStore b2"
-      StaticQuery.queryNA[(StoreEntry, StoreEntry)](s"$select ON b1.start < b2.fin AND b1.fin > b2.fin;").list :::
-      StaticQuery.queryNA[(StoreEntry, StoreEntry)](s"$select ON b1.id != b2.id AND b1.start = b2.start;").list :::
-      StaticQuery.queryNA[(StoreEntry, StoreEntry)](s"$select ON b1.id != b2.id AND b1.fin = b2.fin;").list
-    }
-    def freeRangesInDataArea(implicit session: CurrentSession): List[StartFin] = {
-      dataAreaStarts match {
-        case Nil => Nil
-        case firstArea :: gapStarts =>
-          val tail = dataAreaEnds zip gapStarts
-          if (firstArea > 0L) (0L, firstArea) :: tail else tail
-      }
-    }
-    def freeRangeAtEndOfDataArea(implicit session: CurrentSession): StartFin = (startOfFreeDataArea, Long.MaxValue)
-    def freeAndProblemRanges(implicit session: CurrentSession): (Ranges, List[(StoreEntry, StoreEntry)]) = {
-      val problemRanges = DBUtilities.problemDataAreaOverlaps
-      val freeInData = if (problemRanges isEmpty) DBUtilities.freeRangesInDataArea else Nil
-      val freeRanges = freeInData.toVector :+ DBUtilities.freeRangeAtEndOfDataArea
-      (freeRanges, problemRanges)
-    }
-
+/* TODO use or delete this old code
 
   object Testutil {
     private val dbid = new AtomicLong(0L)
@@ -324,4 +292,4 @@ trait DatabaseWrite extends Metadata { import Database._
     }
   }
 
-     */
+*/

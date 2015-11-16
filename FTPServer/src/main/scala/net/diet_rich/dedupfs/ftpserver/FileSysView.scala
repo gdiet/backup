@@ -1,6 +1,6 @@
 package net.diet_rich.dedupfs.ftpserver
 
-import java.io.{InputStream, OutputStream}
+import java.io.{IOException, InputStream, OutputStream}
 import java.util
 import scala.collection.JavaConverters._
 
@@ -60,7 +60,10 @@ class FileSysFile(private[ftpserver] val file: DedupFile, name: String) extends 
   override def getAbsolutePath: String = call(s"${file.path} getAbsolutePath") { file.path }
   override def mkdir(): Boolean = call(s"${file.path} mkdir") { file mkDir() }
   override def move(destination: FtpFile): Boolean = call(s"${file.path} move") { ??? }
-  override def createInputStream(offset: Long): InputStream = call(s"${file.path} createInputStream") { ??? }
+  override def createInputStream(offset: Long): InputStream = call(s"${file.path} createInputStream") {
+    if (offset != 0) throw new IOException("Not random accessible")
+    file inputStream()
+  }
   override def listFiles(): util.List[FtpFile] = call(s"${file.path} listFiles") {
     (
       Seq(new FileSysFile(file, ".")) ++
@@ -70,5 +73,8 @@ class FileSysFile(private[ftpserver] val file: DedupFile, name: String) extends 
   }
   override def delete(): Boolean = call(s"${file.path} delete") { file.delete() }
   override def setLastModified(time: Long): Boolean = call(s"${file.path} setLastModified") { /* FIXME */ true }
-  override def createOutputStream(offset: Long): OutputStream = call(s"${file.path} createOutputStream") { file.ouputStream() }
+  override def createOutputStream(offset: Long): OutputStream = call(s"${file.path} createOutputStream") {
+    if (offset != 0) throw new IOException("Not random accessible")
+    file ouputStream()
+  }
 }

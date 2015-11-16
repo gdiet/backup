@@ -1,6 +1,6 @@
 package net.diet_rich.dedupfs
 
-import java.io.{OutputStream, IOException}
+import java.io.{FileNotFoundException, InputStream, OutputStream, IOException}
 
 import net.diet_rich.common._
 import net.diet_rich.dedupfs.metadata.TreeEntry, TreeEntry.RichPath
@@ -54,6 +54,8 @@ class FileSystem(val repository: Repository.Any) extends AutoCloseable { import 
     })
   }
 
+  def getInputStream(dataid: Long): InputStream = repository.read(dataid).asInputStream
+
   override def close(): Unit = repository.close()
 }
 
@@ -72,6 +74,7 @@ trait DedupFile {
   def lastModified: Long
   def delete(): Boolean
   def ouputStream(): OutputStream
+  def inputStream(): InputStream
 }
 
 final class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
@@ -92,6 +95,7 @@ final class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
     case Some(f: ActualFile) if f.isDirectory => fs.createWithOutputStream(f.entry.key, name)
     case _ => throw new IOException("Can't create output stream - parent is not a directory.")
   }
+  override def inputStream(): InputStream = throw new FileNotFoundException(s"File is virtual, can't create input stream: $path")
 }
 
 final class ActualFile(fs: FileSystem, val path: String, private[dedupfs] val entry: TreeEntry) extends DedupFile {
@@ -114,5 +118,8 @@ final class ActualFile(fs: FileSystem, val path: String, private[dedupfs] val en
   override def delete(): Boolean = { fs delete entry; true }
   override def ouputStream(): OutputStream =
     if (isFile) fs.replaceWithOutputStream(entry) else throw new IOException("Can't create output stream for a directory.")
-
+  override def inputStream(): InputStream = entry.data match {
+    case None => throw new IOException(s"Can't create input stream for directory: $path")
+    case Some(dataid) => fs getInputStream dataid
+  }
 }

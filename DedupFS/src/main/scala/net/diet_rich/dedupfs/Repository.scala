@@ -1,6 +1,6 @@
 package net.diet_rich.dedupfs
 
-import java.io.File
+import java.io.{IOException, File}
 import scala.util.Random
 
 import net.diet_rich.bytestore.{ByteStore, ByteStoreRead}
@@ -59,11 +59,20 @@ object Repository extends DirWithConfigHelper {
 
 class RepositoryRead[Meta <: MetadataRead, Data <: ByteStoreRead](val metaBackend: Meta, val dataBackend: Data) extends AutoCloseable {
   override def close(): Unit = try metaBackend.close() finally dataBackend.close()
+
+  final def read(dataid: Long): Iterator[Bytes] =
+    metaBackend.dataEntry(dataid) match {
+      case None => throw new IOException(s"No data entry found for id $dataid")
+      case Some(entry) => StoreMethod.restoreCoder(entry.method)(readRaw(dataid))
+    }
+
+  private def readRaw(dataid: Long): Iterator[Bytes] =
+    metaBackend.storeEntries(dataid).iterator flatMap { case (from, to) => dataBackend read (from, to) }
 }
 
 class Repository(val directory: File, metaBackend: Metadata, dataBackend: ByteStore, freeRanges: FreeRanges, storeMethod: Int) extends RepositoryRead(metaBackend, dataBackend) {
-  val dirHelper = new DirWithConfig(Repository, directory)
-  val storeLogic: StoreLogic = StoreLogic(metaBackend, dataBackend.write, freeRanges, metaBackend.hashAlgorithm, storeMethod, systemCores)
+  final val dirHelper = new DirWithConfig(Repository, directory)
+  final val storeLogic: StoreLogic = StoreLogic(metaBackend, dataBackend.write, freeRanges, metaBackend.hashAlgorithm, storeMethod, systemCores)
   dirHelper markOpen()
   override final def close(): Unit = { super.close(); dirHelper markClosed() }
 }
