@@ -72,7 +72,7 @@ class FileSysFile(private[ftpserver] val file: DedupFile, name: String) extends 
     ).asJava
   }
   override def delete(): Boolean = call(s"${file.path} delete") { file.delete() }
-  override def setLastModified(time: Long): Boolean = call(s"${file.path} setLastModified") { /* FIXME */ true }
+  override def setLastModified(time: Long): Boolean = call(s"${file.path} setLastModified") { file change (changed = Some(Some(time))) }
   override def createOutputStream(offset: Long): OutputStream = call(s"${file.path} createOutputStream") {
     if (offset != 0) throw new IOException("Not random accessible")
     file ouputStream()

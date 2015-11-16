@@ -49,6 +49,20 @@ trait Metadata extends MetadataRead {
   def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long
   def changeUnchecked(changed: TreeEntry): Unit
   def change(changed: TreeEntry): Boolean
+  final def change(key: Long, parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean = inTransaction {
+    entry(key) match {
+      case None => false
+      case Some(entry) =>
+        changeUnchecked(TreeEntry(
+          key     = key,
+          parent  = parent getOrElse entry.parent,
+          name    = name getOrElse entry.name,
+          changed = changed getOrElse entry.changed,
+          data    = data getOrElse entry.data
+        ))
+        true
+    }
+  }
   def delete(key: Long): Boolean
   def delete(entry: TreeEntry): Unit
 

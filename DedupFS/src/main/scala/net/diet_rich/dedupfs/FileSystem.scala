@@ -7,7 +7,7 @@ import net.diet_rich.dedupfs.metadata.TreeEntry, TreeEntry.RichPath
 
 /** FileSystem is a convenience wrapper for the repository providing methods
   * that resemble more the standard file system API methods. */
-class FileSystem(val repository: Repository.Any) extends Logging with AutoCloseable { import repository._
+final class FileSystem(val repository: Repository.Any) extends Logging with AutoCloseable { import repository._
   private val maybeRepositoryReadWrite = repository match { case r: Repository => Some(r); case _ => None }
   val isReadOnly = maybeRepositoryReadWrite.isEmpty
   val root = new ActualFile(this, TreeEntry.rootPath, TreeEntry.root)
@@ -27,7 +27,10 @@ class FileSystem(val repository: Repository.Any) extends Logging with AutoClosea
     }
   }
 
-  def delete(entry: TreeEntry): Unit = write { _.metaBackend.delete(entry) }
+  def change(key: Long, parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean =
+    write { _.metaBackend change (key, parent, name, changed, data) }
+
+  def delete(entry: TreeEntry): Unit = write { _.metaBackend delete entry }
 
   def getFile(path: String): DedupFile =
     metaBackend entry path match {
@@ -74,6 +77,7 @@ trait DedupFile {
   def size: Long
   def lastModified: Long
   def delete(): Boolean
+  def change(parent: Option[Long] = None, name: Option[String] = None, changed: Option[Option[Long]] = None, data: Option[Option[Long]] = None): Boolean
   def ouputStream(): OutputStream
   def inputStream(): InputStream
 }
@@ -92,6 +96,8 @@ final class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
   override def children: Iterable[DedupFile] = Seq()
   override def parent: Option[DedupFile] = Some(fs getFile path.parent)
   override def delete(): Boolean = false
+  override def change(parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean =
+    throw new IOException(s"Can't change virtual file: $path")
   override def ouputStream(): OutputStream = parent match {
     case Some(f: ActualFile) if f.isDirectory => fs.createWithOutputStream(f.entry.key, name)
     case _ => throw new IOException("Can't create output stream - parent is not a directory.")
@@ -117,8 +123,10 @@ final class ActualFile(fs: FileSystem, val path: String, private[dedupfs] val en
   override def children: Iterable[DedupFile] = meta.children(entry.key) map (child => new ActualFile(fs, path / child.name, child))
   override def parent: Option[DedupFile] = fs getFile entry.parent
   override def delete(): Boolean = { fs delete entry; true }
+  override def change(parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean =
+    fs change (entry.key, parent, name, changed, data)
   override def ouputStream(): OutputStream =
-    if (isFile) fs.replaceWithOutputStream(entry) else throw new IOException("Can't create output stream for a directory.")
+    if (isFile) fs replaceWithOutputStream entry else throw new IOException("Can't create output stream for a directory.")
   override def inputStream(): InputStream = entry.data match {
     case None => throw new IOException(s"Can't create input stream for directory: $path")
     case Some(dataid) => fs getInputStream dataid
