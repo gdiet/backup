@@ -93,7 +93,7 @@ object Database {
     ).run().toList
 
   type DataOverlap = (StoreEntry, StoreEntry)
-  private def problemDataAreaOverlaps(implicit connection: Connection): Seq[DataOverlap] = {
+  private[sql] def problemDataAreaOverlaps(implicit connection: Connection): Seq[DataOverlap] = {
     // Note: H2 (1.3.176) does not create a good plan if the three queries are packed into one, and the execution is too slow (two nested table scans)
     val select =
       "SELECT b1.id, b1.dataid, b1.start, b1.fin, b2.id, b2.dataid, b2.start, b2.fin FROM ByteStore b1 JOIN ByteStore b2"
@@ -101,7 +101,7 @@ object Database {
     sql.query[DataOverlap](s"$select ON b1.id != b2.id AND b1.start = b2.start").run().toSeq ++:
     sql.query[DataOverlap](s"$select ON b1.id != b2.id AND b1.fin = b2.fin").run().toSeq
   }
-  private def freeRangesInDataArea(implicit connection: Connection): Ranges = {
+  private[sql] def freeRangesInDataArea(implicit connection: Connection): Ranges = {
     dataAreaStarts match {
       case Nil => Nil
       case firstArea :: gapStarts =>
@@ -227,69 +227,3 @@ trait DatabaseWrite extends Metadata { import Database._
   /** In the API, (only) writing the tree structure is synchronized, so "create only if not exists" can be implemented. */
   override def inTransaction[T](f: => T): T = synchronized(f)
 }
-
-/* TODO use or delete this old code
-
-  object Testutil {
-    private val dbid = new AtomicLong(0L)
-
-    def memoryDB: SessionFactory = SessionFactory(
-      Database forURL(
-        // ;TRACE_LEVEL_SYSTEM_OUT=2 or 3 for console debug output
-        url = s"jdbc:h2:mem:testdb_${dbid incrementAndGet}",
-        user = "sa", driver = "org.h2.Driver"
-      ),
-      readWrite
-    )
-  }
-
-
-  class InitialFreeRangesSpec extends Specification { def is = s2"""
-  ${"Tests for finding the free ranges and problems in the data area".title}
-
-  If the database is empty, the free ranges list should be empty $emptyDatabase
-  If connected entries not at the start of the area are present, the queue should contain the free start area $entriesNotAtStart
-  If entries with gaps are present, the queue should contain appropriate entries $gaps
-
-  Illegal overlaps: No problems are reported for good data $noProblems
-  Illegal overlaps: Partially identical entries are correctly detected $partiallyIdentical
-  Illegal overlaps: Inclusions are correctly detected $inclusions
-  Illegal overlaps: Identical entries are correctly detected $identical
-  Illegal overlaps: Partial overlaps are correctly detected $identical
-    """
-
-    def emptyDatabase = freeRangesCheck () expecting ()
-    def entriesNotAtStart = freeRangesCheck ((10,60), (60,110)) expecting ((0,10))
-    def gaps = freeRangesCheck ((0,50), (60,110), (120, 130)) expecting ((50,60), (110,120))
-
-    def noProblems = dataAreaProblemCheck((10,60), (60,110)) expecting true
-    def partiallyIdentical = dataAreaProblemCheck((10,50), (10,30)) expecting false
-    def inclusions = dataAreaProblemCheck((10,50), (20,40)) expecting false
-    def identical = dataAreaProblemCheck((10,50), (10,50)) expecting false
-    def partialOverlap = dataAreaProblemCheck((10,30), (20,40)) expecting false
-
-    def freeRangesCheck(dbContents: StartFin*) = new {
-      def expecting (expectedRanges: StartFin*) = testSetup(dbContents) { session =>
-        val actualRanges = DBUtilities.freeRangesInDataArea(session)
-        actualRanges should beEqualTo(expectedRanges.toList)
-      }
-    }
-
-    def dataAreaProblemCheck(dbContents: StartFin*) = new {
-      def expecting (noProblems: Boolean) = testSetup(dbContents) { session =>
-        DBUtilities.problemDataAreaOverlaps(session) aka "data overlap problem list" should (
-          if (noProblems) beEmpty else not(beEmpty)
-          )
-      }
-    }
-
-    def testSetup[T](dbContents: Seq[StartFin])(f: CurrentSession => T): T = {
-      val db = Testutil.memoryDB
-      DBUtilities.createTables("MD5")(db session)
-      val meta = new SQLMetaBackend(db)
-      dbContents foreach { case (start, fin) => meta.createByteStoreEntry(0, start, fin) }
-      f(db session)
-    }
-  }
-
-*/
