@@ -5,18 +5,12 @@ import org.specs2.specification.AfterAll
 import net.diet_rich.common._, io._, test._
 
 trait Common extends TestsHelper with AfterAll {
-  var store = createStore()
-  def createStore() = {
+  val store = {
     import FileBackend._
     val dataDirectory = testDataDirectory / "emptyStore"
     delete(dataDirectory)
-    dataDirectory.getParentFile.mkdirs()
+    dataDirectory.getParentFile mkdirs()
     initialize(dataDirectory, "emptyStore", 4)
-    openStore()
-  }
-  def openStore() = {
-    import FileBackend._
-    val dataDirectory = testDataDirectory / "emptyStore"
     readWriteRaw(dataDirectory, "emptyStore")
   }
   def read(from: Long, to: Long) = store.read(from, to).toList

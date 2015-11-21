@@ -17,7 +17,8 @@ scalacOptions in Test in ThisBuild ++= Seq("-Yrangepos")
 
 lazy val All = project aggregate (Common, Logging, ByteStore, DedupFS, FTPServer)
 lazy val Common = project
+lazy val CommonTest = Common % "test->test"
 lazy val Logging = project dependsOn Common
-lazy val ByteStore = project dependsOn (Common % "compile->compile;test->test")
-lazy val DedupFS = project dependsOn (ByteStore, Common % "test->test", Logging)
+lazy val ByteStore = project dependsOn (Common, Logging, CommonTest)
+lazy val DedupFS = project dependsOn (ByteStore, CommonTest)
 lazy val FTPServer = project dependsOn DedupFS

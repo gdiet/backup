@@ -2,7 +2,7 @@ package net.diet_rich.dedupfs.metadata
 
 import org.specs2.Specification
 
-import net.diet_rich.bytestore.file.FileBackend
+import net.diet_rich.bytestore.file.{Position, BlockSize, FileBackend}
 import net.diet_rich.common.test._
 
 class FreeRangesSpec extends Specification {
@@ -16,7 +16,7 @@ the free ranges object should
     100L -> 2500L,
     8000L -> Long.MaxValue,
     4800L -> 5000L
-  ), FileBackend.nextBlockStart(1000L, _))
+  ), position => FileBackend.nextBlockStart(BlockSize(1000), Position(position)).value)
 
   def checkNextSevenRanges =
     List.fill(7)(freeRanges.nextBlock) === List(

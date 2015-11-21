@@ -13,7 +13,7 @@
   <!-- For FTPServer -->
   <logger name="org.apache" level="warn"/>
 
-  <root level="debug">
+  <root level="info">
     <appender-ref ref="STDOUT" />
   </root>
 
