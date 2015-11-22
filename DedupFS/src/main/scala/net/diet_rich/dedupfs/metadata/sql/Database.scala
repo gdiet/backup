@@ -75,7 +75,7 @@ object Database {
     indexDefinitions foreach (sql.update(_).run())
     // Make sure the empty data entry is stored plain by inserting it manually
     sql.update("INSERT INTO DataEntries (length, print, hash, method) VALUES (?, ?, ?, ?)")
-      .run(0, printOf(Bytes.empty), Hash empty hashAlgorithm, StoreMethod.STORE)
+      .run(0, Print printOf Bytes.empty, Hash empty hashAlgorithm, StoreMethod.STORE) // TODO Print.empty ?
   }
 
   private def startOfFreeDataArea(implicit connection: Connection): Long =
@@ -121,7 +121,7 @@ object Database {
   implicit val treeEntryResult = { r: ResultSet => TreeEntry(r long 1, r long 2 , r string 3, r longOption 4, r longOption 5) }
   implicit val treeQueryResult = { r: ResultSet => (treeEntryResult(r), r boolean 6, r long 7) }
   implicit val storeEntryResult = { r: ResultSet => StoreEntry(r long 1, r long 2, r long 3, r long 4) }
-  implicit val dataEntryResult = { r: ResultSet => DataEntry(r long 1, r long 2, r long 3, r bytes 4, r int 5) }
+  implicit val dataEntryResult = { r: ResultSet => DataEntry(r long 1, r long 2, Print(r long 3), r bytes 4, r int 5) }
   implicit val dataAreaResult = { r: ResultSet => (storeEntryResult(r), StoreEntry(r long 5, r long 6, r long 7, r long 8)) }
 }
 
@@ -163,17 +163,17 @@ trait DatabaseRead extends MetadataRead { import Database._
 
   // TODO check performance of alternative query "SELECT EXISTS (SELECT 1 FROM DataEntries WHERE print = ?)"
   private val prepDataEntryExistsForPrint = sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? LIMIT 1")
-  override final def dataEntryExists(print: Long): Boolean = prepDataEntryExistsForPrint runv print nextOption() getOrElse false
+  override final def dataEntryExists(print: Print): Boolean = prepDataEntryExistsForPrint runv print nextOption() getOrElse false
 
   // TODO check performance of alternative query (see above)
   private val prepDataEntryExistsForPrintAndSize = sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? AND length = ? LIMIT 1")
-  override final def dataEntryExists(print: Long, size: Long): Boolean = prepDataEntryExistsForPrintAndSize runv (print, size) nextOption() getOrElse false
+  override final def dataEntryExists(size: Long, print: Print): Boolean = prepDataEntryExistsForPrintAndSize runv (print, size) nextOption() getOrElse false
 
   private val prepSizeOfDataEntry = sql.query[Long]("SELECT length FROM DataEntries WHERE id = ?")
   override final def sizeOf(dataid: Long): Option[Long] = prepSizeOfDataEntry runv dataid nextOption()
 
   private val prepDataEntriesFor = sql.query[DataEntry]("SELECT * FROM DataEntries WHERE length = ? AND print = ? and hash = ?")
-  override final def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry] = prepDataEntriesFor.runv(size, print, hash).toSeq
+  override final def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): Seq[DataEntry] = prepDataEntriesFor.runv(size, print, hash).toSeq
 
   private val prepDataEntryFor = sql.query[DataEntry]("SELECT * FROM DataEntries WHERE id = ?")
   override final def dataEntry(dataid: Long): Option[DataEntry] = prepDataEntryFor runv dataid nextOption()
@@ -217,7 +217,7 @@ trait DatabaseWrite extends Metadata { import Database._
   override final def nextDataid() = prepNextDataid run() next()
 
   private val prepCreateDataEntry = sql singleRowUpdate s"INSERT INTO DataEntries (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?)"
-  override def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit = prepCreateDataEntry run (reservedid, size, print, hash, storeMethod)
+  override def createDataEntry(reservedid: Long, size: Long, print: Print, hash: Array[Byte], storeMethod: Int): Unit = prepCreateDataEntry run (reservedid, size, print, hash, storeMethod)
 
   private val prepCreateByteStoreEntry = sql singleRowUpdate s"INSERT INTO ByteStore (dataid, start, fin) VALUES (?, ?, ?)"
   override def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit = prepCreateByteStoreEntry run (dataid, start, fin)

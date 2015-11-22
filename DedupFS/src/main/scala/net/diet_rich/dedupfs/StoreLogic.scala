@@ -7,7 +7,7 @@ import net.diet_rich.common.io._
 import net.diet_rich.dedupfs.metadata._
 
 trait StoreLogic extends AutoCloseable {
-  def dataidFor(printData: Bytes, print: Long, source: Source): Long
+  def dataidFor(printData: Bytes, print: Print, source: Source): Long
   def dataidFor(source: Source): Long
   def futureDataidFor(source: Source): Future[Long]
   def close(): Unit
@@ -30,10 +30,10 @@ class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (
 
   def dataidFor(source: Source): Long = {
     val printData = source read Repository.PRINTSIZE
-    dataidFor(printData, printOf(printData), source)
+    dataidFor(printData, Print printOf printData, source)
   }
 
-  def dataidFor(printData: Bytes, print: Long, source: Source): Long = source match {
+  def dataidFor(printData: Bytes, print: Print, source: Source): Long = source match {
     case sized: SizedSource =>
       if (metaBackend dataEntryExists(sized.size, print))
         tryPreloadSizedDataThatMayBeAlreadyKnown(printData, print, sized)
@@ -47,7 +47,7 @@ class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (
   }
 
   @annotation.tailrec
-  private def tryPreLoadDataThatMayBeAlreadyKnown(data: Seq[Bytes], print: Long, source: Source, reserved: Long): Long = {
+  private def tryPreLoadDataThatMayBeAlreadyKnown(data: Seq[Bytes], print: Print, source: Source, reserved: Long): Long = {
     Memory reserve preloadBlockSize match {
       case NotAvailable(_) => try storeSourceData(data.iterator ++ source.allData, print) finally Memory free reserved
       case Reserved(_) =>
@@ -60,7 +60,7 @@ class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (
     }
   }
 
-  private def tryPreloadSizedDataThatMayBeAlreadyKnown(printData: Bytes, print: Long, source: SizedSource): Long =
+  private def tryPreloadSizedDataThatMayBeAlreadyKnown(printData: Bytes, print: Print, source: SizedSource): Long =
     Memory.reserved(source.size * 105 / 100) {
       case Reserved(_) => storePreloadedIfNotKnown(printData +: source.allData, print)
       case NotAvailable(_) => source match {
@@ -69,35 +69,35 @@ class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (
       }
     }
 
-  private def storePreloadedIfNotKnown(data: TraversableOnce[Bytes], print: Long): Long = {
+  private def storePreloadedIfNotKnown(data: TraversableOnce[Bytes], print: Print): Long = {
     val bytes = data.toArray
     val (hash, size) = Hash calculate (hashAlgorithm, bytes.iterator)
     metaBackend.dataEntriesFor(size, print, hash).headOption.map(_.id)
       .getOrElse(storeSourceData (Bytes consumingIterator bytes, size, print, hash))
   }
 
-  private def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Long, source: FileLikeSource): Long = {
+  private def readMaybeKnownDataTwiceIfNecessary(printData: Bytes, print: Print, source: FileLikeSource): Long = {
     val bytes: Iterator[Bytes] = printData +: source.allData
     val (hash, size) = Hash.calculate(hashAlgorithm, bytes)
     metaBackend.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
       source reset()
       val printData = source read Repository.PRINTSIZE
-      storeSourceData(printData +: source.allData, printOf(printData))
+      storeSourceData(printData +: source.allData, Print printOf printData)
     }
   }
 
-  private def storeSourceData(data: Iterator[Bytes], print: Long): Long = {
+  private def storeSourceData(data: Iterator[Bytes], print: Print): Long = {
     val (hash, size, storedRanges) = Hash calculate(hashAlgorithm, data, writeSourceData)
     finishStoringData(storedRanges, size, print, hash)
   }
 
-  private def storeSourceData(data: Iterator[Bytes], size: Long, print: Long, hash: Array[Byte]): Long =
+  private def storeSourceData(data: Iterator[Bytes], size: Long, print: Print, hash: Array[Byte]): Long =
     finishStoringData(writeSourceData(data), size, print, hash)
 
   private def writeSourceData(data: Iterator[Bytes]): Ranges =
     storePackedData(StoreMethod.storeCoder(storeMethod)(data))
 
-  private def finishStoringData(storedRanges: Ranges, size: Long, print: Long, hash: Array[Byte]): Long = {
+  private def finishStoringData(storedRanges: Ranges, size: Long, print: Print, hash: Array[Byte]): Long = {
     metaBackend inTransaction {
       metaBackend dataEntriesFor(size, print, hash) match {
         case Seq() =>

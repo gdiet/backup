@@ -20,5 +20,5 @@ lazy val Common = project
 lazy val CommonTest = Common % "test->test"
 lazy val Logging = project dependsOn Common
 lazy val ByteStore = project dependsOn (Common, Logging, CommonTest)
-lazy val DedupFS = project dependsOn (ByteStore, CommonTest)
+lazy val DedupFS = project dependsOn (ByteStore, )
 lazy val FTPServer = project dependsOn DedupFS

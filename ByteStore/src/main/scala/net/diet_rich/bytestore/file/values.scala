@@ -1,5 +1,6 @@
 package net.diet_rich.bytestore.file
 
+// FIXME make part of common if logic is clearly defined and generally usable, like Position and Offset
 class FileNumber private (val value: Long) extends AnyVal {
   def *(blocksize: BlockSize): Position = Position(value * blocksize.value)
 }
@@ -43,9 +44,4 @@ object BlockSize {
 class IntSize private (val value: Int) extends AnyVal
 object IntSize {
   def apply(value: Int): IntSize = new IntSize(value)
-}
-
-class Print private(val value: Long) extends AnyVal
-object Print {
-  def apply(value: Long): Print = new Print(value)
 }

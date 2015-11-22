@@ -1,5 +1,7 @@
 package net.diet_rich.dedupfs.metadata
 
+import net.diet_rich.common.Print
+
 import TreeEntry.RichPath
 
 trait MetadataRead extends MetadataReadBasic with MetadataReadExtended
@@ -17,9 +19,9 @@ trait MetadataReadBasic extends AutoCloseable {
   def dataEntry(dataid: Long): Option[DataEntry]
   def sizeOf(dataid: Long): Option[Long]
 
-  def dataEntryExists(print: Long): Boolean
-  def dataEntryExists(size: Long, print: Long): Boolean
-  def dataEntriesFor(size: Long, print: Long, hash: Array[Byte]): Seq[DataEntry]
+  def dataEntryExists(print: Print): Boolean
+  def dataEntryExists(size: Long, print: Print): Boolean
+  def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): Seq[DataEntry]
 
   def storeEntries(dataid: Long): Ranges
 
@@ -66,7 +68,7 @@ trait Metadata extends MetadataRead {
   def delete(key: Long): Boolean
   def delete(entry: TreeEntry): Unit
 
-  def createDataEntry(reservedid: Long, size: Long, print: Long, hash: Array[Byte], storeMethod: Int): Unit
+  def createDataEntry(reservedid: Long, size: Long, print: Print, hash: Array[Byte], storeMethod: Int): Unit
   def nextDataid(): Long
 
   def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit

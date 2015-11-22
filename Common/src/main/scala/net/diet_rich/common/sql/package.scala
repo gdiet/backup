@@ -96,6 +96,8 @@ package object sql {
     args.zipWithIndex foreach {
       case (     x: Long,         index) => statement setLong   (index+1, x)
       case (Some(x: Long),        index) => statement setLong   (index+1, x)
+      case (     x: LongValue,    index) => statement setLong   (index+1, x.value)
+      case (Some(x: LongValue),   index) => statement setLong   (index+1, x.value)
       case (     x: Int,          index) => statement setInt    (index+1, x)
       case (Some(x: Int),         index) => statement setInt    (index+1, x)
       case (     x: String,       index) => statement setString (index+1, x)
