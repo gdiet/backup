@@ -4,6 +4,7 @@ import java.util.zip.{Adler32, CRC32}
 
 import net.diet_rich.common._
 
+/** A fast-to-calculate 64-bit hash value. */
 class Print private(val value: Long) extends AnyVal with LongValue
 object Print {
   def apply(value: Long): Print = new Print(value)
@@ -15,4 +16,6 @@ object Print {
   def of(data: Array[Byte]): Print = of(data, 0, data.length)
   def of(bytes: Bytes): Print = of(bytes.data, bytes.offset, bytes.length)
   def of(string: String): Print = of(string getBytes "UTF-8")
+
+  val empty = of(Array.empty[Byte])
 }

@@ -51,7 +51,7 @@ object Database {
         |  CONSTRAINT pk_Settings PRIMARY KEY (key)
         |);""".stripMargin split ";"
 
-  private val indexDefinitions: Array[String] = // TODO review index definitions with regard to TreeEntry id and to combined indexes
+  private val indexDefinitions: Array[String] = // TODO review index definitions with regard to TreeEntry id, DataEntry print, combined indexes, and others
     """|DROP INDEX idxTreeEntriesParent IF EXISTS;
        |DROP INDEX idxTreeEntriesDataid IF EXISTS;
        |DROP INDEX idxTreeEntriesDeleted IF EXISTS;
@@ -74,7 +74,7 @@ object Database {
     indexDefinitions foreach (update(_).run())
     // Make sure the empty data entry is stored plain by inserting it manually
     update("INSERT INTO DataEntries (length, print, hash, method) VALUES (?, ?, ?, ?)")
-      .run(0, Print of Bytes.empty, Hash empty hashAlgorithm, StoreMethod.STORE) // TODO Print.empty ?
+      .run(0, Print.empty, Hash empty hashAlgorithm, StoreMethod.STORE)
   }
 
   private def startOfFreeDataArea(implicit connection: Connection): Long =
@@ -223,6 +223,6 @@ trait DatabaseWrite extends Metadata { import Database._
 
   override def replaceSettings(newSettings: Map[String, String]): Unit = ???
 
-  /** In the API, (only) writing the tree structure is synchronized, so "create only if not exists" can be implemented. */
+  /** In the API, (only) writing the tree structure is serialized, so e.g. "create only if not exists" can be implemented. */
   override def inTransaction[T](f: => T): T = synchronized(f)
 }
