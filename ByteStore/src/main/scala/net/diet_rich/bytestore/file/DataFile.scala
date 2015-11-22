@@ -2,7 +2,7 @@ package net.diet_rich.bytestore.file
 
 import java.io.{IOException, RandomAccessFile, File}
 
-import net.diet_rich.common._, io._
+import net.diet_rich.common._, io._, vals._
 
 // Note: Synchronization and partitioning of data chunks is done in FileBackend.
 private[file] object DataFile {

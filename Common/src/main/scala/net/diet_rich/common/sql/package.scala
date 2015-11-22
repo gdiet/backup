@@ -3,6 +3,8 @@ package net.diet_rich.common
 import java.sql.{DriverManager, ResultSet, Connection, PreparedStatement}
 import java.util.Date
 
+import net.diet_rich.common.vals.LongValue
+
 package object sql {
 
   def connectionFactory(driver: String, url: String, user: String, password: String, onShutdown: Option[String]): ConnectionFactory = {

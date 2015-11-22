@@ -2,10 +2,11 @@ package net.diet_rich.bytestore.file
 
 import java.io.File
 import java.util.concurrent.locks.ReentrantLock
+
 import scala.collection.mutable
 
 import net.diet_rich.bytestore._
-import net.diet_rich.common._
+import net.diet_rich.common._, vals._
 
 object FileBackend extends DirWithConfigHelper { import DataFile._
   override val (objectName, version) = ("file byte store", "3.0")

@@ -1,6 +1,6 @@
 package net.diet_rich.bytestore
 
-import net.diet_rich.common.Print
+import net.diet_rich.common.vals._
 
 package object file {
   /** Note: This function is designed only for positive values. */
@@ -8,5 +8,5 @@ package object file {
   /** Note: This function is designed only for positive values. */
   def min(s1: IntSize, s2: Long): Int = math.min(s1.value, s2).toInt
 
-  def printOf(string: String): Print = Print printOf string
+  def printOf(string: String): Print = Print of string
 }

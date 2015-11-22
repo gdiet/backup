@@ -2,7 +2,7 @@ package net.diet_rich.dedupfs
 
 import scala.concurrent.Future
 
-import net.diet_rich.common._, Executors._, Memory._
+import net.diet_rich.common._, Executors._, Memory._, vals.Print
 import net.diet_rich.common.io._
 import net.diet_rich.dedupfs.metadata._
 
@@ -30,7 +30,7 @@ class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (
 
   def dataidFor(source: Source): Long = {
     val printData = source read Repository.PRINTSIZE
-    dataidFor(printData, Print printOf printData, source)
+    dataidFor(printData, Print of printData, source)
   }
 
   def dataidFor(printData: Bytes, print: Print, source: Source): Long = source match {
@@ -82,7 +82,7 @@ class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (
     metaBackend.dataEntriesFor(size, print, hash).headOption map (_.id) getOrElse {
       source reset()
       val printData = source read Repository.PRINTSIZE
-      storeSourceData(printData +: source.allData, Print printOf printData)
+      storeSourceData(printData +: source.allData, Print of printData)
     }
   }
 

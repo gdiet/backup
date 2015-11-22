@@ -3,8 +3,7 @@ package net.diet_rich.dedupfs.metadata.sql
 import java.io.IOException
 import java.sql.{Connection, ResultSet}
 
-import net.diet_rich.common._, net.diet_rich.common.sql._
-import net.diet_rich.common.sql
+import net.diet_rich.common._, sql._, vals.Print
 import net.diet_rich.dedupfs.StoreMethod
 import net.diet_rich.dedupfs.metadata._, TreeEntry._
 
@@ -71,23 +70,23 @@ object Database {
        |CREATE INDEX idxByteStoreFin ON ByteStore(fin);""".stripMargin split ";"
 
   def create(hashAlgorithm: String)(implicit connection: Connection): Unit = {
-    tableDefinitions(hashAlgorithm) foreach (sql.update(_).run())
-    indexDefinitions foreach (sql.update(_).run())
+    tableDefinitions(hashAlgorithm) foreach (update(_).run())
+    indexDefinitions foreach (update(_).run())
     // Make sure the empty data entry is stored plain by inserting it manually
-    sql.update("INSERT INTO DataEntries (length, print, hash, method) VALUES (?, ?, ?, ?)")
-      .run(0, Print printOf Bytes.empty, Hash empty hashAlgorithm, StoreMethod.STORE) // TODO Print.empty ?
+    update("INSERT INTO DataEntries (length, print, hash, method) VALUES (?, ?, ?, ?)")
+      .run(0, Print of Bytes.empty, Hash empty hashAlgorithm, StoreMethod.STORE) // TODO Print.empty ?
   }
 
   private def startOfFreeDataArea(implicit connection: Connection): Long =
-    sql.query[Long]("SELECT MAX(fin) FROM ByteStore").run() nextOptionOnly() getOrElse 0
+    query[Long]("SELECT MAX(fin) FROM ByteStore").run() nextOptionOnly() getOrElse 0
 
   private def dataAreaStarts(implicit connection: Connection): List[Long] =
-    sql.query[Long](
+    query[Long](
       "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 " +
       "ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start"
     ).run().toList
   private def dataAreaEnds(implicit connection: Connection): List[Long] =
-    sql.query[Long](
+    query[Long](
       "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 " +
       "ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin"
     ).run().toList
@@ -97,9 +96,9 @@ object Database {
     // Note: H2 (1.3.176) does not create a good plan if the three queries are packed into one, and the execution is too slow (two nested table scans)
     val select =
       "SELECT b1.id, b1.dataid, b1.start, b1.fin, b2.id, b2.dataid, b2.start, b2.fin FROM ByteStore b1 JOIN ByteStore b2"
-    sql.query[DataOverlap](s"$select ON b1.start < b2.fin AND b1.fin > b2.fin").run().toSeq ++:
-    sql.query[DataOverlap](s"$select ON b1.id != b2.id AND b1.start = b2.start").run().toSeq ++:
-    sql.query[DataOverlap](s"$select ON b1.id != b2.id AND b1.fin = b2.fin").run().toSeq
+    query[DataOverlap](s"$select ON b1.start < b2.fin AND b1.fin > b2.fin").run().toSeq ++:
+    query[DataOverlap](s"$select ON b1.id != b2.id AND b1.start = b2.start").run().toSeq ++:
+    query[DataOverlap](s"$select ON b1.id != b2.id AND b1.fin = b2.fin").run().toSeq
   }
   private[sql] def freeRangesInDataArea(implicit connection: Connection): Ranges = {
     dataAreaStarts match {
@@ -134,7 +133,7 @@ trait DatabaseRead extends MetadataRead { import Database._
   // would be used in the SELECT statement.
   // However, H2 does not run such queries fast enough.
   private val prepTreeChildrenOf =
-    sql.query[(TreeEntry, Boolean, Long)](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE parent = ?")
+    query[(TreeEntry, Boolean, Long)](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE parent = ?")
   override final def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
     prepTreeChildrenOf.runv(parentKey)
       .filter { case (_, _, id) => id <= upToId }
@@ -151,7 +150,7 @@ trait DatabaseRead extends MetadataRead { import Database._
   override final def entry(path: Array[String]): Option[TreeEntry] = path.foldLeft(Option(TreeEntry.root)) { (nodes, name) => nodes flatMap (node => child(node.key, name)) }
 
   private val prepTreeEntryFor =
-    sql.query[(TreeEntry, Boolean, Long)]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
+    query[(TreeEntry, Boolean, Long)]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
   override final def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry] =
     prepTreeEntryFor.runv(key)
       .find { case (_, deleted, id) => deleted == isDeleted && id <= upToId }
@@ -162,23 +161,23 @@ trait DatabaseRead extends MetadataRead { import Database._
     else entry(key) flatMap {entry => path(entry.parent) map (_ + "/" + entry.name)}
 
   // TODO check performance of alternative query "SELECT EXISTS (SELECT 1 FROM DataEntries WHERE print = ?)"
-  private val prepDataEntryExistsForPrint = sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? LIMIT 1")
+  private val prepDataEntryExistsForPrint = query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? LIMIT 1")
   override final def dataEntryExists(print: Print): Boolean = prepDataEntryExistsForPrint runv print nextOption() getOrElse false
 
   // TODO check performance of alternative query (see above)
-  private val prepDataEntryExistsForPrintAndSize = sql.query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? AND length = ? LIMIT 1")
+  private val prepDataEntryExistsForPrintAndSize = query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? AND length = ? LIMIT 1")
   override final def dataEntryExists(size: Long, print: Print): Boolean = prepDataEntryExistsForPrintAndSize runv (print, size) nextOption() getOrElse false
 
-  private val prepSizeOfDataEntry = sql.query[Long]("SELECT length FROM DataEntries WHERE id = ?")
+  private val prepSizeOfDataEntry = query[Long]("SELECT length FROM DataEntries WHERE id = ?")
   override final def sizeOf(dataid: Long): Option[Long] = prepSizeOfDataEntry runv dataid nextOption()
 
-  private val prepDataEntriesFor = sql.query[DataEntry]("SELECT * FROM DataEntries WHERE length = ? AND print = ? and hash = ?")
+  private val prepDataEntriesFor = query[DataEntry]("SELECT * FROM DataEntries WHERE length = ? AND print = ? and hash = ?")
   override final def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): Seq[DataEntry] = prepDataEntriesFor.runv(size, print, hash).toSeq
 
-  private val prepDataEntryFor = sql.query[DataEntry]("SELECT * FROM DataEntries WHERE id = ?")
+  private val prepDataEntryFor = query[DataEntry]("SELECT * FROM DataEntries WHERE id = ?")
   override final def dataEntry(dataid: Long): Option[DataEntry] = prepDataEntryFor runv dataid nextOption()
 
-  private val prepStoreEntriesFor = sql.query[Range]("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY id ASC")
+  private val prepStoreEntriesFor = query[Range]("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY id ASC")
   override final def storeEntries(dataid: Long): Ranges = prepStoreEntriesFor.runv(dataid).toSeq
 
   override final def settings: Map[String, String] = ???
@@ -189,7 +188,7 @@ trait DatabaseWrite extends Metadata { import Database._
   private[sql] implicit val connectionFactory: ScalaThreadLocal[Connection]
   private[sql] implicit def connection: Connection
 
-  private val prepTreeInsert = sql insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
+  private val prepTreeInsert = insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
   private[sql] final def treeInsert(parent: Long, name: String, changed: Option[Long], data: Option[Long]): Long = prepTreeInsert runv(parent, name, changed, data)
   override final def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
     if (parent == TreeEntry.root.parent) throw new IOException("Cannot create a sibling of the root entry")
@@ -204,22 +203,22 @@ trait DatabaseWrite extends Metadata { import Database._
   override final def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
   override final def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long = ???
 
-  private val prepTreeUpdate = sql singleRowUpdate s"INSERT INTO TreeEntries (key, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?)"
+  private val prepTreeUpdate = singleRowUpdate(s"INSERT INTO TreeEntries (key, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?)")
   final def changeUnchecked(treeEntry: TreeEntry): Unit = inTransaction { prepTreeUpdate run treeEntry }
   override def change(changed: TreeEntry): Boolean = inTransaction { init(entry(changed.key).isDefined){ if (_) changeUnchecked(changed) } }
 
-  private val prepTreeDelete = sql singleRowUpdate s"INSERT INTO TreeEntries (key, parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, ?, TRUE)"
+  private val prepTreeDelete = singleRowUpdate(s"INSERT INTO TreeEntries (key, parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, ?, TRUE)")
   private[sql] final def treeDelete(treeEntry: TreeEntry): Unit = prepTreeDelete run treeEntry
   override final def delete(entry: TreeEntry): Unit = inTransaction { treeDelete(entry) }
   override final def delete(key: Long): Boolean = inTransaction { init(entry(key)){_ foreach delete}.isDefined }
 
-  private val prepNextDataid = sql.query[Long]("SELECT NEXT VALUE FOR dataEntryIdSeq")
+  private val prepNextDataid = query[Long]("SELECT NEXT VALUE FOR dataEntryIdSeq")
   override final def nextDataid() = prepNextDataid run() next()
 
-  private val prepCreateDataEntry = sql singleRowUpdate s"INSERT INTO DataEntries (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?)"
+  private val prepCreateDataEntry = singleRowUpdate(s"INSERT INTO DataEntries (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?)")
   override def createDataEntry(reservedid: Long, size: Long, print: Print, hash: Array[Byte], storeMethod: Int): Unit = prepCreateDataEntry run (reservedid, size, print, hash, storeMethod)
 
-  private val prepCreateByteStoreEntry = sql singleRowUpdate s"INSERT INTO ByteStore (dataid, start, fin) VALUES (?, ?, ?)"
+  private val prepCreateByteStoreEntry = singleRowUpdate(s"INSERT INTO ByteStore (dataid, start, fin) VALUES (?, ?, ?)")
   override def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit = prepCreateByteStoreEntry run (dataid, start, fin)
 
   override def replaceSettings(newSettings: Map[String, String]): Unit = ???

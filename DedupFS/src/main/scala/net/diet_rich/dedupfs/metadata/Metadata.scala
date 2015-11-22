@@ -1,6 +1,6 @@
 package net.diet_rich.dedupfs.metadata
 
-import net.diet_rich.common.Print
+import net.diet_rich.common.vals.Print
 
 import TreeEntry.RichPath
 
