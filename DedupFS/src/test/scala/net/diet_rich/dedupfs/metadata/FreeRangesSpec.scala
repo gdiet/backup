@@ -2,8 +2,9 @@ package net.diet_rich.dedupfs.metadata
 
 import org.specs2.Specification
 
-import net.diet_rich.bytestore.file.{Position, BlockSize, FileBackend}
+import net.diet_rich.bytestore.file.{BlockSize, FileBackend}
 import net.diet_rich.common.test._
+import net.diet_rich.common.vals.Position
 
 class FreeRangesSpec extends Specification {
   def is = sequential ^ s2"""
