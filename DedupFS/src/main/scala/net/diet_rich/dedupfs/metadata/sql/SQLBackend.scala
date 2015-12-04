@@ -26,8 +26,9 @@ object SQLBackend extends DirWithConfigHelper {
     )
     initialize(directory, name, options)
     setStatus(directory, isClosed = false, isClean = true)
-    using(connectionFactory(driver, url, user, password, Some(onShutdown))) {
-      cf => Database.create(hashAlgorithm)(cf())
+    using(connectionFactory(driver, url, user, password, Some(onShutdown))) { connections =>
+      implicit val connection = connections()
+      Database create hashAlgorithm
     }
     setStatus(directory, isClosed = true, isClean = true)
   }

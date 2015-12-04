@@ -26,6 +26,7 @@ package object sql {
       override def run(args: Seq[Any]): Int = setArguments(prepared(), args) executeUpdate()
     }
 
+  // FIXME document how and whether instances can be released
   def singleRowUpdate(sql: String)(implicit connection: Connection): SingleRowSqlUpdate =
     new PreparedSql(sql) with SingleRowSqlUpdate {
       override def run(args: Seq[Any]): Unit = updateSingleRow(prepared(), args, sql)

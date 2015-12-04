@@ -51,7 +51,7 @@ trait Metadata extends MetadataRead {
   def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long
   def changeUnchecked(changed: TreeEntry): Unit
   def change(changed: TreeEntry): Boolean
-  final def change(key: Long, parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean = inTransaction {
+  final def change(key: Long, parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean = serialized {
     entry(key) match {
       case None => false
       case Some(entry) =>
@@ -75,5 +75,5 @@ trait Metadata extends MetadataRead {
 
   def replaceSettings(newSettings: String Map String): Unit
 
-  def inTransaction[T](f: => T): T
+  def serialized[T](f: => T): T
 }

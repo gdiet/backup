@@ -114,6 +114,11 @@ object Database {
     freeRangesInDataArea :+ (startOfFreeDataArea, Long.MaxValue)
   }
 
+  private[sql] def insertSettings(settings: Map[String, String])(implicit connection: Connection): Unit = {
+    val prepInsertSettings = singleRowUpdate("INSERT INTO Settings (key, value) VALUES (?, ?)")
+    settings foreach prepInsertSettings.run
+  }
+
   implicit val longResult = {(_: ResultSet) long 1}
   implicit val boolResult = {(_: ResultSet) boolean 1}
   implicit val rangeResult = { r: ResultSet => (r long 1, r long 2) }
@@ -122,6 +127,7 @@ object Database {
   implicit val storeEntryResult = { r: ResultSet => StoreEntry(r long 1, r long 2, r long 3, r long 4) }
   implicit val dataEntryResult = { r: ResultSet => DataEntry(r long 1, r long 2, Print(r long 3), r bytes 4, r int 5) }
   implicit val dataAreaResult = { r: ResultSet => (storeEntryResult(r), StoreEntry(r long 5, r long 6, r long 7, r long 8)) }
+  implicit val settingsResult = { r: ResultSet => (r string 1, r string 2) }
 }
 
 
@@ -160,7 +166,7 @@ trait DatabaseRead extends MetadataRead { import Database._
     if (key == TreeEntry.root.key) Some(TreeEntry.rootPath)
     else entry(key) flatMap {entry => path(entry.parent) map (_ + "/" + entry.name)}
 
-  // TODO check performance of alternative query "SELECT EXISTS (SELECT 1 FROM DataEntries WHERE print = ?)"
+  // TODO check performance of alternative query "SELECT EXISTS (SELECT 1 FROM DataEntries WHERE print = ?)" (with indexes)
   private val prepDataEntryExistsForPrint = query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? LIMIT 1")
   override final def dataEntryExists(print: Print): Boolean = prepDataEntryExistsForPrint runv print nextOption() getOrElse false
 
@@ -180,7 +186,8 @@ trait DatabaseRead extends MetadataRead { import Database._
   private val prepStoreEntriesFor = query[Range]("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY id ASC")
   override final def storeEntries(dataid: Long): Ranges = prepStoreEntriesFor.runv(dataid).toSeq
 
-  override final def settings: Map[String, String] = ???
+  private val prepSettings = query[(String, String)]("SELECT key, value FROM Settings")
+  override final def settings: Map[String, String] = prepSettings.run().toMap // FIXME use
 }
 
 
@@ -190,11 +197,11 @@ trait DatabaseWrite extends Metadata { import Database._
 
   private val prepTreeInsert = insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
   private[sql] final def treeInsert(parent: Long, name: String, changed: Option[Long], data: Option[Long]): Long = prepTreeInsert runv(parent, name, changed, data)
-  override final def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
+  override final def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = serialized {
     if (parent == TreeEntry.root.parent) throw new IOException("Cannot create a sibling of the root entry")
     treeInsert(parent, name, changed, dataid)
   }
-  override final def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = inTransaction {
+  override final def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = serialized {
     children(parent) find (_.name == name) match {
       case Some(entry) => throw new IOException(s"entry $entry already exists")
       case None => createUnchecked(parent, name, changed, dataid)
@@ -204,13 +211,13 @@ trait DatabaseWrite extends Metadata { import Database._
   override final def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long = ???
 
   private val prepTreeUpdate = singleRowUpdate(s"INSERT INTO TreeEntries (key, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?)")
-  final def changeUnchecked(treeEntry: TreeEntry): Unit = inTransaction { prepTreeUpdate run treeEntry }
-  override def change(changed: TreeEntry): Boolean = inTransaction { init(entry(changed.key).isDefined){ if (_) changeUnchecked(changed) } }
+  final def changeUnchecked(treeEntry: TreeEntry): Unit = serialized { prepTreeUpdate run treeEntry }
+  override def change(changed: TreeEntry): Boolean = serialized { init(entry(changed.key).isDefined){ if (_) changeUnchecked(changed) } }
 
   private val prepTreeDelete = singleRowUpdate(s"INSERT INTO TreeEntries (key, parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, ?, TRUE)")
   private[sql] final def treeDelete(treeEntry: TreeEntry): Unit = prepTreeDelete run treeEntry
-  override final def delete(entry: TreeEntry): Unit = inTransaction { treeDelete(entry) }
-  override final def delete(key: Long): Boolean = inTransaction { init(entry(key)){_ foreach delete}.isDefined }
+  override final def delete(entry: TreeEntry): Unit = serialized { treeDelete(entry) }
+  override final def delete(key: Long): Boolean = serialized { init(entry(key)){_ foreach delete}.isDefined }
 
   private val prepNextDataid = query[Long]("SELECT NEXT VALUE FOR dataEntryIdSeq")
   override final def nextDataid() = prepNextDataid run() next()
@@ -221,8 +228,13 @@ trait DatabaseWrite extends Metadata { import Database._
   private val prepCreateByteStoreEntry = singleRowUpdate(s"INSERT INTO ByteStore (dataid, start, fin) VALUES (?, ?, ?)")
   override def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit = prepCreateByteStoreEntry run (dataid, start, fin)
 
-  override def replaceSettings(newSettings: Map[String, String]): Unit = ???
+  private val prepDeleteSettings = update("DELETE FROM Settings")
+  override def replaceSettings(newSettings: Map[String, String]): Unit = serialized {
+    prepDeleteSettings run()
+    insertSettings(newSettings)
+  }
 
-  /** In the API, (only) writing the tree structure is serialized, so e.g. "create only if not exists" can be implemented. */
-  override def inTransaction[T](f: => T): T = synchronized(f)
+  // TODO is it really necessary to serialize now that only inserts happen?
+  /** In the API, writing the tree structure is serialized, so e.g. "create only if not exists" can be implemented. */
+  override def serialized[T](f: => T): T = synchronized(f)
 }

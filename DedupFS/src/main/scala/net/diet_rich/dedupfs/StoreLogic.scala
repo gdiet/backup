@@ -98,7 +98,7 @@ class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (
     storePackedData(StoreMethod.storeCoder(storeMethod)(data))
 
   private def finishStoringData(storedRanges: Ranges, size: Long, print: Print, hash: Array[Byte]): Long = {
-    metaBackend inTransaction {
+    metaBackend serialized {
       metaBackend dataEntriesFor(size, print, hash) match {
         case Seq() =>
           init(metaBackend.nextDataid) { dataid =>
