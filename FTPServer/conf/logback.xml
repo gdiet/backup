@@ -1,7 +1,3 @@
-<!-- TODO Here, I'd prefer a per project logback configuration.
-     However, if I have logback.xml here and e.g. in FTPServer,
-     logback finds both and complains about multiple configuration
-     file in classpath. -->
 <configuration>
 
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
@@ -10,7 +6,6 @@
     </encoder>
   </appender>
 
-  <!-- For FTPServer -->
   <logger name="org.apache" level="warn"/>
 
   <root level="info">
