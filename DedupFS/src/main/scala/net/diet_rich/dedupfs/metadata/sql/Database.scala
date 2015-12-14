@@ -69,7 +69,7 @@ object Database {
        |CREATE INDEX idxByteStoreStart ON ByteStore(start);
        |CREATE INDEX idxByteStoreFin ON ByteStore(fin);""".stripMargin split ";"
 
-  def create(hashAlgorithm: String)(implicit connection: Connection): Unit = {
+  def create(hashAlgorithm: String)(implicit connectionFactory: ConnectionFactory): Unit = {
     tableDefinitions(hashAlgorithm) foreach (update(_).run())
     indexDefinitions foreach (update(_).run())
     // Make sure the empty data entry is stored plain by inserting it manually
@@ -77,22 +77,22 @@ object Database {
       .run(0, Print.empty, Hash empty hashAlgorithm, StoreMethod.STORE)
   }
 
-  private def startOfFreeDataArea(implicit connection: Connection): Long =
+  private def startOfFreeDataArea(implicit connectionFactory: ConnectionFactory): Long =
     query[Long]("SELECT MAX(fin) FROM ByteStore").run() nextOptionOnly() getOrElse 0
 
-  private def dataAreaStarts(implicit connection: Connection): List[Long] =
+  private def dataAreaStarts(implicit connectionFactory: ConnectionFactory): List[Long] =
     query[Long](
       "SELECT b1.start FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 " +
       "ON b1.start = b2.fin WHERE b2.fin IS NULL ORDER BY b1.start"
     ).run().toList
-  private def dataAreaEnds(implicit connection: Connection): List[Long] =
+  private def dataAreaEnds(implicit connectionFactory: ConnectionFactory): List[Long] =
     query[Long](
       "SELECT b1.fin FROM BYTESTORE b1 LEFT JOIN BYTESTORE b2 " +
       "ON b1.fin = b2.start WHERE b2.start IS NULL ORDER BY b1.fin"
     ).run().toList
 
   type DataOverlap = (StoreEntry, StoreEntry)
-  private[sql] def problemDataAreaOverlaps(implicit connection: Connection): Seq[DataOverlap] = {
+  private[sql] def problemDataAreaOverlaps(implicit connectionFactory: ConnectionFactory): Seq[DataOverlap] = {
     // Note: H2 (1.3.176) does not create a good plan if the three queries are packed into one, and the execution is too slow (two nested table scans)
     val select =
       "SELECT b1.id, b1.dataid, b1.start, b1.fin, b2.id, b2.dataid, b2.start, b2.fin FROM ByteStore b1 JOIN ByteStore b2"
@@ -100,7 +100,7 @@ object Database {
     query[DataOverlap](s"$select ON b1.id != b2.id AND b1.start = b2.start").run().toSeq ++:
     query[DataOverlap](s"$select ON b1.id != b2.id AND b1.fin = b2.fin").run().toSeq
   }
-  private[sql] def freeRangesInDataArea(implicit connection: Connection): Ranges = {
+  private[sql] def freeRangesInDataArea(implicit connectionFactory: ConnectionFactory): Ranges = {
     dataAreaStarts match {
       case Nil => Nil
       case firstArea :: gapStarts =>
@@ -109,12 +109,12 @@ object Database {
     }
   }
 
-  def freeRanges(implicit connection: Connection): Ranges = {
+  def freeRanges(implicit connectionFactory: ConnectionFactory): Ranges = {
     require(problemDataAreaOverlaps.isEmpty, s"found data area overlaps: $problemDataAreaOverlaps")
     freeRangesInDataArea :+ (startOfFreeDataArea, Long.MaxValue)
   }
 
-  private[sql] def insertSettings(settings: Map[String, String])(implicit connection: Connection): Unit = {
+  private[sql] def insertSettings(settings: Map[String, String])(implicit connectionFactory: ConnectionFactory): Unit = {
     val prepInsertSettings = singleRowUpdate("INSERT INTO Settings (key, value) VALUES (?, ?)")
     settings foreach prepInsertSettings.run
   }
@@ -132,7 +132,7 @@ object Database {
 
 
 trait DatabaseRead extends MetadataRead { import Database._
-  private[sql] implicit def connection: Connection
+  private[sql] implicit def connectionFactory: ConnectionFactory
 
   // Note: Ideally, here an SQL condition like
   // "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
@@ -193,7 +193,6 @@ trait DatabaseRead extends MetadataRead { import Database._
 
 trait DatabaseWrite extends Metadata { import Database._
   private[sql] implicit val connectionFactory: ConnectionFactory
-  private[sql] implicit def connection: Connection
 
   private val prepTreeInsert = insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
   private[sql] final def treeInsert(parent: Long, name: String, changed: Option[Long], data: Option[Long]): Long = prepTreeInsert runv(parent, name, changed, data)

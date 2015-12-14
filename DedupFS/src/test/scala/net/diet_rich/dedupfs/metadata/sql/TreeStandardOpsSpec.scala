@@ -32,7 +32,6 @@ General tests for the tree database, starting with a newly initialized database
     override implicit final val connectionFactory: ConnectionFactory = H2.memoryFactory(className)
     override final val hashAlgorithm = "MD5"
   } with DatabaseRead with DatabaseWrite {
-    override implicit final def connection: Connection = connectionFactory()
     override final def close() = !!!
     Database create "MD5"
   }

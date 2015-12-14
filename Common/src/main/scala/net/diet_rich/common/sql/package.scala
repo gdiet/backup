@@ -7,19 +7,19 @@ import net.diet_rich.common.vals.LongValue
 
 package object sql {
 
-  def query[T](sql: String)(implicit processor: ResultSet => T, connection: Connection): SqlQuery[ResultIterator[T]] =
+  def query[T](sql: String)(implicit processor: ResultSet => T, connectionFactory: ConnectionFactory): SqlQuery[ResultIterator[T]] =
     new PreparedSql(sql) with SqlQuery[ResultIterator[T]] {
       override def run(args: Seq[Any]): ResultIterator[T] =
         execQuery(prepared(), args, sql)
     }
 
-  def update(sql: String)(implicit connection: Connection): SqlUpdate =
+  def update(sql: String)(implicit connectionFactory: ConnectionFactory): SqlUpdate =
     new PreparedSql(sql) with SqlUpdate {
       override def run(args: Seq[Any]): Int = setArguments(prepared(), args) executeUpdate()
     }
 
   // FIXME document how and whether instances can be released
-  def singleRowUpdate(sql: String)(implicit connection: Connection): SingleRowSqlUpdate =
+  def singleRowUpdate(sql: String)(implicit connectionFactory: ConnectionFactory): SingleRowSqlUpdate =
     new PreparedSql(sql) with SingleRowSqlUpdate {
       override def run(args: Seq[Any]): Unit = updateSingleRow(prepared(), args, sql)
     }
@@ -61,8 +61,8 @@ package object sql {
     def stringOption(column: Int): Option[String]     = asOption (resultSet getString    column)
   }
 
-  private class PreparedSql(val sql: String)(implicit connection: Connection) {
-    val prepared = ScalaThreadLocal(connection prepareStatement sql)
+  private class PreparedSql(val sql: String)(implicit connectionFactory: ConnectionFactory) {
+    val prepared = ScalaThreadLocal(connectionFactory() prepareStatement sql)
   }
 
   private def sqlWithArgsString(sql: String, args: Seq[Any]) = s"'$sql' ${args.toList mkString ("(", ", ", ")")}"

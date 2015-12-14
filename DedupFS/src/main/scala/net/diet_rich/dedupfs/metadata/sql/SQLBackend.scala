@@ -26,33 +26,29 @@ object SQLBackend extends DirWithConfigHelper {
     )
     initialize(directory, name, options)
     setStatus(directory, isClosed = false, isClean = true)
-    using(ConnectionFactory(driver, url, user, password, Some(onShutdown))) { connections =>
-      implicit val connection = connections()
-      Database create hashAlgorithm
-    }
+    using(ConnectionFactory(driver, url, user, password, Some(onShutdown))) { Database.create(hashAlgorithm)(_) }
     setStatus(directory, isClosed = true, isClean = true)
   }
 
   def read(directory: File, repositoryid: String): MetadataRead = {
     val conf = settingsChecked(directory, repositoryid)
     val connections = ConnectionFactory(conf(dbDriverKey), conf(readonlyUrlKey), conf(readonlyUserKey), conf(readonlyPasswordKey), None)
-    new SQLBackendRead(connections(), conf(hashAlgorithmKey))
+    new SQLBackendRead(connections, conf(hashAlgorithmKey))
   }
   def readWrite(directory: File, repositoryid: String): (Metadata, Ranges) = {
     val conf = settingsChecked(directory, repositoryid)
     val connections = ConnectionFactory(conf(dbDriverKey), conf(dbUrlKey), conf(dbUserKey), conf(dbPasswordKey), conf get onDbShutdownKey)
-    val freeRanges = Database.freeRanges(connections())
+    val freeRanges = Database.freeRanges(connections)
     (new SQLBackend(directory, connections, conf(hashAlgorithmKey)), freeRanges)
   }
 }
 
-private class SQLBackendRead(val connection: Connection, override final val hashAlgorithm: String) extends DatabaseRead {
-  override final def close(): Unit = connection close()
+private class SQLBackendRead(val connectionFactory: ConnectionFactory, override final val hashAlgorithm: String) extends DatabaseRead {
+  override final def close(): Unit = connectionFactory close()
 }
 
 private class SQLBackend(val directory: File, val connectionFactory: ConnectionFactory, val hashAlgorithm: String)
-      extends { val connection = connectionFactory() }
-      with DatabaseRead with DatabaseWrite {
+      extends DatabaseRead with DatabaseWrite {
   private val dirHelper = new DirWithConfig(SQLBackend, directory)
   dirHelper markOpen()
   override final def close(): Unit = {
