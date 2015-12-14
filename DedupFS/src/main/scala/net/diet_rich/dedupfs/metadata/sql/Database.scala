@@ -192,7 +192,7 @@ trait DatabaseRead extends MetadataRead { import Database._
 
 
 trait DatabaseWrite extends Metadata { import Database._
-  private[sql] implicit val connectionFactory: ScalaThreadLocal[Connection]
+  private[sql] implicit val connectionFactory: ConnectionFactory
   private[sql] implicit def connection: Connection
 
   private val prepTreeInsert = insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")

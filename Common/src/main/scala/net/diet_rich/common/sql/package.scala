@@ -1,6 +1,6 @@
 package net.diet_rich.common
 
-import java.sql.{DriverManager, ResultSet, Connection, PreparedStatement}
+import java.sql.{ResultSet, Connection, PreparedStatement}
 import java.util.Date
 
 import net.diet_rich.common.vals.LongValue
@@ -24,7 +24,7 @@ package object sql {
       override def run(args: Seq[Any]): Unit = updateSingleRow(prepared(), args, sql)
     }
 
-  def insertReturnsKey(sql: String, keyToReturn: String)(implicit connectionFactory: ScalaThreadLocal[Connection]): SqlInsertReturnKey = {
+  def insertReturnsKey(sql: String, keyToReturn: String)(implicit connectionFactory: ConnectionFactory): SqlInsertReturnKey = {
     new SqlInsertReturnKey {
       protected val prepared = ScalaThreadLocal(connectionFactory() prepareStatement (sql, Array(keyToReturn)))
       override def run(args: Seq[Any]): Long = {
