@@ -1,6 +1,6 @@
 package net.diet_rich.common
 
-import java.sql.{ResultSet, Connection, PreparedStatement}
+import java.sql.{ResultSet, PreparedStatement}
 import java.util.Date
 
 import net.diet_rich.common.vals.LongValue

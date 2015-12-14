@@ -11,5 +11,5 @@ object H2 {
   Class forName driver
 
   def memoryFactory(dbName: String = "test"): ConnectionFactory =
-    new ConnectionFactory(DriverManager getConnection (s"jdbc:h2:mem:$dbName", user, password))
+    new ConnectionFactory(() => DriverManager getConnection (s"jdbc:h2:mem:$dbName", user, password))
 }
