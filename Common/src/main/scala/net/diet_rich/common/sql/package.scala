@@ -7,14 +7,6 @@ import net.diet_rich.common.vals.LongValue
 
 package object sql {
 
-  def connectionFactory(driver: String, url: String, user: String, password: String, onShutdown: Option[String]): ConnectionFactory = {
-    Class forName driver
-    new ConnectionFactory(
-      DriverManager.getConnection(url, user, password),
-      connection => onShutdown foreach { connection.createStatement().execute }
-    )
-  }
-
   def query[T](sql: String)(implicit processor: ResultSet => T, connection: Connection): SqlQuery[ResultIterator[T]] =
     new PreparedSql(sql) with SqlQuery[ResultIterator[T]] {
       override def run(args: Seq[Any]): ResultIterator[T] =

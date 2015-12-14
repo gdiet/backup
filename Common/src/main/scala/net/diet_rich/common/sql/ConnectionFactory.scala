@@ -1,6 +1,6 @@
 package net.diet_rich.common.sql
 
-import java.sql.Connection
+import java.sql.{DriverManager, Connection}
 import java.util.concurrent.ConcurrentLinkedQueue
 
 import scala.collection.JavaConverters._
@@ -26,5 +26,15 @@ class ConnectionFactory(factory: => Connection, onClose: Connection => Unit = _ 
         head.close()
       case Nil => ()
     }
+  }
+}
+
+object ConnectionFactory {
+  def apply(driver: String, url: String, user: String, password: String, executeOnShutdown: Option[String]): ConnectionFactory = {
+    Class forName driver
+    new ConnectionFactory(
+      DriverManager.getConnection(url, user, password),
+      connection => executeOnShutdown foreach { connection.prepareStatement(_).execute() }
+    )
   }
 }

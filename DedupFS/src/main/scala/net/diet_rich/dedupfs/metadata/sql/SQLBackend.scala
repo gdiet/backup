@@ -26,7 +26,7 @@ object SQLBackend extends DirWithConfigHelper {
     )
     initialize(directory, name, options)
     setStatus(directory, isClosed = false, isClean = true)
-    using(connectionFactory(driver, url, user, password, Some(onShutdown))) { connections =>
+    using(ConnectionFactory(driver, url, user, password, Some(onShutdown))) { connections =>
       implicit val connection = connections()
       Database create hashAlgorithm
     }
@@ -35,12 +35,12 @@ object SQLBackend extends DirWithConfigHelper {
 
   def read(directory: File, repositoryid: String): MetadataRead = {
     val conf = settingsChecked(directory, repositoryid)
-    val connections = connectionFactory(conf(dbDriverKey), conf(readonlyUrlKey), conf(readonlyUserKey), conf(readonlyPasswordKey), None)
+    val connections = ConnectionFactory(conf(dbDriverKey), conf(readonlyUrlKey), conf(readonlyUserKey), conf(readonlyPasswordKey), None)
     new SQLBackendRead(connections(), conf(hashAlgorithmKey))
   }
   def readWrite(directory: File, repositoryid: String): (Metadata, Ranges) = {
     val conf = settingsChecked(directory, repositoryid)
-    val connections = connectionFactory(conf(dbDriverKey), conf(dbUrlKey), conf(dbUserKey), conf(dbPasswordKey), conf get onDbShutdownKey)
+    val connections = ConnectionFactory(conf(dbDriverKey), conf(dbUrlKey), conf(dbUserKey), conf(dbPasswordKey), conf get onDbShutdownKey)
     val freeRanges = Database.freeRanges(connections())
     (new SQLBackend(directory, connections, conf(hashAlgorithmKey)), freeRanges)
   }
