@@ -18,7 +18,6 @@ package object sql {
       override def run(args: Seq[Any]): Int = setArguments(prepared(), args) executeUpdate()
     }
 
-  // FIXME document how and whether instances can be released
   def singleRowUpdate(sql: String)(implicit connectionFactory: ConnectionFactory): SingleRowSqlUpdate =
     new PreparedSql(sql) with SingleRowSqlUpdate {
       override def run(args: Seq[Any]): Unit = updateSingleRow(prepared(), args, sql)
@@ -32,10 +31,11 @@ package object sql {
         updateSingleRow(statement, args, sql)
         init(statement getGeneratedKeys()) (_ next()) long 1
       }
+      override def close(): Unit = ???
     }
   }
 
-  sealed trait RunArgs[T] {
+  sealed trait RunArgs[T] extends AutoCloseable {
     def run(args: Seq[Any]): T
     final def run(): T = run(Seq())
     final def runv(args: Any*): T = run(args)
@@ -61,8 +61,10 @@ package object sql {
     def stringOption(column: Int): Option[String]     = asOption (resultSet getString    column)
   }
 
-  private class PreparedSql(val sql: String)(implicit connectionFactory: ConnectionFactory) {
+  private class PreparedSql(val sql: String)(implicit connectionFactory: ConnectionFactory) extends AutoCloseable {
+    // FIXME we want a subclass of ScalaThreadLocal that is autocloseable and closes all thread instances
     val prepared = ScalaThreadLocal(connectionFactory() prepareStatement sql)
+    override def close(): Unit = ???
   }
 
   private def sqlWithArgsString(sql: String, args: Seq[Any]) = s"'$sql' ${args.toList mkString ("(", ", ", ")")}"
