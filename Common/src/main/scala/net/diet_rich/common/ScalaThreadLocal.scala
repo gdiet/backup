@@ -24,14 +24,13 @@ class ArmThreadLocal[T: ClassTag](factory: () => T, doClosing: ConcurrentLinkedQ
 }
 
 object ScalaThreadLocal {
-  def apply[T](f: => T): ScalaThreadLocal[T] =
+  def apply[T](factory: () => T): ScalaThreadLocal[T] =
     new ScalaThreadLocal[T] {
-      val local = new ThreadLocal[T] { override def initialValue = f }
+      val local = new ThreadLocal[T] { override def initialValue = factory() }
       override def apply(): T = local.get
       override def toString: String = apply().toString
     }
 
-  // TODO () => T oder => T ?
-  def arm[T <: AutoCloseable : ClassTag](f: () => T): ArmThreadLocal[T] =
-    new ArmThreadLocal[T](f, _.asScala foreach(_ close()))
+  def arm[T <: AutoCloseable : ClassTag](factory: () => T): ArmThreadLocal[T] =
+    new ArmThreadLocal[T](factory, _.asScala foreach(_ close()))
 }
