@@ -10,17 +10,17 @@ package object sql {
   def query[T](sql: String)(implicit processor: ResultSet => T, connectionFactory: ConnectionFactory): SqlQuery[ResultIterator[T]] =
     new PreparedSql(sql) with SqlQuery[ResultIterator[T]] {
       override def run(args: Seq[Any]): ResultIterator[T] =
-        execQuery(prepared(), args, sql)
+        prepared() execQuery(args, sql)
     }
 
   def update(sql: String)(implicit connectionFactory: ConnectionFactory): SqlUpdate =
     new PreparedSql(sql) with SqlUpdate {
-      override def run(args: Seq[Any]): Int = setArguments(prepared(), args) executeUpdate()
+      override def run(args: Seq[Any]): Int = prepared() setArguments args executeUpdate()
     }
 
   def singleRowUpdate(sql: String)(implicit connectionFactory: ConnectionFactory): SingleRowSqlUpdate =
     new PreparedSql(sql) with SingleRowSqlUpdate {
-      override def run(args: Seq[Any]): Unit = updateSingleRow(prepared(), args, sql)
+      override def run(args: Seq[Any]): Unit = prepared() updateSingleRow(args, sql)
     }
 
   def insertReturnsKey(sql: String, keyToReturn: String)(implicit connectionFactory: ConnectionFactory): SqlInsertReturnKey = {
@@ -28,7 +28,7 @@ package object sql {
       protected val prepared = ScalaThreadLocal.arm(() => connectionFactory() prepareStatement (sql, Array(keyToReturn)))
       override def run(args: Seq[Any]): Long = {
         val statement = prepared()
-        updateSingleRow(statement, args, sql)
+        statement updateSingleRow(args, sql)
         init(statement getGeneratedKeys()) (_ next()) long 1
       }
       override def close(): Unit = prepared close()
@@ -47,7 +47,7 @@ package object sql {
   sealed trait SingleRowSqlUpdate extends RunArgs[Unit] { def run(args: Seq[Any]): Unit }
   sealed trait SqlInsertReturnKey extends RunArgs[Long] { def run(args: Seq[Any]): Long }
 
-  implicit class WrappedSQLResult(val resultSet: ResultSet) extends AnyVal {
+  implicit final class WrappedSQLResult(val resultSet: ResultSet) extends AnyVal {
     private def asOption[T](value: T): Option[T] = if (resultSet.wasNull) None else Some(value) // Note: 'value' must be used by-value
     def boolean(column: Int): Boolean                 =           resultSet getBoolean   column
     def bytes(column: Int): Array[Byte]               =           resultSet getBytes     column
@@ -61,56 +61,56 @@ package object sql {
     def stringOption(column: Int): Option[String]     = asOption (resultSet getString    column)
   }
 
+  implicit private final class PreparedStatementMethods(val statement: PreparedStatement) extends AnyVal {
+    def setArguments(args: Seq[Any]): PreparedStatement = {
+      args.zipWithIndex foreach {
+        case (     x: Long,         index) => statement setLong   (index+1, x)
+        case (Some(x: Long),        index) => statement setLong   (index+1, x)
+        case (     x: LongValue,    index) => statement setLong   (index+1, x.value)
+        case (Some(x: LongValue),   index) => statement setLong   (index+1, x.value)
+        case (     x: Int,          index) => statement setInt    (index+1, x)
+        case (Some(x: Int),         index) => statement setInt    (index+1, x)
+        case (     x: String,       index) => statement setString (index+1, x)
+        case (Some(x: String),      index) => statement setString (index+1, x)
+        case (     x: Array[Byte],  index) => statement setObject (index+1, x)
+        case (Some(x: Array[Byte]), index) => statement setObject (index+1, x)
+        case (None, index) => statement setNull (index+1, statement.getParameterMetaData getParameterType (index+1))
+        case (e, _) => throw new IllegalArgumentException(s"setArguments does not support ${e.getClass.getCanonicalName} type arguments")
+      }
+      statement
+    }
+
+    def updateSingleRow(args: Seq[Any], sql: String): Unit =
+      setArguments(args).executeUpdate() match {
+        case 1 => ()
+        case n => throw new IllegalStateException(s"SQL update ${sqlWithArgsString(sql, args)} returned $n rows instead of 1")
+      }
+
+    def execQuery[T](args: Seq[Any], sql: String)(implicit processor: ResultSet => T): ResultIterator[T] =
+      new ResultIterator[T] {
+        def iteratorName = sqlWithArgsString(sql, args)
+        val resultSet = setArguments(args) executeQuery()
+        var (hasNextIsChecked, hasNextResult) = (false, false)
+        override def hasNext : Boolean = {
+          if (!hasNextIsChecked) {
+            hasNextResult = resultSet next()
+            hasNextIsChecked = true
+            if (!hasNextResult) resultSet close()
+          }
+          hasNextResult
+        }
+        override def next() : T = {
+          if (!hasNext) throw new NoSuchElementException(s"Retrieving next element from $iteratorName failed.")
+          hasNextIsChecked = false
+          processor(resultSet)
+        }
+      }
+  }
+
   private class PreparedSql(val sql: String)(implicit connectionFactory: ConnectionFactory) extends AutoCloseable {
     val prepared = ScalaThreadLocal.arm(() => connectionFactory() prepareStatement sql)
     override def close(): Unit = prepared close()
   }
 
   private def sqlWithArgsString(sql: String, args: Seq[Any]) = s"'$sql' ${args.toList mkString ("(", ", ", ")")}"
-
-  private def execQuery[T](stat: PreparedStatement, args: Seq[Any], sql: String)(implicit processor: ResultSet => T): ResultIterator[T] =
-    new ResultIterator[T] {
-      def iteratorName = sqlWithArgsString(sql, args)
-      val resultSet = setArguments(stat, args) executeQuery()
-      var (hasNextIsChecked, hasNextResult) = (false, false)
-      override def hasNext : Boolean = {
-        if (!hasNextIsChecked) {
-          hasNextResult = resultSet next()
-          hasNextIsChecked = true
-          if (!hasNextResult) resultSet close()
-        }
-        hasNextResult
-      }
-      override def next() : T = {
-        if (!hasNext) throw new NoSuchElementException(s"Retrieving next element from $iteratorName failed.")
-        hasNextIsChecked = false
-        processor(resultSet)
-      }
-    }
-
-  // FIXME better as implicit class?
-  private def setArguments(statement: PreparedStatement, args: Seq[Any]): PreparedStatement = {
-    args.zipWithIndex foreach {
-      case (     x: Long,         index) => statement setLong   (index+1, x)
-      case (Some(x: Long),        index) => statement setLong   (index+1, x)
-      case (     x: LongValue,    index) => statement setLong   (index+1, x.value)
-      case (Some(x: LongValue),   index) => statement setLong   (index+1, x.value)
-      case (     x: Int,          index) => statement setInt    (index+1, x)
-      case (Some(x: Int),         index) => statement setInt    (index+1, x)
-      case (     x: String,       index) => statement setString (index+1, x)
-      case (Some(x: String),      index) => statement setString (index+1, x)
-      case (     x: Array[Byte],  index) => statement setObject (index+1, x)
-      case (Some(x: Array[Byte]), index) => statement setObject (index+1, x)
-      case (None, index) => statement setNull (index+1, statement.getParameterMetaData getParameterType (index+1))
-      case (e, _) => throw new IllegalArgumentException(s"setArguments does not support ${e.getClass.getCanonicalName} type arguments")
-    }
-    statement
-  }
-
-  private def updateSingleRow(preparedStatement: PreparedStatement, args: Seq[Any], sql: String): Unit =
-    setArguments(preparedStatement, args).executeUpdate() match {
-      case 1 => ()
-      case n => throw new IllegalStateException(s"SQL update ${sqlWithArgsString(sql, args)} returned $n rows instead of 1")
-    }
-
 }
