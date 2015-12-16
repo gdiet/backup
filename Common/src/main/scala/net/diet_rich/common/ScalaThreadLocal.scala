@@ -31,6 +31,7 @@ object ScalaThreadLocal {
       override def toString: String = apply().toString
     }
 
+  // TODO () => T oder => T ?
   def arm[T <: AutoCloseable : ClassTag](f: () => T): ArmThreadLocal[T] =
     new ArmThreadLocal[T](f, _.asScala foreach(_ close()))
 }

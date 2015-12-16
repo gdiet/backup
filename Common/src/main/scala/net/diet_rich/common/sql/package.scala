@@ -25,13 +25,13 @@ package object sql {
 
   def insertReturnsKey(sql: String, keyToReturn: String)(implicit connectionFactory: ConnectionFactory): SqlInsertReturnKey = {
     new SqlInsertReturnKey {
-      protected val prepared = ScalaThreadLocal(connectionFactory() prepareStatement (sql, Array(keyToReturn)))
+      protected val prepared = ScalaThreadLocal.arm(() => connectionFactory() prepareStatement (sql, Array(keyToReturn)))
       override def run(args: Seq[Any]): Long = {
         val statement = prepared()
         updateSingleRow(statement, args, sql)
         init(statement getGeneratedKeys()) (_ next()) long 1
       }
-      override def close(): Unit = ???
+      override def close(): Unit = prepared close()
     }
   }
 
@@ -62,9 +62,8 @@ package object sql {
   }
 
   private class PreparedSql(val sql: String)(implicit connectionFactory: ConnectionFactory) extends AutoCloseable {
-    // FIXME we want a subclass of ScalaThreadLocal that is autocloseable and closes all thread instances
-    val prepared = ScalaThreadLocal(connectionFactory() prepareStatement sql)
-    override def close(): Unit = ???
+    val prepared = ScalaThreadLocal.arm(() => connectionFactory() prepareStatement sql)
+    override def close(): Unit = prepared close()
   }
 
   private def sqlWithArgsString(sql: String, args: Seq[Any]) = s"'$sql' ${args.toList mkString ("(", ", ", ")")}"
@@ -89,6 +88,7 @@ package object sql {
       }
     }
 
+  // FIXME better as implicit class?
   private def setArguments(statement: PreparedStatement, args: Seq[Any]): PreparedStatement = {
     args.zipWithIndex foreach {
       case (     x: Long,         index) => statement setLong   (index+1, x)
