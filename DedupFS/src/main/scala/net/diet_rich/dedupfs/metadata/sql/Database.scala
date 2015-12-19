@@ -1,18 +1,18 @@
 package net.diet_rich.dedupfs.metadata.sql
 
 import java.io.IOException
-import java.sql.{Connection, ResultSet}
+import java.sql.ResultSet
 
 import net.diet_rich.common._, sql._, vals.Print
 import net.diet_rich.dedupfs.StoreMethod
 import net.diet_rich.dedupfs.metadata._, TreeEntry._
 
 object Database {
-  // Note: All tables are designed for create-only operation,
-  // never for update, and delete only when purging to free space.
-  // To get the current tree state, a clause like
+  // Note: All tables are designed for create-only operation, never for update, and delete only when purging to
+  // free space. To get the current tree state, a clause like
   //   WHERE id IN (SELECT MAX(id) from TreeEntries GROUP BY key);
-  // is needed.
+  // is needed. Note that this design rules out unique constraints for the tree (i.e., for sibling nodes with
+  // the same names).
   private def tableDefinitions(hashAlgorithm: String): Array[String] =
     s"""|CREATE SEQUENCE treeEntryIdSeq START WITH 0;
         |CREATE SEQUENCE treeEntryKeySeq START WITH 0;
@@ -51,17 +51,13 @@ object Database {
         |  CONSTRAINT pk_Settings PRIMARY KEY (key)
         |);""".stripMargin split ";"
 
-  private val indexDefinitions: Array[String] = // TODO review index definitions with regard to TreeEntry id, DataEntry print, combined indexes, and others
+  private val indexDefinitions: Array[String] =
     """|DROP INDEX idxTreeEntriesParent IF EXISTS;
-       |DROP INDEX idxTreeEntriesDataid IF EXISTS;
-       |DROP INDEX idxTreeEntriesDeleted IF EXISTS;
+       |DROP INDEX idxTreeEntriesKey IF EXISTS;
        |CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent);
-       |CREATE INDEX idxTreeEntriesDataid ON TreeEntries(dataid);
-       |CREATE INDEX idxTreeEntriesDeleted ON TreeEntries(deleted);
+       |CREATE INDEX idxTreeEntriesKey ON TreeEntries(key);
        |DROP INDEX idxDataEntriesDuplicates IF EXISTS;
-       |DROP INDEX idxDataEntriesLengthPrint IF EXISTS;
        |CREATE INDEX idxDataEntriesDuplicates ON DataEntries(length, print, hash);
-       |CREATE INDEX idxDataEntriesLengthPrint ON DataEntries(length, print);
        |DROP INDEX idxByteStoreData IF EXISTS;
        |DROP INDEX idxByteStoreStart IF EXISTS;
        |DROP INDEX idxByteStoreFin IF EXISTS;
@@ -233,7 +229,6 @@ trait DatabaseWrite extends Metadata { import Database._
     insertSettings(newSettings)
   }
 
-  // TODO is it really necessary to serialize now that only inserts happen?
   /** In the API, writing the tree structure is serialized, so e.g. "create only if not exists" can be implemented. */
   override def serialized[T](f: => T): T = synchronized(f)
 }
