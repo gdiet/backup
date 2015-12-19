@@ -57,7 +57,7 @@ object Database {
        |CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent);
        |CREATE INDEX idxTreeEntriesKey ON TreeEntries(key);
        |DROP INDEX idxDataEntriesDuplicates IF EXISTS;
-       |CREATE INDEX idxDataEntriesDuplicates ON DataEntries(length, print, hash);
+       |CREATE INDEX idxDataEntriesDuplicates ON DataEntries(print, length, hash);
        |DROP INDEX idxByteStoreData IF EXISTS;
        |DROP INDEX idxByteStoreStart IF EXISTS;
        |DROP INDEX idxByteStoreFin IF EXISTS;
