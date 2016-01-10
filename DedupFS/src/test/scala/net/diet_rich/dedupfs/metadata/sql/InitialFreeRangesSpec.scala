@@ -52,7 +52,7 @@ Illegal overlaps:
   private val dbNum = new AtomicInteger(0)
   def testSetup[T](dbContents: Ranges)(f: ConnectionFactory => T): T = {
     implicit val connectionFactory: ConnectionFactory = H2.memoryFactory(className + s"_${dbNum.incrementAndGet()}")
-    Database.create("MD5")
+    Database create ("MD5", Map(SQLBackend.hashAlgorithmKey -> "MD5"))
     val prepCreateByteStoreEntry = sql singleRowUpdate s"INSERT INTO ByteStore (dataid, start, fin) VALUES (?, ?, ?)"
     dbContents foreach { case (start, fin) => prepCreateByteStoreEntry run (0, start, fin) }
     f(connectionFactory)

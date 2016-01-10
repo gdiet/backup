@@ -65,12 +65,13 @@ object Database {
        |CREATE INDEX idxByteStoreStart ON ByteStore(start);
        |CREATE INDEX idxByteStoreFin ON ByteStore(fin);""".stripMargin split ";"
 
-  def create(hashAlgorithm: String)(implicit connectionFactory: ConnectionFactory): Unit = {
+  def create(hashAlgorithm: String, dbSettings: StringMap)(implicit connectionFactory: ConnectionFactory): Unit = {
     tableDefinitions(hashAlgorithm) foreach (update(_).run())
     indexDefinitions foreach (update(_).run())
-    // Make sure the empty data entry is stored plain by inserting it manually
+    // Make sure the empty data entry is stored uncompressed by inserting it manually
     update("INSERT INTO DataEntries (length, print, hash, method) VALUES (?, ?, ?, ?)")
       .run(0, Print.empty, Hash empty hashAlgorithm, StoreMethod.STORE)
+    insertSettings(dbSettings)
   }
 
   private def startOfFreeDataArea(implicit connectionFactory: ConnectionFactory): Long =
@@ -129,6 +130,8 @@ object Database {
 
 trait DatabaseRead extends MetadataRead { import Database._
   private[sql] implicit def connectionFactory: ConnectionFactory
+
+  override final val hashAlgorithm: String = settings(SQLBackend.hashAlgorithmKey)
 
   // Note: Ideally, here an SQL condition like
   // "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
