@@ -1,7 +1,5 @@
 package net.diet_rich.dedupfs.metadata.sql
 
-import java.sql.Connection
-
 import org.specs2.Specification
 import org.specs2.specification.AfterAll
 
@@ -29,10 +27,12 @@ General tests for the tree database, starting with a newly initialized database
   val child = TreeEntry(1, 0, "child", None, None)
 
   lazy val db = new {
-    override implicit final val connectionFactory: ConnectionFactory = H2.memoryFactory(className)
+    override final val connectionFactory: ConnectionFactory =
+      init(H2.memoryFactory(className)) {
+        Database.create("MD5", Map(SQLBackend.hashAlgorithmKey -> "MD5"))(_)
+      }
   } with DatabaseRead with DatabaseWrite {
     override final def close() = !!!
-    Database create ("MD5", Map(SQLBackend.hashAlgorithmKey -> "MD5"))
   }
   def afterAll(): Unit = db.connectionFactory close()
 }

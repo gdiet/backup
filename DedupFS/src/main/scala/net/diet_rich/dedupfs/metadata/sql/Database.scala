@@ -131,8 +131,6 @@ object Database {
 trait DatabaseRead extends MetadataRead { import Database._
   private[sql] implicit def connectionFactory: ConnectionFactory
 
-  override final val hashAlgorithm: String = settings(SQLBackend.hashAlgorithmKey)
-
   // Note: Ideally, here an SQL condition like
   // "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
   // would be used in the SELECT statement.
@@ -187,6 +185,8 @@ trait DatabaseRead extends MetadataRead { import Database._
 
   private val prepSettings = query[(String, String)]("SELECT key, value FROM Settings")
   override final def settings: Map[String, String] = prepSettings.run().toMap // FIXME use
+
+  override final val hashAlgorithm: String = settings(SQLBackend.hashAlgorithmKey)
 }
 
 
