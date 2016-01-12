@@ -139,7 +139,7 @@ trait DatabaseRead extends MetadataRead { import Database._
     query[(TreeEntry, Boolean, Long)](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE parent = ?")
   override final def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
     prepTreeChildrenOf.runv(parentKey)
-      .filter { case (_, _, id) => id <= upToId }
+      .filter { case (_, _, id) => id <= upToId }  // FIXME define utility functions to improve readability, possibly based on reduceOption
       .toSeq
       .groupBy { case (treeEntry, _, _) => treeEntry.key }
       .map { case (key, entries) => entries.maxBy { case (_, _, id) => id } }
@@ -156,6 +156,9 @@ trait DatabaseRead extends MetadataRead { import Database._
     query[(TreeEntry, Boolean, Long)]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
   override final def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry] =
     prepTreeEntryFor.runv(key)
+      .filter { case (_, _, id) => id <= upToId }                             // filter up to id
+      .toList.sortBy { case (_, _, id) => -id }                               // sort by id, descending
+      .headOption                                   // FIXME define utility functions to improve readability, possibly based on reduceOption
       .find { case (_, deleted, id) => deleted == isDeleted && id <= upToId }
       .map { case (treeEntry, _, _) => treeEntry }
   override final def entry(key: Long) = treeEntryFor(key)

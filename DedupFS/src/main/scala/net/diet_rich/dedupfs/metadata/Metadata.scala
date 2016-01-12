@@ -7,6 +7,7 @@ import TreeEntry.RichPath
 trait MetadataRead extends MetadataReadBasic with MetadataReadExtended
 
 trait MetadataReadBasic extends AutoCloseable {
+  /** @return The current tree entry. */
   def entry(key: Long): Option[TreeEntry]
   def children(parent: Long): Iterable[TreeEntry]
   def child(parent: Long, name: String): Option[TreeEntry]
@@ -30,17 +31,17 @@ trait MetadataReadBasic extends AutoCloseable {
 }
 
 trait MetadataReadExtended {
-  /** @return all children, may include multiple children with the same name. */
+  /** @return All children, may include multiple children with the same name. */
   def allChildren(parent: Long): Iterable[TreeEntry]
-  /** @return all children with the name provided. */
+  /** @return All children with the name provided. */
   def allChildren(parent: Long, name: String): Iterable[TreeEntry]
-  /** @return all entries with the path provided, possibly including multiple path elements with the same names. */
+  /** @return All entries with the path provided, possibly including multiple path elements with the same names. */
   final def allEntries(path: String): Iterable[TreeEntry] = allEntries(path.pathElements)
-  /** @return all entries with the path provided, possibly including multiple path elements with the same names. */
+  /** @return All entries with the path provided, possibly including multiple path elements with the same names. */
   def allEntries(path: Array[String]): Iterable[TreeEntry]
-  /** @return deleted and/or historical entries */
+  /** @return Deleted and/or historical entries */
   def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry]
-  /** @return deleted and/or historical entries */
+  /** @return Deleted and/or historical entries */
   def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry]
 }
 
