@@ -1,7 +1,6 @@
 package net.diet_rich.common
 
-import java.sql.{ResultSet, PreparedStatement}
-import java.util.Date
+import java.sql.{Timestamp, ResultSet, PreparedStatement}
 
 import net.diet_rich.common.vals.LongValue
 
@@ -52,11 +51,11 @@ package object sql {
     def boolean(column: Int): Boolean                 =           resultSet getBoolean   column
     def bytes(column: Int): Array[Byte]               =           resultSet getBytes     column
     def bytesOption(column: Int): Option[Array[Byte]] = asOption (resultSet getBytes     column)
-    def date(column: Int): Date                       =           resultSet getTimestamp column
     def int(column: Int): Int                         =           resultSet getInt       column
     def intOption(column: Int): Option[Int]           = asOption (resultSet getInt       column)
     def long(column: Int): Long                       =           resultSet getLong      column
     def longOption(column: Int): Option[Long]         = asOption (resultSet getLong      column)
+    def timestamp(column: Int): Timestamp             =           resultSet getTimestamp column
     def string(column: Int): String                   =           resultSet getString    column
     def stringOption(column: Int): Option[String]     = asOption (resultSet getString    column)
   }

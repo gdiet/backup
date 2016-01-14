@@ -1,7 +1,7 @@
 package net.diet_rich.dedupfs.metadata.sql
 
 import java.io.IOException
-import java.sql.ResultSet
+import java.sql.{Timestamp, ResultSet}
 
 import net.diet_rich.common._, sql._, vals.Print
 import net.diet_rich.dedupfs.StoreMethod
@@ -116,13 +116,13 @@ object Database {
     settings foreach prepInsertSettings.run
   }
 
-  private[sql] case class TreeQueryResult(treeEntry: TreeEntry, deleted: Boolean, id: Long, timestamp: Long)
+  private[sql] case class TreeQueryResult(treeEntry: TreeEntry, deleted: Boolean, id: Long, timeOfEntry: Timestamp)
 
   implicit val longResult: ResultSet => Long = _ long 1
   implicit val boolResult: ResultSet => Boolean = _ boolean 1
   implicit val rangeResult: ResultSet => (Long, Long) = { r => (r long 1, r long 2) }
   implicit val treeEntryResult: ResultSet => TreeEntry = { r => TreeEntry(r long 1, r long 2 , r string 3, r longOption 4, r longOption 5) }
-  implicit val treeQueryResult: ResultSet => TreeQueryResult = { r => TreeQueryResult(treeEntryResult(r), r boolean 6, r long 7, r long 8) }
+  implicit val treeQueryResult: ResultSet => TreeQueryResult = { r => TreeQueryResult(treeEntryResult(r), r boolean 6, r long 7, r timestamp 8) }
   implicit val storeEntryResult: ResultSet => StoreEntry = { r => StoreEntry(r long 1, r long 2, r long 3, r long 4) }
   implicit val dataEntryResult: ResultSet => DataEntry = { r => DataEntry(r long 1, r long 2, Print(r long 3), r bytes 4, r int 5) }
   implicit val dataAreaResult: ResultSet => (StoreEntry, StoreEntry) = { r => (storeEntryResult(r), StoreEntry(r long 5, r long 6, r long 7, r long 8)) }
