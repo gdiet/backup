@@ -116,15 +116,17 @@ object Database {
     settings foreach prepInsertSettings.run
   }
 
-  implicit val longResult = {(_: ResultSet) long 1}
-  implicit val boolResult = {(_: ResultSet) boolean 1}
-  implicit val rangeResult = { r: ResultSet => (r long 1, r long 2) }
-  implicit val treeEntryResult = { r: ResultSet => TreeEntry(r long 1, r long 2 , r string 3, r longOption 4, r longOption 5) }
-  implicit val treeQueryResult = { r: ResultSet => (treeEntryResult(r), r boolean 6, r long 7) }
-  implicit val storeEntryResult = { r: ResultSet => StoreEntry(r long 1, r long 2, r long 3, r long 4) }
-  implicit val dataEntryResult = { r: ResultSet => DataEntry(r long 1, r long 2, Print(r long 3), r bytes 4, r int 5) }
-  implicit val dataAreaResult = { r: ResultSet => (storeEntryResult(r), StoreEntry(r long 5, r long 6, r long 7, r long 8)) }
-  implicit val settingsResult = { r: ResultSet => (r string 1, r string 2) }
+  private[sql] case class TreeQueryResult(treeEntry: TreeEntry, deleted: Boolean, id: Long, timestamp: Long)
+
+  implicit val longResult: ResultSet => Long = _ long 1
+  implicit val boolResult: ResultSet => Boolean = _ boolean 1
+  implicit val rangeResult: ResultSet => (Long, Long) = { r => (r long 1, r long 2) }
+  implicit val treeEntryResult: ResultSet => TreeEntry = { r => TreeEntry(r long 1, r long 2 , r string 3, r longOption 4, r longOption 5) }
+  implicit val treeQueryResult: ResultSet => TreeQueryResult = { r => TreeQueryResult(treeEntryResult(r), r boolean 6, r long 7, r long 8) }
+  implicit val storeEntryResult: ResultSet => StoreEntry = { r => StoreEntry(r long 1, r long 2, r long 3, r long 4) }
+  implicit val dataEntryResult: ResultSet => DataEntry = { r => DataEntry(r long 1, r long 2, Print(r long 3), r bytes 4, r int 5) }
+  implicit val dataAreaResult: ResultSet => (StoreEntry, StoreEntry) = { r => (storeEntryResult(r), StoreEntry(r long 5, r long 6, r long 7, r long 8)) }
+  implicit val settingsResult: ResultSet => (String, String) = { r => (r string 1, r string 2) }
 }
 
 
@@ -136,15 +138,15 @@ trait DatabaseRead extends MetadataRead { import Database._
   // would be used in the SELECT statement.
   // However, H2 does not run such queries fast enough.
   private val prepTreeChildrenOf =
-    query[(TreeEntry, Boolean, Long)](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE parent = ?")
+    query[TreeQueryResult](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE parent = ?")
   override final def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
     prepTreeChildrenOf.runv(parentKey)
-      .filter { case (_, _, id) => id <= upToId }  // FIXME define utility functions to improve readability, possibly based on reduceOption
-      .toSeq
-      .groupBy { case (treeEntry, _, _) => treeEntry.key }
-      .map { case (key, entries) => entries.maxBy { case (_, _, id) => id } }
-      .filter { case (_, deleted, _) => deleted == isDeleted }
-      .map { case (treeEntry, _, _) => treeEntry }
+      .filter(_.id <= upToId).toSeq   // filter up to id
+      .inGroupsOf(_.treeEntry.key)    // group by entry
+      .map(_.maxBy(_.id))             // only the latest version of each entry
+      .filter(_.deleted == isDeleted) // filter by deleted status
+      .map(_.treeEntry)               // get the entries
+
   override final def allChildren(parent: Long): Iterable[TreeEntry] = treeChildrenOf(parent)
   override final def children(parent: Long): Iterable[TreeEntry] = allChildren(parent).groupBy(_.name).map{ case (_, entries) => entries.head }
   override final def allChildren(parent: Long, name: String): Iterable[TreeEntry] = treeChildrenOf(parent)
@@ -153,14 +155,14 @@ trait DatabaseRead extends MetadataRead { import Database._
   override final def entry(path: Array[String]): Option[TreeEntry] = path.foldLeft(Option(TreeEntry.root)) { (nodes, name) => nodes flatMap (node => child(node.key, name)) }
 
   private val prepTreeEntryFor =
-    query[(TreeEntry, Boolean, Long)]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
+    query[TreeQueryResult]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
   override final def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry] =
     prepTreeEntryFor.runv(key)
-      .filter { case (_, _, id) => id <= upToId }                             // filter up to id
-      .toList.sortBy { case (_, _, id) => -id }                               // sort by id, descending
-      .headOption                                   // FIXME define utility functions to improve readability, possibly based on reduceOption
-      .find { case (_, deleted, id) => deleted == isDeleted && id <= upToId }
-      .map { case (treeEntry, _, _) => treeEntry }
+      .filter(_.id <= upToId).toSeq // filter up to id
+      .maxOptionBy(_.id)            // only the latest version of the entry
+      .find(_.deleted == isDeleted) // filter by deleted status
+      .map(_.treeEntry)             // get the entry
+
   override final def entry(key: Long) = treeEntryFor(key)
   override final def path(key: Long): Option[String] =
     if (key == TreeEntry.root.key) Some(TreeEntry.rootPath)

@@ -43,6 +43,8 @@ trait MetadataReadExtended {
   def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry]
   /** @return Deleted and/or historical entries */
   def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry]
+
+  // FIXME methods to access entry ID and timestamp
 }
 
 trait Metadata extends MetadataRead {

@@ -1,5 +1,6 @@
 package net.diet_rich
 
+import scala.collection.TraversableLike
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
 
@@ -18,6 +19,11 @@ package object common {
 
   implicit class RichIterator[T] (val iterator: Iterator[T]) extends AnyVal {
     def +: (elem: T): Iterator[T] = Iterator(elem) ++ iterator
+  }
+
+  implicit class RichTraversableLike[T, Repr] (val trav: TraversableLike[T, Repr]) extends AnyVal {
+    def inGroupsOf[K](f: T => K) = trav.groupBy(f).values
+    def maxOptionBy[B](f: T => B)(implicit cmp: Ordering[B]): Option[T] = if (trav.isEmpty) None else Some(trav maxBy f)
   }
 
   type StringMap = String Map String
