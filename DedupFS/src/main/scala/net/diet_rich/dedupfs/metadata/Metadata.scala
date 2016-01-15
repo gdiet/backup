@@ -47,6 +47,7 @@ trait MetadataReadExtended {
   // FIXME methods to access entry ID and timestamp
 }
 
+// FIXME MetadataWrite should not require MetadataReadExtended
 trait Metadata extends MetadataRead {
   def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long
   def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long

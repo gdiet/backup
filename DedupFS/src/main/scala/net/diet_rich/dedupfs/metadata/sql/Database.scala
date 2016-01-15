@@ -137,15 +137,17 @@ trait DatabaseRead extends MetadataRead { import Database._
   // "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
   // would be used in the SELECT statement.
   // However, H2 does not run such queries fast enough.
-  private val prepTreeChildrenOf =
-    query[TreeQueryResult](s"SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE parent = ?")
+  private val prepTreeChildrenOf = query[TreeQueryResult](
+    "SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key IN (SELECT key FROM TreeEntries WHERE parent = ?)"
+  )
   override final def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
     prepTreeChildrenOf.runv(parentKey)
-      .filter(_.id <= upToId).toSeq   // filter up to id
-      .inGroupsOf(_.treeEntry.key)    // group by entry
-      .map(_.maxBy(_.id))             // only the latest version of each entry
-      .filter(_.deleted == isDeleted) // filter by deleted status
-      .map(_.treeEntry)               // get the entries
+      .filter(_.id <= upToId).toSeq            // filter up to id
+      .inGroupsOf(_.treeEntry.key)             // group by entry
+      .map(_.maxBy(_.id))                      // only the latest version of each entry
+      .filter(_.treeEntry.parent == parentKey) // filter by actual parent
+      .filter(_.deleted == isDeleted)          // filter by deleted status
+      .map(_.treeEntry)                        // get the entries
 
   override final def allChildren(parent: Long): Iterable[TreeEntry] = treeChildrenOf(parent)
   override final def children(parent: Long): Iterable[TreeEntry] = allChildren(parent).groupBy(_.name).map{ case (_, entries) => entries.head }

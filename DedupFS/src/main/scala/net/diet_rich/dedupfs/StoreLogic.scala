@@ -101,7 +101,7 @@ class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (
     metaBackend serialized {
       metaBackend dataEntriesFor(size, print, hash) match {
         case Seq() =>
-          init(metaBackend.nextDataid) { dataid =>
+          init(metaBackend nextDataid()) { dataid =>
             storedRanges foreach { case (start, fin) =>
               assert(fin > start, s"$start - $fin")
               metaBackend createByteStoreEntry(dataid, start, fin)
