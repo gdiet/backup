@@ -1,7 +1,6 @@
 package net.diet_rich.dedupfs.metadata.sql
 
 import java.io.File
-import java.sql.Connection
 
 import net.diet_rich.common._, io._, sql._
 import net.diet_rich.dedupfs.metadata._
@@ -15,9 +14,12 @@ object SQLBackend extends DirWithConfigHelper {
   val repositoryIdKey = "repository id"
   private val onDbShutdownKey = "on database shutdown"
 
+  private val directoryMarker = "$directory"
+  private def urlForDir(url: String, directory: File) = url.replace(directoryMarker, directory.getAbsolutePath)
+
   def initialize(directory: File, name: String, hashAlgorithm: String): Unit = {
     val (driver, user, password, onShutdown) = (H2.driver, H2.user, H2.password, H2.onShutdown)
-    val url = s"jdbc:h2:${directory.getAbsolutePath}/dedupfs;DB_CLOSE_ON_EXIT=FALSE"
+    val url = s"jdbc:h2:$directoryMarker/dedupfs;DB_CLOSE_ON_EXIT=FALSE"
     val settingsInFile = Map(
       dbDriverKey -> driver,
       dbUrlKey -> url, dbUserKey -> user, dbPasswordKey -> password,
@@ -30,18 +32,20 @@ object SQLBackend extends DirWithConfigHelper {
       repositoryIdKey -> name,
       hashAlgorithmKey -> hashAlgorithm
     )
-    using(ConnectionFactory(driver, url, user, password, Some(onShutdown))) { Database.create(hashAlgorithm, settingsInDB)(_) }
+    using(ConnectionFactory(driver, urlForDir(url, directory), user, password, Some(onShutdown))) {
+      Database.create(hashAlgorithm, settingsInDB)(_)
+    }
     setStatus(directory, isClosed = true, isClean = true)
   }
 
   def read(directory: File, repositoryid: String): MetadataRead = {
     val conf = settingsChecked(directory, repositoryid)
-    val connections = ConnectionFactory(conf(dbDriverKey), conf(readonlyUrlKey), conf(readonlyUserKey), conf(readonlyPasswordKey), None)
+    val connections = ConnectionFactory(conf(dbDriverKey), urlForDir(conf(readonlyUrlKey), directory), conf(readonlyUserKey), conf(readonlyPasswordKey), None)
     new SQLBackendRead(connections, repositoryid)
   }
   def readWrite(directory: File, repositoryid: String): (Metadata, Ranges) = {
     val conf = settingsChecked(directory, repositoryid)
-    val connections = ConnectionFactory(conf(dbDriverKey), conf(dbUrlKey), conf(dbUserKey), conf(dbPasswordKey), conf get onDbShutdownKey)
+    val connections = ConnectionFactory(conf(dbDriverKey), urlForDir(conf(dbUrlKey), directory), conf(dbUserKey), conf(dbPasswordKey), conf get onDbShutdownKey)
     val freeRanges = Database.freeRanges(connections)
     (new SQLBackend(directory, connections, repositoryid), freeRanges)
   }
