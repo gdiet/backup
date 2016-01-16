@@ -131,7 +131,8 @@ object Database {
 
 
 trait DatabaseRead extends MetadataRead { import Database._
-  private[sql] implicit def connectionFactory: ConnectionFactory
+  protected implicit def connectionFactory: ConnectionFactory
+  protected val repositoryId: String
 
   // Note: Ideally, here an SQL condition like
   // "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
@@ -194,11 +195,12 @@ trait DatabaseRead extends MetadataRead { import Database._
   override final def settings: Map[String, String] = prepSettings.run().toMap // FIXME use
 
   override final val hashAlgorithm: String = settings(SQLBackend.hashAlgorithmKey)
+  require(settings(SQLBackend.repositoryIdKey) == repositoryId)
 }
 
 
 trait DatabaseWrite extends Metadata { import Database._
-  private[sql] implicit val connectionFactory: ConnectionFactory
+  protected implicit val connectionFactory: ConnectionFactory
 
   private val prepTreeInsert = insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
   private[sql] final def treeInsert(parent: Long, name: String, changed: Option[Long], data: Option[Long]): Long = prepTreeInsert runv(parent, name, changed, data)

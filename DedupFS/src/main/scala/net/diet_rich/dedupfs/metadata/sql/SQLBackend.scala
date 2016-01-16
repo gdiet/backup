@@ -12,7 +12,7 @@ object SQLBackend extends DirWithConfigHelper {
   private val (dbDriverKey, dbUrlKey, dbUserKey, dbPasswordKey) = ("database driver", "database URL", "database user", "database password")
   private val (readonlyUrlKey, readonlyUserKey, readonlyPasswordKey) = ("database URL read-only", "database user read-only", "database password read-only")
   val hashAlgorithmKey = "hash algorithm"
-  private val repositoryIdKey = "repository id"
+  val repositoryIdKey = "repository id"
   private val onDbShutdownKey = "on database shutdown"
 
   def initialize(directory: File, name: String, hashAlgorithm: String): Unit = {
@@ -26,7 +26,7 @@ object SQLBackend extends DirWithConfigHelper {
     )
     initialize(directory, name, settingsInFile)
     setStatus(directory, isClosed = false, isClean = true)
-    val settingsInDB = Map( // FIXME read from DB
+    val settingsInDB = Map(
       repositoryIdKey -> name,
       hashAlgorithmKey -> hashAlgorithm
     )
@@ -37,21 +37,21 @@ object SQLBackend extends DirWithConfigHelper {
   def read(directory: File, repositoryid: String): MetadataRead = {
     val conf = settingsChecked(directory, repositoryid)
     val connections = ConnectionFactory(conf(dbDriverKey), conf(readonlyUrlKey), conf(readonlyUserKey), conf(readonlyPasswordKey), None)
-    new SQLBackendRead(connections)
+    new SQLBackendRead(connections, repositoryid)
   }
   def readWrite(directory: File, repositoryid: String): (Metadata, Ranges) = {
     val conf = settingsChecked(directory, repositoryid)
     val connections = ConnectionFactory(conf(dbDriverKey), conf(dbUrlKey), conf(dbUserKey), conf(dbPasswordKey), conf get onDbShutdownKey)
     val freeRanges = Database.freeRanges(connections)
-    (new SQLBackend(directory, connections), freeRanges)
+    (new SQLBackend(directory, connections, repositoryid), freeRanges)
   }
 }
 
-private class SQLBackendRead(val connectionFactory: ConnectionFactory) extends DatabaseRead {
+private class SQLBackendRead(protected val connectionFactory: ConnectionFactory, protected val repositoryId: String) extends DatabaseRead {
   override final def close(): Unit = connectionFactory close()
 }
 
-private class SQLBackend(val directory: File, val connectionFactory: ConnectionFactory)
+private class SQLBackend(protected val directory: File, protected val connectionFactory: ConnectionFactory, protected val repositoryId: String)
       extends DatabaseRead with DatabaseWrite {
   private val dirHelper = new DirWithConfig(SQLBackend, directory)
   dirHelper markOpen()
