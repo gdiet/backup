@@ -142,20 +142,15 @@ trait DatabaseRead extends MetadataReadAll { import Database._
     "SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key IN " +
       "(SELECT key FROM TreeEntries WHERE parent = ?)"
   )
-  private def treeChildrenOf(parentKey: Long, upToId: Long) =
+  // FIXME test filterDeleted = None
+  override final def treeChildrenOf(parentKey: Long, filterDeleted: Option[Boolean], upToId: Long): Iterable[TreeEntry] =
     prepTreeChildrenOf.runv(parentKey)
       .filter(_.id <= upToId).toSeq            // filter up to id
       .inGroupsOf(_.treeEntry.key)             // group by entry
       .map(_.maxBy(_.id))                      // only the latest version of each entry
       .filter(_.treeEntry.parent == parentKey) // filter by actual parent
-  // FIXME test filterDeleted = None
-  override final def treeChildrenOf(parentKey: Long, filterDeleted: Option[Boolean], upToId: Long): Iterable[TreeEntry] =
-    filterDeleted                              // if applicable, filter by deleted status
-      .fold(treeChildrenOf(parentKey, upToId))(isDeleted => treeChildrenOf(parentKey, upToId).filter(_.deleted == isDeleted))
+      .maybeFilter(filterDeleted, _.deleted == (_:Boolean)) // if applicable, filter by deleted status
       .map(_.treeEntry)                        // get the entries
-  // FIXME one more try with
-  // treeChildrenOf(parentKey, upToId)
-  //   .maybeFilter(filterDeleted, _.deleted == _)
 
   override final def allChildren(parent: Long): Iterable[TreeEntry] = treeChildrenOf(parent)
   override final def children(parent: Long): Iterable[TreeEntry] = allChildren(parent).groupBy(_.name).map{ case (_, entries) => entries.head }
@@ -165,18 +160,13 @@ trait DatabaseRead extends MetadataReadAll { import Database._
 
   private val prepTreeEntryFor =
     query[TreeQueryResult]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
-  private def treeEntryFor(key: Long, upToId: Long) =
+  // FIXME test filterDeleted = None
+  override final def treeEntryFor(key: Long, filterDeleted: Option[Boolean], upToId: Long): Option[TreeEntry] =
     prepTreeEntryFor.runv(key)
       .filter(_.id <= upToId).toSeq // filter up to id
       .maxOptionBy(_.id)            // only the latest version of the entry
-  // FIXME test filterDeleted = None
-  override final def treeEntryFor(key: Long, filterDeleted: Option[Boolean], upToId: Long): Option[TreeEntry] =
-    filterDeleted                   // if applicable, filter by deleted status
-      .fold(treeEntryFor(key, upToId))(isDeleted => treeEntryFor(key, upToId).filter(_.deleted == isDeleted))
+      .maybeFilter(filterDeleted, _.deleted == (_:Boolean)) // if applicable, filter by deleted status
       .map(_.treeEntry)             //  get the entry
-  // FIXME one more try with
-  // treeChildrenOf(parentKey, upToId)
-  //   .maybeFilter(filterDeleted, _.deleted == _)
 
   override final def entry(key: Long) = treeEntryFor(key)
   override final def path(key: Long): Option[String] =

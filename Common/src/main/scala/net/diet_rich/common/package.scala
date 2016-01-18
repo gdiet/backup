@@ -24,6 +24,11 @@ package object common {
   implicit class RichTraversableLike[T, Repr] (val trav: TraversableLike[T, Repr]) extends AnyVal {
     def inGroupsOf[K](f: T => K) = trav.groupBy(f).values
     def maxOptionBy[B](f: T => B)(implicit cmp: Ordering[B]): Option[T] = if (trav.isEmpty) None else Some(trav maxBy f)
+    def maybeFilter[C](cond: Option[C], f: (T, C) => Boolean) = cond.fold(trav.repr)(c => trav.filter(f(_, c)))
+  }
+
+  implicit class RichOption[T] (val opt: Option[T]) extends AnyVal {
+    def maybeFilter[C](cond: Option[C], f: (T, C) => Boolean) = cond.fold(opt)(c => opt.filter(f(_, c)))
   }
 
   type StringMap = String Map String
