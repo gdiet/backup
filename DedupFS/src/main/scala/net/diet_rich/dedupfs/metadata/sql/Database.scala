@@ -130,7 +130,7 @@ object Database {
 }
 
 
-trait DatabaseRead extends MetadataRead { import Database._
+trait DatabaseRead extends MetadataReadAll { import Database._
   protected implicit def connectionFactory: ConnectionFactory
   protected val repositoryId: String
 
@@ -139,32 +139,44 @@ trait DatabaseRead extends MetadataRead { import Database._
   // would be used in the SELECT statement.
   // However, H2 does not run such queries fast enough.
   private val prepTreeChildrenOf = query[TreeQueryResult](
-    "SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key IN (SELECT key FROM TreeEntries WHERE parent = ?)"
+    "SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key IN " +
+      "(SELECT key FROM TreeEntries WHERE parent = ?)"
   )
-  override final def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry] =
+  private def treeChildrenOf(parentKey: Long, upToId: Long) =
     prepTreeChildrenOf.runv(parentKey)
       .filter(_.id <= upToId).toSeq            // filter up to id
       .inGroupsOf(_.treeEntry.key)             // group by entry
       .map(_.maxBy(_.id))                      // only the latest version of each entry
       .filter(_.treeEntry.parent == parentKey) // filter by actual parent
-      .filter(_.deleted == isDeleted)          // filter by deleted status
+  // FIXME test filterDeleted = None
+  override final def treeChildrenOf(parentKey: Long, filterDeleted: Option[Boolean], upToId: Long): Iterable[TreeEntry] =
+    filterDeleted                              // if applicable, filter by deleted status
+      .fold(treeChildrenOf(parentKey, upToId))(isDeleted => treeChildrenOf(parentKey, upToId).filter(_.deleted == isDeleted))
       .map(_.treeEntry)                        // get the entries
+  // FIXME one more try with
+  // treeChildrenOf(parentKey, upToId)
+  //   .maybeFilter(filterDeleted, _.deleted == _)
 
   override final def allChildren(parent: Long): Iterable[TreeEntry] = treeChildrenOf(parent)
   override final def children(parent: Long): Iterable[TreeEntry] = allChildren(parent).groupBy(_.name).map{ case (_, entries) => entries.head }
   override final def allChildren(parent: Long, name: String): Iterable[TreeEntry] = treeChildrenOf(parent)
-  override final def child(parent: Long, name: String): Option[TreeEntry] = treeChildrenOf(parent) find (_.name == name)
   override final def allEntries(path: Array[String]): Iterable[TreeEntry] = path.foldLeft(Iterable(TreeEntry.root)) { (nodes, name) => nodes flatMap (node => allChildren(node.key, name)) }
   override final def entry(path: Array[String]): Option[TreeEntry] = path.foldLeft(Option(TreeEntry.root)) { (nodes, name) => nodes flatMap (node => child(node.key, name)) }
 
   private val prepTreeEntryFor =
     query[TreeQueryResult]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
-  override final def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry] =
+  private def treeEntryFor(key: Long, upToId: Long) =
     prepTreeEntryFor.runv(key)
       .filter(_.id <= upToId).toSeq // filter up to id
       .maxOptionBy(_.id)            // only the latest version of the entry
-      .find(_.deleted == isDeleted) // filter by deleted status
-      .map(_.treeEntry)             // get the entry
+  // FIXME test filterDeleted = None
+  override final def treeEntryFor(key: Long, filterDeleted: Option[Boolean], upToId: Long): Option[TreeEntry] =
+    filterDeleted                   // if applicable, filter by deleted status
+      .fold(treeEntryFor(key, upToId))(isDeleted => treeEntryFor(key, upToId).filter(_.deleted == isDeleted))
+      .map(_.treeEntry)             //  get the entry
+  // FIXME one more try with
+  // treeChildrenOf(parentKey, upToId)
+  //   .maybeFilter(filterDeleted, _.deleted == _)
 
   override final def entry(key: Long) = treeEntryFor(key)
   override final def path(key: Long): Option[String] =
@@ -192,7 +204,7 @@ trait DatabaseRead extends MetadataRead { import Database._
   override final def storeEntries(dataid: Long): Ranges = prepStoreEntriesFor.runv(dataid).toSeq
 
   private val prepSettings = query[(String, String)]("SELECT key, value FROM Settings")
-  override final def settings: Map[String, String] = prepSettings.run().toMap // FIXME use
+  override final def settings: Map[String, String] = prepSettings.run().toMap
 
   override final val hashAlgorithm: String = settings(SQLBackend.hashAlgorithmKey)
   require(settings(SQLBackend.repositoryIdKey) == repositoryId)

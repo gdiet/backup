@@ -4,13 +4,16 @@ import net.diet_rich.common.vals.Print
 
 import TreeEntry.RichPath
 
-trait MetadataRead extends MetadataReadBasic with MetadataReadExtended
+trait MetadataReadAll extends MetadataRead with MetadataReadUtils with MetadataReadSpecial
 
-trait MetadataReadBasic extends AutoCloseable {
-  /** @return The current tree entry. */
+/** Basic file system metadata read methods. */
+trait MetadataRead extends AutoCloseable {
+  /** @return The tree entry's current state or none if it does not exist or is deleted. */
   def entry(key: Long): Option[TreeEntry]
+  /** @return The current states of the tree entry's non-deleted children.
+    *         This method is indifferent to the deleted state of the tree entry.
+    *         For multiple children with the same name returns one each. */
   def children(parent: Long): Iterable[TreeEntry]
-  def child(parent: Long, name: String): Option[TreeEntry]
 
   final def entry(path: String): Option[TreeEntry] = entry(path.pathElements)
   def entry(path: Array[String]): Option[TreeEntry]
@@ -30,7 +33,14 @@ trait MetadataReadBasic extends AutoCloseable {
   def hashAlgorithm: String
 }
 
-trait MetadataReadExtended {
+/** Utility extensions of the basic metadata read methods. */
+trait MetadataReadUtils { _: MetadataRead =>
+  // FIXME continue utility methods collection
+  def child(parent: Long, name: String): Option[TreeEntry] = children(parent) find (_.name == name)
+}
+
+/** Metadata read extension methods specific for this file system implementation. */
+trait MetadataReadSpecial {
   /** @return All children, may include multiple children with the same name. */
   def allChildren(parent: Long): Iterable[TreeEntry]
   /** @return All children with the name provided. */
@@ -40,15 +50,15 @@ trait MetadataReadExtended {
   /** @return All entries with the path provided, possibly including multiple path elements with the same names. */
   def allEntries(path: Array[String]): Iterable[TreeEntry]
   /** @return Deleted and/or historical entries */
-  def treeEntryFor(key: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Option[TreeEntry]
+  def treeEntryFor(key: Long, filterDeleted: Option[Boolean] = Some(false), upToId: Long = Long.MaxValue): Option[TreeEntry]
   /** @return Deleted and/or historical entries */
-  def treeChildrenOf(parentKey: Long, isDeleted: Boolean = false, upToId: Long = Long.MaxValue): Iterable[TreeEntry]
+  def treeChildrenOf(parentKey: Long, filterDeleted: Option[Boolean] = Some(false), upToId: Long = Long.MaxValue): Iterable[TreeEntry]
 
   // FIXME methods to access entry ID and timestamp
 }
 
 // FIXME MetadataWrite should not require MetadataReadExtended
-trait Metadata extends MetadataRead {
+trait Metadata extends MetadataReadAll {
   def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long
   def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long
   def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long

@@ -38,7 +38,7 @@ object SQLBackend extends DirWithConfigHelper {
     setStatus(directory, isClosed = true, isClean = true)
   }
 
-  def read(directory: File, repositoryid: String): MetadataRead = {
+  def read(directory: File, repositoryid: String): MetadataReadAll = {
     val conf = settingsChecked(directory, repositoryid)
     val connections = ConnectionFactory(conf(dbDriverKey), urlForDir(conf(readonlyUrlKey), directory), conf(readonlyUserKey), conf(readonlyPasswordKey), None)
     new SQLBackendRead(connections, repositoryid)
