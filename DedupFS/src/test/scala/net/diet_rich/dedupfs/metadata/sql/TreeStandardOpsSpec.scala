@@ -11,29 +11,19 @@ class TreeStandardOpsSpec extends Specification with AfterAll with TestsHelper w
 General tests for the tree database, starting with a newly initialized database
   where child is TreeEntry(1, 0, "child", None, None):
   Initially, the root node has no children:
-  ${eg{ db.treeChildrenOf(0) === List() }}
+  ${eg{ db.children(0) === List() }}
   The first child to be inserted gets the key 1:
   ${eg{ db.create(0, "child", None, None) === 1 }}
   The second child, inserted as child of the first child, gets the key 2:
   ${eg{ db.create(1, "grandChild", None, None) === 2 }}
   The root node now has exactly one child:
-  ${eg{ db.treeChildrenOf(0) === List(child) }}
-  There is no deleted child of the root node:
-  ${eg{ db.treeChildrenOf(0, filterDeleted = Some(true)) === List() }}
+  ${eg{ db.children(0) === List(child) }}
   It is possible to delete the child node:
   ${eg{ db.treeDelete(child) === unit }}
-  The deleted node can be accessed only by the extension methods
+  The deleted node is not found by the standard methods
   ${eg{ db.entry(1) === None }}
-  ${eg{ db.treeEntriesFor(1).toList.sortBy(_.id).last.copy(timeOfEntry = null) === TreeQueryResult(child, true, 3, null) }}
   Now, the root node has no children:
-  ${eg{ db.treeChildrenOf(0) === List() }}
-  Accessing the deleted children of root finds the deleted entry:
-  ${eg{ db.treeChildrenOf(0, filterDeleted = Some(true)) === List(child) }}
-  Accessing historical views of the root children works as expected:
-  ${eg{ db.treeChildrenOf(0, upToId = 0) === List() }}
-  ${eg{ db.treeChildrenOf(0, upToId = 2) === List(child) }}
-  ${eg{ db.treeChildrenOf(0, upToId = 3) === List() }}
-  ${eg{ db.treeChildrenOf(0, upToId = 3, filterDeleted = Some(true)) === List(child) }}
+  ${eg{ db.children(0) === List() }}
   """
 
   val child = TreeEntry(1, 0, "child", None, None)

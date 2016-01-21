@@ -22,8 +22,8 @@ Advanced tests for the tree database, starting with a newly initialized database
   Moving a node should be possible:
   ${eg{ db.change(TreeEntry(1, 2, "child", None, None)) === true }}
   The root node now has exactly one child:
-  ${eg{ db.treeChildrenOf(0) === List(TreeEntry(2, 0, "child", None, None)) }}
+  ${eg{ db.children(0) === List(TreeEntry(2, 0, "child", None, None)) }}
   The second child now has exactly one child:
-  ${eg{ db.treeChildrenOf(2) === List(TreeEntry(1, 2, "child", None, None)) }}
+  ${eg{ db.children(2) === List(TreeEntry(1, 2, "child", None, None)) }}
   """
 }

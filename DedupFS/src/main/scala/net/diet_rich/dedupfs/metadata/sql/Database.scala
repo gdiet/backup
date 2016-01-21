@@ -140,18 +140,16 @@ trait DatabaseRead extends MetadataRead with MetadataReadSQL { import Database._
     "SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key IN " +
       "(SELECT key FROM TreeEntries WHERE parent = ?)"
   )
-  // FIXME test filterDeleted = None
-  override final def treeChildrenOf(parentKey: Long, filterDeleted: Option[Boolean], upToId: Long): Iterable[TreeEntry] =
+  override final def treeChildrenOf(parentKey: Long): Iterator[TreeQueryResult] =
     prepTreeChildrenOf.runv(parentKey)
-      .filter(_.id <= upToId).toSeq            // filter up to id
-      .inGroupsOf(_.treeEntry.key)             // group by entry
-      .map(_.maxBy(_.id))                      // only the latest version of each entry
-      .filter(_.treeEntry.parent == parentKey) // filter by actual parent
-      .maybeFilter(filterDeleted, _.deleted == (_:Boolean)) // if applicable, filter by deleted status
-      .map(_.treeEntry)                        // get the entries
-  // FIXME check if maybeFilter is still needed
 
-  override final def children(parent: Long): Iterable[TreeEntry] = treeChildrenOf(parent)
+  override final def children(parent: Long): Iterable[TreeEntry] =
+    treeChildrenOf(parent).toSeq
+      .inGroupsOf(_.treeEntry.key)          // group by entry
+      .map(_.maxBy(_.id))                   // only the latest version of each entry
+      .filter(_.treeEntry.parent == parent) // filter by actual parent
+      .filter(_.deleted == false)           // filter by deleted status
+      .map(_.treeEntry)                     // get the entries
 
   private val prepTreeEntryFor =
     query[TreeQueryResult]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
