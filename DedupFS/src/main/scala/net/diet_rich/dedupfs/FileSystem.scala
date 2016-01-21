@@ -64,7 +64,7 @@ final class FileSystem(val repository: Repository.Any) extends Logging with Auto
   override def close(): Unit = repository.close()
 }
 
-trait DedupFile {
+sealed trait DedupFile {
   def name: String
   def path: String
   def mkDir(): Boolean
@@ -79,7 +79,8 @@ trait DedupFile {
   def lastModified: Long
   def delete(): Boolean
   def change(parent: Option[Long] = None, name: Option[String] = None, changed: Option[Option[Long]] = None, data: Option[Option[Long]] = None): Boolean
-  def ouputStream(): OutputStream
+  def move(destination: DedupFile): Boolean
+  def outputStream(): OutputStream
   def inputStream(): InputStream
 }
 
@@ -95,11 +96,11 @@ final class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
   override def lastModified: Long = 0L
   override def child(name: String): DedupFile = new VirtualFile(fs, path / name)
   override def children: Iterable[DedupFile] = Seq()
-  override def parent: Option[DedupFile] = Some(fs getFile path.parent)
+  override def parent: Option[DedupFile] = Some(fs getFile path.parent) // FIXME return DedupFile, not Option
   override def delete(): Boolean = false
-  override def change(parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean =
-    throw new IOException(s"Can't change virtual file: $path")
-  override def ouputStream(): OutputStream = parent match {
+  override def change(parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean = false
+  override def move(destination: DedupFile): Boolean = false
+  override def outputStream(): OutputStream = parent match {
     case Some(f: ActualFile) if f.isDirectory => fs.createWithOutputStream(f.entry.key, name)
     case _ => throw new IOException("Can't create output stream - parent is not a directory.")
   }
@@ -126,7 +127,15 @@ final class ActualFile(fs: FileSystem, val path: String, private[dedupfs] val en
   override def delete(): Boolean = { fs delete entry; true }
   override def change(parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean =
     fs change (entry.key, parent, name, changed, data)
-  override def ouputStream(): OutputStream =
+  override def move(destination: DedupFile): Boolean = destination match {
+    case dest: VirtualFile =>
+      dest.parent match {
+        case Some(parent: ActualFile) if parent.entry.data.isEmpty => change(parent = Some(parent.entry.key), name = Some(dest.name))
+        case _ => false
+      }
+    case _: ActualFile => false
+  }
+  override def outputStream(): OutputStream =
     if (isFile) fs replaceWithOutputStream entry else throw new IOException("Can't create output stream for a directory.")
   override def inputStream(): InputStream = entry.data match {
     case None => throw new IOException(s"Can't create input stream for directory: $path")

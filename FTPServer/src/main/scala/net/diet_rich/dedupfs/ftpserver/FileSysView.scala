@@ -59,7 +59,14 @@ class FileSysFile(private[ftpserver] val file: DedupFile, name: String) extends 
   override def getLastModified: Long = call(s"${file.path} getLastModified") { file.lastModified }
   override def getAbsolutePath: String = call(s"${file.path} getAbsolutePath") { file.path }
   override def mkdir(): Boolean = call(s"${file.path} mkdir") { file mkDir() }
-  override def move(destination: FtpFile): Boolean = call(s"${file.path} move") { ??? }
+  override def move(destination: FtpFile): Boolean = call(s"${file.path} move") {
+    destination match {
+      case dest: FileSysFile => file move dest.file
+      case other =>
+        log error s"Trying to move ${file.path} to a destination that is not a FileSysFile but a ${other.getClass.getName}."
+        false
+    }
+  }
   override def createInputStream(offset: Long): InputStream = call(s"${file.path} createInputStream") {
     if (offset != 0) throw new IOException("Not random accessible")
     file inputStream()
@@ -75,6 +82,6 @@ class FileSysFile(private[ftpserver] val file: DedupFile, name: String) extends 
   override def setLastModified(time: Long): Boolean = call(s"${file.path} setLastModified") { file change (changed = Some(Some(time))) }
   override def createOutputStream(offset: Long): OutputStream = call(s"${file.path} createOutputStream") {
     if (offset != 0) throw new IOException("Not random accessible")
-    file ouputStream()
+    file outputStream()
   }
 }
