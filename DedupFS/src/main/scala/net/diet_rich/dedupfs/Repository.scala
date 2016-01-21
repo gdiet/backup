@@ -14,24 +14,23 @@ object Repository extends DirWithConfigHelper {
   override val version = "3.0"
   private val (metaDirKey, dataDirKey) = ("metadata directory", "data directory")
   private val (metaDriverKey, bytestoreDriverKey) = ("metadata driver", "byte store driver")
-  private val repositoryidKey = "repository id"
 
   val PRINTSIZE = 8192
 
-  def create(directory: File, repositoryid: Option[String], hashAlgorithm: Option[String], storeBlockSize: Option[Long]): Unit = {
-    val actualRepositoryid: String = repositoryid getOrElse s"${Random nextLong()}"
+  def create(directory: File, repositoryId: Option[String], hashAlgorithm: Option[String], storeBlockSize: Option[Long]): Unit = {
+    val actualRepositoryId: String = repositoryId getOrElse s"${Random nextLong()}"
     val actualHashAlgorithm: String = hashAlgorithm getOrElse "MD5"
     val actualBlockSize: Long = storeBlockSize getOrElse 64000000
     val settings = Map(
-      repositoryidKey -> actualRepositoryid,
+      repositoryIdKey -> actualRepositoryId,
       metaDirKey -> "meta",
       dataDirKey -> "data",
       metaDriverKey -> "SQLBackend",
       bytestoreDriverKey -> "FileBackend"
     )
     initialize(directory, objectName, settings)
-    SQLBackend initialize (directory / settings(metaDirKey), actualRepositoryid, actualHashAlgorithm)
-    FileBackend initialize (directory / settings(dataDirKey), actualRepositoryid, actualBlockSize)
+    SQLBackend initialize (directory / settings(metaDirKey), actualRepositoryId, actualHashAlgorithm)
+    FileBackend initialize (directory / settings(dataDirKey), actualRepositoryId, actualBlockSize)
   }
 
   def openReadOnly(directory: File): ReadOnly =
@@ -50,7 +49,7 @@ object Repository extends DirWithConfigHelper {
     val settings = settingsChecked(directory, objectName)
     require(settings(bytestoreDriverKey) == "FileBackend", s"As $bytestoreDriverKey, only FileBackend is supported, not ${settings(bytestoreDriverKey)}")
     require(settings(metaDriverKey) == "SQLBackend", s"As $metaDriverKey, only SQLBackend is supported, not ${settings(metaDriverKey)}")
-    repositoryFactory(directory / settings(metaDirKey), directory / settings(dataDirKey), settings(repositoryidKey))
+    repositoryFactory(directory / settings(metaDirKey), directory / settings(dataDirKey), settings(repositoryIdKey))
   }
 
   type ReadOnly = RepositoryRead[MetadataReadAll, ByteStoreRead]

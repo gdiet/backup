@@ -3,6 +3,7 @@ package net.diet_rich.dedupfs.metadata.sql
 import java.io.File
 
 import net.diet_rich.common._, io._, sql._
+import net.diet_rich.dedupfs.{hashAlgorithmKey, repositoryIdKey}
 import net.diet_rich.dedupfs.metadata._
 
 object SQLBackend extends DirWithConfigHelper {
@@ -10,8 +11,6 @@ object SQLBackend extends DirWithConfigHelper {
   override val version = "3.0"
   private val (dbDriverKey, dbUrlKey, dbUserKey, dbPasswordKey) = ("database driver", "database URL", "database user", "database password")
   private val (readonlyUrlKey, readonlyUserKey, readonlyPasswordKey) = ("database URL read-only", "database user read-only", "database password read-only")
-  val hashAlgorithmKey = "hash algorithm"
-  val repositoryIdKey = "repository id"
   private val onDbShutdownKey = "on database shutdown"
 
   private val directoryMarker = "$directory"

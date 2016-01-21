@@ -1,14 +1,14 @@
 package net.diet_rich.dedupfs.metadata.sql
 
-import java.sql.Connection
 import java.util.concurrent.atomic.AtomicInteger
 import scala.language.reflectiveCalls
 
-import net.diet_rich.common.sql
 import org.specs2.Specification
 
+import net.diet_rich.common.sql
 import net.diet_rich.common.sql.{H2, ConnectionFactory}
 import net.diet_rich.common.test.TestsHelper
+import net.diet_rich.dedupfs.hashAlgorithmKey
 import net.diet_rich.dedupfs.metadata._
 
 class InitialFreeRangesSpec extends Specification with TestsHelper { def is = s2"""
@@ -52,7 +52,7 @@ Illegal overlaps:
   private val dbNum = new AtomicInteger(0)
   def testSetup[T](dbContents: Ranges)(f: ConnectionFactory => T): T = {
     implicit val connectionFactory: ConnectionFactory = H2.memoryFactory(className + s"_${dbNum.incrementAndGet()}")
-    Database create ("MD5", Map(SQLBackend.hashAlgorithmKey -> "MD5"))
+    Database create ("MD5", Map(hashAlgorithmKey -> "MD5"))
     val prepCreateByteStoreEntry = sql singleRowUpdate s"INSERT INTO ByteStore (dataid, start, fin) VALUES (?, ?, ?)"
     dbContents foreach { case (start, fin) => prepCreateByteStoreEntry run (0, start, fin) }
     f(connectionFactory)

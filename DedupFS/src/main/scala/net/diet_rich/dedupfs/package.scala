@@ -6,6 +6,9 @@ import net.diet_rich.common._
 
 package object dedupfs {
 
+  val repositoryIdKey = "repository id"
+  val hashAlgorithmKey = "hash algorithm"
+
   implicit class BytesIteratorToInputStream(val source: Iterator[Bytes]) extends AnyVal {
     def asInputStream: InputStream = {
       new InputStream {

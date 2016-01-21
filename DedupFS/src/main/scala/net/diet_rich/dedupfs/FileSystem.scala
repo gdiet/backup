@@ -6,7 +6,8 @@ import net.diet_rich.common._
 import net.diet_rich.dedupfs.metadata.TreeEntry, TreeEntry.RichPath
 
 /** FileSystem is a convenience wrapper for the repository providing methods
-  * that resemble more the standard file system API methods. */
+  * that resemble more the standard file system API methods. Returns one of
+  * multiple children with the same name if present. */
 final class FileSystem(val repository: Repository.Any) extends Logging with AutoCloseable { import repository._
   private val maybeRepositoryReadWrite = repository match { case r: Repository => Some(r); case _ => None }
   val isReadOnly = maybeRepositoryReadWrite.isEmpty
@@ -21,7 +22,7 @@ final class FileSystem(val repository: Repository.Any) extends Logging with Auto
   def mkDir(path: String): Boolean = write { write =>
     val pathElements = path.pathElements
     val (parentPath, Array(name)) = pathElements splitAt (pathElements.length - 1)
-    metaBackend entry parentPath match {
+    metaBackend.entry(parentPath).headOption match {
       case Some(parent) => write.metaBackend create (parent.key, name, someNow, None); true
       case None => false
     }
@@ -33,7 +34,7 @@ final class FileSystem(val repository: Repository.Any) extends Logging with Auto
   def delete(entry: TreeEntry): Unit = write { _.metaBackend delete entry }
 
   def getFile(path: String): DedupFile =
-    metaBackend entry path match {
+    metaBackend.entry(path).headOption match {
       case None => new VirtualFile(this, path)
       case Some(entry) => new ActualFile(this, path, entry)
     }
@@ -116,7 +117,7 @@ final class ActualFile(fs: FileSystem, val path: String, private[dedupfs] val en
   override def isWritable: Boolean = !fs.isReadOnly && !(entry == TreeEntry.root)
   override def size: Long = entry.data flatMap meta.sizeOf getOrElse 0L
   override def lastModified: Long = entry.changed getOrElse 0L
-  override def child(name: String): DedupFile = meta.child(entry.key, name) match {
+  override def child(name: String): DedupFile = meta.child(entry.key, name).headOption match {
     case None => new VirtualFile(fs, path / name)
     case Some(child) => new ActualFile(fs, path / name, child)
   }

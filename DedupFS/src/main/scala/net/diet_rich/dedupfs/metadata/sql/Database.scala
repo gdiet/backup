@@ -4,7 +4,7 @@ import java.io.IOException
 import java.sql.{Timestamp, ResultSet}
 
 import net.diet_rich.common._, sql._, vals.Print
-import net.diet_rich.dedupfs.StoreMethod
+import net.diet_rich.dedupfs.{repositoryIdKey, StoreMethod}
 import net.diet_rich.dedupfs.metadata._, TreeEntry._
 
 object Database {
@@ -152,11 +152,9 @@ trait DatabaseRead extends MetadataReadAll { import Database._
       .maybeFilter(filterDeleted, _.deleted == (_:Boolean)) // if applicable, filter by deleted status
       .map(_.treeEntry)                        // get the entries
 
-  override final def allChildren(parent: Long): Iterable[TreeEntry] = treeChildrenOf(parent)
-  override final def children(parent: Long): Iterable[TreeEntry] = allChildren(parent).groupBy(_.name).map{ case (_, entries) => entries.head }
+  override final def children(parent: Long): Iterable[TreeEntry] = treeChildrenOf(parent)
   override final def allChildren(parent: Long, name: String): Iterable[TreeEntry] = treeChildrenOf(parent)
   override final def allEntries(path: Array[String]): Iterable[TreeEntry] = path.foldLeft(Iterable(TreeEntry.root)) { (nodes, name) => nodes flatMap (node => allChildren(node.key, name)) }
-  override final def entry(path: Array[String]): Option[TreeEntry] = path.foldLeft(Option(TreeEntry.root)) { (nodes, name) => nodes flatMap (node => child(node.key, name)) }
 
   private val prepTreeEntryFor =
     query[TreeQueryResult]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
@@ -169,9 +167,6 @@ trait DatabaseRead extends MetadataReadAll { import Database._
       .map(_.treeEntry)             //  get the entry
 
   override final def entry(key: Long) = treeEntryFor(key)
-  override final def path(key: Long): Option[String] =
-    if (key == TreeEntry.root.key) Some(TreeEntry.rootPath)
-    else entry(key) flatMap {entry => path(entry.parent) map (_ + "/" + entry.name)}
 
   // TODO check performance of alternative query "SELECT EXISTS (SELECT 1 FROM DataEntries WHERE print = ?)" (with indexes)
   private val prepDataEntryExistsForPrint = query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? LIMIT 1")
@@ -180,9 +175,6 @@ trait DatabaseRead extends MetadataReadAll { import Database._
   // TODO check performance of alternative query (see above)
   private val prepDataEntryExistsForPrintAndSize = query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? AND length = ? LIMIT 1")
   override final def dataEntryExists(size: Long, print: Print): Boolean = prepDataEntryExistsForPrintAndSize runv (print, size) nextOption() getOrElse false
-
-  private val prepSizeOfDataEntry = query[Long]("SELECT length FROM DataEntries WHERE id = ?")
-  override final def sizeOf(dataid: Long): Option[Long] = prepSizeOfDataEntry runv dataid nextOption()
 
   private val prepDataEntriesFor = query[DataEntry]("SELECT * FROM DataEntries WHERE length = ? AND print = ? and hash = ?")
   override final def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): Seq[DataEntry] = prepDataEntriesFor.runv(size, print, hash).toSeq
@@ -196,8 +188,7 @@ trait DatabaseRead extends MetadataReadAll { import Database._
   private val prepSettings = query[(String, String)]("SELECT key, value FROM Settings")
   override final def settings: Map[String, String] = prepSettings.run().toMap
 
-  override final val hashAlgorithm: String = settings(SQLBackend.hashAlgorithmKey)
-  require(settings(SQLBackend.repositoryIdKey) == repositoryId)
+  require(settings(repositoryIdKey) == repositoryId)
 }
 
 
