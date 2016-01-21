@@ -12,11 +12,11 @@ object Main extends App with Logging {
   }
 
   def createRepository() = {
-    val repositoryid = arguments optional "id"
+    val repositoryId = arguments optional "id"
     val hashAlgorithm = arguments optional "hashAlgorithm"
     val storeBlockSize = arguments longOptional "dataFileSize"
     arguments withSettingsChecked {
-      Repository.create(new File(repoPath), repositoryid, hashAlgorithm, storeBlockSize)
+      Repository.create(new File(repoPath), repositoryId, hashAlgorithm, storeBlockSize)
     }
   }
 }

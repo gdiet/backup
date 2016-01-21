@@ -7,9 +7,9 @@ import net.diet_rich.common.io._
 import net.diet_rich.dedupfs.metadata._
 
 trait StoreLogic extends AutoCloseable {
-  def dataidFor(printData: Bytes, print: Print, source: Source): Long
-  def dataidFor(source: Source): Long
-  def futureDataidFor(source: Source): Future[Long]
+  def dataIdFor(printData: Bytes, print: Print, source: Source): Long
+  def dataIdFor(source: Source): Long
+  def futureDataIdFor(source: Source): Future[Long]
   def close(): Unit
 }
 
@@ -18,7 +18,7 @@ object StoreLogic {
   def apply(metaBackend: Metadata, writeData: (Bytes, Long) => Unit, freeRanges: FreeRanges, hashAlgorithm: String, storeMethod: Int, parallel: Int): StoreLogic =
     new SingleThreadedStoreLogic(metaBackend, writeData, freeRanges, hashAlgorithm, storeMethod) with StoreLogic {
       private implicit val context = blockingThreadPoolExecutionContext(parallel)
-      override def futureDataidFor(source: Source): Future[Long] = Future(dataidFor(source))
+      override def futureDataIdFor(source: Source): Future[Long] = Future(dataIdFor(source))
       override def close(): Unit = { context close() }
     }
 }
@@ -28,12 +28,12 @@ class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (
                          storeMethod: Int) extends StorePackedDataLogic {
   import StoreLogic._
 
-  def dataidFor(source: Source): Long = {
+  def dataIdFor(source: Source): Long = {
     val printData = source read Repository.PRINTSIZE
-    dataidFor(printData, Print of printData, source)
+    dataIdFor(printData, Print of printData, source)
   }
 
-  def dataidFor(printData: Bytes, print: Print, source: Source): Long = source match {
+  def dataIdFor(printData: Bytes, print: Print, source: Source): Long = source match {
     case sized: SizedSource =>
       if (metaBackend dataEntryExists(sized.size, print))
         tryPreloadSizedDataThatMayBeAlreadyKnown(printData, print, sized)
@@ -101,12 +101,12 @@ class SingleThreadedStoreLogic(metaBackend: Metadata, protected val writeData: (
     metaBackend serialized {
       metaBackend dataEntriesFor(size, print, hash) match {
         case Seq() =>
-          init(metaBackend nextDataid()) { dataid =>
+          init(metaBackend nextDataId()) { dataId =>
             storedRanges foreach { case (start, fin) =>
               assert(fin > start, s"$start - $fin")
-              metaBackend createByteStoreEntry(dataid, start, fin)
+              metaBackend createByteStoreEntry(dataId, start, fin)
             }
-            metaBackend createDataEntry(dataid, size, print, hash, storeMethod)
+            metaBackend createDataEntry(dataId, size, print, hash, storeMethod)
           }
         case dataEntry +: _ =>
           storedRanges foreach freeRanges.pushBack

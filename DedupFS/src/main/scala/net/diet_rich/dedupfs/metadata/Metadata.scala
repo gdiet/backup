@@ -20,7 +20,7 @@ trait MetadataReadBasic extends AutoCloseable {
   def children(parent: Long): Iterable[TreeEntry]
 
   /** Returns the data entry or `None` if it does not exist. */
-  def dataEntry(dataid: Long): Option[DataEntry]
+  def dataEntry(dataId: Long): Option[DataEntry]
 
   /** Returns `true` if a corresponding data entry exists. */
   def dataEntryExists(print: Print): Boolean
@@ -30,7 +30,7 @@ trait MetadataReadBasic extends AutoCloseable {
   def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): Seq[DataEntry]
 
   /** Returns the actual data store pointers for a data entry. */
-  def storeEntries(dataid: Long): Ranges
+  def storeEntries(dataId: Long): Ranges
 
   /** Returns the settings map for this metadata repository. */
   def settings: String Map String
@@ -58,8 +58,8 @@ trait MetadataReadUtils { _: MetadataReadBasic =>
     else entry(key) flatMap {entry => path(entry.parent) map (_ + TreeEntry.pathSeparator + entry.name)}
 
   /** Returns the data size of a data entry if the entry it exists. */
-  def sizeOf(dataid: Long): Option[Long] =
-    dataEntry(dataid) map (_.size)
+  def sizeOf(dataId: Long): Option[Long] =
+    dataEntry(dataId) map (_.size)
 
   /** Returns the hash algorithm setting for this metadata repository. */
   def hashAlgorithm: String =
@@ -68,10 +68,10 @@ trait MetadataReadUtils { _: MetadataReadBasic =>
 
 // FIXME MetadataWrite should not require MetadataReadExtended
 trait Metadata extends MetadataRead {
-  def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long
-  def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long
-  def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long
-  def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long
+  def createUnchecked(parent: Long, name: String, changed: Option[Long], dataId: Option[Long]): Long
+  def create(parent: Long, name: String, changed: Option[Long], dataId: Option[Long]): Long
+  def createWithPath(path: String, changed: Option[Long], dataId: Option[Long]): Long
+  def createOrReplace(parent: Long, name: String, changed: Option[Long], dataId: Option[Long]): Long
   def changeUnchecked(changed: TreeEntry): Unit
   def change(changed: TreeEntry): Boolean
   final def change(key: Long, parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean = serialized {
@@ -91,10 +91,10 @@ trait Metadata extends MetadataRead {
   def delete(key: Long): Boolean
   def delete(entry: TreeEntry): Unit
 
-  def createDataEntry(reservedid: Long, size: Long, print: Print, hash: Array[Byte], storeMethod: Int): Unit
-  def nextDataid(): Long
+  def createDataEntry(reservedId: Long, size: Long, print: Print, hash: Array[Byte], storeMethod: Int): Unit
+  def nextDataId(): Long
 
-  def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit
+  def createByteStoreEntry(dataId: Long, start: Long, fin: Long): Unit
 
   def replaceSettings(newSettings: String Map String): Unit
 

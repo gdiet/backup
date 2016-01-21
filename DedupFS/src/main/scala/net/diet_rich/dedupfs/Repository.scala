@@ -34,14 +34,14 @@ object Repository extends DirWithConfigHelper {
   }
 
   def openReadOnly(directory: File): ReadOnly =
-    openAny(directory, { case (metaDir, storeDir, repositoryid) =>
-      new RepositoryRead(SQLBackend.read(metaDir, repositoryid), FileBackend.read(storeDir, repositoryid))
+    openAny(directory, { case (metaDir, storeDir, repositoryId) =>
+      new RepositoryRead(SQLBackend.read(metaDir, repositoryId), FileBackend.read(storeDir, repositoryId))
     })
 
   def openReadWrite(directory: File, storeMethod: Int): Repository =
-    openAny(directory, { case (metaDir, storeDir, repositoryid) =>
-      val (metadata, freeRanges) = SQLBackend.readWrite(metaDir, repositoryid)
-      val byteStore = FileBackend.readWrite(storeDir, repositoryid)
+    openAny(directory, { case (metaDir, storeDir, repositoryId) =>
+      val (metadata, freeRanges) = SQLBackend.readWrite(metaDir, repositoryId)
+      val byteStore = FileBackend.readWrite(storeDir, repositoryId)
       new Repository(directory, metadata, byteStore, new FreeRanges(freeRanges, byteStore.nextBlockStart), storeMethod)
     })
 
@@ -59,14 +59,14 @@ object Repository extends DirWithConfigHelper {
 class RepositoryRead[Meta <: MetadataRead, Data <: ByteStoreRead](val metaBackend: Meta, val dataBackend: Data) extends AutoCloseable {
   override def close(): Unit = try metaBackend.close() finally dataBackend.close()
 
-  final def read(dataid: Long): Iterator[Bytes] =
-    metaBackend.dataEntry(dataid) match {
-      case None => throw new IOException(s"No data entry found for id $dataid")
-      case Some(entry) => StoreMethod.restoreCoder(entry.method)(readRaw(dataid))
+  final def read(dataId: Long): Iterator[Bytes] =
+    metaBackend.dataEntry(dataId) match {
+      case None => throw new IOException(s"No data entry found for id $dataId")
+      case Some(entry) => StoreMethod.restoreCoder(entry.method)(readRaw(dataId))
     }
 
-  private def readRaw(dataid: Long): Iterator[Bytes] =
-    metaBackend.storeEntries(dataid).iterator flatMap { case (from, to) => dataBackend read (from, to) }
+  private def readRaw(dataId: Long): Iterator[Bytes] =
+    metaBackend.storeEntries(dataId).iterator flatMap { case (from, to) => dataBackend read (from, to) }
 }
 
 class Repository(val directory: File, metaBackend: Metadata, dataBackend: ByteStore, freeRanges: FreeRanges, storeMethod: Int) extends RepositoryRead(metaBackend, dataBackend) {

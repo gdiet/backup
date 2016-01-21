@@ -46,20 +46,20 @@ final class FileSystem(val repository: Repository.Any) extends Logging with Auto
 
   /** Note: Storing a Source is the preferred (more optimized) way for storing data. */
   def createWithOutputStream(parentKey: Long, name: String, changed: Option[Long] = someNow): OutputStream = write { write =>
-    new StoreOutputStream(write.storeLogic, { dataid =>
-      write.metaBackend.create(parentKey, name, changed, Some(dataid))
-      log debug s"created entry for $parentKey: $name - $dataid"
+    new StoreOutputStream(write.storeLogic, { dataId =>
+      write.metaBackend.create(parentKey, name, changed, Some(dataId))
+      log debug s"created entry for $parentKey: $name - $dataId"
     })
   }
 
   /** Note: Storing a Source is the preferred (more optimized) way for storing data. */
   def replaceWithOutputStream(entry: TreeEntry, changed: Option[Long] = someNow): OutputStream = write { write =>
-    new StoreOutputStream(write.storeLogic, { dataid =>
-      write.metaBackend.change(entry.copy(data = Some(dataid), changed = changed))
+    new StoreOutputStream(write.storeLogic, { dataId =>
+      write.metaBackend.change(entry.copy(data = Some(dataId), changed = changed))
     })
   }
 
-  def getInputStream(dataid: Long): InputStream = repository.read(dataid).asInputStream
+  def getInputStream(dataId: Long): InputStream = repository.read(dataId).asInputStream
 
   override def close(): Unit = repository.close()
 }
@@ -130,6 +130,6 @@ final class ActualFile(fs: FileSystem, val path: String, private[dedupfs] val en
     if (isFile) fs replaceWithOutputStream entry else throw new IOException("Can't create output stream for a directory.")
   override def inputStream(): InputStream = entry.data match {
     case None => throw new IOException(s"Can't create input stream for directory: $path")
-    case Some(dataid) => fs getInputStream dataid
+    case Some(dataId) => fs getInputStream dataId
   }
 }

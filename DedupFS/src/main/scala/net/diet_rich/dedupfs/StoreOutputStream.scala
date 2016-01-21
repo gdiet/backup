@@ -6,7 +6,7 @@ import java.util.concurrent.ArrayBlockingQueue
 
 import net.diet_rich.common._, io.Source
 
-class StoreOutputStream(storeLogic: StoreLogic, processDataid: Long => Unit) extends OutputStream {
+class StoreOutputStream(storeLogic: StoreLogic, processDataId: Long => Unit) extends OutputStream {
   private var closed = false
   private val transfer = new ArrayBlockingQueue[Bytes](8)
   override def write(byte: Int): Unit = write(Array(byte.toByte), 0, 1)
@@ -18,10 +18,10 @@ class StoreOutputStream(storeLogic: StoreLogic, processDataid: Long => Unit) ext
   override def close(): Unit = if (!closed) {
     closed = true
     transfer put Bytes.empty
-    processDataid(resultOf(dataid))
+    processDataId(resultOf(dataId))
   }
 
-  private val dataid = storeLogic futureDataidFor theSource
+  private val dataId = storeLogic futureDataIdFor theSource
 
   private object theSource extends Source {
     protected var pool: Array[Byte] = Array()

@@ -22,7 +22,7 @@ object Database {
         |  parent    BIGINT NOT NULL,
         |  name      VARCHAR(256) NOT NULL,
         |  changed   BIGINT DEFAULT NULL,
-        |  dataid    BIGINT DEFAULT NULL,
+        |  dataId    BIGINT DEFAULT NULL,
         |  deleted   BOOLEAN NOT NULL DEFAULT FALSE,
         |  timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
@@ -40,7 +40,7 @@ object Database {
         |CREATE SEQUENCE byteStoreIdSeq START WITH 0;
         |CREATE TABLE ByteStore (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR byteStoreIdSeq),
-        |  dataid BIGINT NOT NULL,
+        |  dataId BIGINT NOT NULL,
         |  start  BIGINT NOT NULL,
         |  fin    BIGINT NOT NULL,
         |  CONSTRAINT pk_ByteStore PRIMARY KEY (id)
@@ -61,7 +61,7 @@ object Database {
        |DROP INDEX idxByteStoreData IF EXISTS;
        |DROP INDEX idxByteStoreStart IF EXISTS;
        |DROP INDEX idxByteStoreFin IF EXISTS;
-       |CREATE INDEX idxByteStoreData ON ByteStore(dataid);
+       |CREATE INDEX idxByteStoreData ON ByteStore(dataId);
        |CREATE INDEX idxByteStoreStart ON ByteStore(start);
        |CREATE INDEX idxByteStoreFin ON ByteStore(fin);""".stripMargin split ";"
 
@@ -92,7 +92,7 @@ object Database {
   private[sql] def problemDataAreaOverlaps(implicit connectionFactory: ConnectionFactory): Seq[DataOverlap] = {
     // Note: H2 (1.3.176) does not create a good plan if the three queries are packed into one, and the execution is too slow (two nested table scans)
     val select =
-      "SELECT b1.id, b1.dataid, b1.start, b1.fin, b2.id, b2.dataid, b2.start, b2.fin FROM ByteStore b1 JOIN ByteStore b2"
+      "SELECT b1.id, b1.dataId, b1.start, b1.fin, b2.id, b2.dataId, b2.start, b2.fin FROM ByteStore b1 JOIN ByteStore b2"
     query[DataOverlap](s"$select ON b1.start < b2.fin AND b1.fin > b2.fin").run().toSeq ++:
     query[DataOverlap](s"$select ON b1.id != b2.id AND b1.start = b2.start").run().toSeq ++:
     query[DataOverlap](s"$select ON b1.id != b2.id AND b1.fin = b2.fin").run().toSeq
@@ -137,7 +137,7 @@ trait DatabaseRead extends MetadataRead with MetadataReadSQL { import Database._
   // would be used in the SELECT statement.
   // However, H2 does not run such queries fast enough.
   private val prepTreeChildrenOf = query[TreeQueryResult](
-    "SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key IN " +
+    "SELECT key, parent, name, changed, dataId, deleted, id, timestamp FROM TreeEntries WHERE key IN " +
       "(SELECT key FROM TreeEntries WHERE parent = ?)"
   )
   override final def treeChildrenOf(parentKey: Long): Iterator[TreeQueryResult] =
@@ -152,7 +152,7 @@ trait DatabaseRead extends MetadataRead with MetadataReadSQL { import Database._
       .map(_.treeEntry)                     // get the entries
 
   private val prepTreeEntryFor =
-    query[TreeQueryResult]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
+    query[TreeQueryResult]("SELECT key, parent, name, changed, dataId, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
   override final def treeEntriesFor(key: Long): Iterator[TreeQueryResult] =
     prepTreeEntryFor.runv(key)
 
@@ -175,10 +175,10 @@ trait DatabaseRead extends MetadataRead with MetadataReadSQL { import Database._
   override final def dataEntriesFor(size: Long, print: Print, hash: Array[Byte]): Seq[DataEntry] = prepDataEntriesFor.runv(size, print, hash).toSeq
 
   private val prepDataEntryFor = query[DataEntry]("SELECT * FROM DataEntries WHERE id = ?")
-  override final def dataEntry(dataid: Long): Option[DataEntry] = prepDataEntryFor runv dataid nextOption()
+  override final def dataEntry(dataId: Long): Option[DataEntry] = prepDataEntryFor runv dataId nextOption()
 
-  private val prepStoreEntriesFor = query[Range]("SELECT start, fin FROM ByteStore WHERE dataid = ? ORDER BY id ASC")
-  override final def storeEntries(dataid: Long): Ranges = prepStoreEntriesFor.runv(dataid).toSeq
+  private val prepStoreEntriesFor = query[Range]("SELECT start, fin FROM ByteStore WHERE dataId = ? ORDER BY id ASC")
+  override final def storeEntries(dataId: Long): Ranges = prepStoreEntriesFor.runv(dataId).toSeq
 
   private val prepSettings = query[(String, String)]("SELECT key, value FROM Settings")
   override final def settings: Map[String, String] = prepSettings.run().toMap
@@ -190,38 +190,38 @@ trait DatabaseRead extends MetadataRead with MetadataReadSQL { import Database._
 trait DatabaseWrite extends Metadata { import Database._
   protected implicit val connectionFactory: ConnectionFactory
 
-  private val prepTreeInsert = insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
+  private val prepTreeInsert = insertReturnsKey (s"INSERT INTO TreeEntries (parent, name, changed, dataId, deleted) VALUES (?, ?, ?, ?, FALSE)", "key")
   private[sql] final def treeInsert(parent: Long, name: String, changed: Option[Long], data: Option[Long]): Long = prepTreeInsert runv(parent, name, changed, data)
-  override final def createUnchecked(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = serialized {
+  override final def createUnchecked(parent: Long, name: String, changed: Option[Long], dataId: Option[Long]): Long = serialized {
     if (parent == TreeEntry.root.parent) throw new IOException("Cannot create a sibling of the root entry")
-    treeInsert(parent, name, changed, dataid)
+    treeInsert(parent, name, changed, dataId)
   }
-  override final def create(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = serialized {
+  override final def create(parent: Long, name: String, changed: Option[Long], dataId: Option[Long]): Long = serialized {
     children(parent) find (_.name == name) match {
       case Some(entry) => throw new IOException(s"entry $entry already exists")
-      case None => createUnchecked(parent, name, changed, dataid)
+      case None => createUnchecked(parent, name, changed, dataId)
     }
   }
-  override final def createOrReplace(parent: Long, name: String, changed: Option[Long], dataid: Option[Long]): Long = ???
-  override final def createWithPath(path: String, changed: Option[Long], dataid: Option[Long]): Long = ???
+  override final def createOrReplace(parent: Long, name: String, changed: Option[Long], dataId: Option[Long]): Long = ???
+  override final def createWithPath(path: String, changed: Option[Long], dataId: Option[Long]): Long = ???
 
-  private val prepTreeUpdate = singleRowUpdate(s"INSERT INTO TreeEntries (key, parent, name, changed, dataid) VALUES (?, ?, ?, ?, ?)")
+  private val prepTreeUpdate = singleRowUpdate(s"INSERT INTO TreeEntries (key, parent, name, changed, dataId) VALUES (?, ?, ?, ?, ?)")
   final def changeUnchecked(treeEntry: TreeEntry): Unit = serialized { prepTreeUpdate run treeEntry }
   override def change(changed: TreeEntry): Boolean = serialized { init(entry(changed.key).isDefined){ if (_) changeUnchecked(changed) } }
 
-  private val prepTreeDelete = singleRowUpdate(s"INSERT INTO TreeEntries (key, parent, name, changed, dataid, deleted) VALUES (?, ?, ?, ?, ?, TRUE)")
+  private val prepTreeDelete = singleRowUpdate(s"INSERT INTO TreeEntries (key, parent, name, changed, dataId, deleted) VALUES (?, ?, ?, ?, ?, TRUE)")
   private[sql] final def treeDelete(treeEntry: TreeEntry): Unit = prepTreeDelete run treeEntry
   override final def delete(entry: TreeEntry): Unit = serialized { treeDelete(entry) }
   override final def delete(key: Long): Boolean = serialized { init(entry(key)){_ foreach delete}.isDefined }
 
-  private val prepNextDataid = query[Long]("SELECT NEXT VALUE FOR dataEntryIdSeq")
-  override final def nextDataid() = prepNextDataid run() next()
+  private val prepNextDataId = query[Long]("SELECT NEXT VALUE FOR dataEntryIdSeq")
+  override final def nextDataId() = prepNextDataId run() next()
 
   private val prepCreateDataEntry = singleRowUpdate(s"INSERT INTO DataEntries (id, length, print, hash, method) VALUES (?, ?, ?, ?, ?)")
-  override def createDataEntry(reservedid: Long, size: Long, print: Print, hash: Array[Byte], storeMethod: Int): Unit = prepCreateDataEntry run (reservedid, size, print, hash, storeMethod)
+  override def createDataEntry(reservedId: Long, size: Long, print: Print, hash: Array[Byte], storeMethod: Int): Unit = prepCreateDataEntry run (reservedId, size, print, hash, storeMethod)
 
-  private val prepCreateByteStoreEntry = singleRowUpdate(s"INSERT INTO ByteStore (dataid, start, fin) VALUES (?, ?, ?)")
-  override def createByteStoreEntry(dataid: Long, start: Long, fin: Long): Unit = prepCreateByteStoreEntry run (dataid, start, fin)
+  private val prepCreateByteStoreEntry = singleRowUpdate(s"INSERT INTO ByteStore (dataId, start, fin) VALUES (?, ?, ?)")
+  override def createByteStoreEntry(dataId: Long, start: Long, fin: Long): Unit = prepCreateByteStoreEntry run (dataId, start, fin)
 
   private val prepDeleteSettings = update("DELETE FROM Settings")
   override def replaceSettings(newSettings: Map[String, String]): Unit = serialized {
