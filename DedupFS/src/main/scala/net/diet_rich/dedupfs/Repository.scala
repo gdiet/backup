@@ -6,7 +6,7 @@ import scala.util.Random
 import net.diet_rich.bytestore.{ByteStore, ByteStoreRead}
 import net.diet_rich.bytestore.file.FileBackend
 import net.diet_rich.common._, io._
-import net.diet_rich.dedupfs.metadata.{FreeRanges, MetadataReadAll, Metadata}
+import net.diet_rich.dedupfs.metadata.{FreeRanges, MetadataRead, Metadata}
 import net.diet_rich.dedupfs.metadata.sql.SQLBackend
 
 object Repository extends DirWithConfigHelper {
@@ -52,11 +52,11 @@ object Repository extends DirWithConfigHelper {
     repositoryFactory(directory / settings(metaDirKey), directory / settings(dataDirKey), settings(repositoryIdKey))
   }
 
-  type ReadOnly = RepositoryRead[MetadataReadAll, ByteStoreRead]
-  type Any = RepositoryRead[_ <: MetadataReadAll, _ <: ByteStoreRead]
+  type ReadOnly = RepositoryRead[MetadataRead, ByteStoreRead]
+  type Any = RepositoryRead[_ <: MetadataRead, _ <: ByteStoreRead]
 }
 
-class RepositoryRead[Meta <: MetadataReadAll, Data <: ByteStoreRead](val metaBackend: Meta, val dataBackend: Data) extends AutoCloseable {
+class RepositoryRead[Meta <: MetadataRead, Data <: ByteStoreRead](val metaBackend: Meta, val dataBackend: Data) extends AutoCloseable {
   override def close(): Unit = try metaBackend.close() finally dataBackend.close()
 
   final def read(dataid: Long): Iterator[Bytes] =

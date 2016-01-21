@@ -22,9 +22,9 @@ General tests for the tree database, starting with a newly initialized database
   ${eg{ db.treeChildrenOf(0, filterDeleted = Some(true)) === List() }}
   It is possible to delete the child node:
   ${eg{ db.treeDelete(child) === unit }}
-  The deleted node can be accessed only as deleted node
+  The deleted node can be accessed only by the extension methods
   ${eg{ db.entry(1) === None }}
-  ${eg{ db.treeEntryFor(1, filterDeleted = Some(true)) === Some(child) }}
+  ${eg{ db.treeEntriesFor(1).toList.sortBy(_.id).last.copy(timeOfEntry = null) === TreeQueryResult(child, true, 3, null) }}
   Now, the root node has no children:
   ${eg{ db.treeChildrenOf(0) === List() }}
   Accessing the deleted children of root finds the deleted entry:

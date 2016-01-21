@@ -27,6 +27,7 @@ package object common {
     def maybeFilter[C](cond: Option[C], f: (T, C) => Boolean) = cond.fold(trav.repr)(c => trav.filter(f(_, c)))
   }
 
+  // FIXME not needed anymore?
   implicit class RichOption[T] (val opt: Option[T]) extends AnyVal {
     def maybeFilter[C](cond: Option[C], f: (T, C) => Boolean) = cond.fold(opt)(c => opt.filter(f(_, c)))
   }

@@ -1,7 +1,7 @@
 package net.diet_rich.dedupfs.metadata.sql
 
 import java.io.IOException
-import java.sql.{Timestamp, ResultSet}
+import java.sql.ResultSet
 
 import net.diet_rich.common._, sql._, vals.Print
 import net.diet_rich.dedupfs.{repositoryIdKey, StoreMethod}
@@ -116,8 +116,6 @@ object Database {
     settings foreach prepInsertSettings.run
   }
 
-  private[sql] case class TreeQueryResult(treeEntry: TreeEntry, deleted: Boolean, id: Long, timeOfEntry: Timestamp)
-
   implicit val longResult: ResultSet => Long = _ long 1
   implicit val boolResult: ResultSet => Boolean = _ boolean 1
   implicit val rangeResult: ResultSet => (Long, Long) = { r => (r long 1, r long 2) }
@@ -130,7 +128,7 @@ object Database {
 }
 
 
-trait DatabaseRead extends MetadataReadAll { import Database._
+trait DatabaseRead extends MetadataRead with MetadataReadSQL { import Database._
   protected implicit def connectionFactory: ConnectionFactory
   protected val repositoryId: String
 
@@ -151,22 +149,21 @@ trait DatabaseRead extends MetadataReadAll { import Database._
       .filter(_.treeEntry.parent == parentKey) // filter by actual parent
       .maybeFilter(filterDeleted, _.deleted == (_:Boolean)) // if applicable, filter by deleted status
       .map(_.treeEntry)                        // get the entries
+  // FIXME check if maybeFilter is still needed
 
   override final def children(parent: Long): Iterable[TreeEntry] = treeChildrenOf(parent)
-  override final def allChildren(parent: Long, name: String): Iterable[TreeEntry] = treeChildrenOf(parent)
-  override final def allEntries(path: Array[String]): Iterable[TreeEntry] = path.foldLeft(Iterable(TreeEntry.root)) { (nodes, name) => nodes flatMap (node => allChildren(node.key, name)) }
 
   private val prepTreeEntryFor =
     query[TreeQueryResult]("SELECT key, parent, name, changed, dataid, deleted, id, timestamp FROM TreeEntries WHERE key = ?")
-  // FIXME test filterDeleted = None
-  override final def treeEntryFor(key: Long, filterDeleted: Option[Boolean], upToId: Long): Option[TreeEntry] =
+  override final def treeEntriesFor(key: Long): Iterator[TreeQueryResult] =
     prepTreeEntryFor.runv(key)
-      .filter(_.id <= upToId).toSeq // filter up to id
+
+  override final def entry(key: Long) =
+    treeEntriesFor(key).toSeq
       .maxOptionBy(_.id)            // only the latest version of the entry
-      .maybeFilter(filterDeleted, _.deleted == (_:Boolean)) // if applicable, filter by deleted status
+      .filter(_.deleted == false)   // filter by deleted status
       .map(_.treeEntry)             //  get the entry
 
-  override final def entry(key: Long) = treeEntryFor(key)
 
   // TODO check performance of alternative query "SELECT EXISTS (SELECT 1 FROM DataEntries WHERE print = ?)" (with indexes)
   private val prepDataEntryExistsForPrint = query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? LIMIT 1")
