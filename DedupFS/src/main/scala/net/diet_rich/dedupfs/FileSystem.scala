@@ -68,7 +68,7 @@ sealed trait DedupFile {
   def name: String
   def path: String
   def mkDir(): Boolean
-  def parent: Option[DedupFile]
+  def parent: DedupFile
   def child(name: String): DedupFile
   def children: Iterable[DedupFile]
   def isDirectory: Boolean
@@ -96,12 +96,12 @@ final class VirtualFile(fs: FileSystem, val path: String) extends DedupFile {
   override def lastModified: Long = 0L
   override def child(name: String): DedupFile = new VirtualFile(fs, path / name)
   override def children: Iterable[DedupFile] = Seq()
-  override def parent: Option[DedupFile] = Some(fs getFile path.parent) // FIXME return DedupFile, not Option
+  override def parent: DedupFile = fs getFile path.parent
   override def delete(): Boolean = false
   override def change(parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean = false
   override def move(destination: DedupFile): Boolean = false
   override def outputStream(): OutputStream = parent match {
-    case Some(f: ActualFile) if f.isDirectory => fs.createWithOutputStream(f.entry.key, name)
+    case f: ActualFile if f.isDirectory => fs.createWithOutputStream(f.entry.key, name)
     case _ => throw new IOException("Can't create output stream - parent is not a directory.")
   }
   override def inputStream(): InputStream = throw new FileNotFoundException(s"File is virtual, can't create input stream: $path")
@@ -123,14 +123,14 @@ final class ActualFile(fs: FileSystem, val path: String, private[dedupfs] val en
     case Some(child) => new ActualFile(fs, path / name, child)
   }
   override def children: Iterable[DedupFile] = meta.children(entry.key) map (child => new ActualFile(fs, path / child.name, child))
-  override def parent: Option[DedupFile] = fs getFile entry.parent
+  override def parent: DedupFile = fs getFile entry.parent getOrElse new VirtualFile(fs, path.parent)
   override def delete(): Boolean = { fs delete entry; true }
   override def change(parent: Option[Long], name: Option[String], changed: Option[Option[Long]], data: Option[Option[Long]]): Boolean =
     fs change (entry.key, parent, name, changed, data)
   override def move(destination: DedupFile): Boolean = destination match {
     case dest: VirtualFile =>
       dest.parent match {
-        case Some(parent: ActualFile) if parent.entry.data.isEmpty => change(parent = Some(parent.entry.key), name = Some(dest.name))
+        case parent: ActualFile if parent.entry.data.isEmpty => change(parent = Some(parent.entry.key), name = Some(dest.name))
         case _ => false
       }
     case _: ActualFile => false

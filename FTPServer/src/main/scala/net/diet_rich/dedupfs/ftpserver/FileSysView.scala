@@ -28,7 +28,7 @@ class FileSysView(fs: FileSystem) extends FileSystemView with Logging {
       case Nil          => Some(currentDir)
       case ""   :: tail => resolve(currentDir, tail)
       case "."  :: tail => resolve(currentDir, tail)
-      case ".." :: tail => currentDir.parent flatMap (resolve(_, tail))
+      case ".." :: tail => resolve(currentDir.parent, tail)
       case name :: Nil  => Some(currentDir child name)
       case name :: tail => resolve(currentDir child name, tail)
     }
@@ -73,8 +73,7 @@ class FileSysFile(private[ftpserver] val file: DedupFile, name: String) extends 
   }
   override def listFiles(): util.List[FtpFile] = call(s"${file.path} listFiles") {
     (
-      Seq(new FileSysFile(file, ".")) ++
-      file.parent.map(new FileSysFile(_, "..")).toSeq ++
+      Seq(new FileSysFile(file, "."), new FileSysFile(file.parent, "..")) ++
       file.children.map(FileSysFile(_): FtpFile)
     ).asJava
   }
