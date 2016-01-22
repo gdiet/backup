@@ -162,12 +162,11 @@ trait DatabaseRead extends MetadataRead with MetadataReadSQL { import Database._
       .filter(_.deleted == false)   // filter by deleted status
       .map(_.treeEntry)             //  get the entry
 
-
-  // TODO check performance of alternative query "SELECT EXISTS (SELECT 1 FROM DataEntries WHERE print = ?)" (with indexes)
+  // Note: The alternative query "SELECT EXISTS (SELECT 1 FROM DataEntries WHERE print = ?)" seems to have
+  // pretty much the same the same performance (checked with ~60.000 entries)
   private val prepDataEntryExistsForPrint = query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? LIMIT 1")
   override final def dataEntryExists(print: Print): Boolean = prepDataEntryExistsForPrint runv print nextOption() getOrElse false
 
-  // TODO check performance of alternative query (see above)
   private val prepDataEntryExistsForPrintAndSize = query[Boolean]("SELECT TRUE FROM DataEntries WHERE print = ? AND length = ? LIMIT 1")
   override final def dataEntryExists(size: Long, print: Print): Boolean = prepDataEntryExistsForPrintAndSize runv (print, size) nextOption() getOrElse false
 
