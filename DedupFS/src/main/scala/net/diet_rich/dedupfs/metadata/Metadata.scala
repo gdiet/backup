@@ -6,6 +6,7 @@ import net.diet_rich.dedupfs.hashAlgorithmKey
 import TreeEntry.RichPath
 
 trait MetadataRead extends MetadataReadBasic with MetadataReadUtils
+trait Metadata extends MetadataRead with MetadataWrite
 
 /** Basic file system metadata read methods. Refers only to the current state of entries not marked deleted. */
 trait MetadataReadBasic extends AutoCloseable {
@@ -66,8 +67,7 @@ trait MetadataReadUtils { _: MetadataReadBasic =>
     settings(hashAlgorithmKey)
 }
 
-// FIXME MetadataWrite should not require MetadataReadExtended
-trait Metadata extends MetadataRead {
+trait MetadataWrite { _: MetadataReadBasic =>
   def createUnchecked(parent: Long, name: String, changed: Option[Long], dataId: Option[Long]): Long
   def create(parent: Long, name: String, changed: Option[Long], dataId: Option[Long]): Long
   def createWithPath(path: String, changed: Option[Long], dataId: Option[Long]): Long
