@@ -3,10 +3,11 @@ package net.diet_rich.dedupfs.explorer
 import java.util.concurrent.atomic.AtomicInteger
 import javafx.application.Application
 import javafx.beans.property.{SimpleStringProperty, ReadOnlyIntegerWrapper, ReadOnlyStringWrapper}
-import javafx.beans.value.ObservableValue
+import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.collections.FXCollections
+import javafx.event.EventHandler
 import javafx.scene.Scene
-import javafx.scene.control.TableColumn.CellDataFeatures
+import javafx.scene.control.TableColumn.{CellEditEvent, CellDataFeatures}
 import javafx.scene.control._
 import javafx.scene.control.cell.TextFieldTableCell
 import javafx.scene.image.{ImageView, Image}
@@ -15,7 +16,7 @@ import javafx.stage.Stage
 import javafx.util.Callback
 import scala.collection.JavaConverters._
 
-import net.diet_rich.common.{Arguments, Logging}
+import net.diet_rich.common.{Arguments, Logging, init => _init}
 import net.diet_rich.dedupfs.StoreMethod
 
 object Main extends App with Logging {
@@ -27,6 +28,9 @@ object Main extends App with Logging {
 
 class Main extends Application {
   override def start(stage: Stage): Unit = {
+
+
+
     val currentDir = new TextField("C:/directory/subdir/current")
     val imageUp = new ImageView(new Image("com.modernuiicons/appbar.chevron.up.png"))
     imageUp.setFitHeight(17)
@@ -72,9 +76,22 @@ class Main extends Application {
     val nameColumn = new TableColumn[FileEntry, String]("Name")
     nameColumn.setCellValueFactory(new Callback[CellDataFeatures[FileEntry, String], ObservableValue[String]] {
       def call(p: CellDataFeatures[FileEntry, String]): ObservableValue[String] =
-        new SimpleStringProperty(p.getValue.name)
+        _init(new SimpleStringProperty(p.getValue.name)) { p =>
+          p.addListener(new ChangeListener[String] {
+            override def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String): Unit = {
+              println(s"changed from $oldValue to $newValue")
+            }
+          })
+        }
     })
     nameColumn.setCellFactory(TextFieldTableCell.forTableColumn())
+    nameColumn.setOnEditCommit(new EventHandler[CellEditEvent[FileEntry, String]]() {
+      override def handle(event: CellEditEvent[FileEntry, String]): Unit = {
+        println(s"${event.getOldValue} -> ${event.getNewValue}")
+
+        event.consume()
+      }
+    })
 //    nameColumn.setEditable(true)
     val sizeColumn = new TableColumn[FileEntry, String]("Size")
     sizeColumn.setCellValueFactory(new Callback[CellDataFeatures[FileEntry, String], ObservableValue[String]] {

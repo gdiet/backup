@@ -1,6 +1,13 @@
 package net.diet_rich.dedupfs
 
+import javafx.application.Platform
+import javafx.beans.value.{ObservableValueBase, ObservableValue}
+import javafx.scene.control.{TableView, TableCell, TableColumn}
+import javafx.scene.control.TableColumn.CellDataFeatures
 import javafx.scene.image.{ImageView, Image}
+import javafx.util.Callback
+
+import net.diet_rich.common.init
 
 package object explorer {
   val imageFile = new Image("com.modernuiicons/appbar.page.png")
@@ -8,11 +15,37 @@ package object explorer {
   val imageReload = new Image("com.modernuiicons/appbar.refresh.png")
   val imageUp = new Image("com.modernuiicons/appbar.chevron.up.png")
 
+  def runFX(f: => Unit) = Platform runLater new Runnable { override def run(): Unit = f }
+
   implicit class RichImageView(val view: ImageView) extends AnyVal {
-    def fit(width: Double, height: Double): ImageView = {
+    def fit(width: Double, height: Double): ImageView = init(view) { view =>
       view setFitHeight height
       view setFitWidth width
-      view
+    }
+  }
+
+  implicit class RichTableView[T](val table: TableView[T]) extends AnyVal {
+    def withColumn(title: String, cellRendering: (TableCell[T, T], T) => Unit) = init(table) { table =>
+      table.getColumns add new TableColumn[T, T](title).withFilledCells(cellRendering)
+    }
+  }
+
+  implicit class RichTableColumn[T](val column: TableColumn[T, T]) extends AnyVal {
+    def withFilledCells(cellRendering: (TableCell[T, T], T) => Unit) = init(column) { column =>
+      column setCellValueFactory new Callback[CellDataFeatures[T, T], ObservableValue[T]] {
+        def call(p: CellDataFeatures[T, T]): ObservableValue[T] = {
+          new ObservableValueBase[T] {
+            override def getValue: T = p.getValue
+          }
+        }
+      }
+      column setCellFactory new Callback[TableColumn[T, T], TableCell[T, T]] {
+        override def call(param: TableColumn[T, T]): TableCell[T, T] = new TableCell[T, T]() {
+          override def updateItem(item: T, empty: Boolean): Unit = {
+            if (!empty) cellRendering(this, item)
+          }
+        }
+      }
     }
   }
 }
