@@ -2,12 +2,17 @@ package net.diet_rich.dedupfs.explorer
 
 import java.io.File
 import javafx.application.Application
+import javafx.beans.property.SimpleStringProperty
+import javafx.beans.value.ObservableValue
 import javafx.collections.FXCollections
+import javafx.scene.control.TableColumn.CellDataFeatures
+import javafx.scene.control.cell.TextFieldTableCell
 import javafx.scene.{Scene, Parent}
 import javafx.scene.control._
 import javafx.scene.image.ImageView
 import javafx.scene.layout.BorderPane
 import javafx.stage.Stage
+import javafx.util.Callback
 
 import net.diet_rich.common.init
 
@@ -69,12 +74,22 @@ class ExplorerTab {
     }
     mainPane setCenter {
       init(new TableView[ExplorerFile](files)) { filesView =>
-        filesView setEditable true
-        filesView.withColumn ("", { (cell, file) =>
-          val image = if (file.isDirectory) imageFolder else imageFile
-          cell setGraphic new ImageView(image).fit(17,17)
+        filesView
+          .withColumn ("", {(cell, file) =>
+            val image = if (file.isDirectory) imageFolder else imageFile
+            cell setGraphic new ImageView(image).fit(17,17)
+          })
+          .withColumn ("Name", {(cell, file) => cell setText file.name})
+          .withColumn ("Size", {(cell, file) => if (!file.isDirectory) cell setText s"${file.size}" })
+          .setEditable(true)
+
+        filesView.getColumns.add(init(new TableColumn[ExplorerFile, String]("EName")){c =>
+          c.setCellValueFactory(new Callback[CellDataFeatures[ExplorerFile, String], ObservableValue[String]] {
+            def call(p: CellDataFeatures[ExplorerFile, String]): ObservableValue[String] =
+              new SimpleStringProperty(p.getValue.name)
+          })
+          c.setCellFactory(TextFieldTableCell.forTableColumn())
         })
-        filesView.withColumn ("Name", {(cell, file) => cell setText file.name})
       }
     }
   }
