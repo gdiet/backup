@@ -15,15 +15,6 @@ package object explorer {
   val imageReload = new Image("com.modernuiicons/appbar.refresh.png")
   val imageUp = new Image("com.modernuiicons/appbar.chevron.up.png")
 
-  def runFX(f: => Unit) = Platform runLater new Runnable { override def run(): Unit = f }
-
-  implicit class RichImageView(val view: ImageView) extends AnyVal {
-    def fit(width: Double, height: Double): ImageView = init(view) { view =>
-      view setFitHeight height
-      view setFitWidth width
-    }
-  }
-
   implicit class RichTableView[T](val table: TableView[T]) extends AnyVal {
     def withColumn(title: String, cellRendering: (TableCell[T, T], T) => Unit) = init(table) { table =>
       table.getColumns add new TableColumn[T, T](title).withFilledCells(cellRendering)

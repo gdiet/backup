@@ -17,6 +17,7 @@ import javafx.util.Callback
 import scala.collection.JavaConverters._
 
 import net.diet_rich.common.{Arguments, Logging, init => _init}
+import net.diet_rich.common.fx._
 import net.diet_rich.dedupfs.StoreMethod
 
 object Main extends App with Logging {

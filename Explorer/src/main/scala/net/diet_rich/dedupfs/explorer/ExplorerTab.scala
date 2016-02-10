@@ -3,7 +3,7 @@ package net.diet_rich.dedupfs.explorer
 import java.io.File
 import javafx.application.Application
 import javafx.collections.FXCollections
-import javafx.event.{ActionEvent, EventHandler}
+import javafx.event.EventHandler
 import javafx.scene.input.MouseEvent
 import javafx.scene.{Scene, Parent}
 import javafx.scene.control._
@@ -14,13 +14,20 @@ import javafx.util.Callback
 import scala.collection.JavaConverters._
 
 import net.diet_rich.common.init
+import net.diet_rich.common.fx._
 
-trait ExplorerFile[FileType <: ExplorerFile[_]] { _: FileType =>
+import ExplorerFile.AFile
+
+object ExplorerFile {
+  type AFile = ExplorerFile[_]
+}
+
+trait ExplorerFile[FileType <: AFile] { _: FileType =>
   def isDirectory: Boolean
   def size: Long
   def name: String
-  def list: Seq[ExplorerFile[_]]
-  def parent: ExplorerFile[_]
+  def list: Seq[AFile]
+  def parent: AFile
   def moveTo(other: FileType): Boolean
 }
 
@@ -45,15 +52,15 @@ class ExplorerApp extends Application {
   }
 }
 
-class ExplorerTab(initialDir: ExplorerFile[_]) {
+class ExplorerTab(initialDir: AFile) {
   private val path = new TextField()
-  private var currentDir: ExplorerFile[_] = initialDir
-  private val files = FXCollections.observableList[ExplorerFile[_]](new java.util.ArrayList[ExplorerFile[_]]())
+  private var currentDir: AFile = initialDir
+  private val files = FXCollections.observableList[AFile](new java.util.ArrayList[AFile]())
   private def reload() = files setAll currentDir.list.asJava
 
   runFX(reload())
 
-  private def cd(newDir: ExplorerFile[_]) = {
+  private def cd(newDir: AFile) = {
     currentDir = newDir
     reload()
   }
@@ -64,24 +71,20 @@ class ExplorerTab(initialDir: ExplorerFile[_]) {
         topPane setLeft {
           init(new Button()) { upButton =>
             upButton setGraphic new ImageView(imageUp).fit(17, 17)
-            upButton setOnAction new EventHandler[ActionEvent] {
-              override def handle(event: ActionEvent): Unit = cd(currentDir.parent)
-            }
+            upButton setOnAction handleAction(cd(currentDir.parent))
           }
         }
         topPane setCenter path
         topPane setRight {
           init(new Button()) { reloadButton =>
             reloadButton setGraphic new ImageView(imageReload).fit(17, 17)
-            reloadButton setOnAction new EventHandler[ActionEvent] {
-              override def handle(event: ActionEvent): Unit = reload()
-            }
+            reloadButton setOnAction handleAction(reload())
           }
         }
       }
     }
     mainPane setCenter {
-      init(new TableView[ExplorerFile[_]](files)) { filesView =>
+      init(new TableView[AFile](files)) { filesView =>
         filesView
           .withColumn ("", {(cell, file) =>
             val image = if (file.isDirectory) imageFolder else imageFile
@@ -90,16 +93,10 @@ class ExplorerTab(initialDir: ExplorerFile[_]) {
           .withColumn ("Name", {(cell, file) => cell setText file.name})
           .withColumn ("Size", {(cell, file) => if (!file.isDirectory) cell setText s"${file.size}" })
           .setEditable(true)
-        filesView.setRowFactory(new Callback[TableView[ExplorerFile[_]], TableRow[ExplorerFile[_]]] {
-          override def call(param: TableView[ExplorerFile[_]]): TableRow[ExplorerFile[_]] =
-            init(new TableRow[ExplorerFile[_]]) { row =>
-              row.setOnMouseClicked(new EventHandler[MouseEvent] {
-                override def handle(event: MouseEvent): Unit = {
-                  val file = row.getItem
-                  if (event.getClickCount == 2 && file.isDirectory) cd(file)
-                }
-              })
-            }
+        filesView.setRowFactory(new Callback[TableView[AFile], TableRow[AFile]] {
+          override def call(param: TableView[AFile]): TableRow[AFile] = init(new TableRow[AFile]) { row =>
+            row setOnMouseClicked handleDoubleClick {if (row.getItem.isDirectory) cd(row.getItem)}
+          }
         })
 
 //        filesView.getColumns.add(init(new TableColumn[ExplorerFile, String]("EName")){c =>
