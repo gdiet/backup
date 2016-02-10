@@ -2,30 +2,35 @@ package net.diet_rich.dedupfs.explorer
 
 import java.io.File
 import javafx.application.Application
-import javafx.beans.property.SimpleStringProperty
-import javafx.beans.value.ObservableValue
 import javafx.collections.FXCollections
-import javafx.scene.control.TableColumn.CellDataFeatures
-import javafx.scene.control.cell.TextFieldTableCell
+import javafx.event.{ActionEvent, EventHandler}
+import javafx.scene.input.MouseEvent
 import javafx.scene.{Scene, Parent}
 import javafx.scene.control._
 import javafx.scene.image.ImageView
 import javafx.scene.layout.BorderPane
 import javafx.stage.Stage
 import javafx.util.Callback
+import scala.collection.JavaConverters._
 
 import net.diet_rich.common.init
 
-trait ExplorerFile {
+trait ExplorerFile[FileType <: ExplorerFile[_]] { _: FileType =>
   def isDirectory: Boolean
   def size: Long
   def name: String
+  def list: Seq[ExplorerFile[_]]
+  def parent: ExplorerFile[_]
+  def moveTo(other: FileType): Boolean
 }
 
-case class ExplorerPhysicalFile(file: File) extends ExplorerFile {
+case class PhysicalExplorerFile(file: File) extends ExplorerFile[PhysicalExplorerFile] {
   override def name = file.getName
   override def size = file.length()
   override def isDirectory = file.isDirectory
+  override def list = file.listFiles().toSeq map PhysicalExplorerFile
+  override def parent = PhysicalExplorerFile(Option(file.getParentFile) getOrElse file)
+  override def moveTo(other: PhysicalExplorerFile) = file.renameTo(other.file)
 }
 
 object ExplorerApp extends App {
@@ -34,46 +39,49 @@ object ExplorerApp extends App {
 
 class ExplorerApp extends Application {
   override def start(stage: Stage): Unit = {
-    val explorer = new ExplorerTab
-    explorer.files.setAll(ExplorerPhysicalFile(new File("C:/")), ExplorerPhysicalFile(new File("C:/someFile")))
+    val explorer = new ExplorerTab(PhysicalExplorerFile(new File("E:/")))
     stage setScene new Scene(explorer.component)
     stage.show()
-    new Thread() {
-      override def run() = {
-        Thread.sleep(3000)
-        runFX {
-          println("adding now...")
-          explorer.files.add(ExplorerPhysicalFile(new File("C:/Windows")))
-        }
-      }
-    }.start()
   }
 }
 
-class ExplorerTab {
-  val up = new Button()
-  val path = new TextField()
-  val reload = new Button()
-  val files = FXCollections.observableList[ExplorerFile](new java.util.ArrayList[ExplorerFile]())
+class ExplorerTab(initialDir: ExplorerFile[_]) {
+  private val path = new TextField()
+  private var currentDir: ExplorerFile[_] = initialDir
+  private val files = FXCollections.observableList[ExplorerFile[_]](new java.util.ArrayList[ExplorerFile[_]]())
+  private def reload() = files setAll currentDir.list.asJava
+
+  runFX(reload())
+
+  private def cd(newDir: ExplorerFile[_]) = {
+    currentDir = newDir
+    reload()
+  }
 
   val component: Parent = init(new BorderPane()) { mainPane =>
     mainPane setTop {
       init(new BorderPane()) { topPane =>
         topPane setLeft {
-          init(up) { up =>
-            up setGraphic new ImageView(imageUp).fit(17, 17)
+          init(new Button()) { upButton =>
+            upButton setGraphic new ImageView(imageUp).fit(17, 17)
+            upButton setOnAction new EventHandler[ActionEvent] {
+              override def handle(event: ActionEvent): Unit = cd(currentDir.parent)
+            }
           }
         }
         topPane setCenter path
         topPane setRight {
-          init(reload) { reload =>
-            reload setGraphic new ImageView(imageReload).fit(17, 17)
+          init(new Button()) { reloadButton =>
+            reloadButton setGraphic new ImageView(imageReload).fit(17, 17)
+            reloadButton setOnAction new EventHandler[ActionEvent] {
+              override def handle(event: ActionEvent): Unit = reload()
+            }
           }
         }
       }
     }
     mainPane setCenter {
-      init(new TableView[ExplorerFile](files)) { filesView =>
+      init(new TableView[ExplorerFile[_]](files)) { filesView =>
         filesView
           .withColumn ("", {(cell, file) =>
             val image = if (file.isDirectory) imageFolder else imageFile
@@ -82,14 +90,49 @@ class ExplorerTab {
           .withColumn ("Name", {(cell, file) => cell setText file.name})
           .withColumn ("Size", {(cell, file) => if (!file.isDirectory) cell setText s"${file.size}" })
           .setEditable(true)
-
-        filesView.getColumns.add(init(new TableColumn[ExplorerFile, String]("EName")){c =>
-          c.setCellValueFactory(new Callback[CellDataFeatures[ExplorerFile, String], ObservableValue[String]] {
-            def call(p: CellDataFeatures[ExplorerFile, String]): ObservableValue[String] =
-              new SimpleStringProperty(p.getValue.name)
-          })
-          c.setCellFactory(TextFieldTableCell.forTableColumn())
+        filesView.setRowFactory(new Callback[TableView[ExplorerFile[_]], TableRow[ExplorerFile[_]]] {
+          override def call(param: TableView[ExplorerFile[_]]): TableRow[ExplorerFile[_]] =
+            init(new TableRow[ExplorerFile[_]]) { row =>
+              row.setOnMouseClicked(new EventHandler[MouseEvent] {
+                override def handle(event: MouseEvent): Unit = {
+                  val file = row.getItem
+                  if (event.getClickCount == 2 && file.isDirectory) cd(file)
+                }
+              })
+            }
         })
+
+//        filesView.getColumns.add(init(new TableColumn[ExplorerFile, String]("EName")){c =>
+//          c.setCellValueFactory(new Callback[CellDataFeatures[ExplorerFile, String], ObservableValue[String]] {
+//            def call(p: CellDataFeatures[ExplorerFile, String]): ObservableValue[String] =
+//              new SimpleStringProperty(p.getValue.name)
+//          })
+//          c.setCellFactory(TextFieldTableCell.forTableColumn())
+//        })
+//        filesView.getColumns.add(init(new TableColumn[ExplorerFile, ExplorerFile]("E2Name")){c =>
+//          c.setCellValueFactory(new Callback[CellDataFeatures[ExplorerFile, ExplorerFile], ObservableValue[ExplorerFile]] {
+//            def call(p: CellDataFeatures[ExplorerFile, ExplorerFile]): ObservableValue[ExplorerFile] =
+//              new ObservableValueBase[ExplorerFile] {
+//                override def getValue: ExplorerFile = p.getValue
+//              }
+//            }
+//          )
+//          c.setCellFactory(TextFieldTableCell.forTableColumn(new StringConverter[ExplorerFile] {
+//            override def fromString(string: String): ExplorerFile = {
+//              new ExplorerFile {
+//                override def size: Long = -1
+//                override def name: String = string
+//                override def isDirectory: Boolean = true
+//              }
+//            }
+//            override def toString(file: ExplorerFile): String = file.name
+//          }))
+//          c.setOnEditCommit(new EventHandler[CellEditEvent[ExplorerFile, ExplorerFile]] {
+//            override def handle(event: CellEditEvent[ExplorerFile, ExplorerFile]): Unit = {
+//              println(s"edit committed: ${event.getOldValue} -> ${event.getNewValue.name}")
+//            }
+//          })
+//        })
       }
     }
   }
