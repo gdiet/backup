@@ -1,4 +1,4 @@
-libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.1.3"
+libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.1.5"
 
 libraryDependencies += "com.h2database" % "h2" % "1.4.191"
 
