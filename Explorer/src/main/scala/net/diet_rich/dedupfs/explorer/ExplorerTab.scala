@@ -26,6 +26,7 @@ trait ExplorerFile[FileType <: AFile] { _: FileType =>
   def isDirectory: Boolean
   def size: Long
   def name: String
+  def path: String
   def list: Seq[AFile]
   def parent: AFile
   def moveTo(other: FileType): Boolean
@@ -33,6 +34,7 @@ trait ExplorerFile[FileType <: AFile] { _: FileType =>
 
 case class PhysicalExplorerFile(file: File) extends ExplorerFile[PhysicalExplorerFile] {
   override def name = file.getName
+  override def path = file.getPath
   override def size = file.length()
   override def isDirectory = file.isDirectory
   override def list = file.listFiles().toSeq map PhysicalExplorerFile
@@ -54,14 +56,15 @@ class ExplorerApp extends Application {
 
 class ExplorerTab(initialDir: AFile) {
   private val path = new TextField()
-  private var currentDir: AFile = initialDir
+  private var currentDir: AFile = _
   private val files = FXCollections.observableList[AFile](new java.util.ArrayList[AFile]())
   private def reload() = files setAll currentDir.list.asJava
 
-  runFX(reload())
+  runFX(cd(initialDir))
 
   private def cd(newDir: AFile) = {
     currentDir = newDir
+    path.setText(currentDir.path)
     reload()
   }
 
