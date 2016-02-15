@@ -1,10 +1,9 @@
 package net.diet_rich.dedupfs
 
-import javafx.application.Platform
 import javafx.beans.value.{ObservableValueBase, ObservableValue}
 import javafx.scene.control.{TableView, TableCell, TableColumn}
 import javafx.scene.control.TableColumn.CellDataFeatures
-import javafx.scene.image.{ImageView, Image}
+import javafx.scene.image.Image
 import javafx.util.Callback
 
 import net.diet_rich.common.init
@@ -15,9 +14,15 @@ package object explorer {
   val imageReload = new Image("com.modernuiicons/appbar.refresh.png")
   val imageUp = new Image("com.modernuiicons/appbar.chevron.up.png")
 
+  def createTableColumn[T](title: String, cellRendering: (TableCell[T, T], T) => Unit) =
+    new TableColumn[T, T](title).withFilledCells(cellRendering)
+
   implicit class RichTableView[T](val table: TableView[T]) extends AnyVal {
     def withColumn(title: String, cellRendering: (TableCell[T, T], T) => Unit) = init(table) { table =>
-      table.getColumns add new TableColumn[T, T](title).withFilledCells(cellRendering)
+      table.getColumns add createTableColumn(title, cellRendering)
+    }
+    def withColumn(column: TableColumn[T, T]) = init(table) { table =>
+      table.getColumns add column
     }
   }
 

@@ -1,10 +1,10 @@
 package net.diet_rich.dedupfs.explorer
 
 import java.io.File
+import java.util.Comparator
 import javafx.application.Application
 import javafx.collections.FXCollections
-import javafx.event.EventHandler
-import javafx.scene.input.MouseEvent
+import javafx.scene.control.TableColumn.SortType
 import javafx.scene.{Scene, Parent}
 import javafx.scene.control._
 import javafx.scene.image.ImageView
@@ -88,14 +88,25 @@ class ExplorerTab(initialDir: AFile) {
     }
     mainPane setCenter {
       init(new TableView[AFile](files)) { filesView =>
+        // FIXME the sorting only works correctly when the table is re-sorted manually
+        val nameColumn = createTableColumn[AFile]("Name", {(cell, file) => cell setText file.name})
+        nameColumn.setSortType(SortType.ASCENDING)
+        nameColumn.setComparator(new Comparator[AFile] {
+          override def compare(o1: AFile, o2: AFile): Int = (o1.isDirectory, o2.isDirectory) match {
+            case (true, false) => -1
+            case (false, true) =>  1
+            case _ => o1.name.compare(o2.name)
+          }
+        })
         filesView
           .withColumn ("", {(cell, file) =>
             val image = if (file.isDirectory) imageFolder else imageFile
             cell setGraphic new ImageView(image).fit(17,17)
           })
-          .withColumn ("Name", {(cell, file) => cell setText file.name})
+          .withColumn (nameColumn)
           .withColumn ("Size", {(cell, file) => if (!file.isDirectory) cell setText s"${file.size}" })
           .setEditable(true)
+        filesView.getSortOrder.add(nameColumn)
         filesView.setRowFactory(new Callback[TableView[AFile], TableRow[AFile]] {
           override def call(param: TableView[AFile]): TableRow[AFile] = init(new TableRow[AFile]) { row =>
             row setOnMouseClicked handleDoubleClick {if (row.getItem.isDirectory) cd(row.getItem)}
