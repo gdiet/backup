@@ -94,10 +94,17 @@ class ExplorerTab(initialDir: AFile) {
         val nameColumn = createTableColumn[AFile]("Name", {(cell, file) => cell setText file.name})
         nameColumn.setSortType(SortType.ASCENDING)
         nameColumn.setComparator(new Comparator[AFile] {
-          override def compare(o1: AFile, o2: AFile): Int = (o1.isDirectory, o2.isDirectory) match {
-            case (true, false) => -1
-            case (false, true) =>  1
-            case _ => o1.name.compare(o2.name)
+          override def compare(o1: AFile, o2: AFile): Int = {
+            val direction = nameColumn.getSortType match {
+              case SortType.ASCENDING  =>  1
+              case SortType.DESCENDING => -1
+            }
+            (o1.isDirectory, o2.isDirectory) match {
+              case (true,  false) => -direction
+              case (false, true ) =>  direction
+              case (true,  true ) =>  direction * o1.name.compare(o2.name)
+              case (false, false) =>              o1.name.compare(o2.name)
+            }
           }
         })
         filesView
