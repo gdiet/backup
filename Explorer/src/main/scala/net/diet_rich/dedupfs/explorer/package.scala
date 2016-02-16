@@ -1,12 +1,14 @@
 package net.diet_rich.dedupfs
 
+import java.util.Comparator
 import javafx.beans.value.{ObservableValueBase, ObservableValue}
 import javafx.scene.control.{TableView, TableCell, TableColumn}
-import javafx.scene.control.TableColumn.CellDataFeatures
+import javafx.scene.control.TableColumn.{SortType, CellDataFeatures}
 import javafx.scene.image.Image
 import javafx.util.Callback
 
 import net.diet_rich.common.init
+import net.diet_rich.dedupfs.explorer.ExplorerFile.AFile
 
 package object explorer {
   val imageFile = new Image("com.modernuiicons/appbar.page.png")
@@ -23,6 +25,25 @@ package object explorer {
     }
     def withColumn(column: TableColumn[T, T]) = init(table) { table =>
       table.getColumns add column
+    }
+  }
+
+  implicit class RichFileTableColumn(val column: TableColumn[AFile, AFile]) extends AnyVal {
+    def withFileComparator(comparator: (AFile, AFile) => Int) = init(column) { column =>
+      column.setComparator(new Comparator[AFile] {
+        override def compare(o1: AFile, o2: AFile): Int = {
+          val direction = column.getSortType match {
+            case SortType.ASCENDING  =>  1
+            case SortType.DESCENDING => -1
+          }
+          (o1.isDirectory, o2.isDirectory) match {
+            case (true,  false) => -direction
+            case (false, true ) =>  direction
+            case (true,  true ) =>  direction * o1.name.compare(o2.name)
+            case (false, false) =>  comparator(o1, o2)
+          }
+        }
+      })
     }
   }
 

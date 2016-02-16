@@ -63,6 +63,7 @@ class ExplorerTab(initialDir: AFile) {
 
   runFX(cd(initialDir))
 
+  // FIXME cd somewhere with fewer entries -> superfluous entries in table
   private def cd(newDir: AFile) = {
     currentDir = newDir
     path.setText(currentDir.path)
@@ -96,26 +97,18 @@ class ExplorerTab(initialDir: AFile) {
           cell setGraphic new ImageView(image).fit(17,17)
         })
         iconColumn setSortable false
-        val nameColumn = createTableColumn[AFile]("Name", {(cell, file) => cell setText file.name})
-        nameColumn.setSortType(SortType.ASCENDING)
-        nameColumn.setComparator(new Comparator[AFile] {
-          override def compare(o1: AFile, o2: AFile): Int = {
-            val direction = nameColumn.getSortType match {
-              case SortType.ASCENDING  =>  1
-              case SortType.DESCENDING => -1
-            }
-            (o1.isDirectory, o2.isDirectory) match {
-              case (true,  false) => -direction
-              case (false, true ) =>  direction
-              case (true,  true ) =>  direction * o1.name.compare(o2.name)
-              case (false, false) =>              o1.name.compare(o2.name)
-            }
-          }
-        })
+        val nameColumn =
+          createTableColumn[AFile]("Name", {(cell, file) => cell setText file.name})
+          .withFileComparator((o1, o2) => o1.name.compareTo(o2.name))
+        val sizeColumn =
+          createTableColumn[AFile]("Size", { (cell, file) =>
+            cell setText (if (file.isDirectory) "" else s"${file.size}")
+          })
+          .withFileComparator((o1, o2) => o1.size.compareTo(o2.size))
         filesView
           .withColumn (iconColumn)
           .withColumn (nameColumn)
-          .withColumn ("Size", {(cell, file) => if (!file.isDirectory) cell setText s"${file.size}" })
+          .withColumn (sizeColumn)
           .setEditable(true)
         filesView.getSortOrder.add(nameColumn)
         filesView.setRowFactory(new Callback[TableView[AFile], TableRow[AFile]] {
