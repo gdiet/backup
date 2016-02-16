@@ -91,6 +91,11 @@ class ExplorerTab(initialDir: AFile) {
       val filesSorted = new SortedList[AFile](files)
       init(new TableView[AFile](filesSorted)) { filesView =>
         filesSorted.comparatorProperty().bind(filesView.comparatorProperty())
+        val iconColumn = createTableColumn[AFile]("\u25c8", {(cell, file) =>
+          val image = if (file.isDirectory) imageFolder else imageFile
+          cell setGraphic new ImageView(image).fit(17,17)
+        })
+        iconColumn setSortable false
         val nameColumn = createTableColumn[AFile]("Name", {(cell, file) => cell setText file.name})
         nameColumn.setSortType(SortType.ASCENDING)
         nameColumn.setComparator(new Comparator[AFile] {
@@ -108,10 +113,7 @@ class ExplorerTab(initialDir: AFile) {
           }
         })
         filesView
-          .withColumn ("", {(cell, file) =>
-            val image = if (file.isDirectory) imageFolder else imageFile
-            cell setGraphic new ImageView(image).fit(17,17)
-          })
+          .withColumn (iconColumn)
           .withColumn (nameColumn)
           .withColumn ("Size", {(cell, file) => if (!file.isDirectory) cell setText s"${file.size}" })
           .setEditable(true)
