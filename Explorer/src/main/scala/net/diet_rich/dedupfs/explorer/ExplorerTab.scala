@@ -4,6 +4,7 @@ import java.io.File
 import java.util.Comparator
 import javafx.application.Application
 import javafx.collections.FXCollections
+import javafx.collections.transformation.SortedList
 import javafx.scene.control.TableColumn.SortType
 import javafx.scene.{Scene, Parent}
 import javafx.scene.control._
@@ -57,7 +58,7 @@ class ExplorerApp extends Application {
 class ExplorerTab(initialDir: AFile) {
   private val path = new TextField()
   private var currentDir: AFile = _
-  private val files = FXCollections.observableList[AFile](new java.util.ArrayList[AFile]())
+  private val files = FXCollections.observableArrayList[AFile]()
   private def reload() = files setAll currentDir.list.asJava
 
   runFX(cd(initialDir))
@@ -87,8 +88,9 @@ class ExplorerTab(initialDir: AFile) {
       }
     }
     mainPane setCenter {
-      init(new TableView[AFile](files)) { filesView =>
-        // FIXME the sorting only works correctly when the table is re-sorted manually
+      val filesSorted = new SortedList[AFile](files)
+      init(new TableView[AFile](filesSorted)) { filesView =>
+        filesSorted.comparatorProperty().bind(filesView.comparatorProperty())
         val nameColumn = createTableColumn[AFile]("Name", {(cell, file) => cell setText file.name})
         nameColumn.setSortType(SortType.ASCENDING)
         nameColumn.setComparator(new Comparator[AFile] {
