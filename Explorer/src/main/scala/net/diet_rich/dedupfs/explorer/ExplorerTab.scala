@@ -31,6 +31,23 @@ trait ExplorerFile[FileType <: AFile] {_: FileType =>
   def moveTo(other: FileType): Boolean
 }
 
+trait FileSystems {
+  def fileFor(uri: String): Option[AFile]
+  final def directoryFor(uri: String): Option[AFile] = fileFor(uri).filter(_.isDirectory)
+}
+
+object FileSystems extends FileSystems {
+  def fileFor(uri: String): Option[AFile] = {
+    val Array(protocol, path) = uri.split("\\:\\/\\/", 2)
+    protocol match {
+      case "file" =>
+        val file = new File(path)
+        if (file.exists()) Some(PhysicalExplorerFile(file)) else None
+      case _ => None
+    }
+  }
+}
+
 case class PhysicalExplorerFile(file: File) extends ExplorerFile[PhysicalExplorerFile] {
   override def name = file.getName
   override def path = s"file://${file.getPath}"
@@ -47,25 +64,29 @@ object ExplorerApp extends App {
 
 class ExplorerApp extends Application {
   override def start(stage: Stage): Unit = {
-    val parent = new Commander(PhysicalExplorerFile(new File("E:/")))
+    val parent = new Commander(FileSystems, PhysicalExplorerFile(new File("E:/")))
     stage setScene net.diet_rich.common.init(new Scene(parent.component)) { _.getStylesheets.add("style.css") }
     stage.show()
   }
 }
 
-class Commander(initialDir: AFile) {
-  private val left = new ExplorerTab(initialDir)
-  private val right = new ExplorerTab(initialDir)
+class Commander(fileSystems: FileSystems, initialDir: AFile) {
+  private val left  = new ExplorerTab(fileSystems, initialDir)
+  private val right = new ExplorerTab(fileSystems, initialDir)
 
   val component: Parent = init(new SplitPane()) { splitPane =>
     splitPane.getItems.addAll(left.component, right.component)
   }
 }
 
-class ExplorerTab(initialDir: AFile) {
-  private val path = new TextField()
+class ExplorerTab(fileSystems: FileSystems, initialDir: AFile) {
   private var currentDir: AFile = _
   private val files = FXCollections.observableArrayList[AFile]()
+  private val path: TextField = init(new TextField()) {
+    _.setOnAction(handleAction {
+      fileSystems.directoryFor(path.getText) foreach cd
+    })
+  }
 
   private def reload() = {
     files setAll currentDir.list.asJava
