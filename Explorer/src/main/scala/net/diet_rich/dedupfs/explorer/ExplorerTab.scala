@@ -33,7 +33,7 @@ trait ExplorerFile[FileType <: AFile] {_: FileType =>
 
 case class PhysicalExplorerFile(file: File) extends ExplorerFile[PhysicalExplorerFile] {
   override def name = file.getName
-  override def path = file.getPath
+  override def path = s"file://${file.getPath}"
   override def size = file.length()
   override def isDirectory = file.isDirectory
   override def list = file.listFiles().toSeq map PhysicalExplorerFile
@@ -47,9 +47,18 @@ object ExplorerApp extends App {
 
 class ExplorerApp extends Application {
   override def start(stage: Stage): Unit = {
-    val explorer = new ExplorerTab(PhysicalExplorerFile(new File("E:/")))
-    stage setScene new Scene(explorer.component)
+    val parent = new Commander(PhysicalExplorerFile(new File("E:/")))
+    stage setScene net.diet_rich.common.init(new Scene(parent.component)) { _.getStylesheets.add("style.css") }
     stage.show()
+  }
+}
+
+class Commander(initialDir: AFile) {
+  private val left = new ExplorerTab(initialDir)
+  private val right = new ExplorerTab(initialDir)
+
+  val component: Parent = init(new SplitPane()) { splitPane =>
+    splitPane.getItems.addAll(left.component, right.component)
   }
 }
 
@@ -107,7 +116,7 @@ class ExplorerTab(initialDir: AFile) {
       init(new BorderPane()) { topPane =>
         topPane setLeft {
           init(new Button()) { upButton =>
-            upButton setGraphic new ImageView(imageUp).fit(17, 17)
+            upButton setGraphic new ImageView().fit(17, 17).styled("up-button-image")
             upButton setOnAction handleAction(cd(currentDir.parent))
           }
         }
