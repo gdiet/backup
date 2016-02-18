@@ -13,6 +13,7 @@ import javafx.util.Callback
 
 import net.diet_rich.common.fx._
 import net.diet_rich.common.init
+import net.diet_rich.dedupfs.DedupFile
 import net.diet_rich.dedupfs.explorer.ExplorerFile.AFile
 
 import scala.collection.JavaConverters._
@@ -46,6 +47,16 @@ object FileSystems extends FileSystems {
       case _ => None
     }
   }
+}
+
+case class DedupSystemFile(file: DedupFile) extends ExplorerFile[DedupSystemFile] {
+  override def isDirectory: Boolean = file.isDirectory
+  override def moveTo(other: DedupSystemFile): Boolean = ???
+  override def size: Long = file.size
+  override def name: String = file.name
+  override def list: Seq[AFile] = file.children.toSeq map DedupSystemFile
+  override def path: String = s"dedup://${file.path}"
+  override def parent: AFile = DedupSystemFile(file.parent)
 }
 
 case class PhysicalExplorerFile(file: File) extends ExplorerFile[PhysicalExplorerFile] {

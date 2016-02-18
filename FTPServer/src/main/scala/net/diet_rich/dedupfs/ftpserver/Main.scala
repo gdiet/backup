@@ -18,7 +18,7 @@ object Main extends App with Logging {
   val ftpPort = arguments intOptional "port" getOrElse 21
   val writable = arguments booleanOptional "writable" getOrElse false
   val storeMethod = arguments optional "storeMethod" map StoreMethod.named getOrElse StoreMethod.STORE
-  val versionComment = if (writable) arguments optional "comment" else None
+  val versionComment = if (writable) arguments optional "comment" else None // FIXME never used
   arguments withSettingsChecked {
     val directory = new File(repoPath)
     val repository = if (writable) Repository openReadWrite(directory, storeMethod) else Repository openReadOnly directory
