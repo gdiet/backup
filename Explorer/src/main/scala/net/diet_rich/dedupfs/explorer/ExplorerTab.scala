@@ -10,64 +10,12 @@ import javafx.scene.layout.BorderPane
 import javafx.scene.{Parent, Scene}
 import javafx.stage.Stage
 import javafx.util.Callback
+import scala.collection.JavaConverters._
 
 import net.diet_rich.common.fx._
 import net.diet_rich.common.init
-import net.diet_rich.dedupfs.DedupFile
-import net.diet_rich.dedupfs.explorer.ExplorerFile.AFile
 
-import scala.collection.JavaConverters._
-
-object ExplorerFile {
-  type AFile = ExplorerFile[_]
-}
-
-trait ExplorerFile[FileType <: AFile] {_: FileType =>
-  def isDirectory: Boolean
-  def size: Long
-  def name: String
-  def path: String
-  def list: Seq[AFile]
-  def parent: AFile
-  def moveTo(other: FileType): Boolean
-}
-
-trait FileSystems {
-  def fileFor(uri: String): Option[AFile]
-  final def directoryFor(uri: String): Option[AFile] = fileFor(uri).filter(_.isDirectory)
-}
-
-object FileSystems extends FileSystems {
-  def fileFor(uri: String): Option[AFile] = {
-    val Array(protocol, path) = uri.split("\\:\\/\\/", 2)
-    protocol match {
-      case "file" =>
-        val file = new File(path)
-        if (file.exists()) Some(PhysicalExplorerFile(file)) else None
-      case _ => None
-    }
-  }
-}
-
-case class DedupSystemFile(file: DedupFile) extends ExplorerFile[DedupSystemFile] {
-  override def isDirectory: Boolean = file.isDirectory
-  override def moveTo(other: DedupSystemFile): Boolean = ???
-  override def size: Long = file.size
-  override def name: String = file.name
-  override def list: Seq[AFile] = file.children.toSeq map DedupSystemFile
-  override def path: String = s"dedup://${file.path}"
-  override def parent: AFile = DedupSystemFile(file.parent)
-}
-
-case class PhysicalExplorerFile(file: File) extends ExplorerFile[PhysicalExplorerFile] {
-  override def name = file.getName
-  override def path = s"file://${file.getPath}"
-  override def size = file.length()
-  override def isDirectory = file.isDirectory
-  override def list = file.listFiles().toSeq map PhysicalExplorerFile
-  override def parent = PhysicalExplorerFile(Option(file.getParentFile) getOrElse file)
-  override def moveTo(other: PhysicalExplorerFile) = file.renameTo(other.file)
-}
+import ExplorerFile.AFile
 
 object ExplorerApp extends App {
   Application launch classOf[ExplorerApp]
