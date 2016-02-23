@@ -23,15 +23,15 @@ package object explorer {
     def withColumn(title: String, cellRendering: (TableCell[T, T], T) => Unit) = init(table) { table =>
       table.getColumns add createTableColumn(title, cellRendering)
     }
-    def withColumn(column: TableColumn[T, T]) = init(table) { table =>
+    def withColumn[C](column: TableColumn[T, C]) = init(table) { table =>
       table.getColumns add column
     }
   }
 
-  implicit class RichFileTableColumn(val column: TableColumn[AFile, AFile]) extends AnyVal {
-    def withFileComparator(comparator: (AFile, AFile) => Int) = init(column) { column =>
-      column.setComparator(new Comparator[AFile] {
-        override def compare(o1: AFile, o2: AFile): Int = {
+  implicit class RichFileTableColumn[T <: SortableFile, C <: SortableFile](val column: TableColumn[T, C]) extends AnyVal {
+    def withFileComparator(comparator: (C, C) => Int) = init(column) { column =>
+      column.setComparator(new Comparator[C] {
+        override def compare(o1: C, o2: C): Int = {
           val direction = column.getSortType match {
             case SortType.ASCENDING  =>  1
             case SortType.DESCENDING => -1

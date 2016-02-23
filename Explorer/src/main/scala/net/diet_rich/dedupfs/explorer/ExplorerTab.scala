@@ -2,14 +2,17 @@ package net.diet_rich.dedupfs.explorer
 
 import java.io.File
 import javafx.application.Application
+import javafx.beans.value.{ObservableValueBase, ObservableValue}
 import javafx.collections.FXCollections
 import javafx.collections.transformation.SortedList
+import javafx.scene.control.TableColumn.CellDataFeatures
 import javafx.scene.control._
+import javafx.scene.control.cell.TextFieldTableCell
 import javafx.scene.image.ImageView
 import javafx.scene.layout.BorderPane
 import javafx.scene.{Parent, Scene}
 import javafx.stage.Stage
-import javafx.util.Callback
+import javafx.util.{StringConverter, Callback}
 import scala.collection.JavaConverters._
 
 import net.diet_rich.common.fx._
@@ -47,7 +50,7 @@ class ExplorerTab(fileSystems: FileSystems, initialDir: AFile) {
     })
   }
 
-  private def reload() = {
+  private def reload(): Unit = {
     files setAll currentDir.list.asJava
     tableView refresh()
   }
@@ -68,14 +71,34 @@ class ExplorerTab(fileSystems: FileSystems, initialDir: AFile) {
       cell setGraphic new ImageView(image).fit(17, 17)
     })
     iconColumn setSortable false
-    val nameColumn =
-      createTableColumn[AFile]("Name", { (cell, file) => cell setText file.name })
-        .withFileComparator((o1, o2) => o1.name.compareTo(o2.name))
+
+    // TODO simplify, see createTableColumn
+    val nameColumn: TableColumn[AFile, SortableFile] =
+      init(new TableColumn[AFile, SortableFile]("Name")) { c =>
+        c setCellValueFactory new Callback[CellDataFeatures[AFile, SortableFile], ObservableValue[SortableFile]] {
+          def call(p: CellDataFeatures[AFile, SortableFile]): ObservableValue[SortableFile] = {
+            new ObservableValueBase[SortableFile] {
+              override def getValue: SortableFile = p.getValue
+            }
+          }
+        }
+        c setCellFactory TextFieldTableCell.forTableColumn(new StringConverter[SortableFile] {
+          override def fromString(string: String): SortableFile = FileNameContainer(string)
+          override def toString(file: SortableFile): String = file.name
+        })
+        c setOnEditCommit handle { event =>
+          println(s"edit committed: ${event.getOldValue} -> ${event.getNewValue}")
+          // FIXME react on edit action
+          reload()
+        }
+      }.withFileComparator((o1, o2) => o1.name.compareTo(o2.name))
+
     val sizeColumn =
       createTableColumn[AFile]("Size", { (cell, file) =>
         cell setText (if (file.isDirectory) "" else s"${file.size}")
       })
         .withFileComparator((o1, o2) => o1.size.compareTo(o2.size))
+
     filesView
       .withColumn(iconColumn)
       .withColumn(nameColumn)

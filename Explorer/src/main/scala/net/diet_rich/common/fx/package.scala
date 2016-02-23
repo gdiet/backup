@@ -1,7 +1,7 @@
 package net.diet_rich.common
 
 import javafx.application.Platform
-import javafx.event.{ActionEvent, EventHandler}
+import javafx.event.{Event, ActionEvent, EventHandler}
 import javafx.scene.Node
 import javafx.scene.image.ImageView
 import javafx.scene.input.MouseEvent
@@ -9,13 +9,11 @@ import javafx.scene.input.MouseEvent
 package object fx {
   def runFX(f: => Unit) = Platform runLater new Runnable { override def run(): Unit = f }
 
-  def handleAction[T](handler: => T): EventHandler[ActionEvent] = new EventHandler[ActionEvent] {
-    override def handle(event: ActionEvent): Unit = handler
+  def handle[T <: Event](handler: T => Any): EventHandler[T] = new EventHandler[T] {
+    override def handle(event: T): Unit = handler(event)
   }
-
-  def handleDoubleClick[T](handler: => T): EventHandler[MouseEvent] = new EventHandler[MouseEvent] {
-    override def handle(event: MouseEvent): Unit = if (event.getClickCount == 2) handler
-  }
+  def handleAction(handler: => Any): EventHandler[ActionEvent] = handle(_ => handler)
+  def handleDoubleClick(handler: => Any): EventHandler[MouseEvent] = handle(e => if(e.getClickCount == 2) handler)
 
   implicit class RichNode[T <: Node](val node: T) extends AnyVal {
     def styled(styleClass: String): T = init(node) { _.getStyleClass.add(styleClass) }
