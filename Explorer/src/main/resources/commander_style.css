@@ -1,0 +1,7 @@
+// see http://javawiki.sowas.com/doku.php?id=javafx:table-header-with-icon
+.column-header.table-column.iconColumn {
+    -fx-background-image: url("net.tutorial9/108_Mono_Icons/folder32.png");
+    -fx-background-size: contain;
+    -fx-background-position: center;
+    -fx-background-repeat: no-repeat;
+}
