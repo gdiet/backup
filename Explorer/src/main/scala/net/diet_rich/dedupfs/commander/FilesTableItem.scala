@@ -7,6 +7,5 @@ trait FilesTableItem {
   def name: Property[String]
   def size: Property[String]
   def icon: Property[Image]
-  def isDirectory: Boolean
   def isEditable: Boolean
 }
