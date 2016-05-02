@@ -29,12 +29,12 @@ class FilesTable {
   nameColumn setCellValueFactory cellValueFactory(_.name.getValue)
   nameColumn setCellFactory nameCellFactory
   nameColumn setOnEditCommit handle(event => event.getRowValue.name setValue event.getNewValue.detail)
-  nameColumn setComparator ColumnEntry.comparator(nameColumn.getSortType)
+  nameColumn setComparator ColumnEntry.columnComparator(nameColumn.getSortType, _ compareToIgnoreCase _)
 
   private val sizeColumn = new LongColumn("Size")
   sizeColumn setCellValueFactory cellValueFactory(_.size.getValue)
   sizeColumn setCellFactory sizeCellFactory
-  sizeColumn setComparator ColumnEntry.comparator(sizeColumn.getSortType)
+  sizeColumn setComparator ColumnEntry.columnComparator(sizeColumn.getSortType, _ compareTo _)
 
   val table = new TableView[FilesTableItem](fileSorted)
   fileSorted.comparatorProperty() bind table.comparatorProperty()
@@ -52,7 +52,7 @@ private object FilesTable {
       override def fromString(string: String): ColumnEntry[T] = ColumnEntry[T](convert(string), None)
       override def toString(entry: ColumnEntry[T]): String = entry.detail.toString
     }
-    def comparator[T <: Comparable[T]](sortType: => SortType) = new Comparator[ColumnEntry[T]] {
+    def columnComparator[T](sortType: => SortType, comparator: (T, T) => Int) = new Comparator[ColumnEntry[T]] {
       override def compare(o1: ColumnEntry[T], o2: ColumnEntry[T]): Int = {
         val direction = sortType match {
           case SortType.ASCENDING  =>  1
@@ -62,8 +62,8 @@ private object FilesTable {
         (o1.isDirectory, o2.isDirectory) match {
           case (true,  false) => -direction
           case (false, true ) =>  direction
-          case (true,  true ) =>  direction * o1.detail.compareTo(o2.detail)
-          case (false, false) =>              o1.detail.compareTo(o2.detail)
+          case (true,  true ) =>  direction * comparator(o1.detail, o2.detail)
+          case (false, false) =>              comparator(o1.detail, o2.detail)
         }
       }
     }
