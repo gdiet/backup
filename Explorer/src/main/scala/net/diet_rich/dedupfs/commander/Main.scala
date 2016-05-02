@@ -6,7 +6,7 @@ import javafx.application.Application
 import javafx.scene.Scene
 import javafx.stage.Stage
 
-import net.diet_rich.dedupfs.commander.fx.VetoException
+import net.diet_rich.dedupfs.commander.NameContainer.VetoException
 
 object Main extends App {
   Application launch (classOf[Main], args:_*)
