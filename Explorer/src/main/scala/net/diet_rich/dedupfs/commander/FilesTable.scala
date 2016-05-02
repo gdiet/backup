@@ -93,11 +93,12 @@ private object FilesTable {
   }
 
   val sizeCellFactory = callback[LongColumn, TableCell[FilesTableItem, ColumnEntry[JLong]]] {
+    // TODO align right
     new TextFieldTableCell[FilesTableItem, ColumnEntry[JLong]](ColumnEntry.stringConverter(_.toLong)) {
       override def updateItem(entry: ColumnEntry[JLong], isEmpty: Boolean): Unit = {
         super.updateItem(entry, isEmpty)
         // TODO number formatting
-        if (entry == null) setText("") else setText(entry.detail.toString)
+        if (entry == null || entry.isDirectory) setText("") else setText(entry.detail.toString)
       }
     }
   }
