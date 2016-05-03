@@ -12,6 +12,7 @@ trait FilesTableItem {
   def isDirectory: Boolean
   def isEditable: Boolean
   def open(): Unit
+  def asFilesPaneItem: FilesPaneItem
 }
 
 trait NameContainer extends ObservableValue[String] with WritableValue[String]
@@ -32,6 +33,7 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
   override def isDirectory: Boolean = file.isDirectory
   override def isEditable: Boolean = file.canWrite
   override def open(): Unit = java.awt.Desktop.getDesktop open file
+  override def asFilesPaneItem: FilesPaneItem = PhysicalFilesPaneItem(file)
 
   private def renameTo(newName: String): Boolean =
     newName.contains('/') || newName.contains('\\') || {

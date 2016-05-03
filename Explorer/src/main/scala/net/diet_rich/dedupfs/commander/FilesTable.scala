@@ -16,7 +16,7 @@ import net.diet_rich.common.init
 import net.diet_rich.dedupfs.commander.FilesTable._
 import net.diet_rich.dedupfs.commander.fx._
 
-class FilesTable {
+class FilesTable(cd: FilesTableItem => Unit) {
   val files = FXCollections.observableArrayList[FilesTableItem]()
   private val fileSorted = new SortedList(files)
 
@@ -47,9 +47,7 @@ class FilesTable {
     override def call(param: TableView[FilesTableItem]): TableRow[FilesTableItem] = init(new TableRow[FilesTableItem]) { row =>
       row setOnMouseClicked handle { event =>
         if (event.getClickCount == 2) {
-          if (row.getItem.isDirectory) {
-            println(s"cd(${row.getItem.name.getValue})") // TODO cd
-          } else row.getItem open()
+          if (row.getItem.isDirectory) cd(row.getItem) else row.getItem open()
         }
         event consume()
       }

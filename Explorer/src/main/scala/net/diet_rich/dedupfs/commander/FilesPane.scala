@@ -13,7 +13,10 @@ class FilesPane(private var file: FilesPaneItem) {
     // TODO react on text changes
   }
 
-  private val filesTable = new FilesTable()
+  private val filesTable = new FilesTable(cd)
+
+  private def cd(newDir: FilesTableItem): Unit = cd(newDir.asFilesPaneItem)
+  private def cd(newDir: FilesPaneItem): Unit = { file = newDir; load() }
 
   private def load(): Unit = {
     filesTable.files.clear()
@@ -27,7 +30,7 @@ class FilesPane(private var file: FilesPaneItem) {
       init(new BorderPane()) { topPane =>
         topPane setLeft init(new Button()) { upButton =>
           upButton.getStyleClass add "upButton"
-          upButton setOnAction handle{ file = file.up; load() }
+          upButton setOnAction handle(cd(file.up))
         }
         topPane setCenter pathField
         topPane setRight init(new Button()) { reloadButton =>
