@@ -9,22 +9,25 @@ import net.diet_rich.dedupfs.commander.fx._
 
 class FilesPane(private var file: FilesPaneItem) {
   private val pathField = new TextField()
+  pathField.textProperty() addListener changeListener[String]{newValue =>
+    // TODO react on text changes
+  }
+
   private val filesTable = new FilesTable()
-  def load(): Unit = {
+
+  private def load(): Unit = {
     filesTable.files.clear()
     filesTable.files.addAll(file.list:_*)
     filesTable.table refresh()
     pathField setText file.url
   }
+
   val component: Parent = init(new BorderPane()) { mainPane =>
     mainPane setTop {
       init(new BorderPane()) { topPane =>
         topPane setLeft init(new Button()) { upButton =>
           upButton.getStyleClass add "upButton"
-          upButton setOnAction handle {
-            file = file.up
-            load()
-          }
+          upButton setOnAction handle{ file = file.up; load() }
         }
         topPane setCenter pathField
         topPane setRight init(new Button()) { reloadButton =>

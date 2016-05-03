@@ -8,10 +8,11 @@ import javafx.collections.FXCollections
 import javafx.collections.transformation.SortedList
 import javafx.scene.control.TableColumn.{CellDataFeatures, SortType}
 import javafx.scene.control.cell.TextFieldTableCell
-import javafx.scene.control.{TableCell, TableColumn, TableView}
+import javafx.scene.control.{TableCell, TableColumn, TableRow, TableView}
 import javafx.scene.image.Image
-import javafx.util.StringConverter
+import javafx.util.{Callback, StringConverter}
 
+import net.diet_rich.common.init
 import net.diet_rich.dedupfs.commander.FilesTable._
 import net.diet_rich.dedupfs.commander.fx._
 
@@ -41,6 +42,22 @@ class FilesTable {
   table setEditable true
   table.getColumns addAll (iconColumn, nameColumn, sizeColumn)
   table.getSortOrder add nameColumn
+
+  table.setRowFactory(new Callback[TableView[FilesTableItem], TableRow[FilesTableItem]] {
+    override def call(param: TableView[FilesTableItem]): TableRow[FilesTableItem] = init(new TableRow[FilesTableItem]) { row =>
+      row setOnMouseClicked handle { event =>
+        if (event.getClickCount == 2) {
+          if (row.getItem.isDirectory) {
+            println(s"cd(${row.getItem.name.getValue})") // TODO cd
+          } else {
+            println(s"open(${row.getItem.name.getValue})") // TODO open
+          }
+        }
+        event.consume()
+      }
+    }
+  })
+
 }
 
 private object FilesTable {
