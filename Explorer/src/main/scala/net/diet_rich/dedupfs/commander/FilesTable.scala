@@ -49,11 +49,9 @@ class FilesTable {
         if (event.getClickCount == 2) {
           if (row.getItem.isDirectory) {
             println(s"cd(${row.getItem.name.getValue})") // TODO cd
-          } else {
-            println(s"open(${row.getItem.name.getValue})") // TODO open
-          }
+          } else row.getItem open()
         }
-        event.consume()
+        event consume()
       }
     }
   })

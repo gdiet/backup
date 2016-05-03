@@ -11,6 +11,7 @@ trait FilesTableItem {
   def icon: Property[Image]
   def isDirectory: Boolean
   def isEditable: Boolean
+  def open(): Unit
 }
 
 trait NameContainer extends ObservableValue[String] with WritableValue[String]
@@ -30,6 +31,7 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
   override val icon: Property[Image] = new SimpleObjectProperty[Image](if (file.isDirectory) imageFolder else imageFile)
   override def isDirectory: Boolean = file.isDirectory
   override def isEditable: Boolean = file.canWrite
+  override def open(): Unit = java.awt.Desktop.getDesktop open file
 
   private def renameTo(newName: String): Boolean =
     newName.contains('/') || newName.contains('\\') || {
