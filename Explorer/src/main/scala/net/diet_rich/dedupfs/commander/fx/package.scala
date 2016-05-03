@@ -10,6 +10,7 @@ package object fx {
   def callback[S, T](f: S => T): Callback[S, T] = new Callback[S, T] { override def call(s: S): T = f(s) }
   def callback[S, T](f:   => T): Callback[S, T] = new Callback[S, T] { override def call(s: S): T = f }
   def handle[T <: Event](f: T => Unit): EventHandler[T] = new EventHandler[T] { override def handle(t: T): Unit = f(t) }
+  def handle[T <: Event](f:   => Unit): EventHandler[T] = new EventHandler[T] { override def handle(t: T): Unit = f }
 
   implicit class RichImageView(val view: ImageView) extends AnyVal {
     def fit(width: Double, height: Double): ImageView = init(view) { view =>

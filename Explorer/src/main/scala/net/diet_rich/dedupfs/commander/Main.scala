@@ -17,11 +17,10 @@ class Main extends Application {
   override def stop(): Unit = {} // TODO
 
   override def start(stage: Stage): Unit = {
-    val root = new File("""e:\georg\zeugs\2.4.0.03\iTBClient-win\bin\""")
-    val filesTable = new FilesTable()
-    filesTable.files.addAll(root.listFiles().map(FilesTableItem(_)):_*)
+    val directory = PhysicalFilesPaneItem(new File("""e:\georg\zeugs\2.4.0.03\iTBClient-win\bin"""))
+    val filesPane = new FilesPane(directory)
 
-    stage.setScene(net.diet_rich.common.init(new Scene(filesTable.table)) { _.getStylesheets.add("commander_style.css") })
+    stage.setScene(net.diet_rich.common.init(new Scene(filesPane.component)) { _.getStylesheets.add("commander_style.css") })
     stage.show()
 
     Thread.setDefaultUncaughtExceptionHandler(new UncaughtExceptionHandler {
