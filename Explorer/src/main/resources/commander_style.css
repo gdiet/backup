@@ -6,6 +6,10 @@
     -fx-background-repeat: no-repeat;
 }
 
+.illegalTextValue {
+    -fx-background-color: red;
+}
+
 .upButton {
     -fx-background-image: url("net.tutorial9/108_Mono_Icons/uparrow32.png");
     -fx-background-size: contain;

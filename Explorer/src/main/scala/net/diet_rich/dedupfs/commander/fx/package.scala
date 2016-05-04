@@ -1,6 +1,7 @@
 package net.diet_rich.dedupfs.commander
 
 import javafx.beans.value.{ChangeListener, ObservableValue}
+import javafx.css.Styleable
 import javafx.event.{Event, EventHandler}
 import javafx.scene.image.ImageView
 import javafx.util.Callback
@@ -14,10 +15,12 @@ package object fx {
   def handle[T <: Event](f:   => Unit): EventHandler[T] = new EventHandler[T] { override def handle(t: T): Unit = f }
   def changeListener[T](f: T => Unit): ChangeListener[T] = new ChangeListener[T] { override def changed(observable: ObservableValue[_ <: T], oldValue: T, newValue: T): Unit = f(newValue) }
 
+  implicit class RichStyleable[T <: Styleable](val item: T) extends AnyVal {
+    def withStyle(style: String): T = init(item) { _.getStyleClass add style }
+    def withoutStyle(style: String): T = init(item) { _.getStyleClass remove style }
+  }
+
   implicit class RichImageView(val view: ImageView) extends AnyVal {
-    def fit(width: Double, height: Double): ImageView = init(view) { view =>
-      view setFitHeight height
-      view setFitWidth width
-    }
+    def fit(width: Double, height: Double): ImageView = init(view) { view => view setFitHeight height; view setFitWidth width }
   }
 }

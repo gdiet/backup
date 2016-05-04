@@ -21,7 +21,7 @@ class FilesTable(cd: FilesTableItem => Unit) {
   private val fileSorted = new SortedList(files)
 
   private val iconColumn = new TableColumn[FilesTableItem, Image]("")
-  iconColumn.getStyleClass add "iconColumn"
+  iconColumn withStyle "iconColumn"
   iconColumn setCellValueFactory callback(_.getValue.icon)
   iconColumn setCellFactory callback(new ImageTableCell[FilesTableItem](17, 17))
   iconColumn setSortable false

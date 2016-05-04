@@ -9,8 +9,16 @@ import net.diet_rich.dedupfs.commander.fx._
 
 class FilesPane(private var file: FilesPaneItem) {
   private val pathField = new TextField()
-  pathField.textProperty() addListener changeListener[String]{newValue =>
-    // TODO react on text changes
+  // validate path on "enter" or when focus is lost
+  pathField setOnAction handle(validatePathField())
+  pathField.focusedProperty() addListener changeListener[java.lang.Boolean]{ b => if (!b) validatePathField() }
+  // reset path field style when text is typed
+  pathField.textProperty() addListener changeListener[String]{ _ => pathField withoutStyle "illegalTextValue" }
+  private def validatePathField(): Unit = {
+    if (pathField.getText == "a")
+      pathField withStyle "illegalTextValue"
+    else
+      pathField withoutStyle "illegalTextValue"
   }
 
   private val filesTable = new FilesTable(cd)
@@ -23,18 +31,19 @@ class FilesPane(private var file: FilesPaneItem) {
     filesTable.files.addAll(file.list:_*)
     filesTable.table refresh()
     pathField setText file.url
+    validatePathField()
   }
 
   val component: Parent = init(new BorderPane()) { mainPane =>
     mainPane setTop {
       init(new BorderPane()) { topPane =>
         topPane setLeft init(new Button()) { upButton =>
-          upButton.getStyleClass add "upButton"
+          upButton withStyle "upButton"
           upButton setOnAction handle(cd(file.up))
         }
         topPane setCenter pathField
         topPane setRight init(new Button()) { reloadButton =>
-          reloadButton.getStyleClass add "reloadButton"
+          reloadButton withStyle "reloadButton"
           reloadButton setOnAction handle(load())
         }
       }

@@ -13,8 +13,8 @@ object Main extends App {
 }
 
 class Main extends Application {
-  override def init(): Unit = {} // TODO
-  override def stop(): Unit = {} // TODO
+  override def init(): Unit = {}
+  override def stop(): Unit = {}
 
   override def start(stage: Stage): Unit = {
     val directory = PhysicalFilesPaneItem(new File("""e:\georg\zeugs\2.4.0.03\iTBClient-win\bin"""))
