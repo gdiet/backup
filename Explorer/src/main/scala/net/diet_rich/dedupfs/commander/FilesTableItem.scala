@@ -31,7 +31,7 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
   override val image: String = if (file.isDirectory) "image.folder" else "image.file"
   override def isDirectory: Boolean = file.isDirectory
   override def isEditable: Boolean = file.canWrite
-  override def open(): Unit = java.awt.Desktop.getDesktop open file
+  override def open(): Unit = java.awt.Desktop.getDesktop open file // TODO handle exception if file type has no application assigned
   override def asFilesPaneItem: FilesPaneItem = PhysicalFilesPaneItem(file)
 
   private def renameTo(newName: String): Boolean =
