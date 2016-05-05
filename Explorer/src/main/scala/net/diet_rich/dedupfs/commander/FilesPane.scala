@@ -2,6 +2,7 @@ package net.diet_rich.dedupfs.commander
 
 import javafx.scene.Parent
 import javafx.scene.control.{Button, TextField}
+import javafx.scene.image.ImageView
 import javafx.scene.layout.BorderPane
 
 import net.diet_rich.common.init
@@ -15,7 +16,7 @@ class FilesPane(private var file: FilesPaneItem) {
   // reset path field style when text is typed
   pathField.textProperty() addListener changeListener[String]{ _ => pathField withoutStyle "illegalTextValue" }
   private def validatePathField(): Unit = {
-    if (pathField.getText == "a")
+    if (pathField.getText.contains("a")) // TODO react on changes
       pathField withStyle "illegalTextValue"
     else
       pathField withoutStyle "illegalTextValue"
@@ -37,13 +38,11 @@ class FilesPane(private var file: FilesPaneItem) {
   val component: Parent = init(new BorderPane()) { mainPane =>
     mainPane setTop {
       init(new BorderPane()) { topPane =>
-        topPane setLeft init(new Button()) { upButton =>
-          upButton withStyle "upButton"
+        topPane setLeft init(new Button("", new ImageView(imageUp).fit(17, 17))) { upButton => // TODO customizable layout
           upButton setOnAction handle(cd(file.up))
         }
         topPane setCenter pathField
-        topPane setRight init(new Button()) { reloadButton =>
-          reloadButton withStyle "reloadButton"
+        topPane setRight init(new Button("", new ImageView(imageReload).fit(17, 17))) { reloadButton => // TODO customizable layout
           reloadButton setOnAction handle(load())
         }
       }
