@@ -1,7 +1,7 @@
 package net.diet_rich.dedupfs.commander
 
 import java.lang.{Long => JLong}
-import java.util.Comparator
+import java.util.{Comparator, Locale}
 import javafx.beans.property.{SimpleObjectProperty, SimpleStringProperty}
 import javafx.beans.value.ObservableValue
 import javafx.collections.FXCollections
@@ -15,23 +15,22 @@ import net.diet_rich.common.init
 import net.diet_rich.dedupfs.commander.FilesTable._
 import net.diet_rich.dedupfs.commander.fx._
 
-// TODO reflect GUI structure in package structure
 class FilesTable(cd: FilesTableItem => Unit) {
   val files = FXCollections.observableArrayList[FilesTableItem]()
   private val fileSorted = new SortedList(files)
 
-  private val iconColumn = new TableColumn[FilesTableItem, String]("") // TODO from conf
+  private val iconColumn = new TableColumn[FilesTableItem, String](conf getString "column.icon.label")
   iconColumn setCellValueFactory callback { f: CellDataFeatures[FilesTableItem, String] => new SimpleStringProperty(f.getValue.image) }
   iconColumn setCellFactory iconCellFactory
   iconColumn setSortable false
 
-  private val nameColumn = new TableColumn[FilesTableItem, ColumnEntry[String]]("Name") // TODO from conf
+  private val nameColumn = new TableColumn[FilesTableItem, ColumnEntry[String]](conf getString "column.name.label")
   nameColumn setCellValueFactory cellValueFactory(_.name.getValue) // TODO why unpack and re-wrap the name?
   nameColumn setCellFactory nameCellFactory
   nameColumn setOnEditCommit handle(event => event.getRowValue.name setValue event.getNewValue.detail)
   nameColumn setComparator ColumnEntry.columnComparator(nameColumn.getSortType, _ compareToIgnoreCase _)
 
-  private val sizeColumn = new TableColumn[FilesTableItem, ColumnEntry[JLong]]("Size") // TODO from conf
+  private val sizeColumn = new TableColumn[FilesTableItem, ColumnEntry[JLong]](conf getString "column.size.label")
   sizeColumn withStyle "sizeColumn"
   sizeColumn setCellValueFactory cellValueFactory(_.size.getValue) // TODO why unpack and re-wrap the size?
   sizeColumn setCellFactory sizeCellFactory
@@ -114,8 +113,9 @@ private object FilesTable {
     new TextFieldTableCell[FilesTableItem, ColumnEntry[JLong]](ColumnEntry.stringConverter(_.toLong)) {
       override def updateItem(entry: ColumnEntry[JLong], isEmpty: Boolean): Unit = {
         super.updateItem(entry, isEmpty)
-        // TODO number formatting from conf
-        if (entry == null || entry.isDirectory) setText("") else setText(entry.detail.toString)
+        if (entry == null || entry.isDirectory) setText("") else setText(
+          conf getString "column.size.numberFormat" formatLocal (Locale forLanguageTag (conf getString "column.size.numberLocale"), entry.detail)
+        )
       }
     }
   }
