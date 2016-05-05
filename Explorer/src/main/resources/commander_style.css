@@ -1,3 +1,7 @@
 .illegalTextValue {
     -fx-background-color: red;
 }
+
+.sizeColumn {
+    -fx-alignment: CENTER-RIGHT;
+}

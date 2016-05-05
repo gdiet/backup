@@ -7,8 +7,8 @@ import javafx.beans.value.ObservableValue
 import javafx.collections.FXCollections
 import javafx.collections.transformation.SortedList
 import javafx.scene.control.TableColumn.{CellDataFeatures, SortType}
-import javafx.scene.control.cell.TextFieldTableCell
 import javafx.scene.control._
+import javafx.scene.control.cell.TextFieldTableCell
 import javafx.util.{Callback, StringConverter}
 
 import net.diet_rich.common.init
@@ -32,6 +32,7 @@ class FilesTable(cd: FilesTableItem => Unit) {
   nameColumn setComparator ColumnEntry.columnComparator(nameColumn.getSortType, _ compareToIgnoreCase _)
 
   private val sizeColumn = new TableColumn[FilesTableItem, ColumnEntry[JLong]]("Size") // TODO from conf
+  sizeColumn withStyle "sizeColumn"
   sizeColumn setCellValueFactory cellValueFactory(_.size.getValue) // TODO why unpack and re-wrap the size?
   sizeColumn setCellFactory sizeCellFactory
   sizeColumn setComparator ColumnEntry.columnComparator(sizeColumn.getSortType, _ compareTo _)
@@ -110,7 +111,6 @@ private object FilesTable {
   }
 
   val sizeCellFactory = callback[TableColumn[FilesTableItem, ColumnEntry[JLong]], TableCell[FilesTableItem, ColumnEntry[JLong]]] {
-    // TODO align right
     new TextFieldTableCell[FilesTableItem, ColumnEntry[JLong]](ColumnEntry.stringConverter(_.toLong)) {
       override def updateItem(entry: ColumnEntry[JLong], isEmpty: Boolean): Unit = {
         super.updateItem(entry, isEmpty)
