@@ -2,7 +2,6 @@ package net.diet_rich.dedupfs.commander
 
 import javafx.scene.Parent
 import javafx.scene.control.{Button, TextField}
-import javafx.scene.image.ImageView
 import javafx.scene.layout.BorderPane
 
 import net.diet_rich.common.init
@@ -38,11 +37,11 @@ class FilesPane(private var file: FilesPaneItem) {
   val component: Parent = init(new BorderPane()) { mainPane =>
     mainPane setTop {
       init(new BorderPane()) { topPane =>
-        topPane setLeft init(new Button("", new ImageView(imageUp).fit(17, 17))) { upButton => // TODO customizable layout
+        topPane setLeft init(new Button("", imageView("button.up"))) { upButton =>
           upButton setOnAction handle(cd(file.up))
         }
         topPane setCenter pathField
-        topPane setRight init(new Button("", new ImageView(imageReload).fit(17, 17))) { reloadButton => // TODO customizable layout
+        topPane setRight init(new Button("", imageView("button.reload"))) { reloadButton =>
           reloadButton setOnAction handle(load())
         }
       }

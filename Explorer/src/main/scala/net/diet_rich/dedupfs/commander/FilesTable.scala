@@ -2,37 +2,37 @@ package net.diet_rich.dedupfs.commander
 
 import java.lang.{Long => JLong}
 import java.util.Comparator
-import javafx.beans.property.SimpleObjectProperty
+import javafx.beans.property.{SimpleObjectProperty, SimpleStringProperty}
 import javafx.beans.value.ObservableValue
 import javafx.collections.FXCollections
 import javafx.collections.transformation.SortedList
 import javafx.scene.control.TableColumn.{CellDataFeatures, SortType}
 import javafx.scene.control.cell.TextFieldTableCell
-import javafx.scene.control.{TableCell, TableColumn, TableRow, TableView}
-import javafx.scene.image.Image
+import javafx.scene.control._
 import javafx.util.{Callback, StringConverter}
 
 import net.diet_rich.common.init
 import net.diet_rich.dedupfs.commander.FilesTable._
 import net.diet_rich.dedupfs.commander.fx._
 
+// TODO reflect GUI structure in package structure
 class FilesTable(cd: FilesTableItem => Unit) {
   val files = FXCollections.observableArrayList[FilesTableItem]()
   private val fileSorted = new SortedList(files)
 
-  private val iconColumn = new TableColumn[FilesTableItem, Image]("")
-  iconColumn setCellValueFactory callback(_.getValue.icon)
-  iconColumn setCellFactory callback(new ImageTableCell[FilesTableItem](17, 17)) // TODO customizable layout
+  private val iconColumn = new TableColumn[FilesTableItem, String]("") // TODO from conf
+  iconColumn setCellValueFactory callback { f: CellDataFeatures[FilesTableItem, String] => new SimpleStringProperty(f.getValue.image) }
+  iconColumn setCellFactory iconCellFactory
   iconColumn setSortable false
 
-  private val nameColumn = new StringColumn("Name")
-  nameColumn setCellValueFactory cellValueFactory(_.name.getValue)
+  private val nameColumn = new TableColumn[FilesTableItem, ColumnEntry[String]]("Name") // TODO from conf
+  nameColumn setCellValueFactory cellValueFactory(_.name.getValue) // TODO why unpack and re-wrap the name?
   nameColumn setCellFactory nameCellFactory
   nameColumn setOnEditCommit handle(event => event.getRowValue.name setValue event.getNewValue.detail)
   nameColumn setComparator ColumnEntry.columnComparator(nameColumn.getSortType, _ compareToIgnoreCase _)
 
-  private val sizeColumn = new LongColumn("Size")
-  sizeColumn setCellValueFactory cellValueFactory(_.size.getValue)
+  private val sizeColumn = new TableColumn[FilesTableItem, ColumnEntry[JLong]]("Size") // TODO from conf
+  sizeColumn setCellValueFactory cellValueFactory(_.size.getValue) // TODO why unpack and re-wrap the size?
   sizeColumn setCellFactory sizeCellFactory
   sizeColumn setComparator ColumnEntry.columnComparator(sizeColumn.getSortType, _ compareTo _)
 
@@ -81,15 +81,20 @@ private object FilesTable {
     }
   }
 
-  type StringColumn = TableColumn[FilesTableItem, ColumnEntry[String]]
-  type LongColumn = TableColumn[FilesTableItem, ColumnEntry[JLong]]
-
   def cellValueFactory[T](extractor: FilesTableItem => T) = callback[CellDataFeatures[FilesTableItem, ColumnEntry[T]], ObservableValue[ColumnEntry[T]]] {
     data: CellDataFeatures[FilesTableItem, ColumnEntry[T]] =>
       new SimpleObjectProperty(ColumnEntry[T](extractor(data.getValue), Some(data.getValue.isDirectory)))
   }
 
-  val nameCellFactory = callback[StringColumn, TableCell[FilesTableItem, ColumnEntry[String]]] {
+  val iconCellFactory = callback[TableColumn[FilesTableItem, String], TableCell[FilesTableItem, String]] {
+    new TableCell[FilesTableItem, String] {
+      override def updateItem(key: String, empty: Boolean): Unit = {
+        if (!empty) setGraphic(imageView(key))
+      }
+    }
+  }
+
+  val nameCellFactory = callback[TableColumn[FilesTableItem, ColumnEntry[String]], TableCell[FilesTableItem, ColumnEntry[String]]] {
     new TextFieldTableCell[FilesTableItem, ColumnEntry[String]](ColumnEntry.stringConverter(identity)) {
       override def updateItem(entry: ColumnEntry[String], isEmpty: Boolean): Unit = {
         super.updateItem(entry, isEmpty)
@@ -104,12 +109,12 @@ private object FilesTable {
     }
   }
 
-  val sizeCellFactory = callback[LongColumn, TableCell[FilesTableItem, ColumnEntry[JLong]]] {
+  val sizeCellFactory = callback[TableColumn[FilesTableItem, ColumnEntry[JLong]], TableCell[FilesTableItem, ColumnEntry[JLong]]] {
     // TODO align right
     new TextFieldTableCell[FilesTableItem, ColumnEntry[JLong]](ColumnEntry.stringConverter(_.toLong)) {
       override def updateItem(entry: ColumnEntry[JLong], isEmpty: Boolean): Unit = {
         super.updateItem(entry, isEmpty)
-        // TODO number formatting
+        // TODO number formatting from conf
         if (entry == null || entry.isDirectory) setText("") else setText(entry.detail.toString)
       }
     }
