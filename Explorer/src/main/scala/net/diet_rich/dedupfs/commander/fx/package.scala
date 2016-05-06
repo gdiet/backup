@@ -1,5 +1,6 @@
 package net.diet_rich.dedupfs.commander
 
+import javafx.application.Platform
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.css.Styleable
 import javafx.event.{Event, EventHandler}
@@ -9,6 +10,8 @@ import javafx.util.Callback
 import net.diet_rich.common._
 
 package object fx {
+  def runFX(f: => Unit) = Platform runLater new Runnable { override def run(): Unit = f }
+
   def callback[S, T](f: S => T): Callback[S, T] = new Callback[S, T] { override def call(s: S): T = f(s) }
   def callback[S, T](f:   => T): Callback[S, T] = new Callback[S, T] { override def call(s: S): T = f }
   def handle[T <: Event](f: T => Unit): EventHandler[T] = new EventHandler[T] { override def handle(t: T): Unit = f(t) }
