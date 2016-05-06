@@ -7,6 +7,7 @@ import javafx.collections.transformation.SortedList
 import javafx.scene.control.TableColumn.{CellDataFeatures, SortType}
 import javafx.scene.control._
 import javafx.scene.control.cell.TextFieldTableCell
+import javafx.scene.input.KeyCode
 import javafx.util.{Callback, StringConverter}
 
 import net.diet_rich.common.init
@@ -25,7 +26,8 @@ class FilesTable(cd: FilesTableItem => Unit) {
   private val nameColumn = new TableColumn[FilesTableItem, NameEntry](conf getString "column.name.label")
   nameColumn setCellValueFactory cellValueFactory(file => NameEntry(file.name.getValue, Some(file.isDirectory)), Some(_.name))
   nameColumn setCellFactory nameCellFactory
-  nameColumn setOnEditCommit handle(event => event.getRowValue.name setValue event.getNewValue.detail)
+  nameColumn setOnEditCommit handle { event => event.getRowValue.name setValue event.getNewValue.detail; table setEditable false }
+  nameColumn setOnEditCancel handle { table setEditable false }
   nameColumn setComparator columnComparator(nameColumn, _.isDirectory, _.detail compareToIgnoreCase _.detail)
 
   private val sizeColumn = new TableColumn[FilesTableItem, FilesTableItem](conf getString "column.size.label")
@@ -40,9 +42,15 @@ class FilesTable(cd: FilesTableItem => Unit) {
 
   val table = new TableView[FilesTableItem](fileSorted)
   fileSorted.comparatorProperty bind table.comparatorProperty
-  table setEditable true
   table.getColumns addAll (iconColumn, nameColumn, sizeColumn)
   table.getSortOrder add nameColumn
+  // enable table editing only on F2 release, and disable it on edit commit/cancel (see there)
+  table setOnKeyReleased handle { _.getCode match {
+    case KeyCode.F2 =>
+      table setEditable true
+      table edit (table.getFocusModel.getFocusedCell.getRow, nameColumn)
+    case _ => ()
+  }}
 
   table.setRowFactory(new Callback[TableView[FilesTableItem], TableRow[FilesTableItem]] {
     override def call(param: TableView[FilesTableItem]): TableRow[FilesTableItem] = init(new TableRow[FilesTableItem]) { row =>
