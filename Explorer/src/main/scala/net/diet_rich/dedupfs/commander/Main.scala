@@ -1,6 +1,5 @@
 package net.diet_rich.dedupfs.commander
 
-import java.io.File
 import java.lang.Thread.UncaughtExceptionHandler
 import javafx.application.Application
 import javafx.scene.Scene
@@ -17,8 +16,7 @@ class Main extends Application {
   override def stop(): Unit = {}
 
   override def start(stage: Stage): Unit = {
-    val directory = PhysicalFilesPaneItem(new File("""e:\georg\zeugs\2.4.0.03\iTBClient-win\bin"""))
-    val filesPane = new FilesPane(directory)
+    val filesPane = new FilesPane("""file://e:\georg\zeugs\2.4.0.03\iTBClient-win\bin""")
 
     stage.setScene(net.diet_rich.common.init(new Scene(filesPane.component)) { _.getStylesheets.add("commander_style.css") })
     stage.show()

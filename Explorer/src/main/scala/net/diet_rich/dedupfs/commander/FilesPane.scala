@@ -7,38 +7,38 @@ import javafx.scene.layout.BorderPane
 import net.diet_rich.common.init
 import net.diet_rich.dedupfs.commander.fx._
 
-class FilesPane(private var file: FilesPaneItem) {
+class FilesPane(initialUrl: String) {
+  private var directory = FileSystemRegistry get initialUrl
   private val pathField = new TextField()
   // validate path on "enter" or when focus is lost
-  pathField setOnAction handle(validatePathField())
-  pathField.focusedProperty() addListener changeListener[java.lang.Boolean]{ b => if (!b) validatePathField() }
+  pathField setOnAction handle(cd())
+  pathField.focusedProperty() addListener changeListener { b: java.lang.Boolean => if (!b) cd() }
   // reset path field style when text is typed
   pathField.textProperty() addListener changeListener[String]{ _ => pathField withoutStyle "illegalTextValue" }
-  private def validatePathField(): Unit = {
-    if (pathField.getText.contains("a")) // TODO react on changes
-      pathField withStyle "illegalTextValue"
-    else
-      pathField withoutStyle "illegalTextValue"
-  }
 
-  private val filesTable = new FilesTable(cd)
+  private def cd(): Unit = cd(FileSystemRegistry.get(pathField.getText))
+  private def cd(newDir: Option[FilesPaneDirectory]): Unit = { directory = newDir; load() }
 
-  private def cd(newDir: FilesTableItem): Unit = cd(newDir.asFilesPaneItem)
-  private def cd(newDir: FilesPaneItem): Unit = { file = newDir; load() }
+  private val filesTable = new FilesTable(file => cd(file.asFilesPaneItem))
 
   private def load(): Unit = {
     filesTable.files.clear()
-    filesTable.files.addAll(file.list:_*)
+    directory match {
+      case Some(dir) =>
+        filesTable.files.addAll(dir.list:_*)
+        pathField setText dir.url
+        pathField withoutStyle "illegalTextValue"
+      case None =>
+        pathField withStyle "illegalTextValue"
+    }
     filesTable.table refresh()
-    pathField setText file.url
-    validatePathField()
   }
 
   val component: Parent = init(new BorderPane()) { mainPane =>
     mainPane setTop {
       init(new BorderPane()) { topPane =>
         topPane setLeft init(new Button("", imageView("button.up"))) { upButton =>
-          upButton setOnAction handle(cd(file.up))
+          upButton setOnAction handle(cd(directory map (_.up)))
         }
         topPane setCenter pathField
         topPane setRight init(new Button("", imageView("button.reload"))) { reloadButton =>

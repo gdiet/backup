@@ -1,8 +1,10 @@
 package net.diet_rich.dedupfs.commander
 
-import java.io.File
+import java.io.{File, IOException}
 import javafx.beans.property._
 import javafx.beans.value.{ObservableValue, WritableValue}
+import javafx.scene.control.Alert
+import javafx.scene.control.Alert.AlertType
 
 trait FilesTableItem {
   def name: NameContainer
@@ -11,7 +13,7 @@ trait FilesTableItem {
   def isDirectory: Boolean
   def isEditable: Boolean
   def open(): Unit
-  def asFilesPaneItem: FilesPaneItem
+  def asFilesPaneItem: Option[FilesPaneDirectory]
 }
 
 trait NameContainer extends ObservableValue[String] with WritableValue[String]
@@ -31,8 +33,16 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
   override val image: String = if (file.isDirectory) "image.folder" else "image.file"
   override def isDirectory: Boolean = file.isDirectory
   override def isEditable: Boolean = file.canWrite
-  override def open(): Unit = java.awt.Desktop.getDesktop open file // TODO handle exception if file type has no application assigned
-  override def asFilesPaneItem: FilesPaneItem = PhysicalFilesPaneItem(file)
+  override def open(): Unit =
+    try { java.awt.Desktop.getDesktop open file }
+    catch { case e: IOException =>
+      val alert = new Alert(AlertType.INFORMATION)
+      alert setTitle conf.getString("dialog.cannotOpen.title")
+      alert setHeaderText null
+      alert setContentText conf.getString("dialog.cannotOpen.text").format(file)
+      alert showAndWait()
+    }
+  override def asFilesPaneItem: Option[FilesPaneDirectory] = if (file.isDirectory) Some(PhysicalFilesPaneDirectory(file)) else None
 
   private def renameTo(newName: String): Boolean =
     newName.contains('/') || newName.contains('\\') || {
