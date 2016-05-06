@@ -13,6 +13,7 @@ object Database {
   //   WHERE id IN (SELECT MAX(id) from TreeEntries GROUP BY key);
   // is needed. Note that this design rules out unique constraints for the tree (i.e., for sibling nodes with
   // the same names).
+  // TODO a table LinkEntries (id, key, parent (-> key on TreeEntries), name, target (-> key on TreeEntries), deleted, timestamp) to support links
   private def tableDefinitions(hashAlgorithm: String): Array[String] =
     s"""|CREATE SEQUENCE treeEntryIdSeq START WITH 0;
         |CREATE SEQUENCE treeEntryKeySeq START WITH 0;
@@ -136,6 +137,7 @@ trait DatabaseRead extends MetadataRead with MetadataReadSQL { import Database._
   // "deleted IS FALSE AND id IN (SELECT MAX(id) from TreeEntries GROUP BY key)"
   // would be used in the SELECT statement.
   // However, H2 does not run such queries fast enough.
+  // TODO check whether with a JOIN H2 runs this fast, something like http://stackoverflow.com/questions/7745609/sql-select-only-rows-with-max-value-on-a-column
   private val prepTreeChildrenOf = query[TreeQueryResult](
     "SELECT key, parent, name, changed, dataId, deleted, id, timestamp FROM TreeEntries WHERE key IN " +
       "(SELECT key FROM TreeEntries WHERE parent = ?)"
