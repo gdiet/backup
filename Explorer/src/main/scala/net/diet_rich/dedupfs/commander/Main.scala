@@ -51,8 +51,11 @@ class Main extends Application {
 
     val leftRoot = "dfs:///"
     val rightRoot = """file://e:\georg\zeugs\2.4.0.03\iTBClient-win\bin"""
-    val view = new TwoPanels(leftRoot, rightRoot)
-    stage.setScene(net.diet_rich.common.init(new Scene(view.component)) { _.getStylesheets.add("commander_style.css") })
+    val view = new MainPane(leftRoot, rightRoot)
+    stage.setScene(net.diet_rich.common.init(new Scene(view.component)) { scene =>
+      scene.getStylesheets add "commander_style.css"
+      scene.focusOwnerProperty addListener view.sceneFocusChangeListener
+    })
     stage.show()
 
     Thread.setDefaultUncaughtExceptionHandler(new UncaughtExceptionHandler {

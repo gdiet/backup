@@ -8,6 +8,10 @@ import net.diet_rich.common.init
 import net.diet_rich.dedupfs.commander.fx._
 
 class FilesPane(initialUrl: String) {
+  def setActive(active: Boolean) =
+    if(active) pathField withStyle "activePanel"
+    else pathField withoutStyle "activePanel"
+
   private var directory = FileSystemRegistry get initialUrl
   private val pathField = new TextField()
   // validate path on "enter" or when focus is lost
