@@ -1,6 +1,7 @@
 package net.diet_rich.dedupfs.commander
 
-import java.util.{Comparator, Locale}
+import java.text.SimpleDateFormat
+import java.util.{Comparator, Date, Locale}
 import javafx.beans.value.{ObservableValue, ObservableValueBase}
 import javafx.collections.FXCollections
 import javafx.collections.transformation.SortedList
@@ -40,9 +41,14 @@ class FilesTable(cd: FilesTableItem => Unit) {
   }
   sizeColumn setComparator columnComparator(sizeColumn, _.isDirectory, _.size.longValue compare _.size.longValue)
 
+  private val dateColumn = new TableColumn[FilesTableItem, FilesTableItem](conf getString "column.date.label")
+  dateColumn setCellValueFactory cellValueFactory(identity, Some(_.time))
+  dateColumn setCellFactory cellFactory { case (entry, cell) => cell setText new SimpleDateFormat(conf getString "column.date.dateFormat", Locale forLanguageTag (conf getString "column.date.formatLocale")).format(new Date(entry.time.longValue)) }
+  dateColumn setComparator columnComparator(dateColumn, _.isDirectory, _.time.longValue compare _.time.longValue)
+
   val table = new TableView[FilesTableItem](fileSorted)
   fileSorted.comparatorProperty bind table.comparatorProperty
-  table.getColumns addAll (iconColumn, nameColumn, sizeColumn)
+  table.getColumns addAll (iconColumn, nameColumn, sizeColumn, dateColumn)
   table.getSortOrder add nameColumn
   // enable table editing only on F2 release, and disable it on edit commit/cancel (see there)
   table setOnKeyReleased handle { _.getCode match {

@@ -20,6 +20,7 @@ case class DedupFilesTableItem(file: DedupFile) extends FilesTableItem {
   override def isEditable: Boolean = file.isWritable
   override def asFilesPaneItem: Option[FilesPaneDirectory] = Some(DedupFilePaneDirectory(file)) // TODO check if not exists or nor dir
   override def size: LongProperty = new SimpleLongProperty(file.size)
+  override def time: LongProperty = new SimpleLongProperty(file.lastModified)
   override def isDirectory: Boolean = file.isDirectory
   override def open(): Unit = ???
   override def image: String = if (file.isDirectory) "image.folder" else "image.file"

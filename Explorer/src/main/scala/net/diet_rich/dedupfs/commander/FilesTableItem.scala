@@ -7,8 +7,10 @@ import javafx.scene.control.Alert
 import javafx.scene.control.Alert.AlertType
 
 trait FilesTableItem {
+  // TODO make all observable values and observe them in the GUI
   def name: NameContainer
   def size: LongProperty
+  def time: LongProperty
   def image: String
   def isDirectory: Boolean
   def isEditable: Boolean
@@ -30,6 +32,7 @@ object NameContainer {
 class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
   override val name: NameContainer = NameContainer(file.getName, renameTo)
   override val size: LongProperty = new SimpleLongProperty(file.length)
+  override val time: LongProperty = new SimpleLongProperty(file.lastModified)
   override val image: String = if (file.isDirectory) "image.folder" else "image.file"
   override def isDirectory: Boolean = file.isDirectory
   override def isEditable: Boolean = file.canWrite
