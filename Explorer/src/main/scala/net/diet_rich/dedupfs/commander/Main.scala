@@ -28,7 +28,7 @@ case class DedupFilesTableItem(file: DedupFile) extends FilesTableItem {
 
 case class DedupFilePaneDirectory(file: DedupFile) extends FilesPaneDirectory {
   override def list: Seq[FilesTableItem] = file.children.toSeq map DedupFilesTableItem
-  override def url: String = s"ddup://${file.path}"
+  override def url: String = s"dfs://${file.path}"
   override def up: FilesPaneDirectory = DedupFilePaneDirectory(file.parent)
 }
 
@@ -44,13 +44,15 @@ class Main extends Application {
     val fileSystem = new FileSystem(repository)
     sys addShutdownHook fileSystem.close()
 
-    FileSystemRegistry add ("ddup", path =>
+    FileSystemRegistry add ("dfs", path =>
       // TODO check if not exists
       Some(DedupFilePaneDirectory(fileSystem.getFile(path)))
     )
 
-    val filesPane = new FilesPane("ddup:///") // """file://e:\georg\zeugs\2.4.0.03\iTBClient-win\bin""")
-    stage.setScene(net.diet_rich.common.init(new Scene(filesPane.component)) { _.getStylesheets.add("commander_style.css") })
+    val leftRoot = "dfs:///"
+    val rightRoot = """file://e:\georg\zeugs\2.4.0.03\iTBClient-win\bin"""
+    val view = new TwoPanels(leftRoot, rightRoot)
+    stage.setScene(net.diet_rich.common.init(new Scene(view.component)) { _.getStylesheets.add("commander_style.css") })
     stage.show()
 
     Thread.setDefaultUncaughtExceptionHandler(new UncaughtExceptionHandler {

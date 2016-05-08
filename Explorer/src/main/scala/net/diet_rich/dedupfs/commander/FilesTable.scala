@@ -50,7 +50,7 @@ class FilesTable(cd: FilesTableItem => Unit) {
   fileSorted.comparatorProperty bind table.comparatorProperty
   table.getColumns addAll (iconColumn, nameColumn, sizeColumn, dateColumn)
   table.getSortOrder add nameColumn
-  // enable table editing only on F2 release, and disable it on edit commit/cancel (see there)
+  // enable nameColumn editing only on F2 release, and disable it on edit commit/cancel (see nameColumn)
   table setOnKeyReleased handle { _.getCode match {
     case KeyCode.F2 =>
       table setEditable true
