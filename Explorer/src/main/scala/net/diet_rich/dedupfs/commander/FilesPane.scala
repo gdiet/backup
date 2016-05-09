@@ -8,10 +8,6 @@ import net.diet_rich.common.init
 import net.diet_rich.dedupfs.commander.fx._
 
 class FilesPane(initialUrl: String) {
-  def setActive(active: Boolean) =
-    if(active) pathField withStyle "activePanel"
-    else pathField withoutStyle "activePanel"
-
   private var directory = FileSystemRegistry get initialUrl
   private val pathField = new TextField()
   // validate path on "enter" or when focus is lost
@@ -20,10 +16,15 @@ class FilesPane(initialUrl: String) {
   // reset path field style when text is typed
   pathField.textProperty() addListener changeListener[String]{ _ => pathField withoutStyle "illegalTextValue" }
 
+  def setActive(active: Boolean) =
+    if(active) pathField withStyle "activePanel"
+    else pathField withoutStyle "activePanel"
+
   private def cd(): Unit = cd(FileSystemRegistry.get(pathField.getText))
   private def cd(newDir: Option[FilesPaneDirectory]): Unit = { directory = newDir; load() }
 
   private val filesTable = new FilesTable(file => cd(file.asFilesPaneItem))
+  def renameSingleSelection(): Unit = filesTable renameSingleSelection()
 
   private def load(): Unit = {
     filesTable.files.clear()

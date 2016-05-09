@@ -50,11 +50,11 @@ class FilesTable(cd: FilesTableItem => Unit) {
   fileSorted.comparatorProperty bind table.comparatorProperty
   table.getColumns addAll (iconColumn, nameColumn, sizeColumn, dateColumn)
   table.getSortOrder add nameColumn
+  table.getSelectionModel setSelectionMode SelectionMode.MULTIPLE
   // enable nameColumn editing only on F2 release, and disable it on edit commit/cancel (see nameColumn)
   table setOnKeyReleased handle { _.getCode match {
     case KeyCode.F2 =>
-      table setEditable true
-      table edit (table.getFocusModel.getFocusedCell.getRow, nameColumn)
+      renameSingleSelection()
     case _ => ()
   }}
 
@@ -68,6 +68,12 @@ class FilesTable(cd: FilesTableItem => Unit) {
       }
     }
   })
+
+  def renameSingleSelection(): Unit =
+    if (table.getSelectionModel.getSelectedItems.size() == 1) {
+      table setEditable true
+      table edit (table.getSelectionModel.getSelectedIndex, nameColumn)
+    }
 }
 
 private object FilesTable {

@@ -27,6 +27,7 @@ class MainPane(initialUrlLeft: String, initialUrlRight: String) {
     pane setCenter splitPane
     pane setBottom init(new HBox()) { bottom =>
       bottom.getChildren add init (new Button(conf getString "button.rename.label")) { renameButton =>
+        renameButton setOnAction handle(activePane renameSingleSelection())
       }
       bottom.getChildren add init (new Button(conf getString "button.copy.label")) { copyButton =>
       }
