@@ -1,6 +1,4 @@
-libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.1.5"
-
-libraryDependencies += "com.h2database" % "h2" % "1.4.191"
+libraryDependencies += "com.h2database" % "h2" % "1.4.192"
 
 // Note: Eventually, hsqldb? and mysql? should be supported as well
 // libraryDependencies += "org.hsqldb" % "hsqldb" % "2.3.3"

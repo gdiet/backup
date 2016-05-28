@@ -1,1 +1,1 @@
-libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.1.5"
+libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.1.7"
