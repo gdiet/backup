@@ -39,7 +39,7 @@ class Main extends Application {
   override def start(stage: Stage): Unit = {
     val writable = false
     val storeMethod = StoreMethod.STORE
-    val directory = new File("test")
+    val directory = new File("../test")
     val repository = if (writable) Repository openReadWrite(directory, storeMethod) else Repository openReadOnly directory
     val fileSystem = new FileSystem(repository)
     sys addShutdownHook fileSystem.close()
@@ -50,7 +50,7 @@ class Main extends Application {
     )
 
     val leftRoot = "dfs:///"
-    val rightRoot = """file://e:\georg\zeugs\2.4.0.03\iTBClient-win\bin"""
+    val rightRoot = """file://../test/_files"""
     val view = new MainPane(leftRoot, rightRoot)
     stage.setScene(net.diet_rich.common.init(new Scene(view.component)) { scene =>
       scene.getStylesheets add "commander_style.css"
