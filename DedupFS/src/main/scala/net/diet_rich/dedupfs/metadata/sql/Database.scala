@@ -67,6 +67,8 @@ object Database {
        |CREATE INDEX idxByteStoreStart ON ByteStore(start);
        |CREATE INDEX idxByteStoreFin ON ByteStore(fin);""".stripMargin split ";"
 
+  // TODO optionally add/remove constraints
+
   def create(hashAlgorithm: String, dbSettings: StringMap)(implicit connectionFactory: ConnectionFactory): Unit = {
     tableDefinitions(hashAlgorithm) foreach (update(_).run())
     indexDefinitions foreach (update(_).run())
