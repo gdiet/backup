@@ -23,3 +23,4 @@ lazy val ByteStore = project dependsOn (Common, Logging, CommonTest)
 lazy val DedupFS = project dependsOn (ByteStore, CommonTest)
 lazy val FTPServer = project dependsOn DedupFS
 lazy val Explorer = project dependsOn DedupFS
+lazy val FileExplorer = project dependsOn Common

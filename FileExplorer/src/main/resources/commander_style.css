@@ -1,0 +1,11 @@
+.illegalTextValue {
+    -fx-background-color: red;
+}
+
+.activePanel {
+    -fx-background-color: yellow;
+}
+
+.sizeColumn {
+    -fx-alignment: CENTER-RIGHT;
+}
