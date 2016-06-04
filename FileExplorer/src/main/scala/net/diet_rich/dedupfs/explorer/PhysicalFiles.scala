@@ -10,7 +10,7 @@ import net.diet_rich.dedupfs.explorer.filesPane.filesTable.{FilesTableItem, Name
 
 case class PhysicalFilesPaneDirectory(file: File) extends FilesPaneDirectory {
   override def url: String = s"file://$file"
-  override def list: Seq[FilesTableItem] = file.listFiles.toSeq.map(new PhysicalFileTableItem(_))
+  override def list: Seq[PhysicalFileTableItem] = file.listFiles.toSeq.map(new PhysicalFileTableItem(_))
   override def up: PhysicalFilesPaneDirectory = if (file.getParentFile == null) this else PhysicalFilesPaneDirectory(file.getParentFile)
 }
 
@@ -31,7 +31,7 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
         alert setContentText conf.getString("dialog.cannotOpen.text").format(file)
         alert showAndWait()
     }
-  override def asFilesPaneItem: Option[FilesPaneDirectory] = if (file.isDirectory) Some(PhysicalFilesPaneDirectory(file)) else None
+  override def asFilesPaneItem: Option[PhysicalFilesPaneDirectory] = if (file.isDirectory) Some(PhysicalFilesPaneDirectory(file)) else None
 
   private def renameTo(newName: String): Boolean =
     newName.contains('/') || newName.contains('\\') || {
