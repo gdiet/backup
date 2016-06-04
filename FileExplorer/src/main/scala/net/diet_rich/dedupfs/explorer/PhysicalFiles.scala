@@ -18,7 +18,7 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
   override val name: NameContainer = NameContainer(file.getName, renameTo)
   override val size: LongProperty = new SimpleLongProperty(file.length)
   override val time: LongProperty = new SimpleLongProperty(file.lastModified)
-  override val image: String = if (file.isDirectory) "image.folder" else "image.file"
+  override val image: StringProperty = new SimpleStringProperty(if (file.isDirectory) "image.folder" else "image.file")
   override def isDirectory: Boolean = file.isDirectory
   override def isEditable: Boolean = file.canWrite
   override def execute(): Unit =

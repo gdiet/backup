@@ -23,15 +23,15 @@ class FilesTable(cd: FilesTableItem => Unit) {
   private val fileSorted = new SortedList(files)
 
   private val iconColumn = new TableColumn[FilesTableItem, FilesTableItem](conf getString "column.icon.label")
-  iconColumn setCellValueFactory cellValueFactory(identity)
-  iconColumn setCellFactory cellFactory { case (entry, cell) => cell setGraphic imageView(entry.image) }
+  iconColumn setCellValueFactory cellValueFactory(identity, Some(_.image))
+  iconColumn setCellFactory cellFactory { case (entry, cell) => cell setGraphic imageView(entry.image.getValue) }
   iconColumn setSortable false
 
   private val nameColumn = new TableColumn[FilesTableItem, NameEntry](conf getString "column.name.label")
   nameColumn setCellValueFactory cellValueFactory(file => NameEntry(file.name.getValue, Some(file.isDirectory)), Some(_.name))
   nameColumn setCellFactory nameCellFactory
   nameColumn setOnEditCommit handle { event => event.getRowValue.name setValue event.getNewValue.detail; table setEditable false }
-  nameColumn setOnEditCancel handle {table setEditable false}
+  nameColumn setOnEditCancel handle (table setEditable false)
   nameColumn setComparator columnComparator(nameColumn, _.isDirectory, _.detail compareToIgnoreCase _.detail)
 
   private val sizeColumn = new TableColumn[FilesTableItem, FilesTableItem](conf getString "column.size.label")
