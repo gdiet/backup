@@ -5,13 +5,12 @@ import javafx.beans.value.{ObservableLongValue, ObservableStringValue}
 import net.diet_rich.dedupfs.explorer.filesPane.FilesPaneDirectory
 
 trait FilesTableItem {
-  // TODO make all observable values and observe them in the GUI
   def name: NameContainer // writable to enable renaming
   def size: ObservableLongValue
   def time: ObservableLongValue
   def image: ObservableStringValue
-  def isDirectory: Boolean
-  def isEditable: Boolean
+  def isDirectory: Boolean // assumed to be immutable
+  def canWrite: Boolean // assumed to be immutable
   def execute(): Unit
   def asFilesPaneItem: Option[FilesPaneDirectory]
 }

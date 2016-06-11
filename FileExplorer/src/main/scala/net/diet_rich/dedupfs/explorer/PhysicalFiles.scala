@@ -5,8 +5,16 @@ import javafx.beans.property._
 import javafx.scene.control.Alert
 import javafx.scene.control.Alert.AlertType
 
-import net.diet_rich.dedupfs.explorer.filesPane.FilesPaneDirectory
+import net.diet_rich.dedupfs.explorer.filesPane.{FileSystemRegistry, FilesPaneDirectory}
 import net.diet_rich.dedupfs.explorer.filesPane.filesTable.{FilesTableItem, NameContainer}
+
+object PhysicalFiles {
+  def registerIn(registry: FileSystemRegistry): FileSystemRegistry =
+    registry withScheme ("file", { path =>
+      val file = new File(path)
+      if (file.isDirectory) Some(PhysicalFilesPaneDirectory(file)) else None
+    })
+}
 
 case class PhysicalFilesPaneDirectory(file: File) extends FilesPaneDirectory {
   override def url: String = s"file://$file"
@@ -20,7 +28,7 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
   override val time: LongProperty = new SimpleLongProperty(file.lastModified)
   override val image: StringProperty = new SimpleStringProperty(if (file.isDirectory) "image.folder" else "image.file")
   override def isDirectory: Boolean = file.isDirectory
-  override def isEditable: Boolean = file.canWrite
+  override def canWrite: Boolean = file.canWrite
   override def execute(): Unit =
     try {java.awt.Desktop.getDesktop open file}
     catch {

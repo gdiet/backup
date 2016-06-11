@@ -134,7 +134,7 @@ private object FilesTable {
           (getTableRow != null) && {
             val rowIndex = getTableRow.getIndex
             val items = getTableView.getItems
-            rowIndex >= 0 && rowIndex < items.size && items.get(rowIndex).isEditable
+            rowIndex >= 0 && rowIndex < items.size && items.get(rowIndex).canWrite
           }
         )
       }
