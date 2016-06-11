@@ -1,9 +1,9 @@
 .illegalTextValue {
-    -fx-background-color: red;
+    -fx-border-color: red;
 }
 
 .activePanel {
-    -fx-background-color: yellow;
+    -fx-background-color: linear-gradient(white, yellow);
 }
 
 .sizeColumn {
