@@ -50,6 +50,8 @@ class FilesPane(registry: FileSystemRegistry, initialUrl: String) {
     mainPane setTop {
       init(new BorderPane()) { topPane =>
         topPane setLeft init(new Button("", imageView("button.up"))) { upButton =>
+          // TODO add key listener for backspace -> "up"
+          // TODO add key listener for delete -> delete file
           upButton setOnAction handle(cd(directory map (_.up)))
         }
         topPane setCenter pathField

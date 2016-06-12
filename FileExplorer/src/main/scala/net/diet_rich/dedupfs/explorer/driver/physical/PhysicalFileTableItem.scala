@@ -1,13 +1,13 @@
 package net.diet_rich.dedupfs.explorer.driver.physical
 
 import java.io.{File, IOException}
-import java.nio.file.Files
 import javafx.beans.property.{LongProperty, SimpleLongProperty, SimpleStringProperty, StringProperty}
 import javafx.scene.control.Alert
 import javafx.scene.control.Alert.AlertType
 
 import net.diet_rich.dedupfs.explorer.conf
 import net.diet_rich.dedupfs.explorer.filesPane.filesTable.{FilesTableItem, NameContainer}
+import org.apache.commons.io.FileUtils
 
 class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
   override val name: NameContainer = NameContainer(file.getName, renameTo)
@@ -28,12 +28,24 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
     }
   override def asFilesPaneItem: Option[PhysicalFilesPaneDirectory] = if (file.isDirectory) Some(PhysicalFilesPaneDirectory(file)) else None
 
+  // TODO duplicate code
   def moveTo(newParent: File): Boolean = try {
-    Files.move(file.toPath, newParent.toPath.resolve(file.getName))
+    if (file.isDirectory) FileUtils.moveDirectoryToDirectory(file, newParent, false)
+    else FileUtils.moveFileToDirectory(file, newParent, false)
     true
   } catch {
     case e: IOException =>
       println(s"moving $file to $newParent failed: $e")
+      false
+  }
+
+  def copyTo(newParent: File): Boolean = try {
+    if (file.isDirectory) FileUtils.copyDirectoryToDirectory(file, newParent)
+    else FileUtils.copyFileToDirectory(file, newParent)
+    true
+  } catch {
+    case e: IOException =>
+      println(s"copying $file to $newParent failed: $e")
       false
   }
 

@@ -13,11 +13,20 @@ case class PhysicalFilesPaneDirectory(file: File) extends FilesPaneDirectory {
   override def list: Seq[PhysicalFileTableItem] = file.listFiles.toSeq.map(new PhysicalFileTableItem(_))
   override def up: PhysicalFilesPaneDirectory = if (file.getParentFile == null) this else PhysicalFilesPaneDirectory(file.getParentFile)
 
-  override def copyHere(files: Seq[FilesTableItem], onItemHandled: ItemHandler): Unit = {
-    ???
-  }
+  // FIXME duplicate code
+  override def copyHere(files: Seq[FilesTableItem], onItemHandled: ItemHandler): Unit =
+    files exists { fileToCopy =>
+      val operationalState = fileToCopy match {
+        case item: PhysicalFileTableItem =>
+          if (item copyTo file) Success else Failure
+        case item =>
+          println(s"moving ${item.getClass} to a physical directory not implemented yet")
+          Failure
+      }
+      onItemHandled(fileToCopy, operationalState) == Abort
+    }
 
-  override def moveHere(files: Seq[FilesTableItem], onItemHandled: ItemHandler): Unit = {
+  override def moveHere(files: Seq[FilesTableItem], onItemHandled: ItemHandler): Unit =
     files exists { fileToMove =>
       val operationalState = fileToMove match {
         case item: PhysicalFileTableItem =>
@@ -28,7 +37,6 @@ case class PhysicalFilesPaneDirectory(file: File) extends FilesPaneDirectory {
       }
       onItemHandled(fileToMove, operationalState) == Abort
     }
-  }
 
   override def toString = s"directory $file"
 }
