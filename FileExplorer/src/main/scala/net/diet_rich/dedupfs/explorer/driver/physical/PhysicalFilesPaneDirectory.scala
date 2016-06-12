@@ -13,30 +13,21 @@ case class PhysicalFilesPaneDirectory(file: File) extends FilesPaneDirectory {
   override def list: Seq[PhysicalFileTableItem] = file.listFiles.toSeq.map(new PhysicalFileTableItem(_))
   override def up: PhysicalFilesPaneDirectory = if (file.getParentFile == null) this else PhysicalFilesPaneDirectory(file.getParentFile)
 
-  // FIXME duplicate code
+  private def actionHere(files: Seq[FilesTableItem], onItemHandled: ItemHandler, actionName: String, action: (PhysicalFileTableItem, File) => Boolean): Unit =
+    files exists { fileToProcess =>
+      val operationalState = fileToProcess match {
+        case item: PhysicalFileTableItem =>
+          if (action(item, file)) Success else Failure
+        case item =>
+          println(s"$actionName for ${item.getClass} to a physical directory not implemented yet")
+          Failure
+      }
+      onItemHandled(fileToProcess, operationalState) == Abort
+    }
   override def copyHere(files: Seq[FilesTableItem], onItemHandled: ItemHandler): Unit =
-    files exists { fileToCopy =>
-      val operationalState = fileToCopy match {
-        case item: PhysicalFileTableItem =>
-          if (item copyTo file) Success else Failure
-        case item =>
-          println(s"moving ${item.getClass} to a physical directory not implemented yet")
-          Failure
-      }
-      onItemHandled(fileToCopy, operationalState) == Abort
-    }
-
+    actionHere(files, onItemHandled, "copy", _ copyTo _)
   override def moveHere(files: Seq[FilesTableItem], onItemHandled: ItemHandler): Unit =
-    files exists { fileToMove =>
-      val operationalState = fileToMove match {
-        case item: PhysicalFileTableItem =>
-          if (item moveTo file) Success else Failure
-        case item =>
-          println(s"moving ${item.getClass} to a physical directory not implemented yet")
-          Failure
-      }
-      onItemHandled(fileToMove, operationalState) == Abort
-    }
+    actionHere(files, onItemHandled, "move", _ moveTo _)
 
   override def toString = s"directory $file"
 }

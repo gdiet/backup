@@ -28,7 +28,6 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
     }
   override def asFilesPaneItem: Option[PhysicalFilesPaneDirectory] = if (file.isDirectory) Some(PhysicalFilesPaneDirectory(file)) else None
 
-  // TODO duplicate code
   def moveTo(newParent: File): Boolean = try {
     if (file.isDirectory) FileUtils.moveDirectoryToDirectory(file, newParent, false)
     else FileUtils.moveFileToDirectory(file, newParent, false)
