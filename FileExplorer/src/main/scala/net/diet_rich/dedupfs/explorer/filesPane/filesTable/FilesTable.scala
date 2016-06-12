@@ -8,7 +8,6 @@ import javafx.collections.transformation.SortedList
 import javafx.scene.control.TableColumn.{CellDataFeatures, SortType}
 import javafx.scene.control._
 import javafx.scene.control.cell.TextFieldTableCell
-import javafx.scene.input.KeyCode
 import javafx.util.{Callback, StringConverter}
 
 import net.diet_rich.common.fx._
@@ -31,7 +30,7 @@ class FilesTable(cd: FilesTableItem => Unit) {
   nameColumn setCellValueFactory cellValueFactory(file => NameEntry(file.name.getValue, Some(file.isDirectory)), Some(_.name))
   nameColumn setCellFactory nameCellFactory
   nameColumn setOnEditCommit handle { event => event.getRowValue.name setValue event.getNewValue.detail; table setEditable false }
-  nameColumn setOnEditCancel handle (table setEditable false)
+  nameColumn setOnEditCancel handle(table setEditable false)
   nameColumn setComparator columnComparator(nameColumn, _.isDirectory, _.detail compareToIgnoreCase _.detail)
 
   private val sizeColumn = new TableColumn[FilesTableItem, FilesTableItem](conf getString "column.size.label")
@@ -55,13 +54,6 @@ class FilesTable(cd: FilesTableItem => Unit) {
   table.getColumns addAll(iconColumn, nameColumn, sizeColumn, dateColumn)
   table.getSortOrder add nameColumn
   table.getSelectionModel setSelectionMode SelectionMode.MULTIPLE
-  // enable nameColumn editing only on F2 release, and disable it on edit commit/cancel (see nameColumn)
-  table setOnKeyReleased handle {
-    _.getCode match {
-      case KeyCode.F2 => renameSingleSelection()
-      case _ => ()
-    }
-  }
 
   table setRowFactory callback(
     init(new TableRow[FilesTableItem]) { row =>
