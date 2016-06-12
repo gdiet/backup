@@ -1,13 +1,13 @@
 package net.diet_rich.dedupfs.explorer.filesPane
 
 import javafx.scene.Parent
-import javafx.scene.control.{Button, TextField}
+import javafx.scene.control.{Button, Label, TextField}
 import javafx.scene.layout.BorderPane
 
-import net.diet_rich.common.init
 import net.diet_rich.common.fx._
-import net.diet_rich.dedupfs.explorer.imageView
-import net.diet_rich.dedupfs.explorer.filesPane.filesTable.{FilesTableItem, FilesTable}
+import net.diet_rich.common.init
+import net.diet_rich.dedupfs.explorer._
+import net.diet_rich.dedupfs.explorer.filesPane.filesTable.{FilesTable, FilesTableItem}
 
 class FilesPane(registry: FileSystemRegistry, initialUrl: String) {
   private var directory_ = registry get initialUrl
@@ -19,10 +19,10 @@ class FilesPane(registry: FileSystemRegistry, initialUrl: String) {
   // validate path when focus is lost
   pathField.focusedProperty() addListener changeListener { b: java.lang.Boolean => if (!b) cd() }
   // reset path field style when text is typed
-  pathField.textProperty() addListener changeListener[String]{ _ => pathField withoutStyle "illegalTextValue" }
+  pathField.textProperty() addListener changeListener[String] { _ => pathField withoutStyle "illegalTextValue" }
 
   def setActive(active: Boolean) =
-    if(active) pathField withStyle "activePanel"
+    if (active) pathField withStyle "activePanel"
     else pathField withoutStyle "activePanel"
 
   private def cd(): Unit = cd(registry get pathField.getText)
@@ -37,11 +37,13 @@ class FilesPane(registry: FileSystemRegistry, initialUrl: String) {
     filesTable.files.clear()
     directory match {
       case Some(dir) =>
-        filesTable.files.addAll(dir.list:_*)
+        filesTable.files.addAll(dir.list: _*)
         pathField setText dir.url
         pathField withoutStyle "illegalTextValue"
+        filesTable.table setPlaceholder new Label(conf getString "filesTable.empty")
       case None =>
         pathField withStyle "illegalTextValue"
+        filesTable.table setPlaceholder new Label(conf getString "filesTable.badPath")
     }
     filesTable.table refresh()
   }
