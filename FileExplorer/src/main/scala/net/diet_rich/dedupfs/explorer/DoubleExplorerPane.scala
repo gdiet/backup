@@ -8,7 +8,7 @@ import javafx.scene.{Node, Parent, Scene}
 
 import net.diet_rich.common._
 import net.diet_rich.common.fx._
-import net.diet_rich.dedupfs.explorer.filesPane.{FileSystemRegistry, FilesPane}
+import net.diet_rich.dedupfs.explorer.filesPane.{Continue, FileSystemRegistry, FilesPane}
 
 class DoubleExplorerPane(registry: FileSystemRegistry, initialUrlLeft: String, initialUrlRight: String) {
   private val leftPane = new FilesPane(registry, initialUrlLeft)
@@ -29,11 +29,19 @@ class DoubleExplorerPane(registry: FileSystemRegistry, initialUrlLeft: String, i
   private val keyEventFilter = handle { e: KeyEvent =>
     (e.getEventType, e.getCode, e.getText) match {
       case (KeyEvent.KEY_RELEASED, KeyCode.F2, _) => renameAction(); e.consume()
+      case (KeyEvent.KEY_RELEASED, KeyCode.F5, _) => copyAction(); e.consume()
+      case (KeyEvent.KEY_RELEASED, KeyCode.F6, _) => moveAction(); e.consume()
       case _ => ()
     }
   }
 
-  def renameAction() = activePane renameSingleSelection()
+  private def renameAction(): Unit = activePane renameSingleSelection()
+  private def copyAction(): Unit = otherPane.directory foreach { other =>
+    runAsync(other copyHere(activePane.selectedFiles, (_, _) => Continue))
+  }
+  private def moveAction(): Unit = otherPane.directory foreach { other =>
+    runAsync(other moveHere(activePane.selectedFiles, (_, _) => Continue))
+  }
 
   val component: Parent = init(new BorderPane()) { pane =>
     pane addEventFilter(KeyEvent.KEY_RELEASED, keyEventFilter)
@@ -43,8 +51,10 @@ class DoubleExplorerPane(registry: FileSystemRegistry, initialUrlLeft: String, i
         renameButton setOnAction handle(renameAction())
       }
       bottom.getChildren add init(new Button(conf getString "button.copy.label")) { copyButton =>
+        copyButton setOnAction handle(copyAction())
       }
       bottom.getChildren add init(new Button(conf getString "button.move.label")) { moveButton =>
+        moveButton setOnAction handle(moveAction())
       }
       bottom.getChildren forEach new Consumer[Node] {
         override def accept(node: Node): Unit = node match {

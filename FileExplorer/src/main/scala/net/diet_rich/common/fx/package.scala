@@ -7,9 +7,11 @@ import javafx.event.{Event, EventHandler}
 import javafx.scene.Node
 import javafx.scene.image.ImageView
 import javafx.util.Callback
+import scala.concurrent.{ExecutionContext, Future}
 
 package object fx {
   def runFX(f: => Unit) = Platform runLater new Runnable { override def run(): Unit = f }
+  def runAsync(f: => Unit) = Future(f)(ExecutionContext.Implicits.global)
 
   def callback[S, T](f: S => T): Callback[S, T] = new Callback[S, T] { override def call(s: S): T = f(s) }
   def callback[S, T](f:   => T): Callback[S, T] = new Callback[S, T] { override def call(s: S): T = f }

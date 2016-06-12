@@ -14,6 +14,8 @@ import net.diet_rich.common.fx._
 import net.diet_rich.common.init
 import net.diet_rich.dedupfs.explorer._
 
+import scala.collection.JavaConverters._
+
 class FilesTable(cd: FilesTableItem => Unit) {
 
   import FilesTable._
@@ -71,6 +73,8 @@ class FilesTable(cd: FilesTableItem => Unit) {
       table setEditable true
       table edit(table.getSelectionModel.getSelectedIndex, nameColumn)
     }
+
+  def selectedFiles = table.getSelectionModel.getSelectedItems.asScala.toSeq
 }
 
 private object FilesTable {

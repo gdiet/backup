@@ -1,26 +1,12 @@
-package net.diet_rich.dedupfs.explorer
+package net.diet_rich.dedupfs.explorer.driver.physical
 
 import java.io.{File, IOException}
-import javafx.beans.property._
+import javafx.beans.property.{LongProperty, SimpleLongProperty, SimpleStringProperty, StringProperty}
 import javafx.scene.control.Alert
 import javafx.scene.control.Alert.AlertType
 
-import net.diet_rich.dedupfs.explorer.filesPane.{FileSystemRegistry, FilesPaneDirectory}
+import net.diet_rich.dedupfs.explorer.conf
 import net.diet_rich.dedupfs.explorer.filesPane.filesTable.{FilesTableItem, NameContainer}
-
-object PhysicalFiles {
-  def registerIn(registry: FileSystemRegistry): FileSystemRegistry =
-    registry withScheme ("file", { path =>
-      val file = new File(path)
-      if (file.isDirectory) Some(PhysicalFilesPaneDirectory(file)) else None
-    })
-}
-
-case class PhysicalFilesPaneDirectory(file: File) extends FilesPaneDirectory {
-  override def url: String = s"file://$file"
-  override def list: Seq[PhysicalFileTableItem] = file.listFiles.toSeq.map(new PhysicalFileTableItem(_))
-  override def up: PhysicalFilesPaneDirectory = if (file.getParentFile == null) this else PhysicalFilesPaneDirectory(file.getParentFile)
-}
 
 class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
   override val name: NameContainer = NameContainer(file.getName, renameTo)

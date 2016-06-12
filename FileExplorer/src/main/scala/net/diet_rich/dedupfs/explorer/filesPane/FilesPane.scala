@@ -7,10 +7,11 @@ import javafx.scene.layout.BorderPane
 import net.diet_rich.common.init
 import net.diet_rich.common.fx._
 import net.diet_rich.dedupfs.explorer.imageView
-import net.diet_rich.dedupfs.explorer.filesPane.filesTable.FilesTable
+import net.diet_rich.dedupfs.explorer.filesPane.filesTable.{FilesTableItem, FilesTable}
 
 class FilesPane(registry: FileSystemRegistry, initialUrl: String) {
-  private var directory = registry get initialUrl
+  private var directory_ = registry get initialUrl
+  def directory: Option[FilesPaneDirectory] = directory_
 
   private val pathField = new TextField(initialUrl)
   // validate path on "enter"
@@ -25,10 +26,11 @@ class FilesPane(registry: FileSystemRegistry, initialUrl: String) {
     else pathField withoutStyle "activePanel"
 
   private def cd(): Unit = cd(registry get pathField.getText)
-  private def cd(newDir: Option[FilesPaneDirectory]): Unit = { directory = newDir; load() }
+  private def cd(newDir: Option[FilesPaneDirectory]): Unit = { directory_ = newDir; load() }
 
   private val filesTable = new FilesTable(file => cd(file.asFilesPaneItem))
   def renameSingleSelection(): Unit = filesTable renameSingleSelection()
+  def selectedFiles: Seq[FilesTableItem] = filesTable.selectedFiles
 
   private def load(): Unit = {
     filesTable.files.clear()
