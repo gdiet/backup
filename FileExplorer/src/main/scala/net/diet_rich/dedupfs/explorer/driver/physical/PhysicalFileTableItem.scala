@@ -1,6 +1,7 @@
 package net.diet_rich.dedupfs.explorer.driver.physical
 
 import java.io.{File, IOException}
+import java.nio.file.Files
 import javafx.beans.property.{LongProperty, SimpleLongProperty, SimpleStringProperty, StringProperty}
 import javafx.scene.control.Alert
 import javafx.scene.control.Alert.AlertType
@@ -27,7 +28,14 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
     }
   override def asFilesPaneItem: Option[PhysicalFilesPaneDirectory] = if (file.isDirectory) Some(PhysicalFilesPaneDirectory(file)) else None
 
-  def moveTo(newParent: File): Boolean = file.renameTo(new File(newParent, file.getName))
+  def moveTo(newParent: File): Boolean = try {
+    Files.move(file.toPath, newParent.toPath.resolve(file.getName))
+    true
+  } catch {
+    case e: IOException =>
+      println(s"moving $file to $newParent failed: $e")
+      false
+  }
 
   private def renameTo(newName: String): Boolean =
     newName.contains('/') || newName.contains('\\') || {
@@ -38,5 +46,5 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
       } else true
     }
 
-  override def toString = s"$file"
+  override def toString = s"item $file"
 }

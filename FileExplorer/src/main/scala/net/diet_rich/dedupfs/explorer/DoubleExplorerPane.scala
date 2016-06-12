@@ -8,7 +8,7 @@ import javafx.scene.{Node, Parent, Scene}
 
 import net.diet_rich.common._
 import net.diet_rich.common.fx._
-import net.diet_rich.dedupfs.explorer.filesPane.{Continue, FileSystemRegistry, FilesPane, Success}
+import net.diet_rich.dedupfs.explorer.filesPane._
 
 class DoubleExplorerPane(registry: FileSystemRegistry, initialUrlLeft: String, initialUrlRight: String) {
   private val leftPane = new FilesPane(registry, initialUrlLeft)
@@ -62,7 +62,9 @@ class DoubleExplorerPane(registry: FileSystemRegistry, initialUrlLeft: String, i
           runFX(activePane refresh source)
           runFX(otherPane refresh destination)
           Continue
-        case _ => Continue
+        case (item, Failure) =>
+          println(s"could not move $item to $other")
+          Continue
       }))
     }
   }

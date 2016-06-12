@@ -29,4 +29,6 @@ case class PhysicalFilesPaneDirectory(file: File) extends FilesPaneDirectory {
       onItemHandled(fileToMove, operationalState) == Abort
     }
   }
+
+  override def toString = s"directory $file"
 }
