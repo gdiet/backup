@@ -8,20 +8,21 @@ import javafx.scene.{Node, Parent, Scene}
 
 import net.diet_rich.common._
 import net.diet_rich.common.fx._
-import net.diet_rich.dedupfs.explorer.filesPane.{Continue, FileSystemRegistry, FilesPane}
+import net.diet_rich.dedupfs.explorer.filesPane.{Continue, FileSystemRegistry, FilesPane, Success}
 
 class DoubleExplorerPane(registry: FileSystemRegistry, initialUrlLeft: String, initialUrlRight: String) {
   private val leftPane = new FilesPane(registry, initialUrlLeft)
   private val rightPane = new FilesPane(registry, initialUrlRight)
   private val splitPane = new SplitPane(leftPane.component, rightPane.component)
 
-  private var activePane = init(leftPane) {_ setActive true}
+  private var activePane_ = init(leftPane) {_ setActive true}
+  private def activePane = synchronized(activePane_)
   private def otherPane = if (activePane == leftPane) rightPane else leftPane
   private val sceneFocusChangeListener = changeListener { node: Node =>
     if (nodesUp(node) contains otherPane.component) {
       activePane setActive false
       otherPane setActive true
-      activePane = otherPane
+      synchronized(activePane_ = otherPane)
     }
   }
   def registerIn(scene: Scene): Unit = scene.focusOwnerProperty addListener sceneFocusChangeListener
@@ -36,11 +37,34 @@ class DoubleExplorerPane(registry: FileSystemRegistry, initialUrlLeft: String, i
   }
 
   private def renameAction(): Unit = activePane renameSingleSelection()
-  private def copyAction(): Unit = otherPane.directory foreach { other =>
-    runAsync(other copyHere(activePane.selectedFiles, (_, _) => Continue))
+
+  private def copyAction(): Unit = {
+    val source = activePane.directory
+    val files = activePane.selectedFiles
+    val destination = otherPane.directory
+    if (source != destination) destination foreach { other =>
+      runAsync(other copyHere(files, {
+        case (item, Success) =>
+          otherPane refresh destination
+          Continue
+        case _ => Continue
+      }))
+    }
   }
-  private def moveAction(): Unit = otherPane.directory foreach { other =>
-    runAsync(other moveHere(activePane.selectedFiles, (_, _) => Continue))
+
+  private def moveAction(): Unit = {
+    val source = activePane.directory
+    val files = activePane.selectedFiles
+    val destination = otherPane.directory
+    if (source != destination) destination foreach { other =>
+      runAsync(other moveHere(files, {
+        case (item, Success) =>
+          runFX(activePane refresh source)
+          runFX(otherPane refresh destination)
+          Continue
+        case _ => Continue
+      }))
+    }
   }
 
   val component: Parent = init(new BorderPane()) { pane =>

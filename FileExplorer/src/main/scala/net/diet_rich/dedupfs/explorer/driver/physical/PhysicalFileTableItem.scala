@@ -27,6 +27,8 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
     }
   override def asFilesPaneItem: Option[PhysicalFilesPaneDirectory] = if (file.isDirectory) Some(PhysicalFilesPaneDirectory(file)) else None
 
+  def moveTo(newParent: File): Boolean = file.renameTo(new File(newParent, file.getName))
+
   private def renameTo(newName: String): Boolean =
     newName.contains('/') || newName.contains('\\') || {
       val newFile = new File(file.getParentFile, newName)
@@ -35,4 +37,6 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
         false
       } else true
     }
+
+  override def toString = s"$file"
 }

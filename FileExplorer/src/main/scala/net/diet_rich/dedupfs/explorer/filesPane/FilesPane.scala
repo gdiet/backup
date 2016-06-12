@@ -26,13 +26,14 @@ class FilesPane(registry: FileSystemRegistry, initialUrl: String) {
     else pathField withoutStyle "activePanel"
 
   private def cd(): Unit = cd(registry get pathField.getText)
-  private def cd(newDir: Option[FilesPaneDirectory]): Unit = { directory_ = newDir; load() }
+  private def cd(newDir: Option[FilesPaneDirectory]): Unit = { directory_ = newDir; refresh() }
 
   private val filesTable = new FilesTable(file => cd(file.asFilesPaneItem))
   def renameSingleSelection(): Unit = filesTable renameSingleSelection()
   def selectedFiles: Seq[FilesTableItem] = filesTable.selectedFiles
 
-  private def load(): Unit = {
+  def refresh(source: Option[FilesPaneDirectory]): Unit = if (source == directory) refresh()
+  def refresh(): Unit = {
     filesTable.files.clear()
     directory match {
       case Some(dir) =>
@@ -53,12 +54,12 @@ class FilesPane(registry: FileSystemRegistry, initialUrl: String) {
         }
         topPane setCenter pathField
         topPane setRight init(new Button("", imageView("button.reload"))) { reloadButton =>
-          reloadButton setOnAction handle(load())
+          reloadButton setOnAction handle(refresh())
         }
       }
     }
     mainPane setCenter filesTable.table
   }
 
-  load()
+  refresh()
 }
