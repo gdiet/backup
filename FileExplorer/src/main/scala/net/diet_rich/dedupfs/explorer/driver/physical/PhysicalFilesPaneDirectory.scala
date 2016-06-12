@@ -16,12 +16,15 @@ case class PhysicalFilesPaneDirectory(file: File) extends FilesPaneDirectory {
   override def copyHere(files: Seq[FilesTableItem], onItemHandled: ItemHandler): Unit = {
     ???
   }
+
   override def moveHere(files: Seq[FilesTableItem], onItemHandled: ItemHandler): Unit = {
     files exists { fileToMove =>
       val operationalState = fileToMove match {
         case item: PhysicalFileTableItem =>
           if (item moveTo file) Success else Failure
-        case _ => Failure
+        case item =>
+          println(s"moving ${item.getClass} to a physical directory not implemented yet")
+          Failure
       }
       onItemHandled(fileToMove, operationalState) == Abort
     }
