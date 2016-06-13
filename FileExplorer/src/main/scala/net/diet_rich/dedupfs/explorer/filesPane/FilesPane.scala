@@ -19,7 +19,7 @@ class FilesPane(registry: FileSystemRegistry, initialUrl: String) {
   // validate path when focus is lost
   pathField.focusedProperty() addListener changeListener { b: java.lang.Boolean => if (!b) cd() }
   // reset path field style when text is typed
-  pathField.textProperty() addListener changeListener[String] { _ => pathField withoutStyle "illegalTextValue" }
+  pathField.textProperty() addListener changeListener[String] { _ => pathField withoutStyle "illegalValue" }
 
   def setActive(active: Boolean) =
     if (active) pathField withStyle "activePanel"
@@ -39,10 +39,10 @@ class FilesPane(registry: FileSystemRegistry, initialUrl: String) {
       case Some(dir) =>
         filesTable.files.addAll(dir.list: _*)
         pathField setText dir.url
-        pathField withoutStyle "illegalTextValue"
+        pathField withoutStyle "illegalValue"
         filesTable.table setPlaceholder new Label(conf getString "filesTable.empty")
       case None =>
-        pathField withStyle "illegalTextValue"
+        pathField withStyle "illegalValue"
         filesTable.table setPlaceholder new Label(conf getString "filesTable.badPath")
     }
     filesTable.table refresh()

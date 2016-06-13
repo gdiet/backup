@@ -1,4 +1,5 @@
-.illegalTextValue {
+.illegalValue {
+    -fx-border-width: 0px 5px 0px 5px;
     -fx-border-color: red;
 }
 
