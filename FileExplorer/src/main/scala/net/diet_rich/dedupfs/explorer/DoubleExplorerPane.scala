@@ -38,6 +38,7 @@ class DoubleExplorerPane(registry: FileSystemRegistry, initialUrlLeft: String, i
 
   private def renameAction(): Unit = activePane renameSingleSelection()
 
+  // TODO sooner or later, we will need separate copy/move handling with popup window etc.
   private def copyAction(): Unit = {
     val source = activePane.directory
     val files = activePane.selectedFiles

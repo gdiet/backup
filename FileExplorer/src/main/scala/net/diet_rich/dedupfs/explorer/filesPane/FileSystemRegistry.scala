@@ -3,6 +3,7 @@ package net.diet_rich.dedupfs.explorer.filesPane
 class FileSystemRegistry {
   import FileSystemRegistry._
 
+  // TODO make immutable
   private var fileSystems = Map[Scheme, Path => Option[FilesPaneDirectory]]()
 
   def withScheme(scheme: Scheme, factory: Path => Option[FilesPaneDirectory]): FileSystemRegistry = synchronized {

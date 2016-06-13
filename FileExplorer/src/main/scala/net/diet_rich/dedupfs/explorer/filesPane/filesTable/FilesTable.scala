@@ -31,6 +31,7 @@ class FilesTable(cd: FilesTableItem => Unit) {
   private val nameColumn = new TableColumn[FilesTableItem, NameEntry](conf getString "column.name.label")
   nameColumn setCellValueFactory cellValueFactory(file => NameEntry(file.name.getValue, Some(file.isDirectory)), Some(_.name))
   nameColumn setCellFactory nameCellFactory
+  // TODO catch (and handle?) name container veto exception
   nameColumn setOnEditCommit handle { event => event.getRowValue.name setValue event.getNewValue.detail; table setEditable false }
   nameColumn setOnEditCancel handle(table setEditable false)
   nameColumn setComparator columnComparator(nameColumn, _.isDirectory, _.detail compareToIgnoreCase _.detail)
