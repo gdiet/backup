@@ -24,8 +24,8 @@ class Main extends Application {
 
     val registry = new FileSystemRegistry()
     PhysicalFiles registerIn registry
-    DedupFiles registerIn(repository, registry)
-    val explorer = new DoubleExplorerPane(registry, "file://../test/_files", "dup:///")
+    DedupFiles registerIn (repository, registry)
+    val explorer = new DoubleExplorerPane(registry, "file://../test/_files", "dup://")
 
     val scene = new Scene(explorer.component)
     scene.getStylesheets add "explorer_style.css"

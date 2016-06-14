@@ -53,6 +53,7 @@ object Repository extends DirWithConfigHelper {
   }
 
   type ReadOnly = RepositoryRead[MetadataRead, ByteStoreRead]
+  // TODO this type thing here is crap for practical reasons - better to throw exceptions when writing to read-only file systems
   type Any = RepositoryRead[_ <: MetadataRead, _ <: ByteStoreRead]
 }
 

@@ -6,7 +6,7 @@ class FileSystemRegistry {
   // TODO make immutable
   private var fileSystems = Map[Scheme, Path => Option[FilesPaneDirectory]]()
 
-  def withScheme(scheme: Scheme, factory: Path => Option[FilesPaneDirectory]): FileSystemRegistry = synchronized {
+  def withSchema(scheme: Scheme, factory: Path => Option[FilesPaneDirectory]): FileSystemRegistry = synchronized {
     require(!fileSystems.contains(scheme), s"File system for scheme $scheme already registered")
     fileSystems += scheme -> factory
     this

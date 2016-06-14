@@ -9,7 +9,7 @@ import net.diet_rich.dedupfs.explorer.filesPane.filesTable.FilesTableItem
 case class PhysicalFilesPaneDirectory(file: File) extends FilesPaneDirectory {
   require(file.isDirectory, s"File is not a directory: $file")
 
-  override def url: String = s"file://$file"
+  override def url: String = s"$schema://$file"
   override def list: Seq[PhysicalFileTableItem] = file.listFiles.toSeq.map(new PhysicalFileTableItem(_))
   override def up: PhysicalFilesPaneDirectory = if (file.getParentFile == null) this else PhysicalFilesPaneDirectory(file.getParentFile)
 
