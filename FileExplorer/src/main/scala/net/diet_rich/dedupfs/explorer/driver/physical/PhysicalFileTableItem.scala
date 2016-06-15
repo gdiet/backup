@@ -1,6 +1,6 @@
 package net.diet_rich.dedupfs.explorer.driver.physical
 
-import java.io.{File, IOException}
+import java.io.{File, FileInputStream, IOException, InputStream}
 import javafx.beans.property.{LongProperty, SimpleLongProperty, SimpleStringProperty, StringProperty}
 import javafx.scene.control.Alert
 import javafx.scene.control.Alert.AlertType
@@ -26,7 +26,7 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
         alert setContentText conf.getString("dialog.cannotOpen.text").format(file)
         alert showAndWait()
     }
-  override def asFilesPaneItem: Option[PhysicalFilesPaneDirectory] = if (file.isDirectory) Some(PhysicalFilesPaneDirectory(file)) else None
+  override def asFilesPaneDirectory: Option[PhysicalFilesPaneDirectory] = if (file.isDirectory) Some(PhysicalFilesPaneDirectory(file)) else None
 
   def moveTo(newParent: File): Boolean = try {
     if (file.isDirectory) FileUtils.moveDirectoryToDirectory(file, newParent, false)
@@ -57,5 +57,6 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
       } else true
     }
 
-  override def toString = s"item $file"
+  override def inputStream: InputStream = new FileInputStream(file)
+  override def toString = s"$schema item $file"
 }

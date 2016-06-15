@@ -1,5 +1,6 @@
 package net.diet_rich.dedupfs.explorer.filesPane.filesTable
 
+import java.io.InputStream
 import javafx.beans.value.{ObservableLongValue, ObservableStringValue}
 
 import net.diet_rich.dedupfs.explorer.filesPane.FilesPaneDirectory
@@ -12,5 +13,6 @@ trait FilesTableItem {
   def isDirectory: Boolean // assumed to be immutable
   def canWrite: Boolean // assumed to be immutable
   def execute(): Unit
-  def asFilesPaneItem: Option[FilesPaneDirectory]
+  def asFilesPaneDirectory: Option[FilesPaneDirectory]
+  def inputStream: InputStream
 }

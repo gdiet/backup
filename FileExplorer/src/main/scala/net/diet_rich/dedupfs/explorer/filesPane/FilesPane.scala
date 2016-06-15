@@ -28,7 +28,7 @@ class FilesPane(registry: FileSystemRegistry, initialUrl: String) {
   private def cd(): Unit = cd(registry get pathField.getText)
   private def cd(newDir: Option[FilesPaneDirectory]): Unit = { directory_ = newDir; refresh() }
 
-  private val filesTable = new FilesTable(file => cd(file.asFilesPaneItem))
+  private val filesTable = new FilesTable(file => cd(file.asFilesPaneDirectory))
   def renameSingleSelection(): Unit = filesTable renameSingleSelection()
   def selectedFiles: Seq[FilesTableItem] = filesTable.selectedFiles
 
