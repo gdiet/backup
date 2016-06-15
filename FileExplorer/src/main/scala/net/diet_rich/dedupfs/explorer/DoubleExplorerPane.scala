@@ -8,6 +8,7 @@ import javafx.scene.{Node, Parent, Scene}
 
 import net.diet_rich.common._
 import net.diet_rich.common.fx._
+import net.diet_rich.dedupfs.explorer.filesPane.FilesPaneDirectory.ItemHandler
 import net.diet_rich.dedupfs.explorer.filesPane._
 
 class DoubleExplorerPane(registry: FileSystemRegistry, initialUrlLeft: String, initialUrlRight: String) {
@@ -43,13 +44,16 @@ class DoubleExplorerPane(registry: FileSystemRegistry, initialUrlLeft: String, i
     val source = activePane.directory
     val files = activePane.selectedFiles
     val destination = otherPane.directory
+    // FIXME prevent copying a source to its own children, because it would recurse infinitely?
     if (source != destination) destination foreach { other =>
-      runAsync(other copyHere(files, {
-        case (item, Success) =>
-          otherPane refresh destination
-          Continue
-        case _ => Continue
-      }))
+      runAsync {
+        other.copyHere2(files, {
+          case (item, Success) =>
+            otherPane refresh destination
+            Continue
+          case _ => Continue
+        }: ItemHandler)
+      }
     }
   }
 

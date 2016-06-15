@@ -1,7 +1,8 @@
 package net.diet_rich.dedupfs.explorer.driver.dedup
 
 import net.diet_rich.dedupfs.Repository
-import net.diet_rich.dedupfs.explorer.filesPane.FilesPaneDirectory
+import net.diet_rich.dedupfs.explorer.driver.physical._
+import net.diet_rich.dedupfs.explorer.filesPane.{FilesPaneDirectory, OperationalImplication}
 import net.diet_rich.dedupfs.explorer.filesPane.FilesPaneDirectory.ItemHandler
 import net.diet_rich.dedupfs.explorer.filesPane.filesTable.FilesTableItem
 import net.diet_rich.dedupfs.metadata.TreeEntry
@@ -12,4 +13,9 @@ class DedupFilesPaneDirectory(repository: Repository.Any, treeEntry: TreeEntry) 
   override def url: String = s"$schema://${repository.metaBackend path treeEntry.key getOrElse "???"}"
   override def copyHere(files: Seq[FilesTableItem], onItemHandled: ItemHandler): Unit = ???
   override def up: FilesPaneDirectory = repository.metaBackend.entry(treeEntry.parent) map (new DedupFilesPaneDirectory(repository, _)) getOrElse this
+
+  override def getOrCreateChildDirectory(name: String): Option[FilesPaneDirectory] = ???
+  override protected val nativeCopyHere2: PartialFunction[(FilesTableItem, ItemHandler), OperationalImplication] = null // FIXME
+
+  override def toString = s"$schema folder ${treeEntry.name}"
 }

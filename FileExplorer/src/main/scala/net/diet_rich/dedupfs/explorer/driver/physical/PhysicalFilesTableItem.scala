@@ -6,10 +6,11 @@ import javafx.scene.control.Alert
 import javafx.scene.control.Alert.AlertType
 
 import net.diet_rich.dedupfs.explorer.conf
+import net.diet_rich.dedupfs.explorer.filesPane.{Failure, OperationalState, Success}
 import net.diet_rich.dedupfs.explorer.filesPane.filesTable.{FilesTableItem, NameContainer}
 import org.apache.commons.io.FileUtils
 
-class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
+class PhysicalFilesTableItem(private var file: File) extends FilesTableItem {
   override val name: NameContainer = NameContainer(file.getName, renameTo)
   override val size: LongProperty = new SimpleLongProperty(file.length)
   override val time: LongProperty = new SimpleLongProperty(file.lastModified)
@@ -37,6 +38,8 @@ class PhysicalFileTableItem(private var file: File) extends FilesTableItem {
       println(s"moving $file to $newParent failed: $e")
       false
   }
+
+  def copyTo2(newParent: File): OperationalState = if (copyTo(newParent)) Success else Failure
 
   def copyTo(newParent: File): Boolean = try {
     if (file.isDirectory) FileUtils.copyDirectoryToDirectory(file, newParent)

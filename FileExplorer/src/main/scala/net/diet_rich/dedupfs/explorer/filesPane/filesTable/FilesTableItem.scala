@@ -14,5 +14,5 @@ trait FilesTableItem {
   def canWrite: Boolean // assumed to be immutable
   def execute(): Unit
   def asFilesPaneDirectory: Option[FilesPaneDirectory]
-  def inputStream: InputStream
+  def inputStream: InputStream // TODO Option[InputStream] (None for directories) ???
 }
