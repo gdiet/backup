@@ -1,6 +1,6 @@
 version in ThisBuild := "0.4-SNAPSHOT"
 
-scalaVersion in ThisBuild := "2.11.8"
+scalaVersion in ThisBuild := "2.12.2"
 
 scalacOptions in ThisBuild ++= Seq(
   "-deprecation",
@@ -12,7 +12,7 @@ fork in run in ThisBuild := true
 connectInput in run in ThisBuild := true
 fork in test in ThisBuild := true
 
-libraryDependencies in ThisBuild ++= Seq("org.specs2" %% "specs2-core" % "3.8.3" % "test")
+libraryDependencies in ThisBuild ++= Seq("org.specs2" %% "specs2-core" % "3.9.2" % "test")
 scalacOptions in Test in ThisBuild ++= Seq("-Yrangepos")
 
 lazy val All = project aggregate (Common, Logging, ByteStore, DedupFS)
