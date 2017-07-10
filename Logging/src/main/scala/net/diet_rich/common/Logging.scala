@@ -10,17 +10,17 @@ trait Logging {
 
 object Logging {
   protected class LogAdapter (private val logger: Logger) {
-    def error(message: => String) = if (logger.isErrorEnabled) logger error message
-    def warn (message: => String) = if (logger.isWarnEnabled ) logger warn  message
-    def info (message: => String) = if (logger.isInfoEnabled ) logger info  message
-    def debug(message: => String) = if (logger.isDebugEnabled) logger debug message
-    def trace(message: => String) = if (logger.isTraceEnabled) logger trace message
-    
-    def error(message: => String, e: Throwable) = if (logger.isErrorEnabled) logger error (message, e)
-    def warn (message: => String, e: Throwable) = if (logger.isWarnEnabled)  logger warn  (message, e)
-    def info (message: => String, e: Throwable) = if (logger.isInfoEnabled)  logger info  (message, e)
-    def debug(message: => String, e: Throwable) = if (logger.isDebugEnabled) logger debug (message, e)
-    def trace(message: => String, e: Throwable) = if (logger.isTraceEnabled) logger trace (message, e)
+    def error(message: => String): Unit = if (logger.isErrorEnabled) logger error message
+    def warn (message: => String): Unit = if (logger.isWarnEnabled ) logger warn  message
+    def info (message: => String): Unit = if (logger.isInfoEnabled ) logger info  message
+    def debug(message: => String): Unit = if (logger.isDebugEnabled) logger debug message
+    def trace(message: => String): Unit = if (logger.isTraceEnabled) logger trace message
+
+    def error(message: => String, e: Throwable): Unit = if (logger.isErrorEnabled) logger error (message, e)
+    def warn (message: => String, e: Throwable): Unit = if (logger.isWarnEnabled)  logger warn  (message, e)
+    def info (message: => String, e: Throwable): Unit = if (logger.isInfoEnabled)  logger info  (message, e)
+    def debug(message: => String, e: Throwable): Unit = if (logger.isDebugEnabled) logger debug (message, e)
+    def trace(message: => String, e: Throwable): Unit = if (logger.isTraceEnabled) logger trace (message, e)
 
     def call[R](message: => String)(code: => R): R = {
       if (!logger.isDebugEnabled) code else {
@@ -35,7 +35,5 @@ object Logging {
         }
       }
     }
-
-    def logSuppressNonFatal(code: => Unit) = try { code } catch { case NonFatal(e) => warn(s"an exception has been suppressed", e) }
   }
 }
