@@ -1,34 +1,25 @@
 package net.diet_rich.common
 
-import scala.collection.mutable
-
 class Arguments(args: Array[String], numberOfParams: Int) {
-  require(args.length >= numberOfParams, s"$numberOfParams arguments are mandatory, but only ${args.length} arguments are provided")
-  private val (paramsList, optionsList) = args.toList.splitAt(numberOfParams)
-  private val optionsMap = optionsList
+  private val (params, options) = args.splitAt(numberOfParams)
+  private val optionsMap = options
     .map { option => option.splitAt(option.indexOf(':')) }
-    .map { case (key, value) => (key, value.tail) }
+    .map { case (key, value) => (key, value.drop(1)) }
     .toMap
-  private val checkedOptions = mutable.Set[String]()
-  private def opt(key: String, prefix: String): Option[String] = {
-    checkedOptions add key
-    optionsMap get key
-  }
-  def parameters: List[String] = paramsList
-  def optional(key: String): Option[String] = opt(key, "Optional setting")
-  def required(key: String): String = opt(key, "Mandatory setting") getOrElse (throw new IllegalArgumentException(s"Setting '$key' is mandatory"))
-  def intOptional(key: String) = optional(key) map (_.toInt)
-  def longOptional(key: String) = optional(key) map (_.toLong)
-  def booleanOptional(key: String) = optional(key) map (_.toBoolean)
-  def withSettingsChecked(f: => Unit): Unit = {
-    val availableSettings = optionsMap.keySet
-    if ((availableSettings -- checkedOptions).isEmpty) f else {
-      println(s"The first $numberOfParams arguments are evaluated as parameters.")
-      println("The following additional settings provided have not been evaluated:")
-      println(s"  ${(availableSettings -- checkedOptions) mkString ", "}")
-      println("The following settings are evaluated:")
-      println(s"  ${checkedOptions mkString ", "}")
-      println("\nExiting...")
-    }
-  }
+  private var uncheckedOptions = optionsMap.keySet
+  private var problems = Seq.empty[String]
+
+  if (params.length < numberOfParams) problems :+= s"At least $numberOfParams parameters are required."
+
+  def parameters: List[String] = if (params.length == numberOfParams) params.toList else List.fill(numberOfParams)("")
+  def optional(key: String): Option[String] = { uncheckedOptions -= key; optionsMap.get(key) }
+  def required(key: String): String = optional(key).getOrElse { problems :+= s"The parameter $key is required."; "" }
+
+  def withSettingsChecked[T](bad: String => T)(good: => T): T =
+    if (problems.nonEmpty)
+      bad(problems.mkString("\n"))
+    else if (uncheckedOptions.nonEmpty)
+      bad("The following options provided have not been evaluated:\n" + uncheckedOptions.mkString("'", "', '", "'"))
+    else
+      good
 }

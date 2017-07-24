@@ -1,7 +1,2 @@
-libraryDependencies += "com.h2database" % "h2" % "1.4.196"
-
-// Note: Eventually, hsqldb? and mysql? should be supported as well
-// libraryDependencies += "org.hsqldb" % "hsqldb" % "2.3.3"
-
-// TODO duplicated in FTPServer build
-fullClasspath in Runtime += baseDirectory.value / "conf"
+resolvers += "bintray central" at "https://jcenter.bintray.com"
+libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.4.1"
