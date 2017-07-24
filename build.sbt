@@ -5,7 +5,9 @@ scalacOptions in ThisBuild ++= Seq(
   "-feature",
   "-unchecked"
 )
-libraryDependencies in ThisBuild ++= Seq("org.specs2" %% "specs2-core" % "3.9.2" % "test")
 
 lazy val Common = project
-lazy val DedupFS = project dependsOn Common
+lazy val Meta = project
+lazy val MetaH2 = project dependsOn (Common, Meta)
+lazy val CoreDedup = project dependsOn MetaH2
+lazy val DedupFS = project dependsOn CoreDedup

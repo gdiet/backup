@@ -21,5 +21,8 @@ class Arguments(args: Array[String], numberOfParams: Int) {
     else if (uncheckedOptions.nonEmpty)
       bad("The following options provided have not been evaluated:\n" + uncheckedOptions.mkString("'", "', '", "'"))
     else
-      good
+      try good catch { case t: Throwable =>
+        t.printStackTrace(System.err) // FIXME use logger
+        bad(s"Execution failed with $t")
+      }
 }
