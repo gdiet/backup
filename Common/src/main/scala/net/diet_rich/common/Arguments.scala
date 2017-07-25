@@ -14,6 +14,9 @@ class Arguments(args: Array[String], numberOfParams: Int) {
   def parameters: List[String] = if (params.length == numberOfParams) params.toList else List.fill(numberOfParams)("")
   def optional(key: String): Option[String] = { uncheckedOptions -= key; optionsMap.get(key) }
   def required(key: String): String = optional(key).getOrElse { problems :+= s"The parameter $key is required."; "" }
+  def optionalLong(key: String): Option[Long] =
+    try optional(key).map(_.toLong)
+    catch { case _: NumberFormatException => problems :+= s"The parameter $key is not a valid number."; None }
 
   def withSettingsChecked[T](bad: String => T)(good: => T): T =
     if (problems.nonEmpty)
