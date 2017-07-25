@@ -7,6 +7,9 @@ import net.diet_rich.dedup.meta.TreeEntry.root
 import net.diet_rich.dedup.store.StoreMethod
 
 object Database {
+  val databaseVersionSetting = "databaseVersion" -> "3.0"
+  val metaBackendClassSetting = "metaBackendClass" -> "net.diet_rich.dedup.meta.h2.H2BackendFactory"
+
   // The tables are designed for create-only usage (no updates) and deletes only when purging to free space.
   // To get the current tree state, a clause like WHERE id IN (SELECT MAX(id) from TreeEntries GROUP BY key);
   // is needed. Unique constraints can not be set for the tree (i.e., for sibling nodes with the same names).

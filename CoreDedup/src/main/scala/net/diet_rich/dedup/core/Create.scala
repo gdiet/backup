@@ -1,7 +1,7 @@
 package net.diet_rich.dedup.core
 
 import net.diet_rich.common.Arguments
-import net.diet_rich.common.io.RichFile
+import net.diet_rich.common.io.{RichFile, writeSettingsFile}
 import net.diet_rich.dedup.meta.{MetaBackend, MetaBackendFactory}
 
 object Create extends App {
@@ -48,6 +48,12 @@ object Create extends App {
     else if (!repositoryDir.canWrite) failAndPrintUsage("Can not write to repository path.")
     else if (repositoryDir.list().nonEmpty) failAndPrintUsage("The repository directory must be empty.")
     else {
+      import net.diet_rich.dedup.Settings._
+      val repositorySettings = Map(
+        repositoryVersionSetting,
+        repositoryIdKey -> repositoryId
+      )
+      writeSettingsFile(repositoryDir / settingsFileName, repositorySettings)
       metaBackendFactory.initialize(repositoryDir / MetaBackend.path, repositoryId, hashAlgorithm)
       OK
     }
