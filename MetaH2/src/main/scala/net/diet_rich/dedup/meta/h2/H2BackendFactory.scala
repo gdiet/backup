@@ -9,6 +9,7 @@ class H2BackendFactory extends MetaBackendFactory {
   override def initialize(directory: java.io.File, repositoryId: String, hashAlgorithm: String): Unit = {
     val databaseSettings = Map(
       Settings.repositoryIdKey -> repositoryId,
+      Settings.hashAlgorithmKey -> hashAlgorithm,
       Database.databaseVersionSetting,
       Database.metaBackendClassSetting
     )

@@ -8,7 +8,7 @@ scalacOptions in ThisBuild ++= Seq(
 
 lazy val Common = project
 lazy val CommonDedup = project
-lazy val Meta = project
-lazy val MetaH2 = project dependsOn (Common, CommonDedup, Meta)
+lazy val Meta = project dependsOn CommonDedup
+lazy val MetaH2 = project dependsOn (Common, Meta)
 lazy val CoreDedup = project dependsOn MetaH2
 lazy val DedupFS = project dependsOn CoreDedup
