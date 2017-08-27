@@ -54,7 +54,7 @@ object Create extends App {
         repositoryIdKey -> repositoryId
       )
       writeSettingsFile(repositoryDir / settingsFileName, repositorySettings)
-      metaBackendFactory.initialize(repositoryDir / MetaBackend.path, repositoryId, hashAlgorithm)
+      metaBackendFactory.initialize(repositoryDir / MetaBackend.pathInRepository, repositoryId, hashAlgorithm)
       OK
     }
   }

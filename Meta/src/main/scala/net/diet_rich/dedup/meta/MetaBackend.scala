@@ -3,7 +3,7 @@ package net.diet_rich.dedup.meta
 import TreePath.RichPath
 
 object MetaBackend {
-  val path = "meta"
+  val pathInRepository = "meta"
 }
 
 /** File system tree and metadata methods. */
