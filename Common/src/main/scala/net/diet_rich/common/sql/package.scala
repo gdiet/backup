@@ -24,7 +24,7 @@ package object sql {
 
   def insertReturnsKey(sql: String, keyToReturn: String)(implicit connectionFactory: ConnectionFactory): SqlInsertReturnKey = {
     new SqlInsertReturnKey {
-      protected val prepared = ScalaThreadLocal.arm(() => connectionFactory() prepareStatement (sql, Array(keyToReturn)))
+      private val prepared = ScalaThreadLocal.arm(() => connectionFactory() prepareStatement (sql, Array(keyToReturn)))
       override def run(args: Seq[Any]): Long = {
         val statement = prepared()
         statement updateSingleRow(args, sql)
@@ -86,10 +86,10 @@ package object sql {
 
     def execQuery[T](args: Seq[Any], sql: String)(implicit processor: ResultSet => T): ResultIterator[T] =
       new ResultIterator[T] {
-        def iteratorName = sqlWithArgsString(sql, args)
-        val resultSet = setArguments(args) executeQuery()
+        def iteratorName: String = sqlWithArgsString(sql, args)
+        private val resultSet = setArguments(args) executeQuery()
         var (hasNextIsChecked, hasNextResult) = (false, false)
-        override def hasNext : Boolean = {
+        override def hasNext: Boolean = {
           if (!hasNextIsChecked) {
             hasNextResult = resultSet next()
             hasNextIsChecked = true
@@ -97,7 +97,7 @@ package object sql {
           }
           hasNextResult
         }
-        override def next() : T = {
+        override def next(): T = {
           if (!hasNext) throw new NoSuchElementException(s"Retrieving next element from $iteratorName failed.")
           hasNextIsChecked = false
           processor(resultSet)
@@ -106,7 +106,7 @@ package object sql {
   }
 
   private class PreparedSql(val sql: String)(implicit connectionFactory: ConnectionFactory) extends AutoCloseable {
-    val prepared = ScalaThreadLocal.arm(() => connectionFactory() prepareStatement sql)
+    val prepared: ArmThreadLocal[PreparedStatement] = ScalaThreadLocal.arm(() => connectionFactory() prepareStatement sql)
     override def close(): Unit = prepared close()
   }
 

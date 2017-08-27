@@ -7,6 +7,6 @@ object StoreMethod {
     "store" -> STORE,
     "deflate" -> DEFLATE
   )
-  val names = named map (_.swap)
+  val names: Map[Int, String] = named map (_.swap)
   assert(named.size == names.size)
 }

@@ -17,5 +17,5 @@ object Print {
   def of(bytes: Bytes): Print = of(bytes.data, bytes.offset, bytes.length)
   def of(string: String): Print = of(string getBytes "UTF-8")
 
-  val empty = of(Array.empty[Byte])
+  val empty: Print = of(Array.empty[Byte])
 }
