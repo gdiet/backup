@@ -13,9 +13,11 @@ class H2BackendFactory extends MetaBackendFactory {
       Database.databaseVersionSetting,
       Database.metaBackendClassSetting
     )
-    using(ConnectionFactory(H2.driver, H2.url(directory), H2.user, H2.password, H2.onShutdown)) { implicit cf =>
+    using(ConnectionFactory(H2.driver, H2.url(directory), H2.user, H2.password, H2.onShutdown)) { implicit _cf =>
       Database.create(hashAlgorithm, databaseSettings)
     }
     writeSettingsFile(directory / Settings.settingsFileName, databaseSettings)
   }
+  def metaBackend(directory: java.io.File, repositoryId: String): H2MetaBackend =
+    new H2MetaBackend(directory: java.io.File, repositoryId: String)
 }
