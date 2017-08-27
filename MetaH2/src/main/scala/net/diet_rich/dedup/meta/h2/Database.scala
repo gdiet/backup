@@ -27,10 +27,10 @@ object Database {
         |  changed   BIGINT DEFAULT NULL,
         |  dataId    BIGINT DEFAULT NULL,
         |  deleted   BOOLEAN NOT NULL DEFAULT FALSE,
-        |  timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        |  timestamp BIGINT NOT NULL,
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
         |);
-        |INSERT INTO TreeEntries (parent, name) VALUES (${root.parent}, '${root.name}');
+        |INSERT INTO TreeEntries (parent, name) VALUES (${root.parent}, '${root.name}', ${System.currentTimeMillis});
         |CREATE SEQUENCE dataEntryIdSeq START WITH 0;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),
