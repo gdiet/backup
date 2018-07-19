@@ -6,5 +6,15 @@ scalacOptions in ThisBuild ++= Seq(
   "-unchecked"
 )
 
-lazy val Main = project dependsOn FuseFS
+lazy val DedupFS = project
+  .in(file("."))
+  .dependsOn(FuseFS)
+
 lazy val FuseFS = project
+  .dependsOn(ScalaFS)
+  .settings(
+    resolvers += "bintray" at "http://jcenter.bintray.com",
+    libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.1"
+  )
+
+lazy val ScalaFS = project
