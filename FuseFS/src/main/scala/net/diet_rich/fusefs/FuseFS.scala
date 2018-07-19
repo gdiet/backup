@@ -1,23 +1,67 @@
 package net.diet_rich.fusefs
 
-import ru.serce.jnrfuse.FuseStubFS
+import jnr.ffi.{Platform, Pointer}
+import jnr.ffi.Platform.OS.WINDOWS
+import net.diet_rich.scalafs.{Dir, File, FileSystem}
+import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
+import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 
-class FuseFS extends FuseStubFS {
+class FuseFS(fs: FileSystem) extends FuseStubFS {
+  private val OK = 0
+  private val O777 = 511 // octal 0777
 
+  override def getattr(path: String, stat: FileStat): Int =
+    fs.getPath(path) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(_: Dir) =>
+        stat.st_mode.set(FileStat.S_IFDIR | O777)
+        OK
+      case Some(file: File) =>
+        stat.st_mode.set(FileStat.S_IFREG | O777)
+        stat.st_size.set(file.size)
+        OK
+    }
+
+  // TODO https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html#readdir-details
+  override def readdir(path: String, buf: Pointer, filter: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
+    fs.getPath(path) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(_: File) => -ErrorCodes.ENOTDIR
+      case Some(_: Dir) =>
+        filter.apply(buf, ".", null, 0)
+        filter.apply(buf, "..", null, 0)
+        // TODO implement
+        // p.asInstanceOf[MemoryFS#MemoryDirectory].read(buf, filter)
+        OK
+    }
+
+  override def statfs(path: String, stbuf: Statvfs): Int = {
+    // statfs needs to be implemented on Windows in order to allow for copying
+    // data from other devices because winfsp calculates the volume size based
+    // on the statvfs call.
+    // see https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
+    if (Platform.getNativePlatform.getOS == WINDOWS) {
+      // TODO implement something sensible here ...
+      stbuf.f_blocks.set(1024 * 1024) // total data blocks in file system
+      stbuf.f_frsize.set(1024) // fs block size
+      stbuf.f_bfree.set(1024 * 1024) // free blocks in fs
+    }
+    OK
+  }
 }
 
 object FuseFS {
-  def mount: AutoCloseable = {
+  def mount(fs: FileSystem): AutoCloseable = {
     new AutoCloseable {
-      val fs = new FuseFS
+      val fuseFS = new FuseFS(fs)
       try {
-        val mountPoint = jnr.ffi.Platform.getNativePlatform.getOS match {
-          case jnr.ffi.Platform.OS.WINDOWS => "I:\\"
+        val mountPoint = Platform.getNativePlatform.getOS match {
+          case WINDOWS => "I:\\"
           case _ => "/tmp/mntfs"
         }
-        fs.mount(java.nio.file.Paths.get(mountPoint), false, true)
-      } catch { case e: Throwable => fs.umount(); throw e }
-      override def close(): Unit = fs.umount()
+        fuseFS.mount(java.nio.file.Paths.get(mountPoint), false, true)
+      } catch { case e: Throwable => fuseFS.umount(); throw e }
+      override def close(): Unit = fuseFS.umount()
     }
   }
 }
