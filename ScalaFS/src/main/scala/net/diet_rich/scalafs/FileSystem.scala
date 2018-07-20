@@ -1,13 +1,17 @@
 package net.diet_rich.scalafs
 
 trait FileSystem {
-  def getPath(path: String): Option[DirOrFile]
+  def getNode(path: String): Option[Node]
 }
 
-sealed trait DirOrFile
+sealed trait Node {
+  def name: String
+}
 
-trait Dir extends DirOrFile
+trait Dir extends Node {
+  def list: Seq[Node]
+}
 
-trait File extends DirOrFile {
+trait File extends Node {
   def size: Long
 }
