@@ -14,7 +14,7 @@ lazy val FuseFS = project
   .dependsOn(ScalaFS)
   .settings(
     resolvers += "bintray" at "http://jcenter.bintray.com",
-    libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.1"
+    libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.2.1"
   )
 
 lazy val ScalaFS = project
