@@ -52,27 +52,27 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging {
     // data from other devices because winfsp calculates the volume size based
     // on the statvfs call.
     // see https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
-    if (Platform.getNativePlatform.getOS == WINDOWS) {
+//    if (Platform.getNativePlatform.getOS eq WINDOWS) {
       // TODO implement something sensible here ...
       stbuf.f_blocks.set(1024 * 1024) // total data blocks in file system
       stbuf.f_frsize.set(1024) // fs block size
       stbuf.f_bfree.set(1024 * 1024) // free blocks in fs
-    }
-    OK
+//    }
+    super.statfs(path, stbuf)
   }
 }
 
 object FuseFS extends ClassLogging {
   def mount(fs: FileSystem): AutoCloseable = {
     new AutoCloseable {
-      val fuseFS = new MemoryFS() // new FuseFS(fs)
+      val fuseFS = new FuseFS(fs)
       try {
         val mountPoint = Platform.getNativePlatform.getOS match {
           case WINDOWS => "I:\\"
           case _ => "/tmp/mntfs"
         }
         log.info(s"mount($mountPoint)")
-        fuseFS.mount(java.nio.file.Paths.get(mountPoint), false, true)
+        fuseFS.mount(java.nio.file.Paths.get(mountPoint), false, false)
       } catch { case e: Throwable =>
         log.info(e.getMessage)
         fuseFS.umount(); throw e
