@@ -13,7 +13,7 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging {
   private val O777 = 511 // octal 0777
 
   override def getattr(path: String, stat: FileStat): Int = {
-    log.info(s"!! getattr($path, $stat)")
+    log.info(s"getattr($path, fileStat)") // NOTE: calling FileState.toString DOES NOT WORK
     fs.getNode(path) match {
       case None             => -ErrorCodes.ENOENT
       case Some(_: Dir)     =>
@@ -28,7 +28,7 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging {
 
   // see also https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html#readdir-details
   override def readdir(path: String, buf: Pointer, filler: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = {
-    log.info(s"!! readdir($path, buffer, filler, $offset, $fi)")
+    log.info(s"readdir($path, buffer, filler, $offset, $fi)")
     if (offset.toInt < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW else
       fs.getNode(path) match {
         case None           => -ErrorCodes.ENOENT
@@ -47,18 +47,19 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging {
   }
 
   override def statfs(path: String, stbuf: Statvfs): Int = {
-    log.info(s"!! statfs($path, buffer)")
-    // statfs needs to be implemented on Windows in order to allow for copying
-    // data from other devices because winfsp calculates the volume size based
-    // on the statvfs call.
-    // see https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
-//    if (Platform.getNativePlatform.getOS eq WINDOWS) {
-      // TODO implement something sensible here ...
-      stbuf.f_blocks.set(1024 * 1024) // total data blocks in file system
-      stbuf.f_frsize.set(1024) // fs block size
-      stbuf.f_bfree.set(1024 * 1024) // free blocks in fs
-//    }
-    super.statfs(path, stbuf)
+    log.info(s"statfs($path, buffer)")
+    if (Platform.getNativePlatform.getOS == WINDOWS) {
+      // statfs needs to be implemented on Windows in order to allow for copying
+      // data from other devices because winfsp calculates the volume size based
+      // on the statvfs call.
+      // see https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
+      if ("/" == path) {
+        stbuf.f_blocks.set(1024 * 1024) // total data blocks in file system
+        stbuf.f_frsize.set(1024) // fs block size
+        stbuf.f_bfree.set(1024 * 1024) // free blocks in fs
+      }
+    }
+    OK
   }
 }
 

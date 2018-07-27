@@ -5,19 +5,17 @@ import java.util.Objects
 
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
-import net.diet_rich.util.Log
+import net.diet_rich.util.{ClassLogging, Log}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
-object MinimalScala2 extends App {
-  def log: Log.type = Log
-
+object MinimalScala2 extends App with ClassLogging {
   def mount(): AutoCloseable = {
     new AutoCloseable {
       val fuseFS = new MinimalScala2()
       try {
         val mountPoint = Platform.getNativePlatform.getOS match {
-          case WINDOWS => "J:\\"
+          case WINDOWS => "I:\\"
           case _ => "/tmp/mntfs"
         }
         log.info(s"mount($mountPoint)")
@@ -35,9 +33,12 @@ object MinimalScala2 extends App {
   finally fuseFS.close()
 }
 
-class MinimalScala2 extends FuseStubFS {
+class MinimalScala2 extends FuseStubFS with ClassLogging {
+  private val OK = 0
+  private val O777 = 511 // octal 0777
+
   override def statfs(path: String, stbuf: Statvfs): Int = {
-    println("statfs " + path)
+    log.info(s"statfs($path, buffer)")
     if (Platform.getNativePlatform.getOS == WINDOWS) {
       // statfs needs to be implemented on Windows in order to allow for copying
       // data from other devices because winfsp calculates the volume size based
@@ -49,11 +50,11 @@ class MinimalScala2 extends FuseStubFS {
         stbuf.f_bfree.set(1024 * 1024) // free blocks in fs
       }
     }
-    0
+    OK
   }
 
   override def getattr(path: String, stat: FileStat): Int = {
-    System.out.println("getattr " + path)
+    log.info(s"getattr($path, fileStat)")
     if (Objects.equals(path, "/")) {
       stat.st_mode.set(FileStat.S_IFDIR | 493) // 0755
       stat.st_nlink.set(2)
@@ -63,7 +64,7 @@ class MinimalScala2 extends FuseStubFS {
   }
 
   override def readdir(path: String, buf: Pointer, filter: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = {
-    System.out.println("readdir " + path)
+    log.info("readdir " + path)
     if ("/" != path) -ErrorCodes.ENOENT else {
       filter.apply(buf, ".", null, 0)
       filter.apply(buf, "..", null, 0)
