@@ -3,10 +3,10 @@ package net.diet_rich.dedupfs
 import java.nio.file.Paths
 import java.util.Objects
 
-import jnr.ffi.Platform
+import jnr.ffi.{Platform, Pointer}
 import jnr.ffi.Platform.OS.WINDOWS
-import ru.serce.jnrfuse.{ErrorCodes, FuseStubFS}
-import ru.serce.jnrfuse.struct.{FileStat, Statvfs}
+import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
+import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 
 object MinimalScala extends App {
   val fs = new MinimalScala
@@ -44,5 +44,14 @@ class MinimalScala extends FuseStubFS {
       0
     }
     else -ErrorCodes.ENOENT
+  }
+
+  override def readdir(path: String, buf: Pointer, filter: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = {
+    System.out.println("readdir " + path)
+    if ("/" != path) -ErrorCodes.ENOENT else {
+      filter.apply(buf, ".", null, 0)
+      filter.apply(buf, "..", null, 0)
+      0
+    }
   }
 }
