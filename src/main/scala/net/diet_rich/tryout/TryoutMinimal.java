@@ -1,4 +1,4 @@
-package net.diet_rich.dedupfs;
+package net.diet_rich.tryout;
 
 import jnr.ffi.Platform;
 import ru.serce.jnrfuse.ErrorCodes;

@@ -5,7 +5,6 @@ trait ClassLogging {
 }
 
 object Log {
-  def info(message: String): Unit = {
-    println(s"** $message")
-  }
+  def debug(message: String): Unit = info(message)
+  def info(message: String): Unit = println(message)
 }

@@ -1,12 +1,12 @@
-package net.diet_rich.dedupfs
+package net.diet_rich.tryout
 
 import java.nio.file.Paths
 import java.util.Objects
 
-import jnr.ffi.{Platform, Pointer}
 import jnr.ffi.Platform.OS.WINDOWS
-import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
+import jnr.ffi.{Platform, Pointer}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
+import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
 object MinimalScala extends App {
   val fs = new MinimalScala
