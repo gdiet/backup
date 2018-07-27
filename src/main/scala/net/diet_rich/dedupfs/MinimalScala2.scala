@@ -3,23 +3,39 @@ package net.diet_rich.dedupfs
 import java.nio.file.Paths
 import java.util.Objects
 
-import jnr.ffi.{Platform, Pointer}
 import jnr.ffi.Platform.OS.WINDOWS
-import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
+import jnr.ffi.{Platform, Pointer}
+import net.diet_rich.util.Log
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
+import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
-object MinimalScala extends App {
-  val fs = new MinimalScala
-  try {
-    val path = Platform.getNativePlatform.getOS match {
-      case WINDOWS => "J:\\"
-      case _       => "/tmp/mntm"
+object MinimalScala2 extends App {
+  def log: Log.type = Log
+
+  def mount(): AutoCloseable = {
+    new AutoCloseable {
+      val fuseFS = new MinimalScala2()
+      try {
+        val mountPoint = Platform.getNativePlatform.getOS match {
+          case WINDOWS => "J:\\"
+          case _ => "/tmp/mntfs"
+        }
+        log.info(s"mount($mountPoint)")
+        fuseFS.mount(Paths.get(mountPoint), false, false)
+      } catch { case e: Throwable =>
+        log.info(e.getMessage)
+        fuseFS.umount(); throw e
+      }
+      override def close(): Unit = fuseFS.umount()
     }
-    fs.mount(Paths.get(path), true, false)
-  } finally fs.umount()
+  }
+
+  val fuseFS = mount()
+  try io.StdIn.readLine("[enter] to exit ...")
+  finally fuseFS.close()
 }
 
-class MinimalScala extends FuseStubFS {
+class MinimalScala2 extends FuseStubFS {
   override def statfs(path: String, stbuf: Statvfs): Int = {
     println("statfs " + path)
     if (Platform.getNativePlatform.getOS == WINDOWS) {
