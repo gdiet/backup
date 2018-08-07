@@ -2,7 +2,6 @@ package net.diet_rich.dedup.metaH2
 
 import java.lang.System.{currentTimeMillis => now}
 
-import net.diet_rich.dedup.meta.MetaBackend.Root
 import net.diet_rich.util.Hash
 import net.diet_rich.util.sql._
 
@@ -14,7 +13,8 @@ object Database {
   // To support links, a table like LinkEntries (id, key, parent (-> key on TreeEntries), name,
   // target (-> key on TreeEntries), deleted, timestamp) could be added, where id should feed from the same sequence
   // as TreeEntries.id, so it can be used for history purposes.
-  private def tableDefinitions(hashAlgorithm: String): Array[String] =
+  private def tableDefinitions(hashAlgorithm: String): Array[String] = {
+    import H2MetaBackend._
     s"""|CREATE SEQUENCE treeEntryIdSeq START WITH 0;
         |CREATE SEQUENCE treeEntryKeySeq START WITH 0;
         |CREATE TABLE TreeEntries (
@@ -28,7 +28,7 @@ object Database {
         |  timestamp BIGINT NOT NULL,
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
         |);
-        |INSERT INTO TreeEntries (parent, name, timestamp) VALUES (${Root.parent}, '${Root.name}', $now);
+        |INSERT INTO TreeEntries (parent, name, timestamp) VALUES ($rootId, '$rootName', $now);
         |CREATE SEQUENCE dataEntryIdSeq START WITH 0;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),
@@ -49,6 +49,7 @@ object Database {
         |  value  VARCHAR(256) NOT NULL,
         |  CONSTRAINT pk_Settings PRIMARY KEY (key)
         |);""".stripMargin split ";"
+  }
 
   private val indexDefinitions: Array[String] =
     """|DROP   INDEX idxTreeEntriesParent IF EXISTS;
