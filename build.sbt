@@ -13,7 +13,7 @@ lazy val DedupFS = project
 // ---- subprojects ----
 
 lazy val FuseFS = project
-  .dependsOn(ScalaFS)
+  .dependsOn(ScalaFS, MetaH2)
   .settings(
     resolvers += "bintray" at "http://jcenter.bintray.com",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.2.1" // 0.5.2.1 as of 2018-07-25
