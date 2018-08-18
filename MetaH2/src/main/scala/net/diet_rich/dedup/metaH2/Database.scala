@@ -17,7 +17,7 @@ object Database {
         |  data      BIGINT DEFAULT NULL,
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
         |);
-        |INSERT INTO TreeEntries (parent, name) VALUES ($rootId, '$rootName');
+        |INSERT INTO TreeEntries (parent, name) VALUES ($rootsParent, '$rootName');
         |CREATE SEQUENCE treeJournalIdSeq  START WITH 0;
         |CREATE TABLE TreeJournal (
         |  id        BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeJournalIdSeq),
@@ -30,7 +30,7 @@ object Database {
         |  timestamp BIGINT NOT NULL,
         |  CONSTRAINT pk_TreeJournal PRIMARY KEY (id)
         |);
-        |INSERT INTO TreeJournal (treeId, parent, name, timestamp) VALUES ($rootId, $rootId, '$rootName', $now);
+        |INSERT INTO TreeJournal (treeId, parent, name, timestamp) VALUES ($rootId, $rootsParent, '$rootName', $now);
         |CREATE SEQUENCE dataEntryIdSeq START WITH 0;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),
@@ -54,10 +54,12 @@ object Database {
   }
 
   private val indexDefinitions: Array[String] =
-    """|DROP   INDEX TreeEntriesParentIdx     IF EXISTS;
-       |CREATE INDEX TreeEntriesParentIdx     ON TreeEntries(parent);
-       |DROP   INDEX TreeEntriesIdIdx         IF EXISTS;
+    """|DROP   INDEX TreeEntriesIdIdx         IF EXISTS;
        |CREATE INDEX TreeEntriesIdIdx         ON TreeEntries(id);
+       |DROP   INDEX TreeEntriesParentIdx     IF EXISTS;
+       |CREATE INDEX TreeEntriesParentIdx     ON TreeEntries(parent);
+       |DROP   INDEX TreeEntriesParentNameIdx IF EXISTS;
+       |CREATE INDEX TreeEntriesParentNameIdx ON TreeEntries(parent, name);
        |DROP   INDEX DataEntriesDuplicatesIdx IF EXISTS;
        |CREATE INDEX DataEntriesDuplicatesIdx ON DataEntries(length, hash);
        |DROP   INDEX ByteStoreDataIdx         IF EXISTS;

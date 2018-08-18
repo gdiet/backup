@@ -6,7 +6,8 @@ import net.diet_rich.util.sql._
 
 object H2MetaBackend {
   val pathSeparator = "/"
-  val rootId = 0
+  val rootsParent = 0
+  val rootId: Int = rootsParent + 1
   val rootName = ""
   val rootPath = "/"
 
@@ -25,12 +26,12 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     def isFile: Boolean = data.isDefined
   }
   object TreeEntry { implicit val result: ResultSet => TreeEntry = { r =>
-    TreeEntry(r.long(1), r.long(2), r.string(4), r.longOption(5), r.longOption(6))
+    TreeEntry(r.long(1), r.long(2), r.string(3), r.longOption(4), r.longOption(5))
   } }
 
   private val selectTreeEntry = "SELECT id, parent, name, changed, data FROM TreeEntries"
 
-  private val prepQTreeById = query[TreeEntry](s"$selectTreeEntry WHERE key = ?")
+  private val prepQTreeById = query[TreeEntry](s"$selectTreeEntry WHERE id = ?")
   def entry(id: Long): Option[TreeEntry] = prepQTreeById.run(id).nextOptionOnly()
 
   private val prepQTreeByParent = query[TreeEntry](s"$selectTreeEntry WHERE parent = ?")
@@ -43,12 +44,15 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   def entry(id: Long, children: Seq[String]): Option[TreeEntry] =
     if (children.isEmpty) entry(id) else child(id, children.head).flatMap(e => entry(e.id, children.tail))
 
-  private val prepInsertEntry =
-    insertReturnsKey("INSERT INTO TreeEntries (parent, name, changed, data, timestamp) VALUES (?, ?, ?, ?, ?)", "key")
+  private val prepITreeEntry =
+    insertReturnsKey("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (?, ?, ?, ?)", "id")
   def addNewDir(parent: Long, name: String): Option[Long] = {
     entry(parent).flatMap { parentEntry =>
       if (!parentEntry.isDir) None else {
-        ???
+        child(parent, name) match {
+          case Some(_) => None
+          case None => Some(prepITreeEntry.run(parent, name, None, None))
+        }
       }
     }
   }
@@ -59,5 +63,7 @@ object Tryout extends App {
     ConnectionFactory(H2.jdbcMemoryUrl(), H2.user, H2.password, H2.onShutdown)
   Database.create("MD5", Map())
   val meta = new H2MetaBackend
-  println(meta.children(5))
+  println(meta.addNewDir(1, "a"))
+  println(meta.addNewDir(1, ""))
+  println(meta.addNewDir(2, ""))
 }
