@@ -2,6 +2,7 @@ package net.diet_rich.dedup.metaH2
 
 import java.sql.ResultSet
 
+import net.diet_rich.util.init
 import net.diet_rich.util.sql._
 
 object H2MetaBackend {
@@ -53,16 +54,11 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
       if (!parentEntry.isDir) None else {
         child(parent, name) match {
           case Some(_) => None
-          case None =>
-            try { // FIXME implement some "transaction" method in ConnectionFactory?
-              val id = prepITreeEntry.run(parent, name, None, None)
-              prepITreeJournal.run(id, parent, name, None, None, System.currentTimeMillis())
-              connectionFactory().commit()
-              Some(id)
-            } catch { case e: Throwable =>
-              connectionFactory().rollback()
-              throw e
-            }
+          case None => connectionFactory.transaction {
+            Some(init(prepITreeEntry.run(parent, name, None, None))(
+              prepITreeJournal.run(_, parent, name, None, None, System.currentTimeMillis())
+            ))
+          }
         }
       }
     }

@@ -4,6 +4,7 @@ import java.sql.{Connection, DriverManager}
 
 import net.diet_rich.util.ArmThreadLocal
 import net.diet_rich.util.init
+import net.diet_rich.util.valueOf
 
 class ConnectionFactory(factory: () => Connection, onClose: Connection => Unit)
   extends ArmThreadLocal[Connection] (
@@ -14,7 +15,10 @@ class ConnectionFactory(factory: () => Connection, onClose: Connection => Unit)
         finally { onClose(head); head.close() }
       case Vector() => ()
     }
-  )
+  ) {
+  def transaction[T](f: => T): T =
+    try { valueOf(f).before(factory().commit()) } catch { case t: Throwable => factory().rollback(); throw t }
+}
 
 object ConnectionFactory {
   def apply(url: String, user: String, password: String, executeOnClose: Option[String], autoCommit: Boolean): ConnectionFactory = {
