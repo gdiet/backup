@@ -6,29 +6,31 @@ import net.diet_rich.util.Hash
 import net.diet_rich.util.sql._
 
 object Database {
-
-  // The tables are designed for create-only usage (no updates) and deletes only when purging to free space.
-  // To get the current tree state, a clause like WHERE id IN (SELECT MAX(id) from TreeEntries GROUP BY key);
-  // is needed. Unique constraints can not be set for the tree (i.e., for sibling nodes with the same names).
-  // To support links, a table like LinkEntries (id, key, parent (-> key on TreeEntries), name,
-  // target (-> key on TreeEntries), deleted, timestamp) could be added, where id should feed from the same sequence
-  // as TreeEntries.id, so it can be used for history purposes.
   private def tableDefinitions(hashAlgorithm: String): Array[String] = {
     import H2MetaBackend._
-    s"""|CREATE SEQUENCE treeEntryIdSeq START WITH 0;
-        |CREATE SEQUENCE treeEntryKeySeq START WITH 0;
+    s"""|CREATE SEQUENCE treeEntryIdSeq  START WITH $rootId;
         |CREATE TABLE TreeEntries (
         |  id        BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryIdSeq),
-        |  key       BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryKeySeq),
+        |  parent    BIGINT NOT NULL,
+        |  name      VARCHAR(255) NOT NULL,
+        |  changed   BIGINT DEFAULT NULL,
+        |  data      BIGINT DEFAULT NULL,
+        |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
+        |);
+        |INSERT INTO TreeEntries (parent, name) VALUES ($rootId, '$rootName');
+        |CREATE SEQUENCE treeJournalIdSeq  START WITH 0;
+        |CREATE TABLE TreeJournal (
+        |  id        BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeJournalIdSeq),
+        |  treeId    BIGINT NOT NULL,
         |  parent    BIGINT NOT NULL,
         |  name      VARCHAR(256) NOT NULL,
         |  changed   BIGINT DEFAULT NULL,
         |  data      BIGINT DEFAULT NULL,
         |  deleted   BOOLEAN NOT NULL DEFAULT FALSE,
         |  timestamp BIGINT NOT NULL,
-        |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
+        |  CONSTRAINT pk_TreeJournal PRIMARY KEY (id)
         |);
-        |INSERT INTO TreeEntries (parent, name, timestamp) VALUES ($rootId, '$rootName', $now);
+        |INSERT INTO TreeJournal (treeId, parent, name, timestamp) VALUES ($rootId, $rootId, '$rootName', $now);
         |CREATE SEQUENCE dataEntryIdSeq START WITH 0;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),
@@ -52,18 +54,18 @@ object Database {
   }
 
   private val indexDefinitions: Array[String] =
-    """|DROP   INDEX idxTreeEntriesParent IF EXISTS;
-       |CREATE INDEX idxTreeEntriesParent ON TreeEntries(parent);
-       |DROP   INDEX idxTreeEntriesKey IF EXISTS;
-       |CREATE INDEX idxTreeEntriesKey ON TreeEntries(key);
-       |DROP   INDEX idxDataEntriesDuplicates IF EXISTS;
-       |CREATE INDEX idxDataEntriesDuplicates ON DataEntries(length, hash);
-       |DROP   INDEX idxByteStoreData IF EXISTS;
-       |CREATE INDEX idxByteStoreData ON ByteStore(dataId);
-       |DROP   INDEX idxByteStoreStart IF EXISTS;
-       |CREATE INDEX idxByteStoreStart ON ByteStore(start);
-       |DROP   INDEX idxByteStoreFin IF EXISTS;
-       |CREATE INDEX idxByteStoreFin ON ByteStore(fin);""".stripMargin split ";"
+    """|DROP   INDEX TreeEntriesParentIdx     IF EXISTS;
+       |CREATE INDEX TreeEntriesParentIdx     ON TreeEntries(parent);
+       |DROP   INDEX TreeEntriesIdIdx         IF EXISTS;
+       |CREATE INDEX TreeEntriesIdIdx         ON TreeEntries(id);
+       |DROP   INDEX DataEntriesDuplicatesIdx IF EXISTS;
+       |CREATE INDEX DataEntriesDuplicatesIdx ON DataEntries(length, hash);
+       |DROP   INDEX ByteStoreDataIdx         IF EXISTS;
+       |CREATE INDEX ByteStoreDataIdx         ON ByteStore(dataId);
+       |DROP   INDEX ByteStoreStartIdx        IF EXISTS;
+       |CREATE INDEX ByteStoreStartIdx        ON ByteStore(start);
+       |DROP   INDEX ByteStoreFinIdx          IF EXISTS;
+       |CREATE INDEX ByteStoreFinIdx          ON ByteStore(fin);""".stripMargin split ";"
 
   def create(hashAlgorithm: String, dbSettings: Map[String, String])(implicit con: ConnectionFactory): Unit = {
     tableDefinitions(hashAlgorithm) foreach (update(_).run())
