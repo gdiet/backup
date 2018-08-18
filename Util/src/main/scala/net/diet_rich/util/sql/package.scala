@@ -16,18 +16,24 @@ package object sql {
 
   def singleRowUpdate(sql: String)(implicit connectionFactory: ConnectionFactory): SingleRowSqlUpdate =
     new PreparedSql(sql) with SingleRowSqlUpdate {
-      override def run(args: Seq[Any]): Unit = prepared() updateSingleRow(args, sql)
+      override def run(args: Seq[Any]): Unit = prepared().updateSingleRow(args, sql)
     }
+
+  def insert(sql: String)(implicit connectionFactory: ConnectionFactory): SqlInsert = {
+    new PreparedSql(sql) with SqlInsert {
+      override def run(args: Seq[Any]): Unit = prepared().updateSingleRow(args, sql)
+    }
+  }
 
   def insertReturnsKey(sql: String, keyToReturn: String)(implicit connectionFactory: ConnectionFactory): SqlInsertReturnKey = {
     new SqlInsertReturnKey {
-      private val prepared = ScalaThreadLocal.arm(() => connectionFactory() prepareStatement (sql, Array(keyToReturn)))
+      private val prepared = ScalaThreadLocal.arm(() => connectionFactory().prepareStatement(sql, Array(keyToReturn)))
       override def run(args: Seq[Any]): Long = {
         val statement = prepared()
         statement updateSingleRow(args, sql)
-        init(statement getGeneratedKeys()) (_ next()) long 1
+        init(statement.getGeneratedKeys)(_.next()).long(1)
       }
-      override def close(): Unit = prepared close()
+      override def close(): Unit = prepared.close()
     }
   }
 
@@ -42,6 +48,7 @@ package object sql {
   sealed trait SqlQuery[T] extends RunArgs[T] { def run(args: Seq[Any]): T }
   sealed trait SqlUpdate extends RunArgs[Int] { def run(args: Seq[Any]): Int }
   sealed trait SingleRowSqlUpdate extends RunArgs[Unit] { def run(args: Seq[Any]): Unit }
+  sealed trait SqlInsert extends RunArgs[Unit] { def run(args: Seq[Any]): Unit }
   sealed trait SqlInsertReturnKey extends RunArgs[Long] { def run(args: Seq[Any]): Long }
 
   implicit final class WrappedSQLResult(val resultSet: ResultSet) extends AnyVal {
@@ -102,8 +109,8 @@ package object sql {
   }
 
   private class PreparedSql(val sql: String)(implicit connectionFactory: ConnectionFactory) extends AutoCloseable {
-    val prepared: ArmThreadLocal[PreparedStatement] = ScalaThreadLocal.arm(() => connectionFactory() prepareStatement sql)
-    override def close(): Unit = prepared close()
+    final val prepared: ArmThreadLocal[PreparedStatement] = ScalaThreadLocal.arm(() => connectionFactory() prepareStatement sql)
+    final override def close(): Unit = prepared close()
   }
 
   private def sqlWithArgsString(sql: String, args: Seq[Any]) = s"'$sql' ${args.toList mkString ("(", ", ", ")")}"

@@ -46,12 +46,23 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
 
   private val prepITreeEntry =
     insertReturnsKey("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (?, ?, ?, ?)", "id")
+  private val prepITreeJournal =
+    insert("INSERT INTO TreeJournal (treeId, parent, name, changed, data, timestamp) VALUES (?, ?, ?, ?, ?, ?)")
   def addNewDir(parent: Long, name: String): Option[Long] = {
     entry(parent).flatMap { parentEntry =>
       if (!parentEntry.isDir) None else {
         child(parent, name) match {
           case Some(_) => None
-          case None => Some(prepITreeEntry.run(parent, name, None, None))
+          case None =>
+            try { // FIXME implement some "transaction" method in ConnectionFactory?
+              val id = prepITreeEntry.run(parent, name, None, None)
+              prepITreeJournal.run(id, parent, name, None, None, System.currentTimeMillis())
+              connectionFactory().commit()
+              Some(id)
+            } catch { case e: Throwable =>
+              connectionFactory().rollback()
+              throw e
+            }
         }
       }
     }
@@ -60,7 +71,7 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
 
 object Tryout extends App {
   private implicit val connectionFactory: ConnectionFactory =
-    ConnectionFactory(H2.jdbcMemoryUrl(), H2.user, H2.password, H2.onShutdown)
+    ConnectionFactory(H2.jdbcMemoryUrl(), H2.user, H2.password, H2.onShutdown, autoCommit = false)
   Database.create("MD5", Map())
   val meta = new H2MetaBackend
   println(meta.addNewDir(1, "a"))
