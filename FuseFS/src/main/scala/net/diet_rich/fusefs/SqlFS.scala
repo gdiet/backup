@@ -6,7 +6,7 @@ import net.diet_rich.util.sql.ConnectionFactory
 
 class SqlFS extends FileSystem {
   private implicit val connectionFactory: ConnectionFactory =
-    ConnectionFactory(H2.jdbcMemoryUrl(), H2.user, H2.password, H2.onShutdown, autoCommit = false)
+    ConnectionFactory(H2.jdbcMemoryUrl, H2.defaultUser, H2.defaultPassword, H2.onShutdown, autoCommit = false)
   Database.create("MD5", Map())
   private val meta = new H2MetaBackend
 
