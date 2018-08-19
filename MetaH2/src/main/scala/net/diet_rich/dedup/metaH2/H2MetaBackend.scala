@@ -17,6 +17,14 @@ object H2MetaBackend {
     if (path == rootPath) Some(Seq()) else
     Some(path.split(pathSeparator).toList.drop(1))
   }
+
+  def splitParentPath(path: String): Option[(String, String)] =
+    if (!path.startsWith(pathSeparator) || path == rootPath) None else {
+      Some(path.lastIndexOf('/') match {
+        case 0 => ("/", path.drop(1))
+        case i => (path.take(i), path.drop(i+1))
+      })
+    }
 }
 
 class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
@@ -26,7 +34,7 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     def isDir:  Boolean = data.isEmpty
     def isFile: Boolean = data.isDefined
   }
-  object TreeEntry { implicit val result: ResultSet => TreeEntry = { r =>
+  private object TreeEntry { implicit val result: ResultSet => TreeEntry = { r =>
     TreeEntry(r.long(1), r.long(2), r.string(3), r.longOption(4), r.longOption(5))
   } }
 
@@ -42,23 +50,21 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   def child(parent: Long, name: String): Option[TreeEntry] = prepQTreeByParentName.run(parent, name).nextOptionOnly()
 
   def entry(path: String): Option[TreeEntry] = pathElements(path).flatMap(entry(rootId, _))
-  def entry(id: Long, children: Seq[String]): Option[TreeEntry] =
+  private def entry(id: Long, children: Seq[String]): Option[TreeEntry] =
     if (children.isEmpty) entry(id) else child(id, children.head).flatMap(e => entry(e.id, children.tail))
 
   private val prepITreeEntry =
     insertReturnsKey("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (?, ?, ?, ?)", "id")
   private val prepITreeJournal =
     insert("INSERT INTO TreeJournal (treeId, parent, name, changed, data, timestamp) VALUES (?, ?, ?, ?, ?, ?)")
-  def addNewDir(parent: Long, name: String): Option[Long] = {
-    entry(parent).flatMap { parentEntry =>
-      if (!parentEntry.isDir) None else {
-        child(parent, name) match {
-          case Some(_) => None
-          case None => connectionFactory.transaction {
-            Some(init(prepITreeEntry.run(parent, name, None, None))(
-              prepITreeJournal.run(_, parent, name, None, None, System.currentTimeMillis())
-            ))
-          }
+  def addNewDir(parent: Long, name: String): Option[Long] = entry(parent).flatMap { parentEntry =>
+    if (!parentEntry.isDir) None else {
+      child(parent, name) match {
+        case Some(_) => None
+        case None => connectionFactory.transaction {
+          Some(init(prepITreeEntry.run(parent, name, None, None))(
+            prepITreeJournal.run(_, parent, name, None, None, System.currentTimeMillis())
+          ))
         }
       }
     }

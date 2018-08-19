@@ -25,6 +25,19 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging {
     }
   }
 
+  override def mkdir(path: String, mode: Long): Int = {
+    log.debug(s"mkdir($path, $mode)")
+    fs.getNode(path) match {
+      case Some(_) => -ErrorCodes.EEXIST
+      case None => fs.splitParentPath(path).flatMap {
+        case (parent, name) => fs.getNode(parent).collect { case dir: Dir => dir.mkDir(name) }
+      } match {
+        case Some(true) => 0
+        case _ => -ErrorCodes.ENOENT
+      }
+    }
+  }
+
   // see also https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html#readdir-details
   override def readdir(path: String,
                        buf: Pointer,
