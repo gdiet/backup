@@ -17,7 +17,7 @@ class ConnectionFactory(factory: () => Connection, onClose: Connection => Unit)
     }
   ) {
   def transaction[T](f: => T): T =
-    try { valueOf(f).before(factory().commit()) } catch { case t: Throwable => factory().rollback(); throw t }
+    try { valueOf(f).before(this().commit()) } catch { case t: Throwable => this().rollback(); throw t }
 }
 
 object ConnectionFactory {
