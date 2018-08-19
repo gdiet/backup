@@ -22,9 +22,7 @@ class SqlFS extends FileSystem {
       override def toString: String = s"File '$name': $entry"
     }
 
-  override def getNode(path: String): Option[Node] = meta.entry(path).map(nodeFor)
-
-  override def splitParentPath(path: String): Option[(String, String)] = H2MetaBackend.splitParentPath(path)
+  override def getNode(path: String): Option[Node] = FileSystem.pathElements(path).flatMap(meta.entry).map(nodeFor)
 }
 
 // FIXME remove

@@ -6,25 +6,9 @@ import net.diet_rich.util.init
 import net.diet_rich.util.sql._
 
 object H2MetaBackend {
-  val pathSeparator = "/"
   val rootsParent = 0
   val rootId: Int = rootsParent + 1
   val rootName = ""
-  val rootPath = "/"
-
-  private def pathElements(path: String): Option[Seq[String]] = {
-    if (!path.startsWith(pathSeparator)) None else
-    if (path == rootPath) Some(Seq()) else
-    Some(path.split(pathSeparator).toList.drop(1))
-  }
-
-  def splitParentPath(path: String): Option[(String, String)] =
-    if (!path.startsWith(pathSeparator) || path == rootPath) None else {
-      Some(path.lastIndexOf('/') match {
-        case 0 => ("/", path.drop(1))
-        case i => (path.take(i), path.drop(i+1))
-      })
-    }
 }
 
 class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
@@ -49,7 +33,7 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   private val prepQTreeByParentName = query[TreeEntry](s"$selectTreeEntry WHERE parent = ? AND name = ?")
   def child(parent: Long, name: String): Option[TreeEntry] = prepQTreeByParentName.run(parent, name).nextOptionOnly()
 
-  def entry(path: String): Option[TreeEntry] = pathElements(path).flatMap(entry(rootId, _))
+  def entry(path: Seq[String]): Option[TreeEntry] = entry(rootId, path)
   private def entry(id: Long, children: Seq[String]): Option[TreeEntry] =
     if (children.isEmpty) entry(id) else child(id, children.head).flatMap(e => entry(e.id, children.tail))
 

@@ -29,7 +29,7 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging {
     log.debug(s"mkdir($path, $mode)")
     fs.getNode(path) match {
       case Some(_) => -ErrorCodes.EEXIST
-      case None => fs.splitParentPath(path).flatMap {
+      case None => FileSystem.splitParentPath(path).flatMap {
         case (parent, name) => fs.getNode(parent).collect { case dir: Dir => dir.mkDir(name) }
       } match {
         case Some(true) => 0
