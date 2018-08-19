@@ -220,40 +220,45 @@ public class TryoutMemory extends FuseStubFS {
 
     private TryoutMemory() {
         // Sprinkle some files around
-        rootDirectory.add(new MemoryFile("Sample file.txt", "Hello there, feel free to look around.\n"));
-        rootDirectory.add(new MemoryDirectory("Sample directory"));
-        MemoryDirectory dirWithFiles = new MemoryDirectory("Directory with files");
-        rootDirectory.add(dirWithFiles);
-        dirWithFiles.add(new MemoryFile("hello.txt", "This is some sample text.\n"));
-        dirWithFiles.add(new MemoryFile("hello again.txt", "This another file with text in it! Oh my!\n"));
-        MemoryDirectory nestedDirectory = new MemoryDirectory("Sample nested directory");
-        dirWithFiles.add(nestedDirectory);
-        nestedDirectory.add(new MemoryFile("So deep.txt", "Man, I'm like, so deep in this here file structure.\n"));
+//        rootDirectory.add(new MemoryFile("Sample file.txt", "Hello there, feel free to look around.\n"));
+//        rootDirectory.add(new MemoryDirectory("Sample directory"));
+//        MemoryDirectory dirWithFiles = new MemoryDirectory("Directory with files");
+//        rootDirectory.add(dirWithFiles);
+//        dirWithFiles.add(new MemoryFile("hello.txt", "This is some sample text.\n"));
+//        dirWithFiles.add(new MemoryFile("hello again.txt", "This another file with text in it! Oh my!\n"));
+//        MemoryDirectory nestedDirectory = new MemoryDirectory("Sample nested directory");
+//        dirWithFiles.add(nestedDirectory);
+//        nestedDirectory.add(new MemoryFile("So deep.txt", "Man, I'm like, so deep in this here file structure.\n"));
     }
 
     @Override
     public int create(String path, @mode_t long mode, FuseFileInfo fi) {
         System.out.println("create " + path);
         if (getPath(path) != null) {
+            System.out.println("EEXIST");
             return -ErrorCodes.EEXIST();
         }
         MemoryPath parent = getParentPath(path);
         if (parent instanceof MemoryDirectory) {
             ((MemoryDirectory) parent).mkfile(getLastComponent(path));
+            System.out.println("OK");
             return 0;
         }
+        System.out.println("ENOENT");
         return -ErrorCodes.ENOENT();
     }
 
 
     @Override
     public int getattr(String path, FileStat stat) {
-        System.out.println("getattr " + path);
+        System.out.println("getattr " + Thread.currentThread() + " " + path);
         MemoryPath p = getPath(path);
         if (p != null) {
             p.getattr(stat);
+            System.out.println("OK");
             return 0;
         }
+        System.out.println("ENOENT");
         return -ErrorCodes.ENOENT();
     }
 
@@ -280,13 +285,16 @@ public class TryoutMemory extends FuseStubFS {
     public int mkdir(String path, @mode_t long mode) {
         System.out.println("mkdir " + path);
         if (getPath(path) != null) {
+            System.out.println("EEXIST");
             return -ErrorCodes.EEXIST();
         }
         MemoryPath parent = getParentPath(path);
         if (parent instanceof MemoryDirectory) {
             ((MemoryDirectory) parent).mkdir(getLastComponent(path));
+            System.out.println("OK");
             return 0;
         }
+        System.out.println("ENOENT");
         return -ErrorCodes.ENOENT();
     }
 
@@ -296,11 +304,14 @@ public class TryoutMemory extends FuseStubFS {
         System.out.println("read " + path);
         MemoryPath p = getPath(path);
         if (p == null) {
+            System.out.println("ENOENT");
             return -ErrorCodes.ENOENT();
         }
         if (!(p instanceof MemoryFile)) {
+            System.out.println("EISDIR");
             return -ErrorCodes.EISDIR();
         }
+        System.out.println("read content ...");
         return ((MemoryFile) p).read(buf, size, offset);
     }
 
@@ -309,17 +320,19 @@ public class TryoutMemory extends FuseStubFS {
         System.out.println("readdir " + path);
         MemoryPath p = getPath(path);
         if (p == null) {
+            System.out.println("ENOENT");
             return -ErrorCodes.ENOENT();
         }
         if (!(p instanceof MemoryDirectory)) {
+            System.out.println("ENOTDIR");
             return -ErrorCodes.ENOTDIR();
         }
         filter.apply(buf, ".", null, 0);
         filter.apply(buf, "..", null, 0);
         ((MemoryDirectory) p).read(buf, filter);
+        System.out.println("OK");
         return 0;
     }
-
 
     @Override
     public int statfs(String path, Statvfs stbuf) {
@@ -335,6 +348,7 @@ public class TryoutMemory extends FuseStubFS {
                 stbuf.f_bfree.set(1024 * 1024);  // free blocks in fs
             }
         }
+        System.out.println("OK");
         return super.statfs(path, stbuf);
     }
 

@@ -11,22 +11,25 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging {
   private val OK = 0
   private val O777 = 511 // octal 0777
 
-  override def getattr(path: String, stat: FileStat): Int = {
-    log.debug(s"getattr($path, fileStat)") // Note: Calling FileState.toString DOES NOT WORK
+  // Note: Calling FileStat.toString DOES NOT WORK
+  override def getattr(path: String, stat: FileStat): Int = log(s"getattr($path, fileStat)"){
     fs.getNode(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: Dir) =>
         stat.st_mode.set(FileStat.S_IFDIR | O777)
+        stat.st_uid.set(getContext.uid.get)
+        stat.st_gid.set(getContext.gid.get)
         OK
       case Some(file: File) =>
         stat.st_mode.set(FileStat.S_IFREG | O777)
         stat.st_size.set(file.size)
+        stat.st_uid.set(getContext.uid.get)
+        stat.st_gid.set(getContext.gid.get)
         OK
     }
   }
 
-  override def mkdir(path: String, mode: Long): Int = {
-    log.debug(s"mkdir($path, $mode)")
+  override def mkdir(path: String, mode: Long): Int = log(s"mkdir($path, $mode)"){
     fs.getNode(path) match {
       case Some(_) => -ErrorCodes.EEXIST
       case None => FileSystem.splitParentPath(path).flatMap {
@@ -43,8 +46,7 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging {
                        buf: Pointer,
                        filler: FuseFillDir,
                        offset: Long,
-                       fi: FuseFileInfo): Int = {
-    log.debug(s"readdir($path, buffer, filler, $offset, fileInfo)")
+                       fi: FuseFileInfo): Int = log(s"readdir($path, buffer, filler, $offset, fileInfo)"){
     if (offset.toInt < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
     else
       fs.getNode(path) match {
@@ -61,8 +63,7 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging {
       }
   }
 
-  override def statfs(path: String, stbuf: Statvfs): Int = {
-    log.debug(s"statfs($path, buffer)")
+  override def statfs(path: String, stbuf: Statvfs): Int = log(s"statfs($path, buffer)"){
     if (Platform.getNativePlatform.getOS == WINDOWS) {
       // statfs needs to be implemented on Windows in order to allow for copying
       // data from other devices because winfsp calculates the volume size based
