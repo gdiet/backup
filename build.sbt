@@ -1,5 +1,5 @@
 version in ThisBuild := "0.6-SNAPSHOT"
-scalaVersion in ThisBuild := "2.12.6"
+scalaVersion in ThisBuild := "2.12.7"
 scalacOptions in ThisBuild ++= Seq(
   "-deprecation",
   "-feature",
