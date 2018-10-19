@@ -2,12 +2,13 @@ package net.diet_rich.fusefs
 
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
-import net.diet_rich.scalafs.{Dir, File, FileSystem}
+import net.diet_rich.scalafs._
 import net.diet_rich.util.ClassLogging
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
 class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging { import FuseFS._
+  
   // Note: Calling FileStat.toString DOES NOT WORK
   override def getattr(path: String, stat: FileStat): Int = log(s"getattr($path, fileStat)") {
     stat.st_uid.set(getContext.uid.get)
@@ -54,6 +55,18 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging { import FuseF
             case (entry, k) => filler.apply(buf, entry, null, k + 1) != 0
           }
         OK
+    }
+  }
+
+  override def rename(oldpath: String, newpath: String): Int = log(s"rename($oldpath, $newpath)") {
+    fs.getNode(oldpath) match {
+      case None => ENOENT
+      case Some(node) => node.renameTo(newpath) match {
+        case RenameOk => OK
+        case TargetExists => EEXIST
+        case TargetParentDoesNotExist => ENOENT
+        case TargetParentNotADirectory => ENOTDIR
+      }
     }
   }
 

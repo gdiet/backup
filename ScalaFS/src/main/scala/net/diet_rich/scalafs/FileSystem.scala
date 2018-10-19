@@ -24,6 +24,7 @@ trait FileSystem {
 
 sealed trait Node {
   def name: String
+  def renameTo(path: String): RenameResult
 }
 
 trait Dir extends Node {
@@ -34,3 +35,9 @@ trait Dir extends Node {
 trait File extends Node {
   def size: Long
 }
+
+sealed trait RenameResult
+case object RenameOk extends RenameResult
+case object TargetExists extends RenameResult
+case object TargetParentDoesNotExist extends RenameResult
+case object TargetParentNotADirectory extends RenameResult
