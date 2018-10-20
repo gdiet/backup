@@ -77,9 +77,9 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging { import FuseF
       case Some(_: File) => ENOTDIR
       case Some(dir: Dir) =>
         dir.delete() match {
-          case DeleteDirOk => OK
-          case DirNotEmpty => ENOTEMPTY
-          case DirNotFound => ENOENT
+          case DeleteOk => OK
+          case DeleteHasChildren => ENOTEMPTY
+          case DeleteNotFound => ENOENT
         }
     }
   }
@@ -99,12 +99,27 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging { import FuseF
     }
     OK
   }
+
+  override def unlink(path: String): Int = log(s"unlink($path)") {
+    fs.getNode(path) match {
+      case None => ENOENT
+      case Some(_: Dir) => EISDIR
+      case Some(file: File) =>
+        file.delete() match {
+          case DeleteOk => OK
+          case DeleteHasChildren => EIO
+          case DeleteNotFound => ENOENT
+        }
+    }
+  }
 }
 
 object FuseFS extends ClassLogging {
   private val O777      = 511 // octal 0777
   private val OK        = 0
   private val EEXIST    = -ErrorCodes.EEXIST
+  private val EIO       = -ErrorCodes.EIO
+  private val EISDIR    = -ErrorCodes.EISDIR
   private val ENOENT    = -ErrorCodes.ENOENT
   private val ENOTDIR   = -ErrorCodes.ENOTDIR
   private val ENOTEMPTY = -ErrorCodes.ENOTEMPTY

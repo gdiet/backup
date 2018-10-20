@@ -33,13 +33,14 @@ class SqlFS extends FileSystem {
       }
     }
     if (entry.isDir) new Dir {
-      override def delete(): DeleteDirResult = meta.delete(entry.id)
+      override def delete(): DeleteResult = meta.delete(entry.id)
       override def list: Seq[Node] = meta.children(entry.id).map(nodeFor)
       override def mkDir(child: String): Boolean = meta.addNewDir(entry.id, child).isDefined
       override def name: String = entry.name
       override def renameTo(path: String): RenameResult = rename(path)
       override def toString: String = s"Dir '$name': $entry"
     } else new File {
+      override def delete(): DeleteResult = meta.delete(entry.id)
       override def name: String = entry.name
       override def renameTo(path: String): RenameResult = rename(path)
       override def size: Long = 0 // FIXME

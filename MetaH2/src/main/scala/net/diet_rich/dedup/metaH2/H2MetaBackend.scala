@@ -24,6 +24,12 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     TreeEntry(r.long(1), r.long(2), r.string(3), r.longOption(4), r.longOption(5))
   } }
 
+  private val prepQJournal = query[JournalEntry]("SELECT * FROM TreeJournal")
+  case class JournalEntry(id: Long, treeId: Long, parent: Option[Long], name: Option[String], changed: Option[Long], data: Option[Long], deleted: Boolean, timestamp: Option[Long])
+  private object JournalEntry { implicit val result: ResultSet => JournalEntry = { r =>
+    JournalEntry(r.long(1), r.long(2), r.longOption(3), r.stringOption(4), r.longOption(5), r.longOption(6), r.boolean(7), r.longOption(8))
+  }}
+
   private val selectTreeEntry = "SELECT id, parent, name, changed, data FROM TreeEntries"
 
   private val prepQTreeById = query[TreeEntry](s"$selectTreeEntry WHERE id = ?")
@@ -70,7 +76,10 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
 
   private val prepDTreeEntry =
     singleRowUpdate("DELETE FROM TreeEntries WHERE id = ?")
-  def delete(id: Long): DeleteDirResult =
-    try if (children(id).nonEmpty) DirNotEmpty else { prepDTreeEntry.run(id); DeleteDirOk }
-    catch { case _: IllegalStateException => DirNotFound }
+  def delete(id: Long): DeleteResult =
+    try if (children(id).nonEmpty) DeleteHasChildren else transaction {
+      prepDTreeEntry.run(id)
+      prepITreeJournal.run(id, None, None, None, None, true, None)
+      DeleteOk
+    } catch { case _: IllegalStateException => DeleteNotFound }
 }

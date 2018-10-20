@@ -6,7 +6,7 @@ case object TargetExists extends RenameResult
 case object TargetParentDoesNotExist extends RenameResult
 case object TargetParentNotADirectory extends RenameResult
 
-sealed trait DeleteDirResult
-case object DeleteDirOk extends DeleteDirResult
-case object DirNotEmpty extends DeleteDirResult
-case object DirNotFound extends DeleteDirResult
+sealed trait DeleteResult
+case object DeleteOk extends DeleteResult
+case object DeleteHasChildren extends DeleteResult
+case object DeleteNotFound extends DeleteResult
