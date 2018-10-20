@@ -4,11 +4,12 @@ import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
 import net.diet_rich.scalafs._
 import net.diet_rich.util._
+import net.diet_rich.util.fs._
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
 class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging { import FuseFS._
-  
+
   // Note: Calling FileStat.toString DOES NOT WORK
   override def getattr(path: String, stat: FileStat): Int = log(s"getattr($path, fileStat)") {
     stat.st_uid.set(getContext.uid.get)
@@ -70,6 +71,19 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging { import FuseF
     }
   }
 
+  override def rmdir(path: String): Int = log(s"rmdir($path)") {
+    fs.getNode(path) match {
+      case None => ENOENT
+      case Some(_: File) => ENOTDIR
+      case Some(dir: Dir) =>
+        dir.delete() match {
+          case DeleteDirOk => OK
+          case DirNotEmpty => ENOTEMPTY
+          case DirNotFound => ENOENT
+        }
+    }
+  }
+
   override def statfs(path: String, stbuf: Statvfs): Int = log(s"statfs($path, buffer)") {
     if (Platform.getNativePlatform.getOS == WINDOWS) {
       // statfs needs to be implemented on Windows in order to allow for copying
@@ -88,11 +102,12 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging { import FuseF
 }
 
 object FuseFS extends ClassLogging {
-  private val O777    = 511 // octal 0777
-  private val OK      = 0
-  private val EEXIST  = -ErrorCodes.EEXIST
-  private val ENOENT  = -ErrorCodes.ENOENT
-  private val ENOTDIR = -ErrorCodes.ENOTDIR
+  private val O777      = 511 // octal 0777
+  private val OK        = 0
+  private val EEXIST    = -ErrorCodes.EEXIST
+  private val ENOENT    = -ErrorCodes.ENOENT
+  private val ENOTDIR   = -ErrorCodes.ENOTDIR
+  private val ENOTEMPTY = -ErrorCodes.ENOTEMPTY
 
   def mount(fs: FileSystem): AutoCloseable = {
     new AutoCloseable {

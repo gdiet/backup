@@ -1,5 +1,6 @@
 package net.diet_rich.scalafs
-import net.diet_rich.util.RenameResult
+import net.diet_rich.util.fs.{DeleteDirResult, RenameResult}
+
 
 object FileSystem {
   val separator = "/"
@@ -29,6 +30,7 @@ sealed trait Node {
 }
 
 trait Dir extends Node {
+  def delete(): DeleteDirResult
   def list: Seq[Node]
   def mkDir(child: String): Boolean
 }

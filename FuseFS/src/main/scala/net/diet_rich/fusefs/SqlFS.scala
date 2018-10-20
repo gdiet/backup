@@ -2,7 +2,7 @@ package net.diet_rich.fusefs
 
 import net.diet_rich.dedup.metaH2.{Database, H2, H2MetaBackend}
 import net.diet_rich.scalafs._
-import net.diet_rich.util.{RenameResult, TargetExists, TargetParentDoesNotExist, TargetParentNotADirectory}
+import net.diet_rich.util.fs._
 import net.diet_rich.util.sql.ConnectionFactory
 
 class SqlFS extends FileSystem {
@@ -33,10 +33,11 @@ class SqlFS extends FileSystem {
       }
     }
     if (entry.isDir) new Dir {
-      override def name: String = entry.name
-      override def renameTo(path: String): RenameResult = rename(path)
+      override def delete(): DeleteDirResult = meta.delete(entry.id)
       override def list: Seq[Node] = meta.children(entry.id).map(nodeFor)
       override def mkDir(child: String): Boolean = meta.addNewDir(entry.id, child).isDefined
+      override def name: String = entry.name
+      override def renameTo(path: String): RenameResult = rename(path)
       override def toString: String = s"Dir '$name': $entry"
     } else new File {
       override def name: String = entry.name

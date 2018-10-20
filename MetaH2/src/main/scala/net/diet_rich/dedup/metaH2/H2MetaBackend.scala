@@ -3,6 +3,7 @@ package net.diet_rich.dedup.metaH2
 import java.sql.ResultSet
 
 import net.diet_rich.util._
+import net.diet_rich.util.fs._
 import net.diet_rich.util.sql._
 
 object H2MetaBackend {
@@ -61,8 +62,15 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   def rename(id: Long, newName: String, newParent: Long): RenameResult =
     if (children(newParent).filterNot(_.id == id).exists(_.name == newName)) TargetExists
     else transaction {
+      // FIXME try-catch for "not found"
       prepUTreeEntryRename.run(newName, newParent, id)
       prepITreeJournal.run(id, newParent, newName, None, None, false, None)
       RenameOk
     }
+
+  private val prepDTreeEntry =
+    singleRowUpdate("DELETE FROM TreeEntries WHERE id = ?")
+  def delete(id: Long): DeleteDirResult =
+    try if (children(id).nonEmpty) DirNotEmpty else { prepDTreeEntry.run(id); DeleteDirOk }
+    catch { case _: IllegalStateException => DirNotFound }
 }
