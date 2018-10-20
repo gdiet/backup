@@ -23,7 +23,7 @@ class SqlFS extends FileSystem {
       override def list: Seq[Node] = meta.children(entry.id).map(nodeFor)
       override def mkDir(child: String): Boolean = meta.addNewDir(entry.id, child).isDefined
       override def name: String = entry.name
-      override def renameTo(path: String): RenameResult = ???
+      override def renameTo(path: String): RenameResult = ??? // FIXME rename is ready, move isn't
       override def toString: String = s"Dir '$name': $entry"
     } else new File {
       override def name: String = entry.name

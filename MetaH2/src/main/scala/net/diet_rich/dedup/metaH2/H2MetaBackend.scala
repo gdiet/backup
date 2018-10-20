@@ -1,5 +1,6 @@
 package net.diet_rich.dedup.metaH2
 
+import java.lang.System.{currentTimeMillis => now}
 import java.sql.ResultSet
 
 import net.diet_rich.util.init
@@ -11,6 +12,7 @@ object H2MetaBackend {
   val rootName = ""
 }
 
+// FIXME ensure somehow (e.g.: synchronize) that concurrent access can't corrupt data
 class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   import H2MetaBackend._
 
@@ -47,10 +49,25 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
         case Some(_) => None
         case None => transaction {
           Some(init(prepITreeEntry.run(parent, name, None, None))(
-            prepITreeJournal.run(_, parent, name, None, None, System.currentTimeMillis())
+            prepITreeJournal.run(_, parent, name, None, None, now)
           ))
         }
       }
+    }
+  }
+
+  // FIXME double-check where to use insert, update, singleRowUpdate, ...
+  private val prepUTreeEntryName =
+    singleRowUpdate("UPDATE TreeEntries SET name = ? WHERE id = ?")
+  def rename(id: Long, newName: String): Boolean = {
+    entry(id) match {
+      case None => false
+      case Some(entry) =>
+        if (children(entry.parent).filterNot(_.id == id).exists(_.name == newName)) transaction {
+          prepUTreeEntryName.run(id, newName)
+          prepITreeJournal.run(id, entry.parent, newName, entry.changed, entry.data, now)
+          true
+        } else false
     }
   }
 }
