@@ -6,9 +6,10 @@ import net.diet_rich.util.sql.ConnectionFactory
 
 class SqlFS extends FileSystem {
   private implicit val connectionFactory: ConnectionFactory =
-    ConnectionFactory(H2.jdbcMemoryUrl, H2.defaultUser, H2.defaultPassword, H2.memoryOnShutdown, autoCommit = true)
+    ConnectionFactory(H2.jdbcMemoryUrl, H2.defaultUser, H2.defaultPassword, H2.memoryOnShutdown)
   Database.create("MD5", Map())
   private val meta = new H2MetaBackend
+  // FIXME remove
   val root = getNode("/").get.asInstanceOf[Dir]
   println(root.mkDir("hallo"))
   println(root.mkDir("hallo"))
@@ -32,16 +33,4 @@ class SqlFS extends FileSystem {
     }
 
   override def getNode(path: String): Option[Node] = FileSystem.pathElements(path).flatMap(meta.entry).map(nodeFor)
-}
-
-// FIXME remove
-object SqlFS extends App {
-  val fs = new SqlFS
-  val root = fs.getNode("/").get.asInstanceOf[Dir]
-  println(root.mkDir("hallo"))
-  println(root.mkDir("hallo"))
-  println(root.mkDir("welt"))
-  val welt = fs.getNode("/welt").get.asInstanceOf[Dir]
-  println(welt.mkDir("hello"))
-  println(root.list.toList)
 }

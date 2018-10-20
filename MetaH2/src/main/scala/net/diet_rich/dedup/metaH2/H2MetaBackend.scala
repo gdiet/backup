@@ -45,7 +45,7 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     if (!parentEntry.isDir) None else {
       child(parent, name) match {
         case Some(_) => None
-        case None => connectionFactory.transaction {
+        case None => transaction {
           Some(init(prepITreeEntry.run(parent, name, None, None))(
             prepITreeJournal.run(_, parent, name, None, None, System.currentTimeMillis())
           ))
@@ -53,14 +53,4 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
       }
     }
   }
-}
-
-object Tryout extends App {
-  private implicit val connectionFactory: ConnectionFactory =
-    ConnectionFactory(H2.jdbcMemoryUrl, H2.defaultUser, H2.defaultPassword, H2.onShutdown, autoCommit = false)
-  Database.create("MD5", Map())
-  val meta = new H2MetaBackend
-  println(meta.addNewDir(1, "a"))
-  println(meta.addNewDir(1, ""))
-  println(meta.addNewDir(2, ""))
 }

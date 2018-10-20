@@ -3,6 +3,16 @@ package net.diet_rich.util
 import java.sql.{PreparedStatement, ResultSet}
 
 package object sql {
+  def transaction[T](f: => T)(implicit connectionFactory: ConnectionFactory): T = {
+    val connection = connectionFactory()
+    assert(connection.getAutoCommit, "Autocommit is already disabled.")
+    try {
+      connection.setAutoCommit(false)
+      valueOf(f).before(connection.commit())
+    } catch { case t: Throwable => connection.rollback(); throw t }
+    finally connection.setAutoCommit(false)
+  }
+
   def query[T](sql: String)(implicit processor: ResultSet => T, connectionFactory: ConnectionFactory): SqlQuery[ResultIterator[T]] =
     new PreparedSql(sql) with SqlQuery[ResultIterator[T]] {
       override def run(args: Seq[Any]): ResultIterator[T] =

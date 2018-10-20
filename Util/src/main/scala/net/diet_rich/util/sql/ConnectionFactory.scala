@@ -16,14 +16,12 @@ class ConnectionFactory(factory: () => Connection, onClose: Connection => Unit)
       case Vector() => ()
     }
   ) {
-  def transaction[T](f: => T): T =
-    try { valueOf(f).before(this().commit()) } catch { case t: Throwable => this().rollback(); throw t }
 }
 
 object ConnectionFactory {
-  def apply(url: String, user: String, password: String, executeOnClose: Option[String], autoCommit: Boolean): ConnectionFactory = {
+  def apply(url: String, user: String, password: String, executeOnClose: Option[String]): ConnectionFactory = {
     new ConnectionFactory(
-      () => init(DriverManager.getConnection(url, user, password))(_.setAutoCommit(autoCommit)),
+      () => init(DriverManager.getConnection(url, user, password))(_.setAutoCommit(true)),
       connection => executeOnClose foreach { connection.prepareStatement(_).execute() }
     )
   }
