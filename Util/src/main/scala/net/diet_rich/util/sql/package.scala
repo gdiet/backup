@@ -77,16 +77,18 @@ package object sql {
   implicit private final class PreparedStatementMethods(val statement: PreparedStatement) extends AnyVal {
     def setArguments(args: Seq[Any]): PreparedStatement = {
       args.zipWithIndex foreach {
-        case (     x: Long,         index) => statement setLong   (index+1, x)
-        case (Some(x: Long),        index) => statement setLong   (index+1, x)
-        case (     x: Int,          index) => statement setInt    (index+1, x)
-        case (Some(x: Int),         index) => statement setInt    (index+1, x)
-        case (     x: String,       index) => statement setString (index+1, x)
-        case (Some(x: String),      index) => statement setString (index+1, x)
-        case (     x: Array[Byte],  index) => statement setObject (index+1, x)
-        case (Some(x: Array[Byte]), index) => statement setObject (index+1, x)
+        case (     x: Array[Byte],  index) => statement setObject  (index+1, x)
+        case (Some(x: Array[Byte]), index) => statement setObject  (index+1, x)
+        case (     x: Boolean,      index) => statement setBoolean (index+1, x)
+        case (Some(x: Boolean),     index) => statement setBoolean (index+1, x)
+        case (     x: Int,          index) => statement setInt     (index+1, x)
+        case (Some(x: Int),         index) => statement setInt     (index+1, x)
+        case (     x: Long,         index) => statement setLong    (index+1, x)
+        case (Some(x: Long),        index) => statement setLong    (index+1, x)
+        case (     x: String,       index) => statement setString  (index+1, x)
         case (null, index) => statement setNull (index+1, statement.getParameterMetaData getParameterType (index+1))
         case (None, index) => statement setNull (index+1, statement.getParameterMetaData getParameterType (index+1))
+        case (Some(x: String),      index) => statement setString (index+1, x)
         case (e, _) => throw new IllegalArgumentException(s"setArguments does not support ${e.getClass.getCanonicalName} type arguments")
       }
       statement
