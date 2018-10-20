@@ -10,7 +10,7 @@ package object sql {
       connection.setAutoCommit(false)
       valueOf(f).before(connection.commit())
     } catch { case t: Throwable => connection.rollback(); throw t }
-    finally connection.setAutoCommit(false)
+    finally connection.setAutoCommit(true)
   }
 
   def query[T](sql: String)(implicit processor: ResultSet => T, connectionFactory: ConnectionFactory): SqlQuery[ResultIterator[T]] =
