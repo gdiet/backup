@@ -69,7 +69,7 @@ object Database {
        |DROP   INDEX ByteStoreFinIdx          IF EXISTS;
        |CREATE INDEX ByteStoreFinIdx          ON ByteStore(fin);""".stripMargin split ";"
 
-  def create(hashAlgorithm: String, dbSettings: Map[String, String])(implicit con: ConnectionFactory): Unit = {
+  def create(hashAlgorithm: String, dbSettings: Map[String, String])(implicit con: ConnectionFactory): Unit = con.transaction {
     tableDefinitions(hashAlgorithm) foreach (update(_).run())
     indexDefinitions foreach (update(_).run())
     // The empty data entry is stored uncompressed

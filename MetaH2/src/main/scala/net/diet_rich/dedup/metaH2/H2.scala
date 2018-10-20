@@ -7,6 +7,7 @@ object H2 {
   val defaultUser = "sa"
   val defaultPassword = ""
   val onShutdown = Some("SHUTDOWN COMPACT")
+  val memoryOnShutdown = Option.empty[String]
 
   Class forName driver
 }

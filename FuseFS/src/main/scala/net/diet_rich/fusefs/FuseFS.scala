@@ -98,7 +98,7 @@ object FuseFS extends ClassLogging {
     new AutoCloseable {
       val fuseFS = new FuseFS(fs)
       try {
-        // TODO Eventually, we want to have to mount point configurable.
+        // TODO Eventually, we want to have the mount point configurable.
         val mountPoint = Platform.getNativePlatform.getOS match {
           case WINDOWS => """I:\"""
           case _ => "/tmp/mntfs"
