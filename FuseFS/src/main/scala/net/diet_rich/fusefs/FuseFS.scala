@@ -3,7 +3,7 @@ package net.diet_rich.fusefs
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
 import net.diet_rich.scalafs._
-import net.diet_rich.util.ClassLogging
+import net.diet_rich.util._
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 

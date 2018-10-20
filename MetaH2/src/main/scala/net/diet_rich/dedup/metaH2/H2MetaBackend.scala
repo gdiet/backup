@@ -1,9 +1,8 @@
 package net.diet_rich.dedup.metaH2
 
-import java.lang.System.{currentTimeMillis => now}
 import java.sql.ResultSet
 
-import net.diet_rich.util.init
+import net.diet_rich.util._
 import net.diet_rich.util.sql._
 
 object H2MetaBackend {
@@ -42,14 +41,14 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   private val prepITreeEntry =
     insertReturnsKey("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (?, ?, ?, ?)", "id")
   private val prepITreeJournal =
-    insert("INSERT INTO TreeJournal (treeId, parent, name, changed, data, timestamp) VALUES (?, ?, ?, ?, ?, ?)")
+    insert("INSERT INTO TreeJournal (treeId, parent, name, changed, data, deleted, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")
   def addNewDir(parent: Long, name: String): Option[Long] = entry(parent).flatMap { parentEntry =>
     if (!parentEntry.isDir) None else {
       child(parent, name) match {
         case Some(_) => None
         case None => transaction {
           Some(init(prepITreeEntry.run(parent, name, None, None))(
-            prepITreeJournal.run(_, parent, name, None, None, now)
+            prepITreeJournal.run(_, parent, name, None, None, false, None)
           ))
         }
       }
@@ -57,17 +56,13 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   }
 
   // FIXME double-check where to use insert, update, singleRowUpdate, ...
-  private val prepUTreeEntryName =
-    singleRowUpdate("UPDATE TreeEntries SET name = ? WHERE id = ?")
-  def rename(id: Long, newName: String): Boolean = {
-    entry(id) match {
-      case None => false
-      case Some(entry) =>
-        if (children(entry.parent).filterNot(_.id == id).exists(_.name == newName)) transaction {
-          prepUTreeEntryName.run(id, newName)
-          prepITreeJournal.run(id, entry.parent, newName, entry.changed, entry.data, now)
-          true
-        } else false
+  private val prepUTreeEntryRename =
+    singleRowUpdate("UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?")
+  def rename(id: Long, newName: String, newParent: Long): RenameResult =
+    if (children(newParent).filterNot(_.id == id).exists(_.name == newName)) TargetExists
+    else transaction {
+      prepUTreeEntryRename.run(newName, newParent, id)
+      prepITreeJournal.run(id, newParent, newName, None, None, false, None)
+      RenameOk
     }
-  }
 }

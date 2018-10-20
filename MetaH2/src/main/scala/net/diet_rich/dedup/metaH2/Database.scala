@@ -8,7 +8,7 @@ import net.diet_rich.util.sql._
 object Database {
   private def tableDefinitions(hashAlgorithm: String): Array[String] = {
     import H2MetaBackend._
-    s"""|CREATE SEQUENCE treeEntryIdSeq  START WITH $rootId;
+    s"""|CREATE SEQUENCE treeEntryIdSeq START WITH $rootId;
         |CREATE TABLE TreeEntries (
         |  id        BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryIdSeq),
         |  parent    BIGINT NOT NULL,
@@ -22,12 +22,12 @@ object Database {
         |CREATE TABLE TreeJournal (
         |  id        BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeJournalIdSeq),
         |  treeId    BIGINT NOT NULL,
-        |  parent    BIGINT NOT NULL,
-        |  name      VARCHAR(256) NOT NULL,
+        |  parent    BIGINT DEFAULT NULL,
+        |  name      VARCHAR(256) DEFAULT NULL,
         |  changed   BIGINT DEFAULT NULL,
         |  data      BIGINT DEFAULT NULL,
-        |  deleted   BOOLEAN NOT NULL DEFAULT FALSE,
-        |  timestamp BIGINT NOT NULL,
+        |  deleted   BOOLEAN DEFAULT FALSE,
+        |  timestamp BIGINT DEFAULT NULL,
         |  CONSTRAINT pk_TreeJournal PRIMARY KEY (id)
         |);
         |INSERT INTO TreeJournal (treeId, parent, name, timestamp) VALUES ($rootId, $rootsParent, '$rootName', $now);

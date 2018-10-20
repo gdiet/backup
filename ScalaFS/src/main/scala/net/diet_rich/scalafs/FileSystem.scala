@@ -1,12 +1,13 @@
 package net.diet_rich.scalafs
+import net.diet_rich.util.RenameResult
 
 object FileSystem {
   val separator = "/"
   val rootPath  = "/"
 
-  def pathElements(path: String): Option[Seq[String]] = {
+  def pathElements(path: String): Option[List[String]] = {
     if (!path.startsWith(separator)) None else
-    if (path == rootPath) Some(Seq()) else
+    if (path == rootPath) Some(List()) else
       Some(path.split(separator).toList.drop(1))
   }
 
@@ -35,9 +36,3 @@ trait Dir extends Node {
 trait File extends Node {
   def size: Long
 }
-
-sealed trait RenameResult
-case object RenameOk extends RenameResult
-case object TargetExists extends RenameResult
-case object TargetParentDoesNotExist extends RenameResult
-case object TargetParentNotADirectory extends RenameResult

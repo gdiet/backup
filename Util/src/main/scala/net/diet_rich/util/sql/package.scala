@@ -85,6 +85,7 @@ package object sql {
         case (Some(x: String),      index) => statement setString (index+1, x)
         case (     x: Array[Byte],  index) => statement setObject (index+1, x)
         case (Some(x: Array[Byte]), index) => statement setObject (index+1, x)
+        case (null, index) => statement setNull (index+1, statement.getParameterMetaData getParameterType (index+1))
         case (None, index) => statement setNull (index+1, statement.getParameterMetaData getParameterType (index+1))
         case (e, _) => throw new IllegalArgumentException(s"setArguments does not support ${e.getClass.getCanonicalName} type arguments")
       }
