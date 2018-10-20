@@ -20,12 +20,14 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     def isDir:  Boolean = data.isEmpty
     def isFile: Boolean = data.isDefined
   }
+  //noinspection ScalaUnusedSymbol
   private object TreeEntry { implicit val result: ResultSet => TreeEntry = { r =>
     TreeEntry(r.long(1), r.long(2), r.string(3), r.longOption(4), r.longOption(5))
   } }
 
   private val prepQJournal = query[JournalEntry]("SELECT * FROM TreeJournal")
   case class JournalEntry(id: Long, treeId: Long, parent: Option[Long], name: Option[String], changed: Option[Long], data: Option[Long], deleted: Boolean, timestamp: Option[Long])
+  //noinspection ScalaUnusedSymbol
   private object JournalEntry { implicit val result: ResultSet => JournalEntry = { r =>
     JournalEntry(r.long(1), r.long(2), r.longOption(3), r.stringOption(4), r.longOption(5), r.longOption(6), r.boolean(7), r.longOption(8))
   }}
