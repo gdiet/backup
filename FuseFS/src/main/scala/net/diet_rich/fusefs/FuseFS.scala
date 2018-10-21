@@ -2,13 +2,20 @@ package net.diet_rich.fusefs
 
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
-import net.diet_rich.scalafs._
 import net.diet_rich.util._
 import net.diet_rich.util.fs._
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
-class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import FuseFS._
+class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging {
+  private val O777      = 511 // octal 0777
+  private val OK        = 0
+  private val EEXIST    = -ErrorCodes.EEXIST
+  private val EIO       = -ErrorCodes.EIO
+  private val EISDIR    = -ErrorCodes.EISDIR
+  private val ENOENT    = -ErrorCodes.ENOENT
+  private val ENOTDIR   = -ErrorCodes.ENOTDIR
+  private val ENOTEMPTY = -ErrorCodes.ENOTEMPTY
 
   // Note: Calling FileStat.toString DOES NOT WORK
   override def getattr(path: String, stat: FileStat): Int = log(s"getattr($path, fileStat)") {
@@ -16,10 +23,10 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import FuseFS._
     stat.st_gid.set(getContext.gid.get)
     fs.getNode(path) match {
       case None => ENOENT
-      case Some(_: Dir) =>
+      case Some(_: fs.Dir) =>
         stat.st_mode.set(FileStat.S_IFDIR | O777)
         OK
-      case Some(file: File) =>
+      case Some(file: fs.File) =>
         stat.st_mode.set(FileStat.S_IFREG | O777)
         stat.st_size.set(file.size)
         OK
@@ -30,7 +37,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import FuseFS._
     fs.getNode(path) match {
       case Some(_) => EEXIST
       case None => SqlFS.splitParentPath(path).flatMap {
-        case (parent, name) => fs.getNode(parent).collect { case dir: Dir => dir.mkDir(name) }
+        case (parent, name) => fs.getNode(parent).collect { case dir: fs.Dir => dir.mkDir(name) }
       } match {
         case Some(true) => 0
         case _ => ENOENT
@@ -47,8 +54,8 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import FuseFS._
     if (offset.toInt < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
     else fs.getNode(path) match {
       case None => ENOENT
-      case Some(_: File) => ENOTDIR
-      case Some(dir: Dir) =>
+      case Some(_: fs.File) => ENOTDIR
+      case Some(dir: fs.Dir) =>
         def entries = "." #:: ".." #:: dir.list.toStream.map(_.name)
         entries.zipWithIndex
           .drop(offset.toInt)
@@ -74,8 +81,8 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import FuseFS._
   override def rmdir(path: String): Int = log(s"rmdir($path)") {
     fs.getNode(path) match {
       case None => ENOENT
-      case Some(_: File) => ENOTDIR
-      case Some(dir: Dir) =>
+      case Some(_: fs.File) => ENOTDIR
+      case Some(dir: fs.Dir) =>
         dir.delete() match {
           case DeleteOk => OK
           case DeleteHasChildren => ENOTEMPTY
@@ -103,8 +110,8 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import FuseFS._
   override def unlink(path: String): Int = log(s"unlink($path)") {
     fs.getNode(path) match {
       case None => ENOENT
-      case Some(_: Dir) => EISDIR
-      case Some(file: File) =>
+      case Some(_: fs.Dir) => EISDIR
+      case Some(file: fs.File) =>
         file.delete() match {
           case DeleteOk => OK
           case DeleteHasChildren => EIO
@@ -115,15 +122,6 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import FuseFS._
 }
 
 object FuseFS extends ClassLogging {
-  private val O777      = 511 // octal 0777
-  private val OK        = 0
-  private val EEXIST    = -ErrorCodes.EEXIST
-  private val EIO       = -ErrorCodes.EIO
-  private val EISDIR    = -ErrorCodes.EISDIR
-  private val ENOENT    = -ErrorCodes.ENOENT
-  private val ENOTDIR   = -ErrorCodes.ENOTDIR
-  private val ENOTEMPTY = -ErrorCodes.ENOTEMPTY
-
   def mount(fs: SqlFS): AutoCloseable = {
     new AutoCloseable {
       val fuseFS = new FuseFS(fs)
