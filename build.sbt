@@ -20,12 +20,7 @@ lazy val FuseFS = project
   )
 
 lazy val MetaH2 = project
-  .dependsOn(Util)
   .settings(
-    libraryDependencies += "com.h2database" % "h2" % "1.4.197" // 1.4.197 as of 2018-03-18
-  )
-
-lazy val Util = project
-  .settings(
+    libraryDependencies += "com.h2database" % "h2" % "1.4.197", // 1.4.197 as of 2018-03-18
     libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3" // 1.2.3 as of 2017-03-31
   )
