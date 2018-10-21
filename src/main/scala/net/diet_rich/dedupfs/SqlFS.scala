@@ -61,11 +61,12 @@ class SqlFS {
     override def toString: String = fs(s"File '$name': $entry")
   }
 
-  private def nodeFor(entry: meta.TreeEntry): Node = {
+  private def nodeFor(entry: meta.TreeEntry): Node =
     if (entry.isDir) new Dir(entry) else new File(entry)
-  }
 
-  def getNode(path: String): Option[Node] = fs(SqlFS.pathElements(path).flatMap(meta.entry).map(nodeFor))
+  def getNode(path: String): Option[Node] = fs {
+    SqlFS.pathElements(path).map(meta.entries).flatMap(_.head.map(nodeFor))
+  }
 
   def mkdir(path: String): MkdirResult = fs {
     SqlFS.pathElements(path).map(meta.entries) match {

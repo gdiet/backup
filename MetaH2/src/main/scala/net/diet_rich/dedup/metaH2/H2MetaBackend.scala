@@ -43,10 +43,6 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   private val prepQTreeByParentName = query[TreeEntry](s"$selectTreeEntry WHERE parent = ? AND name = ?")
   def child(parent: Long, name: String): Option[TreeEntry] = prepQTreeByParentName.run(parent, name).nextOptionOnly()
 
-  def entry(path: Seq[String]): Option[TreeEntry] = entry(rootId, path)
-  private def entry(id: Long, children: Seq[String]): Option[TreeEntry] =
-    if (children.isEmpty) entry(id) else child(id, children.head).flatMap(e => entry(e.id, children.tail))
-
   /** @return the tree entries in reverse order of the path entries. */
   def entries(path: Seq[String]): NEL[Option[TreeEntry]] = path.foldLeft(NEL(entry(rootId))){
     case (nel, name) => nel.head.flatMap(entry => child(entry.id, name)) :: nel
