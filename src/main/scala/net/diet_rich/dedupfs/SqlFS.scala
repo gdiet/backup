@@ -1,6 +1,7 @@
 package net.diet_rich.dedupfs
 
 import net.diet_rich.dedup.metaH2.{Database, H2, H2MetaBackend}
+import net.diet_rich.util.NEL
 import net.diet_rich.util.fs._
 import net.diet_rich.util.sql.ConnectionFactory
 
@@ -65,4 +66,15 @@ class SqlFS {
   }
 
   def getNode(path: String): Option[Node] = fs(SqlFS.pathElements(path).flatMap(meta.entry).map(nodeFor))
+
+  def mkdir(path: String): MkdirResult = fs {
+    SqlFS.pathElements(path).map(meta.entries) match {
+      case Some(NEL(None, Some(parent) :: _)) =>
+        if (parent.isDir) MkdirOk
+        else MkdirParentNotADir
+      case Some(NEL(None, _)) => MkdirParentNotFound
+      case Some(NEL(Some(_), _)) => MkdirExists
+      case None => MkdirIllegalPath
+    }
+  }
 }

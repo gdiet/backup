@@ -34,14 +34,12 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   }
 
   override def mkdir(path: String, mode: Long): Int = log(s"mkdir($path, $mode)") {
-    getNode(path) match {
-      case Some(_) => EEXIST
-      case None => SqlFS.splitParentPath(path).flatMap {
-        case (parent, name) => getNode(parent).collect { case dir: Dir => dir.mkDir(name) }
-      } match {
-        case Some(true) => 0
-        case _ => ENOENT
-      }
+    fs.mkdir(path) match {
+      case MkdirOk => OK
+      case MkdirParentNotFound => ENOENT
+      case MkdirParentNotADir => ENOTDIR
+      case MkdirExists => EEXIST
+      case MkdirIllegalPath => EIO
     }
   }
 
