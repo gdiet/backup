@@ -36,9 +36,9 @@ class SqlFS {
     final def name: String = fs(entry.name)
     final def renameTo(path: String): RenameResult = fs {
       SqlFS.pathElements(path).map(meta.entries) match {
-        case Some(Nel(Left(_), Right(parent) :: _)) =>
-          if (parent.isDir) {
-            ??? // FIXME implement
+        case Some(Nel(Left(newName), Right(newParent) :: _)) =>
+          if (newParent.isDir) {
+            meta.rename(entry.id, newName, newParent.id) // FIXME change return value to better type
             RenameOk
           } else RenameParentNotADirectory
         case Some(Nel(Left(_), _)) => RenameParentDoesNotExist
@@ -70,10 +70,9 @@ class SqlFS {
 
   def mkdir(path: String): MkdirResult = fs {
     SqlFS.pathElements(path).map(meta.entries) match {
-      case Some(Nel(Left(_), Right(parent) :: _)) =>
+      case Some(Nel(Left(newName), Right(parent) :: _)) =>
         if (parent.isDir) {
-          meta.addNewDir(parent.id, ???)
-          ??? // FIXME implement
+          meta.addNewDir(parent.id, newName) // FIXME change return value to better type
           MkdirOk
         } else MkdirParentNotADir
       case Some(Nel(Left(_), _)) => MkdirParentNotFound
