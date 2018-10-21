@@ -12,7 +12,7 @@ object H2MetaBackend {
   val rootName = ""
 }
 
-// FIXME ensure somehow (e.g.: synchronize) that concurrent access can't corrupt data
+/** Methods are not thread safe, meaning that concurrent usage might result in data inconsistencies. */
 class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   import H2MetaBackend._
 
@@ -51,6 +51,7 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     insertReturnsKey("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (?, ?, ?, ?)", "id")
   private val prepITreeJournal =
     insert("INSERT INTO TreeJournal (treeId, parent, name, changed, data, deleted, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")
+  // FIXME return Either[Error, ID] or similar...
   def addNewDir(parent: Long, name: String): Option[Long] = entry(parent).flatMap { parentEntry =>
     if (!parentEntry.isDir) None else {
       child(parent, name) match {

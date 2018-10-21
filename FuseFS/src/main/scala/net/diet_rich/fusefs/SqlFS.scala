@@ -19,6 +19,8 @@ class SqlFS extends FileSystem {
   println(welt.mkDir("hello"))
   println(root.list.toList)
 
+  private def fs[T](t: T): T = synchronized(t)
+
   private def nodeFor(entry: meta.TreeEntry): Node = {
     def rename(path: String): RenameResult = {
       FileSystem.pathElements(path).getOrElse(Seq()).reverse match {
@@ -33,20 +35,20 @@ class SqlFS extends FileSystem {
       }
     }
     if (entry.isDir) new Dir {
-      override def delete(): DeleteResult = meta.delete(entry.id)
-      override def list: Seq[Node] = meta.children(entry.id).map(nodeFor)
-      override def mkDir(child: String): Boolean = meta.addNewDir(entry.id, child).isDefined
-      override def name: String = entry.name
-      override def renameTo(path: String): RenameResult = rename(path)
-      override def toString: String = s"Dir '$name': $entry"
+      override def delete(): DeleteResult = fs(meta.delete(entry.id))
+      override def list: Seq[Node] = fs(meta.children(entry.id).map(nodeFor))
+      override def mkDir(child: String): Boolean = fs(meta.addNewDir(entry.id, child).isDefined)
+      override def name: String = fs(entry.name)
+      override def renameTo(path: String): RenameResult = fs(rename(path))
+      override def toString: String = fs(s"Dir '$name': $entry")
     } else new File {
-      override def delete(): DeleteResult = meta.delete(entry.id)
-      override def name: String = entry.name
-      override def renameTo(path: String): RenameResult = rename(path)
-      override def size: Long = 0 // FIXME
-      override def toString: String = s"File '$name': $entry"
+      override def delete(): DeleteResult = fs(meta.delete(entry.id))
+      override def name: String = fs(entry.name)
+      override def renameTo(path: String): RenameResult = fs(rename(path))
+      override def size: Long = fs(0) // FIXME
+      override def toString: String = fs(s"File '$name': $entry")
     }
   }
 
-  override def getNode(path: String): Option[Node] = FileSystem.pathElements(path).flatMap(meta.entry).map(nodeFor)
+  override def getNode(path: String): Option[Node] = fs(FileSystem.pathElements(path).flatMap(meta.entry).map(nodeFor))
 }
