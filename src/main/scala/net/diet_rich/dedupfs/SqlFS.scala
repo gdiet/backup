@@ -1,4 +1,4 @@
-package net.diet_rich.fusefs
+package net.diet_rich.dedupfs
 
 import net.diet_rich.dedup.metaH2.{Database, H2, H2MetaBackend}
 import net.diet_rich.util.fs._

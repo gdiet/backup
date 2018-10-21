@@ -1,4 +1,4 @@
-package net.diet_rich.fusefs
+package net.diet_rich.dedupfs
 
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
@@ -121,7 +121,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   }
 }
 
-object FuseFS extends ClassLogging {
+object FuseFS extends ClassLogging with App {
   def mount(fs: SqlFS): AutoCloseable = {
     new AutoCloseable {
       val fuseFS = new FuseFS(fs)
@@ -140,4 +140,8 @@ object FuseFS extends ClassLogging {
       override def close(): Unit = fuseFS.umount()
     }
   }
+
+  val fuseFS = mount(new SqlFS)
+  try io.StdIn.readLine("[enter] to exit ...")
+  finally fuseFS.close()
 }
