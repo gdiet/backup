@@ -1,7 +1,7 @@
 package net.diet_rich.util.fs
 
 sealed trait MkdirResult
-case object MkdirOk extends MkdirResult
+case class MkdirOk(id: Long) extends MkdirResult
 case object MkdirParentNotFound extends MkdirResult
 case object MkdirParentNotADir extends MkdirResult
 case object MkdirExists extends MkdirResult

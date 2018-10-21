@@ -51,7 +51,6 @@ class SqlFS {
   class Dir(val entry: meta.TreeEntry) extends Node {
     def delete(): DeleteResult = fs(meta.delete(entry.id))
     def list: Seq[Node] = fs(meta.children(entry.id).map(nodeFor))
-    def mkDir(child: String): Boolean = fs(meta.addNewDir(entry.id, child).isDefined)
     override def toString: String = fs(s"Dir '$name': $entry")
   }
 
@@ -69,15 +68,6 @@ class SqlFS {
   }
 
   def mkdir(path: String): MkdirResult = fs {
-    SqlFS.pathElements(path).map(meta.entries) match {
-      case Some(Nel(Left(newName), Right(parent) :: _)) =>
-        if (parent.isDir) {
-          meta.addNewDir(parent.id, newName) // FIXME change return value to better type
-          MkdirOk
-        } else MkdirParentNotADir
-      case Some(Nel(Left(_), _)) => MkdirParentNotFound
-      case Some(Nel(Right(_), _)) => MkdirExists
-      case None => MkdirIllegalPath
-    }
+    SqlFS.pathElements(path).fold[MkdirResult](MkdirIllegalPath)(meta.mkdir)
   }
 }

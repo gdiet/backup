@@ -53,17 +53,15 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     insertReturnsKey("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (?, ?, ?, ?)", "id")
   private val prepITreeJournal =
     insert("INSERT INTO TreeJournal (treeId, parent, name, changed, data, deleted, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")
-  // FIXME return Either[Error, ID] or similar...
-  def addNewDir(parent: Long, name: String): Option[Long] = entry(parent).flatMap { parentEntry =>
-    if (!parentEntry.isDir) None else {
-      child(parent, name) match {
-        case Some(_) => None
-        case None => transaction {
-          Some(init(prepITreeEntry.run(parent, name, None, None))(
-            prepITreeJournal.run(_, parent, name, None, None, false, None)
+  def mkdir(path: List[String]): MkdirResult = {
+    entries(path) match {
+      case Nel(Left(newName), Right(parent) :: _) =>
+        if (!parent.isDir) MkdirParentNotADir else
+          MkdirOk(init(prepITreeEntry.run(parent, newName, None, None))(
+            prepITreeJournal.run(_, parent, newName, None, None, false, None)
           ))
-        }
-      }
+      case Nel(Left(_), _) => MkdirParentNotFound
+      case Nel(Right(_), _) => MkdirExists
     }
   }
 
