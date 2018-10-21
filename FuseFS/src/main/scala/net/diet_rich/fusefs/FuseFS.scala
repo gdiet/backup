@@ -7,7 +7,7 @@ import net.diet_rich.util.fs._
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
-class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging {
+class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   private val O777      = 511 // octal 0777
   private val OK        = 0
   private val EEXIST    = -ErrorCodes.EEXIST
@@ -21,12 +21,12 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging {
   override def getattr(path: String, stat: FileStat): Int = log(s"getattr($path, fileStat)") {
     stat.st_uid.set(getContext.uid.get)
     stat.st_gid.set(getContext.gid.get)
-    fs.getNode(path) match {
+    getNode(path) match {
       case None => ENOENT
-      case Some(_: fs.Dir) =>
+      case Some(_: Dir) =>
         stat.st_mode.set(FileStat.S_IFDIR | O777)
         OK
-      case Some(file: fs.File) =>
+      case Some(file: File) =>
         stat.st_mode.set(FileStat.S_IFREG | O777)
         stat.st_size.set(file.size)
         OK
@@ -34,10 +34,10 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging {
   }
 
   override def mkdir(path: String, mode: Long): Int = log(s"mkdir($path, $mode)") {
-    fs.getNode(path) match {
+    getNode(path) match {
       case Some(_) => EEXIST
       case None => SqlFS.splitParentPath(path).flatMap {
-        case (parent, name) => fs.getNode(parent).collect { case dir: fs.Dir => dir.mkDir(name) }
+        case (parent, name) => getNode(parent).collect { case dir: Dir => dir.mkDir(name) }
       } match {
         case Some(true) => 0
         case _ => ENOENT
@@ -52,10 +52,10 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging {
                        offset: Long,
                        fi: FuseFileInfo): Int = log(s"readdir($path, buffer, filler, $offset, fileInfo)") {
     if (offset.toInt < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
-    else fs.getNode(path) match {
+    else getNode(path) match {
       case None => ENOENT
-      case Some(_: fs.File) => ENOTDIR
-      case Some(dir: fs.Dir) =>
+      case Some(_: File) => ENOTDIR
+      case Some(dir: Dir) =>
         def entries = "." #:: ".." #:: dir.list.toStream.map(_.name)
         entries.zipWithIndex
           .drop(offset.toInt)
@@ -67,7 +67,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging {
   }
 
   override def rename(oldpath: String, newpath: String): Int = log(s"rename($oldpath, $newpath)") {
-    fs.getNode(oldpath) match {
+    getNode(oldpath) match {
       case None => ENOENT
       case Some(node) => node.renameTo(newpath) match {
         case RenameOk => OK
@@ -79,10 +79,10 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging {
   }
 
   override def rmdir(path: String): Int = log(s"rmdir($path)") {
-    fs.getNode(path) match {
+    getNode(path) match {
       case None => ENOENT
-      case Some(_: fs.File) => ENOTDIR
-      case Some(dir: fs.Dir) =>
+      case Some(_: File) => ENOTDIR
+      case Some(dir: Dir) =>
         dir.delete() match {
           case DeleteOk => OK
           case DeleteHasChildren => ENOTEMPTY
@@ -108,10 +108,10 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging {
   }
 
   override def unlink(path: String): Int = log(s"unlink($path)") {
-    fs.getNode(path) match {
+    getNode(path) match {
       case None => ENOENT
-      case Some(_: fs.Dir) => EISDIR
-      case Some(file: fs.File) =>
+      case Some(_: Dir) => EISDIR
+      case Some(file: File) =>
         file.delete() match {
           case DeleteOk => OK
           case DeleteHasChildren => EIO
