@@ -9,9 +9,10 @@ case object MkdirIllegalPath extends MkdirResult
 
 sealed trait RenameResult
 case object RenameOk extends RenameResult
-case object TargetExists extends RenameResult
-case object TargetParentDoesNotExist extends RenameResult
-case object TargetParentNotADirectory extends RenameResult
+case object RenameTargetExists extends RenameResult
+case object RenameParentDoesNotExist extends RenameResult
+case object RenameParentNotADirectory extends RenameResult
+case object RenameIllegalPath extends RenameResult
 
 sealed trait DeleteResult
 case object DeleteOk extends DeleteResult

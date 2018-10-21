@@ -65,13 +65,15 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   }
 
   override def rename(oldpath: String, newpath: String): Int = log(s"rename($oldpath, $newpath)") {
+    // FIXME move actual implemetation to SqlFS
     getNode(oldpath) match {
       case None => ENOENT
       case Some(node) => node.renameTo(newpath) match {
         case RenameOk => OK
-        case TargetExists => EEXIST
-        case TargetParentDoesNotExist => ENOENT
-        case TargetParentNotADirectory => ENOTDIR
+        case RenameTargetExists => EEXIST
+        case RenameParentDoesNotExist => ENOENT
+        case RenameParentNotADirectory => ENOTDIR
+        case RenameIllegalPath => EIO
       }
     }
   }

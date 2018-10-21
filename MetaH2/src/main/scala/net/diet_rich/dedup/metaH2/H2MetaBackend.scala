@@ -47,6 +47,7 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   private def entry(id: Long, children: Seq[String]): Option[TreeEntry] =
     if (children.isEmpty) entry(id) else child(id, children.head).flatMap(e => entry(e.id, children.tail))
 
+  /** @return the tree entries in reverse order of the path entries. */
   def entries(path: Seq[String]): NEL[Option[TreeEntry]] = path.foldLeft(NEL(entry(rootId))){
     case (nel, name) => nel.head.flatMap(entry => child(entry.id, name)) :: nel
   }
@@ -73,7 +74,7 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   private val prepUTreeEntryRename =
     singleRowUpdate("UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?")
   def rename(id: Long, newName: String, newParent: Long): RenameResult =
-    if (children(newParent).filterNot(_.id == id).exists(_.name == newName)) TargetExists
+    if (children(newParent).filterNot(_.id == id).exists(_.name == newName)) RenameTargetExists
     else transaction {
       // FIXME try-catch for "not found"
       prepUTreeEntryRename.run(newName, newParent, id)

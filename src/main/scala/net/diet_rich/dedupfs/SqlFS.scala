@@ -35,15 +35,15 @@ class SqlFS {
     protected def entry: meta.TreeEntry
     final def name: String = fs(entry.name)
     final def renameTo(path: String): RenameResult = fs {
-      SqlFS.pathElements(path).getOrElse(Seq()).reverse match {
-        case List() => TargetExists
-        case newName :: elements =>
-          meta.entry(elements.reverse) match {
-            case None => TargetParentDoesNotExist
-            case Some(newParent) =>
-              if (newParent.data.nonEmpty) TargetParentNotADirectory
-              else meta.rename(entry.id, newName, newParent.id)
-          }
+      SqlFS.pathElements(path).map(meta.entries) match {
+        case Some(NEL(None, Some(parent) :: _)) =>
+          if (parent.isDir) {
+            ??? // FIXME implement
+            RenameOk
+          } else RenameParentNotADirectory
+        case Some(NEL(None, _)) => RenameParentDoesNotExist
+        case Some(NEL(Some(_), _)) => RenameTargetExists
+        case None => RenameIllegalPath
       }
     }
   }
@@ -70,8 +70,10 @@ class SqlFS {
   def mkdir(path: String): MkdirResult = fs {
     SqlFS.pathElements(path).map(meta.entries) match {
       case Some(NEL(None, Some(parent) :: _)) =>
-        if (parent.isDir) MkdirOk
-        else MkdirParentNotADir
+        if (parent.isDir) {
+          ??? // FIXME implement
+          MkdirOk
+        } else MkdirParentNotADir
       case Some(NEL(None, _)) => MkdirParentNotFound
       case Some(NEL(Some(_), _)) => MkdirExists
       case None => MkdirIllegalPath
