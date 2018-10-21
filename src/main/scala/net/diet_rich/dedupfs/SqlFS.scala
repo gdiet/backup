@@ -27,15 +27,6 @@ class SqlFS {
     ConnectionFactory(H2.jdbcMemoryUrl, H2.defaultUser, H2.defaultPassword, H2.memoryOnShutdown)
   Database.create("MD5", Map())
   protected val meta: H2MetaBackend = new H2MetaBackend
-  private val unused: Unit = { // FIXME remove
-    val root: Dir = getNode("/").get.asInstanceOf[Dir]
-    println(root.mkDir("hallo"))
-    println(root.mkDir("hallo"))
-    println(root.mkDir("welt"))
-    val welt: Dir = getNode("/welt").get.asInstanceOf[Dir]
-    println(welt.mkDir("hello"))
-    println(root.list.toList)
-  }
 
   private def fs[T](t: T): T = synchronized(t)
 
