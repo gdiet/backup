@@ -44,9 +44,10 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   def child(parent: Long, name: String): Option[TreeEntry] = prepQTreeByParentName.run(parent, name).nextOptionOnly()
 
   /** @return the tree entries in reverse order of the path entries. */
-  def entries(path: Seq[String]): NEL[Option[TreeEntry]] = path.foldLeft(NEL(entry(rootId))){
-    case (nel, name) => nel.head.flatMap(entry => child(entry.id, name)) :: nel
-  }
+  def entries(path: Seq[String]): Nel[Either[String, TreeEntry]] =
+    path.foldLeft(Nel(entry(rootId).toRight(rootName))) {
+      case (nel, name) => nel.head.fold(_ => Left(name), entry => child(entry.id, name).toRight(name)) :: nel
+    }
 
   private val prepITreeEntry =
     insertReturnsKey("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (?, ?, ?, ?)", "id")

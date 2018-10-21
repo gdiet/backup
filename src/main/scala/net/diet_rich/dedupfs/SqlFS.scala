@@ -1,7 +1,7 @@
 package net.diet_rich.dedupfs
 
 import net.diet_rich.dedup.metaH2.{Database, H2, H2MetaBackend}
-import net.diet_rich.util.NEL
+import net.diet_rich.util.Nel
 import net.diet_rich.util.fs._
 import net.diet_rich.util.sql.ConnectionFactory
 
@@ -36,13 +36,13 @@ class SqlFS {
     final def name: String = fs(entry.name)
     final def renameTo(path: String): RenameResult = fs {
       SqlFS.pathElements(path).map(meta.entries) match {
-        case Some(NEL(None, Some(parent) :: _)) =>
+        case Some(Nel(Left(_), Right(parent) :: _)) =>
           if (parent.isDir) {
             ??? // FIXME implement
             RenameOk
           } else RenameParentNotADirectory
-        case Some(NEL(None, _)) => RenameParentDoesNotExist
-        case Some(NEL(Some(_), _)) => RenameTargetExists
+        case Some(Nel(Left(_), _)) => RenameParentDoesNotExist
+        case Some(Nel(Right(_), _)) => RenameTargetExists
         case None => RenameIllegalPath
       }
     }
@@ -65,18 +65,19 @@ class SqlFS {
     if (entry.isDir) new Dir(entry) else new File(entry)
 
   def getNode(path: String): Option[Node] = fs {
-    SqlFS.pathElements(path).map(meta.entries).flatMap(_.head.map(nodeFor))
+    SqlFS.pathElements(path).map(meta.entries).flatMap(_.head.toOption.map(nodeFor))
   }
 
   def mkdir(path: String): MkdirResult = fs {
     SqlFS.pathElements(path).map(meta.entries) match {
-      case Some(NEL(None, Some(parent) :: _)) =>
+      case Some(Nel(Left(_), Right(parent) :: _)) =>
         if (parent.isDir) {
+          meta.addNewDir(parent.id, ???)
           ??? // FIXME implement
           MkdirOk
         } else MkdirParentNotADir
-      case Some(NEL(None, _)) => MkdirParentNotFound
-      case Some(NEL(Some(_), _)) => MkdirExists
+      case Some(Nel(Left(_), _)) => MkdirParentNotFound
+      case Some(Nel(Right(_), _)) => MkdirExists
       case None => MkdirIllegalPath
     }
   }
