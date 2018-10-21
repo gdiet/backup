@@ -5,7 +5,25 @@ import net.diet_rich.scalafs._
 import net.diet_rich.util.fs._
 import net.diet_rich.util.sql.ConnectionFactory
 
-class SqlFS extends FileSystem {
+object SqlFS {
+  val separator = "/"
+  val rootPath  = "/"
+
+  def pathElements(path: String): Option[List[String]] = {
+    if (!path.startsWith(separator)) None else
+    if (path == rootPath) Some(List()) else
+      Some(path.split(separator).toList.drop(1))
+  }
+
+  def splitParentPath(path: String): Option[(String, String)] =
+    if (!path.startsWith(separator) || path == rootPath) None else {
+      Some(path.lastIndexOf('/') match {
+        case 0 => ("/", path.drop(1))
+        case i => (path.take(i), path.drop(i+1))
+      })
+    }
+}
+class SqlFS {
   private implicit val connectionFactory: ConnectionFactory =
     ConnectionFactory(H2.jdbcMemoryUrl, H2.defaultUser, H2.defaultPassword, H2.memoryOnShutdown)
   Database.create("MD5", Map())
@@ -23,7 +41,7 @@ class SqlFS extends FileSystem {
 
   private def nodeFor(entry: meta.TreeEntry): Node = {
     def rename(path: String): RenameResult = {
-      FileSystem.pathElements(path).getOrElse(Seq()).reverse match {
+      SqlFS.pathElements(path).getOrElse(Seq()).reverse match {
         case List() => TargetExists
         case newName :: elements =>
           meta.entry(elements.reverse) match {
@@ -50,5 +68,5 @@ class SqlFS extends FileSystem {
     }
   }
 
-  override def getNode(path: String): Option[Node] = fs(FileSystem.pathElements(path).flatMap(meta.entry).map(nodeFor))
+  def getNode(path: String): Option[Node] = fs(SqlFS.pathElements(path).flatMap(meta.entry).map(nodeFor))
 }

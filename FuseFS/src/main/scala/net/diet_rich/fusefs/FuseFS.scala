@@ -8,7 +8,7 @@ import net.diet_rich.util.fs._
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
-class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging { import FuseFS._
+class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import FuseFS._
 
   // Note: Calling FileStat.toString DOES NOT WORK
   override def getattr(path: String, stat: FileStat): Int = log(s"getattr($path, fileStat)") {
@@ -29,7 +29,7 @@ class FuseFS(fs: FileSystem) extends FuseStubFS with ClassLogging { import FuseF
   override def mkdir(path: String, mode: Long): Int = log(s"mkdir($path, $mode)") {
     fs.getNode(path) match {
       case Some(_) => EEXIST
-      case None => FileSystem.splitParentPath(path).flatMap {
+      case None => SqlFS.splitParentPath(path).flatMap {
         case (parent, name) => fs.getNode(parent).collect { case dir: Dir => dir.mkDir(name) }
       } match {
         case Some(true) => 0
@@ -124,7 +124,7 @@ object FuseFS extends ClassLogging {
   private val ENOTDIR   = -ErrorCodes.ENOTDIR
   private val ENOTEMPTY = -ErrorCodes.ENOTEMPTY
 
-  def mount(fs: FileSystem): AutoCloseable = {
+  def mount(fs: SqlFS): AutoCloseable = {
     new AutoCloseable {
       val fuseFS = new FuseFS(fs)
       try {
