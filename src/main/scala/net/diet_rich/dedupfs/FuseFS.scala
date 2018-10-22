@@ -39,7 +39,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
       case MkdirParentNotFound => ENOENT
       case MkdirParentNotADir => ENOTDIR
       case MkdirExists => EEXIST
-      case MkdirIllegalPath => EIO
+      case MkdirBadPath => EIO
     }
   }
 
@@ -50,11 +50,12 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
                        offset: Long,
                        fi: FuseFileInfo): Int = log(s"readdir($path, buffer, filler, $offset, fileInfo)") {
     if (offset.toInt < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
-    else getNode(path) match {
-      case None => ENOENT
-      case Some(_: File) => ENOTDIR
-      case Some(dir: Dir) =>
-        def entries = "." #:: ".." #:: dir.list.toStream.map(_.name)
+    else fs.readdir(path) match {
+      case ReaddirBadPath => EIO
+      case ReaddirNotFound => ENOENT
+      case ReaddirNotADirectory => ENOTDIR
+      case ReaddirOk(children) =>
+        def entries = "." #:: ".." #:: children.toStream.map(_.name)
         entries.zipWithIndex
           .drop(offset.toInt)
           .exists {
@@ -73,7 +74,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
         case RenameTargetExists => EEXIST
         case RenameParentDoesNotExist => ENOENT
         case RenameParentNotADirectory => ENOTDIR
-        case RenameIllegalPath => EIO
+        case RenameBadPath => EIO
       }
     }
   }

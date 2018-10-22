@@ -43,14 +43,13 @@ class SqlFS {
           } else RenameParentNotADirectory
         case Some(Nel(Left(_), _)) => RenameParentDoesNotExist
         case Some(Nel(Right(_), _)) => RenameTargetExists
-        case None => RenameIllegalPath
+        case None => RenameBadPath
       }
     }
   }
 
   class Dir(val entry: meta.TreeEntry) extends Node {
     def delete(): DeleteResult = fs(meta.delete(entry.id))
-    def list: Seq[Node] = fs(meta.children(entry.id).map(nodeFor))
     override def toString: String = fs(s"Dir '$name': $entry")
   }
 
@@ -68,6 +67,22 @@ class SqlFS {
   }
 
   def mkdir(path: String): MkdirResult = fs {
-    SqlFS.pathElements(path).fold[MkdirResult](MkdirIllegalPath)(meta.mkdir)
+    SqlFS.pathElements(path).fold[MkdirResult](MkdirBadPath)(meta.mkdir)
   }
+
+  def readdir(path: String): ReaddirResult = fs {
+    SqlFS.pathElements(path).map(meta.entries) match {
+      case None => ReaddirBadPath
+      case Some(Nel(Left(_), _)) => ReaddirNotFound
+      case Some(Nel(Right(entry), _)) =>
+        if (entry.isDir) ReaddirOk(meta.children(entry.id).map(nodeFor))
+        else ReaddirNotADirectory
+    }
+  }
+
+  sealed trait ReaddirResult
+  case class ReaddirOk(children: Seq[Node]) extends ReaddirResult
+  case object ReaddirNotFound extends ReaddirResult
+  case object ReaddirBadPath extends ReaddirResult
+  case object ReaddirNotADirectory extends ReaddirResult
 }
