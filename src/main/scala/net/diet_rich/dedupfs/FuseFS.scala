@@ -7,6 +7,7 @@ import net.diet_rich.util.fs._
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
+/** See for example https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html */
 class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   private val O777      = 511 // octal 0777
   private val OK        = 0
@@ -17,8 +18,10 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   private val ENOTDIR   = -ErrorCodes.ENOTDIR
   private val ENOTEMPTY = -ErrorCodes.ENOTEMPTY
 
+  /** Return file attributes. For the given pathname, this should fill in the elements of the "stat" structure.
+    * We might want to fill in additional fields, see https://linux.die.net/man/2/stat and
+    * https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html */
   // Note: Calling FileStat.toString DOES NOT WORK
-  // FIXME check https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
   override def getattr(path: String, stat: FileStat): Int = log(s"getattr($path, fileStat)") {
     stat.st_uid.set(getContext.uid.get)
     stat.st_gid.set(getContext.gid.get)
@@ -34,9 +37,12 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     }
   }
 
-  // FIXME see and check https://linux.die.net/man/2/mkdir and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
+  /** Attempts to create a directory named path. */
   override def mkdir(path: String, mode: Long): Int = log(s"mkdir($path, $mode)") {
     fs.mkdir(path) match {
+      // EEXIST path already exists (not necessarily as a directory).
+      // ENOENT A directory component in pathname does not exist.
+      // ENOTDIR A component used as a directory in pathname is not, in fact, a directory.
       case MkdirOk(_) => OK
       case MkdirParentNotFound => ENOENT
       case MkdirParentNotADir => ENOTDIR
@@ -45,28 +51,26 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     }
   }
 
-  // see also https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html#readdir-details
-  // FIXME see and check https://linux.die.net/man/2/readdir
-  override def readdir(path: String,
-                       buf: Pointer,
-                       filler: FuseFillDir,
-                       offset: Long,
-                       fi: FuseFileInfo): Int = log(s"readdir($path, buffer, filler, $offset, fileInfo)") {
-    if (offset.toInt < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
-    else fs.readdir(path) match {
-      case ReaddirBadPath => EIO
-      case ReaddirNotFound => ENOENT
-      case ReaddirNotADirectory => ENOTDIR
-      case ReaddirOk(children) =>
-        def entries = "." #:: ".." #:: children.toStream.map(_.name)
-        entries.zipWithIndex
-          .drop(offset.toInt)
-          .exists {
-            case (entry, k) => filler.apply(buf, entry, null, k + 1) != 0
-          }
-        OK
+  /** See https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html#readdir-details */
+  override def readdir(path: String, buf: Pointer, filler: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
+    log(s"readdir($path, buffer, filler, $offset, fileInfo)") {
+      if (offset.toInt < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
+      else fs.readdir(path) match {
+        // ENOENT No such directory.
+        // ENOTDIR path does not refer to a directory.
+        case ReaddirBadPath => EIO
+        case ReaddirNotFound => ENOENT
+        case ReaddirNotADirectory => ENOTDIR
+        case ReaddirOk(children) =>
+          def entries = "." #:: ".." #:: children.toStream.map(_.name)
+          entries.zipWithIndex
+            .drop(offset.toInt)
+            .exists {
+              case (entry, k) => filler.apply(buf, entry, null, k + 1) != 0
+            }
+          OK
+      }
     }
-  }
 
   /** Renames a file, moving it between directories if required. If newpath already exists it will be atomically
     * replaced. oldpath can specify a directory. In this case, newpath must either not exist, or it must specify
