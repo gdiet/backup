@@ -14,6 +14,7 @@ case object MkdirBadPath extends MkdirResult
 
 sealed trait RenameResult
 case object RenameOk extends RenameResult
+case object RenameNotFound extends RenameResult
 case object RenameTargetExists extends RenameResult
 case object RenameParentDoesNotExist extends RenameResult
 case object RenameParentNotADirectory extends RenameResult

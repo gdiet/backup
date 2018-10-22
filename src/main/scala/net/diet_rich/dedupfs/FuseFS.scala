@@ -65,21 +65,22 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     }
   }
 
+  /** Renames a file, moving it between directories if required. If newpath already exists it will be atomically
+    * replaced. oldpath can specify a directory. In this case, newpath must either not exist, or it must specify
+    * an empty directory. */ // FIXME implement as specified
   override def rename(oldpath: String, newpath: String): Int = log(s"rename($oldpath, $newpath)") {
-    // FIXME move actual implemetation to SqlFS
-    getNode(oldpath) match {
-      case None => ENOENT
-      case Some(node) => node.renameTo(newpath) match {
+    fs.rename(oldpath, newpath) match {
         case RenameOk => OK
+        case RenameNotFound => ENOENT
         case RenameTargetExists => EEXIST
         case RenameParentDoesNotExist => ENOENT
         case RenameParentNotADirectory => ENOTDIR
         case RenameBadPath => EIO
-      }
     }
   }
 
   override def rmdir(path: String): Int = log(s"rmdir($path)") {
+    // FIXME move actual implemetation to SqlFS
     getNode(path) match {
       case None => ENOENT
       case Some(_: File) => ENOTDIR
@@ -109,6 +110,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   }
 
   override def unlink(path: String): Int = log(s"unlink($path)") {
+    // FIXME move actual implemetation to SqlFS
     getNode(path) match {
       case None => ENOENT
       case Some(_: Dir) => EISDIR

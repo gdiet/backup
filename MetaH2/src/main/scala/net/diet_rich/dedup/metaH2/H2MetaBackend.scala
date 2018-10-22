@@ -67,14 +67,18 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
 
   // FIXME double-check where to use insert, update, singleRowUpdate, ...
   private val prepUTreeEntryRename =
-    singleRowUpdate("UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?")
+    update("UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?")
   def rename(id: Long, newName: String, newParent: Long): RenameResult =
     if (children(newParent).filterNot(_.id == id).exists(_.name == newName)) RenameTargetExists
     else transaction {
-      // FIXME try-catch for "not found"
-      prepUTreeEntryRename.run(newName, newParent, id)
-      prepITreeJournal.run(id, newParent, newName, None, None, false, None)
-      RenameOk
+      prepUTreeEntryRename.run(newName, newParent, id) match {
+        case 1 =>
+          prepITreeJournal.run(id, newParent, newName, None, None, false, None)
+          RenameOk
+        case other =>
+          assert(other == 1, s"unexpected number of updates in rename: $other")
+          RenameNotFound
+      }
     }
 
   private val prepDTreeEntry =

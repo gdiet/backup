@@ -1,7 +1,7 @@
 package net.diet_rich.dedupfs
 
 import net.diet_rich.dedup.metaH2.{Database, H2, H2MetaBackend}
-import net.diet_rich.util.Nel
+import net.diet_rich.util.{Nel, Head}
 import net.diet_rich.util.fs._
 import net.diet_rich.util.sql.ConnectionFactory
 
@@ -34,18 +34,6 @@ class SqlFS {
   sealed trait Node {
     protected def entry: meta.TreeEntry
     final def name: String = fs(entry.name)
-    final def renameTo(path: String): RenameResult = fs {
-      SqlFS.pathElements(path).map(meta.entries) match {
-        case Some(Nel(Left(newName), Right(newParent) :: _)) =>
-          if (newParent.isDir) {
-            meta.rename(entry.id, newName, newParent.id) // FIXME change return value to better type
-            RenameOk
-          } else RenameParentNotADirectory
-        case Some(Nel(Left(_), _)) => RenameParentDoesNotExist
-        case Some(Nel(Right(_), _)) => RenameTargetExists
-        case None => RenameBadPath
-      }
-    }
   }
 
   class Dir(val entry: meta.TreeEntry) extends Node {
@@ -77,6 +65,24 @@ class SqlFS {
       case Some(Nel(Right(entry), _)) =>
         if (entry.isDir) ReaddirOk(meta.children(entry.id).map(nodeFor))
         else ReaddirNotADirectory
+    }
+  }
+
+  def rename(oldpath: String, newpath: String): RenameResult = fs {
+    (SqlFS.pathElements(oldpath), SqlFS.pathElements(newpath)) match {
+      case (None, _) | (_, None) => RenameBadPath
+      case (Some(oldNames), Some(newNames)) =>
+        meta.entries(oldNames) match {
+          case Head(Left(_)) => RenameNotFound
+          case Head(Right(entry)) =>
+            meta.entries(newNames) match {
+              case Head(Right(_)) => RenameTargetExists
+              case Nel(Left(newName), Right(newParent) :: _) =>
+                if (newParent.isDir) meta.rename(entry.id, newName, newParent.id)
+                else RenameParentNotADirectory
+              case Head(Left(_)) => RenameParentDoesNotExist
+            }
+        }
     }
   }
 
