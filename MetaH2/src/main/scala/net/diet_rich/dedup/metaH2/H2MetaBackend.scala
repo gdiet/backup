@@ -82,11 +82,16 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     }
 
   private val prepDTreeEntry =
-    singleRowUpdate("DELETE FROM TreeEntries WHERE id = ?") // FIXME use update, see above
+    update("DELETE FROM TreeEntries WHERE id = ?")
   def delete(id: Long): DeleteResult =
-    try if (children(id).nonEmpty) DeleteHasChildren else transaction {
-      prepDTreeEntry.run(id)
-      prepITreeJournal.run(id, None, None, None, None, true, None)
-      DeleteOk
-    } catch { case _: IllegalStateException => DeleteNotFound }
+    if (children(id).nonEmpty) DeleteHasChildren else transaction {
+      prepDTreeEntry.run(id) match {
+        case 1 =>
+          prepITreeJournal.run(id, None, None, None, None, true, None)
+          DeleteOk
+        case other =>
+          assert(other == 1, s"unexpected number of updates in delete: $other")
+          DeleteNotFound
+      }
+    }
 }
