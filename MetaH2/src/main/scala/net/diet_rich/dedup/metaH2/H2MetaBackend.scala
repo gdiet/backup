@@ -82,7 +82,7 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     }
 
   private val prepDTreeEntry =
-    singleRowUpdate("DELETE FROM TreeEntries WHERE id = ?")
+    singleRowUpdate("DELETE FROM TreeEntries WHERE id = ?") // FIXME use update, see above
   def delete(id: Long): DeleteResult =
     try if (children(id).nonEmpty) DeleteHasChildren else transaction {
       prepDTreeEntry.run(id)

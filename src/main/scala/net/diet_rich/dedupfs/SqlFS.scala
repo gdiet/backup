@@ -76,7 +76,11 @@ class SqlFS {
           case Head(Left(_)) => RenameNotFound
           case Head(Right(entry)) =>
             meta.entries(newNames) match {
-              case Head(Right(_)) => RenameTargetExists
+              case Nel(Right(target), Right(newParent) :: _) =>
+                if (entry.isDir && target.isDir && meta.children(target.id).isEmpty) {
+                  meta.delete(target.id)
+                  meta.rename(entry.id, target.name, newParent.id)
+                } else RenameTargetExists
               case Nel(Left(newName), Right(newParent) :: _) =>
                 if (newParent.isDir) meta.rename(entry.id, newName, newParent.id)
                 else RenameParentNotADirectory

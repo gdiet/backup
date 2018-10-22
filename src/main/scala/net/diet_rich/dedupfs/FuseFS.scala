@@ -74,7 +74,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
 
   /** Renames a file, moving it between directories if required. If newpath already exists it will be atomically
     * replaced. oldpath can specify a directory. In this case, newpath must either not exist, or it must specify
-    * an empty directory. See https://linux.die.net/man/2/rename */ // FIXME implement as specified
+    * an empty directory. See https://linux.die.net/man/2/rename */
   override def rename(oldpath: String, newpath: String): Int = log(s"rename($oldpath, $newpath)") {
     fs.rename(oldpath, newpath) match {
         // EINVAL An attempt was made to make a directory a subdirectory of itself.
