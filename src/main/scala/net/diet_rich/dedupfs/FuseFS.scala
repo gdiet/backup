@@ -18,6 +18,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   private val ENOTEMPTY = -ErrorCodes.ENOTEMPTY
 
   // Note: Calling FileStat.toString DOES NOT WORK
+  // FIXME check https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
   override def getattr(path: String, stat: FileStat): Int = log(s"getattr($path, fileStat)") {
     stat.st_uid.set(getContext.uid.get)
     stat.st_gid.set(getContext.gid.get)
@@ -33,6 +34,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     }
   }
 
+  // FIXME see and check https://linux.die.net/man/2/mkdir and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
   override def mkdir(path: String, mode: Long): Int = log(s"mkdir($path, $mode)") {
     fs.mkdir(path) match {
       case MkdirOk(_) => OK
@@ -44,6 +46,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   }
 
   // see also https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html#readdir-details
+  // FIXME see and check https://linux.die.net/man/2/readdir
   override def readdir(path: String,
                        buf: Pointer,
                        filler: FuseFillDir,
@@ -67,9 +70,15 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
 
   /** Renames a file, moving it between directories if required. If newpath already exists it will be atomically
     * replaced. oldpath can specify a directory. In this case, newpath must either not exist, or it must specify
-    * an empty directory. */ // FIXME implement as specified
+    * an empty directory. See https://linux.die.net/man/2/rename */ // FIXME implement as specified
+  // FIXME check https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
   override def rename(oldpath: String, newpath: String): Int = log(s"rename($oldpath, $newpath)") {
     fs.rename(oldpath, newpath) match {
+        // EINVAL An attempt was made to make a directory a subdirectory of itself.
+        // EISDIR newpath is an existing directory, but oldpath is not a directory.
+        // ENOENT The link named by oldpath does not exist; or, a directory component in newpath does not exist; or, oldpath or newpath is an empty string.
+        // ENOTDIR A component used as a directory in oldpath or newpath is not, in fact, a directory. Or, oldpath is a directory, and newpath exists but is not a directory.
+        // ENOTEMPTY or EEXIST newpath is a nonempty directory, that is, contains entries other than "." and "..".
         case RenameOk => OK
         case RenameNotFound => ENOENT
         case RenameTargetExists => EEXIST
@@ -79,6 +88,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     }
   }
 
+  // FIXME check https://linux.die.net/man/2/rmdir and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
   override def rmdir(path: String): Int = log(s"rmdir($path)") {
     // FIXME move actual implemetation to SqlFS
     getNode(path) match {
@@ -93,6 +103,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     }
   }
 
+  // FIXME check https://linux.die.net/man/2/statfs and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
   override def statfs(path: String, stbuf: Statvfs): Int = log(s"statfs($path, buffer)") {
     if (Platform.getNativePlatform.getOS == WINDOWS) {
       // statfs needs to be implemented on Windows in order to allow for copying
@@ -109,6 +120,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     OK
   }
 
+  // FIXME check https://linux.die.net/man/2/unlink and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
   override def unlink(path: String): Int = log(s"unlink($path)") {
     // FIXME move actual implemetation to SqlFS
     getNode(path) match {
