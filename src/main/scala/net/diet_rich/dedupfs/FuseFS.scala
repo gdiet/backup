@@ -145,14 +145,12 @@ object FuseFS extends ClassLogging with App {
   val sqlFS = new SqlFS
 
   // FIXME remove
-//  import sqlFS._
-//  val root: Dir = getNode("/").get.asInstanceOf[Dir]
-//  println(root.mkDir("hallo"))
-//  println(root.mkDir("hallo"))
-//  println(root.mkDir("welt"))
-//  val welt: Dir = getNode("/welt").get.asInstanceOf[Dir]
-//  println(welt.mkDir("hello"))
-//  println(root.list.toList)
+  import sqlFS._
+  println(mkdir("/hallo"))
+  println(mkdir("/hallo/welt"))
+  println(mkdir("/hello"))
+  println(mkdir("/hello/world"))
+  println(readdir("/").asInstanceOf[ReaddirOk].children.mkString("\n"))
 
   val fsHandle = mount(sqlFS)
   try io.StdIn.readLine("[enter] to exit ...")
