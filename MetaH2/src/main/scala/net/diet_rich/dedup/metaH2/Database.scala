@@ -73,7 +73,7 @@ object Database {
     tableDefinitions(hashAlgorithm) foreach (update(_).run())
     indexDefinitions foreach (update(_).run())
     // The empty data entry is stored uncompressed
-    update("INSERT INTO DataEntries (length, hash) VALUES (?, ?)")
+    singleRowUpdate("INSERT INTO DataEntries (length, hash) VALUES (?, ?)")
       .run(0, Hash empty hashAlgorithm)
     insertSettings(dbSettings)
   }

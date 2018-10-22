@@ -65,7 +65,6 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     }
   }
 
-  // FIXME double-check where to use insert, update, singleRowUpdate, ...
   private val prepUTreeEntryRename =
     update("UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?")
   def rename(id: Long, newName: String, newParent: Long): RenameResult =
