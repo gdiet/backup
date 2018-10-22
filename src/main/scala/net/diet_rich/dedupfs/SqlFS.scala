@@ -37,18 +37,32 @@ class SqlFS {
   }
 
   class Dir(val entry: meta.TreeEntry) extends Node {
-    def delete(): DeleteResult = fs(meta.delete(entry.id))
     override def toString: String = fs(s"Dir '$name': $entry")
   }
 
   class File(val entry: meta.TreeEntry) extends Node {
-    def delete(): DeleteResult = fs(meta.delete(entry.id))
     def size: Long = fs(0) // FIXME
     override def toString: String = fs(s"File '$name': $entry")
   }
 
   private def nodeFor(entry: meta.TreeEntry): Node =
     if (entry.isDir) new Dir(entry) else new File(entry)
+
+  def delete(path: String, expectDir: Boolean): DeleteResult = fs {
+    SqlFS.pathElements(path).map(meta.entries) match {
+      case None => DeleteBadPath
+      case Some(Nel(Left(_), _)) => DeleteNotFound
+      case Some(Nel(Right(entry), _)) =>
+        if (expectDir) {
+          if (!entry.isDir) DeleteFileType
+          else if (entry.isDir && meta.children(entry.id).nonEmpty) DeleteHasChildren
+          else { meta.delete(entry.id); DeleteOk }
+        } else {
+          if (entry.isDir) DeleteFileType
+          else { meta.delete(entry.id); DeleteOk }
+        }
+    }
+  }
 
   def getNode(path: String): Option[Node] = fs {
     SqlFS.pathElements(path).map(meta.entries).flatMap(_.head.toOption.map(nodeFor))

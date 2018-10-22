@@ -4,6 +4,8 @@ sealed trait DeleteResult
 case object DeleteOk extends DeleteResult
 case object DeleteHasChildren extends DeleteResult
 case object DeleteNotFound extends DeleteResult
+case object DeleteFileType extends DeleteResult
+case object DeleteBadPath extends DeleteResult
 
 sealed trait MkdirResult
 case class MkdirOk(id: Long) extends MkdirResult

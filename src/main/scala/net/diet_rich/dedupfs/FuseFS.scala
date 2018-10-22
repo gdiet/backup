@@ -91,18 +91,18 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     }
   }
 
-  // FIXME check https://linux.die.net/man/2/rmdir and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
+  /** Delete a directory. */ // TODO make sure implementation matches specification with regard to "." and ".."
   override def rmdir(path: String): Int = log(s"rmdir($path)") {
-    // FIXME move actual implemetation to SqlFS
-    getNode(path) match {
-      case None => ENOENT
-      case Some(_: File) => ENOTDIR
-      case Some(dir: Dir) =>
-        dir.delete() match {
-          case DeleteOk => OK
-          case DeleteHasChildren => ENOTEMPTY
-          case DeleteNotFound => ENOENT
-        }
+    fs.delete(path, expectDir = true) match {
+      // EINVAL path has . as last component.
+      // ENOENT A directory component in path does not exist.
+      // ENOTDIR path, or a component used as a directory in pathname, is not, in fact, a directory.
+      // ENOTEMPTY path contains entries other than . and .. ; or, path has .. as its final component.
+      case DeleteOk => OK
+      case DeleteHasChildren => ENOTEMPTY
+      case DeleteNotFound => ENOENT
+      case DeleteFileType => ENOTDIR
+      case DeleteBadPath => EIO
     }
   }
 
@@ -125,16 +125,12 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
 
   // FIXME check https://linux.die.net/man/2/unlink and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
   override def unlink(path: String): Int = log(s"unlink($path)") {
-    // FIXME move actual implemetation to SqlFS
-    getNode(path) match {
-      case None => ENOENT
-      case Some(_: Dir) => EISDIR
-      case Some(file: File) =>
-        file.delete() match {
-          case DeleteOk => OK
-          case DeleteHasChildren => EIO
-          case DeleteNotFound => ENOENT
-        }
+    fs.delete(path, expectDir = false) match {
+      case DeleteOk => OK
+      case DeleteHasChildren => EIO // should never happen
+      case DeleteNotFound => ENOENT
+      case DeleteFileType => EISDIR
+      case DeleteBadPath => EIO
     }
   }
 }
