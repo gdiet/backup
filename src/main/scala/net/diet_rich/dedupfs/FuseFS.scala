@@ -1,5 +1,7 @@
 package net.diet_rich.dedupfs
 
+import java.util
+
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
 import net.diet_rich.util._
@@ -26,13 +28,22 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     stat.st_uid.set(getContext.uid.get)
     stat.st_gid.set(getContext.gid.get)
     getNode(path) match {
-      case None => ENOENT
+      case None =>
+        // FIXME temporary
+        files.get(path) match {
+          case None => ENOENT
+          case Some(array) =>
+            stat.st_mode.set(FileStat.S_IFREG | O777)
+            stat.st_size.set(files.get(path).map(_.length).getOrElse(0).toLong)
+            OK
+        }
+
       case Some(_: Dir) =>
         stat.st_mode.set(FileStat.S_IFDIR | O777)
         OK
       case Some(file: File) =>
         stat.st_mode.set(FileStat.S_IFREG | O777)
-        stat.st_size.set(file.size)
+        stat.st_size.set(files.get(path).map(_.length).getOrElse(0).toLong) // FIXME file.size)
         OK
     }
   }
@@ -133,6 +144,42 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
       case DeleteBadPath => EIO
     }
   }
+
+  private val files: collection.mutable.Map[String, Array[Byte]] = collection.mutable.Map()
+
+  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = log(s"create($path, buf, $mode, fileInfo)") {
+    files.get(path) match {
+      case Some(_) => EEXIST
+      case None => files += path -> Array(); OK
+    }
+  }
+
+  // TODO probably not needed
+  override def open(path: String, fi: FuseFileInfo): Int = log(s"open($path, fileInfo)") { OK }
+
+  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
+    log(s"write($path, buf, $size, $offset, fileInfo)") {
+      val array = {
+        val a = files.getOrElse(path, new Array[Byte](0))
+        if (a.length >= offset + size) a else util.Arrays.copyOf(a, (offset + size).toInt)
+      }
+      buf.get(0, array, offset.toInt, size.toInt)
+      files += path -> array
+      OK
+    }
+
+  override def truncate(path: String, size: Long): Int = log(s"truncate($path, $size)") {
+    val array = files.get(path).map(util.Arrays.copyOf(_, size.toInt))
+    array.foreach(files += path -> _)
+    OK
+  }
+
+  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
+    log(s"read($path, buf, $size, $offset, fileInfo)") {
+      val array = files.getOrElse(path, Array())
+      buf.put(0, util.Arrays.copyOf(array, (offset + size).toInt), offset.toInt, size.toInt)
+      OK
+    }
 }
 
 object FuseFS extends ClassLogging with App {
