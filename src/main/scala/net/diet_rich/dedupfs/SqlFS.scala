@@ -1,7 +1,8 @@
 package net.diet_rich.dedupfs
 
+import jnr.ffi.Pointer
 import net.diet_rich.dedup.metaH2.{Database, H2, H2MetaBackend}
-import net.diet_rich.util.{Nel, Head}
+import net.diet_rich.util.{Head, Nel}
 import net.diet_rich.util.fs._
 import net.diet_rich.util.sql.ConnectionFactory
 
@@ -31,6 +32,71 @@ class SqlFS {
 
   private def fs[T](t: T): T = synchronized(t)
 
+  // FIXME temporary
+  private val files: collection.mutable.Map[Long, Array[Byte]] = collection.mutable.Map()
+
+  def create(path: String): CreateResult = fs {
+    SqlFS.pathElements(path).map(meta.entries) match {
+      case None => CreateBadPath
+      case Some(Nel(Left(fileName), Right(parent) :: _)) =>
+        if (parent.isDir) {
+          meta.mkfile(parent.id, fileName)
+          CreateOk
+        } else CreateBadParent
+      case Some(Nel(Left(_), _)) => CreateNotFound
+      case Some(Nel(Right(entry), _)) =>
+        if (entry.isDir) CreateIsDirectory
+        else CreateOk
+    }
+  }
+
+  def write(path: String, buf: Pointer, size: Long, offset: Long): WriteResult = fs {
+    SqlFS.pathElements(path).map(meta.entries) match {
+      case None => WriteBadPath
+      case Some(Nel(Left(_), _)) => WriteNotFound
+      case Some(Nel(Right(entry), _)) =>
+        if (entry.isDir) WriteIsDirectory
+        else {
+          val array = {
+            val a = files.getOrElse(entry.id, new Array[Byte](0))
+            if (a.length >= offset + size) a else java.util.Arrays.copyOf(a, (offset + size).toInt)
+          }
+          buf.get(0, array, offset.toInt, size.toInt)
+          files += entry.id -> array
+          WriteOk
+        }
+    }
+  }
+
+  def read(path: String, buf: Pointer, size: Long, offset: Long): WriteResult = fs {
+    SqlFS.pathElements(path).map(meta.entries) match {
+      case None => WriteBadPath
+      case Some(Nel(Left(_), _)) => WriteNotFound
+      case Some(Nel(Right(entry), _)) =>
+        if (entry.isDir) WriteIsDirectory
+        else {
+          val array = files.getOrElse(entry.id, Array())
+          buf.put(0, java.util.Arrays.copyOf(array, (offset + size).toInt), offset.toInt, size.toInt)
+          WriteOk
+        }
+    }
+  }
+
+  def truncate(path: String, size: Long): WriteResult = fs {
+    SqlFS.pathElements(path).map(meta.entries) match {
+      case None => WriteBadPath
+      case Some(Nel(Left(_), _)) => WriteNotFound
+      case Some(Nel(Right(entry), _)) =>
+        if (entry.isDir) WriteIsDirectory
+        else {
+          val array = files.get(entry.id).map(java.util.Arrays.copyOf(_, size.toInt))
+          array.foreach(files += entry.id -> _)
+          WriteOk
+        }
+    }
+  }
+
+
   sealed trait Node {
     protected def entry: meta.TreeEntry
     final def name: String = fs(entry.name)
@@ -41,7 +107,7 @@ class SqlFS {
   }
 
   class File(val entry: meta.TreeEntry) extends Node {
-    def size: Long = fs(0) // FIXME
+    def size: Long = files.get(entry.id).map(_.length.toLong).getOrElse(0)
     override def toString: String = fs(s"File '$name': $entry")
   }
 
@@ -104,9 +170,22 @@ class SqlFS {
     }
   }
 
+  sealed trait CreateResult
+  case object CreateOk extends CreateResult
+  case object CreateNotFound extends CreateResult
+  case object CreateBadParent extends CreateResult
+  case object CreateIsDirectory extends CreateResult
+  case object CreateBadPath extends CreateResult
+
   sealed trait ReaddirResult
   case class ReaddirOk(children: Seq[Node]) extends ReaddirResult
   case object ReaddirNotFound extends ReaddirResult
-  case object ReaddirBadPath extends ReaddirResult
   case object ReaddirNotADirectory extends ReaddirResult
+  case object ReaddirBadPath extends ReaddirResult
+
+  sealed trait WriteResult
+  case object WriteOk extends WriteResult
+  case object WriteNotFound extends WriteResult
+  case object WriteIsDirectory extends WriteResult
+  case object WriteBadPath extends WriteResult
 }

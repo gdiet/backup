@@ -65,6 +65,11 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     }
   }
 
+  def mkfile(parent: Long, fileName: String): Long =
+    init(prepITreeEntry.run(parent, fileName, None, Some(1)))(
+      prepITreeJournal.run(_, parent, fileName, None, Some(1), false, None)
+    )
+
   private val prepUTreeEntryRename =
     update("UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?")
   def rename(id: Long, newName: String, newParent: Long): RenameResult =

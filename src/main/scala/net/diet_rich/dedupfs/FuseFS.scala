@@ -1,13 +1,13 @@
 package net.diet_rich.dedupfs
 
-import java.util
-
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
 import net.diet_rich.util._
 import net.diet_rich.util.fs._
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
+
+// FIXME this is such a thin wrapper that we can get rid of it (merge FuseFS and SqlFS)
 
 /** See for example https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html */
 class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
@@ -20,6 +20,11 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   private val ENOTDIR   = -ErrorCodes.ENOTDIR
   private val ENOTEMPTY = -ErrorCodes.ENOTEMPTY
 
+  // FIXME FUSE provides a "file handle" in the "fuse_file_info" structure. The file handle
+  // FIXME is stored in the "fh" element of that structure, which is an unsigned 64-bit
+  // FIXME integer (uint64_t) uninterpreted by FUSE. If you choose to use it, you should set
+  // FIXME that field in your open, create, and opendir functions; other functions can then use it.
+
   /** Return file attributes. For the given pathname, this should fill in the elements of the "stat" structure.
     * We might want to fill in additional fields, see https://linux.die.net/man/2/stat and
     * https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html */
@@ -28,22 +33,11 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     stat.st_uid.set(getContext.uid.get)
     stat.st_gid.set(getContext.gid.get)
     getNode(path) match {
-      case None =>
-        // FIXME temporary
-        files.get(path) match {
-          case None => ENOENT
-          case Some(array) =>
-            stat.st_mode.set(FileStat.S_IFREG | O777)
-            stat.st_size.set(files.get(path).map(_.length).getOrElse(0).toLong)
-            OK
-        }
-
-      case Some(_: Dir) =>
-        stat.st_mode.set(FileStat.S_IFDIR | O777)
-        OK
+      case None => ENOENT
+      case Some(_: Dir) => stat.st_mode.set(FileStat.S_IFDIR | O777); OK
       case Some(file: File) =>
         stat.st_mode.set(FileStat.S_IFREG | O777)
-        stat.st_size.set(files.get(path).map(_.length).getOrElse(0).toLong) // FIXME file.size)
+        stat.st_size.set(file.size)
         OK
     }
   }
@@ -145,40 +139,49 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     }
   }
 
-  private val files: collection.mutable.Map[String, Array[Byte]] = collection.mutable.Map()
-
+  // FIXME double-check
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int = log(s"create($path, buf, $mode, fileInfo)") {
-    files.get(path) match {
-      case Some(_) => EEXIST
-      case None => files += path -> Array(); OK
+    fs.create(path) match {
+      case CreateOk => OK
+      case CreateIsDirectory => EISDIR
+      case CreateNotFound => ENOENT
+      case CreateBadPath => EIO
     }
   }
 
   // TODO probably not needed
   override def open(path: String, fi: FuseFileInfo): Int = log(s"open($path, fileInfo)") { OK }
 
+  // FIXME double-check
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     log(s"write($path, buf, $size, $offset, fileInfo)") {
-      val array = {
-        val a = files.getOrElse(path, new Array[Byte](0))
-        if (a.length >= offset + size) a else util.Arrays.copyOf(a, (offset + size).toInt)
+      fs.write(path, buf, size, offset) match {
+        case WriteOk => OK
+        case WriteIsDirectory => EISDIR
+        case WriteNotFound => ENOENT
+        case WriteBadPath => EIO
       }
-      buf.get(0, array, offset.toInt, size.toInt)
-      files += path -> array
-      OK
     }
 
+  // FIXME double-check
   override def truncate(path: String, size: Long): Int = log(s"truncate($path, $size)") {
-    val array = files.get(path).map(util.Arrays.copyOf(_, size.toInt))
-    array.foreach(files += path -> _)
-    OK
+    fs.truncate(path, size) match {
+      case WriteOk => OK
+      case WriteIsDirectory => EISDIR
+      case WriteNotFound => ENOENT
+      case WriteBadPath => EIO
+    }
   }
 
+  // FIXME double-check
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     log(s"read($path, buf, $size, $offset, fileInfo)") {
-      val array = files.getOrElse(path, Array())
-      buf.put(0, util.Arrays.copyOf(array, (offset + size).toInt), offset.toInt, size.toInt)
-      OK
+      fs.read(path, buf, size, offset) match {
+        case WriteOk => OK
+        case WriteIsDirectory => EISDIR
+        case WriteNotFound => ENOENT
+        case WriteBadPath => EIO
+      }
     }
 }
 
