@@ -57,9 +57,9 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     entries(path) match {
       case Nel(Left(newName), Right(parent) :: _) =>
         if (!parent.isDir) MkdirParentNotADir else
-          MkdirOk(init(prepITreeEntry.run(parent.id, newName, None, None))(
+          MkdirOk(transaction(init(prepITreeEntry.run(parent.id, newName, None, None))(
             prepITreeJournal.run(_, parent.id, newName, None, None, false, None)
-          ))
+          )))
       case Nel(Left(_), _) => MkdirParentNotFound
       case Nel(Right(_), _) => MkdirExists
     }
