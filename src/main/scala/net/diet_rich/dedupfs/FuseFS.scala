@@ -10,14 +10,14 @@ import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 // FIXME this is such a thin wrapper that we can get rid of it (merge FuseFS and SqlFS)
 
 object FuseConstants {
-  val O777      = 511 // octal 0777
-  val OK        = 0
-  val EEXIST    = -ErrorCodes.EEXIST
-  val EIO       = -ErrorCodes.EIO
-  val EISDIR    = -ErrorCodes.EISDIR
-  val ENOENT    = -ErrorCodes.ENOENT
-  val ENOTDIR   = -ErrorCodes.ENOTDIR
-  val ENOTEMPTY = -ErrorCodes.ENOTEMPTY
+  val O777     : Int = 511 // octal 0777
+  val OK       : Int = 0
+  val EEXIST   : Int = -ErrorCodes.EEXIST
+  val EIO      : Int = -ErrorCodes.EIO
+  val EISDIR   : Int = -ErrorCodes.EISDIR
+  val ENOENT   : Int = -ErrorCodes.ENOENT
+  val ENOTDIR  : Int = -ErrorCodes.ENOTDIR
+  val ENOTEMPTY: Int = -ErrorCodes.ENOTEMPTY
 }
 
 /** See for example https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html */
@@ -33,7 +33,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     * We might want to fill in additional fields, see https://linux.die.net/man/2/stat and
     * https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html */
   // Note: Calling FileStat.toString DOES NOT WORK
-  override def getattr(path: String, stat: FileStat): Int = log(s"getattr($path, fileStat)") {
+  override def getattr(path: String, stat: FileStat): Int = log(s"getattr($path, fileStat)", asTrace = true) {
     stat.st_uid.set(getContext.uid.get)
     stat.st_gid.set(getContext.gid.get)
     getNode(path) match {
@@ -74,7 +74,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
     * replaced. oldpath can specify a directory. In this case, newpath must either not exist, or it must specify
     * an empty directory. See https://linux.die.net/man/2/rename */
   override def rename(oldpath: String, newpath: String): Int = log(s"rename($oldpath, $newpath)") {
-    fs.rename(oldpath, newpath) match {
+    fs.renameImpl(oldpath, newpath) match {
         // EINVAL An attempt was made to make a directory a subdirectory of itself.
         // EISDIR newpath is an existing directory, but oldpath is not a directory.
         // ENOENT The link named by oldpath does not exist; or, a directory component in newpath does not exist; or, oldpath or newpath is an empty string.
@@ -159,7 +159,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
 
   // FIXME double-check
   override def truncate(path: String, size: Long): Int = log(s"truncate($path, $size)") {
-    fs.truncate(path, size) match {
+    fs.truncateImpl(path, size) match {
       case WriteOk => OK
       case WriteIsDirectory => EISDIR
       case WriteNotFound => ENOENT

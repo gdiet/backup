@@ -5,6 +5,7 @@ import net.diet_rich.dedup.metaH2.{Database, H2, H2MetaBackend}
 import net.diet_rich.util.{ClassLogging, Head, Nel}
 import net.diet_rich.util.fs._
 import net.diet_rich.util.sql.ConnectionFactory
+import ru.serce.jnrfuse.FuseStubFS
 
 object SqlFS {
   val separator = "/"
@@ -24,7 +25,8 @@ object SqlFS {
       })
     }
 }
-class SqlFS extends ClassLogging {
+// Note: This is not yet a fuse FS, still need to move things from FuseFS here...
+class SqlFS extends FuseStubFS with ClassLogging {
   private implicit val connectionFactory: ConnectionFactory =
     ConnectionFactory(H2.jdbcMemoryUrl, H2.defaultUser, H2.defaultPassword, H2.memoryOnShutdown)
   Database.create("MD5", Map())
@@ -103,7 +105,7 @@ class SqlFS extends ClassLogging {
     }
   }
 
-  def truncate(path: String, size: Long): WriteResult = sync {
+  def truncateImpl(path: String, size: Long): WriteResult = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
       case None => WriteBadPath
       case Some(Nel(Left(_), _)) => WriteNotFound
@@ -165,7 +167,7 @@ class SqlFS extends ClassLogging {
     }
   }
 
-  def rename(oldpath: String, newpath: String): RenameResult = sync {
+  def renameImpl(oldpath: String, newpath: String): RenameResult = sync {
     (SqlFS.pathElements(oldpath), SqlFS.pathElements(newpath)) match {
       case (None, _) | (_, None) => RenameBadPath
       case (Some(oldNames), Some(newNames)) =>
