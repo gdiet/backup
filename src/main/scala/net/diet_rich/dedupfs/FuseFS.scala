@@ -9,16 +9,20 @@ import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
 // FIXME this is such a thin wrapper that we can get rid of it (merge FuseFS and SqlFS)
 
+object FuseConstants {
+  val O777      = 511 // octal 0777
+  val OK        = 0
+  val EEXIST    = -ErrorCodes.EEXIST
+  val EIO       = -ErrorCodes.EIO
+  val EISDIR    = -ErrorCodes.EISDIR
+  val ENOENT    = -ErrorCodes.ENOENT
+  val ENOTDIR   = -ErrorCodes.ENOTDIR
+  val ENOTEMPTY = -ErrorCodes.ENOTEMPTY
+}
+
 /** See for example https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html */
 class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
-  private val O777      = 511 // octal 0777
-  private val OK        = 0
-  private val EEXIST    = -ErrorCodes.EEXIST
-  private val EIO       = -ErrorCodes.EIO
-  private val EISDIR    = -ErrorCodes.EISDIR
-  private val ENOENT    = -ErrorCodes.ENOENT
-  private val ENOTDIR   = -ErrorCodes.ENOTDIR
-  private val ENOTEMPTY = -ErrorCodes.ENOTEMPTY
+  import FuseConstants._
 
   // FIXME FUSE provides a "file handle" in the "fuse_file_info" structure. The file handle
   // FIXME is stored in the "fh" element of that structure, which is an unsigned 64-bit
@@ -43,18 +47,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   }
 
   /** Attempts to create a directory named path. */
-  override def mkdir(path: String, mode: Long): Int = log(s"mkdir($path, $mode)") {
-    fs.mkdir(path) match {
-      // EEXIST path already exists (not necessarily as a directory).
-      // ENOENT A directory component in pathname does not exist.
-      // ENOTDIR A component used as a directory in pathname is not, in fact, a directory.
-      case MkdirOk(_) => OK
-      case MkdirParentNotFound => ENOENT
-      case MkdirParentNotADir => ENOTDIR
-      case MkdirExists => EEXIST
-      case MkdirBadPath => EIO
-    }
-  }
+  override def mkdir(path: String, mode: Long): Int = log(s"mkdir($path, $mode)")(fs.mkdir(path))
 
   /** See https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html#readdir-details */
   override def readdir(path: String, buf: Pointer, filler: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
@@ -146,6 +139,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
       case CreateIsDirectory => EISDIR
       case CreateNotFound => ENOENT
       case CreateBadPath => EIO
+      case CreateBadParent => EIO
     }
   }
 

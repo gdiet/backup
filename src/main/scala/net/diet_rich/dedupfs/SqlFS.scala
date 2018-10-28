@@ -2,7 +2,7 @@ package net.diet_rich.dedupfs
 
 import jnr.ffi.Pointer
 import net.diet_rich.dedup.metaH2.{Database, H2, H2MetaBackend}
-import net.diet_rich.util.{Head, Nel}
+import net.diet_rich.util.{ClassLogging, Head, Nel}
 import net.diet_rich.util.fs._
 import net.diet_rich.util.sql.ConnectionFactory
 
@@ -24,18 +24,39 @@ object SqlFS {
       })
     }
 }
-class SqlFS {
+class SqlFS extends ClassLogging {
   private implicit val connectionFactory: ConnectionFactory =
     ConnectionFactory(H2.jdbcMemoryUrl, H2.defaultUser, H2.defaultPassword, H2.memoryOnShutdown)
   Database.create("MD5", Map())
   protected val meta: H2MetaBackend = new H2MetaBackend
 
-  private def fs[T](t: T): T = synchronized(t)
+  private def sync[T](t: T): T = synchronized(t)
+  protected def sync[T](message: => String)(f: => T): T = log(message)(sync(f))
+
+
+  import FuseConstants._
+
+  def mkdir(path: String): Int = sync {
+    // EEXIST path already exists (not necessarily as a directory).
+    // ENOENT A directory component in pathname does not exist.
+    // ENOTDIR A component used as a directory in pathname is not, in fact, a directory.
+    SqlFS.pathElements(path).fold[Int](EIO)(meta.mkdir(_) match {
+        case MkdirOk(_) => OK
+        case MkdirParentNotFound => ENOENT
+        case MkdirParentNotADir => ENOTDIR
+        case MkdirExists => EEXIST
+    })
+  }
+
+
+
+
+
 
   // FIXME temporary
   private val files: collection.mutable.Map[Long, Array[Byte]] = collection.mutable.Map()
 
-  def create(path: String): CreateResult = fs {
+  def create(path: String): CreateResult = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
       case None => CreateBadPath
       case Some(Nel(Left(fileName), Right(parent) :: _)) =>
@@ -50,7 +71,7 @@ class SqlFS {
     }
   }
 
-  def write(path: String, buf: Pointer, size: Long, offset: Long): WriteResult = fs {
+  def write(path: String, buf: Pointer, size: Long, offset: Long): WriteResult = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
       case None => WriteBadPath
       case Some(Nel(Left(_), _)) => WriteNotFound
@@ -68,7 +89,7 @@ class SqlFS {
     }
   }
 
-  def read(path: String, buf: Pointer, size: Long, offset: Long): WriteResult = fs {
+  def read(path: String, buf: Pointer, size: Long, offset: Long): WriteResult = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
       case None => WriteBadPath
       case Some(Nel(Left(_), _)) => WriteNotFound
@@ -82,7 +103,7 @@ class SqlFS {
     }
   }
 
-  def truncate(path: String, size: Long): WriteResult = fs {
+  def truncate(path: String, size: Long): WriteResult = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
       case None => WriteBadPath
       case Some(Nel(Left(_), _)) => WriteNotFound
@@ -99,22 +120,22 @@ class SqlFS {
 
   sealed trait Node {
     protected def entry: meta.TreeEntry
-    final def name: String = fs(entry.name)
+    final def name: String = sync(entry.name)
   }
 
   class Dir(val entry: meta.TreeEntry) extends Node {
-    override def toString: String = fs(s"Dir '$name': $entry")
+    override def toString: String = sync(s"Dir '$name': $entry")
   }
 
   class File(val entry: meta.TreeEntry) extends Node {
     def size: Long = files.get(entry.id).map(_.length.toLong).getOrElse(0)
-    override def toString: String = fs(s"File '$name': $entry")
+    override def toString: String = sync(s"File '$name': $entry")
   }
 
   private def nodeFor(entry: meta.TreeEntry): Node =
     if (entry.isDir) new Dir(entry) else new File(entry)
 
-  def delete(path: String, expectDir: Boolean): DeleteResult = fs {
+  def delete(path: String, expectDir: Boolean): DeleteResult = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
       case None => DeleteBadPath
       case Some(Nel(Left(_), _)) => DeleteNotFound
@@ -130,15 +151,11 @@ class SqlFS {
     }
   }
 
-  def getNode(path: String): Option[Node] = fs {
+  def getNode(path: String): Option[Node] = sync {
     SqlFS.pathElements(path).map(meta.entries).flatMap(_.head.toOption.map(nodeFor))
   }
 
-  def mkdir(path: String): MkdirResult = fs {
-    SqlFS.pathElements(path).fold[MkdirResult](MkdirBadPath)(meta.mkdir)
-  }
-
-  def readdir(path: String): ReaddirResult = fs {
+  def readdir(path: String): ReaddirResult = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
       case None => ReaddirBadPath
       case Some(Nel(Left(_), _)) => ReaddirNotFound
@@ -148,7 +165,7 @@ class SqlFS {
     }
   }
 
-  def rename(oldpath: String, newpath: String): RenameResult = fs {
+  def rename(oldpath: String, newpath: String): RenameResult = sync {
     (SqlFS.pathElements(oldpath), SqlFS.pathElements(newpath)) match {
       case (None, _) | (_, None) => RenameBadPath
       case (Some(oldNames), Some(newNames)) =>

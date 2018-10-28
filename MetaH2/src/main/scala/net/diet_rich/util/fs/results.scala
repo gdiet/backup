@@ -12,7 +12,6 @@ case class MkdirOk(id: Long) extends MkdirResult
 case object MkdirParentNotFound extends MkdirResult
 case object MkdirParentNotADir extends MkdirResult
 case object MkdirExists extends MkdirResult
-case object MkdirBadPath extends MkdirResult
 
 sealed trait RenameResult
 case object RenameOk extends RenameResult
