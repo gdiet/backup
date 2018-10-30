@@ -42,12 +42,13 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
       case Some(file: File) =>
         stat.st_mode.set(FileStat.S_IFREG | O777)
         stat.st_size.set(file.size)
+        log.info(s"##### $path ${file.size}") // FIXME remove
         OK
     }
   }
 
-  /** Attempts to create a directory named path. */
-  override def mkdir(path: String, mode: Long): Int = log(s"mkdir($path, $mode)")(fs.mkdir(path))
+  /** Attempts to create a directory named [path]. */
+  override def mkdir(path: String, mode: Long): Int = log(s"mkdir($path, $mode)")(fs.mkdir(path, mode))
 
   /** See https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html#readdir-details */
   override def readdir(path: String, buf: Pointer, filler: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
@@ -203,10 +204,10 @@ object FuseFS extends ClassLogging with App {
 
   // FIXME remove
   import sqlFS._
-  println(mkdir("/hallo"))
-  println(mkdir("/hallo/welt"))
-  println(mkdir("/hello"))
-  println(mkdir("/hello/world"))
+  println(mkdir("/hallo", 0))
+  println(mkdir("/hallo/welt", 0))
+  println(mkdir("/hello", 0))
+  println(mkdir("/hello/world", 0))
   println(readdir("/").asInstanceOf[ReaddirOk].children.mkString("\n"))
 
   val fsHandle = mount(sqlFS)

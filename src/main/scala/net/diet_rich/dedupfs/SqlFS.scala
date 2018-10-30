@@ -38,10 +38,11 @@ class SqlFS extends FuseStubFS with ClassLogging {
 
   import FuseConstants._
 
-  def mkdir(path: String): Int = sync {
-    // EEXIST path already exists (not necessarily as a directory).
-    // ENOENT A directory component in pathname does not exist.
-    // ENOTDIR A component used as a directory in pathname is not, in fact, a directory.
+  /** Attempts to create a directory named [path].
+    * EEXIST  Path already exists (not necessarily as a directory).
+    * ENOENT  A directory component in pathname does not exist.
+    * ENOTDIR A component used as a directory in pathname is not, in fact, a directory. */
+  override def mkdir(path: String, mode: Long): Int = sync {
     SqlFS.pathElements(path).fold[Int](EIO)(meta.mkdir(_) match {
         case MkdirOk(_) => OK
         case MkdirParentNotFound => ENOENT
@@ -49,8 +50,6 @@ class SqlFS extends FuseStubFS with ClassLogging {
         case MkdirExists => EEXIST
     })
   }
-
-
 
 
 
