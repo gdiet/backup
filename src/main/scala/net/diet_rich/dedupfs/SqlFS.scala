@@ -181,10 +181,10 @@ class SqlFS extends FuseStubFS with ClassLogging {
               case Nel(Right(target), Right(newParent) :: _) =>
                 if (entry.isDir && target.isDir && meta.children(target.id).isEmpty) {
                   meta.delete(target.id)
-                  meta.rename(entry.id, target.name, newParent.id)
+                  meta.moveRename(entry.id, target.name, newParent.id)
                 } else RenameTargetExists
               case Nel(Left(newName), Right(newParent) :: _) =>
-                if (newParent.isDir) meta.rename(entry.id, newName, newParent.id)
+                if (newParent.isDir) meta.moveRename(entry.id, newName, newParent.id)
                 else RenameParentNotADirectory
               case Head(Left(_)) => RenameParentDoesNotExist
             }

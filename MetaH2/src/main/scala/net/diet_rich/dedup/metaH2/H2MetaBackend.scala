@@ -70,12 +70,12 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
       prepITreeJournal.run(_, parent, fileName, None, Some(1), false, None)
     )
 
-  private val prepUTreeEntryRename =
+  private val prepUTreeEntryMoveRename =
     update("UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?")
-  def rename(id: Long, newName: String, newParent: Long): RenameResult =
+  def moveRename(id: Long, newName: String, newParent: Long): RenameResult =
     if (children(newParent).filterNot(_.id == id).exists(_.name == newName)) RenameTargetExists
     else transaction {
-      prepUTreeEntryRename.run(newName, newParent, id) match {
+      prepUTreeEntryMoveRename.run(newName, newParent, id) match {
         case 1 =>
           prepITreeJournal.run(id, newParent, newName, None, None, false, None)
           RenameOk
