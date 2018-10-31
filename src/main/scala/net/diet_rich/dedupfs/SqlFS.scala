@@ -84,22 +84,25 @@ class SqlFS extends FuseStubFS with ClassLogging {
             if (a.length >= offset + size) a else java.util.Arrays.copyOf(a, (offset + size).toInt)
           }
           buf.get(0, array, offset.toInt, size.toInt)
+          log.info(s"written ${entry.id} -> ${new String(array, "UTF-8")}")
           files += entry.id -> array
           WriteOk
         }
     }
   }
 
-  def read(path: String, buf: Pointer, size: Long, offset: Long): WriteResult = sync {
+  def read(path: String, buf: Pointer, size: Long, offset: Long): Int = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
-      case None => WriteBadPath
-      case Some(Nel(Left(_), _)) => WriteNotFound
+      case None => EIO
+      case Some(Nel(Left(_), _)) => ENOENT
       case Some(Nel(Right(entry), _)) =>
-        if (entry.isDir) WriteIsDirectory
+        if (entry.isDir) EISDIR
         else {
           val array = files.getOrElse(entry.id, Array())
-          buf.put(0, java.util.Arrays.copyOf(array, (offset + size).toInt), offset.toInt, size.toInt)
-          WriteOk
+          val bytesToRead = math.min(array.length - offset, size).toInt
+          buf.put(0, array, offset.toInt, bytesToRead)
+          log.info(s"read ${entry.id} -> ${new String(array, "UTF-8")}")
+          bytesToRead
         }
     }
   }

@@ -42,7 +42,6 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
       case Some(file: File) =>
         stat.st_mode.set(FileStat.S_IFREG | O777)
         stat.st_size.set(file.size)
-        log.info(s"##### $path ${file.size}") // FIXME remove
         OK
     }
   }
@@ -170,14 +169,7 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
 
   // FIXME double-check
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-    log(s"read($path, buf, $size, $offset, fileInfo)") {
-      fs.read(path, buf, size, offset) match {
-        case WriteOk => OK
-        case WriteIsDirectory => EISDIR
-        case WriteNotFound => ENOENT
-        case WriteBadPath => EIO
-      }
-    }
+    log(s"read($path, buf, $size, $offset, fileInfo)")(fs.read(path, buf, size, offset))
 }
 
 object FuseFS extends ClassLogging with App {
