@@ -6,6 +6,7 @@ import net.diet_rich.util.{ClassLogging, Head, Nel}
 import net.diet_rich.util.fs._
 import net.diet_rich.util.sql.ConnectionFactory
 import ru.serce.jnrfuse.FuseStubFS
+import ru.serce.jnrfuse.struct.FuseFileInfo
 
 object SqlFS {
   val separator = "/"
@@ -72,12 +73,12 @@ class SqlFS extends FuseStubFS with ClassLogging {
     }
   }
 
-  def write(path: String, buf: Pointer, size: Long, offset: Long): WriteResult = sync {
+  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
-      case None => WriteBadPath
-      case Some(Nel(Left(_), _)) => WriteNotFound
+      case None => EIO
+      case Some(Nel(Left(_), _)) => ENOENT
       case Some(Nel(Right(entry), _)) =>
-        if (entry.isDir) WriteIsDirectory
+        if (entry.isDir) EISDIR
         else {
           val array = {
             val a = files.getOrElse(entry.id, new Array[Byte](0))
@@ -86,12 +87,12 @@ class SqlFS extends FuseStubFS with ClassLogging {
           buf.get(0, array, offset.toInt, size.toInt)
           log.info(s"written ${entry.id} -> ${new String(array, "UTF-8")}")
           files += entry.id -> array
-          WriteOk
+          OK
         }
     }
   }
 
-  def read(path: String, buf: Pointer, size: Long, offset: Long): Int = sync {
+  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
       case None => EIO
       case Some(Nel(Left(_), _)) => ENOENT
@@ -107,16 +108,16 @@ class SqlFS extends FuseStubFS with ClassLogging {
     }
   }
 
-  def truncateImpl(path: String, size: Long): WriteResult = sync {
+  override def truncate(path: String, size: Long): Int = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
-      case None => WriteBadPath
-      case Some(Nel(Left(_), _)) => WriteNotFound
+      case None => EIO
+      case Some(Nel(Left(_), _)) => ENOENT
       case Some(Nel(Right(entry), _)) =>
-        if (entry.isDir) WriteIsDirectory
+        if (entry.isDir) EISDIR
         else {
           val array = files.get(entry.id).map(java.util.Arrays.copyOf(_, size.toInt))
           array.foreach(files += entry.id -> _)
-          WriteOk
+          OK
         }
     }
   }
@@ -203,10 +204,4 @@ class SqlFS extends FuseStubFS with ClassLogging {
   case object ReaddirNotFound extends ReaddirResult
   case object ReaddirNotADirectory extends ReaddirResult
   case object ReaddirBadPath extends ReaddirResult
-
-  sealed trait WriteResult
-  case object WriteOk extends WriteResult
-  case object WriteNotFound extends WriteResult
-  case object WriteIsDirectory extends WriteResult
-  case object WriteBadPath extends WriteResult
 }

@@ -148,28 +148,14 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
 
   // FIXME double-check
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-    log(s"write($path, buf, $size, $offset, fileInfo)") {
-      fs.write(path, buf, size, offset) match {
-        case WriteOk => OK
-        case WriteIsDirectory => EISDIR
-        case WriteNotFound => ENOENT
-        case WriteBadPath => EIO
-      }
-    }
+    log(s"write($path, buf, $size, $offset, fileInfo)")(fs.write(path, buf, size, offset, fi))
 
   // FIXME double-check
-  override def truncate(path: String, size: Long): Int = log(s"truncate($path, $size)") {
-    fs.truncateImpl(path, size) match {
-      case WriteOk => OK
-      case WriteIsDirectory => EISDIR
-      case WriteNotFound => ENOENT
-      case WriteBadPath => EIO
-    }
-  }
+  override def truncate(path: String, size: Long): Int = log(s"truncate($path, $size)")(fs.truncate(path, size))
 
   // FIXME double-check
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-    log(s"read($path, buf, $size, $offset, fileInfo)")(fs.read(path, buf, size, offset))
+    log(s"read($path, buf, $size, $offset, fileInfo)")(fs.read(path, buf, size, offset, fi))
 }
 
 object FuseFS extends ClassLogging with App {
