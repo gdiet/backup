@@ -58,6 +58,12 @@ class SqlFS extends FuseStubFS with ClassLogging {
   // FIXME temporary
   private val files: collection.mutable.Map[Long, Array[Byte]] = collection.mutable.Map()
 
+  /** Create and open a file. If the file does not exist, first create it with the specified mode, and then open it.
+    * If this method is not implemented or under Linux kernel versions earlier than 2.6.15, the mknod() and open()
+    * methods will be called instead.
+    * The file handle in the "fh" element of FuseFileInfo is an unsigned 64-bit integer uninterpreted by FUSE.
+    * If you choose to use it, you should set that field in your open, create, and opendir functions; other
+    * functions can then use it. */
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
       case None => EIO
@@ -192,13 +198,6 @@ class SqlFS extends FuseStubFS with ClassLogging {
         }
     }
   }
-
-  sealed trait CreateResult
-  case object CreateOk extends CreateResult
-  case object CreateNotFound extends CreateResult
-  case object CreateBadParent extends CreateResult
-  case object CreateIsDirectory extends CreateResult
-  case object CreateBadPath extends CreateResult
 
   sealed trait ReaddirResult
   case class ReaddirOk(children: Seq[Node]) extends ReaddirResult
