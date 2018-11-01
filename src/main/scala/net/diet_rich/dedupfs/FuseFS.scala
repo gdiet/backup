@@ -133,15 +133,8 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   }
 
   // FIXME double-check
-  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = log(s"create($path, buf, $mode, fileInfo)") {
-    fs.create(path) match {
-      case CreateOk => OK
-      case CreateIsDirectory => EISDIR
-      case CreateNotFound => ENOENT
-      case CreateBadPath => EIO
-      case CreateBadParent => EIO
-    }
-  }
+  override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
+    log(s"create($path, buf, $mode, fileInfo)")(fs.create(path, mode, fi))
 
   // TODO probably not needed
   override def open(path: String, fi: FuseFileInfo): Int = log(s"open($path, fileInfo)") { OK }

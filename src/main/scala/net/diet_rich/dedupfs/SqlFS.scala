@@ -58,18 +58,18 @@ class SqlFS extends FuseStubFS with ClassLogging {
   // FIXME temporary
   private val files: collection.mutable.Map[Long, Array[Byte]] = collection.mutable.Map()
 
-  def create(path: String): CreateResult = sync {
+  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
-      case None => CreateBadPath
+      case None => EIO
       case Some(Nel(Left(fileName), Right(parent) :: _)) =>
         if (parent.isDir) {
           meta.mkfile(parent.id, fileName)
-          CreateOk
-        } else CreateBadParent
-      case Some(Nel(Left(_), _)) => CreateNotFound
+          OK
+        } else EIO
+      case Some(Nel(Left(_), _)) => ENOENT
       case Some(Nel(Right(entry), _)) =>
-        if (entry.isDir) CreateIsDirectory
-        else CreateOk
+        if (entry.isDir) EISDIR
+        else OK
     }
   }
 
