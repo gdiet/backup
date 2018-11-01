@@ -74,6 +74,7 @@ class SqlFS extends FuseStubFS with ClassLogging {
   }
 
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
+    // FIXME handle size > MAXINT
     SqlFS.pathElements(path).map(meta.entries) match {
       case None => EIO
       case Some(Nel(Left(_), _)) => ENOENT
@@ -87,7 +88,7 @@ class SqlFS extends FuseStubFS with ClassLogging {
           buf.get(0, array, offset.toInt, size.toInt)
           log.info(s"written ${entry.id} -> ${new String(array, "UTF-8")}")
           files += entry.id -> array
-          OK
+          size.toInt
         }
     }
   }
