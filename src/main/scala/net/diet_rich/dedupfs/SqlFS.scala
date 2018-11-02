@@ -147,6 +147,32 @@ class SqlFS extends FuseStubFS with ClassLogging {
   private def nodeFor(entry: meta.TreeEntry): Node =
     if (entry.isDir) new Dir(entry) else new File(entry)
 
+  /** Delete a directory. */ // TODO make sure implementation matches specification with regard to "." and ".."
+  override def rmdir(path: String): Int = sync {
+      delete(path, expectDir = true) match {
+        // EINVAL path has . as last component.
+        // ENOENT A directory component in path does not exist.
+        // ENOTDIR path, or a component used as a directory in pathname, is not, in fact, a directory.
+        // ENOTEMPTY path contains entries other than . and .. ; or, path has .. as its final component.
+        case DeleteOk => OK
+        case DeleteHasChildren => ENOTEMPTY
+        case DeleteNotFound => ENOENT
+        case DeleteFileType => ENOTDIR
+        case DeleteBadPath => EIO
+      }
+    }
+
+  // FIXME check https://linux.die.net/man/2/unlink and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
+  override def unlink(path: String): Int = sync {
+    delete(path, expectDir = false) match {
+      case DeleteOk => OK
+      case DeleteHasChildren => EIO // should never happen
+      case DeleteNotFound => ENOENT
+      case DeleteFileType => EISDIR
+      case DeleteBadPath => EIO
+    }
+  }
+
   def delete(path: String, expectDir: Boolean): DeleteResult = sync {
     SqlFS.pathElements(path).map(meta.entries) match {
       case None => DeleteBadPath

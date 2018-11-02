@@ -90,19 +90,8 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   }
 
   /** Delete a directory. */ // TODO make sure implementation matches specification with regard to "." and ".."
-  override def rmdir(path: String): Int = log(s"rmdir($path)") {
-    fs.delete(path, expectDir = true) match {
-      // EINVAL path has . as last component.
-      // ENOENT A directory component in path does not exist.
-      // ENOTDIR path, or a component used as a directory in pathname, is not, in fact, a directory.
-      // ENOTEMPTY path contains entries other than . and .. ; or, path has .. as its final component.
-      case DeleteOk => OK
-      case DeleteHasChildren => ENOTEMPTY
-      case DeleteNotFound => ENOENT
-      case DeleteFileType => ENOTDIR
-      case DeleteBadPath => EIO
-    }
-  }
+  override def rmdir(path: String): Int =
+    log(s"rmdir($path)")(fs.rmdir(path))
 
   // FIXME check https://linux.die.net/man/2/statfs and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
   override def statfs(path: String, stbuf: Statvfs): Int = log(s"statfs($path, buffer)") {
@@ -122,15 +111,8 @@ class FuseFS(fs: SqlFS) extends FuseStubFS with ClassLogging { import fs._
   }
 
   // FIXME check https://linux.die.net/man/2/unlink and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
-  override def unlink(path: String): Int = log(s"unlink($path)") {
-    fs.delete(path, expectDir = false) match {
-      case DeleteOk => OK
-      case DeleteHasChildren => EIO // should never happen
-      case DeleteNotFound => ENOENT
-      case DeleteFileType => EISDIR
-      case DeleteBadPath => EIO
-    }
-  }
+  override def unlink(path: String): Int =
+    log(s"unlink($path)")(fs.unlink(path))
 
   // FIXME double-check
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
