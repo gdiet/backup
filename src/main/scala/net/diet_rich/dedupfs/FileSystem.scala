@@ -3,20 +3,8 @@ package net.diet_rich.dedupfs
 import jnr.ffi.Platform
 import jnr.ffi.Platform.OS.WINDOWS
 import net.diet_rich.util._
-import ru.serce.jnrfuse.ErrorCodes
 
-object FuseConstants {
-  val O777     : Int = 511 // octal 0777
-  val OK       : Int = 0
-  val EEXIST   : Int = -ErrorCodes.EEXIST
-  val EIO      : Int = -ErrorCodes.EIO
-  val EISDIR   : Int = -ErrorCodes.EISDIR
-  val ENOENT   : Int = -ErrorCodes.ENOENT
-  val ENOTDIR  : Int = -ErrorCodes.ENOTDIR
-  val ENOTEMPTY: Int = -ErrorCodes.ENOTEMPTY
-}
-
-object FuseFS extends ClassLogging with App {
+object FileSystem extends ClassLogging with App {
   def mount(fs: SqlFS): AutoCloseable = {
     new AutoCloseable {
       try {

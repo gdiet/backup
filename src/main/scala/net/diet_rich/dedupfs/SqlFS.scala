@@ -9,6 +9,17 @@ import net.diet_rich.util.sql.ConnectionFactory
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 
+object FuseConstants {
+  val O777     : Int = 511 // octal 0777
+  val OK       : Int = 0
+  val EEXIST   : Int = -ErrorCodes.EEXIST
+  val EIO      : Int = -ErrorCodes.EIO
+  val EISDIR   : Int = -ErrorCodes.EISDIR
+  val ENOENT   : Int = -ErrorCodes.ENOENT
+  val ENOTDIR  : Int = -ErrorCodes.ENOTDIR
+  val ENOTEMPTY: Int = -ErrorCodes.ENOTEMPTY
+}
+
 object SqlFS {
   val separator = "/"
   val rootPath  = "/"
@@ -49,10 +60,10 @@ class SqlFS extends FuseStubFS with ClassLogging {
   import FuseConstants._
 
   override def flush(path: String, fi: FuseFileInfo): Int =
-    log(s"flush($path, fileInfo)")(super.flush(path, fi))
+    sync(s"flush($path, fileInfo)")(super.flush(path, fi))
 
   override def release(path: String, fi: FuseFileInfo): Int =
-    log(s"release($path, fileInfo)")(super.release(path, fi))
+    sync(s"release($path, fileInfo)")(super.release(path, fi))
 
   /** Return file attributes. For the given pathname, this should fill in the elements of the "stat" structure.
     * We might want to fill in additional fields, see https://linux.die.net/man/2/stat and
@@ -219,7 +230,7 @@ class SqlFS extends FuseStubFS with ClassLogging {
     if (entry.isDir) new Dir(entry) else new File(entry)
 
   // FIXME check https://linux.die.net/man/2/statfs and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
-  override def statfs(path: String, stbuf: Statvfs): Int = log(s"statfs($path, buffer)") {
+  override def statfs(path: String, stbuf: Statvfs): Int = sync(s"statfs($path, buffer)") {
     if (Platform.getNativePlatform.getOS == jnr.ffi.Platform.OS.WINDOWS) {
       // statfs needs to be implemented on Windows in order to allow for copying
       // data from other devices because winfsp calculates the volume size based
