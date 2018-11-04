@@ -10,16 +10,6 @@ import net.diet_rich.util.{ClassLogging, Head, Nel}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
-object SqlFS {
-  val separator = "/"
-  val rootPath  = "/"
-
-  def split(path: String): Seq[String] = {
-    require(path.startsWith(separator), s"Illegal path $path")
-    if (path == rootPath) Seq() else path.split(separator).toSeq.drop(1)
-  }
-}
-
 // FIXME FUSE provides a "file handle" in the "fuse_file_info" structure. The file handle
 // FIXME is stored in the "fh" element of that structure, which is an unsigned 64-bit
 // FIXME integer (uint64_t) uninterpreted by FUSE. If you choose to use it, you should set
@@ -27,23 +17,26 @@ object SqlFS {
 
 /** See for example https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html */
 class SqlFS extends FuseStubFS with ClassLogging {
-  import SqlFS.split
+  private val pathSeparator = "/"
+  private val rootPath  = "/"
 
-  private implicit val connectionFactory: ConnectionFactory =
-    ConnectionFactory(H2.jdbcMemoryUrl, H2.defaultUser, H2.defaultPassword, H2.memoryOnShutdown)
+  private def split(path: String): Seq[String] = {
+    require(path.startsWith(pathSeparator), s"Illegal path $path")
+    if (path == rootPath) Seq() else path.split(pathSeparator).toSeq.drop(1)
+  }
+
+  private implicit val connectionFactory: ConnectionFactory = H2.memoryFactory
   Database.create("MD5", Map())
-  protected val meta: H2MetaBackend = new H2MetaBackend
+
+  private val meta: H2MetaBackend = new H2MetaBackend
 
   private def sync[T](t: T): T = synchronized(t)
-  protected def sync[T](message: => String, asTrace: Boolean = false)(f: => T): T = log(message, asTrace)(sync(f))
+  private def sync[T](message: => String, asTrace: Boolean = false)(f: => T): T = log(message, asTrace)(sync(f))
 
   private val bytecache: ByteCache = new ByteCache
   private val bytestore: ByteStore = new MemoryByteStore
 
-
-  override def flush(path: String, fi: FuseFileInfo): Int =
-    sync(s"flush($path, fileInfo)")(super.flush(path, fi))
-
+  // FIXME this is the point where we should calculate the hash and store the file
   override def release(path: String, fi: FuseFileInfo): Int =
     sync(s"release($path, fileInfo)")(super.release(path, fi))
 
