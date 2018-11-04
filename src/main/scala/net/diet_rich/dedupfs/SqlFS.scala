@@ -9,34 +9,15 @@ import net.diet_rich.util.sql.ConnectionFactory
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 
-object FuseConstants {
-  val O777     : Int = 511 // octal 0777
-  val OK       : Int = 0
-  val EEXIST   : Int = -ErrorCodes.EEXIST
-  val EIO      : Int = -ErrorCodes.EIO
-  val EISDIR   : Int = -ErrorCodes.EISDIR
-  val ENOENT   : Int = -ErrorCodes.ENOENT
-  val ENOTDIR  : Int = -ErrorCodes.ENOTDIR
-  val ENOTEMPTY: Int = -ErrorCodes.ENOTEMPTY
-}
-
 object SqlFS {
   val separator = "/"
   val rootPath  = "/"
 
-  def pathElements(path: String): Option[List[String]] = {
+  def pathElements(path: String): Option[Seq[String]] = {
     if (!path.startsWith(separator)) None else
     if (path == rootPath) Some(List()) else
       Some(path.split(separator).toList.drop(1))
   }
-
-  def splitParentPath(path: String): Option[(String, String)] =
-    if (!path.startsWith(separator) || path == rootPath) None else {
-      Some(path.lastIndexOf('/') match {
-        case 0 => ("/", path.drop(1))
-        case i => (path.take(i), path.drop(i+1))
-      })
-    }
 }
 
 // FIXME FUSE provides a "file handle" in the "fuse_file_info" structure. The file handle

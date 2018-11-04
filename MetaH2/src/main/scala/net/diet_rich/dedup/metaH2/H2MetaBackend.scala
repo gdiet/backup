@@ -53,7 +53,7 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     insertReturnsKey("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (?, ?, ?, ?)", "id")
   private val prepITreeJournal =
     insert("INSERT INTO TreeJournal (treeId, parent, name, changed, data, deleted, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")
-  def mkdir(path: List[String]): MkdirResult = {
+  def mkdir(path: Seq[String]): MkdirResult = {
     entries(path) match {
       case Nel(Left(newName), Right(parent) :: _) =>
         if (!parent.isDir) MkdirParentNotADir else
