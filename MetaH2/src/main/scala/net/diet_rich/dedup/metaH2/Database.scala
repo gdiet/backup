@@ -21,8 +21,8 @@ object Database {
         |CREATE SEQUENCE dataEntryIdSeq START WITH 1;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),
-        |  length BIGINT NOT NULL DEFAULT 0,
-        |  hash   VARBINARY(${Hash.digestLength(hashAlgorithm)}) DEFAULT NULL,
+        |  length BIGINT NOT NULL DEFAULT -1,
+        |  hash   VARBINARY(${Hash.digestLength(hashAlgorithm)}) DEFAULT X'',
         |  CONSTRAINT pk_DataEntries PRIMARY KEY (id)
         |);
         |CREATE SEQUENCE byteStoreIdSeq START WITH 1;

@@ -18,11 +18,18 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
 
   case class TreeEntry(id: Long, parent: Long, name: String, changed: Option[Long], data: Option[Long]) {
     def isDir:  Boolean = data.isEmpty
-    def isFile: Boolean = data.isDefined
   }
   //noinspection ScalaUnusedSymbol
   private object TreeEntry { implicit val result: ResultSet => TreeEntry = { r =>
     TreeEntry(r.long(1), r.long(2), r.string(3), r.longOption(4), r.longOption(5))
+  } }
+
+  case class DataEntry(id: Long, length: Long, hash: Array[Byte]) {
+    def isValid: Boolean = length >= 0
+  }
+  //noinspection ScalaUnusedSymbol
+  private object DataEntry { implicit val result: ResultSet => DataEntry = { r =>
+    DataEntry(r.long(1), r.long(2), r.bytes(3))
   } }
 
   private val selectTreeEntry = "SELECT id, parent, name, changed, data FROM TreeEntries"
@@ -44,8 +51,6 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
 
   private val prepITreeEntry =
     insertReturnsKey("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (?, ?, ?, ?)", "id")
-  private val prepITreeJournal =
-    insert("INSERT INTO TreeJournal (treeId, parent, name, changed, data, deleted, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?)")
   def mkdir(path: Seq[String]): MkdirResult = {
     entries(path) match {
       case Nel(Left(newName), Right(parent) :: _) =>
@@ -67,13 +72,15 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
 
   private val prepUTreeEntryMoveRename =
     update("UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?")
-  def moveRename(id: Long, newName: String, newParent: Long): RenameResult =
+  def moveRename(id: Long, newName: String, newParent: Long): RenameResult = {
+    require(id != rootId, s"The root node $rootId is read-only.")
     if (children(newParent).filterNot(_.id == id).exists(_.name == newName)) RenameTargetExists
     else
       prepUTreeEntryMoveRename.run(newName, newParent, id) match {
         case 1 => RenameOk
         case other => assert(other == 1, s"unexpected number of updates in rename: $other"); RenameNotFound
       }
+  }
 
   private val prepDTreeEntry =
     update("DELETE FROM TreeEntries WHERE id = ?")
