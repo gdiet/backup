@@ -102,20 +102,18 @@ class SqlFS extends FuseStubFS with ClassLogging {
   override def readdir(path: String, buf: Pointer, filler: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
     sync(s"readdir($path, buffer, filler, $offset, fileInfo)") {
       if (offset.toInt < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
-      else readdir(path) match {
-        // ENOENT No such directory.
-        // ENOTDIR path does not refer to a directory.
-        case ReaddirBadPath => EIO
-        case ReaddirNotFound => ENOENT
-        case ReaddirNotADirectory => ENOTDIR
-        case ReaddirOk(children) =>
-          def entries = "." #:: ".." #:: children.toStream.map(_.name)
-          entries.zipWithIndex
-            .drop(offset.toInt)
-            .exists {
-              case (entry, k) => filler.apply(buf, entry, null, k + 1) != 0
+      else {
+        meta.entries(split(path)) match {
+          case Nel(Left(_), _) => ENOENT
+          case Nel(Right(entry), _) =>
+            if (!entry.isDir) ENOTDIR else {
+              val names = Seq(".", "..") ++ meta.children(entry.id).map(_.name)
+              names.zipWithIndex
+                .drop(offset.toInt)
+                .exists { case (name, k) => filler.apply(buf, name, null, k + 1) != 0 }
+              OK
             }
-          OK
+        }
       }
     }
 
@@ -190,24 +188,6 @@ class SqlFS extends FuseStubFS with ClassLogging {
     }
   }
 
-  // FIXME remove - not necessary for current purposes
-  sealed trait Node {
-    protected def entry: meta.TreeEntry
-    final def name: String = sync(entry.name)
-  }
-
-  class Dir(val entry: meta.TreeEntry) extends Node {
-    override def toString: String = sync(s"Dir '$name': $entry")
-  }
-
-  class File(val entry: meta.TreeEntry) extends Node {
-    def size: Long = files.get(entry.id).map(_.length.toLong).getOrElse(0)
-    override def toString: String = sync(s"File '$name': $entry")
-  }
-
-  private def nodeFor(entry: meta.TreeEntry): Node =
-    if (entry.isDir) new Dir(entry) else new File(entry)
-
   // FIXME check https://linux.die.net/man/2/statfs and https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
   override def statfs(path: String, stbuf: Statvfs): Int = sync(s"statfs($path, buffer)") {
     if (Platform.getNativePlatform.getOS == jnr.ffi.Platform.OS.WINDOWS) {
@@ -266,15 +246,6 @@ class SqlFS extends FuseStubFS with ClassLogging {
     }
   }
 
-  def readdir(path: String): ReaddirResult = sync {
-    meta.entries(split(path)) match {
-      case Nel(Left(_), _) => ReaddirNotFound
-      case Nel(Right(entry), _) =>
-        if (entry.isDir) ReaddirOk(meta.children(entry.id).map(nodeFor))
-        else ReaddirNotADirectory
-    }
-  }
-
   def renameImpl(oldpath: String, newpath: String): RenameResult = sync {
     meta.entries(split(oldpath)) match {
       case Head(Left(_)) => RenameNotFound
@@ -292,10 +263,4 @@ class SqlFS extends FuseStubFS with ClassLogging {
         }
     }
   }
-
-  sealed trait ReaddirResult
-  case class ReaddirOk(children: Seq[Node]) extends ReaddirResult
-  case object ReaddirNotFound extends ReaddirResult
-  case object ReaddirNotADirectory extends ReaddirResult
-  case object ReaddirBadPath extends ReaddirResult
 }

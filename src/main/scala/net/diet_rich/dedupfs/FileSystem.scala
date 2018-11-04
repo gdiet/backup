@@ -19,7 +19,6 @@ object FileSystem extends ClassLogging with App {
     println(fs.mkdir("/hallo/welt", 0))
     println(fs.mkdir("/hello", 0))
     println(fs.mkdir("/hello/world", 0))
-    println(fs.readdir("/").asInstanceOf[fs.ReaddirOk].children.mkString("\n"))
 
     () => fs.umount()
   } catch { case e: Throwable =>
