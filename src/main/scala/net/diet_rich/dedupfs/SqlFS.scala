@@ -3,20 +3,20 @@ package net.diet_rich.dedupfs
 import jnr.ffi.{Platform, Pointer}
 import net.diet_rich.bytestore.{ByteStore, MemoryByteStore}
 import net.diet_rich.dedup.metaH2.{Database, H2, H2MetaBackend}
-import net.diet_rich.util.{ClassLogging, Head, Nel}
+import net.diet_rich.dedupfs.FuseConstants._
 import net.diet_rich.util.fs._
 import net.diet_rich.util.sql.ConnectionFactory
-import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
+import net.diet_rich.util.{ClassLogging, Head, Nel}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
+import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
 object SqlFS {
   val separator = "/"
   val rootPath  = "/"
 
-  def pathElements(path: String): Option[Seq[String]] = {
-    if (!path.startsWith(separator)) None else
-    if (path == rootPath) Some(List()) else
-      Some(path.split(separator).toList.drop(1))
+  def split(path: String): Seq[String] = {
+    require(path.startsWith(separator), s"Illegal path $path")
+    if (path == rootPath) Seq() else path.split(separator).toSeq.drop(1)
   }
 }
 
@@ -27,6 +27,7 @@ object SqlFS {
 
 /** See for example https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html */
 class SqlFS extends FuseStubFS with ClassLogging {
+  import SqlFS.split
 
   private implicit val connectionFactory: ConnectionFactory =
     ConnectionFactory(H2.jdbcMemoryUrl, H2.defaultUser, H2.defaultPassword, H2.memoryOnShutdown)
@@ -39,7 +40,6 @@ class SqlFS extends FuseStubFS with ClassLogging {
   private val bytecache: ByteCache = new ByteCache
   private val bytestore: ByteStore = new MemoryByteStore
 
-  import FuseConstants._
 
   override def flush(path: String, fi: FuseFileInfo): Int =
     sync(s"flush($path, fileInfo)")(super.flush(path, fi))
@@ -54,13 +54,15 @@ class SqlFS extends FuseStubFS with ClassLogging {
   override def getattr(path: String, stat: FileStat): Int = sync(s"getattr($path, fileStat)", asTrace = true) {
     stat.st_uid.set(getContext.uid.get)
     stat.st_gid.set(getContext.gid.get)
-    getNode(path) match {
-      case None => ENOENT
-      case Some(_: Dir) => stat.st_mode.set(FileStat.S_IFDIR | O777); OK
-      case Some(file: File) =>
-        stat.st_mode.set(FileStat.S_IFREG | O777)
-        stat.st_size.set(file.size)
-        OK
+    meta.entries(split(path)) match {
+      case Nel(Left(_), _) => ENOENT
+      case Nel(Right(entry), _) =>
+        if (entry.isDir) { stat.st_mode.set(FileStat.S_IFDIR | O777); OK }
+        else {
+          stat.st_mode.set(FileStat.S_IFREG | O777)
+          stat.st_size.set(files.get(entry.id).map(_.length).getOrElse(0).toInt)
+          OK
+        }
     }
   }
 
@@ -69,12 +71,12 @@ class SqlFS extends FuseStubFS with ClassLogging {
     * ENOENT  A directory component in pathname does not exist.
     * ENOTDIR A component used as a directory in pathname is not, in fact, a directory. */
   override def mkdir(path: String, mode: Long): Int = sync(s"mkdir($path, $mode)") {
-    SqlFS.pathElements(path).fold[Int](EIO)(meta.mkdir(_) match {
+    meta.mkdir(split(path)) match {
         case MkdirOk(_) => OK
         case MkdirParentNotFound => ENOENT
         case MkdirParentNotADir => ENOTDIR
         case MkdirExists => EEXIST
-    })
+    }
   }
 
   /** Renames a file, moving it between directories if required. If newpath already exists it will be atomically
@@ -127,28 +129,24 @@ class SqlFS extends FuseStubFS with ClassLogging {
     * If you choose to use it, you should set that field in your open, create, and opendir functions; other
     * functions can then use it. */
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int = sync(s"create($path, buf, $mode, fileInfo)") {
-    SqlFS.pathElements(path).map(meta.entries) match {
-      case None => EIO
-      case Some(Nel(Left(fileName), Right(parent) :: _)) =>
+    meta.entries(split(path)) match {
+      case Nel(Left(fileName), Right(parent) :: _) =>
         if (parent.isDir) {
           val (_, dataId) = meta.mkfile(parent.id, fileName)
           bytecache.write(dataId, new Array[Byte](0), 0) // FIXME create method in byte cache???
           OK
         } else EIO
-      case Some(Nel(Left(_), _)) => ENOENT
-      case Some(Nel(Right(entry), _)) =>
-        if (entry.isDir) EISDIR
-        else OK
+      case Nel(Left(_), _) => ENOENT
+      case Nel(Right(entry), _) => if (entry.isDir) EISDIR else OK
     }
   }
 
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     sync(s"write($path, buf, $size, $offset, fileInfo)") {
       // FIXME handle size > MAXINT
-      SqlFS.pathElements(path).map(meta.entries) match {
-        case None => EIO
-        case Some(Nel(Left(_), _)) => ENOENT
-        case Some(Nel(Right(entry), _)) =>
+      meta.entries(split(path)) match {
+        case Nel(Left(_), _) => ENOENT
+        case Nel(Right(entry), _) =>
           if (entry.isDir) EISDIR
           else {
             val array = {
@@ -165,10 +163,9 @@ class SqlFS extends FuseStubFS with ClassLogging {
 
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     sync(s"read($path, buf, $size, $offset, fileInfo)") {
-      SqlFS.pathElements(path).map(meta.entries) match {
-        case None => EIO
-        case Some(Nel(Left(_), _)) => ENOENT
-        case Some(Nel(Right(entry), _)) =>
+      meta.entries(split(path)) match {
+        case Nel(Left(_), _) => ENOENT
+        case Nel(Right(entry), _) =>
           if (entry.isDir) EISDIR
           else {
             val array = files.getOrElse(entry.id, Array())
@@ -181,10 +178,9 @@ class SqlFS extends FuseStubFS with ClassLogging {
     }
 
   override def truncate(path: String, size: Long): Int = sync(s"truncate($path, $size)") {
-    SqlFS.pathElements(path).map(meta.entries) match {
-      case None => EIO
-      case Some(Nel(Left(_), _)) => ENOENT
-      case Some(Nel(Right(entry), _)) =>
+    meta.entries(split(path)) match {
+      case Nel(Left(_), _) => ENOENT
+      case Nel(Right(entry), _) =>
         if (entry.isDir) EISDIR
         else {
           val array = files.get(entry.id).map(java.util.Arrays.copyOf(_, size.toInt))
@@ -256,10 +252,9 @@ class SqlFS extends FuseStubFS with ClassLogging {
   }
 
   def delete(path: String, expectDir: Boolean): DeleteResult = sync {
-    SqlFS.pathElements(path).map(meta.entries) match {
-      case None => DeleteBadPath
-      case Some(Nel(Left(_), _)) => DeleteNotFound
-      case Some(Nel(Right(entry), _)) =>
+    meta.entries(split(path)) match {
+      case Nel(Left(_), _) => DeleteNotFound
+      case Nel(Right(entry), _) =>
         if (expectDir) {
           if (!entry.isDir) DeleteFileType
           else if (entry.isDir && meta.children(entry.id).nonEmpty) DeleteHasChildren
@@ -271,38 +266,29 @@ class SqlFS extends FuseStubFS with ClassLogging {
     }
   }
 
-  def getNode(path: String): Option[Node] = sync {
-    SqlFS.pathElements(path).map(meta.entries).flatMap(_.head.toOption.map(nodeFor))
-  }
-
   def readdir(path: String): ReaddirResult = sync {
-    SqlFS.pathElements(path).map(meta.entries) match {
-      case None => ReaddirBadPath
-      case Some(Nel(Left(_), _)) => ReaddirNotFound
-      case Some(Nel(Right(entry), _)) =>
+    meta.entries(split(path)) match {
+      case Nel(Left(_), _) => ReaddirNotFound
+      case Nel(Right(entry), _) =>
         if (entry.isDir) ReaddirOk(meta.children(entry.id).map(nodeFor))
         else ReaddirNotADirectory
     }
   }
 
   def renameImpl(oldpath: String, newpath: String): RenameResult = sync {
-    (SqlFS.pathElements(oldpath), SqlFS.pathElements(newpath)) match {
-      case (None, _) | (_, None) => RenameBadPath
-      case (Some(oldNames), Some(newNames)) =>
-        meta.entries(oldNames) match {
-          case Head(Left(_)) => RenameNotFound
-          case Head(Right(entry)) =>
-            meta.entries(newNames) match {
-              case Nel(Right(target), Right(newParent) :: _) =>
-                if (entry.isDir && target.isDir && meta.children(target.id).isEmpty) {
-                  meta.delete(target.id)
-                  meta.moveRename(entry.id, target.name, newParent.id)
-                } else RenameTargetExists
-              case Nel(Left(newName), Right(newParent) :: _) =>
-                if (newParent.isDir) meta.moveRename(entry.id, newName, newParent.id)
-                else RenameParentNotADirectory
-              case Head(Left(_)) => RenameParentDoesNotExist
-            }
+    meta.entries(split(oldpath)) match {
+      case Head(Left(_)) => RenameNotFound
+      case Head(Right(entry)) =>
+        meta.entries(split(newpath)) match {
+          case Nel(Right(target), Right(newParent) :: _) =>
+            if (entry.isDir && target.isDir && meta.children(target.id).isEmpty) {
+              meta.delete(target.id)
+              meta.moveRename(entry.id, target.name, newParent.id)
+            } else RenameTargetExists
+          case Nel(Left(newName), Right(newParent) :: _) =>
+            if (newParent.isDir) meta.moveRename(entry.id, newName, newParent.id)
+            else RenameParentNotADirectory
+          case Head(Left(_)) => RenameParentDoesNotExist
         }
     }
   }
