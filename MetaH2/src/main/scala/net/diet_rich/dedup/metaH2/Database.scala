@@ -18,19 +18,6 @@ object Database {
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
         |);
         |INSERT INTO TreeEntries (parent, name) VALUES ($rootsParent, '$rootName');
-        |CREATE SEQUENCE treeJournalIdSeq  START WITH 1;
-        |CREATE TABLE TreeJournal (
-        |  id        BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeJournalIdSeq),
-        |  treeId    BIGINT NOT NULL,
-        |  parent    BIGINT DEFAULT NULL,
-        |  name      VARCHAR(256) DEFAULT NULL,
-        |  changed   BIGINT DEFAULT NULL,
-        |  data      BIGINT DEFAULT NULL,
-        |  deleted   BOOLEAN DEFAULT FALSE,
-        |  timestamp BIGINT DEFAULT NULL,
-        |  CONSTRAINT pk_TreeJournal PRIMARY KEY (id)
-        |);
-        |INSERT INTO TreeJournal (treeId, parent, name, timestamp) VALUES ($rootId, $rootsParent, '$rootName', $now);
         |CREATE SEQUENCE dataEntryIdSeq START WITH 1;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),

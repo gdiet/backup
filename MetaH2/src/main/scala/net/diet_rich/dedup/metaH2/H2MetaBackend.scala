@@ -12,7 +12,7 @@ object H2MetaBackend {
   val rootName = ""
 }
 
-/** Methods are not thread safe, meaning that concurrent usage might result in data inconsistencies. */
+/** Methods are not thread safe. Concurrent usage can result in data inconsistencies. */
 class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   import H2MetaBackend._
 
@@ -24,13 +24,6 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   private object TreeEntry { implicit val result: ResultSet => TreeEntry = { r =>
     TreeEntry(r.long(1), r.long(2), r.string(3), r.longOption(4), r.longOption(5))
   } }
-
-  private val prepQJournal = query[JournalEntry]("SELECT * FROM TreeJournal")
-  case class JournalEntry(id: Long, treeId: Long, parent: Option[Long], name: Option[String], changed: Option[Long], data: Option[Long], deleted: Boolean, timestamp: Option[Long])
-  //noinspection ScalaUnusedSymbol
-  private object JournalEntry { implicit val result: ResultSet => JournalEntry = { r =>
-    JournalEntry(r.long(1), r.long(2), r.longOption(3), r.stringOption(4), r.longOption(5), r.longOption(6), r.boolean(7), r.longOption(8))
-  }}
 
   private val selectTreeEntry = "SELECT id, parent, name, changed, data FROM TreeEntries"
 
@@ -56,10 +49,8 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   def mkdir(path: Seq[String]): MkdirResult = {
     entries(path) match {
       case Nel(Left(newName), Right(parent) :: _) =>
-        if (!parent.isDir) MkdirParentNotADir else
-          MkdirOk(transaction(init(prepITreeEntry.run(parent.id, newName, None, None))(
-            prepITreeJournal.run(_, parent.id, newName, None, None, false, None)
-          )))
+        if (parent.isDir) MkdirOk(prepITreeEntry.run(parent.id, newName, None, None))
+        else MkdirParentNotADir
       case Nel(Left(_), _) => MkdirParentNotFound
       case Nel(Right(_), _) => MkdirExists
     }
@@ -70,9 +61,7 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
   def mkfile(parent: Long, fileName: String): (Long, Long) =
     transaction {
       val dataId = prepIDataEntry.run()
-      val id = init(prepITreeEntry.run(parent, fileName, None, Some(dataId)))(
-        prepITreeJournal.run(_, parent, fileName, None, Some(dataId), false, None)
-      )
+      val id = prepITreeEntry.run(parent, fileName, None, Some(dataId))
       (id, dataId)
     }
 
@@ -80,28 +69,18 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     update("UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?")
   def moveRename(id: Long, newName: String, newParent: Long): RenameResult =
     if (children(newParent).filterNot(_.id == id).exists(_.name == newName)) RenameTargetExists
-    else transaction {
+    else
       prepUTreeEntryMoveRename.run(newName, newParent, id) match {
-        case 1 =>
-          prepITreeJournal.run(id, newParent, newName, None, None, false, None)
-          RenameOk
-        case other =>
-          assert(other == 1, s"unexpected number of updates in rename: $other")
-          RenameNotFound
+        case 1 => RenameOk
+        case other => assert(other == 1, s"unexpected number of updates in rename: $other"); RenameNotFound
       }
-    }
 
   private val prepDTreeEntry =
     update("DELETE FROM TreeEntries WHERE id = ?")
   def delete(id: Long): DeleteResult =
-    if (children(id).nonEmpty) DeleteHasChildren else transaction {
+    if (children(id).nonEmpty) DeleteHasChildren else
       prepDTreeEntry.run(id) match {
-        case 1 =>
-          prepITreeJournal.run(id, None, None, None, None, true, None)
-          DeleteOk
-        case other =>
-          assert(other == 1, s"unexpected number of updates in delete: $other")
-          DeleteNotFound
+        case 1 => DeleteOk
+        case other => assert(other == 1, s"unexpected number of updates in delete: $other"); DeleteNotFound
       }
-    }
 }
