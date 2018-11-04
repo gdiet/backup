@@ -55,6 +55,7 @@ class SqlFS extends FuseStubFS with ClassLogging {
   private def sync[T](t: T): T = synchronized(t)
   protected def sync[T](message: => String, asTrace: Boolean = false)(f: => T): T = log(message, asTrace)(sync(f))
 
+  private val bytecache: ByteCache = new ByteCache
   private val bytestore: ByteStore = new MemoryByteStore
 
   import FuseConstants._
@@ -149,7 +150,8 @@ class SqlFS extends FuseStubFS with ClassLogging {
       case None => EIO
       case Some(Nel(Left(fileName), Right(parent) :: _)) =>
         if (parent.isDir) {
-          meta.mkfile(parent.id, fileName)
+          val (_, dataId) = meta.mkfile(parent.id, fileName)
+          bytecache.write(dataId, new Array[Byte](0), 0) // FIXME create method in byte cache???
           OK
         } else EIO
       case Some(Nel(Left(_), _)) => ENOENT

@@ -65,10 +65,16 @@ class H2MetaBackend(implicit connectionFactory: ConnectionFactory) {
     }
   }
 
-  def mkfile(parent: Long, fileName: String): Long =
-    init(prepITreeEntry.run(parent, fileName, None, Some(1)))(
-      prepITreeJournal.run(_, parent, fileName, None, Some(1), false, None)
-    )
+  private val prepIDataEntry =
+    insertReturnsKey("INSERT INTO DataEntries () VALUES ()", "id")
+  def mkfile(parent: Long, fileName: String): (Long, Long) =
+    transaction {
+      val dataId = prepIDataEntry.run()
+      val id = init(prepITreeEntry.run(parent, fileName, None, Some(dataId)))(
+        prepITreeJournal.run(_, parent, fileName, None, Some(dataId), false, None)
+      )
+      (id, dataId)
+    }
 
   private val prepUTreeEntryMoveRename =
     update("UPDATE TreeEntries SET name = ?, parent = ? WHERE id = ?")

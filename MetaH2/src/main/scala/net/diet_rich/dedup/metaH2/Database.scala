@@ -18,7 +18,7 @@ object Database {
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
         |);
         |INSERT INTO TreeEntries (parent, name) VALUES ($rootsParent, '$rootName');
-        |CREATE SEQUENCE treeJournalIdSeq  START WITH 0;
+        |CREATE SEQUENCE treeJournalIdSeq  START WITH 1;
         |CREATE TABLE TreeJournal (
         |  id        BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeJournalIdSeq),
         |  treeId    BIGINT NOT NULL,
@@ -31,14 +31,14 @@ object Database {
         |  CONSTRAINT pk_TreeJournal PRIMARY KEY (id)
         |);
         |INSERT INTO TreeJournal (treeId, parent, name, timestamp) VALUES ($rootId, $rootsParent, '$rootName', $now);
-        |CREATE SEQUENCE dataEntryIdSeq START WITH 0;
+        |CREATE SEQUENCE dataEntryIdSeq START WITH 1;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),
-        |  length BIGINT NOT NULL,
-        |  hash   VARBINARY(${Hash.digestLength(hashAlgorithm)}) NOT NULL,
+        |  length BIGINT NOT NULL DEFAULT 0,
+        |  hash   VARBINARY(${Hash.digestLength(hashAlgorithm)}) DEFAULT NULL,
         |  CONSTRAINT pk_DataEntries PRIMARY KEY (id)
         |);
-        |CREATE SEQUENCE byteStoreIdSeq START WITH 0;
+        |CREATE SEQUENCE byteStoreIdSeq START WITH 1;
         |CREATE TABLE ByteStore (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR byteStoreIdSeq),
         |  dataId BIGINT NOT NULL,
