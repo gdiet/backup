@@ -2,8 +2,8 @@ package dedup.fs
 import java.nio.file.Paths
 
 import scala.io.StdIn
+import scala.util.chaining.scalaUtilChainingOps
 
-import dedup.fs.util.chaining
 import jnr.ffi.Pointer
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
@@ -13,13 +13,6 @@ object FuseFS extends App {
   fs.mount(Paths.get("""I:\"""))
   StdIn.readLine("[enter] to exit ...")
   fs.umount()
-}
-
-object util {
-  // see https://github.com/dwijnand/scala/blob/278828b9a2965470e8cbe08a10780b5e923c4c11/src/library/scala/util/ChainingOps.scala
-  implicit class chaining[A](private val self: A) extends AnyVal {
-    def tap[U](f: A => U): A = { f(self); self }
-  }
 }
 
 /** Stage 1: For a minimal (empty) file system, implement getattr & readdir. These two functions also suffice for
