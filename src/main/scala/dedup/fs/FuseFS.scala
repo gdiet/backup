@@ -5,7 +5,7 @@ import scala.io.StdIn
 
 import dedup.fs.util.chaining
 import jnr.ffi.Pointer
-import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
+import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
 object FuseFS extends App {
@@ -57,7 +57,7 @@ class FuseFS extends FuseStubFS {
       if (offset.toInt < 0 || offset.toInt != offset) EOVERFLOW
       else path match {
         case "/" =>
-          def entries = "." #:: ".." #:: Stream.empty[String]
+          def entries = "." #:: ".." #:: LazyList.empty[String]
           entries.zipWithIndex
             .drop(offset.toInt)
             .exists { case (entry, k) => filler.apply(buf, entry, null, k + 1) != 0 }
