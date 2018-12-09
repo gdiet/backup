@@ -1,14 +1,4 @@
-version in ThisBuild := "0.5-SNAPSHOT"
-scalaVersion in ThisBuild := "2.12.3"
-scalacOptions in ThisBuild ++= Seq(
-  "-deprecation",
-  "-feature",
-  "-unchecked"
-)
+scalaVersion in ThisBuild := "2.12.8"
+scalacOptions in ThisBuild ++= Seq("-deprecation", "-feature", "-unchecked")
 
-lazy val Common = project
-lazy val CommonDedup = project
-lazy val Meta = project dependsOn CommonDedup
-lazy val MetaH2 = project dependsOn (Common, Meta)
-lazy val CoreDedup = project dependsOn MetaH2 // Note: It would be enough to have Common, Meta as compile dependency and MetaH2 as runtime dependency.
-lazy val DedupFS = project dependsOn CoreDedup
+libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.2.1" // 0.5.2.1 as of 2018-07-25
