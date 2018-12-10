@@ -16,8 +16,8 @@ object FuseFS extends App {
   fs.umount()
 }
 
-/** Stage 1: For a minimal (empty) file system, implement getattr & readdir. These two functions also suffice for
-  * read-only directory browsing without files. */
+/** Stage 1: For a minimal (empty) file system, implement getattr & readdir.
+  * Stage 2: These two functions also suffice for read-only directory browsing without files. */
 class FuseFS extends FuseStubFS {
   val fs = new FS
 
@@ -38,6 +38,7 @@ class FuseFS extends FuseStubFS {
 
   /** Return file attributes, i.e., for the given path, fill in the elements of the "stat" structure. */
   override def getattr(path: String, stat: FileStat): Int = trace(s"getattr($path, fileStat)") {
+    println(Thread.currentThread().getId)
     // Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176
     // TODO check https://linux.die.net/man/2/stat
     // TODO check https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
