@@ -11,7 +11,7 @@ import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 object FuseFS extends App {
   val fs = new FuseFS
   fs.mount(Paths.get("""I:\"""))
-  StdIn.readLine("[enter] to exit ...")
+  StdIn.readLine("[enter] to exit ...\n")
   fs.umount()
 }
 
@@ -36,7 +36,7 @@ class FuseFS extends FuseStubFS {
     stat.st_uid.set(getContext.uid.get)
     stat.st_gid.set(getContext.gid.get)
     path match {
-      case "/" => stat.st_mode.set(FileStat.S_IFDIR | O777); OK
+      case "/" | "/hallo" => stat.st_mode.set(FileStat.S_IFDIR | O777); OK
 //      case "/hello.txt" =>
 //        stat.st_mode.set(FileStat.S_IFREG | O777)
 //        stat.st_size.set(fileSize)
@@ -44,12 +44,23 @@ class FuseFS extends FuseStubFS {
     }
   }
 
-  /** See https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html#readdir-details */
+  /** See https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html#readdir-details
+    *
+    * Note: At least for Windows, there is no performance benefit in implementing opendir/releasedir and handing over
+    * the file handle to readdir, because opendir/releasedir are called many times as often as readdir. */
   override def readdir(path: String, buf: Pointer, filler: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
     log(s"readdir($path, buffer, filler, $offset, fileInfo)") {
       if (offset.toInt < 0 || offset.toInt != offset) EOVERFLOW
       else path match {
         case "/" =>
+          println("### " + fi.fh)
+          def entries = "." #:: ".." #:: "hallo" #:: LazyList.empty[String]
+          entries.zipWithIndex
+            .drop(offset.toInt)
+            .exists { case (entry, k) => filler.apply(buf, entry, null, k + 1) != 0 }
+          OK
+        case "/hallo" =>
+          println("### " + fi.fh)
           def entries = "." #:: ".." #:: LazyList.empty[String]
           entries.zipWithIndex
             .drop(offset.toInt)
