@@ -3,10 +3,11 @@ package dedup.util.sql
 import java.sql.Connection
 
 trait ConnectionProvider extends AutoCloseable {
-  def connection[T](f: Connection => T): T
+  def use[T](f: Connection => T): T
 }
 
-class SingleConnection(val c: Connection) extends ConnectionProvider {
-  override def connection[T](f: Connection => T): T = synchronized(f(c))
-  override def close(): Unit = c.close()
+class SingleConnection(factory: () => Connection) extends ConnectionProvider {
+  private val connection = factory()
+  override def use[T](f: Connection => T): T = synchronized(f(connection))
+  override def close(): Unit = connection.close()
 }
