@@ -23,6 +23,8 @@ object Database {
        |DROP   INDEX TreeEntriesParentNameIdx IF EXISTS;
        |CREATE INDEX TreeEntriesParentNameIdx ON TreeEntries(parent, name);""".stripMargin split ";"
 
+  // In first H2 performance checks, prepared statements showed only ~15% better performance than simple statements,
+  // so for the KISS approach, plain statements are used.
   def create()(implicit connections: ConnectionProvider): Unit = connections.use { connection =>
     val statement = connection.createStatement()
     tableDefinitions.foreach(statement.execute)
