@@ -4,7 +4,7 @@ import java.nio.file.Paths
 import scala.io.StdIn
 import scala.util.chaining.scalaUtilChainingOps
 
-import dedup.fs.{EntryInfo, FS, FileInfo}
+import dedup.fs._
 import jnr.ffi.Pointer
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
@@ -23,6 +23,7 @@ class FuseFS extends FuseStubFS {
 
   val O777     : Int = 511 // octal 0777
   val OK       : Int = 0
+  val ENOTDIR  : Int = -ErrorCodes.ENOTDIR
   val ENOENT   : Int = -ErrorCodes.ENOENT
   val EOVERFLOW: Int = -ErrorCodes.EOVERFLOW
 
@@ -38,7 +39,6 @@ class FuseFS extends FuseStubFS {
 
   /** Return file attributes, i.e., for the given path, fill in the elements of the "stat" structure. */
   override def getattr(path: String, stat: FileStat): Int = trace(s"getattr($path, fileStat)") {
-    println(Thread.currentThread().getId)
     // Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176
     // TODO check https://linux.die.net/man/2/stat
     // TODO check https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
@@ -66,22 +66,17 @@ class FuseFS extends FuseStubFS {
   override def readdir(path: String, buf: Pointer, filler: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
     info(s"readdir($path, buffer, filler, $offset, fileInfo)") {
       if (offset.toInt < 0 || offset.toInt != offset) EOVERFLOW
-      else path match {
-        case "/" =>
-          println("### " + fi.fh)
-          def entries = "." #:: ".." #:: "hallo" #:: LazyList.empty[String]
-          entries.zipWithIndex
-            .drop(offset.toInt)
-            .exists { case (entry, k) => filler.apply(buf, entry, null, k + 1) != 0 }
-          OK
-        case "/hallo" =>
-          println("### " + fi.fh)
-          def entries = "." #:: ".." #:: LazyList.empty[String]
-          entries.zipWithIndex
-            .drop(offset.toInt)
-            .exists { case (entry, k) => filler.apply(buf, entry, null, k + 1) != 0 }
-          OK
-        case _ => ENOENT // TODO distinguish from ENOTDIR
+      else {
+        fs.list(split(path)) match {
+          case NotFound => ENOENT
+          case IsFile => ENOTDIR
+          case DirEntries(content) =>
+            def entries = "." #:: ".." #:: content
+            entries.zipWithIndex
+              .drop(offset.toInt)
+              .exists { case (entry, k) => filler.apply(buf, entry, null, k + 1) != 0 }
+            OK
+        }
       }
     }
 
