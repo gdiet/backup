@@ -47,6 +47,7 @@ object Database {
       }.get
     }
 
+  /** @return id, changed or None if dir, data id or None if dir. */
   def node(parent: Long, name: String)
           (implicit connections: ConnectionProvider): Option[(Long, Option[Long], Option[Long])] =
     connections.con { con =>
