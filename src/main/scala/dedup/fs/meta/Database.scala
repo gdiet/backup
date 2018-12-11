@@ -36,7 +36,8 @@ object Database {
     statement.execute("INSERT INTO TreeEntries (parent, name) VALUES (1, 'hallo')")
     statement.execute("INSERT INTO TreeEntries (parent, name) VALUES (2, 'welt')")
     statement.execute("INSERT INTO TreeEntries (parent, name) VALUES (1, 'hello')")
-    statement.execute("INSERT INTO TreeEntries (parent, name) VALUES (4, 'welt')")
+    statement.execute("INSERT INTO TreeEntries (parent, name) VALUES (4, 'world')")
+    statement.execute("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (5, 'file', 0, 0)")
   }
 
   def children(id: Long)(implicit connections: ConnectionProvider): Seq[String] =
