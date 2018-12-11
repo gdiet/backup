@@ -1,8 +1,9 @@
 package dedup.fs.meta
 
-import dedup.util.sql.ConnectionProvider
-import dedup.util.sql.RichResultSet
+import scala.util.Using
 import scala.util.chaining.scalaUtilChainingOps
+
+import dedup.util.sql.{ConnectionProvider, RichResultSet}
 
 object Database {
   private def tableDefinitions: Array[String] =
@@ -38,8 +39,16 @@ object Database {
     statement.execute("INSERT INTO TreeEntries (parent, name) VALUES (4, 'welt')")
   }
 
-  def nodeByParentAndName(parent: Long, name: String)
-                         (implicit connections: ConnectionProvider): Option[(Long, Option[Long], Option[Long])] =
+  def children(id: Long)(implicit connections: ConnectionProvider): Seq[String] =
+    connections.stat { stat =>
+      Using(stat.executeQuery(s"SELECT name FROM TreeEntries WHERE parent = $id")) { resultSet =>
+        LazyList.continually(if (resultSet.next()) Some(resultSet.string(1)) else None)
+          .takeWhile(_.isDefined).flatten.toVector
+      }.get
+    }
+
+  def node(parent: Long, name: String)
+          (implicit connections: ConnectionProvider): Option[(Long, Option[Long], Option[Long])] =
     connections.con { con =>
       val prep = con.prepareStatement(
         "SELECT id, changed, data FROM TreeEntries WHERE parent = ? and name = ?"
@@ -47,14 +56,9 @@ object Database {
       prep.setLong(1, parent)
       prep.setString(2, name)
       val resultSet = prep.executeQuery()
-      if (resultSet.next()) {
-        Some((resultSet.long(1), resultSet.longOption(2), resultSet.longOption(3))).tap(
-          _ =>
-            assert(
-              !resultSet.next(),
-              s"expected no more results for $parent / $name"
-          )
-        )
-      } else None
+      if (resultSet.next())
+        Some((resultSet.long(1), resultSet.longOption(2), resultSet.longOption(3)))
+          .tap(_ => assert(!resultSet.next(), s"expected no more results for $parent / $name"))
+      else None
     }
 }
