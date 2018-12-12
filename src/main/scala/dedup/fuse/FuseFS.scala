@@ -47,10 +47,10 @@ class FuseFS extends FuseStubFS {
     stat.st_gid.set(getContext.gid.get)
     fs.info(split(path)) match {
       case None => ENOENT
-      case Some(EntryInfo(_, None)) =>
+      case Some(_: DirInfo) =>
         stat.st_mode.set(FileStat.S_IFDIR | O777)
         OK
-      case Some(EntryInfo(_, Some(FileInfo(size, time)))) =>
+      case Some(FileInfo(_, size, time)) =>
         stat.st_mode.set(FileStat.S_IFREG | O777)
         stat.st_size.set(size)
         stat.st_mtim.tv_sec.set(time / 1000)
