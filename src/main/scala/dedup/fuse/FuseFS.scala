@@ -71,7 +71,7 @@ class FuseFS extends FuseStubFS {
           case NotFound => ENOENT
           case IsFile => ENOTDIR
           case DirEntries(content) =>
-            def entries = "." #:: ".." #:: content
+            def entries = Seq(".", "..") ++ content
             entries.zipWithIndex
               .drop(offset.toInt)
               .exists { case (entry, k) => filler.apply(buf, entry, null, k + 1) != 0 }
