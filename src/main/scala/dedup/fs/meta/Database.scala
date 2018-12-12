@@ -3,7 +3,7 @@ package dedup.fs.meta
 import scala.util.Using
 import scala.util.chaining.scalaUtilChainingOps
 
-import dedup.util.sql.{ConnectionProvider, RichResultSet}
+import dedup.util.sql.{ConnectionProvider, RichPreparedStatement, RichResultSet}
 
 object Database {
   private def tableDefinitions: Array[String] =
@@ -42,22 +42,17 @@ object Database {
 
   def children(id: Long)(implicit connections: ConnectionProvider): Seq[String] =
     connections.stat { stat =>
-      Using(stat.executeQuery(s"SELECT name FROM TreeEntries WHERE parent = $id")) { resultSet =>
-        LazyList.continually(if (resultSet.next()) Some(resultSet.string(1)) else None)
-          .takeWhile(_.isDefined).flatten.toVector
-      }.get
+      val resultSet = stat.executeQuery(s"SELECT name FROM TreeEntries WHERE parent = $id")
+      Vector.unfold(resultSet)(r => if (r.next()) Some(r.string(1) -> r) else None)
     }
 
   /** @return id, changed or None if dir, data id or None if dir. */
   def node(parent: Long, name: String)
           (implicit connections: ConnectionProvider): Option[(Long, Option[Long], Option[Long])] =
     connections.con { con =>
-      val prep = con.prepareStatement(
-        "SELECT id, changed, data FROM TreeEntries WHERE parent = ? and name = ?"
-      )
-      prep.setLong(1, parent)
-      prep.setString(2, name)
-      val resultSet = prep.executeQuery()
+      val resultSet = con
+        .prepareStatement("SELECT id, changed, data FROM TreeEntries WHERE parent = ? and name = ?")
+        .query(parent, name)
       if (resultSet.next())
         Some((resultSet.long(1), resultSet.longOption(2), resultSet.longOption(3)))
           .tap(_ => assert(!resultSet.next(), s"expected no more results for $parent / $name"))
