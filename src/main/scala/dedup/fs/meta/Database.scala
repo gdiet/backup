@@ -1,6 +1,5 @@
 package dedup.fs.meta
 
-import scala.util.Using
 import scala.util.chaining.scalaUtilChainingOps
 
 import dedup.util.sql.{ConnectionProvider, RichPreparedStatement, RichResultSet}
@@ -58,4 +57,17 @@ object Database {
           .tap(_ => assert(!resultSet.next(), s"expected no more results for $parent / $name"))
       else None
     }
+
+  // synchronized to avoid name duplicates
+  def addNode(parent: Long, name: String, changed: Option[Long], data: Option[Long])
+             (implicit connections: ConnectionProvider): Boolean = synchronized {
+    node(parent, name).isEmpty && {
+      val rows = connections.con {
+        _.prepareStatement("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (?, ?, ?, ?)")
+         .update(parent, name, changed, data)
+      }
+      assert(rows == 1, s"insert returned $rows instead of 1")
+      true
+    }
+  }
 }

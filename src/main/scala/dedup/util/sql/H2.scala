@@ -6,7 +6,7 @@ object H2 {
   def memoryUrl = s"jdbc:h2:mem:dedupfs"
   val defaultUser = "sa"
   val defaultPassword = ""
-  Class forName driver
+  Class.forName(driver)
 
   def singleMemoryConnection = new SingleConnection(() =>
     // By default, new connections are in auto-commit mode.

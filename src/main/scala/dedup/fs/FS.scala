@@ -29,13 +29,29 @@ class FS {
       case Some(_: FileInfo) => IsFile
       case None => NotFound
     }
+
+  def mkdir(path: Seq[String]): MkdirResult =
+    if (path.isEmpty) EntryExists else {
+      val parents :+ name = path
+      info(parents) match {
+        case None => NoSuchDir
+        case Some(_: FileInfo) => NotADir
+        case Some(DirInfo(parentId)) => if (Database.addNode(parentId, name, None, None)) Created else EntryExists
+      }
+    }
 }
+
+sealed trait EntryInfo
+case class DirInfo(id: Long) extends EntryInfo
+case class FileInfo(id: Long, size: Long, time: Long) extends EntryInfo
 
 sealed trait ListResult
 case object IsFile extends ListResult
 case object NotFound extends ListResult
 case class DirEntries(entries: Seq[String]) extends ListResult
 
-sealed trait EntryInfo
-case class DirInfo(id: Long) extends EntryInfo
-case class FileInfo(id: Long, size: Long, time: Long) extends EntryInfo
+sealed trait MkdirResult
+case object EntryExists extends MkdirResult
+case object NoSuchDir extends MkdirResult
+case object NotADir extends MkdirResult
+case object Created extends MkdirResult

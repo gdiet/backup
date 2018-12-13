@@ -23,6 +23,7 @@ class FuseFS extends FuseStubFS {
 
   val O777     : Int = 511 // octal 0777
   val OK       : Int = 0
+  val EEXIST   : Int = -ErrorCodes.EEXIST
   val ENOTDIR  : Int = -ErrorCodes.ENOTDIR
   val ENOENT   : Int = -ErrorCodes.ENOENT
   val EOVERFLOW: Int = -ErrorCodes.EOVERFLOW
@@ -56,6 +57,19 @@ class FuseFS extends FuseStubFS {
         stat.st_mtim.tv_sec.set(time / 1000)
         stat.st_mtim.tv_nsec.set((time % 1000) * 1000)
         OK
+    }
+  }
+
+  /** Attempts to create a directory named [path].
+    * EEXIST  Path already exists (not necessarily as a directory).
+    * ENOENT  A directory component in pathname does not exist.
+    * ENOTDIR A component used as a directory in pathname is not, in fact, a directory. */
+  override def mkdir(path: String, mode: Long): Int = info(s"mkdir($path, $mode)") {
+    fs.mkdir(split(path)) match {
+      case EntryExists => EEXIST
+      case NoSuchDir   => ENOENT
+      case NotADir     => ENOTDIR
+      case Created     => OK
     }
   }
 

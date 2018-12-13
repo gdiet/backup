@@ -18,7 +18,7 @@ package object sql {
   }
 
   implicit final class RichPreparedStatement(val statement: PreparedStatement) extends AnyVal {
-    def setArguments(args: Any*): PreparedStatement = {
+    private def setArguments(args: scala.collection.Seq[Any]): PreparedStatement = {
       args.zipWithIndex foreach {
         case (     x: Array[Byte],  index) => statement setObject  (index+1, x)
         case (Some(x: Array[Byte]), index) => statement setObject  (index+1, x)
@@ -37,12 +37,13 @@ package object sql {
       statement
     }
 
-    def query(args: Any*): ResultSet = setArguments(args).executeQuery()
+    def query (args: Any*): ResultSet = setArguments(args).executeQuery()
+    def update(args: Any*): Int       = setArguments(args).executeUpdate()
 
-    def updateSingleRow(args: Any*): Unit =
-      setArguments(args).executeUpdate() match {
-        case 1 => ()
-        case n => throw new IllegalStateException(s"SQL update $statement $args returned $n rows instead of 1")
-      }
+//    def updateSingleRow(args: Any*): PreparedStatement = {
+//      val rows = setArguments(args).executeUpdate()
+//      if (rows != 1) throw new IllegalStateException(s"SQL update $statement $args returned $rows rows instead of 1")
+//      statement
+//    }
   }
 }
