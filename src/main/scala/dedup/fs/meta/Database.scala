@@ -58,9 +58,8 @@ object Database {
       else None
     }
 
-  // synchronized to avoid name duplicates
   def addNode(parent: Long, name: String, changed: Option[Long], data: Option[Long])
-             (implicit connections: ConnectionProvider): Boolean = synchronized {
+             (implicit connections: ConnectionProvider): Boolean =
     node(parent, name).isEmpty && {
       val rows = connections.con {
         _.prepareStatement("INSERT INTO TreeEntries (parent, name, changed, data) VALUES (?, ?, ?, ?)")
@@ -69,5 +68,15 @@ object Database {
       assert(rows == 1, s"insert returned $rows instead of 1")
       true
     }
-  }
+
+  def moveRename(id: Long, parent: Long, name: String)
+             (implicit connections: ConnectionProvider): Boolean =
+    {
+      val rows = connections.con {
+        _.prepareStatement("UPDATE TreeEntries SET parent = ?, name = ? WHERE id = ?")
+         .update(parent, name, id)
+      }
+      assert(rows < 2, s"update returned $rows instead of 0 or 1")
+      rows > 0
+    }
 }

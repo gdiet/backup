@@ -24,6 +24,8 @@ class FuseFS extends FuseStubFS {
   val O777     : Int = 511 // octal 0777
   val OK       : Int = 0
   val EEXIST   : Int = -ErrorCodes.EEXIST
+  val EINVAL   : Int = -ErrorCodes.EINVAL
+  val EIO      : Int = -ErrorCodes.EIO
   val ENOTDIR  : Int = -ErrorCodes.ENOTDIR
   val ENOENT   : Int = -ErrorCodes.ENOENT
   val EOVERFLOW: Int = -ErrorCodes.EOVERFLOW
@@ -46,7 +48,7 @@ class FuseFS extends FuseStubFS {
     // TODO for block size and block number, see https://github.com/Alluxio/alluxio/blob/master/integration/fuse/src/main/java/alluxio/fuse/AlluxioFuseFileSystem.java
     stat.st_uid.set(getContext.uid.get)
     stat.st_gid.set(getContext.gid.get)
-    fs.info(split(path)) match {
+    fs.treeLocked(fs.info(split(path))) match {
       case None => ENOENT
       case Some(_: DirInfo) =>
         stat.st_mode.set(FileStat.S_IFDIR | O777)
@@ -65,7 +67,7 @@ class FuseFS extends FuseStubFS {
     * ENOENT  A directory component in pathname does not exist.
     * ENOTDIR A component used as a directory in pathname is not, in fact, a directory. */
   override def mkdir(path: String, mode: Long): Int = info(s"mkdir($path, $mode)") {
-    fs.mkdir(split(path)) match {
+    fs.treeLocked(fs.mkdir(split(path))) match {
       case EntryExists => EEXIST
       case NoSuchDir   => ENOENT
       case NotADir     => ENOTDIR
@@ -81,7 +83,7 @@ class FuseFS extends FuseStubFS {
     info(s"readdir($path, buffer, filler, $offset, fileInfo)") {
       if (offset.toInt < 0 || offset.toInt != offset) EOVERFLOW
       else {
-        fs.list(split(path)) match {
+        fs.treeLocked(fs.list(split(path))) match {
           case NotFound => ENOENT
           case IsFile => ENOTDIR
           case DirEntries(content) =>
@@ -93,6 +95,30 @@ class FuseFS extends FuseStubFS {
         }
       }
     }
+
+  /** Renames a file, moving it between directories if required. Other than required by
+    * https://linux.die.net/man/2/rename this method never replaces existing files or directories. */
+  override def rename(oldpath: String, newpath: String): Int = info(s"rename($oldpath, $newpath)") {
+    split(oldpath) -> split(newpath) match {
+      case (Seq(), _) | (_, Seq()) => EINVAL
+      case (oldNames, newParent :+ newName) => fs.treeLocked {
+        fs.info(oldNames) match {
+          case None => ENOENT
+          case Some(oldEntry) => fs.info(newParent) match {
+            case None => ENOENT
+            case Some(_: FileInfo) => ENOTDIR
+            case Some(DirInfo(newParentId)) => fs.info(newParentId, newName) match {
+              case Some(_) => EEXIST
+              case None =>
+                val success = fs.moveRename(oldEntry.id, newParentId, newName)
+                assert(success, s"No success renaming $oldpath to $newpath")
+                if (success) OK else EIO
+            }
+          }
+        }
+      }
+    }
+  }
 
 //  // TODO check https://linux.die.net/man/2/statfs
 //  // TODO check https://www.cs.hmc.edu/~geoff/classes/hmc.cs135.201001/homework/fuse/fuse_doc.html
