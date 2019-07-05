@@ -7,7 +7,7 @@ object H2 {
   Class forName "org.h2.Driver"
 
   private def jdbcUrl(directory: java.io.File) = s"jdbc:h2:$directory/dedupfs;DB_CLOSE_ON_EXIT=FALSE"
-  private def jdbcMemoryUrl = s"jdbc:h2:mem:dedupfs"
+  private def jdbcMemoryUrl = s"jdbc:h2:mem:dedupfs" // ;TRACE_LEVEL_SYSTEM_OUT=2"
   private val defaultUser = "sa"
   private val defaultPassword = ""
 
