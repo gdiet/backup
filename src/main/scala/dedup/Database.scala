@@ -34,6 +34,8 @@ object Database {
         |INSERT INTO TreeEntries (parentId, name) VALUES (1, 'sub');
         |INSERT INTO TreeEntries (parentId, name) VALUES (1, 'sub2');
         |INSERT INTO TreeEntries (parentId, name) VALUES (3, 'sub2sub');
+        |INSERT INTO TreeEntries (parentId, name, lastModified, dataId) VALUES (2, 'file', 0, 0);
+        |INSERT INTO DataEntries (start, stop, hash) VALUES (0, 20, x'');
         |""".stripMargin split ";" // FIXME remove example data
   }
 

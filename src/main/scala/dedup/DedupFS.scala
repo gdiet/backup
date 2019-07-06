@@ -28,5 +28,8 @@ case class DedupDir(db: Database, id: Long) extends FSDir {
 
 case class DedupFile(start: Long, stop: Long, lastModifiedMillis: Long) extends FSFile {
   override def size: Long = stop - start
-  override def bytes(offset: Long, size: Int): Array[Byte] = Array() // FIXME
+  override def bytes(offset: Long, size: Int): Array[Byte] = {
+    val bytesToWrite = math.min(this.size - offset, size).toInt
+    Array.fill(bytesToWrite)(65)
+  } // FIXME
 }
