@@ -15,8 +15,8 @@ class DedupFS(connection: Connection) extends FSInterface {
         case (parent, name) => parent.flatMap(p => db.entryByParentAndName(p.id, name))
       }
       maybeEntry.map { e =>
-        if (e.data.isEmpty) DedupDir(db, e.id)
-        else DedupFile(e.length.getOrElse(0), e.changed.getOrElse(0), e.data.getOrElse(0))
+        if (e.dataId.isEmpty) DedupDir(db, e.id)
+        else DedupFile(e.length.getOrElse(0), e.lastModified.getOrElse(0), e.dataId.getOrElse(0))
       }
     }
   }

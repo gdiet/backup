@@ -1,6 +1,5 @@
 package dedup
 
-import java.nio.file.Paths
 import java.sql.Connection
 
 import jnr.ffi.Platform.{OS, getNativePlatform}
@@ -11,9 +10,14 @@ import util.H2
 
 object ReadOnlyFS extends App {
   val mountPoint = if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnth"
-  val fs = new ReadOnlyFS()
-  try fs.mount(Paths.get(mountPoint), true, false)
-  finally fs.umount()
+  run(Map("mount" -> mountPoint))
+
+  def run(options: Map[String, String]): Unit = {
+    val mountPoint = options.getOrElse("mount", throw new IllegalArgumentException("mount option is mandatory."))
+    val fs = new ReadOnlyFS()
+    try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
+    finally fs.umount()
+  }
 }
 
 class ReadOnlyFS extends FuseStubFS {

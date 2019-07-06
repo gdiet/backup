@@ -11,34 +11,36 @@ object Database {
   private def tableDefinitions: Array[String] = {
     s"""|CREATE SEQUENCE treeEntryIdSeq START WITH 0;
         |CREATE TABLE TreeEntries (
-        |  id        BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryIdSeq),
-        |  parent    BIGINT NOT NULL,
-        |  name      VARCHAR(255) NOT NULL,
-        |  changed   BIGINT DEFAULT NULL,
-        |  data      BIGINT DEFAULT NULL,
+        |  id           BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryIdSeq),
+        |  parentId     BIGINT NOT NULL,
+        |  name         VARCHAR(255) NOT NULL,
+        |  lastModified BIGINT DEFAULT NULL,
+        |  dataId       BIGINT DEFAULT NULL,
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
         |);
-        |INSERT INTO TreeEntries (parent, name) VALUES (-1, '');
+        |INSERT INTO TreeEntries (parentId, name) VALUES (-1, '');
+        |CREATE SEQUENCE dataEntryIdSeq START WITH 0;
         |CREATE TABLE DataEntries (
-        |  id     BIGINT NOT NULL,
-        |  length BIGINT NOT NULL,
+        |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),
+        |  start  BIGINT NOT NULL,
+        |  stop   BIGINT NOT NULL,
         |  hash   BINARY NOT NULL,
         |  CONSTRAINT pk_DataEntries PRIMARY KEY (id)
         |);
-        |INSERT INTO TreeEntries (parent, name) VALUES (0, 'dir');
-        |INSERT INTO TreeEntries (parent, name) VALUES (1, 'sub');
-        |INSERT INTO TreeEntries (parent, name) VALUES (1, 'sub2');
-        |INSERT INTO TreeEntries (parent, name) VALUES (3, 'sub2sub');
+        |INSERT INTO TreeEntries (parentId, name) VALUES (0, 'dir');
+        |INSERT INTO TreeEntries (parentId, name) VALUES (1, 'sub');
+        |INSERT INTO TreeEntries (parentId, name) VALUES (1, 'sub2');
+        |INSERT INTO TreeEntries (parentId, name) VALUES (3, 'sub2sub');
         |""".stripMargin split ";" // FIXME remove example data
   }
 
   private val indexDefinitions: Array[String] =
     """|DROP   INDEX TreeEntriesParentIdx     IF EXISTS;
-       |CREATE INDEX TreeEntriesParentIdx     ON TreeEntries(parent);
+       |CREATE INDEX TreeEntriesParentIdx     ON TreeEntries(parentId);
        |DROP   INDEX TreeEntriesParentNameIdx IF EXISTS;
-       |CREATE INDEX TreeEntriesParentNameIdx ON TreeEntries(parent, name);
-       |DROP   INDEX DataEntriesDuplicatesIdx IF EXISTS;
-       |CREATE INDEX DataEntriesDuplicatesIdx ON DataEntries(length, hash);""".stripMargin split ";"
+       |CREATE INDEX TreeEntriesParentNameIdx ON TreeEntries(parentId, name);
+       |DROP   INDEX DataEntriesStopIdx       IF EXISTS;
+       |CREATE INDEX DataEntriesStopIdx       ON DataEntries(stop);""".stripMargin split ";"
 
   def initialize(connection: Connection): Unit =
     resource(connection.createStatement()) { stat =>
@@ -55,7 +57,7 @@ object Database {
       LazyList.continually(Option.when(rs.next)(f(rs))).takeWhile(_.isDefined).flatten.to(List)
   }
 
-  case class ByParentNameResult(id: Long, changed: Option[Long], data: Option[Long], length: Option[Long])
+  case class ByParentNameResult(id: Long, lastModified: Option[Long], dataId: Option[Long], length: Option[Long])
   object ByParentNameResult {
     def apply(rs: ResultSet): Option[ByParentNameResult] = {
       rs.maybe(rs =>
@@ -70,19 +72,19 @@ class Database(connection: Connection) extends AutoCloseable {
   override def toString: String = "db"
 
   private val qTreeParentName = connection.prepareStatement(
-    "SELECT t.id, t.changed, t.data, d.length FROM TreeEntries t LEFT JOIN DataEntries d ON t.data = d.id WHERE t.parent = ? AND t.name = ?"
+    "SELECT t.id, t.lastModified, t.dataId, d.length FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.name = ?"
   )
-  def entryByParentAndName(parent: Long, name: String): Option[ByParentNameResult] = {
-    qTreeParentName.setLong(1, parent)
+  def entryByParentAndName(parentId: Long, name: String): Option[ByParentNameResult] = {
+    qTreeParentName.setLong(1, parentId)
     qTreeParentName.setString(2, name)
     resource(qTreeParentName.executeQuery())(ByParentNameResult(_))
   }
 
   private val qChildren = connection.prepareStatement(
-    "SELECT name FROM TreeEntries WHERE parent = ?"
+    "SELECT name FROM TreeEntries WHERE parentId = ?"
   )
-  def children(parent: Long): Seq[String] = {
-    qChildren.setLong(1, parent)
+  def children(parentId: Long): Seq[String] = {
+    qChildren.setLong(1, parentId)
     resource(qChildren.executeQuery())(r => r.seq(_.getString(1)))
   }
 
