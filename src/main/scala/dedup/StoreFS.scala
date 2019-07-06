@@ -16,11 +16,9 @@ class StoreFS(connection: java.sql.Connection) {
         }
     }
 
-  // FIXME remove?
-  def entryAt(path: String): Option[String] =
-    lookup(path, db).flatMap {
-      case ByParentNameResult(_, Some(time), Some(start), Some(stop)) => Some("file")
-      case ByParentNameResult(id, None, None, None) => Some("dir")
-      case entry => System.err.println(s"Malformed $entry for $path"); None
-    }
+  def mkEntry(parentId: Long, name: String, lastModified: Option[Long], dataId: Option[Long]): Long =
+    db.addTreeEntry(parentId, name, lastModified, dataId)
+
+  def exists(parentId: Long, name: String): Boolean =
+    db.entryByParentAndName(parentId, name).isDefined
 }

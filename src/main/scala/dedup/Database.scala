@@ -31,14 +31,7 @@ object Database {
         |  CONSTRAINT un_TreeEntries UNIQUE (parentId, name),
         |  CONSTRAINT fk_TreeEntries_dataId FOREIGN KEY (dataId) REFERENCES DataEntries(id)
         |);
-        |INSERT INTO DataEntries (start, stop, hash) VALUES (0, 20, x'');
-        |INSERT INTO TreeEntries (parentId, name) VALUES (-1, '');
-        |INSERT INTO TreeEntries (parentId, name) VALUES (0, 'dir');
-        |INSERT INTO TreeEntries (parentId, name) VALUES (1, 'sub');
-        |INSERT INTO TreeEntries (parentId, name) VALUES (1, 'sub2');
-        |INSERT INTO TreeEntries (parentId, name) VALUES (3, 'sub2sub');
-        |INSERT INTO TreeEntries (parentId, name, lastModified, dataId) VALUES (2, 'file', 0, 0);
-        |""".stripMargin split ";" // FIXME remove example data
+        |""".stripMargin split ";"
   }
 
   private val indexDefinitions: Array[String] =
