@@ -1,11 +1,9 @@
 package dedup
 
-import java.sql.Connection
-
-import util.H2
+import dedup.Database.ByParentNameResult
 
 // FIXME synchronization?
-class DedupFS(connection: Connection) extends FSInterface {
+class DedupFS(connection: java.sql.Connection) extends FSInterface {
   private val db = new Database(connection)
 
   override def entryAt(path: String): Option[FSEntry] = {
@@ -14,9 +12,10 @@ class DedupFS(connection: Connection) extends FSInterface {
       val maybeEntry = path.split("/").filter(_.nonEmpty).foldLeft(Option(Database.byParentNameRoot)) {
         case (parent, name) => parent.flatMap(p => db.entryByParentAndName(p.id, name))
       }
-      maybeEntry.map { e =>
-        if (e.dataId.isEmpty) DedupDir(db, e.id)
-        else DedupFile(e.length.getOrElse(0), e.lastModified.getOrElse(0), e.dataId.getOrElse(0))
+      maybeEntry.map {
+        case ByParentNameResult(_, Some(time), Some(start), Some(stop)) => DedupFile(start, stop, time)
+        case ByParentNameResult(id, None, None, None) => DedupDir(db, id)
+        case entry => System.err.println(s"Malformed $entry for $path"); DedupDir(db, entry.id)
       }
     }
   }
@@ -27,6 +26,7 @@ case class DedupDir(db: Database, id: Long) extends FSDir {
   override def childNames: Seq[String] = db.children(id)
 }
 
-case class DedupFile(size: Long, lastModifiedMillis: Long, dataId: Long) extends FSFile {
+case class DedupFile(start: Long, stop: Long, lastModifiedMillis: Long) extends FSFile {
+  override def size: Long = stop - start
   override def bytes(offset: Long, size: Int): Array[Byte] = Array() // FIXME
 }

@@ -1,5 +1,6 @@
 package dedup
 
+import java.io.File
 import java.sql.{Connection, ResultSet}
 
 import dedup.Database._
@@ -8,6 +9,8 @@ import scala.util.Using.resource
 import scala.util.chaining._
 
 object Database {
+  val dbDir: File = new File("./fsdb")
+
   private def tableDefinitions: Array[String] = {
     s"""|CREATE SEQUENCE treeEntryIdSeq START WITH 0;
         |CREATE TABLE TreeEntries (
@@ -35,11 +38,8 @@ object Database {
   }
 
   private val indexDefinitions: Array[String] =
-    """|DROP   INDEX TreeEntriesParentIdx     IF EXISTS;
-       |CREATE INDEX TreeEntriesParentIdx     ON TreeEntries(parentId);
-       |DROP   INDEX TreeEntriesParentNameIdx IF EXISTS;
+    """|CREATE INDEX TreeEntriesParentIdx     ON TreeEntries(parentId);
        |CREATE INDEX TreeEntriesParentNameIdx ON TreeEntries(parentId, name);
-       |DROP   INDEX DataEntriesStopIdx       IF EXISTS;
        |CREATE INDEX DataEntriesStopIdx       ON DataEntries(stop);""".stripMargin split ";"
 
   def initialize(connection: Connection): Unit =
@@ -57,7 +57,7 @@ object Database {
       LazyList.continually(Option.when(rs.next)(f(rs))).takeWhile(_.isDefined).flatten.to(List)
   }
 
-  case class ByParentNameResult(id: Long, lastModified: Option[Long], dataId: Option[Long], length: Option[Long])
+  case class ByParentNameResult(id: Long, lastModified: Option[Long], start: Option[Long], stop: Option[Long])
   object ByParentNameResult {
     def apply(rs: ResultSet): Option[ByParentNameResult] = {
       rs.maybe(rs =>
@@ -72,7 +72,7 @@ class Database(connection: Connection) extends AutoCloseable {
   override def toString: String = "db"
 
   private val qTreeParentName = connection.prepareStatement(
-    "SELECT t.id, t.lastModified, t.dataId, d.length FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.name = ?"
+    "SELECT t.id, t.lastModified, d.start, d.stop FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.name = ?"
   )
   def entryByParentAndName(parentId: Long, name: String): Option[ByParentNameResult] = {
     qTreeParentName.setLong(1, parentId)

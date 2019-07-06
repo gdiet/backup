@@ -1,6 +1,7 @@
 package util
 
 import java.sql.{Connection, DriverManager}
+
 import scala.util.chaining._
 
 object H2 {
@@ -13,8 +14,10 @@ object H2 {
 
   val onShutdown = "SHUTDOWN COMPACT"
 
-  def apply(directory: java.io.File): Connection =
+  def rw(directory: java.io.File): Connection =
     DriverManager.getConnection(jdbcUrl(directory), defaultUser, defaultPassword).tap(_.setAutoCommit(true))
+  def ro(directory: java.io.File): Connection =
+    DriverManager.getConnection(jdbcUrl(directory) + ";ACCESS_MODE_DATA=r", defaultUser, defaultPassword).tap(_.setAutoCommit(true))
   def memDb(): Connection =
     DriverManager.getConnection(jdbcMemoryUrl, defaultUser, defaultPassword).tap(_.setAutoCommit(true))
 }

@@ -1,16 +1,15 @@
 package dedup
 
-import java.io.File
+import dedup.Database.dbDir
+
 import scala.util.Using.resource
-import util.H2
 
 object Init extends App {
   run(Map())
 
   def run(options: Map[String, String]): Unit = {
-    val dbdir = new File("./fsdb")
-    if (dbdir.exists()) throw new IllegalStateException("fsdb already exists.")
-    resource(H2(dbdir)) { connection =>
+    if (dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir already exists.")
+    resource(util.H2.rw(dbDir)) { connection =>
       Database.initialize(connection)
     }
   }

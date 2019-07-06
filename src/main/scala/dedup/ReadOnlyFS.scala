@@ -2,11 +2,11 @@ package dedup
 
 import java.sql.Connection
 
+import dedup.Database.dbDir
 import jnr.ffi.Platform.{OS, getNativePlatform}
 import jnr.ffi.Pointer
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
-import util.H2
 
 object ReadOnlyFS extends App {
   val mountPoint = if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnth"
@@ -22,8 +22,8 @@ object ReadOnlyFS extends App {
 
 class ReadOnlyFS extends FuseStubFS {
   private val O777 = 511
-  val connection: Connection = H2.memDb()
-  Database.initialize(connection)
+  if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exists.")
+  val connection: Connection = util.H2.ro(dbDir)
   private val fs: FSInterface = new DedupFS(connection)
 
   override def umount(): Unit = try super.umount() finally fs.close()
