@@ -12,17 +12,7 @@ object Database {
   val dbDir: File = new File("./fsdb")
 
   private def tableDefinitions: Array[String] = {
-    s"""|CREATE SEQUENCE treeEntryIdSeq START WITH 0;
-        |CREATE TABLE TreeEntries (
-        |  id           BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryIdSeq),
-        |  parentId     BIGINT NOT NULL,
-        |  name         VARCHAR(255) NOT NULL,
-        |  lastModified BIGINT DEFAULT NULL,
-        |  dataId       BIGINT DEFAULT NULL,
-        |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id)
-        |);
-        |INSERT INTO TreeEntries (parentId, name) VALUES (-1, '');
-        |CREATE SEQUENCE dataEntryIdSeq START WITH 0;
+    s"""|CREATE SEQUENCE dataEntryIdSeq START WITH 0;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),
         |  start  BIGINT NOT NULL,
@@ -30,19 +20,29 @@ object Database {
         |  hash   BINARY NOT NULL,
         |  CONSTRAINT pk_DataEntries PRIMARY KEY (id)
         |);
+        |CREATE SEQUENCE treeEntryIdSeq START WITH 0;
+        |CREATE TABLE TreeEntries (
+        |  id           BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryIdSeq),
+        |  parentId     BIGINT NOT NULL,
+        |  name         VARCHAR(255) NOT NULL,
+        |  lastModified BIGINT DEFAULT NULL,
+        |  dataId       BIGINT DEFAULT NULL,
+        |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id),
+        |  CONSTRAINT un_TreeEntries UNIQUE (parentId, name),
+        |  CONSTRAINT fk_TreeEntries_dataId FOREIGN KEY (dataId) REFERENCES DataEntries(id)
+        |);
+        |INSERT INTO DataEntries (start, stop, hash) VALUES (0, 20, x'');
+        |INSERT INTO TreeEntries (parentId, name) VALUES (-1, '');
         |INSERT INTO TreeEntries (parentId, name) VALUES (0, 'dir');
         |INSERT INTO TreeEntries (parentId, name) VALUES (1, 'sub');
         |INSERT INTO TreeEntries (parentId, name) VALUES (1, 'sub2');
         |INSERT INTO TreeEntries (parentId, name) VALUES (3, 'sub2sub');
         |INSERT INTO TreeEntries (parentId, name, lastModified, dataId) VALUES (2, 'file', 0, 0);
-        |INSERT INTO DataEntries (start, stop, hash) VALUES (0, 20, x'');
         |""".stripMargin split ";" // FIXME remove example data
   }
 
   private val indexDefinitions: Array[String] =
-    """|CREATE INDEX TreeEntriesParentIdx     ON TreeEntries(parentId);
-       |CREATE INDEX TreeEntriesParentNameIdx ON TreeEntries(parentId, name);
-       |CREATE INDEX DataEntriesStopIdx       ON DataEntries(stop);""".stripMargin split ";"
+    """|CREATE INDEX DataEntriesStopIdx       ON DataEntries(stop);""".stripMargin split ";"
 
   def initialize(connection: Connection): Unit =
     resource(connection.createStatement()) { stat =>
