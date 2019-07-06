@@ -8,19 +8,19 @@ import jnr.ffi.Pointer
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
-object ReadOnlyFS extends App {
+object Server extends App {
   val mountPoint = if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnth"
   run(Map("mount" -> mountPoint))
 
   def run(options: Map[String, String]): Unit = {
     val mountPoint = options.getOrElse("mount", throw new IllegalArgumentException("mount option is mandatory."))
-    val fs = new ReadOnlyFS()
+    val fs = new Server()
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
     finally fs.umount()
   }
 }
 
-class ReadOnlyFS extends FuseStubFS {
+class Server extends FuseStubFS {
   private val O777 = 511
   if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exists.")
   val connection: Connection = util.H2.ro(dbDir)

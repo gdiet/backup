@@ -9,10 +9,7 @@ class ServerFS(connection: java.sql.Connection) extends FSInterface {
   override def entryAt(path: String): Option[FSEntry] = {
     if (!path.startsWith("/")) None
     else {
-      val maybeEntry = path.split("/").filter(_.nonEmpty).foldLeft(Option(Database.byParentNameRoot)) {
-        case (parent, name) => parent.flatMap(p => db.entryByParentAndName(p.id, name))
-      }
-      maybeEntry.map {
+      lookup(path, db).map {
         case ByParentNameResult(_, Some(time), Some(start), Some(stop)) => DedupFile(start, stop, time)
         case ByParentNameResult(id, None, None, None) => DedupDir(db, id)
         case entry => System.err.println(s"Malformed $entry for $path"); DedupDir(db, entry.id)

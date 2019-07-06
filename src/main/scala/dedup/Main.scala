@@ -9,7 +9,7 @@ object Main extends App {
   val command = commands.head
 
   command match {
-    case "fs" => ReadOnlyFS.run(options)
+    case "fs" => Server.run(options)
     case "init" => Init.run(options)
   }
 }
