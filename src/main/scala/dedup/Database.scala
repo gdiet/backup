@@ -1,7 +1,7 @@
 package dedup
 
 import java.io.File
-import java.sql.{Connection, ResultSet}
+import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
 
 import dedup.Database._
 
@@ -59,6 +59,13 @@ object Database {
       LazyList.continually(Option.when(rs.next)(f(rs))).takeWhile(_.isDefined).flatten.to(List)
   }
 
+  implicit class RichPreparedStatement(val stat: PreparedStatement) extends AnyVal {
+    def setLongOption(index: Int, value: Option[Long]): Unit = value match {
+      case None => stat.setNull(index, java.sql.Types.BIGINT)
+      case Some(t) => stat.setLong(index, t)
+    }
+  }
+
   case class ByParentNameResult(id: Long, lastModified: Option[Long], start: Option[Long], stop: Option[Long])
   object ByParentNameResult {
     def apply(rs: ResultSet): Option[ByParentNameResult] = {
@@ -88,6 +95,20 @@ class Database(connection: Connection) extends AutoCloseable {
   def children(parentId: Long): Seq[String] = {
     qChildren.setLong(1, parentId)
     resource(qChildren.executeQuery())(r => r.seq(_.getString(1)))
+  }
+
+  private val iTreeEntry = connection.prepareStatement(
+    "INSERT INTO TreeEntries (parentId, name, lastModified, dataId) VALUES (?, ?, ?, ?)",
+    Statement.RETURN_GENERATED_KEYS
+  )
+  def addTreeEntry(parent: Long, name: String, lastModified: Option[Long], dataId: Option[Long]): Long = {
+    require(lastModified.isEmpty == dataId.isEmpty)
+    iTreeEntry.setLong(1, parent)
+    iTreeEntry.setString(2, name)
+    iTreeEntry.setLongOption(3, lastModified)
+    iTreeEntry.setLongOption(4, dataId)
+    require(iTreeEntry.executeUpdate() == 1, "Unexpected row count.")
+    iTreeEntry.getGeneratedKeys.tap(_.next()).getLong(1)
   }
 
   override def close(): Unit = connection.close()

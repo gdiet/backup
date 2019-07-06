@@ -4,12 +4,13 @@ import java.nio.file.Files
 
 import dedup.Database.dbDir
 
+import scala.jdk.StreamConverters._
 import scala.util.Using.resource
 
 object Store extends App {
   run(Map(
     "source" -> """e:\georg\privat\dev\backup\src\""",
-    "target" -> "/dir"
+    "target" -> "/a/b/c"
   ))
 
   def run(options: Map[String, String]): Unit = {
@@ -23,20 +24,18 @@ object Store extends App {
       val fs = new StoreFS(connection)
 
       val targetPath = options.getOrElse("target", throw new IllegalArgumentException("target option is mandatory."))
-      fs.entryAt(targetPath).foreach {
-        case "dir" => require(fs.entryAt(s"$targetPath/${source.getName}").isEmpty, "Can't overwrite existing entries in target.")
-        case other => throw new IllegalStateException(s"Target is a $other, not a directory.")
-      }
+      val targetId = fs.mkDirs(targetPath).getOrElse(throw new IllegalArgumentException("Can't create target directory."))
 
-      Files.walk(source.toPath).forEach { path =>
+      Files.walk(source.toPath).toScala(LazyList).foldLeft(targetId) { case (id, path) =>
         val sourceFile = path.toFile
         val targetFile = targetPath + sourceFile.toString.drop(sourceParent.length).replaceAll("\\\\", "/")
+        println(s"$sourceFile -> $targetFile")
         if (sourceFile.isDirectory) {
 
         } else {
 
         }
-        println(s"$sourceFile -> $targetFile")
+        id
       }
     }
   }

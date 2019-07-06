@@ -7,17 +7,17 @@ import scala.util.chaining._
 object H2 {
   Class forName "org.h2.Driver"
 
+  // ;TRACE_LEVEL_SYSTEM_OUT=2"
   private def jdbcUrl(directory: java.io.File) = s"jdbc:h2:$directory/dedupfs;DB_CLOSE_ON_EXIT=FALSE"
-  private def jdbcMemoryUrl = s"jdbc:h2:mem:dedupfs" // ;TRACE_LEVEL_SYSTEM_OUT=2"
-  private val defaultUser = "sa"
-  private val defaultPassword = ""
+
+  private val dbUser = "sa"
+  private val dbPassword = ""
 
   val onShutdown = "SHUTDOWN COMPACT"
 
   def rw(directory: java.io.File): Connection =
-    DriverManager.getConnection(jdbcUrl(directory), defaultUser, defaultPassword).tap(_.setAutoCommit(true))
+    DriverManager.getConnection(jdbcUrl(directory), dbUser, dbPassword).tap(_.setAutoCommit(true))
+
   def ro(directory: java.io.File): Connection =
-    DriverManager.getConnection(jdbcUrl(directory) + ";ACCESS_MODE_DATA=r", defaultUser, defaultPassword).tap(_.setAutoCommit(true))
-  def memDb(): Connection =
-    DriverManager.getConnection(jdbcMemoryUrl, defaultUser, defaultPassword).tap(_.setAutoCommit(true))
+    DriverManager.getConnection(jdbcUrl(directory) + ";ACCESS_MODE_DATA=r", dbUser, dbPassword).tap(_.setAutoCommit(true))
 }
