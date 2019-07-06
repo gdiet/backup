@@ -3,7 +3,7 @@ package dedup
 import dedup.Database.ByParentNameResult
 
 // FIXME synchronization?
-class DedupFS(connection: java.sql.Connection) extends FSInterface {
+class ServerFS(connection: java.sql.Connection) extends FSInterface {
   private val db = new Database(connection)
 
   override def entryAt(path: String): Option[FSEntry] = {

@@ -1,6 +1,6 @@
 package dedup
 
-trait FSInterface extends AutoCloseable {
+trait FSInterface extends AutoCloseable { // FIXME keep or remove this interface?
   def entryAt(path: String): Option[FSEntry]
 }
 

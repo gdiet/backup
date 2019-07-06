@@ -24,7 +24,7 @@ class ReadOnlyFS extends FuseStubFS {
   private val O777 = 511
   if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exists.")
   val connection: Connection = util.H2.ro(dbDir)
-  private val fs: FSInterface = new DedupFS(connection)
+  private val fs: FSInterface = new ServerFS(connection)
 
   override def umount(): Unit = try super.umount() finally fs.close()
 
