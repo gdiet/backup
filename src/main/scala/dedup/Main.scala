@@ -11,5 +11,6 @@ object Main extends App {
   command match {
     case "fs" => Server.run(options)
     case "init" => Init.run(options)
+    case "store" => Store.run(options)
   }
 }

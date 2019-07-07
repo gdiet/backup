@@ -9,7 +9,7 @@ import scala.util.Using.resource
 import scala.util.chaining._
 
 object Database {
-  val dbDir: File = new File("./fsdb")
+  def dbDir(repo: File): File = new File(repo, "fsdb")
 
   private def tableDefinitions: Array[String] = {
     s"""|CREATE SEQUENCE dataEntryIdSeq START WITH 0;

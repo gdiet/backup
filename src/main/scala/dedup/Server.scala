@@ -1,8 +1,8 @@
 package dedup
 
+import java.io.File
 import java.sql.Connection
 
-import dedup.Database.dbDir
 import jnr.ffi.Platform.{OS, getNativePlatform}
 import jnr.ffi.Pointer
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo}
@@ -14,15 +14,18 @@ object Server extends App {
 
   def run(options: Map[String, String]): Unit = {
     val mountPoint = options.getOrElse("mount", throw new IllegalArgumentException("mount option is mandatory."))
-    val fs = new Server()
+    val repo = new File(options.getOrElse("repo", "."))
+    println(s"Starting server for repository $repo")
+    val fs = new Server(repo)
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
     finally fs.umount()
   }
 }
 
-class Server extends FuseStubFS {
+class Server(repo: File) extends FuseStubFS {
   private val O777 = 511
-  if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exists.")
+  private val dbDir = Database.dbDir(repo)
+  if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
   val connection: Connection = util.H2.ro(dbDir)
   private val fs: FSInterface = new ServerFS(connection)
 
