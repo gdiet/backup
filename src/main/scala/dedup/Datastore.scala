@@ -2,6 +2,10 @@ package dedup
 
 import java.io.File
 
+object Datastore {
+  def datastoreDir(repo: File): File = new File(repo, "data")
+}
+
 class Datastore(baseDir: File) extends AutoCloseable {
   private val fileSize = 100000000
 
