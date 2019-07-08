@@ -31,6 +31,7 @@ object Database {
         |  CONSTRAINT un_TreeEntries UNIQUE (parentId, name),
         |  CONSTRAINT fk_TreeEntries_dataId FOREIGN KEY (dataId) REFERENCES DataEntries(id)
         |);
+        |INSERT INTO TreeEntries (parentId, name) VALUES (-1, '');
         |""".stripMargin split ";"
   }
 
