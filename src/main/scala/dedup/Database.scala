@@ -118,5 +118,17 @@ class Database(connection: Connection) extends AutoCloseable {
     }
   }
 
+  private val iDataEntry = connection.prepareStatement(
+    "INSERT INTO DataEntries (start, stop, hash) VALUES (?, ?, ?)",
+    Statement.RETURN_GENERATED_KEYS
+  )
+  def addDataEntry(start: Long, stop: Long, hash: Array[Byte]): Long = {
+    iDataEntry.setLong(1, start)
+    iDataEntry.setLong(2, stop)
+    iDataEntry.setBytes(3, hash)
+    require(iDataEntry.executeUpdate() == 1, "Unexpected row count.")
+    iDataEntry.getGeneratedKeys.tap(_.next()).getLong(1)
+  }
+
   override def close(): Unit = connection.close()
 }

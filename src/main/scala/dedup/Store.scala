@@ -4,6 +4,7 @@ import java.io.{File, RandomAccessFile}
 
 import util.Hash
 
+import scala.util.chaining._
 import scala.util.Using.resource
 
 object Store extends App {
@@ -37,35 +38,30 @@ object Store extends App {
         file.listFiles().foreach(walk(id, _))
       } else {
         resource(new RandomAccessFile(file, "r")) { ra =>
-          val bytes = new Array[Byte](50000000)
-          val fileSize = ra.length
-          val bytesToRead = math.min(fileSize, bytes.length).toInt
-          ra.readFully(bytes, 0, bytesToRead)
-          if (fileSize > bytesToRead) {
-            // FIXME
-          } else {
-            val hash = Hash(Datastore.hashAlgorithm, bytes, bytesToRead)
-            val dataId = fs.dataEntry(hash, bytesToRead).getOrElse {
-              ???
-            }
-            val id = fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
-            println(s"Created file id -> $file")
+          readWholeFile(ra, 50000000) match {
+            case Some(data) =>
+              val size = data.length
+              val hash = Hash(Datastore.hashAlgorithm, data)
+              val dataId = fs.dataEntry(hash, size).getOrElse {
+                val start = fs.startOfFreeData // FIXME MUST NOT BE RUN IN PARALLEL
+                val stop = start + size
+                ds.write(start, data)
+                fs.mkEntry(start, stop, hash).tap(_ => fs.dataWritten(size))
+              }
+              val id = fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
+              println(s"Created file $id -> $file")
+            case None =>
+              println(s"######## Large files not yet supported: $file") // FIXME
           }
         }
-
-//        resource(new RandomAccessFile(file, "r")) { ra =>
-//          val bytes = new Array[Byte](10000000)
-//          var endPosition = startPosition
-//          var bytesRead = 0
-//          while({bytesRead = ra.read(bytes); bytesRead > 0}) {
-//            ds.write(endPosition, bytes.take(bytesRead))
-//            endPosition += bytesRead
-//          }
-//          // FIXME end position is known -> create dataentry and treeentry
-//        }
       }
 
       walk(targetId, source)
     }
+  }
+
+  private def readWholeFile(ra: RandomAccessFile, maxSize: Int): Option[Array[Byte]] = {
+    val size = ra.length
+    Option.when(size <= maxSize)(new Array[Byte](size.toInt).tap(ra.readFully))
   }
 }
