@@ -35,7 +35,8 @@ object Database {
   }
 
   private val indexDefinitions: Array[String] =
-    """|CREATE INDEX DataEntriesStopIdx       ON DataEntries(stop);""".stripMargin split ";"
+    """|CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
+       |CREATE INDEX DataEntriesHashIdx ON DataEntries(hash);""".stripMargin split ";"
 
   def initialize(connection: Connection): Unit =
     resource(connection.createStatement()) { stat =>
