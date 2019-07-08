@@ -2,6 +2,8 @@ package dedup
 
 import java.io.{File, RandomAccessFile}
 
+import util.Hash
+
 import scala.util.Using.resource
 
 object Store extends App {
@@ -31,19 +33,36 @@ object Store extends App {
       println(s"Storing $source in repository $repo")
       def walk(parent: Long, file: File): Unit = if (file.isDirectory) {
         val id = fs.mkEntry(parent, file.getName, None, None)
-        println(s"Created dir $file")
+        println(s"Created dir $id -> $file")
         file.listFiles().foreach(walk(id, _))
       } else {
-        val startPosition = 200L // FIXME get actual start position
         resource(new RandomAccessFile(file, "r")) { ra =>
-          val bytes = new Array[Byte](10000000)
-          var endPosition = startPosition
-          var bytesRead = 0
-          while({bytesRead = ra.read(bytes); bytesRead > 0}) {
-            ds.write(endPosition, bytes.take(bytesRead))
-            endPosition += bytesRead
+          val bytes = new Array[Byte](50000000)
+          val fileSize = ra.length
+          val bytesToRead = math.min(fileSize, bytes.length).toInt
+          ra.readFully(bytes, 0, bytesToRead)
+          if (fileSize > bytesToRead) {
+            // FIXME
+          } else {
+            val hash = Hash(Datastore.hashAlgorithm, bytes, bytesToRead)
+            val dataId = fs.dataEntry(hash, bytesToRead).getOrElse {
+              ???
+            }
+            val id = fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
+            println(s"Created file id -> $file")
           }
         }
+
+//        resource(new RandomAccessFile(file, "r")) { ra =>
+//          val bytes = new Array[Byte](10000000)
+//          var endPosition = startPosition
+//          var bytesRead = 0
+//          while({bytesRead = ra.read(bytes); bytesRead > 0}) {
+//            ds.write(endPosition, bytes.take(bytesRead))
+//            endPosition += bytesRead
+//          }
+//          // FIXME end position is known -> create dataentry and treeentry
+//        }
       }
 
       walk(targetId, source)
