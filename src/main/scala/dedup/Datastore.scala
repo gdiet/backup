@@ -4,6 +4,7 @@ import java.io.File
 
 object Datastore {
   def datastoreDir(repo: File): File = new File(repo, "data")
+  val hashAlgorithm = "SHA-1"
 }
 
 class Datastore(baseDir: File) extends AutoCloseable {
