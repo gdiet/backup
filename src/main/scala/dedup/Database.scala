@@ -72,7 +72,10 @@ object Database {
   val byParentNameRoot = ByParentNameResult(0, None, None, None)
 }
 class Database(connection: Connection) extends AutoCloseable {
-  override def toString: String = "db"
+  def startOfFreeData: Long =
+    connection.createStatement().executeQuery("SELECT MAX(stop) FROM DataEntries").pipe { rs =>
+      rs.maybe(_.getLong(1)).getOrElse(0L)
+    }
 
   private val qTreeParentName = connection.prepareStatement(
     "SELECT t.id, t.lastModified, d.start, d.stop FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.name = ?"
@@ -103,6 +106,16 @@ class Database(connection: Connection) extends AutoCloseable {
     iTreeEntry.setLongOption(4, dataId)
     require(iTreeEntry.executeUpdate() == 1, "Unexpected row count.")
     iTreeEntry.getGeneratedKeys.tap(_.next()).getLong(1)
+  }
+
+  private val qHash = connection.prepareStatement(
+    "SELECT id, start, stop FROM DataEntries WHERE hash = ?"
+  )
+  def dataEntry(hash: Array[Byte], size: Long): Option[Long] = {
+    qHash.setBytes(1, hash)
+    resource(qHash.executeQuery())(r => r.seq(_ => (r.getLong(1), r.getLong(2), r.getLong(3)))).collectFirst {
+      case (id, start, stop) if stop - start == size => id
+    }
   }
 
   override def close(): Unit = connection.close()
