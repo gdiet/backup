@@ -9,8 +9,8 @@ import scala.util.Using.resource
 
 object Store extends App {
   run(Map(
-    "source" -> """e:\georg\privat\dev\backup\src\""",
-    "target" -> "/a/b/c"
+    "source" -> """e:\georg\privat\dev\backup\src""",
+    "target" -> "/backup/v1"
   ))
 
   def run(options: Map[String, String]): Unit = {
@@ -31,34 +31,39 @@ object Store extends App {
       val targetId = fs.mkDirs(targetPath).getOrElse(throw new IllegalArgumentException("Can't create target directory."))
       require(!fs.exists(targetId, source.getName), "Can't overwrite in target.")
 
-      println(s"Storing $source in repository $repo")
       def walk(parent: Long, file: File): Unit = if (file.isDirectory) {
         val id = fs.mkEntry(parent, file.getName, None, None)
         println(s"Created dir $id -> $file")
         file.listFiles().foreach(walk(id, _))
       } else {
         resource(new RandomAccessFile(file, "r")) { ra =>
-          readWholeFile(ra, 50000000) match {
-            case Some(data) =>
-              val size = data.length
-              val hash = Hash(Datastore.hashAlgorithm, data)
-              val dataId = fs.dataEntry(hash, size).getOrElse {
-                val start = fs.startOfFreeData // FIXME MUST NOT BE RUN IN PARALLEL
-                val stop = start + size
-                ds.write(start, data)
-                fs.mkEntry(start, stop, hash).tap(_ => fs.dataWritten(size))
-              }
-              val id = fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
-              println(s"Created file $id -> $file")
-            case None =>
-              println(s"######## Large files not yet supported: $file") // FIXME
+          val (size, hash) = Hash(Datastore.hashAlgorithm, read(ra))
+          val dataId = fs.dataEntry(hash, size).getOrElse {
+            val start = fs.startOfFreeData // FIXME MUST NOT BE RUN IN PARALLEL
+            val stop = read(ra.tap(_.seek(0))).foldLeft(start) {
+              case (pos, chunk) => ds.write(pos, chunk); pos + chunk.length
+            }
+            val dataId = fs.mkEntry(start, stop, hash).tap(_ => fs.dataWritten(size))
+            val id = fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
+            println(s"Created file $id -> $file")
           }
         }
       }
 
+      println(s"Storing $source in repository $repo")
       walk(targetId, source)
     }
   }
+
+  private def read(ra: RandomAccessFile): LazyList[Array[Byte]] =
+    LazyList.unfold(()){ _ =>
+      val chunkSize = 1000000
+      val bytes = new Array[Byte](chunkSize)
+      val read = ra.read(bytes, 0, chunkSize)
+      if (read <= 0) None
+      else if (read == chunkSize) Some(bytes -> ())
+      else Some(bytes.take(read) -> ())
+    }
 
   private def readWholeFile(ra: RandomAccessFile, maxSize: Int): Option[Array[Byte]] = {
     val size = ra.length
