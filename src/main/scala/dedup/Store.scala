@@ -4,7 +4,6 @@ import java.io.{File, RandomAccessFile}
 
 import util.Hash
 
-import scala.util.chaining._
 import scala.util.Using.resource
 
 object Store extends App {

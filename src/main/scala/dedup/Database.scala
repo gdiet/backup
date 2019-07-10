@@ -6,7 +6,6 @@ import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
 import dedup.Database._
 
 import scala.util.Using.resource
-import scala.util.chaining._
 
 object Database {
   def dbDir(repo: File): File = new File(repo, "fsdb")

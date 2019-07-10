@@ -1,4 +1,6 @@
-package object dedup {
+import scala.util.ChainingSyntax
+
+package object dedup extends ChainingSyntax {
 
   def split(path: String): Array[String] = {
     require(path.startsWith("/"), s"Path does not start with '/': $path")

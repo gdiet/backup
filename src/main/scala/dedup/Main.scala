@@ -1,7 +1,5 @@
 package dedup
 
-import scala.util.chaining._
-
 object Main extends App {
   val (rawOptions, commands) = args.partition(_.contains("="))
   require(commands.length == 1, "Exactly one command is mandatory.")
