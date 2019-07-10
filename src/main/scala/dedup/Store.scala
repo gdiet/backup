@@ -38,8 +38,8 @@ object Store extends App {
         resource(new RandomAccessFile(file, "r")) { ra =>
           val (size, hash) = Hash(Datastore.hashAlgorithm, read(ra))
           val dataId = fs.dataEntry(hash, size).getOrElse {
-            val start = fs.startOfFreeData // FIXME MUST NOT BE RUN IN PARALLEL
-            val stop = read(ra.tap(_.seek(0))).foldLeft(start) {
+            val start = fs.startOfFreeData // FIXME must not be run in parallel
+            val stop = read(ra.tap(_.seek(0))).foldLeft(start) { // FIXME re-calculate hash
               case (pos, chunk) => ds.write(pos, chunk); pos + chunk.length
             }
             val dataId = fs.mkEntry(start, stop, hash).tap(_ => fs.dataWritten(size))

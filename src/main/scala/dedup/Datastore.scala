@@ -1,6 +1,8 @@
 package dedup
 
-import java.io.File
+import java.io.{File, RandomAccessFile}
+
+import scala.collection.mutable
 
 object Datastore {
   def datastoreDir(repo: File): File = new File(repo, "data")
@@ -9,6 +11,16 @@ object Datastore {
 
 class Datastore(baseDir: File) extends AutoCloseable {
   private val fileSize = 100000000
+  private val parallelOpenFiles = 5
+  private val basePath = baseDir.getAbsolutePath
+
+  private val openFiles: mutable.LinkedHashMap[String, RandomAccessFile] = mutable.LinkedHashMap()
+
+  private def open(file: String): RandomAccessFile = {
+    if (openFiles.size >= parallelOpenFiles)
+      openFiles.head match { case (f, _) => if (f != file) openFiles.remove(f).foreach(_.close()) }
+    openFiles.remove(file).getOrElse(new RandomAccessFile(file, "rw").tap(_ => println(s"opened $file for writing"))).tap(openFiles.addOne(file, _))
+  }
 
   def write(position: Long, data: Array[Byte]): Unit = {
     val positionInFile = position % fileSize
@@ -17,8 +29,11 @@ class Datastore(baseDir: File) extends AutoCloseable {
     val dir2 = f"${position / fileSize / 100 % 100}%02d"                   //  10GB per dir
     val dir1 = f"${position / fileSize / 100 / 100}%02d"                   //   1TB per dir
     println(s"write ${data.length} bytes at $position in $dir1 / $dir2 / $fileName : $positionInFile")
+    val filePath = s"$basePath/$dir1/$dir2/$fileName"
+    open(filePath).tap(_.seek(positionInFile)).write(data)
     if (data.length > bytesToWrite) write(position + bytesToWrite, data.drop(bytesToWrite))
   }
+
   def read(position: Long, size: Int): Array[Byte] = {
     val positionInFile = position % fileSize
     val bytesToRead = math.min(fileSize - positionInFile, size).toInt
@@ -30,5 +45,6 @@ class Datastore(baseDir: File) extends AutoCloseable {
     if (size > bytesToRead) bytes ++ read(position + bytesToRead, size - bytesToRead)
     else bytes
   }
-  override def close(): Unit = ()
+
+  override def close(): Unit = openFiles.values.foreach(_.close())
 }
