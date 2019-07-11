@@ -51,7 +51,7 @@ class Datastore(baseDir: File, readOnly: Boolean) extends AutoCloseable {
     val bytes = new Array[Byte](bytesToRead)
     open(path).pipe { ra =>
       ra.seek(offset)
-      ra.readFully(bytes) // TODO corrupt data files -> entry will not be read at all
+      ra.readFully(bytes) // Note: From corrupt data file, entry will not be read at all
     }
     if (size > bytesToRead) bytes ++ read(position + bytesToRead, size - bytesToRead)
     else bytes
