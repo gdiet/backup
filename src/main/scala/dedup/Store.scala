@@ -43,10 +43,10 @@ object Store extends App {
             val (newHash, stop) = Hash(Datastore.hashAlgorithm, read(ra.tap(_.seek(0))))(_.foldLeft(start) {
               case (pos, chunk) => ds.write(pos, chunk); pos + chunk.length
             })
-            val dataId = fs.mkEntry(start, stop, newHash).tap(_ => fs.dataWritten(size))
-            val id = fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
-            println(s"Created file $id -> $file")
+            fs.mkEntry(start, stop, newHash).tap(_ => fs.dataWritten(size))
           }
+          val id = fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
+          println(s"Created file $id / $dataId -> $file")
         }
       }
 
@@ -64,9 +64,4 @@ object Store extends App {
       else if (read == chunkSize) Some(bytes -> ())
       else Some(bytes.take(read) -> ())
     }
-
-  private def readWholeFile(ra: RandomAccessFile, maxSize: Int): Option[Array[Byte]] = {
-    val size = ra.length
-    Option.when(size <= maxSize)(new Array[Byte](size.toInt).tap(ra.readFully))
-  }
 }
