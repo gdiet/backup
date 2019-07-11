@@ -27,7 +27,7 @@ class Server(repo: File) extends FuseStubFS {
   private val dbDir = Database.dbDir(repo)
   if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
   val connection: Connection = util.H2.ro(dbDir)
-  private val ds = new Datastore(repo, readOnly = true)
+  private val ds = new DataStore(repo, readOnly = true)
   private val fs = new ServerFS(connection, ds)
 
   override def umount(): Unit = try super.umount() finally { ds.close(); fs.close() }

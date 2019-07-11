@@ -2,7 +2,7 @@ package dedup
 
 import dedup.Database.ByParentNameResult
 
-class ServerFS(connection: java.sql.Connection, ds: Datastore) {
+class ServerFS(connection: java.sql.Connection, ds: DataStore) {
   private val db = new Database(connection)
 
   def entryAt(path: String): Option[FSEntry] = sync(lookup(path, db).map {
@@ -20,7 +20,7 @@ class FSDir(db: Database, id: Long) extends FSEntry {
   def childNames: Seq[String] = sync(db.children(id))
 }
 
-class FSFile(ds: Datastore, start: Long, stop: Long, val lastModifiedMillis: Long) extends FSEntry {
+class FSFile(ds: DataStore, start: Long, stop: Long, val lastModifiedMillis: Long) extends FSEntry {
   def size: Long = stop - start
   def bytes(offset: Long, size: Int): Array[Byte] = {
     val bytesToRead = math.min(this.size - offset, size).toInt

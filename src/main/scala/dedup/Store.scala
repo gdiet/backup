@@ -24,7 +24,7 @@ object Store extends App {
     require(source.getParent != null, "Can't store root.")
 
     val dbDir = Database.dbDir(repo)
-    val ds = new Datastore(repo, readOnly = false)
+    val ds = new DataStore(repo, readOnly = false)
     if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
     resource(util.H2.rw(dbDir)) { connection =>
       val fs = new StoreFS(connection)
