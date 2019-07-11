@@ -10,5 +10,6 @@ object Main extends App {
     case "fs" => Server.run(options)
     case "init" => Init.run(options)
     case "store" => Store.run(options)
+    case "backup" => BackupDB.run(options)
   }
 }
