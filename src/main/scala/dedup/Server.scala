@@ -3,15 +3,11 @@ package dedup
 import java.io.File
 import java.sql.Connection
 
-import jnr.ffi.Platform.{OS, getNativePlatform}
 import jnr.ffi.Pointer
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
-object Server extends App {
-  val mountPoint = if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnth"
-  run(Map("mount" -> mountPoint))
-
+object Server {
   def run(options: Map[String, String]): Unit = {
     val mountPoint = options.getOrElse("mount", throw new IllegalArgumentException("mount option is mandatory."))
     val repo = new File(options.getOrElse("repo", "."))

@@ -6,12 +6,7 @@ import util.Hash
 
 import scala.util.Using.resource
 
-object Store extends App {
-  run(Map(
-    "source" -> """e:\georg\privat\dev\backup\src""",
-    "target" -> "/backup/v1"
-  ))
-
+object Store {
   private def hashAlgorithm = "SHA-1"
 
   def run(options: Map[String, String]): Unit = {

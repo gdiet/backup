@@ -5,9 +5,7 @@ import java.nio.file.{Files, StandardCopyOption}
 import java.text.SimpleDateFormat
 import java.util.Date
 
-object BackupDB extends App {
-  run(Map())
-
+object BackupDB {
   def run(options: Map[String, String]): Unit = {
     val repo = new File(options.getOrElse("repo", ".")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)

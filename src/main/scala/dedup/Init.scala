@@ -4,9 +4,7 @@ import java.io.File
 
 import scala.util.Using.resource
 
-object Init extends App {
-  run(Map())
-
+object Init {
   def run(options: Map[String, String]): Unit = {
     val repo = new File(options.getOrElse("repo", ".")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
