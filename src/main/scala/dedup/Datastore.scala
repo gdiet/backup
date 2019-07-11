@@ -10,7 +10,7 @@ object Datastore {
 }
 
 class Datastore(baseDir: File, readOnly: Boolean) extends AutoCloseable {
-  private val fileSize = 100000000
+  private val fileSize = 100000000 // 100 MB
   private val parallelOpenFiles = 5
   private val basePath = baseDir.getAbsolutePath
   private val writeFlag = if (readOnly) "r" else "rw"
@@ -31,7 +31,7 @@ class Datastore(baseDir: File, readOnly: Boolean) extends AutoCloseable {
   private def pathOffsetSize(position: Long, size: Int): (String, Long, Int) = {
     def positionInFile = position % fileSize
     val chunkSize = math.min(fileSize - positionInFile, size).toInt
-    val fileName = s"%010d".format((position / fileSize % 100) * fileSize) // 100MB per file
+    val fileName = s"%010d".format(position - positionInFile)              // 100MB per file
     val dir2 = f"${position / fileSize / 100 % 100}%02d"                   //  10GB per dir
     val dir1 = f"${position / fileSize / 100 / 100}%02d"                   //   1TB per dir
     val filePath = s"$basePath/$dir1/$dir2/$fileName"
