@@ -2,27 +2,24 @@ package dedup
 
 import dedup.Database.ByParentNameResult
 
-// FIXME synchronization?
 class ServerFS(connection: java.sql.Connection, ds: Datastore) {
   private val db = new Database(connection)
 
-  def entryAt(path: String): Option[FSEntry] = {
+  def entryAt(path: String): Option[FSEntry] =
     if (!path.startsWith("/")) None
-    else {
-      lookup(path, db).map {
-        case ByParentNameResult(_, Some(time), Some(start), Some(stop)) => new FSFile(ds, start, stop, time)
-        case ByParentNameResult(id, None, None, None) => new FSDir(db, id)
-        case entry => System.err.println(s"Malformed $entry for $path"); new FSDir(db, entry.id)
-      }
-    }
-  }
+    else sync(lookup(path, db).map {
+      case ByParentNameResult(_, Some(time), Some(start), Some(stop)) => new FSFile(ds, start, stop, time)
+      case ByParentNameResult(id, None, None, None) => new FSDir(db, id)
+      case entry => System.err.println(s"Malformed $entry for $path"); new FSDir(db, entry.id)
+    })
+
   def close(): Unit = db.close()
 }
 
 sealed trait FSEntry
 
 class FSDir(db: Database, id: Long) extends FSEntry {
-  def childNames: Seq[String] = db.children(id)
+  def childNames: Seq[String] = sync(db.children(id))
 }
 
 class FSFile(ds: Datastore, start: Long, stop: Long, val lastModifiedMillis: Long) extends FSEntry {

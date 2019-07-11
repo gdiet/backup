@@ -2,6 +2,8 @@ import scala.util.ChainingSyntax
 
 package object dedup extends ChainingSyntax {
 
+  def sync[T](f: => T): T = synchronized(f)
+
   def split(path: String): Array[String] = {
     require(path.startsWith("/"), s"Path does not start with '/': $path")
     path.split("/").filter(_.nonEmpty)
