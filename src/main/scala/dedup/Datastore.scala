@@ -4,15 +4,11 @@ import java.io.{File, RandomAccessFile}
 
 import scala.collection.mutable
 
-object Datastore {
-  def datastoreDir(repo: File): File = new File(repo, "data")
-  val hashAlgorithm = "SHA-1"
-}
-
-class Datastore(baseDir: File, readOnly: Boolean) extends AutoCloseable {
+class Datastore(repo: File, readOnly: Boolean) extends AutoCloseable {
+  private val datastore = new File(repo, "data")
   private val fileSize = 100000000 // 100 MB
-  private val parallelOpenFiles = 5
-  private val basePath = baseDir.getAbsolutePath
+  private val parallelOpenFiles = 3
+  private val basePath = datastore.getAbsolutePath
   private val writeFlag = if (readOnly) "r" else "rw"
 
   private val openFiles: mutable.LinkedHashMap[String, RandomAccessFile] = mutable.LinkedHashMap()

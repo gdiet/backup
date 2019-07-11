@@ -27,10 +27,10 @@ class Server(repo: File) extends FuseStubFS {
   private val dbDir = Database.dbDir(repo)
   if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
   val connection: Connection = util.H2.ro(dbDir)
-  private val ds = new Datastore(Datastore.datastoreDir(repo), readOnly = true)
+  private val ds = new Datastore(repo, readOnly = true)
   private val fs = new ServerFS(connection, ds)
 
-  override def umount(): Unit = try super.umount() finally fs.close()
+  override def umount(): Unit = try super.umount() finally { ds.close(); fs.close() }
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int = {

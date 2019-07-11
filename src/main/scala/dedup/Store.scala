@@ -12,6 +12,8 @@ object Store extends App {
     "target" -> "/backup/v1"
   ))
 
+  private def hashAlgorithm = "SHA-1"
+
   def run(options: Map[String, String]): Unit = {
     // Note: Implemented strictly for single-threaded use
     val (repo, source) = (options.get("repo"), options.get("source")) match {
@@ -22,7 +24,7 @@ object Store extends App {
     require(source.getParent != null, "Can't store root.")
 
     val dbDir = Database.dbDir(repo)
-    val ds = new Datastore(Datastore.datastoreDir(repo), readOnly = false)
+    val ds = new Datastore(repo, readOnly = false)
     if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
     resource(util.H2.rw(dbDir)) { connection =>
       val fs = new StoreFS(connection)
@@ -37,10 +39,10 @@ object Store extends App {
         file.listFiles().foreach(walk(id, _))
       } else {
         resource(new RandomAccessFile(file, "r")) { ra =>
-          val (hash, size) = Hash(Datastore.hashAlgorithm, read(ra))(_.map(_.length.toLong).sum)
+          val (hash, size) = Hash(hashAlgorithm, read(ra))(_.map(_.length.toLong).sum)
           val dataId = fs.dataEntry(hash, size).getOrElse {
             val start = fs.startOfFreeData
-            val (newHash, stop) = Hash(Datastore.hashAlgorithm, read(ra.tap(_.seek(0))))(_.foldLeft(start) {
+            val (newHash, stop) = Hash(hashAlgorithm, read(ra.tap(_.seek(0))))(_.foldLeft(start) {
               case (pos, chunk) => ds.write(pos, chunk); pos + chunk.length
             })
             fs.mkEntry(start, stop, newHash).tap(_ => fs.dataWritten(size))

@@ -10,7 +10,7 @@ import scala.util.Using.resource
 object Database {
   def dbDir(repo: File): File = new File(repo, "fsdb")
 
-  private def tableDefinitions: Array[String] = {
+  private def tableDefinitions = {
     s"""|CREATE SEQUENCE dataEntryIdSeq START WITH 0;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),
@@ -34,15 +34,14 @@ object Database {
         |""".stripMargin split ";"
   }
 
-  private val indexDefinitions: Array[String] =
+  private def indexDefinitions =
     """|CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
        |CREATE INDEX DataEntriesHashIdx ON DataEntries(hash);""".stripMargin split ";"
 
-  def initialize(connection: Connection): Unit =
-    resource(connection.createStatement()) { stat =>
-      tableDefinitions.foreach(stat.executeUpdate)
-      indexDefinitions.foreach(stat.executeUpdate)
-    }
+  def initialize(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
+    tableDefinitions.foreach(stat.executeUpdate)
+    indexDefinitions.foreach(stat.executeUpdate)
+  }
 
   implicit class RichResultSet(val rs: ResultSet) extends AnyVal {
     def opt[T](f: ResultSet => T): Option[T] =
@@ -71,6 +70,7 @@ object Database {
 
   val byParentNameRoot = ByParentNameResult(0, None, None, None)
 }
+
 class Database(connection: Connection) extends AutoCloseable {
   def startOfFreeData: Long =
     connection.createStatement().executeQuery("SELECT MAX(stop) FROM DataEntries").pipe { rs =>
