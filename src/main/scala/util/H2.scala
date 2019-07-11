@@ -13,8 +13,6 @@ object H2 {
   private val dbUser = "sa"
   private val dbPassword = ""
 
-  val onShutdown = "SHUTDOWN COMPACT"
-
   def rw(directory: java.io.File): Connection =
     DriverManager.getConnection(jdbcUrl(directory), dbUser, dbPassword).tap(_.setAutoCommit(true))
 

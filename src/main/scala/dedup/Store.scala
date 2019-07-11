@@ -54,6 +54,7 @@ object Store extends App {
 
       println(s"Storing $source in repository $repo")
       walk(targetId, source)
+      resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
     }
   }
 
