@@ -13,6 +13,7 @@ object Store extends App {
   ))
 
   def run(options: Map[String, String]): Unit = {
+    // Note: Implemented strictly for single-threaded use
     val (repo, source) = (options.get("repo"), options.get("source")) match {
       case (None, None) => throw new IllegalArgumentException("One of source or repo option is mandatory.")
       case (repOpt, sourceOpt) => new File(repOpt.getOrElse(".")).getAbsoluteFile -> new File(sourceOpt.getOrElse(".")).getAbsoluteFile
@@ -36,13 +37,13 @@ object Store extends App {
         file.listFiles().foreach(walk(id, _))
       } else {
         resource(new RandomAccessFile(file, "r")) { ra =>
-          val (size, hash) = Hash(Datastore.hashAlgorithm, read(ra))
+          val (hash, size) = Hash(Datastore.hashAlgorithm, read(ra))(_.map(_.length.toLong).sum)
           val dataId = fs.dataEntry(hash, size).getOrElse {
-            val start = fs.startOfFreeData // FIXME must not be run in parallel
-            val stop = read(ra.tap(_.seek(0))).foldLeft(start) { // FIXME re-calculate hash
+            val start = fs.startOfFreeData
+            val (newHash, stop) = Hash(Datastore.hashAlgorithm, read(ra.tap(_.seek(0))))(_.foldLeft(start) {
               case (pos, chunk) => ds.write(pos, chunk); pos + chunk.length
-            }
-            val dataId = fs.mkEntry(start, stop, hash).tap(_ => fs.dataWritten(size))
+            })
+            val dataId = fs.mkEntry(start, stop, newHash).tap(_ => fs.dataWritten(size))
             val id = fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
             println(s"Created file $id -> $file")
           }

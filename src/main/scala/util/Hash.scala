@@ -1,11 +1,12 @@
 package util
 
 import java.security.MessageDigest
+import scala.util.chaining._
 
 object Hash {
-  def apply(algorithm: String, bytes: Seq[Array[Byte]]): (Long, Array[Byte]) = {
+  def apply[T](algorithm: String, bytes: Seq[Array[Byte]])(f: Seq[Array[Byte]] => T): (Array[Byte], T) = {
     val md = MessageDigest.getInstance(algorithm)
-    val totalSize = bytes.foldLeft(0L){ case (size, chunk) => md.update(chunk); size + chunk.length }
-    totalSize -> md.digest
+    val t = f(bytes.map(_.tap(md.update)))
+    md.digest -> t
   }
 }
