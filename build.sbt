@@ -12,5 +12,6 @@ createApp := {
   IO.delete(appDir)
   IO.copyDirectory(file("src/main/script"), appDir)
   (appDir / "dedup.sh").setExecutable(true)
+  IO.touch(appDir / s"${version.value}.version")
   jars.foreach(file => IO.copyFile(file, appDir / "lib" / file.name))
 }
