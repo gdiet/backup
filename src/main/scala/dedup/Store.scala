@@ -33,7 +33,7 @@ object Store {
         progressMessage(s"Storing $file")
         file.listFiles().foreach(walk(id, _))
       } else resource(new RandomAccessFile(file, "r")) { ra =>
-        progressMessage(s"Storing $file") // TODO recursivly compare hash+size
+        progressMessage(s"Storing $file")
         val (hash, size) = Hash(hashAlgorithm, read(ra))(_.map(_.length.toLong).sum)
         val dataId = fs.dataEntry(hash, size).getOrElse {
           val start = fs.startOfFreeData
@@ -54,7 +54,7 @@ object Store {
 
   private var lastProgressMessageAt = System.currentTimeMillis
   def progressMessage(message: String): Unit =
-    if (System.currentTimeMillis - lastProgressMessageAt >= 1000) {
+    if (System.currentTimeMillis - lastProgressMessageAt >= 5000) {
       lastProgressMessageAt = System.currentTimeMillis
       println(message)
     }
