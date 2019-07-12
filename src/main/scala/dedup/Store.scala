@@ -13,7 +13,7 @@ object Store {
     // Note: Implemented strictly for single-threaded use
     val (repo, source) = (options.get("repo"), options.get("source")) match {
       case (None, None) => throw new IllegalArgumentException("One of source or repo option is mandatory.")
-      case (repOpt, sourceOpt) => new File(repOpt.getOrElse(".")).getAbsoluteFile -> new File(sourceOpt.getOrElse(".")).getAbsoluteFile
+      case (repOpt, sourceOpt) => new File(repOpt.getOrElse("")).getAbsoluteFile -> new File(sourceOpt.getOrElse("")).getAbsoluteFile
     }
     require(source.exists(), "Source does not exist.")
     require(source.getParent != null, "Can't store root.")
