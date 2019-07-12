@@ -45,10 +45,11 @@ object Store {
         fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
       }
 
-      println(s"Storing $source in repository $repo")
+      val details = s"$source at $targetPath in repository $repo"
+      println(s"Storing $details")
       walk(targetId, source)
       resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
-      println(s"Finished storing $source in repository $repo")
+      println(s"Finished storing $details")
     }
   }
 
