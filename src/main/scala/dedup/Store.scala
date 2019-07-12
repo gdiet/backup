@@ -30,28 +30,34 @@ object Store {
 
       def walk(parent: Long, file: File): Unit = if (file.isDirectory) {
         val id = fs.mkEntry(parent, file.getName, None, None)
-        println(s"Created dir $id -> $file")
+        progressMessage(s"Storing $file")
         file.listFiles().foreach(walk(id, _))
-      } else {
-        resource(new RandomAccessFile(file, "r")) { ra =>
-          val (hash, size) = Hash(hashAlgorithm, read(ra))(_.map(_.length.toLong).sum)
-          val dataId = fs.dataEntry(hash, size).getOrElse {
-            val start = fs.startOfFreeData
-            val (newHash, stop) = Hash(hashAlgorithm, read(ra.tap(_.seek(0))))(_.foldLeft(start) {
-              case (pos, chunk) => ds.write(pos, chunk); pos + chunk.length
-            })
-            fs.mkEntry(start, stop, newHash).tap(_ => fs.dataWritten(size))
-          }
-          val id = fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
-          println(s"Created file $id / $dataId -> $file")
+      } else resource(new RandomAccessFile(file, "r")) { ra =>
+        progressMessage(s"Storing $file") // TODO recursivly compare hash+size
+        val (hash, size) = Hash(hashAlgorithm, read(ra))(_.map(_.length.toLong).sum)
+        val dataId = fs.dataEntry(hash, size).getOrElse {
+          val start = fs.startOfFreeData
+          val (newHash, stop) = Hash(hashAlgorithm, read(ra.tap(_.seek(0))))(_.foldLeft(start) {
+            case (pos, chunk) => ds.write(pos, chunk); pos + chunk.length
+          })
+          fs.mkEntry(start, stop, newHash).tap(_ => fs.dataWritten(size))
         }
+        fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
       }
 
       println(s"Storing $source in repository $repo")
       walk(targetId, source)
       resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
+      println(s"Finished storing $source in repository $repo")
     }
   }
+
+  private var lastProgressMessageAt = System.currentTimeMillis
+  def progressMessage(message: String): Unit =
+    if (System.currentTimeMillis - lastProgressMessageAt >= 1000) {
+      lastProgressMessageAt = System.currentTimeMillis
+      println(message)
+    }
 
   private def read(ra: RandomAccessFile): LazyList[Array[Byte]] =
     LazyList.unfold(()){ _ =>

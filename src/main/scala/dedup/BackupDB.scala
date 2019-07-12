@@ -13,7 +13,7 @@ object BackupDB {
     if (!dbFile.exists()) throw new IllegalStateException(s"Database file $dbFile does not exist.")
     val timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm").format(new Date())
     val backup = new File(dbDir, s"dedupfs_$timestamp.mv.db")
-    println(s"Creating database backup file $backup")
     Files.copy(dbFile.toPath, backup.toPath, StandardCopyOption.COPY_ATTRIBUTES)
+    println(s"Created database backup file $backup")
   }
 }
