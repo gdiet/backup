@@ -10,7 +10,7 @@ import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 object Server {
   def run(options: Map[String, String]): Unit = {
     val mountPoint = options.getOrElse("mount", throw new IllegalArgumentException("mount option is mandatory."))
-    val repo = new File(options.getOrElse("repo", "."))
+    val repo = new File(options.getOrElse("repo", ""))
     println(s"Starting server for repository $repo")
     val fs = new Server(repo)
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
