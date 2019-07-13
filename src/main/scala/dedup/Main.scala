@@ -11,7 +11,7 @@ object Main extends App {
     case Some("store") => Store.run(options)
     case Some("backup") => BackupDB.run(options)
     case _ =>
-      println("Available commands: init(repo), store(repo, source), backup(repo), fs(repo, mount).")
+      println("Available commands: init(repo), store(repo, source, target), backup(repo), fs(repo, mount).")
       println("Provide parameters like repo in the form key=value.")
   }
 }
