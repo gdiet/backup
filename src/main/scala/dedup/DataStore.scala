@@ -34,7 +34,7 @@ class DataStore(repo: File, readOnly: Boolean) extends AutoCloseable {
 
   def write(position: Long, data: Array[Byte]): Unit = {
     val (path, offset, bytesToWrite) = pathOffsetSize(position, data.length)
-    open(path).tap(_.seek(offset)).write(data)
+    open(path).tap(_.seek(offset)).write(data.take(bytesToWrite))
     if (data.length > bytesToWrite) write(position + bytesToWrite, data.drop(bytesToWrite))
   }
 
