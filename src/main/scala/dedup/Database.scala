@@ -80,23 +80,25 @@ class Database(connection: Connection) {
       rs.maybe(_.getLong(1)).getOrElse(0L)
     }
 
-  private val qTreeParentName = connection.prepareStatement(
+  private val qChild = connection.prepareStatement(
     "SELECT t.id, t.lastModified, d.start, d.stop FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.name = ? AND t.deleted = 0"
   )
   def child(parentId: Long, name: String): Option[TreeNode] = {
-    qTreeParentName.setLong(1, parentId)
-    qTreeParentName.setString(2, name)
-    resource(qTreeParentName.executeQuery())(_.maybe(rs =>
+    qChild.setLong(1, parentId)
+    qChild.setString(2, name)
+    resource(qChild.executeQuery())(_.maybe(rs =>
       TreeNode(rs.getLong(1), parentId, name, rs.opt(_.getLong(2)), rs.opt(_.getLong(3)), rs.opt(_.getLong(4)))
     ))
   }
 
   private val qChildren = connection.prepareStatement(
-    "SELECT id, name FROM TreeEntries WHERE parentId = ? and deleted = 0"
+    "SELECT t.id, t.name, t.lastModified, d.start, d.stop FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.deleted = 0"
   )
-  def children(parentId: Long): Seq[(Long, String)] = {
+  def children(parentId: Long): Seq[TreeNode] = {
     qChildren.setLong(1, parentId)
-    resource(qChildren.executeQuery())(_.seq(r => r.getLong(1) -> r.getString(2)))
+    resource(qChild.executeQuery())(_.seq(rs =>
+      TreeNode(rs.getLong(1), parentId, rs.getString(2), rs.opt(_.getLong(3)), rs.opt(_.getLong(4)), rs.opt(_.getLong(5)))
+    ))
   }
 
   private val iTreeEntry = connection.prepareStatement(

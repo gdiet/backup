@@ -17,8 +17,10 @@ class MetaFS(connection: java.sql.Connection) {
       case (None, _) => None
       case (Some(parent), name) =>
         val namePattern = globPattern(name)
-        db.children(parent).sortBy(_._2.toLowerCase)(Ordering[String].reverse)
-          .find(_._2.matches(namePattern)).map(_._1)
+        db.children(parent)
+          .sortBy(_.name.toLowerCase)(Ordering[String].reverse)
+          .find(_.name.matches(namePattern))
+          .map(_.id)
     }
 
   def mkDirs(path: String): Option[Long] =
@@ -34,7 +36,7 @@ class MetaFS(connection: java.sql.Connection) {
   def child(parentId: Long, name: String): Option[Database.TreeNode] =
     db.child(parentId, name)
 
-  def children(parentId: Long): Seq[(Long, String)] =
+  def children(parentId: Long): Seq[Database.TreeNode] =
     db.children(parentId)
 
   def mkEntry(parentId: Long, name: String, lastModified: Option[Long], dataId: Option[Long]): Long =
