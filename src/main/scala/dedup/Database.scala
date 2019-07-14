@@ -64,7 +64,9 @@ object Database {
 
   sealed trait TreeNode { def id: Long; def name: String }
   case class DirNode(id: Long, parent: Long, name: String) extends TreeNode
-  case class FileNode(id: Long, parent: Long, name: String, lastModified: Long, start: Long, stop: Long) extends TreeNode
+  case class FileNode(id: Long, parent: Long, name: String, lastModified: Long, dataId: Long, start: Long, stop: Long) extends TreeNode {
+    def size: Long = stop - start
+  }
   val root = DirNode(0, 0, "")
 }
 
@@ -76,14 +78,14 @@ class Database(connection: Connection) {
 
 
   private val qChildren = connection.prepareStatement(
-    "SELECT t.id, t.name, t.lastModified, d.start, d.stop FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.deleted = 0"
+    "SELECT t.id, t.name, t.lastModified, t.dataId, d.start, d.stop FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.deleted = 0"
   )
   def children(parentId: Long): Seq[TreeNode] = {
     qChildren.setLong(1, parentId)
     resource(qChildren.executeQuery())(_.seq(rs =>
-      (rs.opt(_.getLong(3)), rs.opt(_.getLong(4)), rs.opt(_.getLong(5))) match {
-        case (None, None, None) => DirNode(rs.getLong(1), parentId, rs.getString(2))
-        case (Some(lastModified), Some(start), Some(stop)) => FileNode(rs.getLong(1), parentId, rs.getString(2), lastModified, start, stop)
+      (rs.opt(_.getLong(3)), rs.opt(_.getLong(4))) match {
+        case (None, None) => DirNode(rs.getLong(1), parentId, rs.getString(2))
+        case (Some(lastModified), Some(dataId)) => FileNode(rs.getLong(1), parentId, rs.getString(2), lastModified, dataId, rs.getLong(5), rs.getLong(6))
         case _ => DirNode(rs.getLong(1), parentId, rs.getString(2)).tap(entry => System.err.println(s"Malformed $entry."))
       }
     ))

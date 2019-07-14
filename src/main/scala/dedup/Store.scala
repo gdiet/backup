@@ -38,20 +38,25 @@ object Store {
       require(!fs.exists(targetId, source.getName), "Can't overwrite in target.")
 
       def walk(parent: Long, file: File, referenceDir: Option[DirNode]): Unit = if (file.isDirectory) {
-        val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case dir: DirNode => dir })
-        val id = fs.mkEntry(parent, file.getName, None, None)
         progressMessage(s"Storing dir $file")
+        val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: DirNode => child })
+        val id = fs.mkEntry(parent, file.getName, None, None)
         newRef.foreach(r => println(s"Reference $r for dir $file")) // FIXME remove
         file.listFiles().foreach(walk(id, _, newRef))
       } else resource(new RandomAccessFile(file, "r")) { ra =>
         progressMessage(s"Storing file $file")
-        val (hash, size) = Hash(hashAlgorithm, read(ra))(_.map(_.length.toLong).sum)
-        val dataId = fs.dataEntry(hash, size).getOrElse {
-          val start = fs.startOfFreeData
-          val (newHash, stop) = Hash(hashAlgorithm, read(ra.tap(_.seek(0))))(_.foldLeft(start) {
-            case (pos, chunk) => ds.write(pos, chunk); pos + chunk.length
-          })
-          fs.mkEntry(start, stop, newHash).tap(_ => fs.dataWritten(size))
+        val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: FileNode => child })
+        val dataId = newRef match {
+          case Some(ref) if ref.lastModified == file.lastModified && ref.size == file.length => ref.dataId
+          case _ =>
+            val (hash, size) = Hash(hashAlgorithm, read(ra))(_.map(_.length.toLong).sum)
+            fs.dataEntry(hash, size).getOrElse {
+              val start = fs.startOfFreeData
+              val (newHash, stop) = Hash(hashAlgorithm, read(ra.tap(_.seek(0))))(_.foldLeft(start) {
+                case (pos, chunk) => ds.write(pos, chunk); pos + chunk.length
+              })
+              fs.mkEntry(start, stop, newHash).tap(_ => fs.dataWritten(size))
+            }
         }
         fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
       }
