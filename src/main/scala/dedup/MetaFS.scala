@@ -1,11 +1,16 @@
 package dedup
 
-class StoreFS(connection: java.sql.Connection) {
+class MetaFS(connection: java.sql.Connection) {
   private val db = new Database(connection)
 
   private var _startOfFreeData = db.startOfFreeData
   def startOfFreeData: Long = _startOfFreeData
   def dataWritten(size: Long): Unit = _startOfFreeData += size
+
+  def entry(path: String): Option[Database.TreeNode] =
+    split(path).foldLeft(Option(Database.root)) {
+      case (parent, name) => parent.flatMap(p => db.child(p.id, name))
+    }
 
   def globDir(path: String): Option[Long] =
     split(path).foldLeft(Option(0L)) {
@@ -28,6 +33,9 @@ class StoreFS(connection: java.sql.Connection) {
 
   def child(parentId: Long, name: String): Option[Database.TreeNode] =
     db.child(parentId, name)
+
+  def children(parentId: Long): Seq[(Long, String)] =
+    db.children(parentId)
 
   def mkEntry(parentId: Long, name: String, lastModified: Option[Long], dataId: Option[Long]): Long =
     db.addTreeEntry(parentId, name, lastModified, dataId)

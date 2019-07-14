@@ -1,17 +1,17 @@
 package dedup
 
 class ServerFS(connection: java.sql.Connection, ds: DataStore) {
-  private val db = new Database(connection)
+  private val meta = new MetaFS(connection)
 
-  def entryAt(path: String): Option[FSEntry] = sync(lookup(path, db).map {
-    _.as[FSEntry](e => new FSDir(db, e.id))(e => new FSFile(ds, e.start, e.stop, e.lastModified))
+  def entryAt(path: String): Option[FSEntry] = sync(meta.entry(path).map {
+    _.as[FSEntry](e => new FSDir(meta, e.id))(e => new FSFile(ds, e.start, e.stop, e.lastModified))
   })
 }
 
 sealed trait FSEntry
 
-class FSDir(db: Database, id: Long) extends FSEntry {
-  def childNames: Seq[String] = sync(db.children(id)).map(_._2)
+class FSDir(meta: MetaFS, id: Long) extends FSEntry {
+  def childNames: Seq[String] = sync(meta.children(id)).map(_._2)
 }
 
 class FSFile(ds: DataStore, start: Long, stop: Long, val lastModifiedMillis: Long) extends FSEntry {

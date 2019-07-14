@@ -22,7 +22,7 @@ object Store {
     val ds = new DataStore(repo, readOnly = false)
     if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
     resource(util.H2.rw(dbDir)) { connection =>
-      val fs = new StoreFS(connection)
+      val fs = new MetaFS(connection)
 
       val refId = options.get("reference").map { refPath =>
         fs.globDir(refPath).getOrElse(throw new IllegalArgumentException(s"Reference directory $refPath does not exist."))
