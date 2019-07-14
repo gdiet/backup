@@ -10,6 +10,7 @@ import scala.util.Using.resource
 object Database {
   def dbDir(repo: File): File = new File(repo, "fsdb")
 
+  // deleted == 0 for regular files, deleted == timestamp for deleted files. NULL does not work with UNIQUE.
   private def tableDefinitions = {
     s"""|CREATE SEQUENCE dataEntryIdSeq START WITH 0;
         |CREATE TABLE DataEntries (
@@ -24,13 +25,15 @@ object Database {
         |  id           BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryIdSeq),
         |  parentId     BIGINT NOT NULL,
         |  name         VARCHAR(255) NOT NULL,
+        |  deleted      BIGINT NOT NULL DEFAULT 0,
         |  lastModified BIGINT DEFAULT NULL,
         |  dataId       BIGINT DEFAULT NULL,
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id),
-        |  CONSTRAINT un_TreeEntries UNIQUE (parentId, name),
-        |  CONSTRAINT fk_TreeEntries_dataId FOREIGN KEY (dataId) REFERENCES DataEntries(id)
+        |  CONSTRAINT un_TreeEntries UNIQUE (parentId, name, deleted),
+        |  CONSTRAINT fk_TreeEntries_dataId FOREIGN KEY (dataId) REFERENCES DataEntries(id),
+        |  CONSTRAINT fk_TreeEntries_parentId FOREIGN KEY (parentId) REFERENCES TreeEntries(id)
         |);
-        |INSERT INTO TreeEntries (parentId, name) VALUES (-1, '');
+        |INSERT INTO TreeEntries (parentId, name) VALUES (0, '');
         |""".stripMargin split ";"
   }
 
