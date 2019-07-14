@@ -17,7 +17,7 @@ class ServerFS(connection: java.sql.Connection, ds: DataStore) {
 sealed trait FSEntry
 
 class FSDir(db: Database, id: Long) extends FSEntry {
-  def childNames: Seq[String] = sync(db.children(id))
+  def childNames: Seq[String] = sync(db.children(id)).map(_._2)
 }
 
 class FSFile(ds: DataStore, start: Long, stop: Long, val lastModifiedMillis: Long) extends FSEntry {

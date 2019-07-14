@@ -90,11 +90,11 @@ class Database(connection: Connection) extends AutoCloseable {
   }
 
   private val qChildren = connection.prepareStatement(
-    "SELECT name FROM TreeEntries WHERE parentId = ?"
+    "SELECT id, name FROM TreeEntries WHERE parentId = ?"
   )
-  def children(parentId: Long): Seq[String] = {
+  def children(parentId: Long): Seq[(Long, String)] = {
     qChildren.setLong(1, parentId)
-    resource(qChildren.executeQuery())(r => r.seq(_.getString(1)))
+    resource(qChildren.executeQuery())(_.seq(r => r.getLong(1) -> r.getString(2)))
   }
 
   private val iTreeEntry = connection.prepareStatement(
