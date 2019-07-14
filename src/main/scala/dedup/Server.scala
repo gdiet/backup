@@ -26,7 +26,7 @@ class Server(repo: File) extends FuseStubFS {
   private val ds = new DataStore(repo, readOnly = true)
   private val fs = new ServerFS(connection, ds)
 
-  override def umount(): Unit = try super.umount() finally { ds.close(); fs.close() }
+  override def umount(): Unit = try super.umount() finally { ds.close(); connection.close() }
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int = {

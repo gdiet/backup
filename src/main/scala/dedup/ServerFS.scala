@@ -6,8 +6,6 @@ class ServerFS(connection: java.sql.Connection, ds: DataStore) {
   def entryAt(path: String): Option[FSEntry] = sync(lookup(path, db).map {
     _.as[FSEntry](e => new FSDir(db, e.id))(e => new FSFile(ds, e.start, e.stop, e.lastModified))
   })
-
-  def close(): Unit = db.close()
 }
 
 sealed trait FSEntry

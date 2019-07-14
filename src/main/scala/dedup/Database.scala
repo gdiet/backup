@@ -74,7 +74,7 @@ object Database {
   val root = TreeNode(0, 0, "", None, None, None)
 }
 
-class Database(connection: Connection) extends AutoCloseable {
+class Database(connection: Connection) {
   def startOfFreeData: Long =
     connection.createStatement().executeQuery("SELECT MAX(stop) FROM DataEntries").pipe { rs =>
       rs.maybe(_.getLong(1)).getOrElse(0L)
@@ -134,6 +134,4 @@ class Database(connection: Connection) extends AutoCloseable {
     require(iDataEntry.executeUpdate() == 1, "Unexpected row count.")
     iDataEntry.getGeneratedKeys.tap(_.next()).getLong(1)
   }
-
-  override def close(): Unit = connection.close()
 }
