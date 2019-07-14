@@ -62,7 +62,14 @@ object Database {
     }
   }
 
-  case class ByParentNameResult(id: Long, lastModified: Option[Long], start: Option[Long], stop: Option[Long])
+  case class ByParentNameResult(id: Long, lastModified: Option[Long], start: Option[Long], stop: Option[Long]) {
+    def asDir: Option[Long] = as[Option[Long]](Some(_))((_, _, _, _) => None)
+    def as[T](dir: Long => T)(file: (Long, Long, Long, Long) => T): T = this match {
+      case ByParentNameResult(_, None, None, None) => dir(id)
+      case ByParentNameResult(_, Some(mod), Some(sta), Some(sto)) => file(id, mod, sta, sto)
+      case _ => System.err.println(s"Malformed $this."); dir(id)
+    }
+  }
   object ByParentNameResult {
     def apply(rs: ResultSet): Option[ByParentNameResult] = {
       rs.maybe(rs =>

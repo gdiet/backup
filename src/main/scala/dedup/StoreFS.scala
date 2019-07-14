@@ -1,7 +1,5 @@
 package dedup
 
-import dedup.Database.ByParentNameResult
-
 class StoreFS(connection: java.sql.Connection) {
   private val db = new Database(connection)
 
@@ -14,9 +12,8 @@ class StoreFS(connection: java.sql.Connection) {
       case (None, _) => None
       case (Some(parent), name) =>
         db.entryByParentAndName(parent, name) match {
-          case Some(ByParentNameResult(id, None, None, None)) => Some(id)
+          case Some(entry) => entry.asDir
           case None => Some(db.addTreeEntry(parent, name, None, None))
-          case _ => None
         }
     }
 
