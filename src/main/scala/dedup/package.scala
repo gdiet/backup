@@ -1,3 +1,5 @@
+import scala.util.matching.Regex
+
 package object dedup extends scala.util.ChainingSyntax {
 
   def sync[T](f: => T): T = synchronized(f)
@@ -9,4 +11,6 @@ package object dedup extends scala.util.ChainingSyntax {
       case (parent, name) => parent.flatMap(p => db.entryByParentAndName(p.id, name))
     }
 
+  def globPattern(glob: String): String =
+    s"\\Q${glob.replaceAll("\\*", "\\\\E.*\\\\Q").replaceAll("\\?", "\\\\E.\\\\Q")}\\E"
 }

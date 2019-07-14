@@ -10,7 +10,7 @@ object Store {
   private def hashAlgorithm = "SHA-1"
 
   def run(options: Map[String, String]): Unit = {
-    // Note: Implemented strictly for single-threaded use
+    // Note: Implemented for single-threaded operation.
     val (repo, source) = (options.get("repo"), options.get("source")) match {
       case (None, None) => throw new IllegalArgumentException("One of source or repo option is mandatory.")
       case (repOpt, sourceOpt) => new File(repOpt.getOrElse("")).getAbsoluteFile -> new File(sourceOpt.getOrElse("")).getAbsoluteFile
@@ -24,16 +24,22 @@ object Store {
     resource(util.H2.rw(dbDir)) { connection =>
       val fs = new StoreFS(connection)
 
+      val refId = options.get("reference").map { refPath =>
+        fs.globDir(refPath).getOrElse(throw new IllegalArgumentException(s"Reference directory $refPath does not exist."))
+      }
+
       val targetPath = options.getOrElse("target", throw new IllegalArgumentException("target option is mandatory."))
       val targetId = fs.mkDirs(targetPath).getOrElse(throw new IllegalArgumentException("Can't create target directory."))
       require(!fs.exists(targetId, source.getName), "Can't overwrite in target.")
 
-      def walk(parent: Long, file: File): Unit = if (file.isDirectory) {
+      def walk(parent: Long, file: File, refId: Option[Long]): Unit = if (file.isDirectory) {
         val id = fs.mkEntry(parent, file.getName, None, None)
-        progressMessage(s"Storing $file")
-        file.listFiles().foreach(walk(id, _))
+        val newRef = refId.flatMap(fs.child(_, file.getName)).flatMap(_.asDir)
+        progressMessage(s"Storing dir $file")
+        newRef.foreach(r => println(s"Reference $r for dir $file")) // FIXME remove
+        file.listFiles().foreach(walk(id, _, newRef))
       } else resource(new RandomAccessFile(file, "r")) { ra =>
-        progressMessage(s"Storing $file")
+        progressMessage(s"Storing file $file")
         val (hash, size) = Hash(hashAlgorithm, read(ra))(_.map(_.length.toLong).sum)
         val dataId = fs.dataEntry(hash, size).getOrElse {
           val start = fs.startOfFreeData
@@ -47,7 +53,7 @@ object Store {
 
       val details = s"$source at $targetPath in repository $repo"
       println(s"Storing $details")
-      walk(targetId, source)
+      walk(targetId, source, refId)
       resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
       println(s"Finished storing $details")
     }

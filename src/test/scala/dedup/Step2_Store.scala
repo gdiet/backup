@@ -5,4 +5,9 @@ object Step2_Store extends App {
     "source" -> """e:\georg\privat\dev\backup\src""",
     "target" -> "/backup/v1"
   ))
+  Store.run(Map(
+    "source" -> """e:\georg\privat\dev\backup\src""",
+    "target" -> "/backup/v2",
+    "reference" -> "/backup/v*"
+  ))
 }

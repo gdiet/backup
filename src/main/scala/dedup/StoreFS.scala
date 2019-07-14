@@ -7,6 +7,15 @@ class StoreFS(connection: java.sql.Connection) {
   def startOfFreeData: Long = _startOfFreeData
   def dataWritten(size: Long): Unit = _startOfFreeData += size
 
+  def globDir(path: String): Option[Long] =
+    split(path).foldLeft(Option(0L)) {
+      case (None, _) => None
+      case (Some(parent), name) =>
+        val namePattern = globPattern(name)
+        db.children(parent).sortBy(_._2.toLowerCase)(Ordering[String].reverse)
+          .find(_._2.matches(namePattern)).map(_._1)
+    }
+
   def mkDirs(path: String): Option[Long] =
     split(path).foldLeft(Option(0L)) {
       case (None, _) => None
@@ -16,6 +25,9 @@ class StoreFS(connection: java.sql.Connection) {
           case None => Some(db.addTreeEntry(parent, name, None, None))
         }
     }
+
+  def child(parentId: Long, name: String) =
+    db.entryByParentAndName(parentId, name)
 
   def mkEntry(parentId: Long, name: String, lastModified: Option[Long], dataId: Option[Long]): Long =
     db.addTreeEntry(parentId, name, lastModified, dataId)
