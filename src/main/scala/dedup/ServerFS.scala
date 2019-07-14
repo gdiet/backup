@@ -4,7 +4,7 @@ class ServerFS(connection: java.sql.Connection, ds: DataStore) {
   private val db = new Database(connection)
 
   def entryAt(path: String): Option[FSEntry] = sync(lookup(path, db).map {
-    _.as[FSEntry](new FSDir(db, _))((_, lastModified, start, stop) => new FSFile(ds, start, stop, lastModified))
+    _.as[FSEntry](e => new FSDir(db, e.id))(e => new FSFile(ds, e.start, e.stop, e.lastModified))
   })
 
   def close(): Unit = db.close()

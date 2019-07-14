@@ -34,7 +34,7 @@ object Store {
 
       def walk(parent: Long, file: File, refId: Option[Long]): Unit = if (file.isDirectory) {
         val id = fs.mkEntry(parent, file.getName, None, None)
-        val newRef = refId.flatMap(fs.child(_, file.getName)).flatMap(_.asDir)
+        val newRef = refId.flatMap(fs.child(_, file.getName)).flatMap(_.as(e => Option(e.id))(_ => None))
         progressMessage(s"Storing dir $file")
         newRef.foreach(r => println(s"Reference $r for dir $file")) // FIXME remove
         file.listFiles().foreach(walk(id, _, newRef))

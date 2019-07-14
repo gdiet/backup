@@ -62,23 +62,16 @@ object Database {
     }
   }
 
-  case class ByParentNameResult(id: Long, lastModified: Option[Long], start: Option[Long], stop: Option[Long]) {
-    def asDir: Option[Long] = as[Option[Long]](Some(_))((_, _, _, _) => None)
-    def as[T](dir: Long => T)(file: (Long, Long, Long, Long) => T): T = this match {
-      case ByParentNameResult(_, None, None, None) => dir(id)
-      case ByParentNameResult(_, Some(mod), Some(sta), Some(sto)) => file(id, mod, sta, sto)
-      case _ => System.err.println(s"Malformed $this."); dir(id)
+  case class DirNode(id: Long, parent: Long, name: String)
+  case class FileNode(id: Long, parent: Long, name: String, lastModified: Long, start: Long, stop: Long)
+  case class TreeNode(id: Long, parent: Long, name: String, lastModified: Option[Long], start: Option[Long], stop: Option[Long]) {
+    def as[T](dir: DirNode => T)(file: FileNode => T): T = this match {
+      case TreeNode(_, _, _, None, None, None) => dir(DirNode(id, parent, name))
+      case TreeNode(_, _, _, Some(mod), Some(sta), Some(sto)) => file(FileNode(id, parent, name, mod, sta, sto))
+      case _ => System.err.println(s"Malformed $this."); dir(DirNode(id, parent, name))
     }
   }
-  object ByParentNameResult {
-    def apply(rs: ResultSet): Option[ByParentNameResult] = {
-      rs.maybe(rs =>
-        ByParentNameResult(rs.getLong(1), rs.opt(_.getLong(2)), rs.opt(_.getLong(3)), rs.opt(_.getLong(4)))
-      )
-    }
-  }
-
-  val byParentNameRoot = ByParentNameResult(0, None, None, None)
+  val root = TreeNode(0, 0, "", None, None, None)
 }
 
 class Database(connection: Connection) extends AutoCloseable {
@@ -90,10 +83,12 @@ class Database(connection: Connection) extends AutoCloseable {
   private val qTreeParentName = connection.prepareStatement(
     "SELECT t.id, t.lastModified, d.start, d.stop FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.name = ? AND t.deleted = 0"
   )
-  def entryByParentAndName(parentId: Long, name: String): Option[ByParentNameResult] = {
+  def child(parentId: Long, name: String): Option[TreeNode] = {
     qTreeParentName.setLong(1, parentId)
     qTreeParentName.setString(2, name)
-    resource(qTreeParentName.executeQuery())(ByParentNameResult(_))
+    resource(qTreeParentName.executeQuery())(_.maybe(rs =>
+      TreeNode(rs.getLong(1), parentId, name, rs.opt(_.getLong(2)), rs.opt(_.getLong(3)), rs.opt(_.getLong(4)))
+    ))
   }
 
   private val qChildren = connection.prepareStatement(

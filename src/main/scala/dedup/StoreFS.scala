@@ -20,14 +20,14 @@ class StoreFS(connection: java.sql.Connection) {
     split(path).foldLeft(Option(0L)) {
       case (None, _) => None
       case (Some(parent), name) =>
-        db.entryByParentAndName(parent, name) match {
-          case Some(entry) => entry.asDir
+        db.child(parent, name) match {
+          case Some(entry) => entry.as(e => Option(e.id))(_ => None)
           case None => Some(db.addTreeEntry(parent, name, None, None))
         }
     }
 
-  def child(parentId: Long, name: String) =
-    db.entryByParentAndName(parentId, name)
+  def child(parentId: Long, name: String): Option[Database.TreeNode] =
+    db.child(parentId, name)
 
   def mkEntry(parentId: Long, name: String, lastModified: Option[Long], dataId: Option[Long]): Long =
     db.addTreeEntry(parentId, name, lastModified, dataId)
@@ -39,5 +39,5 @@ class StoreFS(connection: java.sql.Connection) {
     db.addDataEntry(start, stop, hash)
 
   def exists(parentId: Long, name: String): Boolean =
-    db.entryByParentAndName(parentId, name).isDefined
+    db.child(parentId, name).isDefined
 }
