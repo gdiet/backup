@@ -81,7 +81,7 @@ class Database(connection: Connection) extends AutoCloseable {
     }
 
   private val qTreeParentName = connection.prepareStatement(
-    "SELECT t.id, t.lastModified, d.start, d.stop FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.name = ?"
+    "SELECT t.id, t.lastModified, d.start, d.stop FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.name = ? AND t.deleted = 0"
   )
   def entryByParentAndName(parentId: Long, name: String): Option[ByParentNameResult] = {
     qTreeParentName.setLong(1, parentId)
@@ -90,7 +90,7 @@ class Database(connection: Connection) extends AutoCloseable {
   }
 
   private val qChildren = connection.prepareStatement(
-    "SELECT id, name FROM TreeEntries WHERE parentId = ?"
+    "SELECT id, name FROM TreeEntries WHERE parentId = ? and deleted = 0"
   )
   def children(parentId: Long): Seq[(Long, String)] = {
     qChildren.setLong(1, parentId)
