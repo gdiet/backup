@@ -1,10 +1,13 @@
 package dedup
 
+import dedup.Database.{DirNode, FileNode}
+
 class ServerFS(connection: java.sql.Connection, ds: DataStore) {
   private val meta = new MetaFS(connection)
 
   def entryAt(path: String): Option[FSEntry] = sync(meta.entry(path).map {
-    _.as[FSEntry](e => new FSDir(meta, e.id))(e => new FSFile(ds, e.start, e.stop, e.lastModified))
+    case dir: DirNode => new FSDir(meta, dir.id)
+    case file: FileNode => new FSFile(ds, file.start, file.stop, file.lastModified)
   })
 }
 

@@ -1,5 +1,7 @@
 package dedup
 
+import dedup.Database.{DirNode, FileNode}
+
 class MetaFS(connection: java.sql.Connection) {
   private val db = new Database(connection)
 
@@ -8,19 +10,18 @@ class MetaFS(connection: java.sql.Connection) {
   def dataWritten(size: Long): Unit = _startOfFreeData += size
 
   def entry(path: String): Option[Database.TreeNode] =
-    split(path).foldLeft(Option(Database.root)) {
-      case (parent, name) => parent.flatMap(p => db.child(p.id, name))
+    split(path).foldLeft[Option[Database.TreeNode]](Some(Database.root)) {
+      case (parent, name) => parent.flatMap(node => db.child(node.id, name))
     }
 
-  def globDir(path: String): Option[Long] =
-    split(path).foldLeft(Option(0L)) {
-      case (None, _) => None
-      case (Some(parent), name) =>
+  def globEntry(path: String): Option[Database.TreeNode] =
+    split(path).foldLeft[Option[Database.TreeNode]](Some(Database.root)) {
+      case (parent, name) => parent.flatMap { node =>
         val namePattern = globPattern(name)
-        db.children(parent)
+        db.children(node.id)
           .sortBy(_.name.toLowerCase)(Ordering[String].reverse)
           .find(_.name.matches(namePattern))
-          .map(_.id)
+      }
     }
 
   def mkDirs(path: String): Option[Long] =
@@ -28,7 +29,8 @@ class MetaFS(connection: java.sql.Connection) {
       case (None, _) => None
       case (Some(parent), name) =>
         db.child(parent, name) match {
-          case Some(entry) => entry.as(e => Option(e.id))(_ => None)
+          case Some(dir: DirNode) => Some(dir.id)
+          case Some(_: FileNode) => None
           case None => Some(db.addTreeEntry(parent, name, None, None))
         }
     }

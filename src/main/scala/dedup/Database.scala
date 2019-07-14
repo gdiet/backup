@@ -62,16 +62,10 @@ object Database {
     }
   }
 
-  case class DirNode(id: Long, parent: Long, name: String)
-  case class FileNode(id: Long, parent: Long, name: String, lastModified: Long, start: Long, stop: Long)
-  case class TreeNode(id: Long, parent: Long, name: String, lastModified: Option[Long], start: Option[Long], stop: Option[Long]) {
-    def as[T](dir: DirNode => T)(file: FileNode => T): T = this match {
-      case TreeNode(_, _, _, None, None, None) => dir(DirNode(id, parent, name))
-      case TreeNode(_, _, _, Some(mod), Some(sta), Some(sto)) => file(FileNode(id, parent, name, mod, sta, sto))
-      case _ => System.err.println(s"Malformed $this."); dir(DirNode(id, parent, name))
-    }
-  }
-  val root = TreeNode(0, 0, "", None, None, None)
+  sealed trait TreeNode { def id: Long; def name: String }
+  case class DirNode(id: Long, parent: Long, name: String) extends TreeNode
+  case class FileNode(id: Long, parent: Long, name: String, lastModified: Long, start: Long, stop: Long) extends TreeNode
+  val root = DirNode(0, 0, "")
 }
 
 class Database(connection: Connection) {
@@ -80,26 +74,21 @@ class Database(connection: Connection) {
       rs.maybe(_.getLong(1)).getOrElse(0L)
     }
 
-  private val qChild = connection.prepareStatement(
-    "SELECT t.id, t.lastModified, d.start, d.stop FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.name = ? AND t.deleted = 0"
-  )
-  def child(parentId: Long, name: String): Option[TreeNode] = {
-    qChild.setLong(1, parentId)
-    qChild.setString(2, name)
-    resource(qChild.executeQuery())(_.maybe(rs =>
-      TreeNode(rs.getLong(1), parentId, name, rs.opt(_.getLong(2)), rs.opt(_.getLong(3)), rs.opt(_.getLong(4)))
-    ))
-  }
 
   private val qChildren = connection.prepareStatement(
     "SELECT t.id, t.name, t.lastModified, d.start, d.stop FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.parentId = ? AND t.deleted = 0"
   )
   def children(parentId: Long): Seq[TreeNode] = {
     qChildren.setLong(1, parentId)
-    resource(qChild.executeQuery())(_.seq(rs =>
-      TreeNode(rs.getLong(1), parentId, rs.getString(2), rs.opt(_.getLong(3)), rs.opt(_.getLong(4)), rs.opt(_.getLong(5)))
+    resource(qChildren.executeQuery())(_.seq(rs =>
+      (rs.opt(_.getLong(3)), rs.opt(_.getLong(4)), rs.opt(_.getLong(5))) match {
+        case (None, None, None) => DirNode(rs.getLong(1), parentId, rs.getString(2))
+        case (Some(lastModified), Some(start), Some(stop)) => FileNode(rs.getLong(1), parentId, rs.getString(2), lastModified, start, stop)
+        case _ => DirNode(rs.getLong(1), parentId, rs.getString(2)).tap(entry => System.err.println(s"Malformed $entry."))
+      }
     ))
   }
+  def child(parentId: Long, name: String): Option[TreeNode] = children(parentId).find(_.name == name)
 
   private val iTreeEntry = connection.prepareStatement(
     "INSERT INTO TreeEntries (parentId, name, lastModified, dataId) VALUES (?, ?, ?, ?)",

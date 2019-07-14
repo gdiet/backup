@@ -2,6 +2,7 @@ package dedup
 
 import java.io.{File, RandomAccessFile}
 
+import dedup.Database.{DirNode, FileNode}
 import util.Hash
 
 import scala.util.Using.resource
@@ -24,17 +25,21 @@ object Store {
     resource(util.H2.rw(dbDir)) { connection =>
       val fs = new MetaFS(connection)
 
-      val refId = options.get("reference").map { refPath =>
-        fs.globDir(refPath).getOrElse(throw new IllegalArgumentException(s"Reference directory $refPath does not exist."))
+      val referenceDir = options.get("reference").map { refPath =>
+        fs.globEntry(refPath).pipe {
+          case None => throw new IllegalArgumentException(s"Reference directory $refPath does not exist.")
+          case Some(_: FileNode) => throw new IllegalArgumentException(s"Reference $refPath is a file, not a directory.")
+          case Some(dir: DirNode) => dir
+        }
       }
 
       val targetPath = options.getOrElse("target", throw new IllegalArgumentException("target option is mandatory."))
       val targetId = fs.mkDirs(targetPath).getOrElse(throw new IllegalArgumentException("Can't create target directory."))
       require(!fs.exists(targetId, source.getName), "Can't overwrite in target.")
 
-      def walk(parent: Long, file: File, refId: Option[Long]): Unit = if (file.isDirectory) {
+      def walk(parent: Long, file: File, referenceDir: Option[DirNode]): Unit = if (file.isDirectory) {
+        val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case dir: DirNode => dir })
         val id = fs.mkEntry(parent, file.getName, None, None)
-        val newRef = refId.flatMap(fs.child(_, file.getName)).flatMap(_.as(e => Option(e.id))(_ => None))
         progressMessage(s"Storing dir $file")
         newRef.foreach(r => println(s"Reference $r for dir $file")) // FIXME remove
         file.listFiles().foreach(walk(id, _, newRef))
@@ -53,7 +58,7 @@ object Store {
 
       val details = s"$source at $targetPath in repository $repo"
       println(s"Storing $details")
-      walk(targetId, source, refId)
+      walk(targetId, source, referenceDir)
       resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
       println(s"Finished storing $details")
     }
