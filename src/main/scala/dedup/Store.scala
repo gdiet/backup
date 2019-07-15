@@ -41,7 +41,6 @@ object Store {
         progressMessage(s"Storing dir $file")
         val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: DirNode => child })
         val id = fs.mkEntry(parent, file.getName, None, None)
-        newRef.foreach(r => println(s"Reference $r for dir $file")) // FIXME remove
         file.listFiles().foreach(walk(id, _, newRef))
       } else resource(new RandomAccessFile(file, "r")) { ra =>
         progressMessage(s"Storing file $file")
@@ -49,7 +48,7 @@ object Store {
         val dataId = newRef match {
           case Some(ref) if ref.lastModified == file.lastModified && ref.size == file.length => ref.dataId
           case _ =>
-            val (hash, size) = Hash(hashAlgorithm, read(ra))(_.map(_.length.toLong).sum)
+            val (hash, size) = Hash(hashAlgorithm, read(ra))(_.foldLeft(0L)(_ + _.length))
             fs.dataEntry(hash, size).getOrElse {
               val start = fs.startOfFreeData
               val (newHash, stop) = Hash(hashAlgorithm, read(ra.tap(_.seek(0))))(_.foldLeft(start) {
@@ -76,13 +75,15 @@ object Store {
       println(message)
     }
 
-  private def read(ra: RandomAccessFile): LazyList[Array[Byte]] =
-    LazyList.unfold(()){ _ =>
-      val chunkSize = 1000000
-      val bytes = new Array[Byte](chunkSize)
-      val read = ra.read(bytes, 0, chunkSize)
-      if (read <= 0) None
-      else if (read == chunkSize) Some(bytes -> ())
-      else Some(bytes.take(read) -> ())
+  private def read(ra: RandomAccessFile, size: Long = Long.MaxValue): LazyList[Array[Byte]] =
+    LazyList.unfold(size){ remainingSize =>
+      if (remainingSize <= 0) None else {
+        val currentChunkSize = math.min(1000000, remainingSize).toInt
+        val chunk = new Array[Byte](currentChunkSize)
+        val read = ra.read(chunk)
+        if (read < 0) None
+        else if (read == currentChunkSize) Some(chunk -> (remainingSize - read))
+        else Some(chunk.take(read) -> (remainingSize - read))
+      }
     }
 }
