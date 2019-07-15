@@ -37,6 +37,7 @@ object Store {
       val targetId = fs.mkDirs(targetPath).getOrElse(throw new IllegalArgumentException("Can't create target directory."))
       require(!fs.exists(targetId, source.getName), "Can't overwrite in target.")
 
+      // TODO investigate multi-threaded operation
       def walk(parent: Long, file: File, referenceDir: Option[DirNode]): Unit = if (file.isDirectory) {
         progressMessage(s"Storing dir $file")
         val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: DirNode => child })
@@ -48,6 +49,7 @@ object Store {
         val dataId = newRef match {
           case Some(ref) if ref.lastModified == file.lastModified && ref.size == file.length => ref.dataId
           case _ =>
+            // TODO create a clone of the digest for the cache to avoid having to re-calculate the hash
             val cacheSize = 50000000
             val cachedBytes = read(ra, cacheSize).force // MUST be 'val'
             def allBytes = cachedBytes #::: read(ra) // MUST be 'def'
@@ -64,6 +66,8 @@ object Store {
         fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
       }
 
+      // TODO print time
+      // TODO check whether reference mechanism works as expected
       val details = s"$source at $targetPath in repository $repo"
       println(s"Storing $details")
       walk(targetId, source, referenceDir)
