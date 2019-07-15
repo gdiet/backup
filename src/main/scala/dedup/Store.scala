@@ -48,10 +48,14 @@ object Store {
         val dataId = newRef match {
           case Some(ref) if ref.lastModified == file.lastModified && ref.size == file.length => ref.dataId
           case _ =>
-            val (hash, size) = Hash(hashAlgorithm, read(ra))(_.foldLeft(0L)(_ + _.length))
+            val cacheSize = 50000000
+            val cachedBytes = read(ra, cacheSize).force // MUST be 'val'
+            def allBytes = cachedBytes #::: read(ra) // MUST be 'def'
+            val (hash, size) = Hash(hashAlgorithm, allBytes)(_.foldLeft(0L)(_ + _.length))
             fs.dataEntry(hash, size).getOrElse {
+              ra.seek(cacheSize) // Side effect on allBytes
               val start = fs.startOfFreeData
-              val (newHash, stop) = Hash(hashAlgorithm, read(ra.tap(_.seek(0))))(_.foldLeft(start) {
+              val (newHash, stop) = Hash(hashAlgorithm, allBytes)(_.foldLeft(start) {
                 case (pos, chunk) => ds.write(pos, chunk); pos + chunk.length
               })
               fs.mkEntry(start, stop, newHash).tap(_ => fs.dataWritten(size))
