@@ -11,10 +11,10 @@ object Server {
   def run(options: Map[String, String]): Unit = {
     val mountPoint = options.getOrElse("mount", throw new IllegalArgumentException("mount option is mandatory."))
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
-    println(s"Starting server for repository $repo")
+    println(s"Mounting repository $repo on $mountPoint")
     val fs = new Server(repo)
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
-    finally { fs.umount(); println("Server stopped.") }
+    finally { fs.umount(); println(s"Repository unmounted from $mountPoint.") }
   }
 }
 

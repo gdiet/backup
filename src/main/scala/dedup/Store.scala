@@ -1,14 +1,14 @@
 package dedup
 
 import java.io.{File, RandomAccessFile}
+import java.security.MessageDigest
 
 import dedup.Database.{DirNode, FileNode}
-import util.Hash
 
 import scala.util.Using.resource
 
 object Store {
-  private def hashAlgorithm = "SHA-1"
+  private def hashAlgorithm = "MD5"
 
   def run(options: Map[String, String]): Unit = {
     // Note: Implemented for single-threaded operation.
@@ -49,30 +49,33 @@ object Store {
         val dataId = newRef match {
           case Some(ref) if ref.lastModified == file.lastModified && ref.size == file.length => ref.dataId
           case _ =>
-            // TODO create a clone of the digest for the cache to avoid having to re-calculate the hash
-            val cacheSize = 50000000
-            val cachedBytes = read(ra, cacheSize).force // MUST be 'val'
-            def allBytes = cachedBytes #::: read(ra) // MUST be 'def'
-            val (hash, size) = Hash(hashAlgorithm, allBytes)(_.foldLeft(0L)(_ + _.length))
-            fs.dataEntry(hash, size).getOrElse {
-              ra.seek(cacheSize) // Side effect on allBytes
-              val start = fs.startOfFreeData
-              val (newHash, stop) = Hash(hashAlgorithm, allBytes)(_.foldLeft(start) {
-                case (pos, chunk) => ds.write(pos, chunk); pos + chunk.length
-              })
-              fs.mkEntry(start, stop, newHash).tap(_ => fs.dataWritten(size))
+            val md = MessageDigest.getInstance(hashAlgorithm)
+            val cachedBytes = read(ra, 50000000) // must be 'val'
+            val bytesCached = cachedBytes.map { chunk => md.update(chunk); chunk.length.toLong }.sum
+            val mdClone = md.clone().asInstanceOf[MessageDigest]
+            val fileSize = bytesCached + read(ra).map { chunk => md.update(chunk); chunk.length.toLong }.sum
+            val hash = md.digest()
+            fs.dataEntry(hash, fileSize).getOrElse {
+              val position = cachedBytes.foldLeft(fs.startOfFreeData) { case (pos, chunk) =>
+                ds.write(pos, chunk); pos + chunk.length
+              }
+              ra.seek(bytesCached)
+              val stop = read(ra).foldLeft(position) { case (pos, chunk) =>
+                ds.write(pos, chunk); pos + chunk.length
+              }
+              fs.mkEntry(fs.startOfFreeData, stop, mdClone.digest()).tap(_ => fs.setStartOfFreeData(stop))
             }
         }
         fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
       }
 
-      // TODO print time
       // TODO check whether reference mechanism works as expected
-      val details = s"$source at $targetPath in repository $repo"
+      val details = s"$source at $targetPath with reference ${options.get("reference")} in repository $repo"
       println(s"Storing $details")
+      val time = System.currentTimeMillis
       walk(targetId, source, referenceDir)
       resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
-      println(s"Finished storing $details")
+      println(s"Finished storing $details\nTime: ${(System.currentTimeMillis() - time)/1000}s")
     }
   }
 

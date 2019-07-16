@@ -7,7 +7,7 @@ class MetaFS(connection: java.sql.Connection) {
 
   private var _startOfFreeData = db.startOfFreeData
   def startOfFreeData: Long = _startOfFreeData
-  def dataWritten(size: Long): Unit = _startOfFreeData += size
+  def setStartOfFreeData(newValue: Long): Unit = _startOfFreeData = newValue
 
   def entry(path: String): Option[Database.TreeNode] =
     split(path).foldLeft[Option[Database.TreeNode]](Some(Database.root)) {
