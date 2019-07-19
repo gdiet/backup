@@ -38,11 +38,13 @@ object Store {
       require(!fs.exists(targetId, source.getName), "Can't overwrite in target.")
 
       // TODO investigate multi-threaded operation
-      def walk(parent: Long, file: File, referenceDir: Option[DirNode]): Unit = if (file.isDirectory) {
+      def walk(parent: Long, file: File, referenceDir: Option[DirNode]): (Long, Long, Long) = if (file.isDirectory) {
         progressMessage(s"Storing dir $file")
         val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: DirNode => child })
         val id = fs.mkEntry(parent, file.getName, None, None)
-        file.listFiles().foreach(walk(id, _, newRef))
+        val results = file.listFiles().map(walk(id, _, newRef))
+        def combine(a: (Long, Long, Long), b: (Long, Long, Long)) = (a._1 + b._1, a._2 + b._2, a._3 + b._3)
+        combine((1, 0, 0), results.foldLeft[(Long, Long, Long)]((0, 0, 0))(combine))
       } else resource(new RandomAccessFile(file, "r")) { ra =>
         progressMessage(s"Storing file $file")
         val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: FileNode => child })
@@ -67,15 +69,17 @@ object Store {
             }
         }
         fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
+        (0, 1, ra.length)
       }
 
       // TODO check whether reference mechanism works as expected
       val details = s"$source at $targetPath with reference ${options.get("reference")} in repository $repo"
       println(s"Storing $details")
       val time = System.currentTimeMillis
-      walk(targetId, source, referenceDir)
+      val (dirs, files, bytes) = walk(targetId, source, referenceDir)
       resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
-      println(s"Finished storing $details\nTime: ${(System.currentTimeMillis() - time)/1000}s")
+      println(s"Finished storing $details\n" +
+        s"Stored $dirs directories, $files files, $bytes bytes in ${(System.currentTimeMillis() - time)/1000}s")
     }
   }
 
