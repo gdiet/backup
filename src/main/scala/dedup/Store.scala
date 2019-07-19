@@ -5,13 +5,14 @@ import java.security.MessageDigest
 
 import dedup.Database.{DirNode, FileNode}
 
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, Future}
 import scala.util.Using.resource
 
 object Store {
   private def hashAlgorithm = "MD5"
 
   def run(options: Map[String, String]): Unit = {
-    // Note: Implemented for single-threaded operation.
     val (repo, source) = (options.get("repo"), options.get("source")) match {
       case (None, None) => throw new IllegalArgumentException("One of source or repo option is mandatory.")
       case (repOpt, sourceOpt) => new File(repOpt.getOrElse("")).getAbsoluteFile -> new File(sourceOpt.getOrElse("")).getAbsoluteFile
@@ -37,15 +38,18 @@ object Store {
       val targetId = fs.mkDirs(targetPath).getOrElse(throw new IllegalArgumentException("Can't create target directory."))
       require(!fs.exists(targetId, source.getName), "Can't overwrite in target.")
 
-      // TODO investigate multi-threaded operation
-      def walk(parent: Long, file: File, referenceDir: Option[DirNode]): Unit = if (file.isDirectory) {
+      import scala.concurrent.ExecutionContext.Implicits.global
+      def walk(parent: Long, file: File, referenceDir: Option[DirNode]): Future[(Long, Long, Long)] = if (file.isDirectory) {
         progressMessage(s"Storing dir $file")
-        val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: DirNode => child })
-        val id = fs.mkEntry(parent, file.getName, None, None)
-        file.listFiles().foreach(walk(id, _, newRef))
+        val newRef = referenceDir.flatMap(dir => sync(fs.child(dir.id, file.getName)).collect { case child: DirNode => child })
+        val id = sync(fs.mkEntry(parent, file.getName, None, None))
+        Future.sequence(file.listFiles().toSeq.map(walk(id, _, newRef))).map { s =>
+          def combine(a: (Long, Long, Long), b: (Long, Long, Long)) = (a._1 + b._1, a._2 + b._2, a._3 + b._3)
+          combine((1, 0, 0), s.foldLeft[(Long, Long, Long)]((0, 0, 0))(combine))
+        }
       } else resource(new RandomAccessFile(file, "r")) { ra =>
         progressMessage(s"Storing file $file")
-        val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: FileNode => child })
+        val newRef = referenceDir.flatMap(dir => sync(fs.child(dir.id, file.getName)).collect { case child: FileNode => child })
         val dataId = newRef match {
           case Some(ref) if ref.lastModified == file.lastModified && ref.size == file.length => ref.dataId
           case _ =>
@@ -55,7 +59,7 @@ object Store {
             val mdClone = md.clone().asInstanceOf[MessageDigest]
             val fileSize = bytesCached + read(ra).map { chunk => md.update(chunk); chunk.length.toLong }.sum
             val hash = md.digest()
-            fs.dataEntry(hash, fileSize).getOrElse {
+            sync(fs.dataEntry(hash, fileSize).getOrElse {
               val position = cachedBytes.foldLeft(fs.startOfFreeData) { case (pos, chunk) =>
                 ds.write(pos, chunk); pos + chunk.length
               }
@@ -64,18 +68,19 @@ object Store {
                 ds.write(pos, chunk); pos + chunk.length
               }
               fs.mkEntry(fs.startOfFreeData, stop, mdClone.digest()).tap(_ => fs.setStartOfFreeData(stop))
-            }
+            })
         }
-        fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
+        sync(fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId)))
+        Future.successful((0, 1, ra.length))
       }
 
-      // TODO check whether reference mechanism works as expected
       val details = s"$source at $targetPath with reference ${options.get("reference")} in repository $repo"
       println(s"Storing $details")
       val time = System.currentTimeMillis
-      walk(targetId, source, referenceDir)
+      val (dirs, files, bytes) = Await.result(walk(targetId, source, referenceDir), Duration.Inf)
       resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
-      println(s"Finished storing $details\nTime: ${(System.currentTimeMillis() - time)/1000}s")
+      println(s"Finished storing $details\n" +
+        s"Stored $dirs directories, $files files, $bytes bytes in ${(System.currentTimeMillis() - time)/1000}s")
     }
   }
 
