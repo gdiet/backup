@@ -76,7 +76,7 @@ class Server(repo: File) extends FuseStubFS {
         if (offset < 0 || size < 0 || intSize != size) -ErrorCodes.EOVERFLOW
         else {
           val bytes = file.bytes(offset, intSize)
-          buf.put(0, bytes, offset.toInt, bytes.length)
+          buf.put(0, bytes, 0, bytes.length)
           bytes.length
         }
     }
