@@ -1,4 +1,14 @@
-version := new java.text.SimpleDateFormat("yyyy.MM.dd").format(new java.util.Date())
+version := {
+  val hgRevision = try {
+    import scala.sys.process._
+    val parentEx = "parent: \\d*:([0-9a-f]*).*".r
+    val hgSum = "hg sum".lineStream
+    val revision = hgSum.collectFirst { case parentEx(rev) => rev }.get
+    if (hgSum.contains("commit: (clean)")) s"-$revision" else s"-$revision+"
+  } catch { case _: Throwable => "" }
+  val date = new java.text.SimpleDateFormat("yyyy.MM.dd").format(new java.util.Date())
+  s"$date$hgRevision"
+}
 scalaVersion := "2.13.0"
 scalacOptions := Seq("-target:jvm-1.8")
 resolvers += "bintray" at "http://jcenter.bintray.com"
