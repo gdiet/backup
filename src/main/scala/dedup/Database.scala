@@ -1,6 +1,7 @@
 package dedup
 
 import java.io.File
+import java.lang.System.{currentTimeMillis => now}
 import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
 
 import dedup.Database._
@@ -24,15 +25,16 @@ object Database {
         |  id           BIGINT NOT NULL DEFAULT (NEXT VALUE FOR idSeq),
         |  parentId     BIGINT NOT NULL,
         |  name         VARCHAR(255) NOT NULL,
-        |  deleted      BIGINT NOT NULL DEFAULT 0,
+        |  created      BIGINT NOT NULL,
         |  lastModified BIGINT DEFAULT NULL,
+        |  deleted      BIGINT NOT NULL DEFAULT 0,
         |  dataId       BIGINT DEFAULT NULL,
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id),
         |  CONSTRAINT un_TreeEntries UNIQUE (parentId, name, deleted),
         |  CONSTRAINT fk_TreeEntries_dataId FOREIGN KEY (dataId) REFERENCES DataEntries(id),
         |  CONSTRAINT fk_TreeEntries_parentId FOREIGN KEY (parentId) REFERENCES TreeEntries(id)
         |);
-        |INSERT INTO TreeEntries (parentId, name) VALUES (0, '');
+        |INSERT INTO TreeEntries (parentId, name, created) VALUES (0, '', $now);
         |""".stripMargin split ";"
   }
 
@@ -92,15 +94,16 @@ class Database(connection: Connection) {
   def child(parentId: Long, name: String): Option[TreeNode] = children(parentId).find(_.name == name)
 
   private val iTreeEntry = connection.prepareStatement(
-    "INSERT INTO TreeEntries (parentId, name, lastModified, dataId) VALUES (?, ?, ?, ?)",
+    "INSERT INTO TreeEntries (parentId, name, created, lastModified, dataId) VALUES (?, ?, ?, ?, ?)",
     Statement.RETURN_GENERATED_KEYS
   )
   def addTreeEntry(parent: Long, name: String, lastModified: Option[Long], dataId: Option[Long]): Long = {
     require(lastModified.isEmpty == dataId.isEmpty)
     iTreeEntry.setLong(1, parent)
     iTreeEntry.setString(2, name)
-    iTreeEntry.setLongOption(3, lastModified)
-    iTreeEntry.setLongOption(4, dataId)
+    iTreeEntry.setLong(3, now)
+    iTreeEntry.setLongOption(4, lastModified)
+    iTreeEntry.setLongOption(5, dataId)
     require(iTreeEntry.executeUpdate() == 1, "Unexpected row count.")
     iTreeEntry.getGeneratedKeys.tap(_.next()).getLong(1)
   }
