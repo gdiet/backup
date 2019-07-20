@@ -12,17 +12,16 @@ object Database {
 
   // deleted == 0 for regular files, deleted == timestamp for deleted files. NULL does not work with UNIQUE.
   private def tableDefinitions = {
-    s"""|CREATE SEQUENCE dataEntryIdSeq START WITH 0;
+    s"""|CREATE SEQUENCE idSeq START WITH 0;
         |CREATE TABLE DataEntries (
-        |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR dataEntryIdSeq),
+        |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR idSeq),
         |  start  BIGINT NOT NULL,
         |  stop   BIGINT NOT NULL,
         |  hash   BINARY NOT NULL,
         |  CONSTRAINT pk_DataEntries PRIMARY KEY (id)
         |);
-        |CREATE SEQUENCE treeEntryIdSeq START WITH 0;
         |CREATE TABLE TreeEntries (
-        |  id           BIGINT NOT NULL DEFAULT (NEXT VALUE FOR treeEntryIdSeq),
+        |  id           BIGINT NOT NULL DEFAULT (NEXT VALUE FOR idSeq),
         |  parentId     BIGINT NOT NULL,
         |  name         VARCHAR(255) NOT NULL,
         |  deleted      BIGINT NOT NULL DEFAULT 0,
