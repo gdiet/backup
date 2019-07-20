@@ -29,7 +29,7 @@ class Server(repo: File) extends FuseStubFS {
   override def umount(): Unit = try super.umount() finally { ds.close(); connection.close() }
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
-  override def getattr(path: String, stat: FileStat): Int = {
+  override def getattr(path: String, stat: FileStat): Int =
     fs.entryAt(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: FSDir) =>
@@ -44,7 +44,6 @@ class Server(repo: File) extends FuseStubFS {
         stat.st_mtim.tv_sec.set(file.lastModifiedMillis / 1000)
         0
     }
-  }
 
   /* Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir. */
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
@@ -68,7 +67,7 @@ class Server(repo: File) extends FuseStubFS {
       case Some(_: FSFile) => 0
     }
 
-  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = {
+  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     fs.entryAt(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: FSDir) => -ErrorCodes.EISDIR
@@ -81,5 +80,4 @@ class Server(repo: File) extends FuseStubFS {
           bytes.length
         }
     }
-  }
 }
