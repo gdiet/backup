@@ -73,7 +73,8 @@ object Store {
       }
 
       // TODO check whether reference mechanism works as expected
-      val details = s"$source at $targetPath with reference ${options.get("reference")} in repository $repo"
+      val referenceMessage = options.get("reference").fold("")(r => s" with reference $r")
+      val details = s"$source at $targetPath$referenceMessage in repository $repo"
       println(s"Storing $details")
       val time = System.currentTimeMillis
       val (dirs, files, bytes) = walk(targetId, source, referenceDir)
