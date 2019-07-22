@@ -7,8 +7,7 @@ import java.util.Date
 
 object BackupDB {
   def run(options: Map[String, String]): Unit = {
-    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
-    val dbDir = Database.dbDir(repo)
+    val dbDir = Database.dbDir(options.fileFor("repo"))
     val dbFile = new File(dbDir, "dedupfs.mv.db")
     if (!dbFile.exists()) throw new IllegalStateException(s"Database file $dbFile does not exist.")
     val timestamp = new SimpleDateFormat("yyyy-MM-dd_HH-mm").format(new Date())

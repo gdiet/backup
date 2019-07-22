@@ -3,6 +3,12 @@ package dedup
 import dedup.Database.{DirNode, FileNode}
 
 class MetaFS(connection: java.sql.Connection) {
+  private def split(path: String): Array[String] =
+    path.split("/").filter(_.nonEmpty)
+
+  private def globPattern(glob: String): String =
+    s"\\Q${glob.replaceAll("\\*", "\\\\E.*\\\\Q").replaceAll("\\?", "\\\\E.\\\\Q")}\\E"
+
   private val db = new Database(connection)
 
   private var _startOfFreeData = db.startOfFreeData
