@@ -25,9 +25,9 @@ class DataStore(repo: File, readOnly: Boolean) extends AutoCloseable {
   private def pathOffsetSize(position: Long, size: Int): (String, Long, Int) = {
     val positionInFile = position % fileSize
     val chunkSize = math.min(fileSize - positionInFile, size).toInt
-    val fileName = s"%010d".format(position - positionInFile)              // 100MB per file
-    val dir2 = f"${position / fileSize / 100 % 100}%02d"                   //  10GB per dir
-    val dir1 = f"${position / fileSize / 100 / 100}%02d"                   //   1TB per dir
+    val fileName = s"%010d".format(position - positionInFile) // 100MB per file
+    val dir2 = f"${position / fileSize / 100 % 100}%02d" //  10GB per dir
+    val dir1 = f"${position / fileSize / 100 / 100}%02d" //   1TB per dir
     val filePath = s"$basePath/$dir1/$dir2/$fileName"
     (filePath, positionInFile, chunkSize)
   }

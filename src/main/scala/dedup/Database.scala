@@ -1,7 +1,6 @@
 package dedup
 
 import java.io.File
-import java.lang.System.{currentTimeMillis => now}
 import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
 
 import dedup.Database._

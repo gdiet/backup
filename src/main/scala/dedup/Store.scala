@@ -8,7 +8,7 @@ import dedup.Database.{DirNode, FileNode}
 import scala.util.Using.resource
 
 object Store {
-  private def hashAlgorithm = "MD5"
+  private val hashAlgorithm = "MD5"
 
   def run(options: Map[String, String]): Unit = {
     // Note: Implemented for single-threaded operation.
@@ -76,23 +76,23 @@ object Store {
       val referenceMessage = options.get("reference").fold("")(r => s" with reference $r")
       val details = s"$source at $targetPath$referenceMessage in repository $repo"
       println(s"Storing $details")
-      val time = System.currentTimeMillis
+      val time = now
       val (dirs, files, bytes) = walk(targetId, source, referenceDir)
       resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
       println(s"Finished storing $details\n" +
-        s"Stored $dirs directories, $files files, $bytes bytes in ${(System.currentTimeMillis() - time)/1000}s")
+        s"Stored $dirs directories, $files files, $bytes bytes in ${(now - time)/1000}s")
     }
   }
 
-  private var lastProgressMessageAt = System.currentTimeMillis
+  private var lastProgressMessageAt = now
   def progressMessage(message: String): Unit =
-    if (System.currentTimeMillis - lastProgressMessageAt >= 5000) {
-      lastProgressMessageAt = System.currentTimeMillis
+    if (now - lastProgressMessageAt >= 5000) {
+      lastProgressMessageAt = now
       println(message)
     }
 
   private def read(ra: RandomAccessFile, size: Long = Long.MaxValue): LazyList[Array[Byte]] =
-    LazyList.unfold(size){ remainingSize =>
+    LazyList.unfold(size) { remainingSize =>
       if (remainingSize <= 0) None else {
         val currentChunkSize = math.min(1000000, remainingSize).toInt
         val chunk = new Array[Byte](currentChunkSize)
