@@ -1,0 +1,35 @@
+Dedup File System
+Copyright (C) Georg Dietrich
+MIT License
+https://opensource.org/licenses/MIT
+
+WinFSP 1.4
+Windows File System Proxy
+Copyright (C) Bill Zissimopoulos
+GPLv3 with FLOSS exception
+https://github.com/billziss-gh/winfsp/releases/download/v1.4.19049/winfsp-1.4.19049.msi
+Find releases here:
+https://github.com/billziss-gh/winfsp/releases
+Sources:
+https://github.com/billziss-gh/winfsp/archive/v1.4.19049.tar.gz
+License:
+https://raw.githubusercontent.com/billziss-gh/winfsp/master/License.txt
+
+JNR-fuse 0.5.3:
+https://github.com/SerCeMan/jnr-fuse
+MIT License
+https://raw.githubusercontent.com/SerCeMan/jnr-fuse/master/LICENSE
+
+H2 database 1.4.199:
+https://github.com/h2database
+Mozilla Public License 2
+Eclipse Public License 1
+http://h2database.com/html/license.html
+
+Scala 2.13.0:
+https://github.com/scala/scala
+Apache 2 License
+https://raw.githubusercontent.com/scala/scala/v2.13.0/LICENSE
+
+Java 11.0.4:
+See openjdk-11u-11.0.4_11-jre/about.txt
