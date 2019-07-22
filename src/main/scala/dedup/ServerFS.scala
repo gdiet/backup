@@ -21,6 +21,6 @@ class FSFile(ds: DataStore, start: Long, stop: Long, val lastModifiedMillis: Lon
   def size: Long = stop - start
   def bytes(offset: Long, size: Int): Array[Byte] = {
     val bytesToRead = math.min(this.size - offset, size).toInt
-    ds.read(start, bytesToRead)
+    ds.read(start + offset, bytesToRead)
   }
 }
