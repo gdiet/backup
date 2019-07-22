@@ -1,6 +1,6 @@
 version := "1"
 scalaVersion := "2.13.0"
-scalacOptions := Seq("-target:jvm-1.8")
+scalacOptions := Seq("-target:jvm-1.8", "-deprecation", "-feature", "-unchecked", "-language:postfixOps")
 resolvers += "bintray" at "http://jcenter.bintray.com"
 libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.3"
 libraryDependencies += "com.h2database" % "h2" % "1.4.199"
