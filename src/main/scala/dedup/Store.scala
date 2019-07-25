@@ -45,18 +45,17 @@ object Store {
       require(!fs.exists(targetId, source.getName), "Can't overwrite in target.")
 
       // TODO investigate multi-threaded operation
-      def walk(parent: Long, file: File, referenceDir: Option[DirNode]): (Boolean, Long, Long, Long) =
-        if (shutdownRequested.get) (true, 0, 0, 0)
+      def walk(parent: Long, file: File, referenceDir: Option[DirNode], dirs: Long, files: Long, bytes: Long): (Boolean, Long, Long, Long) =
+        if (shutdownRequested.get) (true, dirs, files, bytes)
         else if (file.isDirectory) {
-          progressMessage(s"Storing dir $file")
+          progressMessage(s"$dirs/$files/$bytes Storing dir $file")
           val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: DirNode => child })
           val id = fs.mkEntry(parent, file.getName, None, None)
-          val results = file.listFiles().map(walk(id, _, newRef))
-          def combine(a: (Boolean, Long, Long, Long), b: (Boolean, Long, Long, Long)) =
-            (a._1 || b._1, a._2 + b._2, a._3 + b._3, a._4 + b._4)
-          results.foldLeft((false: Boolean, 1: Long, 0: Long, 0: Long))(combine)
+          file.listFiles().foldLeft((false: Boolean, dirs + 1, files, bytes)) {
+            case ((s, d, f, b), child) => walk(id, child, newRef, d, f, b)
+          }
         } else resource(new RandomAccessFile(file, "r")) { ra =>
-          progressMessage(s"Storing file $file")
+          progressMessage(s"$dirs/$files/$bytes Storing file $file")
           val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: FileNode => child })
           val dataId = newRef match {
             case Some(ref) if ref.lastModified == file.lastModified && ref.size == file.length => ref.dataId
@@ -79,7 +78,7 @@ object Store {
               }
           }
           fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
-          (false, 0, 1, ra.length)
+          (false, dirs, files + 1, bytes + ra.length)
         }
 
       // TODO check whether reference mechanism works as expected
@@ -87,7 +86,7 @@ object Store {
       val details = s"$source at $targetPath$referenceMessage in repository $repo"
       println(s"Storing $details")
       val time = now
-      val (earlyShutdown, dirs, files, bytes) = walk(targetId, source, referenceDir)
+      val (earlyShutdown, dirs, files, bytes) = walk(targetId, source, referenceDir, 0, 0, 0)
       resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
       if (earlyShutdown) println("Shutdown was requested early.")
       println(s"Finished storing $details\n" +
