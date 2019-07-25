@@ -2,6 +2,7 @@ package dedup
 
 import java.io.{File, RandomAccessFile}
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 
 import dedup.Database.{DirNode, FileNode}
 
@@ -19,10 +20,17 @@ object Store {
     require(source.exists(), "Source does not exist.")
     require(source.getParent != null, "Can't store root.")
 
+    val shutdownRequested = new AtomicBoolean(false)
+    sys.addShutdownHook {
+      println("Shutdown hook called.")
+      shutdownRequested.set(true)
+      shutdownRequested.synchronized(println("Shutdown process finished."))
+    }
+
     val dbDir = Database.dbDir(repo)
     val ds = new DataStore(repo, readOnly = false)
     if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
-    resource(util.H2.rw(dbDir)) { connection =>
+    shutdownRequested.synchronized(resource(util.H2.rw(dbDir)) { connection =>
       val fs = new MetaFS(connection)
 
       val referenceDir = options.get("reference").map { refPath =>
@@ -38,50 +46,54 @@ object Store {
       require(!fs.exists(targetId, source.getName), "Can't overwrite in target.")
 
       // TODO investigate multi-threaded operation
-      def walk(parent: Long, file: File, referenceDir: Option[DirNode]): (Long, Long, Long) = if (file.isDirectory) {
-        progressMessage(s"Storing dir $file")
-        val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: DirNode => child })
-        val id = fs.mkEntry(parent, file.getName, None, None)
-        val results = file.listFiles().map(walk(id, _, newRef))
-        def combine(a: (Long, Long, Long), b: (Long, Long, Long)) = (a._1 + b._1, a._2 + b._2, a._3 + b._3)
-        combine((1, 0, 0), results.foldLeft[(Long, Long, Long)]((0, 0, 0))(combine))
-      } else resource(new RandomAccessFile(file, "r")) { ra =>
-        progressMessage(s"Storing file $file")
-        val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: FileNode => child })
-        val dataId = newRef match {
-          case Some(ref) if ref.lastModified == file.lastModified && ref.size == file.length => ref.dataId
-          case _ =>
-            val md = MessageDigest.getInstance(hashAlgorithm)
-            val cachedBytes = read(ra, 50000000) // must be 'val'
-            val bytesCached = cachedBytes.map { chunk => md.update(chunk); chunk.length.toLong }.sum
-            val mdClone = md.clone().asInstanceOf[MessageDigest]
-            val fileSize = bytesCached + read(ra).map { chunk => md.update(chunk); chunk.length.toLong }.sum
-            val hash = md.digest()
-            fs.dataEntry(hash, fileSize).getOrElse {
-              val position = cachedBytes.foldLeft(fs.startOfFreeData) { case (pos, chunk) =>
-                ds.write(pos, chunk); pos + chunk.length
+      def walk(parent: Long, file: File, referenceDir: Option[DirNode]): (Boolean, Long, Long, Long) =
+        if (shutdownRequested.get) (true, 0, 0, 0)
+        else if (file.isDirectory) {
+          progressMessage(s"Storing dir $file")
+          val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: DirNode => child })
+          val id = fs.mkEntry(parent, file.getName, None, None)
+          val results = file.listFiles().map(walk(id, _, newRef))
+          def combine(a: (Boolean, Long, Long, Long), b: (Boolean, Long, Long, Long)) =
+            (a._1 || b._1, a._2 + b._2, a._3 + b._3, a._4 + b._4)
+          results.foldLeft((false: Boolean, 1: Long, 0: Long, 0: Long))(combine)
+        } else resource(new RandomAccessFile(file, "r")) { ra =>
+          progressMessage(s"Storing file $file")
+          val newRef = referenceDir.flatMap(dir => fs.child(dir.id, file.getName).collect { case child: FileNode => child })
+          val dataId = newRef match {
+            case Some(ref) if ref.lastModified == file.lastModified && ref.size == file.length => ref.dataId
+            case _ =>
+              val md = MessageDigest.getInstance(hashAlgorithm)
+              val cachedBytes = read(ra, 50000000) // must be 'val'
+              val bytesCached = cachedBytes.map { chunk => md.update(chunk); chunk.length.toLong }.sum
+              val mdClone = md.clone().asInstanceOf[MessageDigest]
+              val fileSize = bytesCached + read(ra).map { chunk => md.update(chunk); chunk.length.toLong }.sum
+              val hash = md.digest()
+              fs.dataEntry(hash, fileSize).getOrElse {
+                val position = cachedBytes.foldLeft(fs.startOfFreeData) { case (pos, chunk) =>
+                  ds.write(pos, chunk); pos + chunk.length
+                }
+                ra.seek(bytesCached)
+                val stop = read(ra).foldLeft(position) { case (pos, chunk) =>
+                  ds.write(pos, chunk); pos + chunk.length
+                }
+                fs.mkEntry(fs.startOfFreeData, stop, mdClone.digest()).tap(_ => fs.setStartOfFreeData(stop))
               }
-              ra.seek(bytesCached)
-              val stop = read(ra).foldLeft(position) { case (pos, chunk) =>
-                ds.write(pos, chunk); pos + chunk.length
-              }
-              fs.mkEntry(fs.startOfFreeData, stop, mdClone.digest()).tap(_ => fs.setStartOfFreeData(stop))
-            }
+          }
+          fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
+          (false, 0, 1, ra.length)
         }
-        fs.mkEntry(parent, file.getName, Some(file.lastModified), Some(dataId))
-        (0, 1, ra.length)
-      }
 
       // TODO check whether reference mechanism works as expected
       val referenceMessage = options.get("reference").fold("")(r => s" with reference $r")
       val details = s"$source at $targetPath$referenceMessage in repository $repo"
       println(s"Storing $details")
       val time = now
-      val (dirs, files, bytes) = walk(targetId, source, referenceDir)
+      val (earlyShutdown, dirs, files, bytes) = walk(targetId, source, referenceDir)
       resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
+      if (earlyShutdown) println("Shutdown was requested early.")
       println(s"Finished storing $details\n" +
         s"Stored $dirs directories, $files files, $bytes bytes in ${(now - time)/1000}s")
-    }
+    })
   }
 
   private var lastProgressMessageAt = now
