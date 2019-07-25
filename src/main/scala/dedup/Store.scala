@@ -35,8 +35,9 @@ object Store {
       val referenceDir = options.get("reference").map { refPath =>
         fs.globEntry(refPath).pipe {
           case None => throw new IllegalArgumentException(s"Reference directory $refPath does not exist.")
-          case Some(_: FileNode) => throw new IllegalArgumentException(s"Reference $refPath is a file, not a directory.")
-          case Some(dir: DirNode) => dir
+          case Some((resultingPath, _: FileNode)) =>
+            throw new IllegalArgumentException(s"Reference $resultingPath is a file, not a directory.")
+          case Some((resultingPath, dir: DirNode)) => resultingPath -> dir
         }
       }
 
@@ -82,11 +83,11 @@ object Store {
         }
 
       // TODO check whether reference mechanism works as expected
-      val referenceMessage = options.get("reference").fold("")(r => s" with reference $r")
+      val referenceMessage = referenceDir.fold(""){ case (actualPath, _) => s" with reference $actualPath" }
       val details = s"$source at $targetPath$referenceMessage in repository $repo"
       println(s"Storing $details")
       val time = now
-      val (earlyShutdown, dirs, files, bytes) = walk(targetId, source, referenceDir, 0, 0, 0)
+      val (earlyShutdown, dirs, files, bytes) = walk(targetId, source, referenceDir.map(_._2), 0, 0, 0)
       resource(connection.createStatement)(_.execute("SHUTDOWN COMPACT"))
       if (earlyShutdown) println("Shutdown was requested early.")
       println(s"Finished storing $details\n" +

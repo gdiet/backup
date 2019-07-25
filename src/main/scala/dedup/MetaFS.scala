@@ -20,13 +20,14 @@ class MetaFS(connection: java.sql.Connection) {
       case (parent, name) => parent.flatMap(node => db.child(node.id, name))
     }
 
-  def globEntry(path: String): Option[Database.TreeNode] =
-    split(path).foldLeft[Option[Database.TreeNode]](Some(Database.root)) {
-      case (parent, name) => parent.flatMap { node =>
+  def globEntry(path: String): Option[(String, Database.TreeNode)] =
+    split(path).foldLeft(Option(("": String, Database.root: Database.TreeNode))) {
+      case (parent, name) => parent.flatMap { case (resultingPath, node) =>
         val namePattern = globPattern(name)
         db.children(node.id)
           .sortBy(_.name.toLowerCase)(Ordering[String].reverse)
           .find(_.name.matches(namePattern))
+          .pipe(_.map(node => s"$resultingPath/${node.name}" -> node))
       }
     }
 
