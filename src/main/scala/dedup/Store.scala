@@ -12,6 +12,12 @@ object Store {
   private val hashAlgorithm = "MD5"
 
   def run(options: Map[String, String]): Unit = {
+    val shutdownRequested = new AtomicBoolean(false)
+    sys.addShutdownHook { shutdownRequested.set(true); shutdownRequested.synchronized{} }
+    shutdownRequested.synchronized(runInternal(options, shutdownRequested))
+  }
+
+  private def runInternal(options: Map[String, String], shutdownRequested: AtomicBoolean): Unit = {
     // Note: Implemented for single-threaded operation.
     val (repo, source) = (options.get("repo"), options.get("source")) match {
       case (None, None) => throw new IllegalArgumentException("One of source or repo option is mandatory.")
@@ -20,17 +26,10 @@ object Store {
     require(source.exists(), "Source does not exist.")
     require(source.getParent != null, "Can't store root.")
 
-    val shutdownRequested = new AtomicBoolean(false)
-    sys.addShutdownHook {
-      println("Shutdown hook called.")
-      shutdownRequested.set(true)
-      shutdownRequested.synchronized(println("Shutdown process finished."))
-    }
-
     val dbDir = Database.dbDir(repo)
     val ds = new DataStore(repo, readOnly = false)
     if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
-    shutdownRequested.synchronized(resource(util.H2.rw(dbDir)) { connection =>
+    resource(util.H2.rw(dbDir)) { connection =>
       val fs = new MetaFS(connection)
 
       val referenceDir = options.get("reference").map { refPath =>
@@ -93,7 +92,7 @@ object Store {
       if (earlyShutdown) println("Shutdown was requested early.")
       println(s"Finished storing $details\n" +
         s"Stored $dirs directories, $files files, $bytes bytes in ${(now - time)/1000}s")
-    })
+    }
   }
 
   private var lastProgressMessageAt = now
