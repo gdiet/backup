@@ -7,7 +7,7 @@ class ServerFS(connection: java.sql.Connection, ds: DataStore) {
 
   def entryAt(path: String): Option[FSEntry] = sync(meta.entry(path).map {
     case dir: DirNode => new FSDir(meta, dir.id)
-    case file: FileNode => new FSFile(ds, file.start, file.stop, file.lastModified)
+    case file: FileNode => new FSFile(meta, file.id, ds, file.start, file.stop, file.lastModified)
   })
 }
 
@@ -15,12 +15,14 @@ sealed trait FSEntry
 
 class FSDir(meta: MetaFS, id: Long) extends FSEntry {
   def childNames: Seq[String] = sync(meta.children(id)).map(_.name)
+  def delete(): Boolean = meta.delete(id)
 }
 
-class FSFile(ds: DataStore, start: Long, stop: Long, val lastModifiedMillis: Long) extends FSEntry {
+class FSFile(meta: MetaFS, id: Long, ds: DataStore, start: Long, stop: Long, val lastModifiedMillis: Long) extends FSEntry {
   def size: Long = stop - start
   def bytes(offset: Long, size: Int): Array[Byte] = {
     val bytesToRead = math.min(this.size - offset, size).toInt
     ds.read(start + offset, bytesToRead)
   }
+  def delete(): Boolean = meta.delete(id)
 }

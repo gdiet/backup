@@ -59,4 +59,7 @@ class MetaFS(connection: java.sql.Connection) {
 
   def exists(parentId: Long, name: String): Boolean =
     db.child(parentId, name).isDefined
+
+  def delete(id: Long): Boolean =
+    db.delete(id)
 }

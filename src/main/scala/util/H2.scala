@@ -12,7 +12,4 @@ object H2 {
 
   def rw(directory: java.io.File): Connection =
     DriverManager.getConnection(jdbcUrl(directory), "sa", "").tap(_.setAutoCommit(true))
-
-  def ro(directory: java.io.File): Connection =
-    DriverManager.getConnection(jdbcUrl(directory) + ";ACCESS_MODE_DATA=r", "sa", "")
 }

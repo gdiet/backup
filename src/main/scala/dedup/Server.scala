@@ -22,7 +22,7 @@ class Server(repo: File) extends FuseStubFS {
   private val O777 = 511
   private val dbDir = Database.dbDir(repo)
   if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
-  val connection: Connection = util.H2.ro(dbDir)
+  val connection: Connection = util.H2.rw(dbDir)
   private val ds = new DataStore(repo, readOnly = true)
   private val fs = new ServerFS(connection, ds)
 
@@ -79,5 +79,19 @@ class Server(repo: File) extends FuseStubFS {
           buf.put(0, bytes, 0, bytes.length)
           bytes.length
         }
+    }
+
+  override def unlink(path: String): Int =
+    fs.entryAt(path) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(_: FSDir) => -ErrorCodes.EISDIR
+      case Some(file: FSFile) => file.delete(); 0
+    }
+
+  override def rmdir(path: String): Int =
+    fs.entryAt(path) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(dir: FSDir) => dir.delete(); 0
+      case Some(_: FSFile) => -ErrorCodes.ENOTDIR()
     }
 }

@@ -107,6 +107,16 @@ class Database(connection: Connection) {
     iTreeEntry.getGeneratedKeys.tap(_.next()).getLong(1)
   }
 
+  private val dTreeEntry = connection.prepareStatement(
+    "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
+  )
+  def delete(id: Long): Boolean = {
+    val time = now.pipe { case 0 => 1; case x => x }
+    dTreeEntry.setLong(1, time)
+    dTreeEntry.setLong(2, id)
+    dTreeEntry.executeUpdate() == 1
+  }
+
   private val qHash = connection.prepareStatement(
     "SELECT id, start, stop FROM DataEntries WHERE hash = ?"
   )
