@@ -94,4 +94,24 @@ class Server(repo: File) extends FuseStubFS {
       case Some(dir: FSDir) => dir.delete(); 0
       case Some(_: FSFile) => -ErrorCodes.ENOTDIR()
     }
+
+  /* Renames a file, moving it between directories if required. If newpath already exists,
+     it will be atomically replaced, so that there is no point at which another process
+     attempting to access newpath will find it missing. If newpath exists but the operation
+     fails for some reason, rename() guarantees to leave an instance of newpath in place.
+
+     oldpath can specify a directory.  In this case, newpath must either not exist, or it
+     must specify an empty directory.
+
+     ENOENT The link named by oldpath does not exist; or, a directory component in newpath
+     does not exist; or, oldpath or newpath is an empty string.
+
+     ENOTDIR A component used as a directory in oldpath or newpath is not, in fact, a
+     directory.  Or, oldpath is a directory, and newpath exists but is not a directory.
+
+     ENOTEMPTY or EEXIST newpath is a nonempty directory, that is, contains entries other
+     than "." and "..".
+   */
+// FIXME next thing to implement
+//  override def rename(oldpath: String, newpath: String): Int = super.rename(oldpath, newpath)
 }
