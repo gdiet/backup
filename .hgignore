@@ -1,6 +1,0 @@
-syntax: regexp
-^\.idea
-^data/
-^fsdb/
-^target/
-^.*/target/
