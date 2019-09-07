@@ -1,7 +1,6 @@
 package dedup2
 
 import java.io.File
-import java.lang.System.{currentTimeMillis => now}
 import java.sql.{Connection, PreparedStatement, ResultSet}
 
 import scala.util.chaining._
@@ -24,7 +23,6 @@ object Database {
         |  id           BIGINT NOT NULL DEFAULT (NEXT VALUE FOR idSeq),
         |  parentId     BIGINT NOT NULL,
         |  name         VARCHAR(255) NOT NULL,
-        |  created      BIGINT NOT NULL,
         |  lastModified BIGINT DEFAULT NULL,
         |  deleted      BIGINT NOT NULL DEFAULT 0,
         |  dataId       BIGINT DEFAULT NULL,
@@ -33,7 +31,11 @@ object Database {
         |  CONSTRAINT fk_TreeEntries_dataId FOREIGN KEY (dataId) REFERENCES DataEntries(id),
         |  CONSTRAINT fk_TreeEntries_parentId FOREIGN KEY (parentId) REFERENCES TreeEntries(id)
         |);
-        |INSERT INTO TreeEntries (id, parentId, name, created) VALUES (0, 0, '', $now);
+        |INSERT INTO TreeEntries (id, parentId, name) VALUES (0, 0, '');
+        |INSERT INTO TreeEntries (id, parentId, name) VALUES (1, 0, 'hallo');
+        |INSERT INTO TreeEntries (id, parentId, name) VALUES (2, 0, 'welt');
+        |INSERT INTO TreeEntries (id, parentId, name) VALUES (3, 1, '1');
+        |INSERT INTO TreeEntries (id, parentId, name) VALUES (4, 1, '2');
         |""".stripMargin split ";"
   }
 
@@ -62,7 +64,7 @@ object Database {
     }
   }
 
-  sealed trait TreeEntry { def name: String }
+  sealed trait TreeEntry { def id: Long; def name: String }
   object TreeEntry {
     def apply(parentId: Long, name: String, rs: ResultSet): TreeEntry = rs.opt(_.getLong(3)) match {
       case None => DirEntry(rs.getLong(1), parentId, name)
@@ -100,6 +102,16 @@ class Database(connection: Connection) { import Database._
   def size(dataId: Long): Long = {
     qStartStop.setLong(1, dataId)
     resource(qStartStop.executeQuery())(_.maybeNext(rs => rs.getLong(2) - rs.getLong(1)).getOrElse(0))
+  }
+
+  private val dTreeEntry = connection.prepareStatement(
+    "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
+  )
+  def delete(id: Long): Boolean = {
+    val time = System.currentTimeMillis.pipe { case 0 => 1; case x => x }
+    dTreeEntry.setLong(1, time)
+    dTreeEntry.setLong(2, id)
+    dTreeEntry.executeUpdate() == 1
   }
 
 }

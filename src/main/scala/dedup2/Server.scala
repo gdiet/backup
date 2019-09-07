@@ -63,4 +63,11 @@ class Server(repo: File) extends FuseStubFS {
         }
     }
 
+  override def rmdir(path: String): Int =
+    entry(path) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(FileEntry(_, _, _, _, _)) => -ErrorCodes.ENOTDIR
+      case Some(DirEntry(id, _, _)) => db.delete(id); 0
+    }
+
 }
