@@ -72,10 +72,9 @@ class Server(repo: File) extends FuseStubFS {
       case Some(FileEntry(_, _, _, _, _)) => -ErrorCodes.ENOTDIR
       case Some(DirEntry(id, _, _)) => db.delete(id); 0
     }
-  }
+  }.tap(r => println(s"rmdir $path -> $r"))
 
   // Renames a file. Other than the general contract of rename, newpath must not exist.
-  // FIXME It seems like existence check of target does not work properly
   override def rename(oldpath: String, newpath: String): Int = sync {
     val (oldParts, newParts) = (split(oldpath), split(newpath))
     if (oldParts.length == 0 || newParts.length == 0) -ErrorCodes.ENOENT
@@ -93,7 +92,7 @@ class Server(repo: File) extends FuseStubFS {
             }
         }
     }
-  }
+  }.tap(r => println(s"rename $oldpath -> $newpath -> $r"))
 
   override def mkdir(path: String, mode: Long): Int = sync {
     val parts = split(path)
@@ -108,6 +107,6 @@ class Server(repo: File) extends FuseStubFS {
           case None => db.mkDir(parentId, name); 0
         }
     }
-  }
+  }.tap(r => println(s"mkdir $path -> $r"))
 
 }
