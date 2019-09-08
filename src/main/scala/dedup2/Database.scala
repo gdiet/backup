@@ -32,10 +32,11 @@ object Database {
         |  CONSTRAINT fk_TreeEntries_parentId FOREIGN KEY (parentId) REFERENCES TreeEntries(id)
         |);
         |INSERT INTO TreeEntries (id, parentId, name) VALUES (0, 0, '');
-        |INSERT INTO TreeEntries (id, parentId, name) VALUES (1, 0, 'hallo');
-        |INSERT INTO TreeEntries (id, parentId, name) VALUES (2, 0, 'welt');
-        |INSERT INTO TreeEntries (id, parentId, name) VALUES (3, 1, '1');
-        |INSERT INTO TreeEntries (id, parentId, name) VALUES (4, 1, '2');
+        |INSERT INTO TreeEntries (parentId, name) VALUES (0, '1-hallo');
+        |INSERT INTO TreeEntries (parentId, name) VALUES (0, '2-welt');
+        |INSERT INTO TreeEntries (parentId, name) VALUES (1, '3-x');
+        |INSERT INTO TreeEntries (parentId, name) VALUES (1, '4-y');
+        |UPDATE TreeEntries SET parentId = 1, name = '3-xx' WHERE id = 3;
         |""".stripMargin split ";"
   }
 
@@ -107,11 +108,21 @@ class Database(connection: Connection) { import Database._
   private val dTreeEntry = connection.prepareStatement(
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
   )
-  def delete(id: Long): Boolean = {
+  def delete(treeEntryId: Long): Boolean = {
     val time = System.currentTimeMillis.pipe { case 0 => 1; case x => x }
     dTreeEntry.setLong(1, time)
-    dTreeEntry.setLong(2, id)
+    dTreeEntry.setLong(2, treeEntryId)
     dTreeEntry.executeUpdate() == 1
+  }
+
+  private val uMoveRename = connection.prepareStatement(
+    "UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?"
+  )
+  def moveRename(id: Long, newParentId: Long, newName: String): Boolean = {
+    uMoveRename.setLong(1, newParentId)
+    uMoveRename.setString(2, newName)
+    uMoveRename.setLong(3, id)
+    uMoveRename.executeUpdate() == 1
   }
 
 }

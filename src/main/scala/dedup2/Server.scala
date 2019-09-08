@@ -23,12 +23,14 @@ class Server(repo: File) extends FuseStubFS {
   private def split(path: String): Array[String] =
     path.split("/").filter(_.nonEmpty)
   private def entry(path: String): Option[TreeEntry] =
-    split(path).foldLeft[Option[TreeEntry]](Some(Database.root)) {
+    entry(split(path))
+  private def entry(path: Array[String]): Option[TreeEntry] =
+    path.foldLeft[Option[TreeEntry]](Some(Database.root)) {
       case (Some(DirEntry(id, _, _)), name) => db.child(id, name)
       case _ => None
     }
 
-  override def umount(): Unit = ()
+  override def umount(): Unit = sync {}
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int = sync {
@@ -49,7 +51,7 @@ class Server(repo: File) extends FuseStubFS {
   }
 
   /* Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir. */
-  override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
+  override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(FileEntry(_, _, _, _, _)) => -ErrorCodes.ENOTDIR
@@ -62,12 +64,34 @@ class Server(repo: File) extends FuseStubFS {
           0
         }
     }
+  }
 
-  override def rmdir(path: String): Int =
+  override def rmdir(path: String): Int = sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(FileEntry(_, _, _, _, _)) => -ErrorCodes.ENOTDIR
       case Some(DirEntry(id, _, _)) => db.delete(id); 0
     }
+  }
 
+  // Renames a file. Other than the general contract of rename, newpath must not exist.
+  override def rename(oldpath: String, newpath: String): Int = sync {
+    val (oldParts, newParts) = (split(oldpath), split(newpath))
+    if (oldParts.length == 0 || newParts.length == 0) -ErrorCodes.ENOENT
+    else entry(oldParts) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(source) =>
+        entry(newParts.take(newParts.length - 1)) match {
+          case None => -ErrorCodes.ENOENT
+          case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
+          case Some(DirEntry(parentId, _, _)) =>
+            val newName = newParts.last
+            db.child(parentId, newName) match {
+              case Some(_) => -ErrorCodes.EEXIST
+              case None =>
+                db.moveRename(source.id, parentId, newName); 0
+            }
+        }
+    }
+  }
 }
