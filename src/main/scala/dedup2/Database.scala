@@ -125,5 +125,14 @@ class Database(connection: Connection) { import Database._
     uMoveRename.executeUpdate() == 1
   }
 
+  private val iDir = connection.prepareStatement(
+    "INSERT INTO TreeEntries (parentId, name) VALUES (?, ?)"
+  )
+  def mkDir(parentId: Long, name: String): Boolean = {
+    iDir.setLong(1, parentId)
+    iDir.setString(2, name)
+    iDir.executeUpdate() == 1
+  }
+
 }
 
