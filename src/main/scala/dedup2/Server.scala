@@ -28,7 +28,7 @@ class Server(repo: File) extends FuseStubFS {
     entry(split(path))
   private def entry(path: Array[String]): Option[TreeEntry] =
     path.foldLeft[Option[TreeEntry]](Some(Database.root)) {
-      case (Some(DirEntry(id, _, _)), name) => db.child(id, name)
+      case (Some(dir: DirEntry), name) => db.child(dir.id, name)
       case _ => None
     }
 
@@ -49,16 +49,18 @@ class Server(repo: File) extends FuseStubFS {
             stat.st_mtim.tv_sec.set(0)
             0
         }
-      case Some(DirEntry(_, _, _)) =>
+      case Some(dir: DirEntry) =>
+        stat.st_mtim.tv_nsec.set((dir.time % 1000) * 1000)
+        stat.st_mtim.tv_sec.set(dir.time / 1000)
         stat.st_mode.set(FileStat.S_IFDIR | O777)
         stat.st_nlink.set(2)
         0
-      case Some(FileEntry(_, _, _, lastModified, dataId)) =>
+      case Some(file: FileEntry) =>
         stat.st_mode.set(FileStat.S_IFREG | O777)
         stat.st_nlink.set(1)
-        stat.st_size.set(db.size(dataId))
-        stat.st_mtim.tv_nsec.set((lastModified % 1000) * 1000)
-        stat.st_mtim.tv_sec.set(lastModified / 1000)
+        stat.st_size.set(db.size(file.dataId))
+        stat.st_mtim.tv_nsec.set((file.time % 1000) * 1000)
+        stat.st_mtim.tv_sec.set(file.time / 1000)
         0
     }
   }
@@ -67,11 +69,11 @@ class Server(repo: File) extends FuseStubFS {
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
-      case Some(FileEntry(_, _, _, _, _)) => -ErrorCodes.ENOTDIR
-      case Some(DirEntry(id, _, _)) =>
+      case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
+      case Some(dir: DirEntry) =>
         if (offset < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
         else {
-          def names = Seq(".", "..") ++ db.children(id).map(_.name)
+          def names = Seq(".", "..") ++ db.children(dir.id).map(_.name)
           // FIXME playground
           def names2 = if (path != "/") names else names ++ files.keySet
           // exists: side effect until a condition is met
@@ -84,8 +86,8 @@ class Server(repo: File) extends FuseStubFS {
   override def rmdir(path: String): Int = sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
-      case Some(FileEntry(_, _, _, _, _)) => -ErrorCodes.ENOTDIR
-      case Some(DirEntry(id, _, _)) => db.delete(id); 0
+      case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
+      case Some(dir: DirEntry) => db.delete(dir.id); 0
     }
   }.tap(r => println(s"rmdir $path -> $r"))
 
@@ -101,11 +103,11 @@ class Server(repo: File) extends FuseStubFS {
         entry(newParts.take(newParts.length - 1)) match {
           case None => -ErrorCodes.ENOENT
           case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
-          case Some(DirEntry(parentId, _, _)) =>
+          case Some(dir: DirEntry) =>
             val newName = newParts.last
-            db.child(parentId, newName) match {
+            db.child(dir.id, newName) match {
               case Some(_) => -ErrorCodes.EEXIST
-              case None => db.moveRename(source.id, parentId, newName); 0
+              case None => db.moveRename(source.id, dir.id, newName); 0
             }
         }
     }
@@ -117,11 +119,11 @@ class Server(repo: File) extends FuseStubFS {
     else entry(parts.take(parts.length - 1)) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
-      case Some(DirEntry(parentId, _, _)) =>
+      case Some(dir: DirEntry) =>
         val name = parts.last
-        db.child(parentId, name) match {
+        db.child(dir.id, name) match {
           case Some(_) => -ErrorCodes.EEXIST
-          case None => db.mkDir(parentId, name); 0
+          case None => db.mkDir(dir.id, name); 0
         }
     }
   }.tap(r => println(s"mkdir $path -> $r"))

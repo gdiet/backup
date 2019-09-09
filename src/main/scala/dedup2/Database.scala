@@ -1,10 +1,11 @@
 package dedup2
 
 import java.io.File
+import java.lang.System.{currentTimeMillis => now}
 import java.sql.{Connection, PreparedStatement, ResultSet}
 
-import scala.util.chaining._
 import scala.util.Using.resource
+import scala.util.chaining._
 
 object Database {
   def dbDir(repo: File): File = new File(repo, "fsdb2")
@@ -23,7 +24,7 @@ object Database {
         |  id           BIGINT NOT NULL DEFAULT (NEXT VALUE FOR idSeq),
         |  parentId     BIGINT NOT NULL,
         |  name         VARCHAR(255) NOT NULL,
-        |  lastModified BIGINT DEFAULT NULL,
+        |  time         BIGINT NOT NULL,
         |  deleted      BIGINT NOT NULL DEFAULT 0,
         |  dataId       BIGINT DEFAULT NULL,
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id),
@@ -31,11 +32,11 @@ object Database {
         |  CONSTRAINT fk_TreeEntries_dataId FOREIGN KEY (dataId) REFERENCES DataEntries(id),
         |  CONSTRAINT fk_TreeEntries_parentId FOREIGN KEY (parentId) REFERENCES TreeEntries(id)
         |);
-        |INSERT INTO TreeEntries (id, parentId, name) VALUES (0, 0, '');
-        |INSERT INTO TreeEntries (parentId, name) VALUES (0, '1-hallo');
-        |INSERT INTO TreeEntries (parentId, name) VALUES (0, '2-welt');
-        |INSERT INTO TreeEntries (parentId, name) VALUES (1, '3-x');
-        |INSERT INTO TreeEntries (parentId, name) VALUES (1, '4-y');
+        |INSERT INTO TreeEntries (id, parentId, name, time) VALUES (0, 0, '', ${root.time});
+        |INSERT INTO TreeEntries (parentId, name, time) VALUES (0, '1-hallo', 0);
+        |INSERT INTO TreeEntries (parentId, name, time) VALUES (0, '2-welt', 0);
+        |INSERT INTO TreeEntries (parentId, name, time) VALUES (1, '3-x', 0);
+        |INSERT INTO TreeEntries (parentId, name, time) VALUES (1, '4-y', 0);
         |UPDATE TreeEntries SET parentId = 1, name = '3-xx' WHERE id = 3;
         |""".stripMargin split ";"
   }
@@ -68,20 +69,20 @@ object Database {
   sealed trait TreeEntry { def id: Long; def name: String }
   object TreeEntry {
     def apply(parentId: Long, name: String, rs: ResultSet): TreeEntry = rs.opt(_.getLong(3)) match {
-      case None => DirEntry(rs.getLong(1), parentId, name)
+      case None => DirEntry(rs.getLong(1), parentId, name, rs.getLong(2))
       case Some(dataId) => FileEntry(rs.getLong(1), parentId, name, rs.getLong(2), dataId)
     }
   }
-  case class DirEntry(id: Long, parent: Long, name: String) extends TreeEntry
-  case class FileEntry(id: Long, parent: Long, name: String, lastModified: Long, dataId: Long) extends TreeEntry
+  case class DirEntry(id: Long, parent: Long, name: String, time: Long) extends TreeEntry
+  case class FileEntry(id: Long, parent: Long, name: String, time: Long, dataId: Long) extends TreeEntry
 
-  val root = DirEntry(0, 0, "")
+  val root = DirEntry(0, 0, "", now)
 }
 
 class Database(connection: Connection) { import Database._
 
   private val qChild = connection.prepareStatement(
-    "SELECT id, lastModified, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
+    "SELECT id, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
   )
   def child(parentId: Long, name: String): Option[TreeEntry] = {
     qChild.setLong(1, parentId)
@@ -90,7 +91,7 @@ class Database(connection: Connection) { import Database._
   }
 
   private val qChildren = connection.prepareStatement(
-    "SELECT id, lastModified, dataId, name FROM TreeEntries WHERE parentId = ? AND deleted = 0"
+    "SELECT id, time, dataId, name FROM TreeEntries WHERE parentId = ? AND deleted = 0"
   )
   def children(parentId: Long): Seq[TreeEntry] = {
     qChildren.setLong(1, parentId)
@@ -126,11 +127,12 @@ class Database(connection: Connection) { import Database._
   }
 
   private val iDir = connection.prepareStatement(
-    "INSERT INTO TreeEntries (parentId, name) VALUES (?, ?)"
+    "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)"
   )
   def mkDir(parentId: Long, name: String): Boolean = {
     iDir.setLong(1, parentId)
     iDir.setString(2, name)
+    iDir.setLong(3, now)
     iDir.executeUpdate() == 1
   }
 
