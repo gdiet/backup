@@ -12,7 +12,7 @@ import scala.util.chaining._
 
 object Server extends App {
   val mountPoint = "J:\\"
-  val repo = new File("").getAbsoluteFile
+  val repo = new File("").getAbsoluteFile // absolute needed e.g. for getFreeSpace()
   val fs = new Server(repo)
   try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
   finally { fs.umount(); println(s"Repository unmounted from $mountPoint.") }
@@ -20,8 +20,10 @@ object Server extends App {
 
 class Server(repo: File) extends FuseStubFS {
   private val db = new Database(H2.mem().tap(Database.initialize))
+  private val dataDir = new File(repo, "data").tap{f => f.mkdirs(); require(f.isDirectory)}
+
+  private def O777 = 511
   private def sync[T](f: => T): T = synchronized(f)
-  private val O777 = 511
   private def split(path: String): Array[String] =
     path.split("/").filter(_.nonEmpty)
   private def entry(path: String): Option[TreeEntry] =
@@ -128,27 +130,26 @@ class Server(repo: File) extends FuseStubFS {
     }
   }.tap(r => println(s"mkdir $path -> $r"))
 
-  // ######################################################
-  //      playground: only files at root are supported
-  // ######################################################
-
   override def statfs(path: String, stbuf: Statvfs): Int = {
     if (Platform.getNativePlatform.getOS == WINDOWS) {
-      // statfs needs to be implemented on Windows in order to allow for copying
-      // data from other devices because winfsp calculates the volume size based
-      // on the statvfs call.
+      // statfs needs to be implemented on Windows in order to allow for copying data from
+      // other devices because winfsp calculates the volume size based on the statvfs call.
       // see https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
       if ("/" == path) {
-        stbuf.f_blocks.set(1024 * 1024) // total data blocks in file system
-        stbuf.f_frsize.set(1024) // fs block size
-        stbuf.f_bfree.set(1024 * 1024) // free blocks in fs
+        stbuf.f_blocks.set(dataDir.getTotalSpace / 8192) // total data blocks in file system
+        stbuf.f_frsize.set(8192) // fs block size
+        stbuf.f_bfree.set(dataDir.getFreeSpace / 8192) // free blocks in fs
       }
     }
     super.statfs(path, stbuf)
   }
 
-  case class File(descriptors: Int, data: Array[Byte])
-  var files: Map[String, File] = Map()
+  // ######################################################
+  //      playground: only files at root are supported
+  // ######################################################
+
+  case class MemFile(descriptors: Int, data: Array[Byte])
+  var files: Map[String, MemFile] = Map()
 
   // create and open file -> file descriptor
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int = sync {
@@ -159,7 +160,7 @@ class Server(repo: File) extends FuseStubFS {
         files.get(path.drop(1)) match {
           case Some(_) => -ErrorCodes.EEXIST
           case None =>
-            files += path.drop(1) -> File(1, Array())
+            files += path.drop(1) -> MemFile(1, Array())
             println(s"$path create 1")
             0
         }
