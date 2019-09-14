@@ -1,12 +1,13 @@
 package dedup2
 
 import java.io.File
+import java.lang.System.{currentTimeMillis => now}
 
 import dedup2.Database._
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
-import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
+import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
 import scala.util.chaining._
 
@@ -39,18 +40,7 @@ class Server(repo: File) extends FuseStubFS {
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int = sync {
     entry(path) match {
-      case None =>
-        // FIXME playground
-        files.get(path.drop(1)) match {
-          case None => -ErrorCodes.ENOENT
-          case Some(f) =>
-            stat.st_mode.set(FileStat.S_IFREG | O777)
-            stat.st_nlink.set(1)
-            stat.st_size.set(db.size(f.data.length))
-            stat.st_mtim.tv_nsec.set(0)
-            stat.st_mtim.tv_sec.set(0)
-            0
-        }
+      case None => -ErrorCodes.ENOENT
       case Some(dir: DirEntry) =>
         stat.st_mtim.tv_nsec.set((dir.time % 1000) * 1000)
         stat.st_mtim.tv_sec.set(dir.time / 1000)
@@ -60,6 +50,7 @@ class Server(repo: File) extends FuseStubFS {
       case Some(file: FileEntry) =>
         stat.st_mode.set(FileStat.S_IFREG | O777)
         stat.st_nlink.set(1)
+        // FIXME file size not from db
         stat.st_size.set(db.size(file.dataId))
         stat.st_mtim.tv_nsec.set((file.time % 1000) * 1000)
         stat.st_mtim.tv_sec.set(file.time / 1000)
@@ -76,10 +67,8 @@ class Server(repo: File) extends FuseStubFS {
         if (offset < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
         else {
           def names = Seq(".", "..") ++ db.children(dir.id).map(_.name)
-          // FIXME playground
-          def names2 = if (path != "/") names else names ++ files.keySet
           // exists: side effect until a condition is met
-          names2.zipWithIndex.drop(offset.toInt).exists { case (name, k) => fill.apply(buf, name, null, k + 1) != 0 }
+          names.zipWithIndex.drop(offset.toInt).exists { case (name, k) => fill.apply(buf, name, null, k + 1) != 0 }
           0
         }
     }
@@ -96,12 +85,11 @@ class Server(repo: File) extends FuseStubFS {
   // Renames a file. Other than the general contract of rename, newpath must not exist.
   override def rename(oldpath: String, newpath: String): Int = sync {
     val (oldParts, newParts) = (split(oldpath), split(newpath))
-    if (oldParts.length == 0 || newParts.length == 0) -ErrorCodes.ENOENT
+    if (fileDescriptors.keys.exists(k => k == oldpath || k.startsWith(oldpath + "/"))) -ErrorCodes.EBUSY()
+    else if (oldParts.length == 0 || newParts.length == 0) -ErrorCodes.ENOENT
     else entry(oldParts) match {
       case None => -ErrorCodes.ENOENT
       case Some(source) =>
-        // FIXME playground
-        require(source.isInstanceOf[DirEntry], s"tried to rename file $oldpath")
         entry(newParts.take(newParts.length - 1)) match {
           case None => -ErrorCodes.ENOENT
           case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
@@ -144,79 +132,142 @@ class Server(repo: File) extends FuseStubFS {
     super.statfs(path, stbuf)
   }
 
-  // ######################################################
-  //      playground: only files at root are supported
-  // ######################################################
+  // #########
+  // # files #
+  // #########
 
-  case class MemFile(descriptors: Int, data: Array[Byte])
-  var files: Map[String, MemFile] = Map()
+  private var fileDescriptors: Map[String, Int] = Map()
+  private def incCount(path: String): Unit = fileDescriptors += path -> (fileDescriptors.getOrElse(path, 0) + 1)
+  private def decCount(path: String): Unit = fileDescriptors.get(path) foreach {
+    case 1 => fileDescriptors -= path
+    case n => fileDescriptors += path -> (n - 1)
+  }
+  private val memoryStore = new MemoryStore
 
-  // create and open file -> file descriptor
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int = sync {
-    if (path.drop(1).contains("/")) -ErrorCodes.EIO
-    else entry(path) match {
-      case Some(_) => -ErrorCodes.EEXIST
-      case None =>
-        files.get(path.drop(1)) match {
+    val parts = split(path)
+    if (parts.length == 0) -ErrorCodes.ENOENT
+    else entry(parts.take(parts.length - 1)) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
+      case Some(dir: DirEntry) =>
+        val name = parts.last
+        db.child(dir.id, name) match {
           case Some(_) => -ErrorCodes.EEXIST
           case None =>
-            files += path.drop(1) -> MemFile(1, Array())
-            println(s"$path create 1")
+            val dataId = db.mkDataEntry()
+            db.mkFile(dir.id, name, now, dataId)
+            incCount(path)
+            memoryStore.store(dataId, 0, Array())
             0
         }
     }
   }.tap(r => println(s"create $path -> $r"))
 
-  // open existing file -> file descriptor
   override def open(path: String, fi: FuseFileInfo): Int = sync {
-    if (path.drop(1).contains("/")) -ErrorCodes.EIO
-    else entry(path) match {
-      case Some(_) => -ErrorCodes.EISDIR()
-      case None =>
-        files.get(path.drop(1)) match {
-          case None => -ErrorCodes.ENOENT
-          case Some(f) =>
-            files += path.drop(1) -> f.copy(f.descriptors + 1)
-            println(s"$path open ${f.descriptors + 1}")
-            0
+    entry(path) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(_: DirEntry) => -ErrorCodes.EISDIR
+      case Some(_: FileEntry) => incCount(path); 0
+    }
+  }.tap(r => println(s"open $path ->${fileDescriptors.getOrElse(path, "")} $r"))
+
+  override def release(path: String, fi: FuseFileInfo): Int = sync {
+    entry(path) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(_: DirEntry) => -ErrorCodes.EISDIR
+      case Some(_: FileEntry) => decCount(path); 0
+    }
+  }.tap(r => println(s"release $path ->${fileDescriptors.getOrElse(path, "")} $r"))
+
+  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
+    entry(path) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(_: DirEntry) => -ErrorCodes.EISDIR
+      case Some(file: FileEntry) =>
+        if (!fileDescriptors.contains(path) || size > Int.MaxValue) -ErrorCodes.EIO
+        else {
+          val data = new Array[Byte](size.toInt)
+          buf.get(0, data, 0, size.toInt)
+          memoryStore.store(file.dataId, offset, data)
+          0
         }
     }
-  }.tap(r => println(s"open $path -> $r"))
+  }.tap(r => println(s"write $path ->${fileDescriptors.getOrElse(path, "")} $size/$offset -> $r"))
+
+  // ######################################################
+  //      playground: only files at root are supported
+  // ######################################################
+
+//  case class MemFile(descriptors: Int, data: Array[Byte])
+//  var files: Map[String, MemFile] = Map()
+
+  // create and open file -> file descriptor
+//  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = sync {
+//    if (path.drop(1).contains("/")) -ErrorCodes.EIO
+//    else entry(path) match {
+//      case Some(_) => -ErrorCodes.EEXIST
+//      case None =>
+//        files.get(path.drop(1)) match {
+//          case Some(_) => -ErrorCodes.EEXIST
+//          case None =>
+//            files += path.drop(1) -> MemFile(1, Array())
+//            println(s"$path create 1")
+//            0
+//        }
+//    }
+//  }.tap(r => println(s"create $path -> $r"))
+
+  // open existing file -> file descriptor
+//  override def open(path: String, fi: FuseFileInfo): Int = sync {
+//    if (path.drop(1).contains("/")) -ErrorCodes.EIO
+//    else entry(path) match {
+//      case Some(_) => -ErrorCodes.EISDIR()
+//      case None =>
+//        files.get(path.drop(1)) match {
+//          case None => -ErrorCodes.ENOENT
+//          case Some(f) =>
+//            files += path.drop(1) -> f.copy(f.descriptors + 1)
+//            println(s"$path open ${f.descriptors + 1}")
+//            0
+//        }
+//    }
+//  }.tap(r => println(s"open $path -> $r"))
 
   // release an open file descriptor
-  override def release(path: String, fi: FuseFileInfo): Int = sync {
-    if (path.drop(1).contains("/")) -ErrorCodes.EIO
-    else entry(path) match {
-      case Some(_) => -ErrorCodes.EISDIR()
-      case None =>
-        files.get(path.drop(1)) match {
-          case None => -ErrorCodes.ENOENT
-          case Some(f) =>
-            files += path.drop(1) -> f.copy(f.descriptors - 1)
-            println(s"$path release ${f.descriptors - 1}")
-            0
-        }
-    }
-  }.tap(r => println(s"release $path -> $r"))
+//  override def release(path: String, fi: FuseFileInfo): Int = sync {
+//    if (path.drop(1).contains("/")) -ErrorCodes.EIO
+//    else entry(path) match {
+//      case Some(_) => -ErrorCodes.EISDIR()
+//      case None =>
+//        files.get(path.drop(1)) match {
+//          case None => -ErrorCodes.ENOENT
+//          case Some(f) =>
+//            files += path.drop(1) -> f.copy(f.descriptors - 1)
+//            println(s"$path release ${f.descriptors - 1}")
+//            0
+//        }
+//    }
+//  }.tap(r => println(s"release $path -> $r"))
 
   // write file content
-  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
-    if (path.drop(1).contains("/")) -ErrorCodes.EIO
-    else entry(path) match {
-      case Some(_) => -ErrorCodes.EISDIR()
-      case None =>
-        files.get(path.drop(1)) match {
-          case None => -ErrorCodes.ENOENT
-          case Some(f) =>
-            println(s"$path write ${f.descriptors}")
-            val end = size + offset
-            val data = if (f.data.length >= end) f.data else f.data ++ new Array[Byte]((end - f.data.length).toInt)
-            buf.get(0, data, offset.toInt, size.toInt)
-            files += path.drop(1) -> f.copy(data = data)
-            0
-        }
-    }
-  }.tap(r => println(s"write $path -> $size/$offset -> $r"))
+//  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
+//    if (path.drop(1).contains("/")) -ErrorCodes.EIO
+//    else entry(path) match {
+//      case Some(_) => -ErrorCodes.EISDIR()
+//      case None =>
+//        files.get(path.drop(1)) match {
+//          case None => -ErrorCodes.ENOENT
+//          case Some(f) =>
+//            println(s"$path write ${f.descriptors}")
+//            val end = size + offset
+//            val data = if (f.data.length >= end) f.data else f.data ++ new Array[Byte]((end - f.data.length).toInt)
+//            buf.get(0, data, offset.toInt, size.toInt)
+//            files += path.drop(1) -> f.copy(data = data)
+//            0
+//        }
+//    }
+//  }.tap(r => println(s"write $path -> $size/$offset -> $r"))
 
   // read file content
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {

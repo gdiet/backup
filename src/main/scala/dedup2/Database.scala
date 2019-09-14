@@ -2,7 +2,7 @@ package dedup2
 
 import java.io.File
 import java.lang.System.{currentTimeMillis => now}
-import java.sql.{Connection, PreparedStatement, ResultSet}
+import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
 
 import scala.util.Using.resource
 import scala.util.chaining._
@@ -136,5 +136,24 @@ class Database(connection: Connection) { import Database._
     iDir.executeUpdate() == 1
   }
 
+  private val iFile = connection.prepareStatement(
+    "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)"
+  )
+  def mkFile(parentId: Long, name: String, time: Long, dataId: Long): Boolean = {
+    iFile.setLong(1, parentId)
+    iFile.setString(2, name)
+    iFile.setLong(3, time)
+    iFile.setLong(4, dataId)
+    iFile.executeUpdate() == 1
+  }
+
+  private val iDataEntry = connection.prepareStatement(
+    "INSERT INTO DataEntries (start, stop, hash) VALUES (0, 0, 0x)",
+    Statement.RETURN_GENERATED_KEYS
+  )
+  def mkDataEntry(): Long = {
+    iDataEntry.executeUpdate()
+    iDataEntry.getGeneratedKeys.tap(_.next()).getLong(1)
+  }
 }
 

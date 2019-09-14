@@ -57,7 +57,7 @@ class MemoryStore { import MemoryStore._
   }"
 
   def store(dataId: Long, start: Long, data: Array[Byte]): Boolean = synchronized {
-    if (lastOutput + 1000 < now) { println(s"available: $available"); lastOutput = now }
+    if (lastOutput + 1000 < now) { println(s"available memory: ${available/1000000}MB"); lastOutput = now }
     if (available < data.length) { storage -= dataId; false }
     else {
       storage += dataId -> (storage.get(dataId) match {
