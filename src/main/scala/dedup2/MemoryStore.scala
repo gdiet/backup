@@ -4,6 +4,8 @@ import java.lang.Runtime.{getRuntime => runtime}
 import java.lang.System.{arraycopy, currentTimeMillis => now}
 import java.util.Arrays.copyOf
 
+import org.slf4j.LoggerFactory
+
 import scala.collection.immutable.SortedMap
 import scala.util.chaining._
 
@@ -53,6 +55,7 @@ object MemoryStore {
 }
 
 class MemoryStore { import MemoryStore._
+  private val log = LoggerFactory.getLogger(getClass)
   private var storage: Map[Long, Entries] = Map() // dataid -> entries
   private var lastOutput = now
 
@@ -67,7 +70,7 @@ class MemoryStore { import MemoryStore._
   }
 
   def store(dataId: Long, start: Long, data: Array[Byte]): Boolean = synchronized {
-    if (lastOutput + 1000 < now) { println(s"available memory: ${available/1000000}MB"); lastOutput = now }
+    if (lastOutput + 1000 < now) { log.debug(s"available memory: ${available/1000000}MB"); lastOutput = now }
     if (available < data.length) { storage -= dataId; false }
     else {
       storage += dataId -> (storage.get(dataId) match {

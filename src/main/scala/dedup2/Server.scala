@@ -6,6 +6,7 @@ import java.lang.System.{currentTimeMillis => now}
 import dedup2.Database._
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
+import org.slf4j.LoggerFactory
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
@@ -22,6 +23,7 @@ object Server extends App {
 class Server(repo: File) extends FuseStubFS {
   private val db = new Database(H2.mem().tap(Database.initialize))
   private val dataDir = new File(repo, "data").tap{f => f.mkdirs(); require(f.isDirectory)}
+  private val log = LoggerFactory.getLogger(getClass)
 
   private def O777 = 511
   private def sync[T](f: => T): T = synchronized(f)
@@ -35,7 +37,7 @@ class Server(repo: File) extends FuseStubFS {
       case _ => None
     }
 
-  override def umount(): Unit = sync { println(s"umount") }
+  override def umount(): Unit = sync { log.info(s"umount") }
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int = sync {
@@ -55,7 +57,7 @@ class Server(repo: File) extends FuseStubFS {
         stat.st_mtim.tv_sec.set(file.time / 1000)
         0
     }
-  }.tap(r => println(s"getattr $path -> $r"))
+  }.tap(r => log.debug(s"getattr $path -> $r"))
 
   /* Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir. */
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = sync {
@@ -71,7 +73,7 @@ class Server(repo: File) extends FuseStubFS {
           0
         }
     }
-  }.tap(r => println(s"readdir $path $offset -> $r"))
+  }.tap(r => log.debug(s"readdir $path $offset -> $r"))
 
   override def rmdir(path: String): Int = sync {
     entry(path) match {
@@ -79,7 +81,7 @@ class Server(repo: File) extends FuseStubFS {
       case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
       case Some(dir: DirEntry) => db.delete(dir.id); 0
     }
-  }.tap(r => println(s"rmdir $path -> $r"))
+  }.tap(r => log.info(s"rmdir $path -> $r"))
 
   // Renames a file. Other than the general contract of rename, newpath must not exist.
   override def rename(oldpath: String, newpath: String): Int = sync {
@@ -100,7 +102,7 @@ class Server(repo: File) extends FuseStubFS {
             }
         }
     }
-  }.tap(r => println(s"rename $oldpath -> $newpath -> $r"))
+  }.tap(r => log.info(s"rename $oldpath -> $newpath -> $r"))
 
   override def mkdir(path: String, mode: Long): Int = sync {
     val parts = split(path)
@@ -115,7 +117,7 @@ class Server(repo: File) extends FuseStubFS {
           case None => db.mkDir(dir.id, name); 0
         }
     }
-  }.tap(r => println(s"mkdir $path -> $r"))
+  }.tap(r => log.info(s"mkdir $path -> $r"))
 
   override def statfs(path: String, stbuf: Statvfs): Int = {
     if (Platform.getNativePlatform.getOS == WINDOWS) {
@@ -129,7 +131,7 @@ class Server(repo: File) extends FuseStubFS {
       }
     }
     super.statfs(path, stbuf)
-  }.tap(r => println(s"statfs $path -> $r"))
+  }.tap(r => log.debug(s"statfs $path -> $r"))
 
   // #########
   // # files #
@@ -161,7 +163,7 @@ class Server(repo: File) extends FuseStubFS {
             0
         }
     }
-  }.tap(r => println(s"create $path ->${fileDescriptors.getOrElse(path, "X")} $r"))
+  }.tap(r => log.info(s"create $path ->${fileDescriptors.getOrElse(path, "X")} $r"))
 
   override def open(path: String, fi: FuseFileInfo): Int = sync {
     entry(path) match {
@@ -169,7 +171,7 @@ class Server(repo: File) extends FuseStubFS {
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(_: FileEntry) => incCount(path); 0
     }
-  }.tap(r => println(s"open $path ->${fileDescriptors.getOrElse(path, "X")} $r"))
+  }.tap(r => log.info(s"open $path ->${fileDescriptors.getOrElse(path, "X")} $r"))
 
   override def release(path: String, fi: FuseFileInfo): Int = sync {
     entry(path) match {
@@ -177,7 +179,7 @@ class Server(repo: File) extends FuseStubFS {
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(_: FileEntry) => decCount(path); 0
     }
-  }.tap(r => println(s"release $path ->${fileDescriptors.getOrElse(path, "X")} $r"))
+  }.tap(r => log.info(s"release $path ->${fileDescriptors.getOrElse(path, "X")} $r"))
 
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
     entry(path) match {
@@ -194,7 +196,7 @@ class Server(repo: File) extends FuseStubFS {
           intSize
         }
     }
-  }.tap(r => println(s"write $path ->${fileDescriptors.getOrElse(path, "X")} $offset/$size -> $r"))
+  }.tap(r => log.info(s"write $path ->${fileDescriptors.getOrElse(path, "X")} $offset/$size -> $r"))
 
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
     entry(path) match {
@@ -212,13 +214,13 @@ class Server(repo: File) extends FuseStubFS {
           }
         }
     }
-  }.tap(r => println(s"read $path ->${fileDescriptors.getOrElse(path, "X")} $size/$offset -> $r"))
+  }.tap(r => log.debug(s"read $path ->${fileDescriptors.getOrElse(path, "X")} $size/$offset -> $r"))
 
   override def truncate(path: String, size: Long): Int = sync { // change file size
     -ErrorCodes.EIO
-  }.tap(r => println(s"truncate $path -> $size -> $r"))
+  }.tap(r => log.info(s"truncate $path -> $size -> $r"))
 
   override def unlink(path: String): Int = { // delete file
     -ErrorCodes.EIO
-  }.tap(r => println(s"unlink $path -> $r"))
+  }.tap(r => log.info(s"unlink $path -> $r"))
 }

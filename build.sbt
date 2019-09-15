@@ -4,6 +4,7 @@ scalacOptions := Seq("-target:jvm-1.8", "-deprecation", "-feature", "-unchecked"
 resolvers += "bintray" at "http://jcenter.bintray.com"
 libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.3"
 libraryDependencies += "com.h2database" % "h2" % "1.4.199"
+libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3"
 
 lazy val createApp = taskKey[Unit]("Create the app.")
 createApp := {
