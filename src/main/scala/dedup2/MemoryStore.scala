@@ -25,7 +25,7 @@ object MemoryStore {
       arraycopy(data, 0, entryData, (start - entryStart).toInt, data.length)
       Some(entryStart -> entryData)
     } else if (start <= entryStart && end >= entryEnd) { // entry fits into data
-      Some(start -> copyOf(data, data.length))
+      Some(start -> data)
     } else if (start < entryStart) { // data overlaps entry to the left
       val resultSize = (entryEnd - start).toInt
       val array = copyOf(data, resultSize)
@@ -71,7 +71,7 @@ class MemoryStore { import MemoryStore._
     if (available < data.length) { storage -= dataId; false }
     else {
       storage += dataId -> (storage.get(dataId) match {
-        case None => emptyMap + (start -> copyOf(data, data.length))
+        case None => emptyMap + (start -> data)
         case Some(entries) => merge(start, data, entries)
       })
       true
