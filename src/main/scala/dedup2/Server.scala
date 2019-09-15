@@ -50,8 +50,7 @@ class Server(repo: File) extends FuseStubFS {
       case Some(file: FileEntry) =>
         stat.st_mode.set(FileStat.S_IFREG | O777)
         stat.st_nlink.set(1)
-        // FIXME file size not from db
-        stat.st_size.set(db.size(file.dataId))
+        stat.st_size.set(memoryStore.size(file.dataId).getOrElse[Long](db.size(file.dataId)))
         stat.st_mtim.tv_nsec.set((file.time % 1000) * 1000)
         stat.st_mtim.tv_sec.set(file.time / 1000)
         0
@@ -193,7 +192,7 @@ class Server(repo: File) extends FuseStubFS {
           0
         }
     }
-  }.tap(r => println(s"write $path ->${fileDescriptors.getOrElse(path, "")} $size/$offset -> $r"))
+  }.tap(r => println(s"write $path ->${fileDescriptors.getOrElse(path, "")} $offset/$size -> $r"))
 
   // ######################################################
   //      playground: only files at root are supported

@@ -13,7 +13,8 @@ object MemoryStore {
   def merge(start: Long, data: Array[Byte], entryStart: Long, entryData: Array[Byte]): Option[Entry] = {
     val end = start + data.length
     val entryEnd = entryStart + entryData.length
-    if (start >= entryEnd || end <= entryStart) None // no overlap
+    if (end >= entryStart && entryStart == entryEnd) Some(start -> data) // eliminate non-terminating empty entry
+    else if (start >= entryEnd || end <= entryStart) None // no overlap
     else if (start >= entryStart && end <= entryEnd) { // data fits into entry
       arraycopy(data, 0, entryData, (start - entryStart).toInt, data.length)
       Some(entryStart -> entryData)
@@ -55,6 +56,10 @@ class MemoryStore { import MemoryStore._
       s"[$dataId -> ${ entries.map { case (start, data) => s"$start:${data.length}::${data.take(10).mkString(",")}" }.mkString("  ") }]"
     }.mkString("(", ", ", ")")
   }"
+
+  def size(dataId: Long): Option[Long] = synchronized {
+    storage.get(dataId).flatMap(_.maxByOption(_._1)).map { case (start, data) => start + data.length }
+  }
 
   def store(dataId: Long, start: Long, data: Array[Byte]): Boolean = synchronized {
     if (lastOutput + 1000 < now) { println(s"available memory: ${available/1000000}MB"); lastOutput = now }
