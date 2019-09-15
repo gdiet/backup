@@ -4,10 +4,16 @@ import java.lang.Runtime.{getRuntime => runtime}
 import java.lang.System.{arraycopy, currentTimeMillis => now}
 import java.util.Arrays.copyOf
 
+import scala.collection.immutable.SortedMap
+import scala.util.chaining._
+
 object MemoryStore {
-  type Entry = (Long, Array[Byte])
   private def freeMemory = runtime.maxMemory() - runtime.totalMemory() + runtime.freeMemory()
   private def available = math.max(runtime.maxMemory() * 8 / 10, freeMemory)
+
+  type Entries = SortedMap[Long, Array[Byte]]
+  val emptyMap = SortedMap[Long, Array[Byte]]()(Ordering.Long.reverse)
+  type Entry = (Long, Array[Byte])
 
   /** Merge if data and entryData overlap, else return None. */
   def merge(start: Long, data: Array[Byte], entryStart: Long, entryData: Array[Byte]): Option[Entry] = {
@@ -35,20 +41,20 @@ object MemoryStore {
   }
 
   /** Merge new data array into entries vector. */
-  def merge(start: Long, data: Array[Byte], entries: Vector[Entry]): Vector[Entry] = {
-    val (vector, merged) = entries.foldLeft((Vector[Entry](), start -> data)) {
-      case ((vector, (start, data)), (entryStart, entryData)) =>
+  def merge(start: Long, data: Array[Byte], entries: Entries): Entries = {
+    (entries.foldLeft((emptyMap, start -> data)) {
+      case ((map, (start, data)), (entryStart, entryData)) =>
         merge(start, data, entryStart, entryData) match {
-          case None => (vector :+ entryStart -> entryData, start -> data)
-          case Some(merged) => vector -> merged
+          case None => (map + (entryStart -> entryData), start -> data)
+          case Some(merged) => map -> merged
         }
-    }
-    vector :+ merged
+    }).pipe { case (map, last) => map + last }
   }
 }
 
-class MemoryStore { import MemoryStore._
-  private var storage: Map[Long, Vector[Entry]] = Map() // dataid -> entries
+class MemoryStore {
+  import MemoryStore._
+  private var storage: Map[Long, Entries] = Map() // dataid -> entries
   private var lastOutput = now
 
   override def toString: String = s"MemoryStore${
@@ -58,7 +64,7 @@ class MemoryStore { import MemoryStore._
   }"
 
   def size(dataId: Long): Option[Long] = synchronized {
-    storage.get(dataId).flatMap(_.maxByOption(_._1)).map { case (start, data) => start + data.length }
+    storage.get(dataId).flatMap(_.headOption.map { case (start, data) => start + data.length })
   }
 
   def store(dataId: Long, start: Long, data: Array[Byte]): Boolean = synchronized {
@@ -66,7 +72,7 @@ class MemoryStore { import MemoryStore._
     if (available < data.length) { storage -= dataId; false }
     else {
       storage += dataId -> (storage.get(dataId) match {
-        case None => Vector(start -> copyOf(data, data.length))
+        case None => emptyMap + (start -> copyOf(data, data.length))
         case Some(entries) => merge(start, data, entries)
       })
       true
