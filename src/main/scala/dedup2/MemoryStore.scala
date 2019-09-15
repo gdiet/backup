@@ -52,8 +52,7 @@ object MemoryStore {
   }
 }
 
-class MemoryStore {
-  import MemoryStore._
+class MemoryStore { import MemoryStore._
   private var storage: Map[Long, Entries] = Map() // dataid -> entries
   private var lastOutput = now
 
@@ -76,6 +75,34 @@ class MemoryStore {
         case Some(entries) => merge(start, data, entries)
       })
       true
+    }
+  }
+
+  def read(dataId: Long, offset: Long, intSize: Int): Array[Byte] = synchronized {
+    storage.get(dataId) match {
+      case None => Array()
+      case Some(entries) =>
+        val fileSize = entries.headOption.map { case (start, data) => start + data.length }.getOrElse(0L)
+        val dataSize = math.min(intSize, fileSize - offset).toInt
+        if (dataSize < 1) Array() else {
+          val result = new Array[Byte](dataSize)
+          entries.exists { case (start, data) =>
+            if (start + data.length <= offset) true
+            else {
+              if (start < offset) {
+                val startIndexInData = (offset - start).toInt
+                val bytesToCopy = math.min(data.length - startIndexInData, dataSize)
+                arraycopy(data, startIndexInData, result, 0, bytesToCopy)
+              } else if (start < offset + intSize) {
+                val startIndexInResult = (start - offset).toInt
+                val bytesToCopy = math.min(data.length, dataSize - startIndexInResult)
+                arraycopy(data, 0, result, startIndexInResult, bytesToCopy)
+              }
+              false
+            }
+          }
+          result
+        }
     }
   }
 }
