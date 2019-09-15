@@ -35,7 +35,7 @@ class Server(repo: File) extends FuseStubFS {
       case _ => None
     }
 
-  override def umount(): Unit = sync {}
+  override def umount(): Unit = sync { println(s"umount") }
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int = sync {
@@ -55,7 +55,7 @@ class Server(repo: File) extends FuseStubFS {
         stat.st_mtim.tv_sec.set(file.time / 1000)
         0
     }
-  }
+  }.tap(r => println(s"getattr $path -> $r"))
 
   /* Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir. */
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = sync {
@@ -71,7 +71,7 @@ class Server(repo: File) extends FuseStubFS {
           0
         }
     }
-  }
+  }.tap(r => println(s"readdir $path $offset -> $r"))
 
   override def rmdir(path: String): Int = sync {
     entry(path) match {
@@ -129,7 +129,7 @@ class Server(repo: File) extends FuseStubFS {
       }
     }
     super.statfs(path, stbuf)
-  }
+  }.tap(r => println(s"statfs $path -> $r"))
 
   // #########
   // # files #
@@ -161,7 +161,7 @@ class Server(repo: File) extends FuseStubFS {
             0
         }
     }
-  }.tap(r => println(s"create $path -> $r"))
+  }.tap(r => println(s"create $path ->${fileDescriptors.getOrElse(path, "X")} $r"))
 
   override def open(path: String, fi: FuseFileInfo): Int = sync {
     entry(path) match {
@@ -191,7 +191,7 @@ class Server(repo: File) extends FuseStubFS {
           val data = new Array[Byte](intSize)
           buf.get(0, data, 0, intSize)
           memoryStore.store(file.dataId, offset, data)
-          0
+          intSize
         }
     }
   }.tap(r => println(s"write $path ->${fileDescriptors.getOrElse(path, "X")} $offset/$size -> $r"))
