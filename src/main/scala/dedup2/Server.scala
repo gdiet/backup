@@ -169,7 +169,7 @@ class Server(repo: File) extends FuseStubFS {
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(_: FileEntry) => incCount(path); 0
     }
-  }.tap(r => println(s"open $path ->${fileDescriptors.getOrElse(path, "")} $r"))
+  }.tap(r => println(s"open $path ->${fileDescriptors.getOrElse(path, "X")} $r"))
 
   override def release(path: String, fi: FuseFileInfo): Int = sync {
     entry(path) match {
@@ -177,109 +177,48 @@ class Server(repo: File) extends FuseStubFS {
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(_: FileEntry) => decCount(path); 0
     }
-  }.tap(r => println(s"release $path ->${fileDescriptors.getOrElse(path, "")} $r"))
+  }.tap(r => println(s"release $path ->${fileDescriptors.getOrElse(path, "X")} $r"))
 
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-        if (!fileDescriptors.contains(path) || size > Int.MaxValue) -ErrorCodes.EIO
+        val intSize = size.toInt.abs
+        if (!fileDescriptors.contains(path)) -ErrorCodes.EIO
+        else if (offset < 0 || size != intSize) -ErrorCodes.EOVERFLOW
         else {
-          val data = new Array[Byte](size.toInt)
-          buf.get(0, data, 0, size.toInt)
+          val data = new Array[Byte](intSize)
+          buf.get(0, data, 0, intSize)
           memoryStore.store(file.dataId, offset, data)
           0
         }
     }
-  }.tap(r => println(s"write $path ->${fileDescriptors.getOrElse(path, "")} $offset/$size -> $r"))
+  }.tap(r => println(s"write $path ->${fileDescriptors.getOrElse(path, "X")} $offset/$size -> $r"))
 
-  // ######################################################
-  //      playground: only files at root are supported
-  // ######################################################
-
-//  case class MemFile(descriptors: Int, data: Array[Byte])
-//  var files: Map[String, MemFile] = Map()
-
-  // create and open file -> file descriptor
-//  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = sync {
-//    if (path.drop(1).contains("/")) -ErrorCodes.EIO
-//    else entry(path) match {
-//      case Some(_) => -ErrorCodes.EEXIST
-//      case None =>
-//        files.get(path.drop(1)) match {
-//          case Some(_) => -ErrorCodes.EEXIST
-//          case None =>
-//            files += path.drop(1) -> MemFile(1, Array())
-//            println(s"$path create 1")
-//            0
-//        }
-//    }
-//  }.tap(r => println(s"create $path -> $r"))
-
-  // open existing file -> file descriptor
-//  override def open(path: String, fi: FuseFileInfo): Int = sync {
-//    if (path.drop(1).contains("/")) -ErrorCodes.EIO
-//    else entry(path) match {
-//      case Some(_) => -ErrorCodes.EISDIR()
-//      case None =>
-//        files.get(path.drop(1)) match {
-//          case None => -ErrorCodes.ENOENT
-//          case Some(f) =>
-//            files += path.drop(1) -> f.copy(f.descriptors + 1)
-//            println(s"$path open ${f.descriptors + 1}")
-//            0
-//        }
-//    }
-//  }.tap(r => println(s"open $path -> $r"))
-
-  // release an open file descriptor
-//  override def release(path: String, fi: FuseFileInfo): Int = sync {
-//    if (path.drop(1).contains("/")) -ErrorCodes.EIO
-//    else entry(path) match {
-//      case Some(_) => -ErrorCodes.EISDIR()
-//      case None =>
-//        files.get(path.drop(1)) match {
-//          case None => -ErrorCodes.ENOENT
-//          case Some(f) =>
-//            files += path.drop(1) -> f.copy(f.descriptors - 1)
-//            println(s"$path release ${f.descriptors - 1}")
-//            0
-//        }
-//    }
-//  }.tap(r => println(s"release $path -> $r"))
-
-  // write file content
-//  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
-//    if (path.drop(1).contains("/")) -ErrorCodes.EIO
-//    else entry(path) match {
-//      case Some(_) => -ErrorCodes.EISDIR()
-//      case None =>
-//        files.get(path.drop(1)) match {
-//          case None => -ErrorCodes.ENOENT
-//          case Some(f) =>
-//            println(s"$path write ${f.descriptors}")
-//            val end = size + offset
-//            val data = if (f.data.length >= end) f.data else f.data ++ new Array[Byte]((end - f.data.length).toInt)
-//            buf.get(0, data, offset.toInt, size.toInt)
-//            files += path.drop(1) -> f.copy(data = data)
-//            0
-//        }
-//    }
-//  }.tap(r => println(s"write $path -> $size/$offset -> $r"))
-
-  // read file content
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
-    -ErrorCodes.EIO
-  }.tap(r => println(s"read $path -> $size/$offset -> $r"))
+    entry(path) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(_: DirEntry) => -ErrorCodes.EISDIR
+      case Some(file: FileEntry) =>
+        if (!fileDescriptors.contains(path)) -ErrorCodes.EIO
+        else {
+          val intSize = size.toInt.abs
+          if (offset < 0 || intSize != size) -ErrorCodes.EOVERFLOW
+          else {
+            val bytes: Array[Byte] = memoryStore.read(file.dataId, offset, intSize)
+            buf.put(0, bytes, 0, bytes.length)
+            bytes.length
+          }
+        }
+    }
+  }.tap(r => println(s"read $path ->${fileDescriptors.getOrElse(path, "X")} $size/$offset -> $r"))
 
-  // change file size
-  override def truncate(path: String, size: Long): Int = sync {
+  override def truncate(path: String, size: Long): Int = sync { // change file size
     -ErrorCodes.EIO
   }.tap(r => println(s"truncate $path -> $size -> $r"))
 
-  // delete file
-  override def unlink(path: String): Int = {
+  override def unlink(path: String): Int = { // delete file
     -ErrorCodes.EIO
   }.tap(r => println(s"unlink $path -> $r"))
 }
