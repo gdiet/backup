@@ -10,8 +10,6 @@ import org.slf4j.LoggerFactory
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
-import scala.util.chaining._
-
 object Server extends App {
   val mountPoint = "J:\\"
   val repo = new File("").getAbsoluteFile // absolute needed e.g. for getFreeSpace()

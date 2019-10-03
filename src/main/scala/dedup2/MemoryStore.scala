@@ -7,7 +7,6 @@ import java.util.Arrays.copyOf
 import org.slf4j.LoggerFactory
 
 import scala.collection.immutable.SortedMap
-import scala.util.chaining._
 
 object MemoryStore {
   private def freeMemory = runtime.maxMemory() - runtime.totalMemory() + runtime.freeMemory()

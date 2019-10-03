@@ -2,8 +2,6 @@ package dedup2
 
 import java.sql.{Connection, DriverManager}
 
-import scala.util.chaining._
-
 object H2 {
   Class forName "org.h2.Driver"
 
