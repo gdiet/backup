@@ -11,11 +11,13 @@ object DataStore {
   private var entries = Map[Long, Map[Long, Array[Byte]]]().withDefaultValue(Map())
 
   def read(dataId: Long, ltStart: Long, ltStop: Long)(position: Long, size: Int): Array[Byte] = ???
-  def size(dataId: Long, ltStart: Long, ltStop: Long): Long = ???
+
+  def size(dataId: Long, ltStart: Long, ltStop: Long): Long =
+    math.max(ltStop - ltStart, entries(dataId).maxByOption(_._1).map(e => e._1 + e._2.length).getOrElse(0))
 
   def write(dataId: Long)(position: Long, data: Array[Byte]): Unit = {
     val chunks = entries(dataId)
-    println(s"Stage 1: ${chunks.view.mapValues(_.mkString("[",",","]")).toMap}")
+    println(s"\nStage 1: ${chunks.view.mapValues(_.mkString("[",",","]")).toMap}")
     val combinedChunks = chunks + (chunks.get(position) match {
       case None => position -> data
       case Some(previousData) =>
