@@ -2,6 +2,8 @@ package dedup2
 
 import java.io.File
 
+import scala.collection.immutable.SortedMap
+
 class DataStore(repo: File, readOnly: Boolean) extends AutoCloseable {
   private val longTermStore = new LongTermStore(repo, readOnly)
   override def close(): Unit = longTermStore.close()
@@ -10,10 +12,32 @@ class DataStore(repo: File, readOnly: Boolean) extends AutoCloseable {
 object DataStore {
   private var entries = Map[Long, Map[Long, Array[Byte]]]().withDefaultValue(Map())
 
-  def read(dataId: Long, ltStart: Long, ltStop: Long)(position: Long, size: Int): Array[Byte] = ???
+  def read(dataId: Long, ltStart: Long, ltStop: Long)(position: Long, size: Int): Array[Byte] = {
+    val chunks: Map[Long, Array[Byte]] = entries(dataId).collect {
+      case (chunkPosition, chunkData) if chunkPosition < position && chunkPosition + chunkData.length > position =>
+        position -> chunkData.drop((position - chunkPosition).toInt)
+      case (chunkPosition, chunkData) if chunkPosition >= position && chunkPosition < position + size =>
+        val drop = math.max(0, chunkPosition + chunkData.length - (position + size)).toInt
+        chunkPosition -> chunkData.dropRight(drop)
+    }
+    println(s"READ chunks: ${chunks.view.mapValues(_.mkString("[",",","]")).toMap}")
+    val chunksToRead = chunks.foldLeft(SortedMap(position -> size)) { case (chunksToRead, (chunkPosition, chunkData)) =>
+      println(s"READ chunksToRead -> $chunksToRead")
+      val (readPosition, sizeToRead) = chunksToRead.filter(_._1 <= chunkPosition).last
+      chunksToRead - readPosition ++ Seq(
+        readPosition -> (chunkPosition - readPosition).toInt,
+        chunkPosition + chunkData.length -> (readPosition + sizeToRead - chunkPosition - chunkData.length).toInt
+      ).filterNot(_._2 == 0)
+    }
+    println(s"READ chunksToRead: $chunksToRead")
+    val chunksRead: SortedMap[Long, Array[Byte]] =
+      chunksToRead.map { case (start, length) => start -> Array.fill[Byte](length)(7) } // FIXME read
+    println(s"READ chunksRead: ${chunksRead.view.mapValues(_.mkString("[",",","]")).toMap}")
+    (chunksRead ++ chunks).map(_._2).reduce(_ ++ _)
+  }
 
   def size(dataId: Long, ltStart: Long, ltStop: Long): Long =
-    math.max(ltStop - ltStart, entries(dataId).maxByOption(_._1).map(e => e._1 + e._2.length).getOrElse(0))
+    math.max(ltStop - ltStart, entries(dataId).maxByOption(_._1).map(e => e._1 + e._2.length).getOrElse(0L))
 
   def write(dataId: Long)(position: Long, data: Array[Byte]): Unit = {
     val chunks = entries(dataId)
@@ -44,9 +68,18 @@ object DataStore {
 object X extends App {
   DataStore.write(1)(10, Array[Byte](3, 1, 8, 8, 3, 1))
   println()
+  println(DataStore.read(1, 0, 20)(0, 20).mkString("READ: [",",","]"))
+  println()
   DataStore.write(1)(8, Array[Byte](3, 1, 8, 8, 3, 1))
+  println()
+  println(DataStore.read(1, 0, 20)(0, 20).mkString("READ: [",",","]"))
   println()
   DataStore.write(1)(0, Array[Byte](3, 1, 8, 8, 3, 1))
   println()
+  println(DataStore.read(1, 0, 20)(0, 20).mkString("READ: [",",","]"))
+  println()
   DataStore.write(1)(12, Array[Byte](3, 1, 8, 8, 3, 1))
+  println()
+  println(DataStore.read(1, 0, 20)(0, 20).mkString("READ: [",",","]"))
+  println()
 }
