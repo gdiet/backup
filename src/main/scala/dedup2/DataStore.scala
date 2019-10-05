@@ -1,19 +1,16 @@
 package dedup2
 
-import java.io.File
-
 import scala.collection.immutable.SortedMap
 
-class DataStore(repo: File, readOnly: Boolean) extends AutoCloseable {
-  private val longTermStore = new LongTermStore(repo, readOnly)
+class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
+  private val longTermStore = new LongTermStore(dataDir, readOnly)
   override def close(): Unit = longTermStore.close()
-  private val basePath = new File(repo, "shortterm").getAbsolutePath
-}
-object DataStore {
-  private var entries = Map[Long, Map[Long, Array[Byte]]]().withDefaultValue(Map())
 
-  def read(dataId: Long, ltStart: Long, ltStop: Long)(position: Long, size: Int): Array[Byte] = {
-    val chunks: Map[Long, Array[Byte]] = entries(dataId).collect {
+  private var entries = Map[(Long, Long), Map[Long, Array[Byte]]]().withDefaultValue(Map())
+
+  def read(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, requestedSize: Int): Array[Byte] = {
+    val size = math.max(math.min(requestedSize, this.size(id, dataId, ltStart, ltStop) - position), 0).toInt
+    val chunks: Map[Long, Array[Byte]] = entries(id -> dataId).collect {
       case (chunkPosition, chunkData) if chunkPosition < position && chunkPosition + chunkData.length > position =>
         position -> chunkData.drop((position - chunkPosition).toInt)
       case (chunkPosition, chunkData) if chunkPosition >= position && chunkPosition < position + size =>
@@ -31,16 +28,16 @@ object DataStore {
     }
     println(s"READ chunksToRead: $chunksToRead")
     val chunksRead: SortedMap[Long, Array[Byte]] =
-      chunksToRead.map { case (start, length) => start -> Array.fill[Byte](length)(7) } // FIXME read
+      chunksToRead.map { case (start, length) => start -> longTermStore.read(ltStart + start, length) }
     println(s"READ chunksRead: ${chunksRead.view.mapValues(_.mkString("[",",","]")).toMap}")
     (chunksRead ++ chunks).map(_._2).reduce(_ ++ _)
   }
 
-  def size(dataId: Long, ltStart: Long, ltStop: Long): Long =
-    math.max(ltStop - ltStart, entries(dataId).maxByOption(_._1).map(e => e._1 + e._2.length).getOrElse(0L))
+  def size(id: Long, dataId: Long, ltStart: Long, ltStop: Long): Long =
+    math.max(ltStop - ltStart, entries(id -> dataId).maxByOption(_._1).map(e => e._1 + e._2.length).getOrElse(0L))
 
-  def write(dataId: Long)(position: Long, data: Array[Byte]): Unit = {
-    val chunks = entries(dataId)
+  def write(id: Long, dataId: Long)(position: Long, data: Array[Byte]): Unit = {
+    val chunks = entries(id -> dataId)
     println(s"\nStage 1: ${chunks.view.mapValues(_.mkString("[",",","]")).toMap}")
     val combinedChunks = chunks + (chunks.get(position) match {
       case None => position -> data
@@ -61,25 +58,6 @@ object DataStore {
     println(s"Reduced: ${reduced._1} ${reduced._2.mkString("[",",","]")}")
     val merged = others + reduced
     println(s"Stage 3: ${merged.view.mapValues(_.mkString("[",",","]")).toMap}")
-    entries += dataId -> merged
+    entries += (id -> dataId) -> merged
   }
-}
-
-object X extends App {
-  DataStore.write(1)(10, Array[Byte](3, 1, 8, 8, 3, 1))
-  println()
-  println(DataStore.read(1, 0, 20)(0, 20).mkString("READ: [",",","]"))
-  println()
-  DataStore.write(1)(8, Array[Byte](3, 1, 8, 8, 3, 1))
-  println()
-  println(DataStore.read(1, 0, 20)(0, 20).mkString("READ: [",",","]"))
-  println()
-  DataStore.write(1)(0, Array[Byte](3, 1, 8, 8, 3, 1))
-  println()
-  println(DataStore.read(1, 0, 20)(0, 20).mkString("READ: [",",","]"))
-  println()
-  DataStore.write(1)(12, Array[Byte](3, 1, 8, 8, 3, 1))
-  println()
-  println(DataStore.read(1, 0, 20)(0, 20).mkString("READ: [",",","]"))
-  println()
 }

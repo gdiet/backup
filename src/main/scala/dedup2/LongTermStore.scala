@@ -4,8 +4,7 @@ import java.io.{File, RandomAccessFile}
 
 import scala.collection.mutable
 
-class LongTermStore(repo: File, readOnly: Boolean) extends AutoCloseable {
-  private val basePath = new File(repo, "longterm").getAbsolutePath
+class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val fileSize = 100000000 // 100 MB
   private val parallelOpenFiles = 3
   private val writeFlag = if (readOnly) "r" else "rw"
@@ -27,7 +26,7 @@ class LongTermStore(repo: File, readOnly: Boolean) extends AutoCloseable {
     val fileName = s"%010d".format(position - positionInFile) // 100MB per file
     val dir2 = f"${position / fileSize / 100 % 100}%02d" //  10GB per dir
     val dir1 = f"${position / fileSize / 100 / 100}%02d" //   1TB per dir
-    val filePath = s"$basePath/$dir1/$dir2/$fileName"
+    val filePath = s"$dataDir/$dir1/$dir2/$fileName"
     (filePath, positionInFile, chunkSize)
   }
 

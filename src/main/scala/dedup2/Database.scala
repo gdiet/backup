@@ -4,16 +4,18 @@ import java.io.File
 import java.lang.System.{currentTimeMillis => now}
 import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
 
+import org.slf4j.LoggerFactory
+
 import scala.util.Using.resource
 
 object Database {
-  def dbDir(repo: File): File = new File(repo, "fsdb2")
+  def dbDir(repo: File): File = new File(repo, "fsdb")
 
   // deleted == 0 for regular files, deleted == timestamp for deleted files. NULL does not work with UNIQUE.
   private def tableDefinitions = {
     s"""|CREATE SEQUENCE idSeq START WITH 1;
         |CREATE TABLE DataEntries (
-        |  id     BIGINT NOT NULL DEFAULT (NEXT VALUE FOR idSeq),
+        |  id     BIGINT NOT NULL,
         |  start  BIGINT NOT NULL,
         |  stop   BIGINT NOT NULL,
         |  hash   BINARY NOT NULL,
@@ -28,7 +30,6 @@ object Database {
         |  dataId       BIGINT DEFAULT NULL,
         |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id),
         |  CONSTRAINT un_TreeEntries UNIQUE (parentId, name, deleted),
-        |  CONSTRAINT fk_TreeEntries_dataId FOREIGN KEY (dataId) REFERENCES DataEntries(id),
         |  CONSTRAINT fk_TreeEntries_parentId FOREIGN KEY (parentId) REFERENCES TreeEntries(id)
         |);
         |INSERT INTO TreeEntries (id, parentId, name, time) VALUES (0, 0, '', ${root.time});
@@ -79,6 +80,7 @@ object Database {
 }
 
 class Database(connection: Connection) { import Database._
+  private val log = LoggerFactory.getLogger(getClass)
 
   private val qChild = connection.prepareStatement(
     "SELECT id, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
@@ -100,9 +102,9 @@ class Database(connection: Connection) { import Database._
   private val qStartStop = connection.prepareStatement(
     "SELECT start, stop FROM DataEntries WHERE id = ?"
   )
-  def size(dataId: Long): Long = {
+  def startStop(dataId: Long): (Long, Long) = {
     qStartStop.setLong(1, dataId)
-    resource(qStartStop.executeQuery())(_.maybeNext(rs => rs.getLong(2) - rs.getLong(1)).getOrElse(0))
+    resource(qStartStop.executeQuery())(_.maybeNext(rs => rs.getLong(1) -> rs.getLong(2)).getOrElse(0L -> 0L))
   }
 
   private val dTreeEntry = connection.prepareStatement(
@@ -112,7 +114,7 @@ class Database(connection: Connection) { import Database._
     val time = System.currentTimeMillis.pipe { case 0 => 1; case x => x }
     dTreeEntry.setLong(1, time)
     dTreeEntry.setLong(2, treeEntryId)
-    dTreeEntry.executeUpdate() == 1
+    (dTreeEntry.executeUpdate() == 1).tap(r => if (!r) log.warn(s"DELETE tree entry $treeEntryId failed."))
   }
 
   private val uMoveRename = connection.prepareStatement(
@@ -136,23 +138,14 @@ class Database(connection: Connection) { import Database._
   }
 
   private val iFile = connection.prepareStatement(
-    "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)"
+    "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, NEXT VALUE FOR idSeq)",
+    Statement.RETURN_GENERATED_KEYS
   )
-  def mkFile(parentId: Long, name: String, time: Long, dataId: Long): Boolean = {
+  def mkFile(parentId: Long, name: String, time: Long): Long = {
     iFile.setLong(1, parentId)
     iFile.setString(2, name)
     iFile.setLong(3, time)
-    iFile.setLong(4, dataId)
-    iFile.executeUpdate() == 1
-  }
-
-  private val iDataEntry = connection.prepareStatement(
-    "INSERT INTO DataEntries (start, stop, hash) VALUES (0, 0, 0x)",
-    Statement.RETURN_GENERATED_KEYS
-  )
-  def mkDataEntry(): Long = {
-    iDataEntry.executeUpdate()
-    iDataEntry.getGeneratedKeys.tap(_.next()).getLong(1)
+    require(iFile.executeUpdate() == 1)
+    iFile.getGeneratedKeys.tap(_.next()).getLong("id")
   }
 }
-
