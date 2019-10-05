@@ -36,6 +36,16 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   def size(id: Long, dataId: Long, ltStart: Long, ltStop: Long): Long =
     math.max(ltStop - ltStart, entries(id -> dataId).maxByOption(_._1).map(e => e._1 + e._2.length).getOrElse(0L))
 
+  def delete(id: Long, dataId: Long): Unit = entries -= (id -> dataId)
+
+  def truncate(id: Long, dataId: Long, ltStart: Long, ltStop: Long): Unit =
+    entries += (id -> dataId) -> (
+      for {
+        position <- 0L until (ltStop - ltStart) by 32768
+        dataSize = math.min(32768, ltStop - ltStart - position).toInt
+      } yield position -> new Array[Byte](dataSize)
+    ).toMap
+
   def write(id: Long, dataId: Long)(position: Long, data: Array[Byte]): Unit = {
     val chunks = entries(id -> dataId)
     println(s"\nStage 1: ${chunks.view.mapValues(_.mkString("[",",","]")).toMap}")

@@ -81,7 +81,9 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
-      case Some(dir: DirEntry) => if (db.delete(dir.id)) 0 else -ErrorCodes.EIO
+      case Some(dir: DirEntry) =>
+        if (db.children(dir.id).nonEmpty) -ErrorCodes.ENOTEMPTY
+        else if (db.delete(dir.id)) 0 else -ErrorCodes.EIO
     }
   }.tap(r => log.info(s"rmdir $path -> $r"))
 
@@ -224,11 +226,24 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
     }
   }.tap(r => log.debug(s"read $path -> $size/$offset -> $r"))
 
-//  override def truncate(path: String, size: Long): Int = sync { // change file size
-//    -ErrorCodes.EIO
-//  }.tap(r => log.info(s"truncate $path -> $size -> $r"))
-//
-//  override def unlink(path: String): Int = { // delete file
-//    -ErrorCodes.EIO
-//  }.tap(r => log.info(s"unlink $path -> $r"))
+  override def truncate(path: String, size: Long): Int = sync {
+    entry(path) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(_: DirEntry) => -ErrorCodes.EISDIR
+      case Some(file: FileEntry) =>
+        val (start, stop) = db.startStop(file.dataId)
+        store.truncate(file.id, file.dataId, start, stop)
+        0
+    }
+  }.tap(r => log.info(s"truncate $path -> $size -> $r"))
+
+  override def unlink(path: String): Int = sync {
+    entry(path) match {
+      case None => -ErrorCodes.ENOENT
+      case Some(_: DirEntry) => -ErrorCodes.EISDIR
+      case Some(file: FileEntry) =>
+        if (fileDescriptors.contains(file.id)) -ErrorCodes.EBUSY
+        else if (db.delete(file.id)) { store.delete(file.id, file.dataId); 0 } else -ErrorCodes.EIO
+    }
+  }.tap(r => log.info(s"unlink $path -> $r"))
 }
