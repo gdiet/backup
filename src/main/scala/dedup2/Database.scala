@@ -127,6 +127,15 @@ class Database(connection: Connection) { import Database._
     uMoveRename.executeUpdate() == 1
   }
 
+  private val uTime = connection.prepareStatement(
+    "UPDATE TreeEntries SET time = ? WHERE id = ?"
+  )
+  def setTime(id: Long, newTime: Long): Boolean = {
+    uTime.setLong(1, newTime)
+    uTime.setLong(2, id)
+    uTime.executeUpdate() == 1
+  }
+
   private val iDir = connection.prepareStatement(
     "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)"
   )

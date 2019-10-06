@@ -7,7 +7,7 @@ import dedup2.Database._
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
 import org.slf4j.LoggerFactory
-import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
+import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
 object Server extends App {
@@ -63,6 +63,17 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
         0
     }
   }.tap(r => log.debug(s"getattr $path -> $r"))
+
+  override def utimens(path: String, timespec: Array[Timespec]): Int = sync { // see man UTIMENSAT(2)
+    if (timespec.length < 2) -ErrorCodes.EIO else {
+      entry(path) match {
+        case None => -ErrorCodes.ENOENT
+        case Some(entry) =>
+          db.setTime(entry.id, timespec(1).pipe(t => t.tv_sec.get * 1000 + t.tv_nsec.longValue / 1000000))
+          0
+      }
+    }
+  }.tap(r => log.debug(s"utimens $path -> $r"))
 
   /* Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir. */
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = sync {
