@@ -35,7 +35,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
       case _ => None
     }
 
-  override def umount(): Unit = sync { log.info(s"umount") }
+  override def umount(): Unit = sync { log.debug(s"umount") }
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int = sync {
@@ -53,8 +53,8 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
         setCommon(dir.time, 2)
         0
       case Some(file: FileEntry) =>
-        log.info(s"file $path -> $file")
-        log.info(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+        log.debug(s"file $path -> $file")
+        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
         val (start, stop) = db.startStop(file.dataId)
         val size = store.size(file.id, file.dataId, start, stop)
         stat.st_mode.set(FileStat.S_IFREG | O777)
@@ -66,14 +66,18 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
 
   override def utimens(path: String, timespec: Array[Timespec]): Int = sync { // see man UTIMENSAT(2)
     if (timespec.length < 2) -ErrorCodes.EIO else {
-      entry(path) match {
+      val sec = timespec(1).tv_sec.get
+      val nan = timespec(1).tv_nsec.longValue
+      if (sec < 0 || nan < 0 || nan > 1000000000) -ErrorCodes.EINVAL
+      else entry(path) match {
         case None => -ErrorCodes.ENOENT
         case Some(entry) =>
+          log.info(s"set last modified $path -> ${timespec(1).tv_sec.get} ${timespec(1).tv_nsec.longValue} ${timespec(1).pipe(t => t.tv_sec.get * 1000 + t.tv_nsec.longValue / 1000000)}")
           db.setTime(entry.id, timespec(1).pipe(t => t.tv_sec.get * 1000 + t.tv_nsec.longValue / 1000000))
           0
       }
     }
-  }.tap(r => log.debug(s"utimens $path -> $r"))
+  }.tap(r => log.info(s"utimens $path -> $r"))
 
   /* Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir. */
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = sync {
@@ -99,7 +103,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
         if (db.children(dir.id).nonEmpty) -ErrorCodes.ENOTEMPTY
         else if (db.delete(dir.id)) 0 else -ErrorCodes.EIO
     }
-  }.tap(r => log.info(s"rmdir $path -> $r"))
+  }.tap(r => log.debug(s"rmdir $path -> $r"))
 
   // Renames a file. Other than the general contract of rename, newpath must not exist.
   override def rename(oldpath: String, newpath: String): Int = sync {
@@ -119,7 +123,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
             }
         }
     }
-  }.tap(r => log.info(s"rename $oldpath -> $newpath -> $r"))
+  }.tap(r => log.debug(s"rename $oldpath -> $newpath -> $r"))
 
   override def mkdir(path: String, mode: Long): Int = sync {
     val parts = split(path)
@@ -134,7 +138,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
           case None => db.mkDir(dir.id, name); 0
         }
     }
-  }.tap(r => log.info(s"mkdir $path -> $r"))
+  }.tap(r => log.debug(s"mkdir $path -> $r"))
 
   override def statfs(path: String, stbuf: Statvfs): Int = {
     if (Platform.getNativePlatform.getOS == WINDOWS) {
@@ -174,33 +178,33 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
           case None =>
             val id = db.mkFile(dir.id, name, now)
             incCount(id)
-            log.info(s"count for $path / $id -> ${fileDescriptors.get(id)}")
+            log.debug(s"count for $path / $id -> ${fileDescriptors.get(id)}")
             0
         }
     }
-  }.tap(r => log.info(s"create $path -> $r"))
+  }.tap(r => log.debug(s"create $path -> $r"))
 
   override def open(path: String, fi: FuseFileInfo): Int = sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-        incCount(file.id);
-        log.info(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+        incCount(file.id)
+        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
         0
     }
-  }.tap(r => log.info(s"open $path -> $r"))
+  }.tap(r => log.debug(s"open $path -> $r"))
 
   override def release(path: String, fi: FuseFileInfo): Int = sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-        decCount(file.id);
-        log.info(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+        decCount(file.id)
+        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
         0
     }
-  }.tap(r => log.info(s"release $path -> $r"))
+  }.tap(r => log.debug(s"release $path -> $r"))
 
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
     entry(path) match {
@@ -211,14 +215,14 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
         if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
         else if (offset < 0 || size != intSize) -ErrorCodes.EOVERFLOW
         else {
-          log.info(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+          log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
           val data = new Array[Byte](intSize)
           buf.get(0, data, 0, intSize)
           store.write(file.id, file.dataId)(offset, data)
           intSize
         }
     }
-  }.tap(r => log.info(s"write $path -> $offset/$size -> $r"))
+  }.tap(r => log.debug(s"write $path -> $offset/$size -> $r"))
 
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
     entry(path) match {
@@ -230,7 +234,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
           val intSize = size.toInt.abs
           if (offset < 0 || intSize != size) -ErrorCodes.EOVERFLOW
           else {
-            log.info(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+            log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
             val (start, stop) = db.startStop(file.dataId)
             val bytes: Array[Byte] = store.read(file.id, file.dataId, start, stop)(offset, intSize)
             buf.put(0, bytes, 0, bytes.length)
@@ -249,19 +253,19 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
         store.truncate(file.id, file.dataId, start, stop)
         0
     }
-  }.tap(r => log.info(s"truncate $path -> $size -> $r"))
+  }.tap(r => log.debug(s"truncate $path -> $size -> $r"))
 
   override def unlink(path: String): Int = sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-        log.info(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
         if (db.delete(file.id)) {
           store.delete(file.id, file.dataId)
           fileDescriptors -= file.id
           0
         } else -ErrorCodes.EIO
     }
-  }.tap(r => log.info(s"unlink $path -> $r"))
+  }.tap(r => log.debug(s"unlink $path -> $r"))
 }
