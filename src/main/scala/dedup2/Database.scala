@@ -82,6 +82,11 @@ object Database {
 class Database(connection: Connection) { import Database._
   private val log = LoggerFactory.getLogger(getClass)
 
+  def startOfFreeData: Long =
+    connection.createStatement().executeQuery("SELECT MAX(stop) FROM DataEntries").pipe { rs =>
+      rs.opt(_.getLong(1)).getOrElse(0L)
+    }
+
   private val qChild = connection.prepareStatement(
     "SELECT id, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
   )
@@ -156,5 +161,15 @@ class Database(connection: Connection) { import Database._
     iFile.setLong(3, time)
     require(iFile.executeUpdate() == 1)
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
+  }
+
+  private val uDataId = connection.prepareStatement(
+    "UPDATE TreeEntries SET dataId = NEXT VALUE FOR idSeq WHERE id = ?",
+    Statement.RETURN_GENERATED_KEYS
+  )
+  def newDataId(id: Long): Long = {
+    uDataId.setLong(1, id)
+    require(uDataId.executeUpdate() == 1)
+    uDataId.getGeneratedKeys.tap(_.next()).getLong(1)
   }
 }

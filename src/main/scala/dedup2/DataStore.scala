@@ -8,6 +8,8 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
 
   private var entries = Map[(Long, Long), Map[Long, Array[Byte]]]().withDefaultValue(Map())
 
+  def hasTemporaryData(id: Long, dataId: Long): Boolean = entries.contains(id -> dataId)
+
   def read(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, requestedSize: Int): Array[Byte] = {
     val size = math.max(math.min(requestedSize, this.size(id, dataId, ltStart, ltStop) - position), 0).toInt
     val chunks: Map[Long, Array[Byte]] = entries(id -> dataId).collect {

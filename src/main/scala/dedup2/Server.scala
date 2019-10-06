@@ -2,6 +2,7 @@ package dedup2
 
 import java.io.File
 import java.lang.System.{currentTimeMillis => now}
+import java.security.MessageDigest
 
 import dedup2.Database._
 import jnr.ffi.Platform.OS.WINDOWS
@@ -24,6 +25,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
   private val dataDir = new File(repo, "data").tap{d => d.mkdirs(); require(d.isDirectory)}
   private val store = new DataStore(dataDir.getAbsolutePath, readOnly = false)
   private val log = LoggerFactory.getLogger(getClass)
+  private val hashAlgorithm = "MD5"
 
   private def O777 = 511
   private def sync[T](f: => T): T = synchronized(try f catch { case e: Throwable => log.error("ERROR", e); throw e })
@@ -53,8 +55,8 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
         setCommon(dir.time, 2)
         0
       case Some(file: FileEntry) =>
-        log.debug(s"file $path -> $file")
-        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+//        log.debug(s"file $path -> $file")
+//        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
         val (start, stop) = db.startStop(file.dataId)
         val size = store.size(file.id, file.dataId, start, stop)
         stat.st_mode.set(FileStat.S_IFREG | O777)
@@ -72,7 +74,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
       else entry(path) match {
         case None => -ErrorCodes.ENOENT
         case Some(entry) =>
-          log.info(s"set last modified $path -> ${timespec(1).tv_sec.get} ${timespec(1).tv_nsec.longValue} ${timespec(1).pipe(t => t.tv_sec.get * 1000 + t.tv_nsec.longValue / 1000000)}")
+//          log.info(s"set last modified $path -> ${timespec(1).tv_sec.get} ${timespec(1).tv_nsec.longValue} ${timespec(1).pipe(t => t.tv_sec.get * 1000 + t.tv_nsec.longValue / 1000000)}")
           db.setTime(entry.id, timespec(1).pipe(t => t.tv_sec.get * 1000 + t.tv_nsec.longValue / 1000000))
           0
       }
@@ -160,10 +162,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
 
   private var fileDescriptors: Map[Long, Int] = Map()
   private def incCount(id: Long): Unit = fileDescriptors += id -> (fileDescriptors.getOrElse(id, 0) + 1)
-  private def decCount(id: Long): Unit = fileDescriptors.get(id).foreach {
-    case 1 => fileDescriptors -= id
-    case n => fileDescriptors += id -> (n - 1)
-  }
+  private var startOfFreeData = db.startOfFreeData
 
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int = sync {
     val parts = split(path)
@@ -178,7 +177,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
           case None =>
             val id = db.mkFile(dir.id, name, now)
             incCount(id)
-            log.debug(s"count for $path / $id -> ${fileDescriptors.get(id)}")
+//            log.debug(s"count for $path / $id -> ${fileDescriptors.get(id)}")
             0
         }
     }
@@ -190,7 +189,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
         incCount(file.id)
-        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+//        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
         0
     }
   }.tap(r => log.debug(s"open $path -> $r"))
@@ -200,9 +199,23 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-        decCount(file.id)
-        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+        fileDescriptors.get(file.id).foreach {
+          case 1 =>
+            fileDescriptors -= file.id
+//            if (store.hasTemporaryData(file.id, file.dataId)) {
+//              val (ltStart, ltStop) = db.startStop(file.dataId)
+//              val size = store.size(file.id, file.dataId, ltStart, ltStop)
+//              val md = MessageDigest.getInstance(hashAlgorithm)
+//
+//              // calculate hash
+//              // try to find match
+//              // no match -> write through
+//              ???
+//            }
+          case n => fileDescriptors += file.id -> (n - 1)
+        }
         0
+      //        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
     }
   }.tap(r => log.debug(s"release $path -> $r"))
 
@@ -215,7 +228,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
         if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
         else if (offset < 0 || size != intSize) -ErrorCodes.EOVERFLOW
         else {
-          log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+//          log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
           val data = new Array[Byte](intSize)
           buf.get(0, data, 0, intSize)
           store.write(file.id, file.dataId)(offset, data)
@@ -234,7 +247,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
           val intSize = size.toInt.abs
           if (offset < 0 || intSize != size) -ErrorCodes.EOVERFLOW
           else {
-            log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+//            log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
             val (start, stop) = db.startStop(file.dataId)
             val bytes: Array[Byte] = store.read(file.id, file.dataId, start, stop)(offset, intSize)
             buf.put(0, bytes, 0, bytes.length)
@@ -244,6 +257,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
     }
   }.tap(r => log.debug(s"read $path -> $size/$offset -> $r"))
 
+  // FIXME there is a bug here ...
   override def truncate(path: String, size: Long): Int = sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
@@ -260,7 +274,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+//        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
         if (db.delete(file.id)) {
           store.delete(file.id, file.dataId)
           fileDescriptors -= file.id
