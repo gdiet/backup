@@ -39,23 +39,26 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int = sync {
+    def setCommon(time: Long, nlink: Int): Unit = {
+      stat.st_nlink.set(nlink)
+      stat.st_mtim.tv_sec.set(time / 1000)
+      stat.st_mtim.tv_nsec.set((time % 1000) * 1000000)
+      stat.st_uid.set(getContext.uid.get)
+      stat.st_gid.set(getContext.gid.get)
+    }
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(dir: DirEntry) =>
         stat.st_mode.set(FileStat.S_IFDIR | O777)
-        stat.st_mtim.tv_sec.set(dir.time / 1000)
-        stat.st_mtim.tv_nsec.set((dir.time % 1000) * 1000000)
-        stat.st_nlink.set(2)
+        setCommon(dir.time, 2)
         0
       case Some(file: FileEntry) =>
-        log.info(s"file** $path -> $file")
+        log.info(s"file $path -> $file")
         log.info(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
         val (start, stop) = db.startStop(file.dataId)
         val size = store.size(file.id, file.dataId, start, stop)
         stat.st_mode.set(FileStat.S_IFREG | O777)
-        stat.st_mtim.tv_sec.set(file.time / 1000)
-        stat.st_mtim.tv_nsec.set((file.time % 1000) * 1000000)
-        stat.st_nlink.set(1)
+        setCommon(file.time, 1)
         stat.st_size.set(size)
         0
     }
