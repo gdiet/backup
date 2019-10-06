@@ -245,8 +245,12 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-        if (fileDescriptors.contains(file.id)) -ErrorCodes.EBUSY
-        else if (db.delete(file.id)) { store.delete(file.id, file.dataId); 0 } else -ErrorCodes.EIO
+        log.info(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
+        if (db.delete(file.id)) {
+          store.delete(file.id, file.dataId)
+          fileDescriptors -= file.id
+          0
+        } else -ErrorCodes.EIO
     }
   }.tap(r => log.info(s"unlink $path -> $r"))
 }
