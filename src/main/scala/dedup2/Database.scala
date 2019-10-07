@@ -84,7 +84,7 @@ class Database(connection: Connection) { import Database._
 
   def startOfFreeData: Long =
     connection.createStatement().executeQuery("SELECT MAX(stop) FROM DataEntries").pipe { rs =>
-      rs.opt(_.getLong(1)).getOrElse(0L)
+      rs.maybeNext(_.getLong(1)).getOrElse(0L)
     }
 
   private val qChild = connection.prepareStatement(

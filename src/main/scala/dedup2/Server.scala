@@ -2,7 +2,6 @@ package dedup2
 
 import java.io.File
 import java.lang.System.{currentTimeMillis => now}
-import java.security.MessageDigest
 
 import dedup2.Database._
 import jnr.ffi.Platform.OS.WINDOWS
@@ -79,7 +78,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
           0
       }
     }
-  }.tap(r => log.info(s"utimens $path -> $r"))
+  }.tap(r => log.debug(s"utimens $path -> $r"))
 
   /* Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir. */
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = sync {
@@ -163,6 +162,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
   private var fileDescriptors: Map[Long, Int] = Map()
   private def incCount(id: Long): Unit = fileDescriptors += id -> (fileDescriptors.getOrElse(id, 0) + 1)
   private var startOfFreeData = db.startOfFreeData
+  log.info(s"Start of free data: $startOfFreeData")
 
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int = sync {
     val parts = split(path)
@@ -231,7 +231,8 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
 //          log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
           val data = new Array[Byte](intSize)
           buf.get(0, data, 0, intSize)
-          store.write(file.id, file.dataId)(offset, data)
+          val (ltStart, ltStop) = db.startStop(file.dataId)
+          store.write(file.id, file.dataId, ltStart, ltStop)(offset, data)
           intSize
         }
     }
