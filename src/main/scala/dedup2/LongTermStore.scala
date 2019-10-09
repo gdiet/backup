@@ -2,9 +2,12 @@ package dedup2
 
 import java.io.{File, RandomAccessFile}
 
+import org.slf4j.LoggerFactory
+
 import scala.collection.mutable
 
 class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
+  private val log = LoggerFactory.getLogger(getClass)
   private val fileSize = 100000000 // 100 MB
   private val parallelOpenFiles = 3
   private val writeFlag = if (readOnly) "r" else "rw"
@@ -38,6 +41,7 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
 
   def read(position: Long, size: Int): Array[Byte] = {
     val (path, offset, bytesToRead) = pathOffsetSize(position, size)
+    if (offset <= 0) log.info(s"READ: $position/$size -> $path $offset/$bytesToRead")
     val bytes = new Array[Byte](bytesToRead)
     open(path).pipe { ra =>
       ra.seek(offset)

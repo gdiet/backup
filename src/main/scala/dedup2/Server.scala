@@ -212,7 +212,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
               val hash = md.digest()
               db.dataEntry(hash, size) match {
                 case Some(dataId) =>
-                  log.info(s"release: $path $file -> KNOWN DATAID $dataId")
+                  log.debug(s"release: $path $file -> KNOWN DATAID $dataId")
                   if (file.dataId != dataId) require(db.setDataId(file.id, dataId))
                 case None =>
                   val dataId = if (ltStart -> ltStop == -1 -> -1) file.dataId else db.newDataId(file.id)
@@ -264,7 +264,9 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
           else {
 //            log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
             val (start, stop) = db.startStop(file.dataId)
-            val bytes: Array[Byte] = store.read(file.id, file.dataId, start, stop)(offset, intSize)
+            if (start -> stop == -1 -> -1) log.info(s"EMPTY FILE $path")
+            val bytes: Array[Byte] =
+              if (start -> stop == -1 -> -1) Array() else store.read(file.id, file.dataId, start, stop)(offset, intSize)
             buf.put(0, bytes, 0, bytes.length)
             bytes.length
           }
