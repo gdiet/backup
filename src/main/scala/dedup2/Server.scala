@@ -2,6 +2,7 @@ package dedup2
 
 import java.io.File
 import java.lang.System.{currentTimeMillis => now}
+import java.security.MessageDigest
 
 import dedup2.Database._
 import jnr.ffi.Platform.OS.WINDOWS
@@ -202,16 +203,28 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
         fileDescriptors.get(file.id).foreach {
           case 1 =>
             fileDescriptors -= file.id
-//            if (store.hasTemporaryData(file.id, file.dataId)) {
-//              val (ltStart, ltStop) = db.startStop(file.dataId)
-//              val size = store.size(file.id, file.dataId, ltStart, ltStop)
-//              val md = MessageDigest.getInstance(hashAlgorithm)
-//
-//              // calculate hash
-//              // try to find match
-//              // no match -> write through
-//              ???
-//            }
+            if (store.hasTemporaryData(file.id, file.dataId)) {
+              val (ltStart, ltStop) = db.startStop(file.dataId)
+              val size = store.size(file.id, file.dataId, ltStart, ltStop)
+              val md = MessageDigest.getInstance(hashAlgorithm)
+              for { position <- 0L until size by 32768; chunkSize = math.min(32768, size - position).toInt }
+                md.update(store.read(file.id, file.dataId, ltStart, ltStop)(position, chunkSize))
+              val hash = md.digest()
+              db.dataEntry(hash, size) match {
+                case Some(dataId) =>
+                  log.info(s"release: $path $file -> KNOWN DATAID $dataId")
+                  require(db.setDataId(file.id, dataId))
+                case None =>
+                  val dataId = if (ltStart -> ltStop == -1 -> -1) file.dataId else db.newDataId(file.id)
+                  log.info(s"release: $path $file -> START $ltStart DATAID $dataId")
+                  for { position <- 0L until size by 32768; chunkSize = math.min(32768, size - position).toInt } {
+                    val chunk = store.read(file.id, file.dataId, ltStart, ltStop)(position, chunkSize)
+                    store.longTermStore.write(startOfFreeData + position, chunk)
+                  }
+                  startOfFreeData += size
+              }
+              store.delete(file.id, file.dataId)
+            }
           case n => fileDescriptors += file.id -> (n - 1)
         }
         0
@@ -258,7 +271,6 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
     }
   }.tap(r => log.debug(s"read $path -> $size/$offset -> $r"))
 
-  // FIXME there is a bug here ...
   override def truncate(path: String, size: Long): Int = sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT

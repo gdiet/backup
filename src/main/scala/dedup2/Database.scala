@@ -109,7 +109,7 @@ class Database(connection: Connection) { import Database._
   )
   def startStop(dataId: Long): (Long, Long) = {
     qStartStop.setLong(1, dataId)
-    resource(qStartStop.executeQuery())(_.maybeNext(rs => rs.getLong(1) -> rs.getLong(2)).getOrElse(0L -> 0L))
+    resource(qStartStop.executeQuery())(_.maybeNext(rs => rs.getLong(1) -> rs.getLong(2)).getOrElse(-1L -> -1L))
   }
 
   private val dTreeEntry = connection.prepareStatement(
@@ -163,13 +163,32 @@ class Database(connection: Connection) { import Database._
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
   }
 
-  private val uDataId = connection.prepareStatement(
+  private val iDataId = connection.prepareStatement(
     "UPDATE TreeEntries SET dataId = NEXT VALUE FOR idSeq WHERE id = ?",
     Statement.RETURN_GENERATED_KEYS
   )
   def newDataId(id: Long): Long = {
-    uDataId.setLong(1, id)
-    require(uDataId.executeUpdate() == 1)
-    uDataId.getGeneratedKeys.tap(_.next()).getLong(1)
+    iDataId.setLong(1, id)
+    require(iDataId.executeUpdate() == 1)
+    iDataId.getGeneratedKeys.tap(_.next()).getLong(1)
+  }
+
+  private val uDataId = connection.prepareStatement(
+    "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
+  )
+  def setDataId(id: Long, dataId: Long): Boolean = {
+    uDataId.setLong(1, dataId)
+    uDataId.setLong(2, id)
+    uDataId.executeUpdate() == 1
+  }
+
+  private val qHash = connection.prepareStatement(
+    "SELECT id, start, stop FROM DataEntries WHERE hash = ?"
+  )
+  def dataEntry(hash: Array[Byte], size: Long): Option[Long] = {
+    qHash.setBytes(1, hash)
+    resource(qHash.executeQuery())(r => r.seq(_ => (r.getLong(1), r.getLong(2), r.getLong(3)))).collectFirst {
+      case (id, start, stop) if stop - start == size => id
+    }
   }
 }

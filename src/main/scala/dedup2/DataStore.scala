@@ -3,7 +3,7 @@ package dedup2
 import scala.collection.immutable.SortedMap
 
 class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
-  private val longTermStore = new LongTermStore(dataDir, readOnly)
+  val longTermStore = new LongTermStore(dataDir, readOnly)
   override def close(): Unit = longTermStore.close()
 
   // Map(id/dataId -> size, Map(position, data))
@@ -21,19 +21,25 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
         val drop = math.max(0, chunkPosition + chunkData.length - (position + sizeToRead)).toInt
         chunkPosition -> chunkData.dropRight(drop)
     }
-    // println(s"READ chunks: ${chunks.view.mapValues(_.mkString("[",",","]")).toMap}")
+    println(s"READ chunks: ${chunks.view.mapValues(_.mkString("[",",","]")).toMap}")
     val chunksToRead = chunks.foldLeft(SortedMap(position -> sizeToRead)) { case (chunksToRead, (chunkPosition, chunkData)) =>
-      // println(s"READ chunksToRead -> $chunksToRead")
       val (readPosition, sizeToRead) = chunksToRead.filter(_._1 <= chunkPosition).last
+      println(s"READ chunksToRead -> " +
+        s"\nchunksToRead = $chunksToRead" +
+        s"\nchunkPosition = $chunkPosition" +
+        s"\nreadPosition = $readPosition" +
+        s"\nsizeToRead = $sizeToRead" +
+        s"\nchunkData.length = ${chunkData.length}")
       chunksToRead - readPosition ++ Seq(
-        readPosition -> (chunkPosition - readPosition).toInt,
+        readPosition -> (chunkPosition - readPosition).toInt, // 32768 -> 32768 - 32768
         chunkPosition + chunkData.length -> (readPosition + sizeToRead - chunkPosition - chunkData.length).toInt
+        // 32768 + 35640
       ).filterNot(_._2 == 0)
     }
-    // println(s"READ chunksToRead: $chunksToRead")
+    println(s"READ chunksToRead: $chunksToRead")
     val chunksRead: SortedMap[Long, Array[Byte]] =
       chunksToRead.map { case (start, length) => start -> longTermStore.read(ltStart + start, length) }
-    // println(s"READ chunksRead: ${chunksRead.view.mapValues(_.mkString("[",",","]")).toMap}")
+    println(s"READ chunksRead: ${chunksRead.view.mapValues(_.mkString("[",",","]")).toMap}")
     (chunksRead ++ chunks).map(_._2).reduce(_ ++ _)
   }
 
