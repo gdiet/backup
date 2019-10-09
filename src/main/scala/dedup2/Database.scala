@@ -191,4 +191,15 @@ class Database(connection: Connection) { import Database._
       case (id, start, stop) if stop - start == size => id
     }
   }
+
+  private val iDataEntry = connection.prepareStatement(
+    "INSERT INTO DataEntries (id, start, stop, hash) VALUES (?, ?, ?, ?)"
+  )
+  def insertDataEntry(dataId: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = {
+    iDataEntry.setLong(1, dataId)
+    iDataEntry.setLong(2, start)
+    iDataEntry.setLong(3, stop)
+    iDataEntry.setBytes(4, hash)
+    require(iDataEntry.executeUpdate() == 1)
+  }
 }

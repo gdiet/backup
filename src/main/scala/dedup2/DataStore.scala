@@ -14,32 +14,35 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   def read(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, requestedSize: Int): Array[Byte] = {
     val (fileSize, localChunks) = entries.getOrElse(id -> dataId, ltStop - ltStart -> Map[Long, Array[Byte]]())
     val sizeToRead = math.max(math.min(requestedSize, fileSize - position), 0).toInt
+//    println(s"SIZE TO READ: $sizeToRead")
+//    println(s"LOCAL chunks: ${localChunks.view.mapValues(a => a.take(50).mkString(s"${a.length}->[",",","]")).toMap}")
     val chunks: Map[Long, Array[Byte]] = localChunks.collect {
-      case (chunkPosition, chunkData) if chunkPosition < position && chunkPosition + chunkData.length > position =>
-        position -> chunkData.drop((position - chunkPosition).toInt)
-      case (chunkPosition, chunkData) if chunkPosition >= position && chunkPosition < position + sizeToRead =>
-        val drop = math.max(0, chunkPosition + chunkData.length - (position + sizeToRead)).toInt
-        chunkPosition -> chunkData.dropRight(drop)
+      case (chunkPosition, chunkData)
+        if (chunkPosition <  position && chunkPosition + chunkData.length > position) ||
+           (chunkPosition >= position && chunkPosition                    < position + sizeToRead) =>
+        val dropLeft  = math.max(0, position - chunkPosition).toInt
+        val dropRight = math.max(0, chunkPosition + chunkData.length - (position + sizeToRead)).toInt
+        chunkPosition + dropLeft -> chunkData.drop(dropLeft).dropRight(dropRight)
     }
-    println(s"READ chunks: ${chunks.view.mapValues(_.mkString("[",",","]")).toMap}")
+//    println(s"READ chunks: ${chunks.view.mapValues(a => a.take(50).mkString(s"${a.length}->[",",","]")).toMap}")
     val chunksToRead = chunks.foldLeft(SortedMap(position -> sizeToRead)) { case (chunksToRead, (chunkPosition, chunkData)) =>
       val (readPosition, sizeToRead) = chunksToRead.filter(_._1 <= chunkPosition).last
-      println(s"READ chunksToRead -> " +
-        s"\nchunksToRead = $chunksToRead" +
-        s"\nchunkPosition = $chunkPosition" +
-        s"\nreadPosition = $readPosition" +
-        s"\nsizeToRead = $sizeToRead" +
-        s"\nchunkData.length = ${chunkData.length}")
+//      println(s"READ chunksToRead -> " +
+//        s"\nchunksToRead = $chunksToRead" +
+//        s"\nchunkPosition = $chunkPosition" +
+//        s"\nreadPosition = $readPosition" +
+//        s"\nsizeToRead = $sizeToRead" +
+//        s"\nchunkData.length = ${chunkData.length}")
       chunksToRead - readPosition ++ Seq(
         readPosition -> (chunkPosition - readPosition).toInt, // 32768 -> 32768 - 32768
         chunkPosition + chunkData.length -> (readPosition + sizeToRead - chunkPosition - chunkData.length).toInt
         // 32768 + 35640
       ).filterNot(_._2 == 0)
     }
-    println(s"READ chunksToRead: $chunksToRead")
+//    println(s"READ chunksToRead: $chunksToRead")
     val chunksRead: SortedMap[Long, Array[Byte]] =
       chunksToRead.map { case (start, length) => start -> longTermStore.read(ltStart + start, length) }
-    println(s"READ chunksRead: ${chunksRead.view.mapValues(_.mkString("[",",","]")).toMap}")
+//    println(s"READ chunksRead: ${chunksRead.view.mapValues(_.mkString("[",",","]")).toMap}")
     (chunksRead ++ chunks).map(_._2).reduce(_ ++ _)
   }
 
@@ -52,6 +55,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     entries += (id -> dataId) -> (0L -> Map())
 
   def write(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, data: Array[Byte]): Unit = {
+//    println(s"WRITE $position ${data.length}")
     val (fileSize, chunks) = entries.getOrElse(id -> dataId, ltStop - ltStart -> Map[Long, Array[Byte]]())
     val newSize = math.max(fileSize, position + data.length)
     // println(s"\nStage 1: ${chunks.view.mapValues(_.mkString("[",",","]")).toMap}")

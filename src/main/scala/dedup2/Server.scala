@@ -213,14 +213,15 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
               db.dataEntry(hash, size) match {
                 case Some(dataId) =>
                   log.info(s"release: $path $file -> KNOWN DATAID $dataId")
-                  require(db.setDataId(file.id, dataId))
+                  if (file.dataId != dataId) require(db.setDataId(file.id, dataId))
                 case None =>
                   val dataId = if (ltStart -> ltStop == -1 -> -1) file.dataId else db.newDataId(file.id)
-                  log.info(s"release: $path $file -> START $ltStart DATAID $dataId")
+                  log.debug(s"release: $path $file -> START $ltStart DATAID $dataId")
                   for { position <- 0L until size by 32768; chunkSize = math.min(32768, size - position).toInt } {
                     val chunk = store.read(file.id, file.dataId, ltStart, ltStop)(position, chunkSize)
                     store.longTermStore.write(startOfFreeData + position, chunk)
                   }
+                  db.insertDataEntry(dataId, startOfFreeData, startOfFreeData + size, hash)
                   startOfFreeData += size
               }
               store.delete(file.id, file.dataId)
