@@ -35,12 +35,14 @@ object Server extends App {
     val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val fs = new Server(repo, readonly)
+    LoggerFactory.getLogger(fs.getClass).info(s"Dedup file system $repo -> $mountPoint, readonly = $readonly")
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
     finally { fs.umount(); println(s"Repository unmounted from $mountPoint.") }
   }
 }
 
 class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
+  private val log = LoggerFactory.getLogger(getClass)
   private val repo = maybeRelativeRepo.getAbsoluteFile // absolute needed e.g. for getFreeSpace()
   private val dbDir = Database.dbDir(repo)
   if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
@@ -50,13 +52,12 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
     val timestamp: String = new SimpleDateFormat("yyyy-MM-dd_HH-mm").format(new Date())
     val backup = new File(dbDir, s"dedupfs_$timestamp.mv.db")
     Files.copy(dbFile.toPath, backup.toPath, StandardCopyOption.COPY_ATTRIBUTES)
-    println(s"Created database backup file $backup")
+    log.info(s"Created database backup file $backup")
   }
 
   private val db = new Database(H2.mem().tap(Database.initialize))
   private val dataDir = new File(repo, "data").tap{d => d.mkdirs(); require(d.isDirectory)}
   private val store = new DataStore(dataDir.getAbsolutePath, readonly)
-  private val log = LoggerFactory.getLogger(getClass)
   private val hashAlgorithm = "MD5"
 
   private def O777 = 511
@@ -192,7 +193,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
   private var fileDescriptors: Map[Long, Int] = Map()
   private def incCount(id: Long): Unit = fileDescriptors += id -> (fileDescriptors.getOrElse(id, 0) + 1)
   private var startOfFreeData = db.startOfFreeData
-  log.info(s"Start of free data: $startOfFreeData")
+  log.info(s"Bytes stored: $startOfFreeData")
 
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int = sync {
     val parts = split(path)
