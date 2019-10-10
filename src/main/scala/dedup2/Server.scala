@@ -11,16 +11,35 @@ import org.slf4j.LoggerFactory
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
+import scala.util.Using.resource
+
 object Server extends App {
-  val mountPoint = "J:\\"
-  val repo = new File("")
-  val fs = new Server(repo)
-  try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
-  finally { fs.umount(); println(s"Repository unmounted from $mountPoint.") }
+  val (options, commands) = args.partition(_.contains("=")).pipe { case (options, commands) =>
+    options.map(_.split("=", 2).pipe(o => o(0).toLowerCase -> o(1))).toMap ->
+    commands.toList.map(_.toLowerCase())
+  }
+
+  if (commands.contains("init")) {
+    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+    val dbDir = Database.dbDir(repo)
+    if (dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir already exists.")
+    resource(H2.file(dbDir, readonly = false)) (Database.initialize)
+    println(s"Database initialized in $dbDir.")
+
+  } else {
+    val readonly = !commands.contains("write")
+    val mountPoint = options.getOrElse("mount", "J:\\")
+    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+    val fs = new Server(repo, readonly)
+    try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
+    finally { fs.umount(); println(s"Repository unmounted from $mountPoint.") }
+  }
 }
 
-class Server(maybeRelativeRepo: File) extends FuseStubFS {
+class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
   private val repo = maybeRelativeRepo.getAbsoluteFile // absolute needed e.g. for getFreeSpace()
+  private val dbDir = Database.dbDir(repo)
+  if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
   private val db = new Database(H2.mem().tap(Database.initialize))
   private val dataDir = new File(repo, "data").tap{d => d.mkdirs(); require(d.isDirectory)}
   private val store = new DataStore(dataDir.getAbsolutePath, readOnly = false)
