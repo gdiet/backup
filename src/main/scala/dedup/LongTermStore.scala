@@ -1,13 +1,10 @@
-package dedup2
+package dedup
 
 import java.io.{File, RandomAccessFile}
-
-import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
 
 class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
-  private val log = LoggerFactory.getLogger(getClass)
   private val fileSize = 100000000 // 100 MB
   private val parallelOpenFiles = 3
   private val writeFlag = if (readOnly) "r" else "rw"

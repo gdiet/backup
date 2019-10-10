@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 import scala.collection.immutable.SortedMap
 

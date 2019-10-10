@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 import java.io.File
 import java.lang.System.{currentTimeMillis => now}
@@ -7,7 +7,7 @@ import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 
-import dedup2.Database._
+import dedup.Database._
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.Platform.{OS, getNativePlatform}
 import jnr.ffi.{Platform, Pointer}
