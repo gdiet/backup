@@ -55,8 +55,6 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
         setCommon(dir.time, 2)
         0
       case Some(file: FileEntry) =>
-//        log.debug(s"file $path -> $file")
-//        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
         val (start, stop) = db.startStop(file.dataId)
         val size = store.size(file.id, file.dataId, start, stop)
         stat.st_mode.set(FileStat.S_IFREG | O777)
@@ -74,7 +72,6 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
       else entry(path) match {
         case None => -ErrorCodes.ENOENT
         case Some(entry) =>
-//          log.info(s"set last modified $path -> ${timespec(1).tv_sec.get} ${timespec(1).tv_nsec.longValue} ${timespec(1).pipe(t => t.tv_sec.get * 1000 + t.tv_nsec.longValue / 1000000)}")
           db.setTime(entry.id, timespec(1).pipe(t => t.tv_sec.get * 1000 + t.tv_nsec.longValue / 1000000))
           0
       }
@@ -178,7 +175,6 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
           case None =>
             val id = db.mkFile(dir.id, name, now)
             incCount(id)
-//            log.debug(s"count for $path / $id -> ${fileDescriptors.get(id)}")
             0
         }
     }
@@ -190,7 +186,6 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
         incCount(file.id)
-//        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
         0
     }
   }.tap(r => log.debug(s"open $path -> $r"))
@@ -229,7 +224,6 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
           case n => fileDescriptors += file.id -> (n - 1)
         }
         0
-      //        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
     }
   }.tap(r => log.debug(s"release $path -> $r"))
 
@@ -242,7 +236,6 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
         if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
         else if (offset < 0 || size != intSize) -ErrorCodes.EOVERFLOW
         else {
-//          log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
           val data = new Array[Byte](intSize)
           buf.get(0, data, 0, intSize)
           val (ltStart, ltStop) = db.startStop(file.dataId)
@@ -262,9 +255,7 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
           val intSize = size.toInt.abs
           if (offset < 0 || intSize != size) -ErrorCodes.EOVERFLOW
           else {
-//            log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
             val (start, stop) = db.startStop(file.dataId)
-            if (start -> stop == -1 -> -1) log.info(s"EMPTY FILE $path")
             val bytes: Array[Byte] =
               if (start -> stop == -1 -> -1) Array() else store.read(file.id, file.dataId, start, stop)(offset, intSize)
             buf.put(0, bytes, 0, bytes.length)
@@ -290,7 +281,6 @@ class Server(maybeRelativeRepo: File) extends FuseStubFS {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-//        log.debug(s"count for $path / ${file.id} -> ${fileDescriptors.get(file.id)}")
         if (db.delete(file.id)) {
           store.delete(file.id, file.dataId)
           fileDescriptors -= file.id

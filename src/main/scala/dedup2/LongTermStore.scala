@@ -41,7 +41,6 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
 
   def read(position: Long, size: Int): Array[Byte] = {
     val (path, offset, bytesToRead) = pathOffsetSize(position, size)
-    if (offset <= 0) log.info(s"READ: $position/$size -> $path $offset/$bytesToRead")
     val bytes = new Array[Byte](bytesToRead)
     open(path).pipe { ra =>
       ra.seek(offset)
