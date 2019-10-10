@@ -54,7 +54,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
 
   private val db = new Database(H2.mem().tap(Database.initialize))
   private val dataDir = new File(repo, "data").tap{d => d.mkdirs(); require(d.isDirectory)}
-  private val store = new DataStore(dataDir.getAbsolutePath, readOnly = false)
+  private val store = new DataStore(dataDir.getAbsolutePath, readonly)
   private val log = LoggerFactory.getLogger(getClass)
   private val hashAlgorithm = "MD5"
 
