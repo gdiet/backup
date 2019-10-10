@@ -9,6 +9,7 @@ import java.util.Date
 
 import dedup2.Database._
 import jnr.ffi.Platform.OS.WINDOWS
+import jnr.ffi.Platform.{OS, getNativePlatform}
 import jnr.ffi.{Platform, Pointer}
 import org.slf4j.LoggerFactory
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
@@ -31,7 +32,7 @@ object Server extends App {
 
   } else {
     val readonly = !commands.contains("write")
-    val mountPoint = options.getOrElse("mount", "J:\\")
+    val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val fs = new Server(repo, readonly)
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
