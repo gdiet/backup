@@ -2,7 +2,10 @@ package dedup2
 
 import java.io.File
 import java.lang.System.{currentTimeMillis => now}
+import java.nio.file.{Files, StandardCopyOption}
 import java.security.MessageDigest
+import java.text.SimpleDateFormat
+import java.util.Date
 
 import dedup2.Database._
 import jnr.ffi.Platform.OS.WINDOWS
@@ -40,6 +43,13 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
   private val repo = maybeRelativeRepo.getAbsoluteFile // absolute needed e.g. for getFreeSpace()
   private val dbDir = Database.dbDir(repo)
   if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
+  { val dbFile = new File(dbDir, "dedupfs.mv.db")
+    if (!dbFile.exists()) throw new IllegalStateException(s"Database file $dbFile does not exist.")
+    val timestamp: String = new SimpleDateFormat("yyyy-MM-dd_HH-mm").format(new Date())
+    val backup = new File(dbDir, s"dedupfs_$timestamp.mv.db")
+    Files.copy(dbFile.toPath, backup.toPath, StandardCopyOption.COPY_ATTRIBUTES)
+    println(s"Created database backup file $backup") }
+
   private val db = new Database(H2.mem().tap(Database.initialize))
   private val dataDir = new File(repo, "data").tap{d => d.mkdirs(); require(d.isDirectory)}
   private val store = new DataStore(dataDir.getAbsolutePath, readOnly = false)
