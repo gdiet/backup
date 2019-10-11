@@ -26,6 +26,12 @@ Mozilla Public License 2
 Eclipse Public License 1
 http://h2database.com/html/license.html
 
+Logback classic 1.2.3:
+http://logback.qos.ch/
+Eclipse Public License 1.0
+LGPL 2.1
+http://logback.qos.ch/license.html
+
 Scala 2.13.0:
 https://github.com/scala/scala
 Apache 2 License
