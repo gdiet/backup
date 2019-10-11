@@ -35,8 +35,8 @@ object Database {
         |INSERT INTO TreeEntries (id, parentId, name, time) VALUES (0, 0, '', ${root.time});
         |INSERT INTO TreeEntries (parentId, name, time) VALUES (0, '1-hallo', 0);
         |INSERT INTO TreeEntries (parentId, name, time) VALUES (0, '2-welt', 0);
-        |INSERT INTO TreeEntries (parentId, name, time) VALUES (1, '3-x', 0);
-        |INSERT INTO TreeEntries (parentId, name, time) VALUES (1, '4-y', 0);
+        |INSERT INTO TreeEntries (parentId, name, time) VALUES (1, '3-xx', 0);
+        |INSERT INTO TreeEntries (parentId, name, time) VALUES (1, '4-yy', 0);
         |UPDATE TreeEntries SET parentId = 1, name = '3-xx' WHERE id = 3;
         |""".stripMargin split ";"
   }
@@ -163,15 +163,11 @@ class Database(connection: Connection) { import Database._
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
   }
 
-  private val iDataId = connection.prepareStatement(
-    "UPDATE TreeEntries SET dataId = NEXT VALUE FOR idSeq WHERE id = ?",
-    Statement.RETURN_GENERATED_KEYS
-  )
-  def newDataId(id: Long): Long = {
-    iDataId.setLong(1, id)
-    require(iDataId.executeUpdate() == 1)
-    iDataId.getGeneratedKeys.tap(_.next()).getLong(1)
-  }
+  private val qNextId = connection.prepareStatement("SELECT NEXT VALUE FOR idSeq")
+  private def nextId: Long = resource(qNextId.executeQuery())(_.tap(_.next()).getLong(1))
+
+  // Generated keys seem not to be available for sql update, so this is two SQL commands
+  def newDataId(id: Long): Long = nextId.tap(setDataId(id, _))
 
   private val uDataId = connection.prepareStatement(
     "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
