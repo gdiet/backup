@@ -33,11 +33,6 @@ object Database {
         |  CONSTRAINT fk_TreeEntries_parentId FOREIGN KEY (parentId) REFERENCES TreeEntries(id)
         |);
         |INSERT INTO TreeEntries (id, parentId, name, time) VALUES (0, 0, '', ${root.time});
-        |INSERT INTO TreeEntries (parentId, name, time) VALUES (0, '1-hallo', 0);
-        |INSERT INTO TreeEntries (parentId, name, time) VALUES (0, '2-welt', 0);
-        |INSERT INTO TreeEntries (parentId, name, time) VALUES (1, '3-xx', 0);
-        |INSERT INTO TreeEntries (parentId, name, time) VALUES (1, '4-yy', 0);
-        |UPDATE TreeEntries SET parentId = 1, name = '3-xx' WHERE id = 3;
         |""".stripMargin split ";"
   }
 
