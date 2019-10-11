@@ -18,6 +18,8 @@ import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 import scala.util.Using.resource
 
 object Server extends App {
+  val log = LoggerFactory.getLogger("dedup.ServerApp")
+
   val (options, commands) = args.partition(_.contains("=")).pipe { case (options, commands) =>
     options.map(_.split("=", 2).pipe(o => o(0).toLowerCase -> o(1))).toMap ->
     commands.toList.map(_.toLowerCase())
@@ -35,9 +37,9 @@ object Server extends App {
     val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val fs = new Server(repo, readonly)
-    LoggerFactory.getLogger(fs.getClass).info(s"Dedup file system $repo -> $mountPoint, readonly = $readonly")
+    log.info(s"Dedup file system $repo -> $mountPoint, readonly = $readonly")
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
-    finally { fs.umount(); println(s"Repository unmounted from $mountPoint.") }
+    catch { case e: Throwable => log.error("Mount exception:", e); fs.umount() }
   }
 }
 
@@ -55,7 +57,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
     log.info(s"Created database backup file $backup")
   }
 
-  private val db = new Database(H2.mem().tap(Database.initialize))
+  private val db = new Database(H2.file(dbDir, readonly = false))
   private val dataDir = new File(repo, "data").tap{d => d.mkdirs(); require(d.isDirectory)}
   private val store = new DataStore(dataDir.getAbsolutePath, readonly)
   private val hashAlgorithm = "MD5"
@@ -70,7 +72,10 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
       case _ => None
     }
 
-  override def umount(): Unit = sync { log.debug(s"umount") }
+  override def umount(): Unit = sync {
+    store.close()
+    log.info(s"Repository unmounted from $mountPoint.")
+  }
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int = sync {

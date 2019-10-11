@@ -1,5 +1,5 @@
 package dedup
 
-object Step3_Server extends App {
+object WriteServer extends App {
   Server.main(Array("write"))
 }
