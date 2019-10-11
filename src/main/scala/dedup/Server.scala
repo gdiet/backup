@@ -33,6 +33,16 @@ object Server extends App {
     println(s"Database initialized in $dbDir.")
 
   } else {
+    scala.concurrent.ExecutionContext.global.execute {() =>
+      var minFree = Long.MaxValue
+      while(true) {
+        Thread.sleep(5000)
+        import Runtime.{getRuntime => rt}
+        val free = rt.maxMemory - rt.totalMemory + rt.freeMemory
+        if (free < minFree) {  minFree = free/11*10; log.info(s"Free memory: ${minFree/1000000} MB.") }
+      }
+    }
+
     val readonly = !commands.contains("write")
     val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
