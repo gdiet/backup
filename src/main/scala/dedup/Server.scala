@@ -34,12 +34,12 @@ object Server extends App {
 
   } else {
     scala.concurrent.ExecutionContext.global.execute {() =>
-      var minFree = Long.MaxValue
+      var lastFree = 0L
       while(true) {
         Thread.sleep(5000)
         import Runtime.{getRuntime => rt}
         val free = rt.maxMemory - rt.totalMemory + rt.freeMemory
-        if (free < minFree) {  minFree = free/11*10; log.info(s"Free memory: ${minFree/1000000} MB.") }
+        if ((free-lastFree).abs * 20 > lastFree) {  lastFree = free; log.info(s"Free memory: ${free/1000000} MB.") }
       }
     }
 
