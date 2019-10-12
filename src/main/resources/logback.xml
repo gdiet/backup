@@ -12,7 +12,23 @@
         <appender-ref ref="console"/>
     </appender>
 
-    <root level="DEBUG">
+    <appender name="timeBasedFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>log/dedupfs.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>log/old/dedupfs.%d.gz</fileNamePattern>
+            <maxHistory>100</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%date %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="asyncTimeBasedFile" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="timeBasedFile"/>
+    </appender>
+
+    <root level="INFO">
         <appender-ref ref="asyncConsole"/>
+        <appender-ref ref="asyncTimeBasedFile"/>
     </root>
 </configuration>
