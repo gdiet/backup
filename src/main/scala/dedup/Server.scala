@@ -72,7 +72,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
   private val store = new DataStore(dataDir.getAbsolutePath, readonly)
   private val hashAlgorithm = "MD5"
 
-  private def O777 = 511
+  private val rights = if (readonly) 365 else 511 // o555 else o777
   private def sync[T](f: => T): T = synchronized(try f catch { case e: Throwable => log.error("ERROR", e); throw e })
   private def split(path: String): Array[String] = path.split("/").filter(_.nonEmpty)
   private def entry(path: String): Option[TreeEntry] = entry(split(path))
@@ -99,13 +99,13 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(dir: DirEntry) =>
-        stat.st_mode.set(FileStat.S_IFDIR | O777)
+        stat.st_mode.set(FileStat.S_IFDIR | rights)
         setCommon(dir.time, 2)
         0
       case Some(file: FileEntry) =>
         val (start, stop) = db.startStop(file.dataId)
         val size = store.size(file.id, file.dataId, start, stop)
-        stat.st_mode.set(FileStat.S_IFREG | O777)
+        stat.st_mode.set(FileStat.S_IFREG | rights)
         setCommon(file.time, 1)
         stat.st_size.set(size)
         0
@@ -142,7 +142,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
     }
   }.tap(r => log.debug(s"readdir $path $offset -> $r"))
 
-  override def rmdir(path: String): Int = sync {
+  override def rmdir(path: String): Int = if (readonly) -ErrorCodes.EROFS else sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
@@ -153,7 +153,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
   }.tap(r => log.debug(s"rmdir $path -> $r"))
 
   // Renames a file. Other than the general contract of rename, newpath must not exist.
-  override def rename(oldpath: String, newpath: String): Int = sync {
+  override def rename(oldpath: String, newpath: String): Int = if (readonly) -ErrorCodes.EROFS else sync {
     val (oldParts, newParts) = (split(oldpath), split(newpath))
     if (oldParts.length == 0 || newParts.length == 0) -ErrorCodes.ENOENT
     else entry(oldParts) match {
@@ -172,7 +172,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
     }
   }.tap(r => log.debug(s"rename $oldpath -> $newpath -> $r"))
 
-  override def mkdir(path: String, mode: Long): Int = sync {
+  override def mkdir(path: String, mode: Long): Int = if (readonly) -ErrorCodes.EROFS else sync {
     val parts = split(path)
     if (parts.length == 0) -ErrorCodes.ENOENT
     else entry(parts.take(parts.length - 1)) match {
@@ -210,7 +210,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
   private var startOfFreeData = db.startOfFreeData
   log.info(s"Bytes stored: $startOfFreeData")
 
-  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = sync {
+  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = if (readonly) -ErrorCodes.EROFS else sync {
     val parts = split(path)
     if (parts.length == 0) -ErrorCodes.ENOENT
     else entry(parts.take(parts.length - 1)) match {
@@ -275,7 +275,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
     }
   }.tap(r => log.debug(s"release $path -> $r"))
 
-  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
+  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = if (readonly) -ErrorCodes.EROFS else sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
@@ -313,7 +313,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
     }
   }.tap(r => log.debug(s"read $path -> $size/$offset -> $r"))
 
-  override def truncate(path: String, size: Long): Int = sync {
+  override def truncate(path: String, size: Long): Int = if (readonly) -ErrorCodes.EROFS else sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
@@ -324,7 +324,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
     }
   }.tap(r => log.debug(s"truncate $path -> $size -> $r"))
 
-  override def unlink(path: String): Int = sync {
+  override def unlink(path: String): Int = if (readonly) -ErrorCodes.EROFS else sync {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR

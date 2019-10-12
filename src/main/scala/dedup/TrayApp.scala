@@ -8,7 +8,7 @@ import javax.swing.{JOptionPane, SwingUtilities}
 object TrayApp extends App {
   require(SystemTray.isSupported, "System tray not supported.")
   val icon: Image = new javax.swing.ImageIcon(getClass.getResource("/trayIcon.png"), "tray icon").getImage
-  val freeSpaceItem = new MenuItem("Free: ??? MB")
+  val freeSpaceItem = new MenuItem("Free Memory: ??? MB")
   val stopItem = new MenuItem("Stop Dedup File System")
   val popup = new PopupMenu()
   popup.add(freeSpaceItem)
@@ -28,7 +28,7 @@ object TrayApp extends App {
     while(true) {
       import Runtime.{getRuntime => rt}
       val freeSpace = rt.maxMemory - rt.totalMemory + rt.freeMemory
-      SwingUtilities.invokeLater(() => freeSpaceItem.setLabel(s"Free: ${freeSpace/1000000} MB"))
+      SwingUtilities.invokeLater(() => freeSpaceItem.setLabel(s"Free Memory: ${freeSpace/1000000} MB"))
       Thread.sleep(5000)
     }
   }
