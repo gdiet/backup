@@ -33,5 +33,9 @@ object TrayApp extends App {
     }
   }
 
-  Server.main(args)
+  try Server.main(args) catch { case t: Throwable =>
+    val exceptionMessage = t.getMessage.grouped(80).take(10).mkString("\n")
+    JOptionPane.showMessageDialog(null, s"Dedup File System exited abnormally:\n$exceptionMessage", "Dedup File System", JOptionPane. ERROR_MESSAGE)
+    System.exit(0)
+  }
 }
