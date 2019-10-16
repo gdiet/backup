@@ -20,6 +20,21 @@ import scala.util.Using.resource
 object Server extends App {
   val log = LoggerFactory.getLogger("dedup.ServerApp")
 
+  import Runtime.{getRuntime => rt}
+  def freeMemory: Long = rt.maxMemory - rt.totalMemory + rt.freeMemory
+
+  private var lastGc: Long = now
+  def memoryLow: Boolean = {
+    val free = freeMemory
+    if (free < 1000000000L && now > lastGc + 5000) {
+      log.info(s"Memory getting low: ${free / 1000000} MB - trying to free some")
+      System.gc()
+      Thread.sleep(250)
+      lastGc = now
+      freeMemory < 200000000L
+    } else free < 200000000L
+  }
+
   val (options, commands) = args.partition(_.contains("=")).pipe { case (options, commands) =>
     options.map(_.split("=", 2).pipe(o => o(0).toLowerCase -> o(1))).toMap ->
     commands.toList.map(_.toLowerCase())
@@ -37,8 +52,7 @@ object Server extends App {
       var lastFree = 0L
       while(true) {
         Thread.sleep(5000)
-        import Runtime.{getRuntime => rt}
-        val free = rt.maxMemory - rt.totalMemory + rt.freeMemory
+        val free = freeMemory
         if ((free-lastFree).abs * 10 > lastFree) {  lastFree = free; log.info(s"Free memory: ${free/1000000} MB.") }
       }
     }
@@ -280,15 +294,21 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-        val intSize = size.toInt.abs
-        if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
-        else if (offset < 0 || size != intSize) -ErrorCodes.EOVERFLOW
-        else {
-          val data = new Array[Byte](intSize)
-          buf.get(0, data, 0, intSize)
-          val (ltStart, ltStop) = db.startStop(file.dataId)
-          store.write(file.id, file.dataId, ltStart, ltStop)(offset, data)
-          intSize
+        if (Server.memoryLow) {
+          log.warn(s"Low memory: ${Server.freeMemory / 1000000}MB - not storing (${file.id}/${file.dataId}) -> $path")
+          store.delete(file.id, file.dataId)
+          -ErrorCodes.EIO()
+        } else {
+          val intSize = size.toInt.abs
+          if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
+          else if (offset < 0 || size != intSize) -ErrorCodes.EOVERFLOW
+          else {
+            val data = new Array[Byte](intSize)
+            buf.get(0, data, 0, intSize)
+            val (ltStart, ltStop) = db.startStop(file.dataId)
+            store.write(file.id, file.dataId, ltStart, ltStop)(offset, data)
+            intSize
+          }
         }
     }
   }.tap(r => log.debug(s"write $path -> $offset/$size -> $r"))

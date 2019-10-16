@@ -26,9 +26,8 @@ object TrayApp extends App {
 
   scala.concurrent.ExecutionContext.global.execute {() =>
     while(true) {
-      import Runtime.{getRuntime => rt}
-      val freeSpace = rt.maxMemory - rt.totalMemory + rt.freeMemory
-      SwingUtilities.invokeLater(() => freeSpaceItem.setLabel(s"Free Memory: ${freeSpace/1000000} MB"))
+      val free = Server.freeMemory
+      SwingUtilities.invokeLater(() => freeSpaceItem.setLabel(s"Free Memory: ${free/1000000} MB"))
       Thread.sleep(5000)
     }
   }
