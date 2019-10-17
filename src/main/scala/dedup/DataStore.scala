@@ -1,13 +1,17 @@
 package dedup
 
+import org.slf4j.LoggerFactory
+
 import scala.collection.immutable.SortedMap
 
 class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
+  private val log = LoggerFactory.getLogger(getClass)
   val longTermStore = new LongTermStore(dataDir, readOnly)
   override def close(): Unit = longTermStore.close()
 
   // Map(id/dataId -> size, Map(position, data))
   private var entries = Map[(Long, Long), (Long, Map[Long, Array[Byte]])]()
+  private var memoryUsage = 0L
 
   def hasTemporaryData(id: Long, dataId: Long): Boolean = entries.contains(id -> dataId)
 
@@ -37,10 +41,17 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   def size(id: Long, dataId: Long, ltStart: Long, ltStop: Long): Long =
     entries.get(id -> dataId).map(_._1).getOrElse(ltStop - ltStart)
 
-  def delete(id: Long, dataId: Long): Unit = entries -= (id -> dataId)
+  def delete(id: Long, dataId: Long, writeLog: Boolean = true): Unit = {
+    memoryUsage = memoryUsage - entries.get(id -> dataId).toSeq.flatMap(_._2).map(_._2.length.toLong).sum
+    if (writeLog) log.debug(s"Delete - memory usage $memoryUsage.")
+    entries -= (id -> dataId)
+  }
 
-  def truncate(id: Long, dataId: Long, ltStart: Long, ltStop: Long): Unit =
+  def truncate(id: Long, dataId: Long, ltStart: Long, ltStop: Long): Unit = {
+    delete(id, dataId, writeLog = false)
+    log.debug(s"Truncate - memory usage $memoryUsage.")
     entries += (id -> dataId) -> (0L -> Map())
+  }
 
   def write(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, data: Array[Byte]): Unit = {
     val (fileSize, chunks) = entries.getOrElse(id -> dataId, ltStop - ltStart -> Map[Long, Array[Byte]]())
@@ -60,6 +71,9 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
       else posA -> (dataA ++ dataB.drop((posA + dataA.length - posB).toInt))
     }
     val merged = others + reduced
+    delete(id, dataId, writeLog = false)
+    memoryUsage += merged.values.map(_.length.toLong).sum
+    log.debug(s"Write - memory usage $memoryUsage.")
     entries += (id -> dataId) -> (newSize -> merged)
   }
 }
