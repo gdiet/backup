@@ -13,6 +13,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     def position: Long
     def data: Array[Byte]
     def length: Int
+    def memory: Long
     def write(data: Array[Byte]): Unit
     def drop(left: Int, right: Int): Entry
     def ++(other: Entry): Entry
@@ -23,13 +24,15 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   }
   case class MemoryEntry(id: Long, dataId: Long, position: Long, data: Array[Byte]) extends Entry {
     override def length: Int = data.length
+    override def memory: Long = length + 64
     override def drop(left: Int, right: Int): Entry = copy(data = data.drop(left).dropRight(right))
     override def write(data: Array[Byte]): Unit = System.arraycopy(data, 0, this.data, 0, data.length)
     override def ++(other: Entry): Entry = Entry(id, dataId, position, data ++ other.data)
   }
   case class FileEntry(id: Long, dataId: Long, position: Long, length: Int) extends Entry {
-    override def drop(left: Int, right: Int): Entry = copy(position = position + left, length = length - left - right)
     override def data: Array[Byte] = ???
+    override def memory: Long = 64
+    override def drop(left: Int, right: Int): Entry = copy(position = position + left, length = length - left - right)
     override def write(data: Array[Byte]): Unit = ???
     override def ++(other: Entry): Entry = ???
   }
@@ -66,7 +69,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     entries.get(id -> dataId).map(_._1).getOrElse(ltStop - ltStart)
 
   def delete(id: Long, dataId: Long, writeLog: Boolean = true): Unit = {
-    memoryUsage = memoryUsage - entries.get(id -> dataId).toSeq.flatMap(_._2).map(_.length.toLong).sum
+    memoryUsage = memoryUsage - entries.get(id -> dataId).toSeq.flatMap(_._2).map(_.memory).sum
     if (writeLog) log.debug(s"Delete - memory usage $memoryUsage.")
     entries -= (id -> dataId)
   }
@@ -96,7 +99,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     }
     val merged = others :+ reduced
     delete(id, dataId, writeLog = false)
-    memoryUsage += merged.map(_.length.toLong).sum
+    memoryUsage += merged.map(_.memory).sum
     log.debug(s"Write - memory usage $memoryUsage.")
     entries += (id -> dataId) -> (newSize -> merged)
   }
