@@ -90,9 +90,9 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
       (entry.position < position && entry.position + entry.length > position) ||
         (entry.position >= position && entry.position < position + data.length)
     }
-    val reduced = toMerge.toSeq.sortBy(_._1).reduceLeft[(Long, Entry)] { case (posA -> dataA, posB -> dataB) =>
-      if (posA + dataA.length >= posB + dataB.length) posA -> dataA
-      else posA -> (dataA ++ dataB.drop((posA + dataA.length - posB).toInt, 0))
+    val reduced = toMerge.sortBy(_.position).reduceLeft { case (dataA, dataB) =>
+      if (dataA.position + dataA.length >= dataB.position + dataB.length) dataA
+      else dataA ++ dataB.drop((dataA.position + dataA.length - dataB.position).toInt, 0)
     }
     val merged = others + reduced
     delete(id, dataId, writeLog = false)
