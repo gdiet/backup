@@ -9,6 +9,7 @@ object CleanWriteServer extends App {
   }
   delete(new File("fsdb"))
   delete(new File("data"))
+  delete(new File("data-temp"))
   Server.main(Array("init"))
   Server.main(Array("write"))
 }

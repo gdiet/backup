@@ -1,5 +1,6 @@
 .idea/
 data/
+data-temp/
 fsdb/
 log/
 target/

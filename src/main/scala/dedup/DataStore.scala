@@ -1,40 +1,82 @@
 package dedup
 
+import java.io.File
+import java.nio.ByteBuffer
+import java.nio.channels.SeekableByteChannel
+import java.nio.file.StandardOpenOption._
+import java.nio.file.{Files, Path}
+
 import org.slf4j.LoggerFactory
 
 import scala.collection.immutable.SortedMap
 
+// FIXME use readOnly here
 class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val log = LoggerFactory.getLogger(getClass)
   val longTermStore = new LongTermStore(dataDir, readOnly)
   override def close(): Unit = longTermStore.close()
 
+  val tempDir: File = new File(dataDir, "../data-temp").getCanonicalFile
+  require(tempDir.isDirectory || tempDir.mkdirs())
+
+  var openChannels: Map[(Long, Long), SeekableByteChannel] = Map()
+  def path(id: Long, dataId: Long): Path = new File(tempDir, s"$id-$dataId").toPath
+  def channel(id: Long, dataId: Long): SeekableByteChannel = {
+    require(!readOnly)
+    openChannels.getOrElse(id -> dataId, {
+      Files.newByteChannel(path(id, dataId), WRITE, CREATE_NEW, SPARSE, READ)
+        .tap(channel => openChannels += ((id, dataId) -> channel))
+    })
+  }
+
   sealed trait Entry {
-    def position: Long
-    def data: Array[Byte]
-    def length: Int
-    def memory: Long
+    def id: Long; def dataId: Long
+    def position: Long; def data: Array[Byte]
+    def length: Int; def memory: Long
     def write(data: Array[Byte]): Unit
     def drop(left: Int, right: Int): Entry
     def ++(other: Entry): Entry
   }
   object Entry {
     def apply(id: Long, dataId: Long, position: Long, data: Array[Byte]): Entry =
-      MemoryEntry(id, dataId, position, data)
+      FileEntry(id, dataId, position, data.length).tap(_.write(data))
+//      MemoryEntry(id, dataId, position, data)
   }
   case class MemoryEntry(id: Long, dataId: Long, position: Long, data: Array[Byte]) extends Entry {
     override def length: Int = data.length
-    override def memory: Long = length + 64
+    override def memory: Long = length + 500
     override def drop(left: Int, right: Int): Entry = copy(data = data.drop(left).dropRight(right))
     override def write(data: Array[Byte]): Unit = System.arraycopy(data, 0, this.data, 0, data.length)
     override def ++(other: Entry): Entry = Entry(id, dataId, position, data ++ other.data)
   }
   case class FileEntry(id: Long, dataId: Long, position: Long, length: Int) extends Entry {
-    override def data: Array[Byte] = ???
-    override def memory: Long = 64
-    override def drop(left: Int, right: Int): Entry = copy(position = position + left, length = length - left - right)
-    override def write(data: Array[Byte]): Unit = ???
-    override def ++(other: Entry): Entry = ???
+    log.info(s"create: $id/$dataId $position $length")
+    override def data: Array[Byte] = {
+      log.info(s"read  : $id/$dataId $position $length")
+      val buffer = ByteBuffer.allocate(length)
+      val input = channel(id, dataId).position(position)
+      while(buffer.remaining() > 0) input.read(buffer)
+      new Array[Byte](length).tap(buffer.position(0).get)
+    }
+    override def memory: Long = 500
+    override def drop(left: Int, right: Int): Entry = {
+      log.info(s"drop  : $id/$dataId $position+$left $length-$left-$right")
+      copy(position = position + left, length = length - left - right)
+    }
+    override def write(data: Array[Byte]): Unit = {
+      log.info(s"write : $id/$dataId $position $length data: ${data.length}")
+      channel(id, dataId).position(position).write(ByteBuffer.wrap(data))
+    }
+    override def ++(other: Entry): Entry = {
+      log.info(s"++    : $id/$dataId $position $length $other")
+      require(other.id == id && other.dataId == dataId)
+      require(position + length == other.position)
+      other match {
+        case _: FileEntry => /* Nothing to do. */
+        case _: MemoryEntry => channel(id, dataId).position(position + length).write(ByteBuffer.wrap(other.data))
+      }
+      copy(length = length + other.length)
+    }
   }
   // Map(id/dataId -> size, Seq(data))
   private var entries = Map[(Long, Long), (Long, Seq[Entry])]()
@@ -70,7 +112,15 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
 
   def delete(id: Long, dataId: Long, writeLog: Boolean = true): Unit = {
     memoryUsage = memoryUsage - entries.get(id -> dataId).toSeq.flatMap(_._2).map(_.memory).sum
-    if (writeLog) log.debug(s"Delete - memory usage $memoryUsage.")
+    if (writeLog) {
+      log.debug(s"Delete - memory usage $memoryUsage.")
+      openChannels.get(id -> dataId).foreach { c =>
+        c.close()
+        Files.delete(path(id, dataId))
+        log.info(s"close : $id/$dataId")
+      }
+      openChannels -= id -> dataId
+    }
     entries -= (id -> dataId)
   }
 
