@@ -10,7 +10,6 @@ import org.slf4j.LoggerFactory
 
 import scala.collection.immutable.SortedMap
 
-// FIXME use readOnly here
 class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val initialFreeMemory: Long = Server.freeMemory
 
@@ -41,18 +40,21 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   }
   object Entry {
     def apply(id: Long, dataId: Long, position: Long, data: Array[Byte]): Entry =
-      if (memoryUsage > initialFreeMemory*2/3 - 64000000) FileEntry(id, dataId, position, data.length).tap(_.write(data))
+      if (memoryUsage + data.length > initialFreeMemory*2/3 - 64000000)
+        FileEntry(id, dataId, position, data.length).tap(_.write(data))
       else MemoryEntry(id, dataId, position, data)
   }
   case class MemoryEntry(id: Long, dataId: Long, position: Long, data: Array[Byte]) extends Entry {
+    override def toString: String = s"Mem($id/$dataId, $position, $length)"
     override def length: Int = data.length
     override def memory: Long = length + 500
-    override def drop(left: Int, right: Int): Entry = copy(data = data.drop(left).dropRight(right))
+    override def drop(left: Int, right: Int): Entry = copy(position = position + left, data = data.drop(left).dropRight(right))
     override def write(data: Array[Byte]): Unit = System.arraycopy(data, 0, this.data, 0, data.length)
     override def ++(other: Entry): Entry = Entry(id, dataId, position, data ++ other.data)
   }
   case class FileEntry(id: Long, dataId: Long, position: Long, length: Int) extends Entry {
-    log.info(s"create: $id/$dataId $position $length")
+    log.debug(s"create: $id/$dataId $position $length")
+    override def toString: String = s"Fil($id/$dataId, $position, $length)"
     override def data: Array[Byte] = {
       log.debug(s"read  : $id/$dataId $position $length")
       val buffer = ByteBuffer.allocate(length)
@@ -119,7 +121,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
       openChannels.get(id -> dataId).foreach { c =>
         c.close()
         Files.delete(path(id, dataId))
-        log.info(s"close : $id/$dataId")
+        log.debug(s"close : $id/$dataId")
       }
       openChannels -= id -> dataId
     }
