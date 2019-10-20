@@ -1,35 +1,23 @@
 package dedup
 
-import java.awt.event.ActionEvent
 import java.awt._
 
-import javax.swing.{JOptionPane, SwingUtilities}
+import javax.swing.JOptionPane
 
 object TrayApp extends App {
   require(SystemTray.isSupported, "System tray not supported.")
-  val icon: Image = new javax.swing.ImageIcon(getClass.getResource("/trayIcon.png"), "tray icon").getImage
-  val freeSpaceItem = new MenuItem("Free Memory: ??? MB")
+
   val stopItem = new MenuItem("Stop Dedup File System")
-  val popup = new PopupMenu()
-  popup.add(freeSpaceItem)
-  popup.addSeparator()
-  popup.add(stopItem)
+  val popup = new PopupMenu().tap(_.add(stopItem))
+  val icon: Image = new javax.swing.ImageIcon(getClass.getResource("/trayIcon.png"), "tray icon").getImage
   val trayIcon = new TrayIcon(icon, "tray icon")
   trayIcon.setImageAutoSize(true)
   trayIcon.setPopupMenu(popup)
   SystemTray.getSystemTray.add(trayIcon)
 
-  stopItem.addActionListener{(e: ActionEvent) =>
+  stopItem.addActionListener { _ =>
     val reply = JOptionPane.showConfirmDialog(null, "Stop Dedup File System?", "Dedup File System", JOptionPane.YES_NO_OPTION)
     if (reply == 0) System.exit(0)
-  }
-
-  scala.concurrent.ExecutionContext.global.execute {() =>
-    while(true) {
-      val free = Server.freeMemory
-      SwingUtilities.invokeLater(() => freeSpaceItem.setLabel(s"Free Memory: ${free/1000000} MB"))
-      Thread.sleep(5000)
-    }
   }
 
   try Server.main(args) catch { case t: Throwable =>
