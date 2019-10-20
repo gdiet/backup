@@ -22,7 +22,6 @@ object Server extends App {
 
   import Runtime.{getRuntime => rt}
   def freeMemory: Long = rt.maxMemory - rt.totalMemory + rt.freeMemory
-  val initialFreeMemory: Long = freeMemory
 
   val (options, commands) = args.partition(_.contains("=")).pipe { case (options, commands) =>
     options.map(_.split("=", 2).pipe(o => o(0).toLowerCase -> o(1))).toMap ->

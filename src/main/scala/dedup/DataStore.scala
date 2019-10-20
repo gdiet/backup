@@ -12,6 +12,8 @@ import scala.collection.immutable.SortedMap
 
 // FIXME use readOnly here
 class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
+  private val initialFreeMemory: Long = Server.freeMemory
+
   private val log = LoggerFactory.getLogger(getClass)
   val longTermStore = new LongTermStore(dataDir, readOnly)
   override def close(): Unit = longTermStore.close()
@@ -39,8 +41,8 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   }
   object Entry {
     def apply(id: Long, dataId: Long, position: Long, data: Array[Byte]): Entry =
-      FileEntry(id, dataId, position, data.length).tap(_.write(data))
-//      MemoryEntry(id, dataId, position, data)
+      if (memoryUsage > initialFreeMemory*2/3 - 64000000) FileEntry(id, dataId, position, data.length).tap(_.write(data))
+      else MemoryEntry(id, dataId, position, data)
   }
   case class MemoryEntry(id: Long, dataId: Long, position: Long, data: Array[Byte]) extends Entry {
     override def length: Int = data.length
@@ -52,7 +54,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   case class FileEntry(id: Long, dataId: Long, position: Long, length: Int) extends Entry {
     log.info(s"create: $id/$dataId $position $length")
     override def data: Array[Byte] = {
-      log.info(s"read  : $id/$dataId $position $length")
+      log.debug(s"read  : $id/$dataId $position $length")
       val buffer = ByteBuffer.allocate(length)
       val input = channel(id, dataId).position(position)
       while(buffer.remaining() > 0) input.read(buffer)
@@ -60,15 +62,15 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     }
     override def memory: Long = 500
     override def drop(left: Int, right: Int): Entry = {
-      log.info(s"drop  : $id/$dataId $position+$left $length-$left-$right")
+      log.debug(s"drop  : $id/$dataId $position+$left $length-$left-$right")
       copy(position = position + left, length = length - left - right)
     }
     override def write(data: Array[Byte]): Unit = {
-      log.info(s"write : $id/$dataId $position $length data: ${data.length}")
+      log.debug(s"write : $id/$dataId $position $length data: ${data.length}")
       channel(id, dataId).position(position).write(ByteBuffer.wrap(data))
     }
     override def ++(other: Entry): Entry = {
-      log.info(s"++    : $id/$dataId $position $length $other")
+      log.debug(s"++    : $id/$dataId $position $length $other")
       require(other.id == id && other.dataId == dataId)
       require(position + length == other.position)
       other match {
