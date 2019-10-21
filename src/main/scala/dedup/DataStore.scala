@@ -6,23 +6,20 @@ import java.nio.channels.SeekableByteChannel
 import java.nio.file.StandardOpenOption._
 import java.nio.file.{Files, Path}
 
-import org.slf4j.LoggerFactory
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.immutable.SortedMap
 
 class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val initialFreeMemory: Long = Server.freeMemory
+  private val log: Logger = LoggerFactory.getLogger(getClass)
+  private val longTermStore: LongTermStore = new LongTermStore(dataDir, readOnly)
+  private val tempDir: File = new File(dataDir, "../data-temp").getAbsoluteFile
+  require(tempDir.isDirectory && tempDir.list().isEmpty || tempDir.mkdirs())
 
-  private val log = LoggerFactory.getLogger(getClass)
-  val longTermStore = new LongTermStore(dataDir, readOnly)
-  override def close(): Unit = longTermStore.close()
-
-  val tempDir: File = new File(dataDir, "../data-temp").getCanonicalFile
-  require(tempDir.isDirectory || tempDir.mkdirs())
-
-  var openChannels: Map[(Long, Long), SeekableByteChannel] = Map()
-  def path(id: Long, dataId: Long): Path = new File(tempDir, s"$id-$dataId").toPath
-  def channel(id: Long, dataId: Long): SeekableByteChannel = {
+  private var openChannels: Map[(Long, Long), SeekableByteChannel] = Map()
+  private def path(id: Long, dataId: Long): Path = new File(tempDir, s"$id-$dataId").toPath
+  private def channel(id: Long, dataId: Long): SeekableByteChannel = {
     require(!readOnly)
     openChannels.getOrElse(id -> dataId, {
       Files.newByteChannel(path(id, dataId), WRITE, CREATE_NEW, SPARSE, READ)
@@ -30,7 +27,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     })
   }
 
-  sealed trait Entry {
+  private sealed trait Entry {
     def id: Long; def dataId: Long
     def position: Long; def data: Array[Byte]
     def length: Int; def memory: Long
@@ -38,13 +35,13 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     def drop(left: Int, right: Int): Entry
     def ++(other: Entry): Entry
   }
-  object Entry {
+  private object Entry {
     def apply(id: Long, dataId: Long, position: Long, data: Array[Byte]): Entry =
       if (memoryUsage + data.length > initialFreeMemory*2/3 - 64000000)
         FileEntry(id, dataId, position, data.length).tap(_.write(data))
       else MemoryEntry(id, dataId, position, data)
   }
-  case class MemoryEntry(id: Long, dataId: Long, position: Long, data: Array[Byte]) extends Entry {
+  private case class MemoryEntry(id: Long, dataId: Long, position: Long, data: Array[Byte]) extends Entry {
     override def toString: String = s"Mem($id/$dataId, $position, $length)"
     override def length: Int = data.length
     override def memory: Long = length + 500
@@ -52,7 +49,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     override def write(data: Array[Byte]): Unit = System.arraycopy(data, 0, this.data, 0, data.length)
     override def ++(other: Entry): Entry = Entry(id, dataId, position, data ++ other.data)
   }
-  case class FileEntry(id: Long, dataId: Long, position: Long, length: Int) extends Entry {
+  private case class FileEntry(id: Long, dataId: Long, position: Long, length: Int) extends Entry {
     log.debug(s"create: $id/$dataId $position $length")
     override def toString: String = s"Fil($id/$dataId, $position, $length)"
     override def data: Array[Byte] = {
@@ -85,6 +82,11 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   // Map(id/dataId -> size, Seq(data))
   private var entries = Map[(Long, Long), (Long, Seq[Entry])]()
   private var memoryUsage = 0L
+
+  override def close(): Unit = {
+    openChannels.keys.foreach { case (id, dataId) => delete(id, dataId) }
+    longTermStore.close()
+  }
 
   def hasTemporaryData(id: Long, dataId: Long): Boolean = entries.contains(id -> dataId)
 
@@ -156,5 +158,12 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     memoryUsage += merged.map(_.memory).sum
     log.debug(s"Write - memory usage $memoryUsage.")
     entries += (id -> dataId) -> (newSize -> merged)
+  }
+
+  def persist(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(writePosition: Long, dataSize: Long): Unit = {
+    for { offset <- 0L until dataSize by 32768; chunkSize = math.min(32768, dataSize - offset).toInt } {
+      val chunk = read(id, dataId, ltStart, ltStop)(offset, chunkSize)
+      longTermStore.write(writePosition + offset, chunk)
+    }
   }
 }

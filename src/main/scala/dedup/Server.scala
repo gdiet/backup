@@ -56,14 +56,15 @@ object Server extends App {
   }
 }
 
+// TODO shutdown hook?
 class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
   private val log = LoggerFactory.getLogger(getClass)
   private val repo = maybeRelativeRepo.getAbsoluteFile // absolute needed e.g. for getFreeSpace()
   private val dbDir = Database.dbDir(repo)
-  if (!dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir does not exist.")
+  require(dbDir.exists(), s"Database directory $dbDir does not exist.")
   if (!readonly) {
     val dbFile = new File(dbDir, "dedupfs.mv.db")
-    if (!dbFile.exists()) throw new IllegalStateException(s"Database file $dbFile does not exist.")
+    require(dbFile.exists(), s"Database file $dbFile does not exist.")
     val timestamp: String = new SimpleDateFormat("yyyy-MM-dd_HH-mm").format(new Date())
     val backup = new File(dbDir, s"dedupfs_$timestamp.mv.db")
     Files.copy(dbFile.toPath, backup.toPath, StandardCopyOption.COPY_ATTRIBUTES)
@@ -263,10 +264,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
                 case None =>
                   val dataId = if (ltStart -> ltStop == -1 -> -1) file.dataId else db.newDataId(file.id)
                   log.debug(s"release: $path $file -> START $ltStart DATAID $dataId")
-                  for { position <- 0L until size by 32768; chunkSize = math.min(32768, size - position).toInt } {
-                    val chunk = store.read(file.id, file.dataId, ltStart, ltStop)(position, chunkSize)
-                    store.longTermStore.write(startOfFreeData + position, chunk)
-                  }
+                  store.persist(file.id, file.dataId, ltStart, ltStop)(startOfFreeData, size)
                   db.insertDataEntry(dataId, startOfFreeData, startOfFreeData + size, hash)
                   startOfFreeData += size
               }
