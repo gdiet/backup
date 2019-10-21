@@ -1,6 +1,6 @@
 package dedup
 
-import java.io.RandomAccessFile
+import java.io.{File, RandomAccessFile}
 import java.util.concurrent.Semaphore
 
 import scala.collection.mutable
@@ -31,6 +31,7 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
         fileSem.acquire(); mapSem.release(); f(file).tap(_ => fileSem.release())
       case None =>
         if (openFiles.size < parallelOpenFiles) {
+          if (!readOnly) new File(path).getParentFile.mkdirs()
           val fileSem -> file = new Semaphore(0) -> new RandomAccessFile(path, writeFlag)
           openFiles.addOne(path, fileSem -> file)
           mapSem.release(); f(file).tap(_ => fileSem.release())
