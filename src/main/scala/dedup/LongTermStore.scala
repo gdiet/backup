@@ -1,6 +1,7 @@
 package dedup
 
-import java.io.{File, RandomAccessFile}
+import java.io.RandomAccessFile
+import java.util.concurrent.Semaphore
 
 import scala.collection.mutable
 
@@ -9,8 +10,8 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val parallelOpenFiles = 3
   private val writeFlag = if (readOnly) "r" else "rw"
 
+  /* Same functionality not synchronized:
   private val openFiles: mutable.LinkedHashMap[String, RandomAccessFile] = mutable.LinkedHashMap()
-
   private def access[T](path: String)(f: RandomAccessFile => T): T = {
     if (openFiles.size >= parallelOpenFiles)
       openFiles.head match { case (f, _) => if (f != path) openFiles.remove(f).foreach(_.close()) }
@@ -18,6 +19,35 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
       if (!readOnly) new File(path).getParentFile.mkdirs()
       new RandomAccessFile(path, writeFlag)
     }.tap(openFiles.addOne(path, _)).pipe(f)
+  } */
+
+  private val openFiles: mutable.LinkedHashMap[String, (Semaphore, RandomAccessFile)] = mutable.LinkedHashMap()
+  private val mapSem = new Semaphore(1)
+
+  private def access[T](path: String)(f: RandomAccessFile => T): T = {
+    mapSem.acquire()
+    openFiles.get(path) match {
+      case Some(fileSem -> file) =>
+        fileSem.acquire(); mapSem.release(); f(file).tap(_ => fileSem.release())
+      case None =>
+        if (openFiles.size < parallelOpenFiles) {
+          val fileSem -> file = new Semaphore(0) -> new RandomAccessFile(path, writeFlag)
+          openFiles.addOne(path, fileSem -> file)
+          mapSem.release(); f(file).tap(_ => fileSem.release())
+        } else {
+          val (pathToClose, _ -> file) = openFiles
+            .find { case (_, sem -> _) =>  sem.tryAcquire() }
+            .getOrElse { openFiles.head.tap { case (_, sem -> _) => sem.acquire() } }
+          file.close(); openFiles.remove(pathToClose)
+          mapSem.release()
+          access(path)(f)
+        }
+    }
+  }
+  
+  override def close(): Unit = {
+    mapSem.acquire()
+    openFiles.values.foreach { case fileSem -> file => fileSem.acquire(); file.close() }
   }
 
   private def pathOffsetSize(position: Long, size: Int): (String, Long, Int) = {
@@ -43,6 +73,4 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     if (size > bytesToRead) bytes ++ read(position + bytesToRead, size - bytesToRead)
     else bytes
   }
-
-  override def close(): Unit = openFiles.values.foreach(_.close())
 }
