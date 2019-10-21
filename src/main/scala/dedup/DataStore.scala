@@ -13,7 +13,7 @@ import scala.collection.immutable.SortedMap
 class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val initialFreeMemory: Long = Server.freeMemory
   private val log: Logger = LoggerFactory.getLogger(getClass)
-  private val longTermStore: LongTermStore = new LongTermStore(dataDir, readOnly)
+  private val longTermStore = new SynchonizedLongTermStore(dataDir, readOnly)
   private val tempDir: File = new File(dataDir, "../data-temp").getAbsoluteFile
   require(tempDir.isDirectory && tempDir.list().isEmpty || tempDir.mkdirs())
 

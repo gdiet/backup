@@ -57,10 +57,8 @@ class SynchonizedLongTermStore(dataDir: String, readOnly: Boolean) extends AutoC
 
   def read(position: Long, size: Int): Array[Byte] = {
     val (path, offset, bytesToRead) = pathOffsetSize(position, size)
-    val bytes = access(path) { file =>
-      file.seek(offset)
-      new Array[Byte](bytesToRead).tap(file.readFully) // Note: From corrupt data file, entry will not be read at all
-    }
+    // Note: From corrupt data file, entry will not be read at all
+    val bytes = access(path) { file => file.seek(offset); new Array[Byte](bytesToRead).tap(file.readFully) }
     if (size > bytesToRead) bytes ++ read(position + bytesToRead, size - bytesToRead)
     else bytes
   }

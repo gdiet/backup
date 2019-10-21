@@ -11,13 +11,13 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
 
   private val openFiles: mutable.LinkedHashMap[String, RandomAccessFile] = mutable.LinkedHashMap()
 
-  private def open(file: String): RandomAccessFile = {
+  private def access[T](path: String)(f: RandomAccessFile => T): T = {
     if (openFiles.size >= parallelOpenFiles)
-      openFiles.head match { case (f, _) => if (f != file) openFiles.remove(f).foreach(_.close()) }
-    openFiles.remove(file).getOrElse {
-      if (!readOnly) new File(file).getParentFile.mkdirs()
-      new RandomAccessFile(file, writeFlag)
-    }.tap(openFiles.addOne(file, _))
+      openFiles.head match { case (f, _) => if (f != path) openFiles.remove(f).foreach(_.close()) }
+    openFiles.remove(path).getOrElse {
+      if (!readOnly) new File(path).getParentFile.mkdirs()
+      new RandomAccessFile(path, writeFlag)
+    }.tap(openFiles.addOne(path, _)).pipe(f)
   }
 
   private def pathOffsetSize(position: Long, size: Int): (String, Long, Int) = {
@@ -32,16 +32,14 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
 
   def write(position: Long, data: Array[Byte]): Unit = {
     val (path, offset, bytesToWrite) = pathOffsetSize(position, data.length)
-    open(path).tap(_.seek(offset)).write(data.take(bytesToWrite))
+    access(path) { file => file.seek(offset); file.write(data.take(bytesToWrite)) }
     if (data.length > bytesToWrite) write(position + bytesToWrite, data.drop(bytesToWrite))
   }
 
   def read(position: Long, size: Int): Array[Byte] = {
     val (path, offset, bytesToRead) = pathOffsetSize(position, size)
-    val bytes = open(path).pipe { ra =>
-      ra.seek(offset)
-      new Array[Byte](bytesToRead).tap(ra.readFully) // Note: From corrupt data file, entry will not be read at all
-    }
+    // Note: From corrupt data file, entry will not be read at all
+    val bytes = access(path) { file => file.seek(offset); new Array[Byte](bytesToRead).tap(file.readFully) }
     if (size > bytesToRead) bytes ++ read(position + bytesToRead, size - bytesToRead)
     else bytes
   }
