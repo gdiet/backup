@@ -1,5 +1,6 @@
 package dedup
 
+// https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
 object DataStoreResearch extends App {
   val blocks = 200
   val ds = new DataStoreResearch()
@@ -8,8 +9,9 @@ object DataStoreResearch extends App {
   val initialFreeMemory = Server.freeMemory
   println(s"*** initially free: ${initialFreeMemory / 1000000}")
   println()
+  var list = List[Array[Byte]]()
   for (n <- 0 until blocks) {
-    ds.write(n * 1048576L, new Array[Byte](1048576)) // 1048576 -> problem. 70 less -> ok
+    list = new Array[Byte](1048576) :: list
   }
   System.gc()
   Thread.sleep(2000)
@@ -18,6 +20,7 @@ object DataStoreResearch extends App {
   println(s"*** used up when stored: ${(initialFreeMemory - freeMemoryWhenStored) / 1000000}")
   println(s"*** expected mem usage : $blocks")
   println()
+  list = List()
   ds.delete()
   System.gc()
   Thread.sleep(2000)
