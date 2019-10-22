@@ -9,7 +9,7 @@ object DataStoreResearch extends App {
   println(s"*** initially free: ${initialFreeMemory / 1000000}")
   println()
   for (n <- 0 until blocks) {
-    ds.write(n * 1048576L, new Array[Byte](1048576))
+    ds.write(n * 1048576L, new Array[Byte](1048576)) // 1048576 -> problem. 70 less -> ok
   }
   System.gc()
   Thread.sleep(2000)
