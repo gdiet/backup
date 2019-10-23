@@ -28,12 +28,39 @@ object Server extends App {
     commands.toList.map(_.toLowerCase())
   }
 
-  if (commands.contains("init")) {
+  if (commands.contains("check")) {
+    // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
+    log.info("Checking memory management for byte arrays now.")
+
+    System.gc(); Thread.sleep(1000)
+    val freeBeforeNormalDataCheck = freeMemory
+    val normallyHandledData = Vector.fill(100)(new Array[Byte](1000000))
+    System.gc(); Thread.sleep(1000)
+    val usedByNormalData = freeBeforeNormalDataCheck - freeMemory
+    val deviationWithNormalData = (100000000 - usedByNormalData).abs / 1000000
+    log.info(s"100 Byte arrays of size 1000000 used $usedByNormalData bytes of RAM.")
+    log.info(s"This is a deviation of $deviationWithNormalData% from the expected value.")
+    log.info(s"This software assumes that the deviation is near to 0%.")
+
+    val freeBeforeExceptionalDataCheck = freeMemory
+    val exceptionallyHandledData = Vector.fill(100)(new Array[Byte](1048576))
+    System.gc(); Thread.sleep(1000)
+    val usedByExceptionalData = freeBeforeExceptionalDataCheck - freeMemory
+    val deviationWithExceptionalData = (104857600 - usedByExceptionalData).abs / 1000000
+    log.info(s"100 Byte arrays of size 1048576 used $usedByExceptionalData bytes of RAM.")
+    log.info(s"This is a deviation of $deviationWithExceptionalData% from the expected value.")
+    log.info(s"This software assumes that the deviation is near to 100%.")
+
+    require(deviationWithNormalData < 15, "High deviation of memory usage for normal data.")
+    require(deviationWithExceptionalData > 80, "Low deviation of memory usage for exceptional data.")
+    require(deviationWithExceptionalData < 120, "High deviation of memory usage for exceptional data.")
+
+  } else if (commands.contains("init")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
     if (dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir already exists.")
     resource(H2.file(dbDir, readonly = false)) (Database.initialize)
-    println(s"Database initialized in $dbDir.")
+    log.info(s"Database initialized in $dbDir.")
 
   } else {
     asyncLogFreeMemory()

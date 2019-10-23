@@ -136,7 +136,14 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     entries += (id -> dataId) -> (0L -> Seq())
   }
 
-  def write(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, data: Array[Byte]): Unit = {
+  def write(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, data: Array[Byte]): Unit =
+    // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
+    data.grouped(524288).foldLeft(0) { case (offset, bytes) =>
+      internalWrite(id, dataId, ltStart, ltStop)(position + offset, data)
+      offset + bytes.length
+    }
+
+  private def internalWrite(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, data: Array[Byte]): Unit = {
     val (fileSize, chunks) = entries.getOrElse(id -> dataId, ltStop - ltStart -> Seq[Entry]())
     val newSize = math.max(fileSize, position + data.length)
     val combinedChunks = chunks :+ (chunks.find(_.position == position) match {
