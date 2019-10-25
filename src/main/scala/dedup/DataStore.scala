@@ -24,6 +24,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private def channel(id: Long, dataId: Long): SeekableByteChannel = {
     require(!readOnly)
     openChannels.getOrElse(id -> dataId, {
+      log.info(s"Creating temporary store file for $id/$dataId")
       Files.newByteChannel(path(id, dataId), WRITE, CREATE_NEW, SPARSE, READ)
         .tap(channel => openChannels += ((id, dataId) -> channel))
     })
@@ -119,6 +120,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
       log.debug(s"Delete - memory usage $memoryUsage.")
       openChannels.get(id -> dataId).foreach { c =>
         c.close()
+        log.info(s"Deleting temporary store file for $id/$dataId")
         Files.delete(path(id, dataId))
         log.debug(s"close : $id/$dataId")
       }
