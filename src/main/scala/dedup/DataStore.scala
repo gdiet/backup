@@ -169,7 +169,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   }
 
   def persist(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(writePosition: Long, dataSize: Long): Unit = {
-    for { offset <- 0L until dataSize by 32768; chunkSize = math.min(32768, dataSize - offset).toInt } {
+    for { offset <- 0L until dataSize by 524288; chunkSize = math.min(524288, dataSize - offset).toInt } {
       val chunk = read(id, dataId, ltStart, ltStop)(offset, chunkSize)
       longTermStore.write(writePosition + offset, chunk)
     }

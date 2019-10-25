@@ -281,7 +281,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
               val (ltStart, ltStop) = db.startStop(file.dataId)
               val size = store.size(file.id, file.dataId, ltStart, ltStop)
               val md = MessageDigest.getInstance(hashAlgorithm)
-              for { position <- 0L until size by 32768; chunkSize = math.min(32768, size - position).toInt }
+              for { position <- 0L until size by 524288; chunkSize = math.min(524288, size - position).toInt }
                 md.update(store.read(file.id, file.dataId, ltStart, ltStop)(position, chunkSize))
               val hash = md.digest()
               db.dataEntry(hash, size) match {
