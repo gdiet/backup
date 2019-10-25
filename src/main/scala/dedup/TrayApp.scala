@@ -10,7 +10,7 @@ object TrayApp extends App {
   val stopItem = new MenuItem("Stop Dedup File System")
   val popup = new PopupMenu().tap(_.add(stopItem))
   val icon: Image = new javax.swing.ImageIcon(getClass.getResource("/trayIcon.png"), "tray icon").getImage
-  val trayIcon = new TrayIcon(icon, "tray icon")
+  val trayIcon = new TrayIcon(icon, "Dedup File System")
   trayIcon.setImageAutoSize(true)
   trayIcon.setPopupMenu(popup)
   SystemTray.getSystemTray.add(trayIcon)
