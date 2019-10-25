@@ -139,8 +139,8 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   def write(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, data: Array[Byte]): Unit =
     // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
     data.grouped(524288).foldLeft(0) { case (offset, bytes) =>
-      internalWrite(id, dataId, ltStart, ltStop)(position + offset, data)
-      offset + bytes.length
+      internalWrite(id, dataId, ltStart, ltStop)(position + offset, bytes)
+      offset + 524288
     }
 
   private def internalWrite(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, data: Array[Byte]): Unit = {
