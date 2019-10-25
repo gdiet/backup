@@ -51,10 +51,8 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     override def ++(other: Entry): Entry = Entry(id, dataId, position, data ++ other.data)
   }
   private case class FileEntry(id: Long, dataId: Long, position: Long, length: Int) extends Entry {
-    log.debug(s"create: $id/$dataId $position $length")
     override def toString: String = s"Fil($id/$dataId, $position, $length)"
     override def data: Array[Byte] = {
-      log.debug(s"read  : $id/$dataId $position $length")
       val buffer = ByteBuffer.allocate(length)
       val input = channel(id, dataId).position(position)
       while(buffer.remaining() > 0) input.read(buffer)
@@ -62,15 +60,12 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     }
     override def memory: Long = 500
     override def drop(left: Int, right: Int): Entry = {
-      log.debug(s"drop  : $id/$dataId $position+$left $length-$left-$right")
       copy(position = position + left, length = length - left - right)
     }
     override def write(data: Array[Byte]): Unit = {
-      log.debug(s"write : $id/$dataId $position $length data: ${data.length}")
       channel(id, dataId).position(position).write(ByteBuffer.wrap(data))
     }
     override def ++(other: Entry): Entry = {
-      log.debug(s"++    : $id/$dataId $position $length $other")
       require(other.id == id && other.dataId == dataId)
       require(position + length == other.position)
       other match {
