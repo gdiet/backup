@@ -286,7 +286,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
               val hash = md.digest()
               db.dataEntry(hash, size) match {
                 case Some(dataId) =>
-                  log.info(s"Linking previously stored data: $path with id ${file.id} and dataid $dataId")
+                  log.info(s"Already known, linking: $path")
                   if (file.dataId != dataId) require(db.setDataId(file.id, dataId))
                 case None =>
                   val dataId = if (ltStart -> ltStop == -1 -> -1) file.dataId else db.newDataId(file.id)
