@@ -239,7 +239,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
   private var fileDescriptors: Map[Long, Int] = Map()
   private def incCount(id: Long): Unit = fileDescriptors += id -> (fileDescriptors.getOrElse(id, 0) + 1)
   private var startOfFreeData = db.startOfFreeData
-  log.info(s"Bytes stored: $startOfFreeData")
+  log.info(s"Data stored: ${startOfFreeData / 1000000000}GB")
 
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int = if (readonly) -ErrorCodes.EROFS else sync {
     val parts = split(path)
