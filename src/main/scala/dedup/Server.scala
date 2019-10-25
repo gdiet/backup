@@ -78,7 +78,7 @@ object Server extends App {
     while(true) {
       Thread.sleep(5000)
       val free = freeMemory
-      if ((free-lastFree).abs * 10 > lastFree) {  lastFree = free; log.info(s"Free memory: ${free/1000000} MB.") }
+      if ((free-lastFree).abs * 10 > lastFree) {  lastFree = free; log.info(s"Free memory: ${free/1000000} MB") }
     }
   }
 }

@@ -11,8 +11,9 @@ import org.slf4j.{Logger, LoggerFactory}
 import scala.collection.immutable.SortedMap
 
 class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
-  private val initialFreeMemory: Long = Server.freeMemory
   private val log: Logger = LoggerFactory.getLogger(getClass)
+  private val memoryCacheSize: Long = Server.freeMemory*2/3 - 64000000
+  log.info(s"Initializing data store with memory cache size ${memoryCacheSize / 1000000}MB")
   private val longTermStore = new LongTermStore(dataDir, readOnly)
   private val tempDir: File = new File(dataDir, "../data-temp").getAbsoluteFile
   require(tempDir.isDirectory && tempDir.list().isEmpty || tempDir.mkdirs())
@@ -37,7 +38,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   }
   private object Entry {
     def apply(id: Long, dataId: Long, position: Long, data: Array[Byte]): Entry =
-      if (memoryUsage + data.length > initialFreeMemory*2/3 - 64000000)
+      if (memoryUsage + data.length > memoryCacheSize)
         FileEntry(id, dataId, position, data.length).tap(_.write(data))
       else MemoryEntry(id, dataId, position, data)
   }
