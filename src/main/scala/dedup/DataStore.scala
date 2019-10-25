@@ -12,8 +12,9 @@ import scala.collection.immutable.SortedMap
 
 class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val log: Logger = LoggerFactory.getLogger(getClass)
-  private val memoryCacheSize: Long = Server.freeMemory*2/3 - 64000000
+  private val memoryCacheSize: Long = Server.freeMemory*3/4 - 128000000
   log.info(s"Initializing data store with memory cache size ${memoryCacheSize / 1000000}MB")
+  require(memoryCacheSize > 8000000, "Not enough free memory for a sensible memory cache.")
   private val longTermStore = new LongTermStore(dataDir, readOnly)
   private val tempDir: File = new File(dataDir, "../data-temp").getAbsoluteFile
   require(tempDir.isDirectory && tempDir.list().isEmpty || tempDir.mkdirs())
