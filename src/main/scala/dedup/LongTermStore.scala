@@ -1,7 +1,7 @@
 package dedup
 
 import java.io.{File, RandomAccessFile}
-import java.util.concurrent.Semaphore
+import java.util.concurrent.locks.ReentrantLock
 
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -12,36 +12,36 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val fileSize = 100000000 // 100 MB
   private val parallelOpenFiles = 5
 
-  private val openFiles: mutable.LinkedHashMap[String, (Semaphore, Boolean, RandomAccessFile)] = mutable.LinkedHashMap()
-  private val mapSem = new Semaphore(1)
+  private val openFiles: mutable.LinkedHashMap[String, (ReentrantLock, Boolean, RandomAccessFile)] = mutable.LinkedHashMap()
+  private val mapLock = new ReentrantLock()
 
   private def access[T](path: String, write: Boolean)(f: RandomAccessFile => T): T = {
-    mapSem.acquire()
+    mapLock.lock()
     openFiles.get(path) match {
-      case Some((fileSem, isForWrite, file)) =>
-        fileSem.acquire()
-        if (!write || isForWrite) { mapSem.release(); f(file).tap(_ => fileSem.release()) }
-        else { file.close(); openFiles.remove(path); mapSem.release(); access(path, write)(f) }
+      case Some((fileLock, isForWrite, file)) =>
+        fileLock.lock()
+        if (!write || isForWrite) { mapLock.unlock(); f(file).tap(_ => fileLock.unlock()) }
+        else { file.close(); openFiles.remove(path); mapLock.unlock(); access(path, write)(f) }
       case None =>
         if (openFiles.size < parallelOpenFiles) {
           if (!readOnly) new File(path).getParentFile.mkdirs()
-          val fileSem -> file = new Semaphore(0) -> new RandomAccessFile(path, if (readOnly || !write) "r" else "rw")
-          openFiles.addOne(path, (fileSem, write, file))
-          mapSem.release(); f(file).tap(_ => fileSem.release())
+          val fileLock -> file = new ReentrantLock() -> new RandomAccessFile(path, if (readOnly || !write) "r" else "rw")
+          openFiles.addOne(path, (fileLock, write, file))
+          fileLock.lock(); mapLock.unlock(); f(file).tap(_ => fileLock.unlock())
         } else {
           val (pathToClose, (_, _, file)) = openFiles
-            .find { case (_, (sem, _, _)) =>  sem.tryAcquire() }
-            .getOrElse { openFiles.head.tap { case (_, (sem, _, _)) => sem.acquire() } }
+            .find { case (_, (fileLock, _, _)) =>  fileLock.tryLock() }
+            .getOrElse { openFiles.head.tap { case (_, (fileLock, _, _)) => fileLock.lock() } }
           file.close(); openFiles.remove(pathToClose)
-          mapSem.release()
+          mapLock.unlock()
           access(path, write)(f)
         }
     }
   }
   
   override def close(): Unit = {
-    mapSem.acquire()
-    openFiles.values.foreach { case (fileSem, _, file) => fileSem.acquire(); file.close() }
+    mapLock.lock()
+    openFiles.values.foreach { case (fileLock, _, file) => fileLock.lock(); file.close() }
   }
 
   private def pathOffsetSize(position: Long, size: Int): (String, Long, Int) = {
