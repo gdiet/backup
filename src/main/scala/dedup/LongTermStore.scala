@@ -3,9 +3,12 @@ package dedup
 import java.io.{File, RandomAccessFile}
 import java.util.concurrent.Semaphore
 
+import org.slf4j.{Logger, LoggerFactory}
+
 import scala.collection.mutable
 
 class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
+  private val log: Logger = LoggerFactory.getLogger(getClass)
   private val fileSize = 100000000 // 100 MB
   private val parallelOpenFiles = 5
 
@@ -63,5 +66,13 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     val bytes = access(path, write = false) { file => file.seek(offset); new Array[Byte](bytesToRead).tap(file.readFully) }
     if (size > bytesToRead) bytes ++ read(position + bytesToRead, size - bytesToRead)
     else bytes
+  }
+
+  def writeProtectCompleteFiles(startPosition: Long, endPosition: Long): Unit = {
+    for {position <- startPosition until endPosition-fileSize by fileSize} {
+      val (path, _, _) = pathOffsetSize(position, 0)
+      log.info(s"Write protecting $path")
+      new File(path).setReadOnly()
+    }
   }
 }

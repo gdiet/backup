@@ -81,6 +81,9 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private var entries = Map[(Long, Long), (Long, Seq[Entry])]()
   private var memoryUsage = 0L
 
+  def writeProtectCompleteFiles(startPosition: Long, endPosition: Long): Unit =
+    longTermStore.writeProtectCompleteFiles(startPosition, endPosition)
+
   override def close(): Unit = {
     openChannels.keys.foreach { case (id, dataId) => delete(id, dataId) }
     longTermStore.close()
