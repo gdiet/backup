@@ -7,8 +7,7 @@ import scala.collection.mutable
 
 class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val fileSize = 100000000 // 100 MB
-  private val parallelOpenFiles = 3
-  private val writeFlag = if (readOnly) "r" else "rw"
+  private val parallelOpenFiles = 5
 
   /* Same functionality not synchronized:
   private val openFiles: mutable.LinkedHashMap[String, RandomAccessFile] = mutable.LinkedHashMap()
@@ -21,34 +20,36 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     }.tap(openFiles.addOne(path, _)).pipe(f)
   } */
 
-  private val openFiles: mutable.LinkedHashMap[String, (Semaphore, RandomAccessFile)] = mutable.LinkedHashMap()
+  private val openFiles: mutable.LinkedHashMap[String, (Semaphore, Boolean, RandomAccessFile)] = mutable.LinkedHashMap()
   private val mapSem = new Semaphore(1)
 
-  private def access[T](path: String)(f: RandomAccessFile => T): T = {
+  private def access[T](path: String, write: Boolean)(f: RandomAccessFile => T): T = {
     mapSem.acquire()
     openFiles.get(path) match {
-      case Some(fileSem -> file) =>
-        fileSem.acquire(); mapSem.release(); f(file).tap(_ => fileSem.release())
+      case Some((fileSem, isForWrite, file)) =>
+        fileSem.acquire()
+        if (!write || isForWrite) { mapSem.release(); f(file).tap(_ => fileSem.release()) }
+        else { file.close(); openFiles.remove(path); mapSem.release(); access(path, write)(f) }
       case None =>
         if (openFiles.size < parallelOpenFiles) {
           if (!readOnly) new File(path).getParentFile.mkdirs()
-          val fileSem -> file = new Semaphore(0) -> new RandomAccessFile(path, writeFlag)
-          openFiles.addOne(path, fileSem -> file)
+          val fileSem -> file = new Semaphore(0) -> new RandomAccessFile(path, if (readOnly || !write) "r" else "rw")
+          openFiles.addOne(path, (fileSem, write, file))
           mapSem.release(); f(file).tap(_ => fileSem.release())
         } else {
-          val (pathToClose, _ -> file) = openFiles
-            .find { case (_, sem -> _) =>  sem.tryAcquire() }
-            .getOrElse { openFiles.head.tap { case (_, sem -> _) => sem.acquire() } }
+          val (pathToClose, (_, _, file)) = openFiles
+            .find { case (_, (sem, _, _)) =>  sem.tryAcquire() }
+            .getOrElse { openFiles.head.tap { case (_, (sem, _, _)) => sem.acquire() } }
           file.close(); openFiles.remove(pathToClose)
           mapSem.release()
-          access(path)(f)
+          access(path, write)(f)
         }
     }
   }
   
   override def close(): Unit = {
     mapSem.acquire()
-    openFiles.values.foreach { case fileSem -> file => fileSem.acquire(); file.close() }
+    openFiles.values.foreach { case (fileSem, _, file) => fileSem.acquire(); file.close() }
   }
 
   private def pathOffsetSize(position: Long, size: Int): (String, Long, Int) = {
@@ -63,14 +64,14 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
 
   def write(position: Long, data: Array[Byte]): Unit = {
     val (path, offset, bytesToWrite) = pathOffsetSize(position, data.length)
-    access(path) { file => file.seek(offset); file.write(data.take(bytesToWrite)) }
+    access(path, write = true) { file => file.seek(offset); file.write(data.take(bytesToWrite)) }
     if (data.length > bytesToWrite) write(position + bytesToWrite, data.drop(bytesToWrite))
   }
 
   def read(position: Long, size: Int): Array[Byte] = {
     val (path, offset, bytesToRead) = pathOffsetSize(position, size)
     // Note: From corrupt data file, entry will not be read at all
-    val bytes = access(path) { file => file.seek(offset); new Array[Byte](bytesToRead).tap(file.readFully) }
+    val bytes = access(path, write = false) { file => file.seek(offset); new Array[Byte](bytesToRead).tap(file.readFully) }
     if (size > bytesToRead) bytes ++ read(position + bytesToRead, size - bytesToRead)
     else bytes
   }
