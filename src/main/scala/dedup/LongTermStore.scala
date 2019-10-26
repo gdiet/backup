@@ -9,17 +9,6 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val fileSize = 100000000 // 100 MB
   private val parallelOpenFiles = 5
 
-  /* Same functionality not synchronized:
-  private val openFiles: mutable.LinkedHashMap[String, RandomAccessFile] = mutable.LinkedHashMap()
-  private def access[T](path: String)(f: RandomAccessFile => T): T = {
-    if (openFiles.size >= parallelOpenFiles)
-      openFiles.head match { case (f, _) => if (f != path) openFiles.remove(f).foreach(_.close()) }
-    openFiles.remove(path).getOrElse {
-      if (!readOnly) new File(path).getParentFile.mkdirs()
-      new RandomAccessFile(path, writeFlag)
-    }.tap(openFiles.addOne(path, _)).pipe(f)
-  } */
-
   private val openFiles: mutable.LinkedHashMap[String, (Semaphore, Boolean, RandomAccessFile)] = mutable.LinkedHashMap()
   private val mapSem = new Semaphore(1)
 
