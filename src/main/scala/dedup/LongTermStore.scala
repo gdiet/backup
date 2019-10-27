@@ -7,6 +7,13 @@ import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.mutable
 
+/** This class provides a sequential bytes store on disk limited by disc capacity only, accessed through its
+ *  two main methods #read and #write. The byte store is thread safe. When used in a sequential write-once
+ *  fashion, the #writeProtectCompleteFiles can be called to write protect data files that should not be
+ *  touched anymore. The backing data files are filled up to 100.000.000 bytes, so they can be copied fast
+ *  (not too many files) while being manageable on all file systems (not too large). When used in read-only
+ *  mode, write access fails with an exception.
+ */
 class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val log: Logger = LoggerFactory.getLogger(getClass)
   private val fileSize = 100000000 // 100 MB
@@ -55,6 +62,7 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   }
 
   def write(position: Long, data: Array[Byte]): Unit = {
+    require(!readOnly, "Long term store is read-only, can't write.")
     val (path, offset, bytesToWrite) = pathOffsetSize(position, data.length)
     access(path, write = true) { file => file.seek(offset); file.write(data.take(bytesToWrite)) }
     if (data.length > bytesToWrite) write(position + bytesToWrite, data.drop(bytesToWrite))
