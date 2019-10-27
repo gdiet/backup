@@ -89,7 +89,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     longTermStore.close()
   }
 
-  def hasTemporaryData(id: Long, dataId: Long): Boolean = entries.contains(id -> dataId)
+  def ifDataWritten(id: Long, dataId: Long)(f: => Unit): Unit = if (entries.contains(id -> dataId)) f
 
   def read(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, requestedSize: Int): Array[Byte] = {
     val (fileSize, localEntries) = entries.getOrElse(id -> dataId, ltStop - ltStart -> Seq[Entry]())

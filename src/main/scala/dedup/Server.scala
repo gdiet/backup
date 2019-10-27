@@ -290,7 +290,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
         fileDescriptors.get(file.id).foreach {
           case 1 =>
             fileDescriptors -= file.id
-            if (store.hasTemporaryData(file.id, file.dataId)) {
+            store.ifDataWritten(file.id, file.dataId) {
               val (ltStart, ltStop) = db.startStop(file.dataId)
               val size = store.size(file.id, file.dataId, ltStart, ltStop)
               val md = MessageDigest.getInstance(hashAlgorithm)
