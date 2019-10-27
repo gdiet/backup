@@ -17,7 +17,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   require(memoryCacheSize > 8000000, "Not enough free memory for a sensible memory cache.")
   private val longTermStore = new LongTermStore(dataDir, readOnly)
   private val tempDir: File = new File(dataDir, "../data-temp").getAbsoluteFile
-  require(tempDir.isDirectory && tempDir.list().isEmpty || tempDir.mkdirs())
+  require(readOnly || tempDir.isDirectory && tempDir.list().isEmpty || tempDir.mkdirs())
 
   private var openChannels: Map[(Long, Long), SeekableByteChannel] = Map()
   private def path(id: Long, dataId: Long): Path = new File(tempDir, s"$id-$dataId").toPath
