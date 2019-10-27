@@ -106,6 +106,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
     val timestamp: String = new SimpleDateFormat("yyyy-MM-dd_HH-mm").format(new Date())
     val backup = new File(dbDir, s"dedupfs_$timestamp.mv.db")
     Files.copy(dbFile.toPath, backup.toPath, StandardCopyOption.COPY_ATTRIBUTES)
+    backup.setReadOnly()
     log.info(s"Created database backup file $backup")
   }
 
