@@ -117,23 +117,24 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   def size(id: Long, dataId: Long, ltStart: Long, ltStop: Long): Long =
     entries.get(id -> dataId).map(_._1).getOrElse(ltStop - ltStart)
 
-  def delete(id: Long, dataId: Long, writeLog: Boolean = true): Unit = {
+  private def clearEntry(id: Long, dataId: Long): Unit = {
+    log.debug(s"Clear entry $id/$dataId - memory usage before is $memoryUsage.")
     memoryUsage = memoryUsage - entries.get(id -> dataId).toSeq.flatMap(_._2).map(_.memory).sum
-    if (writeLog) {
-      log.debug(s"Delete - memory usage $memoryUsage.")
-      openChannels.get(id -> dataId).foreach { c =>
-        c.close()
-        log.debug(s"Deleting temporary store file for $id/$dataId")
-        Files.delete(path(id, dataId))
-      }
-      openChannels -= id -> dataId
-    }
     entries -= (id -> dataId)
   }
 
+  def delete(id: Long, dataId: Long): Unit = {
+    openChannels.get(id -> dataId).foreach { c =>
+      c.close()
+      log.debug(s"Deleting temporary store file for $id/$dataId")
+      Files.delete(path(id, dataId))
+    }
+    openChannels -= id -> dataId
+    clearEntry(id, dataId)
+  }
+
   def truncate(id: Long, dataId: Long, ltStart: Long, ltStop: Long): Unit = {
-    delete(id, dataId, writeLog = false)
-    log.debug(s"Truncate - memory usage $memoryUsage.")
+    clearEntry(id, dataId)
     entries += (id -> dataId) -> (0L -> Seq())
   }
 
@@ -162,7 +163,7 @@ class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
       else dataA ++ dataB.drop((dataA.position + dataA.length - dataB.position).toInt, 0)
     }
     val merged = others :+ reduced
-    delete(id, dataId, writeLog = false)
+    clearEntry(id, dataId)
     memoryUsage += merged.map(_.memory).sum
     log.debug(s"Write - memory usage $memoryUsage.")
     entries += (id -> dataId) -> (newSize -> merged)
