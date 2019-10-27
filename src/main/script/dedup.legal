@@ -37,6 +37,7 @@ https://github.com/scala/scala
 Apache 2 License
 https://raw.githubusercontent.com/scala/scala/v2.13.0/LICENSE
 
-Java 11.0.4:
+Java 11.0.5:
+Openjdk 11.0.5_10 x64 JRE
 Get for example here: https://adoptopenjdk.net/
-See openjdk-11u-11.0.4_11-jre/about.txt
+See jre/about.txt
