@@ -4,6 +4,12 @@ import java.io.File
 
 import scala.collection.immutable.SortedMap
 
+/** This class is the storage interface for the dedup server. It keeps data from files currently open in volatile
+ *  storage entries (memory or disk), writing them to long term storage when they are closed. The long term store
+ *  that way is effectively a sequential write once / random access read many times storage.
+ *
+ *  This class is not thread safe.
+ */
 class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val longTermStore = new LongTermStore(dataDir, readOnly)
   private val entries = new CacheEntries(new File(dataDir, "../data-temp").getAbsoluteFile)
