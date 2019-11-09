@@ -34,6 +34,7 @@ object ServerGui extends App {
 
   val textArea = new JTextArea()
   textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14))
+  textArea.setEditable(false)
   val scrollPane = new JScrollPane(textArea)
   val frame = new JFrame("Dedup file system")
   frame.getContentPane.add(scrollPane)
@@ -46,7 +47,7 @@ object ServerGui extends App {
   })
   val icon = new javax.swing.ImageIcon(getClass.getResource("/trayIcon.png"), "tray icon").getImage
   frame.setIconImage(icon)
-  frame.setPreferredSize(new Dimension(650, 350))
+  frame.setPreferredSize(new Dimension(650, 356))
   frame.pack()
   frame.setLocationRelativeTo(null)
   frame.setVisible(true)
