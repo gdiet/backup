@@ -22,6 +22,7 @@ object ServerGui extends App {
       SwingUtilities.invokeLater { () =>
         lines = (lines :+ line).takeRight(15)
         textArea.setText(lines.mkString("\n"))
+        textArea.setCaretPosition(0) // scroll left
       }
     }
   }
