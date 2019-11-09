@@ -10,14 +10,17 @@ import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.immutable.SortedMap
 
-class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
+class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends AutoCloseable {
   private val log: Logger = LoggerFactory.getLogger(getClass)
   private val memoryCacheSize: Long = Server.freeMemory*3/4 - 128000000
   log.info(s"Initializing data store with memory cache size ${memoryCacheSize / 1000000}MB")
   require(memoryCacheSize > 8000000, "Not enough free memory for a sensible memory cache.")
   private val longTermStore = new LongTermStore(dataDir, readOnly)
-  private val tempDir: File = new File(dataDir, "../data-temp").getAbsoluteFile
-  require(readOnly || tempDir.isDirectory && tempDir.list().isEmpty || tempDir.mkdirs())
+  private val tempDir: File = new File(tempPath, "data-temp")
+  if (!readOnly) {
+    require(tempDir.isDirectory || tempDir.mkdirs(), s"Can't create temp dir $tempDir")
+    require(tempDir.list().isEmpty, s"Temp dir is not empty: $tempDir")
+  }
 
   private var openChannels: Map[(Long, Long), SeekableByteChannel] = Map()
   private def path(id: Long, dataId: Long): Path = new File(tempDir, s"$id-$dataId").toPath

@@ -7,5 +7,5 @@ if exist fsdb\dedupfs.trace.db (
   exit /B
 )
 call %~dp0dbbackup.bat
-rem Options: init write repo=repositoryDirectory mount=mountPoint
-%~dp0jre\bin\java -Dfile.encoding=UTF-8 -cp "%~dp0lib\*" dedup.Server write
+rem Options: init write repo=repositoryDirectory mount=mountPoint temp=tempFileDirectory
+%~dp0jre\bin\java -Dfile.encoding=UTF-8 -cp "%~dp0lib\*" dedup.Server write temp=%TEMP%
