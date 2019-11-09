@@ -1,7 +1,5 @@
 package dedup
 
-import java.io.File
-
 import scala.collection.immutable.SortedMap
 
 /** This class is the storage interface for the dedup server. It keeps data from files currently open in volatile
@@ -10,9 +8,9 @@ import scala.collection.immutable.SortedMap
  *
  *  This class is not thread safe.
  */
-class DataStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
+class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends AutoCloseable {
   private val longTermStore = new LongTermStore(dataDir, readOnly)
-  private val entries = new CacheEntries(new File(dataDir, "../data-temp").getAbsoluteFile)
+  private val entries = new CacheEntries(tempPath, readOnly)
   import entries.Entry
 
   def writeProtectCompleteFiles(startPosition: Long, endPosition: Long): Unit =

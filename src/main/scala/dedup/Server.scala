@@ -49,7 +49,7 @@ object Server extends App {
     System.gc(); Thread.sleep(1000)
     val usedByNormalData = freeBeforeNormalDataCheck - freeMemory
     val deviationWithNormalData = (100000000 - usedByNormalData).abs / 1000000
-    log.info(s"100 Byte arrays of size 1000000 used $usedByNormalData bytes of RAM.")
+    log.info(s"${normallyHandledData.size} Byte arrays of size 1000000 used $usedByNormalData bytes of RAM.")
     log.info(s"This is a deviation of $deviationWithNormalData% from the expected value.")
     log.info(s"This software assumes that the deviation is near to 0%.")
 
@@ -58,7 +58,7 @@ object Server extends App {
     System.gc(); Thread.sleep(1000)
     val usedByExceptionalData = freeBeforeExceptionalDataCheck - freeMemory
     val deviationWithExceptionalData = (104857600 - usedByExceptionalData).abs / 1000000
-    log.info(s"100 Byte arrays of size 1048576 used $usedByExceptionalData bytes of RAM.")
+    log.info(s"${exceptionallyHandledData.size} Byte arrays of size 1048576 used $usedByExceptionalData bytes of RAM.")
     log.info(s"This is a deviation of $deviationWithExceptionalData% from the expected value.")
     log.info(s"This software assumes that the deviation is near to 100%.")
 
@@ -78,8 +78,13 @@ object Server extends App {
     val readonly = !commands.contains("write")
     val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
-    val fs = new Server(repo, readonly)
-    log.info(s"Dedup file system $repo -> $mountPoint, readonly = $readonly")
+    val temp = new File(options.getOrElse("temp", repo.getPath)).getAbsoluteFile
+    val fs = new Server(repo, temp, readonly)
+    log.info(s"Starting dedup file system.")
+    log.info(s"Repository:  $repo")
+    log.info(s"Mount point: $mountPoint")
+    log.info(s"Readonly:    $readonly")
+    log.info(s"Temp dir:    $temp")
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
     catch { case e: Throwable => log.error("Mount exception:", e); fs.umount() }
   }
@@ -95,7 +100,7 @@ object Server extends App {
 }
 
 // TODO shutdown hook?
-class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
+class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean) extends FuseStubFS {
   private val log = LoggerFactory.getLogger(getClass)
   private val repo = maybeRelativeRepo.getAbsoluteFile // absolute needed e.g. for getFreeSpace()
   private val dbDir = Database.dbDir(repo)
@@ -112,7 +117,7 @@ class Server(maybeRelativeRepo: File, readonly: Boolean) extends FuseStubFS {
 
   private val db = new Database(H2.file(dbDir, readonly = false))
   private val dataDir = new File(repo, "data").tap{d => d.mkdirs(); require(d.isDirectory)}
-  private val store = new DataStore(dataDir.getAbsolutePath, readonly)
+  private val store = new DataStore(dataDir.getAbsolutePath, maybeRelativeTemp.getAbsolutePath, readonly)
   private val hashAlgorithm = "MD5"
 
   private val rights = if (readonly) 365 else 511 // o555 else o777

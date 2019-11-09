@@ -3,13 +3,19 @@ package dedup
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
-import java.nio.file.{Files, Path}
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
+import java.nio.file.{Files, Path}
 
 import org.slf4j.{Logger, LoggerFactory}
 
-class CacheEntries(tempDir: File) extends AutoCloseable {
+class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
+  private val tempDir: File = new File(tempPath, "dedupfs-temp")
+  if (!readOnly) {
+    require(tempDir.isDirectory || tempDir.mkdirs(), s"Can't create temp dir $tempDir")
+    require(tempDir.list().isEmpty, s"Temp dir is not empty: $tempDir")
+  }
   require(tempDir.isDirectory && tempDir.list().isEmpty || tempDir.mkdirs())
+
   private val log: Logger = LoggerFactory.getLogger(getClass)
   private val memoryCacheSize: Long = Server.freeMemory*3/4 - 128000000
   log.info(s"Initializing data store with memory cache size ${memoryCacheSize / 1000000}MB")
