@@ -49,7 +49,7 @@ object Server extends App {
     System.gc(); Thread.sleep(1000)
     val usedByNormalData = freeBeforeNormalDataCheck - freeMemory
     val deviationWithNormalData = (100000000 - usedByNormalData).abs / 1000000
-    log.info(s"100 Byte arrays of size 1000000 used $usedByNormalData bytes of RAM.")
+    log.info(s"${normallyHandledData.size} Byte arrays of size 1000000 used $usedByNormalData bytes of RAM.")
     log.info(s"This is a deviation of $deviationWithNormalData% from the expected value.")
     log.info(s"This software assumes that the deviation is near to 0%.")
 
@@ -58,7 +58,7 @@ object Server extends App {
     System.gc(); Thread.sleep(1000)
     val usedByExceptionalData = freeBeforeExceptionalDataCheck - freeMemory
     val deviationWithExceptionalData = (104857600 - usedByExceptionalData).abs / 1000000
-    log.info(s"100 Byte arrays of size 1048576 used $usedByExceptionalData bytes of RAM.")
+    log.info(s"${exceptionallyHandledData.size} Byte arrays of size 1048576 used $usedByExceptionalData bytes of RAM.")
     log.info(s"This is a deviation of $deviationWithExceptionalData% from the expected value.")
     log.info(s"This software assumes that the deviation is near to 100%.")
 
