@@ -119,9 +119,8 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
   private val dataDir = new File(repo, "data").tap{d => d.mkdirs(); require(d.isDirectory)}
   private val store = new DataStore(dataDir.getAbsolutePath, maybeRelativeTemp.getAbsolutePath, readonly)
   private val hashAlgorithm = "MD5"
-
   private val rights = if (readonly) 365 else 511 // o555 else o777
-  private def sync[T](f: => T): T = synchronized(try f catch { case e: Throwable => log.error("ERROR", e); throw e })
+
   private def split(path: String): Array[String] = path.split("/").filter(_.nonEmpty)
   private def entry(path: String): Option[TreeEntry] = entry(split(path))
   private def entry(path: Array[String]): Option[TreeEntry] =
@@ -130,14 +129,18 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
       case _ => None
     }
 
-  override def umount(): Unit = sync {
+  private def sync[T](msg: String)(f: => Int): Int = synchronized(
+    try f.tap(result => log.debug(s"$msg -> $result"))
+    catch { case e: Throwable => log.error(s"$msg -> ERROR", e); -ErrorCodes.EIO() }
+  )
+
+  override def umount(): Unit = sync(s"Unmount repository from $mountPoint") {
     if (!readonly) store.writeProtectCompleteFiles(startOfFreeDataAtStart, startOfFreeData)
-    store.close()
-    log.info(s"Repository unmounted from $mountPoint.")
+    store.close(); 0
   }
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
-  override def getattr(path: String, stat: FileStat): Int = sync {
+  override def getattr(path: String, stat: FileStat): Int = sync(s"getattr $path") {
     def setCommon(time: Long, nlink: Int): Unit = {
       stat.st_nlink.set(nlink)
       stat.st_mtim.tv_sec.set(time / 1000)
@@ -159,9 +162,9 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
         stat.st_size.set(size)
         0
     }
-  }.tap(r => log.debug(s"getattr $path -> $r"))
+  }
 
-  override def utimens(path: String, timespec: Array[Timespec]): Int = sync { // see man UTIMENSAT(2)
+  override def utimens(path: String, timespec: Array[Timespec]): Int = sync(s"utimens $path") { // see man UTIMENSAT(2)
     if (timespec.length < 2) -ErrorCodes.EIO else {
       val sec = timespec(1).tv_sec.get
       val nan = timespec(1).tv_nsec.longValue
@@ -173,25 +176,26 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           0
       }
     }
-  }.tap(r => log.debug(s"utimens $path -> $r"))
+  }
 
   /* Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir. */
-  override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = sync {
-    entry(path) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
-      case Some(dir: DirEntry) =>
-        if (offset < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
-        else {
-          def names = Seq(".", "..") ++ db.children(dir.id).map(_.name)
-          // exists: side effect until a condition is met
-          names.zipWithIndex.drop(offset.toInt).exists { case (name, k) => fill.apply(buf, name, null, k + 1) != 0 }
-          0
-        }
+  override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
+    sync(s"readdir $path $offset") {
+      entry(path) match {
+        case None => -ErrorCodes.ENOENT
+        case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
+        case Some(dir: DirEntry) =>
+          if (offset < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
+          else {
+            def names = Seq(".", "..") ++ db.children(dir.id).map(_.name)
+            // exists: side effect until a condition is met
+            names.zipWithIndex.drop(offset.toInt).exists { case (name, k) => fill.apply(buf, name, null, k + 1) != 0 }
+            0
+          }
+      }
     }
-  }.tap(r => log.debug(s"readdir $path $offset -> $r"))
 
-  override def rmdir(path: String): Int = if (readonly) -ErrorCodes.EROFS else sync {
+  override def rmdir(path: String): Int = if (readonly) -ErrorCodes.EROFS else sync("rmdir $path") {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
@@ -199,16 +203,16 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
         if (db.children(dir.id).nonEmpty) -ErrorCodes.ENOTEMPTY
         else if (db.delete(dir.id)) 0 else -ErrorCodes.EIO
     }
-  }.tap(r => log.debug(s"rmdir $path -> $r"))
+  }
 
   // Renames a file. Other than the general contract of rename, newpath must not exist.
-  override def rename(oldpath: String, newpath: String): Int = if (readonly) -ErrorCodes.EROFS else sync {
-    val (oldParts, newParts) = (split(oldpath), split(newpath))
-    if (oldParts.length == 0 || newParts.length == 0) -ErrorCodes.ENOENT
-    else entry(oldParts) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(source) =>
-        entry(newParts.take(newParts.length - 1)) match {
+  override def rename(oldpath: String, newpath: String): Int = if (readonly) -ErrorCodes.EROFS else
+    sync(s"rename $oldpath .. $newpath") {
+      val (oldParts, newParts) = (split(oldpath), split(newpath))
+      if (oldParts.length == 0 || newParts.length == 0) -ErrorCodes.ENOENT
+      else entry(oldParts) match {
+        case None => -ErrorCodes.ENOENT
+        case Some(source) => entry(newParts.take(newParts.length - 1)) match {
           case None => -ErrorCodes.ENOENT
           case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
           case Some(dir: DirEntry) =>
@@ -218,10 +222,10 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
               case None => db.moveRename(source.id, dir.id, newName); 0
             }
         }
+      }
     }
-  }.tap(r => log.debug(s"rename $oldpath -> $newpath -> $r"))
 
-  override def mkdir(path: String, mode: Long): Int = if (readonly) -ErrorCodes.EROFS else sync {
+  override def mkdir(path: String, mode: Long): Int = if (readonly) -ErrorCodes.EROFS else sync(s"mkdir $path") {
     val parts = split(path)
     if (parts.length == 0) -ErrorCodes.ENOENT
     else entry(parts.take(parts.length - 1)) match {
@@ -234,7 +238,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           case None => db.mkDir(dir.id, name); 0
         }
     }
-  }.tap(r => log.debug(s"mkdir $path -> $r"))
+  }
 
   override def statfs(path: String, stbuf: Statvfs): Int = {
     if (Platform.getNativePlatform.getOS == WINDOWS) {
@@ -260,35 +264,34 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
   private var startOfFreeData = startOfFreeDataAtStart
   log.info(s"Data stored: ${startOfFreeData / 1000000000}GB")
 
-  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = if (readonly) -ErrorCodes.EROFS else sync {
-    val parts = split(path)
-    if (parts.length == 0) -ErrorCodes.ENOENT
-    else entry(parts.take(parts.length - 1)) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
-      case Some(dir: DirEntry) =>
-        val name = parts.last
-        db.child(dir.id, name) match {
-          case Some(_) => -ErrorCodes.EEXIST
-          case None =>
-            val id = db.mkFile(dir.id, name, now)
-            incCount(id)
-            0
-        }
+  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = if (readonly) -ErrorCodes.EROFS else
+    sync(s"create $path") {
+      val parts = split(path)
+      if (parts.length == 0) -ErrorCodes.ENOENT
+      else entry(parts.take(parts.length - 1)) match {
+        case None => -ErrorCodes.ENOENT
+        case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
+        case Some(dir: DirEntry) =>
+          val name = parts.last
+          db.child(dir.id, name) match {
+            case Some(_) => -ErrorCodes.EEXIST
+            case None =>
+              val id = db.mkFile(dir.id, name, now)
+              incCount(id); 0
+          }
+      }
     }
-  }.tap(r => log.debug(s"create $path -> $r"))
 
-  override def open(path: String, fi: FuseFileInfo): Int = sync {
+  override def open(path: String, fi: FuseFileInfo): Int = sync(s"open $path") {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-        incCount(file.id)
-        0
+        incCount(file.id); 0
     }
-  }.tap(r => log.debug(s"open $path -> $r"))
+  }
 
-  override def release(path: String, fi: FuseFileInfo): Int = sync {
+  override def release(path: String, fi: FuseFileInfo): Int = sync(s"release $path") {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
@@ -320,27 +323,28 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
         }
         0
     }
-  }.tap(r => log.debug(s"release $path -> $r"))
+  }
 
-  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = if (readonly) -ErrorCodes.EROFS else sync {
-    entry(path) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(_: DirEntry) => -ErrorCodes.EISDIR
-      case Some(file: FileEntry) =>
-        val intSize = size.toInt.abs
-        if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
-        else if (offset < 0 || size != intSize) -ErrorCodes.EOVERFLOW
-        else {
-          val data = new Array[Byte](intSize)
-          buf.get(0, data, 0, intSize)
-          val (ltStart, ltStop) = db.startStop(file.dataId)
-          store.write(file.id, file.dataId, ltStart, ltStop)(offset, data)
-          intSize
-        }
+  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
+    if (readonly) -ErrorCodes.EROFS else sync(s"write $path .. $offset/$size") {
+      entry(path) match {
+        case None => -ErrorCodes.ENOENT
+        case Some(_: DirEntry) => -ErrorCodes.EISDIR
+        case Some(file: FileEntry) =>
+          val intSize = size.toInt.abs
+          if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
+          else if (offset < 0 || size != intSize) -ErrorCodes.EOVERFLOW
+          else {
+            val data = new Array[Byte](intSize)
+            buf.get(0, data, 0, intSize)
+            val (ltStart, ltStop) = db.startStop(file.dataId)
+            store.write(file.id, file.dataId, ltStart, ltStop)(offset, data)
+            intSize
+          }
+      }
     }
-  }.tap(r => log.debug(s"write $path -> $offset/$size -> $r"))
 
-  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync {
+  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync(s"read $path .. $size/$offset") {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
@@ -358,9 +362,9 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           }
         }
     }
-  }.tap(r => log.debug(s"read $path -> $size/$offset -> $r"))
+  }
 
-  override def truncate(path: String, size: Long): Int = if (readonly) -ErrorCodes.EROFS else sync {
+  override def truncate(path: String, size: Long): Int = if (readonly) -ErrorCodes.EROFS else sync(s"truncate $path .. $size") {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
@@ -369,9 +373,9 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
         store.truncate(file.id, file.dataId, start, stop)
         0
     }
-  }.tap(r => log.debug(s"truncate $path -> $size -> $r"))
+  }
 
-  override def unlink(path: String): Int = if (readonly) -ErrorCodes.EROFS else sync {
+  override def unlink(path: String): Int = if (readonly) -ErrorCodes.EROFS else sync(s"unlink $path") {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
@@ -382,5 +386,5 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           0
         } else -ErrorCodes.EIO
     }
-  }.tap(r => log.debug(s"unlink $path -> $r"))
+  }
 }
