@@ -40,6 +40,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       ).filterNot(_._2 == 0)
     }
     val chunksRead: SortedMap[Long, Array[Byte]] =
+      // FIXME READ -1 65140 occurred once
       chunksToRead.map { case (start, length) => start -> longTermStore.read(ltStart + start, length) }
     (chunksRead ++ chunks.map(e => e.position -> e.data)).map(_._2).reduce(_ ++ _)
   }
