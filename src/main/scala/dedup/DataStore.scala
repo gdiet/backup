@@ -1,5 +1,7 @@
 package dedup
 
+import org.slf4j.{Logger, LoggerFactory}
+
 import scala.collection.immutable.SortedMap
 
 /** This class is the storage interface for the dedup server. It keeps data from files currently open in volatile
@@ -9,6 +11,7 @@ import scala.collection.immutable.SortedMap
  *  This class is not thread safe.
  */
 class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends AutoCloseable {
+  implicit private val log: Logger = LoggerFactory.getLogger(getClass)
   private val longTermStore = new LongTermStore(dataDir, readOnly)
   private val entries = new CacheEntries(tempPath, readOnly)
   import entries.Entry
@@ -22,6 +25,13 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
     if (entries.getEntry(id, dataId).nonEmpty) f
 
   def read(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, requestedSize: Int): Array[Byte] = {
+    assumeLogged(id > 0, s"id > 0 ... $id")
+    assumeLogged(dataId > 0, s"dataId > 0 ... $dataId")
+    assumeLogged(ltStart >= 0, s"ltStart >= 0 ... $ltStart")
+    assumeLogged(ltStop >= ltStart, s"ltStop >= ltStart ... $ltStop / $ltStart")
+    assumeLogged(position >= 0, s"position >= 0 ... $position")
+    assumeLogged(requestedSize >= 0, s"requestedSize >= 0 ... $requestedSize")
+    assumeLogged(requestedSize < 1000000, s"requestedSize < 1000000 ... $requestedSize")
     val (fileSize, localEntries) = entries.getEntry(id, dataId).getOrElse(ltStop - ltStart -> Seq[Entry]())
     val sizeToRead = math.max(math.min(requestedSize, fileSize - position), 0).toInt
     val chunks: Seq[Entry] = localEntries.collect {
@@ -39,9 +49,11 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
         entry.position + entry.length -> (readPosition + sizeToRead - entry.position - entry.length).toInt
       ).filterNot(_._2 == 0)
     }
-    val chunksRead: SortedMap[Long, Array[Byte]] =
+    val chunksRead: SortedMap[Long, Array[Byte]] = chunksToRead.map { case (start, length) =>
       // FIXME READ -1 65140 occurred once
-      chunksToRead.map { case (start, length) => start -> longTermStore.read(ltStart + start, length) }
+      assumeLogged(start >= 0, s"start >= 0 ... $start / $localEntries")
+      start -> longTermStore.read(ltStart + start, length)
+    }
     (chunksRead ++ chunks.map(e => e.position -> e.data)).map(_._2).reduce(_ ++ _)
   }
 

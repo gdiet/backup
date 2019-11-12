@@ -10,6 +10,7 @@ import org.slf4j.{Logger, LoggerFactory}
 
 // TODO In read-only mode there is no need to initialize cache entries.
 class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
+  implicit private val log: Logger = LoggerFactory.getLogger(getClass)
   private val tempDir: File = new File(tempPath, "dedupfs-temp")
   if (!readOnly) {
     require(tempDir.isDirectory || tempDir.mkdirs(), s"Can't create temp dir $tempDir")
@@ -17,7 +18,6 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
   }
   require(tempDir.isDirectory && tempDir.list().isEmpty || tempDir.mkdirs())
 
-  private val log: Logger = LoggerFactory.getLogger(getClass)
   private val memoryCacheSize: Long = Server.freeMemory*3/4 - 128000000
   log.info(s"Initializing data store with memory cache size ${memoryCacheSize / 1000000}MB")
   require(memoryCacheSize > 8000000, "Not enough free memory for a sensible memory cache.")
@@ -74,7 +74,13 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
     def position: Long; def data: Array[Byte]
     def length: Int; def memory: Long
     def write(data: Array[Byte]): Unit
-    def drop(left: Int, right: Int): Entry
+    final def drop(left: Int, right: Int): Entry = {
+      assumeLogged(left >= 0, s"left >= 0 ... $left")
+      assumeLogged(right >= 0, s"right >= 0 ... $right")
+      assumeLogged(left + right <= length, s"left + right <= length ... $left / $right / $length")
+      dropImpl(left, right)
+    }
+    protected def dropImpl(left: Int, right: Int): Entry
     def ++(other: Entry): Entry
   }
 
@@ -82,7 +88,7 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
     override def toString: String = s"Mem($id/$dataId, $position, $length)"
     override def length: Int = data.length
     override def memory: Long = length + 500
-    override def drop(left: Int, right: Int): Entry = copy(position = position + left, data = data.drop(left).dropRight(right))
+    override def dropImpl(left: Int, right: Int): Entry = copy(position = position + left, data = data.drop(left).dropRight(right))
     override def write(data: Array[Byte]): Unit = System.arraycopy(data, 0, this.data, 0, data.length)
     override def ++(other: Entry): Entry = newEntry(id, dataId, position, data ++ other.data)
   }
@@ -96,12 +102,10 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
       new Array[Byte](length).tap(buffer.position(0).get)
     }
     override def memory: Long = 500
-    override def drop(left: Int, right: Int): Entry = {
+    override def dropImpl(left: Int, right: Int): Entry =
       copy(position = position + left, length = length - left - right)
-    }
-    override def write(data: Array[Byte]): Unit = {
+    override def write(data: Array[Byte]): Unit =
       channel(id, dataId).position(position).write(ByteBuffer.wrap(data))
-    }
     override def ++(other: Entry): Entry = {
       require(other.id == id && other.dataId == dataId)
       require(position + length == other.position)

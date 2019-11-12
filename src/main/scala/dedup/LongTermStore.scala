@@ -15,7 +15,7 @@ import scala.collection.mutable
  *  mode, write access fails with an exception.
  */
 class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
-  private val log: Logger = LoggerFactory.getLogger(getClass)
+  implicit private val log: Logger = LoggerFactory.getLogger(getClass)
   private val fileSize = 100000000 // 100 MB
   private val parallelOpenFiles = 5
 
@@ -31,6 +31,7 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
         else { file.close(); openFiles.remove(path); mapLock.unlock(); access(path, write)(f) }
       case None =>
         if (openFiles.size < parallelOpenFiles) {
+          log.debug(s"Open data file $path")
           if (!readOnly) new File(path).getParentFile.mkdirs()
           val fileLock -> file = new ReentrantLock() -> new RandomAccessFile(path, if (readOnly || !write) "r" else "rw")
           openFiles.addOne(path, (fileLock, write, file))
@@ -69,6 +70,8 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   }
 
   def read(position: Long, size: Int): Array[Byte] = {
+    assumeLogged(position >= 0, s"position >= 0 ... $position")
+    assumeLogged(size < 1000000, s"size < 1000000 ... $size")
     val (path, offset, bytesToRead) = pathOffsetSize(position, size)
     // Note: From corrupt data file, entry will not be read at all
     val bytes = access(path, write = false) { file => file.seek(offset); new Array[Byte](bytesToRead).tap(file.readFully) }
