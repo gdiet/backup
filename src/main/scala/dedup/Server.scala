@@ -355,8 +355,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           if (offset < 0 || intSize != size) -ErrorCodes.EOVERFLOW
           else {
             val (start, stop) = db.startStop(file.dataId)
-            val bytes: Array[Byte] =
-              if (start -> stop == -1 -> -1) Array() else store.read(file.id, file.dataId, start, stop)(offset, intSize)
+            val bytes: Array[Byte] = store.read(file.id, file.dataId, start, stop)(offset, intSize)
             buf.put(0, bytes, 0, bytes.length)
             bytes.length
           }
