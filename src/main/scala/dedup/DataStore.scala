@@ -27,7 +27,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
   def read(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, requestedSize: Int): Array[Byte] = {
     assumeLogged(id > 0, s"id > 0 ... $id")
     assumeLogged(dataId > 0, s"dataId > 0 ... $dataId")
-    assumeLogged(ltStart >= 0, s"ltStart >= 0 ... $ltStart")
+    assumeLogged(ltStart == -1 && ltStop == -1 || ltStart >= 0, s"ltStart = $ltStart / ltStop = $ltStop")
     assumeLogged(ltStop >= ltStart, s"ltStop >= ltStart ... $ltStop / $ltStart")
     assumeLogged(position >= 0, s"position >= 0 ... $position")
     assumeLogged(requestedSize >= 0, s"requestedSize >= 0 ... $requestedSize")
@@ -50,9 +50,8 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       ).filterNot(_._2 == 0)
     }
     val chunksRead: SortedMap[Long, Array[Byte]] = chunksToRead.map { case (start, length) =>
-      // FIXME READ -1 65140 occurred once
       assumeLogged(start >= 0, s"start >= 0 ... $start / $localEntries")
-      start -> longTermStore.read(ltStart + start, length)
+      start -> longTermStore.read(math.max(ltStart, 0) + start, length)
     }
     (chunksRead ++ chunks.map(e => e.position -> e.data)).map(_._2).reduce(_ ++ _)
   }
