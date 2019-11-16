@@ -59,8 +59,9 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
   def size(id: Long, dataId: Long, longTermStoreSize: => Long): Long =
     entries.getEntry(id, dataId).map(_._1).getOrElse(longTermStoreSize)
 
-  def truncate(id: Long, dataId: Long): Unit =
-    entries.setOrReplace(id, dataId, 0, Seq())
+//  FIXME maybe setOrReplace can be inlined?
+//  def truncate(id: Long, dataId: Long): Unit =
+//    entries.setOrReplace(id, dataId, 0, Seq())
 
   def delete(id: Long, dataId: Long): Unit =
     entries.delete(id, dataId)

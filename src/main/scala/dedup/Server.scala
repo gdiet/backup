@@ -361,16 +361,16 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
     }
   }
 
-  // FIXME truncate should truncate to the provided size, not to 0
-  override def truncate(path: String, size: Long): Int = if (readonly) -ErrorCodes.EROFS else sync(s"truncate $path .. $size") {
-    entry(path) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(_: DirEntry) => -ErrorCodes.EISDIR
-      case Some(file: FileEntry) =>
-        store.truncate(file.id, file.dataId)
-        0
-    }
-  }
+//  override def truncate(path: String, size: Long): Int = if (readonly) -ErrorCodes.EROFS else sync(s"truncate $path .. $size") {
+//    entry(path) match {
+//      case None => -ErrorCodes.ENOENT
+//      case Some(_: DirEntry) => -ErrorCodes.EISDIR
+//      case Some(file: FileEntry) =>
+//        // FIXME truncate should truncate to the provided size, not to 0
+//        store.truncate(file.id, file.dataId)
+//        0
+//    }
+//  }
 
   override def unlink(path: String): Int = if (readonly) -ErrorCodes.EROFS else sync(s"unlink $path") {
     entry(path) match {
