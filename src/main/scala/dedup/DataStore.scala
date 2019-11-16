@@ -49,6 +49,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       ).filterNot(_._2 == 0)
     }
     val chunksRead: SortedMap[Long, Array[Byte]] = chunksNotCached.map { case (start, length) =>
+      // FIXME test
       val readLength = if (start + length > longTermSize) (longTermSize - start).toInt else length
       (start, longTermStore.read(startStop.start + start, readLength) ++ new Array[Byte](length - readLength))
     }
@@ -58,9 +59,25 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
   def size(id: Long, dataId: Long, longTermStoreSize: => Long): Long =
     entries.getEntry(id, dataId).map(_._1).getOrElse(longTermStoreSize)
 
-//  FIXME implement
-//  def truncate(id: Long, dataId: Long): Unit =
-//    entries.setOrReplace(id, dataId, 0, Seq())
+  // FIXME test
+  def truncate(id: Long, dataId: Long, startStop: StartStop, newSize: Long): Unit = {
+    def zeros(position: Long, size: Long): Seq[Entry] =
+      if (size == 0) Seq()
+      else if (size <= 524288) Seq(entries.newEntry(id, dataId, position, new Array[Byte](size.toInt)))
+      else zeros(position + 524288, size - 524288) :+ entries.newEntry(id, dataId, position, new Array[Byte](size.toInt))
+    entries.getEntry(id, dataId) match {
+      case None =>
+        entries.setOrReplace(id, dataId, newSize, zeros(startStop.stop, math.max(newSize - startStop.size, 0)))
+      case Some(oldSize -> chunks) =>
+        val newStop = startStop.start + newSize
+        val newChunks = chunks.collect { case entry if entry.position < newStop =>
+          val dropRight = math.max(0, entry.position + entry.length - newStop).toInt
+          entry.drop(0, dropRight)
+        }
+        val zeroPadding = zeros(startStop.stop, math.max(newSize - oldSize, 0))
+        entries.setOrReplace(id, dataId, newSize, newChunks ++ zeroPadding)
+    }
+  }
 
   def delete(id: Long, dataId: Long): Unit =
     entries.delete(id, dataId)
