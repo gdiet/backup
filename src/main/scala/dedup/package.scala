@@ -10,5 +10,6 @@ package object dedup extends ChainingSyntax {
   implicit class StartStopDecorator(val startStop: StartStop) {
     def size: Long = startStop.map { case (a,b) => b - a }.getOrElse(0)
     def start: Long = startStop.map(_._1).getOrElse(0)
+    def stop: Long = startStop.map(_._1).getOrElse(0)
   }
 }

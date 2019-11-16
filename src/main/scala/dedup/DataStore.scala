@@ -30,9 +30,8 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
     assumeLogged(position >= 0, s"position >= 0 ... $position")
     assumeLogged(requestedSize >= 0, s"requestedSize >= 0 ... $requestedSize")
     assumeLogged(requestedSize < 1000000, s"requestedSize < 1000000 ... $requestedSize")
-    // FIXME here is a potential bug: if the cached entries are not contiguous but longer than
-    // FIXME the long term entries...
-    val (fileSize, localEntries) = entries.getEntry(id, dataId).getOrElse(startStop.size -> Seq[Entry]())
+    val longTermSize = startStop.size
+    val (fileSize, localEntries) = entries.getEntry(id, dataId).getOrElse(longTermSize -> Seq[Entry]())
     val sizeToRead = math.max(math.min(requestedSize, fileSize - position), 0).toInt
     val chunks: Seq[Entry] = localEntries.collect {
       case entry
@@ -42,16 +41,16 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
         val dropRight = math.max(0, entry.position + entry.length - (position + sizeToRead)).toInt
         entry.drop(dropLeft, dropRight)
     }
-    val chunksToRead = chunks.foldLeft(SortedMap(position -> sizeToRead)) { case (chunksToRead, entry) =>
+    val chunksNotCached = chunks.foldLeft(SortedMap(position -> sizeToRead)) { case (chunksToRead, entry) =>
       val (readPosition, sizeToRead) = chunksToRead.filter(_._1 <= entry.position).last
       chunksToRead - readPosition ++ Seq(
         readPosition -> (entry.position - readPosition).toInt,
         entry.position + entry.length -> (readPosition + sizeToRead - entry.position - entry.length).toInt
       ).filterNot(_._2 == 0)
     }
-    val chunksRead: SortedMap[Long, Array[Byte]] = chunksToRead.map { case (start, length) =>
-      assumeLogged(start >= 0, s"start >= 0 ... $start / $localEntries")
-      start -> longTermStore.read(startStop.start + start, length)
+    val chunksRead: SortedMap[Long, Array[Byte]] = chunksNotCached.map { case (start, length) =>
+      val readLength = if (start + length > longTermSize) (longTermSize - start).toInt else length
+      (start, longTermStore.read(startStop.start + start, readLength) ++ new Array[Byte](length - readLength))
     }
     (chunksRead ++ chunks.map(e => e.position -> e.data)).map(_._2).reduce(_ ++ _)
   }
@@ -59,7 +58,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
   def size(id: Long, dataId: Long, longTermStoreSize: => Long): Long =
     entries.getEntry(id, dataId).map(_._1).getOrElse(longTermStoreSize)
 
-//  FIXME maybe setOrReplace can be inlined?
+//  FIXME implement
 //  def truncate(id: Long, dataId: Long): Unit =
 //    entries.setOrReplace(id, dataId, 0, Seq())
 
@@ -68,6 +67,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
 
   def write(id: Long, dataId: Long, longTermSize: Long)(position: Long, data: Array[Byte]): Unit =
     // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
+    // TODO document resolution of this issue
     data.grouped(524288).foldLeft(0) { case (offset, bytes) =>
       internalWrite(id, dataId, longTermSize)(position + offset, bytes)
       offset + 524288

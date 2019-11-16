@@ -69,9 +69,9 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     if (data.length > bytesToWrite) write(position + bytesToWrite, data.drop(bytesToWrite))
   }
 
-  def read(position: Long, size: Int): Array[Byte] = {
+  def read(position: Long, size: Int): Array[Byte] = if (size == 0) Array() else {
     assumeLogged(position >= 0, s"position >= 0 ... $position")
-    assumeLogged(size < 1000000, s"size < 1000000 ... $size")
+    assumeLogged(size < 1000000 && size > 0, s"size < 1000000 && size > 0 ... $size")
     val (path, offset, bytesToRead) = pathOffsetSize(position, size)
     // Note: From corrupt data file, entry will not be read at all
     val bytes = access(path, write = false) { file => file.seek(offset); new Array[Byte](bytesToRead).tap(file.readFully) }
