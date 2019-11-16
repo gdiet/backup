@@ -75,7 +75,7 @@ object Database {
 }
 
 class Database(connection: Connection) { import Database._
-  private val log = LoggerFactory.getLogger(getClass)
+  implicit private val log = LoggerFactory.getLogger(getClass)
 
   def startOfFreeData: Long =
     connection.createStatement().executeQuery("SELECT MAX(stop) FROM DataEntries").pipe { rs =>
@@ -102,10 +102,16 @@ class Database(connection: Connection) { import Database._
   private val qStartStop = connection.prepareStatement(
     "SELECT start, stop FROM DataEntries WHERE id = ?"
   )
-  def startStop(dataId: Long): (Long, Long) = {
+  def startStop(dataId: Long): StartStop = {
     qStartStop.setLong(1, dataId)
-    resource(qStartStop.executeQuery())(_.maybeNext(rs => rs.getLong(1) -> rs.getLong(2)).getOrElse(-1L -> -1L))
+    resource(qStartStop.executeQuery())(_.maybeNext { rs =>
+      val (start, stop) = rs.getLong(1) -> rs.getLong(2)
+      assumeLogged(start >= 0, s"start >= 0 ... $start")
+      assumeLogged(stop >= start, s"stop >= start ... $stop / $start")
+      start -> stop
+    })
   }
+  def dataSize(dataId: Long): Long = startStop(dataId).size
 
   private val dTreeEntry = connection.prepareStatement(
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"

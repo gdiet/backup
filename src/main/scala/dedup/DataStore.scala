@@ -24,15 +24,15 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
   def ifDataWritten(id: Long, dataId: Long)(f: => Unit): Unit =
     if (entries.getEntry(id, dataId).nonEmpty) f
 
-  def read(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, requestedSize: Int): Array[Byte] = {
+  def read(id: Long, dataId: Long, startStop: StartStop)(position: Long, requestedSize: Int): Array[Byte] = {
     assumeLogged(id > 0, s"id > 0 ... $id")
     assumeLogged(dataId > 0, s"dataId > 0 ... $dataId")
-    assumeLogged(ltStart == -1 && ltStop == -1 || ltStart >= 0, s"ltStart = $ltStart / ltStop = $ltStop")
-    assumeLogged(ltStop >= ltStart, s"ltStop >= ltStart ... $ltStop / $ltStart")
     assumeLogged(position >= 0, s"position >= 0 ... $position")
     assumeLogged(requestedSize >= 0, s"requestedSize >= 0 ... $requestedSize")
     assumeLogged(requestedSize < 1000000, s"requestedSize < 1000000 ... $requestedSize")
-    val (fileSize, localEntries) = entries.getEntry(id, dataId).getOrElse(ltStop - ltStart -> Seq[Entry]())
+    // FIXME here is a potential bug: if the cached entries are not contiguous but longer than
+    // FIXME the long term entries...
+    val (fileSize, localEntries) = entries.getEntry(id, dataId).getOrElse(startStop.size -> Seq[Entry]())
     val sizeToRead = math.max(math.min(requestedSize, fileSize - position), 0).toInt
     val chunks: Seq[Entry] = localEntries.collect {
       case entry
@@ -51,29 +51,29 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
     }
     val chunksRead: SortedMap[Long, Array[Byte]] = chunksToRead.map { case (start, length) =>
       assumeLogged(start >= 0, s"start >= 0 ... $start / $localEntries")
-      start -> longTermStore.read(math.max(ltStart, 0) + start, length)
+      start -> longTermStore.read(startStop.start + start, length)
     }
     (chunksRead ++ chunks.map(e => e.position -> e.data)).map(_._2).reduce(_ ++ _)
   }
 
-  def size(id: Long, dataId: Long, ltStart: Long, ltStop: Long): Long =
-    entries.getEntry(id, dataId).map(_._1).getOrElse(ltStop - ltStart)
+  def size(id: Long, dataId: Long, longTermStoreSize: => Long): Long =
+    entries.getEntry(id, dataId).map(_._1).getOrElse(longTermStoreSize)
 
-  def truncate(id: Long, dataId: Long, ltStart: Long, ltStop: Long): Unit =
+  def truncate(id: Long, dataId: Long): Unit =
     entries.setOrReplace(id, dataId, 0, Seq())
 
   def delete(id: Long, dataId: Long): Unit =
     entries.delete(id, dataId)
 
-  def write(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, data: Array[Byte]): Unit =
+  def write(id: Long, dataId: Long, longTermSize: Long)(position: Long, data: Array[Byte]): Unit =
     // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
     data.grouped(524288).foldLeft(0) { case (offset, bytes) =>
-      internalWrite(id, dataId, ltStart, ltStop)(position + offset, bytes)
+      internalWrite(id, dataId, longTermSize)(position + offset, bytes)
       offset + 524288
     }
 
-  private def internalWrite(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(position: Long, data: Array[Byte]): Unit = {
-    val (fileSize, chunks) = entries.getEntry(id, dataId).getOrElse(ltStop - ltStart -> Seq())
+  private def internalWrite(id: Long, dataId: Long, longTermSize: Long)(position: Long, data: Array[Byte]): Unit = {
+    val (fileSize, chunks) = entries.getEntry(id, dataId).getOrElse(longTermSize -> Seq())
     val newSize = math.max(fileSize, position + data.length)
     val combinedChunks = chunks :+ (chunks.find(_.position == position) match {
       case None => entries.newEntry(id, dataId, position, data)
@@ -93,9 +93,9 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
     entries.setOrReplace(id, dataId, newSize, merged)
   }
 
-  def persist(id: Long, dataId: Long, ltStart: Long, ltStop: Long)(writePosition: Long, dataSize: Long): Unit = {
+  def persist(id: Long, dataId: Long, startStop: StartStop)(writePosition: Long, dataSize: Long): Unit = {
     for { offset <- 0L until dataSize by 524288; chunkSize = math.min(524288, dataSize - offset).toInt } {
-      val chunk = read(id, dataId, ltStart, ltStop)(offset, chunkSize)
+      val chunk = read(id, dataId, startStop)(offset, chunkSize)
       longTermStore.write(writePosition + offset, chunk)
     }
   }

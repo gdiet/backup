@@ -155,8 +155,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
         setCommon(dir.time, 2)
         0
       case Some(file: FileEntry) =>
-        val (start, stop) = db.startStop(file.dataId)
-        val size = store.size(file.id, file.dataId, start, stop)
+        val size = store.size(file.id, file.dataId, db.dataSize(file.dataId))
         stat.st_mode.set(FileStat.S_IFREG | rights)
         setCommon(file.time, 1)
         stat.st_size.set(size)
@@ -300,20 +299,20 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           case 1 =>
             fileDescriptors -= file.id
             store.ifDataWritten(file.id, file.dataId) {
-              val (ltStart, ltStop) = db.startStop(file.dataId)
-              val size = store.size(file.id, file.dataId, ltStart, ltStop)
+              val startStop = db.startStop(file.dataId)
+              val size = store.size(file.id, file.dataId, startStop.size)
               val md = MessageDigest.getInstance(hashAlgorithm)
               for { position <- 0L until size by 524288; chunkSize = math.min(524288, size - position).toInt }
-                md.update(store.read(file.id, file.dataId, ltStart, ltStop)(position, chunkSize))
+                md.update(store.read(file.id, file.dataId, startStop)(position, chunkSize))
               val hash = md.digest()
               db.dataEntry(hash, size) match {
                 case Some(dataId) =>
                   log.debug(s"Already known, linking: $path")
                   if (file.dataId != dataId) require(db.setDataId(file.id, dataId))
                 case None =>
-                  val dataId = if (ltStart -> ltStop == -1 -> -1) file.dataId else db.newDataId(file.id)
-                  log.debug(s"release: $path $file -> START $ltStart DATAID $dataId")
-                  store.persist(file.id, file.dataId, ltStart, ltStop)(startOfFreeData, size)
+                  val dataId = if (startStop.isEmpty) file.dataId else db.newDataId(file.id)
+                  log.debug(s"release: $path $file -> DATAID $dataId")
+                  store.persist(file.id, file.dataId, startStop)(startOfFreeData, size)
                   db.insertDataEntry(dataId, startOfFreeData, startOfFreeData + size, hash)
                   startOfFreeData += size
               }
@@ -337,8 +336,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           else {
             val data = new Array[Byte](intSize)
             buf.get(0, data, 0, intSize)
-            val (ltStart, ltStop) = db.startStop(file.dataId)
-            store.write(file.id, file.dataId, ltStart, ltStop)(offset, data)
+            store.write(file.id, file.dataId, db.dataSize(file.dataId))(offset, data)
             intSize
           }
       }
@@ -354,8 +352,8 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           val intSize = size.toInt.abs
           if (offset < 0 || intSize != size) -ErrorCodes.EOVERFLOW
           else {
-            val (start, stop) = db.startStop(file.dataId)
-            val bytes: Array[Byte] = store.read(file.id, file.dataId, start, stop)(offset, intSize)
+            val startStop = db.startStop(file.dataId)
+            val bytes: Array[Byte] = store.read(file.id, file.dataId, startStop)(offset, intSize)
             buf.put(0, bytes, 0, bytes.length)
             bytes.length
           }
@@ -363,13 +361,13 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
     }
   }
 
+  // FIXME truncate should truncate to the provided size, not to 0
   override def truncate(path: String, size: Long): Int = if (readonly) -ErrorCodes.EROFS else sync(s"truncate $path .. $size") {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-        val (start, stop) = db.startStop(file.dataId)
-        store.truncate(file.id, file.dataId, start, stop)
+        store.truncate(file.id, file.dataId)
         0
     }
   }
