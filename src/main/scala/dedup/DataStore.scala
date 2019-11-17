@@ -59,20 +59,21 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
     entries.getEntry(id, dataId).map(_._1).getOrElse(longTermStoreSize)
 
   def truncate(id: Long, dataId: Long, startStop: StartStop, newSize: Long): Unit = {
-    def zeros(offset: Long, size: Long): Seq[Entry] =
-      if (size == 0) Seq()
-      else if (size <= 524288) Seq(entries.newEntry(id, dataId, offset, new Array[Byte](size.toInt)))
-      else zeros(offset + 524288, size - 524288) :+ entries.newEntry(id, dataId, offset, new Array[Byte](size.toInt))
+    @annotation.tailrec
+    def zeros(offset: Long, size: Long, acc: Seq[Entry]): Seq[Entry] =
+      if (size == 0) acc
+      else if (size <= 524288) acc :+ entries.newEntry(id, dataId, offset, new Array[Byte](size.toInt))
+      else zeros(offset + 524288, size - 524288, acc :+ entries.newEntry(id, dataId, offset, new Array[Byte](size.toInt)))
     val longTermSize = startStop.size
     entries.getEntry(id, dataId) match {
       case None =>
-        entries.setOrReplace(id, dataId, newSize, zeros(longTermSize, math.max(newSize - longTermSize, 0)))
+        entries.setOrReplace(id, dataId, newSize, zeros(longTermSize, math.max(newSize - longTermSize, 0), Seq()))
       case Some(oldSize -> chunks) =>
         val newChunks = chunks.collect { case entry if entry.position < newSize =>
           val dropRight = math.max(0, entry.position + entry.length - newSize).toInt
           entry.drop(0, dropRight)
         }
-        val zeroPadding = zeros(oldSize, math.max(newSize - oldSize, 0))
+        val zeroPadding = zeros(oldSize, math.max(newSize - oldSize, 0), Seq())
         entries.setOrReplace(id, dataId, newSize, newChunks ++ zeroPadding)
     }
   }
