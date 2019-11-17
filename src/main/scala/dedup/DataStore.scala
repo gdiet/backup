@@ -59,7 +59,6 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
   def size(id: Long, dataId: Long, longTermStoreSize: => Long): Long =
     entries.getEntry(id, dataId).map(_._1).getOrElse(longTermStoreSize)
 
-  // FIXME test
   def truncate(id: Long, dataId: Long, startStop: StartStop, newSize: Long): Unit = {
     def zeros(offset: Long, size: Long): Seq[Entry] =
       if (size == 0) Seq()
@@ -70,9 +69,8 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       case None =>
         entries.setOrReplace(id, dataId, newSize, zeros(longTermSize, math.max(newSize - longTermSize, 0)))
       case Some(oldSize -> chunks) =>
-        val newStop = startStop.start + newSize
-        val newChunks = chunks.collect { case entry if entry.position < newStop =>
-          val dropRight = math.max(0, entry.position + entry.length - newStop).toInt
+        val newChunks = chunks.collect { case entry if entry.position < newSize =>
+          val dropRight = math.max(0, entry.position + entry.length - newSize).toInt
           entry.drop(0, dropRight)
         }
         val zeroPadding = zeros(oldSize, math.max(newSize - oldSize, 0))

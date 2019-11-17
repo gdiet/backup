@@ -27,6 +27,8 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
   private var memoryUsage = 0L
   private var openChannels: Map[(Long, Long), SeekableByteChannel] = Map()
 
+  override def toString: String = s"Cache(\n${cacheEntries.mkString("\n")}\n)"
+
   private def path(id: Long, dataId: Long): Path = new File(tempDir, s"$id-$dataId").toPath
   private def channel(id: Long, dataId: Long): SeekableByteChannel = {
     openChannels.getOrElse(id -> dataId, {
