@@ -29,7 +29,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
     assumeLogged(dataId > 0, s"dataId > 0 ... $dataId")
     assumeLogged(offset >= 0, s"offset >= 0 ... $offset")
     assumeLogged(requestedSize >= 0, s"requestedSize >= 0 ... $requestedSize")
-    assumeLogged(requestedSize < 1000000, s"requestedSize < 1000000 ... $requestedSize")
+    assumeLogged(requestedSize <= 1048576, s"requestedSize <= 1048576 ... $requestedSize")
     val longTermSize = startStop.size
     val (fileSize, localEntries) = entries.getEntry(id, dataId).getOrElse(longTermSize -> Seq[Entry]())
     val sizeToRead = math.max(math.min(requestedSize, fileSize - offset), 0).toInt
