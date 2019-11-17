@@ -52,7 +52,7 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
   }
 
   def clearEntry(id: Long, dataId: Long): Unit = {
-    log.debug(s"Clear entry $id/$dataId - memory usage before is $memoryUsage.")
+    log.debug(s"Clear entry $id/$dataId - memory usage before is ${memoryUsage/1000000}MB.")
     memoryUsage -= cacheEntries.get(id -> dataId).toSeq.flatMap(_._2).map(_.memory).sum
     cacheEntries -= (id -> dataId)
   }
