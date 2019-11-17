@@ -65,9 +65,10 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       if (size == 0) Seq()
       else if (size <= 524288) Seq(entries.newEntry(id, dataId, offset, new Array[Byte](size.toInt)))
       else zeros(offset + 524288, size - 524288) :+ entries.newEntry(id, dataId, offset, new Array[Byte](size.toInt))
+    val longTermSize = startStop.size
     entries.getEntry(id, dataId) match {
       case None =>
-        entries.setOrReplace(id, dataId, newSize, zeros(0, math.max(newSize - startStop.size, 0)))
+        entries.setOrReplace(id, dataId, newSize, zeros(longTermSize, math.max(newSize - longTermSize, 0)))
       case Some(oldSize -> chunks) =>
         val newStop = startStop.start + newSize
         val newChunks = chunks.collect { case entry if entry.position < newStop =>
