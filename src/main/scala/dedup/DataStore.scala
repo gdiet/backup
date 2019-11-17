@@ -49,7 +49,6 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       ).filterNot(_._2 == 0)
     }
     val chunksRead: SortedMap[Long, Array[Byte]] = chunksNotCached.map { case (start, length) =>
-      // FIXME test
       val readLength = if (start + length > longTermSize) (longTermSize - start).toInt else length
       (start, longTermStore.read(startStop.start + start, readLength) ++ new Array[Byte](length - readLength))
     }
