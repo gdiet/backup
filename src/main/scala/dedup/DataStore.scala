@@ -89,6 +89,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       chunkOffset + 524288
     }
 
+  // FIXME bug here, see TestWrite
   private def internalWrite(id: Long, dataId: Long, longTermSize: => Long)(offset: Long, data: Array[Byte]): Unit = {
     val (fileSize, chunks) = entries.getEntry(id, dataId).getOrElse(longTermSize -> Seq())
     val newSize = math.max(fileSize, offset + data.length)
