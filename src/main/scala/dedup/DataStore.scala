@@ -63,7 +63,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
     def zeros(offset: Long, size: Long, acc: Seq[Entry]): Seq[Entry] =
       if (size == 0) acc
       else if (size <= 524288) acc :+ entries.newEntry(id, dataId, offset, new Array[Byte](size.toInt))
-      else zeros(offset + 524288, size - 524288, acc :+ entries.newEntry(id, dataId, offset, new Array[Byte](size.toInt)))
+      else zeros(offset + 524288, size - 524288, acc :+ entries.newEntry(id, dataId, offset, new Array[Byte](524288)))
     val longTermSize = startStop.size
     entries.getEntry(id, dataId) match {
       case None =>
