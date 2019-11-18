@@ -349,11 +349,11 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
       case Some(file: FileEntry) =>
         if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
         else {
-          val intSize = size.toInt.abs
-          if (offset < 0 || intSize != size) -ErrorCodes.EOVERFLOW
+          if (offset < 0 || size < 0 || size > 67108864) -ErrorCodes.EOVERFLOW // 64MiB
           else {
+            if (size > 16777216) log.warn(s"Conspiciously large read request: $size bytes.") // 16MiB
             val startStop = db.startStop(file.dataId)
-            val bytes: Array[Byte] = store.read(file.id, file.dataId, startStop)(offset, intSize)
+            val bytes: Array[Byte] = store.read(file.id, file.dataId, startStop)(offset, size.toInt)
             buf.put(0, bytes, 0, bytes.length)
             bytes.length
           }
