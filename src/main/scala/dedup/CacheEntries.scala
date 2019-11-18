@@ -24,7 +24,7 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
 
   // Map(id/dataId -> size, Seq(data))
   private var cacheEntries = Map[(Long, Long), (Long, Seq[Entry])]()
-  private var memoryUsage = 0L // TODO cleaner handling for memory usage updates
+  private var memoryUsage = 0L
   private var openChannels: Map[(Long, Long), SeekableByteChannel] = Map()
 
   override def toString: String = s"Cache(\n${cacheEntries.mkString("\n")}\n)"
