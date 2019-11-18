@@ -89,26 +89,23 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       chunkOffset + 524288
     }
 
-  // FIXME bug here, see TestWrite
   private def internalWrite(id: Long, dataId: Long, longTermSize: => Long)(offset: Long, data: Array[Byte]): Unit = {
     val (fileSize, chunks) = entries.getEntry(id, dataId).getOrElse(longTermSize -> Seq())
     val newSize = math.max(fileSize, offset + data.length)
-    val combinedChunks = chunks :+ (chunks.find(_.position == offset) match {
-      case None => entries.newEntry(id, dataId, offset, data)
-      case Some(previousData) =>
-        if (data.length >= previousData.length) entries.newEntry(id, dataId, offset, data)
-        else previousData.tap(_.write(data))
-    })
-    val (toMerge, others) = combinedChunks.partition { entry =>
-      (entry.position < offset && entry.position + entry.length > offset) ||
-        (entry.position >= offset && entry.position < offset + data.length)
-    }
-    val reduced = toMerge.sortBy(_.position).reduceLeft[Entry] { case (dataA, dataB) =>
-      if (dataA.position + dataA.length >= dataB.position + dataB.length) dataA
-      else dataA ++ dataB.drop((dataA.position + dataA.length - dataB.position).toInt, 0)
-    }
-    val merged = others :+ reduced
-    entries.setOrReplace(id, dataId, newSize, merged)
+
+    var integrated = false
+    val updated = chunks.map { entry =>
+      if (entry.position <= offset && entry.position + entry.length >= offset + data.length) {
+        integrated = true
+        entry.tap(_.write((offset - entry.position).toInt, data))
+      } else if (entry.position < offset && entry.position + entry.length > offset)
+        entry.drop(0, (entry.position + entry.length - offset).toInt)
+      else if (entry.position >= offset && entry.position < offset + data.length) {
+        entry.drop(math.min(entry.length, (offset + data.length - entry.position).toInt), 0)
+      } else entry
+    }.filterNot(_.length == 0)
+    if (integrated) entries.setOrReplace(id, dataId, newSize, updated)
+    else entries.setOrReplace(id, dataId, newSize, updated :+ entries.newEntry(id, dataId, offset, data))
   }
 
   def persist(id: Long, dataId: Long, startStop: StartStop)(writePosition: Long, dataSize: Long): Unit = {

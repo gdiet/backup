@@ -24,7 +24,7 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
 
   // Map(id/dataId -> size, Seq(data))
   private var cacheEntries = Map[(Long, Long), (Long, Seq[Entry])]()
-  private var memoryUsage = 0L
+  private var memoryUsage = 0L // TODO cleaner handling for memory usage updates
   private var openChannels: Map[(Long, Long), SeekableByteChannel] = Map()
 
   override def toString: String = s"Cache(\n${cacheEntries.mkString("\n")}\n)"
@@ -40,7 +40,7 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
 
   def newEntry(id: Long, dataId: Long, position: Long, data: Array[Byte]): Entry =
     if (memoryUsage + data.length > memoryCacheSize)
-      FileEntry(id, dataId, position, data.length).tap(_.write(data))
+      FileEntry(id, dataId, position, data.length).tap(_.write(0, data))
     else MemoryEntry(id, dataId, position, data)
 
   def getEntry(id: Long, dataId: Long): Option[(Long, Seq[Entry])] = cacheEntries.get(id -> dataId)
@@ -75,7 +75,12 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
     def id: Long; def dataId: Long
     def position: Long; def data: Array[Byte]
     def length: Int; def memory: Long
-    def write(data: Array[Byte]): Unit
+    final def write(offset: Int, data: Array[Byte]): Unit = {
+      assumeLogged(offset >= 0, s"offset >= 0 ... $offset")
+      assumeLogged(offset + data.length <= length, s"offset + data.length <= length ... $offset + ${data.length} < $length")
+      writeImpl(offset, data)
+    }
+    protected def writeImpl(offset: Int, data: Array[Byte]): Unit
     final def drop(left: Int, right: Int): Entry = {
       assumeLogged(left >= 0, s"left >= 0 ... $left")
       assumeLogged(right >= 0, s"right >= 0 ... $right")
@@ -91,7 +96,7 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
     override def length: Int = data.length
     override def memory: Long = length + 500
     override def dropImpl(left: Int, right: Int): Entry = copy(position = position + left, data = data.drop(left).dropRight(right))
-    override def write(data: Array[Byte]): Unit = System.arraycopy(data, 0, this.data, 0, data.length)
+    override def writeImpl(offset: Int, data: Array[Byte]): Unit = System.arraycopy(data, 0, this.data, offset, data.length)
     override def ++(other: Entry): Entry = newEntry(id, dataId, position, data ++ other.data)
   }
 
@@ -106,8 +111,8 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
     override def memory: Long = 500
     override def dropImpl(left: Int, right: Int): Entry =
       copy(position = position + left, length = length - left - right)
-    override def write(data: Array[Byte]): Unit =
-      channel(id, dataId).position(position).write(ByteBuffer.wrap(data))
+    override def writeImpl(offset: Int, data: Array[Byte]): Unit =
+      channel(id, dataId).position(position + offset).write(ByteBuffer.wrap(data))
     override def ++(other: Entry): Entry = {
       require(other.id == id && other.dataId == dataId)
       require(position + length == other.position)
