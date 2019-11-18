@@ -88,7 +88,6 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
       dropImpl(left, right)
     }
     protected def dropImpl(left: Int, right: Int): Entry
-    def ++(other: Entry): Entry
   }
 
   private case class MemoryEntry(id: Long, dataId: Long, position: Long, data: Array[Byte]) extends Entry {
@@ -97,7 +96,6 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
     override def memory: Long = length + 500
     override def dropImpl(left: Int, right: Int): Entry = copy(position = position + left, data = data.drop(left).dropRight(right))
     override def writeImpl(offset: Int, data: Array[Byte]): Unit = System.arraycopy(data, 0, this.data, offset, data.length)
-    override def ++(other: Entry): Entry = newEntry(id, dataId, position, data ++ other.data)
   }
 
   private case class FileEntry(id: Long, dataId: Long, position: Long, length: Int) extends Entry {
@@ -113,14 +111,5 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
       copy(position = position + left, length = length - left - right)
     override def writeImpl(offset: Int, data: Array[Byte]): Unit =
       channel(id, dataId).position(position + offset).write(ByteBuffer.wrap(data))
-    override def ++(other: Entry): Entry = {
-      require(other.id == id && other.dataId == dataId)
-      require(position + length == other.position)
-      other match {
-        case _: FileEntry => /* Nothing to do. */
-        case _: MemoryEntry => channel(id, dataId).position(position + length).write(ByteBuffer.wrap(other.data))
-      }
-      copy(length = length + other.length)
-    }
   }
 }
