@@ -19,7 +19,7 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
   require(tempDir.isDirectory && tempDir.list().isEmpty || tempDir.mkdirs())
 
   private val memoryCacheSize: Long = Server.freeMemory*3/4 - 128000000
-  log.info(s"Initializing data store with memory cache size ${memoryCacheSize / 1000000}MB")
+  log.debug(s"Initializing data store with memory cache size ${memoryCacheSize / 1000000}MB")
   require(memoryCacheSize > 8000000, "Not enough free memory for a sensible memory cache.")
 
   // Map(id/dataId -> size, Seq(data))
@@ -32,7 +32,7 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
   private def path(id: Long, dataId: Long): Path = new File(tempDir, s"$id-$dataId").toPath
   private def channel(id: Long, dataId: Long): SeekableByteChannel = {
     openChannels.getOrElse(id -> dataId, {
-      log.info(s"Memory cache full, creating temporary store file ($id/$dataId)")
+      log.debug(s"Memory cache full, creating temporary store file ($id/$dataId)")
       Files.newByteChannel(path(id, dataId), WRITE, CREATE_NEW, SPARSE, READ)
         .tap(channel => openChannels += ((id, dataId) -> channel))
     })

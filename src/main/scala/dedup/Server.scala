@@ -79,12 +79,12 @@ object Server extends App {
     val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val temp = new File(options.getOrElse("temp", repo.getPath)).getAbsoluteFile
+    log.info (s"Starting dedup file system.")
+    log.info (s"Repository:  $repo")
+    log.info (s"Mount point: $mountPoint")
+    log.info (s"Readonly:    $readonly")
+    log.debug(s"Temp dir:    $temp")
     val fs = new Server(repo, temp, readonly)
-    log.info(s"Starting dedup file system.")
-    log.info(s"Repository:  $repo")
-    log.info(s"Mount point: $mountPoint")
-    log.info(s"Readonly:    $readonly")
-    log.info(s"Temp dir:    $temp")
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
     catch { case e: Throwable => log.error("Mount exception:", e); fs.umount() }
   }
@@ -94,7 +94,7 @@ object Server extends App {
     while(true) {
       Thread.sleep(5000)
       val free = freeMemory
-      if ((free-lastFree).abs * 10 > lastFree) {  lastFree = free; log.info(s"Free memory: ${free/1000000} MB") }
+      if ((free-lastFree).abs * 10 > lastFree) {  lastFree = free; log.debug(s"Free memory: ${free/1000000} MB") }
     }
   }
 }
@@ -112,7 +112,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
     val backup = new File(dbDir, s"dedupfs_$timestamp.mv.db")
     Files.copy(dbFile.toPath, backup.toPath, StandardCopyOption.COPY_ATTRIBUTES)
     backup.setReadOnly()
-    log.info(s"Created database backup file $backup")
+    log.debug(s"Created database backup file $backup")
   }
 
   private val db = new Database(H2.file(dbDir, readonly = false))
