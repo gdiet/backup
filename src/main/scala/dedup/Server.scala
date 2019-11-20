@@ -130,7 +130,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
     }
 
   private def sync[T](msg: String)(f: => Int): Int = synchronized(
-    try f.tap(result => log.debug(s"$msg -> $result"))
+    try f.tap(result => log.trace(s"$msg -> $result"))
     catch { case e: Throwable => log.error(s"$msg -> ERROR", e); -ErrorCodes.EIO() }
   )
 

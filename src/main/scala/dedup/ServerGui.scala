@@ -6,12 +6,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 
 import ch.qos.logback.classic.LoggerContext
+import ch.qos.logback.classic.filter.ThresholdFilter
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.AppenderBase
 import javax.swing._
 import org.slf4j.{Logger, LoggerFactory}
 
 object ServerGui extends App {
+  private val log = LoggerFactory.getLogger("dedup.ServerGUI")
   private var lines = Vector[String]()
   private val dateFormat = new SimpleDateFormat("HH:mm.ss")
   private val appender = new AppenderBase[ILoggingEvent] {
@@ -26,6 +28,7 @@ object ServerGui extends App {
       }
     }
   }
+  appender.addFilter(new ThresholdFilter().tap(_.setLevel("INFO")).tap(_.start()))
   val loggerContext = LoggerFactory.getILoggerFactory.asInstanceOf[LoggerContext]
   appender.setContext(loggerContext)
   appender.start()
@@ -53,6 +56,7 @@ object ServerGui extends App {
   frame.setVisible(true)
 
   try Server.main(args) catch { case t: Throwable =>
+    log.error("Dedup File System exited abnormally", t)
     val exceptionMessage = t.getMessage.grouped(80).take(10).mkString("\n")
     JOptionPane.showMessageDialog(frame, s"Dedup File System exited abnormally:\n$exceptionMessage", "Dedup File System", JOptionPane. ERROR_MESSAGE)
     System.exit(0)
