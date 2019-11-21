@@ -35,17 +35,20 @@ object ServerGui extends App {
   val rootLogger = loggerContext.getLogger(Logger.ROOT_LOGGER_NAME)
   rootLogger.addAppender(appender)
 
+  val pane = new JPanel()
+  pane.setLayout(new BoxLayout(pane, BoxLayout.Y_AXIS))
+
+  if (args.exists(_.equalsIgnoreCase("write"))) {
+    val copyWhenMoveCheckbox = new JCheckBox("copy when moving")
+    copyWhenMoveCheckbox.addActionListener((e: ActionEvent) => copyWhenMoving.set(copyWhenMoveCheckbox.isSelected))
+    pane.add(copyWhenMoveCheckbox)
+  }
+
   val textArea = new JTextArea()
   textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14))
   textArea.setEditable(false)
   val scrollPane = new JScrollPane(textArea)
 
-  val pane = new JPanel()
-  pane.setLayout(new BoxLayout(pane, BoxLayout.Y_AXIS))
-  val copyWhenMoveCheckbox = new JCheckBox("copy when moving")
-  copyWhenMoveCheckbox.addActionListener((e: ActionEvent) => copyWhenMoving.set(copyWhenMoveCheckbox.isSelected))
-
-  pane.add(copyWhenMoveCheckbox)
   pane.add(scrollPane)
   val frame = new JFrame("Dedup file system")
   frame.getContentPane.add(pane)
