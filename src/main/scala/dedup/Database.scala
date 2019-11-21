@@ -143,13 +143,15 @@ class Database(connection: Connection) { import Database._
   }
 
   private val iDir = connection.prepareStatement(
-    "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)"
+    "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)",
+    Statement.RETURN_GENERATED_KEYS
   )
-  def mkDir(parentId: Long, name: String): Boolean = {
+  def mkDir(parentId: Long, name: String): Long = {
     iDir.setLong(1, parentId)
     iDir.setString(2, name)
     iDir.setLong(3, now)
-    iDir.executeUpdate() == 1
+    require(iDir.executeUpdate() == 1)
+    iDir.getGeneratedKeys.tap(_.next()).getLong("id")
   }
 
   private val iFile = connection.prepareStatement(
@@ -162,6 +164,17 @@ class Database(connection: Connection) { import Database._
     iFile.setLong(3, time)
     require(iFile.executeUpdate() == 1)
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
+  }
+
+  private val iClone = connection.prepareStatement(
+    "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)"
+  )
+  def cloneFile(parentId: Long, name: String, time: Long, dataId: Long): Unit = {
+    iClone.setLong(1, parentId)
+    iClone.setString(2, name)
+    iClone.setLong(3, time)
+    iClone.setLong(4, dataId)
+    require(iClone.executeUpdate() == 1)
   }
 
   private val qNextId = connection.prepareStatement("SELECT NEXT VALUE FOR idSeq")

@@ -29,7 +29,7 @@ import scala.util.Using.resource
  * Unreferenced data (slow): ??? SELECT * from DATAENTRIES d left JOIN TREEENTRIES t on d.ID = t.DATAID WHERE t.DATAID is null;
  */
 object Server extends App {
-  private val log = LoggerFactory.getLogger("dedup.ServerApp")
+  private val log = LoggerFactory.getLogger("dedup.Server")
 
   import Runtime.{getRuntime => rt}
   def freeMemory: Long = rt.maxMemory - rt.totalMemory + rt.freeMemory
@@ -75,6 +75,7 @@ object Server extends App {
 
   } else {
     asyncLogFreeMemory()
+    copyWhenMoving.set(commands.contains("copywhenmoving"))
     val readonly = !commands.contains("write")
     val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
@@ -84,6 +85,7 @@ object Server extends App {
     log.info (s"Mount point: $mountPoint")
     log.info (s"Readonly:    $readonly")
     log.debug(s"Temp dir:    $temp")
+    if (copyWhenMoving.get) log.info (s"Copy instead of move initially enabled.")
     val fs = new Server(repo, temp, readonly)
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
     catch { case e: Throwable => log.error("Mount exception:", e); fs.umount() }
@@ -99,7 +101,6 @@ object Server extends App {
   }
 }
 
-// TODO shutdown hook?
 class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean) extends FuseStubFS {
   private val log = LoggerFactory.getLogger(getClass)
   private val repo = maybeRelativeRepo.getAbsoluteFile // absolute needed e.g. for getFreeSpace()
@@ -218,7 +219,14 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
             val newName = newParts.last
             db.child(dir.id, newName) match {
               case Some(_) => -ErrorCodes.EEXIST
-              case None => db.moveRename(source.id, dir.id, newName); 0
+              case None =>
+                def copy(source: TreeEntry, destId: Long): Unit =
+                  source match {
+                    case file: FileEntry => db.cloneFile(destId, file.name, file.time, file.dataId)
+                    case dir: DirEntry => val id = db.mkDir(destId, dir.name); db.children(source.id).foreach(copy(_, id))
+                  }
+                if (copyWhenMoving.get()) copy(source, dir.id) else db.moveRename(source.id, dir.id, newName)
+                0
             }
         }
       }
@@ -251,7 +259,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
       }
     }
     super.statfs(path, stbuf)
-  }.tap(r => log.debug(s"statfs $path -> $r"))
+  }.tap(r => log.trace(s"statfs $path -> $r"))
 
   // #########
   // # Files #

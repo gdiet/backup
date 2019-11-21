@@ -1,6 +1,6 @@
 package dedup
 
-import java.awt.event.{WindowAdapter, WindowEvent}
+import java.awt.event.{ActionEvent, WindowAdapter, WindowEvent}
 import java.awt.{Dimension, Font}
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -39,8 +39,16 @@ object ServerGui extends App {
   textArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14))
   textArea.setEditable(false)
   val scrollPane = new JScrollPane(textArea)
+
+  val pane = new JPanel()
+  pane.setLayout(new BoxLayout(pane, BoxLayout.Y_AXIS))
+  val copyWhenMoveCheckbox = new JCheckBox("copy when moving")
+  copyWhenMoveCheckbox.addActionListener((e: ActionEvent) => copyWhenMoving.set(copyWhenMoveCheckbox.isSelected))
+
+  pane.add(copyWhenMoveCheckbox)
+  pane.add(scrollPane)
   val frame = new JFrame("Dedup file system")
-  frame.getContentPane.add(scrollPane)
+  frame.getContentPane.add(pane)
   frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE)
   frame.addWindowListener(new WindowAdapter {
     override def windowClosing(e: WindowEvent): Unit = {
@@ -55,7 +63,7 @@ object ServerGui extends App {
   frame.setLocationRelativeTo(null)
   frame.setVisible(true)
 
-  try Server.main(args) catch { case t: Throwable =>
+  try Server.main(args.filterNot(_.equalsIgnoreCase("copywhenmoving"))) catch { case t: Throwable =>
     log.error("Dedup File System exited abnormally", t)
     val exceptionMessage = t.getMessage.grouped(80).take(10).mkString("\n")
     JOptionPane.showMessageDialog(frame, s"Dedup File System exited abnormally:\n$exceptionMessage", "Dedup File System", JOptionPane. ERROR_MESSAGE)

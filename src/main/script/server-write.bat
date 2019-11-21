@@ -7,7 +7,7 @@ if exist fsdb\dedupfs.trace.db (
   exit /B
 )
 call %~dp0dbbackup.bat
-rem Options: init write repo=repositoryDirectory mount=mountPoint temp=tempFileDirectory
+rem Options: init write copyWhenMoving repo=repositoryDirectory mount=mountPoint temp=tempFileDirectory
 rem Possible main classes:
 rem * dedup.Server (console, use "java")
 rem * dedup.TrayApp (use "javaw")
