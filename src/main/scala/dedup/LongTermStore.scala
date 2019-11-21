@@ -40,6 +40,7 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
           val (pathToClose, (_, _, file)) = openFiles
             .find { case (_, (fileLock, _, _)) =>  fileLock.tryLock() }
             .getOrElse { openFiles.head.tap { case (_, (fileLock, _, _)) => fileLock.lock() } }
+          log.debug(s"Close data file $pathToClose")
           file.close(); openFiles.remove(pathToClose)
           mapLock.unlock()
           access(path, write)(f)

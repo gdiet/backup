@@ -315,11 +315,11 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
               val hash = md.digest()
               db.dataEntry(hash, size) match {
                 case Some(dataId) =>
-                  log.debug(s"Already known, linking: $path")
+                  log.trace(s"Already known, linking to dataId $dataId: $path")
                   if (file.dataId != dataId) require(db.setDataId(file.id, dataId))
                 case None =>
                   val dataId = if (startStop.isEmpty) file.dataId else db.newDataId(file.id)
-                  log.debug(s"release: $path $file -> DATAID $dataId")
+                  log.trace(s"release: $path $file -> DATAID $dataId")
                   store.persist(file.id, file.dataId, startStop)(startOfFreeData, size)
                   db.insertDataEntry(dataId, startOfFreeData, startOfFreeData + size, hash)
                   startOfFreeData += size
