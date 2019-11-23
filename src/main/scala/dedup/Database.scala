@@ -61,7 +61,7 @@ object Database {
     }
   }
 
-  sealed trait TreeEntry { def id: Long; def name: String }
+  sealed trait TreeEntry { def parent: Long; def id: Long; def name: String }
   object TreeEntry {
     def apply(parentId: Long, name: String, rs: ResultSet): TreeEntry = rs.opt(_.getLong(3)) match {
       case None => DirEntry(rs.getLong(1), parentId, name, rs.getLong(2))
@@ -166,15 +166,15 @@ class Database(connection: Connection) { import Database._
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
   }
 
-  private val iClone = connection.prepareStatement(
+  private val iFileWithDataId = connection.prepareStatement(
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)"
   )
-  def cloneFile(parentId: Long, name: String, time: Long, dataId: Long): Unit = {
-    iClone.setLong(1, parentId)
-    iClone.setString(2, name)
-    iClone.setLong(3, time)
-    iClone.setLong(4, dataId)
-    require(iClone.executeUpdate() == 1)
+  def mkFile(parentId: Long, name: String, time: Long, dataId: Long): Unit = {
+    iFileWithDataId.setLong(1, parentId)
+    iFileWithDataId.setString(2, name)
+    iFileWithDataId.setLong(3, time)
+    iFileWithDataId.setLong(4, dataId)
+    require(iFileWithDataId.executeUpdate() == 1)
   }
 
   private val qNextId = connection.prepareStatement("SELECT NEXT VALUE FOR idSeq")

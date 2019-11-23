@@ -220,12 +220,15 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
             db.child(dir.id, newName) match {
               case Some(_) => -ErrorCodes.EEXIST
               case None =>
-                def copy(source: TreeEntry, destId: Long): Unit =
+                def copy(source: TreeEntry, newName: String, destId: Long): Unit =
                   source match {
-                    case file: FileEntry => db.cloneFile(destId, file.name, file.time, file.dataId)
-                    case dir: DirEntry => val id = db.mkDir(destId, dir.name); db.children(source.id).foreach(copy(_, id))
+                    case file: FileEntry => db.mkFile(destId, newName, file.time, file.dataId)
+                    case _: DirEntry =>
+                      val id = db.mkDir(destId, newName)
+                      db.children(source.id).foreach(child => copy(child, child.name, id))
                   }
-                if (copyWhenMoving.get()) copy(source, dir.id) else db.moveRename(source.id, dir.id, newName)
+                if (source.parent != dir.id && copyWhenMoving.get()) copy(source, newName, dir.id)
+                else db.moveRename(source.id, dir.id, newName)
                 0
             }
         }
