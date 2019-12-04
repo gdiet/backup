@@ -106,15 +106,6 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
   private val repo = maybeRelativeRepo.getAbsoluteFile // absolute needed e.g. for getFreeSpace()
   private val dbDir = Database.dbDir(repo)
   require(dbDir.exists(), s"Database directory $dbDir does not exist.")
-  if (!readonly) {
-    val dbFile = new File(dbDir, "dedupfs.mv.db")
-    require(dbFile.exists(), s"Database file $dbFile does not exist.")
-    val timestamp: String = new SimpleDateFormat("yyyy-MM-dd_HH-mm").format(new Date())
-    val backup = new File(dbDir, s"dedupfs_$timestamp.mv.db")
-    Files.copy(dbFile.toPath, backup.toPath, StandardCopyOption.COPY_ATTRIBUTES)
-    backup.setReadOnly()
-    log.debug(s"Created database backup file $backup")
-  }
 
   private val db = new Database(H2.file(dbDir, readonly = false))
   private val dataDir = new File(repo, "data").tap{d => d.mkdirs(); require(d.isDirectory)}

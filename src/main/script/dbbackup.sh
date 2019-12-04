@@ -2,6 +2,8 @@
 cd "$(dirname "$0")" || exit 1
 DBFILE=fsdb/dedupfs.mv.db
 if [ -f "$DBFILE" ]; then
+  echo "Creating plain database backup: $DBFILE -> $DBFILE.backup"
+  cp $DBFILE $DBFILE.backup
   TIMESTAMP=$(date +%Y-%m-%d_%H-%M)
   TARGET=fsdb/dedupfs_$TIMESTAMP.zip
   echo "Creating sql script database backup: $DBFILE -> $TARGET"
