@@ -24,7 +24,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
   def ifDataWritten(id: Long, dataId: Long)(f: => Unit): Unit =
     if (entries.getEntry(id, dataId).nonEmpty) f
 
-  def read(id: Long, dataId: Long, startStop: StartStop)(offset: Long, requestedSize: Int): Array[Byte] = {
+  def read(id: Long, dataId: Long, startStop: StartStop)(offset: Long, requestedSize: Int): Array[Byte] = try {
     assumeLogged(id > 0, s"id > 0 ... $id")
     assumeLogged(dataId > 0, s"dataId > 0 ... $dataId")
     assumeLogged(offset >= 0, s"offset >= 0 ... $offset")
@@ -52,6 +52,11 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       (start, longTermStore.read(startStop.start + start, readLength) ++ new Array[Byte](length - readLength))
     }
     (chunksRead ++ chunks.map(e => e.position -> e.data)).values.reduce(_ ++ _)
+  } catch {
+    case e: Throwable =>
+      log.error(s"DS: read($id, $dataId, $startStop)($offset, $requestedSize)")
+      log.error(s"DS: entries = $entries")
+      throw e
   }
 
   def size(id: Long, dataId: Long, longTermStoreSize: => Long): Long =

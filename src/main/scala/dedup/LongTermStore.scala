@@ -72,8 +72,8 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   }
 
   def read(position: Long, size: Int): Array[Byte] = if (size == 0) Array() else {
-    assumeLogged(position >= 0, s"position >= 0 ... $position")
-    assumeLogged(size > 0, s"size > 0 ... $size")
+    assertLogged(position >= 0, s"position >= 0 ... p = $position, s = $size")
+    assertLogged(size > 0, s"size > 0 ... p = $position, s = $size")
     val (path, offset, bytesToRead) = pathOffsetSize(position, size)
     // Note: From corrupt data file, entry will not be read at all
     val bytes = access(path, write = false) { file => file.seek(offset); new Array[Byte](bytesToRead).tap(file.readFully) }

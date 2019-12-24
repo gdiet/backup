@@ -341,13 +341,13 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
       }
     }
 
-  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync(s"read $path .. $size/$offset") {
+  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync(s"read $path .. off = $offset, size = $size") {
     entry(path) match {
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
         if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
-        else {
+        else try {
           if (offset < 0 || size < 0 || size > 67108864) -ErrorCodes.EOVERFLOW // 64MiB
           else {
             if (size > 16777216) log.warn(s"Conspiciously large read request: $size bytes.") // 16MiB
@@ -356,6 +356,10 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
             buf.put(0, bytes, 0, bytes.length)
             bytes.length
           }
+        } catch {
+          case t: Throwable =>
+            log.error(s"SV: file = $file")
+            throw t
         }
     }
   }
