@@ -22,6 +22,7 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   private val openFiles: mutable.LinkedHashMap[String, (ReentrantLock, Boolean, RandomAccessFile)] = mutable.LinkedHashMap()
   private val mapLock = new ReentrantLock()
 
+  @annotation.tailrec
   private def access[T](path: String, write: Boolean)(f: RandomAccessFile => T): T = {
     mapLock.lock()
     openFiles.get(path) match {

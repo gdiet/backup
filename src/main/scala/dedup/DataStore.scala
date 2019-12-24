@@ -51,7 +51,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       val readLength = if (start + length > longTermSize) (longTermSize - start).toInt else length
       (start, longTermStore.read(startStop.start + start, readLength) ++ new Array[Byte](length - readLength))
     }
-    (chunksRead ++ chunks.map(e => e.position -> e.data)).map(_._2).reduce(_ ++ _)
+    (chunksRead ++ chunks.map(e => e.position -> e.data)).values.reduce(_ ++ _)
   }
 
   def size(id: Long, dataId: Long, longTermStoreSize: => Long): Long =

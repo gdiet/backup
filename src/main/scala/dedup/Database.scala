@@ -4,7 +4,7 @@ import java.io.File
 import java.lang.System.{currentTimeMillis => now}
 import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
 
-import org.slf4j.LoggerFactory
+import org.slf4j.{Logger, LoggerFactory}
 
 import scala.util.Using.resource
 
@@ -71,11 +71,11 @@ object Database {
   case class DirEntry(id: Long, parent: Long, name: String, time: Long) extends TreeEntry
   case class FileEntry(id: Long, parent: Long, name: String, time: Long, dataId: Long) extends TreeEntry
 
-  val root = DirEntry(0, 0, "", now)
+  val root: DirEntry = DirEntry(0, 0, "", now)
 }
 
 class Database(connection: Connection) { import Database._
-  implicit private val log = LoggerFactory.getLogger(getClass)
+  implicit private val log: Logger = LoggerFactory.getLogger(getClass)
 
   def startOfFreeData: Long =
     connection.createStatement().executeQuery("SELECT MAX(stop) FROM DataEntries").pipe { rs =>

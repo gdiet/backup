@@ -2,10 +2,7 @@ package dedup
 
 import java.io.File
 import java.lang.System.{currentTimeMillis => now}
-import java.nio.file.{Files, StandardCopyOption}
 import java.security.MessageDigest
-import java.text.SimpleDateFormat
-import java.util.Date
 
 import dedup.Database._
 import jnr.ffi.Platform.OS.WINDOWS
