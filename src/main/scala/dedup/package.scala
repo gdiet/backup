@@ -11,7 +11,7 @@ package object dedup extends ChainingSyntax {
     if (!condition) log.error(s"Assumption failed: $message", new IllegalStateException(""))
 
   def assertLogged(condition: Boolean, message: => String)(implicit log: Logger): Unit =
-    if (!condition) new IllegalStateException(message).tap(log.error(s"Assumption failed: $message", _))
+    if (!condition) throw new IllegalStateException(message).tap(log.error(s"Assumption failed: $message", _))
 
   type StartStop = Option[(Long, Long)]
   implicit class StartStopDecorator(val startStop: StartStop) {
