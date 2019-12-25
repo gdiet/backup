@@ -48,7 +48,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       ).filterNot(_._2 == 0)
     }
     val chunksRead: SortedMap[Long, Array[Byte]] = chunksNotCached.map { case (start, length) =>
-      val readLength = math.max(longTermSize - start, length).toInt
+      val readLength = math.min(math.max(longTermSize - start, 0), length).toInt
       (start, longTermStore.read(startStop.start + start, readLength) ++ new Array[Byte](length - readLength))
     }
     (chunksRead ++ chunks.map(e => e.position -> e.data)).values.reduce(_ ++ _)
