@@ -16,7 +16,6 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
     require(tempDir.isDirectory || tempDir.mkdirs(), s"Can't create temp dir $tempDir")
     require(tempDir.list().isEmpty, s"Temp dir is not empty: $tempDir")
   }
-  require(tempDir.isDirectory && tempDir.list().isEmpty || tempDir.mkdirs())
 
   private val memoryCacheSize: Long = Server.freeMemory*3/4 - 128000000
   log.debug(s"Initializing data store with memory cache size ${memoryCacheSize / 1000000}MB")
