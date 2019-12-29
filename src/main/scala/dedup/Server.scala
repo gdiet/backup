@@ -46,11 +46,11 @@ object Server extends App {
 
     System.gc(); Thread.sleep(1000)
     val freeBeforeNormalDataCheck = freeMemory
-    val normallyHandledData = Vector.fill(100)(new Array[Byte](1000000))
+    val normallyHandledData = Vector.fill(100)(new Array[Byte](memChunk))
     System.gc(); Thread.sleep(1000)
     val usedByNormalData = freeBeforeNormalDataCheck - freeMemory
-    val deviationWithNormalData = (100000000 - usedByNormalData).abs / 1000000
-    log.info(s"${normallyHandledData.size} Byte arrays of size 1000000 used $usedByNormalData bytes of RAM.")
+    val deviationWithNormalData = (memChunk*100 - usedByNormalData).abs / memChunk
+    log.info(s"${normallyHandledData.size} Byte arrays of size $memChunk used $usedByNormalData bytes of RAM.")
     log.info(s"This is a deviation of $deviationWithNormalData% from the expected value.")
     log.info(s"This software assumes that the deviation is near to 0%.")
 
