@@ -5,6 +5,7 @@ import java.lang.System.{currentTimeMillis => now}
 import java.security.MessageDigest
 
 import dedup.Database._
+import dedup.Server.memChunk
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.Platform.{OS, getNativePlatform}
 import jnr.ffi.{Platform, Pointer}
@@ -27,6 +28,9 @@ import scala.util.Using.resource
  */
 object Server extends App {
   private val log = LoggerFactory.getLogger("dedup.Server")
+
+  // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
+  val memChunk = 524200 // a bit less than 0.5 MiB to avoid problems with humongous objects in G1GC
 
   import Runtime.{getRuntime => rt}
   def freeMemory: Long = rt.maxMemory - rt.totalMemory + rt.freeMemory
@@ -301,7 +305,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
               val startStop = db.startStop(file.dataId)
               val size = store.size(file.id, file.dataId, startStop.size)
               val md = MessageDigest.getInstance(hashAlgorithm)
-              for { position <- 0L until size by 524288; chunkSize = math.min(524288, size - position).toInt }
+              for { position <- 0L until size by memChunk; chunkSize = math.min(memChunk, size - position).toInt }
                 md.update(store.read(file.id, file.dataId, startStop)(position, chunkSize))
               val hash = md.digest()
               db.dataEntry(hash, size) match {

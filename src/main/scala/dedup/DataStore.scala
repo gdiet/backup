@@ -1,5 +1,6 @@
 package dedup
 
+import dedup.Server.memChunk
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.immutable.SortedMap
@@ -66,10 +67,10 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
     @annotation.tailrec
     def zeros(offset: Long, size: Long, acc: Seq[Entry], additionalMemory: Long = 0): Seq[Entry] =
       if (size == 0) acc
-      else if (size <= 524288) acc :+ entries.newEntry(id, dataId, offset, new Array[Byte](size.toInt), additionalMemory)
-      else zeros(offset + 524288, size - 524288,
-        acc :+ entries.newEntry(id, dataId, offset, new Array[Byte](524288), additionalMemory),
-        additionalMemory + 524288)
+      else if (size <= memChunk) acc :+ entries.newEntry(id, dataId, offset, new Array[Byte](size.toInt), additionalMemory)
+      else zeros(offset + memChunk, size - memChunk,
+        acc :+ entries.newEntry(id, dataId, offset, new Array[Byte](memChunk), additionalMemory),
+        additionalMemory + memChunk)
     val longTermSize = startStop.size
     entries.getEntry(id, dataId) match {
       case None =>
@@ -90,9 +91,9 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
   def write(id: Long, dataId: Long, longTermSize: => Long)(offset: Long, data: Array[Byte]): Unit =
     // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
     // TODO document resolution of this issue
-    data.grouped(524288).foldLeft(0) { case (chunkOffset, bytes) =>
+    data.grouped(memChunk).foldLeft(0) { case (chunkOffset, bytes) =>
       internalWrite(id, dataId, longTermSize)(offset + chunkOffset, bytes)
-      chunkOffset + 524288
+      chunkOffset + memChunk
     }
 
   private def internalWrite(id: Long, dataId: Long, longTermSize: => Long)(offset: Long, data: Array[Byte]): Unit = {
@@ -115,7 +116,7 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
   }
 
   def persist(id: Long, dataId: Long, startStop: StartStop)(writePosition: Long, dataSize: Long): Unit = {
-    for { offset <- 0L until dataSize by 524288; chunkSize = math.min(524288, dataSize - offset).toInt } {
+    for { offset <- 0L until dataSize by memChunk; chunkSize = math.min(memChunk, dataSize - offset).toInt } {
       val chunk = read(id, dataId, startStop)(offset, chunkSize)
       longTermStore.write(writePosition + offset, chunk)
     }
