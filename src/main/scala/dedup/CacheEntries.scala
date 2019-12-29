@@ -37,8 +37,8 @@ class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
     })
   }
 
-  def newEntry(id: Long, dataId: Long, position: Long, data: Array[Byte]): Entry =
-    if (memoryUsage + data.length > memoryCacheSize)
+  def newEntry(id: Long, dataId: Long, position: Long, data: Array[Byte], additionalMemory: Long = 0): Entry =
+    if (memoryUsage + data.length + additionalMemory > memoryCacheSize)
       FileEntry(id, dataId, position, data.length).tap(_.write(0, data))
     else MemoryEntry(id, dataId, position, data)
 
