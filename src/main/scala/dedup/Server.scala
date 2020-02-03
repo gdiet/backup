@@ -298,7 +298,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           case 1 =>
             fileDescriptors -= file.id
             store.ifDataWritten(file.id, file.dataId) {
-              val startStop = db.startStop(file.dataId)
+              val startStop = db.parts(file.dataId)
               val size = store.size(file.id, file.dataId, startStop.size)
               val md = MessageDigest.getInstance(hashAlgorithm)
               for { position <- 0L until size by memChunk; chunkSize = math.min(memChunk, size - position).toInt }
@@ -351,7 +351,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           if (offset < 0 || size < 0 || size > 67108864) -ErrorCodes.EOVERFLOW // 64MiB
           else {
             if (size > 16777216) log.warn(s"Conspiciously large read request: $size bytes.") // 16MiB
-            val startStop = db.startStop(file.dataId)
+            val startStop = db.parts(file.dataId)
             val bytes: Array[Byte] = store.read(file.id, file.dataId, startStop)(offset, size.toInt)
             buf.put(0, bytes, 0, bytes.length)
             bytes.length
@@ -369,7 +369,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
       case None => -ErrorCodes.ENOENT
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
-        store.truncate(file.id, file.dataId, db.startStop(file.dataId), size)
+        store.truncate(file.id, file.dataId, db.dataSize(file.dataId), size)
         0
     }
   }

@@ -24,7 +24,6 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
   def ifDataWritten(id: Long, dataId: Long)(f: => Unit): Unit =
     if (entries.getEntry(id, dataId).nonEmpty) f
 
-  // FIXME new
   def read(id: Long, dataId: Long, parts: Parts)(offset: Long, requestedSize: Int): Array[Byte] = try {
     assumeLogged(id > 0, s"id > 0 ... $id")
     assumeLogged(dataId > 0, s"dataId > 0 ... $dataId")
@@ -63,46 +62,10 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       throw e
   }
 
-  // FIXME old
-  def read(id: Long, dataId: Long, startStop: StartStop)(offset: Long, requestedSize: Int): Array[Byte] = try {
-    assumeLogged(id > 0, s"id > 0 ... $id")
-    assumeLogged(dataId > 0, s"dataId > 0 ... $dataId")
-    assumeLogged(offset >= 0, s"offset >= 0 ... $offset")
-    assumeLogged(requestedSize >= 0, s"requestedSize >= 0 ... $requestedSize")
-    val longTermSize = startStop.size
-    val (fileSize, localEntries) = entries.getEntry(id, dataId).getOrElse(longTermSize -> Seq[Entry]())
-    val sizeToRead = math.max(math.min(requestedSize, fileSize - offset), 0).toInt
-    val chunks: Seq[Entry] = localEntries.collect {
-      case entry
-        if (entry.position <  offset && entry.position + entry.length > offset) ||
-           (entry.position >= offset && entry.position                < offset + sizeToRead) =>
-        val dropLeft  = math.max(0, offset - entry.position).toInt
-        val dropRight = math.max(0, entry.position + entry.length - (offset + sizeToRead)).toInt
-        entry.drop(dropLeft, dropRight)
-    }
-    val chunksNotCached = chunks.foldLeft(SortedMap(offset -> sizeToRead)) { case (chunksToRead, entry) =>
-      val (readPosition, sizeToRead) = chunksToRead.filter(_._1 <= entry.position).last
-      chunksToRead - readPosition ++ Seq(
-        readPosition -> (entry.position - readPosition).toInt,
-        entry.position + entry.length -> (readPosition + sizeToRead - entry.position - entry.length).toInt
-      ).filterNot(_._2 == 0)
-    }
-    val chunksRead: SortedMap[Long, Array[Byte]] = chunksNotCached.map { case (start, length) =>
-      val readLength = math.min(math.max(longTermSize - start, 0), length).toInt
-      (start, longTermStore.read(startStop.start + start, readLength) ++ new Array[Byte](length - readLength))
-    }
-    (chunksRead ++ chunks.map(e => e.position -> e.data)).values.reduce(_ ++ _)
-  } catch {
-    case e: Throwable =>
-      log.error(s"DS: read($id, $dataId, $startStop)($offset, $requestedSize)")
-      log.error(s"DS: entries = $entries")
-      throw e
-  }
-
   def size(id: Long, dataId: Long, longTermStoreSize: => Long): Long =
     entries.getEntry(id, dataId).map(_._1).getOrElse(longTermStoreSize)
 
-  def truncate(id: Long, dataId: Long, startStop: StartStop, newSize: Long): Unit = {
+  def truncate(id: Long, dataId: Long, dataSize: Long, newSize: Long): Unit = {
     @annotation.tailrec
     def zeros(offset: Long, size: Long, acc: Seq[Entry], additionalMemory: Long = 0): Seq[Entry] =
       if (size == 0) acc
@@ -110,10 +73,9 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
       else zeros(offset + memChunk, size - memChunk,
         acc :+ entries.newEntry(id, dataId, offset, new Array[Byte](memChunk), additionalMemory),
         additionalMemory + memChunk)
-    val longTermSize = startStop.size
     entries.getEntry(id, dataId) match {
       case None =>
-        entries.setOrReplace(id, dataId, newSize, zeros(longTermSize, math.max(newSize - longTermSize, 0), Seq()))
+        entries.setOrReplace(id, dataId, newSize, zeros(dataSize, math.max(newSize - dataSize, 0), Seq()))
       case Some(oldSize -> chunks) =>
         val newChunks = chunks.collect { case entry if entry.position < newSize =>
           val dropRight = math.max(0, entry.position + entry.length - newSize).toInt
@@ -154,18 +116,9 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
     else entries.setOrReplace(id, dataId, newSize, updated :+ entries.newEntry(id, dataId, offset, data))
   }
 
-  // FIXME new
   def persist(id: Long, dataId: Long, parts: Parts)(writePosition: Long, dataSize: Long): Unit = {
     for { offset <- 0L until dataSize by memChunk; chunkSize = math.min(memChunk, dataSize - offset).toInt } {
       val chunk = read(id, dataId, parts)(offset, chunkSize)
-      longTermStore.write(writePosition + offset, chunk)
-    }
-  }
-
-  // FIXME old
-  def persist(id: Long, dataId: Long, startStop: StartStop)(writePosition: Long, dataSize: Long): Unit = {
-    for { offset <- 0L until dataSize by memChunk; chunkSize = math.min(memChunk, dataSize - offset).toInt } {
-      val chunk = read(id, dataId, startStop)(offset, chunkSize)
       longTermStore.write(writePosition + offset, chunk)
     }
   }

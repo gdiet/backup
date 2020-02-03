@@ -1,6 +1,5 @@
 package dedup
 
-// FIXME new
 case class Parts(parts: Seq[(Long, Long)]) {
   require(parts.forall{ case (start, stop) => stop > start }, s"Illegal parts $parts")
   def isEmpty: Boolean = parts.isEmpty

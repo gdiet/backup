@@ -16,10 +16,12 @@ object Database {
     s"""|CREATE SEQUENCE idSeq START WITH 1;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL,
+        |  seq    INTEGER NOT NULL,
+        |  length BIGINT NULL,
         |  start  BIGINT NOT NULL,
         |  stop   BIGINT NOT NULL,
         |  hash   BINARY NOT NULL,
-        |  CONSTRAINT pk_DataEntries PRIMARY KEY (id)
+        |  CONSTRAINT pk_DataEntries PRIMARY KEY (id, seq)
         |);
         |CREATE TABLE TreeEntries (
         |  id           BIGINT NOT NULL DEFAULT (NEXT VALUE FOR idSeq),
@@ -99,19 +101,19 @@ class Database(connection: Connection) { import Database._
     resource(qChildren.executeQuery())(_.seq(rs => TreeEntry(parentId, rs.getString(4), rs)))
   }
 
-  private val qStartStop = connection.prepareStatement(
-    "SELECT start, stop FROM DataEntries WHERE id = ?"
+  private val qParts = connection.prepareStatement(
+    "SELECT start, stop FROM DataEntries WHERE id = ? ORDER BY seq ASCENDING"
   )
-  def startStop(dataId: Long): StartStop = {
-    qStartStop.setLong(1, dataId)
-    resource(qStartStop.executeQuery())(_.maybeNext { rs =>
+  def parts(dataId: Long): Parts = Parts {
+    qParts.setLong(1, dataId)
+    resource(qParts.executeQuery())(_.seq { rs =>
       val (start, stop) = rs.getLong(1) -> rs.getLong(2)
       assumeLogged(start >= 0, s"start >= 0 ... $start")
       assumeLogged(stop >= start, s"stop >= start ... $stop / $start")
       start -> stop
     })
   }
-  def dataSize(dataId: Long): Long = startStop(dataId).size
+  def dataSize(dataId: Long): Long = parts(dataId).size
 
   private val dTreeEntry = connection.prepareStatement(
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
