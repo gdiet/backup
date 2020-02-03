@@ -1,13 +1,12 @@
 package dedup
 
-import dedup.Server.memChunk
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.immutable.SortedMap
 
-/** This class is the storage interface for the dedup server. It keeps data from files currently open in volatile
- *  storage entries (memory or disk), writing them to long term storage when they are closed. The long term store
- *  that way is effectively a sequential write once / random access read many times storage.
+/** This is the storage interface for the dedup server. It keeps data from files currently open in volatile storage
+ *  entries (memory or disk), writing them to long term storage when they are closed. That way the long term store
+ *  is effectively a sequential write once / random access read many times storage.
  *
  *  This class is not thread safe.
  */
@@ -25,6 +24,46 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
   def ifDataWritten(id: Long, dataId: Long)(f: => Unit): Unit =
     if (entries.getEntry(id, dataId).nonEmpty) f
 
+  // FIXME new
+  def read(id: Long, dataId: Long, parts: Parts)(offset: Long, requestedSize: Int): Array[Byte] = try {
+    assumeLogged(id > 0, s"id > 0 ... $id")
+    assumeLogged(dataId > 0, s"dataId > 0 ... $dataId")
+    assumeLogged(offset >= 0, s"offset >= 0 ... $offset")
+    assumeLogged(requestedSize >= 0, s"requestedSize >= 0 ... $requestedSize")
+    val longTermSize = parts.size
+    val (fileSize, localEntries) = entries.getEntry(id, dataId).getOrElse(longTermSize -> Seq[Entry]())
+    val sizeToRead = math.max(math.min(requestedSize, fileSize - offset), 0).toInt
+    val cachedChunks: Seq[Entry] = localEntries.collect {
+      case entry
+        if (entry.position <  offset && entry.position + entry.length > offset) ||
+          (entry.position >= offset && entry.position                < offset + sizeToRead) =>
+        val dropLeft  = math.max(0, offset - entry.position).toInt
+        val dropRight = math.max(0, entry.position + entry.length - (offset + sizeToRead)).toInt
+        entry.drop(dropLeft, dropRight)
+    }
+    val partsNotCached = cachedChunks.foldLeft(SortedMap(offset -> sizeToRead)) { case (result, entry) =>
+      val (readPosition, sizeToRead) = result.filter(_._1 <= entry.position).last
+      result - readPosition ++ Seq(
+        readPosition -> (entry.position - readPosition).toInt,
+        entry.position + entry.length -> (readPosition + sizeToRead - entry.position - entry.length).toInt
+      ).filterNot(_._2 == 0)
+    }
+    val chunksRead: SortedMap[Long, Array[Byte]] = partsNotCached.map { case (start, length) =>
+      val readLength = math.min(math.max(longTermSize - start, 0), length).toInt
+      val read = parts.range(start, readLength)
+        .map{ case (start, stop) => longTermStore.read(start, (stop-start).toInt) }
+        .foldLeft(Array[Byte]())(_ ++ _)
+      (start, read ++ new Array[Byte](length - readLength))
+    }
+    (chunksRead ++ cachedChunks.map(e => e.position -> e.data)).values.reduce(_ ++ _)
+  } catch {
+    case e: Throwable =>
+      log.error(s"DS: read($id, $dataId, $parts)($offset, $requestedSize)")
+      log.error(s"DS: entries = $entries")
+      throw e
+  }
+
+  // FIXME old
   def read(id: Long, dataId: Long, startStop: StartStop)(offset: Long, requestedSize: Int): Array[Byte] = try {
     assumeLogged(id > 0, s"id > 0 ... $id")
     assumeLogged(dataId > 0, s"dataId > 0 ... $dataId")
@@ -115,6 +154,15 @@ class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends Au
     else entries.setOrReplace(id, dataId, newSize, updated :+ entries.newEntry(id, dataId, offset, data))
   }
 
+  // FIXME new
+  def persist(id: Long, dataId: Long, parts: Parts)(writePosition: Long, dataSize: Long): Unit = {
+    for { offset <- 0L until dataSize by memChunk; chunkSize = math.min(memChunk, dataSize - offset).toInt } {
+      val chunk = read(id, dataId, parts)(offset, chunkSize)
+      longTermStore.write(writePosition + offset, chunk)
+    }
+  }
+
+  // FIXME old
   def persist(id: Long, dataId: Long, startStop: StartStop)(writePosition: Long, dataSize: Long): Unit = {
     for { offset <- 0L until dataSize by memChunk; chunkSize = math.min(memChunk, dataSize - offset).toInt } {
       val chunk = read(id, dataId, startStop)(offset, chunkSize)
