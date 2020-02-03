@@ -2,7 +2,7 @@ package dedup
 
 import java.io.File
 import java.lang.System.{currentTimeMillis => now}
-import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
+import java.sql.{Connection, PreparedStatement, ResultSet, Statement, Types}
 
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -20,7 +20,7 @@ object Database {
         |  length BIGINT NULL,
         |  start  BIGINT NOT NULL,
         |  stop   BIGINT NOT NULL,
-        |  hash   BINARY NOT NULL,
+        |  hash   BINARY NULL,
         |  CONSTRAINT pk_DataEntries PRIMARY KEY (id, seq)
         |);
         |CREATE TABLE TreeEntries (
@@ -102,7 +102,7 @@ class Database(connection: Connection) { import Database._
   }
 
   private val qParts = connection.prepareStatement(
-    "SELECT start, stop FROM DataEntries WHERE id = ? ORDER BY seq ASCENDING"
+    "SELECT start, stop FROM DataEntries WHERE id = ? ORDER BY seq ASC"
   )
   def parts(dataId: Long): Parts = Parts {
     qParts.setLong(1, dataId)
@@ -205,13 +205,16 @@ class Database(connection: Connection) { import Database._
   }
 
   private val iDataEntry = connection.prepareStatement(
-    "INSERT INTO DataEntries (id, start, stop, hash) VALUES (?, ?, ?, ?)"
+    "INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)"
   )
-  def insertDataEntry(dataId: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = {
+  def insertDataEntry(dataId: Long, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = {
+    require(seq > 0, s"seq: $seq")
     iDataEntry.setLong(1, dataId)
-    iDataEntry.setLong(2, start)
-    iDataEntry.setLong(3, stop)
-    iDataEntry.setBytes(4, hash)
+    iDataEntry.setInt(2, seq)
+    if (seq == 1) iDataEntry.setLong(3, length) else iDataEntry.setNull(3, Types.BIGINT)
+    iDataEntry.setLong(4, start)
+    iDataEntry.setLong(5, stop)
+    if (seq == 1) iDataEntry.setBytes(6, hash) else iDataEntry.setNull(3, Types.BINARY)
     require(iDataEntry.executeUpdate() == 1)
   }
 }
