@@ -12,7 +12,7 @@ case class Parts(parts: Seq[(Long, Long)]) {
   def take(size: Long): Seq[(Long, Long)] =
     parts.foldLeft((Vector[(Long, Long)](), size)) { case ((result, remaining), (start, stop)) =>
       val length = math.min(stop - start, remaining)
-      (if (remaining == 0) result else result :+ (start, stop + length)) -> (remaining - length)
+      (if (remaining == 0) result else result :+ (start, start + length)) -> (remaining - length)
     }._1
   def range(offset: Long, size: Long): Seq[(Long, Long)] =
     drop(offset).take(size)
