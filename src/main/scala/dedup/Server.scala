@@ -14,17 +14,6 @@ import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
 import scala.util.Using.resource
 
-/* TODO Statistics utility:
- * Deleted folders: SELECT count(*) FROM TreeEntries WHERE deleted <> 0 AND dataid is NULL;
- * Deleted files: SELECT count(*) FROM TreeEntries WHERE deleted <> 0 AND dataid IS NOT NULL;
- * Orphan folders: SELECT count(*) FROM TreeEntries a LEFT JOIN TreeEntries b ON a.PARENTID = b.ID WHERE a.deleted = 0 and a.DATAID is null AND b.deleted <> 0;
- * Orphan files: SELECT count(*) FROM TreeEntries a LEFT JOIN TreeEntries b ON a.PARENTID = b.ID WHERE a.deleted = 0 and a.DATAID is not null AND b.deleted <> 0;
- * Total folders: SELECT count(*) FROM TreeEntries WHERE dataid is NULL;
- * Total files: SELECT count(*) FROM TreeEntries WHERE dataid IS NOT NULL;
- * Current folders = total folders - deleted folders - orphan folders
- * Current files = total files - deleted files - orphan files
- * Unreferenced data (slow): ??? SELECT * from DATAENTRIES d left JOIN TREEENTRIES t on d.ID = t.DATAID WHERE t.DATAID is null;
- */
 object Server extends App {
   private val log = LoggerFactory.getLogger("dedup.Server")
 
@@ -69,6 +58,11 @@ object Server extends App {
     if (dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir already exists.")
     resource(H2.file(dbDir, readonly = false)) (Database.initialize)
     log.info(s"Database initialized in $dbDir.")
+
+  } else if (commands.contains("stats")) {
+    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+    val dbDir = Database.dbDir(repo)
+    resource(H2.file(dbDir, readonly = true)) (Database.stats)
 
   } else {
     asyncLogFreeMemory()

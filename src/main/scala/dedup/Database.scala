@@ -9,6 +9,8 @@ import org.slf4j.{Logger, LoggerFactory}
 import scala.util.Using.resource
 
 object Database {
+  implicit private val log: Logger = LoggerFactory.getLogger("dedup.Database")
+
   def dbDir(repo: File): File = new File(repo, "fsdb")
 
   // deleted == 0 for regular files, deleted == timestamp for deleted files. NULL does not work with UNIQUE.
@@ -52,7 +54,47 @@ object Database {
     indexDefinitions.foreach(stat.executeUpdate)
   }
 
+  /* TODO Statistics utility:
+   * Orphan folders: SELECT count(*) FROM TreeEntries a LEFT JOIN TreeEntries b ON a.PARENTID = b.ID WHERE a.deleted = 0 and a.DATAID is null AND b.deleted <> 0;
+   * Orphan files: SELECT count(*) FROM TreeEntries a LEFT JOIN TreeEntries b ON a.PARENTID = b.ID WHERE a.deleted = 0 and a.DATAID is not null AND b.deleted <> 0;
+   * Unreferenced data (slow): ??? SELECT * from DATAENTRIES d left JOIN TREEENTRIES t on d.ID = t.DATAID WHERE t.DATAID is null;
+   */
+  def stats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
+    log.info(s"Database statistics:")
+    log.info(f"Folders: ${
+      stat.executeQuery("SELECT COUNT(*) FROM TreeEntries WHERE deleted = 0 AND dataid IS NULL").tap(_.next()).getLong(1)
+    }%,d")
+    log.info(f"Files: ${
+      stat.executeQuery("SELECT COUNT(*) FROM TreeEntries WHERE deleted = 0 AND dataid IS NOT NULL").tap(_.next()).getLong(1)
+    }%,d")
+    log.info(f"Deleted folders: ${
+      stat.executeQuery("SELECT COUNT(*) FROM TreeEntries WHERE deleted <> 0 AND dataid IS NULL").tap(_.next()).getLong(1)
+    }%,d")
+    log.info(f"Deleted files: ${
+      stat.executeQuery("SELECT COUNT(*) FROM TreeEntries WHERE deleted <> 0 AND dataid IS NOT NULL").tap(_.next()).getLong(1)
+    }%,d")
+    log.info(f"Referenced data entries: ${
+      stat.executeQuery("SELECT COUNT(DISTINCT(dataid)) FROM TreeEntries WHERE deleted = 0").tap(_.next()).getLong(1)
+    }%,d")
+    log.info(f"Referenced data entries including deleted files: ${
+      stat.executeQuery("SELECT COUNT(DISTINCT(dataid)) FROM TreeEntries").tap(_.next()).getLong(1)
+    }%,d")
+    log.info(f"Zero length data references: ${
+      stat.executeQuery("SELECT COUNT(DISTINCT(t.dataid)) FROM TreeEntries LEFT JOIN ").tap(_.next()).getLong(1)
+    }%,d")
+    log.info(f"Total data entries: ${
+      stat.executeQuery("SELECT COUNT(*) FROM DataEntries").tap(_.next()).getLong(1)
+    }%,d")
+    log.info(f"Referenced data storage: ${
+      stat.executeQuery("SELECT SUM(stop-start) FROM DataEntries").tap(_.next()).getLong(1)/1000000000
+    }%,d GB")
+    log.info(f"Total data storage: ${
+      stat.executeQuery("SELECT MAX(stop) FROM DataEntries").tap(_.next()).getLong(1)/1000000000
+    }%,d GB")
+  }
+
   implicit class RichResultSet(val rs: ResultSet) extends AnyVal {
+    // TODO ResultSets should be handled as closeable resources
     def opt[T](f: ResultSet => T): Option[T] =
       f(rs).pipe(t => if (rs.wasNull) None else Some(t))
     def maybeNext[T](f: ResultSet => T): Option[T] =
@@ -82,8 +124,6 @@ object Database {
 }
 
 class Database(connection: Connection) { import Database._
-  implicit private val log: Logger = LoggerFactory.getLogger(getClass)
-
   {
     val dbVersionRead = resource(connection.createStatement())(
       _.executeQuery("SELECT value FROM Context WHERE key = 'db version'").pipe(_.maybeNext(_.getString(1)))
