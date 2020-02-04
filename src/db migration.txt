@@ -1,0 +1,19 @@
+tag             database version
+2.4             2
+2.3 and before  1
+
+start migration database version 1 -> 2
+
+CREATE TABLE Context (
+  key   VARCHAR(255) NOT NULL,
+  value VARCHAR(255) NOT NULL
+);
+INSERT INTO Context (key, value) VALUES ('db version', '2');
+ALTER TABLE DataEntries DROP CONSTRAINT pk_DataEntries;
+ALTER TABLE DataEntries ADD COLUMN seq INTEGER NOT NULL DEFAULT 1 AFTER id;
+ALTER TABLE DataEntries ALTER COLUMN seq DROP DEFAULT;
+ALTER TABLE DataEntries ADD COLUMN length BIGINT NULL AFTER seq;
+UPDATE DataEntries SET length = stop - start;
+ALTER TABLE DataEntries ADD CONSTRAINT pk_DataEntries PRIMARY KEY (id, seq);
+
+end migration database version 1 -> 2
