@@ -13,7 +13,12 @@ object Database {
 
   // deleted == 0 for regular files, deleted == timestamp for deleted files. NULL does not work with UNIQUE.
   private def tableDefinitions = {
-    s"""|CREATE SEQUENCE idSeq START WITH 1;
+    s"""|CREATE TABLE Context (
+        |  key   VARCHAR(255) NOT NULL,
+        |  value VARCHAR(255) NOT NULL
+        |);
+        |INSERT INTO Context (key, value) VALUES ('db version', '2');
+        |CREATE SEQUENCE idSeq START WITH 1;
         |CREATE TABLE DataEntries (
         |  id     BIGINT NOT NULL,
         |  seq    INTEGER NOT NULL,
@@ -79,10 +84,17 @@ object Database {
 class Database(connection: Connection) { import Database._
   implicit private val log: Logger = LoggerFactory.getLogger(getClass)
 
+  {
+    val dbVersionRead = resource(connection.createStatement())(
+      _.executeQuery("SELECT value FROM Context WHERE key = 'db version'").pipe(_.maybeNext(_.getString(1)))
+    )
+    require(dbVersionRead.contains("2"), s"DB version read is $dbVersionRead, not 2")
+  }
+
   def startOfFreeData: Long =
-    connection.createStatement().executeQuery("SELECT MAX(stop) FROM DataEntries").pipe { rs =>
-      rs.maybeNext(_.getLong(1)).getOrElse(0L)
-    }
+    resource(connection.createStatement())(_.executeQuery("SELECT MAX(stop) FROM DataEntries").pipe(
+      _.maybeNext(_.getLong(1)).getOrElse(0L)
+    ))
 
   private val qChild = connection.prepareStatement(
     "SELECT id, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
