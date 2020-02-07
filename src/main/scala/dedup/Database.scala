@@ -62,35 +62,52 @@ object Database {
   def stats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
     log.info(s"Database statistics:")
     log.info(f"Folders: ${
-      stat.executeQuery("SELECT COUNT(*) FROM TreeEntries WHERE deleted = 0 AND dataid IS NULL").tap(_.next()).getLong(1)
+      stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL").tap(_.next()).getLong(1)
     }%,d")
     log.info(f"Files: ${
-      stat.executeQuery("SELECT COUNT(*) FROM TreeEntries WHERE deleted = 0 AND dataid IS NOT NULL").tap(_.next()).getLong(1)
+      stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL").tap(_.next()).getLong(1)
     }%,d")
     log.info(f"Deleted folders: ${
-      stat.executeQuery("SELECT COUNT(*) FROM TreeEntries WHERE deleted <> 0 AND dataid IS NULL").tap(_.next()).getLong(1)
+      stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL").tap(_.next()).getLong(1)
     }%,d")
     log.info(f"Deleted files: ${
-      stat.executeQuery("SELECT COUNT(*) FROM TreeEntries WHERE deleted <> 0 AND dataid IS NOT NULL").tap(_.next()).getLong(1)
-    }%,d")
-    log.info(f"Referenced data entries: ${
-      stat.executeQuery("SELECT COUNT(DISTINCT(dataid)) FROM TreeEntries WHERE deleted = 0").tap(_.next()).getLong(1)
-    }%,d")
-    log.info(f"Referenced data entries including deleted files: ${
-      stat.executeQuery("SELECT COUNT(DISTINCT(dataid)) FROM TreeEntries").tap(_.next()).getLong(1)
+      stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL").tap(_.next()).getLong(1)
     }%,d")
     log.info(f"Zero length data references: ${
-      stat.executeQuery("SELECT COUNT(DISTINCT(t.dataid)) FROM TreeEntries LEFT JOIN ").tap(_.next()).getLong(1)
+      stat.executeQuery("SELECT COUNT(DISTINCT(t.dataid)) FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataid = d.id WHERE d.id is null").tap(_.next()).getLong(1)
     }%,d")
+    log.info(f"Referenced data entries: ${
+      stat.executeQuery("SELECT COUNT(DISTINCT(dataid)) FROM TreeEntries WHERE dataId IS NOT NULL AND deleted = 0").tap(_.next()).getLong(1)
+    }%,d")
+    log.info(f"Referenced data entries including deleted files: ${
+      stat.executeQuery("SELECT COUNT(DISTINCT(dataid)) FROM TreeEntries WHERE dataId IS NOT NULL").tap(_.next()).getLong(1)
+    }%,d")
+//    log.info(f"Unreferenced data entries: ${
+//      stat.executeQuery("SELECT COUNT(DISTINCT(d.id)) FROM DataEntries d LEFT JOIN TreeEntries t ON d.id = t.dataid WHERE t.dataid is null").tap(_.next()).getLong(1)
+//    }%,d")
     log.info(f"Total data entries: ${
-      stat.executeQuery("SELECT COUNT(*) FROM DataEntries").tap(_.next()).getLong(1)
+      stat.executeQuery("SELECT COUNT(id) FROM DataEntries").tap(_.next()).getLong(1)
     }%,d")
     log.info(f"Referenced data storage: ${
-      stat.executeQuery("SELECT SUM(stop-start) FROM DataEntries").tap(_.next()).getLong(1)/1000000000
+      stat.executeQuery("SELECT SUM(stop-start) FROM DataEntries WHERE seq = 1").tap(_.next()).getLong(1)/1000000000
     }%,d GB")
     log.info(f"Total data storage: ${
       stat.executeQuery("SELECT MAX(stop) FROM DataEntries").tap(_.next()).getLong(1)/1000000000
     }%,d GB")
+    stat.execute("CREATE CACHED TEMPORARY TABLE Referenced (id BIGINT PRIMARY KEY) AS SELECT DISTINCT(dataid) FROM TreeEntries WHERE dataid IS NOT NULL AND deleted = 0")
+    val deletedEntries =
+      stat.executeQuery("SELECT DISTINCT(t.dataId), d.length, * FROM TreeEntries t JOIN DataEntries d ON t.dataId = d.id LEFT JOIN Referenced r ON t.dataId = r.id WHERE t.dataId IS NOT NULL AND t.deleted != 0 AND d.seq = 1 AND r.id IS NULL")
+        .seq(r => r.getLong(1) -> r.getLong(2))
+    stat.execute("DROP TABLE Referenced")
+    log.info(f"Size of deleted storage: ${deletedEntries.map(_._2).sum/1000000}%,d MB in ${deletedEntries.size} entries")
+    // CREATE CACHED TEMPORARY TABLE Referenced (id BIGINT PRIMARY KEY) AS SELECT DISTINCT(dataid) FROM TreeEntries WHERE dataid IS NOT NULL AND deleted = 0;
+    // SELECT DISTINCT(t.dataid), d.LENGTH, * FROM TreeEntries t JOIN DataEntries d ON t.dataid = d.id LEFT JOIN Referenced r ON t.dataid = r.id WHERE t.dataid IS NOT NULL AND t.deleted != 0 AND d.seq = 1 AND r.id IS NULL;
+    // DROP TABLE Referenced;
+//    val deleted = stat.executeQuery("SELECT DISTINCT(dataid) FROM TreeEntries WHERE deleted <> 0 AND dataid IS NOT NULL")
+//      .seq(_.getLong(1)).toSet
+//    val current = stat.executeQuery("SELECT DISTINCT(dataid) FROM TreeEntries WHERE deleted = 0 AND dataid IS NOT NULL")
+//      .seq(_.getLong(1)).toSet
+//    log.info(s"### ${(deleted--current).size} ${(deleted--current).take(100)}")
   }
 
   implicit class RichResultSet(val rs: ResultSet) extends AnyVal {

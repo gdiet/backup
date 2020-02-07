@@ -62,7 +62,7 @@ object Server extends App {
   } else if (commands.contains("stats")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
-    resource(H2.file(dbDir, readonly = true)) (Database.stats)
+    resource(H2.file(dbDir, readonly = false)) (Database.stats)
 
   } else {
     asyncLogFreeMemory()
