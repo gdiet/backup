@@ -31,14 +31,14 @@ object LongTermStoreTest extends App {
     p.access("3", write = false)(identity)
     p.access("3", write = true)(identity)
     p.close()
-    println(p.actions)
-    println(". resources are re-used or closed when the limit is reached")
-    p.actions.slice(0, 4).is(Vector("o1", "o2", "c1", "o3"))
+    println(". resources are re-used or closed in LRU fashion when the limit is reached")
+    p.actions.slice(0, 4).is(Vector("o1", "o2", "c2", "o3"))
     println(". a resource opened for reading is closed and re-opened for writing")
     p.actions.slice(4, 6).is(Vector("c3", "o3w"))
     println(". close closes all currently open resources")
-    p.actions.slice(6, 99).is(Vector("c2", "c3"))
+    p.actions.slice(6, 99).is(Vector("c1", "c3"))
 
+    // FIXME test multithreaded behavior
 //    val e1 = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
 //    Future {}(e1)
   }
