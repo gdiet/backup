@@ -1,12 +1,9 @@
 package dedup.store
 
 import java.io.{File, RandomAccessFile}
-import java.util.concurrent.locks.ReentrantLock
 
 import dedup.assertLogged
 import org.slf4j.{Logger, LoggerFactory}
-
-import scala.collection.mutable
 
 /** This class provides a sequential bytes store on disk limited by disc capacity only, accessed through its
  *  two main methods #read and #write. The byte store is thread safe. When used in a sequential write-once
@@ -15,47 +12,12 @@ import scala.collection.mutable
  *  (not too many files) while being manageable on all file systems (not too large). When used in read-only
  *  mode, write access fails with an exception.
  */
-class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
+class LongTermStore(dataDir: String, readOnly: Boolean) extends ParallelAccess[RandomAccessFile] {
   import LongTermStore._
 
   implicit private val log: Logger = LoggerFactory.getLogger(getClass)
-  private val parallelOpenFiles = 5
-
-  private val openFiles: mutable.LinkedHashMap[String, (ReentrantLock, Boolean, RandomAccessFile)] = mutable.LinkedHashMap()
-  private val mapLock = new ReentrantLock()
-
-  @annotation.tailrec
-  private def access[T](path: String, write: Boolean)(f: RandomAccessFile => T): T = {
-    mapLock.lock()
-    openFiles.get(path) match {
-      case Some((fileLock, isForWrite, file)) =>
-        fileLock.lock()
-        if (!write || isForWrite) { mapLock.unlock(); f(file).tap(_ => fileLock.unlock()) }
-        else { file.close(); openFiles.remove(path); mapLock.unlock(); access(path, write)(f) }
-      case None =>
-        if (openFiles.size < parallelOpenFiles) {
-          val file = new File(dataDir, path)
-          log.debug(s"Open data file $file")
-          if (!readOnly) file.getParentFile.mkdirs()
-          val fileLock -> randomAccessFile = new ReentrantLock() -> new RandomAccessFile(file, if (readOnly || !write) "r" else "rw")
-          openFiles.addOne(path, (fileLock, write, randomAccessFile))
-          fileLock.lock(); mapLock.unlock(); f(randomAccessFile).tap(_ => fileLock.unlock())
-        } else {
-          val (pathToClose, (_, _, file)) = openFiles
-            .find { case (_, (fileLock, _, _)) =>  fileLock.tryLock() }
-            .getOrElse { openFiles.head.tap { case (_, (fileLock, _, _)) => fileLock.lock() } }
-          log.debug(s"Close data file $pathToClose")
-          file.close(); openFiles.remove(pathToClose)
-          mapLock.unlock()
-          access(path, write)(f)
-        }
-    }
-  }
-  
-  override def close(): Unit = {
-    mapLock.lock()
-    openFiles.values.foreach { case (fileLock, _, file) => fileLock.lock(); file.close() }
-  }
+  protected def openResource(path: String, forWrite: Boolean): RandomAccessFile = { log.debug(s"Open data file $path"); new RandomAccessFile(new File(dataDir, path), if (forWrite) "r" else "rw") }
+  protected def closeResource(path: String, r: RandomAccessFile): Unit = { log.debug(s"Closed data file $path"); r.close() }
 
   def write(position: Long, data: Array[Byte]): Unit = {
     require(!readOnly, "Long term store is read-only, can't write.")
