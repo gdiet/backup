@@ -45,7 +45,7 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends ParallelAccess[R
   }
 }
 object LongTermStore {
-  private val fileSize = 100000000 // 100 MB, must be Int (not Long)
+  val fileSize = 100000000 // 100 MB, must be Int (not Long), don't change without migration script
 
   def pathOffsetSize(position: Long, size: Int): (String, Long, Int) = {
     val positionInFile = (position % fileSize).toInt     // 100 MB per file
