@@ -19,14 +19,18 @@ trait ParallelAccess[R] extends AutoCloseable {
   final def access[T](path: String, write: Boolean)(f: R => T): T = {
     mapLock.lock()
     openResources.get(path) match {
-      case Some((resourceLock, isForWrite, resource)) =>
+      case Some(entry @ (resourceLock, isForWrite, resource)) =>
         resourceLock.lock()
-        if (!write || isForWrite) { mapLock.unlock(); f(resource).tap(_ => resourceLock.unlock()) }
+        if (!write || isForWrite) {
+          openResources.remove(path); openResources.put(path, entry) // remove and add for LRU functionality
+          mapLock.unlock()
+          f(resource).tap(_ => resourceLock.unlock())
+        }
         else { closeResource(path, resource); openResources.remove(path); mapLock.unlock(); access(path, write)(f) }
       case None =>
         if (openResources.size < parallelOpenResources) {
           val resource -> resourceLock = openResource(path, write) -> new ReentrantLock().tap(_.lock())
-          openResources.addOne(path, (resourceLock, write, resource))
+          openResources.put(path, (resourceLock, write, resource))
           mapLock.unlock(); f(resource).tap(_ => resourceLock.unlock())
         } else {
           val (pathToClose, (_, _, resource)) = openResources
