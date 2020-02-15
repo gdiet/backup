@@ -32,7 +32,7 @@ trait ParallelAccess[R] extends AutoCloseable {
           val (pathToClose, (_, _, resource)) = openResources
             .find { case (_, (fileLock, _, _)) =>  fileLock.tryLock() }
             .getOrElse { openResources.head.tap { case (_, (fileLock, _, _)) => fileLock.lock() } }
-          closeResource(path, resource)
+          closeResource(pathToClose, resource)
           openResources.remove(pathToClose)
           mapLock.unlock()
           access(path, write)(f)

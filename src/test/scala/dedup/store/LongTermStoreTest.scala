@@ -17,19 +17,22 @@ object LongTermStoreTest extends App {
     class P extends ParallelAccess[String] {
       var actions: Vector[String] = Vector.empty
       override protected val parallelOpenResources: Int = 2
+      private def w(forWrite: Boolean) = if (forWrite) "w" else ""
       override protected def openResource(path: String, forWrite: Boolean): String =
-        synchronized { actions :+= s"open $path $forWrite"; path }
+        synchronized { actions :+= s"o$path${w(forWrite)}"; path }
       override protected def closeResource(path: String, r: String): Unit =
-        synchronized { require(r == path, s"$r = $path"); actions :+= s"close $path" }
+        synchronized { require(r == path, s"$r = $path"); actions :+= s"c$path" }
     }
     println("Tests for ParallelAccess")
-    println(". resources are closed when the limit is reached")
     val p = new P
     p.access("1", write = false)(identity)
     p.access("2", write = false)(identity)
+    p.access("1", write = false)(identity)
     p.access("3", write = false)(identity)
+    p.access("3", write = true)(identity)
     println(p.actions)
-
+    println(". resources are re-used or closed when the limit is reached")
+    p.actions.take(4).is(Vector("o1", "o2", "c1", "o3"))
 
 //    val e1 = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
 //    Future {}(e1)
