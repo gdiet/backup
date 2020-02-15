@@ -2,9 +2,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import org.slf4j.Logger
 
-import scala.util.ChainingSyntax
-
-package object dedup extends ChainingSyntax {
+package object dedup extends scala.util.ChainingSyntax {
   val copyWhenMoving = new AtomicBoolean(false)
 
   def assumeLogged(condition: Boolean, message: => String)(implicit log: Logger): Unit =

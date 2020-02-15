@@ -1,8 +1,9 @@
-package dedup
+package dedup.store
 
 import java.io.{File, RandomAccessFile}
 import java.util.concurrent.locks.ReentrantLock
 
+import dedup.assertLogged
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.mutable
