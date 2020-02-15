@@ -68,7 +68,7 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
     assertLogged(position >= 0, s"position >= 0 ... p = $position, s = $size")
     assertLogged(size > 0, s"size > 0 ... p = $position, s = $size")
     val (path, offset, bytesToRead) = pathOffsetSize(position, size)
-    // Note: From corrupt data file, entry will not be read at all
+    // Note: From corrupt (= too short) data file, entry will not be read at all
     val bytes = access(path, write = false) { file => file.seek(offset); new Array[Byte](bytesToRead).tap(file.readFully) }
     if (size > bytesToRead) bytes ++ read(position + bytesToRead, size - bytesToRead)
     else bytes
@@ -83,15 +83,13 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends AutoCloseable {
   }
 }
 object LongTermStore {
-  private val fileSize = 100000000 // 100 MB
+  private val fileSize = 100000000 // 100 MB, must be Int (not Long)
 
   def pathOffsetSize(position: Long, size: Int): (String, Long, Int) = {
-    val positionInFile = position % fileSize
-    val chunkSize = math.min(fileSize - positionInFile, size).toInt
-    val fileName = s"%010d".format(position - positionInFile) // 100MB per file
-    val dir2 = f"${position / fileSize / 100 % 100}%02d" //  10GB per dir
-    val dir1 = f"${position / fileSize / 100 / 100}%02d" //   1TB per dir
-    val filePath = s"$dir1/$dir2/$fileName"
-    (filePath, positionInFile, chunkSize)
+    val positionInFile = (position % fileSize).toInt     // 100 MB per file
+    val dir2 = f"${position / fileSize / 100 % 100}%02d" //  10 GB per dir
+    val dir1 = f"${position / fileSize / 100 / 100}%02d" //   1 TB per dir
+    val path = f"$dir1%s/$dir2%s/${position - positionInFile}%010d"
+    (path, positionInFile, math.min(fileSize - positionInFile, size))
   }
 }
