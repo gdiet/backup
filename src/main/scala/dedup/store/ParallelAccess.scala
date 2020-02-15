@@ -8,7 +8,7 @@ import scala.collection.mutable
  *  of random access files is kept open, and that write access is only used where necessary.
  */
 trait ParallelAccess[R] extends AutoCloseable {
-  private val parallelOpenResources = 5
+  protected val parallelOpenResources = 5
   private val openResources: mutable.LinkedHashMap[String, (ReentrantLock, Boolean, R)] = mutable.LinkedHashMap()
   private val mapLock = new ReentrantLock()
 
