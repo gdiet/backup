@@ -85,7 +85,7 @@ object Server extends App {
     log.info (s"Repository:  $repo")
     log.info (s"Mount point: $mountPoint")
     log.info (s"Readonly:    $readonly")
-    log.debug(s"Temp dir:    $temp")
+    log.debug(s"Temp root:   $temp")
     if (copyWhenMoving.get) log.info (s"Copy instead of move initially enabled.")
     val fs = new Server(repo, temp, readonly)
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
@@ -362,8 +362,8 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           }
         } catch {
           case t: Throwable =>
-            log.error(s"SV: file = $file")
-            throw t
+            log.error(s"SV: file = $file", t)
+            -ErrorCodes.EIO
         }
     }
   }

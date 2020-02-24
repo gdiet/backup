@@ -16,7 +16,7 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends ParallelAccess[R
   import LongTermStore._
 
   implicit private val log: Logger = LoggerFactory.getLogger(getClass)
-  protected def openResource(path: String, forWrite: Boolean): RandomAccessFile = { log.debug(s"Open data file $path"); new RandomAccessFile(new File(dataDir, path), if (forWrite) "r" else "rw") }
+  protected def openResource(path: String, forWrite: Boolean): RandomAccessFile = { log.debug(s"Open data file $path"); new RandomAccessFile(new File(dataDir, path), if (forWrite) "rw" else "r") }
   protected def closeResource(path: String, r: RandomAccessFile): Unit = { log.debug(s"Closed data file $path"); r.close() }
 
   def write(position: Long, data: Array[Byte]): Unit = {
