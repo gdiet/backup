@@ -2,9 +2,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import org.slf4j.Logger
 
-import scala.util.ChainingSyntax
-
-package object dedup extends ChainingSyntax {
+package object dedup extends scala.util.ChainingSyntax {
   // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
   val memChunk = 524200 // a bit less than 0.5 MiB to avoid problems with humongous objects in G1GC
 

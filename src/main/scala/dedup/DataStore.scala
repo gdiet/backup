@@ -1,5 +1,6 @@
 package dedup
 
+import dedup.store.LongTermStore
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.immutable.SortedMap
