@@ -292,20 +292,20 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           case 1 =>
             fileDescriptors -= file.id
             store.ifDataWritten(file.id, file.dataId) {
-              val startStop = db.parts(file.dataId)
-              val size = store.size(file.id, file.dataId, startStop.size)
+              val parts = db.parts(file.dataId)
+              val size = store.size(file.id, file.dataId, parts.size)
               val md = MessageDigest.getInstance(hashAlgorithm)
               for { position <- 0L until size by memChunk; chunkSize = math.min(memChunk, size - position).toInt }
-                md.update(store.read(file.id, file.dataId, startStop)(position, chunkSize))
+                md.update(store.read(file.id, file.dataId, parts)(position, chunkSize))
               val hash = md.digest()
               db.dataEntry(hash, size) match {
                 case Some(dataId) =>
                   log.trace(s"Already known, linking to dataId $dataId: $path")
                   if (file.dataId != dataId) require(db.setDataId(file.id, dataId))
                 case None =>
-                  val dataId = if (startStop.isEmpty) file.dataId else db.newDataId(file.id)
+                  val dataId = if (parts.isEmpty) file.dataId else db.newDataId(file.id)
                   log.trace(s"release: $path $file -> DATAID $dataId")
-                  store.persist(file.id, file.dataId, startStop)(startOfFreeData, size)
+                  store.persist(file.id, file.dataId, parts)(startOfFreeData, size)
                   db.insertDataEntry(dataId, 1, size, startOfFreeData, startOfFreeData + size, hash)
                   startOfFreeData += size
               }
@@ -345,8 +345,8 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
           if (offset < 0 || size < 0 || size > 67108864) -ErrorCodes.EOVERFLOW // 64MiB
           else {
             if (size > 16777216) log.warn(s"Conspiciously large read request: $size bytes.") // 16MiB
-            val startStop = db.parts(file.dataId)
-            val bytes: Array[Byte] = store.read(file.id, file.dataId, startStop)(offset, size.toInt)
+            val parts = db.parts(file.dataId)
+            val bytes: Array[Byte] = store.read(file.id, file.dataId, parts)(offset, size.toInt)
             buf.put(0, bytes, 0, bytes.length)
             bytes.length
           }
