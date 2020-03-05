@@ -305,7 +305,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
               val startStop = db.startStop(file.dataId)
               val size = store.size(file.id, file.dataId, startStop.size)
               val md = MessageDigest.getInstance(hashAlgorithm)
-              for { position <- 0L until size by memChunk; chunkSize = math.min(memChunk, size - position).toInt }
+              for (position <- 0L until size by memChunk; chunkSize = math.min(memChunk, size - position).toInt)
                 md.update(store.read(file.id, file.dataId, startStop)(position, chunkSize))
               val hash = md.digest()
               db.dataEntry(hash, size) match {
@@ -351,19 +351,17 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
       case Some(_: DirEntry) => -ErrorCodes.EISDIR
       case Some(file: FileEntry) =>
         if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
+        else if (offset < 0 || size < 0 || size > Int.MaxValue) -ErrorCodes.EOVERFLOW
         else try {
-          if (offset < 0 || size < 0 || size > 67108864) -ErrorCodes.EOVERFLOW // 64MiB
-          else {
-            if (size > 16777216) log.warn(s"Conspiciously large read request: $size bytes.") // 16MiB
-            val startStop = db.startStop(file.dataId)
-            val bytes: Array[Byte] = store.read(file.id, file.dataId, startStop)(offset, size.toInt)
-            buf.put(0, bytes, 0, bytes.length)
+          val startStop = db.startStop(file.dataId)
+          val end = offset + size
+          (for (position <- offset until end by memChunk; chunkSize = math.min(memChunk, end - position).toInt) yield {
+            val bytes: Array[Byte] = store.read(file.id, file.dataId, startStop)(position, chunkSize)
+            buf.put(position - offset, bytes, 0, bytes.length)
             bytes.length
-          }
+          }).sum
         } catch {
-          case t: Throwable =>
-            log.error(s"SV: file = $file", t)
-            -ErrorCodes.EIO
+          case t: Throwable => log.error(s"SV: file = $file", t); -ErrorCodes.EIO
         }
     }
   }
