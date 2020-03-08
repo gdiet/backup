@@ -1,6 +1,6 @@
 package dedup.store
 
-import java.io.{File, RandomAccessFile}
+import java.io.{File, FileNotFoundException, RandomAccessFile}
 
 import dedup.assertLogged
 import org.slf4j.{Logger, LoggerFactory}
@@ -34,10 +34,19 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends ParallelAccess[R
   def read(position: Long, size: Int): Array[Byte] = if (size == 0) Array() else {
     assertLogged(position >= 0, s"position >= 0 ... p = $position, s = $size")
     assertLogged(size > 0, s"size > 0 ... p = $position, s = $size")
-    val (path, offset, bytesToRead) = pathOffsetSize(position, size)
-    // Note: From corrupt (= too short) data file, entry will not be read at all
-    val bytes = access(path, write = false) { file => file.seek(offset); new Array[Byte](bytesToRead).tap(file.readFully) }
-    if (size > bytesToRead) bytes ++ read(position + bytesToRead, size - bytesToRead)
+    val (path, offset, bytesRequested) = pathOffsetSize(position, size)
+    val bytes =
+      try access(path, write = false)(file => new Array[Byte](bytesRequested).tap {
+        val bytesToRead = math.min(bytesRequested, file.length - offset).toInt
+        if (bytesToRead < bytesRequested)
+          log.error(s"Data file $path too short, reading $bytesToRead of $bytesRequested from $offset")
+        file.seek(offset); file.readFully(_, 0, bytesToRead)
+      })
+      catch { case e: FileNotFoundException =>
+        log.error(s"Missing data file while trying to read $size bytes starting at $position", e)
+        new Array[Byte](bytesRequested)
+      }
+    if (size > bytesRequested) bytes ++ read(position + bytesRequested, size - bytesRequested)
     else bytes
   }
 
