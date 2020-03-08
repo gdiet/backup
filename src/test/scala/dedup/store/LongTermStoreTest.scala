@@ -12,9 +12,30 @@ object LongTermStoreTest extends App {
     def is(expected: T): Unit = { println(". check"); require(actual == expected, s"$actual is not $expected") }
   }
 
+  def delete(dir: java.io.File) =
+    java.nio.file.Files.walk(dir.toPath).sorted(java.util.Comparator.reverseOrder()).forEach(t => t.toFile.delete())
+
   def test(): Unit = {
     testPathOffsetSize()
     testParallelAccess()
+    testLongTermStore("dedupfs-temp/LongTermStoreTest")
+  }
+
+  def testLongTermStore(basePath: String): Unit = {
+    import java.io.File
+    val dir = new File(basePath)
+    if (dir.exists()) delete(dir)
+    try {
+      dir.mkdirs()
+      val store = new LongTermStore(dir.getAbsolutePath, false)
+      println(". reading an area not covered by data files returns zeros")
+      store.read(0, 10).toSeq.is(Seq.fill[Byte](10)(0))
+      println(". reading some bytes previously written succeeds")
+      store.write(0, Array[Byte](1,2,3,4))
+      store.read(1, 2).toSeq.is(Seq[Byte](2,3))
+      println(". reading beyond the data written returns zeros")
+      store.read(2, 4).toSeq.is(Seq[Byte](3,4,0,0))
+    } finally delete(dir)
   }
 
   def testParallelAccess(): Unit = {
@@ -80,6 +101,7 @@ object LongTermStoreTest extends App {
   def testPathOffsetSize(): Unit = {
     import LongTermStore._
     println("Tests for LongTermStore")
+    println(". file size should be 100.000.000")
     fileSize.is(100000000)
     println(". a location in the first data file that would exceed the file's size")
     pathOffsetSize(        20000000, 100000000).is((      "00/00/0000000000", 20000000, 80000000))
