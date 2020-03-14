@@ -25,3 +25,26 @@ func Read(basePath string, position, size uint64) ([]byte, error) {
 	}
 	return buffer, err
 }
+
+// Read2 todo todo
+func Read2(files map[string]*os.File, basePath string, position, size uint64) ([]byte, error) {
+	var err error
+	relativePath, offsetInFile, bytesToRead := PathOffsetSize(position, size)
+	file := files[relativePath]
+	if file == nil {
+		path := filepath.Join(basePath, relativePath)
+		// os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0777)
+		if file, err = os.Open(path); err != nil {
+			return nil, err
+		}
+		files[relativePath] = file
+	}
+	buffer := make([]byte, bytesToRead)
+	if _, err = file.Seek(int64(offsetInFile), io.SeekStart); err != nil {
+		return nil, err
+	}
+	if _, err = io.ReadFull(file, buffer); err != nil {
+		log.Println(err)
+	}
+	return buffer, err
+}
