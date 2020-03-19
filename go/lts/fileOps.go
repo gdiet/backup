@@ -14,11 +14,16 @@ type Fmap map[string]chan *os.File
 type Fman chan Fmap
 
 // Read todo todo
-func Read(fman Fman, basePath, relativePath string, offsetInFile, bytesToRead uint64, result chan []byte) {
-	read(fman, <-fman, basePath, relativePath, offsetInFile, bytesToRead, result)
+func Read(fman Fman, basePath string, position, size uint64, result chan []byte) {
+	relativePath, offsetInFile, bytesToRead := PathOffsetSize(position, size)
+	read1(fman, basePath, relativePath, offsetInFile, bytesToRead, result)
 }
 
-func read(fman Fman, fmap Fmap, basePath, relativePath string, offsetInFile, bytesToRead uint64, result chan []byte) {
+func read1(fman Fman, basePath, relativePath string, offsetInFile, bytesToRead uint64, result chan []byte) {
+	read2(fman, <-fman, basePath, relativePath, offsetInFile, bytesToRead, result)
+}
+
+func read2(fman Fman, fmap Fmap, basePath, relativePath string, offsetInFile, bytesToRead uint64, result chan []byte) {
 	if fchan, ok := fmap[relativePath]; ok {
 		fman <- fmap // pushing back means we have to call Read if needed, not read
 		if file := <-fchan; file != nil {
@@ -33,13 +38,13 @@ func read(fman Fman, fmap Fmap, basePath, relativePath string, offsetInFile, byt
 			result <- buffer
 			return
 		}
-		Read(fman, basePath, relativePath, offsetInFile, bytesToRead, result) // just try again
+		read1(fman, basePath, relativePath, offsetInFile, bytesToRead, result) // just try again
 		return
 	}
 	// here: no entry in map for basepath
 	if len(fmap) >= maxOpenFiles {
 		if closeOne(&fmap) {
-			read(fman, fmap, basePath, relativePath, offsetInFile, bytesToRead, result)
+			read2(fman, fmap, basePath, relativePath, offsetInFile, bytesToRead, result)
 			return
 		}
 		// here: could not close an entry in a non-blocking way
@@ -47,7 +52,7 @@ func read(fman Fman, fmap Fmap, basePath, relativePath string, offsetInFile, byt
 			(<-fileChannel).Close() // yes, blocks - but makes sure that maxOpenFiles is not exceeded
 			fileChannel <- nil
 			delete(fmap, path)
-			read(fman, fmap, basePath, relativePath, offsetInFile, bytesToRead, result)
+			read2(fman, fmap, basePath, relativePath, offsetInFile, bytesToRead, result)
 			return
 		}
 	}
@@ -59,7 +64,7 @@ func read(fman Fman, fmap Fmap, basePath, relativePath string, offsetInFile, byt
 	fileChannel := make(chan *os.File, 1)
 	fileChannel <- file
 	fmap[relativePath] = fileChannel
-	read(fman, fmap, basePath, relativePath, offsetInFile, bytesToRead, result)
+	read2(fman, fmap, basePath, relativePath, offsetInFile, bytesToRead, result)
 	return
 }
 
