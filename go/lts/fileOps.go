@@ -35,6 +35,7 @@ func read2(fman Fman, fmap Fmap, basePath, relativePath string, offsetInFile, by
 			if _, err := io.ReadFull(file, buffer); err != nil {
 				log.Println(err)
 			}
+			fchan <- file
 			result <- buffer
 			return
 		}
