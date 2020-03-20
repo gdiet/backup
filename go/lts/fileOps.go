@@ -25,7 +25,7 @@ func read1(fman Fman, basePath, relativePath string, offsetInFile, bytesToRead u
 
 func read2(fman Fman, fmap Fmap, basePath, relativePath string, offsetInFile, bytesToRead uint64, result chan []byte) {
 	if fchan, ok := fmap[relativePath]; ok {
-		fman <- fmap // pushing back means we have to call Read if needed, not read
+		fman <- fmap // pushing back means we have to call read1 if needed, not read2
 		if file := <-fchan; file != nil {
 			if _, err := file.Seek(int64(offsetInFile), io.SeekStart); err != nil {
 				result <- nil
@@ -38,7 +38,8 @@ func read2(fman Fman, fmap Fmap, basePath, relativePath string, offsetInFile, by
 			result <- buffer
 			return
 		}
-		read1(fman, basePath, relativePath, offsetInFile, bytesToRead, result) // just try again
+		// here: entry was invalidated by other thread
+		read1(fman, basePath, relativePath, offsetInFile, bytesToRead, result) // just try read1 (!) again
 		return
 	}
 	// here: no entry in map for basepath
