@@ -50,10 +50,10 @@ func read2(fman Fman, fmap Fmap, basePath, relativePath string, offsetInFile, by
 			return
 		}
 		// here: could not close an entry in a non-blocking way
-		for path, fileChannel := range fmap {
+		for relPathToClose, fileChannel := range fmap {
 			(<-fileChannel).Close() // yes, blocks - but makes sure that maxOpenFiles is not exceeded
 			fileChannel <- nil
-			delete(fmap, path)
+			delete(fmap, relPathToClose)
 			read2(fman, fmap, basePath, relativePath, offsetInFile, bytesToRead, result)
 			return
 		}
@@ -72,6 +72,7 @@ func read2(fman Fman, fmap Fmap, basePath, relativePath string, offsetInFile, by
 
 // closeOne closes one available file, removing it from the map
 func closeOne(fmap *Fmap) bool {
+	// if we want LRU functionality here, we need an array or similar along with the map
 	for relativePath, fileChannel := range *fmap {
 		select {
 		case file := <-fileChannel:
