@@ -28,7 +28,7 @@ object LongTermStoreTest extends App {
     try {
       dir.mkdirs()
       val store = new LongTermStore(dir.getAbsolutePath, false)
-      println(". reading an area not covered by data files returns zeros")
+      println(". reading an area not covered by data files returns zeros (and ERROR/exception in log)")
       store.read(0, 10).toSeq.is(Seq.fill[Byte](10)(0))
       println(". reading some bytes previously written succeeds")
       store.write(0, Array[Byte](1,2,3,4))
