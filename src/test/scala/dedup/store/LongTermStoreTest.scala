@@ -12,7 +12,11 @@ object LongTermStoreTest extends App {
     def is(expected: T): Unit = { println(". check"); require(actual == expected, s"$actual is not $expected") }
   }
 
+<<<<<<< HEAD
   def delete(dir: java.io.File) =
+=======
+  def delete(dir: java.io.File): Unit =
+>>>>>>> master
     java.nio.file.Files.walk(dir.toPath).sorted(java.util.Comparator.reverseOrder()).forEach(t => t.toFile.delete())
 
   def test(): Unit = {
