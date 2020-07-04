@@ -15,5 +15,6 @@ ALTER TABLE DataEntries ALTER COLUMN seq DROP DEFAULT;
 ALTER TABLE DataEntries ADD COLUMN length BIGINT NULL AFTER seq;
 UPDATE DataEntries SET length = stop - start;
 ALTER TABLE DataEntries ADD CONSTRAINT pk_DataEntries PRIMARY KEY (id, seq);
+CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);
 
 end migration database version 1 -> 2

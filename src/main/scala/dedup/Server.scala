@@ -59,6 +59,16 @@ object Server extends App {
     resource(H2.file(dbDir, readonly = false)) (Database.initialize)
     log.info(s"Database initialized in $dbDir.")
 
+  } else if (commands.contains("orphandataentrystats")) {
+    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+    val dbDir = Database.dbDir(repo)
+    resource(H2.file(dbDir, readonly = true)) (Database.orphanDataEntryStats)
+
+  } else if (commands.contains("deleteorphandataentries")) {
+    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+    val dbDir = Database.dbDir(repo)
+    resource(H2.file(dbDir, readonly = false)) (Database.deleteOrphanDataEntries)
+
   } else if (commands.contains("stats")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)

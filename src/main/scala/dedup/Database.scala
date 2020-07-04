@@ -45,13 +45,33 @@ object Database {
         |""".stripMargin split ";"
   }
 
+  // DataEntriesStopIdx: Find start of free data.
+  // DataEntriesHashIdx: Find data entries by hash.
+  // TreeEntriesDataIdIdx: Find orphan data entries.
   private def indexDefinitions =
     """|CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
-       |CREATE INDEX DataEntriesHashIdx ON DataEntries(hash);""".stripMargin split ";"
+       |CREATE INDEX DataEntriesHashIdx ON DataEntries(hash);
+       |CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);""".stripMargin split ";"
 
   def initialize(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
     tableDefinitions.foreach(stat.executeUpdate)
     indexDefinitions.foreach(stat.executeUpdate)
+  }
+
+  def orphanDataEntryStats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
+    log.info(s"Counting orphan data entries (allow ~ 1 second per 40.000 entries):")
+    val count = stat.executeQuery(
+      "SELECT COUNT(d.id) FROM DataEntries d LEFT JOIN TreeEntries t ON t.dataId = d.id WHERE t.dataId is NULL"
+    ).tap(_.next()).getLong(1)
+    log.info(s"$count entries.")
+  }
+
+  def deleteOrphanDataEntries(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
+    log.info(s"Deleting orphan data entries (allow ~ 1 second per 40.000 entries):")
+    val count = stat.executeUpdate(
+      "DELETE FROM DataEntries WHERE id IN (SELECT DISTINCT(d.id) FROM DataEntries d LEFT JOIN TreeEntries t ON t.dataId = d.id WHERE t.dataId is NULL)"
+    )
+    log.info(s"$count entries.")
   }
 
   def stats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
