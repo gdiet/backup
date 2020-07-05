@@ -50,7 +50,7 @@ object Database {
   // TreeEntriesDataIdIdx: Find orphan data entries.
   private def indexDefinitions =
     """|CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
-       |CREATE INDEX DataEntriesHashIdx ON DataEntries(hash);
+       |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
        |CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);""".stripMargin split ";"
 
   def initialize(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
@@ -283,13 +283,12 @@ class Database(connection: Connection) { import Database._
   }
 
   private val qHash = connection.prepareStatement(
-    "SELECT id, start, stop FROM DataEntries WHERE hash = ?"
+    "SELECT id FROM DataEntries WHERE hash = ? AND length = ?"
   )
   def dataEntry(hash: Array[Byte], size: Long): Option[Long] = {
     qHash.setBytes(1, hash)
-    resource(qHash.executeQuery())(r => r.seq(_ => (r.getLong(1), r.getLong(2), r.getLong(3)))).collectFirst {
-      case (id, start, stop) if stop - start == size => id
-    }
+    qHash.setLong(2, size)
+    resource(qHash.executeQuery())(r => r.maybeNext(_.getLong(1)))
   }
 
   private val iDataEntry = connection.prepareStatement(
