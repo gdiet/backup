@@ -316,7 +316,7 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
                   val dataId = if (parts.isEmpty) file.dataId else db.newDataId(file.id)
                   log.trace(s"release: $path $file -> DATAID $dataId")
                   store.persist(file.id, file.dataId, parts)(startOfFreeData, size)
-                  db.insertDataEntry(dataId, 1, size, startOfFreeData, startOfFreeData + size, hash)
+                  if (size > 0) db.insertDataEntry(dataId, 1, size, startOfFreeData, startOfFreeData + size, hash)
                   startOfFreeData += size
               }
               store.delete(file.id, file.dataId)

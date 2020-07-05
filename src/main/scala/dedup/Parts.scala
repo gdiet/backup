@@ -1,7 +1,7 @@
 package dedup
 
 case class Parts(parts: Seq[(Long, Long)]) {
-  require(parts.forall{ case (start, stop) => stop >= start }, s"Illegal parts $parts")
+  require(parts.forall{ case (start, stop) => stop > start }, s"Illegal parts $parts")
   def isEmpty: Boolean = parts.isEmpty
   def size: Long = parts.map{ case (start, stop) => stop - start }.sum
   def drop(offset: Long): Parts =

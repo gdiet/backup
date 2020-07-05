@@ -45,11 +45,13 @@ object Database {
         |""".stripMargin split ";"
   }
 
+  // DataEntriesStartIdx + DataEntriesStopIdx: Find gaps in data entries.
   // DataEntriesStopIdx: Find start of free data.
-  // DataEntriesHashIdx: Find data entries by hash.
+  // DataEntriesLengthHashIdx: Find data entries by size & hash.
   // TreeEntriesDataIdIdx: Find orphan data entries.
   private def indexDefinitions =
-    """|CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
+    """|CREATE INDEX DataEntriesStartIdx ON DataEntries(start);
+       |CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
        |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
        |CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);""".stripMargin split ";"
 
@@ -201,6 +203,7 @@ class Database(connection: Connection) { import Database._
       start -> stop
     })
   }
+  // TODO maybe read length from DB seq = 1 instead? (might return no entries)
   def dataSize(dataId: Long): Long = parts(dataId).size
 
   private val dTreeEntry = connection.prepareStatement(

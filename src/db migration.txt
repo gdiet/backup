@@ -15,6 +15,7 @@ ALTER TABLE DataEntries ALTER COLUMN seq DROP DEFAULT;
 ALTER TABLE DataEntries ADD COLUMN length BIGINT NULL AFTER seq;
 UPDATE DataEntries SET length = stop - start;
 ALTER TABLE DataEntries ADD CONSTRAINT pk_DataEntries PRIMARY KEY (id, seq);
+CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
 DROP INDEX DataEntriesHashIdx;
 CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
 CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);
