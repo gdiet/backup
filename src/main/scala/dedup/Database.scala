@@ -76,6 +76,23 @@ object Database {
     log.info(s"$count entries.")
   }
 
+  private def gaps(stat: Statement) = {
+    val starts = stat.executeQuery(
+      "SELECT d1.stop FROM DataEntries d1 LEFT JOIN DataEntries d2 ON d1.start = d2.stop WHERE d2.stop IS NULL ORDER BY d1.start ASC"
+    ).seq(_.getLong(1)).dropRight(1)
+    val stops = stat.executeQuery(
+      "SELECT d1.start FROM DataEntries d1 LEFT JOIN DataEntries d2 ON d1.stop = d2.start WHERE d2.start IS NULL ORDER BY d1.start ASC"
+    ).seq(_.getLong(1)).drop(1)
+    starts.zip(stops)
+  }
+
+  def compactionStats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
+    log.info(s"Compaction potential of datastore:")
+    val dataGaps = gaps(stat)
+    val compactionPotential = dataGaps.map{ case (start, stop) => stop - start }.sum
+    log.info(f"${dataGaps.size} gaps with total ${compactionPotential / 1000000}%,d MB ($compactionPotential%,d bytes)")
+  }
+
   def stats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
     log.info(s"Database statistics:")
     log.info(f"Folders: ${
