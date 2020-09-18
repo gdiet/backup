@@ -14,7 +14,7 @@ import scala.collection.immutable.SortedMap
 class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends AutoCloseable {
   implicit private val log: Logger = LoggerFactory.getLogger(getClass)
   private val longTermStore = new LongTermStore(dataDir, readOnly)
-  private val entries = new CacheEntries(tempPath, readOnly)
+  private val entries = new CacheEntriesOld(tempPath, readOnly)
   import entries.Entry
 
   def writeProtectCompleteFiles(startPosition: Long, endPosition: Long): Unit =

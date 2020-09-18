@@ -12,7 +12,7 @@ import org.slf4j.{Logger, LoggerFactory}
  *  (not too many files) while being manageable on all file systems (not too large). When used in read-only
  *  mode, write access fails with an exception.
  */
-class LongTermStore(dataDir: String, readOnly: Boolean) extends ParallelAccess[RandomAccessFile] {
+class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess[RandomAccessFile] {
   import LongTermStore._
 
   implicit private val log: Logger = LoggerFactory.getLogger(getClass)
@@ -54,7 +54,7 @@ class LongTermStore(dataDir: String, readOnly: Boolean) extends ParallelAccess[R
     for {position <- startPosition until endPosition-fileSize by fileSize} {
       val (path, _, _) = pathOffsetSize(position, 0)
       log.info(s"Write protecting $path")
-      new File(s"$dataDir/$path").setReadOnly()
+      new File(dataDir, path).setReadOnly()
     }
   }
 }

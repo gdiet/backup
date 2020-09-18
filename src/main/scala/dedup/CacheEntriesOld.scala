@@ -9,7 +9,7 @@ import java.nio.file.{Files, Path}
 import org.slf4j.{Logger, LoggerFactory}
 
 // TODO In read-only mode there is no need to initialize cache entries.
-class CacheEntries(tempPath: String, readOnly: Boolean) extends AutoCloseable {
+class CacheEntriesOld(tempPath: String, readOnly: Boolean) extends AutoCloseable {
   implicit private val log: Logger = LoggerFactory.getLogger(getClass)
   private val tempDir: File = new File(tempPath, "dedupfs-temp")
   if (!readOnly) {

@@ -5,6 +5,7 @@ import java.lang.System.{currentTimeMillis => now}
 import java.security.MessageDigest
 
 import dedup.Database._
+import dedup.store.LongTermStore
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.Platform.{OS, getNativePlatform}
 import jnr.ffi.{Platform, Pointer}
@@ -107,7 +108,7 @@ object Server extends App {
   }
 }
 
-class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean) extends FuseStubFS {
+class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean) extends FuseStubFS with FuseConstants {
   private val log = LoggerFactory.getLogger(getClass)
   private val repo = maybeRelativeRepo.getAbsoluteFile // absolute needed e.g. for getFreeSpace()
   private val dbDir = Database.dbDir(repo)
@@ -115,9 +116,9 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
 
   private val db = new Database(H2.file(dbDir, readonly = false))
   private val dataDir = new File(repo, "data").tap{d => d.mkdirs(); require(d.isDirectory)}
-  private val store = new DataStore(dataDir.getAbsolutePath, maybeRelativeTemp.getAbsolutePath, readonly)
   private val hashAlgorithm = "MD5"
   private val rights = if (readonly) 365 else 511 // o555 else o777
+  private val lts = new LongTermStore(dataDir, readonly)
 
   private def split(path: String): Array[String] = path.split("/").filter(_.nonEmpty)
   private def entry(path: String): Option[TreeEntry] = entry(split(path))
@@ -127,10 +128,11 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
       case _ => None
     }
 
-  private def sync[T](msg: String)(f: => Int): Int = synchronized(
+  private def sync[T](f: => T): T = synchronized(f)
+  private def sync(msg: String)(f: => Int): Int = sync {
     try f.tap(result => log.trace(s"$msg -> $result"))
-    catch { case e: Throwable => log.error(s"$msg -> ERROR", e); -ErrorCodes.EIO() }
-  )
+    catch { case e: Throwable => log.error(s"$msg -> ERROR", e); EIO }
+  }
 
   override def umount(): Unit = sync(s"Unmount repository from $mountPoint") {
     if (!readonly) store.writeProtectCompleteFiles(startOfFreeDataAtStart, startOfFreeData)
@@ -265,132 +267,143 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
   // # Files #
   // #########
 
-  private var fileDescriptors: Map[Long, Int] = Map()
-  private def incCount(id: Long): Unit = fileDescriptors += id -> (fileDescriptors.getOrElse(id, 0) + 1)
+  private val fileHandles = new FileHandles()
   private val startOfFreeDataAtStart = db.startOfFreeData
   private var startOfFreeData = startOfFreeDataAtStart
   log.info(s"Data stored: ${startOfFreeData / 1000000000}GB")
 
-  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = if (readonly) -ErrorCodes.EROFS else
+  // 2020.09.18 perfect
+  override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
     sync(s"create $path") {
       val parts = split(path)
-      if (parts.length == 0) -ErrorCodes.ENOENT
-      else entry(parts.take(parts.length - 1)) match {
-        case None => -ErrorCodes.ENOENT
-        case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
+      if (readonly) EROFS
+      else if (parts.length == 0) ENOENT // can't create root
+      else entry(parts.dropRight(1)) match { // fetch parent entry
+        case None => ENOENT // parent not known
+        case Some(_: FileEntry) => ENOTDIR // parent is a file
         case Some(dir: DirEntry) =>
           val name = parts.last
           db.child(dir.id, name) match {
-            case Some(_) => -ErrorCodes.EEXIST
-            case None =>
-              val id = db.mkFile(dir.id, name, now)
-              incCount(id); 0
+            case Some(_) => EEXIST // file (or directory with the same name) already exists
+            case None => fileHandles.create(db.mkFile(dir.id, name, now)); OK
           }
       }
     }
 
-  override def open(path: String, fi: FuseFileInfo): Int = sync(s"open $path") {
-    entry(path) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(_: DirEntry) => -ErrorCodes.EISDIR
-      case Some(file: FileEntry) =>
-        incCount(file.id); 0
-    }
-  }
-
-  override def release(path: String, fi: FuseFileInfo): Int = sync(s"release $path") {
-    entry(path) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(_: DirEntry) => -ErrorCodes.EISDIR
-      case Some(file: FileEntry) =>
-        fileDescriptors.get(file.id).foreach {
-          case 1 =>
-            fileDescriptors -= file.id
-            store.ifDataWritten(file.id, file.dataId) {
-              val parts = db.parts(file.dataId)
-              val size = store.size(file.id, file.dataId, parts.size)
-              val md = MessageDigest.getInstance(hashAlgorithm)
-              for (position <- 0L until size by memChunk; chunkSize = math.min(memChunk, size - position).toInt)
-                md.update(store.read(file.id, file.dataId, parts)(position, chunkSize))
-              val hash = md.digest()
-              db.dataEntry(hash, size) match {
-                case Some(dataId) =>
-                  log.trace(s"Already known, linking to dataId $dataId: $path")
-                  if (file.dataId != dataId) require(db.setDataId(file.id, dataId))
-                case None =>
-                  val dataId = if (parts.isEmpty) file.dataId else db.newDataId(file.id)
-                  log.trace(s"release: $path $file -> DATAID $dataId")
-                  store.persist(file.id, file.dataId, parts)(startOfFreeData, size)
-                  if (size > 0) db.insertDataEntry(dataId, 1, size, startOfFreeData, startOfFreeData + size, hash)
-                  startOfFreeData += size
-              }
-              store.delete(file.id, file.dataId)
-            }
-          case n => fileDescriptors += file.id -> (n - 1)
-        }
-        0
-    }
-  }
-
-  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-    if (readonly) -ErrorCodes.EROFS else sync(s"write $path .. $offset/$size") {
+  // 2020.09.18 perfect
+  override def open(path: String, fi: FuseFileInfo): Int =
+    sync(s"open $path") {
       entry(path) match {
-        case None => -ErrorCodes.ENOENT
-        case Some(_: DirEntry) => -ErrorCodes.EISDIR
-        case Some(file: FileEntry) =>
-          val intSize = size.toInt.abs
-          if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
-          else if (offset < 0 || size != intSize) -ErrorCodes.EOVERFLOW
-          else {
-            val data = new Array[Byte](intSize)
-            buf.get(0, data, 0, intSize)
-            store.write(file.id, file.dataId, db.dataSize(file.dataId))(offset, data)
-            intSize
-          }
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) => fileHandles.create(file.id, db.parts(file.dataId)); OK
       }
     }
 
-  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = sync(s"read $path .. off = $offset, size = $size") {
-    entry(path) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(_: DirEntry) => -ErrorCodes.EISDIR
-      case Some(file: FileEntry) =>
-        if (!fileDescriptors.contains(file.id)) -ErrorCodes.EIO
-        else if (offset < 0 || size < 0 || size > Int.MaxValue) -ErrorCodes.EOVERFLOW
-        else try {
-          val parts = db.parts(file.dataId)
-          val end = offset + size
-          (for (position <- offset until end by memChunk; chunkSize = math.min(memChunk, end - position).toInt) yield {
-            val bytes: Array[Byte] = store.read(file.id, file.dataId, parts)(position, chunkSize)
-            buf.put(position - offset, bytes, 0, bytes.length)
-            bytes.length
-          }).sum
-        } catch {
-          case t: Throwable => log.error(s"SV: file = $file", t); -ErrorCodes.EIO
+  // 2020.09.18 good
+  override def release(path: String, fi: FuseFileInfo): Int =
+    sync(s"release $path") {
+      entry(path) match {
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) =>
+          fileHandles.decCount(file.id, { entry =>
+            // START asynchronously executed release block
+            // 1. calculate hash
+            val md = MessageDigest.getInstance(hashAlgorithm)
+            entry.read(0, entry.size, lts.read).foreach(md.update)
+            val hash = md.digest()
+            // 2. check if already known
+            sync(db.dataEntry(hash, entry.size)) match {
+              // 3. already known, simply link
+              case Some(dataId) =>
+                log.trace(s"release: $path - content known, linking to dataId $dataId")
+                if (file.dataId != dataId) sync(db.setDataId(file.id, dataId))
+              // 4. not yet known, store
+              case None =>
+                // 4a. reserve storage space
+                val start = sync(startOfFreeData.tap(_ => startOfFreeData += entry.size))
+                // 4b. write to storage
+                entry.read(0, entry.size, lts.read).foldLeft(0L) { case (position, data) =>
+                  lts.write(start + position, data)
+                  position + data.length
+                }
+                // 4c. create data entry
+                sync {
+                  val dataId = db.newDataId(file.id)
+                  if (entry.size > 0) db.insertDataEntry(dataId, 1, entry.size, start, start + entry.size, hash)
+                  log.trace(s"release: $path - new content, dataId $dataId")
+                }
+            }
+            // END asynchronously executed release block
+          })
+          OK
+      }
+    }
+
+  // 2020.09.18 perfect
+  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
+    sync(s"write $path .. offset = $offset, size = $size") {
+      val intSize = size.toInt.abs
+      if (readonly) EROFS
+      else if (offset < 0 || size != intSize) EOVERFLOW
+      else entry(path) match {
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) => fileHandles.cacheEntry(file.id) match {
+          case None => EIO // write is hopefully only called after create or open
+          case Some(cacheEntry) =>
+            def dataSource(offset: Int, size: Int): Array[Byte] =
+              new Array[Byte](size).tap(data => buf.get(offset, data, 0, size))
+            cacheEntry.write(offset, intSize, dataSource)
+            intSize
         }
+      }
     }
-  }
 
-  override def truncate(path: String, size: Long): Int = if (readonly) -ErrorCodes.EROFS else sync(s"truncate $path .. $size") {
-    entry(path) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(_: DirEntry) => -ErrorCodes.EISDIR
-      case Some(file: FileEntry) =>
-        store.truncate(file.id, file.dataId, db.dataSize(file.dataId), size)
-        0
+  // 2020.09.18 perfect
+  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
+    sync(s"read $path .. offset = $offset, size = $size") {
+      val intSize = size.toInt.abs
+      if (offset < 0 || size != intSize) EOVERFLOW
+      else entry(path) match {
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) => fileHandles.cacheEntry(file.id) match {
+          case None => EIO // read is hopefully only called after create or open
+          case Some(cacheEntry) =>
+            cacheEntry.read(offset, size, lts.read).foldLeft(0) { case (position, data) =>
+              buf.put(position, data, 0, data.length)
+              position + data.length
+            }
+        }
+      }
     }
-  }
 
-  override def unlink(path: String): Int = if (readonly) -ErrorCodes.EROFS else sync(s"unlink $path") {
-    entry(path) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(_: DirEntry) => -ErrorCodes.EISDIR
-      case Some(file: FileEntry) =>
-        if (db.delete(file.id)) {
-          store.delete(file.id, file.dataId)
-          fileDescriptors -= file.id
-          0
-        } else -ErrorCodes.EIO
+  // 2020.09.18 perfect
+  override def truncate(path: String, size: Long): Int =
+    sync(s"truncate $path .. $size") {
+      if (readonly) EROFS
+      else entry(path) match {
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) => fileHandles.cacheEntry(file.id) match {
+          case None => EIO // truncate is hopefully only called after create or open
+          case Some(cacheEntry) => cacheEntry.truncate(size); OK
+        }
+      }
     }
-  }
+
+  // 2020.09.18 perfect
+  override def unlink(path: String): Int =
+    sync(s"unlink $path") {
+      if (readonly) EROFS
+      else entry(path) match {
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) =>
+          if (!db.delete(file.id)) EIO
+          else { fileHandles.delete(file.id); OK }
+      }
+    }
 }

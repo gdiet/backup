@@ -296,10 +296,10 @@ class Database(connection: Connection) { import Database._
   private val uDataId = connection.prepareStatement(
     "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
   )
-  def setDataId(id: Long, dataId: Long): Boolean = {
+  def setDataId(id: Long, dataId: Long): Unit = {
     uDataId.setLong(1, dataId)
     uDataId.setLong(2, id)
-    uDataId.executeUpdate() == 1
+    require(uDataId.executeUpdate() == 1, s"setDataId update count not 1 for id $id dataId $dataId")
   }
 
   private val qHash = connection.prepareStatement(
@@ -315,13 +315,13 @@ class Database(connection: Connection) { import Database._
     "INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)"
   )
   def insertDataEntry(dataId: Long, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = {
-    require(seq > 0, s"seq: $seq")
+    require(seq > 0, s"seq not positive: $seq")
     iDataEntry.setLong(1, dataId)
     iDataEntry.setInt(2, seq)
     if (seq == 1) iDataEntry.setLong(3, length) else iDataEntry.setNull(3, Types.BIGINT)
     iDataEntry.setLong(4, start)
     iDataEntry.setLong(5, stop)
     if (seq == 1) iDataEntry.setBytes(6, hash) else iDataEntry.setNull(3, Types.BINARY)
-    require(iDataEntry.executeUpdate() == 1)
+    require(iDataEntry.executeUpdate() == 1, s"insertDataEntry update count not 1 for dataId $dataId")
   }
 }
