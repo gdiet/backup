@@ -8,9 +8,10 @@ package object dedup extends scala.util.ChainingSyntax {
 
   val copyWhenMoving = new AtomicBoolean(false)
 
+  // TODO replace "require" with assumeLogged/assertLogged?
   def assumeLogged(condition: Boolean, message: => String)(implicit log: Logger): Unit =
     if (!condition) log.error(s"Assumption failed: $message", new IllegalStateException(""))
 
   def assertLogged(condition: Boolean, message: => String)(implicit log: Logger): Unit =
-    if (!condition) throw new IllegalStateException(message).tap(log.error(s"Assumption failed: $message", _))
+    if (!condition) throw new IllegalStateException(message).tap(log.error(s"Assertion failed: $message", _))
 }

@@ -1,5 +1,5 @@
 version := "1"
-scalaVersion := "2.13.2"
+scalaVersion := "2.13.3"
 scalacOptions := Seq("-target:11", "-deprecation", "-feature", "-unchecked")
 resolvers += "bintray" at "https://jcenter.bintray.com"
 libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.4"
