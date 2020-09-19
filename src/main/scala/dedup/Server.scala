@@ -18,40 +18,13 @@ import scala.util.Using.resource
 object Server extends App {
   private val log = LoggerFactory.getLogger("dedup.Server")
 
-  import Runtime.{getRuntime => rt}
-  def freeMemory: Long = rt.maxMemory - rt.totalMemory + rt.freeMemory
-
   val (options, commands) = args.partition(_.contains("=")).pipe { case (options, commands) =>
     options.map(_.split("=", 2).pipe(o => o(0).toLowerCase -> o(1))).toMap ->
     commands.toList.map(_.toLowerCase())
   }
 
   if (commands.contains("check")) {
-    // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
-    log.info("Checking memory management for byte arrays now.")
-
-    System.gc(); Thread.sleep(1000)
-    val freeBeforeNormalDataCheck = freeMemory
-    val normallyHandledData = Vector.fill(100)(new Array[Byte](memChunk))
-    System.gc(); Thread.sleep(1000)
-    val usedByNormalData = freeBeforeNormalDataCheck - freeMemory
-    val deviationWithNormalData = (memChunk*100 - usedByNormalData).abs / memChunk
-    log.info(s"${normallyHandledData.size} Byte arrays of size $memChunk used $usedByNormalData bytes of RAM.")
-    log.info(s"This is a deviation of $deviationWithNormalData% from the expected value.")
-    log.info(s"This software assumes that the deviation is near to 0%.")
-
-    val freeBeforeExceptionalDataCheck = freeMemory
-    val exceptionallyHandledData = Vector.fill(100)(new Array[Byte](1048576))
-    System.gc(); Thread.sleep(1000)
-    val usedByExceptionalData = freeBeforeExceptionalDataCheck - freeMemory
-    val deviationWithExceptionalData = (104857600 - usedByExceptionalData).abs / 1000000
-    log.info(s"${exceptionallyHandledData.size} Byte arrays of size 1048576 used $usedByExceptionalData bytes of RAM.")
-    log.info(s"This is a deviation of $deviationWithExceptionalData% from the expected value.")
-    log.info(s"This software assumes that the deviation is near to 100%.")
-
-    require(deviationWithNormalData < 15, "High deviation of memory usage for normal data.")
-    require(deviationWithExceptionalData > 80, "Low deviation of memory usage for exceptional data.")
-    require(deviationWithExceptionalData < 120, "High deviation of memory usage for exceptional data.")
+    Utils.memoryCheck()
 
   } else if (commands.contains("init")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
@@ -81,36 +54,27 @@ object Server extends App {
     resource(H2.file(dbDir, readonly = false)) (Database.stats)
 
   } else {
-    asyncLogFreeMemory()
+    Utils.asyncLogFreeMemory()
     copyWhenMoving.set(commands.contains("copywhenmoving"))
     val readonly = !commands.contains("write")
     val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
-    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
-    val temp = new File(options.getOrElse("temp", repo.getPath)).getAbsoluteFile
+    val absoluteRepo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+    val temp = new File(options.getOrElse("temp", absoluteRepo.getPath))
     log.info (s"Starting dedup file system.")
-    log.info (s"Repository:  $repo")
+    log.info (s"Repository:  $absoluteRepo")
     log.info (s"Mount point: $mountPoint")
     log.info (s"Readonly:    $readonly")
     log.debug(s"Temp root:   $temp")
     if (copyWhenMoving.get) log.info (s"Copy instead of move initially enabled.")
-    val fs = new Server(repo, temp, readonly)
+    val fs = new Server(absoluteRepo, temp, readonly)
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
     catch { case e: Throwable => log.error("Mount exception:", e); fs.umount() }
   }
-
-  private def asyncLogFreeMemory(): Unit = concurrent.ExecutionContext.global.execute { () =>
-    var lastFree = 0L
-    while(true) {
-      Thread.sleep(5000)
-      val free = freeMemory
-      if ((free-lastFree).abs * 10 > lastFree) {  lastFree = free; log.debug(s"Free memory: ${free/1000000} MB") }
-    }
-  }
 }
 
-class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean) extends FuseStubFS with FuseConstants {
+/** @param repo Must be an absolute file (e.g. for getFreeSpace). */
+class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS with FuseConstants {
   private val log = LoggerFactory.getLogger(getClass)
-  private val repo = maybeRelativeRepo.getAbsoluteFile // absolute needed e.g. for getFreeSpace()
   private val dbDir = Database.dbDir(repo)
   require(dbDir.exists(), s"Database directory $dbDir does not exist.")
 
@@ -134,48 +98,53 @@ class Server(maybeRelativeRepo: File, maybeRelativeTemp: File, readonly: Boolean
     catch { case e: Throwable => log.error(s"$msg -> ERROR", e); EIO }
   }
 
-  override def umount(): Unit = sync(s"Unmount repository from $mountPoint") {
-    if (!readonly) store.writeProtectCompleteFiles(startOfFreeDataAtStart, startOfFreeData)
-    store.close(); 0
-  }
+  override def umount(): Unit =
+    sync(s"Unmount repository from $mountPoint") {
+      if (!readonly) lts.writeProtectCompleteFiles(startOfFreeDataAtStart, startOfFreeData)
+      lts.close()
+      OK
+    }
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
-  override def getattr(path: String, stat: FileStat): Int = sync(s"getattr $path") {
-    def setCommon(time: Long, nlink: Int): Unit = {
-      stat.st_nlink.set(nlink)
-      stat.st_mtim.tv_sec.set(time / 1000)
-      stat.st_mtim.tv_nsec.set((time % 1000) * 1000000)
-      stat.st_uid.set(getContext.uid.get)
-      stat.st_gid.set(getContext.gid.get)
-    }
-    entry(path) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(dir: DirEntry) =>
-        stat.st_mode.set(FileStat.S_IFDIR | rights)
-        setCommon(dir.time, 2)
-        0
-      case Some(file: FileEntry) =>
-        val size = store.size(file.id, file.dataId, db.dataSize(file.dataId))
-        stat.st_mode.set(FileStat.S_IFREG | rights)
-        setCommon(file.time, 1)
-        stat.st_size.set(size)
-        0
-    }
-  }
-
-  override def utimens(path: String, timespec: Array[Timespec]): Int = sync(s"utimens $path") { // see man UTIMENSAT(2)
-    if (timespec.length < 2) -ErrorCodes.EIO else {
-      val sec = timespec(1).tv_sec.get
-      val nan = timespec(1).tv_nsec.longValue
-      if (sec < 0 || nan < 0 || nan > 1000000000) -ErrorCodes.EINVAL
-      else entry(path) match {
-        case None => -ErrorCodes.ENOENT
-        case Some(entry) =>
-          db.setTime(entry.id, timespec(1).pipe(t => t.tv_sec.get * 1000 + t.tv_nsec.longValue / 1000000))
-          0
+  override def getattr(path: String, stat: FileStat): Int =
+    sync(s"getattr $path") {
+      def setCommon(time: Long, nlink: Int): Unit = {
+        stat.st_nlink.set(nlink)
+        stat.st_mtim.tv_sec.set(time / 1000)
+        stat.st_mtim.tv_nsec.set((time % 1000) * 1000000)
+        stat.st_uid.set(getContext.uid.get)
+        stat.st_gid.set(getContext.gid.get)
+      }
+      entry(path) match {
+        case None => ENOENT
+        case Some(dir: DirEntry) =>
+          stat.st_mode.set(FileStat.S_IFDIR | rights)
+          setCommon(dir.time, 2)
+          OK
+        case Some(file: FileEntry) =>
+          val size = fileHandles.cacheEntry(file.id).map(_.size).getOrElse(db.dataSize(file.dataId))
+          stat.st_mode.set(FileStat.S_IFREG | rights)
+          setCommon(file.time, 1)
+          stat.st_size.set(size)
+          OK
       }
     }
-  }
+
+  override def utimens(path: String, timespec: Array[Timespec]): Int =
+    sync(s"utimens $path") { // see man UTIMENSAT(2)
+      if (timespec.length < 2) EIO
+      else {
+        val sec = timespec(1).tv_sec.get
+        val nan = timespec(1).tv_nsec.longValue
+        if (sec < 0 || nan < 0 || nan > 1000000000) EINVAL
+        else entry(path) match {
+          case None => ENOENT
+          case Some(entry) =>
+            db.setTime(entry.id, sec*1000 + nan/1000000)
+            OK
+        }
+      }
+    }
 
   /* Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir. */
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =

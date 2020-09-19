@@ -1,5 +1,7 @@
 package dedup
 
+import java.io.File
+
 import dedup.store.LongTermStore
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -13,7 +15,7 @@ import scala.collection.immutable.SortedMap
  */
 class DataStore(dataDir: String, tempPath: String, readOnly: Boolean) extends AutoCloseable {
   implicit private val log: Logger = LoggerFactory.getLogger(getClass)
-  private val longTermStore = new LongTermStore(dataDir, readOnly)
+  private val longTermStore = new LongTermStore(new File(dataDir), readOnly)
   private val entries = new CacheEntriesOld(tempPath, readOnly)
   import entries.Entry
 

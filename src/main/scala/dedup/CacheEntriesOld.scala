@@ -17,7 +17,7 @@ class CacheEntriesOld(tempPath: String, readOnly: Boolean) extends AutoCloseable
     require(tempDir.list().isEmpty, s"Temp dir is not empty: $tempDir")
   }
 
-  private val memoryCacheSize: Long = Server.freeMemory*3/4 - 128000000
+  private val memoryCacheSize: Long = 128000000 // Server.freeMemory*3/4 - 128000000
   log.debug(s"Initializing data store with memory cache size ${memoryCacheSize / 1000000}MB")
   require(memoryCacheSize > 8000000, "Not enough free memory for a sensible memory cache.")
 

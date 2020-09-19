@@ -5,6 +5,7 @@ import ru.serce.jnrfuse.ErrorCodes
 trait FuseConstants {
   val EEXIST    : Int = -ErrorCodes.EEXIST
   val EIO       : Int = -ErrorCodes.EIO
+  val EINVAL    : Int = -ErrorCodes.EINVAL
   val EISDIR    : Int = -ErrorCodes.EISDIR
   val ENOENT    : Int = -ErrorCodes.ENOENT
   val ENOTDIR   : Int = -ErrorCodes.ENOTDIR

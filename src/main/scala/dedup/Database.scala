@@ -246,10 +246,10 @@ class Database(connection: Connection) { import Database._
   private val uTime = connection.prepareStatement(
     "UPDATE TreeEntries SET time = ? WHERE id = ?"
   )
-  def setTime(id: Long, newTime: Long): Boolean = {
+  def setTime(id: Long, newTime: Long): Unit = {
     uTime.setLong(1, newTime)
     uTime.setLong(2, id)
-    uTime.executeUpdate() == 1
+    require(uTime.executeUpdate() == 1, s"setTime update count not 1 for id $id")
   }
 
   private val iDir = connection.prepareStatement(

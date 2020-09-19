@@ -22,7 +22,7 @@ object LongTermStorePerformanceTest extends App {
     if (dir.exists()) delete(dir)
     dir.mkdirs()
     def testRun(parallel: Int): Unit = {
-      val store = new LongTermStore(dir.getAbsolutePath, false) {
+      val store = new LongTermStore(dir, false) {
         override val parallelOpenResources: Int = parallel
       }
       store.write(0, new Array[Byte](310000000))
