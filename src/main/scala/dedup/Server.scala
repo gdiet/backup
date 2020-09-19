@@ -151,43 +151,43 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
     sync(s"readdir $path $offset") {
       entry(path) match {
-        case None => -ErrorCodes.ENOENT
-        case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
+        case None => ENOENT
+        case Some(_: FileEntry) => ENOTDIR
         case Some(dir: DirEntry) =>
-          if (offset < 0 || offset.toInt != offset) -ErrorCodes.EOVERFLOW
+          if (offset < 0 || offset.toInt != offset) EOVERFLOW
           else {
             def names = Seq(".", "..") ++ db.children(dir.id).map(_.name)
             // exists: side effect until a condition is met
             names.zipWithIndex.drop(offset.toInt).exists { case (name, k) => fill.apply(buf, name, null, k + 1) != 0 }
-            0
+            OK
           }
       }
     }
 
-  override def rmdir(path: String): Int = if (readonly) -ErrorCodes.EROFS else sync("rmdir $path") {
+  override def rmdir(path: String): Int = if (readonly) EROFS else sync("rmdir $path") {
     entry(path) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
+      case None => ENOENT
+      case Some(_: FileEntry) => ENOTDIR
       case Some(dir: DirEntry) =>
-        if (db.children(dir.id).nonEmpty) -ErrorCodes.ENOTEMPTY
-        else if (db.delete(dir.id)) 0 else -ErrorCodes.EIO
+        if (db.children(dir.id).nonEmpty) ENOTEMPTY
+        else if (db.delete(dir.id)) OK else EIO
     }
   }
 
   // Renames a file. Other than the general contract of rename, newpath must not exist.
-  override def rename(oldpath: String, newpath: String): Int = if (readonly) -ErrorCodes.EROFS else
+  override def rename(oldpath: String, newpath: String): Int = if (readonly) EROFS else
     sync(s"rename $oldpath .. $newpath") {
       val (oldParts, newParts) = (split(oldpath), split(newpath))
-      if (oldParts.length == 0 || newParts.length == 0) -ErrorCodes.ENOENT
+      if (oldParts.length == 0 || newParts.length == 0) ENOENT
       else entry(oldParts) match {
-        case None => -ErrorCodes.ENOENT
+        case None => ENOENT
         case Some(source) => entry(newParts.take(newParts.length - 1)) match {
-          case None => -ErrorCodes.ENOENT
-          case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
+          case None => ENOENT
+          case Some(_: FileEntry) => ENOTDIR
           case Some(dir: DirEntry) =>
             val newName = newParts.last
             db.child(dir.id, newName) match {
-              case Some(_) => -ErrorCodes.EEXIST
+              case Some(_) => EEXIST
               case None =>
                 def copy(source: TreeEntry, newName: String, destId: Long): Unit =
                   source match {
@@ -198,23 +198,23 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
                   }
                 if (source.parent != dir.id && copyWhenMoving.get()) copy(source, newName, dir.id)
                 else db.moveRename(source.id, dir.id, newName)
-                0
+                OK
             }
         }
       }
     }
 
-  override def mkdir(path: String, mode: Long): Int = if (readonly) -ErrorCodes.EROFS else sync(s"mkdir $path") {
+  override def mkdir(path: String, mode: Long): Int = if (readonly) EROFS else sync(s"mkdir $path") {
     val parts = split(path)
-    if (parts.length == 0) -ErrorCodes.ENOENT
+    if (parts.length == 0) ENOENT
     else entry(parts.take(parts.length - 1)) match {
-      case None => -ErrorCodes.ENOENT
-      case Some(_: FileEntry) => -ErrorCodes.ENOTDIR
+      case None => ENOENT
+      case Some(_: FileEntry) => ENOTDIR
       case Some(dir: DirEntry) =>
         val name = parts.last
         db.child(dir.id, name) match {
-          case Some(_) => -ErrorCodes.EEXIST
-          case None => db.mkDir(dir.id, name); 0
+          case Some(_) => EEXIST
+          case None => db.mkDir(dir.id, name); OK
         }
     }
   }
