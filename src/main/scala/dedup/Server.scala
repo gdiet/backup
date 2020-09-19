@@ -65,7 +65,7 @@ object Server extends App {
     log.info (s"Mount point: $mountPoint")
     log.info (s"Readonly:    $readonly")
     log.debug(s"Temp root:   $temp")
-    if (!readonly) temp.mkdirs() // TODO ensure is empty
+    if (!readonly) { if (temp.exists) Utils.delete(temp); temp.mkdirs() }
     if (copyWhenMoving.get) log.info (s"Copy instead of move initially enabled.")
     val fs = new Server(absoluteRepo, temp, readonly)
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
