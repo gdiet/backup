@@ -1,8 +1,25 @@
 package dedup
 
-class CacheEntry(ltsParts: Parts) {
+import java.io.File
+import java.nio.channels.SeekableByteChannel
+import java.nio.file.Files
+import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
+import java.util.concurrent.atomic.AtomicLong
+
+object CacheEntry {
+  val nextTempFile = new AtomicLong(1)
+}
+class CacheEntry(ltsParts: Parts, tempDir: File) {
   var size: Long = ltsParts.size
   var ltsSize: Long = ltsParts.size
+
+  private var maybeChannel: Option[SeekableByteChannel] = None
+  private val path = tempDir.toPath.resolve(CacheEntry.nextTempFile.getAndIncrement().toString)
+  private def channel = {
+    maybeChannel.getOrElse(
+      Files.newByteChannel(path, WRITE, CREATE_NEW, SPARSE, READ).tap(c => maybeChannel = Some(c))
+    )
+  }
 
   // Possible performance optimization: Use a sorted map, key is chunk position
   // Possible performance optimization: Merge adjacent file chunks
@@ -31,7 +48,7 @@ class CacheEntry(ltsParts: Parts) {
     val end = offset + length
     dropFromChunks(offset, end)
     for (position <- offset until end by memChunk; chunkSize = math.min(memChunk, end - position).toInt) {
-      val chunk = Chunk(position, dataSource(position - offset, chunkSize))
+      val chunk = Chunk(position, dataSource(position - offset, chunkSize), channel)
       chunks :+= chunk
     }
     if (end > size) size = end
@@ -82,28 +99,6 @@ class CacheEntry(ltsParts: Parts) {
     result ++ readLtsOrZeros(currentPosition, (end - currentPosition).toInt, ltsRead)
   }
 
-  /*
-    def read(position: Long, size: Int, readLts: Part => Array[Byte]): Array[Byte] = synchronized {
-      assert(size > 0, s"size $size is not greater than zero")
-      val dataFromEntries = entries.collect {
-        case e if e.position > position && e.position < position + size =>
-          val take = math.min(e.size, (position + size - e.position).toInt)
-          e.position -> e.data.take(take)
-        case e if e.position <= position && e.position + e.size > position =>
-          val drop = (position - e.position).toInt
-          val dropRight = math.max(0, (e.position + e.size - position - size).toInt)
-          e.position + drop -> e.data.drop(drop).dropRight(dropRight)
-      }.sortBy(_._1)
-      val (currentPosition, result) = dataFromEntries.foldLeft((0L, Array.empty[Byte])) {
-        case ((position, result), (entryPosition, entryData)) =>
-          assert(entryPosition >= position, s"entryPosition $entryPosition less than position $position")
-          val fromLts = readLtsOrZeros(position, (entryPosition - position).toInt, readLts)
-          (entryPosition + entryData.length, result ++ fromLts ++ entryData)
-      }
-      result ++ readLtsOrZeros(currentPosition, (position - currentPosition).toInt, readLts)
-    }
-   */
-
   private def readLtsOrZeros(start: Long, length: Int, ltsRead: (Long, Int) => Array[Byte]): Array[Byte] = {
     if (start >= ltsSize) new Array[Byte](length)
     else {
@@ -117,5 +112,6 @@ class CacheEntry(ltsParts: Parts) {
 
   def drop(): Unit = synchronized {
     chunks.foreach(_.drop())
+    maybeChannel.foreach { c => c.close(); Files.delete(path) }
   }
 }

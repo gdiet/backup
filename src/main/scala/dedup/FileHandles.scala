@@ -1,5 +1,6 @@
 package dedup
 
+import java.io.File
 import java.util.concurrent.Semaphore
 
 import org.slf4j.LoggerFactory
@@ -7,7 +8,7 @@ import org.slf4j.LoggerFactory
 import scala.concurrent.{ExecutionContext, Future}
 
 /** The methods of this class are not thread safe. Synchronize externally if needed. */
-class FileHandles {
+class FileHandles(tempDir: File) {
   private val log = LoggerFactory.getLogger(getClass)
 
   /** file ID -> (handle count, cache entry) */
@@ -16,7 +17,7 @@ class FileHandles {
   private val writeProcesses = new Semaphore(3)
 
   def create(id: Long, ltsParts: Parts): Unit =
-    require(entries.put(id, 1 -> new CacheEntry(ltsParts)).isEmpty, s"entries already contained $id")
+    require(entries.put(id, 1 -> new CacheEntry(ltsParts, tempDir)).isEmpty, s"entries already contained $id")
 
   def cacheEntry(id: Long): Option[CacheEntry] =
     entries.get(id).map(_._2)

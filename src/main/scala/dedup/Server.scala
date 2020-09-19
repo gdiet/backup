@@ -236,7 +236,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
   // # Files #
   // #########
 
-  private val fileHandles = new FileHandles()
+  private val fileHandles = new FileHandles(tempDir)
   private val startOfFreeDataAtStart = db.startOfFreeData
   private var startOfFreeData = startOfFreeDataAtStart
   log.info(s"Data stored: ${startOfFreeData / 1000000000}GB")
