@@ -265,7 +265,7 @@ class Database(connection: Connection) { import Database._
   }
 
   private val iFile = connection.prepareStatement(
-    "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, NEXT VALUE FOR idSeq)",
+    "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, -1)",
     Statement.RETURN_GENERATED_KEYS
   )
   def mkFile(parentId: Long, name: String, time: Long): Long = {
