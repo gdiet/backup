@@ -38,7 +38,7 @@ class MemChunk(val position: Long, val data: Array[Byte]) extends Chunk {
   }
   override def right(newSize: Int): MemChunk = {
     sizeCheck(newSize)
-    new MemChunk(position, data.takeRight(newSize))
+    new MemChunk(position + size - newSize, data.takeRight(newSize))
   }
   override def drop(): Unit = CacheManager.memoryUsed.addAndGet(-size)
 }
