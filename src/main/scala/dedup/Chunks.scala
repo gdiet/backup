@@ -17,6 +17,7 @@ sealed trait Chunk {
   assert(position >= 0, s"negative position $position")
   assert(size > 0, s"size $size not positive at $position")
   def position: Long
+  def end: Long = position + size
   def size: Int
   def data: Array[Byte]
   protected def sizeCheck(newSize: Int): Unit = {

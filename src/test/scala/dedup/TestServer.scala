@@ -14,8 +14,18 @@ object TestServer extends App {
   println("mkdir " + server.mkdir("/hello/world", 0))
   println("create " + server.create("/hello/file.txt", 0, null))
   println("write " + server.write("/hello/file.txt", new ArrayMemoryIO(getSystemRuntime, Array[Byte](65, 66, 67, 68, 69), 0, 5), 5, 0, null))
-  val readBuffer = Array.fill[Byte](10)( 99)
-  println("read " + server.read("/hello/file.txt", new ArrayMemoryIO(getSystemRuntime, readBuffer, 0, 10), 7, 1, null))
-  println("read " + readBuffer.mkString(", "))
+
+  {
+    val readBuffer = Array.fill[Byte](10)( 99)
+    println("read " + server.read("/hello/file.txt", new ArrayMemoryIO(getSystemRuntime, readBuffer, 0, 10), 7, 1, null))
+    println("read " + readBuffer.mkString(", "))
+  }
+  println("truncate " + server.truncate("/hello/file.txt", 6))
+
+  {
+    val readBuffer = Array.fill[Byte](10)( 99)
+    println("read " + server.read("/hello/file.txt", new ArrayMemoryIO(getSystemRuntime, readBuffer, 0, 10), 7, 1, null))
+    println("read " + readBuffer.mkString(", "))
+  }
   server.umount()
 }
