@@ -81,7 +81,7 @@ object _2 {
 
     def truncate(newLength: Long): Unit = synchronized {
       assert(newLength >= 0, s"negative newLength $newLength")
-      // It might make sense to drop this assertment - let's see...
+      // It might make sense to drop this assertion - let's see...
       assert(length != newLength, s"length $length equals newLength $newLength")
       if (length > newLength) {
         if (ltsLength > newLength) ltsLength = newLength

@@ -322,9 +322,9 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
         case Some(file: FileEntry) => fileHandles.cacheEntry(file.id) match {
           case None => EIO // write is hopefully only called after create or open
           case Some(cacheEntry) =>
-            def dataSource(offset: Int, size: Int): Array[Byte] =
+            def dataSource(offset: Long, size: Int): Array[Byte] =
               new Array[Byte](size).tap(data => buf.get(offset, data, 0, size))
-            cacheEntry.write(offset, intSize, dataSource)
+            cacheEntry.write(offset, size, dataSource)
             intSize
         }
       }
