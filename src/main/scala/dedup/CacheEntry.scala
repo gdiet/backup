@@ -1,7 +1,7 @@
 package dedup
 
 class CacheEntry(ltsParts: Parts) {
-  var size: Long = 0
+  var size: Long = ltsParts.size
   var ltsSize: Long = ltsParts.size
 
   // Possible performance optimization: Use a sorted map, key is chunk position

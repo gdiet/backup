@@ -15,7 +15,7 @@ class FileHandles {
   /** The number of concurrently allowed write processes (file system blocks when limit is reached). */
   private val writeProcesses = new Semaphore(3)
 
-  def create(id: Long, ltsParts: Parts = Parts(Seq())): Unit =
+  def create(id: Long, ltsParts: Parts): Unit =
     require(entries.put(id, 1 -> new CacheEntry(ltsParts)).isEmpty, s"entries already contained $id")
 
   def cacheEntry(id: Long): Option[CacheEntry] =

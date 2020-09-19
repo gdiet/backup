@@ -254,7 +254,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
           val name = parts.last
           db.child(dir.id, name) match {
             case Some(_) => EEXIST // file (or directory with the same name) already exists
-            case None => fileHandles.create(db.mkFile(dir.id, name, now)); OK
+            case None => fileHandles.create(db.mkFile(dir.id, name, now), Parts(Seq())); OK
           }
       }
     }
