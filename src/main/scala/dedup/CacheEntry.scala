@@ -26,12 +26,12 @@ class CacheEntry(ltsParts: Parts) {
     }
   }
 
-  /** @param dataSource A function (offset, size) => data that provides the data to write. */
+  /** @param dataSource A function (sourceOffset, size) => data that provides the data to write. */
   def write(offset: Long, length: Long, dataSource: (Long, Int) => Array[Byte]): Unit = synchronized {
     val end = offset + length
     dropFromChunks(offset, end)
     for (position <- offset until end by memChunk; chunkSize = math.min(memChunk, end - position).toInt) {
-      val chunk = Chunk(position, dataSource(position, chunkSize))
+      val chunk = Chunk(position, dataSource(position - offset, chunkSize))
       chunks :+= chunk
     }
     if (end > size) size = end
