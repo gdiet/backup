@@ -71,7 +71,7 @@ class CacheEntry(ltsParts: Parts) {
         val dropRight = math.max(0, (chunk.end - end).toInt)
         chunk.position + drop -> chunk.data.drop(drop).dropRight(dropRight)
     }.sortBy(_._1)
-    val (currentPosition, result) = sortedDataFromChunks.foldLeft((0L, Array.empty[Byte])) {
+    val (currentPosition, result) = sortedDataFromChunks.foldLeft((start, Array.empty[Byte])) {
       case ((position, result), (entryPosition, entryData)) if position == entryPosition =>
         (position + entryData.length, result ++ entryData)
       case ((position, result), (entryPosition, entryData)) =>
