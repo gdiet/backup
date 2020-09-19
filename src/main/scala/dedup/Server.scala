@@ -16,7 +16,7 @@ import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 import scala.util.Using.resource
 
 object Server extends App {
-  private val log = LoggerFactory.getLogger("dedup.Server")
+  private val log = LoggerFactory.getLogger("dedup.Serve")
 
   val (options, commands) = args.partition(_.contains("=")).pipe { case (options, commands) =>
     options.map(_.split("=", 2).pipe(o => o(0).toLowerCase -> o(1))).toMap ->
@@ -74,7 +74,7 @@ object Server extends App {
 
 /** @param repo Must be an absolute file (e.g. for getFreeSpace). */
 class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS with FuseConstants {
-  private val log = LoggerFactory.getLogger(getClass)
+  private val log = LoggerFactory.getLogger("dedup.Serve")
   private val dbDir = Database.dbDir(repo)
   require(dbDir.exists(), s"Database directory $dbDir does not exist.")
 
