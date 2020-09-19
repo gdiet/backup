@@ -9,7 +9,7 @@ import scala.concurrent.{ExecutionContext, Future}
 
 /** The methods of this class are not thread safe. Synchronize externally if needed. */
 class FileHandles(tempDir: File) {
-  private val log = LoggerFactory.getLogger(getClass)
+  private val log = LoggerFactory.getLogger("dedup.FHand")
 
   /** file ID -> (handle count, cache entry) */
   private val entries = collection.mutable.Map[Long, (Int, CacheEntry)]()

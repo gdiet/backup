@@ -6,7 +6,10 @@ import java.nio.file.Files
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
 import java.util.concurrent.atomic.AtomicLong
 
+import org.slf4j.LoggerFactory
+
 object CacheEntry {
+  private val log = LoggerFactory.getLogger("dedup.Cache")
   val nextTempFile = new AtomicLong(1)
 }
 class CacheEntry(ltsParts: Parts, tempDir: File) {
@@ -16,9 +19,10 @@ class CacheEntry(ltsParts: Parts, tempDir: File) {
   private var maybeChannel: Option[SeekableByteChannel] = None
   private val path = tempDir.toPath.resolve(CacheEntry.nextTempFile.getAndIncrement().toString)
   private def channel = {
-    maybeChannel.getOrElse(
+    maybeChannel.getOrElse {
+      CacheEntry.log.debug(s"Create cache file $path")
       Files.newByteChannel(path, WRITE, CREATE_NEW, SPARSE, READ).tap(c => maybeChannel = Some(c))
-    )
+    }
   }
 
   // Possible performance optimization: Use a sorted map, key is chunk position
@@ -112,6 +116,10 @@ class CacheEntry(ltsParts: Parts, tempDir: File) {
 
   def drop(): Unit = synchronized {
     chunks.foreach(_.drop())
-    maybeChannel.foreach { c => c.close(); Files.delete(path) }
+    maybeChannel.foreach { c =>
+      c.close()
+      CacheEntry.log.debug(s"Delete cache file $path")
+      Files.delete(path)
+    }
   }
 }

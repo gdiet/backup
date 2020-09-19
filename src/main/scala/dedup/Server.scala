@@ -59,12 +59,13 @@ object Server extends App {
     val readonly = !commands.contains("write")
     val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
     val absoluteRepo = new File(options.getOrElse("repo", "")).getAbsoluteFile
-    val temp = new File(options.getOrElse("temp", absoluteRepo.getPath))
+    val temp = new File(options.getOrElse("temp", absoluteRepo.getPath + "/dedupfs-temp"))
     log.info (s"Starting dedup file system.")
     log.info (s"Repository:  $absoluteRepo")
     log.info (s"Mount point: $mountPoint")
     log.info (s"Readonly:    $readonly")
     log.debug(s"Temp root:   $temp")
+    if (!readonly) temp.mkdirs() // TODO ensure is empty
     if (copyWhenMoving.get) log.info (s"Copy instead of move initially enabled.")
     val fs = new Server(absoluteRepo, temp, readonly)
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
