@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 object CacheManager {
   val memoryUsed = new AtomicLong()
-  var cacheLimit: Long = 100000000
+  var cacheLimit: Long = Runtime.getRuntime.maxMemory - 64000000
 }
 
 object Chunk {
