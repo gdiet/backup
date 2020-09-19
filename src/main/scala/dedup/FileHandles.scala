@@ -36,9 +36,9 @@ class FileHandles(tempDir: File) {
         entries -= id
         if (!entry.dataWritten) entry.drop()
         else {
-          // if there is data to persist, do it async, but limit number of write processes
-          writeProcesses.acquire()
+          // if there is data to persist, do it async, but limit number of active write processes
           Future {
+            writeProcesses.acquire()
             try onReleased(entry)
             catch { case t: Throwable => log.error(s"onRelease failed for entry $id", t) }
             finally { writeProcesses.release(); entry.drop() }
