@@ -60,6 +60,47 @@ object Database {
     indexDefinitions.foreach(stat.executeUpdate)
   }
 
+  def reclaimSpace1(connection: Connection, keepDeletedDays: Int): Unit = resource(connection.createStatement()) { stat =>
+    log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
+    log.info(s"Note that stage 2 of reclaiming space partially invalidates database backups.")
+
+    log.info(s"Deleting tree entries marked for deletion more than $keepDeletedDays days ago...")
+    val treeEntriesDeleted = stat.executeUpdate(
+      s"DELETE FROM TreeEntries WHERE deleted != 0 AND deleted < ${now - keepDeletedDays*1000*3600*24}"
+    )
+    log.info(s"Number of tree entries marked for deletion deleted: $treeEntriesDeleted")
+
+    log.info(s"Deleting orphan tree entries...")
+    val orphanTreeEntriesDeleted = stat.executeUpdate(
+      "DELETE FROM TreeEntries WHERE id IN (SELECT FROM TreeEntries a LEFT JOIN TreeEntries b ON a.parentId = b.id WHERE b.id IS NULL)"
+    )
+    log.info(s"Number of orphan tree entries deleted: $orphanTreeEntriesDeleted")
+
+    log.info(s"Counting data entries...")
+    val dataEntries = stat.executeQuery(
+      "SELECT COUNT(id) FROM DataEntries"
+    ).tap(_.next()).getLong(1)
+    log.info(s"Number of data entries in database: $dataEntries")
+
+    log.info(s"Deleting orphan data entries (might take ~ ${dataEntries/40000 + 2} seconds):")
+    val orphanDataEntriesDeleted = stat.executeUpdate(
+      "DELETE FROM DataEntries WHERE id IN (SELECT d.id FROM DataEntries d LEFT JOIN TreeEntries t ON t.dataId = d.id WHERE t.dataId is NULL)"
+    )
+    log.info(s"Number of orphan data entries deleted: $orphanDataEntriesDeleted")
+
+    log.info(s"Reading current size of data storage:")
+    val currentStorageSize = stat.executeQuery(
+      "SELECT MAX(stop) FROM DataEntries"
+    ).tap(_.next()).getLong(1)
+    log.info(f"Current size of data storage: ${currentStorageSize/1000000000d}%,.2f GB")
+
+    log.info(s"Checking compaction potential:")
+    val dataGaps = gaps(stat)
+    log.debug(s"Gaps detected: ${dataGaps.mkString(" ")}")
+    val compactionPotential = dataGaps.map{ case (start, stop) => stop - start }.sum
+    log.info(f"Compaction potential of stage 2: ${compactionPotential/1000000d}%,.1f MB")
+  }
+
   def orphanDataEntryStats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
     log.info(s"Counting orphan data entries (allow ~ 1 second per 40.000 entries):")
     val count = stat.executeQuery(
@@ -76,14 +117,18 @@ object Database {
     log.info(s"$count entries.")
   }
 
-  private def gaps(stat: Statement) = {
+  private def gaps(stat: Statement): Seq[(Long, Long)] = {
     val starts = stat.executeQuery(
       "SELECT d1.stop FROM DataEntries d1 LEFT JOIN DataEntries d2 ON d1.start = d2.stop WHERE d2.stop IS NULL ORDER BY d1.start ASC"
     ).seq(_.getLong(1)).dropRight(1)
     val stops = stat.executeQuery(
       "SELECT d1.start FROM DataEntries d1 LEFT JOIN DataEntries d2 ON d1.stop = d2.start WHERE d2.start IS NULL ORDER BY d1.start ASC"
-    ).seq(_.getLong(1)).drop(1)
-    starts.zip(stops)
+    ).seq(_.getLong(1)).toList
+    stops match {
+      case Nil => Seq()
+      case 0 :: tail => starts.zip(tail)
+      case head :: tail => (0L -> head) +: starts.zip(tail)
+    }
   }
 
   def compactionStats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
