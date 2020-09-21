@@ -101,12 +101,9 @@ object Database {
 
     { // Run in separate block so the sets can be garbage collected soon
       log.info(s"Checking compaction potential of the data entries:")
-      val chunksR =
-        stat.executeQuery("SELECT start, stop FROM DataEntries").seq(r => r.getLong(1) -> r.getLong(2))
       val chunks =
         stat.executeQuery("SELECT start, stop FROM DataEntries").seq(r => r.getLong(1) -> r.getLong(2)).to(SortedMap)
-      val dupStart = chunksR.map(_._1).groupBy(identity).filter(_._2.size > 1)
-      log.info(s"Read all ${chunksR.size} ${chunks.size} data entries $dupStart.")
+      log.info(s"Read all ${chunks.size} data entries.")
       val (_, dataGaps) = chunks.foldLeft(0L -> Set.empty[(Long, Long)]) {
         case ((lastEnd, gaps), (start, stop)) if start < lastEnd =>
           log.warn(s"Detected overlapping data entry ($start, $stop).")
@@ -116,7 +113,6 @@ object Database {
         case ((lastEnd, gaps), (start, stop)) =>
           stop -> gaps.incl(lastEnd -> start)
       }
-      log.info(s"Gaps detected: ${dataGaps.mkString(" ")}")
       val compactionPotential = dataGaps.map{ case (start, stop) => stop - start }.sum
       log.info(f"Compaction potential of stage 2: ${compactionPotential/1000000000d}%,.2f GB in ${dataGaps.size} gaps.")
     }
