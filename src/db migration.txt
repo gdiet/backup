@@ -19,5 +19,7 @@ CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
 DROP INDEX DataEntriesHashIdx;
 CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
 CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);
+// clean up unused data references
+UPDATE TreeEntries SET dataId = -1 WHERE id IN (SELECT t.id FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.dataId IS NOT NULL AND d.id IS NULL)
 
 end migration database version 1 -> 2

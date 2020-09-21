@@ -92,8 +92,6 @@ object Database {
       )
       log.info(s"Deleted ${dataIdsToDelete.size} orphan data entries.")
     }
-    // TODO here we can also optimize the tree: set all unknown dataids to -1
-    // TODO but probably this is only needed during DB upgrade?
 
     log.info(s"Reading current size of data storage:")
     val currentStorageSize = stat.executeQuery(
