@@ -6,6 +6,7 @@ import java.sql.{Connection, PreparedStatement, ResultSet, Statement, Types}
 
 import org.slf4j.{Logger, LoggerFactory}
 
+import scala.collection.SortedMap
 import scala.util.Using.resource
 
 object Database {
@@ -78,19 +79,21 @@ object Database {
     )
     log.info(s"Number of unrooted entries deleted: $treeEntriesDeleted")
 
-    log.info(s"Deleting orphan data entries:")
-    val dataIdsInTree = stat.executeQuery("SELECT DISTINCT(dataId) FROM TreeEntries").seq(_.getLong(1)).toSet
-    log.info(s"Data entries found in tree: ${dataIdsInTree.size}")
-    val dataIdsStorage = stat.executeQuery("SELECT id FROM DataEntries").seq(_.getLong(1)).toSet
-    log.info(s"Data entries in storage database: ${dataIdsStorage.size}")
-    val dataIdsToDelete = (dataIdsStorage -- dataIdsInTree)
-    log.info(s"Orphan storage data entries to delete: ${dataIdsToDelete.size}")
-    dataIdsToDelete.foreach(dataId =>
-      stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId")
-    )
-    log.info(s"Deleted orphan data entries.")
+    // Note: Most operations below could also be run in SQL, but that is much slower...
+    { // Run in separate block so the sets can be garbage collected soon
+      log.info(s"Deleting orphan data entries:")
+      val dataIdsInTree = stat.executeQuery("SELECT DISTINCT(dataId) FROM TreeEntries").seq(_.getLong(1)).toSet
+      log.info(s"Data entries found in tree: ${dataIdsInTree.size}")
+      val dataIdsInStorage = stat.executeQuery("SELECT id FROM DataEntries").seq(_.getLong(1)).toSet
+      log.info(s"Data entries in storage database: ${dataIdsInStorage.size}")
+      val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree
+      dataIdsToDelete.foreach(dataId =>
+        stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId")
+      )
+      log.info(s"Deleted ${dataIdsToDelete.size} orphan data entries.")
+    }
     // TODO here we can also optimize the tree: set all unknown dataids to -1
-    // TODO but maybe this is only needed for DB from previous versions?
+    // TODO but probably this is only needed during DB upgrade?
 
     log.info(s"Reading current size of data storage:")
     val currentStorageSize = stat.executeQuery(
@@ -98,11 +101,29 @@ object Database {
     ).tap(_.next()).getLong(1)
     log.info(f"Current size of data storage: ${currentStorageSize/1000000000d}%,.2f GB")
 
-    log.info(s"Checking compaction potential:")
-    val dataGaps = gaps(stat)
-    log.debug(s"Gaps detected: ${dataGaps.mkString(" ")}")
-    val compactionPotential = dataGaps.map{ case (start, stop) => stop - start }.sum
-    log.info(f"Compaction potential of stage 2: ${compactionPotential/1000000d}%,.1f MB")
+    // TODO during migration remove data blocks with length = 0
+
+    { // Run in separate block so the sets can be garbage collected soon
+      log.info(s"Checking compaction potential of the data entries:")
+      val chunksR =
+        stat.executeQuery("SELECT start, stop FROM DataEntries").seq(r => r.getLong(1) -> r.getLong(2))
+      val chunks =
+        stat.executeQuery("SELECT start, stop FROM DataEntries").seq(r => r.getLong(1) -> r.getLong(2)).to(SortedMap)
+      val dupStart = chunksR.map(_._1).groupBy(identity).filter(_._2.size > 1)
+      log.info(s"Read all ${chunksR.size} ${chunks.size} data entries $dupStart.")
+      val (_, dataGaps) = chunks.foldLeft(0L -> Set.empty[(Long, Long)]) {
+        case ((lastEnd, gaps), (start, stop)) if start < lastEnd =>
+          log.warn(s"Detected overlapping data entry ($start, $stop).")
+          stop -> gaps
+        case ((lastEnd, gaps), (start, stop)) if start == lastEnd =>
+          stop -> gaps
+        case ((lastEnd, gaps), (start, stop)) =>
+          stop -> gaps.incl(lastEnd -> start)
+      }
+      log.info(s"Gaps detected: ${dataGaps.mkString(" ")}")
+      val compactionPotential = dataGaps.map{ case (start, stop) => stop - start }.sum
+      log.info(f"Compaction potential of stage 2: ${compactionPotential/1000000000d}%,.2f GB in ${dataGaps.size} gaps.")
+    }
   }
 
   def orphanDataEntryStats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
