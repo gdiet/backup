@@ -99,8 +99,6 @@ object Database {
     ).tap(_.next()).getLong(1)
     log.info(f"Current size of data storage: ${currentStorageSize/1000000000d}%,.2f GB")
 
-    // TODO during migration remove data blocks with length = 0
-
     { // Run in separate block so the sets can be garbage collected soon
       log.info(s"Checking compaction potential of the data entries:")
       val chunksR =
