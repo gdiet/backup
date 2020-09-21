@@ -285,31 +285,35 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
         case Some(file: FileEntry) =>
           fileHandles.decCount(file.id, { entry =>
             // START asynchronously executed release block
-            // 1. calculate hash
-            val md = MessageDigest.getInstance(hashAlgorithm)
-            entry.read(0, entry.size, lts.read).foreach(md.update)
-            val hash = md.digest()
-            // 2. check if already known
-            sync(db.dataEntry(hash, entry.size)) match {
-              // 3. already known, simply link
-              case Some(dataId) =>
-                log.trace(s"release: $path - content known, linking to dataId $dataId")
-                if (file.dataId != dataId) sync(db.setDataId(file.id, dataId))
-              // 4. not yet known, store
-              case None =>
-                // 4a. reserve storage space
-                val start = sync(startOfFreeData.tap(_ => startOfFreeData += entry.size))
-                // 4b. write to storage
-                entry.read(0, entry.size, lts.read).foldLeft(0L) { case (position, data) =>
-                  lts.write(start + position, data)
-                  position + data.length
-                }
-                // 4c. create data entry
-                sync {
-                  val dataId = db.newDataId(file.id)
-                  if (entry.size > 0) db.insertDataEntry(dataId, 1, entry.size, start, start + entry.size, hash)
-                  log.trace(s"release: $path - new content, dataId $dataId")
-                }
+            // 1. zero size handling - can be the size was > 0 before...
+            if (entry.size == 0) db.setDataId(file.id, -1)
+            else {
+              // 2. calculate hash
+              val md = MessageDigest.getInstance(hashAlgorithm)
+              entry.read(0, entry.size, lts.read).foreach(md.update)
+              val hash = md.digest()
+              // 3. check if already known
+              sync(db.dataEntry(hash, entry.size)) match {
+                // 4. already known, simply link
+                case Some(dataId) =>
+                  log.trace(s"release: $path - content known, linking to dataId $dataId")
+                  if (file.dataId != dataId) sync(db.setDataId(file.id, dataId))
+                // 5. not yet known, store
+                case None =>
+                  // 5a. reserve storage space
+                  val start = sync(startOfFreeData.tap(_ => startOfFreeData += entry.size))
+                  // 5b. write to storage
+                  entry.read(0, entry.size, lts.read).foldLeft(0L) { case (position, data) =>
+                    lts.write(start + position, data)
+                    position + data.length
+                  }
+                  // 5c. create data entry
+                  sync {
+                    val dataId = db.newDataId(file.id)
+                    db.insertDataEntry(dataId, 1, entry.size, start, start + entry.size, hash)
+                    log.trace(s"release: $path - new content, dataId $dataId")
+                  }
+              }
             }
             // END asynchronously executed release block
           })
