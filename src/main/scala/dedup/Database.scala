@@ -118,6 +118,52 @@ object Database {
     }
   }
 
+  def reclaimSpace2(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
+    log.info(s"Starting stage 2 of reclaiming space. This modified the long term store.")
+    log.info(s"After this, database backups can't be fully applied anymore.")
+
+    log.info(s"Reading current size of data storage:")
+    val currentStorageSize = stat.executeQuery(
+      "SELECT MAX(stop) FROM DataEntries"
+    ).tap(_.next()).getLong(1)
+    log.info(f"Current size of data storage: ${currentStorageSize/1000000000d}%,.2f GB")
+
+    log.info(s"Reading data entries:")
+    val chunks =
+      stat.executeQuery("SELECT start, stop FROM DataEntries").seq(r => r.getLong(1) -> r.getLong(2)).to(SortedMap)
+    log.info(s"Read all ${chunks.size} data entries.")
+    val (_, dataGaps) = chunks.foldLeft(0L -> Vector.empty[(Long, Long)]) {
+      case ((lastEnd, gaps), (start, stop)) if start < lastEnd =>
+        log.warn(s"Detected overlapping data entry ($start, $stop).")
+        stop -> gaps
+      case ((lastEnd, gaps), (start, stop)) if start == lastEnd =>
+        stop -> gaps
+      case ((lastEnd, gaps), (start, stop)) =>
+        stop -> gaps.appended(lastEnd -> start)
+    }
+    val compactionPotential = dataGaps.map{ case (start, stop) => stop - start }.sum
+    log.info(f"Compaction potential: ${compactionPotential/1000000000d}%,.2f GB in ${dataGaps.size} gaps.")
+
+    // tail recursive method, each call one move
+    // if chunkToMove.start < gapsToUse.max(stop) then don't
+
+    val (start, stop) :: tail = chunks.toList.reverse
+    val length = stop - start
+
+    val (_, gapsToUse, remainingGaps) = dataGaps.foldLeft((0L, Vector[(Long, Long)](), Vector[(Long, Long)]())) {
+      case ((availableLength, gapsToUse, remainingGaps), (cStart, cStop)) if availableLength == length =>
+        (availableLength, gapsToUse, remainingGaps.appended(cStart -> cStop))
+      case ((availableLength, gapsToUse, remainingGaps), (cStart, cStop)) =>
+        val cLength = cStop - cStart
+        if (availableLength + cLength <= length)
+          (availableLength + cLength, gapsToUse.appended(cStart -> cStop), remainingGaps)
+        else {
+          val divideAt = cStart + length - availableLength
+          (length, gapsToUse.appended(cStart -> divideAt), remainingGaps.appended(divideAt -> cStop))
+        }
+    }
+  }
+
   def orphanDataEntryStats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
     log.info(s"Counting orphan data entries (allow ~ 1 second per 40.000 entries):")
     val count = stat.executeQuery(

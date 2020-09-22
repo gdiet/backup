@@ -39,6 +39,11 @@ object Server extends App {
     val dbDir = Database.dbDir(repo)
     resource(H2.file(dbDir, readonly = false)) (Database.reclaimSpace1(_, keepDeletedDays))
 
+  } else if (commands.contains("reclaimspace2")) {
+    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+    val dbDir = Database.dbDir(repo)
+    resource(H2.file(dbDir, readonly = false)) (Database.reclaimSpace2)
+
   } else if (commands.contains("orphandataentrystats")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
