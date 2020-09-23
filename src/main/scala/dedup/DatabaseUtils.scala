@@ -46,7 +46,9 @@ object DatabaseUtils {
 
     { // Run in separate block so the possibly large collections can be garbage collected soon
       log.info(s"Deleting orphan data entries from storage database...")
-      val dataIdsInTree = stat.executeQuery("SELECT DISTINCT(dataId) FROM TreeEntries").seq(_.getLong(1)).toSet
+      // Note: The WHERE clause also makes sure the 'null' entries are not returned
+      val dataIdsInTree =
+        stat.executeQuery("SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0").seq(_.getLong(1)).toSet
       log.info(s"Number of data entries found in tree database: ${dataIdsInTree.size}")
       val dataIdsInStorage = stat.executeQuery("SELECT id FROM DataEntries").seq(_.getLong(1)).toSet
       log.info(s"Number of data entries in storage database: ${dataIdsInStorage.size}")
@@ -57,7 +59,7 @@ object DatabaseUtils {
       log.info(s"Number of orphan data entries deleted from storage database: ${dataIdsToDelete.size}")
       val orphanDataIdsInTree = (dataIdsInTree -- dataIdsInStorage).size
       if (orphanDataIdsInTree > 0)
-        log.warn(s"Number of orphan data entries found in tree database: ${dataIdsToDelete.size}")
+        log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
     }
 
     { // Run in separate block so the possibly large collections can be garbage collected soon
