@@ -98,9 +98,10 @@ object DBMaintenance {
         entries.head._1 -> entries.sortBy(_._2).map(e => e._3 -> e._4)
       }.values.toSeq.sortBy(-_._2.map(_.start).max) // order by stored last in lts
 
-    // FIXME make @annotation.tailrec
+    @annotation.tailrec
     def reclaim(sortedEntries: Seq[Entry], gaps: Seq[Chunk]): Unit =
-      sortedEntries.headOption.foreach { case (id, chunks) =>
+      if (sortedEntries.nonEmpty) { // can't fold or foreach because that's not tail recursive in Scala 2.13.3
+        val (id, chunks) = sortedEntries.head
         val entrySize = combinedSize(chunks)
         assert(entrySize > 0, "entry size is zero")
         val (compactionSize, gapsToUse, gapsNotUsed) =
