@@ -172,13 +172,6 @@ object Database {
       LazyList.continually(Option.when(rs.next)(f(rs))).takeWhile(_.isDefined).flatten.to(List)
   }
 
-  implicit class RichPreparedStatement(val stat: PreparedStatement) extends AnyVal {
-    def setLongOption(index: Int, value: Option[Long]): Unit = value match {
-      case None => stat.setNull(index, java.sql.Types.BIGINT)
-      case Some(t) => stat.setLong(index, t)
-    }
-  }
-
   sealed trait TreeEntry { def parent: Long; def id: Long; def name: String }
   object TreeEntry {
     def apply(parentId: Long, name: String, rs: ResultSet): TreeEntry = rs.opt(_.getLong(3)) match {
