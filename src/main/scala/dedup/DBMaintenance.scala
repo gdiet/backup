@@ -63,8 +63,6 @@ object DBMaintenance {
         log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
     }
 
-    // FIXME delete zero-length chunks from storage database?
-
     { // Run in separate block so the possibly large collections can be garbage collected soon
       log.info(s"Checking compaction potential of the data entries:")
       val dataChunks = allDataChunks(stat).to(SortedMap)
@@ -98,6 +96,15 @@ object DBMaintenance {
         entries.head._1 -> entries.sortBy(_._2).map(e => e._3 -> e._4)
       }.values.toSeq.sortBy(-_._2.map(_.start).max) // order by stored last in lts
 
+    val db = new Database(connection)
+    val uDataId = connection.prepareStatement("UPDATE TreeEntries SET dataId = ? WHERE dataId = ?")
+    def updateDataId(oldId: Long, newId: Long): Unit = {
+      uDataId.setLong(1, newId)
+      uDataId.setLong(2, oldId)
+      require(uDataId.executeUpdate() > 0, s"updateDataId update count not positive for oldId $oldId newId $newId")
+    }
+
+
     @annotation.tailrec
     def reclaim(sortedEntries: Seq[Entry], gaps: Seq[Chunk]): Unit =
       if (sortedEntries.nonEmpty) { // can't fold or foreach because that's not tail recursive in Scala 2.13.3
@@ -119,9 +126,14 @@ object DBMaintenance {
           }
         if (compactionSize == entrySize && gapsToUse.last.stop <= chunks.map(_.start).max) {
           println("compaction possible, continuing...")
-          println(s"1) store in lts at $gapsToUse")
-          println(s"2) create new data entry for $gapsToUse")
-          println(s"3) replace old data entry $id with new data entry in tree entries")
+          println(s"1) store in lts data for $gapsToUse") // FIXME do it
+          val newId = db.nextId
+          println(s"2) store in database new data entry $newId for $gapsToUse")
+          gapsToUse.zipWithIndex.foreach { case ((start, stop), index) =>
+            db.insertDataEntry(newId, index + 1, combinedSize(gapsToUse), start, stop, Array()) // FIXME add hash
+          }
+          println(s"3) replace old data entry $id with new data entry $newId in tree entries")
+          updateDataId(id, newId)
           reclaim(sortedEntries.drop(1), gapsNotUsed)
         } else {
           assert(compactionSize < entrySize, s"compaction size $compactionSize > entry size $entrySize")

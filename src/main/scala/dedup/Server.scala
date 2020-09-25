@@ -11,7 +11,7 @@ import jnr.ffi.Platform.{OS, getNativePlatform}
 import jnr.ffi.{Platform, Pointer}
 import org.slf4j.LoggerFactory
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
-import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
+import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 
 import scala.util.Using.resource
 

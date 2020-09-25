@@ -2,7 +2,7 @@ package dedup
 
 import java.io.File
 import java.lang.System.{currentTimeMillis => now}
-import java.sql.{Connection, PreparedStatement, ResultSet, Statement, Types}
+import java.sql.{Connection, ResultSet, Statement, Types}
 
 import org.slf4j.{Logger, LoggerFactory}
 
@@ -292,7 +292,7 @@ class Database(connection: Connection) { import Database._
   }
 
   private val qNextId = connection.prepareStatement("SELECT NEXT VALUE FOR idSeq")
-  private def nextId: Long = resource(qNextId.executeQuery())(_.tap(_.next()).getLong(1))
+  def nextId: Long = resource(qNextId.executeQuery())(_.tap(_.next()).getLong(1))
 
   // Generated keys seem not to be available for sql update, so this is two SQL commands
   def newDataId(id: Long): Long = nextId.tap(setDataId(id, _))
@@ -318,7 +318,7 @@ class Database(connection: Connection) { import Database._
   private val iDataEntry = connection.prepareStatement(
     "INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)"
   )
-  def insertDataEntry(dataId: Long, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = {
+  def insertDataEntry(dataId: Long, seq: Int, length: => Long, start: Long, stop: Long, hash: => Array[Byte]): Unit = {
     require(seq > 0, s"seq not positive: $seq")
     iDataEntry.setLong(1, dataId)
     iDataEntry.setInt(2, seq)
