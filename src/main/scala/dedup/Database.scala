@@ -6,7 +6,6 @@ import java.sql.{Connection, PreparedStatement, ResultSet, Statement, Types}
 
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.collection.SortedMap
 import scala.util.Using.resource
 
 object Database {
@@ -104,7 +103,7 @@ object Database {
   def compactionStats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
     log.info(s"Compaction potential of datastore:")
     val dataGaps = gaps(stat)
-    val compactionPotential = dataGaps.map{ case (start, stop) => stop - start }.sum
+    val compactionPotential = combinedSize(dataGaps)
     log.info(f"${dataGaps.size} gaps with total ${compactionPotential / 1000000}%,d MB ($compactionPotential%,d bytes)")
   }
 

@@ -8,6 +8,15 @@ package object dedup extends scala.util.ChainingSyntax {
 
   val copyWhenMoving = new AtomicBoolean(false)
 
+  type Chunk = (Long, Long)
+
+  implicit class ChunkDecorator(chunk: Chunk) {
+    def start: Long = chunk._1
+    def stop: Long = chunk._2
+    def size: Long = chunk.pipe { case (start, stop) => stop - start }
+  }
+  def combinedSize(chunks: Seq[Chunk]): Long = chunks.map(_.size).sum
+
   // TODO replace "require" with assumeLogged/assertLogged?
   def assumeLogged(condition: Boolean, message: => String)(implicit log: Logger): Unit =
     if (!condition) log.error(s"Assumption failed: $message", new IllegalStateException(""))

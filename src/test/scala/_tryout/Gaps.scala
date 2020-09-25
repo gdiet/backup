@@ -57,7 +57,7 @@ object Gaps2 extends App {
 
   val maybeEntry = sortedEntries.headOption
   val remainingEntries = sortedEntries.drop(1)
-  val remainingGaps = dataGaps
+  val remainingGaps = dataGaps :+ (70L -> 100L)
 
   maybeEntry.foreach { case (id, chunks) =>
     val entrySize = chunks.map{ case (start, stop) => stop - start }.sum
