@@ -63,7 +63,7 @@ object DBMaintenance {
         log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
     }
 
-    // FIXME delete zero-length chunks from storage database
+    // FIXME delete zero-length chunks from storage database?
 
     { // Run in separate block so the possibly large collections can be garbage collected soon
       log.info(s"Checking compaction potential of the data entries:")
@@ -98,12 +98,13 @@ object DBMaintenance {
         entries.head._1 -> entries.sortBy(_._2).map(e => e._3 -> e._4)
       }.values.toSeq.sortBy(-_._2.map(_.start).max) // order by stored last in lts
 
-    def reclaim(sortedEntries: Seq[Entry], remainingGaps: Seq[Chunk]): Unit =
+    // FIXME make @annotation.tailrec
+    def reclaim(sortedEntries: Seq[Entry], gaps: Seq[Chunk]): Unit =
       sortedEntries.headOption.foreach { case (id, chunks) =>
         val entrySize = combinedSize(chunks)
         assert(entrySize > 0, "entry size is zero")
         val (compactionSize, gapsToUse, gapsNotUsed) =
-          remainingGaps.foldLeft((0L, Vector.empty[Chunk], Vector.empty[Chunk])) {
+          gaps.foldLeft((0L, Vector.empty[Chunk], Vector.empty[Chunk])) {
             case ((reservedLength, gapsToUse, otherGaps), gap) if reservedLength == entrySize =>
               (reservedLength, gapsToUse, otherGaps.appended(gap))
             case ((reservedLength, gapsToUse, otherGaps), gap) =>
@@ -119,8 +120,8 @@ object DBMaintenance {
           println("compaction possible, continuing...")
           println(s"1) store in lts at $gapsToUse")
           println(s"2) create new data entry for $gapsToUse")
-          println(s"3) replace old data entry with new data entry in tree entries")
-          println(s"4) recurse")
+          println(s"3) replace old data entry $id with new data entry in tree entries")
+          reclaim(sortedEntries.drop(1), gapsNotUsed)
         } else {
           assert(compactionSize < entrySize, s"compaction size $compactionSize > entry size $entrySize")
           println("no more compaction possible, stopping...")
