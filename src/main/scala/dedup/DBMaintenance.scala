@@ -97,10 +97,16 @@ object DBMaintenance {
       }.values.toSeq.sortBy(-_._2.map(_.start).max) // order by stored last in lts
 
     val db = new Database(connection)
+    var progressLoggedLast = now
 
     @annotation.tailrec // FIXME return actual compaction
-    def reclaim(sortedEntries: Seq[Entry], gaps: Seq[Chunk]): Unit =
-      if (sortedEntries.nonEmpty) { // can't fold or foreach because that's not tail recursive in Scala 2.13.3
+    def reclaim(sortedEntries: Seq[Entry], gaps: Seq[Chunk], reclaimed: Long): Long =
+      if (sortedEntries.isEmpty) reclaimed else { // can't fold or foreach because that's not tail recursive in Scala 2.13.3
+        if (now > progressLoggedLast + 1000) {
+          log.info(f"In progress... already reclaimed ${reclaimed/1000000000d}%,.4f GB of ${compactionPotential/1000000000d}%,.2f GB.")
+          progressLoggedLast = now
+        }
+
         val (id, chunks) = sortedEntries.head
         val entrySize = combinedSize(chunks)
         assert(entrySize > 0, "entry size is zero")
@@ -118,78 +124,29 @@ object DBMaintenance {
               }
           }
         if (compactionSize == entrySize && gapsToUse.last.stop <= chunks.map(_.start).max) {
-          println("compaction possible, continuing...")
-          println(s"1) store in lts data for $gapsToUse") // FIXME do it
+          log.debug(s"Copying in lts data of entry $id to $gapsToUse")
+          Thread.sleep(100) // FIXME store in lts data
           val newId = db.nextId
-          println(s"2) store in database new data entry $newId for $gapsToUse")
           connection.transaction {
+            log.debug(s"Storing in database new data entry $newId for $gapsToUse")
             gapsToUse.zipWithIndex.foreach { case ((start, stop), index) =>
               db.insertDataEntry(newId, index + 1, combinedSize(gapsToUse), start, stop, Array()) // FIXME add hash
             }
-            println(s"3) replace old data entry $id with new data entry $newId in tree entries")
+            log.debug(s"Replacing old data entry $id with new data entry $newId in tree entries")
             require(stat.executeUpdate(s"UPDATE TreeEntries SET dataId = $newId WHERE dataId = $id") > 0,
               s"No tree entry found to replace data entry $id in.")
+            log.debug(s"Deleting old data entry $id from storage database.")
             require(stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = $id") > 0,
               s"No data entry $id found when trying to delete it.")
           }
-          reclaim(sortedEntries.drop(1), gapsNotUsed)
+          reclaim(sortedEntries.drop(1), gapsNotUsed, reclaimed + compactionSize)
         } else {
           assert(compactionSize < entrySize, s"compaction size $compactionSize > entry size $entrySize")
-          println("no more compaction possible, stopping...")
+          reclaimed
         }
       }
 
-    reclaim(sortedEntries, dataGaps)
-
-    //    {
-//      val sortedEntries =
-//        dataEntries
-//          .groupBy(_._1)                                  // group by id
-//          .view.mapValues { entries =>
-//            entries.head._1 ->                            // id -> ..
-//              entries.sortBy(_._2).map(e => e._3 -> e._4) // .. -> Seq(start, stop) ordered by seq
-//          }
-//          .values.toSeq
-//          .sortBy(_._2.map(_._1).max)                     // order by stored last in lts
-//      val maybeEntry = sortedEntries.lastOption
-//      val remainingEntries = sortedEntries.dropRight(1)
-//
-//      maybeEntry.foreach { case (id, chunks) =>
-//      }
-//    }
-//    log.info(s"Reading data entries:")
-//    val chunks =
-//      stat.executeQuery("SELECT start, stop FROM DataEntries").seq(r => r.getLong(1) -> r.getLong(2)).to(SortedMap)
-//    log.info(s"Read all ${chunks.size} data entries.")
-//    val (_, dataGaps) = chunks.foldLeft(0L -> Vector.empty[(Long, Long)]) {
-//      case ((lastEnd, gaps), (start, stop)) if start < lastEnd =>
-//        log.warn(s"Detected overlapping data entry ($start, $stop).")
-//        stop -> gaps
-//      case ((lastEnd, gaps), (start, stop)) if start == lastEnd =>
-//        stop -> gaps
-//      case ((lastEnd, gaps), (start, stop)) =>
-//        stop -> gaps.appended(lastEnd -> start)
-//    }
-//    val compactionPotential = dataGaps.map{ case (start, stop) => stop - start }.sum
-//    log.info(f"Compaction potential: ${compactionPotential/1000000000d}%,.2f GB in ${dataGaps.size} gaps.")
-//
-//    // tail recursive method, each call one move
-//    // if chunkToMove.start < gapsToUse.max(stop) then don't
-//
-//    val (start, stop) :: tail = chunks.toList.reverse
-//    val length = stop - start
-//
-//    val (_, gapsToUse, remainingGaps) = dataGaps.foldLeft((0L, Vector[(Long, Long)](), Vector[(Long, Long)]())) {
-//      case ((availableLength, gapsToUse, remainingGaps), (cStart, cStop)) if availableLength == length =>
-//        (availableLength, gapsToUse, remainingGaps.appended(cStart -> cStop))
-//      case ((availableLength, gapsToUse, remainingGaps), (cStart, cStop)) =>
-//        val cLength = cStop - cStart
-//        if (availableLength + cLength <= length)
-//          (availableLength + cLength, gapsToUse.appended(cStart -> cStop), remainingGaps)
-//        else {
-//          val divideAt = cStart + length - availableLength
-//          (length, gapsToUse.appended(cStart -> divideAt), remainingGaps.appended(divideAt -> cStop))
-//        }
-//    }
+    val reclaimed = reclaim(sortedEntries, dataGaps, 0)
+    log.info(f"Reclaimed ${reclaimed/1000000000d}%,.2f GB.")
   }
 }
