@@ -68,7 +68,7 @@ object DBMaintenance {
       val dataChunks = allDataChunks(stat).to(SortedMap)
       log.info(s"Number of data chunks in storage database: ${dataChunks.size}")
       val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks)
-      log.info(f"Current size of data storage: ${endOfStorage/1000000000d}%,.2f GB")
+      log.info(f"Current size of data storage: ${readable(endOfStorage)}B")
       val compactionPotential = combinedSize(dataGaps)
       log.info(f"Compaction potential of stage 2: ${compactionPotential/1000000000d}%,.2f GB in ${dataGaps.size} gaps.")
     }
@@ -84,9 +84,9 @@ object DBMaintenance {
     val dataChunks = dataEntries.map(e => e._3 -> e._4).to(SortedMap)
     log.info(s"Number of data chunks in storage database: ${dataChunks.size}")
     val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks)
-    log.info(f"Current size of data storage: ${endOfStorage/1000000000d}%,.2f GB")
-    val compactionPotential = combinedSize(dataGaps)
-    log.info(f"Compaction potential: ${compactionPotential/1000000000d}%,.2f GB in ${dataGaps.size} gaps.")
+    log.info(f"Current size of data storage: ${readable(endOfStorage)}B")
+    val compactionPotentialString = readable(combinedSize(dataGaps))+"B"
+    log.info(f"Compaction potential: $compactionPotentialString in ${dataGaps.size} gaps.")
 
     type Entry = (Long, Seq[Chunk])
     /** Seq(dataId -> Seq(chunk)), ordered by maximum chunk position descending */
@@ -102,8 +102,8 @@ object DBMaintenance {
     @annotation.tailrec // FIXME return actual compaction
     def reclaim(sortedEntries: Seq[Entry], gaps: Seq[Chunk], reclaimed: Long): Long =
       if (sortedEntries.isEmpty) reclaimed else { // can't fold or foreach because that's not tail recursive in Scala 2.13.3
-        if (now > progressLoggedLast + 1000) {
-          log.info(f"In progress... already reclaimed ${reclaimed/1000000000d}%,.4f GB of ${compactionPotential/1000000000d}%,.2f GB.")
+        if (now > progressLoggedLast + 10000) {
+          log.info(f"In progress... already reclaimed ${readable(reclaimed)}B of $compactionPotentialString.")
           progressLoggedLast = now
         }
 
