@@ -162,6 +162,14 @@ object Database {
 //    log.info(s"### ${(deleted--current).size} ${(deleted--current).take(100)}")
   }
 
+  implicit class RichConnection(val c: Connection) extends AnyVal {
+    /** Don't use nested or multithreaded. */
+    def transaction[T](f: => T): T =
+      try { c.setAutoCommit(false); f.tap(_ => c.commit()) }
+      catch { case t: Throwable => c.rollback(); throw t }
+      finally c.setAutoCommit(false)
+  }
+
   implicit class RichResultSet(val rs: ResultSet) extends AnyVal {
     // TODO ResultSets should be handled as closeable resources
     def opt[T](f: ResultSet => T): Option[T] =

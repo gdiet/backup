@@ -97,15 +97,8 @@ object DBMaintenance {
       }.values.toSeq.sortBy(-_._2.map(_.start).max) // order by stored last in lts
 
     val db = new Database(connection)
-    val uDataId = connection.prepareStatement("UPDATE TreeEntries SET dataId = ? WHERE dataId = ?")
-    def updateDataId(oldId: Long, newId: Long): Unit = {
-      uDataId.setLong(1, newId)
-      uDataId.setLong(2, oldId)
-      require(uDataId.executeUpdate() > 0, s"updateDataId update count not positive for oldId $oldId newId $newId")
-    }
 
-
-    @annotation.tailrec
+    @annotation.tailrec // FIXME return actual compaction
     def reclaim(sortedEntries: Seq[Entry], gaps: Seq[Chunk]): Unit =
       if (sortedEntries.nonEmpty) { // can't fold or foreach because that's not tail recursive in Scala 2.13.3
         val (id, chunks) = sortedEntries.head
@@ -129,11 +122,16 @@ object DBMaintenance {
           println(s"1) store in lts data for $gapsToUse") // FIXME do it
           val newId = db.nextId
           println(s"2) store in database new data entry $newId for $gapsToUse")
-          gapsToUse.zipWithIndex.foreach { case ((start, stop), index) =>
-            db.insertDataEntry(newId, index + 1, combinedSize(gapsToUse), start, stop, Array()) // FIXME add hash
+          connection.transaction {
+            gapsToUse.zipWithIndex.foreach { case ((start, stop), index) =>
+              db.insertDataEntry(newId, index + 1, combinedSize(gapsToUse), start, stop, Array()) // FIXME add hash
+            }
+            println(s"3) replace old data entry $id with new data entry $newId in tree entries")
+            require(stat.executeUpdate(s"UPDATE TreeEntries SET dataId = $newId WHERE dataId = $id") > 0,
+              s"No tree entry found to replace data entry $id in.")
+            require(stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = $id") > 0,
+              s"No data entry $id found when trying to delete it.")
           }
-          println(s"3) replace old data entry $id with new data entry $newId in tree entries")
-          updateDataId(id, newId)
           reclaim(sortedEntries.drop(1), gapsNotUsed)
         } else {
           assert(compactionSize < entrySize, s"compaction size $compactionSize > entry size $entrySize")
@@ -142,9 +140,6 @@ object DBMaintenance {
       }
 
     reclaim(sortedEntries, dataGaps)
-    // TODO delete orphan data entries
-
-
 
     //    {
 //      val sortedEntries =
