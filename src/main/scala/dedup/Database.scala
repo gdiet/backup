@@ -66,9 +66,10 @@ object Database {
   def allDataChunks(statement: Statement): Seq[(Long, Long)] =
     statement.executeQuery("SELECT start, stop FROM DataEntries").seq(r => r.getLong(1) -> r.getLong(2))
 
-  def allDataEntries(statement: Statement): Seq[(Long, Int, Long, Long)] =
-    statement.executeQuery("SELECT id, seq, start, stop FROM DataEntries")
-      .seq(r => (r.getLong(1), r.getInt(2), r.getLong(3), r.getLong(4)))
+  /** @return Seq(id, Option(size), Option(hash), seq, start, stop) */
+  def allDataEntries(statement: Statement): Seq[(Long, Option[Long], Option[Array[Byte]], Int, Long, Long)] =
+    statement.executeQuery("SELECT id, length, hash, seq, start, stop FROM DataEntries")
+      .seq(r => (r.getLong(1), r.opt(_.getLong(2)), r.opt(_.getBytes(3)), r.getInt(4), r.getLong(5), r.getLong(6)))
 
   def orphanDataEntryStats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
     log.info(s"Counting orphan data entries (allow ~ 1 second per 40.000 entries):")

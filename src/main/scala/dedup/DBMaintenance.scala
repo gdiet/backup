@@ -81,20 +81,23 @@ object DBMaintenance {
 
     val dataEntries = allDataEntries(stat)
     log.info(s"Number of data entries in storage database: ${dataEntries.size}")
-    val dataChunks = dataEntries.map(e => e._3 -> e._4).to(SortedMap)
+    val dataChunks = dataEntries.map(e => e._5 -> e._6).to(SortedMap)
     log.info(s"Number of data chunks in storage database: ${dataChunks.size}")
     val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks)
     log.info(s"Current size of data storage: ${readable(endOfStorage)}B")
     val compactionPotentialString = readable(combinedSize(dataGaps))+"B"
     log.info(s"Compaction potential: $compactionPotentialString in ${dataGaps.size} gaps.")
 
-    type Entry = (Long, Seq[Chunk])
+    type Entry = (Long, Long, Array[Byte], Seq[Chunk])
     /** Seq(dataId -> Seq(chunk)), ordered by maximum chunk position descending */
     val sortedEntries: Seq[Entry] =
       dataEntries.groupBy(_._1).view.mapValues { entries => // group by id
-        //  dataId      ->     Seq(start, stop) ordered by seq
-        entries.head._1 -> entries.sortBy(_._2).map(e => e._3 -> e._4)
-      }.values.toSeq.sortBy(-_._2.map(_.start).max) // order by stored last in lts
+        val sorted = entries.sortBy(_._4)
+        val (id, Some(size), Some(hash), _, _, _) = sorted.head
+        val chunks = sorted.map(e => e._5 -> e._6)
+        assert(combinedSize(chunks) == size, s"Size mismatch for dataId $id: $size is not length of chunks $chunks")
+        (id, size, hash, sorted.map(e => e._5 -> e._6))
+      }.values.toSeq.sortBy(-_._4.map(_.start).max) // order by stored last in lts
 
     val db = new Database(connection)
     var progressLoggedLast = now
@@ -103,12 +106,11 @@ object DBMaintenance {
     def reclaim(sortedEntries: Seq[Entry], gaps: Seq[Chunk], reclaimed: Long): Long =
       if (sortedEntries.isEmpty) reclaimed else { // can't fold or foreach because that's not tail recursive in Scala 2.13.3
         if (now > progressLoggedLast + 10000) {
-          log.info(s"In progress... already reclaimed ${readable(reclaimed)}B of $compactionPotentialString.")
+          log.info(s"In progress... reclaimed ${readable(reclaimed)}B of $compactionPotentialString.")
           progressLoggedLast = now
         }
 
-        val (id, chunks) = sortedEntries.head
-        val entrySize = combinedSize(chunks)
+        val (id, entrySize, hash, chunks) = sortedEntries.head
         assert(entrySize > 0, "entry size is zero")
         val (compactionSize, gapsToUse, gapsNotUsed) =
           gaps.foldLeft((0L, Vector.empty[Chunk], Vector.empty[Chunk])) {
@@ -124,13 +126,14 @@ object DBMaintenance {
               }
           }
         if (compactionSize == entrySize && gapsToUse.last.stop <= chunks.map(_.start).max) {
+          assert(entrySize == combinedSize(gapsToUse), s"Size mismatch between entry $entrySize and gaps $gapsToUse")
           log.debug(s"Copying in lts data of entry $id to $gapsToUse")
           Thread.sleep(100) // FIXME store in lts data
           val newId = db.nextId
           connection.transaction {
             log.debug(s"Storing in database new data entry $newId for $gapsToUse")
             gapsToUse.zipWithIndex.foreach { case ((start, stop), index) =>
-              db.insertDataEntry(newId, index + 1, combinedSize(gapsToUse), start, stop, Array()) // FIXME add hash
+              db.insertDataEntry(newId, index + 1, entrySize, start, stop, hash) // FIXME add hash
             }
             log.debug(s"Replacing old data entry $id with new data entry $newId in tree entries")
             require(stat.executeUpdate(s"UPDATE TreeEntries SET dataId = $newId WHERE dataId = $id") > 0,
