@@ -102,7 +102,7 @@ object DBMaintenance {
     val db = new Database(connection)
     var progressLoggedLast = now
 
-    @annotation.tailrec // FIXME return actual compaction
+    @annotation.tailrec
     def reclaim(sortedEntries: Seq[Entry], gaps: Seq[Chunk], reclaimed: Long): Long =
       if (sortedEntries.isEmpty) reclaimed else { // can't fold or foreach because that's not tail recursive in Scala 2.13.3
         if (now > progressLoggedLast + 10000) {
@@ -133,7 +133,7 @@ object DBMaintenance {
           connection.transaction {
             log.debug(s"Storing in database new data entry $newId for $gapsToUse")
             gapsToUse.zipWithIndex.foreach { case ((start, stop), index) =>
-              db.insertDataEntry(newId, index + 1, entrySize, start, stop, hash) // FIXME add hash
+              db.insertDataEntry(newId, index + 1, entrySize, start, stop, hash)
             }
             log.debug(s"Replacing old data entry $id with new data entry $newId in tree entries")
             require(stat.executeUpdate(s"UPDATE TreeEntries SET dataId = $newId WHERE dataId = $id") > 0,

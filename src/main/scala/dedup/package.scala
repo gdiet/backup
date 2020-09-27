@@ -25,7 +25,7 @@ package object dedup extends scala.util.ChainingSyntax {
     else if (l < 1000000000000L) "%,.2f G".format(l/1000000000d)
     else "%,.2f T".format(l/1000000000000d)
 
-  // TODO replace "require" with assumeLogged/assertLogged?
+  // TODO replace "require" and "assert" with assumeLogged/assertLogged?
   def assumeLogged(condition: Boolean, message: => String)(implicit log: Logger): Unit =
     if (!condition) log.error(s"Assumption failed: $message", new IllegalStateException(""))
 
