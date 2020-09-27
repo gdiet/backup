@@ -15,7 +15,7 @@ import org.slf4j.{Logger, LoggerFactory}
 class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess[RandomAccessFile] {
   import LongTermStore._
 
-  implicit private val log: Logger = LoggerFactory.getLogger(getClass)
+  implicit private val log: Logger = LoggerFactory.getLogger("dedup.Store")
   protected def openResource(path: String, forWrite: Boolean): RandomAccessFile = {
     log.debug(s"Open data file $path ${if (forWrite) "for writing" else "read-only"}")
     val file = new File(dataDir, path)
