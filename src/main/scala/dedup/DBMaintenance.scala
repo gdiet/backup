@@ -161,7 +161,7 @@ object DBMaintenance {
           }
           reclaim(sortedEntries.drop(1), gapsNotUsed, reclaimed + compactionSize)
         } else {
-          assert(compactionSize < entrySize, s"compaction size $compactionSize > entry size $entrySize")
+          assert(compactionSize <= entrySize, s"compaction size $compactionSize > entry size $entrySize")
           reclaimed
         }
       }
