@@ -2,7 +2,11 @@ tag             database version
 2.4             2
 2.3 and before  1
 
-start migration database version 1 -> 2
+Migration 2.3 -> 2.4:
+
+a) Set long term store files to "r/w".
+
+b) Migrate database version 1 -> 2
 
 CREATE TABLE Context (
   key   VARCHAR(255) NOT NULL,
@@ -24,4 +28,4 @@ DELETE FROM DataEntries WHERE start = stop;
 // clean up unused data references
 UPDATE TreeEntries SET dataId = -1 WHERE id IN (SELECT t.id FROM TreeEntries t LEFT JOIN DataEntries d ON t.dataId = d.id WHERE t.dataId IS NOT NULL AND d.id IS NULL);
 
-end migration database version 1 -> 2
+>> End of database migration version 1 -> 2 <<

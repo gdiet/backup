@@ -4,6 +4,7 @@ import java.lang.System.{currentTimeMillis => now}
 import java.sql.Connection
 
 import dedup.Database._
+import dedup.store.LongTermStore
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.SortedMap
@@ -75,7 +76,7 @@ object DBMaintenance {
     log.info(s"Finished stage 1 of reclaiming space. Undo by restoring the database from a backup.")
   }
 
-  def reclaimSpace2(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
+  def reclaimSpace2(connection: Connection, lts: LongTermStore): Unit = resource(connection.createStatement()) { stat =>
     log.info(s"Starting stage 2 of reclaiming space. This modifies the long term store.")
     log.info(s"After this, database backups can't be fully applied anymore.")
 

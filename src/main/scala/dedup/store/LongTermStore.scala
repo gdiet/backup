@@ -22,7 +22,10 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess[Ran
     if (forWrite) file.getParentFile.mkdirs()
     new RandomAccessFile(file, if (forWrite) "rw" else "r")
   }
-  protected def closeResource(path: String, r: RandomAccessFile): Unit = { log.debug(s"Closed data file $path"); r.close() }
+  protected def closeResource(path: String, r: RandomAccessFile): Unit = {
+    r.close()
+    log.debug(s"Closed data file $path")
+  }
 
   def write(position: Long, data: Array[Byte]): Unit = {
     require(!readOnly, "Long term store is read-only, can't write.")
@@ -49,19 +52,14 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess[Ran
     if (size > bytesRequested) bytes ++ read(position + bytesRequested, size - bytesRequested)
     else bytes
   }
-
-  def writeProtectCompleteFiles(startPosition: Long, endPosition: Long): Unit = {
-    for {position <- startPosition until endPosition-fileSize by fileSize} {
-      val (path, _, _) = pathOffsetSize(position, 0)
-      log.info(s"Write protecting $path")
-      new File(dataDir, path).setReadOnly()
-    }
-  }
 }
-object LongTermStore {
-  val fileSize = 100000000 // 100 MB, must be Int (not Long), don't change without migration script
 
-  def pathOffsetSize(position: Long, size: Int): (String, Long, Int) = {
+object LongTermStore {
+  def ltsDir(repo: File): File = new File(repo, "data").tap { d => d.mkdirs(); require(d.isDirectory) }
+
+  private[store] val fileSize = 100000000 // 100 MB, must be Int (not Long), don't change without migration script
+
+  private[store] def pathOffsetSize(position: Long, size: Int): (String, Long, Int) = {
     val positionInFile = (position % fileSize).toInt     // 100 MB per file
     val dir2 = f"${position / fileSize / 100 % 100}%02d" //  10 GB per dir
     val dir1 = f"${position / fileSize / 100 / 100}%02d" //   1 TB per dir

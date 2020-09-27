@@ -13,7 +13,7 @@ import org.slf4j.LoggerFactory
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 
-import scala.util.Using.resource
+import scala.util.Using.{resource, resources}
 
 object Server extends App {
   private val log = LoggerFactory.getLogger("dedup.Serve")
@@ -42,7 +42,9 @@ object Server extends App {
   } else if (commands.contains("reclaimspace2")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
-    resource(H2.file(dbDir, readonly = false)) (DBMaintenance.reclaimSpace2)
+    resources(H2.file(dbDir, readonly = false), new LongTermStore(LongTermStore.ltsDir(repo), false)) {
+      case (db, lts) => DBMaintenance.reclaimSpace2(db, lts)
+    }
 
   } else if (commands.contains("orphandataentrystats")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
@@ -91,9 +93,9 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
   require(dbDir.exists(), s"Database directory $dbDir does not exist.")
 
   private val db = new Database(H2.file(dbDir, readonly = false))
-  private val dataDir = new File(repo, "data").tap{d => d.mkdirs(); require(d.isDirectory)}
   private val hashAlgorithm = "MD5"
   private val rights = if (readonly) 365 else 511 // o555 else o777
+  private val dataDir = LongTermStore.ltsDir(repo)
   private val lts = new LongTermStore(dataDir, readonly)
 
   private def split(path: String): Array[String] = path.split("/").filter(_.nonEmpty)
@@ -112,7 +114,6 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   override def umount(): Unit =
     sync(s"Unmount repository from $mountPoint") {
-      if (!readonly) lts.writeProtectCompleteFiles(startOfFreeDataAtStart, startOfFreeData)
       lts.close()
       OK
     }
@@ -249,8 +250,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
   // #########
 
   private val fileHandles = new FileHandles(tempDir)
-  private val startOfFreeDataAtStart = db.startOfFreeData
-  private var startOfFreeData = startOfFreeDataAtStart
+  private var startOfFreeData = db.startOfFreeData
   log.info(s"Data stored: ${startOfFreeData / 1000000000}GB")
 
   // 2020.09.18 perfect
