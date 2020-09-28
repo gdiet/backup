@@ -159,6 +159,10 @@ object DBMaintenance {
           reclaim(sortedEntries.drop(1), gapsNotUsed, reclaimed + compactionSize)
         } else {
           assert(compactionSize <= entrySize, s"compaction size $compactionSize > entry size $entrySize")
+          if (compactionSize == entrySize)
+            log.info(s"Finished reclaiming: Reordering entry $id would take high effort.")
+          else
+            log.info(s"Finished reclaiming: Entry $id size ${readable(entrySize)}B is larger than remaining compaction potential.")
           reclaimed
         }
       }
