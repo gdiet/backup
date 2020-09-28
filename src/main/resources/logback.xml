@@ -14,9 +14,12 @@
 
     <appender name="timeBasedFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>log/dedupfs.log</file>
-        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>log/old/dedupfs.%d.gz</fileNamePattern>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>log/old/dedupfs.%d.%i.gz</fileNamePattern>
+            <!-- each file should be at most 5MB, keep 10 days worth of history, but at most 1GB -->
             <maxHistory>100</maxHistory>
+            <maxFileSize>5MB</maxFileSize>
+            <totalSizeCap>1GB</totalSizeCap>
         </rollingPolicy>
         <encoder>
             <pattern>%date %-5level %logger{36} - %msg%n</pattern>
