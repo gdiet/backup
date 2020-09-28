@@ -266,7 +266,10 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
           val name = parts.last
           db.child(dir.id, name) match {
             case Some(_) => EEXIST // file (or directory with the same name) already exists
-            case None => fileHandles.create(db.mkFile(dir.id, name, now), Parts(Seq())); OK
+            case None =>
+              val id = db.mkFile(dir.id, name, now)
+              log.debug(s"create() - create handle for $id $path")
+              fileHandles.create(id, Parts(Seq())); OK
           }
       }
     }
@@ -277,7 +280,9 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
       entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
-        case Some(file: FileEntry) => fileHandles.create(file.id, db.parts(file.dataId)); OK
+        case Some(file: FileEntry) =>
+          log.debug(s"open() - create handle for ${file.id} $path")
+          fileHandles.createOrIncCount(file.id, db.parts(file.dataId)); OK
       }
     }
 
@@ -288,6 +293,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
         case Some(file: FileEntry) =>
+          log.debug(s"release() - decCount for ${file.id} $path")
           fileHandles.decCount(file.id, { entry =>
             // START asynchronously executed release block
             // 1. zero size handling - can be the size was > 0 before...
@@ -388,7 +394,11 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
         case Some(_: DirEntry) => EISDIR
         case Some(file: FileEntry) =>
           if (!db.delete(file.id)) EIO
-          else { fileHandles.delete(file.id); OK }
+          else {
+            log.debug(s"unlink() - drop handle for ${file.id} $path")
+            fileHandles.delete(file.id)
+            OK
+          }
       }
     }
 }

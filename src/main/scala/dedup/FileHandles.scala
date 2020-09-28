@@ -19,21 +19,27 @@ class FileHandles(tempDir: File) {
   def create(id: Long, ltsParts: Parts): Unit =
     require(entries.put(id, 1 -> new CacheEntry(ltsParts, tempDir)).isEmpty, s"entries already contained $id")
 
+  def createOrIncCount(id: Long, ltsParts: => Parts): Unit = {
+    entries.get(id) match {
+      case None =>
+        log.debug(s"createOrIncCount() - create $id")
+        create(id, ltsParts)
+      case Some(count -> entry) =>
+        log.debug(s"createOrIncCount() - increment count to ${count+1} for $id")
+        entries.update(id, count + 1 -> entry)
+    }
+  }
+
   def cacheEntry(id: Long): Option[CacheEntry] =
     entries.get(id).map(_._2)
-
-  def incCount(id: Long): Unit =
-    entries.updateWith(id) {
-      case None => throw new IllegalArgumentException(s"entry $id not found")
-      case Some(count -> entry) => Some(count + 1 -> entry)
-    }
 
   /** @param onReleased Asynchronously executed callback. */
   def decCount(id: Long, onReleased: CacheEntry => Unit): Unit =
     entries.get(id) match {
       case None => throw new IllegalArgumentException(s"entry $id not found")
       case Some(1 -> entry) =>
-        entries -= id
+        log.debug(s"decCount() - drop handle for $id")
+        entries.subtractOne(id)
         if (!entry.dataWritten) entry.drop()
         else {
           // if there is data to persist, do it async, but limit number of active write processes
@@ -44,7 +50,9 @@ class FileHandles(tempDir: File) {
             finally { writeProcesses.release(); entry.drop() }
           }(ExecutionContext.global)
         }
-      case Some(count -> entry) => entries.update(id, count - 1 -> entry)
+      case Some(count -> entry) =>
+        log.debug(s"decCount() - decrement count to ${count-1} for $id")
+        entries.update(id, count - 1 -> entry)
     }
 
   def delete(id: Long): Unit =

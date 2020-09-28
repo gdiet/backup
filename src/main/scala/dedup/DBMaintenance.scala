@@ -128,24 +128,21 @@ object DBMaintenance {
           }
         if (compactionSize == entrySize && gapsToUse.last.stop <= chunks.map(_.start).max) {
           assert(entrySize == combinedSize(gapsToUse), s"Size mismatch between entry $entrySize and gaps $gapsToUse")
-          log.debug(s"Copying in lts data of entry $id to $gapsToUse")
-          log.info(s"### COPY $id")
-          log.info(s"### FROM $chunks")
-          log.info(s"### TO.. $gapsToUse")
+          log.debug(s"Copying in lts data of entry $id data $chunks to $gapsToUse")
           chunks.foldLeft(gapsToUse) { case (g, c) =>
             @annotation.tailrec
             def copyLoop(gaps: Vector[Chunk], chunk: Chunk): Vector[Chunk] = {
               val gap +: otherGaps = gaps
               val copySize = math.min(memChunk, math.min(gap.size, chunk.size)).toInt
-              log.info(s"### COPY at ${chunk.start} size $copySize to ${gap.start}")
+              log.debug(s"COPY at ${chunk.start} size $copySize to ${gap.start}")
               lts.write(gap.start, lts.read(chunk.start, copySize))
               val restOfGap = (gap.start + copySize, gap.stop)
               val remainingGaps = if (restOfGap.size > 0) restOfGap +: otherGaps else otherGaps
               val restOfChunk = (chunk.start + copySize, chunk.stop)
               if (restOfChunk.size > 0) copyLoop(remainingGaps, restOfChunk) else remainingGaps
             }
-            copyLoop(g, c).tap(r => log.info(s"### GAPS $r"))
-          }
+            copyLoop(g, c)
+          }.tap(remainingGaps => require(remainingGaps.isEmpty, s"remaining gaps not empty: $remainingGaps"))
           val newId = db.nextId
           connection.transaction {
             log.debug(s"Storing in database new data entry $newId for $gapsToUse")
