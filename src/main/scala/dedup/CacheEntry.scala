@@ -27,7 +27,7 @@ class CacheEntry(ltsParts: Parts, tempDir: File) {
 
   // Possible performance optimization: Use a sorted map, key is chunk position
   // Possible performance optimization: Merge adjacent file chunks
-  private var chunks: Seq[Chunk] = Vector()
+  private var chunks: Seq[CacheChunk] = Vector()
 
   private def dropFromChunks(from: Long, to: Long): Unit = {
     assert(from >= 0, s"negative from $from")
@@ -52,7 +52,7 @@ class CacheEntry(ltsParts: Parts, tempDir: File) {
     val end = offset + length
     dropFromChunks(offset, end)
     for (position <- offset until end by memChunk; chunkSize = math.min(memChunk, end - position).toInt) {
-      val chunk = Chunk(position, dataSource(position - offset, chunkSize), channel)
+      val chunk = CacheChunk(position, dataSource(position - offset, chunkSize), channel)
       chunks :+= chunk
     }
     if (end > size) size = end

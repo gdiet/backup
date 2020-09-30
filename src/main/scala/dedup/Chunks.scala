@@ -9,8 +9,8 @@ object CacheManager {
   var cacheLimit: Long = Runtime.getRuntime.maxMemory - 64000000
 }
 
-object Chunk {
-  def apply(position: Long, data: Array[Byte], channel: => SeekableByteChannel): Chunk =
+object CacheChunk {
+  def apply(position: Long, data: Array[Byte], channel: => SeekableByteChannel): CacheChunk =
     if (CacheManager.memoryUsed.get < CacheManager.cacheLimit) new MemChunk(position, data)
     else {
       val buffer = ByteBuffer.wrap(data)
@@ -20,7 +20,7 @@ object Chunk {
     }
 }
 
-sealed trait Chunk {
+sealed trait CacheChunk {
   assert(position >= 0, s"negative position $position")
   assert(size > 0, s"size $size not positive at $position")
   def position: Long
@@ -31,12 +31,12 @@ sealed trait Chunk {
     assert(newSize < size, s"newSize $newSize is not less than size $size")
     assert(newSize > 0, s"newSize $newSize is not greater than zero")
   }
-  def left(newSize: Int): Chunk
-  def right(newSize: Int): Chunk
+  def left(newSize: Int): CacheChunk
+  def right(newSize: Int): CacheChunk
   def drop(): Unit
 }
 
-class MemChunk(override val position: Long, override val data: Array[Byte]) extends Chunk {
+class MemChunk(override val position: Long, override val data: Array[Byte]) extends CacheChunk {
   CacheManager.memoryUsed.addAndGet(size)
   override def size: Int = data.length
   override def left(newSize: Int): MemChunk = {
@@ -50,7 +50,7 @@ class MemChunk(override val position: Long, override val data: Array[Byte]) exte
   override def drop(): Unit = CacheManager.memoryUsed.addAndGet(-size)
 }
 
-class FileChunk(override val position: Long, override val size: Int, channel: SeekableByteChannel) extends Chunk {
+class FileChunk(override val position: Long, override val size: Int, channel: SeekableByteChannel) extends CacheChunk {
   override def data: Array[Byte] = {
     val buffer = java.nio.ByteBuffer.allocate(size)
     channel.position(position)
