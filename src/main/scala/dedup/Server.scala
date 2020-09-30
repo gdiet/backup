@@ -16,7 +16,7 @@ import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 import scala.util.Using.{resource, resources}
 
 object Server extends App {
-  private val log = LoggerFactory.getLogger("dedup.Serve")
+  private val log = LoggerFactory.getLogger("dedup._Main")
 
   val (options, commands) = args.partition(_.contains("=")).pipe { case (options, commands) =>
     options.map(_.split("=", 2).pipe(o => o(0).toLowerCase -> o(1))).toMap ->
@@ -28,6 +28,8 @@ object Server extends App {
 
   } else if (commands.contains("init")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+    require(repo.isDirectory, s"$repo must be a directory.")
+    require(repo.list.isEmpty, s"$repo must be an EMPTY directory.")
     val dbDir = Database.dbDir(repo)
     if (dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir already exists.")
     resource(H2.file(dbDir, readonly = false)) (Database.initialize)
