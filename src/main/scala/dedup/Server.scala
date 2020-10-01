@@ -58,11 +58,6 @@ object Server extends App {
     val dbDir = Database.dbDir(repo)
     resource(H2.file(dbDir, readonly = false)) (Database.deleteOrphanDataEntries)
 
-  } else if (commands.contains("compactionstats")) {
-    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
-    val dbDir = Database.dbDir(repo)
-    resource(H2.file(dbDir, readonly = false)) (Database.compactionStats)
-
   } else if (commands.contains("stats")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)

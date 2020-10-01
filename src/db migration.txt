@@ -20,7 +20,6 @@ UPDATE DataEntries SET length = stop - start;
 ALTER TABLE DataEntries ALTER COLUMN hash SET NULL;
 ALTER TABLE DataEntries DROP CONSTRAINT pk_DataEntries;
 ALTER TABLE DataEntries ADD CONSTRAINT pk_DataEntries PRIMARY KEY (id, seq);
-CREATE INDEX DataEntriesStartIdx ON DataEntries(start);
 DROP INDEX DataEntriesHashIdx;
 CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
 CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);

@@ -45,15 +45,11 @@ object Database {
         |""".stripMargin split ";"
   }
 
-  // FIXME check whether DataEntriesStartIdx is still needed
-  // FIXME if not, also remove from DB migration
-  // DataEntriesStartIdx + DataEntriesStopIdx: Find gaps in data entries.
   // DataEntriesStopIdx: Find start of free data.
   // DataEntriesLengthHashIdx: Find data entries by size & hash.
   // TreeEntriesDataIdIdx: Find orphan data entries.
   private def indexDefinitions =
-    """|CREATE INDEX DataEntriesStartIdx ON DataEntries(start);
-       |CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
+    """|CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
        |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
        |CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);""".stripMargin split ";"
 
@@ -87,27 +83,6 @@ object Database {
       "DELETE FROM DataEntries WHERE id IN (SELECT DISTINCT(d.id) FROM DataEntries d LEFT JOIN TreeEntries t ON t.dataId = d.id WHERE t.dataId is NULL)"
     )
     log.info(s"$count entries.")
-  }
-
-  def gaps(stat: Statement): Seq[(Long, Long)] = {
-    val starts = stat.executeQuery(
-      "SELECT d1.stop FROM DataEntries d1 LEFT JOIN DataEntries d2 ON d1.start = d2.stop WHERE d2.stop IS NULL ORDER BY d1.start ASC"
-    ).seq(_.getLong(1)).dropRight(1)
-    val stops = stat.executeQuery(
-      "SELECT d1.start FROM DataEntries d1 LEFT JOIN DataEntries d2 ON d1.stop = d2.start WHERE d2.start IS NULL ORDER BY d1.start ASC"
-    ).seq(_.getLong(1)).toList
-    stops match {
-      case Nil => Seq()
-      case 0 :: tail => starts.zip(tail)
-      case head :: tail => (0L -> head) +: starts.zip(tail)
-    }
-  }
-
-  def compactionStats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
-    log.info(s"Compaction potential of datastore:")
-    val dataGaps = gaps(stat)
-    val compactionPotential = combinedSize(dataGaps)
-    log.info(f"${dataGaps.size} gaps with total ${compactionPotential / 1000000}%,d MB ($compactionPotential%,d bytes)")
   }
 
   def stats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
