@@ -2,6 +2,18 @@
 
 DedupFS is a file system with transparent file content deduplication. This means that if you store multiple files containing the same sequence of bytes, the file system stores the contents only once and references them multiple times. Of course, you can still update the contents of any file without impact on the contents of other files.
 
+#### Table of contents
+* [Status Of The DedupFS Software](#status-of-the-dedupfs-software)
+* [What DedupFS Can Be Used For](#what-dedupfs-can-be-used-for)
+* [Why Is DedupFS Better Than ...](#why-is-dedupfs-better-than-)
+* [What DedupFS Should Not Be Used For](#what-dedupfs-should-not-be-used-for)
+* [Caveats](#caveats)
+* [System Requirements](#system-requirements)
+* [Basic Steps To Use DedupFS](#basic-steps-to-use-dedupfs)
+* [How To ...](#how-to-)
+* [Storage Format](#storage-format)
+* [License](#license)
+
 ## Status Of The DedupFS Software
 
 No guarantees. Author uses for main backups.
@@ -91,4 +103,6 @@ reclaim space
 
 ## Storage Format
 
+## License
 
+MIT License, see file LICENSE.

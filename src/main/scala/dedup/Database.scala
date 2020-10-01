@@ -45,6 +45,8 @@ object Database {
         |""".stripMargin split ";"
   }
 
+  // FIXME check whether DataEntriesStartIdx is still needed
+  // FIXME if not, also remove from DB migration
   // DataEntriesStartIdx + DataEntriesStopIdx: Find gaps in data entries.
   // DataEntriesStopIdx: Find start of free data.
   // DataEntriesLengthHashIdx: Find data entries by size & hash.
