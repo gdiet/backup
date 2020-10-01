@@ -88,7 +88,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
   private val dbDir = Database.dbDir(repo)
   require(dbDir.exists(), s"Database directory $dbDir does not exist.")
 
-  private val db = new Database(H2.file(dbDir, readonly = false))
+  private val db = new Database(H2.file(dbDir, readonly))
   private val hashAlgorithm = "MD5"
   private val rights = if (readonly) 365 else 511 // o555 else o777
   private val dataDir = LongTermStore.ltsDir(repo)
