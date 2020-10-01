@@ -29,7 +29,6 @@ object Server extends App {
   } else if (commands.contains("init")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     require(repo.isDirectory, s"$repo must be a directory.")
-    require(repo.list.isEmpty, s"$repo must be an EMPTY directory.")
     val dbDir = Database.dbDir(repo)
     if (dbDir.exists()) throw new IllegalStateException(s"Database directory $dbDir already exists.")
     resource(H2.file(dbDir, readonly = false)) (Database.initialize)

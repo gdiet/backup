@@ -83,6 +83,11 @@ Before it can be used, the storage directory for the dedup file system needs to 
 * Check the log output printed to the command line.
 * If successful, this command creates the database directory `<target directory>/fsdb`.
 
+Notes:
+
+* The `repo=<target directory>` parameter is optional. If omitted, the utility initializes the working directory as DedupFS storage directory.
+* I recommend to use an empty target directory, but this is not enforced. DedupFS will create and use the directories `fsdb`, `data` and `dedupfs-temp`.
+
 ### Mount The File System With A GUI
 
 mount with GUI
@@ -92,6 +97,8 @@ mount headless
 stop
 
 start options
+
+temp directory
 
 copy-on-move
 

@@ -3,6 +3,7 @@ package dedup
 import java.io.File
 
 object CleanInit extends App {
+  sys.props.update("LOG_BASE", "./")
   def delete(file: File): Unit = {
     if (file.isDirectory) file.listFiles.foreach(delete)
     file.delete()
