@@ -1,1 +1,0 @@
-In this experimental go code I tried to re-implement some parts of DedupFS in go, to check whether this approach might be feasible and lead to an even slimmer app.
