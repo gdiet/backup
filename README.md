@@ -72,6 +72,8 @@ The following are the basic steps needed to use DedupFS. For details, see the [H
 
 ### Install DedupFS
 
+Windows: Make sure WinFSP is installed, see [System Requirements](#system-requirements).
+
 Installing DedupFS is easy: Unpack the DedupFS archive to a place where you have write access. I recommend unpacking it to the data repository, that is, the directory where the dedup file system data will be stored. For details, see the next paragraph.
 
 ### Initialize The File System
