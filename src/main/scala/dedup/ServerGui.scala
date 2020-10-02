@@ -55,6 +55,7 @@ object ServerGui extends App {
   frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE)
   frame.addWindowListener(new WindowAdapter {
     override def windowClosing(e: WindowEvent): Unit = {
+      // TODO show a countdown - when zero exit automatically
       val reply = JOptionPane.showConfirmDialog(frame, "Stop Dedup File System?", "Dedup File System", JOptionPane.YES_NO_OPTION)
       if (reply == 0) System.exit(0)
     }

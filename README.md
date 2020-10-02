@@ -11,6 +11,7 @@ DedupFS is a file system with transparent file content deduplication. This means
 * [System Requirements](#system-requirements)
 * [Basic Steps To Use DedupFS](#basic-steps-to-use-dedupfs)
 * [How To ...](#how-to-)
+* [Story: How I Use DedupFS](#story-how-i-use-dedupfs)
 * [Storage Format](#storage-format)
 * [License](#license)
 
@@ -46,13 +47,13 @@ MD5 hash collision attack
 
 deleting to free space is a two-step process
 
-Linux scripts not yet checked
+While DedupFS is known to run on Linux, no Linux DedupFS utility scripts are available. You can run it if you know what you are doing :confused:.
 
 ## System Requirements
 
-Windows: WinFSP
+Windows 10. For Linux see [Caveats](#caveats).
 
-Linux: Fuse
+DedupFS uses FUSE (Filesystem in Userspace). This is preinstalled in most Linux installations. On Windows, install [WinFSP](https://github.com/billziss-gh/winfsp) to make FUSE available. It can be downloaded on the [WinFSP Releases](https://github.com/billziss-gh/winfsp/releases) page. Currently I use `WinFsp 2020` a.k.a `winfsp-1.6.20027` for running DedupFS on Windows.
 
 Free space on target drive
 
@@ -92,9 +93,20 @@ Note:
 
 ### Mount The File System With A GUI
 
-mount with GUI
+If you want to write, update, or read files in the dedup file system, you have to "mount" it first. Note that the dedup file system must be initialized before you can mount it, see above. Here are the steps to mount the dedup file system:
 
-mount headless
+* If you have installed DedupFS in the repository directory as recommended, start the dedup file system by running the `write-dedupfs` in the repository directory, e.g. by double-clicking.
+* After some time the DedupFS GUI will open, showing log entries.
+* After some time a log entry will tell you that the dedup file system is started.
+* In the log entries, you see among others which repository is used and where the dedup file system is mounted.
+
+Notes:
+
+* The `write-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
+* By default, `write-dedupfs` uses the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
+* For additional options, read the `write-dedupfs` script.
+
+### Mount The File System On The Commandline
 
 stop
 
@@ -109,6 +121,18 @@ find the logs
 restore database backup
 
 reclaim space
+
+## Story: How I Use DedupFS
+
+store every few weeks everything
+
+name folders by backup date
+
+for folders too big for my laptop, keep a "current" copy of everything in the dedupfs, so I don't have to browse all date-folders ... uses copywhenmoving option
+
+two external backup drives
+
+temp directory on fast drive (ssd)
 
 ## Storage Format
 

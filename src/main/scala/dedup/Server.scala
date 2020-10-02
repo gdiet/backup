@@ -255,6 +255,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
   private val fileHandles = new FileHandles(tempDir)
   private var startOfFreeData = db.startOfFreeData
   log.info(s"Data stored: ${startOfFreeData / 1000000000}GB")
+  log.info(s"Dedup file system is started.")
 
   // 2020.09.18 perfect
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
