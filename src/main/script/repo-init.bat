@@ -1,4 +1,5 @@
 @echo off
+title repo-init [DedupFS]
 rem Options for init:
 rem repo=<repository directory>     | default: working directory
 rem -DLOG_BASE=<log base directory> | mandatory for sensible logging

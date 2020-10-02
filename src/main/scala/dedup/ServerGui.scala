@@ -13,7 +13,7 @@ import javax.swing._
 import org.slf4j.{Logger, LoggerFactory}
 
 object ServerGui extends App {
-  private val log = LoggerFactory.getLogger("dedup.ServerGUI")
+  private val log = LoggerFactory.getLogger("dedup.UIApp")
   private var lines = Vector[String]()
   private val dateFormat = new SimpleDateFormat("HH:mm.ss")
   private val appender = new AppenderBase[ILoggingEvent] {

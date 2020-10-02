@@ -16,7 +16,7 @@ import scala.collection.SortedMap
 import scala.util.Using.resource
 
 object DBMaintenance {
-  implicit private val log: Logger = LoggerFactory.getLogger("dedup.DButl")
+  implicit private val log: Logger = LoggerFactory.getLogger("dedup.dbUtl")
 
   def createBackup(repo: File): Unit = {
     val dbDir = Database.dbDir(repo).getAbsoluteFile

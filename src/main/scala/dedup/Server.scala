@@ -16,17 +16,17 @@ import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 import scala.util.Using.{resource, resources}
 
 object Server extends App {
-  private val log = LoggerFactory.getLogger("dedup._Main")
+  private val log = LoggerFactory.getLogger("dedup.Dedup")
 
   val (options, commands) = args.partition(_.contains("=")).pipe { case (options, commands) =>
     options.map(_.split("=", 2).pipe(o => o(0).toLowerCase -> o(1))).toMap ->
     commands.toList.map(_.toLowerCase())
   }
 
-  if (commands.contains("check")) {
+  if (commands == List("check")) {
     Utils.memoryCheck()
 
-  } else if (commands.contains("init")) {
+  } else if (commands == List("init")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     require(repo.isDirectory, s"$repo must be a directory.")
     val dbDir = Database.dbDir(repo)
@@ -34,52 +34,53 @@ object Server extends App {
     resource(H2.file(dbDir, readonly = false)) (Database.initialize)
     log.info(s"Database initialized in $dbDir.")
 
-  } else if (commands.contains("dbbackup")) {
+  } else if (commands == List("dbbackup")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     require(repo.isDirectory, s"$repo must be a directory.")
     DBMaintenance.createBackup(repo)
     log.info(s"Database backup finished.")
 
-  } else if (commands.contains("reclaimspace1")) {
+  } else if (commands == List("reclaimspace1")) {
     val keepDeletedDays = options.getOrElse("keepdays", "0").toInt
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
     resource(H2.file(dbDir, readonly = false)) (DBMaintenance.reclaimSpace1(_, keepDeletedDays))
 
-  } else if (commands.contains("reclaimspace2")) {
+  } else if (commands == List("reclaimspace2")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
     resources(H2.file(dbDir, readonly = false), new LongTermStore(LongTermStore.ltsDir(repo), false)) {
       case (db, lts) => DBMaintenance.reclaimSpace2(db, lts)
     }
 
-  } else if (commands.contains("orphandataentrystats")) {
+  } else if (commands == List("orphandataentrystats")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
     resource(H2.file(dbDir, readonly = true)) (Database.orphanDataEntryStats)
 
-  } else if (commands.contains("deleteorphandataentries")) {
+  } else if (commands == List("deleteorphandataentries")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
     resource(H2.file(dbDir, readonly = false)) (Database.deleteOrphanDataEntries)
 
-  } else if (commands.contains("stats")) {
+  } else if (commands == List("stats")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
     resource(H2.file(dbDir, readonly = false)) (Database.stats)
 
   } else {
+    require((commands.toSet -- Set("copywhenmoving", "write")).isEmpty, s"Unexpected command(s): $commands")
     Utils.asyncLogFreeMemory()
     copyWhenMoving.set(commands.contains("copywhenmoving"))
     val readonly = !commands.contains("write")
     val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
     val absoluteRepo = new File(options.getOrElse("repo", "")).getAbsoluteFile
-    val temp = new File(options.getOrElse("temp", absoluteRepo.getPath + "/dedupfs-temp"))
+    val temp = new File(options.getOrElse("temp", sys.props("java.io.tmpdir") + "/dedupfs-temp"))
     log.info (s"Starting dedup file system.")
     log.info (s"Repository:  $absoluteRepo")
     log.info (s"Mount point: $mountPoint")
     log.info (s"Readonly:    $readonly")
-    log.debug(s"Temp root:   $temp")
+    log.debug(s"Temp dir:    $temp")
     if (!readonly) { if (temp.exists) Utils.delete(temp); temp.mkdirs() }
     if (copyWhenMoving.get) log.info (s"Copy instead of move initially enabled.")
     val fs = new Server(absoluteRepo, temp, readonly)
