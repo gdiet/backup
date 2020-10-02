@@ -75,7 +75,7 @@ The following are the basic steps needed to use DedupFS. For details, see the [H
 
 Windows: Make sure WinFSP is installed, see [System Requirements](#system-requirements).
 
-Installing DedupFS is easy: Unpack the DedupFS archive to a place where you have write access. I recommend unpacking it to the data repository, that is, the directory where the dedup file system data will be stored. For details, see the next paragraph.
+Installing DedupFS is easy: Unpack the DedupFS archive to a place where you have write access. I recommend unpacking it to the repository directory where the dedup file system data will be stored. For details, see the next paragraph.
 
 ### Initialize The File System
 
@@ -105,15 +105,17 @@ Notes:
 * Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique mount points and temp directories configured - see below.
 * The `write-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
 * By default, `write-dedupfs` uses the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
-* For additional options, read the `write-dedupfs` script.
+* For additional options, read the `write-dedupfs` script and the paragraphs below.
 
 ### Mount The File System Without GUI
 
-If you want to mount the dedup file system without a GUI, run `write-dedupfs-console`. This behaves like `write-dedupfs` except that it does not start a GUI. So see above for more details of `write-dedupfs-console`.
+If you want to mount the dedup file system without a GUI, run `write-dedupfs-console`. This behaves like `write-dedupfs` except that it does not start a GUI. So see above for more details on how `write-dedupfs-console` works.
 
 ### Mount The File System Read-Only
 
-If you want to mount the dedup file system read-only, use the `read-dedupfs` or `read-dedupfs-console` utility. These utilities work analog to the write utilites.
+If you want to mount the dedup file system read-only, use the `dedupfs` or `dedupfs-console` utility. These utilities work analog to the write utilities.
+
+Why mount read-only? This can be handy if for example you want to look up files in your backups while making sure that you cannot accidentally add, change or delete files in the backup.
 
 ### Configure The Mount Point
 
@@ -126,19 +128,19 @@ The DedupFS utilities use the default Java 11 memory settings. You can change th
 * It does not hurt to assign much RAM to the DedupFS utilities - unless the operating system or other software running on the same computer doesn't have enough free RAM left for good operation.
 * `repo-init` does not need more than ~64 MB RAM.
 * `write-dedupfs` and `write-dedupfs-console` need at least ~96 MB RAM for good operation. When storing large files, additional RAM improves performance, so you might want to assign (size of large files to store + 64 MB) RAM to the write utilities. Assigning more will not improve performance.
-* `dbbackup` (which is called first in the write utilties) does not need more than ~64 MB RAM.
+* `dbbackup` (which is called first in the write utilities) does not need more than ~64 MB RAM.
 * `read-dedupfs` and `read-dedupfs-console` work fine with ~80 MB RAM. Assigning more will not improve performance.
 
 To change the RAM assignment of a utility, open it in a text editor. After the `java` or `javaw` call, add the `-Xmx` maximum heap memory setting. In the following example, it is set to 200 MB:
 
 ```batch
-start "DedupFS" "%~dp0jre\bin\javaw" "-DLOG_BASE=%~dp0\"
+start "DedupFS" "%~dp0jre\bin\javaw" "-DLOG_BASE=%~dp0\" ...
 ```
 
 ... insert `-Xmx200m` after 'javaw' ...
 
 ```batch
-start "DedupFS" "%~dp0jre\bin\javaw" -Xmx200m "-DLOG_BASE=%~dp0\"
+start "DedupFS" "%~dp0jre\bin\javaw" -Xmx200m "-DLOG_BASE=%~dp0\" ...
 ```
 
 ### Configure The Temp Directory
@@ -149,7 +151,7 @@ For maximum performance, the temp directory should be on a fast drive and should
 
 Note that the write utilities delete the configured temp directory including all contained files before recreating it and mounting the dedup file system.
 
-### "copy when moving"
+### Copy When Moving
 
 ### Log Files
 
