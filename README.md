@@ -102,26 +102,60 @@ If you want to write, update, or read files in the dedup file system, you have t
 
 Notes:
 
+* Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique mount points and temp directories configured - see below.
 * The `write-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
 * By default, `write-dedupfs` uses the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
-* TODO write about RAM - the Java `Xmx` option.
 * For additional options, read the `write-dedupfs` script.
 
 ### Mount The File System Without GUI
 
 If you want to mount the dedup file system without a GUI, run `write-dedupfs-console`. This behaves like `write-dedupfs` except that it does not start a GUI. So see above for more details of `write-dedupfs-console`.
 
-### Start Options
+### Mount The File System Read-Only
 
-temp directory
+If you want to mount the dedup file system read-only, use the `read-dedupfs` or `read-dedupfs-console` utility. These utilities work analog to the write utilites.
 
-copy-on-move
+### Configure The Mount Point
 
-find the logs
+By default, the DedupFS mounts the dedup file system to `J:\` on Windows and `/tmp/mnt` on Linux. The utilities accept a `mount=<mount point>` option to override the default.
 
-restore database backup
+### Configure Memory Settings
 
-reclaim space
+The DedupFS utilities use the default Java 11 memory settings. You can change these by editing the utility scripts. Let's start with some rules of thumb:
+
+* It does not hurt to assign much RAM to the DedupFS utilities - unless the operating system or other software running on the same computer doesn't have enough free RAM left for good operation.
+* `repo-init` does not need more than ~64 MB RAM.
+* `write-dedupfs` and `write-dedupfs-console` need at least ~96 MB RAM for good operation. When storing large files, additional RAM improves performance, so you might want to assign (size of large files to store + 64 MB) RAM to the write utilities. Assigning more will not improve performance.
+* `dbbackup` (which is called first in the write utilties) does not need more than ~64 MB RAM.
+* `read-dedupfs` and `read-dedupfs-console` work fine with ~80 MB RAM. Assigning more will not improve performance.
+
+To change the RAM assignment of a utility, open it in a text editor. After the `java` or `javaw` call, add the `-Xmx` maximum heap memory setting. In the following example, it is set to 200 MB:
+
+```batch
+start "DedupFS" "%~dp0jre\bin\javaw" "-DLOG_BASE=%~dp0\"
+```
+
+... insert `-Xmx200m` after 'javaw' ...
+
+```batch
+start "DedupFS" "%~dp0jre\bin\javaw" -Xmx200m "-DLOG_BASE=%~dp0\"
+```
+
+### Configure The Temp Directory
+
+When large files are written to the dedup file system so that DedupFS cannot cache them in memory, it caches them in a "temp" directory. By default, it uses a subdirectory of the "temp" directory configured for the user in the operating system.
+
+For maximum performance, the temp directory should be on a fast drive and should not be on the same physical drive as the repository directory. The write utilities accept a `temp=<temp directory>` option, so you can override the default.
+
+Note that the write utilities delete the configured temp directory including all contained files before recreating it and mounting the dedup file system.
+
+### "copy when moving"
+
+### Log Files
+
+### Restore The Database From A Backup
+
+### Reclaim Space
 
 ## Story: How I Use DedupFS
 
