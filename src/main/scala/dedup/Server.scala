@@ -34,6 +34,12 @@ object Server extends App {
     resource(H2.file(dbDir, readonly = false)) (Database.initialize)
     log.info(s"Database initialized in $dbDir.")
 
+  } else if (commands.contains("dbbackup")) {
+    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+    require(repo.isDirectory, s"$repo must be a directory.")
+    DBMaintenance.createBackup(repo)
+    log.info(s"Database backup finished.")
+
   } else if (commands.contains("reclaimspace1")) {
     val keepDeletedDays = options.getOrElse("keepdays", "0").toInt
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile

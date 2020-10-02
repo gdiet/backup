@@ -22,7 +22,7 @@
             <totalSizeCap>1GB</totalSizeCap>
         </rollingPolicy>
         <encoder>
-            <pattern>%date %-5level %-11%logger{36} - %msg%n</pattern>
+            <pattern>%date %-5level %-11logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 

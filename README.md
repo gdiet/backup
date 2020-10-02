@@ -62,31 +62,31 @@ Free space on target drive
 
 The following are the basic steps needed to use DedupFS. For details, see the [How To ...](#how-to-) section of this document.
 
-* Initialize a new dedup file system storage in an empty directory, e.g. on an external drive.
+* Initialize the DedupFS data storage, e.g. on an external drive.
 * Mount the file system, then use it to store backups of your files.
 * Stop the file system.
-* If required, update the copy of the dedup storage directory that is stored e.g. on a different external drive.
+* If required, update the copy of the DedupFS data storage that is stored e.g. on a different external drive.
 * If required, reclaim space by trashing files that have been marked deleted in the dedup file system.
 
 ## How To ...
 
 ### Install DedupFS
 
-unzip to place with write access. prefer SSD.
+Installing DedupFS is easy: Simply unpack the DedupFS archive to a place where you have write access. I recommend unpacking it in the directory where the dedup file system data will be stored. For details, see the next paragraph.
 
 ### Initialize The File System
 
-Before it can be used, the storage directory for the dedup file system needs to be initialized:
+The dedup file system stores all its data in the subdirectories `fsdb` and `data` located in the same base directory. Before the dedup file system can be used, the `fsdb` database needs to be initialized:
 
-* Create an empty target directory that will be used to store all management files of the dedup file system.
-* On the command line, execute the "repo-init" utility from the DedupFS distribution with the "repo" parameter like this: `repo-init repo=<target directory>`.
-* Check the log output printed to the command line.
-* If successful, this command creates the database directory `<target directory>/fsdb`.
+* Create an empty base directory for the dedup file system data, e.g. on an external backup drive.
+* Unpack the DedupFS archive into that base directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like "repo-init" and "server-write" should be located directly in the base directory.
+* Start the DedupFS "repo-init" utility in the base directory, e.g. by double-clicking.
+* Check the log output printed to the console where "repo-init" is executed.
+* If successful, this command creates in the base directory the database directory `fsdb` and the log files directory `logs`.
 
-Notes:
+Note:
 
-* The `repo=<target directory>` parameter is optional. If omitted, the utility initializes the working directory as DedupFS storage directory.
-* I recommend to use an empty target directory, but this is not enforced. DedupFS will create and use the directories `fsdb`, `data` and `dedupfs-temp`.
+* By default, "repo-init" initializes the current working directory as DedupFS storage directory. By adding a `repo=<target directory>` parameter, you can initialize the data storage in a different directory. The `logs` directory is always located in the directory containing the DedupFS utility scripts.
 
 ### Mount The File System With A GUI
 

@@ -1,10 +1,15 @@
 package dedup
 
+import java.io.File
 import java.lang.System.{currentTimeMillis => now}
+import java.nio.file.{Files, StandardCopyOption}
 import java.sql.Connection
+import java.text.SimpleDateFormat
+import java.util.Date
 
 import dedup.Database._
 import dedup.store.LongTermStore
+import org.h2.tools.Script
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.SortedMap
@@ -12,6 +17,23 @@ import scala.util.Using.resource
 
 object DBMaintenance {
   implicit private val log: Logger = LoggerFactory.getLogger("dedup.DButl")
+
+  def createBackup(repo: File): Unit = {
+    val dbDir = Database.dbDir(repo).getAbsoluteFile
+    val dbFile = new File(dbDir, "dedupfs.mv.db")
+    require(dbFile.exists(), s"Database file $dbFile doesn't exist")
+    val backup = new File(dbDir, "dedupfs.mv.db.backup")
+    log.info(s"Creating plain database backup: $dbFile -> $backup")
+    Files.copy(dbFile.toPath, backup.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+
+    val dateString = new SimpleDateFormat("yyyy-MM-dd_HH-mm").format(new Date())
+    val target = new File(dbDir, s"dedupfs_$dateString.zip")
+    log.info(s"Creating sql script database backup: $dbFile -> $target")
+    Script.main(
+      "-url", s"jdbc:h2:${dbDir}/dedupfs", "-script", s"$target", "-user", "sa", "-options", "compression", "zip"
+    )
+    target.setReadOnly()
+  }
 
   def endOfStorageAndDataGaps(dataChunks: SortedMap[Long, Long]): (Long, Seq[Chunk]) = {
     dataChunks.foldLeft(0L -> Vector.empty[Chunk]) {
