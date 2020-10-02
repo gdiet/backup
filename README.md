@@ -25,7 +25,7 @@ Backup of files. Each time a backup is created, use a new folder with the date -
 
 ## Why Is DedupFS Better Than ...
 
-lightweight
+fast yet lightweight (little RAM)
 
 simple storage format
 
@@ -95,7 +95,7 @@ Note:
 
 If you want to write, update, or read files in the dedup file system, you have to "mount" it first. Note that the dedup file system must be initialized before you can mount it, see above. Here are the steps to mount the dedup file system:
 
-* If you have installed DedupFS in the repository directory as recommended, start the dedup file system by running the `write-dedupfs` in the repository directory, e.g. by double-clicking.
+* If you have installed DedupFS in the repository directory as recommended, start the dedup file system by running `write-dedupfs` in the repository directory, e.g. by double-clicking.
 * After some time the DedupFS GUI will open, showing log entries.
 * After some time a log entry will tell you that the dedup file system is started.
 * In the log entries, you see among others which repository is used and where the dedup file system is mounted.
@@ -104,6 +104,7 @@ Notes:
 
 * The `write-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
 * By default, `write-dedupfs` uses the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
+* TODO write about RAM - the Java `Xmx` option.
 * For additional options, read the `write-dedupfs` script.
 
 ### Mount The File System On The Commandline
