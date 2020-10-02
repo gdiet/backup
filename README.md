@@ -78,9 +78,9 @@ Installing DedupFS is easy: Unpack the DedupFS archive to a place where you have
 
 ### Initialize The File System
 
-The dedup file system stores all its data in a repository directory, inside the subdirectories `fsdb` and `data`. Before the dedup file system can be used, the `fsdb` database needs to be initialized:
+The dedup file system stores all its data in a repository directory, inside the subdirectories `fsdb` and `data`. Before the dedup file system can be used, the repository needs to be initialized:
 
-* Create an repository directory for the dedup file system data, e.g. on an external backup drive.
+* Create a repository directory for the dedup file system data, e.g. on an external backup drive.
 * Unpack the DedupFS archive to that repository directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like `repo-init` and `server-write` should be located directly in the repository directory.
 * Start the DedupFS `repo-init` utility in the repository directory, e.g. by double-clicking.
 * Check the log output printed to the console where `repo-init` is executed.
@@ -88,7 +88,7 @@ The dedup file system stores all its data in a repository directory, inside the 
 
 Note:
 
-* By default, `repo-init` initializes the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order to initialize the repository in a different directory. The `logs` directory is always located in the directory containing the DedupFS utility scripts.
+* By default, `repo-init` initializes the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order to initialize the repository in a different directory. DedupFS always creates its `logs` directory in the directory containing the DedupFS utility scripts.
 
 ### Mount The File System With A GUI
 
