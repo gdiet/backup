@@ -107,11 +107,11 @@ Notes:
 * TODO write about RAM - the Java `Xmx` option.
 * For additional options, read the `write-dedupfs` script.
 
-### Mount The File System On The Commandline
+### Mount The File System Without GUI
 
-stop
+If you want to mount the dedup file system without a GUI, run `write-dedupfs-console`. This behaves like `write-dedupfs` except that it does not start a GUI. So see above for more details of `write-dedupfs-console`.
 
-start options
+### Start Options
 
 temp directory
 
