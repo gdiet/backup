@@ -17,37 +17,38 @@ DedupFS is a file system with transparent file content deduplication. This means
 
 ## Status Of The DedupFS Software
 
-No guarantees. Author uses for main backups.
+As the license states, DedupFS is provided "as is", without warranty of any kind. That being said, I use DedupFS now for more than two years to backup my private files, and my backup repository has grown to approx. 1.5 Million files/folders with 400.000 file contents stored comprising 1.5 TB of data. The largest file stored has a size of approx 7.5 GB.
+
+Bottom line: For my personal use it is mature. Decide for yourself.
 
 ## What DedupFS Can Be Used For
 
-Backup of files. Each time a backup is created, use a new folder with the date - that way, data from old backups can be easily retrieved. Doesn't eat up unnecessary space.
+The DedupFS dedup file system is good for keeping a backup archive of your files. Its main advantage is that you don't have to worry storing the same file two, three, or ten times, because after the first copy of each file, additional copies take up only little space.
+
+For example, you can once a week just copy "everything" into the dedup file system - each week into a folder that is named by the current date. That way, you have a nice backup and can even access earlier versions of your files by date.
 
 ## Why Is DedupFS Better Than ...
 
-fast yet lightweight (little RAM)
+Whether or not DedupFS really is better than any other backup software depends mostly on how you like it and how you use it. Here are the main things why **I** like DedupFS better than all alternatives I have found so far:
 
-simple storage format
-
-delete is a two-step process
-
-database backups
-
-easy to keep second copy up-to-date
+* DedupFS is fast at writing and reading backups (at least for personal requirements).
+* DedupFS is lightweight, meaning it's easy to install and to run and it needs little RAM compared to other deduplication software.
+* DedupFS uses a simple storage format, so you know that IF something goes horribly wrong there is still a good chance to retrieve most of the stored data.
+* "Delete" in DedupFS is a two-step process, so if you accidentally deleted important files from your backups, they are not lost until you explicitly run the "reclaim space" utilities.
+* DedupFS automatically creates and keeps backups of the file tree and metadata database, so if necessary you can restore the dedup file system to earlier states.
+* DedupFS is designed to make it fast and easy to keep second offline copy of your backup repository up-to-date, even if the repository is terabytes in size.
 
 ## What DedupFS Should Not Be Used For
 
-everyday file system
+Don't use the DedupFS dedup file system as your everyday file system. It is not fully posix compatible. Locking a file for example will probably not work at all. When a file is closed after writing, immediately opening it for reading will show the old file contents - the new contents are availabe only after some (short) time. Last but not least changing file contents often will lead to a large amount of unused data entries that eat up space unless you use the "reclaim space" utilities regularly.
 
-security critical things
+Don't use the DedupFS dedup file system for really security critical things. For example, DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions. Note that this does not pose a problem when you store e.g. backups of your holiday photos...
 
 ## Caveats
 
-MD5 hash collision attack
-
-deleting to free space is a two-step process
-
-While DedupFS is known to run on Linux, no Linux DedupFS utility scripts are available. You can run it if you know what you are doing :confused:.
+* Deleting files in DedupFS is a two-step process. Don't expect that the repository size shrinks if you delete files. Even if you run the "reclaim space" utilities, the repository size will not shrink. Instead, it will not grow further for some time if you store new files...
+* As already mentioned, DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions.
+* While DedupFS is known to run on Linux, no Linux DedupFS utility scripts are available. You can run it if you know what you are doing :confused:.
 
 ## System Requirements
 
@@ -55,9 +56,9 @@ Windows 10. For Linux see [Caveats](#caveats).
 
 DedupFS uses FUSE (Filesystem in Userspace). This is preinstalled in most Linux installations. On Windows, install [WinFSP](https://github.com/billziss-gh/winfsp) to make FUSE available. It can be downloaded on the [WinFSP Releases](https://github.com/billziss-gh/winfsp/releases) page. Currently I use `WinFsp 2020` a.k.a `winfsp-1.6.20027` for running DedupFS on Windows.
 
-Free space on target drive
+DedupFS needs disk space for its repository. If you back up lots of data, it will need lots of space. Keep an eye on available disk space when using.
 
-128 MB free RAM - more is better
+DedupFS runs fine with approximately 128 MB RAM assigned to its process. See below for details.
 
 ## Basic Steps To Use DedupFS
 
@@ -128,8 +129,9 @@ The DedupFS utilities use the default Java 11 memory settings. You can change th
 * It does not hurt to assign much RAM to the DedupFS utilities - unless the operating system or other software running on the same computer doesn't have enough free RAM left for good operation.
 * `repo-init` does not need more than ~64 MB RAM.
 * `write-dedupfs` and `write-dedupfs-console` need at least ~96 MB RAM for good operation. When storing large files, additional RAM improves performance, so you might want to assign (size of large files to store + 64 MB) RAM to the write utilities. Assigning more will not improve performance.
-* `dbbackup` (which is called first in the write utilities) does not need more than ~64 MB RAM.
+* `db-backup` (which is called first in the write utilities) and `db-restore` do not need more than ~64 MB RAM.
 * `read-dedupfs` and `read-dedupfs-console` work fine with ~80 MB RAM. Assigning more will not improve performance.
+* The `reclaim-space` utilities need about ((number of data entries) * 64 B + 64 MB) RAM.
 
 To change the RAM assignment of a utility, open it in a text editor. After the `java` or `javaw` call, add the `-Xmx` maximum heap memory setting. In the following example, it is set to 200 MB:
 
@@ -153,13 +155,27 @@ Note that the write utilities delete the configured temp directory including all
 
 ### Copy When Moving
 
+TODO
+
 ### Log Files
+
+TODO
+
+### Create A Database Backup
+
+It is not necessary to call `db-backup` explicitly because it is called first in all utilities where the database might change.
 
 ### Restore The Database From A Backup
 
+The `db-restore` utility is for restoring previous versions of the DedupFS database. It accepts the usual `repo=<target directory>` parameter. If run without additional `from=...` parameter, it restores the database to the way it was before the last write operation was started, thus effectively resetting the dedup file system to an earlier state. Alternatively, you can use the `from=...` parameter to point the utility to earlier database backups (zip files) that can be found in the `fsdb` subdirectory of the repository.
+
 ### Reclaim Space
 
+TODO
+
 ## Story: How I Use DedupFS
+
+TODO
 
 store every few weeks everything
 
@@ -172,6 +188,8 @@ two external backup drives
 temp directory on fast drive (ssd)
 
 ## Storage Format
+
+TODO
 
 ## License
 
