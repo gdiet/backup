@@ -1,4 +1,6 @@
 @echo off
+call %~dp0db-backup.bat
+
 title Reclaim Space 1 - DedupFS
 rem Options for reclaim space 1:
 rem keepdays=<number of days to keep> | default: 0

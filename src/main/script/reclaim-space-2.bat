@@ -1,4 +1,6 @@
 @echo off
+call %~dp0db-backup.bat
+
 title Reclaim Space 2 - DedupFS
 rem Options for reclaim space 2:
 rem repo=<repository directory>       | default: working directory

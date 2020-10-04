@@ -1,15 +1,7 @@
 @echo off
-title Write DedupFS
-rem Options for dbbackup:
-rem repo=<repository directory>     | default: working directory
-rem -DLOG_BASE=<log base directory> | mandatory for sensible logging
-"%~dp0jre\bin\java" "-DLOG_BASE=%~dp0\" -cp "%~dp0lib\*" dedup.Server dbbackup %*
-if errorlevel 1 (
-    echo Database backup finished with error code %errorlevel%, exiting...
-    pause
-    exit /B
-)
+call %~dp0db-backup.bat
 
+title Write DedupFS
 rem Options for write:
 rem copywhenmoving                  | default: disabled
 rem mount=K:\                       | default: Windows J:\ Linux /tmp/mnt
