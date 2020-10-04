@@ -8,4 +8,6 @@ if errorlevel 1 (
     echo Database backup finished with error code %errorlevel%, exiting...
     pause
     exit /B
+) else (
+    echo Database backup finished.
 )

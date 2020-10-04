@@ -9,7 +9,7 @@ import java.util.Date
 
 import dedup.Database._
 import dedup.store.LongTermStore
-import org.h2.tools.Script
+import org.h2.tools.{RunScript, Script}
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.SortedMap
@@ -32,7 +32,28 @@ object DBMaintenance {
     Script.main(
       "-url", s"jdbc:h2:${dbDir}/dedupfs", "-script", s"$target", "-user", "sa", "-options", "compression", "zip"
     )
-    target.setReadOnly()
+  }
+
+  def restoreBackup(repo: File, from: Option[String]): Unit = from match {
+    case None =>
+      val dbDir = Database.dbDir(repo).getAbsoluteFile
+      val dbFile = new File(dbDir, "dedupfs.mv.db")
+      val backup = new File(dbDir, "dedupfs.mv.db.backup")
+      require(backup.exists(), s"Database backup file $backup doesn't exist")
+      log.info(s"Restoring plain database backup: $backup -> $dbFile")
+      Files.copy(backup.toPath, dbFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+
+    case Some(scriptFilePath) =>
+      val script = new File(scriptFilePath).getAbsoluteFile
+      require(script.exists(), s"Database backup script file $script doesn't exist")
+      def scriptRepo = script.getCanonicalFile.getParentFile.getParentFile
+      require(scriptRepo == repo.getCanonicalFile, s"Database backup script file $script is not stored in repo $repo")
+      val dbDir = Database.dbDir(repo).getAbsoluteFile
+      val dbFile = new File(dbDir, "dedupfs.mv.db")
+      require(!dbFile.exists || dbFile.delete, s"Can't delete current database file $dbFile")
+      RunScript.main(
+        "-url", s"jdbc:h2:${dbDir}/dedupfs", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
+      )
   }
 
   def endOfStorageAndDataGaps(dataChunks: SortedMap[Long, Long]): (Long, Seq[Chunk]) = {
@@ -100,7 +121,7 @@ object DBMaintenance {
 
   def reclaimSpace2(connection: Connection, lts: LongTermStore): Unit = resource(connection.createStatement()) { stat =>
     log.info(s"Starting stage 2 of reclaiming space. This modifies the long term store.")
-    log.info(s"After this, database backups can't be fully applied anymore.")
+    log.info(s"After this, older database backups can't be fully applied anymore.")
 
     val dataEntries = allDataEntries(stat)
     log.info(s"Number of data entries in storage database: ${dataEntries.size}")

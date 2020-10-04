@@ -40,6 +40,12 @@ object Server extends App {
     DBMaintenance.createBackup(repo)
     log.info(s"Database backup finished.")
 
+  } else if (commands == List("dbrestore")) {
+    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+    require(repo.isDirectory, s"$repo must be a directory.")
+    DBMaintenance.restoreBackup(repo, options.get("from"))
+    log.info(s"Database restore finished.")
+
   } else if (commands == List("reclaimspace1")) {
     val keepDeletedDays = options.getOrElse("keepdays", "0").toInt
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile

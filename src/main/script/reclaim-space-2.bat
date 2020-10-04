@@ -1,4 +1,14 @@
 @echo off
+title Reclaim Space 2 - DedupFS
+
+echo.
+echo This utility will compact the DedupFS data store. After this, older
+echo database backups can't be fully applied anymore. If you do not want
+echo that, simply close the console window where this utility is running.
+echo.
+pause
+echo.
+
 call %~dp0db-backup.bat
 
 title Reclaim Space 2 - DedupFS
