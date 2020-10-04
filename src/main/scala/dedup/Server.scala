@@ -53,16 +53,6 @@ object Server extends App {
       case (db, lts) => DBMaintenance.reclaimSpace2(db, lts)
     }
 
-  } else if (commands == List("orphandataentrystats")) {
-    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
-    val dbDir = Database.dbDir(repo)
-    resource(H2.file(dbDir, readonly = true)) (Database.orphanDataEntryStats)
-
-  } else if (commands == List("deleteorphandataentries")) {
-    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
-    val dbDir = Database.dbDir(repo)
-    resource(H2.file(dbDir, readonly = false)) (Database.deleteOrphanDataEntries)
-
   } else if (commands == List("stats")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
