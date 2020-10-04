@@ -65,9 +65,9 @@ object Server extends App {
     resource(H2.file(dbDir, readonly = false)) (Database.stats)
 
   } else {
-    require((commands.toSet -- Set("copywhenmoving", "write")).isEmpty, s"Unexpected command(s): $commands")
+    require(commands == List("write"), s"Unexpected command(s): $commands")
     Utils.asyncLogFreeMemory()
-    copyWhenMoving.set(commands.contains("copywhenmoving"))
+    copyWhenMoving.set(options.get("copywhenmoving").contains("true"))
     val readonly = !commands.contains("write")
     val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
     val absoluteRepo = new File(options.getOrElse("repo", "")).getAbsoluteFile

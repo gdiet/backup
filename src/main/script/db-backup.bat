@@ -7,7 +7,7 @@ rem -DLOG_BASE=<log base directory> | mandatory for sensible logging
 if errorlevel 1 (
     echo Database backup finished with error code %errorlevel%, exiting...
     pause
-    exit /B
+    exit /b 1
 ) else (
     echo Database backup finished.
 )
