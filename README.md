@@ -37,6 +37,7 @@ Whether or not DedupFS really is better than any other backup software depends m
 * "Delete" in DedupFS is a two-step process, so if you accidentally deleted important files from your backups, they are not lost until you explicitly run the "reclaim space" utilities.
 * DedupFS automatically creates and keeps backups of the file tree and metadata database, so if necessary you can restore the dedup file system to earlier states.
 * DedupFS is designed to make it fast and easy to keep second offline copy of your backup repository up-to-date, even if the repository is terabytes in size.
+* DedupFS is open source. It consists of less than 1500 lines of production code.
 
 ## What DedupFS Should Not Be Used For
 
