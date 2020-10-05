@@ -65,7 +65,7 @@ object Server extends App {
     resource(H2.file(dbDir, readonly = false)) (Database.stats)
 
   } else {
-    require(commands == List("write"), s"Unexpected command(s): $commands")
+    require(commands.isEmpty || commands == List("write"), s"Unexpected command(s): $commands")
     Utils.asyncLogFreeMemory()
     copyWhenMoving.set(options.get("copywhenmoving").contains("true"))
     val readonly = !commands.contains("write")

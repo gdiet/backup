@@ -219,7 +219,7 @@ CREATE TABLE DataEntries (
 
 ### File Contents
 
-DedupFS stores the file contents in the `data` subdirectory of the repository. The data is distributed to files of 100.000.000 Bytes. The file names of the data files denote the position of the first byte stored in the respective files. These positions are referenced by `DataEntries.start` and `DataEntries.stop`, see above.
+DedupFS stores the file contents in the `data` subdirectory of the repository. The data is distributed to files of 100.000.000 Bytes each. The file names of the data files denote the position of the first byte stored in the respective file. These positions are referenced by `DataEntries.start` and `DataEntries.stop`, see above.
 
 ## License
 
