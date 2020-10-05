@@ -189,7 +189,36 @@ temp directory on fast drive (ssd)
 
 ## Storage Format
 
-TODO
+### Tree And File Meta Data
+
+DedupFS stores the tree and file meta data in an SQL database using approximately the following schema:
+
+```sql
+CREATE TABLE TreeEntries (
+  id           BIGINT PRIMARY KEY,
+  parentId     BIGINT NOT NULL,
+  name         VARCHAR(255) NOT NULL,
+  time         BIGINT NOT NULL,
+  deleted      BIGINT NOT NULL DEFAULT 0,
+  dataId       BIGINT DEFAULT NULL
+);
+CREATE TABLE DataEntries (
+  id     BIGINT PRIMARY KEY,
+  seq    INTEGER NOT NULL,
+  length BIGINT NULL,
+  start  BIGINT NOT NULL,
+  stop   BIGINT NOT NULL,
+  hash   BINARY NULL
+);
+```
+
+`TreeEntries`: The tree root entry has `id` 0. The tree structure is defined by providing the `parentId` for each node. `time` is the last modified unix timestamp in milliseconds. `deleted` is set to the deletion unix timestamp in milliseconds; for existing (= not deleted) files it is `0`. `dataId` is `null` for directories. For files, it is a reference to `DataEntries.id`. If no matching `DataEntries.id` exists, the file size is zero.
+
+`DataEntries`: Each sequence of bytes that can be referenced as a file content is assigned a unique `id`. The bytes can stored in multiple non-contiguous parts, where `seq` of the first part is `1` and so on. `start` and `stop` define the storage position of the part, where `stop` points to the position **after** the respective part. `length` is the combined length of all parts, `hash` the MD5 hash of the full sequence, that is, of all parts concatenated. `length` and `hash` are only set for the first part of each data entry, for subsequent parts they are `null`.
+
+### File Contents
+
+DedupFS stores the file contents in the `data` subdirectory of the repository. The data is distributed to files of 100.000.000 Bytes. The file names of the data files denote the position of the first byte stored in the respective files. These positions are referenced by `DataEntries.start` and `DataEntries.stop`, see above.
 
 ## License
 
