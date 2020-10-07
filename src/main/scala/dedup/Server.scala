@@ -77,7 +77,11 @@ object Server extends App {
     log.info (s"Mount point: $mountPoint")
     log.info (s"Readonly:    $readonly")
     log.debug(s"Temp dir:    $temp")
-    if (!readonly) { if (temp.exists) Utils.delete(temp); temp.mkdirs() }
+    if (!readonly) {
+      if (temp.exists && temp.list.nonEmpty) log.info(s"Note that temp dir is not empty: $temp")
+      temp.mkdirs()
+      require(temp.isDirectory && temp.canWrite, s"Temp dir is not a writable directory: $temp")
+    }
     if (copyWhenMoving.get) log.info (s"Copy instead of move initially enabled.")
     val fs = new Server(absoluteRepo, temp, readonly)
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)

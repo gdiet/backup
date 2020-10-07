@@ -10,8 +10,6 @@ import org.slf4j.LoggerFactory
 object Utils {
   private val log = LoggerFactory.getLogger("dedup.Utils")
 
-  def delete(dir: File): Unit = Files.walk(dir.toPath).sorted(reverseOrder).forEach(Files.delete _)
-
   import Runtime.{getRuntime => rt}
   def freeMemory: Long = rt.maxMemory - rt.totalMemory + rt.freeMemory
 

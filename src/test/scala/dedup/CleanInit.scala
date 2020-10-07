@@ -4,6 +4,7 @@ import java.io.File
 
 object CleanInit extends App {
   sys.props.update("LOG_BASE", "./")
+  //  def delete(dir: File): Unit = Files.walk(dir.toPath).sorted(reverseOrder).forEach(Files.delete _)
   def delete(file: File): Unit = {
     if (file.isDirectory) file.listFiles.foreach(delete)
     file.delete()

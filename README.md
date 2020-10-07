@@ -150,9 +150,7 @@ start "DedupFS" "%~dp0jre\bin\javaw" -Xmx200m "-DLOG_BASE=%~dp0\" ...
 
 When large files are written to the dedup file system so that DedupFS cannot cache them in memory, it caches them in a "temp" directory. By default, it uses a subdirectory of the "temp" directory configured for the user in the operating system.
 
-For maximum performance, the temp directory should be on a fast drive and should not be on the same physical drive as the repository directory. The write utilities accept a `temp=<temp directory>` option, so you can override the default.
-
-Note that the write utilities delete the configured temp directory including all contained files before recreating it and mounting the dedup file system.
+If you try to get maximum write performance, make sure the temp directory is on a fast (SSD) drive that and is not on the same physical drive as either the repository or the source from which you copy the files. The write utilities accept a `temp=<temp directory>` option, so you can override the default.
 
 ### Copy When Moving
 
