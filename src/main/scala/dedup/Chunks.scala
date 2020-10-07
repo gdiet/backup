@@ -6,7 +6,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 object CacheManager {
   val memoryUsed = new AtomicLong()
-  var cacheLimit: Long = Runtime.getRuntime.maxMemory - 64000000
+  // Use only 70% of theoretically available memory - a helpful fix that I don't really understand
+  var cacheLimit: Long = (Runtime.getRuntime.maxMemory - 64000000) * 7 / 10
 }
 
 object CacheChunk {
