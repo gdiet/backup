@@ -22,10 +22,10 @@ class FileHandles(tempDir: File) {
   def createOrIncCount(id: Long, ltsParts: => Parts): Unit = {
     entries.get(id) match {
       case None =>
-        log.debug(s"createOrIncCount() - create $id")
+        log.trace(s"createOrIncCount() - create $id")
         create(id, ltsParts)
       case Some(count -> entry) =>
-        log.debug(s"createOrIncCount() - increment count to ${count+1} for $id")
+        log.trace(s"createOrIncCount() - increment count to ${count+1} for $id")
         entries.update(id, count + 1 -> entry)
     }
   }
@@ -38,7 +38,7 @@ class FileHandles(tempDir: File) {
     entries.get(id) match {
       case None => throw new IllegalArgumentException(s"entry $id not found")
       case Some(1 -> entry) =>
-        log.debug(s"decCount() - drop handle for $id")
+        log.trace(s"decCount() - drop handle for $id")
         entries.subtractOne(id)
         if (!entry.dataWritten) entry.drop()
         else {
@@ -51,7 +51,7 @@ class FileHandles(tempDir: File) {
           }(ExecutionContext.global)
         }
       case Some(count -> entry) =>
-        log.debug(s"decCount() - decrement count to ${count-1} for $id")
+        log.trace(s"decCount() - decrement count to ${count-1} for $id")
         entries.update(id, count - 1 -> entry)
     }
 
