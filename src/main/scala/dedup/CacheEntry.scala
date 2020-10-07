@@ -8,16 +8,20 @@ import java.util.concurrent.atomic.AtomicLong
 
 import org.slf4j.LoggerFactory
 
+import scala.util.Random
+
 object CacheEntry {
   private val log = LoggerFactory.getLogger("dedup.Cache")
-  val nextTempFile = new AtomicLong(1)
+  private val nextTempFileNo = new AtomicLong(1)
+  private val tempFileRandom = Random.nextLong().abs
+  private def nextTempFile = s"${nextTempFileNo.getAndIncrement} - $tempFileRandom"
 }
 class CacheEntry(ltsParts: Parts, tempDir: File) {
   var size: Long = ltsParts.size
   var ltsSize: Long = ltsParts.size
 
   private var maybeChannel: Option[SeekableByteChannel] = None
-  private val path = tempDir.toPath.resolve(CacheEntry.nextTempFile.getAndIncrement().toString)
+  private val path = tempDir.toPath.resolve(CacheEntry.nextTempFile)
   private def channel = {
     maybeChannel.getOrElse {
       CacheEntry.log.debug(s"Create cache file $path")
