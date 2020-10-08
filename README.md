@@ -154,11 +154,17 @@ If you try to get maximum write performance, make sure the temp directory is on 
 
 ### Copy When Moving
 
-TODO
+The dedup file system can be operated in a "copy when moving" state. In this state, whenever a command is issued that to move a file (not a directory) within the dedup file system from A to B, the file is not moved but copied. What the heck?
+
+Moving files within the dedup file system is very fast. Copying files is much slower, because the operating system reads the file contents and writes them to the new file. In the "copy when moving" state, copy-moving files is just as fast as moving files.
+
+This can be used to first create in the dedup file system a copy of an existing backup (fast) and then only to update those files that have changed (fast if few files have changed).
+
+To enable the "copy when moving" state, either tick the checkbox in the GUI or specify the `copywhenmoving=true` option when starting the dedup file system.
 
 ### Log Files
 
-TODO
+DedupFS writes log files that contain all log entries visible on the console and additionally DEBUG level log entries. DedupFS always creates its `logs` directory in the directory containing the DedupFS utility scripts.
 
 ### Create A Database Backup
 
@@ -170,7 +176,11 @@ The `db-restore` utility is for restoring previous versions of the DedupFS datab
 
 ### Reclaim Space
 
-TODO
+Deleting files in DedupFS is a multi-step process: First you delete a file in the dedup file system. This makes the file unavailable in the dedup file system. However, if you restore a previous database backup, the file will be available again in the dedup file system.
+
+If you want to re-use the space the deleted files take up, you can run the `reclaim-space-1` and `reclaim-space-2` utilities. Don't expect that this shrinks the repository size. Instead, the repository size will not increase for some time if you store new files.
+
+Note that running the `reclaim-space-2` utility partially invalidates previous database backups: Files are reclaimed by the utility can't be restored correctly anymore even if you restore the database to an earlier state from backup.
 
 ## Story: How I Use DedupFS
 
