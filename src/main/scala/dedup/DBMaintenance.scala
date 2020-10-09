@@ -30,7 +30,7 @@ object DBMaintenance {
     val target = new File(dbDir, s"dedupfs_$dateString.zip")
     log.info(s"Creating sql script database backup: $dbFile -> $target")
     Script.main(
-      "-url", s"jdbc:h2:${dbDir}/dedupfs", "-script", s"$target", "-user", "sa", "-options", "compression", "zip"
+      "-url", s"jdbc:h2:$dbDir/dedupfs", "-script", s"$target", "-user", "sa", "-options", "compression", "zip"
     )
   }
 
@@ -52,7 +52,7 @@ object DBMaintenance {
       val dbFile = new File(dbDir, "dedupfs.mv.db")
       require(!dbFile.exists || dbFile.delete, s"Can't delete current database file $dbFile")
       RunScript.main(
-        "-url", s"jdbc:h2:${dbDir}/dedupfs", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
+        "-url", s"jdbc:h2:$dbDir/dedupfs", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
       )
   }
 
