@@ -1,8 +1,11 @@
 package dedup
 
 import java.io.File
+import java.util.concurrent.Semaphore
 
 import org.slf4j.LoggerFactory
+
+import scala.concurrent.{ExecutionContext, Future}
 
 /** The methods of this class are not thread safe. Synchronize externally if needed. */
 class FileHandles(tempDir: File) {
@@ -10,6 +13,8 @@ class FileHandles(tempDir: File) {
 
   /** file ID -> (handle count, cache entry) */
   private val entries = collection.mutable.Map[Long, (Int, CacheEntry)]()
+  /** The number of concurrently allowed write processes (file system blocks when limit is reached). */
+  private val writeProcesses = new Semaphore(3)
 
   def create(id: Long, ltsParts: Parts): Unit =
     require(entries.put(id, 1 -> new CacheEntry(ltsParts, tempDir)).isEmpty, s"entries already contained $id")
@@ -28,7 +33,7 @@ class FileHandles(tempDir: File) {
   def cacheEntry(id: Long): Option[CacheEntry] =
     entries.get(id).map(_._2)
 
-  /** @param onReleased (TODO Asynchronously) executed callback. */
+  /** @param onReleased Asynchronously executed callback. */
   def decCount(id: Long, onReleased: CacheEntry => Unit): Unit =
     entries.get(id) match {
       case None => throw new IllegalArgumentException(s"entry $id not found")
@@ -36,11 +41,15 @@ class FileHandles(tempDir: File) {
         log.trace(s"decCount() - drop handle for $id")
         entries.subtractOne(id)
         if (!entry.dataWritten) entry.drop()
-        else
-          // if there is data to persist, TODO do it async, but limit number of active write processes
-          try onReleased(entry)
-          catch { case t: Throwable => log.error(s"onRelease failed for entry $id", t) }
-          finally entry.drop()
+        else {
+          // if there is data to persist, do it async, but limit number of active write processes
+          Future {
+            writeProcesses.acquire()
+            try onReleased(entry)
+            catch { case t: Throwable => log.error(s"onRelease failed for entry $id", t) }
+            finally { writeProcesses.release(); entry.drop() }
+          }(ExecutionContext.global)
+        }
       case Some(count -> entry) =>
         log.trace(s"decCount() - decrement count to ${count-1} for $id")
         entries.update(id, count - 1 -> entry)
