@@ -300,6 +300,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
         case Some(file: FileEntry) =>
           log.trace(s"release() - decCount for ${file.id} $path")
           fileHandles.decCount(file.id, { entry =>
+            // TODO manage synchronization so this block can be executed async, but limited to 3 write processes
             // START asynchronously executed release block
             // 1. zero size handling - can be the size was > 0 before...
             if (entry.size == 0) db.setDataId(file.id, -1)
