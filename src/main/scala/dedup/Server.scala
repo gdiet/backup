@@ -109,11 +109,11 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
       case _ => None
     }
 
-  private def sync[T](f: => T): T = synchronized(f)
-  private def sync(msg: String)(f: => Int): Int = sync {
-    try f.tap(result => log.trace(s"$msg -> $result"))
+  private val fsOps = new java.util.concurrent.Semaphore(3)
+  private def sync(msg: String)(f: => Int): Int =
+    try { fsOps.acquire(); f.tap(result => log.trace(s"$msg -> $result")) }
     catch { case e: Throwable => log.error(s"$msg -> ERROR", e); EIO }
-  }
+    finally fsOps.release()
 
   override def umount(): Unit =
     sync(s"Unmount repository from $mountPoint") {
