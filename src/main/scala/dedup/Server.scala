@@ -309,26 +309,24 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
               entry.read(0, entry.size, lts.read).foreach(md.update)
               val hash = md.digest()
               // 3. check if already known
-              sync(db.dataEntry(hash, entry.size)) match {
+              db.dataEntry(hash, entry.size) match {
                 // 4. already known, simply link
                 case Some(dataId) =>
                   log.trace(s"release: $path - content known, linking to dataId $dataId")
-                  if (file.dataId != dataId) sync(db.setDataId(file.id, dataId))
+                  if (file.dataId != dataId) db.setDataId(file.id, dataId)
                 // 5. not yet known, store
                 case None =>
                   // 5a. reserve storage space
-                  val start = sync(startOfFreeData.tap(_ => startOfFreeData += entry.size))
+                  val start = startOfFreeData.tap(_ => startOfFreeData += entry.size)
                   // 5b. write to storage
                   entry.read(0, entry.size, lts.read).foldLeft(0L) { case (position, data) =>
                     lts.write(start + position, data)
                     position + data.length
                   }
                   // 5c. create data entry
-                  sync {
-                    val dataId = db.newDataIdFor(file.id)
-                    db.insertDataEntry(dataId, 1, entry.size, start, start + entry.size, hash)
-                    log.trace(s"release: $path - new content, dataId $dataId")
-                  }
+                  val dataId = db.newDataIdFor(file.id)
+                  db.insertDataEntry(dataId, 1, entry.size, start, start + entry.size, hash)
+                  log.trace(s"release: $path - new content, dataId $dataId")
               }
             }
             // END asynchronously executed release block
