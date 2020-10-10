@@ -109,14 +109,12 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
       case _ => None
     }
 
-  private val fsOps = new java.util.concurrent.Semaphore(3)
-  private def sync(msg: String)(f: => Int): Int =
-    try { fsOps.acquire(); f.tap(result => log.trace(s"$msg -> $result")) }
+  private def guard(msg: String)(f: => Int): Int =
+    try f.tap(result => log.trace(s"$msg -> $result"))
     catch { case e: Throwable => log.error(s"$msg -> ERROR", e); EIO }
-    finally fsOps.release()
 
   override def umount(): Unit =
-    sync(s"Unmount repository from $mountPoint") {
+    guard(s"Unmount repository from $mountPoint") {
       lts.close()
       log.info(s"Dedup file system is stopped.")
       OK
@@ -124,7 +122,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int =
-    sync(s"getattr $path") {
+    guard(s"getattr $path") {
       def setCommon(time: Long, nlink: Int): Unit = {
         stat.st_nlink.set(nlink)
         stat.st_mtim.tv_sec.set(time / 1000)
@@ -148,7 +146,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
     }
 
   override def utimens(path: String, timespec: Array[Timespec]): Int =
-    sync(s"utimens $path") { // see man UTIMENSAT(2)
+    guard(s"utimens $path") { // see man UTIMENSAT(2)
       if (timespec.length < 2) EIO
       else {
         val sec = timespec(1).tv_sec.get
@@ -165,7 +163,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   /* Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir. */
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
-    sync(s"readdir $path $offset") {
+    guard(s"readdir $path $offset") {
       entry(path) match {
         case None => ENOENT
         case Some(_: FileEntry) => ENOTDIR
@@ -180,7 +178,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
       }
     }
 
-  override def rmdir(path: String): Int = if (readonly) EROFS else sync("rmdir $path") {
+  override def rmdir(path: String): Int = if (readonly) EROFS else guard("rmdir $path") {
     entry(path) match {
       case None => ENOENT
       case Some(_: FileEntry) => ENOTDIR
@@ -192,7 +190,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   // Renames a file. Other than the general contract of rename, newpath must not exist.
   override def rename(oldpath: String, newpath: String): Int = if (readonly) EROFS else
-    sync(s"rename $oldpath .. $newpath") {
+    guard(s"rename $oldpath .. $newpath") {
       val (oldParts, newParts) = (split(oldpath), split(newpath))
       if (oldParts.length == 0 || newParts.length == 0) ENOENT
       else entry(oldParts) match {
@@ -220,7 +218,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
       }
     }
 
-  override def mkdir(path: String, mode: Long): Int = if (readonly) EROFS else sync(s"mkdir $path") {
+  override def mkdir(path: String, mode: Long): Int = if (readonly) EROFS else guard(s"mkdir $path") {
     val parts = split(path)
     if (parts.length == 0) ENOENT
     else entry(parts.take(parts.length - 1)) match {
@@ -260,7 +258,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   // 2020.09.18 perfect
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
-    sync(s"create $path") {
+    guard(s"create $path") {
       val parts = split(path)
       if (readonly) EROFS
       else if (parts.length == 0) ENOENT // can't create root
@@ -281,7 +279,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   // 2020.09.18 perfect
   override def open(path: String, fi: FuseFileInfo): Int =
-    sync(s"open $path") {
+    guard(s"open $path") {
       entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
@@ -293,7 +291,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   // 2020.09.18 good
   override def release(path: String, fi: FuseFileInfo): Int =
-    sync(s"release $path") {
+    guard(s"release $path") {
       entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
@@ -304,6 +302,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
             // 1. zero size handling - can be the size was > 0 before...
             if (entry.size == 0) db.setDataId(file.id, -1)
             else {
+              Thread.sleep(100)
               // 2. calculate hash
               val md = MessageDigest.getInstance(hashAlgorithm)
               entry.read(0, entry.size, lts.read).foreach(md.update)
@@ -320,6 +319,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
                   val start = startOfFreeData.tap(_ => startOfFreeData += entry.size)
                   // 5b. write to storage
                   entry.read(0, entry.size, lts.read).foldLeft(0L) { case (position, data) =>
+                    Thread.sleep(20)
                     lts.write(start + position, data)
                     position + data.length
                   }
@@ -337,7 +337,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   // 2020.09.18 perfect
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-    sync(s"write $path .. offset = $offset, size = $size") {
+    guard(s"write $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs
       if (readonly) EROFS
       else if (offset < 0 || size != intSize) EOVERFLOW
@@ -357,7 +357,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   // 2020.09.18 perfect
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-    sync(s"read $path .. offset = $offset, size = $size") {
+    guard(s"read $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW
       else entry(path) match {
@@ -376,7 +376,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   // 2020.09.18 perfect
   override def truncate(path: String, size: Long): Int =
-    sync(s"truncate $path .. $size") {
+    guard(s"truncate $path .. $size") {
       if (readonly) EROFS
       else entry(path) match {
         case None => ENOENT
@@ -390,7 +390,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   // 2020.09.18 perfect
   override def unlink(path: String): Int =
-    sync(s"unlink $path") {
+    guard(s"unlink $path") {
       if (readonly) EROFS
       else entry(path) match {
         case None => ENOENT

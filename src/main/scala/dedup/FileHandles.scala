@@ -10,11 +10,14 @@ class FileHandles(tempDir: File) {
   private val log = LoggerFactory.getLogger("dedup.FHand")
   private def sync[T](f: => T): T = synchronized(f)
 
+  private val maxEntries = new java.util.concurrent.Semaphore(3)
+
   /** file ID -> (handle count, cache entry) */
   private val entries = collection.mutable.Map[Long, (Int, CacheEntry)]()
 
-  def create(id: Long, ltsParts: Parts): Unit = sync {
-    require(entries.put(id, 1 -> new CacheEntry(ltsParts, tempDir)).isEmpty, s"entries already contained $id")
+  def create(id: Long, ltsParts: Parts): Unit = {
+    maxEntries.acquire() // outside the sync block to avoid possible deadlocks
+    sync(require(entries.put(id, 1 -> new CacheEntry(ltsParts, tempDir)).isEmpty, s"entries already contained $id"))
   }
 
   def createOrIncCount(id: Long, ltsParts: => Parts): Unit = sync {
@@ -49,10 +52,10 @@ class FileHandles(tempDir: File) {
     else Future {
       try onReleased(entry)
       catch { case t: Throwable => log.error(s"onRelease failed for entry $id", t) }
-      finally entry.drop()
+      finally { maxEntries.release(); entry.drop() }
     }(ExecutionContext.global)
   }
 
   def delete(id: Long): Unit =
-    sync(entries.remove(id)).foreach(_._2.drop())
+    sync(entries.remove(id)).foreach { case (_, entry) => maxEntries.release(); entry.drop() }
 }
