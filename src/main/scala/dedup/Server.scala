@@ -325,7 +325,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
                   }
                   // 5c. create data entry
                   sync {
-                    val dataId = db.newDataId(file.id)
+                    val dataId = db.newDataIdFor(file.id)
                     db.insertDataEntry(dataId, 1, entry.size, start, start + entry.size, hash)
                     log.trace(s"release: $path - new content, dataId $dataId")
                   }

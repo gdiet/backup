@@ -163,12 +163,14 @@ class Database(connection: Connection) { import Database._
     require(dbVersionRead.contains("2"), s"DB version read is $dbVersionRead, not 2")
   }
 
-  def startOfFreeData: Long = resource(connection.createStatement())(Database.startOfFreeData)
+  private def sync[T](f: => T): T = synchronized(f)
+
+  def startOfFreeData: Long = sync(resource(connection.createStatement())(Database.startOfFreeData))
 
   private val qChild = connection.prepareStatement(
     "SELECT id, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
   )
-  def child(parentId: Long, name: String): Option[TreeEntry] = {
+  def child(parentId: Long, name: String): Option[TreeEntry] = sync {
     qChild.setLong(1, parentId)
     qChild.setString(2, name)
     resource(qChild.executeQuery())(_.maybeNext(TreeEntry(parentId, name, _)))
@@ -177,7 +179,7 @@ class Database(connection: Connection) { import Database._
   private val qChildren = connection.prepareStatement(
     "SELECT id, time, dataId, name FROM TreeEntries WHERE parentId = ? AND deleted = 0"
   )
-  def children(parentId: Long): Seq[TreeEntry] = {
+  def children(parentId: Long): Seq[TreeEntry] = sync {
     qChildren.setLong(1, parentId)
     resource(qChildren.executeQuery())(_.seq(rs => TreeEntry(parentId, rs.getString(4), rs)))
   }
@@ -185,7 +187,7 @@ class Database(connection: Connection) { import Database._
   private val qParts = connection.prepareStatement(
     "SELECT start, stop FROM DataEntries WHERE id = ? ORDER BY seq ASC"
   )
-  def parts(dataId: Long): Parts = Parts {
+  def parts(dataId: Long): Parts = sync(Parts {
     qParts.setLong(1, dataId)
     resource(qParts.executeQuery())(_.seq { rs =>
       val (start, stop) = rs.getLong(1) -> rs.getLong(2)
@@ -193,14 +195,14 @@ class Database(connection: Connection) { import Database._
       assumeLogged(stop >= start, s"stop >= start ... $stop / $start")
       start -> stop
     })
-  }
+  })
   // TODO maybe read length from DB seq = 1 instead? (might return no entries)
   def dataSize(dataId: Long): Long = parts(dataId).size
 
   private val dTreeEntry = connection.prepareStatement(
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
   )
-  def delete(treeEntryId: Long): Boolean = {
+  def delete(treeEntryId: Long): Boolean = sync {
     val time = System.currentTimeMillis.pipe { case 0 => 1; case x => x }
     dTreeEntry.setLong(1, time)
     dTreeEntry.setLong(2, treeEntryId)
@@ -210,7 +212,7 @@ class Database(connection: Connection) { import Database._
   private val uMoveRename = connection.prepareStatement(
     "UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?"
   )
-  def moveRename(id: Long, newParentId: Long, newName: String): Boolean = {
+  def moveRename(id: Long, newParentId: Long, newName: String): Boolean = sync {
     uMoveRename.setLong(1, newParentId)
     uMoveRename.setString(2, newName)
     uMoveRename.setLong(3, id)
@@ -220,7 +222,7 @@ class Database(connection: Connection) { import Database._
   private val uTime = connection.prepareStatement(
     "UPDATE TreeEntries SET time = ? WHERE id = ?"
   )
-  def setTime(id: Long, newTime: Long): Unit = {
+  def setTime(id: Long, newTime: Long): Unit = sync {
     uTime.setLong(1, newTime)
     uTime.setLong(2, id)
     require(uTime.executeUpdate() == 1, s"setTime update count not 1 for id $id")
@@ -230,7 +232,7 @@ class Database(connection: Connection) { import Database._
     "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)",
     Statement.RETURN_GENERATED_KEYS
   )
-  def mkDir(parentId: Long, name: String): Long = {
+  def mkDir(parentId: Long, name: String): Long = sync {
     iDir.setLong(1, parentId)
     iDir.setString(2, name)
     iDir.setLong(3, now)
@@ -242,7 +244,7 @@ class Database(connection: Connection) { import Database._
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, -1)",
     Statement.RETURN_GENERATED_KEYS
   )
-  def mkFile(parentId: Long, name: String, time: Long): Long = {
+  def mkFile(parentId: Long, name: String, time: Long): Long = sync {
     iFile.setLong(1, parentId)
     iFile.setString(2, name)
     iFile.setLong(3, time)
@@ -253,7 +255,7 @@ class Database(connection: Connection) { import Database._
   private val iFileWithDataId = connection.prepareStatement(
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)"
   )
-  def mkFile(parentId: Long, name: String, time: Long, dataId: Long): Unit = {
+  def mkFile(parentId: Long, name: String, time: Long, dataId: Long): Unit = sync {
     iFileWithDataId.setLong(1, parentId)
     iFileWithDataId.setString(2, name)
     iFileWithDataId.setLong(3, time)
@@ -262,15 +264,15 @@ class Database(connection: Connection) { import Database._
   }
 
   private val qNextId = connection.prepareStatement("SELECT NEXT VALUE FOR idSeq")
-  def nextId: Long = resource(qNextId.executeQuery())(_.tap(_.next()).getLong(1))
+  def nextId: Long = sync(resource(qNextId.executeQuery())(_.tap(_.next()).getLong(1)))
 
   // Generated keys seem not to be available for sql update, so this is two SQL commands
-  def newDataId(id: Long): Long = nextId.tap(setDataId(id, _))
+  def newDataIdFor(id: Long): Long = sync(nextId.tap(setDataId(id, _)))
 
   private val uDataId = connection.prepareStatement(
     "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
   )
-  def setDataId(id: Long, dataId: Long): Unit = {
+  def setDataId(id: Long, dataId: Long): Unit = sync {
     uDataId.setLong(1, dataId)
     uDataId.setLong(2, id)
     require(uDataId.executeUpdate() == 1, s"setDataId update count not 1 for id $id dataId $dataId")
@@ -279,7 +281,7 @@ class Database(connection: Connection) { import Database._
   private val qHash = connection.prepareStatement(
     "SELECT id FROM DataEntries WHERE hash = ? AND length = ?"
   )
-  def dataEntry(hash: Array[Byte], size: Long): Option[Long] = {
+  def dataEntry(hash: Array[Byte], size: Long): Option[Long] = sync {
     qHash.setBytes(1, hash)
     qHash.setLong(2, size)
     resource(qHash.executeQuery())(r => r.maybeNext(_.getLong(1)))
@@ -288,7 +290,7 @@ class Database(connection: Connection) { import Database._
   private val iDataEntry = connection.prepareStatement(
     "INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)"
   )
-  def insertDataEntry(dataId: Long, seq: Int, length: => Long, start: Long, stop: Long, hash: => Array[Byte]): Unit = {
+  def insertDataEntry(dataId: Long, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = sync {
     require(seq > 0, s"seq not positive: $seq")
     iDataEntry.setLong(1, dataId)
     iDataEntry.setInt(2, seq)
