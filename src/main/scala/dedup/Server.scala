@@ -302,7 +302,6 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
             // 1. zero size handling - can be the size was > 0 before...
             if (entry.size == 0) db.setDataId(file.id, -1)
             else {
-              Thread.sleep(100)
               // 2. calculate hash
               val md = MessageDigest.getInstance(hashAlgorithm)
               entry.read(0, entry.size, lts.read).foreach(md.update)
@@ -319,7 +318,6 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
                   val start = startOfFreeData.tap(_ => startOfFreeData += entry.size)
                   // 5b. write to storage
                   entry.read(0, entry.size, lts.read).foldLeft(0L) { case (position, data) =>
-                    Thread.sleep(20)
                     lts.write(start + position, data)
                     position + data.length
                   }
