@@ -48,7 +48,7 @@ class FileHandles(tempDir: File) {
         None
     }
   }.foreach { entry =>
-    if (!entry.dataWritten) entry.drop()
+    if (!entry.dataWritten) { maxEntries.release(); entry.drop() }
     else Future {
       try onReleased(entry)
       catch { case t: Throwable => log.error(s"onRelease failed for entry $id", t) }
