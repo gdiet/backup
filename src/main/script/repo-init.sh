@@ -1,0 +1,13 @@
+#!/bin/bash
+APPDIR=$(dirname "$0")
+if [ -d "$APPDIR"/jrex ]; then JAVA=$APPDIR/jrex/bin/java; else JAVA=java; fi
+JAVAVERSION=$($JAVA -version 2>&1 | head -1)
+if [[ $JAVAVERSION != *"\"11.0."* ]]; then
+  echo "This software has been tested with Java 11 only."
+  echo "Detected Java version: $JAVAVERSION"
+  exit 1
+fi
+# Options for init:
+# repo=<repository directory>     | default: working directory
+# -DLOG_BASE=<log base directory> | mandatory for sensible logging
+$JAVA "-DLOG_BASE=$APPDIR/" -cp "$APPDIR/lib/*" dedup.Server init "$@"
