@@ -182,7 +182,7 @@ class Database(connection: Connection) { import Database._
   def children(parentId: Long): Seq[TreeEntry] = sync {
     qChildren.setLong(1, parentId)
     resource(qChildren.executeQuery())(_.seq(rs => TreeEntry(parentId, rs.getString(4), rs)))
-  }
+  }.filterNot(_.id == 0)
 
   private val qParts = connection.prepareStatement(
     "SELECT start, stop FROM DataEntries WHERE id = ? ORDER BY seq ASC"
