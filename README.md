@@ -17,7 +17,7 @@ DedupFS is a file system with transparent file content deduplication. This means
 
 ## Status Of The DedupFS Software
 
-As the license states, DedupFS is provided "as is", without warranty of any kind. That being said, I use DedupFS now for more than two years to backup my private files, and my backup repository has grown to approx. 1.8 Million files/folders with 400.000 file contents stored comprising 1.5 TB of data. The largest file stored has a size of approx 7.5 GB.
+As the license states, DedupFS is provided "as is", without warranty of any kind. That being said, I use DedupFS now for more than two years for backing up my private files, and my backup repository has grown to approx. 1.8 Million files/folders with 400.000 file contents stored comprising 1.5 TB of data. The largest file stored has a size of approx 7.5 GB.
 
 Bottom line: For my personal use it is mature. Decide for yourself.
 
@@ -29,10 +29,10 @@ For example, you can once a week just copy "everything" into the dedup file syst
 
 ## Why Is DedupFS Better Than ...
 
-Whether or not DedupFS really is better than any other backup software depends mostly on how you like it and how you use it. Here are the main things why **I** like DedupFS better than all alternatives I have found so far:
+Whether DedupFS really is better than any other backup software depends mostly on how you like it and how you use it. Here are the main things why **I** like DedupFS better than all alternatives I have found so far:
 
 * DedupFS is fast at writing and reading backups (at least for personal requirements).
-* DedupFS is lightweight, meaning it's easy to install and to run and it needs little RAM compared to other deduplication software.
+* DedupFS is lightweight, meaning it's easy to install and to run, and it needs little RAM compared to other deduplication software.
 * DedupFS uses a simple storage format, so you know that IF something goes horribly wrong there is still a good chance to retrieve most of the stored data.
 * "Delete" in DedupFS is a two-step process, so if you accidentally deleted important files from your backups, they are not lost until you explicitly run the "reclaim space" utilities.
 * DedupFS automatically creates and keeps backups of the file tree and metadata database, so if necessary you can restore the dedup file system to earlier states.
@@ -41,7 +41,7 @@ Whether or not DedupFS really is better than any other backup software depends m
 
 ## What DedupFS Should Not Be Used For
 
-Don't use the DedupFS dedup file system as your everyday file system. It is not fully posix compatible. Locking a file for example will probably not work at all. When a file is closed after writing, immediately opening it for reading will show the old file contents - the new contents are availabe only after some (short) time. Last but not least changing file contents often will lead to a large amount of unused data entries that eat up space unless you use the "reclaim space" utilities regularly.
+Don't use the DedupFS dedup file system as your everyday file system. It is not fully posix compatible. Locking a file for example will probably not work at all. When a file is closed after writing, immediately opening it for reading will show the old file contents - the new contents are available only after some (short) time. Last but not least changing file contents often leads to a large amount of unused data entries that eat up space unless you use the "reclaim space" utilities regularly.
 
 Don't use the DedupFS dedup file system for really security critical things. For example, DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions. Note that this does not pose a problem when you store e.g. backups of your holiday photos...
 
@@ -49,17 +49,27 @@ Don't use the DedupFS dedup file system for really security critical things. For
 
 * Deleting files in DedupFS is a two-step process. Don't expect that the repository size shrinks if you delete files. Even if you run the "reclaim space" utilities, the repository size will not shrink. Instead, it will not grow further for some time if you store new files...
 * As already mentioned, DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions.
-* While DedupFS is known to run on Linux, no Linux DedupFS utility scripts are available. You can run it if you know what you are doing :confused:.
+* Since DedupFS has been used less on Linux, there might be additional issues there.
 
 ## System Requirements
 
-Windows 10. For Linux see [Caveats](#caveats).
-
-DedupFS uses FUSE (Filesystem in Userspace). This is preinstalled in most Linux installations. On Windows, install [WinFSP](https://github.com/billziss-gh/winfsp) to make FUSE available. It can be downloaded on the [WinFSP Releases](https://github.com/billziss-gh/winfsp/releases) page. Currently I use `WinFsp 2020` a.k.a `winfsp-1.6.20027` for running DedupFS on Windows.
+### General
 
 DedupFS needs disk space for its repository. If you back up lots of data, it will need lots of space. Keep an eye on available disk space when using.
 
 DedupFS runs fine with approximately 128 MB RAM assigned to its process. See below for details.
+
+### Windows
+
+Tested on Windows 10 64-bit.
+
+Download and install a [WinFSP Release](https://github.com/billziss-gh/winfsp/releases) to make FUSE (Filesystem in Userspace) available. I use `WinFsp 2020` a.k.a `winfsp-1.6.20027` for running DedupFS.
+
+### Linux
+
+On Linux, DedupFS needs a Java 11 runtime and *libfuse* to create a filesystem in userspace. *libfuse* is preinstalled in most Linux distributions.
+
+One possibility to make the Java 11 runtime available to DedupFS is: Download the appropriate Java 11 release archive from [AdoptOpenJDK](https://adoptopenjdk.net/releases.html). Unpack it into the DedupFS app directory into a folder `jrex`, so that the java executable resides in `<app directory>/jrex/bin/java`.
 
 ## Basic Steps To Use DedupFS
 
@@ -79,6 +89,8 @@ Windows: Make sure WinFSP is installed, see [System Requirements](#system-requir
 
 Installing DedupFS is easy: Unpack the DedupFS archive to a place where you have write access. I recommend unpacking it to the repository directory where the dedup file system data will be stored. For details, see the next paragraph.
 
+Linux: Make sure a Java 11 runtime is available, see [System Requirements](#system-requirements).
+
 ### Initialize The File System
 
 The dedup file system stores all its data in a repository directory, inside the subdirectories `fsdb` and `data`. Before the dedup file system can be used, the repository needs to be initialized:
@@ -94,6 +106,9 @@ Note:
 * By default, `repo-init` initializes the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order to initialize the repository in a different directory. DedupFS always creates its `logs` directory in the directory containing the DedupFS utility scripts.
 
 ### Mount The File System With A GUI
+
+FIXME Linux mount to an existing (empty, writable) directory.
+FIXME Linux unmount using umount only, don't stop the process.
 
 If you want to write, update, or read files in the dedup file system, you have to "mount" it first. Note that the dedup file system must be initialized before you can mount it, see above. Here are the steps to mount the dedup file system:
 
