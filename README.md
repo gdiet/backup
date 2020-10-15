@@ -107,8 +107,7 @@ Note:
 
 ### Mount The File System With A GUI
 
-FIXME Linux mount to an existing (empty, writable) directory.
-FIXME Linux unmount using umount only, don't stop the process.
+Linux: No GUI support yet.
 
 If you want to write, update, or read files in the dedup file system, you have to "mount" it first. Note that the dedup file system must be initialized before you can mount it, see above. Here are the steps to mount the dedup file system:
 
@@ -119,14 +118,21 @@ If you want to write, update, or read files in the dedup file system, you have t
 
 Notes:
 
-* Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique mount points and temp directories configured - see below.
+* Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique mount points configured - see below.
 * The `write-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
 * By default, `write-dedupfs` uses the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
 * For additional options, read the `write-dedupfs` script and the paragraphs below.
 
 ### Mount The File System Without GUI
 
-If you want to mount the dedup file system without a GUI, run `write-dedupfs-console`. This behaves like `write-dedupfs` except that it does not start a GUI. So see above for more details on how `write-dedupfs-console` works.
+Windows: If you want to mount the dedup file system without a GUI, run `write-dedupfs-console`. This behaves like `write-dedupfs` except that it does not start a GUI. So see above for more details on how `write-dedupfs-console` works.
+
+Linux: The `write-dedupfs` script mounts the dedup file system without a GUI. It behaves like the Windows `write-dedupfs-console`, except that it mounts the file system to `tmp/mnt` by default. To mount the file system somewhere else, call the script with a `mount=/target/folder` parameter.
+
+Notes:
+
+* On Linux, mount the dedup file system to an existing (empty, writable) directory.
+* On Linux, unmount using `umount` only, don't stop the process.
 
 ### Mount The File System Read-Only
 
