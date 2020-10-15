@@ -47,6 +47,7 @@ Don't use the DedupFS dedup file system for really security critical things. For
 
 ## Caveats
 
+* The DedupFS dedup file system only supports regular directories and regular files. It does not support for example soft or hard links or sparse files.
 * Deleting files in DedupFS is a two-step process. Don't expect that the repository size shrinks if you delete files. Even if you run the "reclaim space" utilities, the repository size will not shrink. Instead, it will not grow further for some time if you store new files...
 * As already mentioned, DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions.
 * Since DedupFS has been used less on Linux, there might be additional issues there.
@@ -54,6 +55,8 @@ Don't use the DedupFS dedup file system for really security critical things. For
 ## System Requirements
 
 ### General
+
+DedupFS needs a Java 11 runtime. The app comes bundled with a suitable Java runtime for Windows x64 and Linux x64.
 
 DedupFS needs disk space for its repository. If you back up lots of data, it will need lots of space. Keep an eye on available disk space when using.
 
@@ -67,9 +70,9 @@ Download and install a [WinFSP Release](https://github.com/billziss-gh/winfsp/re
 
 ### Linux
 
-On Linux, DedupFS needs a Java 11 runtime and *libfuse* to create a filesystem in userspace. *libfuse* is preinstalled in most Linux distributions.
+Smoke tested on Ubuntu 64-bit.
 
-One possibility to make the Java 11 runtime available to DedupFS is: Download the appropriate Java 11 release archive from [AdoptOpenJDK](https://adoptopenjdk.net/releases.html). Unpack it into the DedupFS app directory into a folder `jrex`, so that the java executable resides in `<app directory>/jrex/bin/java`.
+DedupFS needs *libfuse* to create a filesystem in userspace. *libfuse* is preinstalled in most Linux distributions.
 
 ## Basic Steps To Use DedupFS
 
@@ -89,14 +92,12 @@ Windows: Make sure WinFSP is installed, see [System Requirements](#system-requir
 
 Installing DedupFS is easy: Unpack the DedupFS archive to a place where you have write access. I recommend unpacking it to the repository directory where the dedup file system data will be stored. For details, see the next paragraph.
 
-Linux: Make sure a Java 11 runtime is available, see [System Requirements](#system-requirements).
-
 ### Initialize The File System
 
 The dedup file system stores all its data in a repository directory, inside the subdirectories `fsdb` and `data`. Before the dedup file system can be used, the repository needs to be initialized:
 
 * Create a repository directory for the dedup file system data, e.g. on an external backup drive.
-* Unpack the DedupFS archive to that repository directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like `repo-init` and `server-write` should be located directly in the repository directory.
+* Unpack the DedupFS archive to that repository directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like `repo-init` and `dedupfs` should be located directly in the repository directory.
 * Start the DedupFS `repo-init` utility in the repository directory, e.g. by double-clicking.
 * Check the log output printed to the console where `repo-init` is executed.
 * If successful, this command creates in the repository directory the database directory `fsdb` and the log files directory `logs`.
@@ -107,41 +108,31 @@ Note:
 
 ### Mount The File System With A GUI
 
-Linux: No GUI support yet.
-
 If you want to write, update, or read files in the dedup file system, you have to "mount" it first. Note that the dedup file system must be initialized before you can mount it, see above. Here are the steps to mount the dedup file system:
 
-* If you have installed DedupFS in the repository directory as recommended, start the dedup file system by running `write-dedupfs` in the repository directory, e.g. by double-clicking.
+* If you have installed DedupFS in the repository directory as recommended, start the dedup file system by running `gui-dedupfs` in the repository directory, e.g. by double-clicking.
 * After some time the DedupFS GUI will open, showing log entries.
 * After some time a log entry will tell you that the dedup file system is started.
 * In the log entries, you see among others which repository is used and where the dedup file system is mounted.
 
 Notes:
 
+* The default mount point on Windows is `J:\`, on Linux `tmp/mnt`. To mount the file system somewhere else, call the script with a `mount=<mount target>` parameter.
+* On Linux, mount the dedup file system to an existing (empty, writable) directory.
 * Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique mount points configured - see below.
-* The `write-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
-* By default, `write-dedupfs` uses the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
-* For additional options, read the `write-dedupfs` script and the paragraphs below.
+* The `gui-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
+* By default, `gui-dedupfs` uses the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
+* For additional options, read the `gui-dedupfs` script and the paragraphs below.
 
 ### Mount The File System Without GUI
 
-Windows: If you want to mount the dedup file system without a GUI, run `write-dedupfs-console`. This behaves like `write-dedupfs` except that it does not start a GUI. So see above for more details on how `write-dedupfs-console` works.
-
-Linux: The `write-dedupfs` script mounts the dedup file system without a GUI. It behaves like the Windows `write-dedupfs-console`, except that it mounts the file system to `tmp/mnt` by default. To mount the file system somewhere else, call the script with a `mount=/target/folder` parameter.
-
-Notes:
-
-* On Linux, mount the dedup file system to an existing (empty, writable) directory.
+If you want to mount the dedup file system without a GUI, run `dedupfs`. This behaves like `gui-dedupfs` except that it does not start a GUI. So see above for more details on how `dedupfs` works.
 
 ### Mount The File System Read-Only
 
-If you want to mount the dedup file system read-only, use the `dedupfs` or `dedupfs-console` utility. These utilities work analog to the write utilities.
+If you want to mount the dedup file system read-only, use the `gui-readonly` or `readonly` utility. These utilities work analog to the write utilities.
 
 Why mount read-only? This can be handy if for example you want to look up files in your backups while making sure that you cannot accidentally add, change or delete files in the backup.
-
-### Configure The Mount Point
-
-By default, the DedupFS mounts the dedup file system to `J:\` on Windows and `/tmp/mnt` on Linux. The utilities accept a `mount=<mount point>` option to override the default.
 
 ### Configure Memory Settings
 
@@ -149,9 +140,9 @@ The DedupFS utilities use the default Java 11 memory settings. You can change th
 
 * It does not hurt to assign much RAM to the DedupFS utilities - unless the operating system or other software running on the same computer doesn't have enough free RAM left for good operation.
 * `repo-init` does not need more than ~64 MB RAM.
-* `write-dedupfs` and `write-dedupfs-console` need at least ~96 MB RAM for good operation. When storing large files, additional RAM improves performance, so you might want to assign (size of large files to store + 64 MB) RAM to the write utilities. Assigning more will not improve performance.
+* `gui-dedupfs` and `dedupfs` need at least ~96 MB RAM for good operation. When storing large files, additional RAM improves performance, so you might want to assign (size of large files to store + 64 MB) RAM to the write utilities. Assigning more will not improve performance.
 * `db-backup` (which is called first in the write utilities) and `db-restore` do not need more than ~64 MB RAM.
-* `read-dedupfs` and `read-dedupfs-console` work fine with ~80 MB RAM. Assigning more will not improve performance.
+* `gui-readonly` and `readonly` work fine with ~80 MB RAM. Assigning more will not improve performance.
 * The `reclaim-space` utilities need about ((number of data entries) * 64 B + 64 MB) RAM.
 
 To change the RAM assignment of a utility, open it in a text editor. After the `java` or `javaw` call, add the `-Xmx` maximum heap memory setting. In the following example, it is set to 200 MB:

@@ -1,0 +1,20 @@
+#!/bin/bash
+APPDIR=$(dirname "$0")
+if [ -d "$APPDIR"/jrex ]; then JAVA=$APPDIR/jrex/bin/java; else JAVA=java; fi
+JAVAVERSION=$($JAVA -version 2>&1 | head -1)
+if [[ $JAVAVERSION != *"\"11.0."* ]]; then
+  echo "This software has been tested with Java 11 only."
+  echo "Detected Java version: $JAVAVERSION"
+  exit 1
+fi
+echo FIXME call db-backup
+
+# Options for write:
+# copywhenmoving=true             | default: false
+# mount=/tmp/dedupfs              | default: Windows J:\ Linux /tmp/mnt
+# repo=<repository directory>     | default: working directory
+# temp=<temp file directory>      | default: <system temp dir>/dedupfs-temp
+# -DLOG_BASE=<log base directory> | mandatory for sensible logging
+# -Dfile.encoding=UTF-8           | necessary for FUSE operations
+# write needs at least 96MB RAM.
+$JAVA "-DLOG_BASE=$APPDIR/" -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.Server "$@"
