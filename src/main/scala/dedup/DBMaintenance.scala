@@ -112,9 +112,9 @@ object DBMaintenance {
       val dataChunks = allDataChunks(stat).to(SortedMap)
       log.info(s"Number of data chunks in storage database: ${dataChunks.size}")
       val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks)
-      log.info(s"Current size of data storage: ${readable(endOfStorage)}B")
+      log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
       val compactionPotential = combinedSize(dataGaps)
-      log.info(s"Compaction potential of stage 2: ${readable(compactionPotential)}B in ${dataGaps.size} gaps.")
+      log.info(s"Compaction potential of stage 2: ${readableBytes(compactionPotential)} in ${dataGaps.size} gaps.")
     }
     log.info(s"Finished stage 1 of reclaiming space. Undo by restoring the database from a backup.")
   }
@@ -128,8 +128,8 @@ object DBMaintenance {
     val dataChunks = dataEntries.map(e => e._5 -> e._6).to(SortedMap)
     log.info(s"Number of data chunks in storage database: ${dataChunks.size}")
     val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks)
-    log.info(s"Current size of data storage: ${readable(endOfStorage)}B")
-    val compactionPotentialString = readable(combinedSize(dataGaps))+"B"
+    log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
+    val compactionPotentialString = readableBytes(combinedSize(dataGaps))
     log.info(s"Compaction potential: $compactionPotentialString in ${dataGaps.size} gaps.")
 
     type Entry = (Long, Long, Array[Byte], Seq[Chunk])
@@ -150,7 +150,7 @@ object DBMaintenance {
     def reclaim(sortedEntries: Seq[Entry], gaps: Seq[Chunk], reclaimed: Long): Long =
       if (sortedEntries.isEmpty) reclaimed else { // can't fold or foreach because that's not tail recursive in Scala 2.13.3
         if (now > progressLoggedLast + 10000) {
-          log.info(s"In progress... reclaimed ${readable(reclaimed)}B of $compactionPotentialString.")
+          log.info(s"In progress... reclaimed ${readableBytes(reclaimed)} of $compactionPotentialString.")
           progressLoggedLast = now
         }
 
@@ -205,12 +205,12 @@ object DBMaintenance {
           if (compactionSize == entrySize)
             log.info(s"Finished reclaiming: Reordering entry $id would take high effort.")
           else
-            log.info(s"Finished reclaiming: Entry $id size ${readable(entrySize)}B is larger than remaining compaction potential.")
+            log.info(s"Finished reclaiming: Entry $id size ${readableBytes(entrySize)} is larger than remaining compaction potential.")
           reclaimed
         }
       }
 
     val reclaimed = reclaim(sortedEntries, dataGaps, 0)
-    log.info(s"Reclaimed ${readable(reclaimed)}B.")
+    log.info(s"Reclaimed ${readableBytes(reclaimed)}.")
   }
 }

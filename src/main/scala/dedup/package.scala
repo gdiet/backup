@@ -17,12 +17,12 @@ package object dedup extends scala.util.ChainingSyntax {
   }
   def combinedSize(chunks: Seq[Chunk]): Long = chunks.map(_.size).sum
 
-  /** Format a possibly large number that will be followed by a unit, e.g. "27.38 M"+"B" or "135 "+"B". */
-  def readable(l: Long): String =
-    if (l < 10000) "%d ".format(l)
-    else if (l < 1000000) "%,.2f k".format(l/1000d)
-    else if (l < 1000000000) "%,.2f M".format(l/1000000d)
-    else if (l < 1000000000000L) "%,.2f G".format(l/1000000000d)
+  /** Format a possibly large number of bytes, e.g. "27.38 MB" or "135 B". */
+  def readableBytes(l: Long): String =
+    if (l < 10000) "%d B".format(l)
+    else if (l < 1000000) "%,.2f kB".format(l/1000d)
+    else if (l < 1000000000) "%,.2f MB".format(l/1000000d)
+    else if (l < 1000000000000L) "%,.2f GB".format(l/1000000000d)
     else "%,.2f T".format(l/1000000000000d)
 
   // TODO replace "require" and "assert" with assumeLogged/assertLogged?
