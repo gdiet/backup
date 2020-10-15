@@ -182,7 +182,7 @@ class Database(connection: Connection) { import Database._
   def children(parentId: Long): Seq[TreeEntry] = sync {
     qChildren.setLong(1, parentId)
     resource(qChildren.executeQuery())(_.seq(rs => TreeEntry(parentId, rs.getString(4), rs)))
-  }.filterNot(_.id == 0) // FIXME instead, add tree node -1 as parent for root.
+  }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
   private val qParts = connection.prepareStatement(
     "SELECT start, stop FROM DataEntries WHERE id = ? ORDER BY seq ASC"
