@@ -115,6 +115,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
 
   override def umount(): Unit =
     guard(s"Unmount repository from $mountPoint") {
+      super.umount()
       lts.close()
       log.info(s"Dedup file system is stopped.")
       OK

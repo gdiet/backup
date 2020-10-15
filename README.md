@@ -132,7 +132,6 @@ Linux: The `write-dedupfs` script mounts the dedup file system without a GUI. It
 Notes:
 
 * On Linux, mount the dedup file system to an existing (empty, writable) directory.
-* On Linux, unmount using `umount` only, don't stop the process.
 
 ### Mount The File System Read-Only
 
