@@ -211,7 +211,7 @@ temp directory on fast drive (ssd)
 
 ### Tree And File Meta Data
 
-DedupFS stores the tree and file meta data in an SQL database using approximately the following schema:
+DedupFS stores the tree and file metadata in an [H2](http://h2database.com) SQL database. Use the h2 JDBC driver `lib/h2-<version>.jar` in case you want to inspect the database contents. The database schema is approximately:
 
 ```sql
 CREATE TABLE TreeEntries (
