@@ -5,4 +5,5 @@
 
 # Used by build-app.sh
 !*.version
-!readme.html
+!LICENSE
+!README.md

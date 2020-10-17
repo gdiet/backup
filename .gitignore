@@ -1,5 +1,6 @@
 /.bsp/sbt.json
 /.idea/
+/app/
 /data/
 /dedupfs-temp/
 /fsdb/
