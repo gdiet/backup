@@ -1,0 +1,8 @@
+*
+!project/build.properties
+!src/main/
+!build.sbt
+
+# Used by build-app.sh
+!*.version
+!readme.html

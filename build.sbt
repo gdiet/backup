@@ -1,3 +1,5 @@
+import sbt.nio.file.FileTreeView
+
 version := "1"
 scalaVersion := "2.13.3"
 scalacOptions := Seq("-target:11", "-deprecation", "-feature", "-unchecked")
@@ -14,15 +16,5 @@ createApp := {
   IO.copyDirectory(file("src/main/script"), appDir)
   (appDir / "dedup.sh").setExecutable(true)
   jars.foreach(file => IO.copyFile(file, appDir / "lib" / file.name))
-  
-  val gitRevision = try {
-    import scala.sys.process._
-    val commitEx = "commit ([0-9a-f]{8}).*".r
-    val revision = "git log -1".lineStream.collectFirst { case commitEx(rev) => rev }.get
-    val clean = "git status".lineStream.exists(_.matches(".*working tree clean.*"))
-    if (clean) revision else revision + "+"
-  } catch { case _: Throwable => "xx" }
-  val date = new java.text.SimpleDateFormat("yyyy.MM.dd").format(new java.util.Date())
-  IO.touch(appDir / s"$date-$gitRevision.version")
-  streams.value.log.info(s"Created dedup app $date-$gitRevision")
+  streams.value.log.info(s"Built dedup app")
 }
