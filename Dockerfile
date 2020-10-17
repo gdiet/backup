@@ -4,8 +4,8 @@ FROM hseeberger/scala-sbt:11.0.8_1.4.0_2.13.3
 RUN wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.8%2B10/OpenJDK11U-jre_x64_linux_hotspot_11.0.8_10.tar.gz
 RUN wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.8%2B10/OpenJDK11U-jre_x64_windows_hotspot_11.0.8_10.zip
 
-# Install jq, needed for generating html readme
-RUN apt-get --assume-yes install jq
+# Install additional utilities needed later
+RUN apt-get --assume-yes install jq zip
 
 # Prepare SBT and download dependencies
 COPY build.sbt .
@@ -33,8 +33,12 @@ RUN jq --slurp --raw-input '{"text": "\(.)", "mode": "markdown"}' < README.md \
       | curl -s --data @- https://api.github.com/markdown > target/app/readme.html  || exit 1
 
 # Final touches
-RUN chmod -x target/app/*.bat
-RUN chmod -x target/app/*.html
-RUN chmod -x target/app/*.legal
-RUN chmod -x target/app/*.version
+WORKDIR /root/target/app
+RUN chmod -x *.bat
+RUN chmod -x *.html
+RUN chmod -x *.legal
+RUN chmod -x *.version
 
+# Pack apps
+RUN zip -rq ../../app.zip .
+RUN tar cfz ../../app.tar.gz *
