@@ -7,7 +7,7 @@ if [[ $JAVAVERSION != *"\"11.0."* ]]; then
   echo "Detected Java version: $JAVAVERSION"
   exit 1
 fi
-echo FIXME call db-backup
+if ! $APPDIR/db-backup; then exit 1; fi
 
 # Options for write:
 # copywhenmoving=true             | default: false

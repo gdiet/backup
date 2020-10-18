@@ -7,6 +7,7 @@ if [[ $JAVAVERSION != *"\"11.0."* ]]; then
   echo "Detected Java version: $JAVAVERSION"
   exit 1
 fi
+
 # Options for dbbackup:
 # repo=<repository directory>     | default: working directory
 # -DLOG_BASE=<log base directory> | mandatory for sensible logging

@@ -7,14 +7,11 @@ if [[ $JAVAVERSION != *"\"11.0."* ]]; then
   echo "Detected Java version: $JAVAVERSION"
   exit 1
 fi
-echo FIXME call db-backup
 
-# Options for write:
-# copywhenmoving=true             | default: false
+# Options for read:
 # mount=/tmp/dedupfs              | default: Windows J:\ Linux /tmp/mnt
 # repo=<repository directory>     | default: working directory
-# temp=<temp file directory>      | default: <system temp dir>/dedupfs-temp
 # -DLOG_BASE=<log base directory> | mandatory for sensible logging
 # -Dfile.encoding=UTF-8           | necessary for FUSE operations
-# write needs at least 96MB RAM.
+# read needs at least 80MB RAM.
 $JAVA "-DLOG_BASE=$APPDIR/" -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.ServerGui "$@"
