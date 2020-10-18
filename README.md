@@ -12,6 +12,7 @@ DedupFS is a file system with transparent file content deduplication. This means
 * [Basic Steps To Use DedupFS](#basic-steps-to-use-dedupfs)
 * [How To ...](#how-to-)
 * [Story: How I Use DedupFS](#story-how-i-use-dedupfs)
+* [Upgrading And Version History](#upgrading-and-version-history)
 * [Storage Format](#storage-format)
 * [License](#license)
 
@@ -134,6 +135,10 @@ If you want to mount the dedup file system read-only, use the `gui-readonly` or 
 
 Why mount read-only? This can be handy if for example you want to look up files in your backups while making sure that you cannot accidentally add, change or delete files in the backup.
 
+### Read Basic File System Statistics
+
+The `stats` utility allows you to read basic file system statistics. Like the other utilities, it accepts the optional `repo=<target directory>` parameter.
+
 ### Configure Memory Settings
 
 The DedupFS utilities use the default Java 11 memory settings. You can change these by editing the utility scripts. Let's start with some rules of thumb:
@@ -206,6 +211,20 @@ for folders too big for my laptop, keep a "current" copy of everything in the de
 two external backup drives
 
 temp directory on fast drive (ssd)
+
+## Upgrading And Version History
+
+To upgrade a DedupFS installation to a newer version, TODO TODO.
+
+### Version History And Version Specific Update Instructions
+
+#### 2.5
+
+* Added `stats` utility.
+
+#### 2.4
+
+First public release
 
 ## Storage Format
 
