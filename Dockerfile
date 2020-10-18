@@ -34,6 +34,7 @@ RUN jq --slurp --raw-input '{"text": "\(.)", "mode": "markdown"}' < README.md \
 
 # Final touches
 WORKDIR /root/target/app
+RUN chmod +x *
 RUN chmod -x *.bat
 RUN chmod -x *.html
 RUN chmod -x *.legal
