@@ -118,7 +118,7 @@ If you want to write, update, or read files in the dedup file system, you have t
 Notes:
 
 * The default mount point on Windows is `J:\`, on Linux `tmp/mnt`. To mount the file system somewhere else, call the script with a `mount=<mount target>` parameter.
-* On Linux, mount the dedup file system to an existing (empty, writable) directory.
+* On Linux, mount the dedup file system to an existing empty writable directory.
 * Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique mount points configured - see below.
 * The `gui-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
 * By default, `gui-dedupfs` uses the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.

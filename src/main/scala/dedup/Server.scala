@@ -72,16 +72,21 @@ object Server extends App {
     val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
     val absoluteRepo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val temp = new File(options.getOrElse("temp", sys.props("java.io.tmpdir") + "/dedupfs-temp"))
+    if (!readonly) {
+      temp.mkdirs()
+      require(temp.isDirectory && temp.canWrite, s"Temp dir is not a writable directory: $temp")
+      if (temp.list.nonEmpty) log.info(s"Note that temp dir is not empty: $temp")
+    }
+    if (Platform.getNativePlatform.getOS != WINDOWS) {
+      val mountDir = new File(mountPoint)
+      require(mountDir.isDirectory, s"Mount point is not a directory: $mountPoint")
+      require(mountDir.list.isEmpty, s"Mount point is not empty: $mountPoint")
+    }
     log.info (s"Starting dedup file system.")
     log.info (s"Repository:  $absoluteRepo")
     log.info (s"Mount point: $mountPoint")
     log.info (s"Readonly:    $readonly")
     log.debug(s"Temp dir:    $temp")
-    if (!readonly) {
-      if (temp.exists && temp.list.nonEmpty) log.info(s"Note that temp dir is not empty: $temp")
-      temp.mkdirs()
-      require(temp.isDirectory && temp.canWrite, s"Temp dir is not a writable directory: $temp")
-    }
     if (copyWhenMoving.get) log.info (s"Copy instead of move initially enabled.")
     val fs = new Server(absoluteRepo, temp, readonly)
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
