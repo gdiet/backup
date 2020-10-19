@@ -1,6 +1,7 @@
 package dedup.store
 
 import java.io.{File, FileNotFoundException, RandomAccessFile}
+import java.util.concurrent.atomic.AtomicInteger
 
 import dedup.assertLogged
 import org.slf4j.{Logger, LoggerFactory}
@@ -16,6 +17,8 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess[Ran
   import LongTermStore._
 
   implicit private val log: Logger = LoggerFactory.getLogger("dedup.Store")
+  private val missingFileLogged = new AtomicInteger(0)
+
   protected def openResource(path: String, forWrite: Boolean): RandomAccessFile = {
     log.debug(s"Open data file $path ${if (forWrite) "for writing" else "read-only"}")
     val file = new File(dataDir, path)
@@ -46,7 +49,11 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess[Ran
         file.seek(offset); file.readFully(_, 0, bytesToRead)
       })
       catch { case e: FileNotFoundException =>
-        log.error(s"Missing data file while trying to read $size bytes starting at $position", e)
+        // full log every 1024th time
+        if (missingFileLogged.getAndAdd(Int.MinValue/512) == 0)
+          log.error(s"Missing data file while trying to read $size bytes starting at $position", e)
+        else
+          log.debug(s"Missing data file while trying to read $size bytes starting at $position: $e")
         new Array[Byte](bytesRequested)
       }
     if (size > bytesRequested) bytes ++ read(position + bytesRequested, size - bytesRequested)
