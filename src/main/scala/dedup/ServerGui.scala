@@ -1,6 +1,6 @@
 package dedup
 
-import java.awt.event.{ActionEvent, WindowAdapter, WindowEvent}
+import java.awt.event.{WindowAdapter, WindowEvent}
 import java.awt.{Dimension, Font}
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -40,7 +40,7 @@ object ServerGui extends App {
 
   if (args.exists(_.equalsIgnoreCase("write"))) {
     val copyWhenMoveCheckbox = new JCheckBox("copy when moving")
-    copyWhenMoveCheckbox.addActionListener((e: ActionEvent) => copyWhenMoving.set(copyWhenMoveCheckbox.isSelected))
+    copyWhenMoveCheckbox.addActionListener(_ => copyWhenMoving.set(copyWhenMoveCheckbox.isSelected))
     pane.add(copyWhenMoveCheckbox)
   }
 
@@ -55,9 +55,21 @@ object ServerGui extends App {
   frame.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE)
   frame.addWindowListener(new WindowAdapter {
     override def windowClosing(e: WindowEvent): Unit = {
-      // TODO show a countdown - when zero exit automatically
-      val reply = JOptionPane.showConfirmDialog(frame, "Stop Dedup File System?", "Dedup File System", JOptionPane.YES_NO_OPTION)
-      if (reply == 0) System.exit(0)
+      // Without the count down, it would be just two lines:
+      // val reply = JOptionPane.showConfirmDialog(frame, "Stop Dedup File System?", "Dedup File System", JOptionPane.YES_NO_OPTION)
+      // if (reply == 0) sys.exit(0)
+      val pane = new JOptionPane("", JOptionPane.QUESTION_MESSAGE, JOptionPane.YES_NO_OPTION)
+      var count = 20
+      def setMessage(): Unit = SwingUtilities.invokeLater(() => pane.setMessage(s"Stop Dedup File System?\n(Yes: $count s)"))
+      setMessage()
+      val dialog = pane.createDialog(frame, "Stop Dedup File System?")
+      dialog.setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE)
+      val timer = new Timer(1000, _ => {
+        count -= 1; setMessage(); if (count < 1) dialog.dispose()
+      }).tap(_.start())
+      dialog.setVisible(true)
+      dialog.dispose(); timer.stop()
+      if (!Option(pane.getValue).contains(1)) sys.exit(0)
     }
   })
   val icon = new javax.swing.ImageIcon(getClass.getResource("/trayIcon.png"), "tray icon").getImage

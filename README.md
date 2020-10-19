@@ -235,13 +235,20 @@ To upgrade a DedupFS installation to a newer version, TODO TODO.
 
 ### Version History And Version Specific Update Instructions
 
-#### 2.5
+#### May Come Eventually
+
+* Blacklist files that should not be stored at all.
+* Optionally store packed (gz or similar).
+* Reclaim finds & cleans up data entries duplicates.
+
+#### Coming In 2.5
 
 * New `stats` utility.
 * In read-only mode, log no error when trying to update last modified time of a file.
 * Support running the dedup file system with data files missing.
+* GUI exit dialog count down.
 
-#### 2.4
+#### 2.4 (2020.10.18)
 
 First public release
 
