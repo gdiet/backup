@@ -30,9 +30,11 @@ trait ParallelAccess[R] extends AutoCloseable {
         else { closeResource(path, resource); openResources.remove(path); mapLock.unlock(); access(path, write)(f) }
       case None =>
         if (openResources.size < parallelOpenResources) {
-          val resource -> resourceLock = openResource(path, write) -> new ReentrantLock().tap(_.lock())
-          openResources.put(path, (resourceLock, write, resource))
-          mapLock.unlock(); f(resource).tap(_ => resourceLock.unlock())
+          try {
+            val resource -> resourceLock = openResource(path, write) -> new ReentrantLock().tap(_.lock())
+            openResources.put(path, (resourceLock, write, resource))
+            mapLock.unlock(); f(resource).tap(_ => resourceLock.unlock())
+          } catch { case e: Exception => mapLock.unlock(); throw e }
         } else {
           val (pathToClose, (_, _, resource)) = openResources
             .find { case (_, (fileLock, _, _)) =>  fileLock.tryLock() }
