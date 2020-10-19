@@ -151,7 +151,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
       }
     }
 
-  override def utimens(path: String, timespec: Array[Timespec]): Int =
+  override def utimens(path: String, timespec: Array[Timespec]): Int = if (readonly) EROFS else
     guard(s"utimens $path") { // see man UTIMENSAT(2)
       if (timespec.length < 2) EIO
       else {

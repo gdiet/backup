@@ -221,6 +221,7 @@ To upgrade a DedupFS installation to a newer version, TODO TODO.
 #### 2.5
 
 * Added `stats` utility.
+* In read-only mode, log no error when trying to update last modified time of a file.
 
 #### 2.4
 
