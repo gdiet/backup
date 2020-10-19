@@ -1,7 +1,8 @@
 package dedup.store
 
 import java.io.{File, FileNotFoundException, RandomAccessFile}
-import java.util.concurrent.atomic.AtomicInteger
+import java.lang.System.{currentTimeMillis => now}
+import java.util.concurrent.atomic.AtomicLong
 
 import dedup.assertLogged
 import org.slf4j.{Logger, LoggerFactory}
@@ -17,7 +18,7 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess[Ran
   import LongTermStore._
 
   implicit private val log: Logger = LoggerFactory.getLogger("dedup.Store")
-  private val missingFileLogged = new AtomicInteger(0)
+  private val missingFileLoggedLast = new AtomicLong(now - 3600000) // One hour ago
 
   protected def openResource(path: String, forWrite: Boolean): RandomAccessFile = {
     log.debug(s"Open data file $path ${if (forWrite) "for writing" else "read-only"}")
@@ -49,11 +50,13 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess[Ran
         file.seek(offset); file.readFully(_, 0, bytesToRead)
       })
       catch { case e: FileNotFoundException =>
-        // full log every 1024th time
-        if (missingFileLogged.getAndAdd(Int.MinValue/512) == 0)
-          log.error(s"Missing data file while trying to read $size bytes starting at $position", e)
-        else
-          log.debug(s"Missing data file while trying to read $size bytes starting at $position: $e")
+        // full log every five minutes
+        if (missingFileLoggedLast.get() + 300000 < now) {
+          missingFileLoggedLast.set(now)
+          log.warn(s"Missing data file while reading at $position, substituting with '0' values.")
+          log.debug(s"Missing data file - full stack trace:", e)
+        } else
+          log.debug(s"Missing data file while reading at $position, substituting with '0' values.")
         new Array[Byte](bytesRequested)
       }
     if (size > bytesRequested) bytes ++ read(position + bytesRequested, size - bytesRequested)

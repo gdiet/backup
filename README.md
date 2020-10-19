@@ -52,6 +52,7 @@ Don't use the DedupFS dedup file system for really security critical things. For
 * Deleting files in DedupFS is a two-step process. Don't expect that the repository size shrinks if you delete files. Even if you run the "reclaim space" utilities, the repository size will not shrink. Instead, it will not grow further for some time if you store new files...
 * As already mentioned, DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions.
 * Since DedupFS has been used less on Linux, there might be additional issues there.
+* To support a special operation mode, if data files go missing, DedupFS replaces the missing bytes more or less silently with '0' values.
 
 ## System Requirements
 
@@ -198,6 +199,22 @@ If you want to re-use the space the deleted files take up, you can run the `recl
 
 Note that running the `reclaim-space-2` utility partially invalidates previous database backups: Files are reclaimed by the utility can't be restored correctly anymore even if you restore the database to an earlier state from backup.
 
+### Run A Shallow Copy Of The File System
+
+Advanced usage pattern, only use if you understand what you are doing!
+
+If you have the repository on a removable device, you can create a copy of it on a local device without the data files in the `data` directory. This "shallow" copy of the file system allows you to browse the directories and files, but it will show '0' bytes instead of the actual content when you open files.
+
+If you
+
+* create a "database only" copy of the file system,
+* copy (at least) the last active data file in the right location in the `data` directory,
+* be careful: If you ran `reclaim-space-2` some time ago, the last active data file might not be the last data file. In case of doubt, use the `stats` utility to check the data storage size,
+* only use the shallow copy of the file system for some time (and not the original),
+* don't use the `reclaim-space-2` utility on the shallow copy of the file system,
+
+then you can merge the shallow repository back to the original file system using standard file sync tools.
+
 ## Story: How I Use DedupFS
 
 TODO
@@ -220,8 +237,9 @@ To upgrade a DedupFS installation to a newer version, TODO TODO.
 
 #### 2.5
 
-* Added `stats` utility.
+* New `stats` utility.
 * In read-only mode, log no error when trying to update last modified time of a file.
+* Support running the dedup file system with data files missing.
 
 #### 2.4
 
