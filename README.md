@@ -18,7 +18,7 @@ DedupFS is a file system with transparent file content deduplication. This means
 
 ## Status Of The DedupFS Software
 
-As the license states, DedupFS is provided "as is", without warranty of any kind. That being said, I use DedupFS now for more than two years for backing up my private files, and my backup repository has grown to approx. 1.8 Million files/folders with 400.000 file contents stored comprising 1.5 TB of data. The largest file stored has a size of approx 7.5 GB.
+As the license states, DedupFS is provided "as is", without warranty of any kind. That being said, I use DedupFS now for more than two years for backing up my private files, and my backup repository has grown to approx. 1.8 Million files/folders with 400.000 file contents stored comprising 1.5 TB of data. The largest file stored has a size of approx 7.5 GB.
 
 Bottom line: For my personal use it is mature. Decide for yourself.
 
@@ -38,7 +38,7 @@ Whether DedupFS really is better than any other backup software depends mostly o
 * "Delete" in DedupFS is a two-step process, so if you accidentally deleted important files from your backups, they are not lost until you explicitly run the "reclaim space" utilities.
 * DedupFS automatically creates and keeps backups of the file tree and metadata database, so if necessary you can restore the dedup file system to earlier states.
 * DedupFS is designed to make it fast and easy to keep second offline copy of your backup repository up-to-date, even if the repository is terabytes in size.
-* DedupFS is open source. It consists of less than 1500 lines of production code.
+* DedupFS is open source. It consists of less than 1500 lines of production code.
 
 ## What DedupFS Should Not Be Used For
 
@@ -58,7 +58,7 @@ Don't use the DedupFS dedup file system for really security critical things. For
 
 ### General
 
-DedupFS needs a Java 11 runtime. The app comes bundled with a suitable Java runtime for Windows x64 and Linux x64.
+DedupFS needs a Java 11 runtime. The app comes bundled with a suitable Java runtime for Windows x64 and Linux x64.
 
 DedupFS needs disk space for its repository. If you back up lots of data, it will need lots of space. Keep an eye on available disk space when using.
 
@@ -66,13 +66,13 @@ DedupFS runs fine with approximately 128 MB RAM assigned to its process. See be
 
 ### Windows
 
-Tested on Windows 10 64-bit.
+Tested on Windows 10 64-bit.
 
-Download and install a [WinFSP Release](https://github.com/billziss-gh/winfsp/releases) to make FUSE (Filesystem in Userspace) available. I use `WinFsp 2020` a.k.a `winfsp-1.6.20027` for running DedupFS.
+Download and install a [WinFSP Release](https://github.com/billziss-gh/winfsp/releases) to make FUSE (Filesystem in Userspace) available. I use `WinFsp 2020` a.k.a `winfsp-1.6.20027` for running DedupFS.
 
 ### Linux
 
-Smoke tested on Ubuntu 64-bit.
+Smoke tested on Ubuntu 64-bit.
 
 DedupFS needs *libfuse* to create a filesystem in userspace. *libfuse* is preinstalled in most Linux distributions.
 
@@ -142,7 +142,7 @@ The `stats` utility allows you to read basic file system statistics. Like the ot
 
 ### Configure Memory Settings
 
-The DedupFS utilities use the default Java 11 memory settings. You can change these by editing the utility scripts. Let's start with some rules of thumb:
+The DedupFS utilities use the default Java 11 memory settings. You can change these by editing the utility scripts. Let's start with some rules of thumb:
 
 * It does not hurt to assign much RAM to the DedupFS utilities - unless the operating system or other software running on the same computer doesn't have enough free RAM left for good operation.
 * `repo-init` does not need more than ~64 MB RAM.
@@ -199,6 +199,12 @@ If you want to re-use the space the deleted files take up, you can run the `recl
 
 Note that running the `reclaim-space-2` utility partially invalidates previous database backups: Files are reclaimed by the utility can't be restored correctly anymore even if you restore the database to an earlier state from backup.
 
+### Clean Up Repository Files
+
+In the `log` subdirectory of the installation directory, up to 1 GB of log files are stored. They are useful for getting insights into how DedupFS was used. You can delete them if you don't need them.
+
+In the `fsdb` subdirectory of the repository directory, DedupFS stores database backup zip files that can be used to reset the dedup file system to an earlier state. You can delete older database backup zip files if you don't need them.
+
 ### Run A Shallow Copy Of The File System
 
 Advanced usage pattern, only use if you understand what you are doing!
@@ -231,9 +237,14 @@ temp directory on fast drive (ssd)
 
 ## Upgrading And Version History
 
-To upgrade a DedupFS installation to a newer version, TODO TODO.
+To upgrade a DedupFS installation to a newer version:
 
-### Version History And Version Specific Update Instructions
+* From the installation directory move all files and folders except `data`, `fsdb` and `log` to a separate directory. (The `data` and `fsdb` are only present if you installed DedupFS to the repository directory.)
+* Unpack the new DedupFS archive to the installation directory.
+* Follow any release specific upgrade instructions (see below).
+* Check whether everything works as expected. If yes, you can delete the old app files from the separate directory.
+
+### Version History And Release Specific Update Instructions
 
 #### May Come Eventually
 
@@ -283,7 +294,7 @@ CREATE TABLE DataEntries (
 
 ### File Contents
 
-DedupFS stores the file contents in the `data` subdirectory of the repository. The data is distributed to files of 100.000.000 Bytes each. The file names of the data files denote the position of the first byte stored in the respective file. These positions are referenced by `DataEntries.start` and `DataEntries.stop`, see above.
+DedupFS stores the file contents in the `data` subdirectory of the repository. The data is distributed to files of 100.000.000 Bytes each. The file names of the data files denote the position of the first byte stored in the respective file. These positions are referenced by `DataEntries.start` and `DataEntries.stop`, see above.
 
 ## License
 
