@@ -223,6 +223,22 @@ then you can merge the shallow repository back to the original file system using
 
 ## Story: How I Use DedupFS
 
+### (Some Of) The Problems DedupFS Solves For Me
+
+* At home, I use a laptop computer with a 1 TB SSD. My private collection of photos, videos, audio and document files is larger than 1 TB. Duh.
+* Although I try to avoid it, many photos and videos are stored in two places in my collection. This also bloats backups. Urg.
+* The laptop actually is our family computer. Sometimes, somebody accidentially deletes or overwrites files we would have liked to keep, or moves them to a place where we will never find them again. Gah.
+* One backup isn't enough for me to feel good, I like to keep two backups, and the second backup should be synchronized with the first, at least from time to time. Acg.
+
+### (Some Of) The Solutions DedupFS Provides
+
+* Large media files that I don't need regularly only reside in the backups.
+* DedupFS takes care of deduplicating duplicate files.
+* *"I know that in our photos of the 2010 summer holidays, we had this lovely picture of..."* - Let's look in the backup I stored two years ago.
+* For synchronizing the second backup, standard file copy tools are enough. I only need to copy those parts of the repository that have changed, and that is easy.
+
+### How I Do It
+
 TODO
 
 store every few weeks everything
