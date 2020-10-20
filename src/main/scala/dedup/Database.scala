@@ -71,9 +71,10 @@ object Database {
 
   def stats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
     log.info(s"Dedup File System Statistics")
+    val storageSize = stat.executeQuery("SELECT MAX(stop) FROM DataEntries").tap(_.next()).getLong(1)
     log.info(f"Data storage: ${
-      readableBytes(stat.executeQuery("SELECT MAX(stop) FROM DataEntries").tap(_.next()).getLong(1))
-    } / ${
+      readableBytes(storageSize)
+    } ($storageSize%,d Bytes) / ${
       stat.executeQuery("SELECT COUNT(id) FROM DataEntries WHERE seq = 1").tap(_.next()).getLong(1)
     }%,d entries")
     log.info(f"Files: ${
