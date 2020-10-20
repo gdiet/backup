@@ -1,5 +1,5 @@
 @echo off
-call %~dp0db-backup.bat %*
+call "%~dp0db-backup.bat" %*
 
 if not errorlevel 1 (
     title Reclaim Space 1 - DedupFS
