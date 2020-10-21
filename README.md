@@ -239,17 +239,24 @@ then you can merge the shallow repository back to the original file system using
 
 ### How I Do It
 
-TODO
+I have two large external storage drives, drive A and drive B.
 
-store every few weeks everything
+Every few weeks,
 
-name folders by backup date
+* I store "everything" from the family laptop to a new folder in the dedup file system residing on drive A. This new folder I name by current date, for example "backups_laptop/2020-10-21".
+* To speed things up, before actually creating the new backup, I create a duplicate of the previous backup in a folder with the current date with the `copywhenmoving=true` option enabled. This is fast. After this, I use a tree sync software that mirrors the source to the target, overwriting only those files that have changed (changed size or last modified time) and deleting files in the target that are not present in the source. If few things have changed, this is also fast.
 
-for folders too big for my laptop, keep a "current" copy of everything in the dedupfs, so I don't have to browse all date-folders ... uses copywhenmoving option
+Every few months,
 
-two external backup drives
+* I use a tree sync software that mirrors the source to the target to update the drive B with the new contents of drive A. If few things have changed, this is pretty fast.
 
-temp directory on fast drive (ssd)
+Additionally,
+
+* in the dedup file system there is a "current" folder where I keep (mostly media) files that are just too big for my laptop and that I need only occasionally.
+
+For maximum safety,
+
+* TODO shallow copy of the repository that is auto-sync'ed to a cloud with the last increments, so I can backup my files even more often without having to go fetch the external drive each time.
 
 ## Upgrading And Version History
 
@@ -306,7 +313,7 @@ CREATE TABLE DataEntries (
 
 `TreeEntries`: The tree root entry has `id` 0. The tree structure is defined by providing the `parentId` for each node. `time` is the last modified unix timestamp in milliseconds. `deleted` is set to the deletion unix timestamp in milliseconds; for existing (= not deleted) files it is `0`. `dataId` is `null` for directories. For files, it is a reference to `DataEntries.id`. If no matching `DataEntries.id` exists, the file size is zero.
 
-`DataEntries`: Each sequence of bytes that can be referenced as a file content is assigned a unique `id`. The bytes can stored in multiple non-contiguous parts, where `seq` of the first part is `1` and so on. `start` and `stop` define the storage position of the part, where `stop` points to the position **after** the respective part. `length` is the combined length of all parts, `hash` the MD5 hash of the full sequence, that is, of all parts concatenated. `length` and `hash` are only set for the first part of each data entry, for subsequent parts they are `null`.
+`DataEntries`: Each sequence of bytes that can be referenced as a file content is assigned a unique `id`. The bytes are stored in 1 to n non-contiguous parts, where `seq` of the first part is `1` and so on. `start` and `stop` define the storage position of the part, where `stop` points to the position **after** the respective part. `length` is the combined length of all parts, `hash` the MD5 hash of the full sequence, that is, of all parts concatenated. `length` and `hash` are only set for the first part of each data entry, for subsequent parts they are `null`.
 
 ### File Contents
 
