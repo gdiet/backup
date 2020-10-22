@@ -279,7 +279,7 @@ To upgrade a DedupFS installation to a newer version:
 
 * New `stats` utility.
 * In read-only mode, log no error when trying to update last modified time of a file.
-* Support running the dedup file system with data files missing.
+* Support running the dedup file system with data files missing (for the "Shallow Copy" feature).
 * On Windows, the utilities support space characters in the app path.
 
 #### 2.4 (2020.10.18)
