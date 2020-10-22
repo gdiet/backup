@@ -159,7 +159,7 @@ class Database(connection: Connection) { import Database._
       assumeLogged(start >= 0, s"start >= 0 ... $start")
       assumeLogged(stop >= start, s"stop >= start ... $stop / $start")
       start -> stop
-    })
+    }).filterNot(part => part.start == part.stop) // filter blacklisted parts of size 0
   })
   private val qLength = connection.prepareStatement(
     "SELECT length FROM DataEntries WHERE id = ? AND seq = 1"
