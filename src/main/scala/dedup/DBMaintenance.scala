@@ -68,6 +68,31 @@ object DBMaintenance {
     }
   }
 
+  def blacklist(connection: Connection, blacklistFolder: String): Unit = resource(connection.createStatement()) { stat =>
+    val db = new Database(connection)
+    db.child(root.id, blacklistFolder) foreach { blacklistRoot =>
+      def recurse(parentPath: String, parentId: Long): Unit = {
+        db.children(parentId).foreach {
+          case dir: DirEntry =>
+            recurse(s"$parentPath/${dir.name}", dir.id)
+          case file: FileEntry =>
+            val size = stat.executeQuery(s"SELECT stop - start FROM DataEntries WHERE ID = ${file.dataId}")
+              .seq(_.getLong(1)).sum
+            if (size > 0) {
+              log.info(s"Blacklisting $parentPath/${file.name}")
+              connection.transaction {
+                stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = ${file.dataId} AND seq > 1")
+                stat.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = ${file.dataId}")
+              }
+            }
+        }
+      }
+      log.info(s"Start blacklisting /$blacklistFolder")
+      recurse(s"/$blacklistFolder", blacklistRoot.id)
+      log.info(s"Finished blacklisting /$blacklistFolder")
+    }
+  }
+
   def reclaimSpace1(connection: Connection, keepDeletedDays: Int): Unit = resource(connection.createStatement()) { stat =>
     log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
     log.info(s"Note that stage 2 of reclaiming space modifies the long term store")

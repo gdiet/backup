@@ -59,6 +59,12 @@ object Server extends App {
       case (db, lts) => DBMaintenance.reclaimSpace2(db, lts)
     }
 
+  } else if (commands == List("blacklist")) {
+    val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+    val blacklistFolder = options.getOrElse("blacklistfolder", "blacklist")
+    val dbDir = Database.dbDir(repo)
+    resource(H2.file(dbDir, readonly = false)) (DBMaintenance.blacklist(_, blacklistFolder))
+
   } else if (commands == List("stats")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
