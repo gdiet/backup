@@ -1,9 +1,5 @@
 FROM hseeberger/scala-sbt:11.0.8_1.4.0_2.13.3
 
-# Linux & Windows JRE for app
-RUN wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.8%2B10/OpenJDK11U-jre_x64_linux_hotspot_11.0.8_10.tar.gz
-RUN wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.8%2B10/OpenJDK11U-jre_x64_windows_hotspot_11.0.8_10.zip
-
 # Install additional utilities needed later
 RUN apt-get --assume-yes install jq zip
 
