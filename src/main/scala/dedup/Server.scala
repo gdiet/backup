@@ -62,8 +62,9 @@ object Server extends App {
   } else if (commands == List("blacklist")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val blacklistFolder = options.getOrElse("blacklistfolder", "blacklist")
+    val deleteCopies = options.get("deletecopies").contains("true")
     val dbDir = Database.dbDir(repo)
-    resource(H2.file(dbDir, readonly = false)) (DBMaintenance.blacklist(_, blacklistFolder))
+    resource(H2.file(dbDir, readonly = false)) (DBMaintenance.blacklist(_, blacklistFolder, deleteCopies))
 
   } else if (commands == List("stats")) {
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile

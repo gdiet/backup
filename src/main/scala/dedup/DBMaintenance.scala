@@ -68,7 +68,7 @@ object DBMaintenance {
     }
   }
 
-  def blacklist(connection: Connection, blacklistFolder: String): Unit = resource(connection.createStatement()) { stat =>
+  def blacklist(connection: Connection, blacklistFolder: String, deleteCopies: Boolean): Unit = resource(connection.createStatement()) { stat =>
     val db = new Database(connection)
     db.child(root.id, blacklistFolder) foreach { blacklistRoot =>
       def recurse(parentPath: String, parentId: Long): Unit = {
@@ -83,6 +83,22 @@ object DBMaintenance {
               connection.transaction {
                 stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = ${file.dataId} AND seq > 1")
                 stat.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = ${file.dataId}")
+              }
+            }
+            if (deleteCopies) {
+              @annotation.tailrec
+              def pathOf(id: Long, pathEnd: String): String = {
+                val parentId -> name = stat.executeQuery(s"SELECT parentId, name FROM TreeEntries WHERE id = $id")
+                  .one(r => (r.getLong(1), r.getString(2)))
+                val path = s"/$name$pathEnd"
+                if (parentId == 0) path else pathOf(parentId, path)
+              }
+              val copies = stat.executeQuery(s"SELECT id, parentId, name FROM TreeEntries WHERE dataId = ${file.dataId} AND deleted = 0 AND id != ${file.id}")
+                .seq(r => (r.getLong(1), r.getLong(2), r.getString(3)))
+              if (size == 0 && copies.nonEmpty) log.info(s"Blacklisting $parentPath/${file.name}")
+              copies.foreach { case (id, parentId, name) =>
+                log.info(s"Deleting copy in ${pathOf(parentId, "/")}$name")
+                db.delete(id)
               }
             }
         }

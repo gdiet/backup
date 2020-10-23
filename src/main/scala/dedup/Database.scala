@@ -47,7 +47,7 @@ object Database {
 
   // DataEntriesStopIdx: Find start of free data.
   // DataEntriesLengthHashIdx: Find data entries by size & hash.
-  // TreeEntriesDataIdIdx: Find orphan data entries.
+  // TreeEntriesDataIdIdx: Find orphan data entries and blacklisted copies.
   private def indexDefinitions =
     """|CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
        |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
@@ -101,6 +101,9 @@ object Database {
     // TODO ResultSets should be handled as closeable resources
     def opt[T](f: ResultSet => T): Option[T] =
       f(rs).pipe(t => if (rs.wasNull) None else Some(t))
+    def one[T](f: ResultSet => T): T = {
+      require(rs.next(), "Result set didn't have next entry."); f(rs)
+    }
     def maybeNext[T](f: ResultSet => T): Option[T] =
       if (rs.next()) Some(f(rs)) else None
     def seq[T](f: ResultSet => T): Seq[T] =
