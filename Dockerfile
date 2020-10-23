@@ -13,6 +13,7 @@ COPY src src
 RUN sbt createApp
 
 # unpack JREs
+COPY OpenJDK11U-jre_x64_* ./
 RUN tar xfz OpenJDK11U-jre_x64_linux_hotspot_11.0.8_10.tar.gz
 RUN mv jdk-*-jre target/app/jrex
 RUN unzip -q OpenJDK11U-jre_x64_windows_hotspot_11.0.8_10.zip
