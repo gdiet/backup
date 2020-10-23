@@ -277,11 +277,10 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 2.5 (2020.10.23)
 
-* a11229b: New `stats` utility.
-* 1bbdcc7: In read-only mode, log no error when trying to update last modified time of a file.
-* 013fc7d: Support running the dedup file system with data files missing (for the "Shallow Copy" feature).
-* 1632819: On Windows, the utilities support space characters in the app path.
-* debea1a: The `reclaim-space-2` utility reclaims space more completely.
+* New `stats` utility. (git a11229b)
+* In read-only mode, log no error when trying to update last modified time of a file. (git 1bbdcc7)
+* Support running the dedup file system with data files missing (for the "Shallow Copy" feature). (git 013fc7d)
+* On Windows, the utilities support space characters in the app path. (git 1632819)
 
 #### 2.4 (2020.10.18)
 
