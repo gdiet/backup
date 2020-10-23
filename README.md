@@ -275,16 +275,17 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * Reclaim finds & cleans up data entries duplicates.
 
-#### Coming In 2.5
+#### 2.5 (2020.10.23)
 
-* New `stats` utility.
-* In read-only mode, log no error when trying to update last modified time of a file.
-* Support running the dedup file system with data files missing (for the "Shallow Copy" feature).
-* On Windows, the utilities support space characters in the app path.
+* a11229b: New `stats` utility.
+* 1bbdcc7: In read-only mode, log no error when trying to update last modified time of a file.
+* 013fc7d: Support running the dedup file system with data files missing (for the "Shallow Copy" feature).
+* 1632819: On Windows, the utilities support space characters in the app path.
+* debea1a: The `reclaim-space-2` utility reclaims space more completely.
 
 #### 2.4 (2020.10.18)
 
-First public release
+First public release.
 
 ## Storage Format
 
