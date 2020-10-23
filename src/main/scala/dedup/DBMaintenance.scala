@@ -180,7 +180,6 @@ object DBMaintenance {
         val sorted = entries.sortBy(_._4)
         val (id, Some(size), Some(hash), _, _, _) = sorted.head
         val chunks = sorted.map(e => e._5 -> e._6)
-        assert(combinedSize(chunks) == size, s"Size mismatch for dataId $id: $size is not length of chunks $chunks")
         (id, size, hash, sorted.map(e => e._5 -> e._6))
       }.values.toSeq.sortBy(-_._4.map(_.start).max) // order by stored last in lts
 
