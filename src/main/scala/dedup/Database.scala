@@ -94,7 +94,7 @@ object Database {
     def transaction[T](f: => T): T =
       try { c.setAutoCommit(false); f.tap(_ => c.commit()) }
       catch { case t: Throwable => c.rollback(); throw t }
-      finally c.setAutoCommit(false)
+      finally c.setAutoCommit(true)
   }
 
   implicit class RichResultSet(val rs: ResultSet) extends AnyVal {
