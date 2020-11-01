@@ -22,7 +22,6 @@ trait ParallelAccess[R] extends AutoCloseable {
       case Some(entry @ (resourceLock, isForWrite, resource)) =>
         resourceLock.lock()
         if (!write || isForWrite) {
-          // TODO maybe java LinkedHashMap is better? https://docs.oracle.com/javase/8/docs/api/java/util/LinkedHashMap.html#removeEldestEntry-java.util.Map.Entry-
           openResources.remove(path); openResources.put(path, entry) // remove and add for LRU functionality
           mapLock.unlock()
           f(resource).tap(_ => resourceLock.unlock())
@@ -36,6 +35,7 @@ trait ParallelAccess[R] extends AutoCloseable {
             mapLock.unlock(); f(resource).tap(_ => resourceLock.unlock())
           } catch { case e: Exception => mapLock.unlock(); throw e }
         } else {
+          // this piece of logic is where this approach is better than java.util.LinkedHashMap with removeEldestEntry
           val (pathToClose, (_, _, resource)) = openResources
             .find { case (_, (fileLock, _, _)) =>  fileLock.tryLock() }
             .getOrElse { openResources.head.tap { case (_, (fileLock, _, _)) => fileLock.lock() } }
