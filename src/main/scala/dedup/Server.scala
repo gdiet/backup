@@ -220,7 +220,6 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
                       val id = db.mkDir(destId, newName)
                       db.children(source.id).foreach(child => copy(child, child.name, id))
                   }
-                // TODO document copyWhenMoving applies only for moving to different parent
                 if (source.parent != dir.id && copyWhenMoving.get()) copy(source, newName, dir.id)
                 else db.moveRename(source.id, dir.id, newName)
                 OK
