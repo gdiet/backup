@@ -279,7 +279,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 2.6 (2020.11.15)
 
-* Fixed deadlock when moving files in the dedup file system. (git 7e6d858)
+* Fixed deadlock when moving files in the dedup file system along with the dirty corner cases when moving files. (git 7e6d858)
 
 #### 2.5 (2020.10.23)
 
@@ -287,10 +287,12 @@ To upgrade a DedupFS installation to a newer version:
 * In read-only mode, log no error when trying to update last modified time of a file. (git 1bbdcc7)
 * Support running the dedup file system with data files missing (for the "Shallow Copy" feature). (git 013fc7d)
 * On Windows, the utilities support space characters in the app path. (git 1632819)
+* Fixed that background process can go on for a long time.
 
 Known problems:
 
 * Deadlock e.g. when moving files in the dedup file system.
+* Dirty corner cases when moving a file that currently is just written to.
 
 #### 2.4 (2020.10.18)
 
