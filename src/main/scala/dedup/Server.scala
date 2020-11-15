@@ -115,8 +115,12 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
     }
 
   private def guard(msg: String)(f: => Int): Int =
-    try f.tap(result => log.trace(s"$msg -> $result"))
-    catch { case e: Throwable => log.error(s"$msg -> ERROR", e); EIO }
+    try f.tap {
+      case EINVAL => log.warn(s"EINVAL: $msg")
+      case EIO => log.error(s"EIO: $msg")
+      case EOVERFLOW => log.warn(s"EOVERFLOW: $msg")
+      case result => log.trace(s"$msg -> $result")
+    } catch { case e: Throwable => log.error(s"$msg -> ERROR", e); EIO }
 
   override def umount(): Unit =
     guard(s"Unmount repository from $mountPoint") {
@@ -216,6 +220,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
                       val id = db.mkDir(destId, newName)
                       db.children(source.id).foreach(child => copy(child, child.name, id))
                   }
+                // TODO document copyWhenMoving applies only for moving to different parent
                 if (source.parent != dir.id && copyWhenMoving.get()) copy(source, newName, dir.id)
                 else db.moveRename(source.id, dir.id, newName)
                 OK
@@ -276,9 +281,9 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
           db.child(dir.id, name) match {
             case Some(_) => EEXIST // file (or directory with the same name) already exists
             case None =>
-              val id = db.mkFile(dir.id, name, now)
-              log.trace(s"create() - create handle for $id $path")
-              fileHandles.create(id, Parts(Seq())); OK
+              val fileHandle = db.mkFile(dir.id, name, now)
+//              log.warn(s"create() - create handle for $fileHandle $path") // FIXME remove
+              fi.fh.set(fileHandle); fileHandles.create(fileHandle, Parts(Seq())); OK
           }
       }
     }
@@ -290,23 +295,25 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
         case Some(file: FileEntry) =>
-          log.trace(s"open() - create handle for ${file.id} $path")
-          fileHandles.createOrIncCount(file.id, db.parts(file.dataId)); OK
+//          log.warn(s"open() - create handle for ${file.id} $path") // FIXME remove
+          fi.fh.set(file.id); fileHandles.createOrIncCount(file.id, db.parts(file.dataId)); OK
       }
     }
 
   // 2020.09.18 good
   override def release(path: String, fi: FuseFileInfo): Int =
     guard(s"release $path") {
-      entry(path) match {
-        case None => ENOENT
-        case Some(_: DirEntry) => EISDIR
-        case Some(file: FileEntry) =>
-          log.trace(s"release() - decCount for ${file.id} $path")
-          fileHandles.decCount(file.id, { entry =>
+      val fileHandle = fi.fh.get()
+      db.dataEntry(fileHandle) match {
+        case None =>
+          log.warn(s"release - no dataid for tree entry $fileHandle (path is $path)")
+          ENOENT
+        case Some(dataIdOfHandle) =>
+//          log.warn(s"release() - handle $fileHandle dataId $dataIdOfHandle -> $path") // FIXME remove
+          fileHandles.decCount(fileHandle, { entry =>
             // START asynchronously executed release block
             // 1. zero size handling - can be the size was > 0 before...
-            if (entry.size == 0) db.setDataId(file.id, -1)
+            if (entry.size == 0) db.setDataId(fileHandle, -1)
             else {
               // 2. calculate hash
               val md = MessageDigest.getInstance(hashAlgorithm)
@@ -317,7 +324,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
                 // 4. already known, simply link
                 case Some(dataId) =>
                   log.trace(s"release: $path - content known, linking to dataId $dataId")
-                  if (file.dataId != dataId) db.setDataId(file.id, dataId)
+                  if (dataIdOfHandle != dataId) db.setDataId(fileHandle, dataId)
                 // 5. not yet known, store
                 case None =>
                   // 5a. reserve storage space
@@ -328,7 +335,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
                     position + data.length
                   }
                   // 5c. create data entry
-                  val dataId = db.newDataIdFor(file.id)
+                  val dataId = db.newDataIdFor(fileHandle)
                   db.insertDataEntry(dataId, 1, entry.size, start, start + entry.size, hash)
                   log.trace(s"release: $path - new content, dataId $dataId")
               }
@@ -345,16 +352,22 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
       val intSize = size.toInt.abs
       if (readonly) EROFS
       else if (offset < 0 || size != intSize) EOVERFLOW
-      else entry(path) match {
-        case None => ENOENT
-        case Some(_: DirEntry) => EISDIR
-        case Some(file: FileEntry) => fileHandles.cacheEntry(file.id) match {
-          case None => EIO // write is hopefully only called after create or open
-          case Some(cacheEntry) =>
-            def dataSource(off: Long, size: Int): Array[Byte] =
-              new Array[Byte](size).tap(data => buf.get(off, data, 0, size))
-            cacheEntry.write(offset, size, dataSource)
-            intSize
+      else {
+        val fileHandle = fi.fh.get()
+        db.dataEntry(fileHandle) match {
+          case None =>
+            log.warn(s"write - no dataid for tree entry $fileHandle (path is $path)")
+            ENOENT
+          case Some(dataIdOfHandle) =>
+//            log.warn(s"write() - handle $fileHandle dataId $dataIdOfHandle -> $path") // FIXME remove
+            fileHandles.cacheEntry(fileHandle) match {
+              case None => EIO // write is hopefully only called after create or open
+              case Some(cacheEntry) =>
+                def dataSource(off: Long, size: Int): Array[Byte] =
+                  new Array[Byte](size).tap(data => buf.get(off, data, 0, size))
+                cacheEntry.write(offset, size, dataSource)
+                intSize
+            }
         }
       }
     }
@@ -364,15 +377,21 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
     guard(s"read $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW
-      else entry(path) match {
-        case None => ENOENT
-        case Some(_: DirEntry) => EISDIR
-        case Some(file: FileEntry) => fileHandles.cacheEntry(file.id) match {
-          case None => EIO // read is hopefully only called after create or open
-          case Some(cacheEntry) =>
-            cacheEntry.read(offset, size, lts.read).foldLeft(0) { case (position, data) =>
-              buf.put(position, data, 0, data.length)
-              position + data.length
+      else {
+        val fileHandle = fi.fh.get()
+        db.dataEntry(fileHandle) match {
+          case None =>
+            log.warn(s"read - no dataid for tree entry $fileHandle (path is $path)")
+            ENOENT
+          case Some(dataIdOfHandle) =>
+//            log.warn(s"read() - handle $fileHandle dataId $dataIdOfHandle -> $path") // FIXME remove
+            fileHandles.cacheEntry(fileHandle) match {
+              case None => EIO // read is hopefully only called after create or open
+              case Some(cacheEntry) =>
+                cacheEntry.read(offset, size, lts.read).foldLeft(0) { case (position, data) =>
+                  buf.put(position, data, 0, data.length)
+                  position + data.length
+                }
             }
         }
       }
@@ -385,7 +404,9 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
       else entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
-        case Some(file: FileEntry) => fileHandles.cacheEntry(file.id) match {
+        case Some(file: FileEntry) =>
+//          log.warn(s"truncate() -> $path") // FIXME remove
+          fileHandles.cacheEntry(file.id) match {
           case None => EIO // truncate is hopefully only called after create or open
           case Some(cacheEntry) => cacheEntry.truncate(size); OK
         }
