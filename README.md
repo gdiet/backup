@@ -1,4 +1,4 @@
-# DedupFS: Deduplicating File System
+# DedupFS: A Lightweight Deduplicating File System
 
 DedupFS is a file system perfectly suited for storing many backups of large collections of files - for example your whole photo collection. Yet DedupFS **is not** a "one click backup solution". It's better to regard DedupFS as a backup storage drive where you can backup way more files than on an ordinary storage drive.
 
