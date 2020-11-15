@@ -2,6 +2,8 @@
 
 DedupFS is a file system with transparent file content deduplication. This means that if you store multiple files containing the same sequence of bytes, the file system stores the contents only once and references them multiple times. Of course, you can still update the contents of any file without impact on the contents of other files.
 
+The deduplication feature makes DedupFS a perfect choice for storing backups of files like your photo collection. Yet DedupFS **is not** a "one click backup solution". It's better to regard DedupFS as a backup storage drive where you can backup way more files than on an ordinary storage drive.
+
 #### Table of contents
 * [Status Of The DedupFS Software](#status-of-the-dedupfs-software)
 * [What DedupFS Can Be Used For](#what-dedupfs-can-be-used-for)
@@ -275,16 +277,31 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * Reclaim finds & cleans up data entries duplicates.
 
+#### 2.6 (2020.11.15)
+
+* Fixed deadlock when moving files in the dedup file system along with the dirty corner cases when moving files. (git 7e6d858)
+
 #### 2.5 (2020.10.23)
 
 * New `stats` utility. (git a11229b)
 * In read-only mode, log no error when trying to update last modified time of a file. (git 1bbdcc7)
 * Support running the dedup file system with data files missing (for the "Shallow Copy" feature). (git 013fc7d)
 * On Windows, the utilities support space characters in the app path. (git 1632819)
+* Fixed that background process can go on for a long time.
+
+Known problems:
+
+* Deadlock e.g. when moving files in the dedup file system.
+* Dirty corner cases when moving a file that currently is just written to.
 
 #### 2.4 (2020.10.18)
 
 First public release.
+
+Known problems:
+
+* If the drive the temp folder resides in is faster than the target drive, when copying many files the background write-to-target process may still take a long time when the foreground copy-to-DedupFS process has finished.
+* Dirty corner cases when moving a file that currently is just written to.
 
 ## Storage Format
 

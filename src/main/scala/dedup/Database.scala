@@ -135,6 +135,14 @@ class Database(connection: Connection) { import Database._
 
   def startOfFreeData: Long = sync(resource(connection.createStatement())(Database.startOfFreeData))
 
+  private val qDataIdForEntry = connection.prepareStatement(
+    "SELECT dataId FROM TreeEntries WHERE id = ?"
+  )
+  def dataEntry(id: Long): Option[Long] = sync {
+    qDataIdForEntry.setLong(1, id)
+    resource(qDataIdForEntry.executeQuery())(_.maybeNext(_.opt(_.getLong(1)))).flatten
+  }
+
   private val qChild = connection.prepareStatement(
     "SELECT id, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
   )

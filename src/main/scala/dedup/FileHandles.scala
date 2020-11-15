@@ -17,6 +17,7 @@ class FileHandles(tempDir: File) {
 
   def create(id: Long, ltsParts: Parts): Unit = {
     maxEntries.acquire() // outside the sync block to avoid possible deadlocks
+    //      log.warn(s"add $id to ${entries.keySet}") // FIXME remove
     sync(require(entries.put(id, 1 -> new CacheEntry(ltsParts, tempDir)).isEmpty, s"entries already contained $id"))
   }
 
