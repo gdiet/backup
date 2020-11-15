@@ -227,7 +227,6 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
                       val id = db.mkDir(destId, newName)
                       db.children(source.id).foreach(child => copy(child, child.name, id))
                   }
-                // TODO document copyWhenMoving applies only for moving to different parent
                 if (source.parent != dir.id && copyWhenMoving.get()) copy(source, newName, dir.id)
                 else db.moveRename(source.id, dir.id, newName)
                 OK
@@ -289,7 +288,6 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
             case Some(_) => EEXIST // file (or directory with the same name) already exists
             case None =>
               val fileHandle = db.mkFile(dir.id, name, now)
-//              log.warn(s"create() - create handle for $fileHandle $path") // FIXME remove
               fi.fh.set(fileHandle); fileHandles.create(fileHandle, Parts(Seq())); OK
           }
       }
@@ -302,7 +300,6 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
         case Some(file: FileEntry) =>
-//          log.warn(s"open() - create handle for ${file.id} $path") // FIXME remove
           fi.fh.set(file.id); fileHandles.createOrIncCount(file.id, db.parts(file.dataId)); OK
       }
     }
@@ -316,7 +313,6 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
           log.warn(s"release - no dataid for tree entry $fileHandle (path is $path)")
           ENOENT
         case Some(dataIdOfHandle) =>
-//          log.warn(s"release() - handle $fileHandle dataId $dataIdOfHandle -> $path") // FIXME remove
           fileHandles.decCount(fileHandle, { entry =>
             // START asynchronously executed release block
             // 1. zero size handling - can be the size was > 0 before...
@@ -366,7 +362,6 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
             log.warn(s"write - no dataid for tree entry $fileHandle (path is $path)")
             ENOENT
           case Some(dataIdOfHandle) =>
-//            log.warn(s"write() - handle $fileHandle dataId $dataIdOfHandle -> $path") // FIXME remove
             fileHandles.cacheEntry(fileHandle) match {
               case None => EIO // write is hopefully only called after create or open
               case Some(cacheEntry) =>
@@ -391,7 +386,6 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
             log.warn(s"read - no dataid for tree entry $fileHandle (path is $path)")
             ENOENT
           case Some(dataIdOfHandle) =>
-//            log.warn(s"read() - handle $fileHandle dataId $dataIdOfHandle -> $path") // FIXME remove
             fileHandles.cacheEntry(fileHandle) match {
               case None => EIO // read is hopefully only called after create or open
               case Some(cacheEntry) =>
@@ -412,7 +406,6 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
         case Some(file: FileEntry) =>
-//          log.warn(s"truncate() -> $path") // FIXME remove
           fileHandles.cacheEntry(file.id) match {
           case None => EIO // truncate is hopefully only called after create or open
           case Some(cacheEntry) => cacheEntry.truncate(size); OK

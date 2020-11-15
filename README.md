@@ -173,7 +173,7 @@ If you try to get maximum write performance, make sure the temp directory is on 
 
 ### Copy When Moving
 
-The dedup file system can be operated in a "copy when moving" state. In this state, whenever a command is issued that to move a file (not a directory) within the dedup file system from A to B, the file is not moved but copied. What the heck?
+The dedup file system can be operated in a "copy when moving" state. In this state, whenever a command is issued to move a file (not a directory) within the dedup file system from directory A to directory B, the file is not moved but copied. What the heck?
 
 Moving files within the dedup file system is very fast. Copying files is much slower, because the operating system reads the file contents and writes them to the new file. In the "copy when moving" state, copy-moving files is just as fast as moving files.
 
