@@ -277,6 +277,10 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * Reclaim finds & cleans up data entries duplicates.
 
+#### 2.7 (Coming Soon To A Cinema Near You)
+
+* On Windows, name the dedup file system volume "DedupFS". (git 46a076d)
+
 #### 2.6 (2020.11.15)
 
 * Fixed deadlock when moving files in the dedup file system along with the dirty corner cases when moving files. (git 7e6d858)
