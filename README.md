@@ -1,8 +1,8 @@
 # DedupFS: Deduplicating File System
 
-DedupFS is a file system with transparent file content deduplication. This means that if you store multiple files containing the same sequence of bytes, the file system stores the contents only once and references them multiple times. Of course, you can still update the contents of any file without impact on the contents of other files.
+DedupFS is a file system perfectly suited for storing many backups of large collections of files - for example your whole photo collection. Yet DedupFS **is not** a "one click backup solution". It's better to regard DedupFS as a backup storage drive where you can backup way more files than on an ordinary storage drive.
 
-The deduplication feature makes DedupFS a perfect choice for storing backups of files like your photo collection. Yet DedupFS **is not** a "one click backup solution". It's better to regard DedupFS as a backup storage drive where you can backup way more files than on an ordinary storage drive.
+Technically speaking, DedupFS is a file system with transparent file content deduplication. This means that if you store multiple files containing the same sequence of bytes, the file system stores the contents only once and references them multiple times. Of course, you can still update the contents of any file without impact on the contents of other files.
 
 #### Table of contents
 * [Status Of The DedupFS Software](#status-of-the-dedupfs-software)
