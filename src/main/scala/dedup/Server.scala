@@ -7,8 +7,8 @@ import java.security.MessageDigest
 import dedup.Database._
 import dedup.store.LongTermStore
 import jnr.ffi.Platform.OS.WINDOWS
-import jnr.ffi.Platform.{OS, getNativePlatform}
-import jnr.ffi.{Platform, Pointer}
+import jnr.ffi.Platform.getNativePlatform
+import jnr.ffi.Pointer
 import org.slf4j.LoggerFactory
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
@@ -76,7 +76,7 @@ object Server extends App {
     Utils.asyncLogFreeMemory()
     copyWhenMoving.set(options.get("copywhenmoving").contains("true"))
     val readonly = !commands.contains("write")
-    val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnt")
+    val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == WINDOWS) "J:\\" else "/tmp/mnt")
     val absoluteRepo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val temp = new File(options.getOrElse("temp", sys.props("java.io.tmpdir") + "/dedupfs-temp"))
     if (!readonly) {
@@ -84,7 +84,7 @@ object Server extends App {
       require(temp.isDirectory && temp.canWrite, s"Temp dir is not a writable directory: $temp")
       if (temp.list.nonEmpty) log.info(s"Note that temp dir is not empty: $temp")
     }
-    if (Platform.getNativePlatform.getOS != WINDOWS) {
+    if (getNativePlatform.getOS != WINDOWS) {
       val mountDir = new File(mountPoint)
       require(mountDir.isDirectory, s"Mount point is not a directory: $mountPoint")
       require(mountDir.list.isEmpty, s"Mount point is not empty: $mountPoint")
@@ -96,8 +96,42 @@ object Server extends App {
     log.debug(s"Temp dir:    $temp")
     if (copyWhenMoving.get) log.info (s"Copy instead of move initially enabled.")
     val fs = new Server(absoluteRepo, temp, readonly)
-    try fs.mount(java.nio.file.Paths.get(mountPoint), true, false)
+    val fuseOptions: Array[String] = if (getNativePlatform.getOS == WINDOWS) Array("-o", "volname=DedupFS") else Array()
+    try fs.mount(java.nio.file.Paths.get(mountPoint), true, false, fuseOptions)
     catch { case e: Throwable => log.error("Mount exception:", e); fs.umount() }
+
+/*
+FUSE options:
+    -h   --help            print help
+    -V   --version         print version
+    -d   -o debug          enable debug output (implies -f)
+    -f                     foreground operation
+    -s                     disable multi-threaded operation
+    -o opt,[opt...]        mount options
+
+WinFsp-FUSE options:
+    -o umask=MASK              set file permissions (octal)
+    -o create_umask=MASK       set newly created file permissions (octal)
+        -o create_file_umask=MASK      for files only
+        -o create_dir_umask=MASK       for directories only
+    -o uid=N                   set file owner (-1 for mounting user id)
+    -o gid=N                   set file group (-1 for mounting user group)
+    -o rellinks                interpret absolute symlinks as volume relative
+    -o dothidden               dot files have the Windows hidden file attrib
+    -o volname=NAME            set volume label
+    -o VolumePrefix=UNC        set UNC prefix (/Server/Share)
+        --VolumePrefix=UNC     set UNC prefix (\Server\Share)
+    -o FileSystemName=NAME     set file system name
+    -o DebugLog=FILE           debug log file (requires -d)
+
+WinFsp-FUSE advanced options:
+    -o FileInfoTimeout=N       metadata timeout (millis, -1 for data caching)
+    -o DirInfoTimeout=N        directory info timeout (millis)
+    -o EaTimeout=N             extended attribute timeout (millis)
+    -o VolumeInfoTimeout=N     volume info timeout (millis)
+    -o KeepFileCache           do not discard cache when files are closed
+    -o ThreadCount             number of file system dispatcher threads
+*/
   }
 }
 
@@ -251,7 +285,7 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
   }
 
   override def statfs(path: String, stbuf: Statvfs): Int = {
-    if (Platform.getNativePlatform.getOS == WINDOWS) {
+    if (getNativePlatform.getOS == WINDOWS) {
       // statfs needs to be implemented on Windows in order to allow for copying data from
       // other devices because winfsp calculates the volume size based on the statvfs call.
       // see https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
