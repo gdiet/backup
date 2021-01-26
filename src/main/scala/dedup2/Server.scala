@@ -1,6 +1,5 @@
 package dedup2
 
-import dedup2.Level1.{DirEntry1, FileEntry1, TreeEntry1}
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.Platform.getNativePlatform
 import jnr.ffi.Pointer
@@ -49,14 +48,14 @@ class Server() extends FuseStubFS with FuseConstants {
       }
       store.entry(path) match {
         case None => ENOENT
-        case Some(dir: DirEntry1) =>
+        case Some(dir: DirEntry) =>
           stat.st_mode.set(FileStat.S_IFDIR | rights)
           setCommon(dir.time, 2)
           OK
-        case Some(file: FileEntry1) =>
+        case Some(file: FileEntry) =>
           stat.st_mode.set(FileStat.S_IFREG | rights)
           setCommon(file.time, 1)
-          stat.st_size.set(store.size(file))
+          stat.st_size.set(store.size(file.dataId))
           OK
       }
     }
@@ -70,7 +69,7 @@ class Server() extends FuseStubFS with FuseConstants {
         if (sec < 0 || nan < 0 || nan > 1000000000) EINVAL
         else store.entry(path) match {
           case None => ENOENT
-          case Some(entry) => store.setTime(entry, sec*1000 + nan/1000000); OK
+          case Some(entry) => store.setTime(entry.id, sec*1000 + nan/1000000); OK
         }
       }
     }
@@ -79,7 +78,7 @@ class Server() extends FuseStubFS with FuseConstants {
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
     guard(s"readdir $path $offset") {
       store.entry(path) match {
-        case Some(dir: DirEntry1) =>
+        case Some(dir: DirEntry) =>
           if (offset < 0 || offset.toInt != offset) EOVERFLOW
           else {
             def names = Seq(".", "..") ++ store.children(dir.id).map(_.name)
@@ -94,13 +93,14 @@ class Server() extends FuseStubFS with FuseConstants {
 
   override def rmdir(path: String): Int = if (readonly) EROFS else guard("rmdir $path") {
     store.entry(path) match {
-      case Some(dir: DirEntry1) => if (store.children(dir.id).nonEmpty) ENOTEMPTY else { store.delete(dir); OK }
-      case Some(_)              => ENOTDIR
-      case None                 => ENOENT
+      case Some(dir: DirEntry) => if (store.children(dir.id).nonEmpty) ENOTEMPTY else { store.delete(dir); OK }
+      case Some(_)             => ENOTDIR
+      case None                => ENOENT
     }
   }
 
   // Renames a file. Other than the general contract of rename, newpath must not exist.
+  // If copyWhenMoving is active, the last persisted state of files is copied - without the current modifications.
   override def rename(oldpath: String, newpath: String): Int = if (readonly) EROFS else
     guard(s"rename $oldpath .. $newpath") {
       val (oldParts, newParts) = (store.split(oldpath), store.split(newpath))
@@ -109,21 +109,21 @@ class Server() extends FuseStubFS with FuseConstants {
         case None => ENOENT
         case Some(origin) => store.entry(newParts.take(newParts.length - 1)) match {
           case None => ENOENT
-          case Some(_: FileEntry1) => ENOTDIR
-          case Some(dir: DirEntry1) =>
+          case Some(_  : FileEntry) => ENOTDIR
+          case Some(dir: DirEntry ) =>
             val newName = newParts.last
             store.child(dir.id, newName) match {
               case Some(_) => EEXIST
               case None =>
-                def copy(origin: TreeEntry1, newName: String, newParent: Long): Unit =
+                def copy(origin: TreeEntry, newName: String, newParent: Long): Unit =
                   origin match {
-                    case file: FileEntry1 => store.copyFile(file, newParent, newName)
-                    case dir: DirEntry1 =>
+                    case file: FileEntry => store.copyFile(file, newParent, newName)
+                    case dir : DirEntry  =>
                       val dirId = store.mkDir(newParent, newName)
                       store.children(dir.id).foreach(child => copy(child, child.name, dirId))
                   }
                 if (origin.parent != dir.id && copyWhenMoving.get()) copy(origin, newName, dir.id)
-                else store.moveRename(origin, dir.id, newName)
+                else store.update(origin.id, dir.id, newName)
                 OK
             }
         }
