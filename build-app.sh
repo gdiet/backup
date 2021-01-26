@@ -1,13 +1,13 @@
 #!/bin/sh
 
-# Fetch JREs if necessary
-jre=OpenJDK11U-jre_x64_windows_hotspot_11.0.8_10.zip
+# Fetch JREs if necessary. Find newer releases here: https://adoptopenjdk.net/releases.html
+jre=OpenJDK11U-jre_x64_windows_hotspot_11.0.10_9.zip
 if [ ! -f "$jre" ]; then
-  wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.8%2B10/$jre || exit 1
+  wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.10%2B9/$jre || exit 1
 fi
-jrex=OpenJDK11U-jre_x64_linux_hotspot_11.0.8_10.tar.gz
+jrex=OpenJDK11U-jre_x64_linux_hotspot_11.0.10_9.tar.gz
 if [ ! -f "$jrex" ]; then
-  wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.8%2B10/$jrex || exit 1
+  wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.10%2B9/$jrex || exit 1
 fi
 
 # Delete previous version of app if any
