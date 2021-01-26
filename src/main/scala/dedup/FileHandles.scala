@@ -1,10 +1,8 @@
 package dedup
 
-import java.io.File
-
 import org.slf4j.LoggerFactory
 
-import scala.concurrent.{ExecutionContext, Future}
+import java.io.File
 
 class FileHandles(tempDir: File) {
   private val log = LoggerFactory.getLogger("dedup.FHand")
@@ -48,12 +46,11 @@ class FileHandles(tempDir: File) {
         None
     }
   }.foreach { entry =>
-    if (!entry.dataWritten) { maxEntries.release(); entry.drop() }
-    else Future {
+    if (!entry.dataWritten) { maxEntries.release(); entry.drop() } else {
       try onReleased(entry)
       catch { case t: Throwable => log.error(s"onRelease failed for entry $id", t) }
       finally { maxEntries.release(); entry.drop() }
-    }(ExecutionContext.global)
+    }
   }
 
   def delete(id: Long): Unit =

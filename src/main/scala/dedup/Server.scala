@@ -148,13 +148,14 @@ class Server(repo: File, tempDir: File, readonly: Boolean) extends FuseStubFS wi
       case _ => None
     }
 
-  private def guard(msg: String)(f: => Int): Int =
+  private def guard(msg: String)(f: => Int): Int = synchronized {
     try f.tap {
       case EINVAL => log.warn(s"EINVAL: $msg")
       case EIO => log.error(s"EIO: $msg")
       case EOVERFLOW => log.warn(s"EOVERFLOW: $msg")
       case result => log.trace(s"$msg -> $result")
     } catch { case e: Throwable => log.error(s"$msg -> ERROR", e); EIO }
+  }
 
   override def umount(): Unit =
     guard(s"Unmount repository from $mountPoint") {
