@@ -12,11 +12,11 @@ class Level1 extends AutoCloseable {
   private var files = Map[Long, DataEntry]()
 
   // Proxy methods
-  def child(parent: Long, name: String): Option[TreeEntry]     = two.child(parent, name)
-  def children(id: Long): Seq[TreeEntry]                       = two.children(id)
-  def setTime(id: Long, time: Long): Unit                      = two.setTime(id, time)
-  def mkDir(parent: Long, name: String): Long                  = two.mkDir(parent, name)
-  def update(id: Long, newParent: Long, newName: String): Unit = two.update(id, newParent, newName)
+  def child(parentId: Long, name: String): Option[TreeEntry]     = two.child(parentId, name)
+  def children(parentId: Long): Seq[TreeEntry]                   = two.children(parentId)
+  def setTime(id: Long, time: Long): Unit                        = two.setTime(id, time)
+  def mkDir(parentId: Long, name: String): Long                  = two.mkDir(parentId, name)
+  def update(id: Long, newParentId: Long, newName: String): Unit = two.update(id, newParentId, newName)
 
   // TODO flush data entries
   override def close(): Unit = two.close()
@@ -38,12 +38,12 @@ class Level1 extends AutoCloseable {
       case file: FileEntry => synchronized(files -= file.dataId)
       case _: DirEntry => // nothing to do
     }
-    two.delete(entry)
+    two.delete(entry.id)
   }
 
   /** The last persisted state of files is copied - without the current modifications. */
-  def copyFile(file: FileEntry, newParent: Long, newName: String): Unit =
-    two.mkFile(newParent, newName, file.time, file.dataId)
+  def copyFile(file: FileEntry, newParentId: Long, newName: String): Unit =
+    two.mkFile(newParentId, newName, file.time, file.dataId)
 }
 
 object Level1 {

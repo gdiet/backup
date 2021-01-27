@@ -244,14 +244,14 @@ class Server(readonly: Boolean) extends FuseStubFS with FuseConstants {
             store.child(dir.id, newName) match {
               case Some(_) => EEXIST
               case None =>
-                def copy(origin: TreeEntry, newName: String, newParent: Long): Unit =
+                def copy(origin: TreeEntry, newName: String, newParentId: Long): Unit =
                   origin match {
-                    case file: FileEntry => store.copyFile(file, newParent, newName)
+                    case file: FileEntry => store.copyFile(file, newParentId, newName)
                     case dir : DirEntry  =>
-                      val dirId = store.mkDir(newParent, newName)
+                      val dirId = store.mkDir(newParentId, newName)
                       store.children(dir.id).foreach(child => copy(child, child.name, dirId))
                   }
-                if (origin.parent != dir.id && copyWhenMoving.get()) copy(origin, newName, dir.id)
+                if (origin.parentId != dir.id && copyWhenMoving.get()) copy(origin, newName, dir.id)
                 else store.update(origin.id, dir.id, newName)
                 OK
             }
