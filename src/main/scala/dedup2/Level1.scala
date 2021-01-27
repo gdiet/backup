@@ -49,6 +49,6 @@ class Level1 extends AutoCloseable {
 object Level1 {
   /** mutable! */
   class DataEntry(baseDataId: Long) {
-    def size: Long = ???
+    def size: Long = 0 // FIXME
   }
 }
