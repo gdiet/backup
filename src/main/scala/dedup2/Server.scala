@@ -293,41 +293,30 @@ class Server(readonly: Boolean) extends FuseStubFS with FuseConstants {
   // # Files #
   // #########
 
-//  private val fileHandles = new FileHandles(tempDir)
-//  private var startOfFreeData = db.startOfFreeData
-//  log.info(s"Data stored: ${readableBytes(startOfFreeData)}")
-//  log.info(s"Dedup file system is started.")
+  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = if (readonly) EROFS else
+    guard(s"create $path") {
+      val parts = store.split(path)
+      if (parts.length == 0) ENOENT // can't create root
+      else store.entry(parts.dropRight(1)) match { // fetch parent entry
+        case None => ENOENT // parent not known
+        case Some(_: FileEntry)  => ENOTDIR // parent is a file
+        case Some(dir: DirEntry) =>
+          val name = parts.last
+          store.child(dir.id, name) match {
+            case Some(_) => EEXIST // entry with the given name already exists
+            case None => fi.fh.set(store.createAndOpen(dir.id, name, now)); OK
+          }
+      }
+    }
 
-  // 2020.09.18 perfect
-  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = EIO
-//    guard(s"create $path") {
-//      val parts = split(path)
-//      if (readonly) EROFS
-//      else if (parts.length == 0) ENOENT // can't create root
-//      else entry(parts.dropRight(1)) match { // fetch parent entry
-//        case None => ENOENT // parent not known
-//        case Some(_: FileEntry1) => ENOTDIR // parent is a file
-//        case Some(dir: DirEntry) =>
-//          val name = parts.last
-//          db.child(dir.id, name) match {
-//            case Some(_) => EEXIST // file (or directory with the same name) already exists
-//            case None =>
-//              val fileHandle = db.mkFile(dir.id, name, now)
-//              fi.fh.set(fileHandle); fileHandles.create(fileHandle, Parts(Seq())); OK
-//          }
-//      }
-//    }
-
-  // 2020.09.18 perfect
-  override def open(path: String, fi: FuseFileInfo): Int = EIO
-//    guard(s"open $path") {
-//      entry(path) match {
-//        case None => ENOENT
-//        case Some(_: DirEntry) => EISDIR
-//        case Some(file: FileEntry1) =>
-//          fi.fh.set(file.id); fileHandles.createOrIncCount(file.id, db.parts(file.dataId)); OK
-//      }
-//    }
+  override def open(path: String, fi: FuseFileInfo): Int =
+    guard(s"open $path") {
+      store.entry(path) match {
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) => store.open(file); fi.fh.set(file.id); OK
+      }
+    }
 
   // 2020.09.18 good
   override def release(path: String, fi: FuseFileInfo): Int = EIO
@@ -374,30 +363,16 @@ class Server(readonly: Boolean) extends FuseStubFS with FuseConstants {
 //      }
 //    }
 
-  // 2020.09.18 perfect
-  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = EIO
-//    guard(s"write $path .. offset = $offset, size = $size") {
-//      val intSize = size.toInt.abs
-//      if (readonly) EROFS
-//      else if (offset < 0 || size != intSize) EOVERFLOW
-//      else {
-//        val fileHandle = fi.fh.get()
-//        db.dataEntry(fileHandle) match {
-//          case None =>
-//            log.warn(s"write - no dataid for tree entry $fileHandle (path is $path)")
-//            ENOENT
-//          case Some(dataIdOfHandle) =>
-//            fileHandles.cacheEntry(fileHandle) match {
-//              case None => EIO // write is hopefully only called after create or open
-//              case Some(cacheEntry) =>
-//                def dataSource(off: Long, size: Int): Array[Byte] =
-//                  new Array[Byte](size).tap(data => buf.get(off, data, 0, size))
-//                cacheEntry.write(offset, size, dataSource)
-//                intSize
-//            }
-//        }
-//      }
-//    }
+  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = if (readonly) EROFS else
+    guard(s"write $path .. offset = $offset, size = $size") {
+      val intSize = size.toInt.abs
+      if (offset < 0 || size != intSize) EOVERFLOW else {
+        val fileHandle = fi.fh.get()
+        def dataSource(off: Long, size: Int): Array[Byte] =
+          new Array[Byte](size).tap(data => buf.get(off, data, 0, size))
+        if (store.write(fileHandle, offset, size, dataSource)) intSize else EIO
+      }
+    }
 
   // 2020.09.18 perfect
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = EIO
