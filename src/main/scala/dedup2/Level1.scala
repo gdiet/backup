@@ -65,7 +65,7 @@ class Level1 extends AutoCloseable {
     })
 
   private def dataEntry(id: Long, dataId: Option[Long]) =
-    synchronized(files.getOrElse(id, new DataEntry(dataId.getOrElse(two.nextDataId)).tap(files += id -> _)))
+    synchronized(files.getOrElse(id, new DataEntry(dataId.getOrElse(-1)).tap(files += id -> _)))
 
   def write(id: Long, offset: Long, size: Long, dataSource: (Long, Int) => Array[Byte]): Boolean =
     synchronized(handles.get(id)) match {
@@ -88,11 +88,29 @@ class Level1 extends AutoCloseable {
   /** (position, size) => bytes */
   def data(id: Long): Option[(Long, Int) => LazyList[Array[Byte]]] = ???
 
-  def release(id: Long): Boolean = ???
+  def release(id: Long): Boolean = {
+    val dataId = synchronized {
+      handles.get(id) match {
+        case None => Left(())
+        case Some(count -> dataId) =>
+          if (count < 0) log.error(s"Handle count $count for id $id")
+          if (count > 1) { handles += id -> (count-1, dataId); Right(None) }
+          else { handles -= id; Right(Some(dataId)) }
+      }
+    }
+    // Left - no handle found, return false.
+    // Right(None) - Nothing to do - file is still open.
+    // Right(Some(None)) - Need to write, there is no backing entry yet.
+    // Right(Some(Some(dataId)) - Need to write, backing entry available.
+    dataId.foreach(_.foreach { dataId =>
+      val data = dataEntry(id, dataId)
+    })
+    dataId.isRight
+  }
 }
 
 object Level1 {
-  /** mutable! */
+  /** mutable! baseDataId can be -1. */
   class DataEntry(baseDataId: Long) {
     def truncate(size: Long): Unit = () // FIXME
     def write(offset: Long, size: Long, dataSource: (Long, Int) => Array[Byte]): Unit = () // FIXME
