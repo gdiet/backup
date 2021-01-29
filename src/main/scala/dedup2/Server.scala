@@ -25,10 +25,12 @@ object Server extends App {
     require(mountDir.isDirectory, s"Mount point is not a directory: $mountPoint")
     require(mountDir.list.isEmpty, s"Mount point is not empty: $mountPoint")
   }
+  val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
   log.info (s"Starting dedup file system.")
+  log.info (s"Repository:  $repo")
   log.info (s"Mount point: $mountPoint")
   log.info (s"Readonly:    $readonly")
-  val fs = new Server(Settings(readonly))
+  val fs = new Server(Settings(repo, readonly))
   val fuseOptions: Array[String] = if (getNativePlatform.getOS == WINDOWS) Array("-o", "volname=DedupFS") else Array("-o", "fsname=DedupFS")
   try fs.mount(java.nio.file.Paths.get(mountPoint), true, false, fuseOptions)
   catch { case e: Throwable => log.error("Mount exception:", e); fs.umount() }
@@ -141,7 +143,7 @@ Module options:
 }
 
 class Server(settings: Settings) extends FuseStubFS with FuseConstants {
-  import settings.{copyWhenMoving, readonly}
+  import settings.{copyWhenMoving, dataDir, readonly}
 
   private val rights = if (readonly) 365 else 511 // o555 else o777
 
@@ -273,19 +275,14 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
     }
   }
 
-  override def statfs(path: String, stbuf: Statvfs): Int = {
-    if (getNativePlatform.getOS == WINDOWS) {
-      // statfs needs to be implemented on Windows in order to allow for copying data from
-      // other devices because winfsp calculates the volume size based on the statvfs call.
-      // see https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
-      if ("/" == path) {
-// TODO
-//        stbuf.f_blocks.set(dataDir.getTotalSpace / 32768) // total data blocks in file system
-//        stbuf.f_frsize.set(32768) // fs block size
-//        stbuf.f_bfree.set(dataDir.getFreeSpace / 32768) // free blocks in fs
-      }
-    }
-    super.statfs(path, stbuf)
+  override def statfs(path: String, stbuf: Statvfs): Int = guard(s"statfs $path") {
+    // statfs needs to be implemented on Windows in order to allow for copying data from
+    // other devices because winfsp calculates the volume size based on the statvfs call.
+    // see https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
+    stbuf.f_blocks.set(dataDir.getTotalSpace / 32768) // total data blocks in file system
+    stbuf.f_frsize.set(32768) // fs block size
+    stbuf.f_bfree.set(dataDir.getFreeSpace / 32768) // free blocks in fs
+    OK
   }.tap(r => log.trace(s"statfs $path -> $r"))
 
   // #########
