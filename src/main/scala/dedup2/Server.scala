@@ -370,59 +370,40 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
       }
     }
 
-  // 2020.09.18 perfect
-  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = EIO
-//    guard(s"read $path .. offset = $offset, size = $size") {
-//      val intSize = size.toInt.abs
-//      if (offset < 0 || size != intSize) EOVERFLOW
-//      else {
-//        val fileHandle = fi.fh.get()
-//        db.dataEntry(fileHandle) match {
-//          case None =>
-//            log.warn(s"read - no dataid for tree entry $fileHandle (path is $path)")
-//            ENOENT
-//          case Some(dataIdOfHandle) =>
-//            fileHandles.cacheEntry(fileHandle) match {
-//              case None => EIO // read is hopefully only called after create or open
-//              case Some(cacheEntry) =>
-//                cacheEntry.read(offset, size, lts.read).foldLeft(0) { case (position, data) =>
-//                  buf.put(position, data, 0, data.length)
-//                  position + data.length
-//                }
-//            }
-//        }
-//      }
-//    }
+  override def truncate(path: String, size: Long): Int = if (readonly) EROFS else
+    guard(s"truncate $path .. $size") {
+      store.entry(path) match {
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) =>
+          if (store.truncate(file.id, size)) OK else EIO // truncate is hopefully only called after create or open
+      }
+    }
 
-  // 2020.09.18 perfect
-  override def truncate(path: String, size: Long): Int = EIO
-//    guard(s"truncate $path .. $size") {
-//      if (readonly) EROFS
-//      else entry(path) match {
-//        case None => ENOENT
-//        case Some(_: DirEntry) => EISDIR
-//        case Some(file: FileEntry1) =>
-//          fileHandles.cacheEntry(file.id) match {
-//          case None => EIO // truncate is hopefully only called after create or open
-//          case Some(cacheEntry) => cacheEntry.truncate(size); OK
-//        }
-//      }
-//    }
+  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
+    guard(s"read $path .. offset = $offset, size = $size") {
+      val intSize = size.toInt.abs
+      if (offset < 0 || size != intSize) EOVERFLOW else {
+        val fileHandle = fi.fh.get()
+        store.data(fileHandle) match {
+          case None =>
+            log.warn(s"read - no data for tree entry $fileHandle (path is $path)")
+            ENOENT
+          case Some(data) =>
+            data(offset, intSize).foldLeft(0) { case (position, data) =>
+              buf.put(position, data, 0, data.length)
+              position + data.length
+            }
+        }
+      }
+    }
 
-  // 2020.09.18 perfect
-  override def unlink(path: String): Int = EIO
-//    guard(s"unlink $path") {
-//      if (readonly) EROFS
-//      else entry(path) match {
-//        case None => ENOENT
-//        case Some(_: DirEntry) => EISDIR
-//        case Some(file: FileEntry1) =>
-//          if (!db.delete(file.id)) EIO
-//          else {
-//            log.trace(s"unlink() - drop handle for ${file.id} $path")
-//            fileHandles.delete(file.id)
-//            OK
-//          }
-//      }
-//    }
+  override def unlink(path: String): Int = if (readonly) EROFS else
+    guard(s"unlink $path") {
+      store.entry(path) match {
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) => store.delete(file); OK
+      }
+    }
 }

@@ -72,6 +72,11 @@ class Level1 extends AutoCloseable {
         data.write(offset, size, dataSource)
         true
     }
+
+  def truncate(id: Long, size: Long): Boolean = ???
+
+  /** (position, size) => bytes */
+  def data(id: Long): Option[(Long, Int) => LazyList[Array[Byte]]] = ???
 }
 
 object Level1 {
