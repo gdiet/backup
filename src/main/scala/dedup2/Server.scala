@@ -8,7 +8,6 @@ import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 
 import java.io.File
-import java.util.concurrent.atomic.AtomicBoolean
 
 object Server extends App {
   private val log = LoggerFactory.getLogger("dedup.Dedup")
@@ -29,7 +28,7 @@ object Server extends App {
   log.info (s"Starting dedup file system.")
   log.info (s"Mount point: $mountPoint")
   log.info (s"Readonly:    $readonly")
-  val fs = new Server(readonly)
+  val fs = new Server(Settings(readonly))
   val fuseOptions: Array[String] = if (getNativePlatform.getOS == WINDOWS) Array("-o", "volname=DedupFS") else Array("-o", "fsname=DedupFS")
   try fs.mount(java.nio.file.Paths.get(mountPoint), true, false, fuseOptions)
   catch { case e: Throwable => log.error("Mount exception:", e); fs.umount() }
@@ -141,8 +140,8 @@ Module options:
    */
 }
 
-class Server(readonly: Boolean) extends FuseStubFS with FuseConstants {
-  private val copyWhenMoving = new AtomicBoolean(false)
+class Server(settings: Settings) extends FuseStubFS with FuseConstants {
+  import settings.{copyWhenMoving, readonly}
 
   private val rights = if (readonly) 365 else 511 // o555 else o777
 
