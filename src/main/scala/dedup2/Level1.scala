@@ -66,7 +66,8 @@ class Level1 extends AutoCloseable {
     synchronized(files.get(id)).map(_._2.truncate(size)).isDefined
 
   /** (position, size) => bytes */
-  def data(id: Long): Option[(Long, Int) => LazyList[Array[Byte]]] = ???
+  def data(id: Long): Option[(Long, Int) => LazyList[Array[Byte]]] =
+    synchronized(files.get(id)).map(_._2.data)
 
   def release(id: Long): Boolean = {
     val result = synchronized(files.get(id) match {
@@ -87,6 +88,7 @@ class Level1 extends AutoCloseable {
 object Level1 {
   /** mutable! baseDataId can be -1. */
   class DataEntry(val baseDataId: Long) {
+    def data(position: Long, size: Int): LazyList[Array[Byte]] = LazyList(new Array(size)) // FIXME
     def truncate(size: Long): Unit = () // FIXME
     def write(offset: Long, size: Long, dataSource: (Long, Int) => Array[Byte]): Unit = () // FIXME
     var size: Long = 0 // FIXME
