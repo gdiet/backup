@@ -314,50 +314,11 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
       }
     }
 
-  // 2020.09.18 good
-  override def release(path: String, fi: FuseFileInfo): Int = EIO
-//    guard(s"release $path") {
-//      val fileHandle = fi.fh.get()
-//      db.dataEntry(fileHandle) match {
-//        case None =>
-//          log.warn(s"release - no dataid for tree entry $fileHandle (path is $path)")
-//          ENOENT
-//        case Some(dataIdOfHandle) =>
-//          fileHandles.decCount(fileHandle, { entry =>
-//            // START asynchronously executed release block
-//            // 1. zero size handling - can be the size was > 0 before...
-//            if (entry.size == 0) db.setDataId(fileHandle, -1)
-//            else {
-//              // 2. calculate hash
-//              val md = MessageDigest.getInstance(hashAlgorithm)
-//              entry.read(0, entry.size, lts.read).foreach(md.update)
-//              val hash = md.digest()
-//              // 3. check if already known
-//              db.dataEntry(hash, entry.size) match {
-//                // 4. already known, simply link
-//                case Some(dataId) =>
-//                  log.trace(s"release: $path - content known, linking to dataId $dataId")
-//                  if (dataIdOfHandle != dataId) db.setDataId(fileHandle, dataId)
-//                // 5. not yet known, store
-//                case None =>
-//                  // 5a. reserve storage space
-//                  val start = startOfFreeData.tap(_ => startOfFreeData += entry.size)
-//                  // 5b. write to storage
-//                  entry.read(0, entry.size, lts.read).foldLeft(0L) { case (position, data) =>
-//                    lts.write(start + position, data)
-//                    position + data.length
-//                  }
-//                  // 5c. create data entry
-//                  val dataId = db.newDataIdFor(fileHandle)
-//                  db.insertDataEntry(dataId, 1, entry.size, start, start + entry.size, hash)
-//                  log.trace(s"release: $path - new content, dataId $dataId")
-//              }
-//            }
-//            // END asynchronously executed release block
-//          })
-//          OK
-//      }
-//    }
+  override def release(path: String, fi: FuseFileInfo): Int =
+    guard(s"release $path") {
+      val fileHandle = fi.fh.get()
+      if (store.release(fileHandle)) OK else EIO // false if called without create or open
+    }
 
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = if (readonly) EROFS else
     guard(s"write $path .. offset = $offset, size = $size") {
@@ -366,7 +327,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
         val fileHandle = fi.fh.get()
         def dataSource(off: Long, size: Int): Array[Byte] =
           new Array[Byte](size).tap(data => buf.get(off, data, 0, size))
-        if (store.write(fileHandle, offset, size, dataSource)) intSize else EIO
+        if (store.write(fileHandle, offset, size, dataSource)) intSize else EIO // false if called without create or open
       }
     }
 
@@ -376,7 +337,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
         case Some(file: FileEntry) =>
-          if (store.truncate(file.id, size)) OK else EIO // truncate is hopefully only called after create or open
+          if (store.truncate(file.id, size)) OK else EIO // false if called without create or open
       }
     }
 
