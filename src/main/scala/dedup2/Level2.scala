@@ -16,6 +16,7 @@ class Level2 extends AutoCloseable {
   def mkFile(parentId: Long, name: String, time: Long): Long = db.mkFile(parentId, name, time)
   def update(id: Long, newParentId: Long, newName: String): Unit = db.update(id, newParentId, newName)
   def nextDataId: Long = db.nextId
+  def persist(dataEntry: Level1.DataEntry): Unit = () // FIXME
 }
 
 object Level2 {
