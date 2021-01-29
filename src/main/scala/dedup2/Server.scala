@@ -325,9 +325,10 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW else {
         val fileHandle = fi.fh.get()
-        def dataSource(off: Long, size: Int): Array[Byte] =
-          new Array[Byte](size).tap(data => buf.get(off, data, 0, size))
-        if (store.write(fileHandle, offset, size, dataSource)) intSize else EIO // false if called without create or open
+        log.info(s"$fileHandle: Writing $size at $offset") // TODO remove
+        if (size > memChunk) log.warn(s"$fileHandle: Writing LARGE $size at $offset, see memchunk")
+        val data = new Array[Byte](intSize).tap(data => buf.get(offset, data, 0, intSize))
+        if (store.write(fileHandle, offset, data)) intSize else EIO // false if called without create or open
       }
     }
 
@@ -346,15 +347,15 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW else {
         val fileHandle = fi.fh.get()
-        store.data(fileHandle) match {
+        log.info(s"$fileHandle: Reading $size at $offset") // TODO remove
+        if (size > memChunk) log.warn(s"$fileHandle: Reading LARGE $size at $offset, see memchunk")
+        store.read(fileHandle, offset, intSize) match {
           case None =>
             log.warn(s"read - no data for tree entry $fileHandle (path is $path)")
             ENOENT
           case Some(data) =>
-            data(offset, intSize).foldLeft(0) { case (position, data) =>
-              buf.put(position, data, 0, data.length)
-              position + data.length
-            }
+            buf.put(0, data, 0, data.length)
+            data.length
         }
       }
     }
