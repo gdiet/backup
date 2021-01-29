@@ -185,7 +185,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
         case Some(file: FileEntry) =>
           stat.st_mode.set(FileStat.S_IFREG | rights)
           setCommon(file.time, 1)
-          stat.st_size.set(store.size(file.dataId))
+          stat.st_size.set(store.size(file.id, file.dataId))
           OK
       }
     }

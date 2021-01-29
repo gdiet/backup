@@ -7,7 +7,7 @@ class Level2 extends AutoCloseable {
   override def close(): Unit = con.close()
 
   def setTime(id: Long, time: Long): Unit = db.setTime(id, time)
-  def size(dataId: Long): Long = 0 // FIXME
+  def size(id: Long, dataId: Long): Long = 0 // FIXME
   def child(parentId: Long, name: String): Option[TreeEntry] = db.child(parentId, name)
   def children(parentId: Long): Seq[TreeEntry] = db.children(parentId)
   def delete(id: Long): Unit = db.delete(id)

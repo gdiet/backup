@@ -20,8 +20,7 @@ class Level1 extends AutoCloseable {
   /** Creates a copy of the file's last persisted state without current modifications. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Unit = two.mkFile(newParentId, newName, file.time, file.dataId)
 
-  // FIXME flush data entries
-  override def close(): Unit = two.close()
+  override def close(): Unit = { files.keys.foreach(release); two.close() }
 
   def split(path: String): Array[String] = path.split("/").filter(_.nonEmpty)
 
@@ -33,7 +32,8 @@ class Level1 extends AutoCloseable {
       case _ => None
     }
 
-  def size(dataId: Long): Long = synchronized(files.get(dataId)).map(_._2.size).getOrElse(two.size(dataId))
+  def size(id: Long, dataId: Long): Long =
+    synchronized(files.get(id)).map(_._2.size).getOrElse(two.size(id, dataId))
 
   def delete(entry: TreeEntry): Unit = {
     entry match {
@@ -84,9 +84,31 @@ class Level1 extends AutoCloseable {
 object Level1 {
   /** mutable! baseDataId can be -1. */
   class DataEntry(val baseDataId: Long) {
-    def read(position: Long, size: Int): Array[Byte] = new Array(size) // FIXME
-    def truncate(size: Long): Unit = () // FIXME
-    def write(offset: Long, data: Array[Byte]): Unit = () // FIXME
-    var size: Long = 0 // FIXME
+    private var mem: Map[Long, Array[Byte]] = Map()
+    private var _size: Long = 0
+    def size: Long = synchronized(_size)
+    def read(position: Long, size: Int): Array[Byte] = synchronized {
+      new Array(size)
+    }
+    def truncate(size: Long): Unit = synchronized { // FIXME test
+      mem = mem.collect { case entry @ position -> data if position < size =>
+        if (position + data.length > size) position -> data.take((size - position).toInt) else entry
+      }
+      _size = size
+    }
+    def write(offset: Long, dataToWrite: Array[Byte]): Unit = synchronized { // FIXME test
+      val endOfWrite = offset + dataToWrite.length
+      mem = mem.flatMap { case position -> data =>
+        val prefix =
+          if (position >= offset) None
+          else Some(position -> data.take(math.min(offset - position, data.length).toInt))
+        val postOff = position + data.length - endOfWrite
+        val postfix =
+          if (postOff <= 0) None
+          else Some(position -> data.take(math.min(postOff, data.length).toInt))
+        Seq(prefix, postfix).flatten
+      } + (offset -> dataToWrite)
+      _size = math.max(_size, endOfWrite)
+    }
   }
 }
