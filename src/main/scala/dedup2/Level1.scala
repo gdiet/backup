@@ -65,19 +65,17 @@ class Level1 extends AutoCloseable {
   def truncate(id: Long, size: Long): Boolean =
     synchronized(files.get(id)).map(_._2.truncate(size)).isDefined
 
-  def read(id: Long, offset: Long, size: Int): Option[Array[Byte]] = ???
+  def read(id: Long, offset: Long, size: Int): Option[Array[Byte]] =
+    synchronized(files.get(id)).map(_._2.read(offset, size))
 
   def release(id: Long): Boolean = {
     val result = synchronized(files.get(id) match {
-      case None => None
+      case None => None // No handle found, return false.
       case Some(count -> dataEntry) =>
         if (count < 0) log.error(s"Handle count $count for id $id")
-        if (count > 1) { files += id -> (count - 1, dataEntry); Some(None) }
-        else { files -= id; Some(Some(dataEntry)) }
+        if (count > 1) { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
+        else { files -= id; Some(Some(dataEntry)) } // Outside the sync block persist data if necessary.
     })
-    // None - no handle found, return false.
-    // Some(None) - Nothing to do - file is still open.
-    // Some(Some(dataEntry)) - Persist data entry if necessary.
     result.flatten.foreach(two.persist)
     result.isDefined
   }
@@ -86,7 +84,7 @@ class Level1 extends AutoCloseable {
 object Level1 {
   /** mutable! baseDataId can be -1. */
   class DataEntry(val baseDataId: Long) {
-    def data(position: Long, size: Int): LazyList[Array[Byte]] = LazyList(new Array(size)) // FIXME
+    def read(position: Long, size: Int): Array[Byte] = new Array(size) // FIXME
     def truncate(size: Long): Unit = () // FIXME
     def write(offset: Long, data: Array[Byte]): Unit = () // FIXME
     var size: Long = 0 // FIXME
