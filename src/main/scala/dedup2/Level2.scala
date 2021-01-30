@@ -7,7 +7,7 @@ class Level2 extends AutoCloseable {
   override def close(): Unit = con.close()
 
   def setTime(id: Long, time: Long): Unit = db.setTime(id, time)
-  def size(id: Long, dataId: Long): Long = 0 // FIXME
+  def dataId(id: Long): Option[Long] = db.dataId(id)
   def child(parentId: Long, name: String): Option[TreeEntry] = db.child(parentId, name)
   def children(parentId: Long): Seq[TreeEntry] = db.children(parentId)
   def delete(id: Long): Unit = db.delete(id)
@@ -16,7 +16,9 @@ class Level2 extends AutoCloseable {
   def mkFile(parentId: Long, name: String, time: Long): Long = db.mkFile(parentId, name, time)
   def update(id: Long, newParentId: Long, newName: String): Unit = db.update(id, newParentId, newName)
   def nextDataId: Long = db.nextId
-  def persist(dataEntry: Level1.DataEntry): Unit = () // FIXME
+  def persist(dataEntry: DataEntry): Unit = () // FIXME
+  def size(id: Long, dataId: Long): Long = 0 // FIXME
+  def read(id: Long, dataId: Long, offset: Long, size: Int): Array[Byte] = new Array(size) // FIXME
 }
 
 object Level2 {

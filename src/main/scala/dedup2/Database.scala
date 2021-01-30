@@ -129,7 +129,7 @@ class Database(connection: Connection) { import Database._
   private val qDataIdForEntry = connection.prepareStatement(
     "SELECT dataId FROM TreeEntries WHERE id = ?"
   )
-  def dataEntry(id: Long): Option[Long] = sync {
+  def dataId(id: Long): Option[Long] = sync {
     qDataIdForEntry.setLong(1, id)
     resource(qDataIdForEntry.executeQuery())(_.maybeNext(_.opt(_.getLong(1)))).flatten
   }

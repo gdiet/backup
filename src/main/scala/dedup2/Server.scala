@@ -229,7 +229,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
     }
   }
 
-  // Renames a file. Other than the general contract of rename, newpath must not exist.
+  // Renames a file. Other than the general contract of rename, newpath must not exist. TODO fix this.
   // If copyWhenMoving is active, the last persisted state of files is copied - without the current modifications.
   override def rename(oldpath: String, newpath: String): Int = if (readonly) EROFS else
     guard(s"rename $oldpath .. $newpath") {
