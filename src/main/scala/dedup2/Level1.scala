@@ -19,7 +19,7 @@ class Level1 extends AutoCloseable {
   /** Creates a copy of the file's last persisted state without current modifications. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Unit = two.mkFile(newParentId, newName, file.time, file.dataId)
 
-  override def close(): Unit = { files.keys.foreach(release); two.close() }
+  override def close(): Unit = { synchronized { files.keys.foreach(release); files = Map() }; two.close() }
 
   def split(path: String): Array[String] = path.split("/").filter(_.nonEmpty)
 
@@ -67,7 +67,7 @@ class Level1 extends AutoCloseable {
   def read(id: Long, offset: Long, size: Int): Option[Array[Byte]] =
     two.dataId(id).map(dataId =>
       synchronized(files.get(id))
-        .map(_._2.read(offset, size))
+        .map(_._2.read(offset, size, two.read(id, _, _ ,_)))
         .getOrElse(two.read(id, dataId, offset, size))
     )
 
@@ -79,7 +79,7 @@ class Level1 extends AutoCloseable {
         if (count > 1) { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
         else { files -= id; Some(Some(dataEntry)) } // Outside the sync block persist data if necessary.
     })
-    result.flatten.foreach(two.persist)
+    result.flatten.foreach(two.persist(id, _))
     result.isDefined
   }
 }

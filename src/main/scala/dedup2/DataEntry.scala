@@ -5,7 +5,8 @@ class DataEntry(val baseDataId: Long) {
   private var mem: Map[Long, Array[Byte]] = Map()
   private var _size: Long = 0
   def size: Long = synchronized(_size)
-  def read(position: Long, size: Int): Array[Byte] = synchronized {
+  /** readUnderlying(dataId, offset, size) */
+  def read(position: Long, size: Int, readUnderlying: (Long, Long, Int) => Array[Byte]): Array[Byte] = synchronized {
     new Array(size) // FIXME implement
   }
   def truncate(size: Long): Unit = synchronized { // FIXME test

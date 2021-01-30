@@ -163,8 +163,12 @@ class Database(connection: Connection) { import Database._
 //      start -> stop
 //    })
 //  })
-//  // TODO maybe read length from DB seq = 1 instead? (might return no entries)
-//  def dataSize(dataId: Long): Long = parts(dataId).size
+
+  private val qDataSize = connection.prepareStatement(
+    "SELECT length FROM DataEntries WHERE id = ? AND seq = 1"
+  )
+  def dataSize(dataId: Long): Long =
+    resource(qDataSize.tap(_.setLong(1, dataId)).executeQuery())(_.maybeNext(_.getLong(1))).getOrElse(0)
 
   private val dTreeEntry = connection.prepareStatement(
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
