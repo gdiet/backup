@@ -12,11 +12,11 @@ class Level1 extends AutoCloseable with ClassLogging {
   private var files = Map[Long, (Int, DataEntry)]()
 
   // Proxy methods
-  def child(parentId: Long, name: String): Option[TreeEntry]              = two.child(parentId, name)
-  def children(parentId: Long): Seq[TreeEntry]                            = two.children(parentId)
-  def setTime(id: Long, time: Long): Unit                                 = two.setTime(id, time)
-  def mkDir(parentId: Long, name: String): Long                           = two.mkDir(parentId, name)
-  def update(id: Long, newParentId: Long, newName: String): Unit          = two.update(id, newParentId, newName)
+  def mkDir   (parentId: Long, name: String): Long                        = two.mkDir(parentId, name)
+  def child   (parentId: Long, name: String): Option[TreeEntry]           = two.child(parentId, name)
+  def children(parentId: Long              ): Seq[TreeEntry]              = two.children(parentId)
+  def setTime (id: Long, time: Long): Unit                                = two.setTime(id, time)
+  def update  (id: Long, newParentId: Long, newName: String): Unit        = two.update(id, newParentId, newName)
   /** Creates a copy of the file's last persisted state without current modifications. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Unit = two.mkFile(newParentId, newName, file.time, file.dataId)
 
@@ -32,39 +32,43 @@ class Level1 extends AutoCloseable with ClassLogging {
       case _ => None
     }
 
-  def size(id: Long, dataId: Long): Long = guard(s"size($id, $dataId)", info_) {
-    synchronized(files.get(id)).map(_._2.size).getOrElse(two.size(id, dataId))
-  }
-
-  def delete(entry: TreeEntry): Unit = guard(s"delete($entry)", info_) {
-    entry match {
-      case file: FileEntry => synchronized(files -= file.dataId)
-      case _: DirEntry => // nothing to do
+  def size(id: Long, dataId: Long): Long =
+    guard(s"size($id, $dataId)", info_) {
+      synchronized(files.get(id)).map(_._2.size).getOrElse(two.size(id, dataId))
     }
-    two.delete(entry.id)
-  }
 
-  def createAndOpen(parentId: Long, name: String, time: Long): Long = guard(s"createAndOpen($parentId, $name)", info_) {
-    two.mkFile(parentId, name, time).tap { id =>
-      synchronized(files += id -> (1, new DataEntry(-1)))
+  def delete(entry: TreeEntry): Unit =
+    guard(s"delete($entry)", info_) {
+      entry match {
+        case file: FileEntry => synchronized(files -= file.dataId)
+        case _: DirEntry => // Nothing to do here
+      }
+      two.delete(entry.id)
     }
-  }
 
-  def open(file: FileEntry): Unit = guard(s"open($file)", info_) {
-    synchronized {
-      import file._
-      files += id -> (files.get(id) match {
-        case None => 1 -> new DataEntry(dataId, two.size(id, dataId))
-        case Some(count -> dataEntry) =>
-          if (dataEntry.baseDataId != dataId) warn_(s"File $id: Mismatch between previous ${dataEntry.baseDataId} and current $dataId.")
-          count + 1 -> dataEntry
-      })
+  def createAndOpen(parentId: Long, name: String, time: Long): Long =
+    guard(s"createAndOpen($parentId, $name)", info_) {
+      two.mkFile(parentId, name, time).tap { id =>
+        synchronized(files += id -> (1, new DataEntry(-1)))
+      }
     }
-  }
 
-  def write(id: Long, offset: Long, data: Array[Byte]): Boolean = guard(s"write($id, $offset, size ${data.length})", info_) {
-    synchronized(files.get(id)).map(_._2.write(offset, data)).isDefined
-  }
+  def open(file: FileEntry): Unit =
+    guard(s"open($file)", info_) {
+      synchronized { import file._
+        files += id -> (files.get(id) match {
+          case None => 1 -> new DataEntry(dataId, two.size(id, dataId))
+          case Some(count -> dataEntry) =>
+            if (dataEntry.baseDataId != dataId) warn_(s"File $id: Mismatch between previous ${dataEntry.baseDataId} and current $dataId.")
+            count + 1 -> dataEntry
+        })
+      }
+    }
+
+  def write(id: Long, offset: Long, data: Array[Byte]): Boolean =
+    guard(s"write($id, $offset, size ${data.length})", info_) {
+      synchronized(files.get(id)).map(_._2.write(offset, data)).isDefined
+    }
 
   def truncate(id: Long, size: Long): Boolean =
     guard(s"truncate($id, $size)", info_) {
@@ -76,17 +80,18 @@ class Level1 extends AutoCloseable with ClassLogging {
       synchronized(files.get(id)).map(_._2.read(offset, size, two.read(id, _, _, _)))
     }
 
-  def release(id: Long): Boolean = guard(s"release($id)", info_) {
-    val result = synchronized(files.get(id) match {
-      case None => None // No handle found, return false.
-      case Some(count -> dataEntry) =>
-        if (count < 0) error_(s"Handle count $count for id $id")
-        if (count > 1) { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
-        else { files -= id; Some(Some(dataEntry)) } // Outside the sync block persist data if necessary.
-    })
-    result.flatten.foreach(entry => if (entry.written) two.persist(id, entry))
-    result.isDefined
-  }
+  def release(id: Long): Boolean =
+    guard(s"release($id)", info_) {
+      val result = synchronized(files.get(id) match {
+        case None => None // No handle found, return false.
+        case Some(count -> dataEntry) =>
+          if (count < 0) error_(s"Handle count $count for id $id")
+          if (count > 1) { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
+          else { files -= id; Some(Some(dataEntry)) } // Outside the sync block persist data if necessary.
+      })
+      result.flatten.foreach(entry => if (entry.written) two.persist(id, entry))
+      result.isDefined
+    }
 }
 
 object Level1 extends App {
