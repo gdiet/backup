@@ -99,9 +99,11 @@ object Level1 extends App {
   val root = store.entry("/").get.asInstanceOf[DirEntry]
   val childId = store.createAndOpen(root.id, "test", 0)
   store.write(childId, 0, Array(1,2,3,4,5))
+  store.truncate(childId, 7)
   store.release(childId)
   val file = store.entry("/test").get.asInstanceOf[FileEntry]
   store.open(file)
+  store.truncate(file.id, 9)
   println(store.read(file.id, 0, 4096).get.toList)
   store.release(file.id)
 }

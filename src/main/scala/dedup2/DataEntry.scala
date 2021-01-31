@@ -15,11 +15,12 @@ class DataEntry(val baseDataId: Long, initialSize: Long = 0) {
   def written: Boolean = synchronized(_written)
   def size: Long = synchronized(_size)
 
-  /** readUnderlying is (dataId, offset, size) => data */
+  /** readUnderlying is (dataId, offset, size) => data */ // FIXME test
   def read(position: Long, size: Int, readUnderlying: (Long, Long, Int) => Array[Byte]): Array[Byte] = synchronized {
-    log.info(s"$baseDataId -> $this")
+    log.info(s"$baseDataId, size ${this.size} -> $this")
     log.info("" + mem.view.mapValues(_.length).toMap)
-    val endOfRead = math.min(position + size, this._size) // FIXME test
+    val sizeToReturn = math.max(0, math.min(this.size - position, size).toInt)
+    val endOfRead = position + sizeToReturn
     val candidates =
       mem.view.filterKeys(p => p >= position && p < endOfRead)
         .toSeq.sortBy(_._1)
@@ -28,7 +29,9 @@ class DataEntry(val baseDataId: Long, initialSize: Long = 0) {
       val tail = data.take(math.min(data.length, endOfRead - currentPos).toInt)
       pos + tail.length -> (result ++ head ++ tail)
     }
-    if (currentPos == endOfRead) result else result ++ readUnderlying(baseDataId, currentPos, (endOfRead-currentPos).toInt)
+    val withUnderLying =
+      if (currentPos == endOfRead) result else result ++ readUnderlying(baseDataId, currentPos, (endOfRead-currentPos).toInt)
+    withUnderLying ++ new Array(sizeToReturn - withUnderLying.length)
   }
   def truncate(size: Long): Unit = synchronized { // FIXME test
     mem = mem.collect { case entry @ position -> data if position < size =>
