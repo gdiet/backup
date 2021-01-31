@@ -1,14 +1,10 @@
 package dedup2
 
-import org.slf4j.LoggerFactory
-
 /** Manages currently open files. Forwards everything else to LevelTwo. */
-class Level1 extends AutoCloseable {
-  private val log = LoggerFactory.getLogger("dedup.Level1") // TODO static loggers are enough
-
-  private def guard[T](msg: String, logger: String => Unit = log.trace)(f: => T): T =
+class Level1 extends AutoCloseable with ClassLogging {
+  private def guard[T](msg: => String, logger: (=> String) => Unit = trace_)(f: => T): T =
     try f.tap(t => logger(s"$msg -> $t"))
-    catch { case e: Throwable => log.error(s"$msg -> ERROR", e); throw e }
+    catch { case e: Throwable => error_(s"$msg -> ERROR", e); throw e }
 
   private val two = new Level2()
 
@@ -36,11 +32,11 @@ class Level1 extends AutoCloseable {
       case _ => None
     }
 
-  def size(id: Long, dataId: Long): Long = guard(s"size($id, $dataId)", log.info) {
+  def size(id: Long, dataId: Long): Long = guard(s"size($id, $dataId)", info_) {
     synchronized(files.get(id)).map(_._2.size).getOrElse(two.size(id, dataId))
   }
 
-  def delete(entry: TreeEntry): Unit = guard(s"delete($entry)", log.info) {
+  def delete(entry: TreeEntry): Unit = guard(s"delete($entry)", info_) {
     entry match {
       case file: FileEntry => synchronized(files -= file.dataId)
       case _: DirEntry => // nothing to do
@@ -48,43 +44,43 @@ class Level1 extends AutoCloseable {
     two.delete(entry.id)
   }
 
-  def createAndOpen(parentId: Long, name: String, time: Long): Long = guard(s"createAndOpen($parentId, $name)", log.info) {
+  def createAndOpen(parentId: Long, name: String, time: Long): Long = guard(s"createAndOpen($parentId, $name)", info_) {
     two.mkFile(parentId, name, time).tap { id =>
       synchronized(files += id -> (1, new DataEntry(-1)))
     }
   }
 
-  def open(file: FileEntry): Unit = guard(s"open($file)", log.info) {
+  def open(file: FileEntry): Unit = guard(s"open($file)", info_) {
     synchronized {
       import file._
       files += id -> (files.get(id) match {
         case None => 1 -> new DataEntry(dataId, two.size(id, dataId))
         case Some(count -> dataEntry) =>
-          if (dataEntry.baseDataId != dataId) log.warn(s"File $id: Mismatch between previous ${dataEntry.baseDataId} and current $dataId.")
+          if (dataEntry.baseDataId != dataId) warn_(s"File $id: Mismatch between previous ${dataEntry.baseDataId} and current $dataId.")
           count + 1 -> dataEntry
       })
     }
   }
 
-  def write(id: Long, offset: Long, data: Array[Byte]): Boolean = guard(s"write($id, $offset, size ${data.length})", log.info) {
+  def write(id: Long, offset: Long, data: Array[Byte]): Boolean = guard(s"write($id, $offset, size ${data.length})", info_) {
     synchronized(files.get(id)).map(_._2.write(offset, data)).isDefined
   }
 
   def truncate(id: Long, size: Long): Boolean =
-    guard(s"truncate($id, $size)", log.info) {
+    guard(s"truncate($id, $size)", info_) {
       synchronized(files.get(id)).map(_._2.truncate(size)).isDefined
     }
 
   def read(id: Long, offset: Long, size: Int): Option[Array[Byte]] =
-    guard(s"read($id, $offset, $size)", log.info) {
+    guard(s"read($id, $offset, $size)", info_) {
       synchronized(files.get(id)).map(_._2.read(offset, size, two.read(id, _, _, _)))
     }
 
-  def release(id: Long): Boolean = guard(s"release($id)", log.info) {
+  def release(id: Long): Boolean = guard(s"release($id)", info_) {
     val result = synchronized(files.get(id) match {
       case None => None // No handle found, return false.
       case Some(count -> dataEntry) =>
-        if (count < 0) log.error(s"Handle count $count for id $id")
+        if (count < 0) error_(s"Handle count $count for id $id")
         if (count > 1) { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
         else { files -= id; Some(Some(dataEntry)) } // Outside the sync block persist data if necessary.
     })
