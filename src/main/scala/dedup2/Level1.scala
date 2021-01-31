@@ -4,7 +4,12 @@ import org.slf4j.LoggerFactory
 
 /** Manages currently open files. Forwards everything else to LevelTwo. */
 class Level1 extends AutoCloseable {
-  private val log = LoggerFactory.getLogger("dedup.Level1")
+  private val log = LoggerFactory.getLogger("dedup.Level1") // TODO static loggers are enough
+
+  private def guard[T](msg: String, logger: String => Unit = log.trace)(f: => T): T =
+    try f.tap(t => logger(s"$msg -> $t"))
+    catch { case e: Throwable => log.error(s"$msg -> ERROR", e); throw e }
+
   private val two = new Level2()
 
   /** id -> (handle count, dataEntry). Remember to synchronize. */
@@ -31,10 +36,11 @@ class Level1 extends AutoCloseable {
       case _ => None
     }
 
-  def size(id: Long, dataId: Long): Long =
+  def size(id: Long, dataId: Long): Long = guard(s"size($id, $dataId)", log.info) {
     synchronized(files.get(id)).map(_._2.size).getOrElse(two.size(id, dataId))
+  }
 
-  def delete(entry: TreeEntry): Unit = {
+  def delete(entry: TreeEntry): Unit = guard(s"delete($entry)", log.info) {
     entry match {
       case file: FileEntry => synchronized(files -= file.dataId)
       case _: DirEntry => // nothing to do
@@ -42,12 +48,13 @@ class Level1 extends AutoCloseable {
     two.delete(entry.id)
   }
 
-  def createAndOpen(parentId: Long, name: String, time: Long): Long =
+  def createAndOpen(parentId: Long, name: String, time: Long): Long = guard(s"createAndOpen($parentId, $name)", log.info) {
     two.mkFile(parentId, name, time).tap { id =>
       synchronized(files += id -> (1, new DataEntry(-1)))
     }
+  }
 
-  def open(file: FileEntry): Unit =
+  def open(file: FileEntry): Unit = guard(s"open($file)", log.info) {
     synchronized {
       import file._
       files += id -> (files.get(id) match {
@@ -57,21 +64,25 @@ class Level1 extends AutoCloseable {
           count + 1 -> dataEntry
       })
     }
+  }
 
-  def write(id: Long, offset: Long, data: Array[Byte]): Boolean =
+  def write(id: Long, offset: Long, data: Array[Byte]): Boolean = guard(s"write($id, $offset, size ${data.length})", log.info) {
     synchronized(files.get(id)).map(_._2.write(offset, data)).isDefined
+  }
 
-  def truncate(id: Long, size: Long): Boolean =
+  def truncate(id: Long, size: Long): Boolean = guard(s"truncate($id, $size)", log.info) {
     synchronized(files.get(id)).map(_._2.truncate(size)).isDefined
+  }
 
-  def read(id: Long, offset: Long, size: Int): Option[Array[Byte]] =
+  def read(id: Long, offset: Long, size: Int): Option[Array[Byte]] = guard(s"read($id, $offset, $size)", log.info) {
     two.dataId(id).map(dataId =>
       synchronized(files.get(id))
-        .map(_._2.read(offset, size, two.read(id, _, _ ,_)))
+        .map(_._2.read(offset, size, two.read(id, _, _, _)))
         .getOrElse(two.read(id, dataId, offset, size))
     )
+  }
 
-  def release(id: Long): Boolean = {
+  def release(id: Long): Boolean = guard(s"release($id)", log.info) {
     val result = synchronized(files.get(id) match {
       case None => None // No handle found, return false.
       case Some(count -> dataEntry) =>
@@ -79,7 +90,19 @@ class Level1 extends AutoCloseable {
         if (count > 1) { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
         else { files -= id; Some(Some(dataEntry)) } // Outside the sync block persist data if necessary.
     })
-    result.flatten.foreach(two.persist(id, _))
+    result.flatten.foreach(entry => if (entry.written) two.persist(id, entry))
     result.isDefined
   }
+}
+
+object Level1 extends App {
+  val store = new Level1()
+  val root = store.entry("/").get.asInstanceOf[DirEntry]
+  val childId = store.createAndOpen(root.id, "test", 0)
+  store.write(childId, 0, Array(1,2,3,4,5))
+  store.release(childId)
+  val file = store.entry("/test").get.asInstanceOf[FileEntry]
+  store.open(file)
+  println(store.read(file.id, 0, 4096).get.toList)
+  store.release(file.id)
 }

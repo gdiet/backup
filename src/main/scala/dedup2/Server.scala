@@ -150,12 +150,12 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
   private val log = LoggerFactory.getLogger("dedup.Server")
   private val store = new Level1()
 
-  private def guard(msg: String)(f: => Int): Int =
+  private def guard(msg: String, logger: String => Unit = log.trace)(f: => Int): Int =
     try f.tap {
       case EINVAL => log.warn(s"EINVAL: $msg")
       case EIO => log.error(s"EIO: $msg")
       case EOVERFLOW => log.warn(s"EOVERFLOW: $msg")
-      case result => log.trace(s"$msg -> $result")
+      case result => logger(s"$msg -> $result")
     } catch { case e: Throwable => log.error(s"$msg -> ERROR", e); EIO }
 
   override def umount(): Unit =
@@ -290,7 +290,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
   // #########
 
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int = if (readonly) EROFS else
-    guard(s"create $path") {
+    guard(s"create $path", log.info) {
       val parts = store.split(path)
       if (parts.length == 0) ENOENT // can't create root
       else store.entry(parts.dropRight(1)) match { // fetch parent entry
@@ -306,7 +306,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
     }
 
   override def open(path: String, fi: FuseFileInfo): Int =
-    guard(s"open $path") {
+    guard(s"open $path", log.info) {
       store.entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
@@ -315,13 +315,13 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
     }
 
   override def release(path: String, fi: FuseFileInfo): Int =
-    guard(s"release $path") {
+    guard(s"release $path", log.info) {
       val fileHandle = fi.fh.get()
       if (store.release(fileHandle)) OK else EIO // false if called without create or open
     }
 
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = if (readonly) EROFS else
-    guard(s"write $path .. offset = $offset, size = $size") {
+    guard(s"write $path .. offset = $offset, size = $size", log.info) {
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW else {
         val fileHandle = fi.fh.get()
@@ -333,7 +333,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
     }
 
   override def truncate(path: String, size: Long): Int = if (readonly) EROFS else
-    guard(s"truncate $path .. $size") {
+    guard(s"truncate $path .. $size", log.info) {
       store.entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
@@ -343,7 +343,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
     }
 
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-    guard(s"read $path .. offset = $offset, size = $size") {
+    guard(s"read $path .. offset = $offset, size = $size", log.info) {
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW else {
         val fileHandle = fi.fh.get()
@@ -361,7 +361,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants {
     }
 
   override def unlink(path: String): Int = if (readonly) EROFS else
-    guard(s"unlink $path") {
+    guard(s"unlink $path", log.info) {
       store.entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
