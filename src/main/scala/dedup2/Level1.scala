@@ -58,7 +58,7 @@ class Level1 extends AutoCloseable {
     synchronized {
       import file._
       files += id -> (files.get(id) match {
-        case None => 1 -> new DataEntry(dataId)
+        case None => 1 -> new DataEntry(dataId, two.size(id, dataId))
         case Some(count -> dataEntry) =>
           if (dataEntry.baseDataId != dataId) log.warn(s"File $id: Mismatch between previous ${dataEntry.baseDataId} and current $dataId.")
           count + 1 -> dataEntry

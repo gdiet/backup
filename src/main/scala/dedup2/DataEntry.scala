@@ -3,14 +3,14 @@ package dedup2
 import org.slf4j.LoggerFactory
 
 /** mutable! baseDataId can be -1. */
-class DataEntry(val baseDataId: Long) {
+class DataEntry(val baseDataId: Long, initialSize: Long = 0) {
   private val log = LoggerFactory.getLogger("dedup.DataEntry")
 
   log.info(s"create $baseDataId -> $this")
   /** position -> data */
   private var mem: Map[Long, Array[Byte]] = Map()
   private var _written: Boolean = false
-  private var _size: Long = 0
+  private var _size: Long = initialSize
 
   def written: Boolean = synchronized(_written)
   def size: Long = synchronized(_size)
@@ -23,12 +23,12 @@ class DataEntry(val baseDataId: Long) {
     val candidates =
       mem.view.filterKeys(p => p >= position && p < endOfRead)
         .toSeq.sortBy(_._1)
-    val (_, result) = candidates.foldLeft[(Long, Array[Byte])](position -> Array()) { case ((currentPos, result), (pos, data)) =>
+    val (currentPos, result) = candidates.foldLeft[(Long, Array[Byte])](position -> Array()) { case ((currentPos, result), (pos, data)) =>
       val head = if (currentPos < pos) readUnderlying(baseDataId, currentPos, (pos - currentPos).toInt) else Array()
       val tail = data.take(math.min(data.length, endOfRead - currentPos).toInt)
       pos + tail.length -> (result ++ head ++ tail)
     }
-    result
+    if (currentPos == endOfRead) result else result ++ readUnderlying(baseDataId, currentPos, (endOfRead-currentPos).toInt)
   }
   def truncate(size: Long): Unit = synchronized { // FIXME test
     mem = mem.collect { case entry @ position -> data if position < size =>
