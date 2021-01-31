@@ -70,17 +70,15 @@ class Level1 extends AutoCloseable {
     synchronized(files.get(id)).map(_._2.write(offset, data)).isDefined
   }
 
-  def truncate(id: Long, size: Long): Boolean = guard(s"truncate($id, $size)", log.info) {
-    synchronized(files.get(id)).map(_._2.truncate(size)).isDefined
-  }
+  def truncate(id: Long, size: Long): Boolean =
+    guard(s"truncate($id, $size)", log.info) {
+      synchronized(files.get(id)).map(_._2.truncate(size)).isDefined
+    }
 
-  def read(id: Long, offset: Long, size: Int): Option[Array[Byte]] = guard(s"read($id, $offset, $size)", log.info) {
-    two.dataId(id).map(dataId =>
-      synchronized(files.get(id))
-        .map(_._2.read(offset, size, two.read(id, _, _, _)))
-        .getOrElse(two.read(id, dataId, offset, size))
-    )
-  }
+  def read(id: Long, offset: Long, size: Int): Option[Array[Byte]] =
+    guard(s"read($id, $offset, $size)", log.info) {
+      synchronized(files.get(id)).map(_._2.read(offset, size, two.read(id, _, _, _)))
+    }
 
   def release(id: Long): Boolean = guard(s"release($id)", log.info) {
     val result = synchronized(files.get(id) match {
