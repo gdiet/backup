@@ -4,6 +4,8 @@ package object dedup2 extends scala.util.ChainingSyntax {
   // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
   val memChunk = 524200 // a bit less than 0.5 MiB to avoid problems with humongous objects in G1GC
 
+  type Data = Vector[Array[Byte]]
+
   /** Format a possibly large number of bytes, e.g. "27.38 MB" or "135 B". */
   def readableBytes(l: Long): String =
     if (l < 10000) "%d B".format(l)

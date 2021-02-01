@@ -33,8 +33,8 @@ class Level2 extends AutoCloseable {
   def size(id: Long, dataId: Long): Long =
     synchronized(files.get(id)).map(_.head.size).getOrElse(db.dataSize(dataId))
 
-  def read(id: Long, dataId: Long, offset: Long, size: Int): Array[Byte] = {
-    def readFromLts(dataId: Long, offset: Long, size: Int): Array[Byte] = new Array(size) // FIXME
+  def read(id: Long, dataId: Long, offset: Long, size: Int): Data = {
+    def readFromLts(dataId: Long, offset: Long, size: Int): Data = Vector(new Array(size)) // FIXME
     synchronized(files.get(id)) // TODO test
       .map { entries =>
         entries.reverse.foldLeft(readFromLts _) { case (readMethod, entry) =>

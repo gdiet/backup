@@ -75,7 +75,7 @@ class Level1 extends AutoCloseable with ClassLogging {
       synchronized(files.get(id)).map(_._2.truncate(size)).isDefined
     }
 
-  def read(id: Long, offset: Long, size: Int): Option[Array[Byte]] =
+  def read(id: Long, offset: Long, size: Int): Option[Data] =
     guard(s"read($id, $offset, $size)", info_) {
       synchronized(files.get(id)).map(_._2.read(offset, size, two.read(id, _, _, _)))
     }
@@ -104,6 +104,6 @@ object Level1 extends App {
   val file = store.entry("/test").get.asInstanceOf[FileEntry]
   store.open(file)
   store.truncate(file.id, 9)
-  println(store.read(file.id, 0, 4096).get.toList)
+  println(store.read(file.id, 0, 4096).get.reduce(_++_).toList)
   store.release(file.id)
 }
