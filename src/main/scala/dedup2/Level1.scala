@@ -22,7 +22,7 @@ class Level1 extends AutoCloseable with ClassLogging {
   /** Creates a copy of the file's last persisted state without current modifications. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Unit = two.mkFile(newParentId, newName, file.time, file.dataId)
 
-  override def close(): Unit = { synchronized { files.keys.foreach(release); files = Map() }; two.close() }
+  override def close(): Unit = { synchronized { files.keys.foreach(release); require(files.isEmpty) }; two.close() }
 
   def split(path: String): Array[String] = path.split("/").filter(_.nonEmpty)
 
@@ -42,7 +42,9 @@ class Level1 extends AutoCloseable with ClassLogging {
   def delete(entry: TreeEntry): Unit =
     guard(s"delete($entry)") {
       entry match {
-        case file: FileEntry => synchronized(files -= file.id)
+        case file: FileEntry => synchronized {
+          files.get(file.id).foreach { case _ -> data => data.close(); files -= file.id }
+        }
         case _: DirEntry => // Nothing to do here
       }
       two.delete(entry.id)
@@ -91,7 +93,7 @@ class Level1 extends AutoCloseable with ClassLogging {
           if (count > 1) { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
           else { files -= id; Some(Some(dataEntry)) } // Outside the sync block persist data if necessary.
       })
-      result.flatten.foreach(entry => if (entry.written) two.persist(id, entry))
+      result.flatten.foreach(data => if (data.written) two.persist(id, data) else data.close())
       result.isDefined
     }
 }

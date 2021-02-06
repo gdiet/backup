@@ -3,6 +3,7 @@ package dedup2
 import java.util.concurrent.atomic.AtomicLong
 
 case class MemCached(override val start: Long, private val data: Array[Byte]) extends Cached {
+  override def cacheSize: Long = data.length + 64
   override def end: Long = start + data.length
   override def read(from: Long, to: Long): Array[Byte] = {
     require(from >= start, s"$from >= $start")
@@ -26,6 +27,7 @@ trait Cached {
   def read(from: Long, to: Long): Array[Byte]
   def take(size: Long): Cached
   def drop(size: Long): Cached
+  def cacheSize: Long
 }
 object Cached {
   val cacheLimit: Long = math.max(16000000, (Runtime.getRuntime.maxMemory - 64000000) * 7 / 10)
@@ -40,13 +42,17 @@ object DataEntry extends ClassLogging {
   @inline override protected def warn_ (msg: => String): Unit = super.warn_ (msg)
   @inline override protected def error_(msg:    String): Unit = super.error_(msg)
   @inline override protected def error_(msg: String, e: Throwable): Unit = super.error_(msg, e)
+  protected val currentId = new AtomicLong()
 }
 
 /** mutable! baseDataId can be -1. */
-class DataEntry(val baseDataId: Long, initialSize: Long) { import DataEntry._
-  trace_(s"Create with base data ID $baseDataId.")
+class DataEntry(val baseDataId: Long, initialSize: Long) extends AutoCloseable { import DataEntry._
+  private val id = currentId.incrementAndGet()
+  info_(s"Create $id") // FIXME remove
+  trace_(s"Create $id with base data ID $baseDataId.")
   /** position -> data */
   private var cached: Seq[Cached] = Seq()
+  private def cacheSize: Long = cached.map(_.cacheSize).sum
   private var _written: Boolean = false
   private var _size: Long = initialSize
 
@@ -76,15 +82,18 @@ class DataEntry(val baseDataId: Long, initialSize: Long) { import DataEntry._
   }
 
   def truncate(size: Long): Unit = synchronized {
+    val oldCacheSize = cacheSize
     cached = cached.collect {
       case entry if entry.end <= size => entry
       case entry if entry.start <= size => entry.take(size - entry.start)
     }
+    Cached.cacheUsed.addAndGet(cacheSize - oldCacheSize)
     _written = true
     _size = size
   }
 
   def write(start: Long, dataToWrite: Array[Byte]): Unit = synchronized {
+    val oldCacheSize = cacheSize
     val end = start + dataToWrite.length
     cached = cached.flatMap { entry =>
       if (entry.start >= end || entry.end <= start) Some(entry)
@@ -92,7 +101,13 @@ class DataEntry(val baseDataId: Long, initialSize: Long) { import DataEntry._
       else if (entry.start < start) Some(entry.take(start - entry.start))
       else Some(entry.drop(end - entry.start))
     } :+ MemCached(start, dataToWrite)
+    Cached.cacheUsed.addAndGet(cacheSize - oldCacheSize)
     _written = true
     _size = math.max(_size, end)
+  }
+
+  override def close(): Unit = {
+    info_(s"Close $id") // FIXME remove
+    Cached.cacheUsed.addAndGet(-cacheSize)
   }
 }

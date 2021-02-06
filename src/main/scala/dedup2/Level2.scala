@@ -1,7 +1,5 @@
 package dedup2
 
-import org.slf4j.LoggerFactory
-
 class Level2 extends AutoCloseable {
   private val con = H2.mem()
   Database.initialize(con)
@@ -25,7 +23,7 @@ class Level2 extends AutoCloseable {
   def nextDataId: Long = db.nextId
 
   /** In Level2, DataEntry objects are not mutated. */
-  def persist(id: Long, dataEntry: DataEntry): Unit = // FIXME start persisting
+  def persist(id: Long, dataEntry: DataEntry): Unit = // FIXME start persisting. Don't forget to close DataEntries afterwards
     synchronized(files += id -> (dataEntry +: files.getOrElse(id, Vector())))
 
   def size(id: Long, dataId: Long): Long =
