@@ -97,15 +97,15 @@ class Level1 extends AutoCloseable with ClassLogging {
 }
 
 object Level1 extends App {
+  sys.props.update("LOG_BASE", "./")
   val store = new Level1()
   val root = store.entry("/").get.asInstanceOf[DirEntry]
   val childId = store.createAndOpen(root.id, "test", 0)
-  store.write(childId, 0, Array(1,2,3,4,5))
-  store.truncate(childId, 7)
+  store.write(childId, 0, Array.fill(4096)('a'))
+  store.write(childId, 4096, Array.fill(10)('b'))
   store.release(childId)
   val file = store.entry("/test").get.asInstanceOf[FileEntry]
   store.open(file)
-  store.truncate(file.id, 9)
-  println(store.read(file.id, 0, 4096).get.reduce(_++_).toList)
+  println(store.read(file.id, 0, 8192).get.reduce(_++_).drop(4090).toList)
   store.release(file.id)
 }
