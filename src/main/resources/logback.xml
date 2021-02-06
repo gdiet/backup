@@ -1,7 +1,7 @@
 <configuration>
     <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%date %.-3level %-11logger{36} - %msg%n</pattern>
+            <pattern>%date %.-3level %-14logger{14} - %msg%n</pattern>
         </encoder>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>INFO</level>
