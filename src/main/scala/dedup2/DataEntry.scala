@@ -1,21 +1,35 @@
 package dedup2
 
-case class MemCached(start: Long, data: Array[Byte]) {
-  def end: Long = start + data.length
-  def read(from: Long, to: Long): Array[Byte] = {
+import java.util.concurrent.atomic.AtomicLong
+
+case class MemCached(override val start: Long, private val data: Array[Byte]) extends Cached {
+  override def end: Long = start + data.length
+  override def read(from: Long, to: Long): Array[Byte] = {
     require(from >= start, s"$from >= $start")
     require(to <= end, s"$to <= $end")
     data.slice((from - start).toInt, (to-start).toInt)
   }
-  def take(size: Long): MemCached = {
+  override def take(size: Long): MemCached = {
     require(size < data.length, s"$size < ${data.length}")
     copy(data = data.take(size.toInt))
   }
-  def drop(size: Long): MemCached = {
+  override def drop(size: Long): MemCached = {
     require(size < data.length, s"$size < ${data.length}")
     copy(data = data.drop(size.toInt))
   }
   override def toString: String = s"MemCached($start, size ${data.length}, data ${data.take(10).toSeq}...)"
+}
+
+trait Cached {
+  def start: Long
+  def end: Long
+  def read(from: Long, to: Long): Array[Byte]
+  def take(size: Long): Cached
+  def drop(size: Long): Cached
+}
+object Cached {
+  val cacheLimit: Long = math.max(16000000, (Runtime.getRuntime.maxMemory - 64000000) * 7 / 10)
+  val cacheUsed = new AtomicLong(0)
 }
 
 object DataEntry extends ClassLogging {
@@ -30,10 +44,9 @@ object DataEntry extends ClassLogging {
 
 /** mutable! baseDataId can be -1. */
 class DataEntry(val baseDataId: Long, initialSize: Long) { import DataEntry._
-
   trace_(s"Create with base data ID $baseDataId.")
   /** position -> data */
-  private var cached: Seq[MemCached] = Seq()
+  private var cached: Seq[Cached] = Seq()
   private var _written: Boolean = false
   private var _size: Long = initialSize
 
