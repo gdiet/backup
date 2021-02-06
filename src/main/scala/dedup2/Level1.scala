@@ -2,9 +2,11 @@ package dedup2
 
 /** Manages currently open files. Forwards everything else to LevelTwo. */
 class Level1 extends AutoCloseable with ClassLogging {
-  private def guard[T](msg: => String, logger: (=> String) => Unit = trace_)(f: => T): T =
-    try f.tap(t => logger(s"$msg -> $t"))
-    catch { case e: Throwable => error_(s"$msg -> ERROR", e); throw e }
+  private def guard[T](msg: => String, logger: (=> String) => Unit = trace_)(f: => T): T = {
+    logger(s"$msg ...")
+    try f.tap(t => logger(s"... $msg -> $t"))
+    catch { case e: Throwable => error_(s"... $msg -> ERROR", e); throw e }
+  }
 
   private val two = new Level2()
 
@@ -66,7 +68,7 @@ class Level1 extends AutoCloseable with ClassLogging {
     }
 
   def write(id: Long, offset: Long, data: Array[Byte]): Boolean =
-    guard(s"write($id, $offset, size ${data.length})", info_) {
+    guard(s"write($id, $offset, size ${data.length}, data ${data.take(10).toSeq}...)", info_) {
       synchronized(files.get(id)).map(_._2.write(offset, data)).isDefined
     }
 

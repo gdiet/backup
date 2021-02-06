@@ -144,13 +144,15 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   private val rights = if (readonly) 292 else 438 // o444 else o666
   private val store  = new Level1()
 
-  private def guard(msg: => String, logger: (=> String) => Unit = trace_)(f: => Int): Int =
+  private def guard(msg: => String, logger: (=> String) => Unit = trace_)(f: => Int): Int = {
+    logger(s"$msg ...")
     try f.tap {
       case EIO       => error_(s"EIO: $msg")
       case EINVAL    => warn_ (s"EINVAL: $msg")
       case EOVERFLOW => warn_ (s"EOVERFLOW: $msg")
-      case result    => logger(s"$msg -> $result")
-    } catch { case e: Throwable => error_(s"$msg -> ERROR", e); EIO }
+      case result    => logger(s"... $msg -> $result")
+    } catch { case e: Throwable => error_(s"... $msg -> ERROR", e); EIO }
+  }
 
   override def umount(): Unit =
     guard(s"umount") {
