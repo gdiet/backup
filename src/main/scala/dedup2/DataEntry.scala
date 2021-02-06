@@ -1,7 +1,5 @@
 package dedup2
 
-import org.slf4j.LoggerFactory
-
 case class MemCached(start: Long, data: Array[Byte]) {
   def end: Long = start + data.length
   def read(from: Long, to: Long): Array[Byte] = {
@@ -20,11 +18,20 @@ case class MemCached(start: Long, data: Array[Byte]) {
   override def toString: String = s"MemCached($start, size ${data.length}, data ${data.take(10).toSeq}...)"
 }
 
-/** mutable! baseDataId can be -1. */
-class DataEntry(val baseDataId: Long, initialSize: Long) {
-  private val log = LoggerFactory.getLogger("dedup2.DataEn") // FIXME make static if at all necessary
+object DataEntry extends ClassLogging {
+  // see https://stackoverflow.com/questions/13713557/scala-accessing-protected-field-of-companion-objects-trait
+  @inline override protected def trace_(msg: => String): Unit = super.trace_(msg)
+  @inline override protected def debug_(msg: => String): Unit = super.debug_(msg)
+  @inline override protected def info_ (msg: => String): Unit = super.info_ (msg)
+  @inline override protected def warn_ (msg: => String): Unit = super.warn_ (msg)
+  @inline override protected def error_(msg:    String): Unit = super.error_(msg)
+  @inline override protected def error_(msg: String, e: Throwable): Unit = super.error_(msg, e)
+}
 
-  log.trace(s"Create with base data ID $baseDataId.")
+/** mutable! baseDataId can be -1. */
+class DataEntry(val baseDataId: Long, initialSize: Long) { import DataEntry._
+
+  trace_(s"Create with base data ID $baseDataId.")
   /** position -> data */
   private var cached: Seq[MemCached] = Seq()
   private var _written: Boolean = false
