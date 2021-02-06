@@ -324,7 +324,6 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
 
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     if (readonly) EROFS else guard(s"write $path .. offset = $offset, size = $size") {
-      if (size > 65000) warn_(s"Large write: $size")
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW else {
         val fileHandle = fi.fh.get()
@@ -346,7 +345,6 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
 
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     guard(s"read $path .. offset = $offset, size = $size") {
-      if (size > 65000) warn_(s"Large read: $size")
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW else {
         val fileHandle = fi.fh.get()
