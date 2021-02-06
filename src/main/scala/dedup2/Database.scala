@@ -58,15 +58,16 @@ object Database {
   }
 
   def startOfFreeData(statement: Statement): Long =
-    statement.executeQuery("SELECT MAX(stop) FROM DataEntries").pipe(_.maybeNext(_.getLong(1)).getOrElse(0L))
+    resource(statement.executeQuery("SELECT MAX(stop) FROM DataEntries"))(_.maybeNext(_.getLong(1)).getOrElse(0L))
 
   def allDataChunks(statement: Statement): Seq[(Long, Long)] =
-    statement.executeQuery("SELECT start, stop FROM DataEntries").seq(r => r.getLong(1) -> r.getLong(2))
+    resource(statement.executeQuery("SELECT start, stop FROM DataEntries"))(_.seq(r => r.getLong(1) -> r.getLong(2)))
 
   /** @return Seq(id, Option(size), Option(hash), seq, start, stop) */
   def allDataEntries(statement: Statement): Seq[(Long, Option[Long], Option[Array[Byte]], Int, Long, Long)] =
-    statement.executeQuery("SELECT id, length, hash, seq, start, stop FROM DataEntries")
-      .seq(r => (r.getLong(1), r.opt(_.getLong(2)), r.opt(_.getBytes(3)), r.getInt(4), r.getLong(5), r.getLong(6)))
+    resource(statement.executeQuery("SELECT id, length, hash, seq, start, stop FROM DataEntries"))(
+      _.seq(r => (r.getLong(1), r.opt(_.getLong(2)), r.opt(_.getBytes(3)), r.getInt(4), r.getLong(5), r.getLong(6)))
+    )
 
   def stats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
     log.info(s"Dedup File System Statistics")
@@ -97,7 +98,6 @@ object Database {
   }
 
   implicit class RichResultSet(val rs: ResultSet) extends AnyVal {
-    // TODO ResultSets should be handled as closeable resources
     def opt[T](f: ResultSet => T): Option[T] =
       f(rs).pipe(t => if (rs.wasNull) None else Some(t))
     def maybeNext[T](f: ResultSet => T): Option[T] =
