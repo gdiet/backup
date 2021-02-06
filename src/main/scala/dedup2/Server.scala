@@ -326,7 +326,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
         val fileHandle = fi.fh.get()
         info_(s"$fileHandle: Writing $size at $offset") // TODO remove
         if (size > memChunk) warn_(s"$fileHandle: Writing LARGE $size at $offset, see memchunk")
-        val data = new Array[Byte](intSize).tap(data => buf.get(offset, data, 0, intSize))
+        val data = new Array[Byte](intSize).tap(data => buf.get(0, data, 0, intSize))
         if (store.write(fileHandle, offset, data)) intSize else EIO // false if called without create or open
       }
     }
