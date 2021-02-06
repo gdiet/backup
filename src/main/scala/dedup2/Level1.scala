@@ -42,7 +42,7 @@ class Level1 extends AutoCloseable with ClassLogging {
   def delete(entry: TreeEntry): Unit =
     guard(s"delete($entry)") {
       entry match {
-        case file: FileEntry => synchronized(files -= file.dataId)
+        case file: FileEntry => synchronized(files -= file.id)
         case _: DirEntry => // Nothing to do here
       }
       two.delete(entry.id)
