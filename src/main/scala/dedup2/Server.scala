@@ -23,11 +23,17 @@ object Server extends App with ClassLogging {
     require(mountDir.list.isEmpty, s"Mount point is not empty: $mountPoint")
   }
   val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
+  val temp = new File(options.getOrElse("temp", sys.props("java.io.tmpdir") + "/dedupfs-temp"))
+  if (!readonly) {
+    temp.mkdirs()
+    require(temp.isDirectory && temp.canWrite, s"Temp dir is not a writable directory: $temp")
+    if (temp.list.nonEmpty) warn_(s"Temp dir is not empty: $temp")
+  }
   info_(s"Starting dedup file system.")
   info_(s"Repository:  $repo")
   info_(s"Mount point: $mountPoint")
   info_(s"Readonly:    $readonly")
-  val fs = new Server(Settings(repo, readonly))
+  val fs = new Server(Settings(repo, temp, readonly))
   val fuseOptions: Array[String] = if (getNativePlatform.getOS == WINDOWS) Array("-o", "volname=DedupFS") else Array("-o", "fsname=DedupFS")
   try fs.mount(java.nio.file.Paths.get(mountPoint), true, false, fuseOptions)
   catch { case e: Throwable => error_("Mount exception:", e); fs.umount() }
