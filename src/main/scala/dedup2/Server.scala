@@ -290,7 +290,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   // #########
 
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
-    if (readonly) EROFS else guard(s"create $path", info_) { // TODO default logging
+    if (readonly) EROFS else guard(s"create $path") {
       val parts = store.split(path)
       if (parts.length == 0) ENOENT // can't create root
       else store.entry(parts.dropRight(1)) match { // fetch parent entry
@@ -306,7 +306,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def open(path: String, fi: FuseFileInfo): Int =
-    guard(s"open $path", info_) { // TODO default logging
+    guard(s"open $path") {
       store.entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
@@ -315,18 +315,17 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def release(path: String, fi: FuseFileInfo): Int =
-    guard(s"release $path", info_) { // TODO default logging
+    guard(s"release $path") {
       val fileHandle = fi.fh.get()
       if (store.release(fileHandle)) OK else EIO // false if called without create or open
     }
 
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-    if (readonly) EROFS else guard(s"write $path .. offset = $offset, size = $size", info_) { // TODO default logging
+    if (readonly) EROFS else guard(s"write $path .. offset = $offset, size = $size") {
       if (size > 65000) warn_(s"Large write: $size")
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW else {
         val fileHandle = fi.fh.get()
-        info_(s"$fileHandle: Writing $size at $offset") // TODO remove
         if (size > memChunk) warn_(s"$fileHandle: Writing LARGE $size at $offset, see memchunk")
         val data = new Array[Byte](intSize).tap(data => buf.get(0, data, 0, intSize))
         if (store.write(fileHandle, offset, data)) intSize else EIO // false if called without create or open
@@ -334,7 +333,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def truncate(path: String, size: Long): Int =
-    if (readonly) EROFS else guard(s"truncate $path .. $size", info_) { // TODO default logging
+    if (readonly) EROFS else guard(s"truncate $path .. $size") {
       store.entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
@@ -344,12 +343,11 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-    guard(s"read $path .. offset = $offset, size = $size", info_) { // TODO default logging
+    guard(s"read $path .. offset = $offset, size = $size") {
       if (size > 65000) warn_(s"Large read: $size")
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW else {
         val fileHandle = fi.fh.get()
-        info_(s"$fileHandle: Reading $size at $offset") // TODO remove
         if (size > memChunk) warn_(s"$fileHandle: Reading LARGE $size at $offset, see memchunk")
         store.read(fileHandle, offset, intSize) match {
           case None =>
@@ -365,7 +363,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def unlink(path: String): Int = if (readonly) EROFS else
-    guard(s"unlink $path", info_) { // TODO default logging
+    guard(s"unlink $path") {
       store.entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR

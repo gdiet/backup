@@ -21,10 +21,10 @@ case class MemCached(start: Long, data: Array[Byte]) {
 }
 
 /** mutable! baseDataId can be -1. */
-class DataEntry(val baseDataId: Long, initialSize: Long = 0) {
+class DataEntry(val baseDataId: Long, initialSize: Long) {
   private val log = LoggerFactory.getLogger("dedup2.DataEn") // FIXME make static if at all necessary
 
-  log.info(s"create $baseDataId -> $this")
+  log.trace(s"Create with base data ID $baseDataId.")
   /** position -> data */
   private var cached: Seq[MemCached] = Seq()
   private var _written: Boolean = false
@@ -35,7 +35,6 @@ class DataEntry(val baseDataId: Long, initialSize: Long = 0) {
 
   /** readUnderlying is (dataId, offset, size) => data */
   def read(position: Long, size: Int, readUnderlying: (Long, Long, Int) => Data): Data = synchronized { // FIXME test
-    log.info(s"read $baseDataId, size ${this.size} -> $this; cached: $cached")
     val sizeToReturn = math.max(0, math.min(this.size - position, size).toInt)
     val endOfRead = position + sizeToReturn
     val candidates = cached.filter(entry => entry.start < endOfRead && entry.end > position).sortBy(_.start)
@@ -53,8 +52,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long = 0) {
         val endLength = end.map(_.length).sum
         (currentPos + endLength) -> (result ++ end)
       }
-    val x = withUnderLyingEnd :+ new Array((endOfRead - nextPos).toInt)
-    x.tap(_ => log.info(s"read returns: " + x.reduce(_++_).toList))
+    withUnderLyingEnd :+ new Array((endOfRead - nextPos).toInt)
   }
 
   def truncate(size: Long): Unit = synchronized { // FIXME test

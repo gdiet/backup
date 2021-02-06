@@ -35,12 +35,12 @@ class Level1 extends AutoCloseable with ClassLogging {
     }
 
   def size(id: Long, dataId: Long): Long =
-    guard(s"size($id, $dataId)", info_) {
+    guard(s"size($id, $dataId)") {
       synchronized(files.get(id)).map(_._2.size).getOrElse(two.size(id, dataId))
     }
 
   def delete(entry: TreeEntry): Unit =
-    guard(s"delete($entry)", info_) {
+    guard(s"delete($entry)") {
       entry match {
         case file: FileEntry => synchronized(files -= file.dataId)
         case _: DirEntry => // Nothing to do here
@@ -49,14 +49,14 @@ class Level1 extends AutoCloseable with ClassLogging {
     }
 
   def createAndOpen(parentId: Long, name: String, time: Long): Long =
-    guard(s"createAndOpen($parentId, $name)", info_) {
+    guard(s"createAndOpen($parentId, $name)") {
       two.mkFile(parentId, name, time).tap { id =>
-        synchronized(files += id -> (1, new DataEntry(-1)))
+        synchronized(files += id -> (1, new DataEntry(-1, 0)))
       }
     }
 
   def open(file: FileEntry): Unit =
-    guard(s"open($file)", info_) {
+    guard(s"open($file)") {
       synchronized { import file._
         files += id -> (files.get(id) match {
           case None => 1 -> new DataEntry(dataId, two.size(id, dataId))
@@ -68,22 +68,22 @@ class Level1 extends AutoCloseable with ClassLogging {
     }
 
   def write(id: Long, offset: Long, data: Array[Byte]): Boolean =
-    guard(s"write($id, $offset, size ${data.length}, data ${data.take(10).toSeq}...)", info_) {
+    guard(s"write($id, $offset, size ${data.length}, data ${data.take(10).toSeq}...)") {
       synchronized(files.get(id)).map(_._2.write(offset, data)).isDefined
     }
 
   def truncate(id: Long, size: Long): Boolean =
-    guard(s"truncate($id, $size)", info_) {
+    guard(s"truncate($id, $size)") {
       synchronized(files.get(id)).map(_._2.truncate(size)).isDefined
     }
 
   def read(id: Long, offset: Long, size: Int): Option[Data] =
-    guard(s"read($id, $offset, $size)", info_) {
+    guard(s"read($id, $offset, $size)") {
       synchronized(files.get(id)).map(_._2.read(offset, size, two.read(id, _, _, _)))
     }
 
   def release(id: Long): Boolean =
-    guard(s"release($id)", info_) {
+    guard(s"release($id)") {
       val result = synchronized(files.get(id) match {
         case None => None // No handle found, return false.
         case Some(count -> dataEntry) =>
