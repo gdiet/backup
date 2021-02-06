@@ -41,7 +41,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long) { import DataEntry._
   def size: Long = synchronized(_size)
 
   /** readUnderlying is (dataId, offset, size) => data */
-  def read(position: Long, size: Int, readUnderlying: (Long, Long, Int) => Data): Data = synchronized { // FIXME test
+  def read(position: Long, size: Int, readUnderlying: (Long, Long, Int) => Data): Data = synchronized {
     val sizeToReturn = math.max(0, math.min(this.size - position, size).toInt)
     val endOfRead = position + sizeToReturn
     val candidates = cached.filter(entry => entry.start < endOfRead && entry.end > position).sortBy(_.start)
@@ -62,7 +62,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long) { import DataEntry._
     withUnderLyingEnd :+ new Array((endOfRead - nextPos).toInt)
   }
 
-  def truncate(size: Long): Unit = synchronized { // FIXME test
+  def truncate(size: Long): Unit = synchronized {
     cached = cached.collect {
       case entry if entry.end <= size => entry
       case entry if entry.start <= size => entry.take(size - entry.start)
@@ -71,7 +71,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long) { import DataEntry._
     _size = size
   }
 
-  def write(start: Long, dataToWrite: Array[Byte]): Unit = synchronized { // FIXME test
+  def write(start: Long, dataToWrite: Array[Byte]): Unit = synchronized {
     val end = start + dataToWrite.length
     cached = cached.flatMap { entry =>
       if (entry.start >= end || entry.end <= start) Some(entry)

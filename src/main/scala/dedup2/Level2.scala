@@ -3,8 +3,6 @@ package dedup2
 import org.slf4j.LoggerFactory
 
 class Level2 extends AutoCloseable {
-  private val log = LoggerFactory.getLogger("dedup.Level2") // TODO static loggers are enough
-
   private val con = H2.mem()
   Database.initialize(con)
   private val db = new Database(con)
@@ -35,7 +33,7 @@ class Level2 extends AutoCloseable {
 
   def read(id: Long, dataId: Long, offset: Long, size: Int): Data = {
     def readFromLts(dataId: Long, offset: Long, size: Int): Data = Vector(new Array(size)) // FIXME
-    synchronized(files.get(id)) // TODO test
+    synchronized(files.get(id))
       .map { entries =>
         entries.reverse.foldLeft(readFromLts _) { case (readMethod, entry) =>
           (_, off, siz) => entry.read(off, siz, readMethod)
