@@ -227,7 +227,6 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
       }
     }
 
-  // Renames a file. Other than the general contract of rename, newpath must not exist. TODO fix this.
   // If copyWhenMoving is active, the last persisted state of files is copied - without the current modifications.
   override def rename(oldpath: String, newpath: String): Int =
     if (readonly) EROFS else guard(s"rename $oldpath .. $newpath") {
@@ -240,9 +239,9 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
           case Some(_  : FileEntry) => ENOTDIR
           case Some(dir: DirEntry ) =>
             val newName = newParts.last
-            store.child(dir.id, newName) match {
-              case Some(_) => EEXIST
-              case None =>
+            origin -> store.child(dir.id, newName) match {
+              case (_: FileEntry) -> Some(_: DirEntry) => EISDIR
+              case _ -> previous =>
                 def copy(origin: TreeEntry, newName: String, newParentId: Long): Unit =
                   origin match {
                     case file: FileEntry => store.copyFile(file, newParentId, newName)
@@ -250,6 +249,9 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
                       val dirId = store.mkDir(newParentId, newName)
                       store.children(dir.id).foreach(child => copy(child, child.name, dirId))
                   }
+                // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
+                // replace operation is not atomic. This is tolerated in order to simplify the code.
+                previous.foreach(store.delete)
                 if (origin.parentId != dir.id && copyWhenMoving.get()) copy(origin, newName, dir.id)
                 else store.update(origin.id, dir.id, newName)
                 OK
