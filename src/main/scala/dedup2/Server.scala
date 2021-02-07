@@ -23,7 +23,7 @@ object Server extends App with ClassLogging {
     require(mountDir.list.isEmpty, s"Mount point is not empty: $mountPoint")
   }
   val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
-  val temp = new File(options.getOrElse("temp", sys.props("java.io.tmpdir") + "/dedupfs-temp"))
+  val temp = new File(options.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
   if (!readonly) {
     temp.mkdirs()
     require(temp.isDirectory && temp.canWrite, s"Temp dir is not a writable directory: $temp")
@@ -146,9 +146,9 @@ Module options:
 }
 
 class Server(settings: Settings) extends FuseStubFS with FuseConstants with ClassLogging {
-  import settings.{copyWhenMoving, dataDir, readonly}
+  import settings.{copyWhenMoving, dataDir, readonly, temp}
   private val rights = if (readonly) 292 else 438 // o444 else o666
-  private val store  = new Level1()
+  private val store  = new Level1(settings)
 
   private def guard(msg: => String, logger: (=> String) => Unit = trace_)(f: => Int): Int = {
     logger(s"$msg ...")
@@ -164,6 +164,9 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     guard(s"umount") {
       super.umount()
       store.close()
+      if (!readonly)
+        if (temp.listFiles().nonEmpty) warn_(s"Temp dir is not empty: $temp")
+        else temp.delete()
       info_(s"Dedup file system is stopped.")
       OK
     }

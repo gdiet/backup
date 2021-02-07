@@ -43,6 +43,7 @@ object DataEntry extends ClassLogging {
   @inline override protected def error_(msg:    String): Unit = super.error_(msg)
   @inline override protected def error_(msg: String, e: Throwable): Unit = super.error_(msg, e)
   protected val currentId = new AtomicLong()
+  protected val closedEntries = new AtomicLong() // FIXME on shutdown make sure this is 0.
 }
 
 /** mutable! baseDataId can be -1. */
@@ -108,6 +109,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long) extends AutoCloseable {
 
   override def close(): Unit = {
     info_(s"Close $id") // FIXME remove
+    closedEntries.incrementAndGet()
     Cached.cacheUsed.addAndGet(-cacheSize)
   }
 }
