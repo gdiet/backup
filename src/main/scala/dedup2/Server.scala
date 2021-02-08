@@ -164,6 +164,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     guard(s"umount") {
       super.umount()
       store.close()
+      if (!DataEntry.allClosed) warn_(s"Not all data entries have been closed.")
       if (!readonly)
         if (temp.listFiles().nonEmpty) warn_(s"Temp dir is not empty: $temp")
         else temp.delete()
