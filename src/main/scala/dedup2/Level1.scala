@@ -53,7 +53,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   def createAndOpen(parentId: Long, name: String, time: Long): Long =
     guard(s"createAndOpen($parentId, $name)") {
       two.mkFile(parentId, name, time).tap { id =>
-        synchronized(files += id -> (1, new DataEntry(-1, 0)))
+        synchronized(files += id -> (1, new DataEntry(-1, 0, settings.tempPath)))
       }
     }
 
@@ -61,7 +61,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     guard(s"open($file)") {
       synchronized { import file._
         files += id -> (files.get(id) match {
-          case None => 1 -> new DataEntry(dataId, two.size(id, dataId))
+          case None => 1 -> new DataEntry(dataId, two.size(id, dataId), settings.tempPath)
           case Some(count -> dataEntry) =>
             if (dataEntry.baseDataId != dataId) warn_(s"File $id: Mismatch between previous ${dataEntry.baseDataId} and current $dataId.")
             count + 1 -> dataEntry

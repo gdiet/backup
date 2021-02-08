@@ -1,38 +1,9 @@
 package dedup2
 
+import java.nio.channels.SeekableByteChannel
+import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
+import java.nio.file.{Files, Path}
 import java.util.concurrent.atomic.AtomicLong
-
-case class MemCached(override val start: Long, private val data: Array[Byte]) extends Cached {
-  override def cacheSize: Long = data.length + 64
-  override def end: Long = start + data.length
-  override def read(from: Long, to: Long): Array[Byte] = {
-    require(from >= start, s"$from >= $start")
-    require(to <= end, s"$to <= $end")
-    data.slice((from - start).toInt, (to-start).toInt)
-  }
-  override def take(size: Long): MemCached = {
-    require(size < data.length, s"$size < ${data.length}")
-    copy(data = data.take(size.toInt))
-  }
-  override def drop(size: Long): MemCached = {
-    require(size < data.length, s"$size < ${data.length}")
-    copy(data = data.drop(size.toInt))
-  }
-  override def toString: String = s"MemCached($start, size ${data.length}, data ${data.take(10).toSeq}...)"
-}
-
-trait Cached {
-  def start: Long
-  def end: Long
-  def read(from: Long, to: Long): Array[Byte]
-  def take(size: Long): Cached
-  def drop(size: Long): Cached
-  def cacheSize: Long
-}
-object Cached {
-  val cacheLimit: Long = math.max(16000000, (Runtime.getRuntime.maxMemory - 64000000) * 7 / 10)
-  val cacheUsed = new AtomicLong(0)
-}
 
 object DataEntry extends ClassLogging {
   // see https://stackoverflow.com/questions/13713557/scala-accessing-protected-field-of-companion-objects-trait
@@ -47,7 +18,7 @@ object DataEntry extends ClassLogging {
 }
 
 /** mutable! baseDataId can be -1. */
-class DataEntry(val baseDataId: Long, initialSize: Long) extends AutoCloseable { import DataEntry._
+class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends AutoCloseable { import DataEntry._
   private val id = currentId.incrementAndGet()
   info_(s"Create $id") // FIXME remove
   trace_(s"Create $id with base data ID $baseDataId.")
@@ -56,6 +27,15 @@ class DataEntry(val baseDataId: Long, initialSize: Long) extends AutoCloseable {
   private def cacheSize: Long = cached.map(_.cacheSize).sum
   private var _written: Boolean = false
   private var _size: Long = initialSize
+
+  private var maybeChannel: Option[SeekableByteChannel] = None
+  private val path = tempDir.resolve(s"$id")
+  private def channel = synchronized {
+    maybeChannel.getOrElse {
+      debug_(s"Create cache file $path")
+      Files.newByteChannel(path, WRITE, CREATE_NEW, SPARSE, READ).tap(c => maybeChannel = Some(c))
+    }
+  }
 
   def written: Boolean = synchronized(_written)
   def size: Long = synchronized(_size)
@@ -101,7 +81,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long) extends AutoCloseable {
       else if (entry.start >= start && entry.end <= end) None
       else if (entry.start < start) Some(entry.take(start - entry.start))
       else Some(entry.drop(end - entry.start))
-    } :+ MemCached(start, dataToWrite)
+    } :+ Cached(start, dataToWrite, channel)
     Cached.cacheUsed.addAndGet(cacheSize - oldCacheSize)
     _written = true
     _size = math.max(_size, end)
