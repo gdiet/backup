@@ -102,8 +102,8 @@ object Database {
       f(rs).pipe(t => if (rs.wasNull) None else Some(t))
     def maybeNext[T](f: ResultSet => T): Option[T] =
       if (rs.next()) Some(f(rs)) else None
-    def seq[T](f: ResultSet => T): Seq[T] =
-      LazyList.continually(Option.when(rs.next)(f(rs))).takeWhile(_.isDefined).flatten.to(List)
+    def seq[T](f: ResultSet => T): Vector[T] =
+      LazyList.continually(Option.when(rs.next)(f(rs))).takeWhile(_.isDefined).flatten.toVector
   }
 
   def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry = rs.opt(_.getLong(3)) match {
@@ -151,18 +151,18 @@ class Database(connection: Connection) { import Database._
     resource(qChildren.executeQuery())(_.seq(rs => treeEntry(parentId, rs.getString(4), rs)))
   }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
-//  private val qParts = connection.prepareStatement(
-//    "SELECT start, stop FROM DataEntries WHERE id = ? ORDER BY seq ASC"
-//  )
-//  def parts(dataId: Long): Parts = sync(Parts {
-//    qParts.setLong(1, dataId)
-//    resource(qParts.executeQuery())(_.seq { rs =>
-//      val (start, stop) = rs.getLong(1) -> rs.getLong(2)
-//      assumeLogged(start >= 0, s"start >= 0 ... $start")
-//      assumeLogged(stop >= start, s"stop >= start ... $stop / $start")
-//      start -> stop
-//    })
-//  })
+  private val qParts = connection.prepareStatement(
+    "SELECT start, stop FROM DataEntries WHERE id = ? ORDER BY seq ASC"
+  )
+  def parts(dataId: Long): Vector[(Long, Long)] = sync {
+    qParts.setLong(1, dataId)
+    resource(qParts.executeQuery())(_.seq { rs =>
+      val (start, stop) = rs.getLong(1) -> rs.getLong(2)
+      require(start >= 0, s"start >= 0 ... $start") // TODO eventually distinuish between require and assert and so on
+      require(stop >= start, s"stop >= start ... $stop / $start")
+      start -> stop
+    })
+  }
 
   private val qDataSize = connection.prepareStatement(
     "SELECT length FROM DataEntries WHERE id = ? AND seq = 1"

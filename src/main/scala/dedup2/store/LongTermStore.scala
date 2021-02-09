@@ -10,7 +10,7 @@ class LongTermStore {
     if (actualLength > 0) System.arraycopy(data, 0, store, position.toInt, actualLength)
   }
 
-  def read(position: Long, size: Int): Array[Byte] = if (size == 0) Array() else synchronized {
+  def read(position: Long, size: Long): Array[Byte] = if (size == 0) Array() else synchronized {
     require(position >= 0)
     require(size >= 0)
     val actualLength = math.max(math.min(size, storeSize - position), 0).toInt
