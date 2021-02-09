@@ -2,16 +2,27 @@ package dedup2
 
 import dedup2.store.LongTermStore
 
-class Level2 extends AutoCloseable {
+import java.security.MessageDigest
+import java.util.concurrent.{Executors, TimeUnit}
+import java.util.concurrent.atomic.AtomicLong
+import scala.concurrent.{ExecutionContext, Future}
+
+class Level2 extends AutoCloseable with ClassLogging {
   private val con = H2.mem()
   Database.initialize(con)
   private val db = new Database(con)
   private val lts = new LongTermStore
+  private val startOfFreeData = new AtomicLong(db.startOfFreeData)
+  private val storeContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
   /** id -> dataEntries. dataEntries is non-empty. Remember to synchronize. */
   private var files = Map[Long, Vector[DataEntry]]()
 
-  override def close(): Unit = con.close()
+  override def close(): Unit = {
+    storeContext.shutdown()
+    storeContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
+    con.close()
+  }
 
   def setTime(id: Long, time: Long): Unit = db.setTime(id, time)
   def dataId(id: Long): Option[Long] = db.dataId(id)
@@ -26,11 +37,48 @@ class Level2 extends AutoCloseable {
   def nextDataId: Long = db.nextId
 
   /** In Level2, DataEntry objects are not mutated. */
-  def persist(id: Long, dataEntry: DataEntry): Unit = {
-    synchronized(files += id -> (dataEntry +: files.getOrElse(id, Vector())))
-    // FIXME start persisting. Don't forget to close DataEntries afterwards
-    dataEntry.read(0, ???, readFromLts)
-  }
+  def persist(id: Long, dataEntry: DataEntry): Unit =
+    // If data entry size is zero, explicitly set dataId -1 because it might have been set to something else before...
+    if (dataEntry.size == 0) { db.setDataId(id, -1); dataEntry.close() }
+    else {
+      synchronized(files += id -> (dataEntry +: files.getOrElse(id, Vector())))
+
+      // Persist async
+      Future {
+        val end = dataEntry.size
+        // Must be def to avoid memory problems.
+        def data = LazyList.range(0L, end, memChunk).flatMap { position =>
+          val chunkSize = math.min(memChunk, end - position).toInt
+          dataEntry.read(position, chunkSize, readFromLts)
+        }
+        // Calculate hash
+        val md = MessageDigest.getInstance(hashAlgorithm)
+        data.foreach(md.update)
+        val hash = md.digest()
+        // Check if already known
+        db.dataEntry(hash, dataEntry.size) match {
+          // Already known, simply link
+          case Some(dataId) =>
+            trace_(s"Persisted $id - content known, linking to dataId $dataId")
+            db.setDataId(id, dataId)
+          // Not yet known, store ...
+          case None =>
+            // Reserve storage space
+            val start = startOfFreeData.getAndAdd(dataEntry.size)
+            // Write to storage
+            data.foldLeft(0L) { case (position, data) =>
+              lts.write(start + position, data)
+              position + data.length
+            }
+            // 5c. create data entry
+            val dataId = db.newDataIdFor(id)
+            db.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
+            trace_(s"Persisted $id - new content, dataId $dataId")
+        }
+        synchronized(files -= id)
+        dataEntry.close()
+      }(storeContext)
+    }
 
   def size(id: Long, dataId: Long): Long =
     synchronized(files.get(id)).map(_.head.size).getOrElse(db.dataSize(dataId))
