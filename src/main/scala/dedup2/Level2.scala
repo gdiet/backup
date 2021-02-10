@@ -7,11 +7,11 @@ import java.util.concurrent.{Executors, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.{ExecutionContext, Future}
 
-class Level2 extends AutoCloseable with ClassLogging {
+class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   private val con = H2.mem()
   Database.initialize(con)
   private val db = new Database(con)
-  private val lts = new LongTermStore
+  private val lts = new LongTermStore(settings.dataDir, settings.readonly)
   private val startOfFreeData = new AtomicLong(db.startOfFreeData)
   private val storeContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
@@ -97,7 +97,7 @@ class Level2 extends AutoCloseable with ClassLogging {
       else  if (readPosition >= readEnd) readPosition -> result
       else {
         val skipInChunk = math.max(0, readFrom - readPosition)
-        val takeOfChunk = math.min(chunkLen - skipInChunk, readEnd - readPosition - skipInChunk)
+        val takeOfChunk = math.min(chunkLen - skipInChunk, readEnd - readPosition - skipInChunk).toInt // TODO ensure this is always Int
 //        info_(s"readFromLts loop B skip $skipInChunk take $takeOfChunk") // FIXME remove
         readPosition + skipInChunk + takeOfChunk -> (result :+ lts.read(chunkStart + skipInChunk, takeOfChunk))
       }

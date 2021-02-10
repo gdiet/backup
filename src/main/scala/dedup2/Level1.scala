@@ -8,7 +8,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     catch { case e: Throwable => error_(s"... $msg -> ERROR", e); throw e }
   }
 
-  private val two = new Level2()
+  private val two = new Level2(settings)
 
   /** id -> (handle count, dataEntry). Remember to synchronize. */
   private var files = Map[Long, (Int, DataEntry)]()
