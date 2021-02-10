@@ -41,6 +41,7 @@ class Level2 extends AutoCloseable with ClassLogging {
     // If data entry size is zero, explicitly set dataId -1 because it might have been set to something else before...
     if (dataEntry.size == 0) { db.setDataId(id, -1); dataEntry.close() }
     else {
+      info_(s"ID $id - starting to persist data entry with size ${dataEntry.size} and base data id ${dataEntry.baseDataId}.") // FIXME remove or trace
       synchronized(files += id -> (dataEntry +: files.getOrElse(id, Vector())))
 
       // Persist async
@@ -60,6 +61,7 @@ class Level2 extends AutoCloseable with ClassLogging {
           // Already known, simply link
           case Some(dataId) =>
             trace_(s"Persisted $id - content known, linking to dataId $dataId")
+            info_(s"Persisted $id - content known, linking to dataId $dataId") // FIXME remove
             db.setDataId(id, dataId)
           // Not yet known, store ...
           case None =>
@@ -74,6 +76,7 @@ class Level2 extends AutoCloseable with ClassLogging {
             val dataId = db.newDataIdFor(id)
             db.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
             trace_(s"Persisted $id - new content, dataId $dataId")
+            info_(s"Persisted $id - new content, dataId $dataId") // FIXME remove
         }
         synchronized(files -= id)
         dataEntry.close()

@@ -2,7 +2,7 @@ package dedup2
 
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
-import java.nio.file.{Files, Path}
+import java.nio.file.{Files, Path, Paths}
 import java.util.concurrent.atomic.AtomicLong
 
 object DataEntry extends ClassLogging {
@@ -88,8 +88,13 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
     _size = math.max(_size, end)
   }
 
-  override def close(): Unit = {
+  override def close(): Unit = synchronized {
     info_(s"Close $id") // FIXME remove
+    maybeChannel.foreach { channel =>
+      channel.close()
+      Files.delete(path)
+      info_(s"deleted $path") // FIXME remove
+    }
     closedEntries.incrementAndGet()
     Cached.cacheUsed.addAndGet(-cacheSize)
   }
