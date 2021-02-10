@@ -89,7 +89,7 @@ class Level2 extends AutoCloseable with ClassLogging {
   private def readFromLts(dataId: Long, readFrom: Long, readSize: Int): Data = {
     require(readSize > 0, s"Read size $readSize !> 0")
     val readEnd = readFrom + readSize
-    val actuallyRead -> data = db.parts(dataId).foldLeft(0L -> Vector.empty[Array[Byte]]) { case (readPosition -> result, chunkStart -> chunkEnd) =>
+    val endPosition -> data = db.parts(dataId).foldLeft(0L -> Vector.empty[Array[Byte]]) { case (readPosition -> result, chunkStart -> chunkEnd) =>
       val chunkLen = chunkEnd - chunkStart
       if (readPosition + chunkLen <= readFrom) readPosition + chunkLen -> result
       else  if (readPosition >= readEnd) readPosition -> result
@@ -99,8 +99,8 @@ class Level2 extends AutoCloseable with ClassLogging {
         readPosition + skipInChunk + takeOfChunk -> (result :+ lts.read(chunkStart + skipInChunk, takeOfChunk))
       }
     }
-    require(actuallyRead <= readSize, s"Actually read $actuallyRead !<= read size $readSize")
-    if (actuallyRead >= readSize) data else data :+ new Array((readSize - actuallyRead).toInt)
+    require(endPosition <= readEnd, s"Actually read $endPosition !<= read end $readEnd")
+    if (endPosition >= readEnd) data else data :+ new Array((readSize - endPosition).toInt)
   }
 
   def read(id: Long, dataId: Long, offset: Long, size: Int): Data =
