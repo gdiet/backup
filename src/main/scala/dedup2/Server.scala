@@ -160,6 +160,39 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   // # Files #
   // #########
 
+  // When implementing soft links, need to extend getattr, set FileStat.S_IFLNK
+
+  //  // https://man7.org/linux/man-pages/man2/symlink.2.html
+  //  override def symlink(oldpath: String, newpath: String): Int =
+  //    if (readonly) EROFS else guard(s"symlink $oldpath -> $newpath") {
+  //      info_(s"symlink $oldpath -> $newpath")
+  //      val parts = store.split(newpath)
+  //      if (parts.length == 0) ENOENT // can't create root
+  //      else store.entry(parts.dropRight(1)) match { // fetch parent entry
+  //        case None => ENOENT // parent not known
+  //        case Some(_: FileEntry)  => ENOTDIR // parent is a file
+  //        case Some(dir: DirEntry) =>
+  //          val name = parts.last
+  //          store.child(dir.id, name) match {
+  //            case Some(_) => EEXIST // entry with the given name already exists
+  //            case None =>
+  //              val id = store.createAndOpen(dir.id, name, now)
+  //              if (!store.write(id, 0, s"Symlink: $oldpath".getBytes("UTF-8")))
+  //                warn_(s"Could not write symlink.")
+  //              if (!store.release(id))
+  //                warn_(s"Could not release symlink.")
+  //              OK
+  //          }
+  //      }
+  //    }
+
+  //  // https://man7.org/linux/man-pages/man2/readlink.2.html
+  //  override def readlink(path: String, buf: Pointer, size: Long): Int =
+  //    guard(s"readlink $path size $size") {
+  //      info_(s"readlink $path size $size")
+  //      0 // Number of bytes placed in buf.
+  //    }
+
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
     if (readonly) EROFS else guard(s"create $path") {
       val parts = store.split(path)
@@ -169,7 +202,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
         case Some(_: FileEntry)  => ENOTDIR // parent is a file
         case Some(dir: DirEntry) =>
           val name = parts.last
-          store.child(dir.id, name) match {
+          store.child(dir.id, name) match { // TODO all EEXIST should be based on an atomic "create if not exists"
             case Some(_) => EEXIST // entry with the given name already exists
             case None => fi.fh.set(store.createAndOpen(dir.id, name, now)); OK
           }
