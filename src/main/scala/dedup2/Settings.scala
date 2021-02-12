@@ -8,7 +8,7 @@ case class Settings(
  repo: File,
  temp: File,
  readonly: Boolean,
- copyWhenMoving: AtomicBoolean = new AtomicBoolean(false)
+ copyWhenMoving: AtomicBoolean
 ) {
   val tempPath: Path = temp.toPath
   val dataDir = new File(repo, "data")
