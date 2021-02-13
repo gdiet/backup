@@ -67,49 +67,18 @@ object Main extends App with ClassLogging {
       require(mountDir.isDirectory, s"Mount point is not a directory: $mountPoint")
       require(mountDir.list.isEmpty, s"Mount point is not empty: $mountPoint")
     }
+    val settings = Settings(repo, dbDir, temp, readonly, new AtomicBoolean(copyWhenMoving))
+    if (options.get("ui").contains("true")) new ServerGui(settings)
     info_ (s"Starting dedup file system.")
     info_ (s"Repository:  $repo")
     info_ (s"Mount point: $mountPoint")
     info_ (s"Readonly:    $readonly")
     debug_(s"Temp dir:    $temp")
     if (copyWhenMoving) info_ (s"Copy instead of move initially enabled.")
-    val fs = new Server(Settings(repo, dbDir, temp, readonly, new AtomicBoolean(copyWhenMoving)))
+    val fs = new Server(settings)
     val fuseOptions: Array[String] = if (getNativePlatform.getOS == WINDOWS) Array("-o", "volname=DedupFS") else Array()
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false, fuseOptions)
     catch { case e: Throwable => error_("Mount exception:", e); fs.umount() }
-
-    /*
-    FUSE options:
-        -h   --help            print help
-        -V   --version         print version
-        -d   -o debug          enable debug output (implies -f)
-        -f                     foreground operation
-        -s                     disable multi-threaded operation
-        -o opt,[opt...]        mount options
-
-    WinFsp-FUSE options:
-        -o umask=MASK              set file permissions (octal)
-        -o create_umask=MASK       set newly created file permissions (octal)
-            -o create_file_umask=MASK      for files only
-            -o create_dir_umask=MASK       for directories only
-        -o uid=N                   set file owner (-1 for mounting user id)
-        -o gid=N                   set file group (-1 for mounting user group)
-        -o rellinks                interpret absolute symlinks as volume relative
-        -o dothidden               dot files have the Windows hidden file attrib
-        -o volname=NAME            set volume label
-        -o VolumePrefix=UNC        set UNC prefix (/Server/Share)
-            --VolumePrefix=UNC     set UNC prefix (\Server\Share)
-        -o FileSystemName=NAME     set file system name
-        -o DebugLog=FILE           debug log file (requires -d)
-
-    WinFsp-FUSE advanced options:
-        -o FileInfoTimeout=N       metadata timeout (millis, -1 for data caching)
-        -o DirInfoTimeout=N        directory info timeout (millis)
-        -o EaTimeout=N             extended attribute timeout (millis)
-        -o VolumeInfoTimeout=N     volume info timeout (millis)
-        -o KeepFileCache           do not discard cache when files are closed
-        -o ThreadCount             number of file system dispatcher threads
-    */
 
   } else error_(s"Unexpected command(s): $commands")
 }

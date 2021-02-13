@@ -4,6 +4,38 @@ import jnr.ffi.Pointer
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 
+/*
+FUSE options:
+    -h   --help            print help
+    -V   --version         print version
+    -d   -o debug          enable debug output (implies -f)
+    -f                     foreground operation
+    -s                     disable multi-threaded operation
+    -o opt,[opt...]        mount options
+
+WinFsp-FUSE options:
+    -o umask=MASK              set file permissions (octal)
+    -o create_umask=MASK       set newly created file permissions (octal)
+        -o create_file_umask=MASK      for files only
+        -o create_dir_umask=MASK       for directories only
+    -o uid=N                   set file owner (-1 for mounting user id)
+    -o gid=N                   set file group (-1 for mounting user group)
+    -o rellinks                interpret absolute symlinks as volume relative
+    -o dothidden               dot files have the Windows hidden file attrib
+    -o volname=NAME            set volume label
+    -o VolumePrefix=UNC        set UNC prefix (/Server/Share)
+        --VolumePrefix=UNC     set UNC prefix (\Server\Share)
+    -o FileSystemName=NAME     set file system name
+    -o DebugLog=FILE           debug log file (requires -d)
+
+WinFsp-FUSE advanced options:
+    -o FileInfoTimeout=N       metadata timeout (millis, -1 for data caching)
+    -o DirInfoTimeout=N        directory info timeout (millis)
+    -o EaTimeout=N             extended attribute timeout (millis)
+    -o VolumeInfoTimeout=N     volume info timeout (millis)
+    -o KeepFileCache           do not discard cache when files are closed
+    -o ThreadCount             number of file system dispatcher threads
+*/
 class Server(settings: Settings) extends FuseStubFS with FuseConstants with ClassLogging {
   import settings.{copyWhenMoving, dataDir, readonly, temp}
   private val rights = if (readonly) 292 else 438 // o444 else o666

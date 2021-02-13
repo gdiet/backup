@@ -4,7 +4,6 @@ import java.io.{File, FileNotFoundException, RandomAccessFile}
 import java.lang.System.{currentTimeMillis => now}
 import java.util.concurrent.atomic.AtomicLong
 
-import dedup.assertLogged
 import org.slf4j.{Logger, LoggerFactory}
 
 /** This class provides a sequential bytes store on disk limited by disc capacity only, accessed through its
@@ -39,8 +38,8 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess[Ran
   }
 
   def read(position: Long, size: Int): Array[Byte] = if (size == 0) Array() else {
-    assertLogged(position >= 0, s"position >= 0 ... p = $position, s = $size")
-    assertLogged(size > 0, s"size > 0 ... p = $position, s = $size")
+    assert(position >= 0, s"position >= 0 ... p = $position, s = $size")
+    assert(size > 0, s"size > 0 ... p = $position, s = $size")
     val (path, offset, bytesRequested) = pathOffsetSize(position, size)
     val bytes =
       try access(path, write = false)(file => new Array[Byte](bytesRequested).tap {
