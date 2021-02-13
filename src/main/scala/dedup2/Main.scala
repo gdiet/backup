@@ -56,6 +56,7 @@ object Main extends App with ClassLogging {
     val copyWhenMoving = options.get("copywhenmoving").contains("true")
     val mountPoint     = options.getOrElse("mount", if (getNativePlatform.getOS == WINDOWS) "J:\\" else "/tmp/mnt")
     val temp           = new File(options.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
+    // FIXME make sure that dbdir exists
     if (!readonly) {
       temp.mkdirs() // FIXME get rid of require, log error instead, also below
       require(temp.isDirectory && temp.canWrite, s"Temp dir is not a writable directory: $temp")
@@ -72,7 +73,7 @@ object Main extends App with ClassLogging {
     info_ (s"Readonly:    $readonly")
     debug_(s"Temp dir:    $temp")
     if (copyWhenMoving) info_ (s"Copy instead of move initially enabled.")
-    val fs = new Server(Settings(repo, temp, readonly, new AtomicBoolean(copyWhenMoving)))
+    val fs = new Server(Settings(repo, dbDir, temp, readonly, new AtomicBoolean(copyWhenMoving)))
     val fuseOptions: Array[String] = if (getNativePlatform.getOS == WINDOWS) Array("-o", "volname=DedupFS") else Array()
     try fs.mount(java.nio.file.Paths.get(mountPoint), true, false, fuseOptions)
     catch { case e: Throwable => error_("Mount exception:", e); fs.umount() }

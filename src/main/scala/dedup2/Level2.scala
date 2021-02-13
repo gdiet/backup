@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.{ExecutionContext, Future}
 
 class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
-  private val con = H2.mem()
+  private val con = H2.file(settings.dbDir, settings.readonly)
   Database.initialize(con)
   private val db = new Database(con)
   private val lts = new LongTermStore(settings.dataDir, settings.readonly)
