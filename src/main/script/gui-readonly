@@ -14,4 +14,4 @@ fi
 # -DLOG_BASE=<log base directory> | mandatory for sensible logging
 # -Dfile.encoding=UTF-8           | necessary for FUSE operations
 # read needs at least 80MB RAM.
-$JAVA "-DLOG_BASE=$APPDIR/" -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.ServerGui gui=true "$@"
+$JAVA "-DLOG_BASE=$APPDIR/" -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.Main gui=true "$@"
