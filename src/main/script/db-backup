@@ -14,7 +14,7 @@ fi
 $JAVA "-DLOG_BASE=$APPDIR/" -cp "$APPDIR/lib/*" dedup.Main dbbackup "$@"
 ERRORLEVEL=$?
 if [ $ERRORLEVEL -ne 0 ]; then
-  echo Database backup finished with error code %ERRORLEVEL%, exiting...
+  echo Database backup exited with error code $ERRORLEVEL, exiting...
   exit 1
 else
   echo Database backup finished.
