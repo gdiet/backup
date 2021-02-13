@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}

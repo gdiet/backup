@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 import ch.qos.logback.classic.LoggerContext
 import ch.qos.logback.classic.filter.ThresholdFilter

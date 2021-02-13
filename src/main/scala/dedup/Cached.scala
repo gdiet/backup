@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel

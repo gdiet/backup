@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 object CleanWriteServer extends App {
   CleanInit.main(args)

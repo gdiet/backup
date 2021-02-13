@@ -1,4 +1,4 @@
-package dedup2.store
+package dedup.store
 
 import java.io.{File, FileNotFoundException, RandomAccessFile}
 import java.lang.System.{currentTimeMillis => now}

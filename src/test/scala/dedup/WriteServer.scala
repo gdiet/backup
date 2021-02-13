@@ -1,6 +1,6 @@
-package dedup2
+package dedup
 
-object WriteServerGui extends App {
+object WriteServer extends App {
   sys.props.update("LOG_BASE", "./")
   Main.main(Array("write"))
 }

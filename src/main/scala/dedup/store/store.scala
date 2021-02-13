@@ -1,3 +1,3 @@
-package dedup2
+package dedup
 
 package object store extends scala.util.ChainingSyntax

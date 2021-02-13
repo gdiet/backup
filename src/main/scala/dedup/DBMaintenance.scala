@@ -1,7 +1,7 @@
-package dedup2
+package dedup
 
-import dedup2.Database._
-import dedup2.store.LongTermStore
+import dedup.Database._
+import dedup.store.LongTermStore
 import org.h2.tools.{RunScript, Script}
 import org.slf4j.{Logger, LoggerFactory}
 

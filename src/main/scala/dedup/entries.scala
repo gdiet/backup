@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 sealed trait TreeEntry { def id: Long; def parentId: Long; def name: String; def time: Long }
 object TreeEntry { def root: DirEntry = DirEntry(0, 0, "", now) }

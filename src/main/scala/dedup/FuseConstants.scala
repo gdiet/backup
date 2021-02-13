@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 import ru.serce.jnrfuse.ErrorCodes
 

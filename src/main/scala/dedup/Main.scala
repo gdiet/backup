@@ -1,6 +1,6 @@
-package dedup2
+package dedup
 
-import dedup2.store.LongTermStore
+import dedup.store.LongTermStore
 
 import java.io.File
 import scala.util.Using.{resource, resources}

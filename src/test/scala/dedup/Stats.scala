@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 object Stats extends App {
   sys.props.update("LOG_BASE", "./")

@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 import jnr.ffi.Pointer
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}

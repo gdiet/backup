@@ -1,4 +1,4 @@
-package dedup2.store
+package dedup.store
 
 import java.util.concurrent.locks.ReentrantLock
 import scala.collection.mutable

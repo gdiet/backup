@@ -1,6 +1,6 @@
-package dedup2
+package dedup
 
-import dedup2.store.LongTermStore
+import dedup.store.LongTermStore
 
 import java.security.MessageDigest
 import java.util.concurrent.{Executors, TimeUnit}

@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 /** Manages currently open files. Forwards everything else to LevelTwo. */
 class Level1(settings: Settings) extends AutoCloseable with ClassLogging {

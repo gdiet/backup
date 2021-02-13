@@ -1,4 +1,4 @@
-package object dedup2 extends scala.util.ChainingSyntax {
+package object dedup extends scala.util.ChainingSyntax {
   def now: Long = java.lang.System.currentTimeMillis
 
   // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram

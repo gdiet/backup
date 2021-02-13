@@ -1,4 +1,4 @@
-package dedup2
+package dedup
 
 object Reclaim2 extends App {
   sys.props.update("LOG_BASE", "./")
