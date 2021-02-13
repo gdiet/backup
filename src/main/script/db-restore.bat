@@ -13,7 +13,7 @@ rem Options for dbrestore:
 rem from=<script file>              | default: none (direct file restore)
 rem repo=<repository directory>     | default: working directory
 rem -DLOG_BASE=<log base directory> | mandatory for sensible logging
-"%~dp0jre\bin\java" "-DLOG_BASE=%~dp0\" -cp "%~dp0lib\*" dedup.Server dbrestore %*
+"%~dp0jre\bin\java" "-DLOG_BASE=%~dp0\" -cp "%~dp0lib\*" dedup.Main dbrestore %*
 if errorlevel 1 (
     echo Database restore finished with error code %errorlevel%, exiting...
     pause

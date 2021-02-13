@@ -11,4 +11,4 @@ fi
 # Options for init:
 # repo=<repository directory>     | default: working directory
 # -DLOG_BASE=<log base directory> | mandatory for sensible logging
-$JAVA "-DLOG_BASE=$APPDIR/" -cp "$APPDIR/lib/*" dedup.Server init "$@"
+$JAVA "-DLOG_BASE=$APPDIR/" -cp "$APPDIR/lib/*" dedup.Main init "$@"

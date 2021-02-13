@@ -68,7 +68,7 @@ object Main extends App with ClassLogging {
       require(mountDir.list.isEmpty, s"Mount point is not empty: $mountPoint")
     }
     val settings = Settings(repo, dbDir, temp, readonly, new AtomicBoolean(copyWhenMoving))
-    if (options.get("ui").contains("true")) new ServerGui(settings)
+    if (options.get("gui").contains("true")) new ServerGui(settings)
     info_ (s"Starting dedup file system.")
     info_ (s"Repository:  $repo")
     info_ (s"Mount point: $mountPoint")

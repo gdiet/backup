@@ -16,6 +16,6 @@ if not errorlevel 1 (
     rem Options for reclaim space 2:
     rem repo=<repository directory>       | default: working directory
     rem -DLOG_BASE=<log base directory>   | mandatory for sensible logging
-    "%~dp0jre\bin\java" "-DLOG_BASE=%~dp0\" -cp "%~dp0lib\*" dedup.Server reclaimspace2 %*
+    "%~dp0jre\bin\java" "-DLOG_BASE=%~dp0\" -cp "%~dp0lib\*" dedup.Main reclaimspace2 %*
     pause
 )

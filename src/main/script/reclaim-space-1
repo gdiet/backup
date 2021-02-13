@@ -13,7 +13,7 @@ if ! $APPDIR/db-backup; then exit 1; fi
 # keepdays=<number of days to keep> | default: 0
 # repo=<repository directory>       | default: working directory
 # -DLOG_BASE=<log base directory>   | mandatory for sensible logging
-$JAVA "-DLOG_BASE=$APPDIR/" -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.Server reclaimspace1 "$@"
+$JAVA "-DLOG_BASE=$APPDIR/" -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.Main reclaimspace1 "$@"
 
 echo
 echo "Note if you plan to run the reclaim-space-2 utility: That"

@@ -32,14 +32,14 @@ Eclipse Public License 1.0
 LGPL 2.1
 http://logback.qos.ch/license.html
 
-Scala 2.13.3
+Scala 2.13.4
 https://github.com/scala/scala
 Apache 2 License
-https://raw.githubusercontent.com/scala/scala/v2.13.3/LICENSE
+https://raw.githubusercontent.com/scala/scala/v2.13.4/LICENSE
 
-Java 11.0.8
-OpenJDK version "11.0.8" 2020-07-14
-AdoptOpenJDK (build 11.0.8+10)
+Java 11.0.10
+OpenJDK version "11.0.10"
+AdoptOpenJDK (build 11.0.10+9)
 https://adoptopenjdk.net/
 https://adoptopenjdk.net/about.html
 GPL v2 with Classpath Exception

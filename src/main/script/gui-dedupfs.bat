@@ -12,5 +12,5 @@ if not errorlevel 1 (
     rem -Dfile.encoding=UTF-8           | necessary for FUSE operations
     rem write needs at least 96MB RAM.
     echo Starting the DedupFS server GUI now - it will run detached from the command line.
-    start "DedupFS" "%~dp0jre\bin\javaw" "-DLOG_BASE=%~dp0\" -Dfile.encoding=UTF-8 -cp "%~dp0lib\*" dedup.ServerGui write %*
+    start "DedupFS" "%~dp0jre\bin\javaw" "-DLOG_BASE=%~dp0\" -Dfile.encoding=UTF-8 -cp "%~dp0lib\*" dedup.ServerGui write gui=true %*
 )

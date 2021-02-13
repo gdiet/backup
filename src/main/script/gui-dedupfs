@@ -17,4 +17,4 @@ if ! $APPDIR/db-backup; then exit 1; fi
 # -DLOG_BASE=<log base directory> | mandatory for sensible logging
 # -Dfile.encoding=UTF-8           | necessary for FUSE operations
 # write needs at least 96MB RAM.
-$JAVA "-DLOG_BASE=$APPDIR/" -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.ServerGui write "$@"
+$JAVA "-DLOG_BASE=$APPDIR/" -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.ServerGui write gui=true "$@"
