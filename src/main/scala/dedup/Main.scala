@@ -25,6 +25,7 @@ object Main extends App with ClassLogging {
 
     val repo = new File(options.getOrElse("repo", "")).getAbsoluteFile
     val dbDir = Database.dbDir(repo)
+    if (commands != List("init") && !dbDir.isDirectory) failureExit(s"Repository probably not initialized - can't find the database directory: $dbDir")
 
     if (!repo.isDirectory) failureExit(s"Repository $repo must be a directory.", s"Specify the repository using the repo=<target> option.")
 
@@ -59,7 +60,7 @@ object Main extends App with ClassLogging {
         val copyWhenMoving = options.get("copywhenmoving").contains("true")
         val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == WINDOWS) "J:\\" else "/tmp/mnt")
         val temp = new File(options.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
-        // FIXME make sure that dbdir exists
+        if (!dbDir.isDirectory) failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
         if (!readonly) {
           temp.mkdirs()
           if (!temp.isDirectory || !temp.canWrite) failureExit(s"Temp dir is not a writable directory: $temp")
