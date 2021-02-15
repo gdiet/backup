@@ -1,13 +1,12 @@
 package dedup
 
 import dedup.store.LongTermStore
+import jnr.ffi.Platform.OS.WINDOWS
+import jnr.ffi.Platform.getNativePlatform
 
 import java.io.File
-import scala.util.Using.{resource, resources}
-import jnr.ffi.Platform.getNativePlatform
-import jnr.ffi.Platform.OS.WINDOWS
-
 import java.util.concurrent.atomic.AtomicBoolean
+import scala.util.Using.{resource, resources}
 
 /** Options are arguments of the type 'xx=abc', commands are arguments without '='.
   * Options and commands are handled case insensitively. Internally they are converted
@@ -67,7 +66,7 @@ object Main extends App with ClassLogging {
           if (temp.list.nonEmpty) warn_(s"Note that temp dir is not empty: $temp")
         }
         if (getNativePlatform.getOS != WINDOWS) {
-          val mountDir = new File(mountPoint)
+          val mountDir = new File(mountPoint).getAbsoluteFile
           if (!mountDir.isDirectory) failureExit(s"Mount point is not a directory: $mountPoint")
           if (!mountDir.list.isEmpty) failureExit(s"Mount point is not empty: $mountPoint")
         }

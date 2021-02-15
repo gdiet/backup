@@ -1,6 +1,6 @@
 # DedupFS: A Lightweight Deduplicating File System
 
-DedupFS is a file system perfectly suited for storing many backups of large collections of files - for example your whole photo collection. Yet DedupFS **is not** a "one click backup solution". It's better to regard DedupFS as a backup storage drive where you can backup way more files than on an ordinary storage drive.
+DedupFS is a file system perfectly suited for storing many backups of large collections of files - for example your whole photo collection. Yet DedupFS **is not** a "one click backup solution". It's better to regard DedupFS as a backup storage drive where you can backup considerably more files than on an ordinary storage drive.
 
 Technically speaking, DedupFS is a file system with transparent file content deduplication. This means that if you store multiple files containing the same sequence of bytes, the file system stores the contents only once and references them multiple times. Of course, you can still update the contents of any file without impact on the contents of other files.
 
@@ -39,20 +39,20 @@ Whether DedupFS really is better than any other backup software depends mostly o
 * DedupFS uses a simple storage format, so you know that IF something goes horribly wrong there is still a good chance to retrieve most of the stored data.
 * "Delete" in DedupFS is a two-step process, so if you accidentally deleted important files from your backups, they are not lost until you explicitly run the "reclaim space" utilities.
 * DedupFS automatically creates and keeps backups of the file tree and metadata database, so if necessary you can restore the dedup file system to earlier states.
-* DedupFS is designed to make it fast and easy to keep second offline copy of your backup repository up-to-date, even if the repository is terabytes in size.
+* DedupFS is designed to make it fast and easy to keep a second offline copy of your backup repository up-to-date, even if the repository is terabytes in size.
 * DedupFS is open source. It consists of less than 1500 lines of production code.
 
 ## What DedupFS Should Not Be Used For
 
-Don't use the DedupFS dedup file system as your everyday file system. It is not fully posix compatible. Locking a file for example will probably not work at all. When a file is closed after writing, immediately opening it for reading will show the old file contents - the new contents are available only after some (short) time. Last but not least changing file contents often leads to a large amount of unused data entries that eat up space unless you use the "reclaim space" utilities regularly.
+Don't use the DedupFS dedup file system as your everyday file system. It is not fully posix compatible. Locking a file for example will probably not work at all. When a file is closed after writing, immediately opening it for reading will show the old file contents - the new contents are available only after some (short) time. Last but not least if you change file contents often this leads to a large amount of unused data entries that eat up space unless you use the "reclaim space" utilities regularly.
 
-Don't use the DedupFS dedup file system for really security critical things. For example, DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions. Note that this does not pose a problem when you store e.g. backups of your holiday photos...
+Don't use the DedupFS dedup file system for security critical things. One reason for that: DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions. Note that this does not pose a problem when you store for example backups of your holiday photos...
 
 ## Caveats
 
-* The DedupFS dedup file system only supports regular directories and regular files. It does not support for example soft or hard links or sparse files.
+* The DedupFS dedup file system only supports regular directories and regular files. It does not support for example soft or hard links or sparse files. Support for soft links is planned for 2021.
 * Deleting files in DedupFS is a two-step process. Don't expect that the repository size shrinks if you delete files. Even if you run the "reclaim space" utilities, the repository size will not shrink. Instead, it will not grow further for some time if you store new files...
-* As already mentioned, DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions.
+* DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions.
 * Since DedupFS has been used less on Linux, there might be additional issues there.
 * To support a special operation mode, if data files go missing, DedupFS replaces the missing bytes more or less silently with '0' values.
 
@@ -60,7 +60,7 @@ Don't use the DedupFS dedup file system for really security critical things. For
 
 ### General
 
-DedupFS needs a Java 11 runtime. The app comes bundled with a suitable Java runtime for Windows x64 and Linux x64.
+DedupFS needs a Java 11 runtime. The application comes bundled with a suitable Java runtime for Windows x64 and Linux x64.
 
 DedupFS needs disk space for its repository. If you back up lots of data, it will need lots of space. Keep an eye on available disk space when using.
 
@@ -76,16 +76,16 @@ Download and install a [WinFSP Release](https://github.com/billziss-gh/winfsp/re
 
 Smoke tested on Ubuntu 64-bit.
 
-DedupFS needs *libfuse* to create a filesystem in userspace. *libfuse* is preinstalled in most Linux distributions.
+DedupFS needs *libfuse* to create a filesystem in userspace. *libfuse* is pre-installed in most Linux distributions.
 
 ## Basic Steps To Use DedupFS
 
 The following are the basic steps needed to use DedupFS. For details, see the [How To ...](#how-to-) section of this document.
 
-* Initialize the DedupFS data repository, e.g. on an external drive.
+* Initialize the DedupFS data repository, for example on an external drive.
 * Mount the file system, then use it to store backups of your files.
 * Stop the file system.
-* If required, update the copy of the DedupFS repository that is stored e.g. on a different external drive.
+* If required, update the copy of the DedupFS repository that is stored on a different external drive.
 * If required, reclaim space by trashing files that have been marked deleted in the dedup file system.
 
 ## How To ...
@@ -94,15 +94,15 @@ The following are the basic steps needed to use DedupFS. For details, see the [H
 
 Windows: Make sure WinFSP is installed, see [System Requirements](#system-requirements).
 
-Installing DedupFS is easy: Unpack the DedupFS archive to a place where you have write access. I recommend unpacking it to the repository directory where the dedup file system data will be stored. For details, see the next paragraph.
+Windows / Linux: Unpack the DedupFS archive to a place where you have write access. I recommend unpacking it to the repository directory where the dedup file system data will be stored. For details, see the next paragraph.
 
 ### Initialize The File System
 
 The dedup file system stores all its data in a repository directory, inside the subdirectories `fsdb` and `data`. Before the dedup file system can be used, the repository needs to be initialized:
 
-* Create a repository directory for the dedup file system data, e.g. on an external backup drive.
+* Create a repository directory for the dedup file system data, for example on an external backup drive.
 * Unpack the DedupFS archive to that repository directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like `repo-init` and `dedupfs` should be located directly in the repository directory.
-* Start the DedupFS `repo-init` utility in the repository directory, e.g. by double-clicking.
+* Start the DedupFS `repo-init` utility in the repository directory, for example by double-clicking.
 * Check the log output printed to the console where `repo-init` is executed.
 * If successful, this command creates in the repository directory the database directory `fsdb` and the log files directory `logs`.
 
@@ -114,14 +114,14 @@ Note:
 
 If you want to write, update, or read files in the dedup file system, you have to "mount" it first. Note that the dedup file system must be initialized before you can mount it, see above. Here are the steps to mount the dedup file system:
 
-* If you have installed DedupFS in the repository directory as recommended, start the dedup file system by running `gui-dedupfs` in the repository directory, e.g. by double-clicking.
+* If you have installed DedupFS in the repository directory as recommended, start the dedup file system by running `gui-dedupfs` in the repository directory, for example by double-clicking.
 * After some time the DedupFS GUI will open, showing log entries.
 * After some time a log entry will tell you that the dedup file system is started.
 * In the log entries, you see among others which repository is used and where the dedup file system is mounted.
 
 Notes:
 
-* The default mount point on Windows is `J:\`, on Linux `tmp/mnt`. To mount the file system somewhere else, call the script with a `mount=<mount target>` parameter.
+* The default mount point on Windows is `J:\`, on Linux `/tmp/mnt`. To mount the file system somewhere else, call the script with a `mount=<mount target>` parameter.
 * On Linux, mount the dedup file system to an existing empty writable directory.
 * Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique mount points configured - see below.
 * The `gui-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
@@ -295,7 +295,7 @@ To upgrade a DedupFS installation to a newer version:
 
 Known problems:
 
-* Deadlock e.g. when moving files in the dedup file system.
+* Deadlock for example when moving files in the dedup file system.
 * Dirty corner cases when moving a file that currently is just written to.
 
 #### 2.4 (2020.10.18)
