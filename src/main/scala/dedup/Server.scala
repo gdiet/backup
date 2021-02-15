@@ -1,6 +1,7 @@
 package dedup
 
-import jnr.ffi.Pointer
+import jnr.ffi.Platform.OS.WINDOWS
+import jnr.ffi.{Platform, Pointer}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 
@@ -179,12 +180,16 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
 
   // statfs needs to be implemented on Windows in order to allow for copying data from
   // other devices because winfsp calculates the volume size based on the statvfs call.
-  // see https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
+  // see ru.serce.jnrfuse.examples.MemoryFS.statfs and
+  // https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
+  // On Linux more of the stbuf struct would need to be filled to get sensible disk space values.
   override def statfs(path: String, stbuf: Statvfs): Int =
     guard(s"statfs $path") {
-      stbuf.f_frsize.set(                        32768) // fs block size
-      stbuf.f_bfree .set(dataDir.getFreeSpace  / 32768) // free blocks in fs
-      stbuf.f_blocks.set(dataDir.getTotalSpace / 32768) // total data blocks in file system
+      if (Platform.getNativePlatform.getOS == WINDOWS) {
+        stbuf.f_frsize.set(                        32768) // fs block size
+        stbuf.f_bfree .set(dataDir.getFreeSpace  / 32768) // free blocks in fs
+        stbuf.f_blocks.set(dataDir.getTotalSpace / 32768) // total data blocks in file system
+      }
       OK
     }
 
