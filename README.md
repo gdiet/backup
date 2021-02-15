@@ -273,13 +273,15 @@ To upgrade a DedupFS installation to a newer version:
 
 #### May Come Eventually
 
+* Support for soft links.
 * Blacklist files that should not be stored at all.
 * Optionally store packed (gz or similar).
 * Reclaim finds & cleans up data entries duplicates.
 
-#### 2.7 (Coming Soon To A Cinema Near You)
+#### 3 (Coming Soon To A Cinema Near You)
 
 * On Windows, name the dedup file system volume "DedupFS". (git 46a076d)
+* Fixed occasional deadlock of the file system. (Rewrite of parallel handling.)
 
 #### 2.6 (2020.11.15)
 

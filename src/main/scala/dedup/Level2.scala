@@ -40,7 +40,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     // If data entry size is zero, explicitly set dataId -1 because it might have been set to something else before...
     if (dataEntry.size == 0) { db.setDataId(id, -1); dataEntry.close() }
     else {
-      info_(s"ID $id - starting to persist data entry with size ${dataEntry.size} and base data id ${dataEntry.baseDataId}.") // FIXME remove or trace
+      trace_(s"ID $id - persisting data entry, size ${dataEntry.size} / base data id ${dataEntry.baseDataId}.")
       synchronized(files += id -> (dataEntry +: files.getOrElse(id, Vector())))
 
       // Persist async
@@ -60,7 +60,6 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
           // Already known, simply link
           case Some(dataId) =>
             trace_(s"Persisted $id - content known, linking to dataId $dataId")
-            info_(s"Persisted $id - content known, linking to dataId $dataId") // FIXME remove
             db.setDataId(id, dataId)
           // Not yet known, store ...
           case None =>
@@ -75,7 +74,6 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
             val dataId = db.newDataIdFor(id)
             db.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
             trace_(s"Persisted $id - new content, dataId $dataId")
-            info_(s"Persisted $id - new content, dataId $dataId") // FIXME remove
         }
         synchronized(files -= id)
         dataEntry.close()
@@ -88,16 +86,13 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   private def readFromLts(dataId: Long, readFrom: Long, readSize: Int): Data = {
     require(readSize > 0, s"Read size $readSize !> 0")
     val readEnd = readFrom + readSize
-//    info_(s"readFromLts from $readFrom size $readSize") // FIXME remove
     val endPosition -> data = db.parts(dataId).foldLeft(0L -> Vector.empty[Array[Byte]]) { case (readPosition -> result, chunkStart -> chunkEnd) =>
       val chunkLen = chunkEnd - chunkStart
-//      info_(s"readFromLts loop A $readPosition ($chunkStart $chunkEnd)") // FIXME remove
       if (readPosition + chunkLen <= readFrom) readPosition + chunkLen -> result
       else  if (readPosition >= readEnd) readPosition -> result
       else {
         val skipInChunk = math.max(0, readFrom - readPosition)
         val takeOfChunk = math.min(chunkLen - skipInChunk, readEnd - readPosition - skipInChunk).toInt // TODO ensure this is always Int
-//        info_(s"readFromLts loop B skip $skipInChunk take $takeOfChunk") // FIXME remove
         readPosition + skipInChunk + takeOfChunk -> (result :+ lts.read(chunkStart + skipInChunk, takeOfChunk))
       }
     }

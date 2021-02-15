@@ -21,7 +21,6 @@ object DataEntry extends ClassLogging {
 /** mutable! baseDataId can be -1. */
 class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends AutoCloseable { import DataEntry._
   private val id = currentId.incrementAndGet()
-  info_(s"Create $id") // FIXME remove
   trace_(s"Create $id with base data ID $baseDataId.")
   /** position -> data */
   private var cached: Seq[Cached] = Seq()
@@ -89,11 +88,9 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
   }
 
   override def close(): Unit = synchronized {
-    info_(s"Close $id") // FIXME remove
     maybeChannel.foreach { channel =>
       channel.close()
       Files.delete(path)
-      info_(s"deleted $path") // FIXME remove
     }
     closedEntries.incrementAndGet()
     Cached.cacheUsed.addAndGet(-cacheSize)
