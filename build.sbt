@@ -1,8 +1,7 @@
-version := "1"
+version := "current"
 scalaVersion := "2.13.4"
 scalacOptions := Seq("-target:11", "-deprecation", "-feature", "-unchecked")
-resolvers += "bintray" at "https://jcenter.bintray.com"
-libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.4"
+libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.5"
 libraryDependencies += "com.h2database" % "h2" % "1.4.200" // Check compatibility before upgrading!
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.3"
 
