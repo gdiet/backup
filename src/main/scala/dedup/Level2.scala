@@ -92,7 +92,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
       else  if (readPosition >= readEnd) readPosition -> result
       else {
         val skipInChunk = math.max(0, readFrom - readPosition)
-        val takeOfChunk = math.min(chunkLen - skipInChunk, readEnd - readPosition - skipInChunk).toInt // TODO ensure this is always Int
+        val takeOfChunk = math.min(chunkLen - skipInChunk, readEnd - readPosition - skipInChunk).toInt
         readPosition + skipInChunk + takeOfChunk -> (result :+ lts.read(chunkStart + skipInChunk, takeOfChunk))
       }
     }
