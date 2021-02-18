@@ -1,10 +1,10 @@
 package dedup
 
-import java.io.File
-import java.sql.{Connection, ResultSet, Statement, Types}
-
 import org.slf4j.{Logger, LoggerFactory}
 
+import java.io.File
+import java.sql.{Connection, ResultSet, Statement, Types}
+import scala.util.Try
 import scala.util.Using.resource
 
 object Database {
@@ -203,36 +203,39 @@ class Database(connection: Connection) { import Database._
     "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)",
     Statement.RETURN_GENERATED_KEYS
   )
-  def mkDir(parentId: Long, name: String): Long = sync {
+  /** Returns None if a child entry with the same name already exists. */
+  def mkDir(parentId: Long, name: String): Option[Long] = Try(sync {
     iDir.setLong(1, parentId)
     iDir.setString(2, name)
     iDir.setLong(3, now)
     require(iDir.executeUpdate() == 1)
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
-  }
+  }).toOption
 
   private val iFile = connection.prepareStatement(
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, -1)",
     Statement.RETURN_GENERATED_KEYS
   )
-  def mkFile(parentId: Long, name: String, time: Long): Long = sync {
+  /** Returns None if a child entry with the same name already exists. */
+  def mkFile(parentId: Long, name: String, time: Long): Option[Long] = Try(sync {
     iFile.setLong(1, parentId)
     iFile.setString(2, name)
     iFile.setLong(3, time)
     require(iFile.executeUpdate() == 1)
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
-  }
+  }).toOption
 
   private val iFileWithDataId = connection.prepareStatement(
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)"
   )
-  def mkFile(parentId: Long, name: String, time: Long, dataId: Long): Unit = sync {
+  /** Returns false if a child entry with the same name already exists. */
+  def mkFile(parentId: Long, name: String, time: Long, dataId: Long): Boolean = Try(sync {
     iFileWithDataId.setLong(1, parentId)
     iFileWithDataId.setString(2, name)
     iFileWithDataId.setLong(3, time)
     iFileWithDataId.setLong(4, dataId)
     require(iFileWithDataId.executeUpdate() == 1)
-  }
+  }).isSuccess
 
   private val qNextId = connection.prepareStatement("SELECT NEXT VALUE FOR idSeq")
   def nextId: Long = sync(resource(qNextId.executeQuery())(_.tap(_.next()).getLong(1)))

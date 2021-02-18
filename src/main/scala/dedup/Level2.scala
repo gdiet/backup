@@ -28,10 +28,10 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   def child(parentId: Long, name: String): Option[TreeEntry] = db.child(parentId, name)
   def children(parentId: Long): Seq[TreeEntry] = db.children(parentId)
   def delete(id: Long): Unit = db.delete(id)
-  def mkDir(parentId: Long, name: String): Long = db.mkDir(parentId, name)
-  def mkFile(parentId: Long, name: String, time: Long, dataId: Long): Unit = db.mkFile(parentId, name, time, dataId)
+  def mkDir(parentId: Long, name: String): Option[Long] = db.mkDir(parentId, name)
+  def mkFile(parentId: Long, name: String, time: Long, dataId: Long): Boolean = db.mkFile(parentId, name, time, dataId)
   /** Creates a new file with dataId -1. */
-  def mkFile(parentId: Long, name: String, time: Long): Long = db.mkFile(parentId, name, time)
+  def mkFile(parentId: Long, name: String, time: Long): Option[Long] = db.mkFile(parentId, name, time)
   def update(id: Long, newParentId: Long, newName: String): Unit = db.update(id, newParentId, newName)
   def nextDataId: Long = db.nextId
 

@@ -144,19 +144,19 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
             origin -> store.child(dir.id, newName) match {
               case (_: FileEntry) -> Some(_: DirEntry) => EISDIR
               case _ -> previous =>
-                def copy(origin: TreeEntry, newName: String, newParentId: Long): Unit =
-                  origin match {
-                    case file: FileEntry => store.copyFile(file, newParentId, newName)
-                    case dir : DirEntry  =>
-                      val dirId = store.mkDir(newParentId, newName)
-                      store.children(dir.id).foreach(child => copy(child, child.name, dirId))
-                  }
+                def copy(origin: TreeEntry, newName: String, newParentId: Long): Boolean = origin match {
+                  case file: FileEntry =>
+                    store.copyFile(file, newParentId, newName)
+                  case dir : DirEntry =>
+                    store.mkDir(newParentId, newName)
+                      .exists(dirId => store.children(dir.id).forall(child => copy(child, child.name, dirId)))
+                }
                 // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
                 // replace operation is not atomic. This is tolerated in order to simplify the code.
                 previous.foreach(store.delete)
-                if (origin.parentId != dir.id && copyWhenMoving.get()) copy(origin, newName, dir.id)
-                else store.update(origin.id, dir.id, newName)
-                OK
+                if (origin.parentId != dir.id && copyWhenMoving.get()) {
+                  if (copy(origin, newName, dir.id)) OK else EEXIST
+                } else { store.update(origin.id, dir.id, newName); OK }
             }
         }
       }
@@ -171,10 +171,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
         case Some(_: FileEntry) => ENOTDIR
         case Some(dir: DirEntry) =>
           val name = parts.last
-          store.child(dir.id, name) match {
-            case Some(_) => EEXIST
-            case None => store.mkDir(dir.id, name); OK
-          }
+          store.mkDir(dir.id, name).fold(EEXIST)(_ => OK)
       }
     }
 
@@ -239,9 +236,9 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
         case Some(_: FileEntry)  => ENOTDIR // parent is a file
         case Some(dir: DirEntry) =>
           val name = parts.last
-          store.child(dir.id, name) match { // TODO all EEXIST should be based on an atomic "create if not exists"
-            case Some(_) => EEXIST // entry with the given name already exists
-            case None => fi.fh.set(store.createAndOpen(dir.id, name, now)); OK
+          store.createAndOpen(dir.id, name, now) match {
+            case None => EEXIST // entry with the given name already exists
+            case Some(handle) => fi.fh.set(handle); OK
           }
       }
     }

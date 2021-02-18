@@ -14,13 +14,13 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   private var files = Map[Long, (Int, DataEntry)]()
 
   // Proxy methods
-  def mkDir   (parentId: Long, name: String): Long                        = two.mkDir(parentId, name)
-  def child   (parentId: Long, name: String): Option[TreeEntry]           = two.child(parentId, name)
-  def children(parentId: Long              ): Seq[TreeEntry]              = two.children(parentId)
-  def setTime (id: Long, time: Long): Unit                                = two.setTime(id, time)
-  def update  (id: Long, newParentId: Long, newName: String): Unit        = two.update(id, newParentId, newName)
+  def mkDir   (parentId: Long, name: String): Option[Long]          = two.mkDir(parentId, name)
+  def child   (parentId: Long, name: String): Option[TreeEntry]     = two.child(parentId, name)
+  def children(parentId: Long              ): Seq[TreeEntry]        = two.children(parentId)
+  def setTime (id: Long, time: Long): Unit                          = two.setTime(id, time)
+  def update  (id: Long, newParentId: Long, newName: String): Unit  = two.update(id, newParentId, newName)
   /** Creates a copy of the file's last persisted state without current modifications. */
-  def copyFile(file: FileEntry, newParentId: Long, newName: String): Unit = two.mkFile(newParentId, newName, file.time, file.dataId)
+  def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean = two.mkFile(newParentId, newName, file.time, file.dataId)
 
   override def close(): Unit = { synchronized { files.keys.foreach(release); require(files.isEmpty) }; two.close() }
 
@@ -50,11 +50,11 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       two.delete(entry.id)
     }
 
-  def createAndOpen(parentId: Long, name: String, time: Long): Long =
+  def createAndOpen(parentId: Long, name: String, time: Long): Option[Long] =
     guard(s"createAndOpen($parentId, $name)") {
-      two.mkFile(parentId, name, time).tap { id =>
+      two.mkFile(parentId, name, time).tap(_.foreach { id =>
         synchronized(files += id -> (1, new DataEntry(-1, 0, settings.tempPath)))
-      }
+      })
     }
 
   def open(file: FileEntry): Unit =
@@ -96,18 +96,4 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       result.flatten.foreach(data => if (data.written) two.persist(id, data) else data.close())
       result.isDefined
     }
-}
-
-object Level1 extends App {
-  sys.props.update("LOG_BASE", "./")
-  val store = new Level1(???)
-  val root = store.entry("/").get.asInstanceOf[DirEntry]
-  val childId = store.createAndOpen(root.id, "test", 0)
-  store.write(childId, 0, Array.fill(4096)('a'))
-  store.write(childId, 4096, Array.fill(10)('b'))
-  store.release(childId)
-  val file = store.entry("/test").get.asInstanceOf[FileEntry]
-  store.open(file)
-  println(store.read(file.id, 0, 8192).get.reduce(_++_).drop(4090).toList)
-  store.release(file.id)
 }
