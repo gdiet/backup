@@ -54,9 +54,10 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
 
   override def umount(): Unit =
     guard(s"umount") {
+      info_(s"Stopping dedup file system...")
       super.umount()
       store.close()
-      if (!DataEntry.allClosed) warn_(s"Not all data entries have been closed.")
+      if (DataEntry.openEntries != 0) warn_(s"${DataEntry.openEntries} data entries have not been closed.")
       if (!readonly)
         if (temp.listFiles().nonEmpty) warn_(s"Temp dir is not empty: $temp")
         else temp.delete()

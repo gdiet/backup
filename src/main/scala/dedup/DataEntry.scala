@@ -15,7 +15,7 @@ object DataEntry extends ClassLogging {
   @inline override protected def error_(msg: String, e: Throwable): Unit = super.error_(msg, e)
   protected val currentId = new AtomicLong()
   protected val closedEntries = new AtomicLong()
-  def allClosed: Boolean = currentId.get == closedEntries.get
+  def openEntries: Long = currentId.get - closedEntries.get
 }
 
 /** mutable! baseDataId can be -1. */
