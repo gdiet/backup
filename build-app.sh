@@ -15,7 +15,7 @@ rm -f app.*
 
 # Create version file here so we don't need git and the repo in the container
 version=$(git log -1 | sed -n 's/commit //p' | cut -b 1-8) || exit 1
-if git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi || exit 1
+if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi || exit 1
 versionFile=$(date +%Y.%m.%d)-$version$clean.version || exit 1
 echo building app $versionFile
 touch $versionFile || exit 1
