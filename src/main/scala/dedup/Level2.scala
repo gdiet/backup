@@ -3,8 +3,8 @@ package dedup
 import dedup.store.LongTermStore
 
 import java.security.MessageDigest
-import java.util.concurrent.{Executors, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.{Executors, TimeUnit}
 import scala.concurrent.{ExecutionContext, Future}
 
 class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
@@ -19,6 +19,12 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
 
   override def close(): Unit = {
     storeContext.shutdown()
+    Future {
+      while(true) {
+        info_(s"Cache to write: ${readableBytes(Cached.cacheUsed.get())}.")
+        Thread.sleep(2500)
+      }
+    }(concurrent.ExecutionContext.global)
     storeContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
     con.close()
   }
