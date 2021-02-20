@@ -2,7 +2,7 @@ package dedup
 
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
-import java.nio.file.{Files, Path, Paths}
+import java.nio.file.{Files, Path}
 import java.util.concurrent.atomic.AtomicLong
 
 object DataEntry extends ClassLogging {
@@ -91,7 +91,9 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
     maybeChannel.foreach { channel =>
       channel.close()
       Files.delete(path)
+      debug_(s"Closed & deleted cache file $path")
     }
+    trace_(s"Close $id with base data ID $baseDataId.")
     closedEntries.incrementAndGet()
     Cached.cacheUsed.addAndGet(-cacheSize)
   }
