@@ -60,17 +60,17 @@ object Main extends App with ClassLogging {
         val mountPoint = options.getOrElse("mount", if (getNativePlatform.getOS == WINDOWS) "J:\\" else "/tmp/mnt")
         val temp = new File(options.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
         if (!dbDir.isDirectory) failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
-        if (!readonly) {
-          temp.mkdirs()
-          if (!temp.isDirectory || !temp.canWrite) failureExit(s"Temp dir is not a writable directory: $temp")
-          if (temp.list.nonEmpty) warn_(s"Note that temp dir is not empty: $temp")
-        }
         if (getNativePlatform.getOS != WINDOWS) {
           val mountDir = new File(mountPoint).getAbsoluteFile
           if (!mountDir.isDirectory) failureExit(s"Mount point is not a directory: $mountPoint")
           if (!mountDir.list.isEmpty) failureExit(s"Mount point is not empty: $mountPoint")
         }
         val settings = Settings(repo, dbDir, temp, readonly, new AtomicBoolean(copyWhenMoving))
+        if (!readonly) {
+          temp.mkdirs()
+          if (!temp.isDirectory || !temp.canWrite) failureExit(s"Temp dir is not a writable directory: $temp")
+          if (temp.list.nonEmpty) warn_(s"Note that temp dir is not empty: $temp")
+        }
         if (options.get("gui").contains("true")) new ServerGui(settings)
         info_(s"Starting dedup file system.")
         info_(s"Repository:  $repo")
