@@ -44,7 +44,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
       synchronized(files += id -> (dataEntry +: files.getOrElse(id, Vector())))
 
       // Persist async
-      Future {
+      Future(try {
         val end = dataEntry.size
         // Must be def to avoid memory problems.
         def data = LazyList.range(0L, end, memChunk).flatMap { position =>
@@ -59,8 +59,8 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
         db.dataEntry(hash, dataEntry.size) match {
           // Already known, simply link
           case Some(dataId) =>
-            trace_(s"Persisted $id - content known, linking to dataId $dataId")
             db.setDataId(id, dataId)
+            trace_(s"Persisted $id - content known, linking to dataId $dataId")
           // Not yet known, store ...
           case None =>
             // Reserve storage space
@@ -77,7 +77,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
         }
         synchronized(files -= id)
         dataEntry.close()
-      }(storeContext)
+      } catch { case e: Throwable => error_(s"Persisting $id failed.", e); throw e })(storeContext)
     }
 
   def size(id: Long, dataId: Long): Long =
