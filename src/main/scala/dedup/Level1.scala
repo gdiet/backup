@@ -98,38 +98,44 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     }
 }
 
-object Level1 extends App with ClassLogging { // FIXME remove when not needed anymore
+object L1 extends App { // FIXME remove when not needed anymore
+  sys.props.update("LOG_BASE", "./")
+  Level1.run()
+}
+
+object Level1 extends ClassLogging {
   import java.io.File
   import java.util.concurrent.atomic.AtomicBoolean
   import scala.io.StdIn
   import scala.util.Using.resource
 
-  StdIn.readLine()
-  sys.props.update("LOG_BASE", "./")
-  val repo = new File("/home/georg/temp/repo").getAbsoluteFile
-  def delete(file: File): Unit = {
-    if (file.isDirectory) file.listFiles.foreach(delete)
-    file.delete()
-  }
-  delete(repo)
-  repo.mkdir()
-  val temp = new File(sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now")
-  temp.mkdirs()
-  val dbDir = Database.dbDir(repo)
-  val settings = Settings(repo, dbDir, temp, readonly = false, new AtomicBoolean(false))
-  resource(H2.file(dbDir, readonly = false))(Database.initialize)
-  val level1 = new Level1(settings)
-  try {
-    val id = level1.createAndOpen(1, "name", 0).get
-    val data = new Array[Byte](4096)
-    var start = System.nanoTime()
-    (0 to 50000).foreach { n =>
-      level1.write(id, n * 4096, data)
-      if (n % 1000 == 0) {
-        info_(s"${(System.nanoTime() - start)/1000}")
-        start = System.nanoTime()
-      }
+  def run(): Boolean = {
+//    StdIn.readLine()
+    val repo = new File("/home/georg/temp/repo").getAbsoluteFile
+    def delete(file: File): Unit = {
+      if (file.isDirectory) file.listFiles.foreach(delete)
+      file.delete()
     }
-    level1.release(id)
-  } finally level1.close()
+    delete(repo)
+    repo.mkdir()
+    val temp = new File(sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now")
+    temp.mkdirs()
+    val dbDir = Database.dbDir(repo)
+    val settings = Settings(repo, dbDir, temp, readonly = false, new AtomicBoolean(false))
+    resource(H2.file(dbDir, readonly = false))(Database.initialize)
+    val level1 = new Level1(settings)
+    try {
+      val id = level1.createAndOpen(1, "name", 0).get
+      val data = new Array[Byte](4096)
+      var start = System.nanoTime()
+      (0 to 50000).foreach { n =>
+        level1.write(id, n * 4096, data)
+        if (n % 1000 == 0) {
+          info_(s"${(System.nanoTime() - start)/1000}")
+          start = System.nanoTime()
+        }
+      }
+      level1.release(id)
+    } finally level1.close()
+  }
 }

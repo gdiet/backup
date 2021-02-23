@@ -4,7 +4,7 @@ import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.util.concurrent.atomic.AtomicLong
 
-case class MemCached(override val start: Long, private val data: Array[Byte]) extends Cached {
+case class MemCached(override val start: Long, private val data: Array[Byte]) extends Cached with ClassLogging {
   override def cacheSize: Long = data.length + 64
   override def end: Long = start + data.length
   override def read(from: Long, to: Long): Array[Byte] = {
@@ -20,10 +20,18 @@ case class MemCached(override val start: Long, private val data: Array[Byte]) ex
     require(size < data.length, s"$size !< ${data.length}")
     copy(data = data.drop(size.toInt))
   }
+  override def tryMerge(other: Cached): Option[Cached] = other match {
+    case MemCached(s, d) if s == end && d.length + data.length < memChunk =>
+      trace_(s"merging at $end")
+      Some(MemCached(start, data ++ d))
+    case _ =>
+      trace_(s"merge failed at $end with $other")
+      None
+  }
   override def toString: String = s"MemCached($start, size ${data.length}, data ${data.take(10).toSeq}...)"
 }
 
-case class FileCached(override val start: Long, size: Long, channel: SeekableByteChannel) extends Cached {
+case class FileCached(override val start: Long, size: Long, channel: SeekableByteChannel) extends Cached with ClassLogging {
   override def cacheSize: Long = 128
   override def end: Long = start + size
   override def read(from: Long, to: Long): Array[Byte] = {
@@ -42,6 +50,14 @@ case class FileCached(override val start: Long, size: Long, channel: SeekableByt
     require(size < this.size, s"$size !< ${this.size}")
     copy(start = start + size, size = this.size - size)
   }
+  override def tryMerge(other: Cached): Option[Cached] = other match {
+    case FileCached(st, si, _) if end == st =>
+      trace_(s"merging at $end")
+      Some(FileCached(start, size + si, channel))
+    case _ =>
+      info_(s"merge failed at $end with $other")
+      None
+  }
   override def toString: String = s"FileCached($start, size $size, data ${read(start, math.min(10, size)).toSeq}...)"
 }
 
@@ -52,6 +68,7 @@ trait Cached {
   def read(from: Long, to: Long): Array[Byte]
   def take(size: Long): Cached
   def drop(size: Long): Cached
+  def tryMerge(other: Cached): Option[Cached]
   def cacheSize: Long
 }
 object Cached {
@@ -60,7 +77,9 @@ object Cached {
 
   /** Not thread safe, must be synchronized externally. */
   def apply(start: Long, data: Array[Byte], channel: => SeekableByteChannel): Cached =
-    if (cacheUsed.get() < cacheLimit) MemCached(start, data) else {
+  // FIXME check whether we still get real performance through mem cache
+    if (cacheUsed.get() < cacheLimit) MemCached(start, data) else
+    {
       val buffer = ByteBuffer.wrap(data)
       channel.position(start)
       while (buffer.hasRemaining) channel.write(buffer)

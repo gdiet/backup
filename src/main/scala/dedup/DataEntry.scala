@@ -16,6 +16,7 @@ object DataEntry extends ClassLogging {
   protected val currentId = new AtomicLong()
   protected val closedEntries = new AtomicLong()
   def openEntries: Long = currentId.get - closedEntries.get
+  private val empty = Vector.empty[Cached]
 }
 
 /** mutable! baseDataId can be -1. */
@@ -23,7 +24,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
   private val id = currentId.incrementAndGet()
   trace_(s"Create $id with base data ID $baseDataId.")
   /** position -> data */
-  private var cached: Seq[Cached] = Seq()
+  private var cached: Seq[Cached] = empty
   private def cacheSize: Long = cached.map(_.cacheSize).sum
   private var _written: Boolean = false
   private var _size: Long = initialSize
@@ -74,15 +75,31 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
   }
 
   def write(start: Long, dataToWrite: Array[Byte]): Unit = synchronized {
-    val oldCacheSize = cacheSize
     val end = start + dataToWrite.length
-    cached = cached.flatMap { entry =>
-      if (entry.start >= end || entry.end <= start) Some(entry)
-      else if (entry.start >= start && entry.end <= end) None
-      else if (entry.start < start) Some(entry.take(start - entry.start))
-      else Some(entry.drop(end - entry.start))
-    } :+ Cached(start, dataToWrite, channel)
-    Cached.cacheUsed.addAndGet(cacheSize - oldCacheSize)
+    val (before, after, freed) = cached.foldLeft((empty, empty, 0L)) { case ((before, after, freed), entry) =>
+      if (entry.start >= end) (before, after :+ entry, freed)
+      else if (entry.end <= start) (before :+ entry, after, freed)
+      else {
+        val left = if (entry.start < start) Some(entry.take(start - entry.start)) else None
+        val right = if (entry.end > end) Some(entry.drop(end - entry.start)) else None
+        (before.appendedAll(left), after.appendedAll(right), freed + entry.cacheSize - Seq(left, right).flatten.map(_.cacheSize).sum)
+      }
+    }
+    val entry = Cached(start, dataToWrite, channel)
+    before.lastOption.map(e => e -> e.tryMerge(entry)) match {
+      case Some(dropped -> Some(merged)) =>
+        cached = (before.dropRight(1) :+ merged) ++ after
+        Cached.cacheUsed.addAndGet(merged.cacheSize - freed - dropped.cacheSize)
+      case _ =>
+        after.headOption.map(e => e -> entry.tryMerge(e)) match {
+          case Some(dropped -> Some(merged)) =>
+            cached = (before :+ merged) ++ after.drop(1)
+            Cached.cacheUsed.addAndGet(merged.cacheSize - freed - dropped.cacheSize)
+          case _ =>
+            cached = (before :+ entry) ++ after
+            Cached.cacheUsed.addAndGet(entry.cacheSize - freed)
+        }
+    }
     _written = true
     _size = math.max(_size, end)
   }
