@@ -69,9 +69,14 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       }
     }
 
-  def write(id: Long, offset: Long, data: Array[Byte]): Boolean =
-    guard(s"write($id, $offset, size ${data.length}, data ${data.take(10).toSeq}...)") {
-      synchronized(files.get(id)).map(_._2.write(offset, data)).isDefined
+  /** @param copy writes bytes from a memory block into a provided byte array. Use all bytes from 0 to size.
+    * - copy#1: Read offset in the memory block.
+    * - copy#2: Destination byte array to write to.
+    * - copy#3: Write offset in the destination byte array.
+    * - copy#4: Number of bytes to copy.                       */
+  def write(id: Long, offset: Long, size: Long, copy: (Long, Array[Byte], Int, Int) => Unit): Boolean =
+    guard(s"write($id, $offset, size $size, copy)") {
+      synchronized(files.get(id)).map(_._2.write(offset, size, copy)).isDefined
     }
 
   def truncate(id: Long, size: Long): Boolean =
@@ -96,46 +101,4 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       result.flatten.foreach(data => if (data.written) two.persist(id, data) else data.close())
       result.isDefined
     }
-}
-
-object L1 extends App { // FIXME remove when not needed anymore
-  sys.props.update("LOG_BASE", "./")
-  Level1.run()
-}
-
-object Level1 extends ClassLogging {
-  import java.io.File
-  import java.util.concurrent.atomic.AtomicBoolean
-  import scala.io.StdIn
-  import scala.util.Using.resource
-
-  def run(): Boolean = {
-//    StdIn.readLine()
-    val repo = new File("/home/georg/temp/repo").getAbsoluteFile
-    def delete(file: File): Unit = {
-      if (file.isDirectory) file.listFiles.foreach(delete)
-      file.delete()
-    }
-    delete(repo)
-    repo.mkdir()
-    val temp = new File(sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now")
-    temp.mkdirs()
-    val dbDir = Database.dbDir(repo)
-    val settings = Settings(repo, dbDir, temp, readonly = false, new AtomicBoolean(false))
-    resource(H2.file(dbDir, readonly = false))(Database.initialize)
-    val level1 = new Level1(settings)
-    try {
-      val id = level1.createAndOpen(1, "name", 0).get
-      val data = new Array[Byte](4096)
-      var start = System.nanoTime()
-      (0 to 50000).foreach { n =>
-        level1.write(id, n * 4096, data)
-        if (n % 1000 == 0) {
-          info_(s"${(System.nanoTime() - start)/1000}")
-          start = System.nanoTime()
-        }
-      }
-      level1.release(id)
-    } finally level1.close()
-  }
 }

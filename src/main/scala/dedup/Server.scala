@@ -264,12 +264,9 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     if (readonly) EROFS else guard(s"write $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs
-      if (offset < 0 || size != intSize) EOVERFLOW else {
-        val fileHandle = fi.fh.get()
-        if (size > memChunk) warn_(s"$fileHandle: Writing LARGE $size at $offset, see memchunk")
-        val data = new Array[Byte](intSize).tap(data => buf.get(0, data, 0, intSize))
-        if (store.write(fileHandle, offset, data)) intSize else EIO // false if called without create or open
-      }
+      if (offset < 0 || size != intSize) EOVERFLOW
+      else if (store.write(fi.fh.get(), offset, size, buf.get)) intSize
+      else EIO // false if called without create or open
     }
 
   override def truncate(path: String, size: Long): Int =

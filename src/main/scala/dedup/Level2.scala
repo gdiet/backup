@@ -19,12 +19,6 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
 
   override def close(): Unit = {
     storeContext.shutdown()
-    Future {
-      while(true) {
-        info_(s"Cache to write: ${readableBytes(Cached.cacheUsed.get())}.")
-        Thread.sleep(2500)
-      }
-    }(concurrent.ExecutionContext.global)
     storeContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
     con.close()
   }

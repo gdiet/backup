@@ -1,9 +1,11 @@
 package dedup
 
+import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
 import java.nio.file.{Files, Path}
 import java.util.concurrent.atomic.AtomicLong
+import scala.collection.immutable.TreeMap
 
 object DataEntry extends ClassLogging {
   // see https://stackoverflow.com/questions/13713557/scala-accessing-protected-field-of-companion-objects-trait
@@ -13,95 +15,67 @@ object DataEntry extends ClassLogging {
   @inline override protected def warn_ (msg: => String): Unit = super.warn_ (msg)
   @inline override protected def error_(msg:    String): Unit = super.error_(msg)
   @inline override protected def error_(msg: String, e: Throwable): Unit = super.error_(msg, e)
+
   protected val currentId = new AtomicLong()
   protected val closedEntries = new AtomicLong()
   def openEntries: Long = currentId.get - closedEntries.get
-  private val empty = Vector.empty[Cached]
+
+  val cacheLimit: Long = math.max(16000000, (Runtime.getRuntime.maxMemory - 64000000) * 7 / 10)
+  val cacheUsed = new AtomicLong(0)
 }
 
 /** mutable! baseDataId can be -1. */
 class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends AutoCloseable { import DataEntry._
   private val id = currentId.incrementAndGet()
   trace_(s"Create $id with base data ID $baseDataId.")
-  /** position -> data */
-  private var cached: Seq[Cached] = empty
-  private def cacheSize: Long = cached.map(_.cacheSize).sum
-  private var _written: Boolean = false
-  private var _size: Long = initialSize
 
   private var maybeChannel: Option[SeekableByteChannel] = None
   private val path = tempDir.resolve(s"$id")
-  private def channel = synchronized {
-    maybeChannel.getOrElse {
-      debug_(s"Create cache file $path")
-      Files.newByteChannel(path, WRITE, CREATE_NEW, SPARSE, READ).tap(c => maybeChannel = Some(c))
-    }
+  private def channel = maybeChannel.getOrElse {
+    debug_(s"Create cache file $path")
+    Files.newByteChannel(path, WRITE, CREATE_NEW, SPARSE, READ).tap(c => maybeChannel = Some(c))
   }
 
+  private var _written: Boolean = false
   def written: Boolean = synchronized(_written)
+
+  private var _size: Long = initialSize
   def size: Long = synchronized(_size)
+
+  private var stored = TreeMap[Long, Long]()
 
   /** readUnderlying is (dataId, offset, size) => data */
   def read(position: Long, size: Int, readUnderlying: (Long, Long, Int) => Data): Data = synchronized {
-    val sizeToReturn = math.max(0, math.min(this.size - position, size).toInt)
-    val endOfRead = position + sizeToReturn
-    val candidates = cached.filter(entry => entry.start < endOfRead && entry.end > position).sortBy(_.start)
-    val (currentPos, result) = candidates.foldLeft[(Long, Data)](position -> Vector()) {
-      case ((readPosition, result), cached) =>
-        val startInCache = math.max(readPosition, cached.start)
-        val head = if (readPosition == startInCache) Vector() else
-          readUnderlying(baseDataId, readPosition, (cached.start - readPosition).toInt)
-        val tail = cached.read(startInCache, math.min(endOfRead, cached.end))
-        startInCache + tail.length -> (result ++ head :+ tail)
-    }
-    val nextPos -> withUnderLyingEnd =
-      if (currentPos == endOfRead) currentPos -> result else {
-        val end = readUnderlying(baseDataId, currentPos, (endOfRead-currentPos).toInt)
-        val endLength = end.map(_.length).sum
-        (currentPos + endLength) -> (result ++ end)
-      }
-    withUnderLyingEnd :+ new Array((endOfRead - nextPos).toInt)
+    ???
   }
 
-  def truncate(size: Long): Unit = synchronized {
-    val oldCacheSize = cacheSize
-    cached = cached.collect {
-      case entry if entry.end <= size => entry
-      case entry if entry.start <= size => entry.take(size - entry.start)
-    }
-    Cached.cacheUsed.addAndGet(cacheSize - oldCacheSize)
+  def truncate(size: Long): Unit = synchronized { if (size != _size) {
+    stored = stored.collect { case (from, to) if from < size => from -> math.min(to, size) }
     _written = true
     _size = size
-  }
+  } }
 
-  def write(start: Long, dataToWrite: Array[Byte]): Unit = synchronized {
-    val end = start + dataToWrite.length
-    val (before, after, freed) = cached.foldLeft((empty, empty, 0L)) { case ((before, after, freed), entry) =>
-      if (entry.start >= end) (before, after :+ entry, freed)
-      else if (entry.end <= start) (before :+ entry, after, freed)
-      else {
-        val left = if (entry.start < start) Some(entry.take(start - entry.start)) else None
-        val right = if (entry.end > end) Some(entry.drop(end - entry.start)) else None
-        (before.appendedAll(left), after.appendedAll(right), freed + entry.cacheSize - Seq(left, right).flatten.map(_.cacheSize).sum)
-      }
+  /** @param copy writes bytes from a memory block into a provided byte array. Use all bytes from 0 to size.
+    * - copy#1: Read offset in the memory block.
+    * - copy#2: Destination byte array to write to.
+    * - copy#3: Write offset in the destination byte array.
+    * - copy#4: Number of bytes to copy.                       */
+  def write(offset: Long, size: Long, copy: (Long, Array[Byte], Int, Int) => Unit): Unit = synchronized {
+    channel.position(offset)
+    val chunk = new Array[Byte](memChunk)
+    for (position <- 0L until size by memChunk; chunkSize = math.min(memChunk, size - position).toInt) {
+      copy(position, chunk, 0, chunkSize)
+      channel.write(ByteBuffer.wrap(chunk, 0, chunkSize))
     }
-    val entry = Cached(start, dataToWrite, channel)
-    before.lastOption.map(e => e -> e.tryMerge(entry)) match {
-      case Some(dropped -> Some(merged)) =>
-        cached = (before.dropRight(1) :+ merged) ++ after
-        Cached.cacheUsed.addAndGet(merged.cacheSize - freed - dropped.cacheSize)
-      case _ =>
-        after.headOption.map(e => e -> entry.tryMerge(e)) match {
-          case Some(dropped -> Some(merged)) =>
-            cached = (before :+ merged) ++ after.drop(1)
-            Cached.cacheUsed.addAndGet(merged.cacheSize - freed - dropped.cacheSize)
-          case _ =>
-            cached = (before :+ entry) ++ after
-            Cached.cacheUsed.addAndGet(entry.cacheSize - freed)
-        }
+    stored = stored + (offset -> (offset + size))
+    val result -> last = stored.foldLeft(TreeMap[Long, Long]() -> (-1L, -1L)) {
+      case ((result, last@(lastFrom, lastTo)), cur@(from,to)) =>
+        if (lastTo >= from) result -> (lastFrom, to)
+        else result + last -> cur
     }
+    stored = result + last - (-1L)
     _written = true
-    _size = math.max(_size, end)
+    _size = math.max(_size, offset + size)
   }
 
   override def close(): Unit = synchronized {
@@ -112,6 +86,5 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
     }
     trace_(s"Close $id with base data ID $baseDataId.")
     closedEntries.incrementAndGet()
-    Cached.cacheUsed.addAndGet(-cacheSize)
   }
 }
