@@ -46,6 +46,10 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
 
   /** readUnderlying is (dataId, offset, size) => data */
   def read(position: Long, size: Int, readUnderlying: (Long, Long, Int) => Data): Data = synchronized {
+//    val sizeToRead = math.min(size, _size - position)
+//    for (p <- position until position + sizeToRead by memChunk; chunkSize = math.min(memChunk, size - position).toInt) {
+//      yield 1
+//    }
     ???
   }
 

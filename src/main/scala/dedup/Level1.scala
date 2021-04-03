@@ -84,7 +84,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       synchronized(files.get(id)).map(_._2.truncate(size)).isDefined
     }
 
-  def read(id: Long, offset: Long, size: Int): Option[Data] =
+  def read(id: Long, offset: Long, size: Int, write: (Int, Array[Byte], Int, Int) => Unit): Boolean =
     guard(s"read($id, $offset, $size)") {
       synchronized(files.get(id)).map(_._2.read(offset, size, two.read(id, _, _, _)))
     }
