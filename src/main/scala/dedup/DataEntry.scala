@@ -44,9 +44,14 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
 
   private var stored = TreeMap[Long, Long]()
 
-  /** readUnderlying is (dataId, offset, size) => data */
-  def read(position: Long, size: Int, readUnderlying: (Long, Long, Int) => Data): Data = synchronized {
-//    val sizeToRead = math.min(size, _size - position)
+  /** readUnderlying is (dataId, offset, size) => data ??? FIXME */
+  def read(position: Long, size: Int, write: (Int, Array[Byte], Int, Int) => Unit, readUnderlying: (Long, Long, Int) => Data): Boolean = synchronized {
+    if (size > _size - position) {
+      warn_(s"Requested size $size larger than available bytes between $position and ${_size}.")
+      false
+    } else {
+
+    }
 //    for (p <- position until position + sizeToRead by memChunk; chunkSize = math.min(memChunk, size - position).toInt) {
 //      yield 1
 //    }

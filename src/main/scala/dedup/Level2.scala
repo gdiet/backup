@@ -49,11 +49,13 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
         // Must be def to avoid memory problems.
         def data = LazyList.range(0L, end, memChunk).flatMap { position =>
           val chunkSize = math.min(memChunk, end - position).toInt
-          dataEntry.read(position, chunkSize, readFromLts)
+          dataEntry.read(position, chunkSize, ???, readFromLts)
+          ???
         }
         // Calculate hash
         val md = MessageDigest.getInstance(hashAlgorithm)
-        data.foreach(md.update)
+        ???
+//        data.foreach(md.update)
         val hash = md.digest()
         // Check if already known
         db.dataEntry(hash, dataEntry.size) match {
@@ -68,7 +70,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
             // Write to storage
             data.foldLeft(0L) { case (position, data) =>
               lts.write(start + position, data)
-              position + data.length
+              ??? // position + data.length
             }
             // 5c. create data entry
             val dataId = db.newDataIdFor(id)
@@ -104,7 +106,8 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     synchronized(files.get(id))
       .map { entries =>
         entries.reverse.foldLeft(readFromLts _) { case (readMethod, entry) =>
-          (_, off, siz) => entry.read(off, siz, readMethod)
+          (_, off, siz) => entry.read(off, siz, ???, readMethod)
+          ???
         }(dataId, offset, size)
       }
       .getOrElse(readFromLts(dataId, offset, size))
