@@ -261,11 +261,11 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
       if (store.release(fileHandle)) OK else EIO // false if called without create or open
     }
 
-  override def write(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
+  override def write(path: String, source: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     if (readonly) EROFS else guard(s"write $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW
-      else if (store.write(fi.fh.get(), offset, size, buf.get)) intSize
+      else if (store.write(fi.fh.get(), offset, size, source)) intSize
       else EIO // false if called without create or open
     }
 

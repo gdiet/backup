@@ -1,5 +1,7 @@
 package dedup
 
+import jnr.ffi.Pointer
+
 /** Manages currently open files. Forwards everything else to LevelTwo. */
 class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   private def guard[T](msg: => String, logger: (=> String) => Unit = trace_)(f: => T): T = {
@@ -69,14 +71,9 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       }
     }
 
-  /** @param copy writes bytes from a memory block into a provided byte array. Use all bytes from 0 to size.
-    * - copy#1: Read offset in the memory block.
-    * - copy#2: Destination byte array to write to.
-    * - copy#3: Write offset in the destination byte array.
-    * - copy#4: Number of bytes to copy.                       */
-  def write(id: Long, offset: Long, size: Long, copy: (Long, Array[Byte], Int, Int) => Unit): Boolean =
+  def write(id: Long, offset: Long, size: Long, source: Pointer): Boolean =
     guard(s"write($id, $offset, size $size, copy)") {
-      synchronized(files.get(id)).map(_._2.write(offset, size, copy)).isDefined
+      synchronized(files.get(id)).map(_._2.write(offset, size, source)).isDefined
     }
 
   def truncate(id: Long, size: Long): Boolean =

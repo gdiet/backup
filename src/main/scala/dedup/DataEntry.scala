@@ -1,5 +1,7 @@
 package dedup
 
+import jnr.ffi.Pointer
+
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
@@ -64,16 +66,11 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
     _size = size
   } }
 
-  /** @param copy writes bytes from a memory block into a provided byte array. Use all bytes from 0 to size.
-    * - copy#1: Read offset in the memory block.
-    * - copy#2: Destination byte array to write to.
-    * - copy#3: Write offset in the destination byte array.
-    * - copy#4: Number of bytes to copy.                       */
-  def write(offset: Long, size: Long, copy: (Long, Array[Byte], Int, Int) => Unit): Unit = synchronized {
+  def write(offset: Long, size: Long, source: Pointer): Unit = synchronized {
     channel.position(offset)
     val chunk = new Array[Byte](memChunk)
     for (position <- 0L until size by memChunk; chunkSize = math.min(memChunk, size - position).toInt) {
-      copy(position, chunk, 0, chunkSize)
+      source.get(position, chunk, 0, chunkSize)
       channel.write(ByteBuffer.wrap(chunk, 0, chunkSize))
     }
     stored = stored + (offset -> (offset + size))
