@@ -1,6 +1,6 @@
 package dedup
 
-import dedup.cache.{ChannelCache, MemCache, ZeroCache}
+import dedup.cache.{ChannelCache, MemCache, Allocation}
 import jnr.ffi.Pointer
 
 import java.nio.ByteBuffer
@@ -32,7 +32,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
   private val id = currentId.incrementAndGet()
   trace_(s"Create $id with base data ID $baseDataId.")
 
-  private val zeroCache = new ZeroCache
+  private val zeroCache = new Allocation
   private val memCache = new MemCache(available)
   private var maybeChannelCache: Option[ChannelCache] = None
   private val path = tempDir.resolve(s"$id")

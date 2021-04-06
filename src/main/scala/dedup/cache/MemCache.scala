@@ -21,6 +21,19 @@ class MemCache(available: AtomicLong) {
     if (!available.compareAndSet(avail, avail + size)) release(size)
   }
 
+//  def truncate(length: Long): Unit = {
+//    // If necessary, trim floor entry.
+//    Option(entries.floorEntry(length)).foreach { case Entry(storedPosition, stored) =>
+//      val distance = length - storedPosition
+//      if (distance < stored.length) {
+//        entries.put(storedPosition, stored.take(distance.asInt))
+//        release(stored.length - distance)
+//      }
+//    }
+//    // Remove higher entries.
+//    entries = entries.headMap(length, false)
+//  }
+
   /** @return `false` if not enough free memory available and data is not cached. */
   def write(offset: Long, data: Array[Byte]): Boolean = if (tryAquire(data.length)) {
     // If necessary, trim floor entry.

@@ -2,7 +2,9 @@ package dedup.cache
 
 import java.util
 
-class ZeroCache {
+/** Keeps record of allocated ranges. Useful for keeping record of the zeros appended in a virtual file system
+  * when the file system operation `truncate(newSize)` is called. */
+class Allocation {
   protected var entries: util.NavigableMap[Long, Long] = new util.TreeMap[Long, Long]()
 
   def truncate(length: Long): Unit = {
