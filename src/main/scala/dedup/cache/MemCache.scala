@@ -43,8 +43,11 @@ class MemCache(available: AtomicLong) {
         if (overlap < stored.length) {
           entries.put(storedPosition + overlap, stored.drop(overlap.asInt))
           release(overlap)
-        } else release(stored.length)
-        true
+          false
+        } else {
+          release(stored.length)
+          true
+        }
       } else false
     }
     while(trimHigher.contains(true)){/**/}
