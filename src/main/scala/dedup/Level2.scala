@@ -1,6 +1,7 @@
 package dedup
 
 import dedup.store.LongTermStore
+import jnr.ffi.Pointer
 
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicLong
@@ -49,7 +50,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
         // Must be def to avoid memory problems.
         def data = LazyList.range(0L, end, memChunk).flatMap { position =>
           val chunkSize = math.min(memChunk, end - position).toInt
-          dataEntry.read(position, chunkSize, ???, readFromLts)
+          dataEntry.read(position, chunkSize, ???, ???) // FIXME readFromLts)
           ???
         }
         // Calculate hash
@@ -102,11 +103,11 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     if (endPosition >= readEnd) data else data :+ new Array((readSize - endPosition).toInt)
   }
 
-  def read(id: Long, dataId: Long, offset: Long, size: Int): Data =
+  def read(id: Long, dataId: Long, offset: Long, size: Int, sink: Pointer): Unit =
     synchronized(files.get(id))
       .map { entries =>
         entries.reverse.foldLeft(readFromLts _) { case (readMethod, entry) =>
-          (_, off, siz) => entry.read(off, siz, ???, readMethod)
+          (_, off, siz) => entry.read(off, siz, sink, ???) //  readMethod)
           ???
         }(dataId, offset, size)
       }

@@ -279,13 +279,13 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
       }
     }
 
-  override def read(path: String, buf: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
+  override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     guard(s"read $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW else {
         val fileHandle = fi.fh.get()
         if (size > memChunk) warn_(s"$fileHandle: Reading LARGE $size at $offset, see memchunk")
-        if (!store.read(fileHandle, offset, intSize, buf.put(_, _, _, _))) {
+        if (!store.read(fileHandle, offset, intSize, sink)) {
           warn_(s"read - no data for tree entry $fileHandle (path is $path)")
           ENOENT
         } else intSize
