@@ -28,8 +28,8 @@ object MemCacheFunctionality extends App {
   assert(cache.data.sameElements(Array[Byte](0, 0, 0, 1, 2, 0, 7, 8, 0, 3, 4)))
   assert(100000 - available.get() == 6)
 
-  println("Overwriting two entries works.")
+  println("Overwriting multiple entries works.")
   cache.write(4, Array[Byte](1,2,3,4,5,6))
   assert(cache.data.sameElements(Array[Byte](0, 0, 0, 1, 1, 2, 3, 4, 5, 6, 4)))
-  assert(100000 - available.get() == 6)
+  assert(100000 - available.get() == 8)
 }

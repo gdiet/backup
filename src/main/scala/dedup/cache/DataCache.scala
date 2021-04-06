@@ -58,6 +58,7 @@ class MemCache(available: AtomicLong) {
     if (!available.compareAndSet(avail, avail + size)) release(size)
   }
 
+  /** @return `false` if not enough free memory available. */
   def write(offset: Long, data: Array[Byte]): Boolean = if (tryAquire(data.length)) {
     // If necessary, trim floor entry.
     Option(entries.floorEntry(offset)).foreach { case Entry(storedPosition, stored) =>
@@ -70,8 +71,9 @@ class MemCache(available: AtomicLong) {
         } else release(overlap)
       }
     }
-    // If necessary, trim higher entry.
-    Option(entries.higherEntry(offset)).foreach { case Entry(storedPosition, stored) =>
+
+    // If necessary, trim higher entries.
+    def trimHigher = Option(entries.higherEntry(offset)).map { case Entry(storedPosition, stored) =>
       val overlap = offset + data.length - storedPosition
       if (overlap > 0) {
         entries.remove(storedPosition)
@@ -79,8 +81,11 @@ class MemCache(available: AtomicLong) {
           entries.put(storedPosition + overlap, stored.drop(overlap.asInt))
           release(overlap)
         } else release(stored.length)
-      }
+        true
+      } else false
     }
+    while(trimHigher.contains(true)){/**/}
+
     // Store new entry.
     entries.put(offset, data)
     true
