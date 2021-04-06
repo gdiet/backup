@@ -1,5 +1,5 @@
 version := "current"
-scalaVersion := "2.13.4"
+scalaVersion := "2.13.5"
 scalacOptions := Seq("-target:11", "-deprecation", "-feature", "-unchecked")
 libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.5"
 libraryDependencies += "com.h2database" % "h2" % "1.4.200" // Check compatibility before upgrading!

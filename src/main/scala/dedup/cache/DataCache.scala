@@ -42,7 +42,7 @@ object MemCache {
 class MemCache(available: AtomicLong) {
   import MemCache.LongDecorator
 
-  private val entries = new util.TreeMap[Long, Array[Byte]]()
+  protected val entries = new util.TreeMap[Long, Array[Byte]]()
 
   @tailrec
   private def tryAquire(size: Long): Boolean = {
