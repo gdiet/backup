@@ -11,7 +11,7 @@ class Allocation {
   protected var entries: util.NavigableMap[Long, Long] = new util.TreeMap[Long, Long]()
 
   /** Truncates the allocated ranges to the provided size. */
-  def truncate(newSize: Long): Unit = {
+  def keep(newSize: Long): Unit = {
     // Remove higher entries (by keeping all strictly lower entries).
     entries = entries.headMap(newSize, false)
     // If necessary, trim highest entry.

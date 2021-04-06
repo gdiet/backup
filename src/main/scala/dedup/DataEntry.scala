@@ -74,7 +74,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
     if (size > _size) {
       zeroCache.allocate(_size, size - _size)
     } else {
-      zeroCache.truncate(size)
+      zeroCache.keep(size)
       ???
     }
     _written = true

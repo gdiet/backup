@@ -4,35 +4,36 @@ import java.util
 import java.util.concurrent.atomic.AtomicLong
 import scala.annotation.tailrec
 
-class MemCache(available: AtomicLong) {
-  protected val entries = new util.TreeMap[Long, Array[Byte]]()
+class MemCache(availableMem: AtomicLong) {
+  protected var entries: util.NavigableMap[Long, Array[Byte]] = new util.TreeMap[Long, Array[Byte]]()
 
   @tailrec
   private def tryAquire(size: Long): Boolean = {
-    val avail = available.get()
+    val avail = availableMem.get()
     if (avail < size) false
-    else if (available.compareAndSet(avail, avail - size)) true
+    else if (availableMem.compareAndSet(avail, avail - size)) true
     else tryAquire(size)
   }
 
   @tailrec
   private def release(size: Long): Unit = {
-    val avail = available.get()
-    if (!available.compareAndSet(avail, avail + size)) release(size)
+    val avail = availableMem.get()
+    if (!availableMem.compareAndSet(avail, avail + size)) release(size)
   }
 
-//  def truncate(length: Long): Unit = {
-//    // If necessary, trim floor entry.
-//    Option(entries.floorEntry(length)).foreach { case Entry(storedPosition, stored) =>
-//      val distance = length - storedPosition
-//      if (distance < stored.length) {
-//        entries.put(storedPosition, stored.take(distance.asInt))
-//        release(stored.length - distance)
-//      }
-//    }
-//    // Remove higher entries.
-//    entries = entries.headMap(length, false)
-//  }
+  /** Truncates the cached data to the provided size. */
+  def keep(newSize: Long): Unit = {
+    // Remove higher entries (by keeping all strictly lower entries).
+    entries = entries.headMap(newSize, false)
+    // If necessary, trim highest entry.
+    Option(entries.lastEntry()).foreach { case Entry(storedPosition, stored) =>
+      val distance = newSize - storedPosition
+      if (distance < stored.length) {
+        entries.put(storedPosition, stored.take(distance.asInt))
+        release(stored.length - distance)
+      }
+    }
+  }
 
   /** @return `false` if not enough free memory available and data is not cached. */
   def write(offset: Long, data: Array[Byte]): Boolean = if (tryAquire(data.length)) {
