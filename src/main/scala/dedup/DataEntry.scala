@@ -72,7 +72,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
 
   def truncate(size: Long): Unit = synchronized { if (size != _size) {
     if (size > _size) {
-      zeroCache.write(_size, size - _size)
+      zeroCache.allocate(_size, size - _size)
     } else {
       zeroCache.truncate(size)
       ???
