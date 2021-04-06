@@ -3,7 +3,6 @@ package dedup.cache
 import java.util.concurrent.atomic.AtomicLong
 
 object MemCacheFunctionality extends App {
-  import MemCache.LongDecorator
   val available = new AtomicLong(100000)
   object cache extends MemCache(available) {
     def data: Array[Byte] = {
