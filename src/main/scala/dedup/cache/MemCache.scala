@@ -4,6 +4,9 @@ import java.util
 import java.util.concurrent.atomic.AtomicLong
 import scala.annotation.tailrec
 
+/** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous.
+  *
+  * Instances are not thread safe. */
 class MemCache(availableMem: AtomicLong) {
   protected var entries: util.NavigableMap[Long, Array[Byte]] = new util.TreeMap[Long, Array[Byte]]()
 
@@ -36,22 +39,22 @@ class MemCache(availableMem: AtomicLong) {
   }
 
   /** @return `false` if not enough free memory available and data is not cached. */
-  def write(offset: Long, data: Array[Byte]): Boolean = if (tryAquire(data.length)) {
+  def write(position: Long, data: Array[Byte]): Boolean = if (tryAquire(data.length)) {
     // If necessary, trim floor entry.
-    Option(entries.floorEntry(offset)).foreach { case Entry(storedPosition, stored) =>
-      val overlap = storedPosition + stored.length - offset
+    Option(entries.floorEntry(position)).foreach { case Entry(storedPosition, stored) =>
+      val overlap = storedPosition + stored.length - position
       if (overlap > 0) {
-        if (storedPosition != offset) entries.put(storedPosition, stored.dropRight(overlap.asInt))
+        if (storedPosition != position) entries.put(storedPosition, stored.dropRight(overlap.asInt))
         if (overlap > data.length) {
-          entries.put(offset + data.length, stored.takeRight((overlap - data.length).asInt))
+          entries.put(position + data.length, stored.takeRight((overlap - data.length).asInt))
           release(data.length)
         } else release(overlap)
       }
     }
 
     // If necessary, trim higher entries.
-    def trimHigher = Option(entries.higherEntry(offset)).map { case Entry(storedPosition, stored) =>
-      val overlap = offset + data.length - storedPosition
+    def trimHigher = Option(entries.higherEntry(position)).map { case Entry(storedPosition, stored) =>
+      val overlap = position + data.length - storedPosition
       if (overlap > 0) {
         entries.remove(storedPosition)
         if (overlap < stored.length) {
@@ -67,7 +70,7 @@ class MemCache(availableMem: AtomicLong) {
     while(trimHigher.contains(true)){/**/}
 
     // Store new entry.
-    entries.put(offset, data)
+    entries.put(position, data)
     true
   } else false
 

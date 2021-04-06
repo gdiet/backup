@@ -3,11 +3,25 @@ package dedup.cache
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.util
-import java.util.concurrent.atomic.AtomicLong
-import scala.annotation.tailrec
 
+/** Caches in a file byte arrays with positions, where the byte arrays are not necessarily contiguous.
+  * For best performance use a sparse file channel.
+  *
+  * Instances are not thread safe. */
 class ChannelCache(channel: SeekableByteChannel) {
-  protected val entries = new util.TreeMap[Long, Int]()
+  protected var entries: util.NavigableMap[Long, Int] = new util.TreeMap[Long, Int]()
+
+  /** Truncates the allocated ranges to the provided size. */
+  def keep(newSize: Long): Unit = {
+    if (channel.size() > newSize) channel.truncate(newSize)
+    // Remove higher entries (by keeping all strictly lower entries).
+    entries = entries.headMap(newSize, false)
+    // If necessary, trim highest entry.
+    Option(entries.lastEntry()).foreach { case Entry(storedPosition, storedSize) =>
+      val distance = newSize - storedPosition
+      if (distance < storedSize) entries.put(storedPosition, distance.asInt)
+    }
+  }
 
   def write(offset: Long, data: Array[Byte]): Unit = {
     // If necessary, trim floor entry.
