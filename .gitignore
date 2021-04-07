@@ -6,4 +6,5 @@
 /fsdb/
 /log/
 target/
+**/*\.log
 OpenJDK11U-jre_x64_*
