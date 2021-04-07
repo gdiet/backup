@@ -1,6 +1,6 @@
 package dedup.cache
 
-import dedup.memChunk
+import dedup.{memChunk, scalaUtilChainingOps}
 
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
@@ -55,11 +55,10 @@ class ChannelCache(channel: SeekableByteChannel) {
     MemAreaSection(entries, position, size).flatMap {
       case Left(left) =>
         LazyList(Left(left))
-      case Right(localSize) =>
-        LazyList.range(0, localSize, memChunk).map { pos =>
-
-          ???
-//          pos => Right(new Array[Byte](math.min(memChunk, localSize - pos).asInt)))
+      case Right(localPos -> localSize) =>
+        channel.position(localPos)
+        LazyList.range(0, localSize, memChunk).map { chunkSize =>
+          Right(new Array[Byte](chunkSize).tap { data => while (channel.read(ByteBuffer.wrap(data)) > 0) {/**/} })
         }
     }
   }

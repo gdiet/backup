@@ -53,7 +53,7 @@ class Allocation {
     MemAreaSection(entries, position, size).flatMap {
       case Left(left) =>
         LazyList(Left(left))
-      case Right(localSize) =>
+      case Right(_ -> localSize) =>
         LazyList.range(0L, localSize, memChunk).map(pos => Right(new Array[Byte](math.min(memChunk, localSize - pos).asInt)))
     }
   }

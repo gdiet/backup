@@ -40,7 +40,7 @@ package object cache {
   }
 
   object MemAreaSection {
-    def apply[M: MemArea](entries: util.NavigableMap[Long, M], position: Long, size: Long): LazyList[Either[(Long, Long), M]] = {
+    def apply[M: MemArea](entries: util.NavigableMap[Long, M], position: Long, size: Long): LazyList[Either[(Long, Long), (Long, M)]] = {
       // Identify the relevant entries.
       var section = Vector[(Long, M)]()
       val startKey = Option(entries.floorKey(position)).getOrElse(position)
@@ -63,10 +63,10 @@ package object cache {
           if (distance > 0) section = lead :+ (tailPosition -> tailData.dropRight(distance))
 
           // Assemble result.
-          val (endPos, result) = section.foldLeft(0L -> LazyList[Either[(Long, Long), M]]()) {
+          val (endPos, result) = section.foldLeft(0L -> LazyList[Either[(Long, Long), (Long, M)]]()) {
             case (position -> result, pos -> dat) =>
-              if (position == pos) (position + dat.length) -> (result :+ Right(dat))
-              else (pos + dat.length) -> (result :+ Left(position -> (pos - position)) :+ Right(dat))
+              if (position == pos) (position + dat.length) -> (result :+ Right(pos -> dat))
+              else (pos + dat.length) -> (result :+ Left(position -> (pos - position)) :+ Right(pos -> dat))
           }
           if (distance >= 0) result else result :+ Left(endPos -> -distance)
         }
