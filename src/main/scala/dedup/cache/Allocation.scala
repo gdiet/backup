@@ -1,7 +1,5 @@
 package dedup.cache
 
-import dedup.memChunk
-
 import java.util
 
 /** Keeps record of allocated ranges. Useful for keeping record of the zeros appended in a virtual file system
@@ -49,13 +47,7 @@ class Allocation {
     entries.put(position, size)
   }
 
-  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = {
-    MemAreaSection(entries, position, size).flatMap {
-      case Left(left) =>
-        LazyList(Left(left))
-      case Right(localPos -> localSize) =>
-        LazyList.range(0L, localSize, memChunk)
-          .map(pos => Right(pos -> new Array[Byte](math.min(memChunk, localSize - pos).asInt)))
-    }
-  }
+  /** @return Left: Holes. Right: Allocations. */
+  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Long)]] =
+    MemAreaSection(entries, position, size)
 }

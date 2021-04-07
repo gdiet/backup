@@ -1,6 +1,6 @@
 package dedup.cache
 
-import dedup.ClassLogging
+import dedup.{ClassLogging, memChunk}
 
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
 import java.nio.file.{Files, Path}
@@ -67,12 +67,22 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
     * @return The remaining holes in the cached data. */
   def read[D: DataSink](position: Long, size: Long, sink: D): Vector[(Long, Long)] = synchronized {
     require(_size >= position + size, s"Requested $position $size exceeds ${_size}.")
+    // Read from memory cache.
     memCache.read(position, size).flatMap {
       case Right(data) => LazyList(Right(data))
+      // Fill holes from channel cache.
       case Left(position -> size) => maybeChannelCache.map(_.read(position, size)).getOrElse(LazyList(Left(position -> size)))
     }.flatMap {
       case Right(data) => LazyList(Right(data))
-      case Left(position -> size) => zeroCache.read(position, size)
+      case Left(position -> size) =>
+        // Fill holes from zero allocations cache.
+        zeroCache.read(position, size).flatMap {
+          case Left(left) =>
+            LazyList(Left(left))
+          case Right(localPos -> localSize) =>
+            LazyList.range(0L, localSize, memChunk)
+              .map(pos => Right(pos -> new Array[Byte](math.min(memChunk, localSize - pos).asInt)))
+        }
     }.flatMap {
       case Right(pos -> data) => sink.write(pos - position, data); None
       case Left(gap) => Some(gap)
