@@ -81,7 +81,7 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
             LazyList(Left(left))
           case Right(localPos -> localSize) =>
             LazyList.range(0L, localSize, memChunk)
-              .map(pos => Right(pos -> new Array[Byte](math.min(memChunk, localSize - pos).asInt)))
+              .map(off => Right(localPos + off -> new Array[Byte](math.min(memChunk, localSize - off).asInt)))
         }
     }.flatMap {
       case Right(pos -> data) => sink.write(pos - position, data); None
