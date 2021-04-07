@@ -43,17 +43,13 @@ class ChannelCache(channel: SeekableByteChannel) extends CacheBase[Int] {
   }
 
   def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = {
-    areasInSection(entries, position, size).flatMap {
-      case Left(left) =>
-        LazyList(Left(left))
+    areasInSection(entries, position, size).map {
+      case Left(left) => Left(left)
       case Right(localPos -> localSize) =>
         channel.position(localPos)
-        LazyList.range(0, localSize, memChunk).map { add =>
-          val chunkSize = math.min(memChunk, localSize - add)
-          Right(localPos + add -> new Array[Byte](chunkSize).tap { data =>
-            while (channel.read(ByteBuffer.wrap(data)) > 0) {/**/} }
-          )
-        }
+        Right(localPos -> new Array[Byte](localSize).tap { data =>
+          while (channel.read(ByteBuffer.wrap(data)) > 0) {/**/}
+        })
     }
   }
 }
