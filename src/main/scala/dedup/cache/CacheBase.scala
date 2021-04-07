@@ -17,7 +17,7 @@ trait CacheBase[M] {
     }
   }
 
-  protected def areasInSection(entries: util.NavigableMap[Long, M], position: Long, size: Long)(implicit m: MemArea[M]): LazyList[Either[(Long, Long), (Long, M)]] = {
+  protected def areasInSection(position: Long, size: Long)(implicit m: MemArea[M]): LazyList[Either[(Long, Long), (Long, M)]] = {
     // Identify the relevant entries.
     var section = Vector[(Long, M)]()
     val startKey = Option(entries.floorKey(position)).getOrElse(position)

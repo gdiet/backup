@@ -38,5 +38,5 @@ class Allocation extends CacheBase[Long] {
 
   /** @return Left: Holes. Right: Allocations. */
   def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Long)]] =
-    areasInSection(entries, position, size)
+    areasInSection(position, size)
 }
