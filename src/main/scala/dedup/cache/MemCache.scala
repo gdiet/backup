@@ -2,7 +2,6 @@ package dedup.cache
 
 import java.util
 import java.util.concurrent.atomic.AtomicLong
-import java.util.function.BiConsumer
 import scala.annotation.tailrec
 
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous.
@@ -76,35 +75,6 @@ class MemCache(availableMem: AtomicLong) {
   } else false
 
   def read(position: Long, size: Long): LazyList[Either[(Long, Long), Array[Byte]]] = {
-    // Identify the relevant entries.
-    var section = Vector[(Long, Array[Byte])]()
-    val startKey = Option(entries.floorKey(position)).getOrElse(position)
-    val subMap = entries.subMap(startKey, position + size - 1)
-    subMap.forEach((pos: Long, dat: Array[Byte]) => section :+= (pos -> dat))
-    if (section.isEmpty) LazyList(Left(position -> size)) else {
-
-      // Trim or remove the head entry if necessary.
-      if (startKey < position) {
-        val (headPosition -> headData) +: tail = section
-        val distance = position - headPosition
-        if (headData.length <= distance) section = tail
-        else section = (position -> headData.drop(distance.asInt)) +: tail
-      }
-      if (section.isEmpty) LazyList(Left(position -> size)) else {
-
-        // Truncate the last entry if necessary.
-        val lead :+ (tailPosition -> tailData) = section
-        val distance = tailPosition + tailData.length - (position + size)
-        if (distance > 0) section = lead :+ (tailPosition -> tailData.dropRight(distance.asInt))
-
-        // Assemble result.
-        val (endPos, result) = section.foldLeft(0L -> LazyList[Either[(Long, Long), Array[Byte]]]()) {
-          case (position -> result, pos -> dat) =>
-            if (position == pos) (position + dat.length) -> (result :+ Right(dat))
-            else (pos + dat.length) -> (result :+ Left(position -> (pos - position)) :+ Right(dat))
-        }
-        if (distance >= 0) result else result :+ Left(endPos -> -distance)
-      }
-    }
+    MemAreaSection(entries, position, size)
   }
 }
