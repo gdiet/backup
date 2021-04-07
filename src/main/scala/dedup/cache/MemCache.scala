@@ -76,7 +76,6 @@ class MemCache(availableMem: AtomicLong) {
   } else false
 
   def read(position: Long, size: Long): LazyList[Either[(Long, Long), Array[Byte]]] = {
-
     // Identify the relevant entries.
     var section = Vector[(Long, Array[Byte])]()
     val startKey = Option(entries.floorKey(position)).getOrElse(position)
@@ -99,46 +98,13 @@ class MemCache(availableMem: AtomicLong) {
         if (distance > 0) section = lead :+ (tailPosition -> tailData.dropRight(distance.asInt))
 
         // Assemble result.
-        for (kv <- section)
-          yield kv
+        val (endPos, result) = section.foldLeft(0L -> LazyList[Either[(Long, Long), Array[Byte]]]()) {
+          case (position -> result, pos -> dat) =>
+            if (position == pos) (position + dat.length) -> (result :+ Right(dat))
+            else (pos + dat.length) -> (result :+ Left(position -> (pos - position)) :+ Right(dat))
+        }
+        if (distance >= 0) result else result :+ Left(endPos -> -distance)
       }
     }
-
-
-    ???
-
-    //    def traverse(
-    //           currentPosition: Long,
-    //           remainingSize: Long,
-    //           iterator: util.Iterator[util.Map.Entry[Long, Array[Byte]]],
-    //           intermediateResult: LazyList[Either[Long, Array[Byte]]]
-    //         ): LazyList[Either[Long, Array[Byte]]] = {
-    //      if (!iterator.hasNext) intermediateResult :+ Left(remainingSize)
-    //      else {
-    //        val Entry(storedPosition, data) = iterator.next()
-    //        if (storedPosition < currentPosition) {
-    //          val distance = position - storedPosition
-    //
-    //        } else {
-    //          ???
-    //        }
-    //      }
-    //    }
-
-
-    //    val iterator = subMap.entrySet().iterator()
-//    traverse(position, size, iterator, LazyList())
-
-//    if (!iterator.hasNext) LazyList(Left(size))
-//    else {
-//      val Entry(storedPosition, data) = iterator.next()
-//      if (storedPosition < position) {
-//        val distance = position - storedPosition
-//        if (data.length <= distance) None -> position else Some(data.drop(distance.asInt)) -> position
-//      } else {
-//
-//      }
-//      ???
-//    }
   }
 }
