@@ -9,6 +9,19 @@ package object cache {
     def asInt: Int = { assert(long >= 0 && long <= Int.MaxValue, s"Illegal value $long"); long.toInt }
   }
 
+  trait DataSink[D] {
+    def write(d: D, offset: Long, data: Array[Byte]): Unit
+  }
+
+  implicit class DataSinkOps[D](val d: D) {
+    def write(offset: Long, data: Array[Byte])(implicit dataSink: DataSink[D]): Unit = dataSink.write(d, offset, data)
+  }
+
+  implicit object PointerSink extends DataSink[jnr.ffi.Pointer] {
+    override def write(dataSink: jnr.ffi.Pointer, offset: Long, data: Array[Byte]): Unit =
+      dataSink.put(offset, data, 0, data.length)
+  }
+
   trait MemArea[M] {
     def length(t: M): Long
     def drop(t: M, distance: Long): M

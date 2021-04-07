@@ -74,10 +74,7 @@ class MemCache(availableMem: AtomicLong) {
     true
   } else false
 
-  def read(position: Long, size: Long): LazyList[Either[(Long, Long), Array[Byte]]] = {
-    MemAreaSection(entries, position, size).map {
-      case Left(left) => Left(left)
-      case Right(_ -> data) => Right(data)
-    }
+  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = {
+    MemAreaSection(entries, position, size)
   }
 }

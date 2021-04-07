@@ -51,14 +51,14 @@ class ChannelCache(channel: SeekableByteChannel) {
     channel.write(ByteBuffer.wrap(data, 0, data.length))
   }
 
-  def read(position: Long, size: Long): LazyList[Either[(Long, Long), Array[Byte]]] = {
+  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = {
     MemAreaSection(entries, position, size).flatMap {
       case Left(left) =>
         LazyList(Left(left))
       case Right(localPos -> localSize) =>
         channel.position(localPos)
         LazyList.range(0, localSize, memChunk).map { chunkSize =>
-          Right(new Array[Byte](chunkSize).tap { data => while (channel.read(ByteBuffer.wrap(data)) > 0) {/**/} })
+          Right(localPos -> new Array[Byte](chunkSize).tap { data => while (channel.read(ByteBuffer.wrap(data)) > 0) {/**/} })
         }
     }
   }

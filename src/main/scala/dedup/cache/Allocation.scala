@@ -49,12 +49,13 @@ class Allocation {
     entries.put(position, size)
   }
 
-  def read(position: Long, size: Long): LazyList[Either[(Long, Long), Array[Byte]]] = {
+  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = {
     MemAreaSection(entries, position, size).flatMap {
       case Left(left) =>
         LazyList(Left(left))
-      case Right(_ -> localSize) =>
-        LazyList.range(0L, localSize, memChunk).map(pos => Right(new Array[Byte](math.min(memChunk, localSize - pos).asInt)))
+      case Right(localPos -> localSize) =>
+        LazyList.range(0L, localSize, memChunk)
+          .map(pos => Right(pos -> new Array[Byte](math.min(memChunk, localSize - pos).asInt)))
     }
   }
 }

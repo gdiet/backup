@@ -54,15 +54,27 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
     }
   }
 
-  /** Writes data to the cache. */
+  /** Writes data to the cache. Data size should not exceed `memChunk`. */
   def write(position: Long, data: Array[Byte]): Unit = if (data.length > 0) synchronized {
     if (!memCache.write(position, data)) channelCache.write(position, data)
     _written = true
     _size = math.max(_size, position + data.length)
   }
 
-  /** Reads data from the cache, possibly less than requested if the request exceeds the cache size.
+  /** Reads data from the cache. Throws an exception if the request exceeds the cache size.
     *
-    * @return Either the actual data or the length of a hole in the cached data. */
-  def read(position: Long, size: Long): LazyList[Either[Long, Array[Byte]]] = ???
+    * @return The remaining holes in the cached data. */
+  def read[D: DataSink](position: Long, size: Long, sink: D): Vector[(Long, Long)] = synchronized {
+    require(_size >= position + size, s"Requested $position $size exceeds ${_size}.")
+    memCache.read(position, size).flatMap {
+      case Right(data) => LazyList(Right(data))
+      case Left(position -> size) => channelCache.read(position, size)
+    }.flatMap {
+      case Right(data) => LazyList(Right(data))
+      case Left(position -> size) => zeroCache.read(position, size)
+    }.flatMap {
+      case Right(pos -> data) => sink.write(pos - position, data); None
+      case Left(gap) => Some(gap)
+    }.toVector
+  }
 }
