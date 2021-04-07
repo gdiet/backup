@@ -24,4 +24,8 @@ object CombinedCacheFunctionality extends App {
   println("\nWrite beyond end-of-file:")
   cache.write(14, Array[Byte](1,2))
   println(s"Holes: ${cache.read(0, 16, ()).mkString(",")}")
+
+  println("\nWrite to cache file:")
+  cache.write(8, Array[Byte](3,4,5,6))
+  println(s"Holes: ${cache.read(0, 16, ()).mkString(",")}")
 }

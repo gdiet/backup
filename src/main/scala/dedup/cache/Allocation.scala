@@ -21,12 +21,13 @@ class Allocation {
     }
   }
 
-  /** Allocates a range. */
-  def allocate(position: Long, size: Long): Unit = {
+  def clear(position: Long, size: Long): Unit = {
     // If necessary, trim floor entry.
     Option(entries.floorEntry(position)).foreach { case Entry(storedPosition, storedSize) =>
       val distance = position - storedPosition
       if (distance < storedSize) entries.put(storedPosition, distance)
+      val overlap = storedSize - distance
+      if (overlap > size) entries.put(position + size, overlap - size)
     }
 
     /** If necessary, trim higher entries.
@@ -42,8 +43,11 @@ class Allocation {
       }
     }
     while(trimHigher()){/**/}
+  }
 
-    // Store new entry.
+  /** Allocates a range. */
+  def allocate(position: Long, size: Long): Unit = {
+    clear(position, size)
     entries.put(position, size)
   }
 
