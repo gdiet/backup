@@ -34,7 +34,7 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
   private var maybeChannelCache: Option[ChannelCache] = None
 
   private def channelCache = maybeChannelCache.getOrElse {
-    debug_(s"Create cache file $tempFilePath")
+    println(s"Create cache file $tempFilePath") // FIXME make debug_
     val channel = Files.newByteChannel(tempFilePath, WRITE, CREATE_NEW, SPARSE, READ)
     new ChannelCache(channel).tap(c => maybeChannelCache = Some(c))
   }
@@ -69,7 +69,7 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
     require(_size >= position + size, s"Requested $position $size exceeds ${_size}.")
     memCache.read(position, size).flatMap {
       case Right(data) => LazyList(Right(data))
-      case Left(position -> size) => channelCache.read(position, size)
+      case Left(position -> size) => maybeChannelCache.map(_.read(position, size)).getOrElse(LazyList(Left(position -> size)))
     }.flatMap {
       case Right(data) => LazyList(Right(data))
       case Left(position -> size) => zeroCache.read(position, size)
