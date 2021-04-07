@@ -98,6 +98,9 @@ class MemCache(availableMem: AtomicLong) {
         val distance = tailPosition + tailData.length - (position + size)
         if (distance > 0) section = lead :+ (tailPosition -> tailData.dropRight(distance.asInt))
 
+        // Assemble result.
+        for (kv <- section)
+          yield kv
       }
     }
 
