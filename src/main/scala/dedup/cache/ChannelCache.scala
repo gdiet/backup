@@ -57,8 +57,11 @@ class ChannelCache(channel: SeekableByteChannel) {
         LazyList(Left(left))
       case Right(localPos -> localSize) =>
         channel.position(localPos)
-        LazyList.range(0, localSize, memChunk).map { chunkSize =>
-          Right(localPos -> new Array[Byte](chunkSize).tap { data => while (channel.read(ByteBuffer.wrap(data)) > 0) {/**/} })
+        LazyList.range(0, localSize, memChunk).map { add =>
+          val chunkSize = math.min(memChunk, localSize - add)
+          Right(localPos + add -> new Array[Byte](chunkSize).tap { data =>
+            while (channel.read(ByteBuffer.wrap(data)) > 0) {/**/} }
+          )
         }
     }
   }
