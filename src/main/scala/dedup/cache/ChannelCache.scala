@@ -9,9 +9,9 @@ import java.nio.channels.SeekableByteChannel
   * For best performance use a sparse file channel.
   *
   * Instances are not thread safe. */
-class ChannelCache(channel: SeekableByteChannel) extends CacheBase[Int] {
+class ChannelCache(channel: SeekableByteChannel)(implicit val m: MemArea[Int]) extends CacheBase[Int] {
   /** Truncates the allocated ranges to the provided size. */
-  override def keep(newSize: Long)(implicit m: MemArea[Int]): Unit = {
+  override def keep(newSize: Long): Unit = {
     super.keep(newSize)
     if (channel.size() > newSize) channel.truncate(newSize)
   }

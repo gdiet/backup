@@ -3,7 +3,7 @@ package dedup.cache
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous.
   *
   * Instances are not thread safe. */
-class MemCache(implicit m: MemArea[Array[Byte]]) extends CacheBase[Array[Byte]] {
+class MemCache(val m: MemArea[Array[Byte]]) extends CacheBase[Array[Byte]] {
 // FIXME
 //  @tailrec
 //  private def tryAquire(size: Long): Boolean = {
@@ -14,7 +14,7 @@ class MemCache(implicit m: MemArea[Array[Byte]]) extends CacheBase[Array[Byte]] 
 //  }
 
   /** Truncates the cached data to the provided size. */
-  def keep(newSize: Long): Unit = {
+  override def keep(newSize: Long): Unit = {
     // Remove higher entries (by keeping all strictly lower entries).
     entries = entries.headMap(newSize, false)
     // If necessary, trim highest entry.
@@ -63,7 +63,6 @@ class MemCache(implicit m: MemArea[Array[Byte]]) extends CacheBase[Array[Byte]] 
     true
   } // FIXME else false
 
-  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = {
+  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] =
     areasInSection(position, size)
-  }
 }

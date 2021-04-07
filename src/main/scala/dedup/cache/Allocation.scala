@@ -4,7 +4,7 @@ package dedup.cache
   * when the file system operation `truncate(newSize)` is called.
   *
   * Instances are not thread safe. */
-class Allocation extends CacheBase[Long] {
+class Allocation(implicit val m: MemArea[Long]) extends CacheBase[Long] {
 
   def clear(position: Long, size: Long): Unit = {
     // If necessary, trim floor entry.
@@ -36,7 +36,6 @@ class Allocation extends CacheBase[Long] {
     entries.put(position, size)
   }
 
-  /** @return Left: Holes. Right: Allocations. */
   def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Long)]] =
     areasInSection(position, size)
 }
