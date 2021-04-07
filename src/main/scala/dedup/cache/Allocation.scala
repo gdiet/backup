@@ -1,25 +1,10 @@
 package dedup.cache
 
-import java.util
-
 /** Keeps record of allocated ranges. Useful for keeping record of the zeros appended in a virtual file system
   * when the file system operation `truncate(newSize)` is called.
   *
   * Instances are not thread safe. */
-class Allocation {
-  /** The methods are designed so no overlapping entries can occur. */
-  protected var entries: util.NavigableMap[Long, Long] = new util.TreeMap[Long, Long]()
-
-  /** Truncates the allocated ranges to the provided size. */
-  def keep(newSize: Long): Unit = {
-    // Remove higher entries (by keeping all strictly lower entries).
-    entries = entries.headMap(newSize, false)
-    // If necessary, trim highest entry.
-    Option(entries.lastEntry()).foreach { case Entry(storedPosition, storedSize) =>
-      val distance = newSize - storedPosition
-      if (distance < storedSize) entries.put(storedPosition, distance)
-    }
-  }
+class Allocation extends CacheBase[Long] {
 
   def clear(position: Long, size: Long): Unit = {
     // If necessary, trim floor entry.

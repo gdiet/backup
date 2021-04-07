@@ -1,6 +1,7 @@
 package dedup
 
 import java.util
+import java.util.concurrent.atomic.AtomicLong
 
 package object cache {
   object Entry { def unapply[K,V](e: util.Map.Entry[K,V]): Option[(K,V)] = Some(e.getKey -> e.getValue) }
@@ -26,30 +27,53 @@ package object cache {
     def length(t: M): Long
     def drop(t: M, distance: Long): M
     def dropRight(t: M, distance: Long): M
+    def take(t: M, distance: Long): M
   }
 
   implicit class MemAreaOps[M](val m: M) extends AnyVal {
     def length(implicit memArea: MemArea[M]): Long = memArea.length(m)
-    def drop(distance: Long)(implicit memArea: MemArea[M]): M = memArea.drop(m, distance)
-    def dropRight(distance: Long)(implicit memArea: MemArea[M]): M = memArea.dropRight(m, distance)
+    def drop(distance: Long)(implicit memArea: MemArea[M]): M = {
+      assert(distance < length && distance > 0, s"Distance: $distance")
+      memArea.drop(m, distance)
+    }
+    def dropRight(distance: Long)(implicit memArea: MemArea[M]): M = {
+      assert(distance < length && distance > 0, s"Distance: $distance")
+      memArea.dropRight(m, distance)
+    }
+    def take(distance: Long)(implicit memArea: MemArea[M]): M = {
+      assert(distance < length && distance > 0, s"Distance: $distance")
+      memArea.take(m, distance)
+    }
   }
 
-  implicit object ByteArrayArea extends MemArea[Array[Byte]] {
+  class ByteArrayArea(available: AtomicLong) extends MemArea[Array[Byte]] {
     override def length(t: Array[Byte]): Long = t.length
-    override def drop(t: Array[Byte], distance: Long): Array[Byte] = t.drop(distance.asInt)
-    override def dropRight(t: Array[Byte], distance: Long): Array[Byte] = t.dropRight(distance.asInt)
+    override def drop(t: Array[Byte], distance: Long): Array[Byte] = {
+      available.addAndGet(distance)
+      t.drop(distance.asInt)
+    }
+    override def dropRight(t: Array[Byte], distance: Long): Array[Byte] = {
+      available.addAndGet(distance)
+      t.dropRight(distance.asInt)
+    }
+    override def take(t: Array[Byte], distance: Long): Array[Byte] = {
+      available.addAndGet(t.length - distance)
+      t.take(distance.asInt)
+    }
   }
 
   implicit object LongArea extends MemArea[Long] {
     override def length(t: Long): Long = t
     override def drop(t: Long, distance: Long): Long = t - distance
     override def dropRight(t: Long, distance: Long): Long = t - distance
+    override def take(t: Long, distance: Long): Long = distance
   }
 
   implicit object IntArea extends MemArea[Int] {
     override def length(t: Int): Long = t
     override def drop(t: Int, distance: Long): Int = t - distance.asInt
     override def dropRight(t: Int, distance: Long): Int = t - distance.asInt
+    override def take(t: Int, distance: Long): Int = distance.asInt
   }
 
   object MemAreaSection {

@@ -30,7 +30,7 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
   def written: Boolean = synchronized(_written)
 
   private val zeroCache = new Allocation
-  private val memCache = new MemCache(availableMem)
+  private val memCache = new MemCache()(new ByteArrayArea(availableMem))
   private var maybeChannelCache: Option[ChannelCache] = None
 
   private def channelCache = maybeChannelCache.getOrElse {
@@ -56,8 +56,9 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
 
   /** Writes data to the cache. Data size should not exceed `memChunk`. */
   def write(position: Long, data: Array[Byte]): Unit = if (data.length > 0) synchronized {
-    if (!memCache.write(position, data)) channelCache.write(position, data)
+    // FIXME first clear all three caches, then write
     zeroCache.clear(position, data.length)
+    if (!memCache.write(position, data)) channelCache.write(position, data)
     if (position > _size) zeroCache.allocate(_size, position - _size)
     _written = true
     _size = math.max(_size, position + data.length)
