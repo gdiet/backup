@@ -64,6 +64,6 @@ class MemCache(implicit m: MemArea[Array[Byte]]) extends CacheBase[Array[Byte]] 
   } // FIXME else false
 
   def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = {
-    MemAreaSection(entries, position, size)
+    areasInSection(entries, position, size)
   }
 }

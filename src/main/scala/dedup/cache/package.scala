@@ -75,39 +75,4 @@ package object cache {
     override def dropRight(t: Int, distance: Long): Int = t - distance.asInt
     override def take(t: Int, distance: Long): Int = distance.asInt
   }
-
-  object MemAreaSection {
-    def apply[M: MemArea](entries: util.NavigableMap[Long, M], position: Long, size: Long): LazyList[Either[(Long, Long), (Long, M)]] = {
-      // Identify the relevant entries.
-      var section = Vector[(Long, M)]()
-      val startKey = Option(entries.floorKey(position)).getOrElse(position)
-      val subMap = entries.subMap(startKey, position + size - 1)
-      subMap.forEach((pos: Long, dat: M) => section :+= (pos -> dat))
-      if (section.isEmpty) LazyList(Left(position -> size)) else {
-
-        // Trim or remove the head entry if necessary.
-        if (startKey < position) {
-          val (headPosition -> headData) +: tail = section
-          val distance = position - headPosition
-          if (headData.length <= distance) section = tail
-          else section = (position -> headData.drop(distance)) +: tail
-        }
-        if (section.isEmpty) LazyList(Left(position -> size)) else {
-
-          // Truncate the last entry if necessary.
-          val lead :+ (tailPosition -> tailData) = section
-          val distance = tailPosition + tailData.length - (position + size)
-          if (distance > 0) section = lead :+ (tailPosition -> tailData.dropRight(distance))
-
-          // Assemble result.
-          val (endPos, result) = section.foldLeft(0L -> LazyList[Either[(Long, Long), (Long, M)]]()) {
-            case (position -> result, pos -> dat) =>
-              if (position == pos) (position + dat.length) -> (result :+ Right(pos -> dat))
-              else (pos + dat.length) -> (result :+ Left(position -> (pos - position)) :+ Right(pos -> dat))
-          }
-          if (distance >= 0) result else result :+ Left(endPos -> -distance)
-        }
-      }
-    }
-  }
 }

@@ -43,7 +43,7 @@ class ChannelCache(channel: SeekableByteChannel) extends CacheBase[Int] {
   }
 
   def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = {
-    MemAreaSection(entries, position, size).flatMap {
+    areasInSection(entries, position, size).flatMap {
       case Left(left) =>
         LazyList(Left(left))
       case Right(localPos -> localSize) =>
