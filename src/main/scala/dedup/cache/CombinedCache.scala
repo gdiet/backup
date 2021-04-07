@@ -57,6 +57,7 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
   /** Writes data to the cache. Data size should not exceed `memChunk`. */
   def write(position: Long, data: Array[Byte]): Unit = if (data.length > 0) synchronized {
     if (!memCache.write(position, data)) channelCache.write(position, data)
+    if (position > _size) zeroCache.allocate(_size, position - _size)
     _written = true
     _size = math.max(_size, position + data.length)
   }
