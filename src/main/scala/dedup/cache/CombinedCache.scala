@@ -1,7 +1,6 @@
 package dedup.cache
 
 import dedup.ClassLogging
-import dedup.cache.CombinedCache._
 
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
 import java.nio.file.{Files, Path}
@@ -22,8 +21,13 @@ object CombinedCache extends ClassLogging {
   *
   * Instances are thread safe. */
 class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: Long) {
+  import CombinedCache._
+
   private var _size: Long = initialSize
+  def size: Long = synchronized(_size)
+
   private var _written: Boolean = false
+  def written: Boolean = synchronized(_written)
 
   private val zeroCache = new Allocation
   private val memCache = new MemCache(availableMem)
@@ -50,9 +54,15 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
     }
   }
 
+  /** Writes data to the cache. */
   def write(position: Long, data: Array[Byte]): Unit = if (data.length > 0) synchronized {
     if (!memCache.write(position, data)) channelCache.write(position, data)
     _written = true
     _size = math.max(_size, position + data.length)
   }
+
+  /** Reads data from the cache, possibly less than requested if the request exceeds the cache size.
+    *
+    * @return Either the actual data or the length of a hole in the cached data. */
+  def read(position: Long, size: Long): LazyList[Either[Long, Array[Byte]]] = ???
 }

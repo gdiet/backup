@@ -2,6 +2,7 @@ package dedup.cache
 
 import java.util
 import java.util.concurrent.atomic.AtomicLong
+import java.util.function.BiConsumer
 import scala.annotation.tailrec
 
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous.
@@ -74,4 +75,67 @@ class MemCache(availableMem: AtomicLong) {
     true
   } else false
 
+  def read(position: Long, size: Long): LazyList[Either[(Long, Long), Array[Byte]]] = {
+
+    // Identify the relevant entries.
+    var section = Vector[(Long, Array[Byte])]()
+    val startKey = Option(entries.floorKey(position)).getOrElse(position)
+    val subMap = entries.subMap(startKey, position + size - 1)
+    subMap.forEach((pos: Long, dat: Array[Byte]) => section :+= (pos -> dat))
+    if (section.isEmpty) LazyList(Left(position -> size)) else {
+
+      // Trim or remove the head entry if necessary.
+      if (startKey < position) {
+        val (headPosition -> headData) +: tail = section
+        val distance = position - headPosition
+        if (headData.length <= distance) section = tail
+        else section = (position -> headData.drop(distance.asInt)) +: tail
+      }
+      if (section.isEmpty) LazyList(Left(position -> size)) else {
+
+        // Truncate the last entry if necessary.
+        val lead :+ (tailPosition -> tailData) = section
+        val distance = tailPosition + tailData.length - (position + size)
+        if (distance > 0) section = lead :+ (tailPosition -> tailData.dropRight(distance.asInt))
+
+      }
+    }
+
+
+    ???
+
+    //    def traverse(
+    //           currentPosition: Long,
+    //           remainingSize: Long,
+    //           iterator: util.Iterator[util.Map.Entry[Long, Array[Byte]]],
+    //           intermediateResult: LazyList[Either[Long, Array[Byte]]]
+    //         ): LazyList[Either[Long, Array[Byte]]] = {
+    //      if (!iterator.hasNext) intermediateResult :+ Left(remainingSize)
+    //      else {
+    //        val Entry(storedPosition, data) = iterator.next()
+    //        if (storedPosition < currentPosition) {
+    //          val distance = position - storedPosition
+    //
+    //        } else {
+    //          ???
+    //        }
+    //      }
+    //    }
+
+
+    //    val iterator = subMap.entrySet().iterator()
+//    traverse(position, size, iterator, LazyList())
+
+//    if (!iterator.hasNext) LazyList(Left(size))
+//    else {
+//      val Entry(storedPosition, data) = iterator.next()
+//      if (storedPosition < position) {
+//        val distance = position - storedPosition
+//        if (data.length <= distance) None -> position else Some(data.drop(distance.asInt)) -> position
+//      } else {
+//
+//      }
+//      ???
+//    }
+  }
 }
