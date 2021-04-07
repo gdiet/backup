@@ -27,6 +27,18 @@ package object cache {
     override def dropRight(t: Array[Byte], distance: Long): Array[Byte] = t.dropRight(distance.asInt)
   }
 
+  implicit object LongArea extends MemArea[Long] {
+    override def length(t: Long): Long = t
+    override def drop(t: Long, distance: Long): Long = t - distance
+    override def dropRight(t: Long, distance: Long): Long = t - distance
+  }
+
+  implicit object IntArea extends MemArea[Int] {
+    override def length(t: Int): Long = t
+    override def drop(t: Int, distance: Long): Int = t - distance.asInt
+    override def dropRight(t: Int, distance: Long): Int = t - distance.asInt
+  }
+
   object MemAreaSection {
     def apply[M: MemArea](entries: util.NavigableMap[Long, M], position: Long, size: Long): LazyList[Either[(Long, Long), M]] = {
       // Identify the relevant entries.

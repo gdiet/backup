@@ -1,5 +1,7 @@
 package dedup.cache
 
+import dedup.memChunk
+
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
 import java.util
@@ -47,5 +49,18 @@ class ChannelCache(channel: SeekableByteChannel) {
     entries.put(offset, data.length)
     channel.position(offset)
     channel.write(ByteBuffer.wrap(data, 0, data.length))
+  }
+
+  def read(position: Long, size: Long): LazyList[Either[(Long, Long), Array[Byte]]] = {
+    MemAreaSection(entries, position, size).flatMap {
+      case Left(left) =>
+        LazyList(Left(left))
+      case Right(localSize) =>
+        LazyList.range(0, localSize, memChunk).map { pos =>
+
+          ???
+//          pos => Right(new Array[Byte](math.min(memChunk, localSize - pos).asInt)))
+        }
+    }
   }
 }
