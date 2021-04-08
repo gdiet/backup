@@ -27,5 +27,5 @@ object CombinedCacheFunctionality extends App {
 
   println("\nWrite to cache file:")
   cache.write(8, Array[Byte](3,4,5,6))
-  println(s"Holes: ${cache.read(0, 16, ()).mkString(",")}") // FIXME not yet OK
+  println(s"Holes: ${cache.read(0, 16, ()).mkString(",")}")
 }
