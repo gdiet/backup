@@ -22,19 +22,20 @@ object MemCacheFunctionality extends App {
   assert(100000 - available.get() == 6, s"${100000 - available.get()}")
 
   println("Replacing an entry works.")
+  cache.clear(6, 2)
   assert(cache.write(6, Array[Byte](7,8)))
   assert(cache.data.sameElements(Array[Byte](0, 0, 0, 1, 2, 0, 7, 8, 0, 3, 4)))
-  assert(100000 - available.get() == 6)
+  assert(100000 - available.get() == 6, s"${100000 - available.get()}")
 
   println("Overwriting multiple entries works.")
   assert(cache.write(4, Array[Byte](1,2,3,4,5,6)))
   assert(cache.data.sameElements(Array[Byte](0, 0, 0, 1, 1, 2, 3, 4, 5, 6, 4)))
-  assert(100000 - available.get() == 8)
+  assert(100000 - available.get() == 8, s"${100000 - available.get()}")
 
   println("Inserting in front works.")
   assert(cache.write(0, Array[Byte](1,2,3)))
   assert(cache.data.sameElements(Array[Byte](1, 2, 3, 1, 1, 2, 3, 4, 5, 6, 4)))
-  assert(100000 - available.get() == 11)
+  assert(100000 - available.get() == 11, s"${100000 - available.get()}")
 
   println("Partially replacing at the start works.")
   assert(cache.write(4, Array[Byte](9)))
@@ -44,12 +45,12 @@ object MemCacheFunctionality extends App {
   println("Partially replacing in the middle works.")
   assert(cache.write(6, Array[Byte](9)))
   assert(cache.data.sameElements(Array[Byte](1, 2, 3, 1, 9, 2, 9, 4, 5, 6, 4)))
-  assert(100000 - available.get() == 11)
+  assert(100000 - available.get() == 11, s"${100000 - available.get()}")
 
   println("Partially replacing in the end works.")
   assert(cache.write(9, Array[Byte](9)))
   assert(cache.data.sameElements(Array[Byte](1, 2, 3, 1, 9, 2, 9, 4, 5, 9, 4)))
-  assert(100000 - available.get() == 11)
+  assert(100000 - available.get() == 11, s"${100000 - available.get()}")
 
   println("Memory check works.")
   assert(!cache.write(0, new Array[Byte](100000 - 10)))
