@@ -86,7 +86,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   def size(id: Long, dataId: Long): Long =
     synchronized(files.get(id)).map(_.head.size).getOrElse(db.dataSize(dataId))
 
-  private def readFromLts(dataId: Long, readFrom: Long, readSize: Int): Data = {
+  private def readFromLts(dataId: Long, readFrom: Long, readSize: Int): Vector[Array[Byte]] = { // FIXME must be LazyList
     require(readSize > 0, s"Read size $readSize !> 0")
     val readEnd = readFrom + readSize
     val endPosition -> data = db.parts(dataId).foldLeft(0L -> Vector.empty[Array[Byte]]) { case (readPosition -> result, chunkStart -> chunkEnd) =>

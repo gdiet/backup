@@ -6,8 +6,6 @@ package object dedup extends scala.util.ChainingSyntax {
 
   val hashAlgorithm = "MD5"
 
-  type Data = Vector[Array[Byte]] // FIXME still needed?
-
   /** Format a possibly large number of bytes, e.g. "27.38 MB" or "135 B". */
   def readableBytes(l: Long): String =
     if (l < 10000) "%d B".format(l)
