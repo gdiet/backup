@@ -1,27 +1,15 @@
 package dedup.cache
 
-import dedup.{ClassLogging, memChunk}
+import dedup.memChunk
 
-import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
-import java.nio.file.{Files, Path}
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
-
-object CombinedCache extends ClassLogging {
-  // see https://stackoverflow.com/questions/13713557/scala-accessing-protected-field-of-companion-objects-trait
-  @inline override protected def trace_(msg: => String): Unit = super.trace_(msg)
-  @inline override protected def debug_(msg: => String): Unit = super.debug_(msg)
-  @inline override protected def info_ (msg: => String): Unit = super.info_ (msg)
-  @inline override protected def warn_ (msg: => String): Unit = super.warn_ (msg)
-  @inline override protected def error_(msg:    String): Unit = super.error_(msg)
-  @inline override protected def error_(msg: String, e: Throwable): Unit = super.error_(msg, e)
-}
 
 /** Caches byte arrays with positions, where the byte arrays are not necessarily contiguous. Useful for representing
   * a singe file's contents in a virtual file system.
   *
   * Instances are thread safe. */
-class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: Long) {
-  import CombinedCache._
+class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: Long) extends AutoCloseable {
 
   private var _size: Long = initialSize
   def size: Long = synchronized(_size)
@@ -33,11 +21,9 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
   private val memCache = new MemCache(availableMem)
   private var maybeChannelCache: Option[ChannelCache] = None
 
-  private def channelCache = maybeChannelCache.getOrElse {
-    println(s"Create cache file $tempFilePath") // FIXME make debug_
-    val channel = Files.newByteChannel(tempFilePath, WRITE, CREATE_NEW, SPARSE, READ)
-    new ChannelCache(channel).tap(c => maybeChannelCache = Some(c))
-  }
+  private def channelCache = maybeChannelCache.getOrElse(
+    new ChannelCache(tempFilePath).tap(c => maybeChannelCache = Some(c))
+  )
 
   /** Truncates the cache to the provided size. Zero-pads if the cache size increases. */
   def truncate(size: Long): Unit = synchronized {
@@ -96,4 +82,6 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
       case Left(gap) => Some(gap)
     }.toVector
   }
+
+  override def close(): Unit = maybeChannelCache.foreach(_.close())
 }
