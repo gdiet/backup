@@ -27,37 +27,10 @@ class MemCache(val m: MemArea[Array[Byte]]) extends CacheBase[Array[Byte]] {
     }
   }
 
-  /** @return `false` if not enough free memory available and data is not cached. */
+  /** Assumes that the area to write is clear.
+    *
+    * @return `false` if data is not cached because not enough free memory is available. */
   def write(position: Long, data: Array[Byte]): Boolean = { // FIXME if (tryAquire(data.length)) {
-    // If necessary, trim floor entry.
-    Option(entries.floorEntry(position)).foreach { case Entry(storedPosition, stored) =>
-      val overlap = storedPosition + stored.length - position
-      if (overlap > 0) {
-        if (storedPosition != position) entries.put(storedPosition, stored.dropRight(overlap.asInt))
-        if (overlap > data.length) {
-          entries.put(position + data.length, stored.takeRight((overlap - data.length).asInt))
-//          release(data.length) FIXME
-        } // FIXME else release(overlap)
-      }
-    }
-
-    // If necessary, trim higher entries.
-    def trimHigher = Option(entries.higherEntry(position)).map { case Entry(storedPosition, stored) =>
-      val overlap = position + data.length - storedPosition
-      if (overlap > 0) {
-        entries.remove(storedPosition)
-        if (overlap < stored.length) {
-          entries.put(storedPosition + overlap, stored.drop(overlap.asInt))
-          // FIXME release(overlap)
-          false
-        } else {
-          // FIXME release(stored.length)
-          true
-        }
-      } else false
-    }
-    while(trimHigher.contains(true)){/**/}
-
     // Store new entry.
     entries.put(position, data)
     true
