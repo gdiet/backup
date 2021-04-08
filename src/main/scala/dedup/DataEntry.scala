@@ -34,26 +34,9 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
   def written: Boolean = synchronized(cache.written)
   def size: Long = synchronized(cache.size)
 
-  /** @param readUnderlying (dataId, offset, size, sink)
-    * @return `false` if request exceeds available size. */
-  def read(offset: Long, size: Int, sink: Pointer, readUnderlying: (Long, Long, Int, Pointer) => Unit): Boolean = synchronized {
-    ???
-//    if (size > _size - offset) {
-//      warn_(s"Requested size $size larger than available bytes between $offset and ${_size}.")
-//      false
-//    } else {
-//      var position = offset
-//      var parts = stored.filter { case (_, to) => to > position }
-//      while(position < size) {
-//        val (from, to) = parts.head
-//        parts = parts.tail
-//
-//      }
-//      ???
-//    }
-//    for (p <- position until position + sizeToRead by memChunk; chunkSize = math.min(memChunk, size - position).toInt) {
-//      yield 1
-//    }
+  /** @return None if request exceeds available size or Some(holes to fill). */
+  def read(offset: Long, size: Int, sink: Pointer): Option[Vector[(Long, Long)]] = synchronized {
+    if (offset + size > cache.size) None else Some(cache.read(offset, size, sink))
   }
 
   def truncate(size: Long): Unit = synchronized { cache.truncate(size) }

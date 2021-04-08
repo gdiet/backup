@@ -13,7 +13,6 @@ import java.util.Date
 import javax.swing._
 
 class ServerGui(settings: Settings) {
-  private val log = LoggerFactory.getLogger("dedup.UIApp")
   private var lines = Vector[String]()
   private val dateFormat = new SimpleDateFormat("HH:mm.ss")
   private val appender = new AppenderBase[ILoggingEvent] {

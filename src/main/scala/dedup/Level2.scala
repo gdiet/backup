@@ -50,7 +50,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
         // Must be def to avoid memory problems.
         def data = LazyList.range(0L, end, memChunk).flatMap { position =>
           val chunkSize = math.min(memChunk, end - position).toInt
-          dataEntry.read(position, chunkSize, ???, ???) // FIXME readFromLts)
+          dataEntry.read(position, chunkSize, ???) // FIXME readFromLts)
           ???
         }
         // Calculate hash
@@ -103,13 +103,13 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     if (endPosition >= readEnd) data else data :+ new Array((readSize - endPosition).toInt)
   }
 
-  def read(id: Long, dataId: Long, offset: Long, size: Int, sink: Pointer): Unit =
+  def read(id: Long, dataId: Long, offset: Long, size: Long, sink: Pointer): Unit =
     synchronized(files.get(id))
       .map { entries =>
-        entries.reverse.foldLeft(readFromLts _) { case (readMethod, entry) =>
-          (_, off, siz) => entry.read(off, siz, sink, ???) //  readMethod)
-          ???
-        }(dataId, offset, size)
+//        entries.reverse.foldLeft(readFromLts _) { case (readMethod, entry) =>
+//          (_, off, siz) => entry.read(off, siz, sink) //  readMethod) FIXME
+//          ???
+//        }(dataId, offset, size)
       }
-      .getOrElse(readFromLts(dataId, offset, size))
+//      .getOrElse(readFromLts(dataId, offset, size)) FIXME
 }
