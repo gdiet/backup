@@ -56,9 +56,15 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
 
   /** Writes data to the cache. Data size should not exceed `memChunk`. */
   def write(position: Long, data: Array[Byte]): Unit = if (data.length > 0) synchronized {
-    // FIXME first clear all three caches, then write
-    zeroCache.clear(position, data.length)
+    // Clear the area in all caches.
+    if (position < _size) {
+      memCache.clear(position, data.length)
+      maybeChannelCache.foreach(_.clear(position, data.length))
+      zeroCache.clear(position, data.length)
+    }
+    // Write the area.
     if (!memCache.write(position, data)) channelCache.write(position, data)
+    // Allocate zeros if writing starts beyond end of file.
     if (position > _size) zeroCache.allocate(_size, position - _size)
     _written = true
     _size = math.max(_size, position + data.length)

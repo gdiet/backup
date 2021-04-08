@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 object MemCacheFunctionality extends App {
   val available = new AtomicLong(100000)
-  object cache extends MemCache()(new ByteArrayArea(available)) {
+  object cache extends MemCache(new ByteArrayArea(available)) {
     def data: Array[Byte] = {
       var result = Array[Byte]()
       entries.forEach((position: Long, data: Array[Byte]) => {
@@ -19,7 +19,7 @@ object MemCacheFunctionality extends App {
   assert(cache.write(9, Array[Byte](3,4)))
   assert(cache.write(6, Array[Byte](5,6)))
   assert(cache.data.sameElements(Array[Byte](0, 0, 0, 1, 2, 0, 5, 6, 0, 3, 4)))
-  assert(100000 - available.get() == 6)
+  assert(100000 - available.get() == 6, s"${100000 - available.get()}")
 
   println("Replacing an entry works.")
   assert(cache.write(6, Array[Byte](7,8)))

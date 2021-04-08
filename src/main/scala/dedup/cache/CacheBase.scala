@@ -8,6 +8,32 @@ trait CacheBase[M] {
   /** The methods are designed so no overlapping entries can occur. */
   protected var entries: util.NavigableMap[Long, M] = new util.TreeMap[Long, M]()
 
+  def clear(position: Long, size: Long): Unit = {
+    // If necessary, trim lower entry.
+    Option(entries.lowerEntry(position)).foreach { case Entry(storedPos, storedArea) =>
+      val distance = position - storedPos
+      if (storedArea.length > distance) entries.put(storedPos, storedArea.take(distance))
+    }
+
+    /** If necessary, trim ceiling entries.
+      * @return `true` if trimming needs to be continued. */
+    def trimAbove(): Boolean = Option(entries.ceilingEntry(position)).exists { case Entry(storedPos, storedArea) =>
+      val overlap = position + size - storedPos
+      if (overlap <= 0) {
+        false
+      } else if (overlap < storedArea.length) {
+        entries.remove(storedPos)
+        entries.put(storedPos + overlap, storedArea.drop(overlap))
+        false
+      } else {
+        entries.remove(storedPos)
+        storedArea.drop()
+        true
+      }
+    }
+    while(trimAbove()){/**/}
+  }
+
   /** Truncates the managed areas to the provided size. */
   def keep(newSize: Long): Unit = {
     // Remove higher entries (by keeping all strictly lower entries).

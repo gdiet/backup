@@ -32,6 +32,7 @@ package object cache {
 
   implicit class MemAreaOps[M](val m: M) extends AnyVal {
     def length(implicit memArea: MemArea[M]): Long = memArea.length(m)
+    def drop()(implicit memArea: MemArea[M]): Unit = drop(length)
     def drop(distance: Long)(implicit memArea: MemArea[M]): M = {
       assert(distance < length && distance > 0, s"Distance: $distance")
       memArea.drop(m, distance)
