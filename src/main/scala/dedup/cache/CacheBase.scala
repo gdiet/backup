@@ -72,10 +72,10 @@ trait CacheBase[M] {
         if (distance > 0) section = lead :+ (tailPosition -> tailData.dropRight(distance))
 
         // Assemble result.
-        val (endPos, result) = section.foldLeft(0L -> LazyList[Either[(Long, Long), (Long, M)]]()) {
-          case (position -> result, pos -> dat) =>
-            if (position == pos) (position + dat.length) -> (result :+ Right(pos -> dat))
-            else (pos + dat.length) -> (result :+ Left(position -> (pos - position)) :+ Right(pos -> dat))
+        val (endPos, result) = section.foldLeft(position -> LazyList[Either[(Long, Long), (Long, M)]]()) {
+          case (currentPos -> result, entryPos -> dat) =>
+            if (currentPos == entryPos) (entryPos + dat.length) -> (result :+ Right(entryPos -> dat))
+            else (entryPos + dat.length) -> (result :+ Left(currentPos -> (entryPos - currentPos)) :+ Right(entryPos -> dat))
         }
         if (distance >= 0) result else result :+ Left(endPos -> -distance)
       }
