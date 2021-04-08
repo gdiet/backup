@@ -59,7 +59,8 @@ object MemCacheFunctionality extends App {
 
   println("Check: Memory check works.")
   assert(!cache.write(0, new Array[Byte](100000 - 10)))
-  val data = new Array[Byte](100000 - 11)
+  val data = new Array[Byte](100000)
+  cache.clear(0, 100000)
   assert(cache.write(0, data))
-  assert(available.get() == 11)
+  assert(available.get() == 0, s"${available.get()}")
 }
