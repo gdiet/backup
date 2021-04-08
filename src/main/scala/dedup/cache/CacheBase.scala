@@ -9,10 +9,14 @@ trait CacheBase[M] {
   protected var entries: util.NavigableMap[Long, M] = new util.TreeMap[Long, M]()
 
   def clear(position: Long, size: Long): Unit = {
-    // If necessary, trim lower entry.
+    // If necessary, split lower entry.
     Option(entries.lowerEntry(position)).foreach { case Entry(storedPos, storedArea) =>
       val distance = position - storedPos
-      if (storedArea.length > distance) entries.put(storedPos, storedArea.take(distance))
+      if (storedArea.length > distance) {
+        val (head, tail) = storedArea.split(distance)
+        entries.put(storedPos, head)
+        entries.put(storedPos + distance, tail)
+      }
     }
 
     /** If necessary, trim ceiling entries.

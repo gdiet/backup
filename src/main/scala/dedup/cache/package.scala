@@ -24,22 +24,27 @@ package object cache {
   }
 
   trait MemArea[M] {
-    def length(t: M): Long
     def drop(t: M, distance: Long): M
     def dropRight(t: M, distance: Long): M
+    def length(t: M): Long
+    def split(t: M, distance: Long): (M, M)
     def take(t: M, distance: Long): M
   }
 
   implicit class MemAreaOps[M](val m: M) extends AnyVal {
-    def length(implicit memArea: MemArea[M]): Long = memArea.length(m)
-    def drop()(implicit memArea: MemArea[M]): Unit = drop(length)
+    def drop()(implicit memArea: MemArea[M]): Unit = memArea.drop(m, length)
     def drop(distance: Long)(implicit memArea: MemArea[M]): M = {
-      assert(distance <= length && distance > 0, s"Distance: $distance")
+      assert(distance < length && distance > 0, s"Distance: $distance")
       memArea.drop(m, distance)
     }
     def dropRight(distance: Long)(implicit memArea: MemArea[M]): M = {
       assert(distance < length && distance > 0, s"Distance: $distance")
       memArea.dropRight(m, distance)
+    }
+    def length(implicit memArea: MemArea[M]): Long = memArea.length(m)
+    def split(distance: Long)(implicit memArea: MemArea[M]): (M, M) = {
+      assert(distance < length && distance > 0, s"Distance: $distance")
+      memArea.split(m, distance)
     }
     def take(distance: Long)(implicit memArea: MemArea[M]): M = {
       assert(distance < length && distance > 0, s"Distance: $distance")
@@ -48,7 +53,6 @@ package object cache {
   }
 
   class ByteArrayArea(available: AtomicLong) extends MemArea[Array[Byte]] {
-    override def length(t: Array[Byte]): Long = t.length
     override def drop(t: Array[Byte], distance: Long): Array[Byte] = {
       available.addAndGet(distance)
       t.drop(distance.asInt)
@@ -57,6 +61,8 @@ package object cache {
       available.addAndGet(distance)
       t.dropRight(distance.asInt)
     }
+    override def length(t: Array[Byte]): Long = t.length
+    override def split(t: Array[Byte], distance: Long): (Array[Byte], Array[Byte]) = t.splitAt(distance.asInt)
     override def take(t: Array[Byte], distance: Long): Array[Byte] = {
       available.addAndGet(t.length - distance)
       t.take(distance.asInt)
@@ -64,16 +70,18 @@ package object cache {
   }
 
   implicit object LongArea extends MemArea[Long] {
-    override def length(t: Long): Long = t
     override def drop(t: Long, distance: Long): Long = t - distance
     override def dropRight(t: Long, distance: Long): Long = t - distance
+    override def length(t: Long): Long = t
+    override def split(t: Long, distance: Long): (Long, Long) = (distance, t-distance)
     override def take(t: Long, distance: Long): Long = distance
   }
 
   implicit object IntArea extends MemArea[Int] {
-    override def length(t: Int): Long = t
     override def drop(t: Int, distance: Long): Int = t - distance.asInt
     override def dropRight(t: Int, distance: Long): Int = t - distance.asInt
+    override def length(t: Int): Long = t
+    override def split(t: Int, distance: Long): (Int, Int) = distance.asInt.pipe(d => d -> (t - d))
     override def take(t: Int, distance: Long): Int = distance.asInt
   }
 }
