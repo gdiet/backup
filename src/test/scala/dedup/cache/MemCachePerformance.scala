@@ -9,7 +9,7 @@ object MemCachePerformance extends App {
     System.gc()
     Thread.sleep(200)
     val start = System.nanoTime()
-    val memCache = new MemCache()(new ByteArrayArea(available))
+    val memCache = new MemCache(available)
     var vector = Vector[Array[Byte]]()
     (1 to 500000).foreach { _ =>
       vector :+=  new Array[Byte](4000)
@@ -24,7 +24,7 @@ object MemCachePerformance extends App {
     System.gc()
     Thread.sleep(200)
     val start = System.nanoTime()
-    val memCache = new MemCache()(new ByteArrayArea(available))
+    val memCache = new MemCache(available)
     var vector = Vector[Array[Byte]]()
     (1 to 500000).foreach { n =>
       memCache.write(n * 4000, new Array[Byte](4000))

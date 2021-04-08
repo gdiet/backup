@@ -1,9 +1,12 @@
 package dedup.cache
 
+import java.util.concurrent.atomic.AtomicLong
+
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous.
   *
   * Instances are not thread safe. */
-class MemCache(val m: MemArea[Array[Byte]]) extends CacheBase[Array[Byte]] {
+class MemCache(available: AtomicLong) extends CacheBase[Array[Byte]] {
+  override implicit protected val m: MemArea[Array[Byte]] = new ByteArrayArea(available)
 // FIXME
 //  @tailrec
 //  private def tryAquire(size: Long): Boolean = {

@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 object MemCacheFunctionality extends App {
   val available = new AtomicLong(100000)
-  object cache extends MemCache(new ByteArrayArea(available)) {
+  object cache extends MemCache(available) {
     def data: Array[Byte] = {
       var result = Array[Byte]()
       entries.forEach((position: Long, data: Array[Byte]) => {

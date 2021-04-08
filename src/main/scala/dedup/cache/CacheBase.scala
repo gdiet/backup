@@ -3,7 +3,7 @@ package dedup.cache
 import java.util
 
 trait CacheBase[M] {
-  implicit def m: MemArea[M]
+  implicit protected def m: MemArea[M]
 
   /** The methods are designed so no overlapping entries can occur. */
   protected var entries: util.NavigableMap[Long, M] = new util.TreeMap[Long, M]()

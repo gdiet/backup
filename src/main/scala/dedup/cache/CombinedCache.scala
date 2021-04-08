@@ -30,7 +30,7 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
   def written: Boolean = synchronized(_written)
 
   private val zeroCache = new Allocation
-  private val memCache = new MemCache(new ByteArrayArea(availableMem))
+  private val memCache = new MemCache(availableMem)
   private var maybeChannelCache: Option[ChannelCache] = None
 
   private def channelCache = maybeChannelCache.getOrElse {
