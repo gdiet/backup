@@ -25,10 +25,7 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] {
     // If necessary, trim highest entry.
     Option(entries.lastEntry()).foreach { case Entry(storedPosition, stored) =>
       val distance = newSize - storedPosition
-      if (distance < stored.length) {
-        entries.put(storedPosition, stored.take(distance.asInt))
-//        release(stored.length - distance) // FIXME
-      }
+      if (distance < stored.length) entries.put(storedPosition, stored.take(distance.asInt))
     }
   }
 
