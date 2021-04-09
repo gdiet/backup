@@ -14,7 +14,7 @@ import scala.util.Using.{resource, resources}
 object Main extends App with ClassLogging {
   // FIXME review uses of require and assert
 
-  def failureExit(msg: String*): Nothing = { msg.foreach(error_); Thread.sleep(200); sys.exit(1) }
+  def failureExit(msg: String*): Nothing = { msg.foreach(log.error); Thread.sleep(200); sys.exit(1) }
 
   try {
     val (options, commands) = args.partition(_.contains("=")).pipe { case (options, commands) =>
@@ -32,15 +32,15 @@ object Main extends App with ClassLogging {
       case List("init") =>
         if (dbDir.exists()) failureExit(s"Database directory $dbDir exists - repository is probably already initialized.")
         resource(H2.file(dbDir, readonly = false))(Database.initialize)
-        info_(s"Database initialized for repository $repo.")
+        log.info(s"Database initialized for repository $repo.")
 
       case List("dbbackup") =>
         DBMaintenance.createBackup(repo)
-        info_(s"Database backup finished.")
+        log.info(s"Database backup finished.")
 
       case List("dbrestore") =>
         DBMaintenance.restoreBackup(repo, options.get("from"))
-        info_(s"Database restore finished.")
+        log.info(s"Database restore finished.")
 
       case List("reclaimspace1") =>
         val keepDeletedDays = options.getOrElse("keepdays", "0").toInt
@@ -69,19 +69,19 @@ object Main extends App with ClassLogging {
         if (!readonly) {
           temp.mkdirs()
           if (!temp.isDirectory || !temp.canWrite) failureExit(s"Temp dir is not a writable directory: $temp")
-          if (temp.list.nonEmpty) warn_(s"Note that temp dir is not empty: $temp")
+          if (temp.list.nonEmpty) log.warn(s"Note that temp dir is not empty: $temp")
         }
         if (options.get("gui").contains("true")) new ServerGui(settings)
-        info_(s"Starting dedup file system.")
-        info_(s"Repository:  $repo")
-        info_(s"Mount point: $mountPoint")
-        info_(s"Readonly:    $readonly")
-        debug_(s"Temp dir:    $temp")
-        if (copyWhenMoving) info_(s"Copy instead of move initially enabled.")
+        log.info(s"Starting dedup file system.")
+        log.info(s"Repository:  $repo")
+        log.info(s"Mount point: $mountPoint")
+        log.info(s"Readonly:    $readonly")
+        log.debug(s"Temp dir:    $temp")
+        if (copyWhenMoving) log.info(s"Copy instead of move initially enabled.")
         val fs = new Server(settings)
         val fuseOptions: Array[String] = if (getNativePlatform.getOS == WINDOWS) Array("-o", "volname=DedupFS") else Array()
         try fs.mount(java.nio.file.Paths.get(mountPoint), true, false, fuseOptions)
-        catch { case e: Throwable => error_("Mount exception:", e); fs.umount() }
+        catch { case e: Throwable => log.error("Mount exception:", e); fs.umount() }
 
       case other =>
         failureExit(s"Unexpected command(s): ${other.mkString(", ")}")

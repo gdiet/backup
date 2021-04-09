@@ -42,28 +42,28 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   private val rights = if (readonly) 292 else 438 // o444 else o666
   private val store  = new Level1(settings)
 
-  private def guard(msg: => String, logger: (=> String) => Unit = trace_)(f: => Int): Int = {
+  private def guard(msg: => String, logger: (=> String) => Unit = log.trace)(f: => Int): Int = {
     val start = System.nanoTime()
     def time = s"${(System.nanoTime()-start)/1000}us"
     logger(s"$msg ...")
     try f.tap {
-      case EIO       => error_(s"$time EIO: $msg")
-      case EINVAL    => warn_ (s"$time EINVAL: $msg")
-      case EOVERFLOW => warn_ (s"$time EOVERFLOW: $msg")
+      case EIO       => log.error(s"$time EIO: $msg")
+      case EINVAL    => log.warn (s"$time EINVAL: $msg")
+      case EOVERFLOW => log.warn (s"$time EOVERFLOW: $msg")
       case result    => logger(s"... $time $msg -> $result")
-    } catch { case e: Throwable => error_(s"... $time $msg -> ERROR", e); EIO }
+    } catch { case e: Throwable => log.error(s"... $time $msg -> ERROR", e); EIO }
   }
 
   override def umount(): Unit =
     guard(s"umount") {
-      info_(s"Stopping dedup file system...")
+      log.info(s"Stopping dedup file system...")
       super.umount()
       store.close()
-      if (DataEntry.openEntries != 0) warn_(s"${DataEntry.openEntries} data entries have not been closed.")
+      if (DataEntry.openEntries != 0) log.warn(s"${DataEntry.openEntries} data entries have not been closed.")
       if (!readonly)
-        if (temp.listFiles().nonEmpty) warn_(s"Temp dir is not empty: $temp")
+        if (temp.listFiles().nonEmpty) log.warn(s"Temp dir is not empty: $temp")
         else temp.delete()
-      info_(s"Dedup file system is stopped.")
+      log.info(s"Dedup file system is stopped.")
       OK
     }
 
@@ -202,7 +202,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   //  // https://man7.org/linux/man-pages/man2/symlink.2.html
   //  override def symlink(oldpath: String, newpath: String): Int =
   //    if (readonly) EROFS else guard(s"symlink $oldpath -> $newpath") {
-  //      info_(s"symlink $oldpath -> $newpath")
+  //      log.info(s"symlink $oldpath -> $newpath")
   //      val parts = store.split(newpath)
   //      if (parts.length == 0) ENOENT // can't create root
   //      else store.entry(parts.dropRight(1)) match { // fetch parent entry
@@ -215,9 +215,9 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   //            case None =>
   //              val id = store.createAndOpen(dir.id, name, now)
   //              if (!store.write(id, 0, s"Symlink: $oldpath".getBytes("UTF-8")))
-  //                warn_(s"Could not write symlink.")
+  //                log.warn(s"Could not write symlink.")
   //              if (!store.release(id))
-  //                warn_(s"Could not release symlink.")
+  //                log.warn(s"Could not release symlink.")
   //              OK
   //          }
   //      }
@@ -226,7 +226,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   //  // https://man7.org/linux/man-pages/man2/readlink.2.html
   //  override def readlink(path: String, buf: Pointer, size: Long): Int =
   //    guard(s"readlink $path size $size") {
-  //      info_(s"readlink $path size $size")
+  //      log.info(s"readlink $path size $size")
   //      0 // Number of bytes placed in buf.
   //    }
 
@@ -284,9 +284,9 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW else {
         val fileHandle = fi.fh.get()
-        if (size > memChunk) warn_(s"$fileHandle: Reading LARGE $size at $offset, see memchunk")
+        if (size > memChunk) log.warn(s"$fileHandle: Reading LARGE $size at $offset, see memchunk")
         if (!store.read(fileHandle, offset, intSize, sink)) {
-          warn_(s"read - no data for tree entry $fileHandle (path is $path)")
+          log.warn(s"read - no data for tree entry $fileHandle (path is $path)")
           ENOENT
         } else intSize
       }

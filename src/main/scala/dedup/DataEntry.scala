@@ -19,7 +19,7 @@ object DataEntry {
 /** The internal cache is mutable! baseDataId can be -1. */
 class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends AutoCloseable with ClassLogging {
   private val id = currentId.incrementAndGet()
-  trace_(s"Create $id with base data ID $baseDataId.")
+  log.trace(s"Create $id with base data ID $baseDataId.")
 
   private val path = tempDir.resolve(s"$id")
   private val cache = new CombinedCache(availableMem, path, initialSize)
@@ -44,7 +44,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
 
   override def close(): Unit = synchronized {
     cache.close()
-    trace_(s"Close $id with base data ID $baseDataId.")
+    log.trace(s"Close $id with base data ID $baseDataId.")
     closedEntries.incrementAndGet()
   }
 }

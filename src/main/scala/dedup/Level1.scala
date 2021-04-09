@@ -4,10 +4,10 @@ import jnr.ffi.Pointer
 
 /** Manages currently open files. Forwards everything else to LevelTwo. */
 class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
-  private def guard[T](msg: => String, logger: (=> String) => Unit = trace_)(f: => T): T = {
+  private def guard[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T = {
     logger(s"$msg ...")
     try f.tap(t => logger(s"... $msg -> $t"))
-    catch { case e: Throwable => error_(s"... $msg -> ERROR", e); throw e }
+    catch { case e: Throwable => log.error(s"... $msg -> ERROR", e); throw e }
   }
 
   private val two = new Level2(settings)
@@ -65,7 +65,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
         files += id -> (files.get(id) match {
           case None => 1 -> new DataEntry(dataId, two.size(id, dataId), settings.tempPath)
           case Some(count -> dataEntry) =>
-            if (dataEntry.baseDataId != dataId) warn_(s"File $id: Mismatch between previous ${dataEntry.baseDataId} and current $dataId.")
+            if (dataEntry.baseDataId != dataId) log.warn(s"File $id: Mismatch between previous ${dataEntry.baseDataId} and current $dataId.")
             count + 1 -> dataEntry
         })
       }
@@ -95,7 +95,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       val result = synchronized(files.get(id) match {
         case None => None // No handle found, return false.
         case Some(count -> dataEntry) =>
-          if (count < 0) error_(s"Handle count $count for id $id")
+          if (count < 0) log.error(s"Handle count $count for id $id")
           if (count > 1) { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
           else { files -= id; Some(Some(dataEntry)) } // Outside the sync block persist data if necessary.
       })

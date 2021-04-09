@@ -42,7 +42,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     // If data entry size is zero, explicitly set dataId -1 because it might have been set to something else before...
     if (dataEntry.size == 0) { db.setDataId(id, -1); dataEntry.close() }
     else {
-      trace_(s"ID $id - persisting data entry, size ${dataEntry.size} / base data id ${dataEntry.baseDataId}.")
+      log.trace(s"ID $id - persisting data entry, size ${dataEntry.size} / base data id ${dataEntry.baseDataId}.")
       synchronized(files += id -> (dataEntry +: files.getOrElse(id, Vector())))
 
       // Persist async
@@ -55,7 +55,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
           dataEntry.read(position, chunkSize, chunk)((sink: Array[Byte], offset: Long, data: Array[Byte]) =>
             System.arraycopy(data, 0, sink, offset.asInt, data.length)
           ) match {
-            case None => warn_(s"Persist: Did not get all data: $position $chunkSize - ${dataEntry.size}")
+            case None => log.warn(s"Persist: Did not get all data: $position $chunkSize - ${dataEntry.size}")
             case Some(holes) =>
               holes.foreach { case (holePos, holeSize) =>
                 readFromLts(dataEntry.baseDataId, holePos, holeSize.asInt)
@@ -72,7 +72,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
           // Already known, simply link
           case Some(dataId) =>
             db.setDataId(id, dataId)
-            trace_(s"Persisted $id - content known, linking to dataId $dataId")
+            log.trace(s"Persisted $id - content known, linking to dataId $dataId")
           // Not yet known, store ...
           case None =>
             // Reserve storage space
@@ -85,11 +85,11 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
             // 5c. create data entry
             val dataId = db.newDataIdFor(id)
             db.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
-            trace_(s"Persisted $id - new content, dataId $dataId")
+            log.trace(s"Persisted $id - new content, dataId $dataId")
         }
         synchronized(files -= id)
         dataEntry.close()
-      } catch { case e: Throwable => error_(s"Persisting $id failed.", e); throw e })(storeContext)
+      } catch { case e: Throwable => log.error(s"Persisting $id failed.", e); throw e })(storeContext)
     }
 
   def size(id: Long, dataId: Long): Long =

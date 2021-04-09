@@ -11,13 +11,13 @@ import java.nio.file.{Files, Path}
   *
   * Instances are not thread safe. */
 class ChannelCache(path: Path)(implicit val m: MemArea[Int]) extends CacheBase[Int] with ClassLogging with AutoCloseable {
-  debug_(s"Create cache file $path")
+  log.debug(s"Create cache file $path")
   private val channel = Files.newByteChannel(path, WRITE, CREATE_NEW, SPARSE, READ)
 
   override def close(): Unit = {
     channel.close()
     Files.delete(path)
-    debug_(s"Closed & deleted cache file $path")
+    log.debug(s"Closed & deleted cache file $path")
   }
 
   /** Truncates the allocated ranges to the provided size. */
