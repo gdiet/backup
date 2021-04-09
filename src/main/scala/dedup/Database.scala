@@ -216,7 +216,7 @@ class Database(connection: Connection) { import Database._
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, -1)",
     Statement.RETURN_GENERATED_KEYS
   )
-  /** Returns None if a child entry with the same name already exists. */
+  /** @return [[None]] if a child entry with the same name already exists. */
   def mkFile(parentId: Long, name: String, time: Long): Option[Long] = Try(sync {
     iFile.setLong(1, parentId)
     iFile.setString(2, name)

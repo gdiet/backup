@@ -10,6 +10,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     catch { case e: Throwable => log.error(s"... $msg -> ERROR", e); throw e }
   }
 
+  /** The store backing Level 1. */
   private val two = new Level2(settings)
 
   /** id -> (handle count, dataEntry). Remember to synchronize. */

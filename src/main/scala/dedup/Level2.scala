@@ -39,7 +39,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
 
   /** In Level2, DataEntry objects are not mutated. */
   def persist(id: Long, dataEntry: DataEntry): Unit =
-    // If data entry size is zero, explicitly set dataId -1 because it might have been set to something else before...
+    // If data entry size is zero, explicitly set dataId -1 because it might contained something else...
     if (dataEntry.size == 0) { db.setDataId(id, -1); dataEntry.close() }
     else {
       log.trace(s"ID $id - persisting data entry, size ${dataEntry.size} / base data id ${dataEntry.baseDataId}.")
