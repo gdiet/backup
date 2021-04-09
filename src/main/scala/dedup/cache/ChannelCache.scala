@@ -1,27 +1,16 @@
 package dedup.cache
 
-import dedup.cache.ChannelCache.debug_
 import dedup.{ClassLogging, scalaUtilChainingOps}
 
 import java.nio.ByteBuffer
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
 import java.nio.file.{Files, Path}
 
-object ChannelCache extends ClassLogging {
-  // see https://stackoverflow.com/questions/13713557/scala-accessing-protected-field-of-companion-objects-trait
-  @inline override protected def trace_(msg: => String): Unit = super.trace_(msg)
-  @inline override protected def debug_(msg: => String): Unit = super.debug_(msg)
-  @inline override protected def info_ (msg: => String): Unit = super.info_ (msg)
-  @inline override protected def warn_ (msg: => String): Unit = super.warn_ (msg)
-  @inline override protected def error_(msg:    String): Unit = super.error_(msg)
-  @inline override protected def error_(msg: String, e: Throwable): Unit = super.error_(msg, e)
-}
-
 /** Caches in a file byte arrays with positions, where the byte arrays are not necessarily contiguous.
   * For best performance use a sparse file channel.
   *
   * Instances are not thread safe. */
-class ChannelCache(path: Path)(implicit val m: MemArea[Int]) extends CacheBase[Int] with AutoCloseable {
+class ChannelCache(path: Path)(implicit val m: MemArea[Int]) extends CacheBase[Int] with ClassLogging with AutoCloseable {
   debug_(s"Create cache file $path")
   private val channel = Files.newByteChannel(path, WRITE, CREATE_NEW, SPARSE, READ)
 
