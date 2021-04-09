@@ -1,6 +1,6 @@
 package dedup
 
-import dedup.cache.CombinedCache
+import dedup.cache.{CombinedCache, DataSink}
 import jnr.ffi.Pointer
 
 import java.nio.file.Path
@@ -23,7 +23,7 @@ object DataEntry extends ClassLogging {
   val available = new AtomicLong(cacheLimit)
 }
 
-/** mutable! baseDataId can be -1. */
+/** The internal cache is mutable! baseDataId can be -1. */
 class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends AutoCloseable { import DataEntry._
   private val id = currentId.incrementAndGet()
   trace_(s"Create $id with base data ID $baseDataId.")
@@ -35,7 +35,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
   def size: Long = synchronized(cache.size)
 
   /** @return None if request exceeds available size or Some(holes to fill). */
-  def read(offset: Long, size: Int, sink: Pointer): Option[Vector[(Long, Long)]] = synchronized {
+  def read[D: DataSink](offset: Long, size: Int, sink: D): Option[Vector[(Long, Long)]] = synchronized {
     if (offset + size > cache.size) None else Some(cache.read(offset, size, sink))
   }
 

@@ -1,5 +1,6 @@
 package dedup
 
+import dedup.cache.LongDecorator
 import dedup.store.LongTermStore
 import jnr.ffi.Pointer
 
@@ -48,15 +49,23 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
       Future(try {
         val end = dataEntry.size
         // Must be def to avoid memory problems.
-        def data = LazyList.range(0L, end, memChunk).flatMap { position =>
+        def data = LazyList.range(0L, end, memChunk).map { position =>
           val chunkSize = math.min(memChunk, end - position).toInt
-          dataEntry.read(position, chunkSize, ???) // FIXME readFromLts)
-          ???
+          val chunk = new Array[Byte](chunkSize)
+          dataEntry.read(position, chunkSize, chunk)((sink: Array[Byte], offset: Long, data: Array[Byte]) =>
+            System.arraycopy(data, 0, sink, offset.asInt, data.length)
+          ) match {
+            case None => warn_(s"Persist: Did not get all data: $position $chunkSize - ${dataEntry.size}")
+            case Some(holes) =>
+              holes.foreach { case (holePos, holeSize) =>
+                readFromLts(dataEntry.baseDataId, holePos, holeSize.asInt)
+              }
+          }
+          chunk
         }
         // Calculate hash
         val md = MessageDigest.getInstance(hashAlgorithm)
-        ???
-//        data.foreach(md.update)
+        data.foreach(md.update)
         val hash = md.digest()
         // Check if already known
         db.dataEntry(hash, dataEntry.size) match {
@@ -71,7 +80,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
             // Write to storage
             data.foldLeft(0L) { case (position, data) =>
               lts.write(start + position, data)
-              ??? // position + data.length
+              position + data.length
             }
             // 5c. create data entry
             val dataId = db.newDataIdFor(id)
@@ -86,7 +95,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   def size(id: Long, dataId: Long): Long =
     synchronized(files.get(id)).map(_.head.size).getOrElse(db.dataSize(dataId))
 
-  private def readFromLts(dataId: Long, readFrom: Long, readSize: Int): Vector[Array[Byte]] = { // FIXME must be LazyList
+  private def readFromLts(dataId: Long, readFrom: Long, readSize: Int): Vector[Array[Byte]] = {
     require(readSize > 0, s"Read size $readSize !> 0")
     val readEnd = readFrom + readSize
     val endPosition -> data = db.parts(dataId).foldLeft(0L -> Vector.empty[Array[Byte]]) { case (readPosition -> result, chunkStart -> chunkEnd) =>
@@ -106,10 +115,21 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   def read(id: Long, dataId: Long, offset: Long, size: Long, sink: Pointer): Unit =
     synchronized(files.get(id))
       .map { entries =>
+        ???
 //        entries.reverse.foldLeft(readFromLts _) { case (readMethod, entry) =>
 //          (_, off, siz) => entry.read(off, siz, sink) //  readMethod) FIXME
 //          ???
 //        }(dataId, offset, size)
       }
 //      .getOrElse(readFromLts(dataId, offset, size)) FIXME
+  /*
+  def read(id: Long, offset: Long, size: Int, sink: Pointer): Boolean =
+    guard(s"read($id, $offset, $size)") {
+      synchronized(files.get(id)).exists { case (_, dataEntry) =>
+        dataEntry.read(offset, size, sink).map { holes =>
+            holes.foreach { case (holePos, holeSize) => two.read(id, dataEntry.baseDataId, holePos, holeSize, sink) }
+        }.isDefined
+      }
+    }
+   */
 }
