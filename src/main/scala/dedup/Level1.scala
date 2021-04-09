@@ -86,9 +86,12 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   def read(id: Long, offset: Long, size: Int, sink: Pointer): Boolean =
     guard(s"read($id, $offset, $size)") {
       synchronized(files.get(id)).exists { case (_, dataEntry) =>
-        dataEntry.read(offset, size, sink).map { holes =>
+        Range(0, size, memChunk).forall { chunkOff =>
+          val chunkSize = math.min(memChunk, size - chunkOff)
+          dataEntry.read(offset + chunkOff, chunkSize, sink).map { holes =>
             holes.foreach { case (holePos, holeSize) => two.read(id, dataEntry.baseDataId, holePos, holeSize, sink) }
-        }.isDefined
+          }.isDefined
+        }
       }
     }
 

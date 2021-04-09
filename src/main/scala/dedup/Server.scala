@@ -284,11 +284,8 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
       val intSize = size.toInt.abs
       if (offset < 0 || size != intSize) EOVERFLOW else {
         val fileHandle = fi.fh.get()
-        if (size > memChunk) log.warn(s"$fileHandle: Reading LARGE $size at $offset, see memchunk")
-        if (!store.read(fileHandle, offset, intSize, sink)) {
-          log.warn(s"read - no data for tree entry $fileHandle (path is $path)")
-          ENOENT
-        } else intSize
+        if (store.read(fileHandle, offset, intSize, sink)) intSize
+        else { log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); ENOENT }
       }
     }
 
