@@ -54,6 +54,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
 
   def createAndOpen(parentId: Long, name: String, time: Long): Option[Long] =
     guard(s"createAndOpen($parentId, $name)") {
+      // https://stackoverflow.com/questions/67017901/why-does-scala-option-tapeach-return-iterable-not-option
       two.mkFile(parentId, name, time).tap(_.foreach { id =>
         synchronized(files += id -> (1, new DataEntry(-1, 0, settings.tempPath)))
       })
