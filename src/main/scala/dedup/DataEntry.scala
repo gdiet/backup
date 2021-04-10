@@ -17,7 +17,7 @@ object DataEntry {
 
 /** Thread safe handler for the mutable contents of a virtual file.
   *
-  * baseDataId can be -1. */
+  * @param baseDataId Id of the data record this entry updates. -1 if this entry is independent. */
 class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends AutoCloseable with ClassLogging {
   private val id = currentId.incrementAndGet()
   log.trace(s"Create $id with base data ID $baseDataId.")
