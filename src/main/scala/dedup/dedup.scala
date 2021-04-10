@@ -1,8 +1,14 @@
 package object dedup extends scala.util.ChainingSyntax {
   def now: Long = java.lang.System.currentTimeMillis
 
-  // https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
-  val memChunk = 524200 // a bit less than 0.5 MiB to avoid problems with humongous objects in G1GC
+  /** Internal size limit for byte arrays. Set to less than 0.5 MiB to avoid problems with humongous objects in G1GC
+    * and to a power of 2 so blocks align well if the fuse layer uses blocks sized a smaller power of 2. (The fuse
+    * default is 4096.)
+    *
+    * Ideally TODO the fuse options should be set so the fuse layer uses this size for file system operations, too.
+    *
+    * @see https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram */
+  val memChunk: Int = 2 << 18
 
   val hashAlgorithm = "MD5"
 
