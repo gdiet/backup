@@ -52,20 +52,22 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
         def data = LazyList.range(0L, end, memChunk).map { position =>
           val chunkSize = math.min(memChunk, end - position).toInt
           val chunk = new Array[Byte](chunkSize)
-          dataEntry.read(position, chunkSize, chunk)((sink: Array[Byte], offset: Long, data: Array[Byte]) =>
-            System.arraycopy(data, 0, sink, offset.asInt, data.length)
-          ) match {
-            case None => log.warn(s"Persist: Did not get all data: $position $chunkSize - ${dataEntry.size}")
-            case Some(holes) =>
-              holes.foreach { case (holePos, holeSize) =>
-                readFromLts(dataEntry.baseDataId, holePos, holeSize.asInt)
-              }
-          }
-          chunk
+          ???
+//          dataEntry.read(position, chunkSize, chunk)((sink: Array[Byte], offset: Long, data: Array[Byte]) =>
+//            System.arraycopy(data, 0, sink, offset.asInt, data.length)
+//          ) match {
+//            case None => log.warn(s"Persist: Did not get all data: $position $chunkSize - ${dataEntry.size}")
+//            case Some(holes) =>
+//              holes.foreach { case (holePos, holeSize) =>
+//                readFromLts(dataEntry.baseDataId, holePos, holeSize.asInt)
+//              }
+//          }
+//          chunk
         }
         // Calculate hash
         val md = MessageDigest.getInstance(hashAlgorithm)
-        data.foreach(md.update)
+//        data.foreach(md.update)
+        ???
         val hash = md.digest()
         // Check if already known
         db.dataEntry(hash, dataEntry.size) match {
@@ -78,10 +80,11 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
             // Reserve storage space
             val start = startOfFreeData.getAndAdd(dataEntry.size)
             // Write to storage
-            data.foldLeft(0L) { case (position, data) =>
-              lts.write(start + position, data)
-              position + data.length
-            }
+            ???
+//            data.foldLeft(0L) { case (position, data) =>
+//              lts.write(start + position, data)
+//              position + data.length
+//            }
             // 5c. create data entry
             val dataId = db.newDataIdFor(id)
             db.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
@@ -112,7 +115,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     if (endPosition >= readEnd) data else data :+ new Array((readSize - endPosition).toInt)
   }
 
-  def read(id: Long, dataId: Long, offset: Long, size: Long, sink: Pointer): Unit =
+  def read(id: Long, dataId: Long, offset: Long, size: Long): LazyList[(Long, Array[Byte])] = {
     synchronized(files.get(id))
       .map { entries =>
         ???
@@ -121,7 +124,9 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
 //          ???
 //        }(dataId, offset, size)
       }
-//      .getOrElse(readFromLts(dataId, offset, size)) FIXME
+    ???
+  }
+  //      .getOrElse(readFromLts(dataId, offset, size)) FIXME
   /*
   def read(id: Long, offset: Long, size: Int, sink: Pointer): Boolean =
     guard(s"read($id, $offset, $size)") {

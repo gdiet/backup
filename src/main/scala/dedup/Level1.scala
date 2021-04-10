@@ -85,14 +85,24 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       synchronized(files.get(id)).map(_._2.truncate(size)).isDefined
     }
 
+  // FIXME return Option[LazyList[Array[Byte]]] or similar
   def read(id: Long, offset: Long, size: Int, sink: Pointer): Boolean =
     guard(s"read($id, $offset, $size)") {
       synchronized(files.get(id)).exists { case (_, dataEntry) =>
         Range(0, size, memChunk).forall { chunkOff =>
           val chunkSize = math.min(memChunk, size - chunkOff)
-          dataEntry.read(offset + chunkOff, chunkSize, sink).map { holes =>
-            holes.foreach { case (holePos, holeSize) => two.read(id, dataEntry.baseDataId, holePos, holeSize, sink) }
+          dataEntry.read(offset + chunkOff, chunkSize).map {
+            _.foreach {
+              case Right(offset -> bytes) => sink.put(offset, bytes, 0, bytes.length)
+              case Left(offset -> size) =>
+                two.read(id, dataEntry.baseDataId, offset, size)
+            }
           }.isDefined
+
+//            .map { holes =>
+//            holes.foreach { case (holePos, holeSize) => two.read(id, dataEntry.baseDataId, holePos, holeSize, sink) }
+//          }.isDefined
+          ???
         }
       }
     }

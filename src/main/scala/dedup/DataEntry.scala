@@ -1,7 +1,7 @@
 package dedup
 
 import dedup.DataEntry.{availableMem, closedEntries, currentId}
-import dedup.cache.{CombinedCache, DataSink}
+import dedup.cache.CombinedCache
 
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
@@ -28,9 +28,13 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
   def written: Boolean = synchronized(cache.written)
   def size: Long = synchronized(cache.size)
 
-  /** @return None if request exceeds available size or Some(holes to fill). */
-  def read[D: DataSink](offset: Long, size: Int, sink: D): Option[Vector[(Long, Long)]] = synchronized {
-    if (offset + size > cache.size) None else Some(cache.read(offset, size, sink))
+  /** @param size Must not exceed the internal size limit for byte arrays.
+    * @return Some(Vector((holePosition, holeSize) | (dataPosition, bytes)))
+    *         or None if the request exceeds the entry size. */
+  def read(offset: Long, size: Int): Option[Vector[Either[(Long, Long), (Long, Array[Byte])]]] = synchronized {
+    // Materialize the lazy entries in the synchronized context to avoid concurrency issues.
+    // This is safe from memory point of view because size is restricted to the internal size limit for byte arrays.
+    cache.read(offset, size).map(_.toVector)
   }
 
   def truncate(size: Long): Unit = synchronized { cache.truncate(size) }

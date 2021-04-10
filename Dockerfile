@@ -1,7 +1,8 @@
 # https://github.com/hseeberger/scala-sbt
-FROM hseeberger/scala-sbt:11.0.9.1_1.4.5_2.13.4
+FROM hseeberger/scala-sbt:11.0.10_1.5.0_2.13.5
 
 # Install additional utilities needed later
+RUN apt-get update
 RUN apt-get --assume-yes install jq zip
 
 # Prepare SBT and download dependencies
