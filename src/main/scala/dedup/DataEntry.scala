@@ -2,7 +2,6 @@ package dedup
 
 import dedup.DataEntry.{availableMem, closedEntries, currentId}
 import dedup.cache.{CombinedCache, DataSink}
-import jnr.ffi.Pointer
 
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
@@ -16,7 +15,9 @@ object DataEntry {
   val availableMem = new AtomicLong(cacheLimit)
 }
 
-/** The internal cache is mutable! baseDataId can be -1. */
+/** Thread safe handler for the mutable contents of a virtual file.
+  *
+  * baseDataId can be -1. */
 class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends AutoCloseable with ClassLogging {
   private val id = currentId.incrementAndGet()
   log.trace(s"Create $id with base data ID $baseDataId.")

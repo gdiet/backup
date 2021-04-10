@@ -1,9 +1,7 @@
 package dedup.cache
 
 /** Keeps record of allocated ranges. Useful for keeping record of the zeros appended in a virtual file system
-  * when the file system operation `truncate(newSize)` is called.
-  *
-  * Instances are not thread safe. */
+  * when the file system operation `truncate(newSize)` is called. */
 class Allocation(implicit val m: MemArea[Long]) extends CacheBase[Long] {
 
   /** Allocates a range. */

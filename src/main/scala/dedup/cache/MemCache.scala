@@ -4,9 +4,7 @@ import dedup.scalaUtilChainingOps
 
 import java.util.concurrent.atomic.AtomicLong
 
-/** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous.
-  *
-  * Instances are not thread safe. */
+/** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous. */
 class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] {
   override implicit protected val m: MemArea[Array[Byte]] = new ByteArrayArea(availableMem)
 
