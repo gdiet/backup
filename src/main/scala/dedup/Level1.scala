@@ -73,9 +73,11 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       }
     }
 
-  def write(id: Long, offset: Long, size: Long, source: Pointer): Boolean =
-    guard(s"write($id, $offset, size $size, copy)") {
-      synchronized(files.get(id)).map(_._2.write(offset, size, source)).isDefined
+  /** @param data LazyList(position -> bytes).
+    * @return false if called without createAndOpen or open. */
+  def write(id: Long, data: LazyList[(Long, Array[Byte])]): Boolean =
+    guard(s"write($id, data)") {
+      synchronized(files.get(id)).map(_._2.write(data)).isDefined
     }
 
   def truncate(id: Long, size: Long): Boolean =

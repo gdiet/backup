@@ -34,12 +34,9 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
 
   def truncate(size: Long): Unit = synchronized { cache.truncate(size) }
 
-  def write(offset: Long, size: Long, source: Pointer): Unit = synchronized {
-    for (position <- 0L until size by memChunk; chunkSize = math.min(memChunk, size - position).toInt) {
-      val chunk = new Array[Byte](chunkSize)
-      source.get(position, chunk, 0, chunkSize)
-      cache.write(offset + position, chunk)
-    }
+  /** @param data LazyList(position -> bytes). */
+  def write(data: LazyList[(Long, Array[Byte])]): Unit = synchronized {
+    data.foreach { case (position, bytes) => cache.write(position, bytes) }
   }
 
   override def close(): Unit = synchronized {

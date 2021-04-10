@@ -263,10 +263,14 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
 
   override def write(path: String, source: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     if (readonly) EROFS else guard(s"write $path .. offset = $offset, size = $size") {
-      val intSize = size.toInt.abs
-      if (offset < 0 || size != intSize) EOVERFLOW
-      else if (store.write(fi.fh.get(), offset, size, source)) intSize
-      else EIO // false if called without create or open
+      val intSize = size.toInt.abs // We need to return an Int size, so here it is.
+      def data: LazyList[(Long, Array[Byte])] = LazyList.range(0, intSize, memChunk).map { readOffset =>
+        def chunkSize = math.min(memChunk, intSize - readOffset)
+        offset -> new Array[Byte](chunkSize).tap(source.get(readOffset, _, 0, chunkSize))
+      }
+      if (offset < 0 || size != intSize) EOVERFLOW // With intSize being .abs (see above) checks for negative size, too.
+      else if (store.write(fi.fh.get(), data)) intSize
+      else EIO // false if called without create or open.
     }
 
   override def truncate(path: String, size: Long): Int =
