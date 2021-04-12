@@ -52,27 +52,24 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
     _size = math.max(_size, position + data.length)
   }
 
-  /** @return Some(LazyList((holePosition, holeSize) | (dataPosition, bytes)))
-    *         or None if the request exceeds the cache size. */
-  def read(position: Long, size: Int): Option[LazyList[Either[(Long, Long), (Long, Array[Byte])]]] =
-    if (position + size > _size) None else Some {
-      // Read from memory cache.
-      memCache.read(position, size).flatMap {
-        case Right(data) => LazyList(Right(data))
-        // Fill holes from channel cache.
-        case Left(position -> size) => maybeChannelCache.map(_.read(position, size)).getOrElse(LazyList(Left(position -> size)))
-      }.flatMap {
-        case Right(data) => LazyList(Right(data))
-        case Left(position -> size) =>
-          // Fill holes from zero allocations cache.
-          zeroCache.read(position, size).flatMap {
-            case Left(left) =>
-              LazyList(Left(left))
-            case Right(localPos -> localSize) =>
-              LazyList.range(0L, localSize, memChunk)
-                .map(off => Right(localPos + off -> new Array[Byte](math.min(memChunk, localSize - off).asInt)))
-          }
-      }
+  /** @return LazyList((holePosition, holeSize) | (dataPosition, bytes)) where positions start at `position`. */
+  def read(position: Long, size: Int): LazyList[Either[(Long, Long), (Long, Array[Byte])]] =
+    // Read from memory cache.
+    memCache.read(position, size).flatMap {
+      case Right(data) => LazyList(Right(data))
+      // Fill holes from channel cache.
+      case Left(position -> size) => maybeChannelCache.map(_.read(position, size)).getOrElse(LazyList(Left(position -> size)))
+    }.flatMap {
+      case Right(data) => LazyList(Right(data))
+      case Left(position -> size) =>
+        // Fill holes from zero allocations cache.
+        zeroCache.read(position, size).flatMap {
+          case Left(left) =>
+            LazyList(Left(left))
+          case Right(localPos -> localSize) =>
+            LazyList.range(0L, localSize, memChunk)
+              .map(off => Right(localPos + off -> new Array[Byte](math.min(memChunk, localSize - off).asInt)))
+        }
     }
 
   override def close(): Unit = maybeChannelCache.foreach(_.close())

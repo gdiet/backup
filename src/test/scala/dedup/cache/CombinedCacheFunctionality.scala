@@ -14,13 +14,13 @@ object CombinedCacheFunctionality extends App {
   // Not up to date anymore - this was written when the return type of read() was different.
 
   println("\nRead empty cache:")
-  println(s"Holes: ${cache.read(0, 10).get.mkString(",")}")
+  println(s"Holes: ${cache.read(0, 10).mkString(",")}")
 
   println("\nWrite beyond end-of-file:")
   cache.write(14, Array[Byte](1,2))
-  println(s"Holes: ${cache.read(0, 16).get.mkString(",")}")
+  println(s"Holes: ${cache.read(0, 16).mkString(",")}")
 
   println("\nWrite to cache file:")
   cache.write(8, Array[Byte](3,4,5,6))
-  println(s"Holes: ${cache.read(0, 16).get.mkString(",")}")
+  println(s"Holes: ${cache.read(0, 16).mkString(",")}")
 }

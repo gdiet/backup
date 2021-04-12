@@ -89,16 +89,13 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   /** @param size Supports sizes larger than the internal size limit for byte arrays.
     * @param sink The sink to write data into. Providing this instead of returning the data read reduces memory
     *             consumption, especially in case of large reads.
-    * @return `false` if called without createAndOpen or open or if the request exceeds the entry size.
+    * @return `false` if not OK - called without createAndOpen or open or if the request exceeds the entry size.
     */
   def read[D: DataSink](id: Long, offset: Long, size: Int, sink: D): Boolean =
     guard(s"read($id, $offset, $size)") {
       synchronized(files.get(id)).exists { case (_, dataEntry) =>
         dataEntry.read(offset, size, sink)
         ???
-        // FIXME partitioning must be done in the dataEntry.read method
-//        Range(0, size, memChunk).forall { chunkOff =>
-//          val chunkSize = math.min(memChunk, size - chunkOff)
 //          dataEntry.read(offset + chunkOff, chunkSize).map {
 //            _.foreach {
 //              case Right(offset -> bytes) => sink.write(offset, bytes)
@@ -109,8 +106,6 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
 //            .map { holes =>
 //            holes.foreach { case (holePos, holeSize) => two.read(id, dataEntry.baseDataId, holePos, holeSize, sink) }
 //          }.isDefined
-//          ???
-//        }
       }
     }
 
