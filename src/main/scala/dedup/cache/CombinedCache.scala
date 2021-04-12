@@ -58,11 +58,11 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
     if (position + size > _size) None else Some {
       // Read from memory cache.
       memCache.read(position, size).flatMap {
-        case Right(data) => Vector(Right(data))
+        case Right(data) => LazyList(Right(data))
         // Fill holes from channel cache.
-        case Left(position -> size) => maybeChannelCache.map(_.read(position, size)).getOrElse(Vector(Left(position -> size)))
+        case Left(position -> size) => maybeChannelCache.map(_.read(position, size)).getOrElse(LazyList(Left(position -> size)))
       }.flatMap {
-        case Right(data) => Vector(Right(data))
+        case Right(data) => LazyList(Right(data))
         case Left(position -> size) =>
           // Fill holes from zero allocations cache.
           zeroCache.read(position, size).flatMap {
