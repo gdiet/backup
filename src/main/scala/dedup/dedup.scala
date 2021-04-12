@@ -19,4 +19,19 @@ package object dedup extends scala.util.ChainingSyntax {
     else if (l < 1000000000) "%,.2f MB".format(l/1000000d)
     else if (l < 1000000000000L) "%,.2f GB".format(l/1000000000d)
     else "%,.2f T".format(l/1000000000000d)
+
+  trait DataSink[D] {
+    def write(d: D, offset: Long, data: Array[Byte]): Unit
+  }
+
+  /* Could be made a value class, but in that case the implicit definition would have to go to the write method
+   * and this would pollute the namespace, because all objects would be extended, not only DataSink objects. */
+  implicit class DataSinkOps[D: DataSink](val d: D) {
+    def write(offset: Long, data: Array[Byte]): Unit = implicitly[DataSink[D]].write(d, offset, data)
+  }
+
+  implicit object PointerSink extends DataSink[jnr.ffi.Pointer] {
+    override def write(dataSink: jnr.ffi.Pointer, offset: Long, data: Array[Byte]): Unit =
+      dataSink.put(offset, data, 0, data.length)
+  }
 }

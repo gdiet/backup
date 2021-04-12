@@ -4,7 +4,7 @@ import dedup.ClassLogging
 
 object ClassLoggingPerformance extends App {
   class T extends ClassLogging {
-    log.info _
+    val x: (=> String) => Unit = log.info _
   }
 
   (1 to 10).foreach { _ =>
