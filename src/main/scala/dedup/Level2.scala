@@ -115,14 +115,27 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     if (endPosition >= readEnd) data else data :+ new Array((readSize - endPosition).toInt)
   }
 
-  def read(id: Long, dataId: Long, offset: Long, size: Long): LazyList[(Long, Array[Byte])] = {
+  def read[D: DataSink](id: Long, dataId: Long, offset: Long, size: Long, sink: D): Unit = {
     synchronized(files.get(id))
       .map { entries =>
+
+        def readOne(entries: Vector[DataEntry], holes: Vector[(Long, Int)]) = {
+          entries match {
+            case Vector() => holes.foreach { case (position, size) => ??? }
+            case entry +: tail =>
+              holes.flatMap { case (position, size) =>
+                entry.read(position, size, sink)
+                ???
+              }
+          }
+        }
+
+        entries.reverse
+        //        entries.reverse.foldLeft(readFromLts _) { case (readMethod, entry) =>
+        //          (_, off, siz) => entry.read(off, siz, sink) //  readMethod) FIXME
+        //          ???
+        //        }(dataId, offset, size)
         ???
-//        entries.reverse.foldLeft(readFromLts _) { case (readMethod, entry) =>
-//          (_, off, siz) => entry.read(off, siz, sink) //  readMethod) FIXME
-//          ???
-//        }(dataId, offset, size)
       }
     ???
   }

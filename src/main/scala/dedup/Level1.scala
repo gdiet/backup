@@ -94,18 +94,11 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   def read[D: DataSink](id: Long, offset: Long, size: Int, sink: D): Boolean =
     guard(s"read($id, $offset, $size)") {
       synchronized(files.get(id)).exists { case (_, dataEntry) =>
-        dataEntry.read(offset, size, sink)
-        ???
-//          dataEntry.read(offset + chunkOff, chunkSize).map {
-//            _.foreach {
-//              case Right(offset -> bytes) => sink.write(offset, bytes)
-//              case Left(offset -> size)   => two.read(id, dataEntry.baseDataId, offset, size)
-//            }
-//          }.isDefined
-//
-//            .map { holes =>
-//            holes.foreach { case (holePos, holeSize) => two.read(id, dataEntry.baseDataId, holePos, holeSize, sink) }
-//          }.isDefined
+        dataEntry.read(offset, size, sink).map {
+          _.foreach { case holeOffset -> holeSize =>
+            two.read(id, dataEntry.baseDataId, holeOffset, holeSize, sink)
+          }
+        }.isDefined
       }
     }
 
