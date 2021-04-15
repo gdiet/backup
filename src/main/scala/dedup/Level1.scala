@@ -89,17 +89,15 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   /** @param size Supports sizes larger than the internal size limit for byte arrays.
     * @param sink The sink to write data into. Providing this instead of returning the data read reduces memory
     *             consumption, especially in case of large reads.
-    * @return `false` if not OK - called without createAndOpen or open or if the request exceeds the entry size.
+    * @return `false` if called without createAndOpen.
     */
   def read[D: DataSink](id: Long, offset: Long, size: Int, sink: D): Boolean =
     guard(s"read($id, $offset, $size)") {
-      synchronized(files.get(id)).exists { case (_, dataEntry) =>
+      synchronized(files.get(id)).map { case (_, dataEntry) =>
         dataEntry.read(offset, size, sink).map {
-          _.foreach { case holeOffset -> holeSize =>
-            two.read(id, dataEntry.baseDataId, holeOffset, holeSize, sink)
-          }
-        }.isDefined
-      }
+          case holeOffset -> holeSize => two.read(id, dataEntry.baseDataId, holeOffset, holeSize, sink)
+        }
+      }.isDefined
     }
 
   def release(id: Long): Boolean =

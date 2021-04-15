@@ -2,10 +2,9 @@ package dedup
 
 import dedup.store.LongTermStore
 
-import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{Executors, TimeUnit}
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.ExecutionContext
 
 class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   private val con = H2.file(settings.dbDir, settings.readonly)
@@ -43,54 +42,55 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
       log.trace(s"ID $id - persisting data entry, size ${dataEntry.size} / base data id ${dataEntry.baseDataId}.")
       synchronized(files += id -> (dataEntry +: files.getOrElse(id, Vector())))
 
-      // Persist async
-      Future(try {
-        val end = dataEntry.size
-        // Must be def to avoid memory problems.
-        def data = LazyList.range(0L, end, memChunk).map { position =>
-          val chunkSize = math.min(memChunk, end - position).toInt
-          val chunk = new Array[Byte](chunkSize)
-          ???
-//          dataEntry.read(position, chunkSize, chunk)((sink: Array[Byte], offset: Long, data: Array[Byte]) =>
-//            System.arraycopy(data, 0, sink, offset.asInt, data.length)
-//          ) match {
-//            case None => log.warn(s"Persist: Did not get all data: $position $chunkSize - ${dataEntry.size}")
-//            case Some(holes) =>
-//              holes.foreach { case (holePos, holeSize) =>
-//                readFromLts(dataEntry.baseDataId, holePos, holeSize.asInt)
-//              }
-//          }
-//          chunk
-        }
-        // Calculate hash
-        val md = MessageDigest.getInstance(hashAlgorithm)
-//        data.foreach(md.update)
-        ???
-        val hash = md.digest()
-        // Check if already known
-        db.dataEntry(hash, dataEntry.size) match {
-          // Already known, simply link
-          case Some(dataId) =>
-            db.setDataId(id, dataId)
-            log.trace(s"Persisted $id - content known, linking to dataId $dataId")
-          // Not yet known, store ...
-          case None =>
-            // Reserve storage space
-            val start = startOfFreeData.getAndAdd(dataEntry.size)
-            // Write to storage
-            ???
-//            data.foldLeft(0L) { case (position, data) =>
-//              lts.write(start + position, data)
-//              position + data.length
-//            }
-            // 5c. create data entry
-            val dataId = db.newDataIdFor(id)
-            db.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
-            log.trace(s"Persisted $id - new content, dataId $dataId")
-        }
-        synchronized(files -= id)
-        dataEntry.close()
-      } catch { case e: Throwable => log.error(s"Persisting $id failed.", e); throw e })(storeContext)
+      // FIXME Persist async
+//      Future(try {
+//        val end = dataEntry.size
+//        // Must be def to avoid memory problems.
+//        def data = LazyList.range(0L, end, memChunk).map { position =>
+//          val chunkSize = math.min(memChunk, end - position).toInt
+//          val chunk = new Array[Byte](chunkSize)
+//          ???
+////          dataEntry.read(position, chunkSize, chunk)((sink: Array[Byte], offset: Long, data: Array[Byte]) =>
+////            System.arraycopy(data, 0, sink, offset.asInt, data.length)
+////          ) match {
+////            case None => log.warn(s"Persist: Did not get all data: $position $chunkSize - ${dataEntry.size}")
+////            case Some(holes) =>
+////              holes.foreach { case (holePos, holeSize) =>
+////                readFromLts(dataEntry.baseDataId, holePos, holeSize.asInt)
+////              }
+////          }
+////          chunk
+//        }
+//        // Calculate hash
+//        val md = MessageDigest.getInstance(hashAlgorithm)
+////        data.foreach(md.update)
+//        ???
+//        val hash = md.digest()
+//        // Check if already known
+//        db.dataEntry(hash, dataEntry.size) match {
+//          // Already known, simply link
+//          case Some(dataId) =>
+//            db.setDataId(id, dataId)
+//            log.trace(s"Persisted $id - content known, linking to dataId $dataId")
+//          // Not yet known, store ...
+//          case None =>
+//            // Reserve storage space
+//            val start = startOfFreeData.getAndAdd(dataEntry.size)
+//            // Write to storage
+//            ???
+////            data.foldLeft(0L) { case (position, data) =>
+////              lts.write(start + position, data)
+////              position + data.length
+////            }
+//            // 5c. create data entry
+//            val dataId = db.newDataIdFor(id)
+//            db.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
+//            log.trace(s"Persisted $id - new content, dataId $dataId")
+//        }
+//        synchronized(files -= id)
+//        dataEntry.close()
+//      } catch { case e: Throwable => log.error(s"Persisting $id failed.", e); throw e })(storeContext)
+
     }
 
   def size(id: Long, dataId: Long): Long =
@@ -123,43 +123,20 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   /** Implementation (hopefully) guarantees that no read beyond end-of-entry takes place here. */
   def read[D: DataSink](id: Long, dataId: Long, offset: Long, size: Long, sink: D): Unit = {
     lazy val ltsParts = db.parts(dataId)
-    synchronized(files.get(id))
-      .map { entries =>
-        def recurse(entries: Vector[DataEntry], holes: Vector[(Long, Long)]): Unit = {
-          entries match {
-            case Vector() =>
-              holes.foreach { case (position, size) =>
-                readFromLts(ltsParts, position, size, position).foreach { case partPos -> data =>
-                  sink.write(partPos, data)
-                }
-              }
-            case entry +: remaining =>
-              holes.flatMap { case (position, size) =>
-//                entry.read(position, size, sink)
-                ???
-              }
-              recurse(remaining, ???)
+    @annotation.tailrec
+    def readFrom(entries: Vector[DataEntry], holes: Vector[(Long, Long)]): Unit = {
+      entries match {
+        case Vector() =>
+          holes.foreach { case (position, size) =>
+            readFromLts(ltsParts, position, size, position).foreach { case partPos -> data =>
+              sink.write(partPos, data)
+            }
           }
-        }
-
-        entries.reverse
-        //        entries.reverse.foldLeft(readFromLts _) { case (readMethod, entry) =>
-        //          (_, off, siz) => entry.read(off, siz, sink) //  readMethod) FIXME
-        //          ???
-        //        }(dataId, offset, size)
-        ???
-      }
-    ???
-  }
-  //      .getOrElse(readFromLts(dataId, offset, size)) FIXME
-  /*
-  def read(id: Long, offset: Long, size: Int, sink: Pointer): Boolean =
-    guard(s"read($id, $offset, $size)") {
-      synchronized(files.get(id)).exists { case (_, dataEntry) =>
-        dataEntry.read(offset, size, sink).map { holes =>
-            holes.foreach { case (holePos, holeSize) => two.read(id, dataEntry.baseDataId, holePos, holeSize, sink) }
-        }.isDefined
+        case entry +: remaining =>
+          val newHoles = holes.flatMap { case (position, size) => entry.read(position, size, sink) }
+          if (newHoles.nonEmpty) readFrom(remaining, newHoles)
       }
     }
-   */
+    readFrom(synchronized(files.get(id)).getOrElse(Vector()), Vector(offset -> size))
+  }
 }
