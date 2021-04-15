@@ -184,7 +184,8 @@ object DBMaintenance {
               val gap +: otherGaps = gaps
               val copySize = math.min(memChunk, math.min(gap.size, chunk.size)).toInt
               log.debug(s"COPY at ${chunk.start} size $copySize to ${gap.start}")
-              lts.write(gap.start, lts.read(chunk.start, copySize))
+              // TODO can be optimized with the new read
+              lts.read(chunk.start, copySize, gap.start).foreach { case (position, data) => lts.write(position, data) }
               val restOfGap = (gap.start + copySize, gap.stop)
               val remainingGaps = if (restOfGap.size > 0) restOfGap +: otherGaps else otherGaps
               val restOfChunk = (chunk.start + copySize, chunk.stop)

@@ -98,6 +98,19 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   def size(id: Long, dataId: Long): Long =
     synchronized(files.get(id)).map(_.head.size).getOrElse(db.dataSize(dataId))
 
+  private def readFromLts(readSize: Long, ltsStart: Long, ltsEnd: Long, resultOffset: Long): LazyList[Array[Byte]] = {
+    require(readSize > 0, s"Read size $readSize should be > 0.")
+    lts.read(ltsStart, math.min(readSize, ltsEnd - ltsStart), resultOffset)
+
+    ???
+  }
+
+  private def readFromLts(parts: Vector[(Long, Long)], readFrom: Long, readSize: Int): LazyList[Array[Byte]] = {
+    require(readSize > 0, s"Read size $readSize should be > 0.")
+
+    ???
+  }
+
   private def readFromLts(dataId: Long, readFrom: Long, readSize: Int): Vector[Array[Byte]] = {
     require(readSize > 0, s"Read size $readSize !> 0")
     val readEnd = readFrom + readSize
@@ -108,25 +121,31 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
       else {
         val skipInChunk = math.max(0, readFrom - readPosition)
         val takeOfChunk = math.min(chunkLen - skipInChunk, readEnd - readPosition - skipInChunk).toInt
-        readPosition + skipInChunk + takeOfChunk -> (result :+ lts.read(chunkStart + skipInChunk, takeOfChunk))
+//        readPosition + skipInChunk + takeOfChunk -> (result :+ lts.read(chunkStart + skipInChunk, takeOfChunk))
+        ???
       }
     }
     require(endPosition <= readEnd, s"Actually read $endPosition !<= read end $readEnd")
     if (endPosition >= readEnd) data else data :+ new Array((readSize - endPosition).toInt)
   }
 
+  /** Implementation (hopefully) guarantees that no read beyond end-of-entry takes place here. */
   def read[D: DataSink](id: Long, dataId: Long, offset: Long, size: Long, sink: D): Unit = {
     synchronized(files.get(id))
       .map { entries =>
-
-        def readOne(entries: Vector[DataEntry], holes: Vector[(Long, Int)]) = {
+        @annotation.tailrec
+        def recurse(entries: Vector[DataEntry], holes: Vector[(Long, Int)]): Unit = {
           entries match {
-            case Vector() => holes.foreach { case (position, size) => ??? }
-            case entry +: tail =>
+            case Vector() =>
+              holes.foreach { case (position, size) =>
+                readFromLts(dataId, position, size)
+              }
+            case entry +: remaining =>
               holes.flatMap { case (position, size) =>
                 entry.read(position, size, sink)
                 ???
               }
+              recurse(remaining, ???)
           }
         }
 

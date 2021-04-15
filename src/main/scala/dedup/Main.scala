@@ -14,7 +14,7 @@ import scala.util.Using.{resource, resources}
 object Main extends App with ClassLogging {
   // FIXME review uses of require and assert
 
-  def failureExit(msg: String*): Nothing = { msg.foreach(log.error); Thread.sleep(200); sys.exit(1) }
+  def failureExit(msg: String*): Nothing = { msg.foreach(log.error(_)); Thread.sleep(200); sys.exit(1) }
 
   try {
     val (options, commands) = args.partition(_.contains("=")).pipe { case (options, commands) =>
