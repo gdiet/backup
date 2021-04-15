@@ -30,16 +30,13 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
 
   /** @param size Supports sizes larger than the internal size limit for byte arrays.
     * @param sink The sink to write data into. Providing this instead of returning the data read reduces memory
-    *             consumption, especially in case of large reads, while allowing atomic / synchronized reads.
+    *             consumption in case of large reads while allowing atomic / synchronized reads.
     * @return Some(Vector((holePosition, holeSize))) or None if the request exceeds the entry size. */
-  def read[D: DataSink](offset: Long, size: Int, sink: D): Option[Vector[(Long, Long)]] = synchronized {
+  def read[D: DataSink](offset: Long, size: Long, sink: D): Option[Vector[(Long, Long)]] = synchronized {
     if (cache.size < offset + size) None else Some {
-      Range(0, size, memChunk).flatMap { chunkOffset =>
-        val chunkSize = math.min(memChunk, size - chunkOffset)
-        cache.read(offset + chunkOffset, chunkSize).flatMap {
-          case Left(hole) => Some(hole)
-          case Right(position -> data) => sink.write(position - offset, data); None
-        }
+      cache.read(offset, size).flatMap {
+        case Left(hole) => Some(hole)
+        case Right(position -> data) => sink.write(position - offset, data); None
       }.toVector
     }
   }

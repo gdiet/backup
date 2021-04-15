@@ -152,15 +152,15 @@ class Database(connection: Connection) { import Database._
   }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
   private val qParts = connection.prepareStatement(
-    "SELECT start, stop FROM DataEntries WHERE id = ? ORDER BY seq ASC"
+    "SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC"
   )
   def parts(dataId: Long): Vector[(Long, Long)] = sync {
     qParts.setLong(1, dataId)
     resource(qParts.executeQuery())(_.seq { rs =>
-      val (start, stop) = rs.getLong(1) -> rs.getLong(2)
-      require(start >= 0, s"start >= 0 ... $start") // TODO eventually distinuish between require and assert and so on
-      require(stop >= start, s"stop >= start ... $stop / $start")
-      start -> stop
+      val (start, size) = rs.getLong(1) -> rs.getLong(2)
+      assert(start >= 0, s"Start $start must be >= 0.")
+      assert(size >= 0, s"Size $size must be >= 0.")
+      start -> size
     })
   }
 

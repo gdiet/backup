@@ -53,7 +53,7 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
   }
 
   /** @return LazyList((holePosition, holeSize) | (dataPosition, bytes)) where positions start at `position`. */
-  def read(position: Long, size: Int): LazyList[Either[(Long, Long), (Long, Array[Byte])]] =
+  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] =
     // Read from memory cache.
     memCache.read(position, size).flatMap {
       case Right(data) => LazyList(Right(data))

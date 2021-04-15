@@ -1,8 +1,6 @@
 package dedup
 
-import dedup.cache.LongDecorator
 import dedup.store.LongTermStore
-import jnr.ffi.Pointer
 
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicLong
@@ -122,38 +120,22 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     recurse(partsToReadFrom, readSize, 0L)
   }
 
-  private def readFromLts(dataId: Long, readFrom: Long, readSize: Int): Vector[Array[Byte]] = {
-    require(readSize > 0, s"Read size $readSize !> 0")
-    val readEnd = readFrom + readSize
-    val endPosition -> data = db.parts(dataId).foldLeft(0L -> Vector.empty[Array[Byte]]) { case (readPosition -> result, chunkStart -> chunkEnd) =>
-      val chunkLen = chunkEnd - chunkStart
-      if (readPosition + chunkLen <= readFrom) readPosition + chunkLen -> result
-      else  if (readPosition >= readEnd) readPosition -> result
-      else {
-        val skipInChunk = math.max(0, readFrom - readPosition)
-        val takeOfChunk = math.min(chunkLen - skipInChunk, readEnd - readPosition - skipInChunk).toInt
-//        readPosition + skipInChunk + takeOfChunk -> (result :+ lts.read(chunkStart + skipInChunk, takeOfChunk))
-        ???
-      }
-    }
-    require(endPosition <= readEnd, s"Actually read $endPosition !<= read end $readEnd")
-    if (endPosition >= readEnd) data else data :+ new Array((readSize - endPosition).toInt)
-  }
-
   /** Implementation (hopefully) guarantees that no read beyond end-of-entry takes place here. */
   def read[D: DataSink](id: Long, dataId: Long, offset: Long, size: Long, sink: D): Unit = {
+    lazy val ltsParts = db.parts(dataId)
     synchronized(files.get(id))
       .map { entries =>
-        @annotation.tailrec
-        def recurse(entries: Vector[DataEntry], holes: Vector[(Long, Int)]): Unit = {
+        def recurse(entries: Vector[DataEntry], holes: Vector[(Long, Long)]): Unit = {
           entries match {
             case Vector() =>
               holes.foreach { case (position, size) =>
-                readFromLts(dataId, position, size)
+                readFromLts(ltsParts, position, size, position).foreach { case partPos -> data =>
+                  sink.write(partPos, data)
+                }
               }
             case entry +: remaining =>
               holes.flatMap { case (position, size) =>
-                entry.read(position, size, sink)
+//                entry.read(position, size, sink)
                 ???
               }
               recurse(remaining, ???)

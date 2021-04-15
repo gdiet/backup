@@ -1,6 +1,6 @@
 package dedup.cache
 
-import dedup.{ClassLogging, scalaUtilChainingOps}
+import dedup.{ClassLogging, memChunk, scalaUtilChainingOps}
 
 import java.nio.ByteBuffer
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
@@ -26,6 +26,7 @@ class ChannelCache(path: Path)(implicit val m: MemArea[Int]) extends CacheBase[I
 
   /** Assumes that the area to write is clear. */
   def write(offset: Long, data: Array[Byte]): Unit = {
+    if (data.length > memChunk) log.warn(s"Writing large data chunk of size ${data.length}.")
     entries.put(offset, data.length)
     channel.position(offset)
     channel.write(ByteBuffer.wrap(data, 0, data.length))
