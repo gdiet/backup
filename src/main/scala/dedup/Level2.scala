@@ -98,17 +98,28 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   def size(id: Long, dataId: Long): Long =
     synchronized(files.get(id)).map(_.head.size).getOrElse(db.dataSize(dataId))
 
-  private def readFromLts(readSize: Long, ltsStart: Long, ltsEnd: Long, resultOffset: Long): LazyList[Array[Byte]] = {
-    require(readSize > 0, s"Read size $readSize should be > 0.")
-    lts.read(ltsStart, math.min(readSize, ltsEnd - ltsStart), resultOffset)
-
-    ???
-  }
-
-  private def readFromLts(parts: Vector[(Long, Long)], readFrom: Long, readSize: Int): LazyList[Array[Byte]] = {
-    require(readSize > 0, s"Read size $readSize should be > 0.")
-
-    ???
+  /** @param parts    List of (position, size) defining the LTS parts of the file to read from.
+    *                 `readFrom` + `readSize` must not exceed summed part sizes.
+    * @param readFrom Position in the file to start reading at, must be >= 0.
+    * @param readSize Number of bytes to read, must be >= 0.
+    * @return A contiguous LazyList(position, bytes) where data chunk size is limited to [[dedup.memChunk]]. */
+  private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] = {
+    require(readFrom > 0, s"Read offset $readFrom must be > 0.")
+    require(readSize > 0, s"Read size $readSize must be > 0.")
+    val (lengthOfParts, partsToReadFrom) = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
+      case ((currentOffset, result), part @ (partPosition, partSize)) =>
+        val distance = readFrom - currentOffset
+        if (distance > partSize) currentOffset + partSize -> result
+        else if (distance > 0) currentOffset + partSize -> (result :+ (partPosition + distance, partSize - distance))
+        else currentOffset + partSize -> (result :+ part)
+    }
+    require(lengthOfParts >= readFrom + readSize, s"Read offset $readFrom size $readSize exceeds parts length $parts.")
+    def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] = {
+      val (partPosition, partSize) +: rest = remainingParts
+      if (partSize < readSize) lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
+      else lts.read(partPosition, readSize, resultOffset)
+    }
+    recurse(partsToReadFrom, readSize, 0L)
   }
 
   private def readFromLts(dataId: Long, readFrom: Long, readSize: Int): Vector[Array[Byte]] = {

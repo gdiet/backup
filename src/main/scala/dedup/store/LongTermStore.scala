@@ -77,7 +77,7 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess[Ran
   /** @param position     The position in the store to start reading at, must be >= 0.
     * @param size         The number of bytes to read, must be >= 0.
     * @param resultOffset Start offset for return positions.
-    * @return A contiguous LazyList(offset, data) where data chunk size is limited to [[dedup.memChunk]]. */
+    * @return A contiguous LazyList(position, bytes) where data chunk size is limited to [[dedup.memChunk]]. */
   def read(position: Long, size: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] = if (size == 0) LazyList() else {
     val (alreadyRead, bytes) = readChunk(position, size)
     if (alreadyRead == size) LazyList(resultOffset -> bytes)
