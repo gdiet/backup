@@ -133,7 +133,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
             }
           }
         case entry +: remaining =>
-          val newHoles = holes.flatMap { case (position, size) => entry.read(position, size, sink) }
+          val newHoles = holes.flatMap { case (position, size) => entry.read(position, size, sink)._2 }
           if (newHoles.nonEmpty) readFrom(remaining, newHoles)
       }
     }

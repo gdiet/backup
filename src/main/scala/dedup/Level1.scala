@@ -1,5 +1,6 @@
 package dedup
 
+import dedup.cache.LongDecorator
 import jnr.ffi.Pointer
 
 /** Manages currently open files. Forwards everything else to LevelTwo. */
@@ -89,15 +90,15 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   /** @param size Supports sizes larger than the internal size limit for byte arrays.
     * @param sink The sink to write data into. Providing this instead of returning the data read reduces memory
     *             consumption, especially in case of large reads.
-    * @return `false` if called without createAndOpen.
+    * @return Some(actual size read) or None if called without createAndOpen.
     */
-  def read[D: DataSink](id: Long, offset: Long, size: Int, sink: D): Boolean =
+  def read[D: DataSink](id: Long, offset: Long, size: Long, sink: D): Option[Long] =
     guard(s"read($id, $offset, $size)") {
       synchronized(files.get(id)).map { case (_, dataEntry) =>
-        dataEntry.read(offset, size, sink).map {
-          case holeOffset -> holeSize => two.read(id, dataEntry.baseDataId, holeOffset, holeSize, sink)
-        }
-      }.isDefined
+        val (sizeRead, holes) = dataEntry.read(offset, size, sink)
+        holes.foreach { case holeOffset -> holeSize => two.read(id, dataEntry.baseDataId, holeOffset, holeSize, sink) }
+        sizeRead
+      }
     }
 
   def release(id: Long): Boolean =

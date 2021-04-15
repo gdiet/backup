@@ -288,8 +288,9 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
       val intSize = size.toInt.abs // We need to return an Int size, so here it is.
       if (offset < 0 || size != intSize) EOVERFLOW else { // With intSize being .abs (see above) checks for negative size, too.
         val fileHandle = fi.fh.get()
-        if (store.read(fileHandle, offset, intSize, sink)) intSize
-        else { log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); ENOENT }
+        store
+          .read(fileHandle, offset, intSize, sink).map(_.toInt)
+          .getOrElse { log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); ENOENT }
       }
     }
 
