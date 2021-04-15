@@ -6,7 +6,7 @@ package dedup
   * consider using the companion object for class logging. In this case see also
   *
   * @see https://stackoverflow.com/questions/13713557/scala-accessing-protected-field-of-companion-objects-trait */
-trait ClassLogging { protected val log: Logger = new Slf4jLogger }
+trait ClassLogging { protected val log: Logger = new Slf4jLogger(getClass.getName) }
 
 trait Logger {
   def trace(msg: => String): Unit
@@ -20,8 +20,8 @@ trait Logger {
   def error(msg: => String, e: => Throwable): Unit
 }
 
-class Slf4jLogger extends Logger {
-  private val logger: org.slf4j.Logger = org.slf4j.LoggerFactory.getLogger(getClass.getName.stripSuffix("$"))
+class Slf4jLogger(name: String) extends Logger {
+  private val logger: org.slf4j.Logger = org.slf4j.LoggerFactory.getLogger(name.stripSuffix("$"))
   def trace(msg: => String): Unit = if (logger.isTraceEnabled) logger.trace(msg)
   def debug(msg: => String): Unit = if (logger.isDebugEnabled) logger.debug(msg)
   def info (msg: => String): Unit = if (logger.isInfoEnabled)  logger.info (msg)
