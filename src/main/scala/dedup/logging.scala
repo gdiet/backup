@@ -14,6 +14,9 @@ trait Logger {
   def info (msg: => String): Unit
   def warn (msg: => String): Unit
   def error(msg: => String): Unit
+  def trace(msg: => String, e: => Throwable): Unit
+  def debug(msg: => String, e: => Throwable): Unit
+  def info (msg: => String, e: => Throwable): Unit
   def error(msg: => String, e: => Throwable): Unit
 }
 
@@ -24,5 +27,9 @@ class Slf4jLogger extends Logger {
   def info (msg: => String): Unit = if (logger.isInfoEnabled)  logger.info (msg)
   def warn (msg: => String): Unit = if (logger.isWarnEnabled)  logger.warn (msg)
   def error(msg: => String): Unit = logger.error(msg)
+  def trace(msg: => String, e: => Throwable): Unit = logger.error(msg, e)
+  def debug(msg: => String, e: => Throwable): Unit = logger.error(msg, e)
+  def info (msg: => String, e: => Throwable): Unit = logger.error(msg, e)
+  def warn (msg: => String, e: => Throwable): Unit = logger.error(msg, e)
   def error(msg: => String, e: => Throwable): Unit = logger.error(msg, e)
 }

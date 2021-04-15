@@ -47,7 +47,7 @@ object Main extends App with ClassLogging {
         resource(H2.file(dbDir, readonly = false))(DBMaintenance.reclaimSpace1(_, keepDeletedDays))
 
       case List("reclaimspace2") =>
-        resources(H2.file(dbDir, readonly = false), new LongTermStore(LongTermStore.ltsDir(repo), false)) {
+        resources(H2.file(dbDir, readonly = false), new LongTermStore(???, false)) {
           case (db, lts) => DBMaintenance.reclaimSpace2(db, lts)
         }
 
