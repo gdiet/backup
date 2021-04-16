@@ -2,23 +2,25 @@ package dedup
 
 import dedup.store.LongTermStore
 
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{Executors, TimeUnit}
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 
 class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   private val con = H2.file(settings.dbDir, settings.readonly)
   private val db = new Database(con)
   private val lts = new LongTermStore(settings.dataDir, settings.readonly)
   private val startOfFreeData = new AtomicLong(db.startOfFreeData)
-  private val storeContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
+  /** Store logic relies on this being a single thread executor. */
+  private val singleThreadStoreContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
   /** id -> dataEntries. dataEntries is non-empty. Remember to synchronize. */
   private var files = Map[Long, Vector[DataEntry]]()
 
   override def close(): Unit = {
-    storeContext.shutdown()
-    storeContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
+    singleThreadStoreContext.shutdown()
+    singleThreadStoreContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
     con.close()
   }
 
@@ -40,57 +42,48 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     if (dataEntry.size == 0) { db.setDataId(id, -1); dataEntry.close() }
     else {
       log.trace(s"ID $id - persisting data entry, size ${dataEntry.size} / base data id ${dataEntry.baseDataId}.")
-      synchronized(files += id -> (dataEntry +: files.getOrElse(id, Vector())))
+      synchronized {
+        files += id -> (dataEntry +: files.getOrElse(id, Vector()))
 
-      // FIXME Persist async
-//      Future(try {
-//        val end = dataEntry.size
-//        // Must be def to avoid memory problems.
-//        def data = LazyList.range(0L, end, memChunk).map { position =>
-//          val chunkSize = math.min(memChunk, end - position).toInt
-//          val chunk = new Array[Byte](chunkSize)
-//          ???
-////          dataEntry.read(position, chunkSize, chunk)((sink: Array[Byte], offset: Long, data: Array[Byte]) =>
-////            System.arraycopy(data, 0, sink, offset.asInt, data.length)
-////          ) match {
-////            case None => log.warn(s"Persist: Did not get all data: $position $chunkSize - ${dataEntry.size}")
-////            case Some(holes) =>
-////              holes.foreach { case (holePos, holeSize) =>
-////                readFromLts(dataEntry.baseDataId, holePos, holeSize.asInt)
-////              }
-////          }
-////          chunk
-//        }
-//        // Calculate hash
-//        val md = MessageDigest.getInstance(hashAlgorithm)
-////        data.foreach(md.update)
-//        ???
-//        val hash = md.digest()
-//        // Check if already known
-//        db.dataEntry(hash, dataEntry.size) match {
-//          // Already known, simply link
-//          case Some(dataId) =>
-//            db.setDataId(id, dataId)
-//            log.trace(s"Persisted $id - content known, linking to dataId $dataId")
-//          // Not yet known, store ...
-//          case None =>
-//            // Reserve storage space
-//            val start = startOfFreeData.getAndAdd(dataEntry.size)
-//            // Write to storage
-//            ???
-////            data.foldLeft(0L) { case (position, data) =>
-////              lts.write(start + position, data)
-////              position + data.length
-////            }
-//            // 5c. create data entry
-//            val dataId = db.newDataIdFor(id)
-//            db.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
-//            log.trace(s"Persisted $id - new content, dataId $dataId")
-//        }
-//        synchronized(files -= id)
-//        dataEntry.close()
-//      } catch { case e: Throwable => log.error(s"Persisting $id failed.", e); throw e })(storeContext)
-
+        // Persist async. Creating the future synchronized makes sure data entries are processed in the right order.
+        Future(try {
+          // Here in the Future the context is not synchronized anymore.
+          val ltsParts = db.parts(dataEntry.baseDataId)
+          def data: LazyList[(Long, Array[Byte])] = dataEntry.readUnsafe(0, dataEntry.size)._2.flatMap {
+            case Right(data) => LazyList(data)
+            case Left((position, offset)) => readFromLts(ltsParts, position, offset, position)
+          }
+          // Calculate hash
+          val md = MessageDigest.getInstance(hashAlgorithm)
+          data.foreach(data => md.update(data._2))
+          val hash = md.digest()
+          // Check if already known
+          db.dataEntry(hash, dataEntry.size) match {
+            // Already known, simply link
+            case Some(dataId) =>
+              db.setDataId(id, dataId)
+              log.trace(s"Persisted $id - content known, linking to dataId $dataId")
+            // Not yet known, store ...
+            case None =>
+              // Reserve storage space
+              val start = startOfFreeData.getAndAdd(dataEntry.size)
+              // Write to storage
+              data.foreach { case (offset, bytes) => lts.write(start + offset, bytes) }
+              // create data entry
+              val dataId = db.newDataIdFor(id)
+              db.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
+              log.trace(s"Persisted $id - new content, dataId $dataId")
+          }
+          // Remove persisted DataEntry from level 2.
+          synchronized {
+            val filteredEntries = files(id).filterNot(_.id == dataEntry.id)
+            if (filteredEntries.nonEmpty) files += id -> filteredEntries else {
+              files -= id
+              log.trace(s"Fully persisted file $id.")
+            }
+          }
+        } catch { case e: Throwable => log.error(s"Persisting $id failed.", e); throw e })(singleThreadStoreContext)
+      }
     }
 
   def size(id: Long, dataId: Long): Long =

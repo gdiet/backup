@@ -19,7 +19,7 @@ object DataEntry {
   *
   * @param baseDataId Id of the data record this entry updates. -1 if this entry is independent. */
 class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends AutoCloseable with ClassLogging {
-  private val id = currentId.incrementAndGet()
+  val id: Long = currentId.incrementAndGet()
   log.trace(s"Create $id with base data ID $baseDataId.")
 
   private val path = tempDir.resolve(s"$id")
@@ -31,13 +31,22 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
   /** @param size Supports sizes larger than the internal size limit for byte arrays.
     * @param sink The sink to write data into. Providing this instead of returning the data read reduces memory
     *             consumption in case of large reads while allowing atomic / synchronized reads.
-    * @return Vector((holePosition, holeSize)) */
+    * @return (actual size read, Vector((holePosition, holeSize))) */
   def read[D: DataSink](offset: Long, size: Long, sink: D): (Long, Vector[(Long, Long)]) = synchronized {
-    val sizeToRead = math.min(size, cache.size - offset)
-    sizeToRead -> cache.read(offset, sizeToRead).flatMap {
+    val (sizeRead, readResult) = readUnsafe(offset, size)
+    sizeRead -> readResult.flatMap {
       case Left(hole) => Some(hole)
       case Right(position -> data) => sink.write(position - offset, data); None
     }.toVector
+  }
+
+  /** Unsafe: Should only be used if it is ensured that no writes to the DataEntry occur during the read process.
+    *
+    * @param size Supports sizes larger than the internal size limit for byte arrays.
+    * @return (actual size read, Vector(Either(holePosition, holeSize | position, bytes)) */
+  def readUnsafe(offset: Long, size: Long): (Long, LazyList[Either[(Long, Long), (Long, Array[Byte])]]) = synchronized {
+    val sizeToRead = math.min(size, cache.size - offset)
+    sizeToRead -> cache.read(offset, sizeToRead)
   }
 
   def truncate(size: Long): Unit = synchronized { cache.truncate(size) }
