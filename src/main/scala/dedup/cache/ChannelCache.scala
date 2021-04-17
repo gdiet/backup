@@ -36,10 +36,11 @@ class ChannelCache(path: Path)(implicit val m: MemArea[Int]) extends CacheBase[I
     areasInSection(position, size).map {
       case Left(left) => Left(left)
       case Right(localPos -> localSize) =>
+        val bytes = new Array[Byte](localSize)
+        val buffer = ByteBuffer.wrap(bytes)
         channel.position(localPos)
-        Right(localPos -> new Array[Byte](localSize).tap { data =>
-          while (channel.read(ByteBuffer.wrap(data)) > 0) {/**/}
-        })
+        if (channel.read(buffer) < localSize) while (channel.read(buffer) > 0) {/**/}
+        Right(localPos -> bytes)
     }
   }
 }
