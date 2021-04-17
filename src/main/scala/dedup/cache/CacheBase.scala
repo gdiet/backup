@@ -50,34 +50,38 @@ trait CacheBase[M] {
   }
 
   protected def areasInSection(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, M)]] = {
-    // Identify the relevant entries.
-    var section = Vector[(Long, M)]()
-    val startKey = Option(entries.floorKey(position)).getOrElse(position)
-    val subMap = entries.subMap(startKey, position + size - 1)
-    subMap.forEach((pos: Long, dat: M) => section :+= (pos -> dat))
-    if (section.isEmpty) LazyList(Left(position -> size)) else {
-
+    {
+      // Identify the relevant entries.
+      val startKey = Option(entries.floorKey(position)).getOrElse(position)
+      import scala.jdk.CollectionConverters.MapHasAsScala
+      var section = entries.subMap(startKey, position + size - 1).asScala.toVector
       // Trim or remove the head entry if necessary.
-      if (startKey < position) {
+      if (section.nonEmpty && startKey < position) {
         val (headPosition -> headData) +: tail = section
         val distance = position - headPosition
         if (headData.length <= distance) section = tail
         else section = (position -> headData.drop(distance)) +: tail
       }
       if (section.isEmpty) LazyList(Left(position -> size)) else {
-
         // Truncate the last entry if necessary.
         val lead :+ (tailPosition -> tailData) = section
         val distance = tailPosition + tailData.length - (position + size)
         if (distance > 0) section = lead :+ (tailPosition -> tailData.dropRight(distance))
-
         // Assemble result.
-        val (endPos, result) = section.foldLeft(position -> LazyList[Either[(Long, Long), (Long, M)]]()) {
-          case (currentPos -> result, entryPos -> dat) =>
-            if (currentPos == entryPos) (entryPos + dat.length) -> (result :+ Right(entryPos -> dat))
-            else (entryPos + dat.length) -> (result :+ Left(currentPos -> (entryPos - currentPos)) :+ Right(entryPos -> dat))
+        def recurse(section: Vector[(Long, M)], currentPos: Long, remainingSize: Long): LazyList[Either[(Long, Long), (Long, M)]] = {
+          section match {
+            case Vector() =>
+              if (remainingSize == 0) LazyList() else LazyList(Left(currentPos, remainingSize))
+            case vector @ (entry @ entryPos -> data) +: rest =>
+              if (entryPos == currentPos)
+                Right(entry) #:: recurse(rest, entryPos + data.length, remainingSize - data.length)
+              else {
+                val distance = entryPos - currentPos
+                Left(currentPos, distance) #:: recurse(vector, entryPos, remainingSize - distance)
+              }
+          }
         }
-        if (distance >= 0) result else result :+ Left(endPos -> -distance)
+        recurse(section, position, size)
       }
     }
   }
