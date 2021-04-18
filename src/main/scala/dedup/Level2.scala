@@ -7,7 +7,15 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.{Executors, TimeUnit}
 import scala.concurrent.{ExecutionContext, Future}
 
+object Level2 {
+  def cacheLoad: Long = _entriesSize.get() * _entryCount.get()
+  private val _entryCount = new AtomicLong()
+  private val _entriesSize = new AtomicLong()
+}
+
 class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
+  import Level2._
+
   private val con = H2.file(settings.dbDir, settings.readonly)
   private val db = new Database(con)
   private val lts = new LongTermStore(settings.dataDir, settings.readonly)
@@ -42,6 +50,8 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     if (dataEntry.size == 0) { db.setDataId(id, -1); dataEntry.close() }
     else {
       log.trace(s"ID $id - persisting data entry, size ${dataEntry.size} / base data id ${dataEntry.baseDataId}.")
+      _entryCount.incrementAndGet()
+      _entriesSize.addAndGet(dataEntry.size)
       synchronized {
         files += id -> (dataEntry +: files.getOrElse(id, Vector()))
 
@@ -81,6 +91,8 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
               files -= id
               log.trace(s"Fully persisted file $id.")
             }
+            _entryCount.decrementAndGet()
+            _entriesSize.addAndGet(-dataEntry.size)
             dataEntry.close()
           }
         } catch { case e: Throwable => log.error(s"Persisting $id failed.", e); throw e })(singleThreadStoreContext)
