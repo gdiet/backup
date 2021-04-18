@@ -5,7 +5,8 @@ package object dedup extends scala.util.ChainingSyntax {
     * and to a power of 2 so blocks align well if the fuse layer uses blocks sized a smaller power of 2. (The fuse
     * default is 4096.)
     *
-    * Ideally TODO the fuse options should be set so the fuse layer uses this size for file system operations, too.
+    * TODO The fuse options could be set so the fuse layer uses a higher value than the default 4096 bytes
+    * TODO for file system operations, too. 2 << 18 would probably be too high, but maybe 2 << 16 is fine?
     *
     * @see https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram */
   val memChunk: Int = 2 << 18
