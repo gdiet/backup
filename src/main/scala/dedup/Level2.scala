@@ -27,7 +27,8 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   private var files = Map[Long, Vector[DataEntry]]()
 
   override def close(): Unit = {
-    if (DataEntry.openEntries > 0) log.info(s"Entries remaining to persist: ${DataEntry.openEntries}")
+    if (DataEntry.openEntries > 0)
+      log.info(s"Persist remaining ${DataEntry.openEntries} entries, combined size ${readableBytes(_entriesSize.get())}...")
     singleThreadStoreContext.shutdown()
     singleThreadStoreContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
     con.close()
