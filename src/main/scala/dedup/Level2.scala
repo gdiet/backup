@@ -81,6 +81,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
               files -= id
               log.trace(s"Fully persisted file $id.")
             }
+            dataEntry.close()
           }
         } catch { case e: Throwable => log.error(s"Persisting $id failed.", e); throw e })(singleThreadStoreContext)
       }
