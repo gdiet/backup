@@ -57,7 +57,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
   def write(data: LazyList[(Long, Array[Byte])]): Unit = synchronized {
     data.foreach { case (position, bytes) =>
       if (Level2.cacheLoad > 1000000000L) {
-        log.info(s"Slowing write to reduce cache load ${Level2.cacheLoad}.")
+        log.trace(s"Slowing write to reduce cache load ${Level2.cacheLoad}.")
         Thread.sleep(Level2.cacheLoad/1000000000L)
       }
       cache.write(position, bytes)
