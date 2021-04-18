@@ -26,7 +26,11 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   /** Creates a copy of the file's last persisted state without current modifications. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean = two.mkFile(newParentId, newName, file.time, file.dataId)
 
-  override def close(): Unit = { synchronized { files.keys.foreach(release); require(files.isEmpty) }; two.close() }
+  override def close(): Unit = {
+    // Release no matter how many file handles are currently open.
+    synchronized(while(files.nonEmpty) files.keys.foreach(release))
+    two.close()
+  }
 
   def split(path: String): Array[String] = path.split("/").filter(_.nonEmpty)
 
