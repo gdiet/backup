@@ -25,7 +25,12 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
 
   override def close(): Unit = {
     // Release no matter how many file handles are currently open.
-    synchronized(while(files.nonEmpty) files.keys.foreach(release))
+    synchronized {
+      while(files.nonEmpty) {
+        log.info(s"Files to close: ${files.size}")
+        files.keys.foreach(release)
+      }
+    }
     two.close()
   }
 
