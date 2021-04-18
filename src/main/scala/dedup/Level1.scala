@@ -1,8 +1,5 @@
 package dedup
 
-import dedup.cache.LongDecorator
-import jnr.ffi.Pointer
-
 /** Manages currently open files. Forwards everything else to LevelTwo. */
 class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   private def guard[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T = {
