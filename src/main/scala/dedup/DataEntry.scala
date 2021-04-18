@@ -11,6 +11,7 @@ object DataEntry {
   protected val closedEntries = new AtomicLong()
   def openEntries: Long = currentId.get - closedEntries.get
 
+  // TODO move to MemCache
   val cacheLimit: Long = math.max(0, (Runtime.getRuntime.maxMemory - 64000000) * 7 / 10)
   val availableMem = new AtomicLong(cacheLimit)
 }
@@ -54,7 +55,13 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
   /** @param data LazyList(position -> bytes). Providing the complete data as LazyList allows running the update
     *             atomically / synchronized. */
   def write(data: LazyList[(Long, Array[Byte])]): Unit = synchronized {
-    data.foreach { case (position, bytes) => cache.write(position, bytes) }
+    data.foreach { case (position, bytes) =>
+      if (Level2.cacheLoad > 1000000000L) {
+        log.info(s"Slowing write to reduce cache load ${Level2.cacheLoad}.")
+        Thread.sleep(Level2.cacheLoad/1000000000L)
+      }
+      cache.write(position, bytes)
+    }
   }
 
   override def close(): Unit = synchronized {
