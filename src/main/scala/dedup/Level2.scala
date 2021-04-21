@@ -24,7 +24,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   private val singleThreadStoreContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
   /** id -> dataEntries. dataEntries is non-empty. Remember to synchronize. */
-  private var files = Map[Long, Vector[DataEntry]]()
+  private var files = Map[Long, Vector[DataEntry]]() // FIXME can be Map[Long, DataEntry]
 
   override def close(): Unit = {
     if (DataEntry.openEntries > 0)
@@ -33,6 +33,9 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     singleThreadStoreContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
     con.close()
   }
+
+  def ensureClosed(id: Long): Unit =
+    synchronized(files.get(id)).foreach(_.foreach(_.awaitClose()))
 
   def setTime(id: Long, time: Long): Unit = db.setTime(id, time)
   def dataId(id: Long): Option[Long] = db.dataId(id)

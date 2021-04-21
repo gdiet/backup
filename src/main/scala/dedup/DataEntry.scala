@@ -4,6 +4,7 @@ import dedup.DataEntry.{availableMem, closedEntries, currentId}
 import dedup.cache.CombinedCache
 
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicLong
 
 object DataEntry {
@@ -25,6 +26,7 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
 
   private val path = tempDir.resolve(s"$id")
   private val cache = new CombinedCache(availableMem, path, initialSize)
+  private val isOpen = new CountDownLatch(1)
 
   def written: Boolean = synchronized(cache.written)
   def size: Long = synchronized(cache.size)
@@ -68,5 +70,8 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
     cache.close()
     log.trace(s"Close $id with base data ID $baseDataId.")
     closedEntries.incrementAndGet()
+    isOpen.countDown()
   }
+
+  def awaitClose(): Unit = isOpen.await()
 }
