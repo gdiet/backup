@@ -2,12 +2,6 @@ package dedup
 
 /** Manages currently open files. Forwards everything else to LevelTwo. */
 class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
-  private def guard[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T = {
-    logger(s"$msg ...")
-    try f.tap(t => logger(s"... $msg -> $t"))
-    catch { case e: Throwable => log.error(s"... $msg -> ERROR", e); throw e }
-  }
-
   /** The store backing Level 1. */
   private val two = new Level2(settings)
 

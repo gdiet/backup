@@ -6,7 +6,17 @@ package dedup
   * consider using the companion object for class logging. In this case see also
   *
   * @see https://stackoverflow.com/questions/13713557/scala-accessing-protected-field-of-companion-objects-trait */
-trait ClassLogging { protected val log: Logger = new Slf4jLogger(getClass.getName) }
+trait ClassLogging {
+  protected val log: Logger = new Slf4jLogger(getClass.getName)
+
+  protected def guard[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T = {
+    logger(s">> $msg")
+    val start = System.nanoTime()
+    def time = s"${(System.nanoTime()-start)/1000}µs"
+    try f.tap(t => logger(s"<< $time $msg -> $t"))
+    catch { case e: Throwable => log.error(s"<< $time $msg -> ERROR", e); throw e }
+  }
+}
 
 trait Logger {
   def trace(msg: => String): Unit

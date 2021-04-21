@@ -42,16 +42,13 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   private val rights = if (readonly) 292 else 438 // o444 else o666
   private val store  = new Level1(settings)
 
-  private def guard(msg: => String, logger: (=> String) => Unit = log.trace)(f: => Int): Int = {
-    val start = System.nanoTime()
-    def time = s"${(System.nanoTime()-start)/1000}us"
-    logger(s"$msg ...")
-    try f.tap {
-      case EIO       => log.error(s"$time EIO: $msg")
-      case EINVAL    => log.warn (s"$time EINVAL: $msg")
-      case EOVERFLOW => log.warn (s"$time EOVERFLOW: $msg")
-      case result    => logger(s"... $time $msg -> $result")
-    } catch { case e: Throwable => log.error(s"... $time $msg -> ERROR", e); EIO }
+  override protected def guard[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T = {
+    super.guard(msg, logger)(f).tap {
+      case EIO       => log.error(s"EIO: $msg")
+      case EINVAL    => log.warn (s"EINVAL: $msg")
+      case EOVERFLOW => log.warn (s"EOVERFLOW: $msg")
+      case _         => /**/
+    }
   }
 
   override def umount(): Unit =
