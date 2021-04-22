@@ -9,11 +9,11 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] {
   override implicit protected val m: MemArea[Array[Byte]] = new ByteArrayArea(availableMem)
 
   @annotation.tailrec
-  private def tryAquire(size: Long): Boolean = {
+  private def tryAcquire(size: Long): Boolean = {
     val avail = availableMem.get()
     if (avail < size) false
     else if (availableMem.compareAndSet(avail, avail - size)) true
-    else tryAquire(size)
+    else tryAcquire(size)
   }
 
   /** Truncates the cached data to the provided size. */
@@ -31,7 +31,7 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] {
     *
     * @return `false` if data is not cached because not enough free memory is available. */
   def write(position: Long, data: Array[Byte]): Boolean =
-    tryAquire(data.length).tap(if (_) entries.put(position, data))
+    tryAcquire(data.length).tap(if (_) entries.put(position, data))
 
   def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] =
     areasInSection(position, size)

@@ -12,7 +12,7 @@ case class Settings(
  copyWhenMoving: AtomicBoolean
 ) {
   val tempPath: Path = temp.toPath
-  val dataDir = Settings.dataDir(repo)
+  val dataDir: File = Settings.dataDir(repo)
 }
 
 object Settings {
