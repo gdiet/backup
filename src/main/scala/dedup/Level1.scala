@@ -1,5 +1,7 @@
 package dedup
 
+import java.util.concurrent.atomic.AtomicLong
+
 /** Manages currently open files. Forwards everything else to LevelTwo. */
 class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   /** The store backing Level 1. */
@@ -47,7 +49,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     guard(s"delete($entry)") {
       entry match {
         case file: FileEntry => synchronized {
-          files.get(file.id).foreach { case _ -> data => data.close(); files -= file.id }
+          files.get(file.id).foreach { case _ -> data => data.close(-1); files -= file.id }
         }
         case _: DirEntry => // Nothing to do here
       }
@@ -58,7 +60,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     guard(s"createAndOpen($parentId, $name)") {
       // https://stackoverflow.com/questions/67017901/why-does-scala-option-tapeach-return-iterable-not-option
       two.mkFile(parentId, name, time).tap(_.foreach { id =>
-        synchronized(files += id -> (1, new DataEntry(-1, 0, settings.tempPath)))
+        synchronized(files += id -> (1, new DataEntry(new AtomicLong(-1), 0, settings.tempPath)))
       })
     }
 
@@ -67,9 +69,8 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       synchronized { import file._
         files += id -> (files.get(id) match {
           case None =>
-            1 -> new DataEntry(dataId, two.size(id, dataId), settings.tempPath)
+            1 -> two.newDataEntry(id, dataId)
           case Some(count -> dataEntry) =>
-            if (dataEntry.baseDataId != dataId) log.warn(s"File $id: Mismatch between previous ${dataEntry.baseDataId} and current $dataId.")
             count + 1 -> dataEntry
         })
       }
@@ -97,7 +98,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     guard(s"read($id, $offset, $size)") {
       synchronized(files.get(id)).map { case (_, dataEntry) =>
         val (sizeRead, holes) = dataEntry.read(offset, size, sink)
-        holes.foreach { case holeOffset -> holeSize => two.read(id, dataEntry.baseDataId, holeOffset, holeSize, sink) }
+        holes.foreach { case holeOffset -> holeSize => two.read(id, dataEntry.baseDataId.get(), holeOffset, holeSize, sink) }
         sizeRead
       }
     }
@@ -111,7 +112,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
           if (count > 1) { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
           else { files -= id; Some(Some(dataEntry)) } // Outside the sync block persist data if necessary.
       })
-      result.flatten.foreach(data => if (data.written) two.persist(id, data) else data.close())
+      result.flatten.foreach(data => if (data.written) two.persist(id, data) else data.close(-1))
       result.isDefined
     }
 }

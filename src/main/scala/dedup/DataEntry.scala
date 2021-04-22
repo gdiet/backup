@@ -20,7 +20,7 @@ object DataEntry {
 /** Thread safe handler for the mutable contents of a virtual file.
   *
   * @param baseDataId Id of the data record this entry updates. -1 if this entry is independent. */
-class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends AutoCloseable with ClassLogging {
+class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) extends ClassLogging {
   val id: Long = currentId.incrementAndGet()
   log.trace(s"Create $id with base data ID $baseDataId.")
 
@@ -66,11 +66,12 @@ class DataEntry(val baseDataId: Long, initialSize: Long, tempDir: Path) extends 
     }
   }
 
-  override def close(): Unit = synchronized {
+  def close(finalDataId: Long): Unit = synchronized {
     cache.close()
     log.trace(s"Close $id with base data ID $baseDataId.")
     closedEntries.incrementAndGet()
     isOpen.countDown()
+    baseDataId.set(finalDataId)
   }
 
   def awaitClose(): Unit = isOpen.await()
