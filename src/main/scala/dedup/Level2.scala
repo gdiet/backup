@@ -156,13 +156,4 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
           }
         }
     }
-
-    lazy val ltsParts = db.parts(dataId)
-    val holes = synchronized(files.get(id)).map(_.read(offset, size, sink)._2).getOrElse(Vector(offset -> size))
-    holes.foreach { case (position, size) =>
-      readFromLts(ltsParts, position, size, position).foreach { case partPos -> data =>
-        sink.write(partPos, data)
-      }
-    }
-  }
 }
