@@ -17,7 +17,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   import Level2._
 
   private val con = H2.file(settings.dbDir, settings.readonly)
-  private val db = { new Database(con) } // FIXME the { } are a magical fix for a "result set is already closed" condition.
+  private val db = new Database(con)
   private val lts = new LongTermStore(settings.dataDir, settings.readonly)
   private val startOfFreeData = new AtomicLong(db.startOfFreeData)
   /** Store logic relies on this being a single thread executor. */

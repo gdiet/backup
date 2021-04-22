@@ -90,7 +90,7 @@ object Database {
   }
 
   implicit class RichConnection(val c: Connection) extends AnyVal {
-    /** Don't use nested or multithreaded. */
+    /** Don't use nested or multi-threaded. */
     def transaction[T](f: => T): T =
       try { c.setAutoCommit(false); f.tap(_ => c.commit()) }
       catch { case t: Throwable => c.rollback(); throw t }
@@ -124,7 +124,9 @@ class Database(connection: Connection) { import Database._
 
   private def sync[T](f: => T): T = synchronized(f)
 
-  def startOfFreeData: Long = sync(resource(connection.createStatement())(Database.startOfFreeData))
+  def startOfFreeData: Long = sync {
+    resource(connection.createStatement())(Database.startOfFreeData)
+  }
 
   private val qDataIdForEntry = connection.prepareStatement(
     "SELECT dataId FROM TreeEntries WHERE id = ?"
@@ -167,8 +169,9 @@ class Database(connection: Connection) { import Database._
   private val qDataSize = connection.prepareStatement(
     "SELECT length FROM DataEntries WHERE id = ? AND seq = 1"
   )
-  def dataSize(dataId: Long): Long =
+  def dataSize(dataId: Long): Long = sync {
     resource(qDataSize.tap(_.setLong(1, dataId)).executeQuery())(_.maybeNext(_.getLong(1))).getOrElse(0)
+  }
 
   private val dTreeEntry = connection.prepareStatement(
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
@@ -238,10 +241,14 @@ class Database(connection: Connection) { import Database._
   }).isSuccess
 
   private val qNextId = connection.prepareStatement("SELECT NEXT VALUE FOR idSeq")
-  def nextId: Long = sync(resource(qNextId.executeQuery())(_.tap(_.next()).getLong(1)))
+  def nextId: Long = sync {
+    resource(qNextId.executeQuery())(_.tap(_.next()).getLong(1))
+  }
 
   // Generated keys seem not to be available for sql update, so this is two SQL commands
-  def newDataIdFor(id: Long): Long = sync(nextId.tap(setDataId(id, _)))
+  def newDataIdFor(id: Long): Long = sync {
+    nextId.tap(setDataId(id, _))
+  }
 
   private val uDataId = connection.prepareStatement(
     "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
