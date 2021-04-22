@@ -67,7 +67,6 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       synchronized { import file._
         files += id -> (files.get(id) match {
           case None =>
-            two.ensureClosed(id)
             1 -> new DataEntry(dataId, two.size(id, dataId), settings.tempPath)
           case Some(count -> dataEntry) =>
             if (dataEntry.baseDataId != dataId) log.warn(s"File $id: Mismatch between previous ${dataEntry.baseDataId} and current $dataId.")
