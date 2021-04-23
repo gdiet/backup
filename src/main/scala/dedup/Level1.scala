@@ -80,7 +80,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     *             atomically / synchronized.
     * @return `false` if called without createAndOpen or open. */
   def write(id: Long, data: LazyList[(Long, Array[Byte])]): Boolean =
-    guard(s"write($id, data)") {
+    guard(s"write(id: $id, data: LazyList)") {
       synchronized(files.get(id)).map(_._2.write(data)).isDefined
     }
 
