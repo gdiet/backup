@@ -89,9 +89,18 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
       synchronized(files.get(id)).map(_._2.truncate(size)).isDefined
     }
 
-  /** @param size Supports sizes larger than the internal size limit for byte arrays.
-    * @param sink The sink to write data into. Providing this instead of returning the data read reduces memory
-    *             consumption, especially in case of large reads.
+  /** Reads bytes from the referenced file and writes them to the data `sink`.
+    * Reads the requested number of bytes unless end-of-file is reached first.
+    *
+    * Note: Providing a `sink` instead of returning the data read
+    * reduces memory consumption, especially in case of large reads,
+    * and may reduce the number of required arraycopy operations.
+    *
+    * @param id     id of the file to read from.
+    * @param offset offset in the file to start reading at.
+    * @param size   number of bytes to read, NOT limited by the internal size limit for byte arrays.
+    * @param sink   sink to write data to, starting at sink position 0.
+    *
     * @return Some(actual size read) or None if called without createAndOpen.
     */
   def read[D: DataSink](id: Long, offset: Long, size: Long, sink: D): Option[Long] =
