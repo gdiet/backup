@@ -141,19 +141,38 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
     recurse(partsToReadFrom, readSize, 0L)
   }
 
-  /** Implementation (hopefully) guarantees that no read beyond end-of-entry takes place here. */
-  def read[D: DataSink](id: Long, dataId: Long, offset: Long, size: Long, sink: D): Unit = {
+  /** Reads bytes from the referenced file and writes them to the data `sink`.
+    *
+    * Notes:
+    *
+    * The caller must make sure that no read beyond end-of-entry takes place here
+    * because the behavior in that case is undefined. TODO define it.
+    *
+    * Providing a `sink` instead of returning the data read
+    * reduces memory consumption, especially in case of large reads,
+    * and may reduce the number of required arraycopy operations.
+    *
+    * @param id           id of the file to read from.
+    * @param dataId       dataId of the file to read from in case the file is not cached.
+    * @param offset       offset in the file to start reading at.
+    * @param size         number of bytes to read, NOT limited by the internal size limit for byte arrays.
+    * @param sink         sink to write data to.
+    * @param offsetInSink position in sink to start writing at.
+    */
+  def read[D: DataSink](id: Long, dataId: Long, offset: Long, size: Long, sink: D, offsetInSink: Long): Unit = {
     synchronized(files.get(id)) match {
       case None =>
+        // FIXME continue documentation here
         readFromLts(db.parts(dataId), offset, size, offset).foreach { case partPos -> data =>
-          sink.write(partPos, data)
+          sink.write(offsetInSink + partPos, data)
         }
       case Some(entry) =>
         lazy val ltsParts = db.parts(entry.baseDataId.get())
+        // FIXME entry.read needs offsetInSink
         val remainingHoles = entry.read(offset, size, sink)._2
         remainingHoles.foreach { case (position, size) =>
           readFromLts(ltsParts, position, size, position).foreach { case partPos -> data =>
-            sink.write(partPos, data)
+            sink.write(offsetInSink + partPos, data)
           }
         }
     }
