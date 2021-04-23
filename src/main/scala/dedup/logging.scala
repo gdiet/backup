@@ -12,7 +12,13 @@ trait ClassLogging {
   protected def guard[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T = {
     logger(s">> $msg")
     val start = System.nanoTime()
-    def time = s"${(System.nanoTime()-start)/1000}µs"
+    def time = {
+      val t = System.nanoTime() - start
+      if (t < 5000) s"${t}ns"
+      else if (t / 1000 < 5000) s"${t/1000}µs"
+      else if (t / 1000000 < 5000) s"${t/1000000}ms"
+      else s"${t/1000000000}s"
+    }
     try f.tap(t => logger(s"<< $time $msg -> $t"))
     catch { case e: Throwable => log.error(s"<< $time $msg -> ERROR", e); throw e }
   }
