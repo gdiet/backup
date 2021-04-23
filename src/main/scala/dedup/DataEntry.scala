@@ -38,15 +38,14 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     * @param offset       offset to start reading at.
     * @param size         number of bytes to read, NOT limited by the internal size limit for byte arrays.
     * @param sink         sink to write data to.
-    * @param offsetInSink position in sink to start writing at.
     *
     * @return (actual size read, Vector((holePosition, holeSize)))
     */
-  def read[D: DataSink](offset: Long, size: Long, sink: D, offsetInSink: Long): (Long, Vector[(Long, Long)]) = synchronized {
+  def read[D: DataSink](offset: Long, size: Long, sink: D): (Long, Vector[(Long, Long)]) = synchronized {
     val (sizeRead, readResult) = readUnsafe(offset, size)
     sizeRead -> readResult.flatMap {
       case Left(hole) => Some(hole)
-      case Right(position -> data) => sink.write(position - offset + offsetInSink, data); None
+      case Right(position -> data) => sink.write(position - offset, data); None
     }.toVector
   }
 

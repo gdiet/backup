@@ -106,7 +106,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
   def read[D: DataSink](id: Long, offset: Long, size: Long, sink: D): Option[Long] =
     guard(s"read($id, $offset, $size)") {
       synchronized(files.get(id)).map { case _ -> dataEntry =>
-        val sizeRead -> holes = dataEntry.read(offset, size, sink, offsetInSink = 0) // FIXME offsetInSink isn't needed anymore
+        val sizeRead -> holes = dataEntry.read(offset, size, sink)
         holes.foreach { case holeOffset -> holeSize =>
           two.read(id, dataEntry.baseDataId.get(), holeOffset, holeSize)
             .foreach { case dataOffset -> data => sink.write(dataOffset - offset, data) }
