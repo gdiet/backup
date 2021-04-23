@@ -1,7 +1,7 @@
 package dedup
 
-import dedup.DataEntry.{availableMem, closedEntries, currentId}
-import dedup.cache.CombinedCache
+import dedup.DataEntry.{closedEntries, currentId}
+import dedup.cache.{CombinedCache, MemCache}
 
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
@@ -11,10 +11,6 @@ object DataEntry {
   protected val currentId = new AtomicLong()
   protected val closedEntries = new AtomicLong()
   def openEntries: Long = currentId.get - closedEntries.get
-
-  // TODO move to MemCache
-  val cacheLimit: Long = math.max(0, (Runtime.getRuntime.maxMemory - 64000000) * 7 / 10)
-  val availableMem = new AtomicLong(cacheLimit)
 }
 
 /** Thread safe handler for the mutable contents of a virtual file.
@@ -25,7 +21,7 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   log.trace(s"Create $id with base data ID $baseDataId.")
 
   private val path = tempDir.resolve(s"$id")
-  private val cache = new CombinedCache(availableMem, path, initialSize)
+  private val cache = new CombinedCache(MemCache.availableMem, path, initialSize)
   private val isOpen = new CountDownLatch(1)
 
   def written: Boolean = synchronized(cache.written)

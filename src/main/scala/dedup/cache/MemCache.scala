@@ -4,6 +4,11 @@ import dedup.scalaUtilChainingOps
 
 import java.util.concurrent.atomic.AtomicLong
 
+object MemCache {
+  private val cacheLimit: Long = math.max(0, (Runtime.getRuntime.maxMemory - 64000000) * 7 / 10)
+  val availableMem = new AtomicLong(cacheLimit)
+}
+
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous. */
 class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] {
   override implicit protected val m: MemArea[Array[Byte]] = new ByteArrayArea(availableMem)
