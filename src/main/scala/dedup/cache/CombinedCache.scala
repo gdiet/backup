@@ -24,16 +24,16 @@ class CombinedCache(availableMem: AtomicLong, tempFilePath: Path, initialSize: L
   )
 
   /** Truncates the cache to a new size. Zero-pads if the cache size increases. */
-  def truncate(size: Long): Unit = if (size != _size) {
-    if (size > _size) {
-      zeroCache.allocate(_size, size - _size)
+  def truncate(newSize: Long): Unit = if (newSize != _size) {
+    if (newSize > _size) {
+      zeroCache.allocate(_size, newSize - _size)
     } else {
-      zeroCache.keep(size)
-      memCache.keep(size)
-      maybeChannelCache.foreach(_.keep(size))
+      zeroCache.keep(newSize)
+      memCache.keep(newSize)
+      maybeChannelCache.foreach(_.keep(newSize))
     }
     _written = true
-    _size = size
+    _size = newSize
   }
 
   /** Writes data to the cache. Data size should not exceed `memChunk`. */

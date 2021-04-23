@@ -59,7 +59,7 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     sizeToRead -> cache.read(offset, sizeToRead)
   }
 
-  def truncate(size: Long): Unit = synchronized { cache.truncate(size) }
+  def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
 
   /** @param data LazyList(position -> bytes). Providing the complete data as LazyList allows running the update
     *             atomically / synchronized. */
