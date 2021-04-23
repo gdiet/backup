@@ -143,14 +143,11 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
 
   /** Reads bytes from the referenced file and writes them to the data `sink`.
     *
-    * Notes:
+    * Note: The caller must make sure that no read beyond end-of-entry takes place
+    * here because the behavior in that case is undefined. TODO define it.
     *
-    * The caller must make sure that no read beyond end-of-entry takes place here
-    * because the behavior in that case is undefined. TODO define it.
-    *
-    * Providing a `sink` instead of returning the data read
-    * reduces memory consumption, especially in case of large reads,
-    * and may reduce the number of required arraycopy operations.
+    * Note: Instead of returning the data read the `sink` approach is used
+    * so [[Level2]] can easily use the [[DataEntry.read()]] method.
     *
     * @param id           id of the file to read from.
     * @param dataId       dataId of the file to read from in case the file is not cached.
