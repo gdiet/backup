@@ -79,7 +79,9 @@ object Main extends App with ClassLogging {
         log.debug(s"Temp dir:    $temp")
         if (copyWhenMoving) log.info(s"Copy instead of move initially enabled.")
         val fs = new Server(settings)
-        val fuseOptions: Array[String] = if (getNativePlatform.getOS == WINDOWS) Array("-o", "volname=DedupFS") else Array()
+        val fuseOptions: Array[String] =
+          Array("-o", "big_writes", "-o", "max_write=131072") ++
+            (if (getNativePlatform.getOS == WINDOWS) Array("-o", "volname=DedupFS") else Array())
         try fs.mount(java.nio.file.Paths.get(mountPoint), true, false, fuseOptions)
         catch { case e: Throwable => log.error("Mount exception:", e); fs.umount() }
 
