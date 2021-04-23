@@ -165,6 +165,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
         }
       case Some(entry) =>
         lazy val ltsParts = db.parts(entry.baseDataId.get())
+        // FIXME we can use readUnsafe here as well, then we don't have to use the sink in Level2.read at all...
         val remainingHoles = entry.read(offset, size, sink, offsetInSink)._2
         remainingHoles.foreach { case (position, size) =>
           readFromLts(ltsParts, position, size, position).foreach { case partPos -> data =>
