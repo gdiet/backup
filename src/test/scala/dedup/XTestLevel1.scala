@@ -7,8 +7,10 @@ import cache.LongDecorator
 
 object XTestLevel1 extends App with ClassLogging {
   implicit object BytesSink extends DataSink[Array[Byte]] {
-    override def write(dataSink: Array[Byte], offset: Long, data: Array[Byte]): Unit =
+    override def write(dataSink: Array[Byte], offset: Long, data: Array[Byte]): Unit = {
+      log.info(s"write ... $offset ${data.toList}")
       System.arraycopy(data, 0, dataSink, offset.asInt, data.length)
+    }
   }
 
   val baseFolder = new File("dedupfs-temp")
