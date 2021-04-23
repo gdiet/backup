@@ -39,7 +39,7 @@ object XTestLevel1 extends App with ClassLogging {
       val fileId = file.id
 
       log.info(s"Write 1000 bytes.")
-      store.write(fileId, LazyList(0L -> Array.fill(1000)(Array[Byte](70, 71, 72, 73, 74)).flatten))
+      store.write(fileId, LazyList(0L -> Array.fill(200)(Array[Byte](70, 71, 72, 73, 74)).flatten))
 
       log.info(s"Close the file.")
       store.release(fileId)
