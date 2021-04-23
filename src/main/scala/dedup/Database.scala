@@ -1,15 +1,11 @@
 package dedup
 
-import org.slf4j.{Logger, LoggerFactory}
-
 import java.io.File
 import java.sql.{Connection, ResultSet, Statement, Types}
 import scala.util.Try
 import scala.util.Using.resource
 
-object Database {
-  implicit private val log: Logger = LoggerFactory.getLogger("dedup.DBase")
-
+object Database extends ClassLogging {
   def dbDir(repo: File): File = new File(repo, "fsdb")
 
   // deleted == 0 for regular files, deleted == timestamp for deleted files. NULL does not work with UNIQUE.
@@ -114,7 +110,9 @@ object Database {
   val root: DirEntry = DirEntry(0, 0, "", now)
 }
 
-class Database(connection: Connection) { import Database._
+class Database(connection: Connection) extends ClassLogging {
+  import Database._
+
   {
     val dbVersionRead = resource(connection.createStatement())(
       _.executeQuery("SELECT value FROM Context WHERE key = 'db version'").pipe(_.maybeNext(_.getString(1)))
@@ -156,7 +154,7 @@ class Database(connection: Connection) { import Database._
   private val qParts = connection.prepareStatement(
     "SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC"
   )
-  def parts(dataId: Long): Vector[(Long, Long)] = sync {
+  def parts(dataId: Long): Vector[(Long, Long)] = guard(s"parts(dataId: $dataId)")(sync {
     qParts.setLong(1, dataId)
     resource(qParts.executeQuery())(_.seq { rs =>
       val (start, size) = rs.getLong(1) -> rs.getLong(2)
@@ -164,7 +162,7 @@ class Database(connection: Connection) { import Database._
       assert(size >= 0, s"Size $size must be >= 0.")
       start -> size
     })
-  }
+  })
 
   private val qDataSize = connection.prepareStatement(
     "SELECT length FROM DataEntries WHERE id = ? AND seq = 1"
