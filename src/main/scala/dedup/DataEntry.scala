@@ -31,10 +31,21 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   def written: Boolean = synchronized(cache.written)
   def size: Long = synchronized(cache.size)
 
-  /** @param size Supports sizes larger than the internal size limit for byte arrays.
-    * @param sink The sink to write data into. Providing this instead of returning the data read reduces memory
-    *             consumption in case of large reads while allowing atomic / synchronized reads.
-    * @return (actual size read, Vector((holePosition, holeSize))) */
+  /** Reads bytes from this [[DataEntry]] and writes them to the data `sink`.
+    * Reads the requested number of bytes unless end-of-entry is reached first.
+    * Returns the areas skipped because they are not cached in this [[DataEntry]].
+    *
+    * Note: Providing a `sink` instead of returning the data read
+    * enables synchronized reads even though [[DataEntry]] is mutable
+    * without incurring the risk of large memory allocations.
+    *
+    * @param offset       offset to start reading at.
+    * @param size         number of bytes to read, NOT limited by the internal size limit for byte arrays.
+    * @param sink         sink to write data to.
+    * @param offsetInSink position in sink to start writing at.
+    *
+    * @return (actual size read, Vector((holePosition, holeSize)))
+    */
   def read[D: DataSink](offset: Long, size: Long, sink: D, offsetInSink: Long): (Long, Vector[(Long, Long)]) = synchronized {
     val (sizeRead, readResult) = readUnsafe(offset, size)
     sizeRead -> readResult.flatMap {
