@@ -35,11 +35,11 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     * @param sink The sink to write data into. Providing this instead of returning the data read reduces memory
     *             consumption in case of large reads while allowing atomic / synchronized reads.
     * @return (actual size read, Vector((holePosition, holeSize))) */
-  def read[D: DataSink](offset: Long, size: Long, sink: D): (Long, Vector[(Long, Long)]) = synchronized {
+  def read[D: DataSink](offset: Long, size: Long, sink: D, offsetInSink: Long): (Long, Vector[(Long, Long)]) = synchronized {
     val (sizeRead, readResult) = readUnsafe(offset, size)
     sizeRead -> readResult.flatMap {
       case Left(hole) => Some(hole)
-      case Right(position -> data) => sink.write(position - offset, data); None
+      case Right(position -> data) => sink.write(position - offset + offsetInSink, data); None
     }.toVector
   }
 

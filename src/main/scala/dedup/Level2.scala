@@ -165,11 +165,10 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
         }
       case Some(entry) =>
         lazy val ltsParts = db.parts(entry.baseDataId.get())
-        // FIXME entry.read needs offsetInSink
-        val remainingHoles = entry.read(offset, size, sink)._2
+        val remainingHoles = entry.read(offset, size, sink, offsetInSink)._2
         remainingHoles.foreach { case (position, size) =>
           readFromLts(ltsParts, position, size, position).foreach { case partPos -> data =>
-            sink.write(offsetInSink + partPos, data)
+            sink.write(offsetInSink + partPos, data) // FIXME offsetInSink + partPos probably not correct
           }
         }
     }
