@@ -68,19 +68,18 @@ trait CacheBase[M] {
         val distance = tailPosition + tailData.length - (position + size)
         if (distance > 0) section = lead :+ (tailPosition -> tailData.dropRight(distance))
         // Assemble result.
-        def recurse(section: Vector[(Long, M)], currentPos: Long, remainingSize: Long): LazyList[Either[(Long, Long), (Long, M)]] = {
-          section match {
-            case Vector() =>
-              if (remainingSize == 0) LazyList() else LazyList(Left(currentPos, remainingSize))
-            case vector @ (entry @ entryPos -> data) +: rest =>
-              if (entryPos == currentPos)
-                Right(entry) #:: recurse(rest, entryPos + data.length, remainingSize - data.length)
-              else {
-                val distance = entryPos - currentPos
-                Left(currentPos, distance) #:: recurse(vector, entryPos, remainingSize - distance)
-              }
+        def recurse(section: Vector[(Long, M)], currentPos: Long, remainingSize: Long): LazyList[Either[(Long, Long), (Long, M)]] =
+          if (section.isEmpty) {
+            if (remainingSize == 0) LazyList() else LazyList(Left(currentPos, remainingSize))
+          } else {
+            val (entry @ entryPos -> data) +: rest = section
+            if (entryPos == currentPos)
+              Right(entry) #:: recurse(rest, entryPos + data.length, remainingSize - data.length)
+            else {
+              val distance = entryPos - currentPos
+              Left(currentPos, distance) #:: recurse(section, entryPos, remainingSize - distance)
+            }
           }
-        }
         recurse(section, position, size)
       }
     }
