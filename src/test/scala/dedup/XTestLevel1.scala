@@ -22,7 +22,7 @@ object XTestLevel1 extends App with ClassLogging {
     resource(H2.file(dbDir, readonly = false))(Database.initialize)
 
     log.info(s"Create store")
-    val temp = new File(baseFolder + "temp")
+    val temp = new File(baseFolder, "temp")
     val settings = Settings(repo, dbDir, temp, readonly = false, new AtomicBoolean(false))
     resource(new Level1(settings)) { store =>
 
