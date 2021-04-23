@@ -67,7 +67,7 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
           val ltsParts = db.parts(dataEntry.baseDataId.get())
           def data: LazyList[(Long, Array[Byte])] = dataEntry.readUnsafe(0, dataEntry.size)._2.flatMap {
             case Right(data) => LazyList(data)
-            case Left((position, offset)) => readFromLts(ltsParts, position, offset, position)
+            case Left((position, offset)) => readFromLts(ltsParts, position, offset)
           }
           // Calculate hash
           val md = MessageDigest.getInstance(hashAlgorithm)
@@ -116,13 +116,20 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
   def size(id: Long, dataId: Long): Long =
     synchronized(files.get(id)).map(_.size).getOrElse(db.dataSize(dataId))
 
-  /** @param parts    List of (position, size) defining the LTS parts of the file to read from.
+  /** Reads bytes from the long term store from a file defined by `parts`.
+    *
+    * Note: The caller must make sure that no read beyond end-of-entry takes place
+    * here because the behavior in that case is undefined. TODO define it.
+    *
+    * @param parts    List of (offset, size) defining the parts of the file to read from.
     *                 `readFrom` + `readSize` must not exceed summed part sizes.
     * @param readFrom Position in the file to start reading at, must be >= 0.
     * @param readSize Number of bytes to read, must be >= 0.
-    * @return A contiguous LazyList(position, bytes) where data chunk size is limited to [[dedup.memChunk]]. */
-  private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] = {
-    // FIXME resultOffset is not used - this points at a problem
+    *
+    * @return A contiguous LazyList(position, bytes) where data chunk size is limited to [[dedup.memChunk]].
+    */
+  private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): LazyList[(Long, Array[Byte])] = {
+    log.info(s"readFromLts $parts $readFrom $readSize")
     require(readFrom >= 0, s"Read offset $readFrom must be >= 0.")
     require(readSize > 0, s"Read size $readSize must be > 0.")
     val (lengthOfParts, partsToReadFrom) = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
@@ -138,39 +145,30 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
       if (partSize < readSize) lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
       else lts.read(partPosition, readSize, resultOffset)
     }
-    recurse(partsToReadFrom, readSize, 0L)
+    recurse(partsToReadFrom, readSize, readFrom)
   }
 
-  /** Reads bytes from the referenced file and writes them to the data `sink`.
+  /** Reads bytes from the referenced file.
     *
     * Note: The caller must make sure that no read beyond end-of-entry takes place
     * here because the behavior in that case is undefined. TODO define it.
-    *
-    * Note: Instead of returning the data read the `sink` approach is used
-    * so [[Level2]] can easily use the [[DataEntry.read()]] method.
     *
     * @param id           id of the file to read from.
     * @param dataId       dataId of the file to read from in case the file is not cached.
     * @param offset       offset in the file to start reading at.
     * @param size         number of bytes to read, NOT limited by the internal size limit for byte arrays.
-    * @param sink         sink to write data to.
-    * @param offsetInSink position in sink to start writing at.
+    *
+    * @return A contiguous LazyList(position, bytes) where data chunk size is limited to [[dedup.memChunk]].
     */
-  def read[D: DataSink](id: Long, dataId: Long, offset: Long, size: Long, sink: D, offsetInSink: Long): Unit = {
+  def read(id: Long, dataId: Long, offset: Long, size: Long): LazyList[(Long, Array[Byte])] = {
     synchronized(files.get(id)) match {
       case None =>
-        // FIXME continue documentation here
-        readFromLts(db.parts(dataId), offset, size, offset).foreach { case partPos -> data =>
-          sink.write(offsetInSink + partPos, data)
-        }
+        readFromLts(db.parts(dataId), offset, size)
       case Some(entry) =>
         lazy val ltsParts = db.parts(entry.baseDataId.get())
-        // FIXME we can use readUnsafe here as well, then we don't have to use the sink in Level2.read at all...
-        val remainingHoles = entry.read(offset, size, sink, offsetInSink)._2
-        remainingHoles.foreach { case (position, size) =>
-          readFromLts(ltsParts, position, size, position).foreach { case partPos -> data =>
-            sink.write(offsetInSink + partPos, data) // FIXME offsetInSink + partPos probably not correct
-          }
+        entry.readUnsafe(offset, size)._2.flatMap {
+          case Right(value) => LazyList(value)
+          case Left(holeOffset -> holeSize) => readFromLts(ltsParts, holeOffset, holeSize)
         }
     }
   }
