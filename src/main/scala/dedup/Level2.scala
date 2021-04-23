@@ -156,4 +156,5 @@ class Level2(settings: Settings) extends AutoCloseable with ClassLogging {
           }
         }
     }
+  }
 }
