@@ -67,5 +67,6 @@ object XTestLevel1 extends App with ClassLogging {
   } finally {
     log.info(s"Clean up")
     CleanInit.delete(baseFolder)
+    Thread.sleep(100)
   }
 }
