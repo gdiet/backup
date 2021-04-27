@@ -1,8 +1,10 @@
 package dedup.cache
 
+import dedup.ClassLogging
+
 import java.util
 
-trait CacheBase[M] {
+trait CacheBase[M] extends ClassLogging {
   implicit protected def m: MemArea[M]
 
   /** The methods are designed so no overlapping entries can occur. */
@@ -49,8 +51,8 @@ trait CacheBase[M] {
     }
   }
 
-  protected def areasInSection(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, M)]] = {
-    {
+  protected def areasInSection(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, M)]] =
+    guard(s"areasInSection(position: $position, size: $size) - entries: $entries") {
       // Identify the relevant entries.
       val startKey = Option(entries.floorKey(position)).getOrElse(position)
       import scala.jdk.CollectionConverters.MapHasAsScala
@@ -83,5 +85,4 @@ trait CacheBase[M] {
         recurse(section, position, size)
       }
     }
-  }
 }

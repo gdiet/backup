@@ -9,7 +9,7 @@ package dedup
 trait ClassLogging {
   protected val log: Logger = new Slf4jLogger(getClass.getName)
 
-  protected def guard[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T = {
+  protected def watch[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T = {
     logger(s">> $msg")
     val start = System.nanoTime()
     def time = {
@@ -22,6 +22,9 @@ trait ClassLogging {
     try f.tap(t => logger(s"<< $time $msg -> $t"))
     catch { case e: Throwable => log.error(s"<< $time $msg -> ERROR", e); throw e }
   }
+
+  protected def guard[T](msg: => String)(f: => T): T =
+    try f catch { case e: Throwable => log.error(s"$msg -> ERROR", e); throw e }
 }
 
 trait Logger {

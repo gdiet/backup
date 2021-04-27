@@ -41,12 +41,12 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     }
 
   def size(id: Long, dataId: Long): Long =
-    guard(s"size($id, $dataId)") {
+    watch(s"size($id, $dataId)") {
       synchronized(files.get(id)).map(_._2.size).getOrElse(two.size(id, dataId))
     }
 
   def delete(entry: TreeEntry): Unit =
-    guard(s"delete($entry)") {
+    watch(s"delete($entry)") {
       entry match {
         case file: FileEntry => synchronized {
           files.get(file.id).foreach { case _ -> data => data.close(-1); files -= file.id }
@@ -57,7 +57,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     }
 
   def createAndOpen(parentId: Long, name: String, time: Long): Option[Long] =
-    guard(s"createAndOpen($parentId, $name)") {
+    watch(s"createAndOpen($parentId, $name)") {
       // https://stackoverflow.com/questions/67017901/why-does-scala-option-tapeach-return-iterable-not-option
       two.mkFile(parentId, name, time).tap(_.foreach { id =>
         synchronized(files += id -> (1, new DataEntry(new AtomicLong(-1), 0, settings.tempPath)))
@@ -65,7 +65,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     }
 
   def open(file: FileEntry): Unit =
-    guard(s"open($file)") {
+    watch(s"open($file)") {
       synchronized { import file._
         files += id -> (files.get(id) match {
           case None =>
@@ -80,12 +80,12 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     *             atomically / synchronized.
     * @return `false` if called without createAndOpen or open. */
   def write(id: Long, data: LazyList[(Long, Array[Byte])]): Boolean =
-    guard(s"write(id: $id, data: LazyList)") {
+    watch(s"write(id: $id, data: LazyList)") {
       synchronized(files.get(id)).map(_._2.write(data)).isDefined
     }
 
   def truncate(id: Long, newSize: Long): Boolean =
-    guard(s"truncate(id: $id, newSize: $newSize)") {
+    watch(s"truncate(id: $id, newSize: $newSize)") {
       synchronized(files.get(id)).map(_._2.truncate(newSize)).isDefined
     }
 
@@ -104,7 +104,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     * @return Some(actual size read) or None if called without createAndOpen.
     */
   def read[D: DataSink](id: Long, offset: Long, size: Long, sink: D): Option[Long] =
-    guard(s"read($id, $offset, $size)") {
+    watch(s"read($id, $offset, $size)") {
       synchronized(files.get(id)).map { case _ -> dataEntry =>
         val sizeRead -> holes = dataEntry.read(offset, size, sink)
         holes.foreach { case holeOffset -> holeSize =>
@@ -116,7 +116,7 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     }
 
   def release(id: Long): Boolean =
-    guard(s"release($id)") {
+    watch(s"release($id)") {
       val result = synchronized(files.get(id) match {
         case None => None // No handle found, return false.
         case Some(count -> dataEntry) =>

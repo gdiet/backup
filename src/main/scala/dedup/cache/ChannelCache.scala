@@ -1,6 +1,6 @@
 package dedup.cache
 
-import dedup.{ClassLogging, memChunk}
+import dedup.memChunk
 
 import java.nio.ByteBuffer
 import java.nio.file.StandardOpenOption.{CREATE_NEW, READ, SPARSE, WRITE}
@@ -8,7 +8,7 @@ import java.nio.file.{Files, Path}
 
 /** Caches in a file byte arrays with positions, where the byte arrays are not necessarily contiguous.
   * For best performance use a sparse file channel. */
-class ChannelCache(path: Path)(implicit val m: MemArea[Int]) extends CacheBase[Int] with ClassLogging with AutoCloseable {
+class ChannelCache(path: Path)(implicit val m: MemArea[Int]) extends CacheBase[Int] with AutoCloseable {
   log.debug(s"Create cache file $path")
   private val channel = Files.newByteChannel(path, WRITE, CREATE_NEW, SPARSE, READ)
 

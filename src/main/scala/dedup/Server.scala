@@ -42,8 +42,8 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   private val rights = if (readonly) 292 else 438 // o444 else o666
   private val store  = new Level1(settings)
 
-  override protected def guard[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T = {
-    super.guard(msg, logger)(f).tap {
+  override protected def watch[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T = {
+    super.watch(msg, logger)(f).tap {
       case EIO       => log.error(s"EIO: $msg")
       case EINVAL    => log.warn (s"EINVAL: $msg")
       case EOVERFLOW => log.warn (s"EOVERFLOW: $msg")
@@ -52,7 +52,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   }
 
   override def umount(): Unit =
-    guard(s"umount") {
+    watch(s"umount") {
       log.info(s"Stopping dedup file system...")
       super.umount()
       store.close()
@@ -66,7 +66,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
 
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int =
-    guard(s"getattr $path") {
+    watch(s"getattr $path") {
       def setCommon(time: Long, nlink: Int): Unit = {
         stat.st_nlink.set(nlink)
         stat.st_mtim.tv_sec .set (time / 1000)
@@ -90,7 +90,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
 
   // see man UTIMENSAT(2)
   override def utimens(path: String, timespec: Array[Timespec]): Int =
-    if (readonly) EROFS else guard(s"utimens $path") {
+    if (readonly) EROFS else watch(s"utimens $path") {
       if (timespec.length < 2) EIO
       else {
         val sec = timespec(1).tv_sec .get
@@ -105,7 +105,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
 
   // Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir.
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
-    guard(s"readdir $path $offset") {
+    watch(s"readdir $path $offset") {
       store.entry(path) match {
         case Some(dir: DirEntry) =>
           if (offset < 0 || offset.toInt != offset) EOVERFLOW
@@ -121,7 +121,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def rmdir(path: String): Int =
-    if (readonly) EROFS else guard("rmdir $path") {
+    if (readonly) EROFS else watch("rmdir $path") {
       store.entry(path) match {
         case Some(dir: DirEntry) => if (store.children(dir.id).nonEmpty) ENOTEMPTY else { store.delete(dir); OK }
         case Some(_)             => ENOTDIR
@@ -131,7 +131,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
 
   // If copyWhenMoving is active, the last persisted state of files is copied - without the current modifications.
   override def rename(oldpath: String, newpath: String): Int =
-    if (readonly) EROFS else guard(s"rename $oldpath .. $newpath") {
+    if (readonly) EROFS else watch(s"rename $oldpath .. $newpath") {
       val (oldParts, newParts) = (store.split(oldpath), store.split(newpath))
       if (oldParts.length == 0 || newParts.length == 0) ENOENT
       else store.entry(oldParts) match {
@@ -163,7 +163,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def mkdir(path: String, mode: Long): Int =
-    if (readonly) EROFS else guard(s"mkdir $path") {
+    if (readonly) EROFS else watch(s"mkdir $path") {
       val parts = store.split(path)
       if (parts.length == 0) ENOENT
       else store.entry(parts.take(parts.length - 1)) match {
@@ -181,7 +181,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   // https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
   // On Linux more of the stbuf struct would need to be filled to get sensible disk space values.
   override def statfs(path: String, stbuf: Statvfs): Int =
-    guard(s"statfs $path") {
+    watch(s"statfs $path") {
       if (Platform.getNativePlatform.getOS == WINDOWS) {
         stbuf.f_frsize.set(                        32768) // fs block size
         stbuf.f_bfree .set(dataDir.getFreeSpace  / 32768) // free blocks in fs
@@ -228,7 +228,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
   //    }
 
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
-    if (readonly) EROFS else guard(s"create $path") {
+    if (readonly) EROFS else watch(s"create $path") {
       val parts = store.split(path)
       if (parts.length == 0) ENOENT // can't create root
       else store.entry(parts.dropRight(1)) match { // fetch parent entry
@@ -244,7 +244,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def open(path: String, fi: FuseFileInfo): Int =
-    guard(s"open $path") {
+    watch(s"open $path") {
       store.entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
@@ -253,13 +253,13 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def release(path: String, fi: FuseFileInfo): Int =
-    guard(s"release $path") {
+    watch(s"release $path") {
       val fileHandle = fi.fh.get()
       if (store.release(fileHandle)) OK else EIO // false if called without create or open
     }
 
   override def write(path: String, source: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-    if (readonly) EROFS else guard(s"write $path .. offset = $offset, size = $size") {
+    if (readonly) EROFS else watch(s"write $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs // We need to return an Int size, so here it is.
       def data: LazyList[(Long, Array[Byte])] = LazyList.range(0, intSize, memChunk).map { readOffset =>
         def chunkSize = math.min(memChunk, intSize - readOffset)
@@ -271,7 +271,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def truncate(path: String, size: Long): Int =
-    if (readonly) EROFS else guard(s"truncate $path .. $size") {
+    if (readonly) EROFS else watch(s"truncate $path .. $size") {
       store.entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
@@ -281,7 +281,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-    guard(s"read $path .. offset = $offset, size = $size") {
+    watch(s"read $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs // We need to return an Int size, so here it is.
       if (offset < 0 || size != intSize) EOVERFLOW else { // With intSize being .abs (see above) checks for negative size, too.
         val fileHandle = fi.fh.get()
@@ -292,7 +292,7 @@ class Server(settings: Settings) extends FuseStubFS with FuseConstants with Clas
     }
 
   override def unlink(path: String): Int = if (readonly) EROFS else
-    guard(s"unlink $path") {
+    watch(s"unlink $path") {
       store.entry(path) match {
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR

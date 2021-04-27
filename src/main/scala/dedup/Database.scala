@@ -154,7 +154,7 @@ class Database(connection: Connection) extends ClassLogging {
   private val qParts = connection.prepareStatement(
     "SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC"
   )
-  def parts(dataId: Long): Vector[(Long, Long)] = guard(s"parts(dataId: $dataId)")(sync {
+  def parts(dataId: Long): Vector[(Long, Long)] = watch(s"parts(dataId: $dataId)")(sync {
     qParts.setLong(1, dataId)
     resource(qParts.executeQuery())(_.seq { rs =>
       val (start, size) = rs.getLong(1) -> rs.getLong(2)
