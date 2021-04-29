@@ -90,7 +90,8 @@ class Level1(settings: Settings) extends AutoCloseable with ClassLogging {
     }
 
   /** Reads bytes from the referenced file and writes them to the data `sink`.
-    * Reads the requested number of bytes unless end-of-file is reached first.
+    * Reads the requested number of bytes unless end-of-file is reached first,
+    * in that case stops there.
     *
     * Note: Providing a `sink` instead of returning the data read enables atomic reads
     * in the - at [[Level1]] mutable - [[DataEntry]] without incurring the risk of large

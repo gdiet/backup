@@ -28,7 +28,8 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   def size: Long = synchronized(cache.size)
 
   /** Reads bytes from this [[DataEntry]] and writes them to the data `sink`.
-    * Reads the requested number of bytes unless end-of-entry is reached first.
+    * Reads the requested number of bytes unless end-of-file is reached first,
+    * in that case stops there.
     * Returns the areas skipped because they are not cached in this [[DataEntry]].
     *
     * Note: Providing a `sink` instead of returning the data read
@@ -49,13 +50,15 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     }.toVector
   }
 
-  /** Unsafe: Should only be used if it is ensured that no writes to the DataEntry occur during the read process.
+  /** Reads the requested number of bytes unless end-of-file is reached first,
+    * in that case stops there.
+    *
+    * Unsafe: Should only be used if it is ensured that no writes to the DataEntry occur during the read process.
     *
     * @param size Supports sizes larger than the internal size limit for byte arrays.
     * @return (actual size read, Vector(Either(holePosition, holeSize | position, bytes)) */
   def readUnsafe(offset: Long, size: Long): (Long, LazyList[Either[(Long, Long), (Long, Array[Byte])]]) = synchronized {
-    // FIXME offset can be larger than cache.size...?
-    val sizeToRead = math.min(size, cache.size - offset)
+    val sizeToRead = math.max(0, math.min(size, cache.size - offset))
     sizeToRead -> cache.read(offset, sizeToRead)
   }
 
