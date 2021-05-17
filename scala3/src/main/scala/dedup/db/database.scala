@@ -1,0 +1,287 @@
+package dedup
+package db
+
+import java.io.File
+import java.lang.System.{currentTimeMillis => now}
+import java.sql.{Connection, ResultSet, Statement, Types}
+import scala.util.Try
+import scala.util.Using.resource
+
+def dbDir(repo: java.io.File) = java.io.File(repo, "fsdb")
+
+// deleted == 0 for regular files, deleted == timestamp for deleted files. Why? Because NULL does not work with UNIQUE.
+private def tableDefinitions =
+  s"""|CREATE TABLE Context (
+      |  key   VARCHAR(255) NOT NULL,
+      |  value VARCHAR(255) NOT NULL
+      |);
+      |INSERT INTO Context (key, value) VALUES ('db version', '2');
+      |CREATE SEQUENCE idSeq START WITH 1;
+      |CREATE TABLE DataEntries (
+      |  id     BIGINT NOT NULL,
+      |  seq    INTEGER NOT NULL,
+      |  length BIGINT NULL,
+      |  start  BIGINT NOT NULL,
+      |  stop   BIGINT NOT NULL,
+      |  hash   BINARY NULL,
+      |  CONSTRAINT pk_DataEntries PRIMARY KEY (id, seq)
+      |);
+      |CREATE TABLE TreeEntries (
+      |  id           BIGINT NOT NULL DEFAULT (NEXT VALUE FOR idSeq),
+      |  parentId     BIGINT NOT NULL,
+      |  name         VARCHAR(255) NOT NULL,
+      |  time         BIGINT NOT NULL,
+      |  deleted      BIGINT NOT NULL DEFAULT 0,
+      |  dataId       BIGINT DEFAULT NULL,
+      |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id),
+      |  CONSTRAINT un_TreeEntries UNIQUE (parentId, name, deleted),
+      |  CONSTRAINT fk_TreeEntries_parentId FOREIGN KEY (parentId) REFERENCES TreeEntries(id)
+      |);
+      |INSERT INTO TreeEntries (id, parentId, name, time) VALUES (0, 0, '', $now);
+      |""".stripMargin split ";"
+
+// DataEntriesStopIdx: Find start of free data.
+// DataEntriesLengthHashIdx: Find data entries by size & hash.
+// TreeEntriesDataIdIdx: Find orphan data entries.
+private def indexDefinitions =
+  """|CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
+     |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
+     |CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);""".stripMargin split ";"
+
+def initialize(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
+  tableDefinitions.foreach(stat.executeUpdate)
+  indexDefinitions.foreach(stat.executeUpdate)
+}
+
+//object database extends util.ClassLogging {
+//
+//
+//
+//
+//  def startOfFreeData(statement: Statement): Long =
+//    resource(statement.executeQuery("SELECT MAX(stop) FROM DataEntries"))(_.maybeNext(_.getLong(1)).getOrElse(0L))
+//
+//  def allDataChunks(statement: Statement): Seq[(Long, Long)] =
+//    resource(statement.executeQuery("SELECT start, stop FROM DataEntries"))(_.seq(r => r.getLong(1) -> r.getLong(2)))
+//
+//  /** @return Seq(id, Option(size), Option(hash), seq, start, stop) */
+//  def allDataEntries(statement: Statement): Seq[(Long, Option[Long], Option[Array[Byte]], Int, Long, Long)] =
+//    resource(statement.executeQuery("SELECT id, length, hash, seq, start, stop FROM DataEntries"))(
+//      _.seq(r => (r.getLong(1), r.opt(_.getLong(2)), r.opt(_.getBytes(3)), r.getInt(4), r.getLong(5), r.getLong(6)))
+//    )
+//
+//  def stats(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
+//    log.info(s"Dedup File System Statistics")
+//    val storageSize = stat.executeQuery("SELECT MAX(stop) FROM DataEntries").tap(_.next()).getLong(1)
+//    log.info(f"Data storage: ${
+//      readableBytes(storageSize)
+//    } ($storageSize%,d Bytes) / ${
+//      stat.executeQuery("SELECT COUNT(id) FROM DataEntries WHERE seq = 1").tap(_.next()).getLong(1)
+//    }%,d entries")
+//    log.info(f"Files: ${
+//      stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL").tap(_.next()).getLong(1)
+//    }%,d, deleted ${
+//      stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL").tap(_.next()).getLong(1)
+//    }%,d")
+//    log.info(f"Folders: ${
+//      stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL").tap(_.next()).getLong(1)
+//    }%,d, deleted ${
+//      stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL").tap(_.next()).getLong(1)
+//    }%,d")
+//  }
+//
+//  implicit class RichConnection(val c: Connection) extends AnyVal {
+//    /** Don't use nested or multi-threaded. */
+//    def transaction[T](f: => T): T =
+//      try { c.setAutoCommit(false); f.tap(_ => c.commit()) }
+//      catch { case t: Throwable => c.rollback(); throw t }
+//      finally c.setAutoCommit(true)
+//  }
+//
+//  implicit class RichResultSet(val rs: ResultSet) extends AnyVal {
+//    def opt[T](f: ResultSet => T): Option[T] =
+//      f(rs).pipe(t => if (rs.wasNull) None else Some(t))
+//    def maybeNext[T](f: ResultSet => T): Option[T] =
+//      if (rs.next()) Some(f(rs)) else None
+//    def seq[T](f: ResultSet => T): Vector[T] =
+//      LazyList.continually(Option.when(rs.next)(f(rs))).takeWhile(_.isDefined).flatten.toVector
+//  }
+//
+//  def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry = rs.opt(_.getLong(3)) match {
+//    case None => DirEntry(rs.getLong(1), parentId, name, rs.getLong(2))
+//    case Some(dataId) => FileEntry(rs.getLong(1), parentId, name, rs.getLong(2), dataId)
+//  }
+//
+//  val root: DirEntry = DirEntry(0, 0, "", now)
+//}
+//
+//class database(connection: Connection) extends ClassLogging {
+//  import database._
+//
+//  {
+//    val dbVersionRead = resource(connection.createStatement())(
+//      _.executeQuery("SELECT value FROM Context WHERE key = 'db version'").pipe(_.maybeNext(_.getString(1)))
+//    )
+//    require(dbVersionRead.contains("2"), s"DB version read is $dbVersionRead, not 2")
+//  }
+//
+//  private def sync[T](f: => T): T = synchronized(f)
+//
+//  def startOfFreeData: Long = sync {
+//    resource(connection.createStatement())(database.startOfFreeData)
+//  }
+//
+//  private val qDataIdForEntry = connection.prepareStatement(
+//    "SELECT dataId FROM TreeEntries WHERE id = ?"
+//  )
+//  def dataId(id: Long): Option[Long] = sync {
+//    qDataIdForEntry.setLong(1, id)
+//    resource(qDataIdForEntry.executeQuery())(_.maybeNext(_.opt(_.getLong(1)))).flatten
+//  }
+//
+//  private val qChild = connection.prepareStatement(
+//    "SELECT id, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
+//  )
+//  def child(parentId: Long, name: String): Option[TreeEntry] = sync {
+//    qChild.setLong(1, parentId)
+//    qChild.setString(2, name)
+//    resource(qChild.executeQuery())(_.maybeNext(treeEntry(parentId, name, _)))
+//  }
+//
+//  private val qChildren = connection.prepareStatement(
+//    "SELECT id, time, dataId, name FROM TreeEntries WHERE parentId = ? AND deleted = 0"
+//  )
+//  def children(parentId: Long): Seq[TreeEntry] = sync {
+//    qChildren.setLong(1, parentId)
+//    resource(qChildren.executeQuery())(_.seq(rs => treeEntry(parentId, rs.getString(4), rs)))
+//  }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
+//
+//  private val qParts = connection.prepareStatement(
+//    "SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC"
+//  )
+//  def parts(dataId: Long): Vector[(Long, Long)] = watch(s"parts(dataId: $dataId)")(sync {
+//    qParts.setLong(1, dataId)
+//    resource(qParts.executeQuery())(_.seq { rs =>
+//      val (start, size) = rs.getLong(1) -> rs.getLong(2)
+//      assert(start >= 0, s"Start $start must be >= 0.")
+//      assert(size >= 0, s"Size $size must be >= 0.")
+//      start -> size
+//    })
+//  })
+//
+//  private val qDataSize = connection.prepareStatement(
+//    "SELECT length FROM DataEntries WHERE id = ? AND seq = 1"
+//  )
+//  def dataSize(dataId: Long): Long = sync {
+//    resource(qDataSize.tap(_.setLong(1, dataId)).executeQuery())(_.maybeNext(_.getLong(1))).getOrElse(0)
+//  }
+//
+//  private val dTreeEntry = connection.prepareStatement(
+//    "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
+//  )
+//  def delete(id: Long): Boolean = sync {
+//    val time = System.currentTimeMillis.pipe { case 0 => 1; case x => x }
+//    dTreeEntry.setLong(1, time)
+//    dTreeEntry.setLong(2, id)
+//    (dTreeEntry.executeUpdate() == 1).tap(r => if (!r) log.warn(s"DELETE tree entry $id failed."))
+//  }
+//
+//  private val uParentName = connection.prepareStatement(
+//    "UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?"
+//  )
+//  def update(id: Long, newParentId: Long, newName: String): Boolean = sync {
+//    uParentName.setLong(1, newParentId)
+//    uParentName.setString(2, newName)
+//    uParentName.setLong(3, id)
+//    uParentName.executeUpdate() == 1
+//  }
+//
+//  private val uTime = connection.prepareStatement(
+//    "UPDATE TreeEntries SET time = ? WHERE id = ?"
+//  )
+//  def setTime(id: Long, newTime: Long): Unit = sync {
+//    uTime.setLong(1, newTime)
+//    uTime.setLong(2, id)
+//    require(uTime.executeUpdate() == 1, s"setTime update count not 1 for id $id")
+//  }
+//
+//  private val iDir = connection.prepareStatement(
+//    "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)",
+//    Statement.RETURN_GENERATED_KEYS
+//  )
+//  /** Returns None if a child entry with the same name already exists. */
+//  def mkDir(parentId: Long, name: String): Option[Long] = Try(sync {
+//    iDir.setLong(1, parentId)
+//    iDir.setString(2, name)
+//    iDir.setLong(3, now)
+//    require(iDir.executeUpdate() == 1)
+//    iDir.getGeneratedKeys.tap(_.next()).getLong("id")
+//  }).toOption
+//
+//  private val iFile = connection.prepareStatement(
+//    "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, -1)",
+//    Statement.RETURN_GENERATED_KEYS
+//  )
+//  /** @return [[None]] if a child entry with the same name already exists. */
+//  def mkFile(parentId: Long, name: String, time: Long): Option[Long] = Try(sync {
+//    iFile.setLong(1, parentId)
+//    iFile.setString(2, name)
+//    iFile.setLong(3, time)
+//    require(iFile.executeUpdate() == 1)
+//    iFile.getGeneratedKeys.tap(_.next()).getLong("id")
+//  }).toOption
+//
+//  private val iFileWithDataId = connection.prepareStatement(
+//    "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)"
+//  )
+//  /** Returns false if a child entry with the same name already exists. */
+//  def mkFile(parentId: Long, name: String, time: Long, dataId: Long): Boolean = Try(sync {
+//    iFileWithDataId.setLong(1, parentId)
+//    iFileWithDataId.setString(2, name)
+//    iFileWithDataId.setLong(3, time)
+//    iFileWithDataId.setLong(4, dataId)
+//    require(iFileWithDataId.executeUpdate() == 1)
+//  }).isSuccess
+//
+//  private val qNextId = connection.prepareStatement("SELECT NEXT VALUE FOR idSeq")
+//  def nextId: Long = sync {
+//    resource(qNextId.executeQuery())(_.tap(_.next()).getLong(1))
+//  }
+//
+//  // Generated keys seem not to be available for sql update, so this is two SQL commands
+//  def newDataIdFor(id: Long): Long = sync {
+//    nextId.tap(setDataId(id, _))
+//  }
+//
+//  private val uDataId = connection.prepareStatement(
+//    "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
+//  )
+//  def setDataId(id: Long, dataId: Long): Unit = sync {
+//    uDataId.setLong(1, dataId)
+//    uDataId.setLong(2, id)
+//    require(uDataId.executeUpdate() == 1, s"setDataId update count not 1 for id $id dataId $dataId")
+//  }
+//
+//  private val qHash = connection.prepareStatement(
+//    "SELECT id FROM DataEntries WHERE hash = ? AND length = ?"
+//  )
+//  def dataEntry(hash: Array[Byte], size: Long): Option[Long] = sync {
+//    qHash.setBytes(1, hash)
+//    qHash.setLong(2, size)
+//    resource(qHash.executeQuery())(r => r.maybeNext(_.getLong(1)))
+//  }
+//
+//  private val iDataEntry = connection.prepareStatement(
+//    "INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)"
+//  )
+//  def insertDataEntry(dataId: Long, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = sync {
+//    require(seq > 0, s"seq not positive: $seq")
+//    iDataEntry.setLong(1, dataId)
+//    iDataEntry.setInt(2, seq)
+//    if (seq == 1) iDataEntry.setLong(3, length) else iDataEntry.setNull(3, Types.BIGINT)
+//    iDataEntry.setLong(4, start)
+//    iDataEntry.setLong(5, stop)
+//    if (seq == 1) iDataEntry.setBytes(6, hash) else iDataEntry.setNull(3, Types.BINARY)
+//    require(iDataEntry.executeUpdate() == 1, s"insertDataEntry update count not 1 for dataId $dataId")
+//  }
+//}
