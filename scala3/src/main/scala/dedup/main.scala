@@ -21,7 +21,7 @@ import scala.util.Using.resource
   val copyWhenMoving = opts.get("copywhenmoving").contains("true")
   val temp           = File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
   val dbDir          = db.dbDir(repo)
-  if dbDir.exists() then
+  if !dbDir.exists() then
     main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
   if getNativePlatform.getOS != WINDOWS then
     if !mountPoint.isDirectory  then main.failureExit(s"Mount point is not a directory: $mountPoint")
