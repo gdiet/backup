@@ -1,0 +1,16 @@
+package dedup
+
+import java.io.File
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
+
+case class ServerSettings(
+                     repo          : File,
+                     dbDir         : File,
+                     temp          : File,
+                     readonly      : Boolean,
+                     copyWhenMoving: AtomicBoolean
+                   ) {
+  val tempPath: Path = temp.toPath
+  val dataDir : File = store.dataDir(repo)
+}

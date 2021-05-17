@@ -4,11 +4,13 @@ import java.io.{File, FileNotFoundException, RandomAccessFile}
 import java.lang.System.{currentTimeMillis => now}
 import java.util.concurrent.atomic.AtomicLong
 
+def dataDir(repo: File) = new File(repo, "data")
+
 /** A sequential byte store on disk limited by disc capacity only, accessible by [[read]] and [[write]].
   * The byte store is thread safe. Backing data files are filled up to [[fileSize]] 100.000.000 bytes. This way
   * they can be copied fast (not too many files which slows down copy) while having a manageable in size for
   * all kinds of file systems. When used in read-only mode, write access fails with an exception. */
-class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dataDir) {
+class longTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dataDir) {
 
   /** 100.000.000 bytes. Must be Int (not Long). Don't change without migration script. */
   private val fileSize = 100000000
