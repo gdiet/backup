@@ -1,10 +1,10 @@
-/.bsp/sbt.json
-/.idea/
+**/\.bsp/sbt\.json
+**/\.idea/
+**/target/
+**/log/
+**/*\.log
 /app\.*
 /data/
 /dedupfs-temp/
 /fsdb/
-/log/
-target/
-**/*\.log
 OpenJDK11U-jre_x64_*
