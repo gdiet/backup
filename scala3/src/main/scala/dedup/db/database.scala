@@ -2,7 +2,6 @@ package dedup
 package db
 
 import java.io.File
-import java.lang.System.{currentTimeMillis => now}
 import java.sql.{Connection, ResultSet, Statement, Types}
 import scala.util.Try
 import scala.util.Using.resource

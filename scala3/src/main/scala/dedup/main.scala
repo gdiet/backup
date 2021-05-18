@@ -4,7 +4,6 @@ import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.Platform.getNativePlatform
 
 import java.io.File
-import java.lang.System.{currentTimeMillis => now}
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.Using.resource
 
