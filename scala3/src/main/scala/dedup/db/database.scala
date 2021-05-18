@@ -28,6 +28,15 @@ class Database(connection: Connection) extends util.ClassLogging {
     qChild.setString(2, name    )
     resource(qChild.executeQuery())(_.maybeNext(treeEntry(parentId, name)))
   }
+
+  private val uTime = connection.prepareStatement(
+    "UPDATE TreeEntries SET time = ? WHERE id = ?"
+  )
+  def setTime(id: Long, newTime: Long): Unit = synchronized {
+    uTime.setLong(1, newTime)
+    uTime.setLong(2, id)
+    require(uTime.executeUpdate() == 1, s"setTime update count not 1 for id $id")
+  }
 }
 
 extension (rs: ResultSet)

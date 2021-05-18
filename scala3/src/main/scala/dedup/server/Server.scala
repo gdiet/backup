@@ -51,4 +51,16 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
           OK
     }
 
+  // see man UTIMENSAT(2)
+  override def utimens(path: String, timespec: Array[Timespec]): Int =
+    if settings.readonly then EROFS else watch(s"utimens $path") {
+      if timespec.length < 2 then EIO else
+        val sec = timespec(1).tv_sec .get
+        val nan = timespec(1).tv_nsec.longValue
+        if sec < 0 || nan < 0 || nan > 1000000000 then EINVAL else
+          backend.entry(path) match
+            case None => ENOENT
+            case Some(entry) => backend.setTime(entry.id, sec*1000 + nan/1000000); OK
+    }
+
 }
