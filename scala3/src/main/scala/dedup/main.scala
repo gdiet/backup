@@ -39,11 +39,14 @@ import scala.util.Using.resource
   main.info (s"Readonly:    $readOnly")
   main.debug(s"Temp dir:    $temp")
   if copyWhenMoving then main.info(s"Copy instead of move initially enabled.")
-
-  ???
+  val fs             = server.Server(settings)
+  val nativeFuseOpts = if getNativePlatform.getOS == WINDOWS then Array("-o", "volname=DedupFS") else Array[String]()
+  val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
+  try fs.mount(mountPoint.toPath, true, false, fuseOpts)
+  catch { case e: Throwable => main.error("Mount exception:", e); fs.umount() }
 
 object main extends util.ClassLogging {
-  export log.{debug, info, warn}
+  export log.{debug, info, warn, error}
   def failureExit(msg: String*): Nothing =
     msg.foreach(log.error(_))
     Thread.sleep(200)
