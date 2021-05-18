@@ -79,4 +79,12 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
         case None               => ENOENT
     }
 
+  override def rmdir(path: String): Int =
+    if settings.readonly then EROFS else watch("rmdir $path") {
+      backend.entry(path) match
+        case Some(dir: DirEntry) => if backend.children(dir.id).nonEmpty then ENOTEMPTY else { backend.delete(dir); OK }
+        case Some(_)             => ENOTDIR
+        case None                => ENOENT
+    }
+
 }

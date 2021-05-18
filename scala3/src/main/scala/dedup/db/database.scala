@@ -43,8 +43,22 @@ class Database(connection: Connection) extends util.ClassLogging {
   def setTime(id: Long, newTime: Long): Unit = synchronized {
     uTime.setLong(1, newTime)
     uTime.setLong(2, id)
-    require(uTime.executeUpdate() == 1, s"setTime update count not 1 for id $id")
+    val count = uTime.executeUpdate()
+    if count != 1 then log.warn(s"For id $id, setTime update count $count instead of 1.")
   }
+
+  private val dTreeEntry = connection.prepareStatement(
+    "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
+  )
+  // TODO use type aliases for id, size, time
+  def delete(id: Long): Unit = synchronized {
+    val time = now.pipe { case 0 => 1; case x => x }
+    dTreeEntry.setLong(1, time)
+    dTreeEntry.setLong(2, id)
+    val count = dTreeEntry.executeUpdate()
+    if count != 1 then log.warn(s"For id $id, delete count $count instead of 1.")
+  }
+
 }
 
 extension (rs: ResultSet)

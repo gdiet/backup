@@ -12,5 +12,11 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging {
                                                         case _ => None
                                                       }
 
+  def delete(entry: TreeEntry): Unit =
+    watch(s"delete($entry)") {
+      // TODO delete from Level1
+      backend.delete(entry.id)
+    }
+
   def size(id: Long, dataId: Long): Long = 0 // FIXME
 }
