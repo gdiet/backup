@@ -1,6 +1,5 @@
-package dedup.util
-
-import scala.util.chaining._
+package dedup
+package util
 
 /** Provides logging methods. For optimum performance uses by-name string parameters.
   *

@@ -5,7 +5,6 @@ import java.io.File
 import java.sql.{Connection, ResultSet, Statement, Types}
 import scala.util.Try
 import scala.util.Using.resource
-import scala.util.chaining._
 
 def dbDir(repo: java.io.File) = java.io.File(repo, "fsdb")
 
