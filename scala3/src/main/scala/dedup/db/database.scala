@@ -15,7 +15,7 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
 
 class Database(connection: Connection) extends util.ClassLogging {
 
-  private def treeEntry(parentId: Long, name: String)(rs: ResultSet): TreeEntry =
+  private def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry =
     rs.opt(_.getLong(3)) match
       case None         => DirEntry (rs.getLong(1), parentId, name, rs.getLong(2)        )
       case Some(dataId) => FileEntry(rs.getLong(1), parentId, name, rs.getLong(2), dataId)
@@ -26,8 +26,16 @@ class Database(connection: Connection) extends util.ClassLogging {
   def child(parentId: Long, name: String): Option[TreeEntry] = synchronized {
     qChild.setLong  (1, parentId)
     qChild.setString(2, name    )
-    resource(qChild.executeQuery())(_.maybeNext(treeEntry(parentId, name)))
+    resource(qChild.executeQuery())(_.maybeNext(treeEntry(parentId, name, _)))
   }
+
+  private val qChildren = connection.prepareStatement(
+    "SELECT id, time, dataId, name FROM TreeEntries WHERE parentId = ? AND deleted = 0"
+  )
+  def children(parentId: Long): Seq[TreeEntry] = synchronized {
+    qChildren.setLong(1, parentId)
+    resource(qChildren.executeQuery())(_.seq(rs => treeEntry(parentId, rs.getString(4), rs)))
+  }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
   private val uTime = connection.prepareStatement(
     "UPDATE TreeEntries SET time = ? WHERE id = ?"

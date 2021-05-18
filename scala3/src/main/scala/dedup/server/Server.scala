@@ -59,8 +59,24 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
         val nan = timespec(1).tv_nsec.longValue
         if sec < 0 || nan < 0 || nan > 1000000000 then EINVAL else
           backend.entry(path) match
-            case None => ENOENT
+            case None        => ENOENT
             case Some(entry) => backend.setTime(entry.id, sec*1000 + nan/1000000); OK
+    }
+
+  // No benefit expected from implementing opendir/releasedir and handing over a file handle to readdir.
+  override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
+    watch(s"readdir $path $offset") {
+      backend.entry(path) match
+        case Some(dir: DirEntry) =>
+          if offset < 0 || offset.toInt != offset then EOVERFLOW else
+            def names = Seq(".", "..") ++ backend.children(dir.id).map(_.name)
+            // '.exists' used for side effect until a condition is met.
+            // TODO fill with k+1 or with k+1 - offset? -> Check with a LONG directory listing that logs if offset > 0
+            // TODO For FileStat try to use S_IFREG / S_IFDIR directly - this might save some fs calls
+            names.zipWithIndex.drop(offset.toInt).exists { case (name, k) => fill.apply(buf, name, null, k + 1 - offset) != 0 }
+            OK
+        case Some(_: FileEntry) => ENOTDIR
+        case None               => ENOENT
     }
 
 }
