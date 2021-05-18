@@ -1,5 +1,4 @@
 package dedup
-package server
 
 trait      TreeEntry(id: Long, parentId: Long, name: String, time: Long)
 case class DirEntry (id: Long, parentId: Long, name: String, time: Long)               extends TreeEntry(id, parentId, name, time)

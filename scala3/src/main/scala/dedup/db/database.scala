@@ -8,6 +8,15 @@ import scala.util.Using.resource
 
 def dbDir(repo: java.io.File) = java.io.File(repo, "fsdb")
 
+def initialize(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
+  tableDefinitions.foreach(stat.executeUpdate)
+  indexDefinitions.foreach(stat.executeUpdate)
+}
+
+class Database(connection: Connection) extends util.ClassLogging {
+  def child(parentId: Long, name: String): Option[TreeEntry] = ???
+}
+
 // deleted == 0 for regular files, deleted == timestamp for deleted files. Why? Because NULL does not work with UNIQUE.
 private def tableDefinitions =
   s"""|CREATE TABLE Context (
@@ -46,11 +55,6 @@ private def indexDefinitions =
   """|CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
      |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
      |CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);""".stripMargin split ";"
-
-def initialize(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
-  tableDefinitions.foreach(stat.executeUpdate)
-  indexDefinitions.foreach(stat.executeUpdate)
-}
 
 //object database extends util.ClassLogging {
 //
@@ -114,6 +118,8 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
 //  val root: DirEntry = DirEntry(0, 0, "", now)
 //}
 //
+
+
 //class database(connection: Connection) extends ClassLogging {
 //  import database._
 //

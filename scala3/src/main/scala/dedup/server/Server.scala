@@ -23,8 +23,8 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
     watch(s"umount") {
       log.info(s"Stopping dedup file system...")
       super.umount()
-      // TODO close level 1 store - there, warn about unclosed data entries and non-empty temp dir
       log.info(s"Dedup file system is stopped.")
+      backend.close()
       OK
     }
 
