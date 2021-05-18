@@ -33,10 +33,10 @@ import scala.util.Using.resource
     if !temp.canWrite     then main.failureExit(s"Temp dir is not writable: $temp")
     if temp.list.nonEmpty then main.warn(s"Note that temp dir is not empty: $temp")
   // TODO add server GUI
-  main.info(s"Starting dedup file system.")
-  main.info(s"Repository:  $repo")
-  main.info(s"Mount point: $mountPoint")
-  main.info(s"Readonly:    $readOnly")
+  main.info (s"Starting dedup file system.")
+  main.info (s"Repository:  $repo")
+  main.info (s"Mount point: $mountPoint")
+  main.info (s"Readonly:    $readOnly")
   main.debug(s"Temp dir:    $temp")
   if copyWhenMoving then main.info(s"Copy instead of move initially enabled.")
 

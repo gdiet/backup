@@ -1,0 +1,36 @@
+<configuration>
+    <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%date{HH:mm:ss.SSS} %.-3level %-17logger{17} - %msg%n</pattern>
+        </encoder>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>INFO</level>
+        </filter>
+    </appender>
+
+    <appender name="asyncConsole" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="console"/>
+    </appender>
+
+    <appender name="timeBasedFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_BASE:-log}/dedupfs.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_BASE:-log}/old/dedupfs.%d.%i.gz</fileNamePattern>
+            <maxHistory>100</maxHistory>
+            <maxFileSize>5MB</maxFileSize>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder>
+            <pattern>%date %-5level %-11logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="asyncTimeBasedFile" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="timeBasedFile"/>
+    </appender>
+
+    <root level="DEBUG">
+        <appender-ref ref="asyncConsole"/>
+        <appender-ref ref="asyncTimeBasedFile"/>
+    </root>
+</configuration>
