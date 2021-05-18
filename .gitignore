@@ -1,8 +1,12 @@
-**/\.bsp/sbt\.json
+**/\.bloop/
+**/\.bsp/
 **/\.idea/
+**/\.metals/
+**/\.vscode/
+**/null/
 **/target/
 **/log/
-**/*\.log
+**/metals.sbt
 /app\.*
 /data/
 /dedupfs-temp/

@@ -26,7 +26,7 @@ import scala.util.Using.resource
   if getNativePlatform.getOS != WINDOWS then
     if !mountPoint.isDirectory  then main.failureExit(s"Mount point is not a directory: $mountPoint")
     if !mountPoint.list.isEmpty then main.failureExit(s"Mount point is not empty: $mountPoint")
-  val settings = ServerSettings(repo, dbDir, temp, readOnly, AtomicBoolean(copyWhenMoving))
+  val settings = server.Settings(repo, dbDir, temp, readOnly, AtomicBoolean(copyWhenMoving))
   if !readOnly then
     temp.mkdirs()
     if !temp.isDirectory  then main.failureExit(s"Temp dir is not a directory: $temp")

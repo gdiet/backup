@@ -1,10 +1,11 @@
 package dedup
+package server
 
 import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
 
-case class ServerSettings(
+case class Settings(
                      repo          : File,
                      dbDir         : File,
                      temp          : File,
