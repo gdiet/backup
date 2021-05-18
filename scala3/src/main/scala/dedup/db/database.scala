@@ -5,6 +5,7 @@ import java.io.File
 import java.sql.{Connection, ResultSet, Statement, Types}
 import scala.util.Try
 import scala.util.Using.resource
+import scala.util.chaining._
 
 def dbDir(repo: java.io.File) = java.io.File(repo, "fsdb")
 
@@ -14,8 +15,26 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
 }
 
 class Database(connection: Connection) extends util.ClassLogging {
-  def child(parentId: Long, name: String): Option[TreeEntry] = ???
+
+  private def treeEntry(parentId: Long, name: String)(rs: ResultSet): TreeEntry =
+    rs.opt(_.getLong(3)) match
+      case None         => DirEntry (rs.getLong(1), parentId, name, rs.getLong(2)        )
+      case Some(dataId) => FileEntry(rs.getLong(1), parentId, name, rs.getLong(2), dataId)
+  
+  private val qChild = connection.prepareStatement(
+    "SELECT id, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
+  )
+  def child(parentId: Long, name: String): Option[TreeEntry] = synchronized {
+    qChild.setLong  (1, parentId)
+    qChild.setString(2, name    )
+    resource(qChild.executeQuery())(_.maybeNext(treeEntry(parentId, name)))
+  }
 }
+
+extension (rs: ResultSet)
+  def maybeNext[T](f: ResultSet => T): Option[T] = Option.when(rs.next())(f(rs))
+  def opt[T](f: ResultSet => T): Option[T] = f(rs).pipe(t => if rs.wasNull then None else Some(t))
+  def seq[T](f: ResultSet => T): Vector[T] = LazyList.continually(Option.when(rs.next)(f(rs))).takeWhile(_.isDefined).flatten.toVector
 
 // deleted == 0 for regular files, deleted == timestamp for deleted files. Why? Because NULL does not work with UNIQUE.
 private def tableDefinitions =
