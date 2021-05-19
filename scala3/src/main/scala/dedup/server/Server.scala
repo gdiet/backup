@@ -51,16 +51,14 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
           OK
     }
 
-  // see man UTIMENSAT(2)
-  override def utimens(path: String, timespec: Array[Timespec]): Int =
-    if settings.readonly then EROFS else watch(s"utimens $path") {
-      if timespec.length < 2 then EIO else
-        val sec = timespec(1).tv_sec .get
-        val nan = timespec(1).tv_nsec.longValue
-        if sec < 0 || nan < 0 || nan > 1000000000 then EINVAL else
-          backend.entry(path) match
-            case None        => ENOENT
-            case Some(entry) => backend.setTime(entry.id, sec*1000 + nan/1000000); OK
+  override def mkdir(path: String, mode: Long): Int =
+    if settings.readonly then EROFS else watch(s"mkdir $path") {
+      val parts = backend.split(path)
+      if parts.length == 0 then ENOENT else
+        backend.entry(parts.dropRight(1)) match
+          case None                 => ENOENT
+          case Some(_  : FileEntry) => ENOTDIR
+          case Some(dir: DirEntry ) => backend.mkDir(dir.id, parts.last).fold(EEXIST)(_ => OK)
     }
 
   // No benefit expected from implementing opendir/releasedir and handing over a file handle to readdir.
@@ -85,6 +83,18 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
         case Some(dir: DirEntry) => if backend.children(dir.id).nonEmpty then ENOTEMPTY else { backend.delete(dir); OK }
         case Some(_)             => ENOTDIR
         case None                => ENOENT
+    }
+
+  // see man UTIMENSAT(2)
+  override def utimens(path: String, timespec: Array[Timespec]): Int =
+    if settings.readonly then EROFS else watch(s"utimens $path") {
+      if timespec.length < 2 then EIO else
+        val sec = timespec(1).tv_sec .get
+        val nan = timespec(1).tv_nsec.longValue
+        if sec < 0 || nan < 0 || nan > 1000000000 then EINVAL else
+          backend.entry(path) match
+            case None        => ENOENT
+            case Some(entry) => backend.setTime(entry.id, sec*1000 + nan/1000000); OK
     }
 
 }
