@@ -17,8 +17,8 @@ class Database(connection: Connection) extends util.ClassLogging {
 
   private def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry =
     rs.opt(_.getLong(3)) match
-      case None         => DirEntry (rs.getLong(1), parentId, name, rs.getLong(2)        )
-      case Some(dataId) => FileEntry(rs.getLong(1), parentId, name, rs.getLong(2), dataId)
+      case None         => DirEntry (rs.getLong(1), parentId, name, Time(rs.getLong(2))        )
+      case Some(dataId) => FileEntry(rs.getLong(1), parentId, name, Time(rs.getLong(2)), dataId)
   
   private val qChild = connection.prepareStatement(
     "SELECT id, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
@@ -50,10 +50,8 @@ class Database(connection: Connection) extends util.ClassLogging {
   private val dTreeEntry = connection.prepareStatement(
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
   )
-  // TODO use type aliases for id, size, time
   def delete(id: Long): Unit = synchronized {
-    val time = now.pipe { case 0 => 1; case x => x }
-    dTreeEntry.setLong(1, time)
+    dTreeEntry.setLong(1, now.nonZero.toLong)
     dTreeEntry.setLong(2, id)
     val count = dTreeEntry.executeUpdate()
     if count != 1 then log.warn(s"For id $id, delete count $count instead of 1.")

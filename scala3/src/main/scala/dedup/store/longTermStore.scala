@@ -25,7 +25,7 @@ class longTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dat
     (path, positionInFile, math.min(fileSize - positionInFile, size).toInt)
 
   /** Unix time in millis when last a missing file was logged on WARN level. */
-  private val missingFileLoggedLast = AtomicLong(now - 3600000) // Initialized as "one hour ago".
+  private val missingFileLoggedLast = AtomicLong(now.toLong - 3600000) // Initialized as "one hour ago".
 
   /** @param position The position in the store to start writing at, must be >= 0.
     * @param data     The data to write to the store. */
@@ -53,8 +53,8 @@ class longTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dat
       file.seek(offset)
       file.readFully(bytes, 0, bytesToRead)
     } catch { case _: FileNotFoundException =>
-      if missingFileLoggedLast.get() + 300000 < now then // full log every five minutes
-        missingFileLoggedLast.set(now)
+      if missingFileLoggedLast.get() + 300000 < now.toLong then // full log every five minutes
+        missingFileLoggedLast.set(now.toLong)
         log.warn(s"Missing data file $path while reading at $position, substituting with '0' values.")
       else
         log.debug(s"Missing data file $path while reading at $position, substituting with '0' values.")

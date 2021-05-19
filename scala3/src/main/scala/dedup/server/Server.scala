@@ -30,10 +30,10 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int =
     watch(s"getattr $path") {
-      def setCommon(time: Long, nlink: Int): Unit =
+      def setCommon(time: Time, nlink: Int): Unit =
         stat.st_nlink.set(nlink)
-        stat.st_mtim.tv_sec .set (time / 1000)
-        stat.st_mtim.tv_nsec.set((time % 1000) * 1000000)
+        stat.st_mtim.tv_sec .set (time.toLong / 1000)
+        stat.st_mtim.tv_nsec.set((time.toLong % 1000) * 1000000)
         stat.st_uid.set(getContext.uid.get)
         stat.st_gid.set(getContext.gid.get)
 
