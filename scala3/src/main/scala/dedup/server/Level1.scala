@@ -18,5 +18,5 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging {
       backend.delete(entry.id)
     }
 
-  def size(id: Long, dataId: Long): Long = 0 // FIXME
+  def size(id: Long, dataId: DataId): Long = 0 // FIXME
 }

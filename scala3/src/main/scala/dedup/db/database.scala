@@ -17,8 +17,8 @@ class Database(connection: Connection) extends util.ClassLogging {
 
   private def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry =
     rs.opt(_.getLong(3)) match
-      case None         => DirEntry (rs.getLong(1), parentId, name, Time(rs.getLong(2))        )
-      case Some(dataId) => FileEntry(rs.getLong(1), parentId, name, Time(rs.getLong(2)), dataId)
+      case None         => DirEntry (rs.getLong(1), parentId, name, Time(rs.getLong(2))                )
+      case Some(dataId) => FileEntry(rs.getLong(1), parentId, name, Time(rs.getLong(2)), DataId(dataId))
   
   private val qChild = connection.prepareStatement(
     "SELECT id, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
