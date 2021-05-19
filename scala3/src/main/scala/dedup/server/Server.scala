@@ -27,6 +27,10 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
       OK
     }
 
+  // *************
+  // Tree Handling
+  // *************
+
   /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int =
     watch(s"getattr $path") {
@@ -85,6 +89,19 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
         case None                => ENOENT
     }
 
+  // Implemented for Windows in order to allow for copying data from other devices because winfsp calculates
+  // volume size based on statvfs. See ru.serce.jnrfuse.examples.MemoryFS.statfs and
+  // https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
+  // On Linux more of the stbuf struct would need to be filled to get sensible disk space values.
+  override def statfs(path: String, stbuf: Statvfs): Int =
+    watch(s"statfs $path") {
+      if Platform.getNativePlatform.getOS == WINDOWS then
+        stbuf.f_frsize.set(                                 32768) // fs block size
+        stbuf.f_bfree .set(settings.dataDir.getFreeSpace  / 32768) // free blocks in fs
+        stbuf.f_blocks.set(settings.dataDir.getTotalSpace / 32768) // total data blocks in file system
+      OK
+    }
+
   // see man UTIMENSAT(2)
   override def utimens(path: String, timespec: Array[Timespec]): Int =
     if settings.readonly then EROFS else watch(s"utimens $path") {
@@ -96,5 +113,9 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
             case None        => ENOENT
             case Some(entry) => backend.setTime(entry.id, sec*1000 + nan/1000000); OK
     }
+
+  // *************
+  // File Handling
+  // *************
 
 }
