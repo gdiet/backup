@@ -60,15 +60,38 @@ class Database(connection: Connection) extends util.ClassLogging {
   private val iDir = connection.prepareStatement(
     "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS
   )
-  /** Returns None if a child entry with the same name already exists. */
+  /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = Try(synchronized {
     iDir.setLong  (1, parentId  )
     iDir.setString(2, name      )
     iDir.setLong  (3, now.toLong)
     val count = iDir.executeUpdate() // Name conflict triggers SQL exception due to unique constraint.
-    if count != 1 then log.warn(s"For parentId $parentId and name '$name', mkdir update count is $count instead of 1.")
+    if count != 1 then log.warn(s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
+
+  private val iFileWithDataId = connection.prepareStatement(
+    "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)"
+  )
+  /** @return false if a child entry with the same name already exists. */
+  def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Boolean = Try(synchronized {
+    iFileWithDataId.setLong  (1, parentId     )
+    iFileWithDataId.setString(2, name         )
+    iFileWithDataId.setLong  (3, time.toLong  )
+    iFileWithDataId.setLong  (4, dataId.toLong)
+    val count = iFileWithDataId.executeUpdate() // Name conflict triggers SQL exception due to unique constraint.
+    if count != 1 then log.warn(s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
+  }).isSuccess
+
+  private val uParentName = connection.prepareStatement(
+    "UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?"
+  )
+  def update(id: Long, newParentId: Long, newName: String): Boolean = synchronized {
+    uParentName.setLong  (1, newParentId)
+    uParentName.setString(2, newName    )
+    uParentName.setLong  (3, id         )
+    uParentName.executeUpdate() == 1
+  }
 
 }
 

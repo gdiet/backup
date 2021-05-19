@@ -81,6 +81,40 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
         case None               => ENOENT
     }
 
+  // If copyWhenMoving is active, the last persisted state of files is copied - without any current modifications.
+  override def rename(oldpath: String, newpath: String): Int =
+    if (settings.readonly) EROFS else watch(s"rename $oldpath .. $newpath") {
+      val oldParts = backend.split(oldpath)
+      val newParts = backend.split(newpath)
+      if oldParts.length == 0 || newParts.length == 0 then ENOENT else
+      if oldParts.sameElements(newParts)              then OK     else
+        backend.entry(oldParts) match
+          case None         => ENOENT // Oldpath does not exist.
+          case Some(origin) => backend.entry(newParts.dropRight(1)) match
+            case None                       => ENOENT  // Parent of newpath does not exist.
+            case Some(_        : FileEntry) => ENOTDIR // Parent of newpath is a file.
+            case Some(targetDir: DirEntry ) =>
+              val newName = newParts.last
+              origin -> backend.child(targetDir.id, newName) match
+                case (_: FileEntry) -> Some(_: DirEntry) => EISDIR // Oldpath is a file and newpath is a dir.
+                case  _             -> previous          =>
+                  // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
+                  // replace operation is not atomic. This is tolerated in order to simplify the code.
+                  previous.foreach(backend.delete)
+                  if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
+                    def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match {
+                      case file: FileEntry =>
+                        backend.copyFile(file, newParentId, newName)
+                      case dir : DirEntry =>
+                        backend.mkDir(newParentId, newName)
+                          .exists(dirId => backend.children(source.id).forall(child => copy(child, child.name, dirId)))
+                    }
+                    if (copy(origin, newName, targetDir.id)) OK else EEXIST
+                  else
+                    backend.update(origin.id, targetDir.id, newName)
+                    OK
+    }
+
   override def rmdir(path: String): Int =
     if settings.readonly then EROFS else watch("rmdir $path") {
       backend.entry(path) match
