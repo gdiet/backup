@@ -73,9 +73,9 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
           if offset < 0 || offset.toInt != offset then EOVERFLOW else
             def names = Seq(".", "..") ++ backend.children(dir.id).map(_.name)
             // '.exists' used for side effect until a condition is met.
-            // TODO fill with k+1 or with k+1 - offset? -> Check with a LONG directory listing that logs if offset > 0
-            // TODO For FileStat try to use S_IFREG / S_IFDIR directly - this might save some fs calls
-            names.zipWithIndex.drop(offset.toInt).exists { case (name, k) => fill.apply(buf, name, null, k + 1 - offset) != 0 }
+            // Providing a FileStat would probably save getattr calls but is not straightforward to implement.
+            // The last arg of fill.apply could be set to 0, but then there would be no paging for readdir.
+            names.zipWithIndex.drop(offset.toInt).exists { case (name, k) => fill.apply(buf, name, null, k + 1) != 0 }
             OK
         case Some(_: FileEntry) => ENOTDIR
         case None               => ENOENT
