@@ -1,3 +1,5 @@
+On Linux (e.g. WSL/Debian), `/etc/mtab` might not be available and CTRL-C will not correctly unmount the file system. This might help: `sudo ln -s /proc/self/mounts /etc/mtab`.
+
 ```
 c:\dateien\Computer\bin\idea\jbr\bin\java.exe -cp * dedup.init c:\dateien\Temp\repo
 c:\dateien\Computer\bin\idea\jbr\bin\java.exe -cp * dedup.mount c:\dateien\Temp\repo J:\
