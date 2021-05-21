@@ -3,7 +3,8 @@ package server
 
 import java.util.concurrent.atomic.AtomicLong
 
-class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging {
+class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
+
   val backend = Level2(settings)
   export backend.{child, children, close, mkDir, setTime, update}
 
@@ -16,7 +17,7 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging {
                                                       
   /** Creates a copy of the file's last persisted state without current modifications. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean = 
-    backend.mkFile(newParentId, newName, file.time, file.dataId)
+    backend.mkFile(newParentId, newName, file.time, file.dataId).isDefined
 
   /** id -> (handle count, dataEntry). Remember to synchronize. */
   private var files = Map[Long, (Int, DataEntry)]()
@@ -31,10 +32,11 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging {
     watch(s"createAndOpen($parentId, $name)") {
       // https://stackoverflow.com/questions/67017901/why-does-scala-option-tapeach-return-iterable-not-option
       // TODO use https://github.com/scala/scala-library-next/pull/80
-      backend.mkFile(parentId, name, time).tap(_.foreach { id =>
+      backend.mkFile(parentId, name, time, DataId(-1)).tap(_.foreach { id =>
         synchronized(files += id -> (1, DataEntry(new AtomicLong(-1), 0, settings.tempPath)))
       })
     }
 
   def size(id: Long, dataId: DataId): Long = 0 // FIXME
-}
+
+end Level1

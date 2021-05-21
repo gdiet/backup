@@ -1,10 +1,10 @@
 package dedup
 package server
 
-class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging {
+class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   private val con = db.H2.connection(settings.dbDir, settings.readonly)
-  private val database = db.Database(con)
+  val database = db.Database(con)
   export database.{child, children, delete, mkDir, mkFile, setTime, update}
 
   override def close(): Unit =
@@ -13,4 +13,4 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging {
     // TODO delete empty temp dir
     con.close()
   
-}
+end Level2

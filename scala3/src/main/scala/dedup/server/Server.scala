@@ -6,7 +6,8 @@ import jnr.ffi.{Platform, Pointer}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 
-class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
+class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
+
   private val rights = if (settings.readonly) 292 else 438 // o444 else o666
   private val backend = Level1(settings)
 
@@ -173,4 +174,4 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
               OK
     }
 
-}
+end Server

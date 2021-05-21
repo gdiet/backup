@@ -7,7 +7,8 @@ package util
   * consider using the companion object for class logging. In this case see also
   *
   * @see https://stackoverflow.com/questions/13713557/scala-accessing-protected-field-of-companion-objects-trait */
-trait ClassLogging {
+trait ClassLogging:
+
   protected val log: Slf4jLogger = Slf4jLogger(getClass.getName)
 
   protected def watch[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T =
@@ -25,9 +26,11 @@ trait ClassLogging {
 
   protected def guard[T](msg: => String)(f: => T): T =
     try f catch { case e: Throwable => log.error(s"$msg -> ERROR", e); throw e }
-}
 
-class Slf4jLogger(name: String) {
+end ClassLogging
+
+class Slf4jLogger(name: String):
+
   private val logger: org.slf4j.Logger = org.slf4j.LoggerFactory.getLogger(name.stripSuffix("$"))
   def trace(msg: => String): Unit = if (logger.isTraceEnabled) logger.trace(msg)
   def debug(msg: => String): Unit = if (logger.isDebugEnabled) logger.debug(msg)
@@ -39,4 +42,5 @@ class Slf4jLogger(name: String) {
   def info (msg: => String, e: => Throwable): Unit = logger.info(msg, e)
   def warn (msg: => String, e: => Throwable): Unit = logger.warn(msg, e)
   def error(msg: => String, e: => Throwable): Unit = logger.error(msg, e)
-}
+
+end Slf4jLogger

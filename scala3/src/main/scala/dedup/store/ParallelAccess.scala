@@ -7,10 +7,12 @@ import java.io.{File, RandomAccessFile}
 import java.util.concurrent.locks.ReentrantLock
 import scala.collection.mutable
 import scala.util.Try
+import dedup.store.ParallelAccess
 
 /** Manages thread safe parallel access to dedupfs data files so that only a limited
   * number of files is kept open and that write access is only used where necessary. */
-trait ParallelAccess(dataDir: File) extends AutoCloseable with ClassLogging {
+trait ParallelAccess(dataDir: File) extends AutoCloseable with ClassLogging:
+
   private val parallelOpenFiles = 5
   private val mapLock = ReentrantLock()
   private val openFiles = mutable.LinkedHashMap[String, (ReentrantLock, Boolean, RandomAccessFile)]()
@@ -72,4 +74,5 @@ trait ParallelAccess(dataDir: File) extends AutoCloseable with ClassLogging {
       fileLock.lock()
       closeFile(path, resource)
     }
-}
+
+end ParallelAccess

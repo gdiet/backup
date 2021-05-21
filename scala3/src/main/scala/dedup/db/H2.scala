@@ -3,7 +3,7 @@ package db
 
 import java.sql.{Connection, DriverManager}
 
-object H2 {
+object H2:
   Class.forName("org.h2.Driver")
 
   // For SQL debugging, add to the DB URL "...;TRACE_LEVEL_SYSTEM_OUT=2"
@@ -16,4 +16,4 @@ object H2 {
       val dbTraceFile = java.io.File(directory, "fsdb/dedupfs.trace.db")
       require(!dbTraceFile.exists(), s"Database trace file $connection found. Check for database problems.")
     DriverManager.getConnection(jdbcUrl(directory, readonly) + settings, "sa", "").tap(_.setAutoCommit(true))
-}
+end H2
