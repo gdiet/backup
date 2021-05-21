@@ -152,4 +152,25 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging {
   // File Handling
   // *************
 
+  // To implement soft links in getattr set FileStat.S_IFLNK.
+  // https://man7.org/linux/man-pages/man2/symlink.2.html
+  //  override def symlink(oldpath: String, newpath: String): Int =
+  // https://man7.org/linux/man-pages/man2/readlink.2.html
+  //  override def readlink(path: String, buf: Pointer, size: Long): Int =
+
+  override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
+    if settings.readonly then EROFS else watch(s"create $path") {
+      val parts = backend.split(path)
+      if parts.length == 0 then ENOENT // Can't create root.
+      else backend.entry(parts.dropRight(1)) match // Fetch parent entry.
+        case None                => ENOENT  // Parent not known.
+        case Some(_: FileEntry)  => ENOTDIR // Parent is a file.
+        case Some(dir: DirEntry) =>
+          backend.createAndOpen(dir.id, parts.last, now) match
+            case None         => EEXIST // Entry with the given name already exists.
+            case Some(handle) => // Yay, success!
+              fi.fh.set(handle)
+              OK
+    }
+
 }

@@ -93,6 +93,23 @@ class Database(connection: Connection) extends util.ClassLogging {
     uParentName.executeUpdate() == 1
   }
 
+  // FIXME merge the two iFile operations
+  private val iFile = connection.prepareStatement(
+    "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, -1)",
+    Statement.RETURN_GENERATED_KEYS
+  )
+  /** Creates a file with dataId -1 if possible.
+    * 
+    * @return `Some(id)` or [[None]] if a child entry with the same name already exists. */
+  def mkFile(parentId: Long, name: String, time: Time): Option[Long] = Try(synchronized {
+    iFile.setLong  (1, parentId   )
+    iFile.setString(2, name       )
+    iFile.setLong  (3, time.toLong)
+    val count = iFile.executeUpdate()
+    if count != 1 then log.warn(s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
+    iFile.getGeneratedKeys.tap(_.next()).getLong("id")
+  }).toOption
+
 }
 
 extension (rs: ResultSet)

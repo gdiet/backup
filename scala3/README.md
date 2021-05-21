@@ -7,7 +7,7 @@ java -cp .:* dedup.init /home/georg/repo
 java -cp .:* dedup.mount /home/georg/repo /home/georg/dfs
 
 ~/git/backup/scala3$
+~/sbt/bin/sbt "~ createApp"
 java -cp .:target/app/lib/* dedup.mount /home/georg/repo /home/georg/dfs
 java -cp .:target/app/lib/* ru.serce.jnrfuse.examples.MemoryFS
-
 ```
