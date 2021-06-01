@@ -12,7 +12,20 @@ end MemCache
 
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous. */
 class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] {
-  override implicit protected val m: MemArea[Array[Byte]] = ??? // new ByteArrayArea(availableMem)
+
+  extension(m: Array[Byte])
+    override protected def length: Long = m.length
+    override protected def dropped: Unit = availableMem.addAndGet(length)
+    override protected def drop(distance: Long): Array[Byte] =
+      require(distance < length && distance > 0, s"Distance: $distance")
+      availableMem.addAndGet(distance)
+      m.drop(distance.asInt)
+    override protected def keep(distance: Long): Array[Byte] =
+      require(distance < length && distance > 0, s"Distance: $distance")
+      ???
+    override protected def split(distance: Long): (Array[Byte], Array[Byte]) =
+      require(distance < length && distance > 0, s"Distance: $distance")
+      ???
 
   @annotation.tailrec
   private def tryAcquire(size: Long): Boolean =
@@ -20,17 +33,6 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] {
     if avail < size then false
     else if availableMem.compareAndSet(avail, avail - size) then true
     else tryAcquire(size)
-
-  /** Truncates the cached data to the provided size. */
-  override def keep(newSize: Long): Unit =
-    ???
-    // // Remove higher entries (by keeping all strictly lower entries).
-    // entries = entries.headMap(newSize, false)
-    // // If necessary, trim highest entry.
-    // Option(entries.lastEntry()).foreach { case Entry(storedPosition, stored) =>
-    //   val distance = newSize - storedPosition
-    //   if (distance < stored.length) entries.put(storedPosition, stored.take(distance.asInt))
-    // }
 
   /** Assumes that the area to write is clear.
     *
