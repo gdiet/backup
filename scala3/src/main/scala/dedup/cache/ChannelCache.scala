@@ -21,4 +21,7 @@ class ChannelCache(temp: Path) extends CacheBase[Int] with AutoCloseable:
       require(distance < length && distance > 0, s"Distance: $distance")
       (distance.asInt, m - distance.asInt)
 
+  /** Assumes that the area to write is clear. */
+  def write(offset: Long, data: Array[Byte]): Unit = ???
+
   override def close(): Unit = ???

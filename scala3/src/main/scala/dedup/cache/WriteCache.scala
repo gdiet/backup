@@ -10,7 +10,7 @@ import dedup.util.ClassLogging
   *
   * @param temp Temp directory to use.
   * @param initialSize Size of the underlying file when the cache is instantiated. */
-class FileCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extends AutoCloseable with ClassLogging:
+class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extends AutoCloseable with ClassLogging:
 
   private var _size: Long = initialSize
   def          size: Long = _size
@@ -18,28 +18,42 @@ class FileCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extends
   private var _written: Boolean = false
   def          written: Boolean = _written
 
-  private val zeroCache = Allocation()
   private val memCache = MemCache(availableMem)
+  private val zeroCache = Allocation()
   private var maybeChannelCache: Option[ChannelCache] = None
   private def channelCache = maybeChannelCache.getOrElse(ChannelCache(temp).tap(c => maybeChannelCache = Some(c)))
 
   /** Truncates the cache to a new size. Zero-pads if the cache size increases. */
-  def truncate(newSize: Long): Unit = if newSize != _size then
+  def truncate(newSize: Long): Unit = if newSize != _size then guard(s"truncate $_size -> $newSize") {
     require(newSize >= 0, s"newSize: $newSize")
     if newSize > _size then
-      zeroCache.allocate(_size, newSize - _size)
+      zeroCache.allocate(position = _size, size = newSize - _size)
     else
-      zeroCache.keep(newSize)
       memCache.keep(newSize)
+      zeroCache.keep(newSize)
       maybeChannelCache.foreach(_.keep(newSize))
     _written = true
     _size = newSize
+  }
 
   /** Writes data to the cache. Data size should not exceed `memChunk`. */
-  def write(position: Long, data: Array[Byte]): Unit = ???
+  def write(position: Long, data: Array[Byte]): Unit = if data.length > 0 then guard(s"write $position [${data.length}]") {
+    // Clear the area in all caches.
+    if position < _size then
+      memCache.clear(position, data.length)
+      zeroCache.clear(position, data.length)
+      maybeChannelCache.foreach(_.clear(position, data.length))
+    // Allocate zeros if writing starts beyond end of file.
+    if position > _size then zeroCache.allocate(_size, position - _size)
+    // Write the area.
+    if !memCache.write(position, data) then channelCache.write(position, data)
+    _written = true
+    _size = math.max(_size, position + data.length)
+  }
 
   /** @return LazyList((holePosition, holeSize) | (dataPosition, bytes)) where positions start at `position`. */
   def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = ???
 
   override def close(): Unit =
+    memCache.close()
     maybeChannelCache.foreach(_.close())
