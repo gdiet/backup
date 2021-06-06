@@ -22,3 +22,6 @@ class Allocation extends CacheBase[Long]:
 
   /** Allocates a range. */
   def allocate(position: Long, size: Long): Unit = entries.put(position, size)
+
+  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Long)]] =
+    areasInSection(position, size)

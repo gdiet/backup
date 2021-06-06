@@ -24,4 +24,6 @@ class ChannelCache(temp: Path) extends CacheBase[Int] with AutoCloseable:
   /** Assumes that the area to write is clear. */
   def write(offset: Long, data: Array[Byte]): Unit = ???
 
+  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = ???
+
   override def close(): Unit = ???
