@@ -11,7 +11,7 @@ object MemCache extends ClassLogging:
 end MemCache
 
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous. */
-class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] {
+class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with AutoCloseable:
 
   extension(m: Array[Byte])
     override protected def length: Long = m.length
@@ -34,6 +34,12 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] {
     else if availableMem.compareAndSet(avail, avail - size) then true
     else tryAcquire(size)
 
+  override def keep(newSize: Long): Unit =
+    // In addition, deallocate all higher entries.
+    val higher = entries.tailMap(newSize)
+    super.keep(newSize)
+    higher.forEach((_, data) => availableMem.addAndGet(data.length))
+
   /** Assumes that the area to write is clear.
     *
     * @return `false` if data is not cached because not enough free memory is available. */
@@ -42,4 +48,5 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] {
 
   def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] =
     areasInSection(position, size)
-}
+
+  override def close(): Unit = ???

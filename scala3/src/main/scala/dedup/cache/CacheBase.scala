@@ -2,7 +2,7 @@ package dedup.cache
 
 import dedup.util.ClassLogging
 
-trait CacheBase[M] extends ClassLogging {
+trait CacheBase[M] extends ClassLogging:
 
   extension(m: M)
     protected def length: Long
@@ -44,9 +44,9 @@ trait CacheBase[M] extends ClassLogging {
     // Remove higher entries (by keeping all strictly lower entries).
     entries = entries.headMap(newSize, false)
     // If necessary, trim highest remaining entry.
-    Option(entries.lastEntry()).foreach { case JEntry(storedPosition, storedArea) =>
-      val distance = newSize - storedPosition
-      if (distance < storedArea.length) entries.put(storedPosition, storedArea.keep(distance))
+    Option(entries.lastEntry()).foreach { case JEntry(storedAt, area) =>
+      val distance = newSize - storedAt
+      if (distance < area.length) entries.put(storedAt, area.keep(distance))
     }
 
   protected def areasInSection(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, M)]] =
@@ -81,4 +81,3 @@ trait CacheBase[M] extends ClassLogging {
     //           Left(currentPos, distance) #:: recurse(section, entryPos, remainingSize - distance)
     //     recurse(section, position, size)
     // }
-}

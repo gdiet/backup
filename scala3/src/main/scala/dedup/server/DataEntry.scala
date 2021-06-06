@@ -1,7 +1,8 @@
-package dedup.server
+package dedup
+package server
 
 import DataEntry.{closedEntries, currentId}
-import dedup.cache.{CombinedCache, MemCache}
+import dedup.cache.{FileCache, MemCache}
 import dedup.util.ClassLogging
 
 import java.util.concurrent.atomic.AtomicLong
@@ -17,7 +18,7 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   log.trace(s"Create $id with base data ID $baseDataId.")
 
   private val path = tempDir.resolve(s"$id")
-  private val cache = CombinedCache(MemCache.availableMem, path, initialSize)
+  private val cache = FileCache(MemCache.availableMem, path, initialSize)
   private val isOpen = new CountDownLatch(1)
 
   def written: Boolean = synchronized(cache.written)
