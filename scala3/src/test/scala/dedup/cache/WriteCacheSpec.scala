@@ -26,6 +26,12 @@ class WriteCacheSpec extends AnyFreeSpec:
 
     val MaxInt: Long = Int.MaxValue
 
+    "The keep method" - {
+      "called with negative size throws an IllegalArgumentException" in {
+        intercept[IllegalArgumentException] { cache.keep(-1) }
+      }
+    }
+
     "The clear method" - {
       "called with negative position throws an IllegalArgumentException" in {
         intercept[IllegalArgumentException] { cache.clear(-1, 1) }
