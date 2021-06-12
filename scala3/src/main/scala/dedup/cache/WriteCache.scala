@@ -53,22 +53,24 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
 
   /** @return LazyList((holePosition, holeSize) | (dataPosition, bytes)) where positions start at `position`. */
   def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = if size == 0 then LazyList() else guard(s"read($position, $size)") {
-    // Read from memory cache.
-    memCache.read(position, size).flatMap {
-      case Right(data) => LazyList(Right(data))
-      // Fill holes from channel cache.
-      case left @ Left(position -> size) => maybeChannelCache.map(_.read(position, size)).getOrElse(LazyList(left))
-    }.flatMap {
-      case Right(data) => LazyList(Right(data))
-      case Left(position -> size) =>
-        // Fill holes from zero allocations cache.
-        zeroCache.read(position, size).flatMap {
-          case Right(localPos -> localSize) =>
-            LazyList.range(0L, localSize, memChunk.toLong)
-              .map(off => Right(localPos + off -> new Array[Byte](math.min(memChunk, localSize - off).asInt)))
-          case Left(data) => LazyList(Left(data))
-        }
-    }
+    // FIXME change return type to LazyList[Long, Either[(Long, Array[Byte])]]
+    ???
+//    // Read from memory cache.
+//    memCache.read(position, size).flatMap {
+//      case Right(data) => LazyList(Right(data))
+//      // Fill holes from channel cache.
+//      case left @ Left(position -> size) => ??? // maybeChannelCache.map(_.read(position, size)).getOrElse(LazyList(left))
+//    }.flatMap {
+//      case Right(data) => LazyList(Right(data))
+//      case Left(position -> size) =>
+//        // Fill holes from zero allocations cache.
+//        zeroCache.read(position, size).flatMap {
+//          case Right(localPos -> localSize) =>
+//            LazyList.range(0L, localSize, memChunk.toLong)
+//              .map(off => Right(localPos + off -> new Array[Byte](math.min(memChunk, localSize - off).asInt)))
+//          case Left(data) => LazyList(Left(data))
+//        }
+//    }
   }
 
   override def close(): Unit =

@@ -5,7 +5,7 @@ trait CacheBase[M]:
 
   extension(m: M)
     protected def length: Long
-    protected def dropped: Unit
+    protected def dropped: Unit // FIXME make this the one "release" function, possibly by-ref
     protected def drop (distance: Long): M
     protected def keep (distance: Long): M
     protected def split(distance: Long): (M, M)
@@ -15,7 +15,7 @@ trait CacheBase[M]:
 
   protected val markDropped = false
 
-  /** Clears some of the managed area. */
+  /** Clears the specified part of the managed area. */
   def clear(position: Long, size: Long): Unit =
     require(position >= 0, s"Negative position: $position")
     require(size     >  0, s"Size not positive: $position")
@@ -42,7 +42,7 @@ trait CacheBase[M]:
         true
     } do {/**/}
 
-  /** Truncates the managed areas to the provided size. */
+  /** Truncates the managed areas to the specified size. */
   def keep(newSize: Long): Unit =
     require(newSize >= 0, s"Negative new size: $newSize")
     // Remove higher entries.
@@ -55,19 +55,20 @@ trait CacheBase[M]:
       if (distance < area.length) entries.put(storedAt, area.keep(distance))
     }
 
-  protected def areasInSection(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, M)]] =
-    ???
-    // guard(s"areasInSection(position: $position, size: $size) - entries: $entries") {
-    //   // Identify the relevant entries.
-    //   val startKey = Option(entries.floorKey(position)).getOrElse(position)
-    //   import scala.jdk.CollectionConverters.MapHasAsScala
-    //   var section = entries.subMap(startKey, position + size - 1).asScala.toVector
-    //   // Trim or remove the head entry if necessary.
-    //   if section.nonEmpty && startKey < position then
-    //     val (headPosition -> headData) +: tail = section
-    //     val distance = position - headPosition
-    //     if headData.length <= distance then section = tail
-    //     else section = (position -> headData.drop(distance)) +: tail
+  /** For the specified area, return the list of data chunks and holes, ordered by position.
+    *
+    * @return LazyList(offset -> (holeSize | data)) where offset is relative to `position`. */
+  protected def areasInSection(position: Long, size: Long): LazyList[(Long, Either[Long, M])] =
+    // Identify the relevant entries.
+    val startKey = Option(entries.floorKey(position)).getOrElse(position)
+    import scala.jdk.CollectionConverters.MapHasAsScala
+    var section = entries.subMap(startKey, position + size - 1).asScala.toVector
+    // Trim or remove the head entry if necessary.
+    if section.nonEmpty && startKey < position then
+      val (headPosition -> headData) +: tail = section
+      val distance = position - headPosition
+      if headData.length <= distance then section = tail
+      else section = (position -> headData.drop(distance)) +: tail
     //   if section.isEmpty then LazyList(Left(position -> size))
     //   else
     //     // Truncate the last entry if necessary.
@@ -87,3 +88,4 @@ trait CacheBase[M]:
     //           Left(currentPos, distance) #:: recurse(section, entryPos, remainingSize - distance)
     //     recurse(section, position, size)
     // }
+    ???

@@ -41,7 +41,7 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with Aut
   def write(position: Long, data: Array[Byte]): Boolean =
     tryAcquire(data.length).tap(if (_) entries.put(position, data))
 
-  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] =
+  def read(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] =
     areasInSection(position, size)
 
   override def close(): Unit = ???
