@@ -9,6 +9,7 @@ class WriteCacheSpec extends AnyFreeSpec:
 
   °[CacheBase[_]] - {
     object cache extends CacheBase[Int]:
+      override protected val markDropped = true
       private var partsDropped = Seq[Int]()
       extension(m: Int)
         override protected def length: Long = m
@@ -29,6 +30,18 @@ class WriteCacheSpec extends AnyFreeSpec:
     "The keep method" - {
       "called with negative size throws an IllegalArgumentException" in {
         intercept[IllegalArgumentException] { cache.keep(-1) }
+      }
+      "does not change anything when called for a non-allocated area" in {
+        cache.set(0L -> 100, 300L -> 100)
+        cache.keep(400)
+        assert(cache.map == Map(0L -> 100, 300L -> 100))
+        assert(cache.dropped == Seq())
+      }
+      "drops all entries in the area to clear" in {
+        cache.set(MaxInt -> 1000, MaxInt + 1000 -> 1000)
+        cache.keep(MaxInt + 1000)
+        assert(cache.map == Map(MaxInt -> 1000))
+        assert(cache.dropped == Seq(1000))
       }
     }
 

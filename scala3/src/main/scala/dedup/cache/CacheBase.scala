@@ -15,6 +15,8 @@ trait CacheBase[M] extends ClassLogging:
   // The methods are designed to avoid overlapping entries.
   protected var entries: java.util.NavigableMap[Long, M] = java.util.TreeMap[Long, M]()
 
+  protected val markDropped = false
+
   /** Clears some of the managed area. */
   def clear(position: Long, size: Long): Unit =
     require(position >= 0, s"Negative position: $position")
@@ -38,14 +40,16 @@ trait CacheBase[M] extends ClassLogging:
         false
       else
         entries.remove(storedAt)
-        area.dropped
+        if markDropped then area.dropped
         true
     } do {/**/}
 
   /** Truncates the managed areas to the provided size. */
   def keep(newSize: Long): Unit =
     require(newSize >= 0, s"Negative new size: $newSize")
-    // Remove higher entries (by keeping all strictly lower entries).
+    // Remove higher entries.
+    if markDropped then entries.tailMap(newSize).forEach((_, m) => m.dropped)
+    // Keep all strictly lower entries.
     entries = java.util.TreeMap(entries.headMap(newSize)) // The headMap view doesn't accept out-of-range keys.
     // If necessary, trim highest remaining entry.
     Option(entries.lastEntry()).foreach { case JEntry(storedAt, area) =>
