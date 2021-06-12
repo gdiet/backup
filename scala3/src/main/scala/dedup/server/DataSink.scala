@@ -1,4 +1,5 @@
-package dedup.server
+package dedup
+package server
 
 trait DataSink[D]:
   extension(d: D) def write(offset: Long, data: Array[Byte]): Unit

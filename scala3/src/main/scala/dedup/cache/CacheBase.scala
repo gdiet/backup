@@ -1,4 +1,5 @@
-package dedup.cache
+package dedup
+package cache
 
 import dedup.util.ClassLogging
 
@@ -16,6 +17,8 @@ trait CacheBase[M] extends ClassLogging:
 
   /** Clears some of the managed area. */
   def clear(position: Long, size: Long): Unit =
+    require(position >= 0, s"Negative position: $position")
+    require(size     >  0, s"Size not positive: $position")
     // If necessary, split lower entry.
     Option(entries.lowerEntry(position)).foreach { case JEntry(storedAt, area) =>
       val distance = position - storedAt
@@ -25,7 +28,7 @@ trait CacheBase[M] extends ClassLogging:
         entries.put(storedAt + distance, tail)
     }
 
-    // If necessary, trim ceiling entries (including the higher part of the entry split before).
+    // If necessary, drop or trim ceiling entries (including the higher part of the entry split before).
     while Option(entries.ceilingEntry(position)).exists { case JEntry(storedAt, area) =>
       val overlap = position + size - storedAt
       if overlap <= 0 then false
