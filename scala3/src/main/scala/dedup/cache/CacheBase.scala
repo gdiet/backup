@@ -44,8 +44,9 @@ trait CacheBase[M] extends ClassLogging:
 
   /** Truncates the managed areas to the provided size. */
   def keep(newSize: Long): Unit =
+    require(newSize >= 0, s"Negative new size: $newSize")
     // Remove higher entries (by keeping all strictly lower entries).
-    entries = entries.headMap(newSize, false)
+    entries = java.util.TreeMap(entries.headMap(newSize)) // The headMap view doesn't accept out-of-range keys.
     // If necessary, trim highest remaining entry.
     Option(entries.lastEntry()).foreach { case JEntry(storedAt, area) =>
       val distance = newSize - storedAt
