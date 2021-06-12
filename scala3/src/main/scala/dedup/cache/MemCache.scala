@@ -12,6 +12,7 @@ end MemCache
 
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous. */
 class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with AutoCloseable:
+  override protected val markDropped = true
 
   extension(m: Array[Byte])
     override protected def length: Long = m.length
@@ -33,12 +34,6 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with Aut
     if avail < size then false
     else if availableMem.compareAndSet(avail, avail - size) then true
     else tryAcquire(size)
-
-  override def keep(newSize: Long): Unit =
-    // In addition, deallocate all higher entries.
-    val higher = entries.tailMap(newSize)
-    super.keep(newSize)
-    higher.forEach((_, data) => availableMem.addAndGet(data.length))
 
   /** Assumes that the area to write is clear.
     *

@@ -1,9 +1,7 @@
 package dedup
 package cache
 
-import dedup.util.ClassLogging
-
-trait CacheBase[M] extends ClassLogging:
+trait CacheBase[M]:
 
   extension(m: M)
     protected def length: Long
