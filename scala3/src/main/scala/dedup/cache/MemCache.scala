@@ -12,11 +12,8 @@ end MemCache
 
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous. */
 class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with AutoCloseable:
-  override protected val markDropped = true
-
   extension(m: Array[Byte])
     override protected def length: Long = m.length
-    override protected def dropped: Unit = availableMem.addAndGet(length)
     override protected def drop(distance: Long): Array[Byte] =
       require(distance < length && distance > 0, s"Distance: $distance")
       availableMem.addAndGet(distance)
@@ -27,6 +24,8 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with Aut
     override protected def split(distance: Long): (Array[Byte], Array[Byte]) =
       require(distance < length && distance > 0, s"Distance: $distance")
       ???
+
+  // FIXME override release
 
   @annotation.tailrec
   private def tryAcquire(size: Long): Boolean =

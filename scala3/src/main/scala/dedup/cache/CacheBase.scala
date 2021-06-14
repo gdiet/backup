@@ -5,7 +5,6 @@ trait CacheBase[M]:
 
   extension(m: M)
     protected def length: Long
-    protected def dropped: Unit // FIXME make this the one "release" function, possibly by-ref
     protected def drop (distance: Long): M
     protected def keep (distance: Long): M
     protected def split(distance: Long): (M, M)
@@ -13,7 +12,8 @@ trait CacheBase[M]:
   // The methods are designed to avoid overlapping entries.
   protected var entries: java.util.NavigableMap[Long, M] = java.util.TreeMap[Long, M]()
 
-  protected val markDropped = false
+  /** Called when entries are (partially) removed from cache. Overridden by [[MemCache]] for memory management. */
+  protected def release(sizes: => Iterable[Long]): Unit = {/**/}
 
   /** Clears the specified part of the managed area. */
   def clear(position: Long, size: Long): Unit =
@@ -29,24 +29,26 @@ trait CacheBase[M]:
     }
 
     // If necessary, drop or trim ceiling entries (including the higher part of the entry split before).
-    while Option(entries.ceilingEntry(position)).exists { case JEntry(storedAt, area) =>
+    while Option(entries.ceilingKey(position)).exists { storedAt =>
       val overlap = position + size - storedAt
-      if overlap <= 0 then false
-      else if (overlap < area.length) then
-        entries.remove(storedAt)
-        entries.put(storedAt + overlap, area.drop(overlap))
-        false
-      else
-        entries.remove(storedAt)
-        if markDropped then area.dropped
-        true
+      if overlap <= 0 then false else
+        val area = entries.remove(storedAt)
+        if (overlap < area.length) then
+          entries.put(storedAt + overlap, area.drop(overlap))
+          release(Seq(overlap))
+          false
+        else
+          entries.remove(storedAt)
+          release(Seq(area.length))
+          true
     } do {/**/}
 
   /** Truncates the managed areas to the specified size. */
   def keep(newSize: Long): Unit =
     require(newSize >= 0, s"Negative new size: $newSize")
     // Remove higher entries.
-    if markDropped then entries.tailMap(newSize).forEach((_, m) => m.dropped)
+    import scala.jdk.CollectionConverters.MapHasAsScala
+    release(entries.tailMap(newSize).asScala.values.map(_.length))
     // Keep all strictly lower entries.
     entries = java.util.TreeMap(entries.headMap(newSize)) // The headMap view doesn't accept out-of-range keys.
     // If necessary, trim highest remaining entry.

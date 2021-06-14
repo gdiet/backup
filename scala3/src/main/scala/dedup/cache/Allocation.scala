@@ -9,7 +9,6 @@ class Allocation extends CacheBase[Long]:
 
   extension(m: Long)
     override protected def length: Long = m
-    override protected def dropped: Unit = {/**/}
     override protected def drop (distance: Long): Long =
       require(distance < length && distance > 0, s"Distance: $distance")
       m - distance

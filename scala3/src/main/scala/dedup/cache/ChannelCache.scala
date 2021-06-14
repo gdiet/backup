@@ -10,7 +10,6 @@ class ChannelCache(temp: Path) extends CacheBase[Int] with AutoCloseable:
   
   extension(m: Int)
     override protected def length: Long = m
-    override protected def dropped: Unit = {/**/}
     override protected def drop (distance: Long): Int =
       require(distance < length && distance > 0, s"Distance: $distance")
       m - distance.asInt
