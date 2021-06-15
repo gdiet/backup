@@ -59,6 +59,8 @@ trait CacheBase[M]:
 
   /** For the specified area, return the list of data chunks and holes, ordered by position.
     *
+    * TODO check whether Long | M would be better than Either
+    *
     * @return LazyList(offset -> (holeSize | data)) where offset is relative to `position`. */
   protected def areasInSection(position: Long, size: Long): LazyList[(Long, Either[Long, M])] =
     // Identify the relevant entries.
@@ -71,23 +73,20 @@ trait CacheBase[M]:
       val distance = position - headPosition
       if headData.length <= distance then section = tail
       else section = (position -> headData.drop(distance)) +: tail
-    //   if section.isEmpty then LazyList(Left(position -> size))
-    //   else
-    //     // Truncate the last entry if necessary.
-    //     val lead :+ (tailPosition -> tailData) = section
-    //     val distance = tailPosition + tailData.length - (position + size)
-    //     if distance > 0 then section = lead :+ (tailPosition -> tailData.dropRight(distance))
-    //     // Assemble result.
-    //     def recurse(section: Vector[(Long, M)], currentPos: Long, remainingSize: Long): LazyList[Either[(Long, Long), (Long, M)]] =
-    //       if section.isEmpty then
-    //         if remainingSize == 0 then LazyList() else LazyList(Left(currentPos, remainingSize))
-    //       else
-    //         val (entry @ entryPos -> data) +: rest = section
-    //         if entryPos == currentPos then
-    //           Right(entry) #:: recurse(rest, entryPos + data.length, remainingSize - data.length)
-    //         else
-    //           val distance = entryPos - currentPos
-    //           Left(currentPos, distance) #:: recurse(section, entryPos, remainingSize - distance)
-    //     recurse(section, position, size)
-    // }
-    ???
+    if section.isEmpty then LazyList(position -> Left(size)) else
+      // Truncate the last entry if necessary.
+      val lead :+ (tailPosition -> tailData) = section
+      val keep = tailPosition - (position + size)
+      if keep < tailData.length then section = lead :+ (tailPosition -> tailData.keep(keep))
+      // Assemble result.
+      def recurse(section: Vector[(Long, M)], currentPos: Long, remainingSize: Long): LazyList[(Long, Either[Long, M])] =
+        if section.isEmpty then
+          if remainingSize == 0 then LazyList() else LazyList(currentPos -> Left(remainingSize))
+        else
+          val (entryPos -> data) +: rest = section
+          if entryPos == currentPos then
+            (entryPos -> Right(data)) #:: recurse(rest, entryPos + data.length, remainingSize - data.length)
+          else
+            val distance = entryPos - currentPos
+            (currentPos -> Left(distance)) #:: recurse(section, entryPos, remainingSize - distance)
+      recurse(section, position, size)
