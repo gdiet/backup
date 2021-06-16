@@ -25,6 +25,26 @@ class WriteCacheSpec extends AnyFreeSpec:
 
     val MaxInt: Long = Int.MaxValue
 
+    "The read method" - {
+      "called with negative position throws an IllegalArgumentException" in {
+        intercept[IllegalArgumentException] { cache.read(-1, 1) }
+      }
+      "called with zero or negative size throws an IllegalArgumentException" in {
+        intercept[IllegalArgumentException] { cache.read(1,  0) }
+        intercept[IllegalArgumentException] { cache.read(1, -1) }
+      }
+      "returns no data when a hole is requested" in {
+        cache.set(MaxInt - 1000 -> 500, MaxInt + 500 -> 500)
+        val result = cache.read(MaxInt - 500, 1000)
+        assert (result == Seq(MaxInt - 500 -> Left(1000)))
+      }
+      "returns a trimmed start entry if requested" in {
+        cache.set(1000L -> 1000)
+        val result = cache.read(1600, 1000)
+        assert (result == Seq(1600 -> Right(400), 2000 -> Left(600)))
+      }
+    }
+
     "The keep method" - {
       "called with negative size throws an IllegalArgumentException" in {
         intercept[IllegalArgumentException] { cache.keep(-1) }

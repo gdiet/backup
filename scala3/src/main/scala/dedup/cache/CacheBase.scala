@@ -63,6 +63,8 @@ trait CacheBase[M]:
     *
     * @return LazyList(offset -> (holeSize | data)) where offset is relative to `position`. */
   def read(position: Long, size: Long): LazyList[(Long, Either[Long, M])] =
+    require(position >= 0, s"Negative position: $position")
+    require(size     >  0, s"Size not positive: $position")
     // Identify the relevant entries.
     val startKey = Option(entries.floorKey(position)).getOrElse(position)
     import scala.jdk.CollectionConverters.MapHasAsScala
@@ -76,7 +78,7 @@ trait CacheBase[M]:
     if section.isEmpty then LazyList(position -> Left(size)) else
       // Truncate the last entry if necessary.
       val lead :+ (tailPosition -> tailData) = section
-      val keep = tailPosition - (position + size)
+      val keep = position + size - tailPosition
       if keep < tailData.length then section = lead :+ (tailPosition -> tailData.keep(keep))
       // Assemble result.
       def recurse(section: Vector[(Long, M)], currentPos: Long, remainingSize: Long): LazyList[(Long, Either[Long, M])] =
