@@ -43,6 +43,16 @@ class WriteCacheSpec extends AnyFreeSpec:
         val result = cache.read(1600, 1000)
         assert (result == Seq(1600 -> Right(400), 2000 -> Left(600)))
       }
+      "returns a trimmed end entry if requested" in {
+        cache.set(1000L -> 1000)
+        val result = cache.read(600, 1000)
+        assert (result == Seq(600 -> Left(400), 1000 -> Right(600)))
+      }
+      "returns a full entry and holes to the left and right if requested" in {
+        cache.set(1000L -> 1000)
+        val result = cache.read(600, 2000)
+        assert (result == Seq(600 -> Left(400), 1000 -> Right(1000), 2000 -> Left(600)))
+      }
     }
 
     "The keep method" - {
