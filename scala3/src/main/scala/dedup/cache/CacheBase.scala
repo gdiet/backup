@@ -62,7 +62,7 @@ trait CacheBase[M]:
     * TODO check whether Long | M would be better than Either
     *
     * @return LazyList(offset -> (holeSize | data)) where offset is relative to `position`. */
-  protected def areasInSection(position: Long, size: Long): LazyList[(Long, Either[Long, M])] =
+  def read(position: Long, size: Long): LazyList[(Long, Either[Long, M])] =
     // Identify the relevant entries.
     val startKey = Option(entries.floorKey(position)).getOrElse(position)
     import scala.jdk.CollectionConverters.MapHasAsScala
