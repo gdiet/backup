@@ -27,10 +27,12 @@ class WriteCacheSpec extends AnyFreeSpec:
         "updates the cache contents" in assert(cache.read(0, 50)._seq == Seq(0 -> Left(19), 19 -> Right(Seq[Byte](1,2,3,4)), 23 -> Left(27)))
         "updates available count" in assert(available.get == 96)
       }
+      "merges adjacent data up to memChunk size" in assert(false)
     }
   }
 
-  °[Allocation] - { // FIXME test or remove readData
+  °[Allocation] - {
+    // TODO "Needs a test for readData unless that method is never used" in assert(false)
     s"Doesn't need additional tests besides those for ${°[CacheBase[_]]}" - {}
   }
 
