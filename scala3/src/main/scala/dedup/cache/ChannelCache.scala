@@ -8,17 +8,10 @@ import dedup.cache.CacheBase
   * For performance use a sparse file channel. */
 class ChannelCache(temp: Path) extends CacheBase[Int] with AutoCloseable:
   
-  extension(m: Int)
-    override protected def length: Long = m
-    override protected def drop (distance: Long): Int =
-      require(distance < length && distance > 0, s"Distance: $distance")
-      m - distance.asInt
-    override protected def keep (distance: Long): Int =
-      require(distance < length && distance > 0, s"Distance: $distance")
-      distance.asInt
-    override protected def split(distance: Long): (Int, Int) =
-      require(distance < length && distance > 0, s"Distance: $distance")
-      (distance.asInt, m - distance.asInt)
+  override protected def length(m: Int): Long = m
+  override protected def drop  (m: Int, distance: Long): Int        = m - distance.asInt
+  override protected def keep  (m: Int, distance: Long): Int        = distance.asInt
+  override protected def split (m: Int, distance: Long): (Int, Int) = (distance.asInt, m - distance.asInt)
 
   /** Assumes that the area to write is clear. */
   def write(offset: Long, data: Array[Byte]): Unit = ???

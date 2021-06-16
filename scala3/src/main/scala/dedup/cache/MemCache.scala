@@ -12,18 +12,10 @@ end MemCache
 
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous. */
 class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with AutoCloseable:
-  extension(m: Array[Byte])
-    override protected def length: Long = m.length
-    override protected def drop(distance: Long): Array[Byte] =
-      require(distance < length && distance > 0, s"Distance: $distance")
-      availableMem.addAndGet(distance)
-      m.drop(distance.asInt)
-    override protected def keep(distance: Long): Array[Byte] =
-      require(distance < length && distance > 0, s"Distance: $distance")
-      ???
-    override protected def split(distance: Long): (Array[Byte], Array[Byte]) =
-      require(distance < length && distance > 0, s"Distance: $distance")
-      ???
+  override protected def length(m: Array[Byte]): Long = m.length
+  override protected def drop  (m: Array[Byte], distance: Long): Array[Byte]                = m.drop(distance.asInt)
+  override protected def keep  (m: Array[Byte], distance: Long): Array[Byte]                = m.take(distance.asInt)
+  override protected def split (m: Array[Byte], distance: Long): (Array[Byte], Array[Byte]) = m.splitAt(distance.asInt)
 
   // FIXME override release
 

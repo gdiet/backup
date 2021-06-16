@@ -3,17 +3,23 @@ package cache
 
 trait CacheBase[M]:
 
-  extension(m: M)
-    protected def length: Long
-    protected def drop (distance: Long): M
-    protected def keep (distance: Long): M
-    protected def split(distance: Long): (M, M)
-
-  // The methods are designed to avoid overlapping entries.
-  protected var entries: java.util.NavigableMap[Long, M] = java.util.TreeMap[Long, M]()
+  protected def length(m: M): Long
+  protected def drop  (m: M, distance: Long): M
+  protected def keep  (m: M, distance: Long): M
+  protected def split (m: M, distance: Long): (M, M)
 
   /** Called when entries are (partially) removed from cache. Overridden by [[MemCache]] for memory management. */
   protected def release(sizes: => Iterable[Long]): Unit = {/**/}
+
+  extension(m: M)
+    private def _check(distance: Long) = require(distance > 0 && distance < length(m), s"Distance: $distance")
+    private def _length: Long = length(m)
+    private def _drop (distance: Long): M      = { _check(distance); drop (m, distance) }
+    private def _keep (distance: Long): M      = { _check(distance); keep (m, distance) }
+    private def _split(distance: Long): (M, M) = { _check(distance); split(m, distance) }
+
+  // The methods are designed to avoid overlapping entries.
+  protected var entries: java.util.NavigableMap[Long, M] = java.util.TreeMap[Long, M]()
 
   /** Clears the specified part of the managed area. */
   def clear(position: Long, size: Long): Unit =
@@ -22,8 +28,8 @@ trait CacheBase[M]:
     // If necessary, split lower entry.
     Option(entries.lowerEntry(position)).foreach { case JEntry(storedAt, area) =>
       val distance = position - storedAt
-      if area.length > distance then
-        val (head, tail) = area.split(distance)
+      if area._length > distance then
+        val (head, tail) = area._split(distance)
         entries.put(storedAt, head)
         entries.put(storedAt + distance, tail)
     }
@@ -33,13 +39,13 @@ trait CacheBase[M]:
       val overlap = position + size - storedAt
       if overlap <= 0 then false else
         val area = entries.remove(storedAt)
-        if (overlap < area.length) then
-          entries.put(storedAt + overlap, area.drop(overlap))
+        if (overlap < area._length) then
+          entries.put(storedAt + overlap, area._drop(overlap))
           release(Seq(overlap))
           false
         else
           entries.remove(storedAt)
-          release(Seq(area.length))
+          release(Seq(area._length))
           true
     } do {/**/}
 
@@ -48,13 +54,13 @@ trait CacheBase[M]:
     require(newSize >= 0, s"Negative new size: $newSize")
     // Remove higher entries.
     import scala.jdk.CollectionConverters.MapHasAsScala
-    release(entries.tailMap(newSize).asScala.values.map(_.length))
+    release(entries.tailMap(newSize).asScala.values.map(_._length))
     // Keep all strictly lower entries.
     entries = java.util.TreeMap(entries.headMap(newSize)) // The headMap view doesn't accept out-of-range keys.
     // If necessary, trim highest remaining entry.
     Option(entries.lastEntry()).foreach { case JEntry(storedAt, area) =>
       val distance = newSize - storedAt
-      if (distance < area.length) entries.put(storedAt, area.keep(distance))
+      if (distance < area._length) entries.put(storedAt, area._keep(distance))
     }
 
   /** For the specified area, return the list of data chunks and holes, ordered by position.
@@ -73,13 +79,13 @@ trait CacheBase[M]:
     if section.nonEmpty && startKey < position then
       val (headPosition -> headData) +: tail = section
       val distance = position - headPosition
-      if headData.length <= distance then section = tail
-      else section = (position -> headData.drop(distance)) +: tail
+      if headData._length <= distance then section = tail
+      else section = (position -> headData._drop(distance)) +: tail
     if section.isEmpty then LazyList(position -> Left(size)) else
       // Truncate the last entry if necessary.
       val lead :+ (tailPosition -> tailData) = section
       val keep = position + size - tailPosition
-      if keep < tailData.length then section = lead :+ (tailPosition -> tailData.keep(keep))
+      if keep < tailData._length then section = lead :+ (tailPosition -> tailData._keep(keep))
       // Assemble result.
       def recurse(section: Vector[(Long, M)], currentPos: Long, remainingSize: Long): LazyList[(Long, Either[Long, M])] =
         if section.isEmpty then
@@ -87,7 +93,7 @@ trait CacheBase[M]:
         else
           val (entryPos -> data) +: rest = section
           if entryPos == currentPos then
-            (entryPos -> Right(data)) #:: recurse(rest, entryPos + data.length, remainingSize - data.length)
+            (entryPos -> Right(data)) #:: recurse(rest, entryPos + data._length, remainingSize - data._length)
           else
             val distance = entryPos - currentPos
             (currentPos -> Left(distance)) #:: recurse(section, entryPos, remainingSize - distance)

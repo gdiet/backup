@@ -9,14 +9,13 @@ class WriteCacheSpec extends AnyFreeSpec:
 
   °[CacheBase[_]] - {
     object cache extends CacheBase[Int]:
+      override protected def length(m: Int): Long = m
+      override protected def drop  (m: Int, distance: Long): Int        = m - distance.asInt
+      override protected def keep  (m: Int, distance: Long): Int        = distance.asInt
+      override protected def split (m: Int, distance: Long): (Int, Int) = (distance.asInt, m - distance.asInt)
       private var partsDropped = Seq[Long]()
       def dropped = partsDropped.tap { _ => partsDropped = Seq() }
       override protected def release(sizes: => Iterable[Long]): Unit = partsDropped ++= sizes.toSeq
-      extension(m: Int)
-        override protected def length: Long = m
-        override protected def drop (distance: Long): Int = m - distance.asInt
-        override protected def keep (distance: Long): Int = distance.asInt
-        override protected def split(distance: Long): (Int, Int) = (distance.asInt, m - distance.asInt)
       import scala.jdk.CollectionConverters.MapHasAsScala
       def map = entries.asScala
       def set(values: (Long, Int)*) =
