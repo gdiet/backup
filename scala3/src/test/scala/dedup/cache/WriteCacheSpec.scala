@@ -4,8 +4,35 @@ package cache
 import org.scalatest._
 import org.scalatest.freespec._
 
+import java.util.concurrent.atomic.AtomicLong
+
 // No IDEA support for scalatest with scala 3? https://youtrack.jetbrains.com/issue/SCL-18644
 class WriteCacheSpec extends AnyFreeSpec:
+
+  °[MemCache] - {
+    val available = AtomicLong(100)
+    val cache = MemCache(available)
+    "The write method" - {
+      "called with data exceeding the available cache size" - {
+        "returns false" in assert(cache.write(200, new Array[Byte](101)) == false)
+        "doesn't change the cache contents" in assert(cache.read(0, 300) == Seq(0 -> Left(300)))
+      }
+      "called with data that can be added as first entry" - {
+        "returns true" in assert(cache.write(20, Array[Byte](1,2)) == true)
+        "updates the cache contents" in assert(cache.read(0, 50)._seq == Seq(0 -> Left(20), 20 -> Right(Seq[Byte](1,2)), 22 -> Left(28)))
+        "updates available count" in assert(available.get == 98)
+      }
+      "called with data that overwrite an existing entry" - {
+        "returns true" in assert(cache.write(19, Array[Byte](1,2,3,4)) == true)
+        "updates the cache contents" in assert(cache.read(0, 50)._seq == Seq(0 -> Left(19), 19 -> Right(Seq[Byte](1,2,3,4)), 23 -> Left(27)))
+        "updates available count" in assert(available.get == 96)
+      }
+    }
+  }
+
+  °[Allocation] - { // FIXME test or remove readData
+    s"Doesn't need additional tests besides those for ${°[CacheBase[_]]}" - {}
+  }
 
   °[CacheBase[_]] - {
     object cache extends CacheBase[Int]:

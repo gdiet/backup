@@ -17,7 +17,7 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with Aut
   override protected def keep  (m: Array[Byte], distance: Long): Array[Byte]                = m.take(distance.asInt)
   override protected def split (m: Array[Byte], distance: Long): (Array[Byte], Array[Byte]) = m.splitAt(distance.asInt)
 
-  // FIXME override release
+  override protected def release(sizes: => Iterable[Long]): Unit = availableMem.addAndGet(sizes.sum)
 
   @annotation.tailrec
   private def tryAcquire(size: Long): Boolean =
@@ -26,10 +26,11 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with Aut
     else if availableMem.compareAndSet(avail, avail - size) then true
     else tryAcquire(size)
 
-  /** Assumes that the area to write is clear.
-    *
-    * @return `false` if data is not cached because not enough free memory is available. */
+  /** @return `false` if data is not cached because not enough free memory is available. */
   def write(position: Long, data: Array[Byte]): Boolean =
-    tryAcquire(data.length).tap(if (_) entries.put(position, data))
+    tryAcquire(data.length).tap(if _ then
+      clear(position, data.length)
+      entries.put(position, data) // TODO try to merge entries
+    )
 
   override def close(): Unit = ???
