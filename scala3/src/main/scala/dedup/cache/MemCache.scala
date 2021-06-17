@@ -13,6 +13,7 @@ end MemCache
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous. */
 class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with AutoCloseable:
   override protected def length(m: Array[Byte]): Long = m.length
+  override protected def merge (m: Array[Byte], n: Array[Byte]): Option[Array[Byte]]        = if m.length + n.length > memChunk then None else Some(m ++ n)
   override protected def drop  (m: Array[Byte], distance: Long): Array[Byte]                = m.drop(distance.asInt)
   override protected def keep  (m: Array[Byte], distance: Long): Array[Byte]                = m.take(distance.asInt)
   override protected def split (m: Array[Byte], distance: Long): (Array[Byte], Array[Byte]) = m.splitAt(distance.asInt)
@@ -30,7 +31,8 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with Aut
   def write(position: Long, data: Array[Byte]): Boolean =
     tryAcquire(data.length).tap(if _ then
       clear(position, data.length)
-      entries.put(position, data) // TODO try to merge entries
+      entries.put(position, data)
+      mergeIfPossible(position)
     )
 
   override def close(): Unit = ???

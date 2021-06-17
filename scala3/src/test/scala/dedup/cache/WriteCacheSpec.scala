@@ -9,7 +9,7 @@ import java.util.concurrent.atomic.AtomicLong
 // No IDEA support for scalatest with scala 3? https://youtrack.jetbrains.com/issue/SCL-18644
 class WriteCacheSpec extends AnyFreeSpec:
 
-  °[MemCache] - {
+  s"${°[MemCache]} uses ${°[CacheBase[_]]}, see also there..." - {
     val available = AtomicLong(100)
     val cache = MemCache(available)
     "The write method" - {
@@ -22,23 +22,37 @@ class WriteCacheSpec extends AnyFreeSpec:
         "updates the cache contents" in assert(cache.read(0, 50)._seq == Seq(0 -> Left(20), 20 -> Right(Seq[Byte](1,2)), 22 -> Left(28)))
         "updates available count" in assert(available.get == 98)
       }
-      "called with data that overwrite an existing entry" - {
+      "called with data that overwrites an existing entry" - {
         "returns true" in assert(cache.write(19, Array[Byte](1,2,3,4)) == true)
         "updates the cache contents" in assert(cache.read(0, 50)._seq == Seq(0 -> Left(19), 19 -> Right(Seq[Byte](1,2,3,4)), 23 -> Left(27)))
         "updates available count" in assert(available.get == 96)
       }
-      "merges adjacent data up to memChunk size" in assert(false)
+      "called with data that overwrites the end of a data entry" - {
+        "returns true" in assert(cache.write(22, Array[Byte](1,2)) == true)
+        "updates the cache contents, merging entries" in assert(cache.read(0, 50)._seq == Seq(0 -> Left(19), 19 -> Right(Seq[Byte](1,2,3,1,2)), 24 -> Left(26)))
+        "updates available count" in assert(available.get == 95)
+      }
+      "called with data that overwrites the start of a data entry" - {
+        "returns true" in assert(cache.write(18, Array[Byte](1,2)) == true)
+        "updates the cache contents, not merging entries" in assert(cache.read(0, 50)._seq == Seq(0 -> Left(18), 18 -> Right(Seq[Byte](1,2)), 20 -> Right(Seq[Byte](2,3,1,2)), 24 -> Left(26)))
+        "updates available count" in assert(available.get == 94)
+      }
+      "called with data that overwrites the middle of a data entry" - {
+        "returns true" in assert(cache.write(21, Array[Byte](8,9)) == true)
+        "updates the cache contents, merging two entries" in assert(cache.read(0, 50)._seq == Seq(0 -> Left(18), 18 -> Right(Seq[Byte](1,2)), 20 -> Right(Seq[Byte](2,8,9)), 23 -> Right(Seq[Byte](2)), 24 -> Left(26)))
+        "updates available count" in assert(available.get == 94)
+      }
     }
   }
 
-  °[Allocation] - {
-    // TODO "Needs a test for readData unless that method is never used" in assert(false)
-    s"Doesn't need additional tests besides those for ${°[CacheBase[_]]}" - {}
+  s"${°[Allocation]} uses ${°[CacheBase[_]]}, see also there..." - {
+    "needs a test for readData unless that method is never used" in assert(false)
   }
 
   °[CacheBase[_]] - {
     object cache extends CacheBase[Int]:
       override protected def length(m: Int): Long = m
+      override protected def merge (m: Int, n       : Int ): Option[Int] = Some(m + n)
       override protected def drop  (m: Int, distance: Long): Int        = m - distance.asInt
       override protected def keep  (m: Int, distance: Long): Int        = distance.asInt
       override protected def split (m: Int, distance: Long): (Int, Int) = (distance.asInt, m - distance.asInt)

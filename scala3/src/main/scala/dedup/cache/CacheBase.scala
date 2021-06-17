@@ -4,6 +4,7 @@ package cache
 trait CacheBase[M]:
 
   protected def length(m: M): Long
+  protected def merge (m: M, n: M): Option[M]
   protected def drop  (m: M, distance: Long): M
   protected def keep  (m: M, distance: Long): M
   protected def split (m: M, distance: Long): (M, M)
@@ -14,9 +15,10 @@ trait CacheBase[M]:
   extension(m: M)
     private def _check(distance: Long) = require(distance > 0 && distance < length(m), s"Distance: $distance")
     private def _length: Long = length(m)
-    private def _drop (distance: Long): M      = { _check(distance); drop (m, distance) }
-    private def _keep (distance: Long): M      = { _check(distance); keep (m, distance) }
-    private def _split(distance: Long): (M, M) = { _check(distance); split(m, distance) }
+    private def _merge(other   : M   ): Option[M] = merge(m, other)
+    private def _drop (distance: Long): M         = { _check(distance); drop (m, distance) }
+    private def _keep (distance: Long): M         = { _check(distance); keep (m, distance) }
+    private def _split(distance: Long): (M, M)    = { _check(distance); split(m, distance) }
 
   // The methods are designed to avoid overlapping entries.
   protected var entries: java.util.NavigableMap[Long, M] = java.util.TreeMap[Long, M]()
@@ -61,6 +63,21 @@ trait CacheBase[M]:
     Option(entries.lastEntry()).foreach { case JEntry(storedAt, area) =>
       val distance = newSize - storedAt
       if (distance < area._length) entries.put(storedAt, area._keep(distance))
+    }
+
+  def mergeIfPossible(position: Long): Unit =
+    require(position >= 0, s"Negative position: $position")
+    Option(entries.lowerEntry(position)).foreach { case JEntry(storedAt, area) =>
+      val entryLength = area._length
+      require(storedAt + entryLength <= position, s"Overlapping entries at $position: $entries")
+      if storedAt + entryLength == position then
+        Option(entries.get(position)) match
+          case None => throw new IllegalArgumentException(s"No entry at position: $position")
+          case Some(upperArea) =>
+            area._merge(upperArea).foreach { case merged =>
+              entries.remove(position)
+              entries.put(storedAt, merged)
+            }
     }
 
   /** For the specified area, return the list of data chunks and holes, ordered by position.
