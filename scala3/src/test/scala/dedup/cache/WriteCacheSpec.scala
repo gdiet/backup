@@ -50,12 +50,12 @@ class WriteCacheSpec extends AnyFreeSpec:
   }
 
   °[CacheBase[_]] - {
-    object cache extends CacheBase[Int]:
-      override protected def length(m: Int): Long = m
-      override protected def merge (m: Int, n       : Int ): Option[Int] = Some(m + n)
-      override protected def drop  (m: Int, distance: Long): Int        = m - distance.asInt
-      override protected def keep  (m: Int, distance: Long): Int        = distance.asInt
-      override protected def split (m: Int, distance: Long): (Int, Int) = (distance.asInt, m - distance.asInt)
+    object cache extends LongCache:
+      override protected def length(m: Long): Long = m
+      override protected def merge (m: Long, n       : Long): Option[Long] = Some(m + n)
+      override protected def drop  (m: Long, distance: Long): Long         = m - distance
+      override protected def keep  (m: Long, distance: Long): Long         = distance
+      override protected def split (m: Long, distance: Long): (Long, Long) = (distance, m - distance)
       private var partsDropped = Seq[Long]()
       def dropped = partsDropped.tap { _ => partsDropped = Seq() }
       override protected def release(sizes: => Iterable[Long]): Unit = partsDropped ++= sizes.toSeq

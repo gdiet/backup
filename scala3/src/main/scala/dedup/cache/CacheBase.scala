@@ -1,8 +1,14 @@
 package dedup
 package cache
 
-trait CacheBase[M]:
+trait LongCache extends CacheBase[Long]:
+  override protected def length(m: Long): Long = m
+  override protected def merge (m: Long, n       : Long): Option[Long] = Some(m + n)
+  override protected def drop  (m: Long, distance: Long): Long         = m - distance
+  override protected def keep  (m: Long, distance: Long): Long         = distance
+  override protected def split (m: Long, distance: Long): (Long, Long) = (distance, m - distance)
 
+trait CacheBase[M]:
   protected def length(m: M): Long
   protected def merge (m: M, n: M): Option[M]
   protected def drop  (m: M, distance: Long): M
