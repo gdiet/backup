@@ -18,7 +18,12 @@ class ChannelCache(temp: Path) extends CacheBase[Long] with AutoCloseable:
   /** Assumes that the area to write is clear. */
   def write(offset: Long, data: Array[Byte]): Unit = ??? // FIXME don't forget mergeIfPossible
 
-  /** TODO document */
+  /** Reads cached byte areas from this [[ChannelCache]].
+    *
+    * @param position position to start reading at.
+    * @param size     number of bytes to read.
+    *
+    * @return A lazy list of (position, gapSize | byte array]). */
   def readData(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = ??? // FIXME read memChunk sized chunks
 
   override def close(): Unit = ???

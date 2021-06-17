@@ -18,7 +18,12 @@ class Allocation extends CacheBase[Long]:
     entries.put(position, size)
     mergeIfPossible(position)
 
-  /** TODO document */
+  /** Reads allocated zero byte areas from this [[Allocation]].
+    *
+    * @param position position to start reading at.
+    * @param size     number of bytes to read.
+    *
+    * @return A lazy list of (position, gapSize | byte array]). */
   def readData(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] =
     read(position, size).flatMap {
       case position -> Right(size) =>
