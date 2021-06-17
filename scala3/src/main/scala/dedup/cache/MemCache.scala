@@ -35,4 +35,15 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with Aut
       mergeIfPossible(position)
     )
 
-  override def close(): Unit = ???
+  /** Reads allocated zero byte areas from this [[Allocation]].
+    *
+    * @param position position to start reading at.
+    * @param size     number of bytes to read.
+    *
+    * @return A lazy list of (position, gapSize | byte array]). */
+  def readData(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] =
+    ???
+
+  override def close(): Unit =
+    import scala.jdk.CollectionConverters.MapHasAsScala
+    release(entries.asScala.map(_._2.length.toLong))
