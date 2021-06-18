@@ -8,6 +8,8 @@ import dedup.util.ClassLogging
 /** Caches byte arrays with positions, where the byte arrays are not necessarily contiguous.
   * Used keep track of changes to a singe file's contents for as long as that file is kept open.
   *
+  * Not thread safe.
+  *
   * @param temp Temp directory to use.
   * @param initialSize Size of the underlying file when the cache is instantiated. */
 class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extends AutoCloseable with ClassLogging:
@@ -18,10 +20,9 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
   private var _written: Boolean = false
   def          written: Boolean = _written
 
-  private val memCache = MemCache(availableMem)
+  private val memCache  = MemCache(availableMem)
   private val zeroCache = Allocation()
-  private var maybeChannelCache: Option[ChannelCache] = None
-  private def channelCache = maybeChannelCache.getOrElse(ChannelCache(temp).tap(c => maybeChannelCache = Some(c)))
+  private var fileCache = FileCache(temp)
 
   /** Truncates the cache to a new size. Zero-pads if the cache size increases. */
   def truncate(newSize: Long): Unit = if newSize != _size then guard(s"truncate $_size -> $newSize") {
@@ -29,9 +30,9 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
     if newSize > _size then
       zeroCache.allocate(position = _size, size = newSize - _size)
     else
-      memCache.keep(newSize)
+      memCache .keep(newSize)
       zeroCache.keep(newSize)
-      maybeChannelCache.foreach(_.keep(newSize))
+      fileCache.keep(newSize)
     _written = true
     _size = newSize
   }
@@ -40,13 +41,13 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
   def write(position: Long, data: Array[Byte]): Unit = if data.length > 0 then guard(s"write $position [${data.length}]") {
     // Clear the area in all caches.
     if position < _size then
-      memCache.clear(position, data.length)
+      memCache .clear(position, data.length)
       zeroCache.clear(position, data.length)
-      maybeChannelCache.foreach(_.clear(position, data.length))
+      fileCache.clear(position, data.length)
     // Allocate zeros if writing starts beyond end of file.
     if position > _size then zeroCache.allocate(_size, position - _size)
     // Write the area.
-    if !memCache.write(position, data) then channelCache.write(position, data)
+    if !memCache.write(position, data) then fileCache.write(position, data)
     _written = true
     _size = math.max(_size, position + data.length)
   }
@@ -74,5 +75,5 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
   }
 
   override def close(): Unit =
-    memCache.close()
-    maybeChannelCache.foreach(_.close())
+    memCache .close()
+    fileCache.close()
