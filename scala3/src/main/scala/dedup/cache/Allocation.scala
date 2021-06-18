@@ -9,6 +9,7 @@ class Allocation extends LongCache:
 
   /** Allocates a range. */
   def allocate(position: Long, size: Long): Unit =
+    clear(position, size)
     entries.put(position, size)
     mergeIfPossible(position)
 
