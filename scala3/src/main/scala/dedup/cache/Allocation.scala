@@ -21,9 +21,9 @@ class Allocation extends LongCache:
     * @return A lazy list of (position, gapSize | byte array]). */
   def readData(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] =
     read(position, size).flatMap {
-      case position -> Right(size) =>
-        val end = position + size
-        Range.Long(position, end, memChunk)
-          .map(pos => pos -> Right(new Array[Byte](math.min(end - pos, memChunk).asInt)))
+      case entryPos -> Right(entrySize) =>
+        val end = entryPos + entrySize
+        Range.Long(entryPos, end, memChunk)
+          .map(localPos => localPos -> Right(new Array[Byte](math.min(end - localPos, memChunk).asInt)))
       case position -> Left(hole) => Seq(position -> Left(hole))
     }

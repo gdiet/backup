@@ -31,9 +31,9 @@ class FileCache(path: Path) extends LongCache with AutoCloseable with ClassLoggi
     * @return A lazy list of (position, gapSize | byte array]). */
   def readData(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] =
     read(position, size).flatMap {
-      case position -> Right(entrySize) =>
-        val end = position + entrySize
-        Range.Long(position, end, memChunk).map { localPos =>
+      case entryPos -> Right(entrySize) =>
+        val end = entryPos + entrySize
+        Range.Long(entryPos, end, memChunk).map { localPos =>
           val localSize = math.min(end - localPos, memChunk).asInt
           val bytes = new Array[Byte](localSize)
           val buffer = ByteBuffer.wrap(bytes)
