@@ -59,23 +59,13 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
     * @param size     number of bytes to read.
     * @return A lazy list of (offset, gapSize | byte array]) where offset is relative to `position`. */
   def read(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = if size == 0 then LazyList() else guard(s"read($position, $size)") {
-    ???
-//    // Read from memory cache.
-//    memCache.read(position, size).flatMap {
-//      case Right(data) => LazyList(Right(data))
-//      // Fill holes from channel cache.
-//      case left @ Left(position -> size) => ??? // maybeChannelCache.map(_.read(position, size)).getOrElse(LazyList(left))
-//    }.flatMap {
-//      case Right(data) => LazyList(Right(data))
-//      case Left(position -> size) =>
-//        // Fill holes from zero allocations cache.
-//        zeroCache.read(position, size).flatMap {
-//          case Right(localPos -> localSize) =>
-//            LazyList.range(0L, localSize, memChunk.toLong)
-//              .map(off => Right(localPos + off -> new Array[Byte](math.min(memChunk, localSize - off).asInt)))
-//          case Left(data) => LazyList(Left(data))
-//        }
-//    }
+    memCache.read(position, size).flatMap {
+      case right @ _ -> Right(_)  => LazyList(right)
+      case position -> Left(size) => fileCache.readData(position, size) // Fill holes from channel cache.
+    }.flatMap {
+      case right @ _ -> Right(_)  => LazyList(right)
+      case position -> Left(size) => zeroCache.readData(position, size) // Fill holes from zero cache.
+    }
   }
 
   override def close(): Unit =
