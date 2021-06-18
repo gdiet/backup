@@ -39,6 +39,7 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
 
   /** Writes data to the cache. Data size should not exceed `memChunk`. */
   def write(position: Long, data: Array[Byte]): Unit = if data.length > 0 then guard(s"write $position [${data.length}]") {
+    require(data.length < memChunk, s"Data array too large: [${data.length}]")
     // Clear the area in all caches.
     if position < _size then
       memCache .clear(position, data.length)
@@ -52,9 +53,12 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
     _size = math.max(_size, position + data.length)
   }
 
-  /** @return LazyList((holePosition, holeSize) | (dataPosition, bytes)) where positions start at `position`. */
-  def read(position: Long, size: Long): LazyList[Either[(Long, Long), (Long, Array[Byte])]] = if size == 0 then LazyList() else guard(s"read($position, $size)") {
-    // FIXME change return type to LazyList[Long, Either[(Long, Array[Byte])]]
+  /** Reads cached byte areas from this [[WriteCache]].
+    *
+    * @param position position to start reading at.
+    * @param size     number of bytes to read.
+    * @return A lazy list of (offset, gapSize | byte array]) where offset is relative to `position`. */
+  def read(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = if size == 0 then LazyList() else guard(s"read($position, $size)") {
     ???
 //    // Read from memory cache.
 //    memCache.read(position, size).flatMap {
