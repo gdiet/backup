@@ -88,7 +88,7 @@ trait CacheBase[M]:
 
   /** Reads available data chunks. TODO check whether Long | M would be better than Either.
     *
-    * @return A lazy list of (offset, gapSize | byte array]) where offset is relative to `position`. */
+    * @return A lazy list of (position, gapSize | byte array]). */
   def read(position: Long, size: Long): LazyList[(Long, Either[Long, M])] =
     require(position >= 0, s"Negative position: $position")
     require(size     >  0, s"Size not positive: $position")

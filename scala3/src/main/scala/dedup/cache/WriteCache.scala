@@ -57,7 +57,7 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
     *
     * @param position position to start reading at.
     * @param size     number of bytes to read.
-    * @return A lazy list of (offset, gapSize | byte array]) where offset is relative to `position`. */
+    * @return A lazy list of (position, gapSize | byte array]). */
   def read(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = if size == 0 then LazyList() else guard(s"read($position, $size)") {
     memCache.read(position, size).flatMap {
       case right @ _ -> Right(_)  => LazyList(right)
