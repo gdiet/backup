@@ -17,8 +17,8 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   val id: Long = currentId.incrementAndGet()
   log.trace(s"Create $id with base data ID $baseDataId.")
 
-  private val path = tempDir.resolve(s"$id")
-  private val cache = WriteCache(MemCache.availableMem, path, initialSize)
+  private val path   = tempDir.resolve(s"$id")
+  private val cache  = WriteCache(MemCache.availableMem, path, initialSize)
   private val isOpen = new CountDownLatch(1)
 
   def written: Boolean = synchronized(cache.written)
@@ -27,12 +27,12 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   /** Reads the requested number of bytes unless end-of-file is reached first,
     * in that case stops there.
     *
-    * Unsafe: Should only be used if it is ensured that no writes to the DataEntry
-    * occur during the read process.
+    * Unsafe: Use only if it is ensured that no writes to the DataEntry occur
+    * during the read process while iterating the result lazy list.
     *
     * @param size Supports sizes larger than the internal size limit for byte arrays.
-    * @return (actual size read, Vector(Either(holePosition, holeSize | position, bytes)) */
-  def read(offset: Long, size: Long): (Long, LazyList[(Long, Either[Long, Array[Byte]])]) = synchronized {
+    * @return (actual size read, LazyList(position, (holeSize | bytes)) */
+  def readUnsafe(offset: Long, size: Long): (Long, LazyList[(Long, Either[Long, Array[Byte]])]) = synchronized {
     val sizeToRead = math.max(0, math.min(size, cache.size - offset))
     sizeToRead -> cache.read(offset, sizeToRead)
   }
@@ -53,17 +53,14 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     * @return (actual size read, Vector((holePosition, holeSize)))
     */
   def read[D: DataSink](offset: Long, size: Long, sink: D): (Long, Vector[(Long, Long)]) = synchronized {
-    val (sizeRead, readResult) = read(offset, size)
+    val (sizeRead, readResult) = readUnsafe(offset, size)
     sizeRead -> readResult.flatMap {
       case position -> Left(hole) => Some(position -> hole)
       case position -> Right(data) => sink.write(position - offset, data); None
     }.toVector
   }
 
-end DataEntry
-
 object DataEntry:
   protected val currentId = new AtomicLong()
   protected val closedEntries = new AtomicLong()
   def openEntries: Long = currentId.get - closedEntries.get
-end DataEntry
