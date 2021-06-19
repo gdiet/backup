@@ -10,7 +10,8 @@ import java.nio.channels.SeekableByteChannel
 import java.nio.file.StandardOpenOption._
 
 /** Caches in a file byte arrays with positions, where the byte arrays are not necessarily contiguous.
-  * For performance uses a sparse file channel. */
+  * For performance uses a sparse file channel. Read and write methods are synchronized because 
+  * otherwise concurrent changes to the channel position may occur. */
 class FileCache(path: Path) extends LongCache with AutoCloseable with ClassLogging:
 
   private var maybeChannel: Option[SeekableByteChannel] = None
@@ -18,18 +19,19 @@ class FileCache(path: Path) extends LongCache with AutoCloseable with ClassLoggi
     Files.newByteChannel(path, WRITE, CREATE_NEW, SPARSE, READ).tap(c => maybeChannel = Some(c))
   )
 
-  def write(position: Long, data: Array[Byte]): Unit =
+  def write(position: Long, data: Array[Byte]): Unit = synchronized {
     clear(position, data.length)
     channel.position(position)
     channel.write(ByteBuffer.wrap(data, 0, data.length))
     mergeIfPossible(position)
+  }
 
   /** Reads cached byte areas from this [[FileCache]].
     *
     * @param position position to start reading at.
     * @param size     number of bytes to read.
     * @return A lazy list of (position, gapSize | byte array]). */
-  def readData(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] =
+  def readData(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = synchronized {
     read(position, size).flatMap {
       case entryPos -> Right(entrySize) =>
         val end = entryPos + entrySize
@@ -43,9 +45,11 @@ class FileCache(path: Path) extends LongCache with AutoCloseable with ClassLoggi
         }
       case position -> Left(hole) => Seq(position -> Left(hole))
     }
+  }
 
-  override def close(): Unit =
+  override def close(): Unit = synchronized {
     maybeChannel.foreach(_.close())
     maybeChannel = None
     Files.delete(path)
     log.debug(s"Closed & deleted cache file $path")
+  }

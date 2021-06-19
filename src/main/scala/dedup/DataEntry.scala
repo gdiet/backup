@@ -58,6 +58,7 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     * @param size Supports sizes larger than the internal size limit for byte arrays.
     * @return (actual size read, Vector(Either(holePosition, holeSize | position, bytes)) */
   def readUnsafe(offset: Long, size: Long): (Long, LazyList[Either[(Long, Long), (Long, Array[Byte])]]) = synchronized {
+    // FIXME must not be "val"
     val sizeToRead = math.max(0, math.min(size, cache.size - offset))
     sizeToRead -> cache.read(offset, sizeToRead)
   }

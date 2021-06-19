@@ -24,18 +24,17 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   def written: Boolean = synchronized(cache.written)
   def size: Long       = synchronized(cache.size   )
 
-  /** Reads the requested number of bytes unless end-of-file is reached first,
-    * in that case stops there.
+  /** Reads the requested number of bytes. Beyond end-of-file returns a hole entry.
     *
     * Unsafe: Use only if it is ensured that no writes to the DataEntry occur
     * during the read process while iterating the result lazy list.
     *
-    * @param size Supports sizes larger than the internal size limit for byte arrays.
-    * @return (actual size read, LazyList(position, (holeSize | bytes)) */
-  def readUnsafe(offset: Long, size: Long): (Long, LazyList[(Long, Either[Long, Array[Byte]])]) = synchronized {
-    val sizeToRead = math.max(0, math.min(size, cache.size - offset))
-    sizeToRead -> cache.read(offset, sizeToRead)
-  }
+    * @param offset Offset to start reading at.
+    * @param size   Number of bytes to read, not limited by the internal size limit for byte arrays.
+    *
+    * @return LazyList(position, (holeSize | bytes) */
+  def readUnsafe(offset: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] =
+    cache.read(offset, size)
 
   /** Reads bytes from this [[DataEntry]] and writes them to `sink`.
     * Reads the requested number of bytes unless end-of-file is
@@ -46,15 +45,14 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     * enables synchronized reads even though [[DataEntry]] is mutable
     * without incurring the risk of large memory allocations.
     *
-    * @param offset       offset to start reading at.
-    * @param size         number of bytes to read, NOT limited by the internal size limit for byte arrays.
-    * @param sink         sink to write data to.
+    * @param offset Offset to start reading at.
+    * @param size   Number of bytes to read, not limited by the internal size limit for byte arrays.
+    * @param sink   Sink to write data to.
     *
-    * @return (actual size read, Vector((holePosition, holeSize)))
-    */
+    * @return (actual size read, Vector((holePosition, holeSize))) */
   def read[D: DataSink](offset: Long, size: Long, sink: D): (Long, Vector[(Long, Long)]) = synchronized {
-    val (sizeRead, readResult) = readUnsafe(offset, size)
-    sizeRead -> readResult.flatMap {
+    val sizeToRead = math.max(0, math.min(size, cache.size - offset))
+    sizeToRead -> readUnsafe(offset, sizeToRead).flatMap {
       case position -> Left(hole) => Some(position -> hole)
       case position -> Right(data) => sink.write(position - offset, data); None
     }.toVector
