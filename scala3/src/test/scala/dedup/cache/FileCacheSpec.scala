@@ -19,8 +19,13 @@ class FileCacheSpec extends AnyFreeSpec with TestDir:
       cache.write(MaxInt - 1000, chunk1)
       cache.write(MaxInt + 9000, chunk2)
       cache.write(MaxInt + 8000 + memChunk, chunk3)
-      val i = cache.readData(0, MaxInt + 20000 + memChunk).iterator
-      i.next // FIXME check result
+      val i = cache.readData(0, MaxInt + 20000 + memChunk)
+      i.foreach {
+        case pos -> Left(size) => println(s"LEFT $size")
+        case pos -> Right(data) => println(s"RIGHT ${data.length}")
+      }
+//      assert(i.next == 0 -> Left(MaxInt - 1000))
+      // FIXME check result
     }
     "Scenario 2 for memory handling" in {
       // FIXME test with Runtime.getRuntime.maxMemory zeros

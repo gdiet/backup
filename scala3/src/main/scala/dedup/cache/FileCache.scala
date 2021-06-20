@@ -23,6 +23,7 @@ class FileCache(path: Path) extends LongCache with AutoCloseable with ClassLoggi
     clear(position, data.length)
     channel.position(position)
     channel.write(ByteBuffer.wrap(data, 0, data.length))
+    entries.put(position, data.length)
     mergeIfPossible(position)
   }
 
