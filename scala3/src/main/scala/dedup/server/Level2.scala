@@ -53,5 +53,22 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
     */
   private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): LazyList[(Long, Array[Byte])] =
     ???
+//    log.trace(s"readFromLts(parts: $parts, readFrom: $readFrom, readSize: $readSize)")
+//    require(readFrom >= 0, s"Read offset $readFrom must be >= 0.")
+//    require(readSize > 0, s"Read size $readSize must be > 0.")
+//    val (lengthOfParts, partsToReadFrom) = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
+//      case ((currentOffset, result), part @ (partPosition, partSize)) =>
+//        val distance = readFrom - currentOffset
+//        if (distance > partSize) currentOffset + partSize -> result
+//        else if (distance > 0) currentOffset + partSize -> (result :+ (partPosition + distance, partSize - distance))
+//        else currentOffset + partSize -> (result :+ part)
+//    }
+//    require(lengthOfParts >= readFrom + readSize, s"Read offset $readFrom size $readSize exceeds parts length $parts.")
+//    def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] = {
+//      val (partPosition, partSize) +: rest = remainingParts
+//      if (partSize < readSize) lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
+//      else lts.read(partPosition, readSize, resultOffset)
+//    }
+//    recurse(partsToReadFrom, readSize, readFrom)
 
 end Level2
