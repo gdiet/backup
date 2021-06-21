@@ -25,10 +25,10 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
   private var fileCache = FileCache(temp)
 
   /** Truncates the cache to a new size. Zero-pads if the cache size increases. */
-  def truncate(newSize: Long): Unit = if newSize != _size then guard(s"truncate $_size -> $newSize") {
+  def truncate(newSize: Long): Unit = if newSize != size then guard(s"truncate $size -> $newSize") {
     require(newSize >= 0, s"newSize: $newSize")
-    if newSize > _size then
-      zeroCache.allocate(position = _size, size = newSize - _size)
+    if newSize > size then
+      zeroCache.allocate(position = size, size = newSize - size)
     else
       memCache .keep(newSize)
       zeroCache.keep(newSize)
@@ -41,30 +41,31 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
   def write(position: Long, data: Array[Byte]): Unit = if data.length > 0 then guard(s"write $position [${data.length}]") {
     require(data.length < memChunk, s"Data array too large: [${data.length}]")
     // Clear the area in all caches.
-    if position < _size then
+    if position < size then
       memCache .clear(position, data.length)
       zeroCache.clear(position, data.length)
       fileCache.clear(position, data.length)
     // Allocate zeros if writing starts beyond end of file.
-    if position > _size then zeroCache.allocate(_size, position - _size)
+    if position > size then zeroCache.allocate(size, position - size)
     // Write the area.
     if !memCache.write(position, data) then fileCache.write(position, data)
     _written = true
-    _size = math.max(_size, position + data.length)
+    _size = math.max(size, position + data.length)
   }
 
-  /** Reads cached byte areas from this [[WriteCache]].
+  /** Reads cached byte areas from this [[WriteCache]]. Does not read beyond the end of the cached area.
     *
     * @param position position to start reading at.
     * @param size     number of bytes to read.
     * @return A lazy list of (position, gapSize | byte array]). */
   def read(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = if size == 0 then LazyList() else guard(s"read($position, $size)") {
-    memCache.read(position, size).flatMap {
+    val sizeToRead = math.min(size, _size - position)
+    memCache.read(position, sizeToRead).flatMap {
       case right @ _ -> Right(_)  => LazyList(right)
-      case position -> Left(size) => fileCache.readData(position, size) // Fill holes from channel cache.
+      case position -> Left(size) => fileCache.readData(position, sizeToRead) // Fill holes from channel cache.
     }.flatMap {
       case right @ _ -> Right(_)  => LazyList(right)
-      case position -> Left(size) => zeroCache.readData(position, size) // Fill holes from zero cache.
+      case position -> Left(size) => zeroCache.readData(position, sizeToRead) // Fill holes from zero cache.
     }
   }
 
