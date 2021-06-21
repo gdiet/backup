@@ -61,11 +61,11 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
   def read(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = if size == 0 then LazyList() else guard(s"read($position, $size)") {
     val sizeToRead = math.min(size, _size - position)
     memCache.read(position, sizeToRead).flatMap {
-      case right @ _ -> Right(_)  => LazyList(right)
-      case position -> Left(size) => fileCache.readData(position, sizeToRead) // Fill holes from channel cache.
+      case right @ _ -> Right(_)      => LazyList(right)
+      case position -> Left(holeSize) => fileCache.readData(position, holeSize) // Fill holes from channel cache.
     }.flatMap {
-      case right @ _ -> Right(_)  => LazyList(right)
-      case position -> Left(size) => zeroCache.readData(position, sizeToRead) // Fill holes from zero cache.
+      case right @ _ -> Right(_)      => LazyList(right)
+      case position -> Left(holeSize) => zeroCache.readData(position, holeSize) // Fill holes from zero cache.
     }
   }
 

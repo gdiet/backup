@@ -23,3 +23,4 @@ class WriteCacheSpec extends AnyFreeSpec with TestFile:
       7 -> Right(Seq(1, 2))
     ))
   }
+  // FIXME more tests
