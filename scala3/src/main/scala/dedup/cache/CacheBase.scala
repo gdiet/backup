@@ -1,6 +1,8 @@
 package dedup
 package cache
 
+import scala.jdk.CollectionConverters.MapHasAsScala
+
 trait LongCache extends CacheBase[Long]:
   override protected def length(m: Long): Long = m
   override protected def merge (m: Long, n       : Long): Option[Long] = Some(m + n)
@@ -28,6 +30,10 @@ trait CacheBase[M]:
 
   // The methods are designed to avoid overlapping entries.
   protected var entries: java.util.NavigableMap[Long, M] = java.util.TreeMap[Long, M]()
+
+  /** For debugging purposes. */
+  override def toString: String =
+    s"$getClass ${entries.asScala.view.mapValues(_._length).toMap.toString}"
 
   /** Clears the specified part of the managed area. */
   def clear(position: Long, size: Long): Unit =
@@ -61,7 +67,6 @@ trait CacheBase[M]:
   def keep(newSize: Long): Unit =
     require(newSize >= 0, s"Negative new size: $newSize")
     // Remove higher entries.
-    import scala.jdk.CollectionConverters.MapHasAsScala
     release(entries.tailMap(newSize).asScala.values.map(_._length))
     // Keep all strictly lower entries.
     entries = java.util.TreeMap(entries.headMap(newSize)) // The headMap view doesn't accept out-of-range keys.
