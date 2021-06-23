@@ -4,7 +4,7 @@ package store
 import java.io.{File, FileNotFoundException, RandomAccessFile}
 import java.util.concurrent.atomic.AtomicLong
 
-def dataDir(repo: File) = new File(repo, "data")
+def dataDir(repo: File) = File(repo, "data")
 
 /** A sequential byte store on disk limited by disc capacity only, accessible by [[read]] and [[write]].
   * The byte store is thread safe. Backing data files are filled up to [[fileSize]] 100.000.000 bytes. This way

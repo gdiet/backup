@@ -83,7 +83,7 @@ trait CacheBase[M]:
       require(storedAt + entryLength <= position, s"Overlapping entries at $position: $entries")
       if storedAt + entryLength == position then
         Option(entries.get(position)) match
-          case None => throw new IllegalArgumentException(s"No entry at position: $position")
+          case None => throw IllegalArgumentException(s"No entry at position: $position")
           case Some(upperArea) =>
             area._merge(upperArea).foreach { case merged =>
               entries.remove(position)

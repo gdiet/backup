@@ -48,8 +48,8 @@ trait ParallelAccess(dataDir: File) extends AutoCloseable with ClassLogging:
           access(path, write)(f)
 
       case None if openFiles.size < parallelOpenFiles => // create new entry for path
-        val file = try openFile(path, write) catch case e: Throwable => { mapLock.unlock(); throw e }
-        val fileLock = new ReentrantLock().tap(_.lock())
+        val file = try openFile(path, write) catch (e: Throwable) => { mapLock.unlock(); throw e }
+        val fileLock = ReentrantLock().tap(_.lock())
         openFiles.put(path, (fileLock, write, file))
         mapLock.unlock()
         try f(file) finally fileLock.unlock()

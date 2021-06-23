@@ -33,7 +33,7 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
       // https://stackoverflow.com/questions/67017901/why-does-scala-option-tapeach-return-iterable-not-option
       // TODO use https://github.com/scala/scala-library-next/pull/80
       backend.mkFile(parentId, name, time, DataId(-1)).tap(_.foreach { id =>
-        synchronized(files += id -> (1, DataEntry(new AtomicLong(-1), 0, settings.tempPath)))
+        synchronized(files += id -> (1, DataEntry(AtomicLong(-1), 0, settings.tempPath)))
       })
     }
 
@@ -56,11 +56,11 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
     */
   def read[D: DataSink](id: Long, offset: Long, size: Long, sink: D): Option[Long] =
     watch(s"read(id = $id, offset = $offset, size = $size)") {
-      synchronized(files.get(id)).map { case _ -> dataEntry =>
+      synchronized(files.get(id)).map { (_, dataEntry) =>
         val sizeRead -> holes = dataEntry.read(offset, size, sink)
-        holes.foreach { case holeOffset -> holeSize =>
+        holes.foreach { (holeOffset, holeSize) =>
           backend.read(id, dataEntry.baseDataId.get(), holeOffset, holeSize)
-            .foreach { case dataOffset -> data => sink.write(dataOffset - offset, data) }
+            .foreach { (dataOffset, data) => sink.write(dataOffset - offset, data) }
         }
         sizeRead
       }

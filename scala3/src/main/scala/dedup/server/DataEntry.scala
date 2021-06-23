@@ -19,7 +19,7 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
 
   private val path   = tempDir.resolve(s"$id")
   private val cache  = WriteCache(MemCache.availableMem, path, initialSize)
-  private val isOpen = new CountDownLatch(1)
+  private val isOpen = CountDownLatch(1)
 
   def written: Boolean = synchronized(cache.written)
   def size: Long       = synchronized(cache.size   )
@@ -68,6 +68,6 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   def awaitClosed(): Unit = isOpen.await()
 
 object DataEntry:
-  protected val currentId = new AtomicLong()
-  protected val closedEntries = new AtomicLong()
+  protected val currentId = AtomicLong()
+  protected val closedEntries = AtomicLong()
   def openEntries: Long = currentId.get - closedEntries.get

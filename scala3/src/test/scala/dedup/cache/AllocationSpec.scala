@@ -10,7 +10,7 @@ import java.util.concurrent.atomic.AtomicLong
 class AllocationSpec extends AnyFreeSpec:
 
   s"${°[Allocation]} uses ${°[CacheBase[_]]}, see also there..." - {
-    val cache = new Allocation
+    val cache = Allocation()
     "example 1 reading more than memChunk bytes" in {
       cache.allocate(100000, 10)
       cache.allocate(100010, memChunk)

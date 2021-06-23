@@ -42,7 +42,7 @@ import scala.util.Using.resource
   val nativeFuseOpts = if getNativePlatform.getOS == WINDOWS then Array("-o", "volname=DedupFS") else Array[String]()
   val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
   try fs.mount(mountPoint.toPath, true, false, fuseOpts)
-  catch { case e: Throwable => main.error("Mount exception:", e); fs.umount() }
+  catch (e: Throwable) => { main.error("Mount exception:", e); fs.umount() }
 
 object main extends util.ClassLogging {
   export log.{debug, info, warn, error}
