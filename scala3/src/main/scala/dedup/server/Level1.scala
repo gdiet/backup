@@ -41,7 +41,10 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
       })
     }
 
-  def size(id: Long, dataId: DataId): Long = 0 // FIXME
+  def size(id: Long, dataId: DataId): Long =
+    watch(s"size($id, $dataId)") {
+      synchronized(files.get(id)).map(_._2.size).getOrElse(backend.size(id, dataId))
+    }
 
   /** Reads bytes from the referenced file and writes them to `sink`.
     * Reads the requested number of bytes unless end-of-file is reached
@@ -69,5 +72,3 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
         sizeRead
       }
     }
- 
-end Level1

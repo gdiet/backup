@@ -50,6 +50,13 @@ class Database(connection: Connection) extends util.ClassLogging:
     })
   }
 
+  private val qDataSize = connection.prepareStatement(
+    "SELECT length FROM DataEntries WHERE id = ? AND seq = 1"
+  )
+  def dataSize(dataId: DataId): Long = synchronized {
+    resource(qDataSize.tap(_.setLong(1, dataId.toLong)).executeQuery())(_.maybeNext(_.getLong(1))).getOrElse(0)
+  }
+
   private val uTime = connection.prepareStatement(
     "UPDATE TreeEntries SET time = ? WHERE id = ?"
   )

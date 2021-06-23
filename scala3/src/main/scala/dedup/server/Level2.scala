@@ -16,6 +16,9 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
     // TODO delete empty temp dir
     con.close()
 
+  def size(id: Long, dataId: DataId): Long =
+    synchronized(files.get(id)).map(_.size).getOrElse(database.dataSize(dataId))
+
   /** Reads bytes from the referenced file.
     *
     * Note: The caller must make sure that no read beyond end-of-entry takes place
@@ -70,5 +73,3 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
 //      else lts.read(partPosition, readSize, resultOffset)
 //    }
 //    recurse(partsToReadFrom, readSize, readFrom)
-
-end Level2
