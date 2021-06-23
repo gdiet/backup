@@ -53,7 +53,7 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
     _size = math.max(size, position + data.length)
   }
 
-  /** Reads cached byte areas from this [[WriteCache]]. Does not read beyond the end of the cached area.
+  /** Reads cached byte areas from this [[WriteCache]]. Stops reading at the end of the cached area.
     *
     * @param position position to start reading at.
     * @param size     number of bytes to read.

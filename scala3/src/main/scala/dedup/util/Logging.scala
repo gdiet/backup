@@ -27,7 +27,6 @@ trait ClassLogging:
   protected def guard[T](msg: => String)(f: => T): T =
     try f catch { case e: Throwable => log.error(s"$msg -> ERROR", e); throw e }
 
-end ClassLogging
 
 class Slf4jLogger(name: String):
 
@@ -42,5 +41,3 @@ class Slf4jLogger(name: String):
   def info (msg: => String, e: => Throwable): Unit = logger.info(msg, e)
   def warn (msg: => String, e: => Throwable): Unit = logger.warn(msg, e)
   def error(msg: => String, e: => Throwable): Unit = logger.error(msg, e)
-
-end Slf4jLogger

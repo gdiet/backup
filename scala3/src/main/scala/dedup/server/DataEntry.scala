@@ -24,7 +24,7 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   def written: Boolean = synchronized(cache.written)
   def size: Long       = synchronized(cache.size   )
 
-  /** Reads the requested number of bytes. Beyond end-of-file returns a hole entry.
+  /** Reads the requested number of bytes. Stops reading at the end of this [[DataEntry]].
     *
     * Unsafe: Use only if it is ensured that no writes to the DataEntry occur
     * during the read process while iterating the result lazy list.
@@ -32,13 +32,12 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     * @param offset Offset to start reading at.
     * @param size   Number of bytes to read, not limited by the internal size limit for byte arrays.
     *
-    * @return LazyList(position, (holeSize | bytes) */
+    * @return LazyList(position, holeSize | bytes) */
   def readUnsafe(offset: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] =
     cache.read(offset, size)
 
   /** Reads bytes from this [[DataEntry]] and writes them to `sink`.
-    * Reads the requested number of bytes unless end-of-file is
-    * reached first, in that case stops there. Returns the areas
+    * Stops reading at the end of this [[DataEntry]]. Returns the areas
     * not cached in this [[DataEntry]].
     *
     * Note: Providing a `sink` instead of returning the data
@@ -52,11 +51,21 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     * @return (actual size read, Vector((holePosition, holeSize))) */
   def read[D: DataSink](offset: Long, size: Long, sink: D): (Long, Vector[(Long, Long)]) = synchronized {
     val sizeToRead = math.max(0, math.min(size, cache.size - offset))
-    sizeToRead -> readUnsafe(offset, sizeToRead).flatMap {
+    sizeToRead -> cache.read(offset, sizeToRead).flatMap {
       case position -> Left(hole) => Some(position -> hole)
       case position -> Right(data) => sink.write(position - offset, data); None
     }.toVector
   }
+
+  def close(finalDataId: Long): Unit = synchronized {
+    cache.close()
+    closedEntries.incrementAndGet()
+    isOpen.countDown()
+    baseDataId.set(finalDataId)
+    log.trace(s"Closed $id with new base data ID $baseDataId.")
+  }
+
+  def awaitClosed(): Unit = isOpen.await()
 
 object DataEntry:
   protected val currentId = new AtomicLong()
