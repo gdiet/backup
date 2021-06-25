@@ -64,8 +64,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   /** Reads bytes from the long term store from a file defined by `parts`.
     *
-    * Note: The caller must make sure that no read beyond end-of-entry takes place
-    * here because the behavior in that case is undefined. TODO define it.
+    * TODO unify: WriteCache read methods stop reading at end of file, this method throws
     *
     * @param parts    List of (offset, size) defining the parts of the file to read from.
     *                 `readFrom` + `readSize` must not exceed summed part sizes.
@@ -73,6 +72,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
     * @param readSize Number of bytes to read, must be >= 0.
     *
     * @return A contiguous LazyList(position, bytes) where data chunk size is limited to [[dedup.memChunk]].
+    * @throws IllegalArgumentException if `readFrom` or `readSize` exceed the bounds defined by `parts`.
     */
   private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): LazyList[(Long, Array[Byte])] =
     log.trace(s"readFromLts(parts: $parts, readFrom: $readFrom, readSize: $readSize)")
