@@ -1,7 +1,17 @@
 package dedup
 package server
 
+import java.util.concurrent.{Executors, TimeUnit}
+import java.util.concurrent.atomic.AtomicLong
+import scala.concurrent.ExecutionContext
+
+object Level2:
+  def cacheLoad: Long = entriesSize.get() * entryCount.get()
+  private val entryCount = new AtomicLong()
+  private val entriesSize = new AtomicLong()
+
 class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
+  import Level2._
 
   private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
   private val con = db.H2.connection(settings.dbDir, settings.readonly)
@@ -11,10 +21,19 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   /** id -> DataEntry. Remember to synchronize. */
   private var files = Map[Long, DataEntry]()
 
+  /** Store logic relies on this being a single thread executor. */
+  private val singleThreadStoreContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
+
   override def close(): Unit =
-    // TODO see original
-    // TODO warn about unclosed data entries and non-empty temp dir
-    // TODO delete empty temp dir
+    if DataEntry.openEntries > 0 then
+      log.info(s"Persisting remaining ${DataEntry.openEntries} entries, combined size ${readableBytes(entriesSize.get())} ...")
+    singleThreadStoreContext.shutdown()
+    singleThreadStoreContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
+    if entryCount.get > 0 then log.warn(s"${entryCount.get} entries have not been reported closed.")
+    if settings.temp.exists() then
+      if settings.temp.list().isEmpty then settings.temp.delete()
+      else log.warn(s"Temp dir not empty: ${settings.temp}")
+    lts.close()
     con.close()
 
   def size(id: Long, dataId: DataId): Long =
