@@ -90,17 +90,6 @@ class Database(connection: Connection) extends util.ClassLogging:
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
 
-  private val uParentName = connection.prepareStatement(
-    "UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?"
-  )
-  def update(id: Long, newParentId: Long, newName: String): Boolean = synchronized {
-    uParentName.setLong  (1, newParentId)
-    uParentName.setString(2, newName    )
-    uParentName.setLong  (3, id         )
-    uParentName.executeUpdate() == 1
-  }
-
-  // FIXME merge the two iFile operations
   private val iFile = connection.prepareStatement(
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)",
     Statement.RETURN_GENERATED_KEYS
@@ -111,12 +100,21 @@ class Database(connection: Connection) extends util.ClassLogging:
     iFile.setString(2, name         )
     iFile.setLong  (3, time.toLong  )
     iFile.setLong  (4, dataId.toLong)
-    val count = iFile.executeUpdate()
+    val count = iFile.executeUpdate() // Name conflict triggers SQL exception due to unique constraint.
     if count != 1 then log.warn(s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
-  
-end Database
+
+  private val uParentName = connection.prepareStatement(
+    "UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?"
+  )
+  def update(id: Long, newParentId: Long, newName: String): Boolean = synchronized {
+    uParentName.setLong  (1, newParentId)
+    uParentName.setString(2, newName    )
+    uParentName.setLong  (3, id         )
+    uParentName.executeUpdate() == 1
+  }
+
 
 extension (rs: ResultSet)
   def maybeNext[T](f: ResultSet => T): Option[T] = Option.when(rs.next())(f(rs))
