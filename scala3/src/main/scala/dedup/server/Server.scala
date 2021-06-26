@@ -183,5 +183,3 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
           .read(fileHandle, offset, intSize, sink).map(_.toInt)
           .getOrElse { log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); ENOENT }
     }
-
-end Server

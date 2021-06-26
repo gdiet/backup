@@ -74,5 +74,3 @@ trait ParallelAccess(dataDir: File) extends AutoCloseable with ClassLogging:
       fileLock.lock()
       closeFile(path, resource)
     }
-
-end ParallelAccess

@@ -16,4 +16,3 @@ object H2:
       val dbTraceFile = java.io.File(directory, "fsdb/dedupfs.trace.db")
       require(!dbTraceFile.exists(), s"Database trace file $connection found. Check for database problems.")
     DriverManager.getConnection(jdbcUrl(directory, readonly) + settings, "sa", "").tap(_.setAutoCommit(true))
-end H2

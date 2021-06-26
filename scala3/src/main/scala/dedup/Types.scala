@@ -18,5 +18,3 @@ object types:
     def nonZero: Time = if t == 0 then 1 else t
     @annotation.targetName("timeToLong")
     def toLong: Long = t
-
-end types

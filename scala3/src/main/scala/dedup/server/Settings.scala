@@ -13,5 +13,3 @@ case class Settings( repo          : File,
 
   val tempPath: Path = temp.toPath
   val dataDir : File = store.dataDir(repo)
-
-end Settings

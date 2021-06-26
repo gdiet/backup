@@ -12,9 +12,8 @@ class WriteCacheSpec extends AnyFreeSpec with TestFile:
   val available = AtomicLong(10)
   val cache = WriteCache(available, testFile.toPath, 5)
 
-  "Reading beyond end of cache throws" in {
-    intercept[IllegalArgumentException] { cache.read(0, 100) }
-  }
+  "Reading beyond end of cache throws" in { intercept[IllegalArgumentException] { cache.read(0, 100) } }
+  "Truncating to negative size throws" in { intercept[IllegalArgumentException] { cache.truncate(-1) } }
   "Reading the initial cache yields a hole of the initial size" in {
     assert(cache.read(0, 5)._seq == Seq(0 -> Left(5)))
     assert(cache.size == 5)

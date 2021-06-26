@@ -70,5 +70,3 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dat
       val (alreadyRead, bytes) = readChunk(position, size)
       if alreadyRead == size then LazyList(resultOffset -> bytes)
       else (resultOffset -> bytes) #:: read(position + alreadyRead, size - alreadyRead, resultOffset + alreadyRead)
-
-end LongTermStore
