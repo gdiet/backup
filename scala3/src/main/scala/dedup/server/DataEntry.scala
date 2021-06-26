@@ -25,7 +25,18 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   def size: Long       = synchronized(cache.size   )
 
   def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
-  
+
+  /** @param data LazyList(position -> bytes). Providing the complete data as LazyList allows running the update
+    *             atomically / synchronized. */
+  def write(data: LazyList[(Long, Array[Byte])]): Unit = synchronized {
+    data.foreach { (position, bytes) =>
+      if Level2.cacheLoad > 1000000000L then
+        log.trace(s"Slowing write to reduce cache load ${Level2.cacheLoad}.")
+        Thread.sleep(Level2.cacheLoad/1000000000L)
+      cache.write(position, bytes)
+    }
+  }
+
   /** Reads the requested number of bytes. Stops reading at the end of this [[DataEntry]].
     *
     * Unsafe: Use only if it is ensured that no writes to the DataEntry occur

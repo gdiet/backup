@@ -190,6 +190,18 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
         case Some(file: FileEntry) => if (backend.truncate(file.id, size)) OK else EIO // false if called without create or open
     }
 
+  override def write(path: String, source: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
+    if settings.readonly then EROFS else watch(s"write $path .. offset = $offset, size = $size") {
+      val intSize = size.toInt.abs // We need to return an Int size, so here it is.
+      def data: LazyList[(Long, Array[Byte])] = LazyList.range(0, intSize, memChunk).map { readOffset =>
+        val chunkSize = math.min(memChunk, intSize - readOffset)
+        offset -> new Array[Byte](chunkSize).tap(source.get(readOffset, _, 0, chunkSize))
+      }
+      if offset < 0 || size != intSize then EOVERFLOW // With intSize being .abs (see above) checks for negative size, too.
+      else if backend.write(fi.fh.get(), data) then intSize
+      else EIO // false if called without create or open.
+    }
+
   override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     watch(s"read $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs // We need to return an Int size, so here it is.
