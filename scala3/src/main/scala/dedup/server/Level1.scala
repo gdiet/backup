@@ -41,6 +41,16 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
       })
     }
 
+  def open(file: FileEntry): Unit =
+    watch(s"open($file)") {
+      synchronized { import file._
+        files += id -> (files.get(id) match
+          case None => 1 -> backend.newDataEntry(id, dataId)
+          case Some(count -> dataEntry) => count + 1 -> dataEntry
+        )
+      }
+    }
+
   def size(id: Long, dataId: DataId): Long =
     watch(s"size($id, $dataId)") {
       synchronized(files.get(id)).map(_._2.size).getOrElse(backend.size(id, dataId))
