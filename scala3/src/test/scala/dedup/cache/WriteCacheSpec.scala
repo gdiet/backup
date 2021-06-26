@@ -12,13 +12,16 @@ class WriteCacheSpec extends AnyFreeSpec with TestFile:
   val available = AtomicLong(10)
   val cache = WriteCache(available, testFile.toPath, 5)
 
+  "Reading beyond end of cache throws" in {
+    intercept[IllegalArgumentException] { cache.read(0, 100) }
+  }
   "Reading the initial cache yields a hole of the initial size" in {
-    assert(cache.read(0, 100)._seq == Seq(0 -> Left(5)))
+    assert(cache.read(0, 5)._seq == Seq(0 -> Left(5)))
     assert(cache.size == 5)
   }
   "Writing beyond end of cache is possible" in {
     cache.write(7, Array[Byte](1, 2))
-    assert(cache.read(0, 100)._seq == Seq(
+    assert(cache.read(0, 9)._seq == Seq(
       0 -> Left(5),
       5 -> Right(Seq(0, 0)),
       7 -> Right(Seq(1, 2))
@@ -29,7 +32,7 @@ class WriteCacheSpec extends AnyFreeSpec with TestFile:
   val data12 = Array.fill[Byte](12)(3)
   "Scenario: Overwrite so file cache is used" in {
     cache.write(2, data12)
-    assert(cache.read(0, 100)._seq == Seq(
+    assert(cache.read(0, 14)._seq == Seq(
       0 -> Left(2),
       2 -> Right(data12.toSeq)
     ))
@@ -38,7 +41,7 @@ class WriteCacheSpec extends AnyFreeSpec with TestFile:
   }
   "Scenario: Truncate extends cache" in {
     cache.truncate(20)
-    assert(cache.read(0, 100)._seq == Seq(
+    assert(cache.read(0, 20)._seq == Seq(
       0 -> Left(2),
       2 -> Right(data12.toSeq),
       14 -> Right(Seq(0, 0, 0, 0, 0, 0))
@@ -49,7 +52,7 @@ class WriteCacheSpec extends AnyFreeSpec with TestFile:
   "Scenario: Overwrite to memCache" in {
     cache.write(6, Array[Byte](6, 5))
     cache.write(12, Array[Byte](8, 7, 6, 5))
-    assert(cache.read(0, 100)._seq == Seq(
+    assert(cache.read(0, 20)._seq == Seq(
       0 -> Left(2),
       2 -> Right(Seq(3, 3, 3, 3)),
       6 -> Right(Seq(6, 5)),
@@ -62,7 +65,7 @@ class WriteCacheSpec extends AnyFreeSpec with TestFile:
   }
   "Scenario: Truncate to shorten cache" in {
     cache.truncate(10)
-    assert(cache.read(0, 100)._seq == Seq(
+    assert(cache.read(0, 10)._seq == Seq(
       0 -> Left(2),
       2 -> Right(Seq(3, 3, 3, 3)),
       6 -> Right(Seq(6, 5)),

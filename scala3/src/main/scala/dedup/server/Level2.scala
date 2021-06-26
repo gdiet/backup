@@ -41,15 +41,13 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   /** Reads bytes from the referenced file.
     *
-    * Note: The caller must make sure that no read beyond end-of-entry takes place
-    * here because the behavior in that case is undefined. TODO define it.
-    *
     * @param id           id of the file to read from.
     * @param dataId       dataId of the file to read from in case the file is not cached.
     * @param offset       offset in the file to start reading at.
     * @param size         number of bytes to read, NOT limited by the internal size limit for byte arrays.
     *
     * @return A contiguous LazyList(position, bytes) where data chunk size is limited to [[dedup.memChunk]].
+    * @throws IllegalArgumentException if `offset` / `size` exceed the bounds of the virtual file.
     */
   def read(id: Long, dataId: Long, offset: Long, size: Long): LazyList[(Long, Array[Byte])] =
     synchronized(files.get(id)) match
@@ -63,8 +61,6 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
         }
 
   /** Reads bytes from the long term store from a file defined by `parts`.
-    *
-    * TODO unify: WriteCache read methods stop reading at end of file, this method throws
     *
     * @param parts    List of (offset, size) defining the parts of the file to read from.
     *                 `readFrom` + `readSize` must not exceed summed part sizes.
