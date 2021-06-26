@@ -36,6 +36,11 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
     lts.close()
     con.close()
 
+  def newDataEntry(id: Long, baseDataId: DataId): DataEntry =
+    synchronized(files.get(id)) match
+      case None => DataEntry(AtomicLong(baseDataId.toLong), database.dataSize(baseDataId), settings.tempPath)
+      case Some(entry) => DataEntry(entry.baseDataId, entry.size, settings.tempPath)
+
   def size(id: Long, dataId: DataId): Long =
     synchronized(files.get(id)).map(_.size).getOrElse(database.dataSize(dataId))
 

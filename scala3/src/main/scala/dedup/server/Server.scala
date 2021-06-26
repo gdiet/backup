@@ -174,6 +174,14 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
               OK
     }
 
+  override def open(path: String, fi: FuseFileInfo): Int =
+    watch(s"open $path") {
+      backend.entry(path) match
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) => backend.open(file); fi.fh.set(file.id); OK
+    }
+
   override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     watch(s"read $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs // We need to return an Int size, so here it is.
