@@ -24,6 +24,8 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   def written: Boolean = synchronized(cache.written)
   def size: Long       = synchronized(cache.size   )
 
+  def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
+  
   /** Reads the requested number of bytes. Stops reading at the end of this [[DataEntry]].
     *
     * Unsafe: Use only if it is ensured that no writes to the DataEntry occur

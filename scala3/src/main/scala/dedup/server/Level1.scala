@@ -56,6 +56,11 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
       synchronized(files.get(id)).map(_._2.size).getOrElse(backend.size(id, dataId))
     }
 
+  def truncate(id: Long, newSize: Long): Boolean =
+    watch(s"truncate(id: $id, newSize: $newSize)") {
+      synchronized(files.get(id)).map(_._2.truncate(newSize)).isDefined
+    }
+
   /** Reads bytes from the referenced file and writes them to `sink`.
     * Reads the requested number of bytes unless end-of-file is reached
     * first, in that case stops there.

@@ -182,6 +182,14 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
         case Some(file: FileEntry) => backend.open(file); fi.fh.set(file.id); OK
     }
 
+  override def truncate(path: String, size: Long): Int =
+    if settings.readonly then EROFS else watch(s"truncate $path .. $size") {
+      backend.entry(path) match
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) => if (backend.truncate(file.id, size)) OK else EIO // false if called without create or open
+    }
+
   override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     watch(s"read $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs // We need to return an Int size, so here it is.
