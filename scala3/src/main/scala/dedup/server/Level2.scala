@@ -18,6 +18,8 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val database = db.Database(con)
   export database.{child, children, delete, mkDir, mkFile, setTime, update}
 
+  // FIXME what happens if a tree entry is deleted and after that the level 2 cache is written?
+  
   /** id -> DataEntry. Remember to synchronize. */
   private var files = Map[Long, DataEntry]()
 

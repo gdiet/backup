@@ -216,5 +216,5 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
       backend.entry(path) match
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
-        case Some(file: FileEntry) => ??? // FIXME store.delete(file); OK
+        case Some(file: FileEntry) => backend.delete(file); OK
     }
