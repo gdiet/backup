@@ -103,13 +103,12 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
                   // replace operation is not atomic. This is tolerated in order to simplify the code.
                   previous.foreach(backend.delete)
                   if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
-                    def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match {
+                    def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match
                       case file: FileEntry =>
                         backend.copyFile(file, newParentId, newName)
                       case dir : DirEntry =>
                         backend.mkDir(newParentId, newName)
                           .exists(dirId => backend.children(source.id).forall(child => copy(child, child.name, dirId)))
-                    }
                     if (copy(origin, newName, targetDir.id)) OK else EEXIST
                   else
                     backend.update(origin.id, targetDir.id, newName)
@@ -210,4 +209,12 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
         backend
           .read(fileHandle, offset, intSize, sink).map(_.toInt)
           .getOrElse { log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); ENOENT }
+    }
+
+  override def unlink(path: String): Int =
+    if settings.readonly then EROFS else watch(s"unlink $path") {
+      backend.entry(path) match
+        case None => ENOENT
+        case Some(_: DirEntry) => EISDIR
+        case Some(file: FileEntry) => ??? // FIXME store.delete(file); OK
     }
