@@ -89,7 +89,7 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
       synchronized(files.get(id)).map { (_, dataEntry) =>
         val sizeRead -> holes = dataEntry.read(offset, size, sink)
         holes.foreach { (holeOffset, holeSize) =>
-          backend.read(id, dataEntry.baseDataId.get(), holeOffset, holeSize)
+          backend.read(id, dataEntry.getBaseDataId, holeOffset, holeSize)
             .foreach { (dataOffset, data) => sink.write(dataOffset - offset, data) }
         }
         sizeRead

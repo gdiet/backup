@@ -63,7 +63,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       case None =>
         readFromLts(database.parts(dataId), offset, size)
       case Some(entry) =>
-        lazy val ltsParts = database.parts(DataId(entry.baseDataId.get())) // TODO introduce typed entry.getBaseDataId?
+        lazy val ltsParts = database.parts(entry.getBaseDataId)
         entry.readUnsafe(offset, size).flatMap {
           case holeOffset -> Left(holeSize) => readFromLts(ltsParts, holeOffset, holeSize)
           case dataOffset -> Right(data)    => LazyList(dataOffset -> data)
@@ -116,7 +116,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       }
 
   private def persistAsync(id: Long, dataEntry: DataEntry): Unit = try {
-    val ltsParts = database.parts(DataId(dataEntry.baseDataId.get()))
+    val ltsParts = database.parts(dataEntry.getBaseDataId)
     ???
   } catch (e: Throwable) => { log.error(s"Persisting $id failed.", e); throw e }
 

@@ -13,6 +13,7 @@ import java.util.concurrent.CountDownLatch
   *
   * @param baseDataId Id of the data record this entry updates. -1 if this entry is independent. */
 class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) extends ClassLogging:
+  def getBaseDataId: DataId = DataId(baseDataId.get())
 
   val id: Long = currentId.incrementAndGet()
   log.trace(s"Create $id with base data ID $baseDataId.")
