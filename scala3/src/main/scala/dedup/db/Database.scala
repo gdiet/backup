@@ -40,8 +40,8 @@ class Database(connection: Connection) extends util.ClassLogging:
   private val qParts = connection.prepareStatement(
     "SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC"
   )
-  def parts(dataId: Long): Vector[(Long, Long)] = synchronized {
-    qParts.setLong(1, dataId)
+  def parts(dataId: DataId): Vector[(Long, Long)] = synchronized {
+    qParts.setLong(1, dataId.toLong)
     resource(qParts.executeQuery())(_.seq { rs =>
       val (start, size) = rs.getLong(1) -> rs.getLong(2)
       assert(start >= 0, s"Start $start must be >= 0.")
@@ -113,6 +113,15 @@ class Database(connection: Connection) extends util.ClassLogging:
     uParentName.setString(2, newName    )
     uParentName.setLong  (3, id         )
     uParentName.executeUpdate() == 1
+  }
+
+  private val uDataId = connection.prepareStatement(
+    "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
+  )
+  def setDataId(id: Long, dataId: DataId): Unit = synchronized {
+    uDataId.setLong(1, dataId.toLong)
+    uDataId.setLong(2, id)
+    require(uDataId.executeUpdate() == 1, s"setDataId update count not 1 for id $id dataId $dataId")
   }
 
 

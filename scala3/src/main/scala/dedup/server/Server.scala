@@ -211,6 +211,12 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
           .getOrElse { log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); ENOENT }
     }
 
+  override def release(path: String, fi: FuseFileInfo): Int =
+    watch(s"release $path") {
+      val fileHandle = fi.fh.get()
+      if backend.release(fileHandle) then OK else EIO // false if called without create or open
+    }
+
   override def unlink(path: String): Int =
     if settings.readonly then EROFS else watch(s"unlink $path") {
       backend.entry(path) match

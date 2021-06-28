@@ -95,3 +95,16 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
         sizeRead
       }
     }
+
+  def release(id: Long): Boolean =
+    watch(s"release($id)") {
+      val result = synchronized(files.get(id) match {
+        case None => None // No handle found, will return false.
+        case Some(count -> dataEntry) =>
+          if count < 0 then log.error(s"Handle count $count for id $id")
+          if count > 1 then { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
+          else { files -= id; Some(Some(dataEntry)) } // Outside the sync block persist data if necessary.
+      })
+      result.flatten.foreach(data => if data.written then backend.persist(id, data) else data.close(-1))
+      result.isDefined
+    }

@@ -4,6 +4,7 @@ package server
 import java.util.concurrent.{Executors, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
 
 object Level2:
   def cacheLoad: Long = entriesSize.get() * entryCount.get()
@@ -19,7 +20,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   export database.{child, children, delete, mkDir, mkFile, setTime, update}
 
   // FIXME what happens if a tree entry is deleted and after that the level 2 cache is written?
-  
+
   /** id -> DataEntry. Remember to synchronize. */
   private var files = Map[Long, DataEntry]()
 
@@ -27,6 +28,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val singleThreadStoreContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
   override def close(): Unit =
+    // TODO is it necessary to flush files, or is this automatically done?
     if DataEntry.openEntries > 0 then
       log.info(s"Persisting remaining ${DataEntry.openEntries} entries, combined size ${readableBytes(entriesSize.get())} ...")
     singleThreadStoreContext.shutdown()
@@ -56,12 +58,12 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
     * @return A contiguous LazyList(position, bytes) where data chunk size is limited to [[dedup.memChunk]].
     * @throws IllegalArgumentException if `offset` / `size` exceed the bounds of the virtual file.
     */
-  def read(id: Long, dataId: Long, offset: Long, size: Long): LazyList[(Long, Array[Byte])] =
+  def read(id: Long, dataId: DataId, offset: Long, size: Long): LazyList[(Long, Array[Byte])] =
     synchronized(files.get(id)) match
       case None =>
         readFromLts(database.parts(dataId), offset, size)
       case Some(entry) =>
-        lazy val ltsParts = database.parts(entry.baseDataId.get())
+        lazy val ltsParts = database.parts(DataId(entry.baseDataId.get())) // TODO introduce typed entry.getBaseDataId?
         entry.readUnsafe(offset, size).flatMap {
           case holeOffset -> Left(holeSize) => readFromLts(ltsParts, holeOffset, holeSize)
           case dataOffset -> Right(data)    => LazyList(dataOffset -> data)
@@ -94,3 +96,61 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       if partSize < readSize then lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
       else lts.read(partPosition, readSize, resultOffset)
     recurse(partsToReadFrom, readSize, readFrom)
+
+  /* Note: Once in Level2, DataEntry objects are never mutated. */
+  def persist(id: Long, dataEntry: DataEntry): Unit =
+    // First wait that any previous persist request for this file is finished.
+    synchronized(files.get(id)).foreach(_.awaitClosed())
+    if dataEntry.size == 0 then
+      // If data entry size is zero, explicitly set dataId -1 because it might have contained something else...
+      database.setDataId(id, DataId(-1))
+      dataEntry.close(-1)
+    else
+      log.trace(s"ID $id - persisting data entry, size ${dataEntry.size} / base data id ${dataEntry.baseDataId}.")
+      entryCount.incrementAndGet()
+      entriesSize.addAndGet(dataEntry.size)
+      // Persist async. Creating the future synchronized makes sure data entries are processed in the right order.
+      synchronized {
+        files += id -> dataEntry
+        Future(persistAsync(id, dataEntry))(singleThreadStoreContext)
+      }
+
+  private def persistAsync(id: Long, dataEntry: DataEntry): Unit = try {
+    val ltsParts = database.parts(DataId(dataEntry.baseDataId.get()))
+    ???
+  } catch (e: Throwable) => { log.error(s"Persisting $id failed.", e); throw e }
+
+//          def data: LazyList[(Long, Array[Byte])] = dataEntry.readUnsafe(0, dataEntry.size)._2.flatMap {
+//            case Right(data) => LazyList(data)
+//            case Left((position, offset)) => readFromLts(ltsParts, position, offset)
+//          }
+//          // Calculate hash
+//          val md = MessageDigest.getInstance(hashAlgorithm)
+//          data.foreach(data => md.update(data._2))
+//          val hash = md.digest()
+//          // Check if already known
+//          val dataId = db.dataEntry(hash, dataEntry.size) match {
+//            // Already known, simply link
+//            case Some(dataId) =>
+//              db.setDataId(id, dataId)
+//              log.trace(s"Persisted $id - content known, linking to dataId $dataId")
+//              dataId
+//            // Not yet known, store ...
+//            case None =>
+//              // Reserve storage space
+//              val start = startOfFreeData.getAndAdd(dataEntry.size)
+//              // Write to storage
+//              data.foreach { case (offset, bytes) => lts.write(start + offset, bytes) }
+//              // create data entry
+//              val dataId = db.newDataIdFor(id)
+//              db.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
+//              log.trace(s"Persisted $id - new content, dataId $dataId")
+//              dataId
+//          }
+//          // Release persisted DataEntry.
+//          synchronized {
+//            files -= id
+//            _entryCount.decrementAndGet()
+//            _entriesSize.addAndGet(-dataEntry.size)
+//            dataEntry.close(dataId)
+//          }
