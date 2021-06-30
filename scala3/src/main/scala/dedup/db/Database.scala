@@ -57,6 +57,19 @@ class Database(connection: Connection) extends util.ClassLogging:
     resource(qDataSize.tap(_.setLong(1, dataId.toLong)).executeQuery())(_.maybeNext(_.getLong(1))).getOrElse(0)
   }
 
+  private val qDataEntry = connection.prepareStatement(
+    "SELECT id FROM DataEntries WHERE hash = ? AND length = ?"
+  )
+  def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = synchronized {
+    qDataEntry.setBytes(1, hash)
+    qDataEntry.setLong(2, size)
+    resource(qDataEntry.executeQuery())(_.maybeNext(r => DataId(r.getLong(1))))
+  }
+
+  def startOfFreeData: Long = synchronized {
+    resource(connection.createStatement().executeQuery("SELECT MAX(stop) FROM DataEntries"))(_.maybeNext(_.getLong(1)).getOrElse(0L))
+  }
+
   private val uTime = connection.prepareStatement(
     "UPDATE TreeEntries SET time = ? WHERE id = ?"
   )
@@ -122,6 +135,32 @@ class Database(connection: Connection) extends util.ClassLogging:
     uDataId.setLong(1, dataId.toLong)
     uDataId.setLong(2, id)
     require(uDataId.executeUpdate() == 1, s"setDataId update count not 1 for id $id dataId $dataId")
+  }
+
+  private val qNextId = connection.prepareStatement(
+    "SELECT NEXT VALUE FOR idSeq"
+  )
+  def nextId: Long = synchronized {
+    resource(qNextId.executeQuery())(_.tap(_.next()).getLong(1))
+  }
+
+  // Generated keys seem not to be available for sql update, so this is two SQL commands
+  def newDataIdFor(id: Long): DataId = synchronized {
+    nextId.pipe(DataId(_)).tap(setDataId(id, _))
+  }
+
+  private val iDataEntry = connection.prepareStatement(
+    "INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)"
+  )
+  def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = synchronized {
+    require(seq > 0, s"seq not positive: $seq")
+    iDataEntry.setLong(1, dataId.toLong)
+    iDataEntry.setInt(2, seq)
+    if (seq == 1) iDataEntry.setLong(3, length) else iDataEntry.setNull(3, Types.BIGINT)
+    iDataEntry.setLong(4, start)
+    iDataEntry.setLong(5, stop)
+    if (seq == 1) iDataEntry.setBytes(6, hash) else iDataEntry.setNull(3, Types.BINARY)
+    require(iDataEntry.executeUpdate() == 1, s"insertDataEntry update count not 1 for dataId $dataId")
   }
 
 

@@ -105,6 +105,6 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
           if count > 1 then { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
           else { files -= id; Some(Some(dataEntry)) } // Outside the sync block persist data if necessary.
       })
-      result.flatten.foreach(data => if data.written then backend.persist(id, data) else data.close(-1))
+      result.flatten.foreach(data => if data.written then backend.persist(id, data) else data.close(DataId(-1)))
       result.isDefined
     }

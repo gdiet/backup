@@ -9,3 +9,5 @@ package dedup
   *
   * @see https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram */
 val memChunk = 2 << 18
+
+val hashAlgorithm = "MD5"

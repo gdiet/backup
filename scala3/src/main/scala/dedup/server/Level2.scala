@@ -17,6 +17,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
   private val con = db.H2.connection(settings.dbDir, settings.readonly)
   private val database = db.Database(con)
+  private val startOfFreeData = new AtomicLong(database.startOfFreeData)
   export database.{child, children, delete, mkDir, mkFile, setTime, update}
 
   // FIXME what happens if a tree entry is deleted and after that the level 2 cache is written?
@@ -104,7 +105,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
     if dataEntry.size == 0 then
       // If data entry size is zero, explicitly set dataId -1 because it might have contained something else...
       database.setDataId(id, DataId(-1))
-      dataEntry.close(-1)
+      dataEntry.close(DataId(-1))
     else
       log.trace(s"ID $id - persisting data entry, size ${dataEntry.size} / base data id ${dataEntry.baseDataId}.")
       entryCount.incrementAndGet()
@@ -117,40 +118,38 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   private def persistAsync(id: Long, dataEntry: DataEntry): Unit = try {
     val ltsParts = database.parts(dataEntry.getBaseDataId)
-    ???
+    def data: LazyList[(Long, Array[Byte])] = dataEntry.readUnsafe(0, dataEntry.size).flatMap {
+      case position -> Right(data) => LazyList(position -> data)
+      case position -> Left(offset) => readFromLts(ltsParts, position, offset)
+    }
+    // Calculate hash
+    val md = java.security.MessageDigest.getInstance(hashAlgorithm)
+    data.foreach(entry => md.update(entry._2))
+    val hash = md.digest()
+    // Check if already known
+    val dataId = database.dataEntry(hash, dataEntry.size) match {
+      // Already known, simply link
+      case Some(dataId) =>
+        database.setDataId(id, dataId)
+        log.trace(s"Persisted $id - content known, linking to dataId $dataId")
+        dataId
+      // Not yet known, store ...
+      case None =>
+        // Reserve storage space
+        val start = startOfFreeData.getAndAdd(dataEntry.size)
+        // Write to storage
+        data.foreach { case (offset, bytes) => lts.write(start + offset, bytes) }
+        // create data entry
+        val dataId = database.newDataIdFor(id)
+        database.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
+        log.trace(s"Persisted $id - new content, dataId $dataId")
+        dataId
+    }
+    // Release persisted DataEntry.
+    synchronized {
+      files -= id
+      entryCount.decrementAndGet()
+      entriesSize.addAndGet(-dataEntry.size)
+      dataEntry.close(dataId)
+    }
   } catch (e: Throwable) => { log.error(s"Persisting $id failed.", e); throw e }
-
-//          def data: LazyList[(Long, Array[Byte])] = dataEntry.readUnsafe(0, dataEntry.size)._2.flatMap {
-//            case Right(data) => LazyList(data)
-//            case Left((position, offset)) => readFromLts(ltsParts, position, offset)
-//          }
-//          // Calculate hash
-//          val md = MessageDigest.getInstance(hashAlgorithm)
-//          data.foreach(data => md.update(data._2))
-//          val hash = md.digest()
-//          // Check if already known
-//          val dataId = db.dataEntry(hash, dataEntry.size) match {
-//            // Already known, simply link
-//            case Some(dataId) =>
-//              db.setDataId(id, dataId)
-//              log.trace(s"Persisted $id - content known, linking to dataId $dataId")
-//              dataId
-//            // Not yet known, store ...
-//            case None =>
-//              // Reserve storage space
-//              val start = startOfFreeData.getAndAdd(dataEntry.size)
-//              // Write to storage
-//              data.foreach { case (offset, bytes) => lts.write(start + offset, bytes) }
-//              // create data entry
-//              val dataId = db.newDataIdFor(id)
-//              db.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
-//              log.trace(s"Persisted $id - new content, dataId $dataId")
-//              dataId
-//          }
-//          // Release persisted DataEntry.
-//          synchronized {
-//            files -= id
-//            _entryCount.decrementAndGet()
-//            _entriesSize.addAndGet(-dataEntry.size)
-//            dataEntry.close(dataId)
-//          }

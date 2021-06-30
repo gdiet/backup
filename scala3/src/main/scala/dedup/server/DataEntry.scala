@@ -73,11 +73,11 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     }.toVector
   }
 
-  def close(finalDataId: Long): Unit = synchronized {
+  def close(finalDataId: DataId): Unit = synchronized {
     cache.close()
     closedEntries.incrementAndGet()
     isOpen.countDown()
-    baseDataId.set(finalDataId)
+    baseDataId.set(finalDataId.toLong)
     log.trace(s"Closed $id with new base data ID $baseDataId.")
   }
 
