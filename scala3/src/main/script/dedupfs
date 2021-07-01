@@ -7,8 +7,19 @@ if [[ $JAVAVERSION != *"\"11.0."* ]]; then
   echo "Detected Java version: $JAVAVERSION"
   exit 1
 fi
+# FIXME re-enable db-backup
+# if ! $APPDIR/db-backup; then exit 1; fi
 
-# Init options:
+# Mount options:
 # Log directory: -DLOG_BASE=<log base directory>
 # First parameter: <repository directory>
-$JAVA "-DLOG_BASE=$APPDIR/log" -cp "$APPDIR/lib/*" dedup.init "$@"
+# Second parameter: <mount point>
+# Additional optional parameters:
+# -readOnly=true
+# -copyWhenMoving=true
+# -temp=<temp dir>
+
+# Note:
+# Mount needs at least 96MB RAM.
+# -Dfile.encoding=UTF-8 is necessary for FUSE operations.
+$JAVA "-DLOG_BASE=$APPDIR/log" -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.mount "$@"

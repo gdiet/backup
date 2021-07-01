@@ -153,7 +153,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
   override def chmod(path: String, mode: Long): Int =
     watch(s"chmod $path $mode") {
       if logChmod.getAndSet(false) then
-        log.info(s"chmod implementation is no-op, provided to avoid warnings in certain Linux file managers.")
+        log.info(s"no-op chmod provided for certain Linux file managers.")
       OK
     }
 
@@ -161,7 +161,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
   override def chown(path: String, uid: Long, gid: Long): Int =
     watch(s"chown $path $uid $gid") {
       if logChown.getAndSet(false) then
-        log.info(s"chown implementation is no-op, provided to avoid warnings in certain Linux file managers.")
+        log.info(s"no-op chown provided for certain Linux file managers.")
       OK
     }
 
