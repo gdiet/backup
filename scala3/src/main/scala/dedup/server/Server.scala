@@ -5,6 +5,7 @@ import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
+import java.util.concurrent.atomic.AtomicBoolean
 
 class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
 
@@ -146,6 +147,22 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
           backend.entry(path) match
             case None        => ENOENT
             case Some(entry) => backend.setTime(entry.id, sec*1000 + nan/1000000); OK
+    }
+
+  private val logChmod = AtomicBoolean(true)
+  override def chmod(path: String, mode: Long): Int =
+    watch(s"chmod $path $mode") {
+      if logChmod.getAndSet(false) then
+        log.info(s"chmod implementation is no-op, provided to avoid warnings in certain Linux file managers.")
+      OK
+    }
+
+  private val logChown = AtomicBoolean(true)
+  override def chown(path: String, uid: Long, gid: Long): Int =
+    watch(s"chown $path $uid $gid") {
+      if logChown.getAndSet(false) then
+        log.info(s"chown implementation is no-op, provided to avoid warnings in certain Linux file managers.")
+      OK
     }
 
   // *************
