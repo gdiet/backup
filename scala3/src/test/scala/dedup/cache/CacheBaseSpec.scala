@@ -38,6 +38,11 @@ class CacheBaseSpec extends AnyFreeSpec:
         val result = cache.read(MaxInt - 500, 1000)
         assert (result == Seq(MaxInt - 500 -> Left(1000)))
       }
+      "returns a single byte if that is in cache" in {
+        cache.set(0L -> 1)
+        val result = cache.read(0, 1)
+        assert (result == Seq(0 -> Right(1)))
+      }
       "returns a trimmed start entry if requested" in {
         cache.set(1000L -> 1000)
         val result = cache.read(1600, 1000)
