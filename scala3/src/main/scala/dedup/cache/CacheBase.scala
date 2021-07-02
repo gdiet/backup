@@ -100,7 +100,7 @@ trait CacheBase[M]:
     // Identify the relevant entries.
     val startKey = Option(entries.floorKey(position)).getOrElse(position)
     import scala.jdk.CollectionConverters.MapHasAsScala
-    var section = entries.subMap(startKey, position + size - 1).asScala.toVector
+    var section = entries.subMap(startKey, position + size).asScala.toVector
     // Trim or remove the head entry if necessary.
     if section.nonEmpty && startKey < position then
       val (headPosition -> headData) +: tail = section
