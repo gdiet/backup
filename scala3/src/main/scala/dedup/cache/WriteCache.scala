@@ -24,6 +24,10 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
   private val zeroCache = Allocation()
   private var fileCache = FileCache(temp)
 
+  /** For debugging purposes. */
+  override def toString: String =
+    s"$getClass: mem $memCache / file $fileCache / zero $zeroCache"
+
   /** Truncates the cache to a new size. Zero-pads if the cache size increases. */
   def truncate(newSize: Long): Unit = if newSize != size then guard(s"truncate $size -> $newSize") {
     require(newSize >= 0, s"newSize: $newSize")

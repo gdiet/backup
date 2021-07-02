@@ -25,6 +25,11 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   def written: Boolean = synchronized(cache.written)
   def size: Long       = synchronized(cache.size   )
 
+  /** For debugging purposes. */
+  override def toString: String = synchronized {
+    s"$getClass: id $id / size $size / cache $cache"
+  }
+
   def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
 
   /** @param data LazyList(position -> bytes). Providing the complete data as LazyList allows running the update
