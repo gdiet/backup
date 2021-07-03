@@ -8,7 +8,7 @@ if [[ $JAVAVERSION != *"\"11.0."* ]]; then
   exit 1
 fi
 
-# Init options:
+### Init options ###
 # Log directory: -DLOG_BASE=<log base directory>
-# First parameter: <repository directory>
+# Parameter    : <repository directory>
 $JAVA "-DLOG_BASE=$APPDIR/log" -cp "$APPDIR/lib/*" dedup.init "$@"
