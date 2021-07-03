@@ -7,8 +7,6 @@ if [[ $JAVAVERSION != *"\"11.0."* ]]; then
   echo "Detected Java version: $JAVAVERSION"
   exit 1
 fi
-# FIXME re-enable db-backup
-# if ! $APPDIR/db-backup; then exit 1; fi
 
 # Mount options:
 # Log directory: -DLOG_BASE=<log base directory>
@@ -16,6 +14,7 @@ fi
 # Second parameter: <mount point>
 # Additional optional parameters:
 # -readOnly=true
+# -noDbBackup=true
 # -copyWhenMoving=true
 # -temp=<temp dir>
 

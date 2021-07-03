@@ -17,6 +17,7 @@ import scala.util.Using.resource
 @main def mount(repo: File, mountPoint: File, options: (String, String)*) =
   val opts           = options.toMap
   val readOnly       = opts.get("readonly").contains("true")
+  val backup         = !readOnly && opts.get("nodbbackup").contains("true")
   val copyWhenMoving = opts.get("copywhenmoving").contains("true")
   val temp           = File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
   val dbDir          = db.dbDir(repo)
@@ -31,6 +32,7 @@ import scala.util.Using.resource
     if !temp.isDirectory  then main.failureExit(s"Temp dir is not a directory: $temp")
     if !temp.canWrite     then main.failureExit(s"Temp dir is not writable: $temp")
     if temp.list.nonEmpty then main.warn(s"Note that temp dir is not empty: $temp")
+  if backup then db.maintenance.backup(repo)
   // TODO add server GUI
   main.info (s"Starting dedup file system.")
   main.info (s"Repository:  $repo")
