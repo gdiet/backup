@@ -15,7 +15,7 @@ object maintenance extends util.ClassLogging {
     require(file.exists(), s"Database file $file doesn't exist")
     val plainBackup = File(dir, "dedupfs.mv.db.backup")
     log.info(s"Creating plain database backup: $file -> $plainBackup")
-    Files.copy(file.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+    Files.copy(file.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
     val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
     val zipBackup = File(dir, s"dedupfs_$dateString.zip")
