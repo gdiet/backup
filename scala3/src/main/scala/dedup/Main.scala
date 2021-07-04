@@ -17,7 +17,7 @@ import scala.util.Using.resource
 @main def mount(repo: File, mountPoint: File, options: (String, String)*) =
   val opts           = options.toMap
   val readOnly       = opts.get("readonly").contains("true")
-  val backup         = !readOnly && opts.get("nodbbackup").contains("true")
+  val backup         = !readOnly && !opts.get("nodbbackup").contains("true")
   val copyWhenMoving = opts.get("copywhenmoving").contains("true")
   val temp           = File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
   val dbDir          = db.dbDir(repo)

@@ -63,6 +63,8 @@ Don't use DedupFS for security critical things. One reason for that: DedupFS use
 ---
 TODO remove below
 
+mount -t drvfs e: /mnt/e
+
 On Linux (e.g. WSL/Debian), `/etc/mtab` might not be available and CTRL-C will not correctly unmount the file system. This might help: `sudo ln -s /proc/self/mounts /etc/mtab`.
 
 ```
