@@ -65,6 +65,8 @@ TODO remove below
 
 mount -t drvfs e: /mnt/e
 
+georg@julius:~/dfs/Sicherungen/Laptop zu Hause/2021.07/dateien$ rsync -a --delete --info=progress2 /mnt/c/dateien/Aufzuräumen .
+
 On Linux (e.g. WSL/Debian), `/etc/mtab` might not be available and CTRL-C will not correctly unmount the file system. This might help: `sudo ln -s /proc/self/mounts /etc/mtab`.
 
 ```
