@@ -9,7 +9,7 @@ object H2:
   // For SQL debugging, add to the DB URL "...;TRACE_LEVEL_SYSTEM_OUT=2"
   private def jdbcUrl(directory: java.io.File, readonly: Boolean) =
     if readonly then s"jdbc:h2:$directory/dedupfs;ACCESS_MODE_DATA=r"
-    else s"jdbc:h2:$directory/dedupfs;DB_CLOSE_ON_EXIT=FALSE"
+    else s"jdbc:h2:$directory/dedupfs"
 
   def connection(directory: java.io.File, readonly: Boolean, settings: String = ""): Connection =
     if !readonly then
