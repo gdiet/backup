@@ -43,7 +43,7 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
 
   /** Writes data to the cache. Data size should not exceed `memChunk`. */
   def write(position: Long, data: Array[Byte]): Unit = if data.length > 0 then guard(s"write $position [${data.length}]") {
-    require(data.length < memChunk, s"Data array too large: [${data.length}]")
+    require(data.length <= memChunk, s"Data array too large: [${data.length}]")
     // Clear the area in all caches.
     if position < size then
       memCache .clear(position, data.length)
