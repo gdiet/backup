@@ -11,7 +11,7 @@ class MemCacheSpec extends AnyFreeSpec:
 
   s"${°[MemCache]} uses ${°[CacheBase[_]]}, see also there..." - {
     val available = AtomicLong(100)
-    val cache = MemCache(available)
+    val cache = MemCache(ConstReservation(available))
     "The write method" - {
       "called with data exceeding the available cache size" - {
         "returns false" in assert(cache.write(200, new Array[Byte](101)) == false)

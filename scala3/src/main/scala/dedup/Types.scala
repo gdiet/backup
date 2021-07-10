@@ -15,6 +15,8 @@ object types:
   opaque type Time = Long
   object Time { def apply(t: Long): Time = t }
   extension (t: Time)
+    def <(other: Time): Boolean = t < other
+    def +(millis: Long): Time = t + millis
     def nonZero: Time = if t == 0 then 1 else t
     @annotation.targetName("timeToLong")
     def toLong: Long = t

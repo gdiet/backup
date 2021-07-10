@@ -10,7 +10,7 @@ import scala.util.Random
 // No IDEA support for scalatest with scala 3? https://youtrack.jetbrains.com/issue/SCL-18644
 class WriteCacheSpec extends AnyFreeSpec with TestFile:
   val available = AtomicLong(10)
-  val cache = WriteCache(available, testFile.toPath, 5)
+  val cache = WriteCache(ConstReservation(available), testFile.toPath, 5)
 
   "Reading beyond end of cache throws" in { intercept[IllegalArgumentException] { cache.read(0, 100) } }
   "Truncating to negative size throws" in { intercept[IllegalArgumentException] { cache.truncate(-1) } }

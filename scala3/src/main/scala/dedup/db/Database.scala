@@ -14,6 +14,7 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
 }
 
 class Database(connection: Connection) extends util.ClassLogging:
+  // FIXME check DB version
 
   private def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry =
     rs.opt(_.getLong(3)) match
