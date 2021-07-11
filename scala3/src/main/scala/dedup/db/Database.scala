@@ -15,9 +15,13 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
 
 class Database(connection: Connection) extends util.ClassLogging:
   resource(connection.createStatement) { stat =>
-    val dbVersion = resource(stat.executeQuery("SELECT value FROM Context WHERE key = 'db version';"))(_.getString(1))
-    log.debug(s"Database version: $dbVersion.")
-    require(dbVersion == "2", s"Only database version 2 is supported, not $dbVersion.")
+    resource(stat.executeQuery("SELECT value FROM Context WHERE key = 'db version';"))(_.maybeNext(_.getString(1))) match
+      case None =>
+        log.error(s"No database version found.")
+        throw new IllegalStateException("No database version found.")
+      case Some(dbVersion) =>
+        log.debug(s"Database version: $dbVersion.")
+        require(dbVersion == "2", s"Only database version 2 is supported, detected version is $dbVersion.")
   }
 
   private def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry =
