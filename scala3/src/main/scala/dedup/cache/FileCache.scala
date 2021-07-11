@@ -49,7 +49,10 @@ class FileCache(path: Path) extends LongCache with AutoCloseable with ClassLoggi
   }
 
   override def close(): Unit = synchronized {
-    maybeChannel.foreach { file => file.close(); Files.delete(path) }
+    maybeChannel.foreach { file =>
+      file.close()
+      Files.delete(path)
+      log.debug(s"Closed & deleted cache file $path")
+    }
     maybeChannel = None
-    log.debug(s"Closed & deleted cache file $path")
   }
