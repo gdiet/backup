@@ -13,7 +13,7 @@ def dataDir(repo: File) = File(repo, "data")
 class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dataDir):
 
   /** 100.000.000 bytes. Must be Int (not Long). Don't change without migration script. */
-  private val fileSize = 100000000
+  val fileSize = 100000000
 
   /** @return The relative data file path, the offset in the data file,
     *         and the part of the requested size located on the data file. */
