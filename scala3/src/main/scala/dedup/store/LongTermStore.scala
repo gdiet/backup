@@ -59,7 +59,7 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dat
       else
         log.debug(s"Missing data file $path while reading at $position, substituting with '0' values.")
     }
-    bytesFromFile -> bytes
+    bytesToReturn -> bytes
 
   /** @param position     The position in the store to start reading at, must be >= 0.
     * @param size         The number of bytes to read, must be >= 0.
