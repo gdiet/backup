@@ -8,12 +8,17 @@ import scala.util.Using.resource
 
 def dbDir(repo: java.io.File) = java.io.File(repo, "fsdb")
 
-def initialize(connection: Connection): Unit = resource(connection.createStatement()) { stat =>
+def initialize(connection: Connection): Unit = resource(connection.createStatement) { stat =>
   tableDefinitions.foreach(stat.executeUpdate)
   indexDefinitions.foreach(stat.executeUpdate)
 }
 
 class Database(connection: Connection) extends util.ClassLogging:
+  resource(connection.createStatement) { stat =>
+    val dbVersion = resource(stat.executeQuery("SELECT value FROM Context WHERE key = 'db version';"))(_.getString(1))
+    log.debug(s"Database version: $dbVersion.")
+    require(dbVersion == "2", s"Only database version 2 is supported, not $dbVersion.")
+  }
 
   private def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry =
     rs.opt(_.getLong(3)) match

@@ -13,5 +13,5 @@ if not "%JAVAVERSION%"=="11.0" (
 rem ### Init options ###
 rem # Log directory: -DLOG_BASE=<log base directory>
 rem # Parameter    : <repository directory>
-%JAVA% "-DLOG_BASE=%~dp0log" -Xmx512m -cp "%~dp0lib\*" dedup.init %*
+%JAVA% "-DLOG_BASE=%~dp0log" -cp "%~dp0lib\*" dedup.init %*
 pause

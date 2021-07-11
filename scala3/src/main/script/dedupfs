@@ -12,7 +12,7 @@ fi
 
 ### Mount options ###
 # Log directory: -DLOG_BASE=<log base directory>
-# Heap space   : -Xmx256M
+# Heap space   : -Xmx256M - mount needs at least 96MB RAM.
 # 1. parameter : <repository directory>
 # 2. parameter : <mount point>
 # Additional optional parameters:
@@ -22,6 +22,5 @@ fi
 # -temp=<temp dir>
 
 ### Note ###
-# Mount needs at least 96MB RAM.
 # -Dfile.encoding=UTF-8 is necessary for FUSE operations.
-$JAVA "-DLOG_BASE=$APPDIR/log" -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.mount "$@"
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.mount "$@"
