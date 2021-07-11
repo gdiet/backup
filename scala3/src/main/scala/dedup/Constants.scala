@@ -9,7 +9,7 @@ package dedup
   *
   * The fuse default for write is 4kiB, for read is 128kiB. For DedupFS write is also set to 128kiB
   * using the option "big_writes" and "max_write=131072". So read and write automatically partitions
-  * data into small-enough chunks. TODO check actual read and write chunk size
+  * data into small-enough chunks.
   *
   * @see https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
   * @see https://stackoverflow.com/questions/68331703/java-big-byte-arrays-use-more-heap-than-expected */
