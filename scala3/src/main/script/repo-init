@@ -8,6 +8,8 @@ if [[ $JAVAVERSION != *"\"11.0."* ]]; then
   exit 1
 fi
 
+
+
 ### Init options ###
 # Log directory: -DLOG_BASE=<log base directory>
 # Parameter    : <repository directory>
