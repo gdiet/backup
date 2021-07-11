@@ -2,12 +2,27 @@ package dedup
 package cache
 
 import dedup.util.ClassLogging
+
+import java.lang.Runtime.{getRuntime => rt}
 import java.util.concurrent.atomic.AtomicLong
 
 object MemCache extends ClassLogging:
-  private val cacheLimit: Long = math.max(0, (Runtime.getRuntime.maxMemory - 64000000) * 7 / 10)
+  // Give room for database and memory management peculiarities, see startupCheck.
+  private val cacheLimit: Long = math.max(0, (rt.maxMemory - 64000000) * 7 / 10)
   log.info(s"Memory cache size: ${readableBytes(cacheLimit)}")
   val availableMem = AtomicLong(cacheLimit)
+
+  /** Allocate 90% of the free heap with byte arrays sized [[dedup.memChunk]], then free the heap again.
+    * This is to ensure [[cache.MemCache]] will work as expected.
+    *
+    * @see https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
+    * @see https://stackoverflow.com/questions/68331703/java-big-byte-arrays-use-more-heap-than-expected */
+  def startupCheck: Unit =
+    val freeMemory = rt.maxMemory - rt.totalMemory + rt.freeMemory
+    val numberOfChunks = (freeMemory / 10 * 9 / memChunk).asInt
+    log.debug(s"Checking memory cache with ${readableBytes(numberOfChunks.toLong * memChunk)}.")
+    Vector.fill(numberOfChunks)(new Array[Byte](memChunk))
+    log.debug(s"Memory cache check ok.")
 
 /** Caches in memory byte arrays with positions, where the byte arrays are not necessarily contiguous. */
 class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with AutoCloseable:

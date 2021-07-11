@@ -16,6 +16,7 @@ import scala.util.Using.resource
   Thread.sleep(200) // Give logging some time to display message
 
 @main def mount(repo: File, mountPoint: File, options: (String, String)*) =
+  cache.MemCache.startupCheck
   val opts           = options.toMap
   val readOnly       = opts.get("readonly").contains("true")
   val backup         = !readOnly && !opts.get("nodbbackup").contains("true")
