@@ -13,6 +13,7 @@ import scala.util.Using.resource
     main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.");
   resource(db.H2.connection(dbDir, readonly = false))(db.initialize)
   main.info(s"Database initialized for repository $repo.")
+  Thread.sleep(200) // Give logging some time to display message
 
 @main def mount(repo: File, mountPoint: File, options: (String, String)*) =
   val opts           = options.toMap
