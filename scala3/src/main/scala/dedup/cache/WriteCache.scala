@@ -63,8 +63,7 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
     * @param size     number of bytes to read.
     * @return A lazy list of (position, gapSize | byte array]).
     * @throws IllegalArgumentException if `offset` / `size` exceed the bounds of the cached area. */
-  def read(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = {
-    require(size > 0, s"Zero size read at $position.") // TODO Did happen with buggy write.
+  def read(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = if size < 1 then LazyList() else
     require(position + size <= _size, s"Read $position/$size beyond end of cache $_size.")
     if size == 0 then LazyList() else guard(s"read($position, $size)") {
       val sizeToRead = math.min(size, _size - position)
@@ -76,7 +75,6 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
         case position -> Left(holeSize) => zeroCache.readData(position, holeSize) // Fill holes from zero cache.
       }
     }
-  }
 
   override def close(): Unit =
     memCache .close()
