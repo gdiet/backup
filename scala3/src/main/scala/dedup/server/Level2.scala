@@ -29,11 +29,10 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val singleThreadStoreContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
   override def close(): Unit =
-    // TODO is it necessary to flush files, or is this automatically done?
     if DataEntry.openEntries > 0 then
       log.info(s"Persisting remaining ${DataEntry.openEntries} entries, combined size ${readableBytes(entriesSize.get())} ...")
     singleThreadStoreContext.shutdown()
-    singleThreadStoreContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
+    singleThreadStoreContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS) // This flushes all pending files.
     if entryCount.get > 0 then log.warn(s"${entryCount.get} entries have not been reported closed.")
     if settings.temp.exists() then
       if settings.temp.list().isEmpty then settings.temp.delete()
