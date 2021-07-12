@@ -24,11 +24,10 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   def delete(entry: TreeEntry): Unit =
     watch(s"delete($entry)") {
-      // TODO research whether to keep the data entry as is or to close it here like this:
-      //      entry match
-      //        case file: FileEntry =>
-      //          synchronized { files.get(file.id).foreach { (_, data) => data.close(-1); files -= file.id } }
-      //        case _: DirEntry => // Nothing to do here
+      // From man unlink(2)
+      // If the name was the last link to a file but any processes still have the file open,
+      // the file will remain in existence until the last file descriptor referring to it is closed.
+      // ... This means that we keep the file open in level 1 if it currently is open ...
       backend.delete(entry.id)
     }
 
