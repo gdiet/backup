@@ -11,6 +11,8 @@ object Level2:
   private val entryCount = new AtomicLong()
   private val entriesSize = new AtomicLong()
 
+/* Corner case: What happens if a tree entry is deleted and after that the level 2 cache is written?
+ * In that case, level 2 cache is written for the deleted file entry, and everything is fine. */
 class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   import Level2._
 
@@ -19,8 +21,6 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val database = db.Database(con)
   private val startOfFreeData = new AtomicLong(database.startOfFreeData)
   export database.{child, children, delete, mkDir, mkFile, setTime, update}
-
-  // FIXME what happens if a tree entry is deleted and after that the level 2 cache is written?
 
   /** id -> DataEntry. Remember to synchronize. */
   private var files = Map[Long, DataEntry]()
