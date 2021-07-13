@@ -10,8 +10,7 @@ if not "%JAVAVERSION%"=="11.0" (
   exit /B 1
 )
 
-rem ### Init options ###
-rem # Log directory: -DLOG_BASE=<log base directory>
-rem # Parameter    : <repository directory>
+rem ### Parameters ###
+rem # repo=<repository directory>     | optional, default: working directory
 %JAVA% "-DLOG_BASE=%~dp0log" -cp "%~dp0lib\*" dedup.init %*
 pause

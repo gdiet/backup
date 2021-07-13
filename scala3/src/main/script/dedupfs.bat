@@ -10,18 +10,12 @@ if not "%JAVAVERSION%"=="11.0" (
   exit /B 1
 )
 
-rem ### Mount options ###
-rem # Log directory: -DLOG_BASE=<log base directory>
-rem # Heap space   : -Xmx256M - mount needs at least 96MB RAM.
-rem # 1. parameter : <repository directory>
-rem # 2. parameter : <mount point>
-rem # Additional optional parameters:
-rem # -readOnly=true
-rem # -noDbBackup=true
-rem # -copyWhenMoving=true
-rem # -temp=<temp dir>
-rem
-rem ### Note ###
-rem # -Dfile.encoding=UTF-8 is necessary for FUSE operations.
+rem ### Parameters ###
+rem # repo=<repository directory>     | optional, default: working directory
+rem # mountPoint=<mount point>        | mandatory, e.g. J:\ or /mnt/dedupfs
+rem # readOnly=true                   | optional, default: false
+rem # noDbBackup=true                 | optional, default: false
+rem # copyWhenMoving=true             | optional, default: false
+rem # temp=<temp dir>                 | optional, default: 'dedupfs-temp' in the user's temp dir
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx512m -Dfile.encoding=UTF-8 -cp "%~dp0lib\*" dedup.mount %*
 pause

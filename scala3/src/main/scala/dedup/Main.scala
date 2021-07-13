@@ -7,7 +7,8 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.Using.resource
 
-@main def init(repo: File) =
+@main def init(opts: (String, String)*) =
+  val repo  = File(opts.getOrElse("repo", "."))
   val dbDir = db.dbDir(repo)
   if dbDir.exists() then
     main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.");
@@ -16,12 +17,13 @@ import scala.util.Using.resource
   main.info(s"Database initialized for repository $repo.")
   Thread.sleep(200) // Give logging some time to display message
 
-@main def mount(repo: File, mountPoint: File, options: (String, String)*) =
+@main def mount(opts: (String, String)*) =
   cache.MemCache.startupCheck
-  val opts           = options.toMap
-  val readOnly       = opts.get("readonly").contains("true")
-  val backup         = !readOnly && !opts.get("nodbbackup").contains("true")
-  val copyWhenMoving = opts.get("copywhenmoving").contains("true")
+  val repo           = File(opts.getOrElse("repo", "."))
+  val mountPoint     = File(opts.require("mountPoint"))
+  val readOnly       = opts.boolean("readOnly")
+  val backup         = !readOnly && !opts.boolean("noDbBackup")
+  val copyWhenMoving = opts.boolean("copyWhenMoving")
   val temp           = File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
   val dbDir          = db.dbDir(repo)
   if !dbDir.exists() then
@@ -57,11 +59,17 @@ object main extends util.ClassLogging {
     sys.exit(1)
 }
 
-given scala.util.CommandLineParser.FromString[File] with
-  def fromString(file: String) = File(file).getAbsoluteFile()
-
 given scala.util.CommandLineParser.FromString[(String, String)] with
-  private val matcher = """-(\S+?)=(\S+)""".r
+  private val matcher = """(\w+)=(\S+)""".r
   def fromString(option: String) = option match
     case matcher(key, value) => key.toLowerCase -> value.toLowerCase
     case _ => throw IllegalArgumentException()
+
+extension(options: Seq[(String, String)])
+  private def opts = options.toMap.map((key, value) => key.toLowerCase -> value)
+  def require(name: String): String =
+    opts.getOrElse(name.toLowerCase, main.failureExit(s"Required parameter '$name=...' is missing."))
+  def getOrElse(name: String, otherwise: => String): String =
+    opts.getOrElse(name.toLowerCase, otherwise)
+  def boolean(name: String): Boolean =
+    opts.getOrElse(name.toLowerCase, "").equalsIgnoreCase("true")
