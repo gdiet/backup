@@ -18,9 +18,10 @@ import scala.util.Using.resource
   Thread.sleep(200) // Give logging some time to display message
 
 @main def mount(opts: (String, String)*) =
+  def isWindows = getNativePlatform.getOS == WINDOWS
   cache.MemCache.startupCheck
   val repo           = File(opts.getOrElse("repo", "."))
-  val mountPoint     = File(opts.require("mountPoint"))
+  val mountPoint     = File(opts.getOrElse("mountPoint", if isWindows then "J:\\" else "/mnt/dedupfs" ))
   val readOnly       = opts.boolean("readOnly")
   val backup         = !readOnly && !opts.boolean("noDbBackup")
   val copyWhenMoving = opts.boolean("copyWhenMoving")
@@ -28,7 +29,7 @@ import scala.util.Using.resource
   val dbDir          = db.dbDir(repo)
   if !dbDir.exists() then
     main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
-  if getNativePlatform.getOS != WINDOWS then
+  if !isWindows then
     if !mountPoint.isDirectory  then main.failureExit(s"Mount point is not a directory: $mountPoint")
     if !mountPoint.list.isEmpty then main.failureExit(s"Mount point is not empty: $mountPoint")
   val settings = server.Settings(repo, dbDir, temp, readOnly, AtomicBoolean(copyWhenMoving))

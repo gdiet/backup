@@ -11,5 +11,5 @@ fi
 
 
 ### Parameters ###
-# repo=<repository directory>     | optional, default: working directory
+# repo=<repository directory>     | default: working directory
 $JAVA "-DLOG_BASE=$APPDIR/log" -cp "$APPDIR/lib/*" dedup.init "$@"

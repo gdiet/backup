@@ -11,11 +11,11 @@ if not "%JAVAVERSION%"=="11.0" (
 )
 
 rem ### Parameters ###
-rem # repo=<repository directory>     | optional, default: working directory
-rem # mountPoint=<mount point>        | mandatory, e.g. J:\ or /mnt/dedupfs
-rem # readOnly=true                   | optional, default: false
-rem # noDbBackup=true                 | optional, default: false
-rem # copyWhenMoving=true             | optional, default: false
-rem # temp=<temp dir>                 | optional, default: 'dedupfs-temp' in the user's temp dir
+rem # repo=<repository directory> | default: working directory
+rem # mount=<mount point>         | default: J:\
+rem # readOnly=true               | default: false
+rem # noDbBackup=true             | default: false
+rem # copyWhenMoving=true         | default: false
+rem # temp=<temp dir>             | default: 'dedupfs-temp' in the user's temp dir
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx512m -Dfile.encoding=UTF-8 -cp "%~dp0lib\*" dedup.mount %*
 pause
