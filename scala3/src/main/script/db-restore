@@ -1,0 +1,16 @@
+#!/bin/bash
+APPDIR=$(dirname "$0")
+if [ -d "$APPDIR"/jrex ]; then JAVA=$APPDIR/jrex/bin/java; else JAVA=java; fi
+JAVAVERSION=$($JAVA -version 2>&1 | head -1)
+if [[ $JAVAVERSION != *"\"11.0."* ]]; then
+  echo "This software has been tested with Java 11.0.* only."
+  echo "Detected Java version: $JAVAVERSION"
+  exit 1
+fi
+
+
+
+### Parameters ###
+# repo=<repository directory>     | default: working directory
+# from=<restore script file name> | default: none - for simple db file restore
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx64m -cp "$APPDIR/lib/*" dedup.dbRestore "$@"
