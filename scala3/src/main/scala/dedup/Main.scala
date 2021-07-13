@@ -68,8 +68,6 @@ given scala.util.CommandLineParser.FromString[(String, String)] with
 
 extension(options: Seq[(String, String)])
   private def opts = options.toMap.map((key, value) => key.toLowerCase -> value)
-  def require(name: String): String =
-    opts.getOrElse(name.toLowerCase, main.failureExit(s"Required parameter '$name=...' is missing."))
   def getOrElse(name: String, otherwise: => String): String =
     opts.getOrElse(name.toLowerCase, otherwise)
   def boolean(name: String): Boolean =
