@@ -16,7 +16,8 @@ rem # mount=<mount point>         | default: J:\
 rem # readOnly=true               | default: false
 rem # noDbBackup=true             | default: false
 rem # copyWhenMoving=true         | default: false
-rem # gui=true                    | default: false - true to show server GUI
+rem # gui=true                    | default: false, true in script - true to show server GUI
 rem # temp=<temp dir>             | default: 'dedupfs-temp' in the user's temp dir
-%JAVA% "-DLOG_BASE=%~dp0log" -Xmx512m -Dfile.encoding=UTF-8 -cp "%~dp0lib\*" dedup.mount %*
+echo Starting the DedupFS server GUI now - it will run detached from the command line.
+%JAVA%w "-DLOG_BASE=%~dp0log" -Xmx512m -Dfile.encoding=UTF-8 -cp "%~dp0lib\*" dedup.mount gui=true %*
 pause

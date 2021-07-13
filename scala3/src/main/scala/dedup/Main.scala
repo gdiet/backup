@@ -26,6 +26,7 @@ import scala.util.Using.resource
   val backup         = !readOnly && !opts.boolean("noDbBackup")
   val copyWhenMoving = opts.boolean("copyWhenMoving")
   val temp           = File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
+  val gui            = opts.boolean("gui")
   val dbDir          = db.dbDir(repo)
   if !dbDir.exists() then
     main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
@@ -38,8 +39,8 @@ import scala.util.Using.resource
     if !temp.isDirectory  then main.failureExit(s"Temp dir is not a directory: $temp")
     if !temp.canWrite     then main.failureExit(s"Temp dir is not writable: $temp")
     if temp.list.nonEmpty then main.warn(s"Note that temp dir is not empty: $temp")
+  if gui then ServerGui(settings)
   if backup then db.maintenance.backup(repo)
-  // TODO add server GUI
   main.info (s"Starting dedup file system.")
   main.info (s"Repository:  $repo")
   main.info (s"Mount point: $mountPoint")
