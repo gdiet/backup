@@ -162,8 +162,6 @@ When large files are written to the dedup file system and DedupFS cannot cache t
 
 To get maximum write performance, make sure the temp directory is on a fast (SSD) drive that and is not on the same physical drive as either the repository or the source from which you copy the files. The write utilities accept a `temp=<temp directory>` option, so you can override the default.
 
-TODO REVIEW FROM HERE
-
 ### Copy When Moving
 
 The dedup file system can be operated in a "copy when moving" state. In this state, whenever a command is issued to move a file (not a directory) within the dedup file system from directory A to directory B, the file is not moved but copied. What the heck?
@@ -172,19 +170,17 @@ Moving files within the dedup file system is very fast. Copying files is much sl
 
 This can be used to first create in the dedup file system a copy of an existing backup (fast) and then only to update those files that have changed (fast if few files have changed).
 
-To enable the "copy when moving" state, either tick the checkbox in the GUI or specify the `copywhenmoving=true` option when starting the dedup file system.
+To enable the "copy when moving" state, either tick the checkbox in the GUI or specify the `copyWhenMoving=true` option when starting the dedup file system.
 
 ### Log Files
 
 DedupFS writes log files that contain all log entries visible on the console and additionally DEBUG level log entries. DedupFS always creates its `logs` directory in the directory containing the DedupFS utility scripts.
 
-### Create A Database Backup
-
-It is not necessary to call `db-backup` explicitly because it is called first in all utilities where the database might change.
-
 ### Restore The Database From A Backup
 
 The `db-restore` utility is for restoring previous versions of the DedupFS database. It accepts the usual `repo=<target directory>` parameter. If run without additional `from=...` parameter, it restores the database to the way it was before the last write operation was started, thus effectively resetting the dedup file system to an earlier state. Alternatively, you can use the `from=...` parameter to point the utility to earlier database backups (zip files) that can be found in the `fsdb` subdirectory of the repository.
+
+TODO REVIEW FROM HERE
 
 ### Reclaim Space
 
