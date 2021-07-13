@@ -129,17 +129,17 @@ Notes:
 * By default, `gui-dedupfs` uses the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
 * For additional options see the paragraphs below.
 
-TODO REVIEW FROM HERE
-
 ### Mount The File System Without GUI
 
 If you want to mount the dedup file system without a GUI, run `dedupfs`. This behaves like `gui-dedupfs` except that it does not start a GUI. So see above for more details on how `dedupfs` works.
 
 ### Mount The File System Read-Only
 
-If you want to mount the dedup file system read-only, use the `gui-readonly` or `readonly` utility. These utilities work analog to the write utilities.
+If you want to mount the dedup file system read-only, use the `gui-readonly` or `readonly` utility. These utilities work the same way the write enabled utilities do.
 
 Why mount read-only? This can be handy if for example you want to look up files in your backups while making sure that you cannot accidentally add, change or delete files in the backup.
+
+TODO REVIEW FROM HERE
 
 ### Read Basic File System Statistics
 
