@@ -1,5 +1,5 @@
 @echo off
-title Repo Init DedupFS
+title DB Restore - DedupFS
 set BUNDLEDJAVA="%~dp0jre\bin\java"
 if exist %BUNDLEDJAVA% ( set JAVA=BUNDLEDJAVA ) else ( set JAVA=java )
 for /f tokens^=2-3^ delims^=.^" %%j in ('%JAVA% -fullversion 2^>^&1') do set JAVAVERSION=%%j.%%k
@@ -10,8 +10,27 @@ if not "%JAVAVERSION%"=="11.0" (
   exit /B 1
 )
 
+echo FIXME needs warning first
+exit /B
+
+echo.
+echo This utility will restore a previous state of the DedupFS database.
+echo This will overwrite the current database state.  If you do not want
+echo that, simply close the console window where this utility is running.
+echo.
+pause
+echo.
+
+
 rem ### Parameters ###
 rem # repo=<repository directory>     | default: working directory
 rem # from=<restore script file name> | default: none - for simple db file restore
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx64m -cp "%~dp0lib\*" dedup.dbRestore %*
-pause
+if not errorlevel 0 (
+    echo Database restore finished with error code %errorlevel%, exiting...
+    pause
+    exit /b 1
+) else (
+    echo Database restore finished.
+    pause
+)
