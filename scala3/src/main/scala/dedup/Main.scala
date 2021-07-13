@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.Using.resource
 
 @main def init(opts: (String, String)*) =
-  val repo  = File(opts.getOrElse("repo", "."))
+  val repo  = File(opts.getOrElse("repo", "")).getAbsoluteFile
   val dbDir = db.dbDir(repo)
   if dbDir.exists() then
     main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.");
@@ -20,7 +20,7 @@ import scala.util.Using.resource
 @main def mount(opts: (String, String)*) =
   def isWindows = getNativePlatform.getOS == WINDOWS
   cache.MemCache.startupCheck
-  val repo           = File(opts.getOrElse("repo", "."))
+  val repo           = File(opts.getOrElse("repo", "")).getAbsoluteFile
   val mountPoint     = File(opts.getOrElse("mountPoint", if isWindows then "J:\\" else "/mnt/dedupfs" ))
   val readOnly       = opts.boolean("readOnly")
   val backup         = !readOnly && !opts.boolean("noDbBackup")
