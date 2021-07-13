@@ -12,4 +12,4 @@ fi
 
 ### Parameters ###
 # repo=<repository directory>     | default: working directory
-$JAVA "-DLOG_BASE=$APPDIR/log" -cp "$APPDIR/lib/*" dedup.init "$@"
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx64m -cp "$APPDIR/lib/*" dedup.init "$@"

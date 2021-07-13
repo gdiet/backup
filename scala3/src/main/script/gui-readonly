@@ -18,4 +18,4 @@ fi
 # copyWhenMoving=true         | default: false
 # gui=true                    | default: default: false, true in script - true to show server GUI
 # temp=<temp dir>             | default: 'dedupfs-temp' in the user's temp dir
-$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.mount gui=true readOnly=true "$@"
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx80m -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.mount gui=true readOnly=true "$@"

@@ -12,5 +12,5 @@ if not "%JAVAVERSION%"=="11.0" (
 
 rem ### Parameters ###
 rem # repo=<repository directory>     | default: working directory
-%JAVA% "-DLOG_BASE=%~dp0log" -cp "%~dp0lib\*" dedup.init %*
+%JAVA% "-DLOG_BASE=%~dp0log" -Xmx64m -cp "%~dp0lib\*" dedup.init %*
 pause

@@ -143,30 +143,20 @@ Why mount read-only? This can be handy if for example you want to look up files 
 
 The `stats` utility allows you to read basic file system statistics. Like the other utilities, it accepts the optional `repo=<target directory>` parameter.
 
-TODO REVIEW FROM HERE
-
 ### Configure Memory Settings
 
-The DedupFS utilities use the default Java 11 memory settings. You can change these by editing the utility scripts. Let's start with some rules of thumb:
+The DedupFS utilities come with reasonable default memory settings. You can change these by editing the utility scripts. Let's start with some rules of thumb:
 
-* It does not hurt to assign much RAM to the DedupFS utilities - unless the operating system or other software running on the same computer doesn't have enough free RAM left for good operation.
+* It does not hurt to assign much RAM to the DedupFS utilities. That is, unless the operating system or other software running on the same computer doesn't have enough free RAM left.
 * `repo-init` does not need more than ~64 MB RAM.
-* `gui-dedupfs` and `dedupfs` need at least ~96 MB RAM for good operation. When storing large files, additional RAM improves performance, so you might want to assign (size of large files to store + 64 MB) RAM to the write utilities. Assigning more will not improve performance.
-* `db-backup` (which is called first in the write utilities) and `db-restore` do not need more than ~64 MB RAM.
+* `gui-dedupfs` and `dedupfs` need at least ~96 MB RAM for good operation. When storing large files or using a slow storage device, additional RAM improves performance.
+* `db-restore` does not need more than ~64 MB RAM.
 * `gui-readonly` and `readonly` work fine with ~80 MB RAM. Assigning more will not improve performance.
 * The `reclaim-space` utilities need about ((number of data entries) * 64 B + 64 MB) RAM.
 
-To change the RAM assignment of a utility, open it in a text editor. After the `java` or `javaw` call, add the `-Xmx` maximum heap memory setting. In the following example, it is set to 200 MB:
+To change the RAM assignment of a utility, open it in a text editor. After the `$JAVA` or `%JAVA%` call, change `-Xmx` maximum heap memory setting.
 
-```batch
-start "DedupFS" "%~dp0jre\bin\javaw" "-DLOG_BASE=%~dp0\" ...
-```
-
-... insert `-Xmx200m` after 'javaw' ...
-
-```batch
-start "DedupFS" "%~dp0jre\bin\javaw" -Xmx200m "-DLOG_BASE=%~dp0\" ...
-```
+TODO REVIEW FROM HERE
 
 ### Configure The Temp Directory
 
