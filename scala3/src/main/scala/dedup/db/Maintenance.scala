@@ -1,7 +1,7 @@
 package dedup
 package db
 
-import org.h2.tools.Script
+import org.h2.tools.{RunScript, Script}
 
 import java.io.File
 import java.nio.file.{Files, StandardCopyOption}
@@ -9,7 +9,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import scala.util.Using.resource
 
-object maintenance extends util.ClassLogging {
+object maintenance extends util.ClassLogging:
+
   def backup(repo: File): Unit =
     val dir = dbDir(repo).getAbsoluteFile
     val file = File(dir, "dedupfs.mv.db")
@@ -25,8 +26,8 @@ object maintenance extends util.ClassLogging {
       "-url", s"jdbc:h2:$dir/dedupfs", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
     )
 
-  def stats(repo: File): Unit =
-    resource(H2.connection(repo, readonly = true)) { connection =>
+  def stats(dbDir: File): Unit =
+    resource(H2.connection(dbDir, readonly = true)) { connection =>
       resource(connection.createStatement()) { stat =>
         log.info(s"Dedup File System Statistics")
         val storageSize = stat.executeQuery("SELECT MAX(stop) FROM DataEntries").tap(_.next()).getLong(1)
@@ -35,5 +36,20 @@ object maintenance extends util.ClassLogging {
         log.info(f"Folders: ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d, deleted ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d")
       }
     }
-}
 
+  def restoreBackup(dbDir: File, from: Option[String]): Unit = from match
+    case None =>
+      val dbFile = File(dbDir, "dedupfs.mv.db")
+      val backup = File(dbDir, "dedupfs.mv.db.backup")
+      require(backup.exists(), s"Database backup file $backup doesn't exist")
+      log.info(s"Restoring plain database backup: $backup -> $dbFile")
+      Files.copy(backup.toPath, dbFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+
+    case Some(scriptName) =>
+      val script = File(dbDir, scriptName)
+      require(script.exists(), s"Database backup script file $script doesn't exist")
+      val dbFile = File(dbDir, "dedupfs.mv.db")
+      require(!dbFile.exists || dbFile.delete, s"Can't delete current database file $dbFile")
+      RunScript.main(
+        "-url", s"jdbc:h2:$dbDir/dedupfs", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
+      )

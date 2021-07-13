@@ -23,6 +23,12 @@ import scala.util.Using.resource
   db.maintenance.stats(dbDir)
   Thread.sleep(200) // Give logging some time to display message
 
+@main def dbRestore(opts: (String, String)*) =
+  val repo = File(opts.getOrElse("repo", "")).getAbsoluteFile
+  val dbDir = db.dbDir(repo)
+  db.maintenance.restoreBackup(dbDir, opts.get("from"))
+  Thread.sleep(200) // Give logging some time to display message
+
 @main def mount(opts: (String, String)*) =
   def isWindows = getNativePlatform.getOS == WINDOWS
   val repo           = File(opts.getOrElse("repo", "")).getAbsoluteFile
@@ -75,6 +81,8 @@ given scala.util.CommandLineParser.FromString[(String, String)] with
 
 extension(options: Seq[(String, String)])
   private def opts = options.toMap.map((key, value) => key.toLowerCase -> value)
+  def get(name: String): Option[String] =
+    opts.get(name.toLowerCase)
   def getOrElse(name: String, otherwise: => String): String =
     opts.getOrElse(name.toLowerCase, otherwise)
   def boolean(name: String): Boolean =
