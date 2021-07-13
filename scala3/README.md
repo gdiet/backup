@@ -139,11 +139,11 @@ If you want to mount the dedup file system read-only, use the `gui-readonly` or 
 
 Why mount read-only? This can be handy if for example you want to look up files in your backups while making sure that you cannot accidentally add, change or delete files in the backup.
 
-TODO REVIEW FROM HERE
-
 ### Read Basic File System Statistics
 
 The `stats` utility allows you to read basic file system statistics. Like the other utilities, it accepts the optional `repo=<target directory>` parameter.
+
+TODO REVIEW FROM HERE
 
 ### Configure Memory Settings
 

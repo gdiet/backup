@@ -17,6 +17,12 @@ import scala.util.Using.resource
   main.info(s"Database initialized for repository $repo.")
   Thread.sleep(200) // Give logging some time to display message
 
+@main def stats(opts: (String, String)*) =
+  val repo = File(opts.getOrElse("repo", "")).getAbsoluteFile
+  val dbDir = db.dbDir(repo)
+  db.maintenance.stats(dbDir)
+  Thread.sleep(200) // Give logging some time to display message
+
 @main def mount(opts: (String, String)*) =
   def isWindows = getNativePlatform.getOS == WINDOWS
   val repo           = File(opts.getOrElse("repo", "")).getAbsoluteFile
@@ -57,7 +63,7 @@ object main extends util.ClassLogging {
   export log.{debug, info, warn, error}
   def failureExit(msg: String*): Nothing =
     msg.foreach(log.error(_))
-    Thread.sleep(200)
+    Thread.sleep(200) // Give logging some time to display message
     sys.exit(1)
 }
 
