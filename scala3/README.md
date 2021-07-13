@@ -156,13 +156,13 @@ The DedupFS utilities come with reasonable default memory settings. You can chan
 
 To change the RAM assignment of a utility, open it in a text editor. After the `$JAVA` or `%JAVA%` call, change `-Xmx` maximum heap memory setting.
 
-TODO REVIEW FROM HERE
-
 ### Configure The Temp Directory
 
-When large files are written to the dedup file system so that DedupFS cannot cache them in memory, it caches them in a "temp" directory. By default, it uses a subdirectory of the "temp" directory configured for the user in the operating system.
+When large files are written to the dedup file system and DedupFS cannot cache them in memory, it caches them in a "temp" directory. By default, it uses a subdirectory of the "temp" directory configured for the user in the operating system.
 
-If you try to get maximum write performance, make sure the temp directory is on a fast (SSD) drive that and is not on the same physical drive as either the repository or the source from which you copy the files. The write utilities accept a `temp=<temp directory>` option, so you can override the default.
+To get maximum write performance, make sure the temp directory is on a fast (SSD) drive that and is not on the same physical drive as either the repository or the source from which you copy the files. The write utilities accept a `temp=<temp directory>` option, so you can override the default.
+
+TODO REVIEW FROM HERE
 
 ### Copy When Moving
 
