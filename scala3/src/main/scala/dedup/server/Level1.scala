@@ -33,8 +33,9 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] =
     watch(s"createAndOpen(parentId = $parentId, name = '$name')") {
+      // A sensible Option.tapEach will be available in Scala 3.1, see
       // https://stackoverflow.com/questions/67017901/why-does-scala-option-tapeach-return-iterable-not-option
-      // TODO use https://github.com/scala/scala-library-next/pull/80
+      // and https://github.com/scala/scala-library-next/pull/80
       backend.mkFile(parentId, name, time, DataId(-1)).tap(_.foreach { id =>
         synchronized(files += id -> (1, DataEntry(AtomicLong(-1), 0, settings.tempPath)))
       })
