@@ -10,9 +10,6 @@ if not "%JAVAVERSION%"=="11.0" (
   exit /B 1
 )
 
-echo FIXME needs warning first
-exit /B
-
 echo.
 echo This utility will restore a previous state of the DedupFS database.
 echo This will overwrite the current database state.  If you do not want
