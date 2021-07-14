@@ -1,5 +1,5 @@
 @echo off
-title Repo Init DedupFS
+title Repo Init - DedupFS
 set BUNDLEDJAVA="%~dp0jre\bin\java"
 if exist %BUNDLEDJAVA% ( set JAVA=BUNDLEDJAVA ) else ( set JAVA=java )
 for /f tokens^=2-3^ delims^=.^" %%j in ('%JAVA% -fullversion 2^>^&1') do set JAVAVERSION=%%j.%%k

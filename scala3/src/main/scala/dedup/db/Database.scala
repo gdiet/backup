@@ -174,6 +174,7 @@ class Database(connection: Connection) extends util.ClassLogging:
 
 
 extension (rs: ResultSet)
+  def withNext[T](f: ResultSet => T): T = { require(rs.next()); f(rs) }
   def maybeNext[T](f: ResultSet => T): Option[T] = Option.when(rs.next())(f(rs))
   def opt[T](f: ResultSet => T): Option[T] = f(rs).pipe(t => if rs.wasNull then None else Some(t))
   def seq[T](f: ResultSet => T): Vector[T] = LazyList.continually(Option.when(rs.next)(f(rs))).takeWhile(_.isDefined).flatten.toVector

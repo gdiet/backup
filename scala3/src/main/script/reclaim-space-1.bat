@@ -1,5 +1,5 @@
 @echo off
-title Statistics - DedupFS
+title Reclaim Space 1 - DedupFS
 set BUNDLEDJAVA="%~dp0jre\bin\java"
 if exist %BUNDLEDJAVA% ( set JAVA=BUNDLEDJAVA ) else ( set JAVA=java )
 for /f tokens^=2-3^ delims^=.^" %%j in ('%JAVA% -fullversion 2^>^&1') do set JAVAVERSION=%%j.%%k
@@ -11,6 +11,7 @@ if not "%JAVAVERSION%"=="11.0" (
 )
 
 rem ### Parameters ###
-rem # repo=<repository directory>     | default: working directory
+rem # repo=<repository directory>       | default: working directory
+rem # keepDays=<number of days to keep> | default: 0
 %JAVA% "-DLOG_BASE=%~dp0log" -cp "%~dp0lib\*" dedup.stats %*
 pause

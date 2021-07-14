@@ -180,15 +180,16 @@ DedupFS writes log files that contain all log entries visible on the console and
 
 The `db-restore` utility is for restoring previous versions of the DedupFS database. It accepts the usual `repo=<target directory>` parameter. If run without additional `from=...` parameter, it restores the database to the way it was before the last write operation was started, thus effectively resetting the dedup file system to an earlier state. Alternatively, you can use the `from=...` parameter to point the utility to earlier database backups (zip files) that can be found in the `fsdb` subdirectory of the repository.
 
-TODO REVIEW FROM HERE
-
 ### Reclaim Space
 
 Deleting files in DedupFS is a multi-step process: First you delete a file in the dedup file system. This makes the file unavailable in the dedup file system. However, if you restore a previous database backup, the file will be available again in the dedup file system.
 
-If you want to re-use the space the deleted files take up, you can run the `reclaim-space-1` and `reclaim-space-2` utilities. Don't expect that this shrinks the repository size. Instead, the repository size will not increase for some time if you store new files.
+If you want to re-use the space the deleted files take up, you can run the `reclaim-space-1` and `reclaim-space-2` utilities. Don't expect this to shrink the repository size. Instead, the repository size will not increase for some time if you store new files.
 
-Note that running the `reclaim-space-2` utility partially invalidates previous database backups: Files are reclaimed by the utility can't be restored correctly anymore even if you restore the database to an earlier state from backup.
+Note that running the `reclaim-space-2` utility partially invalidates previous database backups: After that, some files can't be restored correctly anymore even if you restore the database to an earlier state from backup.
+
+TODO reclaim-space-2
+TODO REVIEW FROM HERE
 
 ### Clean Up Repository Files
 
