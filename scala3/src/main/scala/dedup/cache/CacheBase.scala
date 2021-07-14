@@ -91,10 +91,11 @@ trait CacheBase[M]:
             }
     }
 
-  /** Reads available data chunks. TODO check whether Long | M would be better than Either.
+  /** Reads available data chunks.
     *
     * @return A lazy list of (position, gapSize | byte array]). */
   def read(position: Long, size: Long): LazyList[(Long, Either[Long, M])] =
+    // Note: For Scala 3.0, generic union types like Long | M seem to still be unwieldy.
     require(position >= 0, s"Negative position: $position")
     require(size     >  0, s"Size not positive: $position")
     // Identify the relevant entries.
