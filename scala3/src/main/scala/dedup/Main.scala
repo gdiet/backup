@@ -29,9 +29,15 @@ import scala.util.Using.resource
   db.maintenance.reclaimSpace1(opts.dbDir, opts.getOrElse("keepDays", "0").toInt)
   Thread.sleep(200) // Give logging some time to display message
 
+@main def reclaimSpace2(opts: (String, String)*) =
+  resource(store.LongTermStore(store.dataDir(opts.repo), false))(lts =>
+    db.maintenance.reclaimSpace2(opts.dbDir, lts)
+  )
+  Thread.sleep(200) // Give logging some time to display message
+
 @main def mount(opts: (String, String)*) =
   def isWindows = getNativePlatform.getOS == WINDOWS
-  val repo           = File(opts.getOrElse("repo", "")).getAbsoluteFile
+  val repo           = opts.repo
   val mount          = File(opts.getOrElse("mount", if isWindows then "J:\\" else "/mnt/dedupfs" ))
   val readOnly       = opts.boolean("readOnly")
   val backup         = !readOnly && !opts.boolean("noDbBackup")
@@ -85,5 +91,7 @@ extension(options: Seq[(String, String)])
     opts.getOrElse(name.toLowerCase, otherwise)
   private def boolean(name: String): Boolean =
     opts.getOrElse(name.toLowerCase, "").equalsIgnoreCase("true")
+  private def repo: File =
+    File(opts.getOrElse("repo", "")).getAbsoluteFile
   private def dbDir: File =
-    db.dbDir(File(opts.getOrElse("repo", "")).getAbsoluteFile)
+    db.dbDir(repo)
