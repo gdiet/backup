@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.Using.resource
 
 @main def init(opts: (String, String)*) =
-  val repo  = File(opts.getOrElse("repo", "")).getAbsoluteFile
+  val repo  = opts.repo
   val dbDir = db.dbDir(repo)
   if dbDir.exists() then main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.")
   store.dataDir(repo).mkdirs() // If dataDir is missing, Server.statfs will report free size 0 on Windows.
@@ -92,6 +92,6 @@ extension(options: Seq[(String, String)])
   private def boolean(name: String): Boolean =
     opts.getOrElse(name.toLowerCase, "").equalsIgnoreCase("true")
   private def repo: File =
-    File(opts.getOrElse("repo", "")).getAbsoluteFile
+    File(opts.getOrElse("repo", "..")).getAbsoluteFile
   private def dbDir: File =
     db.dbDir(repo)

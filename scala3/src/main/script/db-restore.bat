@@ -20,7 +20,7 @@ echo.
 
 
 rem ### Parameters ###
-rem # repo=<repository directory>     | default: working directory
+rem # repo=<repository directory>     | default: '..' (parent of working directory)
 rem # from=<restore script file name> | default: none - for simple db file restore
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx64m -cp "%~dp0lib\*" dedup.dbRestore %*
 if not errorlevel 0 (

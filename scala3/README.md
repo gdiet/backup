@@ -102,23 +102,23 @@ Windows / Linux: Unpack the DedupFS archive. I recommend unpacking it to the rep
 The dedup file system stores all its data in a repository directory, inside the subdirectories `fsdb` and `data`. Before the dedup file system can be used, the repository needs to be initialized:
 
 * Create a repository directory for the dedup file system data, for example on an external backup drive.
-* Unpack the DedupFS archive to that repository directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like `repo-init` and `dedupfs` should be located directly in the repository directory.
-* Start the DedupFS `repo-init` utility in the repository directory, for example by double-clicking.
+* Unpack the DedupFS archive to that repository directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like `repo-init` and `dedupfs` should be located in the `dedupfs` folder in the repository directory.
+* Start the DedupFS `repo-init` utility in the `dedupfs` directory, for example by double-clicking.
 * Check the log output printed to the console where `repo-init` is executed.
-* If successful, this command creates in the repository directory the database directory `fsdb` and the log files directory `logs`.
+* If successful, this command creates in the repository directory the database directory `fsdb` and in the `dedupfs` directory the log files directory `logs`.
 
 Note:
 
-* By default, `repo-init` initializes the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order to initialize the repository in a different directory. DedupFS always creates its `logs` directory in the directory containing the DedupFS utility scripts.
+* By default, `repo-init` and all other DedupFS utilities regard the parent of the current working directory as the DedupFS repository directory. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order to point the utilities to a different repository directory. DedupFS always creates its `logs` directory in the directory containing the DedupFS utility scripts.
 
 ### Mount The File System With A GUI
 
 If you want to write, update, or read files in the dedup file system, you have to "mount" it first. Note that the dedup file system must be initialized before you can mount it, see above. Here are the steps to mount the dedup file system:
 
-* If you have installed DedupFS in the repository directory as recommended, start the dedup file system by running `gui-dedupfs` in the repository directory, for example by double-clicking.
+* If you have installed DedupFS in the repository directory as recommended, start the dedup file system by running `gui-dedupfs` in the `dedupfs` directory, for example by double-clicking.
 * After some time the DedupFS GUI will open, showing log entries.
-* After some time a log entry will tell you that the dedup file system is started.
-* In the log entries, you see among others which repository is used and where the dedup file system is mounted.
+* Some time later a log entry will tell you that the dedup file system is started.
+* In the log entries, you see among others which repository directory is used and where the dedup file system is mounted.
 
 Notes:
 
@@ -126,7 +126,7 @@ Notes:
 * On Linux, mount the dedup file system to an existing empty writable directory.
 * Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique `mount=<mount point>` mount points configured.
 * `gui-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
-* By default, `gui-dedupfs` uses the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
+* By default, `gui-dedupfs` uses the parent of the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
 * For additional options see the paragraphs below.
 
 ### Mount The File System Without GUI

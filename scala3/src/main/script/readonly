@@ -11,7 +11,7 @@ fi
 
 
 ### Parameters ###
-# repo=<repository directory> | default: working directory
+# repo=<repository directory> | default: '..' (parent of working directory)
 # mount=<mount point>         | default: /mnt/dedupfs
 # readOnly=true               | default: false, true in script
 # noDbBackup=true             | default: false

@@ -11,7 +11,7 @@ if not "%JAVAVERSION%"=="11.0" (
 )
 
 rem ### Parameters ###
-rem # repo=<repository directory> | default: working directory
+rem # repo=<repository directory> | default: '..' (parent of working directory)
 rem # mount=<mount point>         | default: J:\
 rem # readOnly=true               | default: false
 rem # noDbBackup=true             | default: false
