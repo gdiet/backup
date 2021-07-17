@@ -48,8 +48,8 @@ chmod -x target/app/*.html
 chmod -x target/app/*.version
 
 # Pack apps
-zip -rq ../../app.zip target/app
-tar cfz ../../app.tar.gz target/app/*
+zip -rq app.zip target/app
+tar cfz app.tar.gz target/app/*
 
 echo
 echo Created dedupfs app as app.tar.gz and app.zip
