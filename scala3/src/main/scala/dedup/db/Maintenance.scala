@@ -127,7 +127,6 @@ object maintenance extends util.ClassLogging:
   // TODO scala 3 code style
   def reclaimSpace2(dbDir: File, lts: store.LongTermStore): Unit = withConnection(dbDir) { con =>
     resource(con.createStatement()) { stat =>
-
       log.info(s"Starting stage 2 of reclaiming space. This modifies the long term store.")
       log.info(s"After this, older database backups can't be fully applied anymore.")
 
@@ -160,28 +159,25 @@ object maintenance extends util.ClassLogging:
 
 //      @annotation.tailrec
       def reclaim(sortedEntries: Seq[SortedEntry], gaps: Seq[Chunk], reclaimed: Long): Long =
-        ???
-//        if (sortedEntries.isEmpty) reclaimed else { // can't fold or foreach because that's not tail recursive in Scala 2.13.3
-//          if (now.toLong > progressLoggedLast + 10000) {
-//            log.info(s"In progress... reclaimed ${readableBytes(reclaimed)} of $compactionPotentialString.")
-//            progressLoggedLast = now.toLong
-//          }
-//
-//          val SortedEntry(id, entrySize, hash, chunks) = sortedEntries.head
-//          assert(entrySize > 0, "entry size is zero")
-//          val (compactionSize, gapsToUse, gapsNotUsed) =
-//            gaps.foldLeft((0L, Vector.empty[Chunk], Vector.empty[Chunk])) {
-//              case ((reservedLength, gapsToUse, otherGaps), gap) if reservedLength == entrySize =>
-//                (reservedLength, gapsToUse, otherGaps.appended(gap))
-//              case ((reservedLength, gapsToUse, otherGaps), gap) =>
-//                assert(otherGaps.isEmpty, s"Expected other gaps to be empty but are $otherGaps")
-//                if (reservedLength + gap.size <= entrySize)
-//                  (reservedLength + gap.size, gapsToUse.appended(gap), otherGaps)
-//                else {
-//                  val divideAt = gap.start + entrySize - reservedLength
-//                  (entrySize, gapsToUse.appended(Chunk(gap.start, divideAt)), otherGaps.appended(Chunk(divideAt, gap.stop)))
-//                }
-//            }
+        if sortedEntries.isEmpty then reclaimed else
+          if now.toLong > progressLoggedLast + 10000 then
+            log.info(s"In progress... reclaimed ${readableBytes(reclaimed)} of $compactionPotentialString.")
+            progressLoggedLast = now.toLong
+          val SortedEntry(id, entrySize, hash, chunks) = sortedEntries.head
+          assert(entrySize > 0, "entry size is zero")
+          val (compactionSize, gapsToUse, gapsNotUsed) =
+            gaps.foldLeft((0L, Vector.empty[Chunk], Vector.empty[Chunk])) {
+              case ((reservedLength, gapsToUse, otherGaps), gap) if reservedLength == entrySize =>
+                (reservedLength, gapsToUse, otherGaps.appended(gap))
+              case ((reservedLength, gapsToUse, otherGaps), gap) =>
+                assert(otherGaps.isEmpty, s"Expected other gaps to be empty but are $otherGaps")
+                if reservedLength + gap.size <= entrySize then
+                  (reservedLength + gap.size, gapsToUse.appended(gap), otherGaps)
+                else
+                  val divideAt = gap.start + entrySize - reservedLength
+                  (entrySize, gapsToUse.appended(Chunk(gap.start, divideAt)), otherGaps.appended(Chunk(divideAt, gap.stop)))
+            }
+          ???
 //          if (compactionSize == entrySize && gapsToUse.last.stop <= chunks.map(_.start).max) {
 //            assert(entrySize == combinedSize(gapsToUse), s"Size mismatch between entry $entrySize and gaps $gapsToUse")
 //            log.debug(s"Copying in lts data of entry $id data $chunks to $gapsToUse")
