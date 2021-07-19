@@ -19,8 +19,8 @@ rm -f app.* ||  exit 1
 # Read version from git.
 version=$(git log -1 | sed -n 's/commit //p' | cut -b 1-8) || exit 1
 if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi || exit 1
-versionFile=$(date +%Y.%m.%d)-$version$clean.version || exit 1
-echo building app $versionFile
+versionString=$(date +%Y.%m.%d)-$version$clean || exit 1
+echo building app $versionString
 
 # Build the app. Note that the JAR file contains the resource files.
 ~/sbt/bin/sbt ';clean;update;createApp' || exit 1
@@ -33,7 +33,7 @@ mv jdk-*-jre target/app/jre || exit 1
 
 # Copy license and version file
 cp LICENSE target/app/ || exit 1
-touch target/app/$versionFile || exit 1
+touch target/app/$versionString.version || exit 1
 
 # Create HTML documentation
 # Thanks to https://github.com/jfroche/docker-markdown and to the GitHub api
@@ -48,8 +48,10 @@ chmod -x target/app/*.html
 chmod -x target/app/*.version
 
 # Pack apps
-zip -rq app.zip target/app
-tar cfz app.tar.gz target/app/*
+mv target/app dedupfs-$versionString
+zip -rq dedupfs-$versionString.zip dedupfs-$versionString
+tar cfz dedupfs-$versionString.tar.gz dedupfs-$versionString
+rm -rf dedupfs-$versionString
 
 echo
-echo Created dedupfs app as app.tar.gz and app.zip
+echo Created dedupfs app as dedupfs-$versionString.tar.gz and dedupfs-$versionString.zip
