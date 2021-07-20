@@ -20,7 +20,14 @@ rm -f app.* ||  exit 1
 version=$(git log -1 | sed -n 's/commit //p' | cut -b 1-8) || exit 1
 if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi || exit 1
 versionString=$(date +%Y.%m.%d)-$version$clean || exit 1
-echo building app $versionString
+
+# Possibly create release version
+if [ $1 ]; then release=$1; else release=$versionString; fi
+echo building app $versionString as release $release
+if [ $1 ]; then
+  echo
+  read -p "RELEASE BUILD - Press enter to confirm..." reply
+fi
 
 # Build the app. Note that the JAR file contains the resource files.
 ~/sbt/bin/sbt ';clean;update;createApp' || exit 1
@@ -48,10 +55,10 @@ chmod -x target/app/*.html
 chmod -x target/app/*.version
 
 # Pack apps
-mv target/app dedupfs-$versionString
-zip -rq dedupfs-$versionString.zip dedupfs-$versionString
-tar cfz dedupfs-$versionString.tar.gz dedupfs-$versionString
-rm -rf dedupfs-$versionString
+mv target/app dedupfs-$release
+zip -rq dedupfs-$release.zip dedupfs-$release
+tar cfz dedupfs-$release.tar.gz dedupfs-$release
+rm -rf dedupfs-$release
 
 echo
-echo Created dedupfs app as dedupfs-$versionString.tar.gz and dedupfs-$versionString.zip
+echo Created dedupfs app as dedupfs-$release.tar.gz and dedupfs-$release.zip
