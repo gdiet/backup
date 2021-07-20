@@ -13,9 +13,6 @@ if [ ! -f "$jrex" ]; then
   wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/$jreFolder/$jrex || exit 1
 fi
 
-# Delete previous version of app if any.
-rm -f app.* ||  exit 1
-
 # Read version from git.
 version=$(git log -1 | sed -n 's/commit //p' | cut -b 1-8) || exit 1
 if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi || exit 1
@@ -28,6 +25,9 @@ if [ $1 ]; then
   echo
   read -p "RELEASE BUILD - Press enter to confirm..." reply
 fi
+
+# Delete previous version of app if any.
+rm -rf dedupfs-* ||  exit 1
 
 # Build the app. Note that the JAR file contains the resource files.
 ~/sbt/bin/sbt ';clean;update;createApp' || exit 1
