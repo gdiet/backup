@@ -38,7 +38,7 @@ import scala.util.Using.resource
 @main def mount(opts: (String, String)*) =
   def isWindows = getNativePlatform.getOS == WINDOWS
   val repo           = opts.repo
-  val mount          = File(opts.getOrElse("mount", if isWindows then "J:\\" else "/mnt/dedupfs" ))
+  val mount          = File(opts.getOrElse("mount", if isWindows then "J:\\" else "/mnt/dedupfs" )).getAbsoluteFile
   val readOnly       = opts.boolean("readOnly")
   val backup         = !readOnly && !opts.boolean("noDbBackup")
   val copyWhenMoving = opts.boolean("copyWhenMoving")
@@ -46,7 +46,11 @@ import scala.util.Using.resource
   val gui            = opts.boolean("gui")
   val dbDir          = db.dbDir(repo)
   if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
-  if !isWindows then
+  if isWindows then
+    if !mount.toString.matches(raw"[a-zA-Z]:\\.*") then main.failureExit(s"Mount point not on a local drive: $mount")
+    if mount.exists then main.failureExit(s"Mount point already exists: $mount")
+    if Option(mount.getParentFile).exists(!_.isDirectory) then main.failureExit(s"Mount parent is not a directory: $mount")
+  else
     if !mount.isDirectory  then main.failureExit(s"Mount point is not a directory: $mount")
     if !mount.list.isEmpty then main.failureExit(s"Mount point is not empty: $mount")
   val settings = server.Settings(repo, dbDir, temp, readOnly, AtomicBoolean(copyWhenMoving))
