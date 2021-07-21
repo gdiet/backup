@@ -102,10 +102,10 @@ Windows / Linux: Unpack the DedupFS archive. I recommend unpacking it to the rep
 The dedup file system stores all its data in a repository directory, inside the subdirectories `fsdb` and `data`. Before the dedup file system can be used, the repository needs to be initialized:
 
 * Create a repository directory for the dedup file system data, for example on an external backup drive.
-* Unpack the DedupFS archive to that repository directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like `repo-init` and `dedupfs` should be located in the `dedupfs` folder in the repository directory.
-* Start the DedupFS `repo-init` utility in the `dedupfs` directory, for example by double-clicking.
+* Unpack the DedupFS archive to that repository directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like `repo-init` and `dedupfs` should be located in the `dedupfs-[version]` folder in the repository directory.
+* Start the DedupFS `repo-init` utility in the `dedupfs-[version]` directory, for example by double-clicking.
 * Check the log output printed to the console where `repo-init` is executed.
-* If successful, this command creates in the repository directory the database directory `fsdb` and in the `dedupfs` directory the log files directory `logs`.
+* If successful, this command creates in the repository directory the database directory `fsdb` and in the `dedupfs-[version]` directory the log files directory `logs`.
 
 Note:
 
@@ -123,6 +123,7 @@ If you want to write, update, or read files in the dedup file system, you have t
 Notes:
 
 * The default mount point on Windows is `J:\`, on Linux `/mnt/dedupfs`. To mount the file system somewhere else, call the script with a `mount=<mount point>` parameter.
+* On Windows, mount the dedup file system to a file system root like `J:\` or to a folder like `C:\myFiles\dedupfs`, where `C:\myFiles` must be an existing directory and `C:\myFiles\dedupfs` must not exist yet.
 * On Linux, mount the dedup file system to an existing empty writable directory.
 * Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique `mount=<mount point>` mount points configured.
 * `gui-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
@@ -188,9 +189,6 @@ If you want to re-use the space the deleted files take up, you can run the `recl
 
 Note that running the `reclaim-space-2` utility partially invalidates previous database backups: After that, some files can't be restored correctly anymore even if you restore the database to an earlier state from backup.
 
-TODO reclaim-space-2
-TODO REVIEW FROM HERE
-
 ### Clean Up Repository Files
 
 In the `log` subdirectory of the installation directory, up to 1 GB of log files are stored. They are useful for getting insights into how DedupFS was used. You can delete them if you don't need them.
@@ -254,10 +252,9 @@ For maximum safety,
 
 To upgrade a DedupFS installation to a newer version:
 
-* From the installation directory move all files and folders except `data`, `fsdb` and `log` to a separate directory. (The `data` and `fsdb` are only present if you installed DedupFS to the repository directory.)
-* Unpack the new DedupFS archive to the installation directory.
+* Unpack the new DedupFS archive to the installation directory, next to the existing installation.
 * Follow any release specific upgrade instructions (see below).
-* Check whether everything works as expected. If yes, you can delete the old app files from the separate directory.
+* Check whether everything works as expected. If yes, you can delete the old installation directory.
 
 ### Version History And Release Specific Update Instructions
 
@@ -268,10 +265,11 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * Reclaim finds & cleans up data entries duplicates.
 
-#### 3 (Coming Soon To A Cinema Near You)
+#### 3.0.0 (Coming Soon To A Cinema Near You)
 
 * On Windows, name the dedup file system volume "DedupFS". (git 46a076d)
 * Fixed occasional deadlock of the file system. (Rewrite of parallel handling.)
+* Restructured installation directory, ".." instead of "." is the default repository path.
 
 #### 2.6 (2020.11.15)
 
@@ -335,26 +333,3 @@ DedupFS stores the file contents in the `data` subdirectory of the repository. T
 ## License
 
 MIT License, see file LICENSE.
-
-
-
----
-TODO remove below
-
-mount -t drvfs e: /mnt/e
-
-georg@julius:~/dfs/Sicherungen/Laptop zu Hause/2021.07/dateien$ rsync -a --delete --info=progress2 /mnt/c/dateien/Aufzuräumen .
-
-On Linux (e.g. WSL/Debian), `/etc/mtab` might not be available and CTRL-C will not correctly unmount the file system. This might help: `sudo ln -s /proc/self/mounts /etc/mtab`.
-
-```
-c:\dateien\Computer\bin\idea\jbr\bin\java.exe -cp * dedup.init c:\dateien\Temp\repo
-c:\dateien\Computer\bin\idea\jbr\bin\java.exe -cp * dedup.mount c:\dateien\Temp\repo J:\
-java -cp .:* dedup.init /home/georg/repo
-java -cp .:* dedup.mount /home/georg/repo /home/georg/dfs
-
-~/git/backup/scala3$
-~/sbt/bin/sbt "~ createApp"
-java -cp .:target/app/lib/* dedup.mount /home/georg/repo /home/georg/dfs
-java -cp .:target/app/lib/* ru.serce.jnrfuse.examples.MemoryFS
-```
