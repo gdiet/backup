@@ -69,6 +69,8 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
       val sizeToRead = math.min(size, _size - position) // TODO can probably be removed, see above require
       memCache.read(position, sizeToRead).flatMap { // FIXME the flatMap here causes memory problems because
                                                     // FIXME everything read from file is materialized immediately.
+                                                    // FIXME The base problem is probably that we use a LazyList
+                                                    // FIXME where we need just an iterator or iterable.
         case right @ _ -> Right(_)      => LazyList(right)
         case position -> Left(holeSize) => fileCache.readData(position, holeSize) // Fill holes from channel cache.
       }.flatMap {
