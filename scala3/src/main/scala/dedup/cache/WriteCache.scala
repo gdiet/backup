@@ -66,7 +66,7 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
   def read(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = if size < 1 then LazyList() else
     require(position + size <= _size, s"Read $position/$size beyond end of cache $_size.")
     if size == 0 then LazyList() else guard(s"read($position, $size)") {
-      val sizeToRead = math.min(size, _size - position)
+      val sizeToRead = math.min(size, _size - position) // TODO can probably be removed, see above require
       memCache.read(position, sizeToRead).flatMap {
         case right @ _ -> Right(_)      => LazyList(right)
         case position -> Left(holeSize) => fileCache.readData(position, holeSize) // Fill holes from channel cache.
