@@ -209,7 +209,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
   override def write(path: String, source: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
     if settings.readonly then EROFS else watch(s"write $path .. offset = $offset, size = $size") {
       val intSize = size.toInt.abs // We need to return an Int size, so here it is.
-      def data: LazyList[(Long, Array[Byte])] = LazyList.range(0, intSize, memChunk).map { readOffset =>
+      def data: Iterator[(Long, Array[Byte])] = Iterator.range(0, intSize, memChunk).map { readOffset =>
         val chunkSize = math.min(memChunk, intSize - readOffset)
         offset + readOffset -> new Array[Byte](chunkSize).tap(source.get(readOffset, _, 0, chunkSize))
       }

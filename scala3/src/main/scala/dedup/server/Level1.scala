@@ -61,11 +61,11 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
       synchronized(files.get(id)).map(_._2.truncate(newSize)).isDefined
     }
 
-  /** @param data LazyList(position -> bytes). Providing the complete data as LazyList allows running the update
+  /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
     *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g. by
     *             using defensive copys (Array.clone) that they are not modified later.
     * @return `false` if called without createAndOpen or open. */
-  def write(id: Long, data: => LazyList[(Long, Array[Byte])]): Boolean =
+  def write(id: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
     watch(s"write(id: $id, data: LazyList)") {
       synchronized(files.get(id)).map(_._2.write(data)).isDefined
     }

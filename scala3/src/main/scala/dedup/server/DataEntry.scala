@@ -32,9 +32,9 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
 
   def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
 
-  /** @param data LazyList(position -> bytes). Providing the complete data as LazyList allows running the update
+  /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
     *             atomically / synchronized. */
-  def write(data: => LazyList[(Long, Array[Byte])]): Unit = synchronized {
+  def write(data: Iterator[(Long, Array[Byte])]): Unit = synchronized {
     data.foreach { (position, bytes) =>
       if Level2.cacheLoad > 1000000000L then
         log.trace(s"Slowing write to reduce cache load ${Level2.cacheLoad}.")
