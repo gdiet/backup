@@ -35,7 +35,7 @@ import scala.util.Using.resource
   )
   Thread.sleep(200) // Give logging some time to display message
 
-@main def mount(opts: (String, String)*) =
+@main def mount(opts: (String, String)*) = // TODO use canonical instead of getAbsoluteFile to get ".." etc. removed
   def isWindows = getNativePlatform.getOS == WINDOWS
   val repo           = opts.repo
   val mount          = File(opts.getOrElse("mount", if isWindows then "J:\\" else "/mnt/dedupfs" )).getAbsoluteFile
