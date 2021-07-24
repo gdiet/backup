@@ -20,7 +20,7 @@ Technically speaking, DedupFS is a file system with transparent file content ded
 
 ## Status Of The DedupFS Software
 
-DedupFS is provided "as is", without any warranty. That being said, I use DedupFS since 2018 for backing up my private files. End of 2020 my backup repository contains 1.8 Million files/folders with 400.000 file contents stored comprising 1.5 TB of data. The largest file stored has a size of about 7.5 GB.
+DedupFS is provided "as is", without any warranty. That being said, I use DedupFS since 2018 for backing up my private files. Mid 2021 my backup repository contains 2.9 Million files/folders with 500.000 file contents stored comprising 1.5 TB of data. The largest file stored has a size of about 7.5 GB.
 
 Summary: For my personal use it is mature. Decide for yourself.
 
