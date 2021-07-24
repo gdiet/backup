@@ -13,5 +13,5 @@ object H2:
   def connection(dbDir: java.io.File, readonly: Boolean, settings: String = ""): Connection =
     if !readonly then
       val dbTraceFile = java.io.File(dbDir, "dedupfs.trace.db")
-      require(!dbTraceFile.exists(), s"Database trace file $connection found. Check for database problems.")
+      require(!dbTraceFile.exists(), s"Database trace file $dbTraceFile found. Check for database problems.")
     DriverManager.getConnection(jdbcUrl(dbDir, readonly) + settings, "sa", "").tap(_.setAutoCommit(true))
