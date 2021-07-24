@@ -151,7 +151,7 @@ The DedupFS utilities come with reasonable default memory settings. You can chan
 * It does not hurt to assign much RAM to the DedupFS utilities. That is, unless the operating system or other software running on the same computer doesn't have enough free RAM left.
 * `repo-init` does not need more than ~64 MB RAM.
 * `gui-dedupfs` and `dedupfs` need at least ~96 MB RAM for good operation. When storing large files or using a slow storage device, additional RAM improves performance.
-* `db-restore` does not need more than ~64 MB RAM.
+* `db-restore` might need more than 64 MB RAM, it depends on the database size.
 * `gui-readonly` and `readonly` work fine with ~80 MB RAM. Assigning more will not improve performance.
 * The `reclaim-space` utilities need about ((number of data entries) * 64 B + 64 MB) RAM.
 
