@@ -67,10 +67,8 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
     require(position + size <= _size, s"Read $position/$size beyond end of cache $_size.")
     if size == 0 then LazyList() else guard(s"read($position, $size)") {
       val sizeToRead = math.min(size, _size - position) // TODO can probably be removed, see above require
-      memCache.read(position, sizeToRead).flatMap { // FIXME the flatMap here causes memory problems because
-                                                    // FIXME everything read from file is materialized immediately.
-                                                    // FIXME The base problem is probably that we use a LazyList
-                                                    // FIXME where we need just an iterator or iterable.
+      memCache.read(position, sizeToRead).flatMap { // TODO replace LazyList with Iterator because we don't need & want
+                                                    // TODO to have a lazy list, we need the data lazily & just once.
         case right @ _ -> Right(_)      => LazyList(right)
         case position -> Left(holeSize) => fileCache.readData(position, holeSize) // Fill holes from channel cache.
       }.flatMap {
