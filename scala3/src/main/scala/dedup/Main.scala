@@ -35,10 +35,10 @@ import scala.util.Using.resource
   )
   Thread.sleep(200) // Give logging some time to display message
 
-@main def mount(opts: (String, String)*) = // TODO use canonical instead of getAbsoluteFile to get ".." etc. removed
+@main def mount(opts: (String, String)*) =
   def isWindows = getNativePlatform.getOS == WINDOWS
   val repo           = opts.repo
-  val mount          = File(opts.getOrElse("mount", if isWindows then "J:\\" else "/mnt/dedupfs" )).getAbsoluteFile
+  val mount          = File(opts.getOrElse("mount", if isWindows then "J:\\" else "/mnt/dedupfs" )).getCanonicalFile
   val readOnly       = opts.boolean("readOnly")
   val backup         = !readOnly && !opts.boolean("noDbBackup")
   val copyWhenMoving = opts.boolean("copyWhenMoving")
@@ -96,6 +96,6 @@ extension(options: Seq[(String, String)])
   private def boolean(name: String): Boolean =
     opts.getOrElse(name.toLowerCase, "").equalsIgnoreCase("true")
   private def repo: File =
-    File(opts.getOrElse("repo", "..")).getAbsoluteFile
+    File(opts.getOrElse("repo", "..")).getCanonicalFile
   private def dbDir: File =
     db.dbDir(repo)
