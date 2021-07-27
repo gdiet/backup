@@ -31,8 +31,8 @@ class FileCache(path: Path) extends LongCache with AutoCloseable with ClassLoggi
     *
     * @param position position to start reading at.
     * @param size     number of bytes to read.
-    * @return A lazy list of (position, gapSize | byte array]). */
-  def readData(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = synchronized {
+    * @return An Iterator of (position, gapSize | byte array]). */
+  def readData(position: Long, size: Long): Iterator[(Long, Either[Long, Array[Byte]])] = synchronized {
     read(position, size).flatMap {
       case entryPos -> Right(entrySize) =>
         val end = entryPos + entrySize

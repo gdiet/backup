@@ -61,18 +61,19 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
     *
     * @param position position to start reading at.
     * @param size     number of bytes to read.
-    * @return A lazy list of (position, gapSize | byte array]).
+    * @return An Iterator of (position, gapSize | byte array]).
     * @throws IllegalArgumentException if `offset` / `size` exceed the bounds of the cached area. */
-  def read(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] = if size < 1 then LazyList() else
-    require(position + size <= _size, s"Read $position/$size beyond end of cache $_size.")
-    if size == 0 then LazyList() else guard(s"read($position, $size)") {
-      val sizeToRead = math.min(size, _size - position) // TODO can probably be removed, see above require
-      memCache.read(position, sizeToRead).flatMap { // TODO replace LazyList with Iterator because we don't need & want
-                                                    // TODO to have a lazy list, we need the data lazily & just once.
-        case right @ _ -> Right(_)      => LazyList(right)
+  def read(position: Long, size: Long): Iterator[(Long, Either[Long, Array[Byte]])] =
+    if size == 0 then Iterator() else guard(s"read($position, $size)") {
+      require(size > 0, s"Negative read: $position/$size.")
+      require(position + size <= _size, s"Read $position/$size beyond end of cache $_size.")
+      memCache.read(position, size).flatMap { // TODO replace LazyList with Iterator almost everywhere because
+                                              // TODO we don't need & want
+                                              // TODO to have a lazy list, we need the data lazily & just once.
+        case right @ _ -> Right(_)      => Iterator(right)
         case position -> Left(holeSize) => fileCache.readData(position, holeSize) // Fill holes from channel cache.
       }.flatMap {
-        case right @ _ -> Right(_)      => LazyList(right)
+        case right @ _ -> Right(_)      => Iterator(right)
         case position -> Left(holeSize) => zeroCache.readData(position, holeSize) // Fill holes from zero cache.
       }
     }

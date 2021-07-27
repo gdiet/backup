@@ -36,27 +36,27 @@ class CacheBaseSpec extends AnyFreeSpec:
       "returns no data when a hole is requested" in {
         cache.set(MaxInt - 1000 -> 500, MaxInt + 500 -> 500)
         val result = cache.read(MaxInt - 500, 1000)
-        assert (result == Seq(MaxInt - 500 -> Left(1000)))
+        assert (result.toSeq == Seq(MaxInt - 500 -> Left(1000)))
       }
       "returns a single byte if that is in cache" in {
         cache.set(0L -> 1)
         val result = cache.read(0, 1)
-        assert (result == Seq(0 -> Right(1)))
+        assert (result.toSeq == Seq(0 -> Right(1)))
       }
       "returns a trimmed start entry if requested" in {
         cache.set(1000L -> 1000)
         val result = cache.read(1600, 1000)
-        assert (result == Seq(1600 -> Right(400), 2000 -> Left(600)))
+        assert (result.toSeq == Seq(1600 -> Right(400), 2000 -> Left(600)))
       }
       "returns a trimmed end entry if requested" in {
         cache.set(1000L -> 1000)
         val result = cache.read(600, 1000)
-        assert (result == Seq(600 -> Left(400), 1000 -> Right(600)))
+        assert (result.toSeq == Seq(600 -> Left(400), 1000 -> Right(600)))
       }
       "returns a full entry and holes to the left and right if requested" in {
         cache.set(1000L -> 1000)
         val result = cache.read(600, 2000)
-        assert (result == Seq(600 -> Left(400), 1000 -> Right(1000), 2000 -> Left(600)))
+        assert (result.toSeq == Seq(600 -> Left(400), 1000 -> Right(1000), 2000 -> Left(600)))
       }
     }
 

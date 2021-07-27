@@ -15,7 +15,7 @@ class MemCacheSpec extends AnyFreeSpec:
     "The write method" - {
       "called with data exceeding the available cache size" - {
         "returns false" in assert(cache.write(200, new Array[Byte](101)) == false)
-        "doesn't change the cache contents" in assert(cache.read(0, 300) == Seq(0 -> Left(300)))
+        "doesn't change the cache contents" in assert(cache.read(0, 300)._seq == Seq(0 -> Left(300)))
       }
       "called with data that can be added as first entry" - {
         "returns true" in assert(cache.write(20, Array[Byte](1,2)) == true)

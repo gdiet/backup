@@ -51,10 +51,10 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     * @param offset Offset to start reading at.
     * @param size   Number of bytes to read, not limited by the internal size limit for byte arrays.
     *
-    * @return LazyList(position, holeSize | bytes)
+    * @return Iterator(position, holeSize | bytes)
     * @throws IllegalArgumentException if `offset` / `size` exceed the bounds of the virtual file.
     */
-  def readUnsafe(offset: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] =
+  def readUnsafe(offset: Long, size: Long): Iterator[(Long, Either[Long, Array[Byte]])] =
     cache.read(offset, size)
 
   /** Reads bytes from this [[DataEntry]] and writes them to `sink`.

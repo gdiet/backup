@@ -25,7 +25,7 @@ class AllocationSpec extends AnyFreeSpec:
       cache.clear(0, Long.MaxValue)
       cache.allocate(MaxInt + 10, MaxInt + 20)
       cache.allocate(2*MaxInt + 30, MaxInt)
-      assert(cache.read(0, 4*MaxInt) == Seq(
+      assert(cache.read(0, 4*MaxInt).toSeq == Seq(
         0 -> Left(MaxInt + 10),
         MaxInt + 10 -> Right(2*MaxInt + 20),
         3*MaxInt + 30 -> Left(MaxInt - 30)

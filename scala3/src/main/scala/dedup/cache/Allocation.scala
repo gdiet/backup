@@ -18,8 +18,8 @@ class Allocation extends LongCache:
     * @param position position to start reading at.
     * @param size     number of bytes to read.
     *
-    * @return A lazy list of (position, gapSize | byte array]). */
-  def readData(position: Long, size: Long): LazyList[(Long, Either[Long, Array[Byte]])] =
+    * @return An Iterator of (position, gapSize | byte array]). */
+  def readData(position: Long, size: Long): Iterator[(Long, Either[Long, Array[Byte]])] =
     read(position, size).flatMap {
       case entryPos -> Right(entrySize) =>
         val end = entryPos + entrySize

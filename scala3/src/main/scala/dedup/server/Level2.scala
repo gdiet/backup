@@ -55,10 +55,10 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
     * @param offset       offset in the file to start reading at.
     * @param size         number of bytes to read, NOT limited by the internal size limit for byte arrays.
     *
-    * @return A contiguous LazyList(position, bytes) where data chunk size is limited to [[dedup.memChunk]].
+    * @return A contiguous Iterator(position, bytes) where data chunk size is limited to [[dedup.memChunk]].
     * @throws IllegalArgumentException if `offset` / `size` exceed the bounds of the virtual file.
     */
-  def read(id: Long, dataId: DataId, offset: Long, size: Long): LazyList[(Long, Array[Byte])] =
+  def read(id: Long, dataId: DataId, offset: Long, size: Long): Iterator[(Long, Array[Byte])] =
     synchronized(files.get(id)) match
       case None =>
         readFromLts(database.parts(dataId), offset, size)
@@ -66,7 +66,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
         lazy val ltsParts = database.parts(entry.getBaseDataId)
         entry.readUnsafe(offset, size).flatMap {
           case holeOffset -> Left(holeSize) => readFromLts(ltsParts, holeOffset, holeSize)
-          case dataOffset -> Right(data)    => LazyList(dataOffset -> data)
+          case dataOffset -> Right(data)    => Iterator(dataOffset -> data)
         }
 
   /** Reads bytes from the long term store from a file defined by `parts`.
@@ -76,10 +76,10 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
     * @param readFrom Position in the file to start reading at, must be >= 0.
     * @param readSize Number of bytes to read, must be >= 0.
     *
-    * @return A contiguous LazyList(position, bytes) where data chunk size is limited to [[dedup.memChunk]].
+    * @return A contiguous Iterator(position, bytes) where data chunk size is limited to [[dedup.memChunk]].
     * @throws IllegalArgumentException if `readFrom` or `readSize` exceed the bounds defined by `parts`.
     */
-  private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): LazyList[(Long, Array[Byte])] =
+  private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): Iterator[(Long, Array[Byte])] =
     log.trace(s"readFromLts(parts: $parts, readFrom: $readFrom, readSize: $readSize)")
     require(readFrom >= 0, s"Read offset $readFrom must be >= 0.")
     require(readSize > 0, s"Read size $readSize must be > 0.")
@@ -95,7 +95,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       val (partPosition, partSize) +: rest = remainingParts
       if partSize < readSize then lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
       else lts.read(partPosition, readSize, resultOffset)
-    recurse(partsToReadFrom, readSize, readFrom)
+    recurse(partsToReadFrom, readSize, readFrom).iterator
 
   /* Note: Once in Level2, DataEntry objects are never mutated. */
   def persist(id: Long, dataEntry: DataEntry): Unit =
@@ -117,8 +117,8 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   private def persistAsync(id: Long, dataEntry: DataEntry): Unit = try {
     val ltsParts = database.parts(dataEntry.getBaseDataId)
-    def data: LazyList[(Long, Array[Byte])] = dataEntry.readUnsafe(0, dataEntry.size).flatMap {
-      case position -> Right(data) => LazyList(position -> data)
+    def data: Iterator[(Long, Array[Byte])] = dataEntry.readUnsafe(0, dataEntry.size).flatMap {
+      case position -> Right(data) => Iterator(position -> data)
       case position -> Left(offset) => readFromLts(ltsParts, position, offset)
     }
     // Calculate hash

@@ -93,8 +93,8 @@ trait CacheBase[M]:
 
   /** Reads available data chunks.
     *
-    * @return A lazy list of (position, gapSize | byte array]). */
-  def read(position: Long, size: Long): LazyList[(Long, Either[Long, M])] =
+    * @return An Iterator of (position, gapSize | byte array]). */
+  def read(position: Long, size: Long): Iterator[(Long, Either[Long, M])] =
     // Note: For Scala 3.0, generic union types like Long | M seem to still be unwieldy.
     require(position >= 0, s"Negative position: $position")
     require(size     >  0, s"Size not positive: $position")
@@ -108,7 +108,7 @@ trait CacheBase[M]:
       val distance = position - headPosition
       if headData._length <= distance then section = tail
       else section = (position -> headData._drop(distance)) +: tail
-    if section.isEmpty then LazyList(position -> Left(size)) else
+    if section.isEmpty then Iterator(position -> Left(size)) else
       // Truncate the last entry if necessary.
       val lead :+ (tailPosition -> tailData) = section
       val keep = position + size - tailPosition
@@ -124,4 +124,4 @@ trait CacheBase[M]:
           else
             val distance = entryPos - currentPos
             (currentPos -> Left(distance)) #:: recurse(section, entryPos, remainingSize - distance)
-      recurse(section, position, size)
+      recurse(section, position, size).iterator

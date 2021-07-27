@@ -66,7 +66,7 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
     *             using defensive copys (Array.clone) that they are not modified later.
     * @return `false` if called without createAndOpen or open. */
   def write(id: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
-    watch(s"write(id: $id, data: LazyList)") {
+    watch(s"write(id: $id, data: Iterator...)") {
       synchronized(files.get(id)).map(_._2.write(data)).isDefined
     }
   
