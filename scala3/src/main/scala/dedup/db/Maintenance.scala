@@ -185,14 +185,12 @@ object maintenance extends util.ClassLogging:
                 val gap +: otherGaps = gaps
                 val copySize = math.min(memChunk, math.min(gap.size, chunk.size)).toInt
                 log.debug(s"COPY at ${chunk.start} size $copySize to ${gap.start}")
-                // TODO can be optimized with the new read
-                lts.read(chunk.start, copySize, gap.start).foreach { case (position, data) => lts.write(position, data) }
+                lts.read(chunk.start, copySize, gap.start).foreach(lts.write)
                 val restOfGap = Chunk(gap.start + copySize, gap.stop)
                 val remainingGaps = if restOfGap.size > 0 then restOfGap +: otherGaps else otherGaps
                 val restOfChunk = Chunk(chunk.start + copySize, chunk.stop)
                 if restOfChunk.size > 0 then copyLoop(remainingGaps, restOfChunk) else remainingGaps
               }
-
               copyLoop(g, c)
             }.tap(remainingGaps => require(remainingGaps.isEmpty, s"remaining gaps not empty: $remainingGaps"))
             val newId = DataId(db.nextId)
