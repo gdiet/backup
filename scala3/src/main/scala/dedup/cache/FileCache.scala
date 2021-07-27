@@ -36,7 +36,7 @@ class FileCache(path: Path) extends LongCache with AutoCloseable with ClassLoggi
     read(position, size).flatMap {
       case entryPos -> Right(entrySize) =>
         val end = entryPos + entrySize
-        LazyList.range(entryPos, end, memChunk.toLong).map { localPos =>
+        Iterator.range(entryPos, end, memChunk.toLong).map { localPos =>
           val localSize = math.min(end - localPos, memChunk).asInt
           val bytes = new Array[Byte](localSize)
           val buffer = ByteBuffer.wrap(bytes)

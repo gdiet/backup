@@ -67,9 +67,7 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
     if size == 0 then Iterator() else guard(s"read($position, $size)") {
       require(size > 0, s"Negative read: $position/$size.")
       require(position + size <= _size, s"Read $position/$size beyond end of cache $_size.")
-      memCache.read(position, size).flatMap { // TODO replace LazyList with Iterator almost everywhere because
-                                              // TODO we don't need & want
-                                              // TODO to have a lazy list, we need the data lazily & just once.
+      memCache.read(position, size).flatMap {
         case right @ _ -> Right(_)      => Iterator(right)
         case position -> Left(holeSize) => fileCache.readData(position, holeSize) // Fill holes from channel cache.
       }.flatMap {
