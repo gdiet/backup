@@ -5,9 +5,7 @@ class LongTermStoreSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile
   require(testFile.mkdirs(), "testFile.mkdirs returned false")
   val lts = LongTermStore(testFile, false)
 
-  override def afterAll(): Unit =
-    lts.close()
-    delete(testFile)
+  override def afterAll(): Unit = lts.close()
 
   "Attempts to read from missing data files yield zeros" in
     assert(lts.read(1000, 5, 200)._seq == Seq(200 -> Seq(0,0,0,0,0)))
