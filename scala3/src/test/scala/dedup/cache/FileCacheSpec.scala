@@ -1,14 +1,11 @@
 package dedup
 package cache
 
-import org.scalatest._
-import org.scalatest.freespec._
-
 import java.util.concurrent.atomic.AtomicLong
 import scala.util.Random
 
 // No IDEA support for scalatest with scala 3? https://youtrack.jetbrains.com/issue/SCL-18644
-class FileCacheSpec extends AnyFreeSpec with TestFile:
+class FileCacheSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
 
   s"Important parts of ${°[FileCache]} are tested by ${°[CacheBaseSpec]}, see there..." - {
     val cache = FileCache(testFile.toPath)

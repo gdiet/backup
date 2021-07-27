@@ -1,10 +1,7 @@
 package dedup
 package store
 
-import org.scalatest._
-import org.scalatest.freespec._
-
-class LongTermStoreSpec extends AnyFreeSpec with TestFile with BeforeAndAfterAll:
+class LongTermStoreSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile with org.scalatest.BeforeAndAfterAll:
   require(testFile.mkdirs(), "testFile.mkdirs returned false")
   val lts = LongTermStore(testFile, false)
 
