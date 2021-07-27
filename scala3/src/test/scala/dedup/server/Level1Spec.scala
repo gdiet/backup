@@ -27,4 +27,38 @@ class Level1Spec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
     assert(sink.toSeq == Seq(0,0,1,2,5,6,7,8,0,0))
   }
 
+  "truncate-shorten the open 10 bytes file" in {
+    val sink = new Array[Byte](7)
+    assert(level1.truncate(tenBytesId, 7))
+    assert(level1.read(tenBytesId, 0, 7, sink) == Some(7))
+    assert(sink.toSeq == Seq(0,0,0,0,1,2,5))
+  }
+
+  "truncate-extends the open 10 bytes file" in {
+    val sink = new Array[Byte](5)
+    assert(level1.truncate(tenBytesId, 10))
+    assert(level1.read(tenBytesId, 4, 4, sink) == Some(4))
+    assert(sink.toSeq == Seq(1,2,5,0,0))
+  }
+
+  "release(1) the open 10 bytes file" in assert(level1.release(tenBytesId))
+
+  "release returns false when already closed" in assert(!level1.release(tenBytesId))
+
+  lazy val tenBytes = level1.entry("/dir/10 bytes").get.asInstanceOf[FileEntry]
+  "re-open the open 10 bytes file after some time" in {
+    Thread.sleep(100)
+    assert(tenBytes.id == 2)
+    assert(tenBytes.dataId == DataId(3))
+    level1.open(tenBytes)
+  }
+
+  "read(2) the open 10 bytes file" in {
+    val sink = new Array[Byte](10)
+    assert(level1.read(tenBytesId, 0, 10, sink) == Some(10))
+    assert(sink.toSeq == Seq(0,0,0,0,1,2,5,0,0,0))
+  }
+
+  "release(2) the open 10 bytes file" in assert(level1.release(tenBytesId))
+
   "close level 1" in level1.close()
