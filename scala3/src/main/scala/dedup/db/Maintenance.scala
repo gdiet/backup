@@ -57,6 +57,10 @@ object maintenance extends util.ClassLogging:
     log.info(f"Folders: ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d, deleted ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d")
   }
 
+  // TODO at least reclaim 1 & reclaim 2 can be written more readable
+
+  private case class Chunk(start: Long, stop: Long) { def size = stop - start }
+
   def reclaimSpace1(dbDir: File, keepDeletedDays: Int): Unit = withStatement(dbDir) { stat =>
     log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
     log.info(s"Note that stage 2 of reclaiming space modifies the long term store")
@@ -104,27 +108,23 @@ object maintenance extends util.ClassLogging:
       log.info(s"Number of data chunks in storage database: ${dataChunks.size}")
       val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks)
       log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
-      val compactionPotential = combinedSize(dataGaps)
+      val compactionPotential = dataGaps.map(_.size).sum
       log.info(s"Compaction potential of stage 2: ${readableBytes(compactionPotential)} in ${dataGaps.size} gaps.")
     }
     log.info(s"Finished stage 1 of reclaiming space. Undo by restoring the database from a backup.")
   }
 
-  private def combinedSize(chunks: Seq[(Long, Long)]): Long =
-    chunks.map { case (start, stop) => stop - start }.sum
-
-  private def endOfStorageAndDataGaps(dataChunks: SortedMap[Long, Long]): (Long, Seq[(Long, Long)]) =
-    dataChunks.foldLeft(0L -> Vector.empty[(Long, Long)]) {
+  private def endOfStorageAndDataGaps(dataChunks: SortedMap[Long, Long]): (Long, Seq[Chunk]) =
+    dataChunks.foldLeft(0L -> Vector.empty[Chunk]) {
       case ((lastEnd, gaps), (start, stop)) if start < lastEnd =>
         log.warn(s"Detected overlapping data entry ($start, $stop).")
         stop -> gaps
       case ((lastEnd, gaps), (start, stop)) if start == lastEnd =>
         stop -> gaps
       case ((lastEnd, gaps), (start, stop)) =>
-        stop -> gaps.appended(lastEnd -> start)
+        stop -> gaps.appended(Chunk(lastEnd, start))
     }
 
-  // TODO scala 3 code style
   def reclaimSpace2(dbDir: File, lts: store.LongTermStore): Unit = withConnection(dbDir) { con =>
     resource(con.createStatement()) { stat =>
       log.info(s"Starting stage 2 of reclaiming space. This modifies the long term store.")
@@ -139,10 +139,9 @@ object maintenance extends util.ClassLogging:
       log.info(s"Number of data chunks in storage database: ${dataChunks.size}")
       val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks)
       log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
-      val compactionPotentialString = readableBytes(combinedSize(dataGaps))
+      val compactionPotentialString = readableBytes(dataGaps.map(_.size).sum)
       log.info(s"Compaction potential: $compactionPotentialString in ${dataGaps.size} gaps.")
 
-      case class Chunk(start: Long, stop: Long) { def size = stop - start }
       case class SortedEntry(id: Long, size: Long, hash: Array[Byte], chunks: Seq[Chunk])
       /** Seq(id, size, hash, Seq(chunk)), ordered by maximum chunk position descending */
       val sortedEntries: Seq[SortedEntry] =
@@ -150,14 +149,14 @@ object maintenance extends util.ClassLogging:
           val sorted = entries.sortBy(_.seq)
           val Entry(id, Some(size), Some(hash), _, _, _) = sorted.head
           val chunks = sorted.map(e => e.start -> e.stop)
-          require(combinedSize(chunks) == size, s"Size mismatch for dataId $id: $size is not length of chunks $chunks")
+          require(chunks.map(_.size).sum == size, s"Size mismatch for dataId $id: $size is not length of chunks $chunks")
           SortedEntry(id, size, hash, sorted.map(e => Chunk(e.start, e.stop)))
         }.values.toSeq.sortBy(-_.chunks.map(_.start).max) // order by stored last in lts
 
       val db = Database(con)
       var progressLoggedLast = now.toLong
 
-//      @annotation.tailrec
+      @annotation.tailrec
       def reclaim(sortedEntries: Seq[SortedEntry], gaps: Seq[Chunk], reclaimed: Long): Long =
         if sortedEntries.isEmpty then reclaimed else
           if now.toLong > progressLoggedLast + 10000 then
@@ -177,51 +176,48 @@ object maintenance extends util.ClassLogging:
                   val divideAt = gap.start + entrySize - reservedLength
                   (entrySize, gapsToUse.appended(Chunk(gap.start, divideAt)), otherGaps.appended(Chunk(divideAt, gap.stop)))
             }
-          ???
-//          if (compactionSize == entrySize && gapsToUse.last.stop <= chunks.map(_.start).max) {
-//            assert(entrySize == combinedSize(gapsToUse), s"Size mismatch between entry $entrySize and gaps $gapsToUse")
-//            log.debug(s"Copying in lts data of entry $id data $chunks to $gapsToUse")
-//            chunks.foldLeft(gapsToUse) { case (g, c) =>
-//              @annotation.tailrec
-//              def copyLoop(gaps: Vector[Chunk], chunk: Chunk): Vector[Chunk] = {
-//                val gap +: otherGaps = gaps
-//                val copySize = math.min(memChunk, math.min(gap.size, chunk.size)).toInt
-//                log.debug(s"COPY at ${chunk.start} size $copySize to ${gap.start}")
-//                // TODO can be optimized with the new read
-//                lts.read(chunk.start, copySize, gap.start).foreach { case (position, data) => lts.write(position, data) }
-//                val restOfGap = (gap.start + copySize, gap.stop)
-//                val remainingGaps = if (restOfGap.size > 0) restOfGap +: otherGaps else otherGaps
-//                val restOfChunk = (chunk.start + copySize, chunk.stop)
-//                if (restOfChunk.size > 0) copyLoop(remainingGaps, restOfChunk) else remainingGaps
-//              }
-//              copyLoop(g, c)
-//            }.tap(remainingGaps => require(remainingGaps.isEmpty, s"remaining gaps not empty: $remainingGaps"))
-//            val newId = db.nextId
-//            connection.transaction {
-//              log.debug(s"Storing in database new data entry $newId for $gapsToUse")
-//              gapsToUse.zipWithIndex.foreach { case ((start, stop), index) =>
-//                db.insertDataEntry(newId, index + 1, entrySize, start, stop, hash)
-//              }
-//              log.debug(s"Replacing old data entry $id with new data entry $newId in tree entries")
-//              require(stat.executeUpdate(s"UPDATE TreeEntries SET dataId = $newId WHERE dataId = $id") > 0,
-//                s"No tree entry found to replace data entry $id in.")
-//              log.debug(s"Deleting old data entry $id from storage database.")
-//              require(stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = $id") > 0,
-//                s"No data entry $id found when trying to delete it.")
-//            }
-//            reclaim(sortedEntries.drop(1), gapsNotUsed, reclaimed + compactionSize)
-//          } else {
-//            assert(compactionSize <= entrySize, s"compaction size $compactionSize > entry size $entrySize")
-//            if (compactionSize == entrySize)
-//              log.info(s"Finished reclaiming: Reordering entry $id would take high effort.")
-//            else
-//              log.info(s"Finished reclaiming: Entry $id size ${readableBytes(entrySize)} is larger than remaining compaction potential.")
-//            reclaimed
-//          }
-//        }
+          if compactionSize == entrySize && gapsToUse.last.stop <= chunks.map(_.start).max then
+            assert(entrySize == gapsToUse.map(_.size).sum, s"Size mismatch between entry $entrySize and gaps $gapsToUse")
+            log.debug(s"Copying in lts data of entry $id data $chunks to $gapsToUse")
+            chunks.foldLeft(gapsToUse) { case (g, c) =>
+              @annotation.tailrec
+              def copyLoop(gaps: Vector[Chunk], chunk: Chunk): Vector[Chunk] = {
+                val gap +: otherGaps = gaps
+                val copySize = math.min(memChunk, math.min(gap.size, chunk.size)).toInt
+                log.debug(s"COPY at ${chunk.start} size $copySize to ${gap.start}")
+                // TODO can be optimized with the new read
+                lts.read(chunk.start, copySize, gap.start).foreach { case (position, data) => lts.write(position, data) }
+                val restOfGap = Chunk(gap.start + copySize, gap.stop)
+                val remainingGaps = if restOfGap.size > 0 then restOfGap +: otherGaps else otherGaps
+                val restOfChunk = Chunk(chunk.start + copySize, chunk.stop)
+                if restOfChunk.size > 0 then copyLoop(remainingGaps, restOfChunk) else remainingGaps
+              }
 
-      val reclaimed = reclaim(sortedEntries, ???, 0) // dataGaps, 0)
+              copyLoop(g, c)
+            }.tap(remainingGaps => require(remainingGaps.isEmpty, s"remaining gaps not empty: $remainingGaps"))
+            val newId = DataId(db.nextId)
+            con.transaction {
+              log.debug(s"Storing in database new data entry $newId for $gapsToUse")
+              gapsToUse.zipWithIndex.foreach { case (Chunk(start, stop), index) =>
+                db.insertDataEntry(newId, index + 1, entrySize, start, stop, hash)
+              }
+              log.debug(s"Replacing old data entry $id with new data entry $newId in tree entries")
+              require(stat.executeUpdate(s"UPDATE TreeEntries SET dataId = $newId WHERE dataId = $id") > 0,
+                s"No tree entry found to replace data entry $id in.")
+              log.debug(s"Deleting old data entry $id from storage database.")
+              require(stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = $id") > 0,
+                s"No data entry $id found when trying to delete it.")
+            }
+            reclaim(sortedEntries.drop(1), gapsNotUsed, reclaimed + compactionSize)
+          else
+            assert(compactionSize <= entrySize, s"compaction size $compactionSize > entry size $entrySize")
+            if compactionSize == entrySize then
+              log.info(s"Finished reclaiming: Reordering entry $id would take high effort.")
+            else
+              log.info(s"Finished reclaiming: Entry $id size ${readableBytes(entrySize)} is larger than remaining compaction potential.")
+            reclaimed
+
+      val reclaimed = reclaim(sortedEntries, dataGaps, 0)
       log.info(s"Reclaimed ${readableBytes(reclaimed)}.")
     }
   }
-
