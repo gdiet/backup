@@ -57,6 +57,48 @@ object maintenance extends util.ClassLogging:
     log.info(f"Folders: ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d, deleted ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d")
   }
 
+  def blacklist(dbDir: File, dfsBlacklist: String, deleteCopies: Boolean): Unit = withConnection(dbDir) { connection =>
+    val db = Database(connection)
+    db.child(root.id, dfsBlacklist) match
+      case None                          => log.error(s"/$dfsBlacklist in DedupFS does not exist, can't run blacklisting.")
+      case Some(_: FileEntry)            => log.error(s"/$dfsBlacklist in DedupFS is a file, not a directory, can't run blacklisting.")
+      case Some(blacklistRoot: DirEntry) => resource(connection.createStatement()) { stat =>
+        def recurse(parentPath: String, parentId: Long): Unit =
+          db.children(parentId).foreach {
+            case dir: DirEntry =>
+              recurse(s"$parentPath/${dir.name}", dir.id)
+            case file: FileEntry =>
+              val size = stat.executeQuery(s"SELECT stop - start FROM DataEntries WHERE ID = ${file.dataId}")
+                .seq(_.getLong(1)).sum
+              if size > 0 then
+                log.info(s"Blacklisting $parentPath/${file.name}")
+                connection.transaction {
+                  stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = ${file.dataId} AND seq > 1")
+                  stat.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = ${file.dataId}")
+                }
+              if deleteCopies then
+                @annotation.tailrec
+                def pathOf(id: Long, pathEnd: String): String =
+                  val parentId -> name = stat.executeQuery(s"SELECT parentId, name FROM TreeEntries WHERE id = $id")
+                    .one(r => (r.getLong(1), r.getString(2)))
+                  val path = s"/$name$pathEnd"
+                  if parentId == 0 then path else pathOf(parentId, path)
+                val copies = stat.executeQuery(s"SELECT id, parentId, name FROM TreeEntries WHERE dataId = ${file.dataId} AND deleted = 0 AND id != ${file.id}")
+                  .seq(r => (r.getLong(1), r.getLong(2), r.getString(3)))
+                // TODO why if size == 0 ?
+                if size == 0 && copies.nonEmpty then log.info(s"Blacklisting $parentPath/${file.name}")
+                copies.foreach { (id, parentId, name) =>
+                  log.info(s"Deleting copy in ${pathOf(parentId, "/")}$name")
+                  db.delete(id)
+                }
+          }
+        log.info(s"Start blacklisting /$dfsBlacklist")
+        recurse(s"/$dfsBlacklist", blacklistRoot.id)
+        log.info(s"Finished blacklisting /$dfsBlacklist")
+      }
+
+  }
+
   // TODO at least reclaim 1 & reclaim 2 can be written more readable
 
   private case class Chunk(start: Long, stop: Long) { def size = stop - start }
