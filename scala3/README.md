@@ -122,12 +122,12 @@ If you want to write, update, or read files in the dedup file system, you have t
 
 Notes:
 
-* The default mount point on Windows is `J:\`, on Linux `/mnt/dedupfs`. To mount the file system somewhere else, call the script with a `mount=<mount point>` parameter.
+* The default mount point on Windows is `J:\`, on Linux `/mnt/dedupfs`. To mount the file system somewhere else, call the script with a `mount=<mount point>` parameter.
 * On Windows, mount the dedup file system to a file system root like `J:\` or to a folder like `C:\myFiles\dedupfs`, where `C:\myFiles` must be an existing directory and `C:\myFiles\dedupfs` must not exist yet.
 * On Linux, mount the dedup file system to an existing empty writable directory.
-* Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique `mount=<mount point>` mount points configured.
+* Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique `mount=<mount point>` mount points configured.
 * `gui-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
-* By default, `gui-dedupfs` uses the parent of the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
+* By default, `gui-dedupfs` uses the parent of the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
 * For additional options see the paragraphs below.
 
 ### Mount The File System Without GUI
@@ -161,7 +161,7 @@ To change the RAM assignment of a utility, open it in a text editor. After the `
 
 When large files are written to the dedup file system and DedupFS cannot cache them in memory, it caches them in a "temp" directory. By default, it uses a subdirectory of the "temp" directory configured for the user in the operating system.
 
-To get maximum write performance, make sure the temp directory is on a fast (SSD) drive that and is not on the same physical drive as either the repository or the source from which you copy the files. The write utilities accept a `temp=<temp directory>` option, so you can override the default.
+To get maximum write performance, make sure the temp directory is on a fast (SSD) drive that and is not on the same physical drive as either the repository or the source from which you copy the files. The write utilities accept a `temp=<temp directory>` option, so you can override the default.
 
 ### Copy When Moving
 
@@ -268,12 +268,16 @@ To upgrade a DedupFS installation to a newer version:
 #### 3.0.0 (Coming Soon To A Cinema Near You)
 
 * On Windows, name the dedup file system volume "DedupFS". (git 46a076d)
-* Fixed occasional deadlock of the file system. (Rewrite of parallel handling.)
+* Fixed occasional out-of-memory or deadlock condition (rewrite of parallel handling).
 * Restructured installation directory, ".." instead of "." is the default repository path.
 
 #### 2.6 (2020.11.15)
 
 * Fixed deadlock when moving files in the dedup file system along with the dirty corner cases when moving files. (git 7e6d858)
+
+Known problems:
+
+* Occasional deadlock and out-of-memory conditions.
 
 #### 2.5 (2020.10.23)
 
