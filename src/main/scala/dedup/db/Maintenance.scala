@@ -149,8 +149,9 @@ object maintenance extends util.ClassLogging:
           val sorted = entries.sortBy(_.seq)
           val Entry(id, Some(size), Some(hash), _, _, _) = sorted.head
           val chunks = sorted.map(e => e.start -> e.stop)
-          // FIXME assertion doesn't hold true anymore for blacklisted entries
-          require(chunks.map(_.size).sum == size, s"Size mismatch for dataId $id: $size is not length of chunks $chunks")
+          val chunkSizes = chunks.map(_.size).sum
+          require(chunkSizes == 0 || // For blacklisted entries
+                  chunkSizes == size, s"Size mismatch for dataId $id: $size is not length of chunks $chunks")
           SortedEntry(id, size, hash, sorted.map(e => Chunk(e.start, e.stop)))
         }.values.toSeq.sortBy(-_.chunks.map(_.start).max) // order by stored last in lts
 
