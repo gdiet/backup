@@ -85,7 +85,7 @@ trait CacheBase[M]:
         Option(entries.get(position)) match
           case None => throw IllegalArgumentException(s"No entry at position: $position")
           case Some(upperArea) =>
-            area._merge(upperArea).foreach { case merged =>
+            area._merge(upperArea).foreach { merged =>
               entries.remove(position)
               entries.put(storedAt, merged)
             }

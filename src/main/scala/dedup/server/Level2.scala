@@ -137,7 +137,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
         // Reserve storage space
         val start = startOfFreeData.getAndAdd(dataEntry.size)
         // Write to storage
-        data.foreach { case (offset, bytes) => lts.write(start + offset, bytes) }
+        data.foreach { (offset, bytes) => lts.write(start + offset, bytes) }
         // create data entry
         val dataId = database.newDataIdFor(id)
         database.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
