@@ -56,7 +56,7 @@ class Database(connection: Connection) extends util.ClassLogging:
       assert(start >= 0, s"Start $start must be >= 0.")
       assert(size >= 0, s"Size $size must be >= 0.")
       start -> size
-    })
+    }).filterNot(_ == _) // Filter blacklisted parts of size 0.
   }
 
   private val qDataSize = connection.prepareStatement(
@@ -205,7 +205,7 @@ private def tableDefinitions =
 
 // DataEntriesStopIdx: Find start of free data.
 // DataEntriesLengthHashIdx: Find data entries by size & hash.
-// TreeEntriesDataIdIdx: Find orphan data entries.
+// TreeEntriesDataIdIdx: Find orphan data entries and blacklisted copies.
 private def indexDefinitions =
   """|CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
      |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
