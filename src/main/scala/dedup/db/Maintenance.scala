@@ -60,8 +60,8 @@ object maintenance extends util.ClassLogging:
   def blacklist(dbDir: File, dfsBlacklist: String, deleteCopies: Boolean): Unit = withConnection(dbDir) { connection =>
     val db = Database(connection)
     db.child(root.id, dfsBlacklist) match
-      case None                          => log.error(s"/$dfsBlacklist in DedupFS does not exist, can't run blacklisting.")
-      case Some(_: FileEntry)            => log.error(s"/$dfsBlacklist in DedupFS is a file, not a directory, can't run blacklisting.")
+      case None                          => log.error(s"Can't run blacklisting - DedupFS:/$dfsBlacklist does not exist.")
+      case Some(_: FileEntry)            => log.error(s"Can't run blacklisting - DedupFS:/$dfsBlacklist is a file, not a directory.")
       case Some(blacklistRoot: DirEntry) => resource(connection.createStatement()) { stat =>
         def recurse(parentPath: String, parentId: Long): Unit =
           db.children(parentId).foreach {
@@ -96,7 +96,6 @@ object maintenance extends util.ClassLogging:
         recurse(s"/$dfsBlacklist", blacklistRoot.id)
         log.info(s"Finished blacklisting /$dfsBlacklist")
       }
-
   }
 
   // TODO at least reclaim 1 & reclaim 2 can be written more readable
