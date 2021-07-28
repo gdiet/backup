@@ -3,13 +3,13 @@
 **/\.idea/
 **/\.metals/
 **/\.vscode/
-**/null/
 **/target/
-**/log/
 **/metals.sbt
-**/dedupfs-*.zip
-**/dedupfs-*.tar.gz
+dedupfs-*.zip
+dedupfs-*.tar.gz
+OpenJDK11U-jre_x64_*
+# TODO is this really needed?
+**/log/
 /data/
 /dedupfs-temp/
 /fsdb/
-OpenJDK11U-jre_x64_*
