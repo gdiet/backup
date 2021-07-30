@@ -71,7 +71,7 @@ DedupFS runs fine with approximately 128 MB RAM assigned to its process. See be
 
 Tested on Windows 10 64-bit.
 
-Download and install a [WinFSP Release](https://github.com/billziss-gh/winfsp/releases) to make FUSE (Filesystem in Userspace) available. I use `WinFsp 2021` a.k.a `winfsp-1.9.21096` for running DedupFS.
+Download and install a [WinFSP Release](https://github.com/billziss-gh/winfsp/releases) to make FUSE (Filesystem in Userspace) available. I use `WinFsp 2021` a.k.a. `winfsp-1.9.21096` for running DedupFS.
 
 ### Linux
 
@@ -217,7 +217,7 @@ then you can merge the shallow repository back to the original file system using
 
 * At home, I use a laptop computer with a 1 TB SSD. My private collection of photos, videos, audio and document files is larger than 1 TB. Duh.
 * Although I try to avoid it, many photos and videos are stored in two places in my collection. This also bloats backups. Urg.
-* The laptop actually is our family computer. Sometimes, somebody accidentially deletes or overwrites files we would have liked to keep, or moves them to a place where we will never find them again. Gah.
+* The laptop actually is our family computer. Sometimes, somebody accidentally deletes or overwrites files we would have liked to keep, or moves them to a place where we will never find them again. Gah.
 * One backup isn't enough for me to feel good, I like to keep two backups, and the second backup should be synchronized with the first, at least from time to time. Acg.
 
 ### (Some Of) The Solutions DedupFS Provides
@@ -246,7 +246,7 @@ Additionally,
 
 For maximum safety,
 
-* TODO shallow copy of the repository that is auto-sync'ed to a cloud with the last increments, so I can backup my files even more often without having to go fetch the external drive each time.
+* TODO shallow copy of the repository that is auto-synchronized to a cloud with the last increments, so I can backup my files even more often without having to go fetch the external drive each time.
 
 ## Upgrading And Version History
 
@@ -303,7 +303,7 @@ Known problems:
 
 ## Storage Format
 
-### Tree And File Meta Data
+### Tree And File Metadata
 
 DedupFS stores the tree and file metadata in an [H2](http://h2database.com) SQL database. Use the h2 JDBC driver `lib/h2-<version>.jar` in case you want to inspect the database contents. The database schema is approximately:
 
