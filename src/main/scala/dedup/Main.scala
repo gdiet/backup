@@ -72,14 +72,18 @@ import scala.util.Using.resource
     val nativeFuseOpts = if getNativePlatform.getOS == WINDOWS then Array("-o", "volname=DedupFS") else Array[String]()
     val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
     try fs.mount(mount.toPath, true, false, fuseOpts) catch (e: Throwable) => { fs.umount(); throw e }
-  catch (e: Throwable) => main.error("Mount exception:", e);
+  catch
+    case main.exit =>
+      main.error("Finished abnormally.")
+      Thread.sleep(200) // Give logging some time to display message
+    case (e: Throwable) =>
+      main.error("Mount exception:", e)
+      Thread.sleep(200) // Give logging some time to display message
 
 object main extends util.ClassLogging:
   export log.{debug, info, warn, error}
-  def failureExit(msg: String*): Nothing =
-    msg.foreach(log.error(_))
-    Thread.sleep(200) // Give logging some time to display message
-    sys.exit(1)
+  object exit extends RuntimeException
+  def failureExit(msg: String*): Nothing = { msg.foreach(log.error(_)); throw exit }
 
 given scala.util.CommandLineParser.FromString[(String, String)] with
   private val matcher = """(\w+)=(\S+)""".r
