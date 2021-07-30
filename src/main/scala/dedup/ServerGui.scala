@@ -10,9 +10,10 @@ import java.awt.event.{WindowAdapter, WindowEvent}
 import java.awt.{Dimension, Font}
 import java.text.SimpleDateFormat
 import java.util.Date
-import javax.swing._
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.swing.*
 
-class ServerGui(settings: server.Settings):
+class ServerGui(copyWhenMoving: AtomicBoolean, readOnly: Boolean):
   private var lines = Vector[String]()
   private val dateFormat = SimpleDateFormat("HH:mm.ss")
   private val appender = new AppenderBase[ILoggingEvent] {
@@ -36,9 +37,9 @@ class ServerGui(settings: server.Settings):
   private val pane = JPanel()
   pane.setLayout(BoxLayout(pane, BoxLayout.Y_AXIS))
 
-  if !settings.readonly then
-    val copyWhenMoveCheckbox = JCheckBox("copy when moving", settings.copyWhenMoving.get())
-    copyWhenMoveCheckbox.addActionListener(_ => settings.copyWhenMoving.set(copyWhenMoveCheckbox.isSelected))
+  if !readOnly then
+    val copyWhenMoveCheckbox = JCheckBox("copy when moving", copyWhenMoving.get())
+    copyWhenMoveCheckbox.addActionListener(_ => copyWhenMoving.set(copyWhenMoveCheckbox.isSelected))
     pane.add(copyWhenMoveCheckbox)
 
   private val textArea = JTextArea()
