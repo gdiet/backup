@@ -57,7 +57,7 @@ object maintenance extends util.ClassLogging:
     log.info(f"Folders: ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d, deleted ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d")
   }
 
-  def blacklist(dbDir: File, dfsBlacklist: String, deleteCopies: Boolean): Unit = withConnection(dbDir) { connection =>
+  def blacklist(dbDir: File, dfsBlacklist: String, deleteCopies: Boolean): Unit = resource(H2.connection(dbDir, readonly = false)) { connection =>
     val db = Database(connection)
     db.child(root.id, dfsBlacklist) match
       case None                          => log.error(s"Can't run blacklisting - DedupFS:/$dfsBlacklist does not exist.")
