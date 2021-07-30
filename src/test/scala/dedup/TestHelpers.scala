@@ -1,7 +1,7 @@
 package dedup
 
 import java.io.File
-import scala.reflect._
+import scala.reflect.*
 
 def °[T: ClassTag]: String = classTag[T].runtimeClass.getTypeName
 

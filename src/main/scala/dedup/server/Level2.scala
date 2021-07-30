@@ -14,7 +14,7 @@ object Level2:
 /* Corner case: What happens if a tree entry is deleted and after that the level 2 cache is written?
  * In that case, level 2 cache is written for the deleted file entry, and everything is fine. */
 class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
-  import Level2._
+  import Level2.*
 
   private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
   private val con = db.H2.connection(settings.dbDir, settings.readonly)
