@@ -39,6 +39,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       else log.warn(s"Temp dir not empty: ${settings.temp}")
     lts.close()
     con.close()
+    log.info("Shutdown complete.")
 
   def newDataEntry(id: Long, baseDataId: DataId): DataEntry =
     synchronized(files.get(id)) match
