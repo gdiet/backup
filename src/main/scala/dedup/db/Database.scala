@@ -57,7 +57,7 @@ class Database(connection: Connection) extends util.ClassLogging:
       assert(size >= 0, s"Size $size must be >= 0.")
       start -> size
     })
-  }
+  }.filterNot(_ == _) // Filter blacklisted parts of size 0.
 
   private val qDataSize = connection.prepareStatement(
     "SELECT length FROM DataEntries WHERE id = ? AND seq = 1"
