@@ -4,7 +4,7 @@ lazy val dedupfs = project
     name := "dedupfs",
     version := "current",
     scalaVersion := "3.0.1",
-    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.4",
+    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.5",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.5",
     libraryDependencies += "com.h2database" % "h2" % "1.4.200", // Check compatibility before upgrading!
     // Test dependencies
