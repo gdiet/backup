@@ -149,19 +149,15 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
             case Some(entry) => backend.setTime(entry.id, sec*1000 + nan/1000000); OK
     }
 
-  private val logChmod = AtomicBoolean(true)
   override def chmod(path: String, mode: Long): Int =
     watch(s"chmod $path $mode") {
-      if logChmod.getAndSet(false) then
-        log.info(s"no-op chmod provided for certain Linux file managers.")
+      log.debug(s"No-op chmod: $mode -> $path")
       OK
     }
 
-  private val logChown = AtomicBoolean(true)
   override def chown(path: String, uid: Long, gid: Long): Int =
     watch(s"chown $path $uid $gid") {
-      if logChown.getAndSet(false) then
-        log.info(s"no-op chown provided for certain Linux file managers.")
+      log.debug(s"No-op chown: uid $uid, gid $gid -> $path")
       OK
     }
 
