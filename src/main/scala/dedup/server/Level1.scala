@@ -43,7 +43,7 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   def open(file: FileEntry): Unit =
     watch(s"open($file)") {
-      synchronized { import file._
+      synchronized { import file.*
         files += id -> (files.get(id) match
           case None => 1 -> backend.newDataEntry(id, dataId)
           case Some(count -> dataEntry) => count + 1 -> dataEntry

@@ -7,7 +7,7 @@ import dedup.util.ClassLogging
 
 import java.nio.ByteBuffer
 import java.nio.channels.SeekableByteChannel
-import java.nio.file.StandardOpenOption._
+import java.nio.file.StandardOpenOption.*
 
 /** Caches in a file byte arrays with positions, where the byte arrays are not necessarily contiguous.
   * For performance uses a sparse file channel. Read and write methods are synchronized because 
