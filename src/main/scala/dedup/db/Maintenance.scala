@@ -136,22 +136,27 @@ object maintenance extends util.ClassLogging:
       )
       log.info(s"Number of data entries in storage database: ${dataEntries.size}")
       val dataChunks = dataEntries.map(e => e.start -> e.stop).to(SortedMap)
-      log.info(s"Number of data chunks in storage database: ${dataChunks.size}")
+      log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
       val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks)
       log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
       val compactionPotentialString = readableBytes(dataGaps.map(_.size).sum)
       log.info(s"Compaction potential: $compactionPotentialString in ${dataGaps.size} gaps.")
 
       case class SortedEntry(id: Long, size: Long, hash: Array[Byte], chunks: Seq[Chunk])
-      /** Seq(id, size, hash, Seq(chunk)), ordered by maximum chunk position descending */
+      /** Seq(id, size, hash, Seq(chunk)), ordered by maximum chunk position descending. */
       val sortedEntries: Seq[SortedEntry] =
         dataEntries.groupBy(_.id).view.mapValues { entries => // group by id
           val sorted = entries.sortBy(_.seq)
           val Entry(id, Some(size), Some(hash), _, _, _) = sorted.head
           val chunks = sorted.map(e => e.start -> e.stop)
-          require(chunks.map(_.size).sum == size, s"Size mismatch for dataId $id: $size is not length of chunks $chunks")
           SortedEntry(id, size, hash, sorted.map(e => Chunk(e.start, e.stop)))
-        }.values.toSeq.sortBy(-_.chunks.map(_.start).max) // order by stored last in lts
+        }.values.filter { entry =>
+          val chunkSize = entry.chunks.map(_.size).sum
+          if chunkSize > 0 then require(chunkSize == entry.size,
+            s"Size mismatch for dataId ${entry.id}: ${entry.size} is not length of chunks $chunkSize"
+          )
+          chunkSize > 0 // Filter out blacklisted entries.
+        }.toSeq.sortBy(-_.chunks.map(_.start).max) // order by stored last in lts
 
       val db = Database(con)
       var progressLoggedLast = now.toLong
