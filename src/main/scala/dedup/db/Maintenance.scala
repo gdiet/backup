@@ -44,10 +44,10 @@ object maintenance extends util.ClassLogging:
         "-url", s"jdbc:h2:$dbDir/dedupfs", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
       )
 
-  private def withConnection(dbDir: File)(f: Connection => Any): Unit =
-    resource(H2.connection(dbDir, readonly = true))(f)
-  private def withStatement(dbDir: File)(f: Statement => Any): Unit =
-    withConnection(dbDir)(con => resource(con.createStatement())(f))
+  private def withConnection(dbDir: File, readonly: Boolean = true)(f: Connection => Any): Unit =
+    resource(H2.connection(dbDir, readonly))(f)
+  private def withStatement(dbDir: File, readonly: Boolean = true)(f: Statement => Any): Unit =
+    withConnection(dbDir, readonly)(con => resource(con.createStatement())(f))
 
   def stats(dbDir: File): Unit = withStatement(dbDir) { stat =>
     log.info(s"Dedup File System Statistics")
@@ -61,7 +61,7 @@ object maintenance extends util.ClassLogging:
 
   private case class Chunk(start: Long, stop: Long) { def size = stop - start }
 
-  def reclaimSpace1(dbDir: File, keepDeletedDays: Int): Unit = withStatement(dbDir) { stat =>
+  def reclaimSpace1(dbDir: File, keepDeletedDays: Int): Unit = withStatement(dbDir, readonly = false) { stat =>
     log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
     log.info(s"Note that stage 2 of reclaiming space modifies the long term store")
     log.info(s"  thus partially invalidates older database backups.")
@@ -125,7 +125,7 @@ object maintenance extends util.ClassLogging:
         stop -> gaps.appended(Chunk(lastEnd, start))
     }
 
-  def reclaimSpace2(dbDir: File, lts: store.LongTermStore): Unit = withConnection(dbDir) { con =>
+  def reclaimSpace2(dbDir: File, lts: store.LongTermStore): Unit = withConnection(dbDir, readonly = false) { con =>
     resource(con.createStatement()) { stat =>
       log.info(s"Starting stage 2 of reclaiming space. This modifies the long term store.")
       log.info(s"After this, older database backups can't be fully applied anymore.")
