@@ -72,7 +72,8 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   /** Reads bytes from the long term store from a file defined by `parts`.
     *
     * @param parts    List of (offset, size) defining the parts of the file to read from.
-    *                 `readFrom` + `readSize` must not exceed summed part sizes.
+    *                 `readFrom` + `readSize` must not exceed summed part sizes unless
+    *                 `parts` is the empty list that is used for blacklisted entries.
     * @param readFrom Position in the file to start reading at, must be >= 0.
     * @param readSize Number of bytes to read, must be >= 0.
     *
@@ -80,22 +81,27 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
     * @throws IllegalArgumentException if `readFrom` or `readSize` exceed the bounds defined by `parts`.
     */
   private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): Iterator[(Long, Array[Byte])] =
-    log.trace(s"readFromLts(parts: $parts, readFrom: $readFrom, readSize: $readSize)")
-    require(readFrom >= 0, s"Read offset $readFrom must be >= 0.")
-    require(readSize > 0, s"Read size $readSize must be > 0.")
-    val (lengthOfParts, partsToReadFrom) = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
-      case ((currentOffset, result), part @ (partPosition, partSize)) =>
-        val distance = readFrom - currentOffset
-        if distance > partSize then currentOffset + partSize -> result
-        else if distance > 0 then currentOffset + partSize -> (result :+ (partPosition + distance, partSize - distance))
-        else currentOffset + partSize -> (result :+ part)
-    }
-    require(lengthOfParts >= readFrom + readSize, s"Read offset $readFrom size $readSize exceeds parts length $parts.")
-    def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] =
-      val (partPosition, partSize) +: rest = remainingParts
-      if partSize < readSize then lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
-      else lts.read(partPosition, readSize, resultOffset)
-    recurse(partsToReadFrom, readSize, readFrom).iterator
+    if parts.isEmpty then // Read appropriate number of zeros from blacklisted entry.
+      Iterator.range(0L, readSize, memChunk.toLong).map(
+        offset => readFrom + offset -> new Array[Byte](math.min(memChunk, readSize - offset).toInt)
+      )
+    else
+      log.trace(s"readFromLts(parts: $parts, readFrom: $readFrom, readSize: $readSize)")
+      require(readFrom >= 0, s"Read offset $readFrom must be >= 0.")
+      require(readSize > 0, s"Read size $readSize must be > 0.")
+      val (lengthOfParts, partsToReadFrom) = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
+        case ((currentOffset, result), part @ (partPosition, partSize)) =>
+          val distance = readFrom - currentOffset
+          if distance > partSize then currentOffset + partSize -> result
+          else if distance > 0 then currentOffset + partSize -> (result :+ (partPosition + distance, partSize - distance))
+          else currentOffset + partSize -> (result :+ part)
+      }
+      require(lengthOfParts >= readFrom + readSize, s"Read offset $readFrom size $readSize exceeds parts length $parts.")
+      def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] =
+        val (partPosition, partSize) +: rest = remainingParts
+        if partSize < readSize then lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
+        else lts.read(partPosition, readSize, resultOffset)
+      recurse(partsToReadFrom, readSize, readFrom).iterator
 
   /* Note: Once in Level2, DataEntry objects are never mutated. */
   def persist(id: Long, dataEntry: DataEntry): Unit =
