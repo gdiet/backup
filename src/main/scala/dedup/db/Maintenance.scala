@@ -145,9 +145,9 @@ object maintenance extends util.ClassLogging:
       log.info(s"Checking compaction potential of the data entries:")
       val dataChunks = resource(stat.executeQuery(
         "SELECT start, stop FROM DataEntries"
-      ))(_.seq(r => r.getLong(1) -> r.getLong(2))).to(SortedMap)
+      ))(_.seq(r => r.getLong(1) -> r.getLong(2)))
       log.info(s"Number of data chunks in storage database: ${dataChunks.size}")
-      val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks)
+      val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks.to(SortedMap))
       log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
       val compactionPotential = dataGaps.map(_.size).sum
       log.info(s"Compaction potential of stage 2: ${readableBytes(compactionPotential)} in ${dataGaps.size} gaps.")
@@ -175,9 +175,8 @@ object maintenance extends util.ClassLogging:
       val dataEntries: Seq[Entry] = resource(stat.executeQuery("SELECT id, length, hash, seq, start, stop FROM DataEntries"))(
         _.seq(r => Entry(r.getLong(1), r.opt(_.getLong(2)), r.opt(_.getBytes(3)), r.getInt(4), r.getLong(5), r.getLong(6)))
       )
-      log.info(s"Number of data entries in storage database: ${dataEntries.size}")
+      log.debug(s"Number of data chunks in storage database: ${dataEntries.size}")
       val dataChunks = dataEntries.map(e => e.start -> e.stop).to(SortedMap)
-      log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
       val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks)
       log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
       val compactionPotentialString = readableBytes(dataGaps.map(_.size).sum)
