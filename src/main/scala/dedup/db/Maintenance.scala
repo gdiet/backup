@@ -85,7 +85,7 @@ object maintenance extends util.ClassLogging:
                   if parentId == 0 then path else pathOf(parentId, path)
                 val copies = stat.executeQuery(s"SELECT id, parentId, name FROM TreeEntries WHERE dataId = ${file.dataId} AND deleted = 0 AND id != ${file.id}")
                   .seq(r => (r.getLong(1), r.getLong(2), r.getString(3)))
-                // TODO why if size == 0 ?
+                // If size is > 0, the log entry is already written.
                 if size == 0 && copies.nonEmpty then log.info(s"Blacklisting $parentPath/${file.name}")
                 copies.foreach { (id, parentId, name) =>
                   log.info(s"Deleting copy in ${pathOf(parentId, "/")}$name")
