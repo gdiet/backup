@@ -3,7 +3,7 @@ package db
 
 import org.h2.tools.{RunScript, Script}
 
-import java.io.File
+import java.io.{File, FileInputStream}
 import java.nio.file.{Files, StandardCopyOption}
 import java.sql.{Connection, Statement}
 import java.text.SimpleDateFormat
@@ -63,6 +63,38 @@ object maintenance extends util.ClassLogging:
       case None                          => log.error(s"Can't run blacklisting - DedupFS:/$dfsBlacklist does not exist.")
       case Some(_: FileEntry)            => log.error(s"Can't run blacklisting - DedupFS:/$dfsBlacklist is a file, not a directory.")
       case Some(blacklistRoot: DirEntry) => resource(connection.createStatement()) { stat =>
+
+        // Add external files to blacklist.
+        val blacklistFolder = File(dbDir, "../blacklist").getCanonicalFile // FIXME should come from main
+        val deleteFiles = true // FIXME should come from main
+        def recurseFiles(currentDir: File, dirId: Long): Unit =
+          Option(currentDir.listFiles()).toSeq.flatten.foreach { file =>
+            if file.isDirectory then
+              db.mkDir(dirId, file.getName).foreach(recurseFiles(file, _))
+              if deleteFiles then
+                if file.listFiles.isEmpty then file.delete else
+                  log.warn(s"Blacklist folder not empty after processing it: $file")
+            else
+              val (size, hash) = resource(FileInputStream(file)) { stream =>
+                val buffer = new Array[Byte](memChunk)
+                val md = java.security.MessageDigest.getInstance(hashAlgorithm)
+                val size = Iterator.continually(stream.read(buffer)).takeWhile(_ > 0)
+                    .tapEach(md.digest(buffer, 0, _)).map(_.toLong).sum
+                size -> md.digest()
+              }
+              val dataId = DataId(db.nextId)
+              db.insertDataEntry(dataId, 1, size, 0, 0, hash)
+              db.mkFile(dirId, file.getName, Time(file.lastModified), dataId)
+              if deleteFiles then
+                file.delete
+                log.info(s"Moved from external blacklist to DedupFS blacklist: $file")
+              else
+                log.info(s"Copied from external blacklist to DedupFS blacklist: $file")
+          }
+        val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
+        db.mkDir(blacklistRoot.id, dateString).foreach(recurseFiles(blacklistFolder, _))
+
+        // Process internal blacklist.
         def recurse(parentPath: String, parentId: Long): Unit =
           db.children(parentId).foreach {
             case dir: DirEntry =>
