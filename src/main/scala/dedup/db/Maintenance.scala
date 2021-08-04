@@ -82,6 +82,7 @@ object maintenance extends util.ClassLogging:
                     .tapEach(md.digest(buffer, 0, _)).map(_.toLong).sum
                 size -> md.digest()
               }
+              // FIXME first look up whether we can find a matching dataid
               val dataId = DataId(db.nextId)
               db.insertDataEntry(dataId, 1, size, 0, 0, hash)
               db.mkFile(dirId, file.getName, Time(file.lastModified), dataId)
