@@ -131,28 +131,27 @@ object maintenance extends util.ClassLogging:
       }
   }
 
-  // TODO at least reclaim 1 & reclaim 2 can be written more readable
+  // TODO at least reclaim 2 can be written more readable
 
   private case class Chunk(start: Long, stop: Long) { def size = stop - start }
 
   def reclaimSpace1(dbDir: File, keepDeletedDays: Int): Unit = withStatement(dbDir, readonly = false) { stat =>
-    log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
-    log.info(s"Note that stage 2 of reclaiming space modifies the long term store")
-    log.info(s"  thus partially invalidates older database backups.")
+    log.info(s"Starting stage 1 of reclaiming space...")
+    log.info(s"For hints and details, see the README file.")
 
-    log.info(s"Deleting tree entries marked for deletion more than $keepDeletedDays days ago...")
+    log.info(s"Purging tree entries marked deleted more than $keepDeletedDays days ago:")
     val deleteBefore = now.toLong - keepDeletedDays*24*60*60*1000
-    log.info(s"Part 1: Un-rooting the tree entries to delete...")
+    log.info(s"Un-rooting the tree entries to purge...")
     val entriesUnrooted = stat.executeUpdate(
       s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBefore"
     )
     log.info(s"Number of entries un-rooted: $entriesUnrooted")
 
-    log.info(s"Part 2: Deleting un-rooted tree entries...")
+    log.info(s"Purging un-rooted tree entries...")
     val treeEntriesDeleted = stat.executeUpdate(
       s"DELETE FROM TreeEntries WHERE id = parentId AND id != 0"
     )
-    log.info(s"Number of un-rooted tree entries deleted: $treeEntriesDeleted")
+    log.info(s"Number of un-rooted tree entries purged: $treeEntriesDeleted")
 
     // Note: Most operations implemented in Scala below could also be run in SQL, but that is much slower...
 
