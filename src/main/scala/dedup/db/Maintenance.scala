@@ -59,10 +59,12 @@ object maintenance extends util.ClassLogging:
 
   def blacklist(dbDir: File, dfsBlacklist: String, deleteCopies: Boolean): Unit = withConnection(dbDir, readonly = false) { connection =>
     val db = Database(connection)
+    db.mkDir(root.id, dfsBlacklist).foreach(_ => log.info(s"Created blacklist folder DedupFS:/$dfsBlacklist"))
     db.child(root.id, dfsBlacklist) match
-      case None                          => log.error(s"Can't run blacklisting - DedupFS:/$dfsBlacklist does not exist.")
+      case None                          => log.error(s"Can't run blacklisting - couldn't create DedupFS:/$dfsBlacklist.")
       case Some(_: FileEntry)            => log.error(s"Can't run blacklisting - DedupFS:/$dfsBlacklist is a file, not a directory.")
       case Some(blacklistRoot: DirEntry) => resource(connection.createStatement()) { stat =>
+        log.info(s"Blacklisting now...")
 
         // Add external files to blacklist.
         val blacklistFolder = File(dbDir, "../blacklist").getCanonicalFile // FIXME should come from main
@@ -79,18 +81,17 @@ object maintenance extends util.ClassLogging:
                 val buffer = new Array[Byte](memChunk)
                 val md = java.security.MessageDigest.getInstance(hashAlgorithm)
                 val size = Iterator.continually(stream.read(buffer)).takeWhile(_ > 0)
-                    .tapEach(md.digest(buffer, 0, _)).map(_.toLong).sum
+                    .tapEach(md.update(buffer, 0, _)).map(_.toLong).sum
                 size -> md.digest()
               }
-              // FIXME first look up whether we can find a matching dataid
-              val dataId = DataId(db.nextId)
-              db.insertDataEntry(dataId, 1, size, 0, 0, hash)
+              val dataId = db.dataEntry(hash, size).getOrElse(
+                DataId(db.nextId).tap(db.insertDataEntry(_, 1, size, 0, 0, hash))
+              )
               db.mkFile(dirId, file.getName, Time(file.lastModified), dataId)
-              if deleteFiles then
-                file.delete
-                log.info(s"Moved from external blacklist to DedupFS blacklist: $file")
+              if deleteFiles && file.delete then
+                log.info(s"Moved to DedupFS blacklist: $file")
               else
-                log.info(s"Copied from external blacklist to DedupFS blacklist: $file")
+                log.info(s"Copied to DedupFS blacklist: $file")
           }
         val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
         db.mkDir(blacklistRoot.id, dateString).foreach(recurseFiles(blacklistFolder, _))
@@ -125,9 +126,8 @@ object maintenance extends util.ClassLogging:
                   db.delete(id)
                 }
           }
-        log.info(s"Start blacklisting /$dfsBlacklist")
         recurse(s"/$dfsBlacklist", blacklistRoot.id)
-        log.info(s"Finished blacklisting /$dfsBlacklist")
+        log.info(s"Finished blacklisting.")
       }
   }
 
