@@ -3,12 +3,12 @@ lazy val dedupfs = project
   .settings(
     name := "dedupfs",
     version := "current",
-    scalaVersion := "3.0.1",
-    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.5",
+    scalaVersion := "3.0.2",
+    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.6",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.5",
     libraryDependencies += "com.h2database" % "h2" % "1.4.200", // Check compatibility before upgrading!
     // Test dependencies
-    libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.9" % "test",
+    libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.10" % "test",
   )
 
 lazy val createApp = taskKey[Unit]("Create the app.")
