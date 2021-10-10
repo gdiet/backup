@@ -2,15 +2,15 @@
 
 # sudo apt --assume-yes install curl jq zip
 
-# Fetch JREs if necessary. Find newer releases here: https://adoptopenjdk.net/releases.html
-jreFolder=jdk-11.0.11%2B9
-jre=OpenJDK11U-jre_x64_windows_hotspot_11.0.11_9.zip
+# Fetch JREs if necessary. Find newer releases here: https://adoptium.net/releases.html
+jreFolder=jdk-11.0.12%2B7
+jre=OpenJDK11U-jre_x64_windows_hotspot_11.0.12_7.zip
 if [ ! -f "$jre" ]; then
-  wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/$jreFolder/$jre || exit 1
+  wget https://github.com/adoptium/temurin11-binaries/releases/download/$jreFolder/$jre || exit 1
 fi
-jrex=OpenJDK11U-jre_x64_linux_hotspot_11.0.11_9.tar.gz
+jrex=OpenJDK11U-jre_x64_linux_hotspot_11.0.12_7.tar.gz
 if [ ! -f "$jrex" ]; then
-  wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/$jreFolder/$jrex || exit 1
+  wget https://github.com/adoptium/temurin11-binaries/releases/download/$jreFolder/$jrex || exit 1
 fi
 
 # Read version from git.
