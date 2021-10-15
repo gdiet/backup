@@ -1,6 +1,6 @@
 #!/bin/bash
 APPDIR=$(dirname "$0")
-JAVA=$($APPDIR/helpers/set-java java $APPDIR/jrex/bin/java) || exit 1
+JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 
 
 ### Parameters ###
