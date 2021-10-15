@@ -57,7 +57,12 @@ object maintenance extends util.ClassLogging:
     log.info(f"Folders: ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d, deleted ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d")
   }
 
-  def blacklist(dbDir: File, dfsBlacklist: String, deleteCopies: Boolean): Unit = withConnection(dbDir, readonly = false) { connection =>
+  /** @param dbDir Database directory
+    * @param blacklistDir Directory containing files to add to the blacklist
+    * @param deleteFiles If true, files in the `blacklistDir` are deleted when they have been taken over
+    * @param dfsBlacklist Name of the base blacklist folder in the dedup file system, resolved against root
+    * @param deleteCopies If true, mark deleted all blacklisted occurrences except for the original entries in `dfsBlacklist` */
+  def blacklist(dbDir: File, blacklistDir: String, deleteFiles: Boolean, dfsBlacklist: String, deleteCopies: Boolean): Unit = withConnection(dbDir, readonly = false) { connection =>
     val db = Database(connection)
     db.mkDir(root.id, dfsBlacklist).foreach(_ => log.info(s"Created blacklist folder DedupFS:/$dfsBlacklist"))
     db.child(root.id, dfsBlacklist) match
@@ -67,8 +72,7 @@ object maintenance extends util.ClassLogging:
         log.info(s"Blacklisting now...")
 
         // Add external files to blacklist.
-        val blacklistFolder = File(dbDir, "../blacklist").getCanonicalFile // FIXME should come from main
-        val deleteFiles = true // FIXME should come from main
+        val blacklistFolder = File(blacklistDir).getCanonicalFile
         def recurseFiles(currentDir: File, dirId: Long): Unit =
           Option(currentDir.listFiles()).toSeq.flatten.foreach { file =>
             if file.isDirectory then

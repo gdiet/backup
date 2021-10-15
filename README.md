@@ -181,6 +181,16 @@ DedupFS writes log files that contain all log entries visible on the console and
 
 The `db-restore` utility is for restoring previous versions of the DedupFS database. It accepts the usual `repo=<target directory>` parameter. If run without additional `from=...` parameter, it restores the database to the way it was before the last write operation was started, thus effectively resetting the dedup file system to an earlier state. Alternatively, you can use the `from=...` parameter to point the utility to earlier database backups (zip files) that can be found in the `fsdb` subdirectory of the repository.
 
+### Blacklist Files
+
+The `blacklist` utility is for blacklisting files that should be removed from the dedup file system if they are currently
+stored and should not be stored even when added later to the file system. Reading a blacklisted file yields [file length] zeros. The utility accepts the following parameters:
+* `repo=<target directory>` (mandatory)
+* `blacklistDir=<directory name>` (optional, default `blacklist`): If the subfolder of `repo` with this name contains files, those are added to the blacklist in the repository.
+* `deleteFiles=true` (optional, default false): If true, when the files in `blacklistDir` are deleted once they have been added to the blacklist in the repository.
+* `dfsBlacklist=<directory name>` (optional, default `blacklist`): Name of the base blacklist folder in the dedup file system, resolved against root.
+* `deleteCopies=true` (optional, default false): If true, mark deleted all blacklisted occurrences except for the original entries in the `dfsBlacklist` folder.
+
 ### Reclaim Space
 
 When you delete a file in the dedup file system, internally the file is marked as "deleted" and nothing more. This means:
@@ -265,11 +275,14 @@ To upgrade a DedupFS installation to a newer version:
 #### May Come Eventually
 
 * Support for soft links.
-* Blacklist files that should not be stored at all.
 * Optionally store packed (gz or similar).
-* Reclaim finds & cleans up data entries duplicates.
+* 'reclaim' finds & cleans up data entries duplicates.
 
-#### 3.0.0 (Coming Soon To A Cinema Near You)
+#### 3.0.1 (Coming Soon To A Cinema Near You)
+
+* Blacklist files that should not be stored at all.
+
+#### 3.0.0 (2020.08.01)
 
 * On Windows, name the dedup file system volume "DedupFS". (git 46a076d)
 * Fixed occasional out-of-memory or deadlock condition (rewrite of parallel handling).
