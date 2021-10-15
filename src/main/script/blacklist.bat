@@ -5,6 +5,7 @@ if errorlevel 1 exit /B %errorlevel%
 
 rem ### Parameters ###
 rem # repo=<repository directory>                                     | default: '..' (parent of working directory)
+rem # noDbBackup=true                                                 | default: false
 rem # blacklistDir=<name of directory in repo with files to blacklist>| default: 'blacklist'
 rem # deleteFiles=<delete files in blacklistDir when blacklisted?>    | default: 'false'
 rem # dfsBlacklist=<name of blacklist directory in dedup file system> | default: 'blacklist'

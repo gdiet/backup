@@ -126,7 +126,7 @@ object maintenance extends util.ClassLogging:
                 // If size is > 0, the log entry is already written.
                 if size == 0 && copies.nonEmpty then log.info(s"Blacklisting $parentPath/${file.name}")
                 copies.foreach { (id, parentId, name) =>
-                  log.info(s"Deleting copy in ${pathOf(parentId, "/")}$name")
+                  log.info(s"Deleting copy of entry: ${pathOf(parentId, "/")}$name")
                   db.delete(id)
                 }
           }
