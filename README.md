@@ -265,7 +265,19 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * Reclaim finds & cleans up data entries duplicates.
 
-#### 3.0.0 (Coming Soon To A Cinema Near You)
+#### 4.0.0 (In Preparation)
+
+* Upgrade H2 database to 2.0.202
+
+**Migration from 3.x to 4.x:**
+
+* Start dedupfs 3.x one more time to make sure a current database backup exists. 
+* Stop dedupfs 3.x without changing anything in the dedup file system.
+* Use the 4.x `db-restore` utility with the `from=...` parameter to point the utility to the database backup zip file created above that can be found in the `fsdb` subdirectory of the repository.
+* The migration is complete. Don't use the 3.x version of the dedupfs software anymore.
+* Eventually, you might want to manually delete the final version of the 3.x database, that is, the files `dedupfs.mv.db` and `dedupfs.mv.db.backup` in the `fsdb` subdirectory of the repository.
+
+#### 3.0.0 (2021.07.31)
 
 * On Windows, name the dedup file system volume "DedupFS". (git 46a076d)
 * Fixed occasional out-of-memory or deadlock condition (rewrite of parallel handling).
