@@ -59,7 +59,7 @@ object maintenance extends util.ClassLogging:
 
   // TODO at least reclaim 1 & reclaim 2 can be written more readable
 
-  private case class Chunk(start: Long, stop: Long) { def size = stop - start }
+  private case class Chunk(start: Long, stop: Long) { def size: Long = stop - start }
 
   def reclaimSpace1(dbDir: File, keepDeletedDays: Int): Unit = withStatement(dbDir, readonly = false) { stat =>
     log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
