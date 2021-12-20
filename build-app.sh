@@ -1,16 +1,16 @@
-#!/bin/sh
+#!/bin/bash
 
 # sudo apt --assume-yes install curl jq zip
 
-# Fetch JREs if necessary. Find newer releases here: https://adoptopenjdk.net/releases.html
-jreFolder=jdk-11.0.11%2B9
-jre=OpenJDK11U-jre_x64_windows_hotspot_11.0.11_9.zip
+# Fetch JREs if necessary. Find newer releases here: https://adoptium.net/releases.html
+jreFolder=jdk-17.0.1%2B12
+jre=OpenJDK17U-jre_x64_windows_hotspot_17.0.1_12.zip
 if [ ! -f "$jre" ]; then
-  wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/$jreFolder/$jre || exit 1
+  wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jre || exit 1
 fi
-jrex=OpenJDK11U-jre_x64_linux_hotspot_11.0.11_9.tar.gz
-if [ ! -f "$jrex" ]; then
-  wget https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/$jreFolder/$jrex || exit 1
+jreLinux=OpenJDK17U-jre_x64_linux_hotspot_17.0.1_12.tar.gz
+if [ ! -f "$jreLinux" ]; then
+  wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jreLinux || exit 1
 fi
 
 # Read version from git.
@@ -19,11 +19,11 @@ if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean=
 versionString=$(date +%Y.%m.%d)-$version$clean || exit 1
 
 # Possibly create release version
-if [ $1 ]; then release=$1; else release=$versionString; fi
-echo building app $versionString as release $release
-if [ $1 ]; then
+if [ "$1" ]; then release=$1; else release=$versionString; fi
+echo "building app $versionString as release $release"
+if [ "$1" ]; then
   echo
-  read -p "RELEASE BUILD - Press enter to confirm..." reply
+  read -r -s -p "RELEASE BUILD - Press enter to confirm..." _
 fi
 
 # Delete previous version of app if any.
@@ -33,14 +33,14 @@ rm -rf dedupfs-* ||  exit 1
 ~/sbt/bin/sbt ';clean;update;createApp' || exit 1
 
 # unpack JREs to app.
-tar xfz $jrex || exit 1
+tar xfz $jreLinux || exit 1
 mv jdk-*-jre target/app/jrex || exit 1
 unzip -q $jre || exit 1
 mv jdk-*-jre target/app/jre || exit 1
 
 # Copy license and version file
 cp LICENSE target/app/ || exit 1
-touch target/app/$versionString.version || exit 1
+touch "target/app/$versionString.version" || exit 1
 
 # Create HTML documentation
 # Thanks to https://github.com/jfroche/docker-markdown and to the GitHub api
@@ -55,10 +55,10 @@ chmod -x target/app/*.html
 chmod -x target/app/*.version
 
 # Pack apps
-mv target/app dedupfs-$release
-zip -rq dedupfs-$release.zip dedupfs-$release
-tar cfz dedupfs-$release.tar.gz dedupfs-$release
-rm -rf dedupfs-$release
+mv target/app "dedupfs-$release"
+zip -rq "dedupfs-$release.zip" "dedupfs-$release"
+tar cfz "dedupfs-$release.tar.gz" "dedupfs-$release"
+rm -rf "dedupfs-$release"
 
 echo
-echo Created dedupfs app as dedupfs-$release.tar.gz and dedupfs-$release.zip
+echo "Created dedupfs app as dedupfs-$release.tar.gz and dedupfs-$release.zip"
