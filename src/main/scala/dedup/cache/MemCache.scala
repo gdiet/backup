@@ -17,7 +17,7 @@ object MemCache extends ClassLogging:
     *
     * @see https://stackoverflow.com/questions/58506337/java-byte-array-of-1-mb-or-more-takes-up-twice-the-ram
     * @see https://stackoverflow.com/questions/68331703/java-big-byte-arrays-use-more-heap-than-expected */
-  def startupCheck: Unit =
+  def startupCheck(): Unit =
     val freeMemory = rt.maxMemory - rt.totalMemory + rt.freeMemory
     val numberOfChunks = (freeMemory / 10 * 9 / memChunk).asInt
     log.debug(s"Checking memory cache with ${readableBytes(numberOfChunks.toLong * memChunk)}.")
