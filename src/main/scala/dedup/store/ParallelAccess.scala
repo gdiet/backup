@@ -29,7 +29,7 @@ trait ParallelAccess(dataDir: File) extends AutoCloseable with ClassLogging:
     log.debug(s"Closed data file $path")
 
   /** @throws java.io.FileNotFoundException when trying read access to a non-existing data file. */
-  @annotation.tailrec
+  @annotation.tailrec @Req_DataFileReadAccess
   final def access(path: String, write: Boolean)(f: RandomAccessFile => _): Unit = {
     mapLock.lock()
     openFiles.get(path) match
