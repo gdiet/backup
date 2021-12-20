@@ -3,14 +3,14 @@
 # sudo apt --assume-yes install curl jq zip
 
 # Fetch JREs if necessary. Find newer releases here: https://adoptium.net/releases.html
-jreFolder=jdk-11.0.12%2B7
-jre=OpenJDK11U-jre_x64_windows_hotspot_11.0.12_7.zip
+jreFolder=jdk-17.0.1%2B12
+jre=OpenJDK17U-jre_x64_windows_hotspot_17.0.1_12.zip
 if [ ! -f "$jre" ]; then
-  wget https://github.com/adoptium/temurin11-binaries/releases/download/$jreFolder/$jre || exit 1
+  wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jre || exit 1
 fi
-jreLinux=OpenJDK11U-jre_x64_linux_hotspot_11.0.12_7.tar.gz
+jreLinux=OpenJDK17U-jre_x64_linux_hotspot_17.0.1_12.tar.gz
 if [ ! -f "$jreLinux" ]; then
-  wget https://github.com/adoptium/temurin11-binaries/releases/download/$jreFolder/$jreLinux || exit 1
+  wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jreLinux || exit 1
 fi
 
 # Read version from git.
