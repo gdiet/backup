@@ -17,7 +17,7 @@ private val fileSize = 100000000
 private def pathOffsetSize(position: Long, size: Long): (String, Long, Int) =
   require(9000000000000000000L - position - size > 0) // Cap access near MaxLong.
   require(position >= 0) // No sensible behavior implemented for negative position.
-  require(size >= 0) // No sensible beahavior implemented for negative size.
+  require(size >= 0) // No sensible behavior implemented for negative size.
   val positionInFile = (position % fileSize).toInt     // 100 MB per file
   val dir2 = f"${position / fileSize / 100 % 100}%02d" //  10 GB per dir
   val dir1 = f"${position / fileSize / 100 / 100}%02d" //   1 TB per dir
