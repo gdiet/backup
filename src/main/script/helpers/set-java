@@ -1,10 +1,10 @@
 #!/bin/bash
 if [ -f $2 ]; then JAVA=$2; else JAVA=$1; fi
 JAVAVERSION=$($JAVA -version 2>&1 | head -1)
-if [[ $JAVAVERSION == *"\"11.0."* ]]; then
+if [[ $JAVAVERSION == *"\"17.0."* ]]; then
   echo $JAVA
 else
-  >&2 echo "This software has been tested with Java 11.0.* only."
+  >&2 echo "This software has been tested with Java 17.0.* only."
   >&2 echo "Detected Java version: $JAVAVERSION"
   exit 1
 fi
