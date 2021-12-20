@@ -5,7 +5,7 @@ package dedup
   * Set to a power of 2 so blocks align well if the fuse layer uses blocks sized a smaller power of 2.
   * Set to less than 0.5 MiB to avoid problems with humongous objects in G1GC.
   * Set to 64 kiB or less to avoid a big array issue.
-  * Long story short, 2 << 14 (that is 2^15 or 32 kiB) is a good value.
+  * Long story short, 2 << 14 (that is 2`^`15 or 32 kiB) is a good value.
   *
   * The fuse default for write is 4kiB, for read is 128kiB. For DedupFS write is also set to 128kiB
   * using the option "big_writes" and "max_write=131072". So read and write automatically partitions
