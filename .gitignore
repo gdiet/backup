@@ -7,7 +7,7 @@
 **/metals.sbt
 dedupfs-*.zip
 dedupfs-*.tar.gz
-OpenJDK11U-jre_x64_*
+OpenJDK*-jre_x64_*
 # TODO is this really needed?
 **/log/
 /data/
