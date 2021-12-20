@@ -62,8 +62,8 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
     }
 
   /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
-    *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g. by
-    *             using defensive copys (Array.clone) that they are not modified later.
+    *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.
+    *             using defensive copy (Array.clone) that they are not modified later.
     * @return `false` if called without createAndOpen or open. */
   def write(id: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
     watch(s"write(id: $id, data: Iterator...)") {
