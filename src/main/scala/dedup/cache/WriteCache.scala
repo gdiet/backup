@@ -22,7 +22,7 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
 
   private val memCache  = MemCache(availableMem)
   private val zeroCache = Allocation()
-  private var fileCache = FileCache(temp)
+  private val fileCache = FileCache(temp)
 
   /** For debugging purposes. */
   override def toString: String =
