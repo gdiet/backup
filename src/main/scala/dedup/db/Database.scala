@@ -15,7 +15,7 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
 
 class Database(connection: Connection) extends util.ClassLogging:
   resource(connection.createStatement) { stat =>
-    resource(stat.executeQuery("SELECT value FROM Context WHERE key = 'db version';"))(_.maybeNext(_.getString(1))) match
+    resource(stat.executeQuery("""SELECT "VALUE" FROM Context WHERE "KEY" = 'db version';"""))(_.maybeNext(_.getString(1))) match
       case None =>
         log.error(s"No database version found.")
         throw new IllegalStateException("No database version found.")
@@ -172,13 +172,19 @@ class Database(connection: Connection) extends util.ClassLogging:
     require(iDataEntry.executeUpdate() == 1, s"insertDataEntry update count not 1 for dataId $dataId")
   }
 
+extension (rawSql: String)
+  private def prepareSql = rawSql.stripMargin
+    .linesIterator.filterNot(_.trim.startsWith("--")).mkString
+    .split(";")
+
 // deleted == 0 for regular files, deleted == timestamp for deleted files. Why? Because NULL does not work with UNIQUE.
 private def tableDefinitions =
   s"""|CREATE TABLE Context (
-      |  key   VARCHAR(255) NOT NULL,
-      |  value VARCHAR(255) NOT NULL
+      |  -- Starting with H2 2.0.202, KEY and VALUE are reserved keywords and must be quoted. --
+      |  "KEY" VARCHAR(255) NOT NULL,
+      |  "VALUE" VARCHAR(255) NOT NULL
       |);
-      |INSERT INTO Context (key, value) VALUES ('db version', '2');
+      |INSERT INTO Context ("KEY", "VALUE") VALUES ('db version', '2');
       |CREATE SEQUENCE idSeq START WITH 1;
       |CREATE TABLE DataEntries (
       |  id     BIGINT NOT NULL,
@@ -201,12 +207,12 @@ private def tableDefinitions =
       |  CONSTRAINT fk_TreeEntries_parentId FOREIGN KEY (parentId) REFERENCES TreeEntries(id)
       |);
       |INSERT INTO TreeEntries (id, parentId, name, time) VALUES (0, 0, '', $now);
-      |""".stripMargin split ";"
+      |""".prepareSql
 
-// DataEntriesStopIdx: Find start of free data.
-// DataEntriesLengthHashIdx: Find data entries by size & hash.
-// TreeEntriesDataIdIdx: Find orphan data entries.
 private def indexDefinitions =
-  """|CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
+  """|-- Find start of free data --
+     |CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
+     |-- Find data entries by size & hash --
      |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
-     |CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);""".stripMargin split ";"
+     |-- Find orphan data entries --
+     |CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);""".prepareSql
