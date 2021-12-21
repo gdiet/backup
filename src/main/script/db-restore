@@ -4,12 +4,11 @@ JAVA=$($APPDIR/helpers/set-java java $APPDIR/jrex/bin/java) || exit 1
 
 
 echo
-echo This utility will restore a previous state of the DedupFS database.
-echo This will overwrite the current database state.  If you do not want
-echo that, simply close the console window where this utility is running.
+echo "This utility will restore a previous state of the DedupFS database."
+echo "This will overwrite the current database state.  If you do not want"
+echo "that, simply close the console window where this utility is running."
 echo
-echo Press <enter> to continue...
-pause
+read -n 1 -s -p "Press any key to continue..."
 echo
 
 ### Parameters ###
@@ -18,8 +17,8 @@ echo
 $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -cp "$APPDIR/lib/*" dedup.dbRestore "$@"
 ERRORLEVEL=$?
 if [ $ERRORLEVEL -ne 0 ]; then
-  echo Database restore finished with error code %ERRORLEVEL%, exiting...
+  echo "Database restore finished with error code $ERRORLEVEL, exiting..."
   exit 1
 else
-  echo Database restore finished.
+  echo "Database restore finished."
 fi
