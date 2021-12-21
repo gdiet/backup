@@ -15,7 +15,7 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
 
 class Database(connection: Connection) extends util.ClassLogging:
   resource(connection.createStatement) { stat =>
-    resource(stat.executeQuery("""SELECT "VALUE" FROM Context WHERE "KEY" = 'db version';"""))(_.maybeNext(_.getString(1))) match
+    resource(stat.executeQuery("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version';"))(_.maybeNext(_.getString(1))) match
       case None =>
         log.error(s"No database version found.")
         throw new IllegalStateException("No database version found.")
@@ -181,10 +181,10 @@ extension (rawSql: String)
 private def tableDefinitions =
   s"""|CREATE TABLE Context (
       |  -- Starting with H2 2.0.202, KEY and VALUE are reserved keywords and must be quoted. --
-      |  "KEY" VARCHAR(255) NOT NULL,
-      |  "VALUE" VARCHAR(255) NOT NULL
+      |  `KEY`   VARCHAR(255) NOT NULL,
+      |  `VALUE` VARCHAR(255) NOT NULL
       |);
-      |INSERT INTO Context ("KEY", "VALUE") VALUES ('db version', '2');
+      |INSERT INTO Context (`KEY`, `VALUE`) VALUES ('db version', '2');
       |CREATE SEQUENCE idSeq START WITH 1;
       |CREATE TABLE DataEntries (
       |  id     BIGINT NOT NULL,
