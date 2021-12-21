@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 # sudo apt --assume-yes install curl jq zip
 
