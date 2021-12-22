@@ -15,13 +15,17 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
 
 class Database(connection: Connection) extends util.ClassLogging:
   resource(connection.createStatement) { stat =>
-    resource(stat.executeQuery("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version';"))(_.maybeNext(_.getString(1))) match
+    resource(stat.executeQuery("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'"))(_.maybeNext(_.getString(1))) match
       case None =>
         log.error(s"No database version found.")
         throw new IllegalStateException("No database version found.")
+      case Some("2") =>
+        require(stat.execute("ALTER TABLE Context ADD CONSTRAINT pk_Context PRIMARY KEY (`KEY`)")     , "DB migration 2->3 step 1 failed.")
+        require(stat.execute("ALTER TABLE DataEntries ALTER COLUMN hash BINARY(8)")                   , "DB migration 2->3 step 2 failed.")
+        require(stat.executeUpdate("UPDATE CONTEXT set `VALUE` = '3' WHERE `KEY` = 'db version'") == 1, "DB migration 2->3 step 3 failed.")
       case Some(dbVersion) =>
         log.debug(s"Database version: $dbVersion.")
-        require(dbVersion == "2", s"Only database version 2 is supported, detected version is $dbVersion.")
+        require(dbVersion == "3", s"Only database version 3 is supported, detected version is $dbVersion.")
   }
 
   private def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry =
@@ -181,9 +185,10 @@ private def tableDefinitions =
   s"""|CREATE TABLE Context (
       |  -- Starting with H2 2.0.202, KEY and VALUE are reserved keywords and must be quoted. --
       |  `KEY`   VARCHAR(255) NOT NULL,
-      |  `VALUE` VARCHAR(255) NOT NULL
+      |  `VALUE` VARCHAR(255) NOT NULL,
+      |  CONSTRAINT pk_Context PRIMARY KEY (`KEY`)
       |);
-      |INSERT INTO Context (`KEY`, `VALUE`) VALUES ('db version', '2');
+      |INSERT INTO Context (`KEY`, `VALUE`) VALUES ('db version', '3');
       |CREATE SEQUENCE idSeq START WITH 1;
       |CREATE TABLE DataEntries (
       |  id     BIGINT NOT NULL,
@@ -191,7 +196,7 @@ private def tableDefinitions =
       |  length BIGINT NULL,
       |  start  BIGINT NOT NULL,
       |  stop   BIGINT NOT NULL,
-      |  hash   BINARY NULL,
+      |  hash   BINARY(16) NULL,
       |  CONSTRAINT pk_DataEntries PRIMARY KEY (id, seq)
       |);
       |CREATE TABLE TreeEntries (
