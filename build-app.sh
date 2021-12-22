@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # sudo apt --assume-yes install curl jq zip
 
@@ -24,6 +24,8 @@ echo "building app $versionString as release $release"
 if [ "$1" ]; then
   echo
   read -r -s -p "RELEASE BUILD - Press enter to confirm..." _
+  echo
+  echo
 fi
 
 # Delete previous version of app if any.
