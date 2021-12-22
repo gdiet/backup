@@ -20,9 +20,13 @@ class Database(connection: Connection) extends util.ClassLogging:
         log.error(s"No database version found.")
         throw new IllegalStateException("No database version found.")
       case Some("2") =>
-        require(stat.execute("ALTER TABLE Context ADD CONSTRAINT pk_Context PRIMARY KEY (`KEY`)")     , "DB migration 2->3 step 1 failed.")
-        require(stat.execute("ALTER TABLE DataEntries ALTER COLUMN hash BINARY(8)")                   , "DB migration 2->3 step 2 failed.")
-        require(stat.executeUpdate("UPDATE CONTEXT set `VALUE` = '3' WHERE `KEY` = 'db version'") == 1, "DB migration 2->3 step 3 failed.")
+        log.info(s"Database migration 2 -> 3 step 1 of 3.")
+        stat.execute("ALTER TABLE Context ADD CONSTRAINT pk_Context PRIMARY KEY (`KEY`)")
+        log.info(s"Database migration 2 -> 3 step 2 of 3.")
+        stat.execute("ALTER TABLE DataEntries ALTER COLUMN hash BINARY(8)")
+        log.info(s"Database migration 2 -> 3 step 3 of 3.")
+        stat.executeUpdate("UPDATE CONTEXT set `VALUE` = '3' WHERE `KEY` = 'db version'") == 1
+        log.info(s"Database migration 2 -> 3 successfully completed.")
       case Some(dbVersion) =>
         log.debug(s"Database version: $dbVersion.")
         require(dbVersion == "3", s"Only database version 3 is supported, detected version is $dbVersion.")
