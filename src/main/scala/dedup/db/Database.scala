@@ -174,10 +174,9 @@ class Database(connection: Connection) extends util.ClassLogging:
 
 extension (rawSql: String)
   private def prepareSql = rawSql.stripMargin
-    .linesIterator.filterNot(_.trim.startsWith("--")).mkString
+    .linesIterator.filterNot(_.trim.startsWith("--")).mkString // FIXME is this line needed at all?
     .split(";")
 
-// deleted == 0 for regular files, deleted == timestamp for deleted files. Why? Because NULL does not work with UNIQUE.
 private def tableDefinitions =
   s"""|CREATE TABLE Context (
       |  -- Starting with H2 2.0.202, KEY and VALUE are reserved keywords and must be quoted. --
@@ -200,6 +199,7 @@ private def tableDefinitions =
       |  parentId     BIGINT NOT NULL,
       |  name         VARCHAR(255) NOT NULL,
       |  time         BIGINT NOT NULL,
+      |  -- deleted == 0 for regular files, deleted == timestamp for deleted files, because NULL does not work with UNIQUE --
       |  deleted      BIGINT NOT NULL DEFAULT 0,
       |  dataId       BIGINT DEFAULT NULL,
       |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id),
