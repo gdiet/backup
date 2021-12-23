@@ -265,29 +265,29 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * Reclaim finds & cleans up data entries duplicates.
 
-#### 4.0.0 (In Preparation)
+#### 5.0.0 (In Preparation)
 
 * Upgrade H2 database to 2.0.202
 
-**Migration from 3.1.x to 4.x:**
+**Migration from 4.x to 5.x:**
 
-* **Direct migration of repositories from versions prior to 3.1.x is not supported.**
-* Start dedupfs 3.1.x one more time to make sure a current database backup exists.
-* Stop dedupfs 3.1.x without changing anything in the dedup file system.
-* Use the 4.x `db-restore` utility with the `from=...` parameter to point the utility to the database backup zip file created above that can be found in the `fsdb` subdirectory of the repository.
-* The migration is complete. Don't use the 3.1.x version of the dedupfs software anymore.
+* **Direct migration of repositories from versions prior to 4.x is not supported.**
+* Start dedupfs 4.x one more time to make sure a current database backup exists.
+* Stop dedupfs 4.x without changing anything in the dedup file system.
+* Use the 5.x `db-restore` utility with the `from=...` parameter to point the utility to the database backup zip file created above that can be found in the `fsdb` subdirectory of the repository.
+* The migration is complete. Don't use dedupfs versions previous to 5.0.0 anymore with the repository.
 * Eventually, manually delete the final version of the 3.1.x database, that is, the files `dedupfs.mv.db` and `dedupfs.mv.db.backup` in the `fsdb` subdirectory of the repository.
 
-#### 3.1.0 (In Preparation)
+#### 4.0.0 (In Preparation)
 
 * Update Java 11 to Java 17.
-* Prepare upgrade of H2 database to 2.0.202.
+* Prepare upgrade of H2 database to 2.0.202, which will come with dedupfs 5.
 
-**Migration from 3.0.x to 3.1.x:**
+**Migration from 3.x to 4.x:**
 
-* Start dedupfs 3.1.x with repository write access once to migrate the repository database.
-* After migration, dedupfs version prior to 3.1.x can't be used anymore with the repository.
-* To fall back to an earlier software version, restore the repository database from a backup created before upgrading to 3.1.x.
+* Start dedupfs 4.x with repository write access once to migrate the repository database.
+* After migration, dedupfs version prior to 4.x can't be used anymore with the repository.
+* To fall back to an earlier software version, restore the repository database from a backup created before upgrading to 4.x.
 
 #### 3.0.0 (2021.07.31)
 
