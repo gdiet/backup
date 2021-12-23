@@ -181,9 +181,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   }
 
 extension (rawSql: String)
-  private def prepareSql = rawSql.stripMargin
-    .linesIterator.filterNot(_.trim.startsWith("--")).mkString // FIXME is this line needed at all?
-    .split(";")
+  private def prepareSql = rawSql.stripMargin.split(";")
 
 private def tableDefinitions =
   s"""|CREATE TABLE Context (
