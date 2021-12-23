@@ -33,7 +33,6 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
   // Tree Handling
   // *************
 
-  /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int =
     watch(s"getattr $path") {
       def setCommon(time: Time, nlink: Int): Unit =
