@@ -32,7 +32,7 @@ fi
 rm -rf dedupfs-* ||  exit 1
 
 # Build the app. Note that the JAR file contains the resource files.
-~/sbt/bin/sbt ';clean;update;createApp' || exit 1
+sbt ';clean;update;createApp' || exit 1
 
 # unpack JREs to app.
 tar xfz $jreLinux || exit 1
