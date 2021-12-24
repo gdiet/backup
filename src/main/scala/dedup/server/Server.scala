@@ -8,9 +8,15 @@ import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 import java.util.concurrent.atomic.AtomicBoolean
 
 class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
-
-  private val rights = if (settings.readonly) 292 else 438 // o444 else o666
   private val backend = Level1(settings)
+
+  private val rights =
+    if Platform.getNativePlatform.getOS == WINDOWS then
+      // Windows needs the executable flag, at least for the root.
+      if settings.readonly then 365 else 511 // o555 else o777
+    else
+      // On Linux, clear the executable flag because it is rather dangerous.
+      if settings.readonly then 292 else 438 // o444 else o666
 
   override protected def watch[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T =
     super.watch(msg, logger)(f).tap {
