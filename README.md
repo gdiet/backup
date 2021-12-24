@@ -289,6 +289,10 @@ To upgrade a DedupFS installation to a newer version:
 * After migration, dedupfs version prior to 4.x can't be used anymore with the repository.
 * To fall back to an earlier software version, restore the repository database from a backup created before upgrading to 4.x.
 
+#### 3.0.1 (2021.12.24)
+
+* On Windows, fixed dedupfs problems caused by missing executable flag. (git 1c69bf58)
+
 #### 3.0.0 (2021.07.31)
 
 * On Windows, name the dedup file system volume "DedupFS". (git 46a076d)
