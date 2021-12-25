@@ -267,7 +267,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.0.0 (In Preparation)
 
-* Upgrade H2 database to 2.0.202
+* Upgrade H2 database to 2.0.202.
 
 **Migration from 4.x to 5.x:**
 
@@ -281,7 +281,7 @@ To upgrade a DedupFS installation to a newer version:
 #### 4.0.0 (In Preparation)
 
 * Update Java 11 to Java 17.
-* Prepare upgrade of H2 database to 2.0.202, which will come with dedupfs 5.
+* Update dedupfs database version from 2 to 3 to prepare upgrading H2 database to 2.0.202, which will come with dedupfs 5.
 
 **Migration from 3.x to 4.x:**
 
