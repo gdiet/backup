@@ -23,7 +23,7 @@ class Database(connection: Connection) extends util.ClassLogging:
         log.info(s"Database migration 2 -> 3 step 1 of 3.")
         stat.execute("ALTER TABLE Context ADD CONSTRAINT pk_Context PRIMARY KEY (`KEY`)")
         log.info(s"Database migration 2 -> 3 step 2 of 3.")
-        stat.execute("ALTER TABLE DataEntries ALTER COLUMN hash BINARY(8)")
+        stat.execute("ALTER TABLE DataEntries ALTER COLUMN hash BINARY(16)")
         log.info(s"Database migration 2 -> 3 step 3 of 3.")
         stat.executeUpdate("UPDATE CONTEXT set `VALUE` = '3' WHERE `KEY` = 'db version'") == 1
         log.info(s"Database migration 2 -> 3 successfully completed.")
