@@ -181,6 +181,15 @@ DedupFS writes log files that contain all log entries visible on the console and
 
 The `db-restore` utility is for restoring previous versions of the DedupFS database. It accepts the usual `repo=<target directory>` parameter. If run without additional `from=...` parameter, it restores the database to the way it was before the last write operation was started, thus effectively resetting the dedup file system to an earlier state. Alternatively, you can use the `from=...` parameter to point the utility to earlier database backups (zip files) that can be found in the `fsdb` subdirectory of the repository.
 
+### Blacklist Files
+
+The `blacklist` utility is for blacklisting files that should be removed from the dedup file system if they are currently stored and should not be stored even when added later to the file system. Reading a blacklisted file yields [file length] zeros. The utility accepts the following parameters:
+* `repo=<target directory>` (mandatory)
+* `blacklistDir=<directory name>` (optional, default `blacklist`): If the subfolder of `repo` with this name contains files, those are added to the blacklist in the repository, in a folder named with the current timestamp.
+* `deleteFiles=true` (optional, default false): If true, when the files in `blacklistDir` are deleted once they have been added to the blacklist in the repository.
+* `dfsBlacklist=<directory name>` (optional, default `blacklist`): Name of the base blacklist folder in the dedup file system, resolved against root.
+* `deleteCopies=true` (optional, default false): If true, mark deleted all blacklisted occurrences except for the original entries in the `dfsBlacklist` folder.
+
 ### Reclaim Space
 
 When you delete a file in the dedup file system, internally the file is marked as "deleted" and nothing more. This means, that the dedup file system will **not** free that file's storage space, and that you can make the file available again by restoring a previous state of the database from backup.
@@ -266,6 +275,10 @@ To upgrade a DedupFS installation to a newer version:
 * Blacklist files that should not be stored at all.
 * Optionally store packed (gz or similar).
 * The reclaim utilities find & clean up data entry duplicates.
+
+#### 5.1.0 (In Preparation)
+
+* Blacklist files that should not be stored at all.
 
 #### 5.0.0 (In Preparation)
 
