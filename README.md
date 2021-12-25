@@ -183,11 +183,13 @@ The `db-restore` utility is for restoring previous versions of the DedupFS datab
 
 ### Reclaim Space
 
-Deleting files in DedupFS is a multi-step process: First you delete a file in the dedup file system. This makes the file unavailable in the dedup file system. However, if you restore a previous database backup, the file will be available again in the dedup file system.
+When you delete a file in the dedup file system, internally the file is marked as "deleted" and nothing more. This means, that the dedup file system will **not** free that file's storage space, and that you can make the file available again by restoring a previous state of the database from backup.
 
-If you want to re-use the space the deleted files take up, you can run the `reclaim-space-1` and `reclaim-space-2` utilities. Don't expect this to shrink the repository size. Instead, the repository size will not increase for some time if you store new files.
+If you want to re-use the space deleted files take up, run the `reclaim-space-1` and `reclaim-space-2` utilities. Note that this will not shrink the repository size. Instead, the repository size will not increase for some time if you store new files.
 
-Note that running the `reclaim-space-2` utility partially invalidates previous database backups: After that, some files can't be restored correctly anymore even if you restore the database to an earlier state from backup.
+The `reclaim-space-1` utility purges deleted and orphan entries from the database. After running it, as long as you do not store new files in the dedup file system you can still restore previous file system states by restoring the database from backup.
+
+The `reclaim-space-2` invalidates previous database backups because it reorders the actual data storage. Don't try to restore database backups that have been created before.
 
 ### Clean Up Repository Files
 
@@ -263,7 +265,7 @@ To upgrade a DedupFS installation to a newer version:
 * Support for soft links.
 * Blacklist files that should not be stored at all.
 * Optionally store packed (gz or similar).
-* Reclaim finds & cleans up data entries duplicates.
+* The reclaim utilities find & clean up data entry duplicates.
 
 #### 5.0.0 (In Preparation)
 
