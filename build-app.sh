@@ -2,17 +2,6 @@
 
 # sudo apt --assume-yes install curl jq zip
 
-# Fetch JREs if necessary. Find newer releases here: https://adoptium.net/releases.html
-jreFolder=jdk-17.0.1%2B12
-jre=OpenJDK17U-jre_x64_windows_hotspot_17.0.1_12.zip
-if [ ! -f "$jre" ]; then
-  wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jre || exit 1
-fi
-jreLinux=OpenJDK17U-jre_x64_linux_hotspot_17.0.1_12.tar.gz
-if [ ! -f "$jreLinux" ]; then
-  wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jreLinux || exit 1
-fi
-
 # Read version from git.
 version=$(git log -1 | sed -n 's/commit //p' | cut -b 1-8) || exit 1
 if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi || exit 1
@@ -26,6 +15,17 @@ if [ "$1" ]; then
   read -r -s -p "RELEASE BUILD - Press enter to confirm..." _
   echo
   echo
+fi
+
+# Fetch JREs if necessary. Find newer releases here: https://adoptium.net/releases.html
+jreFolder=jdk-17.0.1%2B12
+jre=OpenJDK17U-jre_x64_windows_hotspot_17.0.1_12.zip
+if [ ! -f "$jre" ]; then
+  wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jre || exit 1
+fi
+jreLinux=OpenJDK17U-jre_x64_linux_hotspot_17.0.1_12.tar.gz
+if [ ! -f "$jreLinux" ]; then
+  wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jreLinux || exit 1
 fi
 
 # Delete previous version of app if any.
