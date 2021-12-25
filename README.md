@@ -295,6 +295,8 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 3.0.0 (2021.07.31)
 
+Named "3" because this release is a Scala 3 re-write of dedupfs.
+
 * On Windows, name the dedup file system volume "DedupFS". (git 46a076d)
 * Fixed occasional out-of-memory or deadlock condition (rewrite of parallel handling).
 * Restructured installation directory, ".." instead of "." is the default repository path.
