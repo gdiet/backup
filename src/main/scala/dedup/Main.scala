@@ -7,7 +7,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.Using.resource
 
-@main def init(opts: (String, String)*) =
+@main def init(opts: (String, String)*): Unit =
   val repo  = opts.repo
   val dbDir = db.dbDir(repo)
   if dbDir.exists() then main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.")
@@ -16,26 +16,26 @@ import scala.util.Using.resource
   main.info(s"Database initialized for repository $repo.")
   Thread.sleep(200) // Give logging some time to display message
 
-@main def stats(opts: (String, String)*) =
+@main def stats(opts: (String, String)*): Unit =
   db.maintenance.stats(opts.dbDir)
   Thread.sleep(200) // Give logging some time to display message
 
-@main def dbRestore(opts: (String, String)*) =
+@main def dbRestore(opts: (String, String)*): Unit =
   db.maintenance.restoreBackup(opts.dbDir, opts.get("from"))
   Thread.sleep(200) // Give logging some time to display message
 
-@main def reclaimSpace1(opts: (String, String)*) =
+@main def reclaimSpace1(opts: (String, String)*): Unit =
   db.maintenance.backup(opts.dbDir)
   db.maintenance.reclaimSpace1(opts.dbDir, opts.getOrElse("keepDays", "0").toInt)
   Thread.sleep(200) // Give logging some time to display message
 
-@main def reclaimSpace2(opts: (String, String)*) =
+@main def reclaimSpace2(opts: (String, String)*): Unit =
   resource(store.LongTermStore(store.dataDir(opts.repo), false))(lts =>
     db.maintenance.reclaimSpace2(opts.dbDir, lts)
   )
   Thread.sleep(200) // Give logging some time to display message
 
-@main def mount(opts: (String, String)*) =
+@main def mount(opts: (String, String)*): Unit =
   val readOnly       = opts.boolean("readOnly")
   val copyWhenMoving = AtomicBoolean(opts.boolean("copyWhenMoving"))
   if opts.boolean("gui") then ServerGui(copyWhenMoving, readOnly)
@@ -76,7 +76,7 @@ import scala.util.Using.resource
     case main.exit =>
       main.error("Finished abnormally.")
       Thread.sleep(200) // Give logging some time to display message
-    case (e: Throwable) =>
+    case e: Throwable =>
       main.error("Mount exception:", e)
       Thread.sleep(200) // Give logging some time to display message
 
@@ -87,7 +87,7 @@ object main extends util.ClassLogging:
 
 given scala.util.CommandLineParser.FromString[(String, String)] with
   private val matcher = """(\w+)=(\S+)""".r
-  def fromString(option: String) = option match
+  def fromString(option: String): (String, String) = option match
     case matcher(key, value) => key.toLowerCase -> value.toLowerCase
     case _ => throw IllegalArgumentException()
 
