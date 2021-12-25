@@ -267,21 +267,21 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.0.0 (In Preparation)
 
-* Upgrade H2 database to 2.0.202
+* Upgrade H2 database to 2.0.202.
 
 **Migration from 4.x to 5.x:**
 
 * **Direct migration of repositories from versions prior to 4.x is not supported.**
 * Start dedupfs 4.x one more time to make sure a current database backup exists.
 * Stop dedupfs 4.x without changing anything in the dedup file system.
-* Use the 5.x `db-restore` utility with the `from=...` parameter to point the utility to the database backup zip file created above that can be found in the `fsdb` subdirectory of the repository.
+* Use the 5.x `db-restore` utility like this:<br> `db-restore from=dedupfs_[timestamp].zip`<br> to point the utility to the database backup zip file created above. Look for the exact timestamp to use in the `fsdb` subdirectory of the repository.
 * The migration is complete. Don't use dedupfs versions previous to 5.0.0 anymore with the repository.
-* Eventually, manually delete the final version of the 3.1.x database, that is, the files `dedupfs.mv.db` and `dedupfs.mv.db.backup` in the `fsdb` subdirectory of the repository.
+* Eventually, manually delete the final version of the 4.x database, that is, the files `dedupfs.mv.db` and `dedupfs.mv.db.backup` in the `fsdb` subdirectory of the repository.
 
 #### 4.0.0 (In Preparation)
 
 * Update Java 11 to Java 17.
-* Prepare upgrade of H2 database to 2.0.202, which will come with dedupfs 5.
+* Update dedupfs database version from 2 to 3 to prepare upgrading H2 database to 2.0.202, which will come with dedupfs 5.
 
 **Migration from 3.x to 4.x:**
 
