@@ -213,5 +213,5 @@ private def indexDefinitions =
      |CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
      |-- Find data entries by size & hash --
      |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
-     |-- Find orphan data entries --
+     |-- Find orphan data entries and blacklisted copies --
      |CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);""".prepareSql
