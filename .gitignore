@@ -8,7 +8,6 @@
 dedupfs-*.zip
 dedupfs-*.tar.gz
 OpenJDK*-jre_x64_*
-# TODO is this really needed?
 **/log/
 /data/
 /dedupfs-temp/
