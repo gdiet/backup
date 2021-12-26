@@ -58,6 +58,78 @@ object maintenance extends util.ClassLogging:
     log.info(f"Folders: ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d, deleted ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d")
   }
 
+  def list(dbDir: File, path: String): Unit = withConnection(dbDir) { con =>
+    val db = Database(con)
+    db.entry(path) match
+      case None =>
+        println(s"The path '$path' does not exist.")
+      case Some(file: FileEntry) =>
+        println(s"File information for path '$path':")
+        println(s"${file.name} .. ${readableBytes(db.dataSize(file.dataId))}")
+      case Some(dir: DirEntry) =>
+        println(s"Listing of directory '$path':")
+        db.children(dir.id).sortBy {
+          case dir: DirEntry => s"d${dir.name}"
+          case file: FileEntry => s"f${file.name}"
+        }.foreach {
+          case dir: DirEntry   => println(s"> ${dir.name}")
+          case file: FileEntry => println(s"- ${file.name} ${"." * math.max(2, 38-file.name.length)} ${readableBytes(db.dataSize(file.dataId))}")
+        }
+  }
+
+  def del(dbDir: File, path: String): Unit = withConnection(dbDir, readonly = false) { con =>
+    val db = Database(con)
+    db.entry(path) match
+      case None =>
+        println(s"The path '$path' does not exist.")
+      case Some(file: FileEntry) =>
+        db.delete(file.id)
+        log.info(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
+      case Some(dir: DirEntry) =>
+        log.info(s"Marking deleted directory '$path' ...")
+        def delete(treeEntry: TreeEntry): Long =
+          val childCount = db.children(treeEntry.id).map(delete).sum
+          db.delete(treeEntry.id)
+          log.debug(s"Marked deleted: $treeEntry")
+          childCount + 1
+        log.info(s"Marked deleted ${delete(dir)} files/directories.")
+  }
+
+  def find(dbDir: File, matcher: String): Unit = withConnection(dbDir) { con =>
+    println(s"Searching for files matching '$matcher':")
+
+    val qLike = con.prepareStatement(
+      """SELECT id, parentId, name, time, dataId FROM TreeEntries
+        |WHERE deleted = 0 AND name LIKE ?""".stripMargin
+    )
+    val qId = con.prepareStatement(
+      """SELECT id, parentId, name, time, dataId FROM TreeEntries
+        |WHERE id = ? AND deleted = 0""".stripMargin
+    )
+    def treeEntry(rs: ResultSet): TreeEntry = rs.opt(_.getLong(5)) match
+      case None         => DirEntry (rs.getLong(1), rs.getLong(2), rs.getString(3), Time(rs.getLong(4))                )
+      case Some(dataId) => FileEntry(rs.getLong(1), rs.getLong(2), rs.getString(3), Time(rs.getLong(4)), DataId(dataId))
+
+    @annotation.tailrec
+    def path(entry: TreeEntry, acc: List[TreeEntry] = Nil): List[TreeEntry] =
+      if entry.id == root.id then entry :: acc else
+        qId.setLong(1, entry.parentId)
+        resource(qId.executeQuery())(_.maybeNext(treeEntry)) match
+          case None => Nil
+          case Some(parent) => path(parent, entry :: acc)
+
+    qLike.setString(1, matcher)
+    resource(qLike.executeQuery())(_.seq(treeEntry).foreach { entry =>
+      path(entry) match
+        case Nil => /* deleted entry */
+        case entries =>
+          println(entries.map {
+            case dirEntry: DirEntry => s"${dirEntry.name}/"
+            case fileEntry: FileEntry => fileEntry.name
+          }.mkString)
+    })
+  }
+
   /** @param dbDir Database directory
     * @param blacklistDir Directory containing files to add to the blacklist
     * @param deleteFiles If true, files in the `blacklistDir` are deleted when they have been taken over
