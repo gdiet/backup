@@ -61,7 +61,7 @@ Don't use DedupFS for security critical things. One reason for that: DedupFS use
 
 ### General
 
-DedupFS needs a Java 11 runtime. The application comes bundled with a suitable Java runtime for Windows x64 and Linux x64.
+DedupFS needs a Java 17 runtime. The application comes bundled with a suitable Java runtime for Windows x64 and Linux x64.
 
 DedupFS needs disk space for its repository. If you back up lots of data, it will need lots of space. Keep an eye on available disk space when using.
 
@@ -117,7 +117,7 @@ If you want to write, update, or read files in the dedup file system, you have t
 
 * If you have installed DedupFS in the repository directory as recommended, start the dedup file system by running `gui-dedupfs` in the `dedupfs` directory, for example by double-clicking.
 * After some time the DedupFS GUI will open, showing log entries.
-* Some time later a log entry will tell you that the dedup file system is started.
+* Some time later a log entry will tell you that the dedup file system is started: `Mounting the dedup file system now...`
 * In the log entries, you see among others which repository directory is used and where the dedup file system is mounted.
 
 Notes:
@@ -125,7 +125,7 @@ Notes:
 * The default mount point on Windows is `J:\`, on Linux `/mnt/dedupfs`. To mount the file system somewhere else, call the script with a `mount=<mount point>` parameter.
 * On Windows, mount the dedup file system to a file system root like `J:\` or to a folder like `C:\myFiles\dedupfs`, where `C:\myFiles` must be an existing directory and `C:\myFiles\dedupfs` must not exist yet.
 * On Linux, mount the dedup file system to an existing empty writable directory.
-* Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique `mount=<mount point>` mount points configured.
+* Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have different `mount=<mount point>` mount points configured.
 * `gui-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
 * By default, `gui-dedupfs` uses the parent of the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
 * For additional options see the paragraphs below.

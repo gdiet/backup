@@ -62,7 +62,7 @@ import scala.util.Using.resource
       if temp.list.nonEmpty then main.warn(s"Note that temp dir is not empty: $temp")
     cache.MemCache.startupCheck()
     if backup then db.maintenance.backup(settings.dbDir)
-    main.info (s"Starting dedup file system.")
+    main.info (s"Dedup file system settings:")
     main.info (s"Repository:  $repo")
     main.info (s"Mount point: $mount")
     main.info (s"Readonly:    $readOnly")
@@ -71,6 +71,7 @@ import scala.util.Using.resource
     val fs             = server.Server(settings)
     val nativeFuseOpts = if getNativePlatform.getOS == WINDOWS then Array("-o", "volname=DedupFS") else Array[String]()
     val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
+    main.info(s"Starting the dedup file system now...")
     try fs.mount(mount.toPath, true, false, fuseOpts) catch (e: Throwable) => { fs.umount(); throw e }
   catch
     case main.exit =>
