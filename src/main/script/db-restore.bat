@@ -10,7 +10,7 @@ echo that, simply close the console window where this utility is running.
 echo.
 pause
 echo.
-
+echo Starting database restore...
 
 rem ### Parameters ###
 rem # repo=<repository directory>     | default: '..' (parent of working directory)
