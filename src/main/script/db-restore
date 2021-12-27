@@ -1,6 +1,6 @@
 #!/bin/bash
 APPDIR=$(dirname "$0")
-JAVA=$($APPDIR/helpers/set-java java $APPDIR/jrex/bin/java) || exit 1
+JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 
 
 echo
@@ -8,7 +8,7 @@ echo "This utility will restore a previous state of the DedupFS database."
 echo "This will overwrite the current database state.  If you do not want"
 echo "that, simply close the console window where this utility is running."
 echo
-read -n 1 -s -p "Press any key to continue..."
+read -n 1 -r -s -p "Press any key to continue..."
 echo
 
 ### Parameters ###

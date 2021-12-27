@@ -7,3 +7,4 @@ if not "%JAVAVERSION%"=="17.0" (
   pause
   exit /B 1
 )
+exit /B 0
