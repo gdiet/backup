@@ -27,7 +27,7 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
 
   /** For debugging purposes. */
   override def toString: String = synchronized {
-    s"$getClass: id $id / size $size / cache $cache"
+    s"${getClass.getName}: id $id / size $size / $cache"
   }
 
   def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
