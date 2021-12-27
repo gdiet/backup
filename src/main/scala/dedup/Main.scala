@@ -20,6 +20,18 @@ import scala.util.Using.resource
   db.maintenance.stats(opts.dbDir)
   Thread.sleep(200) // Give logging some time to display message
 
+@main def utils(optsx: String*): Unit =
+  val opts = Seq("ls", "/Dateien/Spielfilme/Jugend/")
+  val dbDir = opts.baseOptions.dbDir
+  val cmd = opts.additionalOptions.toList
+  cmd match {
+    case "ls" :: path :: Nil => db.maintenance.ll(dbDir, path)
+    case "fd" :: matcher :: Nil => println("Find not yet implemented.") // TODO
+    case "rf" :: path :: Nil => println("Delete file not yet implemented.") // TODO
+    case "rd" :: path :: Nil => println("Delete directory not yet implemented.") // TODO
+    case other => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
+  }
+
 @main def dbRestore(opts: (String, String)*): Unit =
   db.maintenance.restoreBackup(opts.dbDir, opts.get("from"))
   Thread.sleep(200) // Give logging some time to display message
@@ -86,11 +98,22 @@ object main extends util.ClassLogging:
   object exit extends RuntimeException
   def failureExit(msg: String*): Nothing = { msg.foreach(log.error(_)); throw exit }
 
+private val baseOptionMatcher = """(\w+)=(\S+)""".r
+
 given scala.util.CommandLineParser.FromString[(String, String)] with
-  private val matcher = """(\w+)=(\S+)""".r
   def fromString(option: String): (String, String) = option match
-    case matcher(key, value) => key.toLowerCase -> value.toLowerCase
+    case baseOptionMatcher(key, value) => key.toLowerCase -> value.toLowerCase
     case _ => throw IllegalArgumentException()
+
+extension(options: Seq[String])
+  private def baseAndAdditionalOptions = options.partitionMap {
+    case baseOptionMatcher(key, value) => Left(key.toLowerCase -> value.toLowerCase)
+    case other => Right(other)
+  }
+  private def baseOptions: Seq[(String, String)] =
+    baseAndAdditionalOptions._1
+  private def additionalOptions: Seq[String] =
+    baseAndAdditionalOptions._2
 
 extension(options: Seq[(String, String)])
   private def opts = options.toMap.map((key, value) => key.toLowerCase -> value)
