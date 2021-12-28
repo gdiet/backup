@@ -10,4 +10,4 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 # find <matcher>    | find files with matching file names, e.g. '%.scala'
 # list <path>       | list directory or show file info
 # del <path>        | mark a file or recursively mark a directory as deleted
-$JAVA "-DLOG_BASE=$APPDIR/log" -cp "$APPDIR/lib/*" dedup.fsc "$@"
+$JAVA "-DLOG_BASE=$APPDIR/log" -Dlogback.configurationFile=fsc-logback.xml -cp "$APPDIR/lib/*" dedup.fsc "$@"
