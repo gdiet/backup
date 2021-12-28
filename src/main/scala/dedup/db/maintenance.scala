@@ -66,7 +66,7 @@ object maintenance extends util.ClassLogging:
         println(s"File information for path '$path':")
         println(s"${file.name} .. ${readableBytes(db.dataSize(file.dataId))}")
       case Some(dir: DirEntry) =>
-        println(s"Listing of directory '$path':'")
+        println(s"Listing of directory '$path':")
         db.children(dir.id).sortBy {
           case dir: DirEntry => s"d${dir.name}"
           case file: FileEntry => s"f${file.name}"
@@ -76,7 +76,7 @@ object maintenance extends util.ClassLogging:
         }
   }
 
-  def del(dbDir: File, path: String): Unit = withConnection(dbDir) { con =>
+  def del(dbDir: File, path: String): Unit = withConnection(dbDir, readonly = false) { con =>
     val db = Database(con)
     db.entry(path) match
       case None =>
@@ -88,7 +88,7 @@ object maintenance extends util.ClassLogging:
         println(s"Use 'rmdir' to delete directory '$path'.")
   }
 
-  def rmdir(dbDir: File, path: String): Unit = withConnection(dbDir) { con =>
+  def rmdir(dbDir: File, path: String): Unit = withConnection(dbDir, readonly = false) { con =>
     val db = Database(con)
     db.entry(path) match
       case None =>
