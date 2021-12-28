@@ -83,14 +83,15 @@ object maintenance extends util.ClassLogging:
         println(s"The path '$path' does not exist.")
       case Some(file: FileEntry) =>
         db.delete(file.id)
-        println(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
+        log.info(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
       case Some(dir: DirEntry) =>
-        println(s"Marking deleted directory '$path' ...")
+        log.info(s"Marking deleted directory '$path' ...")
         def delete(treeEntry: TreeEntry): Long =
           val childCount = db.children(treeEntry.id).map(delete).sum
           db.delete(treeEntry.id)
+          log.debug(s"Marked deleted: $treeEntry")
           childCount + 1
-        println(s"Marked deleted ${delete(dir)} files/directories.")
+        log.info(s"Marked deleted ${delete(dir)} files/directories.")
   }
 
   def find(dbDir: File, matcher: String): Unit = withConnection(dbDir) { con =>

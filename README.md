@@ -146,7 +146,7 @@ The `stats` utility allows you to read basic file system statistics. Like the ot
 
 ### Use The `fsc` Command Line Utilities
 
-A number of **command line** utilities for the dedup file system is available through the `fsc` command. Like the other utilities, `fsc` accepts the optional `repo=<target directory>` parameter. `fsc` prints its output directly to the command line and is not meant to be run without additional parameters.
+A number of **command line** utilities for the dedup file system is available through the `fsc` command. Like the other utilities, `fsc` accepts the optional `repo=<target directory>` parameter. `fsc` is not meant to be run without additional parameters.
 
 #### Create A Database Backup
 
