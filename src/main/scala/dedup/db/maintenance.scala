@@ -85,17 +85,6 @@ object maintenance extends util.ClassLogging:
         db.delete(file.id)
         println(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
       case Some(dir: DirEntry) =>
-        println(s"Use 'rmdir' to delete directory '$path'.")
-  }
-
-  def rmdir(dbDir: File, path: String): Unit = withConnection(dbDir, readonly = false) { con =>
-    val db = Database(con)
-    db.entry(path) match
-      case None =>
-        println(s"The path '$path' does not exist.")
-      case Some(file: FileEntry) =>
-        println(s"Use 'del' to delete file '$path'.")
-      case Some(dir: DirEntry) =>
         println(s"Marking deleted directory '$path' ...")
         def delete(treeEntry: TreeEntry): Long =
           val childCount = db.children(treeEntry.id).map(delete).sum

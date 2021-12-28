@@ -144,6 +144,26 @@ Why mount read-only? This can be handy if for example you want to look up files 
 
 The `stats` utility allows you to read basic file system statistics. Like the other utilities, it accepts the optional `repo=<target directory>` parameter.
 
+### Use The `fsc` Command Line Utilities
+
+A number of **command line** utilities for the dedup file system is available through the `fsc` command. Like the other utilities, `fsc` accepts the optional `repo=<target directory>` parameter. `fsc` prints its output directly to the command line and is not meant to be run without additional parameters.
+
+#### Create A Database Backup
+
+Use `fsc backup` to create a database backup.
+
+#### Find Files By Name Pattern
+
+Use `fsc find <name pattern>` to find files matching the name pattern. The name pattern supports '`%`' as wildcard for any number of characters and '`_`' as wildcard for a single character.
+
+#### List Files
+
+Use `fsc list <path>` to list the contents of the directory denoted by `<path>`.
+
+#### Delete A File Or A Directory
+
+Use `fsc del <path>` to delete the file or **recursively** delete the directory denoted by `<path>`. **This utility does not create a database backup.** If required, use `fsc backup` before using `fsc del <path>`.
+
 ### Configure Memory Settings
 
 The DedupFS utilities come with reasonable default memory settings. You can change these by editing the utility scripts. Let's start with some rules of thumb:
@@ -173,7 +193,7 @@ This can be used to first create in the dedup file system a copy of an existing 
 
 To enable the "copy when moving" state, either tick the checkbox in the GUI or specify the `copyWhenMoving=true` option when starting the dedup file system.
 
-### Log Files
+### Read Log Files
 
 DedupFS writes log files that contain all log entries visible on the console and additionally DEBUG level log entries. DedupFS always creates its `logs` directory in the directory containing the DedupFS utility scripts.
 
@@ -284,6 +304,7 @@ To upgrade a DedupFS installation to a newer version:
 
 * Update Java 11 to Java 17.
 * Update dedupfs database version from 2 to 3 to prepare upgrading H2 database to 2.0.202, which will come with dedupfs 5.
+* Added `fsc` utilities to list, find, or delete files without mounting the repository.
 
 **Migration from 3.x to 4.x:**
 

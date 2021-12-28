@@ -6,8 +6,8 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 ### Parameters ###
 # repo=<repository directory>     | default: '..' (parent of working directory)
 ### Commands ###
+# backup            | create a database backup
 # find <matcher>    | find files with matching file names, e.g. '%.scala'
 # list <path>       | list directory or show file info
-# del <path>        | mark a file as deleted
-# rmdir <path>      | recursively mark a directory as deleted
+# del <path>        | mark a file or recursively mark a directory as deleted
 $JAVA "-DLOG_BASE=$APPDIR/log" -cp "$APPDIR/lib/*" dedup.fsc "$@"
