@@ -24,10 +24,10 @@ import scala.util.Using.resource
   val dbDir = opts.baseOptions.dbDir
   val cmd = opts.additionalOptions.toList
   cmd match {
-    case "find"  :: matcher :: Nil => db.maintenance.fd(dbDir, matcher)
-    case "list"  :: path    :: Nil => db.maintenance.ll(dbDir, path)
-    case "del"   :: path    :: Nil => println("Delete file not yet implemented.") // TODO
-    case "rmdir" :: path    :: Nil => println("Delete dir not yet implemented.") // TODO
+    case "find"  :: matcher :: Nil => db.maintenance.find (dbDir, matcher)
+    case "list"  :: path    :: Nil => db.maintenance.list (dbDir, path   )
+    case "del"   :: path    :: Nil => db.maintenance.del  (dbDir, path   )
+    case "rmdir" :: path    :: Nil => db.maintenance.rmdir(dbDir, path   )
     case other => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
   }
 

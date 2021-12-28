@@ -57,7 +57,7 @@ object maintenance extends util.ClassLogging:
     log.info(f"Folders: ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d, deleted ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d")
   }
 
-  def ll(dbDir: File, path: String): Unit = withConnection(dbDir) { con =>
+  def list(dbDir: File, path: String): Unit = withConnection(dbDir) { con =>
     val db = Database(con)
     db.entry(path) match
       case None =>
@@ -76,7 +76,35 @@ object maintenance extends util.ClassLogging:
         }
   }
 
-  def fd(dbDir: File, matcher: String): Unit = withConnection(dbDir) { con =>
+  def del(dbDir: File, path: String): Unit = withConnection(dbDir) { con =>
+    val db = Database(con)
+    db.entry(path) match
+      case None =>
+        println(s"The path '$path' does not exist.")
+      case Some(file: FileEntry) =>
+        db.delete(file.id)
+        println(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
+      case Some(dir: DirEntry) =>
+        println(s"Use 'rmdir' to delete directory '$path'.")
+  }
+
+  def rmdir(dbDir: File, path: String): Unit = withConnection(dbDir) { con =>
+    val db = Database(con)
+    db.entry(path) match
+      case None =>
+        println(s"The path '$path' does not exist.")
+      case Some(file: FileEntry) =>
+        println(s"Use 'del' to delete file '$path'.")
+      case Some(dir: DirEntry) =>
+        println(s"Marking deleted directory '$path' ...")
+        def delete(treeEntry: TreeEntry): Long =
+          val childCount = db.children(treeEntry.id).map(delete).sum
+          db.delete(treeEntry.id)
+          childCount + 1
+        println(s"Marked deleted ${delete(dir)} files/directories.")
+  }
+
+  def find(dbDir: File, matcher: String): Unit = withConnection(dbDir) { con =>
     println(s"Searching for files matching '$matcher':")
 
     val qLike = con.prepareStatement(
