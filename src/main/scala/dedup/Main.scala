@@ -20,15 +20,14 @@ import scala.util.Using.resource
   db.maintenance.stats(opts.dbDir)
   Thread.sleep(200) // Give logging some time to display message
 
-@main def utils(optsx: String*): Unit =
-  val opts = Seq("ls", "/Dateien/Spielfilme/Jugend/")
+@main def fsc(opts: String*): Unit =
   val dbDir = opts.baseOptions.dbDir
   val cmd = opts.additionalOptions.toList
   cmd match {
-    case "ls" :: path :: Nil => db.maintenance.ll(dbDir, path)
-    case "fd" :: matcher :: Nil => println("Find not yet implemented.") // TODO
-    case "rf" :: path :: Nil => println("Delete file not yet implemented.") // TODO
-    case "rd" :: path :: Nil => println("Delete directory not yet implemented.") // TODO
+    case "find"  :: matcher :: Nil => db.maintenance.fd(dbDir, matcher)
+    case "list"  :: path    :: Nil => db.maintenance.ll(dbDir, path)
+    case "del"   :: path    :: Nil => println("Delete file not yet implemented.") // TODO
+    case "rmdir" :: path    :: Nil => println("Delete dir not yet implemented.") // TODO
     case other => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
   }
 
