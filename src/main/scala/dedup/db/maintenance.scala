@@ -59,14 +59,7 @@ object maintenance extends util.ClassLogging:
 
   def ll(dbDir: File, path: String): Unit = withConnection(dbDir) { con =>
     val db = Database(con)
-    // TODO copy/paste from Level1
-    def split(path: String): Array[String]     = path.split("/").filter(_.nonEmpty)
-    def entry(path: String): Option[TreeEntry] = split(path).foldLeft(Option[TreeEntry](root)) {
-      case (Some(dir: DirEntry), name) => db.child(dir.id, name)
-      case _ => None
-    }
-    // TODO end of copy/paste from Level1
-    entry(path) match
+    db.entry(path) match
       case None =>
         println(s"The path '$path' does not exist.")
       case Some(file: FileEntry) =>
@@ -75,8 +68,8 @@ object maintenance extends util.ClassLogging:
       case Some(dir: DirEntry) =>
         println(s"Listing of directory '$path':'")
         db.children(dir.id).sortBy {
-          case file: FileEntry => s"f${file.name}"
           case dir: DirEntry => s"d${dir.name}"
+          case file: FileEntry => s"f${file.name}"
         }.foreach {
           case dir: DirEntry   => println(s"> ${dir.name}")
           case file: FileEntry => println(s"- ${file.name} ${"." * math.max(2, 38-file.name.length)} ${readableBytes(db.dataSize(file.dataId))}")

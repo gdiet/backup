@@ -20,7 +20,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val con = db.H2.connection(settings.dbDir, settings.readonly)
   private val database = db.Database(con)
   private val startOfFreeData = new AtomicLong(database.startOfFreeData)
-  export database.{child, children, delete, mkDir, mkFile, setTime, update}
+  export database.{child, children, delete, entry, mkDir, mkFile, setTime, split, update}
 
   /** id -> DataEntry. Remember to synchronize. */
   private var files = Map[Long, DataEntry]()

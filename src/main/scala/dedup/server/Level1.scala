@@ -6,15 +6,8 @@ import java.util.concurrent.atomic.AtomicLong
 class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   val backend: Level2 = Level2(settings)
-  export backend.{child, children, mkDir, setTime, update}
+  export backend.{child, children, entry, mkDir, setTime, split, update}
 
-  def split(path: String)       : Array[String]     = path.split("/").filter(_.nonEmpty)
-  def entry(path: String)       : Option[TreeEntry] = entry(split(path))
-  def entry(path: Array[String]): Option[TreeEntry] = path.foldLeft(Option[TreeEntry](root)) {
-                                                        case (Some(dir: DirEntry), name) => child(dir.id, name)
-                                                        case _ => None
-                                                      }
-                                                      
   /** Creates a copy of the file's last persisted state without current modifications. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean = 
     backend.mkFile(newParentId, newName, file.time, file.dataId).isDefined
