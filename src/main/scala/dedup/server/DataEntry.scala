@@ -89,6 +89,6 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   def awaitClosed(): Unit = isOpen.await()
 
 object DataEntry:
-  protected val currentId = AtomicLong()
-  protected val closedEntries = AtomicLong()
+  protected val currentId    : AtomicLong = AtomicLong()
+  protected val closedEntries: AtomicLong = AtomicLong()
   def openEntries: Long = currentId.get - closedEntries.get
