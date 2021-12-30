@@ -300,10 +300,10 @@ To upgrade a DedupFS installation to a newer version:
 * The migration is complete. Don't use dedupfs versions previous to 5.0.0 anymore with the repository.
 * Eventually, manually delete the final version of the 4.x database, that is, the files `dedupfs.mv.db` and `dedupfs.mv.db.backup` in the `fsdb` subdirectory of the repository.
 
-#### 4.0.0 (In Preparation)
+#### 4.0.0 (2021.12.30)
 
-* Update Java 11 to Java 17.
-* Update dedupfs database version from 2 to 3 to prepare upgrading H2 database to 2.0.202, which will come with dedupfs 5.
+* Updated Java 11 to Java 17.
+* Updated dedupfs database version from 2 to 3 to prepare upgrading H2 database to 2.0.202, which will come with dedupfs 5.
 * Added `fsc` utilities to create a database backup or to list, find, or delete files without mounting the repository.
 
 **Migration from 3.x to 4.x:**
@@ -320,7 +320,7 @@ To upgrade a DedupFS installation to a newer version:
 
 Named "3" because this release is a Scala 3 re-write of dedupfs.
 
-* On Windows, name the dedup file system volume "DedupFS". (git 46a076d)
+* On Windows, named the dedup file system volume "DedupFS". (git 46a076d)
 * Fixed occasional out-of-memory or deadlock condition (rewrite of parallel handling).
 * Restructured installation directory, ".." instead of "." is the default repository path.
 
