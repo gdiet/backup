@@ -12,3 +12,5 @@ OpenJDK*-jre_x64_*
 /data/
 /dedupfs-temp/
 /fsdb/
+# For temporary notes etc.
+/scratch/
