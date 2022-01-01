@@ -292,16 +292,12 @@ To upgrade a DedupFS installation to a newer version:
 #### May Come Eventually
 
 * Support for soft links.
-* Blacklist files that should not be stored at all.
 * Optionally store packed (gz or similar).
 * The reclaim utilities find & clean up data entry duplicates.
 
-#### 5.1.0 (In Preparation)
-
-* Blacklist files that should not be stored at all.
-
 #### 5.0.0 (In Preparation)
 
+* Blacklist files that should not be stored at all.
 * Upgrade H2 database to 2.0.202.
 
 **Migration from 4.x to 5.x:**
