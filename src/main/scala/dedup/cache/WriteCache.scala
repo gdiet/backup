@@ -26,7 +26,7 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
 
   /** For debugging purposes. */
   override def toString: String =
-    s"$getClass: mem $memCache / file $fileCache / zero $zeroCache"
+    s"${getClass.getName}: written $written / mem $memCache / file $fileCache / zero $zeroCache"
 
   /** Truncates the cache to a new size. Zero-pads if the cache size increases. */
   def truncate(newSize: Long): Unit = if newSize != size then guard(s"truncate $size -> $newSize") {

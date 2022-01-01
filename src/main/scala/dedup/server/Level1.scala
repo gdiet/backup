@@ -5,16 +5,9 @@ import java.util.concurrent.atomic.AtomicLong
 
 class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
-  val backend = Level2(settings)
-  export backend.{child, children, mkDir, setTime, update}
+  val backend: Level2 = Level2(settings)
+  export backend.{child, children, entry, mkDir, setTime, split, update}
 
-  def split(path: String)       : Array[String]     = path.split("/").filter(_.nonEmpty)
-  def entry(path: String)       : Option[TreeEntry] = entry(split(path))
-  def entry(path: Array[String]): Option[TreeEntry] = path.foldLeft(Option[TreeEntry](root)) {
-                                                        case (Some(dir: DirEntry), name) => child(dir.id, name)
-                                                        case _ => None
-                                                      }
-                                                      
   /** Creates a copy of the file's last persisted state without current modifications. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean = 
     backend.mkFile(newParentId, newName, file.time, file.dataId).isDefined
@@ -100,7 +93,9 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
   def release(id: Long): Boolean =
     watch(s"release($id)") {
       val result = synchronized(files.get(id) match {
-        case None => None // No handle found, will return false.
+        case None =>
+          log.warn(s"release($id) called for a file handle that is currently not open.")
+          None // No handle found, will return false.
         case Some(count -> dataEntry) =>
           if count < 0 then log.error(s"Handle count $count for id $id")
           if count > 1 then { files += id -> (count - 1, dataEntry); Some(None) } // Nothing else to do - file is still open.
@@ -113,6 +108,6 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
   override def close(): Unit = synchronized {
     if files.nonEmpty then
       log.warn(s"Forcibly closing ${files.size} open files.")
-      files.foreach { case (id, (_, data)) => backend.persist(id, data) }
+      files.foreach { case (id, (_, data)) => if data.written then backend.persist(id, data) }
     backend.close()
   }

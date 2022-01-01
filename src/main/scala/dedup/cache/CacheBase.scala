@@ -21,8 +21,8 @@ trait CacheBase[M]:
   protected def release(sizes: => Iterable[Long]): Unit = {/**/}
 
   extension(m: M)
-    private def _check(distance: Long) = require(distance > 0 && distance < length(m), s"Distance: $distance")
-    private def _length: Long = length(m)
+    private def _check(distance: Long): Unit      = require(distance > 0 && distance < length(m), s"Distance: $distance")
+    private def _length               : Long      = length(m)
     private def _merge(other   : M   ): Option[M] = merge(m, other)
     private def _drop (distance: Long): M         = { _check(distance); drop (m, distance) }
     private def _keep (distance: Long): M         = { _check(distance); keep (m, distance) }
@@ -53,7 +53,7 @@ trait CacheBase[M]:
       val overlap = position + size - storedAt
       if overlap <= 0 then false else
         val area = entries.remove(storedAt)
-        if (overlap < area._length) then
+        if overlap < area._length then
           entries.put(storedAt + overlap, area._drop(overlap))
           release(Seq(overlap))
           false

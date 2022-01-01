@@ -10,7 +10,7 @@ object MemCache extends ClassLogging:
   // Give room for database and memory management peculiarities, see startupCheck.
   private val cacheLimit: Long = math.max(0, (rt.maxMemory - 64000000) * 7 / 10)
   log.info(s"Memory cache size: ${readableBytes(cacheLimit)}")
-  val availableMem = AtomicLong(cacheLimit)
+  val availableMem: AtomicLong = AtomicLong(cacheLimit)
 
   /** Allocate 90% of the free heap with byte arrays sized [[dedup.memChunk]], then free the heap again.
     * This is to ensure [[cache.MemCache]] will work as expected.

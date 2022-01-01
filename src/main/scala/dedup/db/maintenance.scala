@@ -5,7 +5,7 @@ import org.h2.tools.{RunScript, Script}
 
 import java.io.{File, FileInputStream}
 import java.nio.file.{Files, StandardCopyOption}
-import java.sql.{Connection, Statement}
+import java.sql.{Connection, ResultSet, Statement}
 import java.text.SimpleDateFormat
 import java.util.Date
 import scala.collection.SortedMap
@@ -72,7 +72,7 @@ object maintenance extends util.ClassLogging:
           case dir: DirEntry => s"d${dir.name}"
           case file: FileEntry => s"f${file.name}"
         }.foreach {
-          case dir: DirEntry   => println(s"> ${dir.name}")
+          case dir: DirEntry => println(s"> ${dir.name}")
           case file: FileEntry => println(s"- ${file.name} ${"." * math.max(2, 38-file.name.length)} ${readableBytes(db.dataSize(file.dataId))}")
         }
   }

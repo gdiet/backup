@@ -20,6 +20,17 @@ import scala.util.Using.resource
   db.maintenance.stats(opts.dbDir)
   Thread.sleep(200) // Give logging some time to display message
 
+@main def fsc(opts: String*): Unit =
+  val dbDir = opts.baseOptions.dbDir
+  val cmd = opts.additionalOptions.toList
+  cmd match {
+    case "backup"           :: Nil => db.maintenance.backup(dbDir         )
+    case "find"  :: matcher :: Nil => db.maintenance.find  (dbDir, matcher)
+    case "list"  :: path    :: Nil => db.maintenance.list  (dbDir, path   )
+    case "del"   :: path    :: Nil => db.maintenance.del   (dbDir, path   )
+    case other => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
+  }
+
 @main def dbRestore(opts: (String, String)*): Unit =
   db.maintenance.restoreBackup(opts.dbDir, opts.get("from"))
   Thread.sleep(200) // Give logging some time to display message
@@ -70,7 +81,7 @@ import scala.util.Using.resource
       if temp.list.nonEmpty then main.warn(s"Note that temp dir is not empty: $temp")
     cache.MemCache.startupCheck()
     if backup then db.maintenance.backup(settings.dbDir)
-    main.info (s"Starting dedup file system.")
+    main.info (s"Dedup file system settings:")
     main.info (s"Repository:  $repo")
     main.info (s"Mount point: $mount")
     main.info (s"Readonly:    $readOnly")
@@ -79,6 +90,7 @@ import scala.util.Using.resource
     val fs             = server.Server(settings)
     val nativeFuseOpts = if getNativePlatform.getOS == WINDOWS then Array("-o", "volname=DedupFS") else Array[String]()
     val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
+    main.info(s"Starting the dedup file system now...")
     try fs.mount(mount.toPath, true, false, fuseOpts) catch (e: Throwable) => { fs.umount(); throw e }
   catch
     case main.exit =>
@@ -93,11 +105,22 @@ object main extends util.ClassLogging:
   object exit extends RuntimeException
   def failureExit(msg: String*): Nothing = { msg.foreach(log.error(_)); throw exit }
 
+private val baseOptionMatcher = """(\w+)=(\S+)""".r
+
 given scala.util.CommandLineParser.FromString[(String, String)] with
-  private val matcher = """(\w+)=(\S+)""".r
   def fromString(option: String): (String, String) = option match
-    case matcher(key, value) => key.toLowerCase -> value.toLowerCase
+    case baseOptionMatcher(key, value) => key.toLowerCase -> value.toLowerCase
     case _ => throw IllegalArgumentException()
+
+extension(options: Seq[String])
+  private def baseAndAdditionalOptions = options.partitionMap {
+    case baseOptionMatcher(key, value) => Left(key.toLowerCase -> value.toLowerCase)
+    case other => Right(other)
+  }
+  private def baseOptions: Seq[(String, String)] =
+    baseAndAdditionalOptions._1
+  private def additionalOptions: Seq[String] =
+    baseAndAdditionalOptions._2
 
 extension(options: Seq[(String, String)])
   private def opts = options.toMap.map((key, value) => key.toLowerCase -> value)

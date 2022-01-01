@@ -38,6 +38,14 @@ class Database(connection: Connection) extends util.ClassLogging:
     resource(qChild.executeQuery())(_.maybeNext(treeEntry(parentId, name, _)))
   }
 
+  def split(path: String)       : Array[String] = path.split("/").filter(_.nonEmpty)
+  def entry(path: String)       : Option[TreeEntry] = entry(split(path))
+  def entry(path: Array[String]): Option[TreeEntry] =
+    path.foldLeft(Option[TreeEntry](root)) {
+      case (Some(dir: DirEntry), name) => child(dir.id, name)
+      case _ => None
+    }
+
   private val qChildren = connection.prepareStatement(
     "SELECT id, time, dataId, name FROM TreeEntries WHERE parentId = ? AND deleted = 0"
   )

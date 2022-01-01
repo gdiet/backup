@@ -20,7 +20,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val con = db.H2.connection(settings.dbDir, settings.readonly, dbMustExist = true)
   private val database = db.Database(con)
   private val startOfFreeData = new AtomicLong(database.startOfFreeData)
-  export database.{child, children, delete, mkDir, mkFile, setTime, update}
+  export database.{child, children, delete, entry, mkDir, mkFile, setTime, split, update}
 
   /** id -> DataEntry. Remember to synchronize. */
   private var files = Map[Long, DataEntry]()
@@ -30,7 +30,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   override def close(): Unit =
     if DataEntry.openEntries > 0 then
-      log.info(s"Persisting remaining ${DataEntry.openEntries} entries, combined size ${readableBytes(entriesSize.get())} ...")
+      log.info(s"Closing remaining ${DataEntry.openEntries} entries, combined size ${readableBytes(entriesSize.get())} ...")
     singleThreadStoreContext.shutdown()
     singleThreadStoreContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS) // This flushes all pending files.
     if entryCount.get > 0 then log.warn(s"${entryCount.get} entries have not been reported closed.")

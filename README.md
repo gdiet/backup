@@ -61,7 +61,7 @@ Don't use DedupFS for security critical things. One reason for that: DedupFS use
 
 ### General
 
-DedupFS needs a Java 11 runtime. The application comes bundled with a suitable Java runtime for Windows x64 and Linux x64.
+DedupFS needs a Java 17 runtime. The application comes bundled with a suitable Java runtime for Windows x64 and Linux x64.
 
 DedupFS needs disk space for its repository. If you back up lots of data, it will need lots of space. Keep an eye on available disk space when using.
 
@@ -117,7 +117,7 @@ If you want to write, update, or read files in the dedup file system, you have t
 
 * If you have installed DedupFS in the repository directory as recommended, start the dedup file system by running `gui-dedupfs` in the `dedupfs` directory, for example by double-clicking.
 * After some time the DedupFS GUI will open, showing log entries.
-* Some time later a log entry will tell you that the dedup file system is started.
+* Some time later a log entry will tell you that the dedup file system is started: `Mounting the dedup file system now...`
 * In the log entries, you see among others which repository directory is used and where the dedup file system is mounted.
 
 Notes:
@@ -125,7 +125,7 @@ Notes:
 * The default mount point on Windows is `J:\`, on Linux `/mnt/dedupfs`. To mount the file system somewhere else, call the script with a `mount=<mount point>` parameter.
 * On Windows, mount the dedup file system to a file system root like `J:\` or to a folder like `C:\myFiles\dedupfs`, where `C:\myFiles` must be an existing directory and `C:\myFiles\dedupfs` must not exist yet.
 * On Linux, mount the dedup file system to an existing empty writable directory.
-* Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have unique `mount=<mount point>` mount points configured.
+* Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have different `mount=<mount point>` mount points configured.
 * `gui-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
 * By default, `gui-dedupfs` uses the parent of the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
 * For additional options see the paragraphs below.
@@ -143,6 +143,26 @@ Why mount read-only? This can be handy if for example you want to look up files 
 ### Read Basic File System Statistics
 
 The `stats` utility allows you to read basic file system statistics. Like the other utilities, it accepts the optional `repo=<target directory>` parameter.
+
+### Use The `fsc` Command Line Utilities
+
+A number of **command line** utilities for the dedup file system is available through the `fsc` command. Like the other utilities, `fsc` accepts the optional `repo=<target directory>` parameter. `fsc` is not meant to be run without additional parameters.
+
+#### Create A Database Backup
+
+Use `fsc backup` to create a database backup.
+
+#### Find Files By Name Pattern
+
+Use `fsc find <name pattern>` to find files matching the name pattern. The name pattern supports '`%`' as wildcard for any number of characters and '`_`' as wildcard for a single character.
+
+#### List Files
+
+Use `fsc list <path>` to list the contents of the directory denoted by `<path>`.
+
+#### Delete A File Or A Directory
+
+Use `fsc del <path>` to delete the file or **recursively** delete the directory denoted by `<path>`. **This utility does not create a database backup.** If required, use `fsc backup` before using `fsc del <path>`.
 
 ### Configure Memory Settings
 
@@ -173,7 +193,7 @@ This can be used to first create in the dedup file system a copy of an existing 
 
 To enable the "copy when moving" state, either tick the checkbox in the GUI or specify the `copyWhenMoving=true` option when starting the dedup file system.
 
-### Log Files
+### Read Log Files
 
 DedupFS writes log files that contain all log entries visible on the console and additionally DEBUG level log entries. DedupFS always creates its `logs` directory in the directory containing the DedupFS utility scripts.
 
@@ -293,10 +313,11 @@ To upgrade a DedupFS installation to a newer version:
 * The migration is complete. Don't use dedupfs versions previous to 5.0.0 anymore with the repository.
 * Eventually, manually delete the final version of the 4.x database, that is, the files `dedupfs.mv.db` and `dedupfs.mv.db.backup` in the `fsdb` subdirectory of the repository.
 
-#### 4.0.0 (In Preparation)
+#### 4.0.0 (2021.12.30)
 
-* Update Java 11 to Java 17.
-* Update dedupfs database version from 2 to 3 to prepare upgrading H2 database to 2.0.202, which will come with dedupfs 5.
+* Updated Java 11 to Java 17.
+* Updated dedupfs database version from 2 to 3 to prepare upgrading H2 database to 2.0.202, which will come with dedupfs 5.
+* Added `fsc` utilities to create a database backup or to list, find, or delete files without mounting the repository.
 
 **Migration from 3.x to 4.x:**
 
@@ -312,7 +333,7 @@ To upgrade a DedupFS installation to a newer version:
 
 Named "3" because this release is a Scala 3 re-write of dedupfs.
 
-* On Windows, name the dedup file system volume "DedupFS". (git 46a076d)
+* On Windows, named the dedup file system volume "DedupFS". (git 46a076d)
 * Fixed occasional out-of-memory or deadlock condition (rewrite of parallel handling).
 * Restructured installation directory, ".." instead of "." is the default repository path.
 

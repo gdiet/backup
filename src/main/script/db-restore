@@ -10,6 +10,7 @@ echo "that, simply close the console window where this utility is running."
 echo
 read -n 1 -r -s -p "Press any key to continue..."
 echo
+echo "Starting database restore..."
 
 ### Parameters ###
 # repo=<repository directory>     | default: '..' (parent of working directory)
