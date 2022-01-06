@@ -203,8 +203,7 @@ The `db-restore` utility is for restoring previous versions of the DedupFS datab
 
 ### Blacklist Files
 
-The `blacklist` utility is for blacklisting files that should be removed from the dedup file system if they are currently stored and should not be stored even when added later to the file system. Reading a blacklisted file yields [file length] zeros. The utility accepts the following parameters:
-* `repo=<target directory>` (mandatory)
+The `blacklist` utility is for blacklisting files that should be removed from the dedup file system if they are currently stored and should not be stored even when added later to the file system. Reading a blacklisted file yields [file length] zeros. In addition to the usual `repo=<target directory>` parameter, the utility accepts the following parameters:
 * `blacklistDir=<directory name>` (optional, default `blacklist`): If the subfolder of `repo` with this name contains files, those are added to the blacklist in the repository, in a folder named with the current timestamp.
 * `deleteFiles=true` (optional, default false): If true, when the files in `blacklistDir` are deleted once they have been added to the blacklist in the repository.
 * `dfsBlacklist=<directory name>` (optional, default `blacklist`): Name of the base blacklist folder in the dedup file system, resolved against root.
@@ -303,8 +302,8 @@ To upgrade a DedupFS installation to a newer version:
 **Migration from 4.x to 5.x:**
 
 * **Direct migration of repositories from versions prior to 4.x is not supported.**
-* Start dedupfs 4.x one more time to make sure a current database backup exists.
-* Stop dedupfs 4.x without changing anything in the dedup file system.
+* Use the 4.x dedupfs software to run the command `fsc backup` in order to make sure a current database backup exists.
+* Unpack the 5.x dedupfs software into the repository.
 * Use the 5.x `db-restore` utility like this:<br> `db-restore from=dedupfs_[timestamp].zip`<br> to point the utility to the database backup zip file created above. Look for the exact timestamp to use in the `fsdb` subdirectory of the repository.
 * The migration is complete. Don't use dedupfs versions previous to 5.0.0 anymore with the repository.
 * Eventually, manually delete the final version of the 4.x database, that is, the files `dedupfs.mv.db` and `dedupfs.mv.db.backup` in the `fsdb` subdirectory of the repository.
