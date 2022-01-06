@@ -50,6 +50,7 @@ object maintenance extends util.ClassLogging:
   def withStatement(dbDir: File, readonly: Boolean = true)(f: Statement => Any): Unit =
     withConnection(dbDir, readonly)(con => resource(con.createStatement())(f))
 
+  // FIXME print database version & expected database version
   def stats(dbDir: File): Unit = withStatement(dbDir) { stat =>
     log.info(s"Dedup File System Statistics")
     val storageSize = resource(stat.executeQuery("SELECT MAX(stop) FROM DataEntries"))(_.withNext(_.getLong(1)))
@@ -130,6 +131,7 @@ object maintenance extends util.ClassLogging:
     })
   }
 
+  // FIXME don't delete entries in the blacklist folder itself.
   /** @param dbDir Database directory
     * @param blacklistDir Directory containing files to add to the blacklist
     * @param deleteFiles If true, files in the `blacklistDir` are deleted when they have been taken over
@@ -203,7 +205,7 @@ object maintenance extends util.ClassLogging:
                   db.delete(id)
                 }
           }
-        recurse(s"/$dfsBlacklist", blacklistRoot.id)
+        recurse(s"/${blacklistRoot.name}", blacklistRoot.id)
         log.info(s"Finished blacklisting.")
       }
   }
