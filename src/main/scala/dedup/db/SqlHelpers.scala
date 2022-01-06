@@ -1,14 +1,21 @@
 package dedup
 package db
 
-import java.sql.{Connection, ResultSet}
+import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
+import scala.util.Using.resource
 
 extension (c: Connection)
-/** Don't use nested or multi-threaded. */
+  /** Don't use nested or multi-threaded. */
   def transaction[T](f: => T): T =
     try { c.setAutoCommit(false); f.tap(_ => c.commit()) }
     catch { case t: Throwable => c.rollback(); throw t }
     finally c.setAutoCommit(true)
+
+extension (stat: Statement)
+  def query[T](queryString: String)(f: ResultSet => T): T = resource(stat.executeQuery(queryString))(f)
+
+extension (stat: PreparedStatement)
+  def query[T](f: ResultSet => T): T = resource(stat.executeQuery())(f)
 
 extension (rs: ResultSet)
   def withNext[T](f: ResultSet => T): T = { require(rs.next()); f(rs) }

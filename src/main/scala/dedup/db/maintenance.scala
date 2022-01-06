@@ -53,10 +53,10 @@ object maintenance extends util.ClassLogging:
   // FIXME print database version & expected database version
   def stats(dbDir: File): Unit = withStatement(dbDir) { stat =>
     log.info(s"Dedup File System Statistics")
-    val storageSize = resource(stat.executeQuery("SELECT MAX(stop) FROM DataEntries"))(_.withNext(_.getLong(1)))
-    log.info(f"Data storage: ${readableBytes(storageSize)} ($storageSize%,d Bytes) / ${stat.executeQuery("SELECT COUNT(id) FROM DataEntries WHERE seq = 1").tap(_.next()).getLong(1)}%,d entries")
-    log.info(f"Files: ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL").tap(_.next()).getLong(1)}%,d, deleted ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL").tap(_.next()).getLong(1)}%,d")
-    log.info(f"Folders: ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d, deleted ${stat.executeQuery("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL").tap(_.next()).getLong(1)}%,d")
+    val storageSize = stat.query("SELECT MAX(stop) FROM DataEntries")(_.withNext(_.getLong(1)))
+    log.info(f"Data storage: ${readableBytes(storageSize)} ($storageSize%,d Bytes) / ${stat.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(_.withNext(_.getLong(1)))}%,d entries")
+    log.info(f"Files: ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(_.withNext(_.getLong(1)))}%,d, deleted ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")(_.withNext(_.getLong(1)))}%,d")
+    log.info(f"Folders: ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")(_.withNext(_.getLong(1)))}%,d, deleted ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(_.withNext(_.getLong(1)))}%,d")
   }
 
   def list(dbDir: File, path: String): Unit = withConnection(dbDir) { con =>
@@ -115,12 +115,12 @@ object maintenance extends util.ClassLogging:
     def path(entry: TreeEntry, acc: List[TreeEntry] = Nil): List[TreeEntry] =
       if entry.id == root.id then entry :: acc else
         qId.setLong(1, entry.parentId)
-        resource(qId.executeQuery())(_.maybeNext(treeEntry)) match
+        qId.query(_.maybeNext(treeEntry)) match
           case None => Nil
           case Some(parent) => path(parent, entry :: acc)
 
     qLike.setString(1, matcher)
-    resource(qLike.executeQuery())(_.seq(treeEntry).foreach { entry =>
+    qLike.query(_.seq(treeEntry)).foreach { entry =>
       path(entry) match
         case Nil => /* deleted entry */
         case entries =>
@@ -128,7 +128,7 @@ object maintenance extends util.ClassLogging:
             case dirEntry: DirEntry => s"${dirEntry.name}/"
             case fileEntry: FileEntry => fileEntry.name
           }.mkString)
-    })
+    }
   }
 
   // FIXME don't delete entries in the blacklist folder itself.
@@ -181,8 +181,9 @@ object maintenance extends util.ClassLogging:
             case dir: DirEntry =>
               recurse(s"$parentPath/${dir.name}", dir.id)
             case file: FileEntry =>
-              val size = stat.executeQuery(s"SELECT stop - start FROM DataEntries WHERE ID = ${file.dataId}")
-                .seq(_.getLong(1)).sum
+              val size = stat.query(
+                s"SELECT stop - start FROM DataEntries WHERE ID = ${file.dataId}"
+              )(_.seq(_.getLong(1))).sum
               if size > 0 then
                 log.info(s"Blacklisting $parentPath/${file.name}")
                 connection.transaction {
@@ -192,12 +193,14 @@ object maintenance extends util.ClassLogging:
               if deleteCopies then
                 @annotation.tailrec
                 def pathOf(id: Long, pathEnd: String): String =
-                  val parentId -> name = stat.executeQuery(s"SELECT parentId, name FROM TreeEntries WHERE id = $id")
-                    .one(r => (r.getLong(1), r.getString(2)))
+                  val parentId -> name = stat.query(
+                    s"SELECT parentId, name FROM TreeEntries WHERE id = $id"
+                  )(_.one(r => (r.getLong(1), r.getString(2))))
                   val path = s"/$name$pathEnd"
                   if parentId == 0 then path else pathOf(parentId, path)
-                val copies = stat.executeQuery(s"SELECT id, parentId, name FROM TreeEntries WHERE dataId = ${file.dataId} AND deleted = 0 AND id != ${file.id}")
-                  .seq(r => (r.getLong(1), r.getLong(2), r.getString(3)))
+                val copies = stat.query(
+                  s"SELECT id, parentId, name FROM TreeEntries WHERE dataId = ${file.dataId} AND deleted = 0 AND id != ${file.id}"
+                )(_.seq(r => (r.getLong(1), r.getLong(2), r.getString(3))))
                 // If size is > 0, the log entry is already written.
                 if size == 0 && copies.nonEmpty then log.info(s"Blacklisting $parentPath/${file.name}")
                 copies.foreach { (id, parentId, name) =>

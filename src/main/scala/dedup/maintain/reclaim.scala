@@ -6,6 +6,8 @@ import java.sql.{Connection, Statement}
 import scala.collection.SortedMap
 import scala.util.Using.resource
 
+import db.query
+
 object reclaim extends util.ClassLogging:
   import db.maintenance.{withConnection, withStatement}
   import db.{Database, opt, seq, transaction}
@@ -38,11 +40,11 @@ object reclaim extends util.ClassLogging:
     { // Run in separate block so the possibly large collections can be garbage collected soon
       log.info(s"Deleting orphan data entries from storage database...")
       // Note: The WHERE clause also makes sure the 'null' entries are not returned
-      val dataIdsInTree = resource(stat.executeQuery(
+      val dataIdsInTree = stat.query(
         "SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0"
-      ))(_.seq(_.getLong(1))).toSet
+      )(_.seq(_.getLong(1))).toSet
       log.info(s"Number of data entries found in tree database: ${dataIdsInTree.size}")
-      val dataIdsInStorage = stat.executeQuery("SELECT id FROM DataEntries").seq(_.getLong(1)).toSet
+      val dataIdsInStorage = stat.query("SELECT id FROM DataEntries")(_.seq(_.getLong(1))).toSet
       log.info(s"Number of data entries in storage database: ${dataIdsInStorage.size}")
       val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree
       dataIdsToDelete.foreach(dataId => stat.executeUpdate(
@@ -55,9 +57,9 @@ object reclaim extends util.ClassLogging:
 
     { // Run in separate block so the possibly large collections can be garbage collected soon
       log.info(s"Checking compaction potential of the data entries:")
-      val dataChunks = resource(stat.executeQuery(
+      val dataChunks = stat.query(
         "SELECT start, stop FROM DataEntries"
-      ))(_.seq(r => r.getLong(1) -> r.getLong(2)))
+      )(_.seq(r => r.getLong(1) -> r.getLong(2)))
       log.info(s"Number of data chunks in storage database: ${dataChunks.size}")
       val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks.to(SortedMap))
       log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
@@ -84,7 +86,7 @@ object reclaim extends util.ClassLogging:
       log.info(s"After this, older database backups can't be fully applied anymore.")
 
       case class Entry(id: Long, length: Option[Long], hash: Option[Array[Byte]], seq: Int, start: Long, stop: Long)
-      val dataEntries: Seq[Entry] = resource(stat.executeQuery("SELECT id, length, hash, seq, start, stop FROM DataEntries"))(
+      val dataEntries: Seq[Entry] = stat.query("SELECT id, length, hash, seq, start, stop FROM DataEntries")(
         _.seq(r => Entry(r.getLong(1), r.opt(_.getLong(2)), r.opt(_.getBytes(3)), r.getInt(4), r.getLong(5), r.getLong(6)))
       )
       log.debug(s"Number of data chunks in storage database: ${dataEntries.size}")

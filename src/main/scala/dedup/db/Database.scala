@@ -15,7 +15,7 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
 
 class Database(connection: Connection) extends util.ClassLogging:
   resource(connection.createStatement) { stat =>
-    resource(stat.executeQuery("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'"))(_.maybeNext(_.getString(1))) match
+    stat.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1))) match
       case None =>
         log.error(s"No database version found.")
         throw new IllegalStateException("No database version found.")
@@ -35,7 +35,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   def child(parentId: Long, name: String): Option[TreeEntry] = synchronized {
     qChild.setLong  (1, parentId)
     qChild.setString(2, name    )
-    resource(qChild.executeQuery())(_.maybeNext(treeEntry(parentId, name, _)))
+    qChild.query(_.maybeNext(treeEntry(parentId, name, _)))
   }
 
   def split(path: String)       : Array[String] = path.split("/").filter(_.nonEmpty)
@@ -51,7 +51,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   )
   def children(parentId: Long): Seq[TreeEntry] = synchronized {
     qChildren.setLong(1, parentId)
-    resource(qChildren.executeQuery())(_.seq(rs => treeEntry(parentId, rs.getString(4), rs)))
+    qChildren.query(_.seq(rs => treeEntry(parentId, rs.getString(4), rs)))
   }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
   private val qParts = connection.prepareStatement(
@@ -59,7 +59,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   )
   def parts(dataId: DataId): Vector[(Long, Long)] = synchronized {
     qParts.setLong(1, dataId.toLong)
-    resource(qParts.executeQuery())(_.seq { rs =>
+    qParts.query(_.seq { rs =>
       val (start, size) = rs.getLong(1) -> rs.getLong(2)
       assert(start >= 0, s"Start $start must be >= 0.")
       assert(size >= 0, s"Size $size must be >= 0.")
@@ -71,7 +71,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     "SELECT length FROM DataEntries WHERE id = ? AND seq = 1"
   )
   def dataSize(dataId: DataId): Long = synchronized {
-    resource(qDataSize.tap(_.setLong(1, dataId.toLong)).executeQuery())(_.maybeNext(_.getLong(1))).getOrElse(0)
+    qDataSize.tap(_.setLong(1, dataId.toLong)).query(_.maybeNext(_.getLong(1))).getOrElse(0)
   }
 
   private val qDataEntry = connection.prepareStatement(
@@ -80,11 +80,11 @@ class Database(connection: Connection) extends util.ClassLogging:
   def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = synchronized {
     qDataEntry.setBytes(1, hash)
     qDataEntry.setLong(2, size)
-    resource(qDataEntry.executeQuery())(_.maybeNext(r => DataId(r.getLong(1))))
+    qDataEntry.query(_.maybeNext(r => DataId(r.getLong(1))))
   }
 
   def startOfFreeData: Long = synchronized {
-    resource(connection.createStatement().executeQuery("SELECT MAX(stop) FROM DataEntries"))(_.maybeNext(_.getLong(1)).getOrElse(0L))
+    connection.createStatement().query("SELECT MAX(stop) FROM DataEntries")(_.maybeNext(_.getLong(1)).getOrElse(0L))
   }
 
   private val uTime = connection.prepareStatement(
@@ -158,7 +158,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     "SELECT NEXT VALUE FOR idSeq"
   )
   def nextId: Long = synchronized {
-    resource(qNextId.executeQuery())(_.tap(_.next()).getLong(1))
+    qNextId.query(_.tap(_.next()).getLong(1))
   }
 
   // Generated keys seem not to be available for sql update, so this is two SQL commands
