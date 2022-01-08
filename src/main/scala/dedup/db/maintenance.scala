@@ -50,9 +50,12 @@ object maintenance extends util.ClassLogging:
   def withStatement(dbDir: File, readonly: Boolean = true)(f: Statement => Any): Unit =
     withConnection(dbDir, readonly)(con => resource(con.createStatement())(f))
 
-  // FIXME print database version & expected database version
   def stats(dbDir: File): Unit = withStatement(dbDir) { stat =>
     log.info(s"Dedup File System Statistics")
+    dbVersion(stat) match
+      case None => log.error("No database version available.")
+      case Some(`currentDbVersion`) => log.info(s"Database version $currentDbVersion - OK.")
+      case Some(otherDbVersion) => log.warn(s"Database version $otherDbVersion is INCOMPATIBLE, expected $currentDbVersion.")
     val storageSize = stat.query("SELECT MAX(stop) FROM DataEntries")(_.withNext(_.getLong(1)))
     log.info(f"Data storage: ${readableBytes(storageSize)} ($storageSize%,d Bytes) / ${stat.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(_.withNext(_.getLong(1)))}%,d entries")
     log.info(f"Files: ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(_.withNext(_.getLong(1)))}%,d, deleted ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")(_.withNext(_.getLong(1)))}%,d")

@@ -13,15 +13,20 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
   indexDefinitions.foreach(stat.executeUpdate)
 }
 
+def dbVersion(stat: Statement): Option[String] =
+  stat.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
+
+val currentDbVersion = "3"
+
 class Database(connection: Connection) extends util.ClassLogging:
   resource(connection.createStatement) { stat =>
-    stat.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1))) match
+    dbVersion(stat) match
       case None =>
         log.error(s"No database version found.")
         throw new IllegalStateException("No database version found.")
       case Some(dbVersion) =>
         log.debug(s"Database version: $dbVersion.")
-        require(dbVersion == "3", s"Only database version 3 is supported, detected version is $dbVersion.")
+        require(dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
   }
 
   private def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry =
@@ -190,7 +195,7 @@ private def tableDefinitions =
       |  `VALUE` VARCHAR(255) NOT NULL,
       |  CONSTRAINT pk_Context PRIMARY KEY (`KEY`)
       |);
-      |INSERT INTO Context (`KEY`, `VALUE`) VALUES ('db version', '3');
+      |INSERT INTO Context (`KEY`, `VALUE`) VALUES ('db version', '$currentDbVersion');
       |CREATE SEQUENCE idSeq START WITH 1;
       |CREATE TABLE DataEntries (
       |  id     BIGINT NOT NULL,
