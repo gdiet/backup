@@ -23,10 +23,17 @@ object reclaim extends util.ClassLogging:
 
     log.info(s"Deleting tree entries marked for deletion more than $keepDeletedDays days ago...")
     val deleteBefore = now.toLong - keepDeletedDays*24*60*60*1000
-    val treeEntriesDeleted = stat.executeUpdate(
-      s"DELETE FROM TreeEntries WHERE deleted != 0 AND deleted < $deleteBefore"
+    log.info(s"Part 1: Un-rooting the tree entries to delete...")
+    val entriesUnrooted = stat.executeUpdate(
+      s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBefore"
     )
-    log.info(s"Number of tree entries deleted: $treeEntriesDeleted")
+    log.info(s"Number of entries un-rooted: $entriesUnrooted")
+
+    log.info(s"Part 2: Deleting un-rooted tree entries...")
+    val treeEntriesDeleted = stat.executeUpdate(
+      s"DELETE FROM TreeEntries WHERE id = parentId AND id != 0"
+    )
+    log.info(s"Number of un-rooted tree entries deleted: $treeEntriesDeleted")
 
     // Note: Most operations implemented in Scala below could also be run in SQL, but that is much slower...
 
