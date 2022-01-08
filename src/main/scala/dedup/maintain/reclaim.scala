@@ -10,7 +10,7 @@ import db.query
 
 object reclaim extends util.ClassLogging:
   import db.maintenance.{withConnection, withStatement}
-  import db.{Database, opt, seq, transaction}
+  import db.{Database, maybeNext, opt, seq, transaction}
 
   // TODO at least reclaim 1 & reclaim 2 can be written more readable
 
@@ -51,7 +51,7 @@ object reclaim extends util.ClassLogging:
       // Keep the data entry at max position so after reclaim 1 no data is overwritten and DB backups remain valid.
       val maxStopDataId = stat.query(
         "SELECT id FROM DataEntries WHERE stop IN (SELECT MAX(stop) FROM DataEntries)"
-      )(_.opt(_.getLong(1)))
+      )(_.maybeNext(_.getLong(1)))
       val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree -- maxStopDataId
       dataIdsToDelete.foreach(dataId => stat.executeUpdate(
         s"DELETE FROM DataEntries WHERE id = $dataId"
