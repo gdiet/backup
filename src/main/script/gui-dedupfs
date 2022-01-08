@@ -4,11 +4,11 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 
 
 ### Parameters ###
-# repo=<repository directory> | default: '..' (parent of working directory)
+# repo=<repository directory> | default: .. (parent of working directory)
 # mount=<mount point>         | default: /mnt/dedupfs
 # readOnly=true               | default: false
-# noDbBackup=true             | default: false
+# dbBackup=false              | default: true
 # copyWhenMoving=true         | default: false
 # gui=true                    | default: default: false, true in script - true to show server GUI
-# temp=<temp dir>             | default: 'dedupfs-temp' in the user's temp dir
+# temp=<temp dir>             | default: dedupfs-temp in the user's temp dir
 $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -Dfile.encoding=UTF-8 -cp "$APPDIR/lib/*" dedup.mount gui=true "$@"

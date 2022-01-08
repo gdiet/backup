@@ -126,7 +126,7 @@ Notes:
 * On Windows, mount the dedup file system to a file system root like `J:\` or to a folder like `C:\myFiles\dedupfs`, where `C:\myFiles` must be an existing directory and `C:\myFiles\dedupfs` must not exist yet.
 * On Linux, mount the dedup file system to an existing empty writable directory.
 * Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have different `mount=<mount point>` mount points configured.
-* `gui-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong.
+* `gui-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong. To suppress database backup creation, call the script with the `dbBackup=false` parameter.
 * By default, `gui-dedupfs` uses the parent of the current working directory as DedupFS repository. If you run the script from the command line, you can add a `repo=<target directory>` parameter in order use a different repository directory.
 * For additional options see the paragraphs below.
 
@@ -136,7 +136,7 @@ If you want to mount the dedup file system without a GUI, run `dedupfs`. This be
 
 ### Mount The File System Read-Only
 
-If you want to mount the dedup file system read-only, use the `gui-readonly` or `readonly` utility. These utilities work the same way the write enabled utilities do.
+If you want to mount the dedup file system read-only, use the `gui-readonly` or `readonly` utility. These utilities work the same way the write enabled utilities do, except that they don't create a database backup before starting.
 
 Why mount read-only? This can be handy if for example you want to look up files in your backups while making sure that you cannot accidentally add, change or delete files in the backup.
 
@@ -204,6 +204,7 @@ The `db-restore` utility is for restoring previous versions of the DedupFS datab
 ### Blacklist Files
 
 The `blacklist` utility is for blacklisting files that should be removed from the dedup file system if they are currently stored and should not be stored even when added later to the file system. Reading a blacklisted file yields [file length] zeros. In addition to the usual `repo=<target directory>` parameter, the utility accepts the following parameters:
+* `dbBackup=false` (optional, default true): Create a database backup before starting the blacklisting process.
 * `blacklistDir=<directory name>` (optional, default `blacklist`): If the subfolder of `repo` with this name contains files, those are added to the blacklist in the repository, in a folder named with the current timestamp.
 * `deleteFiles=false` (optional, default true): If true, the files in `blacklistDir` are deleted once they have been added to the blacklist in the repository.
 * `dfsBlacklist=<directory name>` (optional, default `blacklist`): Name of the base blacklist folder in the dedup file system, resolved against root.

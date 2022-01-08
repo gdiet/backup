@@ -4,10 +4,10 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 
 
 ### Parameters ###
-# repo=<repository directory>                                     | default: '..' (parent of working directory)
-# noDbBackup=true                                                 | default: false
-# blacklistDir=<name of directory in repo with files to blacklist>| default: 'blacklist'
-# deleteFiles=<delete files in blacklistDir when blacklisted?>    | default: 'false'
-# dfsBlacklist=<name of blacklist directory in dedup file system> | default: 'blacklist'
-# deleteCopies=<delete all copies of blacklisted files?>          | default: 'false'
+# repo=<repository directory>                                     | default: .. (parent of working directory)
+# dbBackup=false                                                  | default: true
+# blacklistDir=<name of directory in repo with files to blacklist>| default: blacklist
+# deleteFiles=<delete files in blacklistDir when blacklisted?>    | default: true
+# dfsBlacklist=<name of blacklist directory in dedup file system> | default: blacklist
+# deleteCopies=<delete all copies of blacklisted files?>          | default: false
 $JAVA "-DLOG_BASE=$APPDIR/log" -cp "$APPDIR/lib/*" dedup.blacklist "$@"

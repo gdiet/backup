@@ -48,21 +48,21 @@ import scala.util.Using.resource
 
 @main def blacklist(opts: (String, String)*): Unit =
   val blacklistDir = File(opts.repo, opts.getOrElse("blacklistDir", "blacklist")).getPath
-  val deleteFiles  = opts.getOrElse("deleteFiles", "true").equalsIgnoreCase("true")
+  val deleteFiles  = opts.defaultTrue("deleteFiles")
   val dfsBlacklist = opts.getOrElse("dfsBlacklist", "blacklist")
-  val deleteCopies = opts.boolean("deleteCopies")
-  if !opts.boolean("noDbBackup") then db.maintenance.backup(opts.dbDir)
+  val deleteCopies = opts.defaultFalse("deleteCopies")
+  if opts.defaultTrue("dbBackup") then db.maintenance.backup(opts.dbDir)
   db.maintenance.blacklist(opts.dbDir, blacklistDir, deleteFiles, dfsBlacklist, deleteCopies)
 
 @main def mount(opts: (String, String)*): Unit =
-  val readOnly       = opts.boolean("readOnly")
-  val copyWhenMoving = AtomicBoolean(opts.boolean("copyWhenMoving"))
-  if opts.boolean("gui") then ServerGui(copyWhenMoving, readOnly)
+  val readOnly       = opts.defaultFalse("readOnly")
+  val copyWhenMoving = AtomicBoolean(opts.defaultFalse("copyWhenMoving"))
+  if opts.defaultFalse("gui") then ServerGui(copyWhenMoving, readOnly)
   try
     def isWindows = getNativePlatform.getOS == WINDOWS
     val repo           = opts.repo
     val mount          = File(opts.getOrElse("mount", if isWindows then "J:\\" else "/mnt/dedupfs" )).getCanonicalFile
-    val backup         = !readOnly && !opts.boolean("noDbBackup")
+    val backup         = !readOnly && opts.defaultTrue("dbBackup")
     val temp           = File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
     val dbDir          = db.dbDir(repo)
     if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
@@ -128,8 +128,10 @@ extension(options: Seq[(String, String)])
     opts.get(name.toLowerCase)
   private def getOrElse(name: String, otherwise: => String): String =
     opts.getOrElse(name.toLowerCase, otherwise)
-  private def boolean(name: String): Boolean =
+  private def defaultFalse(name: String): Boolean =
     opts.getOrElse(name.toLowerCase, "").equalsIgnoreCase("true")
+  private def defaultTrue(name: String): Boolean =
+    opts.getOrElse(name.toLowerCase, "true").equalsIgnoreCase("true")
   private def repo: File =
     File(opts.getOrElse("repo", "..")).getCanonicalFile
   private def dbDir: File =
