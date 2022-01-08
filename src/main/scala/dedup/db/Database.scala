@@ -89,7 +89,9 @@ class Database(connection: Connection) extends util.ClassLogging:
   }
 
   def startOfFreeData: Long = synchronized {
-    connection.createStatement().query("SELECT MAX(stop) FROM DataEntries")(_.maybeNext(_.getLong(1)).getOrElse(0L))
+    resource(connection.createStatement())(
+      _.query("SELECT MAX(stop) FROM DataEntries")(_.maybeNext(_.getLong(1)).getOrElse(0L))
+    )
   }
 
   private val uTime = connection.prepareStatement(
