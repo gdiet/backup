@@ -23,6 +23,8 @@ object reclaim extends util.ClassLogging:
 
     log.info(s"Deleting tree entries marked for deletion more than $keepDeletedDays days ago...")
     val deleteBefore = now.toLong - keepDeletedDays*24*60*60*1000
+
+    // First un-root, then delete. Deleting directly can violate the foreign key constraint.
     log.info(s"Part 1: Un-rooting the tree entries to delete...")
     val entriesUnrooted = stat.executeUpdate(
       s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBefore"
