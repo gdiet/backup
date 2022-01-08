@@ -216,7 +216,7 @@ When you delete a file in the dedup file system, internally the file is marked a
 
 If you want to re-use the space deleted files take up, run the `reclaim-space-1` and `reclaim-space-2` utilities. Note that this will not shrink the repository size. Instead, the repository size will not increase for some time if you store new files.
 
-The `reclaim-space-1` utility purges deleted and orphan entries from the database. After running it, as long as you do not store new files in the dedup file system you can still restore previous file system states by restoring the database from backup.
+The `reclaim-space-1` utility purges deleted and orphan entries from the database. After running it, you can still restore previous file system states by restoring the database from backup.
 
 The `reclaim-space-2` invalidates previous database backups because it reorders the actual data storage. Don't try to restore database backups that have been created before.
 
