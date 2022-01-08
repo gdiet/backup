@@ -134,7 +134,6 @@ object maintenance extends util.ClassLogging:
     }
   }
 
-  // FIXME don't delete entries in the blacklist folder itself.
   /** @param dbDir Database directory
     * @param blacklistDir Directory containing files to add to the blacklist
     * @param deleteFiles If true, files in the `blacklistDir` are deleted when they have been taken over
@@ -204,10 +203,11 @@ object maintenance extends util.ClassLogging:
                 val copies = stat.query(
                   s"SELECT id, parentId, name FROM TreeEntries WHERE dataId = ${file.dataId} AND deleted = 0 AND id != ${file.id}"
                 )(_.seq(r => (r.getLong(1), r.getLong(2), r.getString(3))))
-                // If size is > 0, the log entry is already written.
-                if size == 0 && copies.nonEmpty then log.info(s"Blacklisting $parentPath/${file.name}")
-                copies.foreach { (id, parentId, name) =>
-                  log.info(s"Deleting copy of entry: ${pathOf(parentId, "/")}$name")
+                val filteredCopies = copies
+                  .map((id, parentId, name) => (id, pathOf(parentId, s"/$name")))
+                  .filterNot(_._2.startsWith(s"/$dfsBlacklist/"))
+                filteredCopies.foreach { (id, path) =>
+                  log.info(s"Deleting copy of entry: $path")
                   db.delete(id)
                 }
           }

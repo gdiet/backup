@@ -46,9 +46,9 @@ import scala.util.Using.resource
   )
   Thread.sleep(200) // Give logging some time to display message
 
-@main def blacklist(opts: (String, String)*) =
+@main def blacklist(opts: (String, String)*): Unit =
   val blacklistDir = File(opts.repo, opts.getOrElse("blacklistDir", "blacklist")).getPath
-  val deleteFiles  = opts.boolean("deleteFiles")
+  val deleteFiles  = opts.getOrElse("deleteFiles", "true").equalsIgnoreCase("true")
   val dfsBlacklist = opts.getOrElse("dfsBlacklist", "blacklist")
   val deleteCopies = opts.boolean("deleteCopies")
   if !opts.boolean("noDbBackup") then db.maintenance.backup(opts.dbDir)

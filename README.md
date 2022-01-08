@@ -205,7 +205,7 @@ The `db-restore` utility is for restoring previous versions of the DedupFS datab
 
 The `blacklist` utility is for blacklisting files that should be removed from the dedup file system if they are currently stored and should not be stored even when added later to the file system. Reading a blacklisted file yields [file length] zeros. In addition to the usual `repo=<target directory>` parameter, the utility accepts the following parameters:
 * `blacklistDir=<directory name>` (optional, default `blacklist`): If the subfolder of `repo` with this name contains files, those are added to the blacklist in the repository, in a folder named with the current timestamp.
-* `deleteFiles=true` (optional, default false): If true, when the files in `blacklistDir` are deleted once they have been added to the blacklist in the repository.
+* `deleteFiles=false` (optional, default true): If true, the files in `blacklistDir` are deleted once they have been added to the blacklist in the repository.
 * `dfsBlacklist=<directory name>` (optional, default `blacklist`): Name of the base blacklist folder in the dedup file system, resolved against root.
 * `deleteCopies=true` (optional, default false): If true, mark deleted all blacklisted occurrences except for the original entries in the `dfsBlacklist` folder.
 
