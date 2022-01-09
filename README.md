@@ -297,8 +297,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.0.0 (In Preparation)
 
-* Blacklist files that should not be stored at all.
-* Upgrade H2 database to 2.0.202.
+* Upgrade H2 database from 1.4.200 to 2.0.???.
 
 **Migration from 4.x to 5.x:**
 
@@ -308,6 +307,11 @@ To upgrade a DedupFS installation to a newer version:
 * Use the 5.x `db-restore` utility like this:<br> `db-restore from=dedupfs_[timestamp].zip`<br> to point the utility to the database backup zip file created above. Look for the exact timestamp to use in the `fsdb` subdirectory of the repository.
 * The migration is complete. Don't use dedupfs versions previous to 5.0.0 anymore with the repository.
 * Eventually, manually delete the final version of the 4.x database, that is, the files `dedupfs.mv.db` and `dedupfs.mv.db.backup` in the `fsdb` subdirectory of the repository.
+
+#### 4.1.0 (In Preparation)
+
+* Blacklist files that should not be stored at all.
+* The `reclaim-space-1` utility never deletes the data entry at the end, so database backups stay fully valid after `reclaim-space-1`.
 
 #### 4.0.0 (2021.12.30)
 
