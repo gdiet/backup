@@ -122,7 +122,7 @@ If you want to write, update, or read files in the dedup file system, you have t
 
 Notes:
 
-* The default mount point on Windows is `J:\`, on Linux `/mnt/dedupfs`. To mount the file system somewhere else, call the script with a `mount=<mount point>` parameter.
+* The default mount point on Windows is `J:\`, on Linux `/mnt/dedupfs`. To mount the file system somewhere else, call the script with a `mount=<mount point>` parameter (the `mount=` part of the parameter can be omitted).
 * On Windows, mount the dedup file system to a file system root like `J:\` or to a folder like `C:\myFiles\dedupfs`, where `C:\myFiles` must be an existing directory and `C:\myFiles\dedupfs` must not exist yet.
 * On Linux, mount the dedup file system to an existing empty writable directory.
 * Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have different `mount=<mount point>` mount points configured.
@@ -199,7 +199,7 @@ DedupFS writes log files that contain all log entries visible on the console and
 
 ### Restore The Database From A Backup
 
-The `db-restore` utility is for restoring previous versions of the DedupFS database. It accepts the usual `repo=<target directory>` parameter. If run without additional `from=...` parameter, it restores the database to the way it was before the last write operation was started, thus effectively resetting the dedup file system to an earlier state. Alternatively, you can use the `from=...` parameter to point the utility to earlier database backups (zip files) that can be found in the `fsdb` subdirectory of the repository.
+The `db-restore` utility is for restoring previous versions of the DedupFS database. It accepts the usual `repo=<target directory>` parameter. If run without additional `from=[file name]` parameter (the `from=` part can be omitted), it restores the database to the way it was before the last write operation was started, thus effectively resetting the dedup file system to an earlier state. Alternatively, you can use the `from=[file name]` parameter to point the utility to earlier database backups (zip files) that can be found in the `fsdb` subdirectory of the repository.
 
 ### Blacklist Files
 
@@ -313,6 +313,7 @@ To upgrade a DedupFS installation to a newer version:
 * Blacklist files that should not be stored at all.
 * The `reclaim-space-1` utility never deletes the data entry at the end, so database backups stay fully valid after `reclaim-space-1`.
 * Compact database when unmounting the dedup file system and after `blacklist` and `reclaim`. (git 548f1803)
+* `db-restore`, `mount` and `reclaim-space-1` accept an unnamed parameter.
 
 #### 4.0.0 (2021.12.30)
 

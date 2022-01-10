@@ -5,7 +5,7 @@ if errorlevel 1 exit /B %errorlevel%
 
 rem ### Parameters ###
 rem # repo=<repository directory> | default: '..' (parent of working directory)
-rem # mount=<mount point>         | default: J:\
+rem # mount=<mount point>         | default: J:\ - the 'mount=' prefix can be omitted
 rem # readOnly=true               | default: false, true in script
 rem # noDbBackup=true             | default: false
 rem # copyWhenMoving=true         | default: false

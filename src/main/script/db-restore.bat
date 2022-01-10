@@ -14,7 +14,7 @@ echo Starting database restore...
 
 rem ### Parameters ###
 rem # repo=<repository directory>     | default: '..' (parent of working directory)
-rem # from=<restore script file name> | default: none - for simple db file restore
+rem # from=<restore script file name> | default: none - for simple db file restore. The 'from=' prefix can be omitted.
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx512m -cp "%~dp0lib\*" dedup.dbRestore %*
 if not errorlevel 0 (
     echo Database restore finished with error code %errorlevel%, exiting...
