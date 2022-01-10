@@ -72,6 +72,8 @@ object reclaim extends util.ClassLogging:
       val compactionPotential = dataGaps.map(_.size).sum
       log.info(s"Compaction potential of stage 2: ${readableBytes(compactionPotential)} in ${dataGaps.size} gaps.")
     }
+    log.info(s"Compacting database...")
+    stat.execute("SHUTDOWN COMPACT;")
     log.info(s"Finished stage 1 of reclaiming space. Undo by restoring the database from a backup.")
   }
 
@@ -182,5 +184,8 @@ object reclaim extends util.ClassLogging:
 
       val reclaimed = reclaim(sortedEntries, dataGaps, 0)
       log.info(s"Reclaimed ${readableBytes(reclaimed)}.")
+      log.info("Compacting database...")
+      stat.execute("SHUTDOWN COMPACT;")
+      log.info("Finished.")
     }
   }

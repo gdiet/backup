@@ -5,6 +5,7 @@ import java.util.concurrent.{Executors, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
+import scala.util.Using.resource
 
 object Level2:
   def cacheLoad: Long = entriesSize.get() * entryCount.get()
@@ -38,6 +39,9 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       if settings.temp.list().isEmpty then settings.temp.delete()
       else log.warn(s"Temp dir not empty: ${settings.temp}")
     lts.close()
+    if !settings.readonly then
+      log.info("Compacting database...")
+      resource(con.createStatement())(_.execute("SHUTDOWN COMPACT;"))
     con.close()
     log.info("Shutdown complete.")
 

@@ -212,6 +212,8 @@ object maintenance extends util.ClassLogging:
                 }
           }
         recurse(s"/${blacklistRoot.name}", blacklistRoot.id)
+        log.info("Compacting database...")
+        stat.execute("SHUTDOWN COMPACT;")
         log.info(s"Finished blacklisting.")
       }
   }
