@@ -312,6 +312,7 @@ To upgrade a DedupFS installation to a newer version:
 
 * Blacklist files that should not be stored at all.
 * The `reclaim-space-1` utility never deletes the data entry at the end, so database backups stay fully valid after `reclaim-space-1`.
+* Compact database when unmounting the dedup file system and after `blacklist` and `reclaim`. (git 548f1803)
 
 #### 4.0.0 (2021.12.30)
 
