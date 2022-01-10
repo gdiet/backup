@@ -6,7 +6,10 @@ lazy val dedupfs = project
     scalaVersion := "3.1.0",
     libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.10",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.7",
-    libraryDependencies += "com.h2database" % "h2" % "1.4.200", // Check compatibility before upgrading!
+    // Update dedup.db.H2.dbName accordingly when updating H2 version.
+    // Document migration, similar to 4.x -> 5.x migration.
+    // FIXME 2.0.206 is probably short-lived, the next one might be good.
+    libraryDependencies += "com.h2database" % "h2" % "2.0.206",
     // Test dependencies
     libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.10" % "test",
   )
