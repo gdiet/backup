@@ -1,8 +1,11 @@
 package dedup
 package db
 
+import dedup.util.Slf4jLogger
+
 import java.io.File
 import java.sql.{Connection, ResultSet, Statement, Types}
+import scala.collection.SortedMap
 import scala.util.Try
 import scala.util.Using.resource
 
@@ -15,6 +18,31 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
 
 def dbVersion(stat: Statement): Option[String] =
   stat.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
+
+def freeDataEntries(stat: Statement, log: Slf4jLogger) =
+  case class Chunk(start: Long, stop: Long) { def size: Long = stop - start }
+
+  def endOfStorageAndDataGaps(dataChunks: SortedMap[Long, Long]): (Long, Seq[Chunk]) =
+    dataChunks.foldLeft(0L -> Vector.empty[Chunk]) {
+      case ((lastEnd, gaps), (start, stop)) if start < lastEnd =>
+        log.warn(s"Detected overlapping data entry ($start, $stop).")
+        stop -> gaps
+      case ((lastEnd, gaps), (start, stop)) if start == lastEnd =>
+        stop -> gaps
+      case ((lastEnd, gaps), (start, stop)) =>
+        stop -> gaps.appended(Chunk(lastEnd, start))
+    }
+
+  val dataChunks = stat.query(
+    "SELECT start, stop FROM DataEntries"
+  )(_.seq(r => r.getLong(1) -> r.getLong(2)))
+  log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
+  val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks.to(SortedMap))
+  log.debug(s"Current size of data storage: ${readableBytes(endOfStorage)}")
+  val dataGapSizesSum = dataGaps.map(_.size).sum
+  log.info(s"Sum of data gap sizes: ${readableBytes(dataGapSizesSum)} in ${dataGaps.size} gaps.")
+
+  ???
 
 val currentDbVersion = "3"
 

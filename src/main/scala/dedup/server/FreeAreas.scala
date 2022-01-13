@@ -1,7 +1,7 @@
 package dedup
 package server
 
-private case class Chunk(start: Long, stop: Long) { def size: Long = stop - start }
+case class DataArea(start: Long, stop: Long) { def size: Long = stop - start }
 
 /* Notes on how to read free areas from database:
    We can read the starts and stops of contiguous data areas like this:
@@ -9,12 +9,12 @@ private case class Chunk(start: Long, stop: Long) { def size: Long = stop - star
    However, if we simply read all DataEntries and do the sorting in Scala,
    we are much faster (as long as we don't run out of memory).  */
 class FreeAreas:
-  protected var free: Seq[Chunk] = Seq()
-  def set(currentFree: Seq[Chunk]): Unit = synchronized {
+  protected var free: Seq[DataArea] = Seq()
+  def set(currentFree: Seq[DataArea]): Unit = synchronized {
     require(currentFree.last.stop == Long.MaxValue, s"Last chunk doesn't stop at MAXLONG but at ${currentFree.last.stop}.")
     free = currentFree
   }
-  def get(size: Long): Seq[Chunk] = synchronized {
+  def get(size: Long): Seq[DataArea] = synchronized {
     require(size > 0, s"Requested free chunk(s) for size $size.")
     var sizeOfChunks = 0L
     val completeChunks = free.takeWhile { chunk => sizeOfChunks += chunk.size; sizeOfChunks < size }
