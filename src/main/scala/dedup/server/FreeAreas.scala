@@ -3,6 +3,11 @@ package server
 
 private case class Chunk(start: Long, stop: Long) { def size: Long = stop - start }
 
+/* Notes on how to read free areas from database:
+   We can read the starts and stops of contiguous data areas like this:
+     SELECT b1.start FROM DataEntries b1 LEFT JOIN DataEntries b2 ON b1.start = b2.stop WHERE b2.stop IS NULL ORDER BY b1.start;
+   However, if we simply read all DataEntries and do the sorting in Scala,
+   we are much faster (as long as we don't run out of memory).  */
 class FreeAreas:
   protected var free: Seq[Chunk] = Seq()
   def set(currentFree: Seq[Chunk]): Unit = synchronized {
