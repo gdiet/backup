@@ -21,7 +21,6 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val con = db.H2.connection(settings.dbDir, settings.readonly, dbMustExist = true)
   private val database = db.Database(con)
   private val freeAreas = if settings.readonly then FreeAreas() else database.freeDataEntries()
-  private val startOfFreeData: AtomicLong = ??? // FIXME free areas instead of new AtomicLong(database.startOfFreeData)
   export database.{child, children, delete, entry, mkDir, mkFile, setTime, split, update}
 
   /** id -> DataEntry. Remember to synchronize. */
@@ -147,12 +146,27 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       // Not yet known, store ...
       case None =>
         // Reserve storage space
-        val start = startOfFreeData.getAndAdd(dataEntry.size)
+        val reserved = freeAreas.get(dataEntry.size)
         // Write to storage
-        data.foreach { (offset, bytes) => lts.write(start + offset, bytes) }
+        data.foldLeft(reserved) { case (storeAt, (_, bytes)) => // FIXME can we remove offset from data?
+          @annotation.tailrec
+          def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
+            val head +: rest = areas
+            if head.size == data.length then
+              lts.write(head.start, data); rest
+            else if head.size > data.length then
+              lts.write(head.start, data); head.drop(data.length) +: rest
+            else
+              val intSize = head.size.toInt // TODO use asInt?
+              lts.write(head.start, data.take(intSize)); doStore(rest, data.drop(intSize))
+          doStore(storeAt, bytes)
+        }
         // create data entry
         val dataId = database.newDataIdFor(id)
-        database.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
+        reserved.zipWithIndex.foreach { case (dataArea, index) =>
+          log.debug(s"data entry: $dataId, ${dataEntry.size}, ${dataArea.start}, ${dataArea.size}") // TODO trace or remove or keep?
+          database.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
+        }
         log.trace(s"Persisted $id - new content, dataId $dataId")
         dataId
     }

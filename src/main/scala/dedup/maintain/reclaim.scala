@@ -88,6 +88,7 @@ object reclaim extends util.ClassLogging:
         stop -> gaps.appended(Chunk(lastEnd, start))
     }
 
+  // FIXME obsolete now
   def reclaimSpace2(dbDir: File, lts: store.LongTermStore): Unit = withConnection(dbDir, readonly = false) { con =>
     resource(con.createStatement()) { stat =>
       log.info(s"Starting stage 2 of reclaiming space. This modifies the long term store.")
