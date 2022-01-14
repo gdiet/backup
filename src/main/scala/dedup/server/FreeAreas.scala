@@ -1,8 +1,6 @@
 package dedup
 package server
 
-case class DataArea(start: Long, stop: Long) { def size: Long = stop - start }
-
 /* Notes on how to read free areas from database:
    We can read the starts and stops of contiguous data areas like this:
      SELECT b1.start FROM DataEntries b1 LEFT JOIN DataEntries b2 ON b1.start = b2.stop WHERE b2.stop IS NULL ORDER BY b1.start;
@@ -25,6 +23,6 @@ class FreeAreas:
     else
       val partialChunk +: completelyFree = free.drop(completeChunks.size)
       val lastSize = size - (sizeOfChunks - partialChunk.size)
-      free = partialChunk.copy(start = partialChunk.start + lastSize) +: completelyFree
-      completeChunks :+ partialChunk.copy(stop = partialChunk.start + lastSize)
+      free = partialChunk.drop(lastSize) +: completelyFree
+      completeChunks :+ partialChunk.take(lastSize)
   }
