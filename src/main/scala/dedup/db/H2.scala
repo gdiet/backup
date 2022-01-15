@@ -11,7 +11,7 @@ object H2:
 
   // For SQL debugging, add to the DB URL "...;TRACE_LEVEL_SYSTEM_OUT=2"
   private def jdbcUrl(dbDir: java.io.File, readonly: Boolean) =
-    if readonly then s"jdbc:h2:$dbDir/$dbName;ACCESS_MODE_DATA=r" else s"jdbc:h2:$dbDir/$dbName"
+    if readonly then s"jdbc:h2:$dbDir/$dbName;ACCESS_MODE_DATA=r" else s"jdbc:h2:$dbDir/$dbName;DB_CLOSE_ON_EXIT=FALSE"
 
   def checkForTraceFile(dbDir: java.io.File): Unit =
     val dbTraceFile = java.io.File(dbDir, s"$dbName.trace.db")
