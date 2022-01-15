@@ -12,7 +12,6 @@ object Level2:
   private val entryCount = new AtomicLong()
   private val entriesSize = new AtomicLong()
 
-  // FIXME write integration test
   def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
     @annotation.tailrec
     def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
@@ -24,7 +23,8 @@ object Level2:
       else
         val intSize = head.size.toInt // TODO use asInt?
         write(head.start, data.take(intSize)); doStore(rest, data.drop(intSize))
-    data.foldLeft(toAreas) { case (storeAt, (_, bytes)) => doStore(storeAt, bytes) }
+    val remaining = data.foldLeft(toAreas) { case (storeAt, (_, bytes)) => doStore(storeAt, bytes) }
+    require(remaining.isEmpty, s"Remaining data areas not empty: $remaining")
 
 /* Corner case: What happens if a tree entry is deleted and after that the level 2 cache is written?
  * In that case, level 2 cache is written for the deleted file entry, and everything is fine. */
