@@ -12,6 +12,20 @@ object Level2:
   private val entryCount = new AtomicLong()
   private val entriesSize = new AtomicLong()
 
+  // FIXME write integration test
+  def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
+    @annotation.tailrec
+    def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
+      val head +: rest = areas
+      if head.size == data.length then
+        write(head.start, data); rest
+      else if head.size > data.length then
+        write(head.start, data); head.drop(data.length) +: rest
+      else
+        val intSize = head.size.toInt // TODO use asInt?
+        write(head.start, data.take(intSize)); doStore(rest, data.drop(intSize))
+    data.foldLeft(toAreas) { case (storeAt, (_, bytes)) => doStore(storeAt, bytes) }
+
 /* Corner case: What happens if a tree entry is deleted and after that the level 2 cache is written?
  * In that case, level 2 cache is written for the deleted file entry, and everything is fine. */
 class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
@@ -148,20 +162,8 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
         // Reserve storage space
         val reserved = freeAreas.get(dataEntry.size)
         // Write to storage
-        data.foldLeft(reserved) { case (storeAt, (_, bytes)) => // FIXME can we remove offset from data?
-          @annotation.tailrec
-          def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
-            val head +: rest = areas
-            if head.size == data.length then
-              lts.write(head.start, data); rest
-            else if head.size > data.length then
-              lts.write(head.start, data); head.drop(data.length) +: rest
-            else
-              val intSize = head.size.toInt // TODO use asInt?
-              lts.write(head.start, data.take(intSize)); doStore(rest, data.drop(intSize))
-          doStore(storeAt, bytes)
-        }
-        // create data entry
+        Level2.writeAlgorithm(data, reserved, lts.write)
+        // Save data entries
         val dataId = database.newDataIdFor(id)
         reserved.zipWithIndex.foreach { case (dataArea, index) =>
           log.debug(s"data entry: $dataId, ${dataEntry.size}, ${dataArea.start}, ${dataArea.size}") // TODO trace or remove or keep?
