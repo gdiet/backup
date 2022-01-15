@@ -66,7 +66,7 @@ import scala.util.Using.resource
     val temp           = File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
     val dbDir          = db.dbDir(repo)
     if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
-    db.H2.checkForTraceFile(dbDir)
+    if !readOnly then db.H2.checkForTraceFile(dbDir)
     if isWindows then
       if !mount.toString.matches(raw"[a-zA-Z]:\\.*") then main.failureExit(s"Mount point not on a local drive: $mount")
       if mount.exists then main.failureExit(s"Mount point already exists: $mount")
