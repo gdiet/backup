@@ -216,7 +216,9 @@ When you delete a file in the dedup file system, internally the file is marked a
 
 If you want to re-use the space deleted files take up, run the `reclaim-space` utility. Note that this will not shrink the repository size. Instead, the repository size will not increase for some time if you store new files.
 
-The `reclaim-space-1` utility purges deleted and orphan entries from the database. After running it, as long as you do not store new files in the dedup file system you can still restore previous file system states by restoring the database from backup.
+The `reclaim-space` utility purges deleted and orphan entries from the database. After running it, as long as you do not store new files in the dedup file system you can still restore previous file system states by restoring the database from backup.
+
+In addition to the usual `repo=<target directory>` parameter, the `reclaim-space` utility accepts an optional `keepDays=[number]` parameter (the `keepDays=` part can be omitted) that can be used to specify that recently deleted files should not be reclaimed. Without this parameter, all deleted files are reclaimed.
 
 ### Clean Up Repository Files
 

@@ -35,15 +35,9 @@ import scala.util.Using.resource
   db.maintenance.restoreBackup(opts.dbDir, opts.unnamedOrGet("from"))
   Thread.sleep(200) // Give logging some time to display message
 
-@main def reclaimSpace1(opts: (String, String)*): Unit =
+@main def reclaimSpace(opts: (String, String)*): Unit =
   db.maintenance.backup(opts.dbDir)
-  maintain.reclaim.reclaimSpace1(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
-  Thread.sleep(200) // Give logging some time to display message
-
-@main def reclaimSpace2(opts: (String, String)*): Unit =
-  resource(store.LongTermStore(store.dataDir(opts.repo), false))(lts =>
-    maintain.reclaim.reclaimSpace2(opts.dbDir, lts)
-  )
+  maintain.reclaim.reclaimSpace(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
   Thread.sleep(200) // Give logging some time to display message
 
 @main def blacklist(opts: (String, String)*): Unit =
