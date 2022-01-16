@@ -48,11 +48,7 @@ object reclaim extends util.ClassLogging:
       log.info(s"Number of data entries found in tree database: ${dataIdsInTree.size}")
       val dataIdsInStorage = stat.query("SELECT id FROM DataEntries")(_.seq(_.getLong(1))).toSet
       log.info(s"Number of data entries in storage database: ${dataIdsInStorage.size}")
-      // Keep the data entry at max position so after reclaim 1 no data is overwritten and DB backups remain valid.
-      val maxStopDataId = stat.query(
-        "SELECT id FROM DataEntries WHERE stop IN (SELECT MAX(stop) FROM DataEntries)"
-      )(_.maybeNext(_.getLong(1)))
-      val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree -- maxStopDataId
+      val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree
       dataIdsToDelete.foreach(dataId => stat.executeUpdate(
         s"DELETE FROM DataEntries WHERE id = $dataId"
       ))
