@@ -14,7 +14,7 @@ object FreeAreas:
 
 class FreeAreas:
   protected var free: Seq[DataArea] = Seq()
-  def get(size: Long): Seq[DataArea] = synchronized {
+  def reserve(size: Long): Seq[DataArea] = synchronized {
     require(size > 0, s"Requested free chunk(s) for size $size.")
     var sizeOfChunks = 0L
     val completeChunks = free.takeWhile { chunk => sizeOfChunks += chunk.size; sizeOfChunks < size }

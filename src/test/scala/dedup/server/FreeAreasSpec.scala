@@ -8,15 +8,15 @@ class FreeAreasSpec extends org.scalatest.freespec.AnyFreeSpec {
 
   "For FreeAreas objects, certain requirements are checked to avoid programming mistakes:" - {
     val free = FreeAreas(Seq(DataArea(10, Long.MaxValue)))
-    "Get fails for size zero"     in intercept[IllegalArgumentException](free.get( 0))
-    "Get fails for negative size" in intercept[IllegalArgumentException](free.get(-1))
+    "Get fails for size zero"     in intercept[IllegalArgumentException](free.reserve( 0))
+    "Get fails for negative size" in intercept[IllegalArgumentException](free.reserve(-1))
     "Create fails if the last chunk doesn't end at MAXLONG" in
       intercept[IllegalArgumentException](FreeAreas(Seq(DataArea(10,Long.MaxValue - 1))))
   }
 
   "A FreeAreas object containing a single chunk" - {
     val free = _FreeAreas(Seq(DataArea(10, Long.MaxValue)))
-    "should return a single chunk for a get" in assert(free.get(1000000000) == Seq(DataArea(10, 1000000010)))
+    "should return a single chunk for a get" in assert(free.reserve(1000000000) == Seq(DataArea(10, 1000000010)))
     "should have the free size reduced afterwards" in assert(free._free == Seq(DataArea(1000000010, Long.MaxValue)))
   }
 
@@ -30,7 +30,7 @@ class FreeAreasSpec extends org.scalatest.freespec.AnyFreeSpec {
     "to request exactly the first chunk" - {
       val free = freeFactory()
       "get should return one chunk" in assert(
-        free.get(10) == Seq(DataArea(10, 20))
+        free.reserve(10) == Seq(DataArea(10, 20))
       )
       "the free size should be reduced afterwards" in assert(
         free._free == Seq(DataArea(100, 200), DataArea(1000, Long.MaxValue))
@@ -40,7 +40,7 @@ class FreeAreasSpec extends org.scalatest.freespec.AnyFreeSpec {
     "to request more than the first and less than the second chunk" - {
       val free = freeFactory()
       "get should return two chunks" in assert(
-        free.get(30) == Seq(DataArea(10, 20), DataArea(100, 120))
+        free.reserve(30) == Seq(DataArea(10, 20), DataArea(100, 120))
       )
       "the free size should be reduced afterwards" in assert(
         free._free == Seq(DataArea(120, 200), DataArea(1000, Long.MaxValue))
@@ -50,7 +50,7 @@ class FreeAreasSpec extends org.scalatest.freespec.AnyFreeSpec {
     "to request more than the second chunk" - {
       val free = freeFactory()
       "get should return three chunks" in assert(
-        free.get(130) == Seq(DataArea(10, 20), DataArea(100, 200), DataArea(1000, 1020))
+        free.reserve(130) == Seq(DataArea(10, 20), DataArea(100, 200), DataArea(1000, 1020))
       )
       "the free size should be reduced afterwards" in assert(
         free._free == Seq(DataArea(1020, Long.MaxValue))

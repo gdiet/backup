@@ -161,7 +161,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       // Not yet known, store ...
       case None =>
         // Reserve storage space
-        val reserved = freeAreas.get(dataEntry.size)
+        val reserved = freeAreas.reserve(dataEntry.size)
         // Write to storage
         Level2.writeAlgorithm(data, reserved, lts.write)
         // Save data entries
