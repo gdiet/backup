@@ -22,7 +22,7 @@ object Level2:
       else if head.size > data.length then
         write(head.start, data); head.drop(data.length) +: rest
       else
-        val intSize = head.size.toInt // TODO use asInt?
+        val intSize = head.size.toInt // always smaller than MaxInt, see above
         write(head.start, data.take(intSize)); doStore(rest, data.drop(intSize))
     val remaining = data.foldLeft(toAreas) { case (storeAt, (_, bytes)) => doStore(storeAt, bytes) }
     require(remaining.isEmpty, s"Remaining data areas not empty: $remaining")
@@ -167,7 +167,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
         // Save data entries
         val dataId = database.newDataIdFor(id)
         reserved.zipWithIndex.foreach { case (dataArea, index) =>
-          log.debug(s"data entry: $dataId, ${dataEntry.size}, ${dataArea.start}, ${dataArea.size}") // TODO trace or remove or keep?
+          log.debug(s"Data ID $dataId size ${dataEntry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
           database.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
         }
         log.trace(s"Persisted $id - new content, dataId $dataId")

@@ -105,9 +105,8 @@ class Database(connection: Connection) extends util.ClassLogging:
     if sortedChunks.size != dataChunks.size then log.warn(s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
     val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(sortedChunks)
     log.debug(s"End of data storage at: ${readableBytes(endOfStorage)}")
-    log.debug(s"${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} gaps can be reclaimed.")
-    log.info(s"REMOVE: ${dataGaps :+ DataArea(endOfStorage, Long.MaxValue)}") // FIXME
-    dataGaps :+ DataArea(endOfStorage, Long.MaxValue)
+    log.debug(s"${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} data gaps will be reused.")
+    (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
   }
 
   private val uTime = connection.prepareStatement(
@@ -238,8 +237,8 @@ private def tableDefinitions =
       |INSERT INTO TreeEntries (id, parentId, name, time) VALUES (0, 0, '', $now);
       |""".prepareSql
 
-private def indexDefinitions = // FIXME DataEntriesStopIdx not needed anymore?
-  """|-- Find start of free data --
+private def indexDefinitions =
+  """|-- Stats: Read active storage size --
      |CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
      |-- Find data entries by size & hash --
      |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
