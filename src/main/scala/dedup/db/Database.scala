@@ -1,8 +1,6 @@
 package dedup
 package db
 
-import dedup.server.FreeAreas
-
 import java.io.File
 import java.sql.{Connection, ResultSet, Statement, Types}
 import scala.util.Try
@@ -90,7 +88,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     qDataEntry.query(_.maybeNext(r => DataId(r.getLong(1))))
   }
 
-  def freeDataEntries(): FreeAreas = synchronized {
+  def freeDataEntries(): Seq[DataArea] = synchronized {
     def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
       dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
         case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
@@ -109,7 +107,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     log.debug(s"End of data storage at: ${readableBytes(endOfStorage)}")
     log.debug(s"${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} gaps can be reclaimed.")
     log.info(s"REMOVE: ${dataGaps :+ DataArea(endOfStorage, Long.MaxValue)}") // FIXME
-    server.FreeAreas().tap(_.set(dataGaps :+ DataArea(endOfStorage, Long.MaxValue)))
+    dataGaps :+ DataArea(endOfStorage, Long.MaxValue)
   }
 
   private val uTime = connection.prepareStatement(
