@@ -214,11 +214,9 @@ The `blacklist` utility is for blacklisting files that should be removed from th
 
 When you delete a file in the dedup file system, internally the file is marked as "deleted" and nothing more. This means, that the dedup file system will **not** free that file's storage space, and that you can make the file available again by restoring a previous state of the database from backup.
 
-If you want to re-use the space deleted files take up, run the `reclaim-space-1` and `reclaim-space-2` utilities. Note that this will not shrink the repository size. Instead, the repository size will not increase for some time if you store new files.
+If you want to re-use the space deleted files take up, run the `reclaim-space` utility. Note that this will not shrink the repository size. Instead, the repository size will not increase for some time if you store new files.
 
 The `reclaim-space-1` utility purges deleted and orphan entries from the database. After running it, as long as you do not store new files in the dedup file system you can still restore previous file system states by restoring the database from backup.
-
-The `reclaim-space-2` invalidates previous database backups because it reorders the actual data storage. Don't try to restore database backups that have been created before.
 
 ### Clean Up Repository Files
 
@@ -310,10 +308,10 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 4.1.0 (In Preparation)
 
-* Blacklist files that should not be stored at all.
-* The `reclaim-space-1` utility never deletes the data entry at the end, so database backups stay fully valid after `reclaim-space-1`.
+* New `blacklist` utility for blacklisting files that should not be stored at all.
+* Simplified reclaim space process: After running the `reclaim-space` utility, freed up space is automatically used when storing new files.
 * Compact database when unmounting the dedup file system and after `blacklist` and `reclaim`. (git 548f1803)
-* `db-restore`, `mount` and `reclaim-space-1` accept an unnamed parameter.
+* `db-restore`, `mount` and `reclaim-space` accept an unnamed parameter.
 
 #### 4.0.0 (2021.12.30)
 
