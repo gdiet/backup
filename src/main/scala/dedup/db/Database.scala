@@ -104,7 +104,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     )(_.seq(r => r.getLong(1) -> r.getLong(2))))
     val sortedChunks = dataChunks.to(scala.collection.SortedMap)
     log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
-    if sortedChunks.size == dataChunks.size then log.warn(s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
+    if sortedChunks.size != dataChunks.size then log.warn(s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
     val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(sortedChunks)
     log.debug(s"End of data storage at: ${readableBytes(endOfStorage)}")
     log.debug(s"${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} gaps can be reclaimed.")
