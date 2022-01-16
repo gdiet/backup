@@ -14,7 +14,7 @@ import H2.{dbFileName, dbName}
 
 object maintenance extends util.ClassLogging:
 
-  def backup(dbDir: File): Unit =
+  def backup(dbDir: File, fileNameSuffix: String = ""): Unit =
     val dbFile = File(dbDir, dbFileName)
     require(dbFile.exists(), s"Database file $dbFile doesn't exist")
     val plainBackup = File(dbDir, s"$dbFileName.backup")
@@ -22,7 +22,7 @@ object maintenance extends util.ClassLogging:
     Files.copy(dbFile.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
     val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
-    val zipBackup = File(dbDir, s"dedupfs_$dateString.zip")
+    val zipBackup = File(dbDir, s"dedupfs_$dateString$fileNameSuffix.zip")
     log.info(s"Creating sql script database backup: $dbFile -> $zipBackup")
     Script.main(
       "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
