@@ -15,6 +15,7 @@ object Level2:
   def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
     @annotation.tailrec
     def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
+      require(areas.nonEmpty, s"Remaining data areas are empty, data size ${data.length}")
       val head +: rest = areas
       if head.size == data.length then
         write(head.start, data); rest
