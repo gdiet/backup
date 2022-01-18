@@ -18,8 +18,8 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
 object Database extends util.ClassLogging:
   val currentDbVersion = "3"
 
-def dbVersion(stat: Statement): Option[String] =
-  stat.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
+  def dbVersion(stat: Statement): Option[String] =
+    stat.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
 
 
 class Database(connection: Connection) extends util.ClassLogging:

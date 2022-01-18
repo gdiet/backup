@@ -51,7 +51,7 @@ object maintenance extends util.ClassLogging:
     withConnection(dbDir, readonly)(con => resource(con.createStatement())(f))
 
   def stats(dbDir: File): Unit = withStatement(dbDir) { stat =>
-    import Database.currentDbVersion
+    import Database.*
     log.info(s"Dedup File System Statistics")
     dbVersion(stat) match
       case None => log.error("No database version available.")
