@@ -88,6 +88,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     qDataEntry.query(_.maybeNext(r => DataId(r.getLong(1))))
   }
 
+  // FIXME duplicate with dedup.db.maintenance.endOfStorageAndDataGaps
   def freeDataEntries(): Seq[DataArea] = synchronized {
     def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
       dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {

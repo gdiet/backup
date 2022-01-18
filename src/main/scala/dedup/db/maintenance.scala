@@ -149,6 +149,7 @@ object maintenance extends util.ClassLogging:
         log.info(s"Blacklisting now...")
 
         // Add external files to blacklist.
+        // TODO integration test
         val blacklistFolder = File(blacklistDir).getCanonicalFile
         def recurseFiles(currentDir: File, dirId: Long): Unit =
           Option(currentDir.listFiles()).toSeq.flatten.foreach { file =>
@@ -178,6 +179,7 @@ object maintenance extends util.ClassLogging:
         db.mkDir(blacklistRoot.id, dateString).foreach(recurseFiles(blacklistFolder, _))
 
         // Process internal blacklist.
+        // TODO integration test
         def recurse(parentPath: String, parentId: Long): Unit =
           db.children(parentId).foreach {
             case dir: DirEntry =>
