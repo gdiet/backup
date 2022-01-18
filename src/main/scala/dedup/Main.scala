@@ -120,7 +120,7 @@ extension(options: Seq[String])
 extension(options: Seq[(String, String)])
   private def opts =
     val map = options.toMap.map((key, value) => key.toLowerCase -> value)
-    if options.size - map.size > 0 then throw new IllegalArgumentException("Multiple unnamed arguments.")
+    ensure("unnamed.arguments", options.size == map.size, s"Multiple unnamed arguments: $options")
     map
   private def unnamedOrGet(name: String): Option[String] =
     opts.get("").orElse(opts.get(name.toLowerCase))

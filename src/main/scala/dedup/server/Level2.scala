@@ -15,7 +15,7 @@ object Level2:
   def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
     @annotation.tailrec
     def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
-      require(areas.nonEmpty, s"Remaining data areas are empty, data size ${data.length}")
+      ensure("write.algorithm.1", areas.nonEmpty, s"Remaining data areas are empty, data size ${data.length}")
       val head +: rest = areas
       if head.size == data.length then
         write(head.start, data); rest
@@ -25,7 +25,7 @@ object Level2:
         val intSize = head.size.toInt // always smaller than MaxInt, see above
         write(head.start, data.take(intSize)); doStore(rest, data.drop(intSize))
     val remaining = data.foldLeft(toAreas) { case (storeAt, (_, bytes)) => doStore(storeAt, bytes) }
-    require(remaining.isEmpty, s"Remaining data areas not empty: $remaining")
+    ensure("write.algorithm.2", remaining.isEmpty, s"Remaining data areas not empty: $remaining")
 
 /* Corner case: What happens if a tree entry is deleted and after that the level 2 cache is written?
  * In that case, level 2 cache is written for the deleted file entry, and everything is fine. */
@@ -107,8 +107,8 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       )
     else
       log.trace(s"readFromLts(parts: $parts, readFrom: $readFrom, readSize: $readSize)")
-      require(readFrom >= 0, s"Read offset $readFrom must be >= 0.")
-      require(readSize > 0, s"Read size $readSize must be > 0.")
+      ensure("read.lts.offset", readFrom >= 0, s"Read offset $readFrom must be >= 0.")
+      ensure("read.lts.size", readSize > 0, s"Read size $readSize must be > 0.")
       val (lengthOfParts, partsToReadFrom) = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
         case ((currentOffset, result), part @ (partPosition, partSize)) =>
           val distance = readFrom - currentOffset
@@ -116,7 +116,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
           else if distance > 0 then currentOffset + partSize -> (result :+ (partPosition + distance, partSize - distance))
           else currentOffset + partSize -> (result :+ part)
       }
-      require(lengthOfParts >= readFrom + readSize, s"Read offset $readFrom size $readSize exceeds parts length $parts.")
+      ensure("read.lts.parts", lengthOfParts >= readFrom + readSize, s"Read offset $readFrom size $readSize exceeds parts length $parts.")
       def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] =
         val (partPosition, partSize) +: rest = remainingParts
         if partSize < readSize then lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)

@@ -15,3 +15,10 @@ def readableBytes(l: Long): String =
   else if l < 1000000000     then "%,.2f MB".format(l/1000000d)
   else if l < 1000000000000L then "%,.2f GB".format(l/1000000000d)
   else                            "%,.2f TB".format(l/1000000000000d)
+
+class EnsureFailed(reason: String) extends IllegalArgumentException(reason)
+
+def ensure(marker: String, condition: Boolean, warningMessage: => String): Unit =
+  if !condition then
+    main.error(s"$marker: $warningMessage")
+    if !sys.props.isDefinedAt(s"suppress.$marker") then throw new EnsureFailed(s"$marker - $warningMessage")

@@ -16,7 +16,7 @@ object maintenance extends util.ClassLogging:
 
   def backup(dbDir: File, fileNameSuffix: String = ""): Unit =
     val dbFile = File(dbDir, dbFileName)
-    require(dbFile.exists(), s"Database file $dbFile doesn't exist")
+    ensure("tool.backup", dbFile.exists(), s"Database file $dbFile does not exist")
     val plainBackup = File(dbDir, s"$dbFileName.backup")
     log.info(s"Creating plain database backup: $dbFile -> $plainBackup")
     Files.copy(dbFile.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
@@ -32,15 +32,15 @@ object maintenance extends util.ClassLogging:
     case None =>
       val dbFile = File(dbDir, dbFileName)
       val backup = File(dbDir, s"$dbFileName.backup")
-      require(backup.exists(), s"Database backup file $backup doesn't exist")
+      ensure("tool.restore.notfound", backup.exists(), s"Database backup file $backup does not exist")
       log.info(s"Restoring plain database backup: $backup -> $dbFile")
       Files.copy(backup.toPath, dbFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 
     case Some(scriptName) =>
       val script = File(dbDir, scriptName)
-      require(script.exists(), s"Database backup script file $script doesn't exist")
+      ensure("tool.restore.from", script.exists(), s"Database backup script file $script does not exist")
       val dbFile = File(dbDir, dbFileName)
-      require(!dbFile.exists || dbFile.delete, s"Can't delete current database file $dbFile")
+      ensure("tool.restore", !dbFile.exists || dbFile.delete, s"Can't delete current database file $dbFile")
       RunScript.main(
         "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
       )

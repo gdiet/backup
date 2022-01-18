@@ -24,30 +24,27 @@ object Database extends util.ClassLogging:
   def checkAndMigrateDbVersion(stat: Statement): Unit =
     dbVersion(stat) match
       case None =>
-        log.error(s"No database version found.")
-        throw new IllegalStateException("No database version found.")
+        ensure("database.no.version", false, s"No database version found.")
       case Some(dbVersion) =>
         log.debug(s"Database version: $dbVersion.")
-        require(dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
+        ensure("database.illegal.version", dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
 
   // TODO test
   def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
     dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
       case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
-        // FIXME write own require that can be configured to be soft
-        if start < lastEnd then log.warn(s"Detected overlapping data entry ($start, $stop).")
+        ensure("data.find.gaps", start < lastEnd, s"Detected overlapping data entry ($start, $stop).")
         stop -> gaps
       case ((lastEnd, gaps), (start, stop)) =>
         stop -> gaps.appended(DataArea(lastEnd, start))
     }
 
-  // FIXME duplicate with dedup.db.maintenance.endOfStorageAndDataGaps
   // TODO test
   def endOfStorageAndDataGaps(statement: Statement): (Long, Seq[DataArea]) =
     val dataChunks = statement.query("SELECT start, stop FROM DataEntries")(_.seq(r => r.getLong(1) -> r.getLong(2)))
     val sortedChunks = dataChunks.to(scala.collection.SortedMap)
     log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
-    if sortedChunks.size != dataChunks.size then log.warn(s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
+    ensure("data.sort.gaps", sortedChunks.size == dataChunks.size, s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
     endOfStorageAndDataGaps(sortedChunks)
 
   // TODO test
@@ -97,8 +94,8 @@ class Database(connection: Connection) extends util.ClassLogging:
     qParts.setLong(1, dataId.toLong)
     qParts.query(_.seq { rs =>
       val (start, size) = rs.getLong(1) -> rs.getLong(2)
-      assert(start >= 0, s"Start $start must be >= 0.")
-      assert(size >= 0, s"Size $size must be >= 0.")
+      ensure("data.part.start", start >= 0, s"Start $start must be >= 0.")
+      ensure("data.part.size", size >= 0, s"Size $size must be >= 0.")
       start -> size
     })
   }.filterNot(_ == _) // Filter blacklisted parts of size 0.
@@ -183,7 +180,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   def setDataId(id: Long, dataId: DataId): Unit = synchronized {
     uDataId.setLong(1, dataId.toLong)
     uDataId.setLong(2, id)
-    require(uDataId.executeUpdate() == 1, s"setDataId update count not 1 for id $id dataId $dataId")
+    ensure("db.set.dataid", uDataId.executeUpdate() == 1, s"setDataId update count not 1 for id $id dataId $dataId")
   }
 
   private val qNextId = connection.prepareStatement(
@@ -201,14 +198,14 @@ class Database(connection: Connection) extends util.ClassLogging:
     "INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)"
   )
   def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = synchronized {
-    require(seq > 0, s"seq not positive: $seq")
+    ensure("db.add.data.entry.1", seq > 0, s"seq not positive: $seq")
     iDataEntry.setLong(1, dataId.toLong)
     iDataEntry.setInt(2, seq)
     if (seq == 1) iDataEntry.setLong(3, length) else iDataEntry.setNull(3, Types.BIGINT)
     iDataEntry.setLong(4, start)
     iDataEntry.setLong(5, stop)
     if (seq == 1) iDataEntry.setBytes(6, hash) else iDataEntry.setNull(3, Types.BINARY)
-    require(iDataEntry.executeUpdate() == 1, s"insertDataEntry update count not 1 for dataId $dataId")
+    ensure("db.add.data.entry.2", iDataEntry.executeUpdate() == 1, s"insertDataEntry update count not 1 for dataId $dataId")
   }
 
 extension (rawSql: String)
