@@ -123,7 +123,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     uTime.setLong(1, newTime)
     uTime.setLong(2, id)
     val count = uTime.executeUpdate()
-    if count != 1 then log.warn(s"For id $id, setTime update count is $count instead of 1.")
+    ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
   }
 
   private val dTreeEntry = connection.prepareStatement(
@@ -133,7 +133,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     dTreeEntry.setLong(1, now.nonZero.toLong)
     dTreeEntry.setLong(2, id)
     val count = dTreeEntry.executeUpdate()
-    if count != 1 then log.warn(s"For id $id, delete count is $count instead of 1.")
+    ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
   }
 
   private val iDir = connection.prepareStatement(
@@ -145,7 +145,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     iDir.setString(2, name      )
     iDir.setLong  (3, now.toLong)
     val count = iDir.executeUpdate() // Name conflict triggers SQL exception due to unique constraint.
-    if count != 1 then log.warn(s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
+    ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
 
@@ -160,7 +160,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     iFile.setLong  (3, time.toLong  )
     iFile.setLong  (4, dataId.toLong)
     val count = iFile.executeUpdate() // Name conflict triggers SQL exception due to unique constraint.
-    if count != 1 then log.warn(s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
+    ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
 
