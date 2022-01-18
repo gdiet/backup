@@ -37,7 +37,7 @@ import scala.util.Using.resource
 
 @main def reclaimSpace(opts: (String, String)*): Unit =
   db.maintenance.backup(opts.dbDir, "_before_reclaim")
-  maintain.reclaim.reclaimSpace(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
+  db.maintenance.reclaimSpace(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
   Thread.sleep(200) // Give logging some time to display message
 
 @main def blacklist(opts: (String, String)*): Unit =
