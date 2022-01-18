@@ -1,6 +1,8 @@
 package dedup
 package db
 
+import dedup.db.Database.*
+
 import java.io.File
 import java.sql.{Connection, ResultSet, Statement, Types}
 import scala.util.Try
@@ -13,10 +15,12 @@ def initialize(connection: Connection): Unit = resource(connection.createStateme
   indexDefinitions.foreach(stat.executeUpdate)
 }
 
+object Database extends util.ClassLogging:
+  val currentDbVersion = "3"
+
 def dbVersion(stat: Statement): Option[String] =
   stat.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
 
-val currentDbVersion = "3"
 
 class Database(connection: Connection) extends util.ClassLogging:
   resource(connection.createStatement) { stat =>
