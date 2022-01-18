@@ -21,9 +21,7 @@ object Database extends util.ClassLogging:
   def dbVersion(stat: Statement): Option[String] =
     stat.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
 
-
-class Database(connection: Connection) extends util.ClassLogging:
-  resource(connection.createStatement) { stat =>
+  def checkAndMigrateDbVersion(stat: Statement): Unit =
     dbVersion(stat) match
       case None =>
         log.error(s"No database version found.")
@@ -31,7 +29,9 @@ class Database(connection: Connection) extends util.ClassLogging:
       case Some(dbVersion) =>
         log.debug(s"Database version: $dbVersion.")
         require(dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
-  }
+
+class Database(connection: Connection) extends util.ClassLogging:
+  resource(connection.createStatement)(checkAndMigrateDbVersion)
 
   private def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry =
     rs.opt(_.getLong(3)) match
