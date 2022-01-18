@@ -88,10 +88,25 @@ class Database(connection: Connection) extends util.ClassLogging:
     qDataEntry.query(_.maybeNext(r => DataId(r.getLong(1))))
   }
 
-  def startOfFreeData: Long = synchronized {
-    resource(connection.createStatement())(
-      _.query("SELECT MAX(stop) FROM DataEntries")(_.maybeNext(_.getLong(1)).getOrElse(0L))
-    )
+  def freeDataEntries(): Seq[DataArea] = synchronized {
+    def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
+      dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
+        case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
+          if start < lastEnd then log.warn(s"Detected overlapping data entry ($start, $stop).")
+          stop -> gaps
+        case ((lastEnd, gaps), (start, stop)) =>
+          stop -> gaps.appended(DataArea(lastEnd, start))
+      }
+    val dataChunks = resource(connection.createStatement())(_.query(
+      "SELECT start, stop FROM DataEntries"
+    )(_.seq(r => r.getLong(1) -> r.getLong(2))))
+    val sortedChunks = dataChunks.to(scala.collection.SortedMap)
+    log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
+    if sortedChunks.size != dataChunks.size then log.warn(s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
+    val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(sortedChunks)
+    log.debug(s"End of data storage at: ${readableBytes(endOfStorage)}")
+    log.debug(s"${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} data gaps will be reused.")
+    (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
   }
 
   private val uTime = connection.prepareStatement(
@@ -168,7 +183,6 @@ class Database(connection: Connection) extends util.ClassLogging:
     qNextId.query(_.tap(_.next()).getLong(1))
   }
 
-  // Generated keys seem not to be available for sql update, so this is two SQL commands
   def newDataIdFor(id: Long): DataId = synchronized {
     nextId.pipe(DataId(_)).tap(setDataId(id, _))
   }
@@ -224,7 +238,7 @@ private def tableDefinitions =
       |""".prepareSql
 
 private def indexDefinitions =
-  """|-- Find start of free data --
+  """|-- Stats: Read active storage size --
      |CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
      |-- Find data entries by size & hash --
      |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);

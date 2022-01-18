@@ -12,6 +12,21 @@ object Level2:
   private val entryCount = new AtomicLong()
   private val entriesSize = new AtomicLong()
 
+  def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
+    @annotation.tailrec
+    def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
+      require(areas.nonEmpty, s"Remaining data areas are empty, data size ${data.length}")
+      val head +: rest = areas
+      if head.size == data.length then
+        write(head.start, data); rest
+      else if head.size > data.length then
+        write(head.start, data); head.drop(data.length) +: rest
+      else
+        val intSize = head.size.toInt // always smaller than MaxInt, see above
+        write(head.start, data.take(intSize)); doStore(rest, data.drop(intSize))
+    val remaining = data.foldLeft(toAreas) { case (storeAt, (_, bytes)) => doStore(storeAt, bytes) }
+    require(remaining.isEmpty, s"Remaining data areas not empty: $remaining")
+
 /* Corner case: What happens if a tree entry is deleted and after that the level 2 cache is written?
  * In that case, level 2 cache is written for the deleted file entry, and everything is fine. */
 class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
@@ -20,7 +35,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
   private val con = db.H2.connection(settings.dbDir, settings.readonly, dbMustExist = true)
   private val database = db.Database(con)
-  private val startOfFreeData = new AtomicLong(database.startOfFreeData)
+  private val freeAreas = FreeAreas(if settings.readonly then Seq() else database.freeDataEntries())
   export database.{child, children, delete, entry, mkDir, mkFile, setTime, split, update}
 
   /** id -> DataEntry. Remember to synchronize. */
@@ -146,12 +161,15 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       // Not yet known, store ...
       case None =>
         // Reserve storage space
-        val start = startOfFreeData.getAndAdd(dataEntry.size)
+        val reserved = freeAreas.reserve(dataEntry.size)
         // Write to storage
-        data.foreach { (offset, bytes) => lts.write(start + offset, bytes) }
-        // create data entry
+        Level2.writeAlgorithm(data, reserved, lts.write)
+        // Save data entries
         val dataId = database.newDataIdFor(id)
-        database.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
+        reserved.zipWithIndex.foreach { case (dataArea, index) =>
+          log.debug(s"Data ID $dataId size ${dataEntry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
+          database.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
+        }
         log.trace(s"Persisted $id - new content, dataId $dataId")
         dataId
     }
