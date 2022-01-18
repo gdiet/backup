@@ -30,6 +30,33 @@ object Database extends util.ClassLogging:
         log.debug(s"Database version: $dbVersion.")
         require(dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
 
+  // TODO test
+  def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
+    dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
+      case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
+        // FIXME write own require that can be configured to be soft
+        if start < lastEnd then log.warn(s"Detected overlapping data entry ($start, $stop).")
+        stop -> gaps
+      case ((lastEnd, gaps), (start, stop)) =>
+        stop -> gaps.appended(DataArea(lastEnd, start))
+    }
+
+  // FIXME duplicate with dedup.db.maintenance.endOfStorageAndDataGaps
+  // TODO test
+  def endOfStorageAndDataGaps(statement: Statement): (Long, Seq[DataArea]) =
+    val dataChunks = statement.query("SELECT start, stop FROM DataEntries")(_.seq(r => r.getLong(1) -> r.getLong(2)))
+    val sortedChunks = dataChunks.to(scala.collection.SortedMap)
+    log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
+    if sortedChunks.size != dataChunks.size then log.warn(s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
+    endOfStorageAndDataGaps(sortedChunks)
+
+  // TODO test
+  def freeAreas(statement: Statement): Seq[DataArea] =
+    val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(statement)
+    log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
+    log.info(s"Free for reclaiming: ${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} gaps.")
+    (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
+
 class Database(connection: Connection) extends util.ClassLogging:
   resource(connection.createStatement)(checkAndMigrateDbVersion)
 
@@ -90,28 +117,6 @@ class Database(connection: Connection) extends util.ClassLogging:
     qDataEntry.setBytes(1, hash)
     qDataEntry.setLong(2, size)
     qDataEntry.query(_.maybeNext(r => DataId(r.getLong(1))))
-  }
-
-  // FIXME duplicate with dedup.db.maintenance.endOfStorageAndDataGaps
-  def freeDataEntries(): Seq[DataArea] = synchronized {
-    def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
-      dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
-        case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
-          if start < lastEnd then log.warn(s"Detected overlapping data entry ($start, $stop).")
-          stop -> gaps
-        case ((lastEnd, gaps), (start, stop)) =>
-          stop -> gaps.appended(DataArea(lastEnd, start))
-      }
-    val dataChunks = resource(connection.createStatement())(_.query(
-      "SELECT start, stop FROM DataEntries"
-    )(_.seq(r => r.getLong(1) -> r.getLong(2))))
-    val sortedChunks = dataChunks.to(scala.collection.SortedMap)
-    log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
-    if sortedChunks.size != dataChunks.size then log.warn(s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
-    val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(sortedChunks)
-    log.debug(s"End of data storage at: ${readableBytes(endOfStorage)}")
-    log.debug(s"${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} data gaps will be reused.")
-    (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
   }
 
   private val uTime = connection.prepareStatement(

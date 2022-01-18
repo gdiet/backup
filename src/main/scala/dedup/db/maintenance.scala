@@ -263,29 +263,11 @@ object maintenance extends util.ClassLogging:
       if orphanDataIdsInTree > 0 then log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
     }
 
-    { // Run in separate block so the possibly large collections can be garbage collected soon
-      log.info(s"Checking compaction potential of the data entries:")
-      val dataChunks = stat.query(
-        "SELECT start, stop FROM DataEntries"
-      )(_.seq(r => r.getLong(1) -> r.getLong(2)))
-      log.info(s"Number of data chunks in storage database: ${dataChunks.size}")
-      val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(dataChunks.to(SortedMap))
-      log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
-      val compactionPotential = dataGaps.map(_.size).sum
-      log.info(s"Compaction potential of stage 2: ${readableBytes(compactionPotential)} in ${dataGaps.size} gaps.")
-    }
+    // TODO add option to skip this
+    log.info(s"Checking compaction potential of the data storage:")
+    Database.freeAreas(stat) // Run for its log output
+
     log.info(s"Compacting database...")
     stat.execute("SHUTDOWN COMPACT;")
     log.info(s"Finished stage 1 of reclaiming space. Undo by restoring the database from a backup.")
   }
-
-  private def endOfStorageAndDataGaps(dataChunks: SortedMap[Long, Long]): (Long, Seq[DataArea]) =
-    dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
-      case ((lastEnd, gaps), (start, stop)) if start < lastEnd =>
-        log.warn(s"Detected overlapping data entry ($start, $stop).")
-        stop -> gaps
-      case ((lastEnd, gaps), (start, stop)) if start == lastEnd =>
-        stop -> gaps
-      case ((lastEnd, gaps), (start, stop)) =>
-        stop -> gaps.appended(DataArea(lastEnd, start))
-    }
