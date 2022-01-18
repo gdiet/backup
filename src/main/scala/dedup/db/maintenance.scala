@@ -221,7 +221,6 @@ object maintenance extends util.ClassLogging:
       }
   }
 
-  // TODO integration test
   def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withStatement(dbDir, readonly = false) { stat =>
     log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
     log.info(s"Note that stage 2 of reclaiming space modifies the long term store")
@@ -245,6 +244,7 @@ object maintenance extends util.ClassLogging:
 
     // Note: Most operations implemented in Scala below could also be run in SQL, but that is much slower...
 
+    // TODO extract to method and add integration test
     { // Run in separate block so the possibly large collections can be garbage collected soon
       log.info(s"Deleting orphan data entries from storage database...")
       // Note: The WHERE clause also makes sure the 'null' entries are not returned
