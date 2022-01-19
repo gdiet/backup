@@ -1,7 +1,7 @@
 package dedup
 package server
 
-class FreeAreasSpec extends org.scalatest.freespec.AnyFreeSpec {
+class FreeAreasSpec extends org.scalatest.freespec.AnyFreeSpec:
   private class _FreeAreas(initialFree: Seq[DataArea]) extends FreeAreas:
     free = initialFree
     def _free: Seq[DataArea] = free
@@ -57,4 +57,3 @@ class FreeAreasSpec extends org.scalatest.freespec.AnyFreeSpec {
       )
     }
   }
-}

@@ -29,17 +29,15 @@ object Database extends util.ClassLogging:
         log.debug(s"Database version: $dbVersion.")
         ensure("database.illegal.version", dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
 
-  // TODO test
   def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
     dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
       case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
-        ensure("data.find.gaps", start < lastEnd, s"Detected overlapping data entry ($start, $stop).")
+        ensure("data.find.gaps", start == lastEnd, s"Detected overlapping data entry ($start, $stop).")
         stop -> gaps
       case ((lastEnd, gaps), (start, stop)) =>
         stop -> gaps.appended(DataArea(lastEnd, start))
     }
 
-  // TODO test
   def endOfStorageAndDataGaps(statement: Statement): (Long, Seq[DataArea]) =
     val dataChunks = statement.query("SELECT start, stop FROM DataEntries")(_.seq(r => r.getLong(1) -> r.getLong(2)))
     val sortedChunks = dataChunks.to(scala.collection.SortedMap)
@@ -47,7 +45,6 @@ object Database extends util.ClassLogging:
     ensure("data.sort.gaps", sortedChunks.size == dataChunks.size, s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
     endOfStorageAndDataGaps(sortedChunks)
 
-  // TODO test
   def freeAreas(statement: Statement): Seq[DataArea] =
     val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(statement)
     log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
