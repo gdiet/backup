@@ -12,6 +12,11 @@ import scala.collection.SortedMap
 import scala.util.Using.resource
 import H2.{dbFileName, dbName}
 
+def withConnection(dbDir: File, readonly: Boolean = true)(f: Connection => Any): Unit =
+  resource(H2.connection(dbDir, readonly, dbMustExist = true))(f)
+def withStatement(dbDir: File, readonly: Boolean = true)(f: Statement => Any): Unit =
+  withConnection(dbDir, readonly)(con => resource(con.createStatement())(f))
+
 object maintenance extends util.ClassLogging:
 
   def backup(dbDir: File, fileNameSuffix: String = ""): Unit =
@@ -44,11 +49,6 @@ object maintenance extends util.ClassLogging:
       RunScript.main(
         "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
       )
-
-  def withConnection(dbDir: File, readonly: Boolean = true)(f: Connection => Any): Unit =
-    resource(H2.connection(dbDir, readonly, dbMustExist = true))(f)
-  def withStatement(dbDir: File, readonly: Boolean = true)(f: Statement => Any): Unit =
-    withConnection(dbDir, readonly)(con => resource(con.createStatement())(f))
 
   def stats(dbDir: File): Unit = withStatement(dbDir) { stat =>
     import Database.*
@@ -135,12 +135,65 @@ object maintenance extends util.ClassLogging:
     }
   }
 
+  def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withStatement(dbDir, readonly = false) { stat =>
+    log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
+    log.info(s"Note that stage 2 of reclaiming space modifies the long term store")
+    log.info(s"  thus partially invalidates older database backups.")
+
+    log.info(s"Deleting tree entries marked for deletion more than $keepDeletedDays days ago...")
+    val deleteBefore = now.toLong - keepDeletedDays*24*60*60*1000
+
+    // First un-root, then delete. Deleting directly can violate the foreign key constraint.
+    log.info(s"Part 1: Un-rooting the tree entries to delete...")
+    val entriesUnrooted = stat.executeUpdate(
+      s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBefore"
+    )
+    log.info(s"Number of entries un-rooted: $entriesUnrooted")
+
+    log.info(s"Part 2: Deleting un-rooted tree entries...")
+    val treeEntriesDeleted = stat.executeUpdate(
+      s"DELETE FROM TreeEntries WHERE id = parentId AND id != 0"
+    )
+    log.info(s"Number of un-rooted tree entries deleted: $treeEntriesDeleted")
+
+    // Note: Most operations implemented in Scala below could also be run in SQL, but that is much slower...
+
+    // TODO extract to method and add integration test
+    { // Run in separate block so the possibly large collections can be garbage collected soon
+      log.info(s"Deleting orphan data entries from storage database...")
+      // Note: The WHERE clause also makes sure the 'null' entries are not returned
+      val dataIdsInTree = stat.query(
+        "SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0"
+      )(_.seq(_.getLong(1))).toSet
+      log.info(s"Number of data entries found in tree database: ${dataIdsInTree.size}")
+      val dataIdsInStorage = stat.query("SELECT id FROM DataEntries")(_.seq(_.getLong(1))).toSet
+      log.info(s"Number of data entries in storage database: ${dataIdsInStorage.size}")
+      val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree
+      dataIdsToDelete.foreach(dataId => stat.executeUpdate(
+        s"DELETE FROM DataEntries WHERE id = $dataId"
+      ))
+      log.info(s"Number of orphan data entries deleted from storage database: ${dataIdsToDelete.size}")
+      val orphanDataIdsInTree = (dataIdsInTree -- dataIdsInStorage).size
+      if orphanDataIdsInTree > 0 then log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
+    }
+
+    // TODO add option to skip this
+    log.info(s"Checking compaction potential of the data storage:")
+    Database.freeAreas(stat) // Run for its log output
+
+    log.info(s"Compacting database...")
+    stat.execute("SHUTDOWN COMPACT;")
+    log.info(s"Finished stage 1 of reclaiming space. Undo by restoring the database from a backup.")
+  }
+
+object blacklist extends util.ClassLogging:
+
   /** @param dbDir Database directory
     * @param blacklistDir Directory containing files to add to the blacklist
     * @param deleteFiles If true, files in the `blacklistDir` are deleted when they have been taken over
     * @param dfsBlacklist Name of the base blacklist folder in the dedup file system, resolved against root
     * @param deleteCopies If true, mark deleted all blacklisted occurrences except for the original entries in `dfsBlacklist` */
-  def blacklist(dbDir: File, blacklistDir: String, deleteFiles: Boolean, dfsBlacklist: String, deleteCopies: Boolean): Unit = withConnection(dbDir, readonly = false) { connection =>
+  def apply(dbDir: File, blacklistDir: String, deleteFiles: Boolean, dfsBlacklist: String, deleteCopies: Boolean): Unit = withConnection(dbDir, readonly = false) { connection =>
     val db = Database(connection)
     db.mkDir(root.id, dfsBlacklist).foreach(_ => log.info(s"Created blacklist folder DedupFS:/$dfsBlacklist"))
     db.child(root.id, dfsBlacklist) match
@@ -219,55 +272,4 @@ object maintenance extends util.ClassLogging:
         stat.execute("SHUTDOWN COMPACT;")
         log.info(s"Finished blacklisting.")
       }
-  }
-
-  def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withStatement(dbDir, readonly = false) { stat =>
-    log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
-    log.info(s"Note that stage 2 of reclaiming space modifies the long term store")
-    log.info(s"  thus partially invalidates older database backups.")
-
-    log.info(s"Deleting tree entries marked for deletion more than $keepDeletedDays days ago...")
-    val deleteBefore = now.toLong - keepDeletedDays*24*60*60*1000
-
-    // First un-root, then delete. Deleting directly can violate the foreign key constraint.
-    log.info(s"Part 1: Un-rooting the tree entries to delete...")
-    val entriesUnrooted = stat.executeUpdate(
-      s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBefore"
-    )
-    log.info(s"Number of entries un-rooted: $entriesUnrooted")
-
-    log.info(s"Part 2: Deleting un-rooted tree entries...")
-    val treeEntriesDeleted = stat.executeUpdate(
-      s"DELETE FROM TreeEntries WHERE id = parentId AND id != 0"
-    )
-    log.info(s"Number of un-rooted tree entries deleted: $treeEntriesDeleted")
-
-    // Note: Most operations implemented in Scala below could also be run in SQL, but that is much slower...
-
-    // TODO extract to method and add integration test
-    { // Run in separate block so the possibly large collections can be garbage collected soon
-      log.info(s"Deleting orphan data entries from storage database...")
-      // Note: The WHERE clause also makes sure the 'null' entries are not returned
-      val dataIdsInTree = stat.query(
-        "SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0"
-      )(_.seq(_.getLong(1))).toSet
-      log.info(s"Number of data entries found in tree database: ${dataIdsInTree.size}")
-      val dataIdsInStorage = stat.query("SELECT id FROM DataEntries")(_.seq(_.getLong(1))).toSet
-      log.info(s"Number of data entries in storage database: ${dataIdsInStorage.size}")
-      val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree
-      dataIdsToDelete.foreach(dataId => stat.executeUpdate(
-        s"DELETE FROM DataEntries WHERE id = $dataId"
-      ))
-      log.info(s"Number of orphan data entries deleted from storage database: ${dataIdsToDelete.size}")
-      val orphanDataIdsInTree = (dataIdsInTree -- dataIdsInStorage).size
-      if orphanDataIdsInTree > 0 then log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
-    }
-
-    // TODO add option to skip this
-    log.info(s"Checking compaction potential of the data storage:")
-    Database.freeAreas(stat) // Run for its log output
-
-    log.info(s"Compacting database...")
-    stat.execute("SHUTDOWN COMPACT;")
-    log.info(s"Finished stage 1 of reclaiming space. Undo by restoring the database from a backup.")
   }

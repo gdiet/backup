@@ -46,7 +46,7 @@ import scala.util.Using.resource
   val dfsBlacklist = opts.getOrElse("dfsBlacklist", "blacklist")
   val deleteCopies = opts.defaultFalse("deleteCopies")
   if opts.defaultTrue("dbBackup") then db.maintenance.backup(opts.dbDir)
-  db.maintenance.blacklist(opts.dbDir, blacklistDir, deleteFiles, dfsBlacklist, deleteCopies)
+  db.blacklist(opts.dbDir, blacklistDir, deleteFiles, dfsBlacklist, deleteCopies)
 
 @main def mount(opts: (String, String)*): Unit =
   val readOnly       = opts.defaultFalse("readOnly")
