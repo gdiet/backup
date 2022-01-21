@@ -203,73 +203,75 @@ object blacklist extends util.ClassLogging:
         log.info(s"Blacklisting now...")
 
         // Add external files to blacklist.
-        // TODO integration test
         val blacklistFolder = File(blacklistDir).getCanonicalFile
-        def recurseFiles(currentDir: File, dirId: Long): Unit =
-          Option(currentDir.listFiles()).toSeq.flatten.foreach { file =>
-            if file.isDirectory then
-              db.mkDir(dirId, file.getName).foreach(recurseFiles(file, _))
-              if !deleteFiles then {} else // needed like this to avoid compile problem
-                if file.listFiles.isEmpty then file.delete else
-                  log.warn(s"Blacklist folder not empty after processing it: $file")
-            else
-              val (size, hash) = resource(FileInputStream(file)) { stream =>
-                val buffer = new Array[Byte](memChunk)
-                val md = java.security.MessageDigest.getInstance(hashAlgorithm)
-                val size = Iterator.continually(stream.read(buffer)).takeWhile(_ > 0)
-                  .tapEach(md.update(buffer, 0, _)).map(_.toLong).sum
-                size -> md.digest()
-              }
-              val dataId = db.dataEntry(hash, size).getOrElse(
-                DataId(db.nextId).tap(db.insertDataEntry(_, 1, size, 0, 0, hash))
-              )
-              db.mkFile(dirId, file.getName, Time(file.lastModified), dataId)
-              if deleteFiles && file.delete then
-                log.info(s"Moved to DedupFS blacklist: $file")
-              else
-                log.info(s"Copied to DedupFS blacklist: $file")
-          }
         val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
-        db.mkDir(blacklistRoot.id, dateString).foreach(recurseFiles(blacklistFolder, _))
+        db.mkDir(blacklistRoot.id, dateString).foreach(externalFilesToInternalBlacklist(db, blacklistFolder, _, deleteFiles))
 
         // Process internal blacklist.
-        // TODO integration test
-        def recurse(parentPath: String, parentId: Long): Unit =
-          db.children(parentId).foreach {
-            case dir: DirEntry =>
-              recurse(s"$parentPath/${dir.name}", dir.id)
-            case file: FileEntry =>
-              val size = stat.query(
-                s"SELECT stop - start FROM DataEntries WHERE ID = ${file.dataId}"
-              )(_.seq(_.getLong(1))).sum
-              if size > 0 then
-                log.info(s"Blacklisting $parentPath/${file.name}")
-                connection.transaction {
-                  stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = ${file.dataId} AND seq > 1")
-                  stat.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = ${file.dataId}")
-                }
-              if deleteCopies then
-                @annotation.tailrec
-                def pathOf(id: Long, pathEnd: String): String =
-                  val parentId -> name = stat.query(
-                    s"SELECT parentId, name FROM TreeEntries WHERE id = $id"
-                  )(_.one(r => (r.getLong(1), r.getString(2))))
-                  val path = s"/$name$pathEnd"
-                  if parentId == 0 then path else pathOf(parentId, path)
-                val copies = stat.query(
-                  s"SELECT id, parentId, name FROM TreeEntries WHERE dataId = ${file.dataId} AND deleted = 0 AND id != ${file.id}"
-                )(_.seq(r => (r.getLong(1), r.getLong(2), r.getString(3))))
-                val filteredCopies = copies
-                  .map((id, parentId, name) => (id, pathOf(parentId, s"/$name")))
-                  .filterNot(_._2.startsWith(s"/$dfsBlacklist/"))
-                filteredCopies.foreach { (id, path) =>
-                  log.info(s"Deleting copy of entry: $path")
-                  db.delete(id)
-                }
-          }
-        recurse(s"/${blacklistRoot.name}", blacklistRoot.id)
+        processInternalBlacklist(db, connection, stat, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteFiles)
         log.info("Compacting database...")
         stat.execute("SHUTDOWN COMPACT;")
         log.info(s"Finished blacklisting.")
       }
   }
+
+  // TODO integration test
+  def externalFilesToInternalBlacklist(db: Database, currentDir: File, dirId: Long, deleteFiles: Boolean): Unit =
+    Option(currentDir.listFiles()).toSeq.flatten.foreach { file =>
+      if file.isDirectory then
+        db.mkDir(dirId, file.getName).foreach(externalFilesToInternalBlacklist(db, file, _, deleteFiles))
+        if !deleteFiles then {} else // needed like this to avoid compile problem
+          if file.listFiles.isEmpty then file.delete else
+            log.warn(s"Blacklist folder not empty after processing it: $file")
+      else
+        val (size, hash) = resource(FileInputStream(file)) { stream =>
+          val buffer = new Array[Byte](memChunk)
+          val md = java.security.MessageDigest.getInstance(hashAlgorithm)
+          val size = Iterator.continually(stream.read(buffer)).takeWhile(_ > 0)
+            .tapEach(md.update(buffer, 0, _)).map(_.toLong).sum
+          size -> md.digest()
+        }
+        val dataId = db.dataEntry(hash, size).getOrElse(
+          DataId(db.nextId).tap(db.insertDataEntry(_, 1, size, 0, 0, hash))
+        )
+        db.mkFile(dirId, file.getName, Time(file.lastModified), dataId)
+        if deleteFiles && file.delete then
+          log.info(s"Moved to DedupFS blacklist: $file")
+        else
+          log.info(s"Copied to DedupFS blacklist: $file")
+    }
+
+  // TODO integration test
+  def processInternalBlacklist(db: Database, connection: Connection, stat: Statement, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
+    db.children(parentId).foreach {
+      case dir: DirEntry =>
+        processInternalBlacklist(db, connection, stat, dfsBlacklist, s"$parentPath/${dir.name}", dir.id, deleteCopies)
+      case file: FileEntry =>
+        val size = stat.query(
+          s"SELECT stop - start FROM DataEntries WHERE ID = ${file.dataId}"
+        )(_.seq(_.getLong(1))).sum
+        if size > 0 then
+          log.info(s"Blacklisting $parentPath/${file.name}")
+          connection.transaction {
+            stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = ${file.dataId} AND seq > 1")
+            stat.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = ${file.dataId}")
+          }
+        if deleteCopies then
+          @annotation.tailrec
+          def pathOf(id: Long, pathEnd: String): String =
+            val parentId -> name = stat.query(
+              s"SELECT parentId, name FROM TreeEntries WHERE id = $id"
+            )(_.one(r => (r.getLong(1), r.getString(2))))
+            val path = s"/$name$pathEnd"
+            if parentId == 0 then path else pathOf(parentId, path)
+          val copies = stat.query(
+            s"SELECT id, parentId, name FROM TreeEntries WHERE dataId = ${file.dataId} AND deleted = 0 AND id != ${file.id}"
+          )(_.seq(r => (r.getLong(1), r.getLong(2), r.getString(3))))
+          val filteredCopies = copies
+            .map((id, parentId, name) => (id, pathOf(parentId, s"/$name")))
+            .filterNot(_._2.startsWith(s"/$dfsBlacklist/"))
+          filteredCopies.foreach { (id, path) =>
+            log.info(s"Deleting copy of entry: $path")
+            db.delete(id)
+          }
+    }
