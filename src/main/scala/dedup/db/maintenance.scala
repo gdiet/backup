@@ -194,7 +194,7 @@ object blacklist extends util.ClassLogging:
     db.child(root.id, dfsBlacklist) match
       case None                          => log.error(s"Can't run blacklisting - couldn't create DedupFS:/$dfsBlacklist.")
       case Some(_: FileEntry)            => log.error(s"Can't run blacklisting - DedupFS:/$dfsBlacklist is a file, not a directory.")
-      case Some(blacklistRoot: DirEntry) => resource(connection.createStatement()) { stat =>
+      case Some(blacklistRoot: DirEntry) => connection.withStatement { stat =>
         log.info(s"Blacklisting now...")
 
         // Add external files to blacklist.

@@ -10,7 +10,7 @@ import scala.util.Using.resource
 
 def dbDir(repo: java.io.File) = java.io.File(repo, "fsdb")
 
-def initialize(connection: Connection): Unit = resource(connection.createStatement) { stat =>
+def initialize(connection: Connection): Unit = connection.withStatement { stat =>
   tableDefinitions.foreach(stat.executeUpdate)
   indexDefinitions.foreach(stat.executeUpdate)
 }
@@ -52,7 +52,7 @@ object Database extends util.ClassLogging:
     (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
 
 class Database(connection: Connection) extends util.ClassLogging:
-  resource(connection.createStatement)(checkAndMigrateDbVersion)
+  connection.withStatement(checkAndMigrateDbVersion)
 
   private def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry =
     rs.opt(_.getLong(3)) match

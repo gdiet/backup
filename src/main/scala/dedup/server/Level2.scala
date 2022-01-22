@@ -1,10 +1,11 @@
 package dedup
 package server
 
-import java.util.concurrent.{Executors, TimeUnit}
+import dedup.db.withStatement
+
 import java.util.concurrent.atomic.AtomicLong
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
+import java.util.concurrent.{Executors, TimeUnit}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Using.resource
 
 object Level2:
@@ -34,7 +35,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
   private val con = db.H2.connection(settings.dbDir, settings.readonly)
-  private val freeAreas = FreeAreas(if settings.readonly then Seq() else resource(con.createStatement())(db.Database.freeAreas))
+  private val freeAreas = FreeAreas(if settings.readonly then Seq() else con.withStatement(db.Database.freeAreas))
   private val database = db.Database(con)
   export database.{child, children, delete, entry, mkDir, mkFile, setTime, split, update}
 
@@ -56,7 +57,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
     lts.close()
     if !settings.readonly then
       log.info("Compacting database...")
-      resource(con.createStatement())(_.execute("SHUTDOWN COMPACT;"))
+      con.withStatement(_.execute("SHUTDOWN COMPACT;"))
     con.close()
     log.info("Shutdown complete.")
 

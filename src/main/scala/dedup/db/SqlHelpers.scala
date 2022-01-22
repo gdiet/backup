@@ -8,9 +8,10 @@ import scala.util.Using.resource
 def withConnection(dbDir: File, readonly: Boolean = true)(f: Connection => Any): Unit =
   resource(H2.connection(dbDir, readonly))(f)
 def withStatement(dbDir: File, readonly: Boolean = true)(f: Statement => Any): Unit =
-  withConnection(dbDir, readonly)(con => resource(con.createStatement())(f))
+  withConnection(dbDir, readonly)(_.withStatement(f))
 
 extension (c: Connection)
+  def withStatement[T](f: Statement => T): T = resource(c.createStatement())(f)
   /** Don't use nested or multi-threaded. */
   def transaction[T](f: => T): T =
     try { c.setAutoCommit(false); f.tap(_ => c.commit()) }
