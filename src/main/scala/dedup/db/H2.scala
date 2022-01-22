@@ -18,11 +18,13 @@ object H2:
 
   def checkForTraceFile(dbDir: java.io.File): Unit =
     val dbTraceFile = java.io.File(dbDir, s"$dbName.trace.db")
-    ensure("h2.trace.file", !dbTraceFile.exists(), s"Database trace file $dbTraceFile found. Check for database problems.")
-  
-  def connection(dbDir: java.io.File, readonly: Boolean, dbMustExist: Boolean): Connection =
-    if dbMustExist then
-      val dbFile = java.io.File(dbDir, s"$dbFileName")
-      ensure("h2.connection", dbFile.exists(), s"Database file $dbFile does not exist.")
+    ensure("h2.trace.file", !dbTraceFile.exists, s"Database trace file $dbTraceFile found. Check for database problems.")
+
+  def dbFile(dbDir: java.io.File): java.io.File =
+    java.io.File(dbDir, s"$dbFileName")
+
+  def connection(dbDir: java.io.File, readonly: Boolean, expectExists: Boolean = true): Connection =
+    ensure("h2.connection", dbFile(dbDir).exists == expectExists, 
+      s"Database file ${dbFile(dbDir)} does ${if expectExists then "not " else ""}exist.")
     if !readonly then checkForTraceFile(dbDir)
     DriverManager.getConnection(jdbcUrl(dbDir, readonly), "sa", "").tap(_.setAutoCommit(true))
