@@ -20,8 +20,8 @@ object H2:
     val dbTraceFile = java.io.File(dbDir, s"$dbName.trace.db")
     ensure("h2.trace.file", !dbTraceFile.exists, s"Database trace file $dbTraceFile found. Check for database problems.")
 
-  def dbFile(dbDir: java.io.File): java.io.File =
-    java.io.File(dbDir, s"$dbFileName")
+  def dbFile(dbDir: java.io.File, fileNameSuffix: String = ""): java.io.File =
+    java.io.File(dbDir, dbFileName + fileNameSuffix)
 
   def connection(dbDir: java.io.File, readonly: Boolean, expectExists: Boolean = true): Connection =
     ensure("h2.connection", dbFile(dbDir).exists == expectExists, 

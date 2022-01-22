@@ -1,6 +1,7 @@
 package dedup
 package db
 
+import dedup.db.H2.dbName
 import org.h2.tools.{RunScript, Script}
 
 import java.io.{File, FileInputStream}
@@ -10,14 +11,13 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import scala.collection.SortedMap
 import scala.util.Using.resource
-import H2.{dbFileName, dbName}
 
 object maintenance extends util.ClassLogging:
 
   def backup(dbDir: File, fileNameSuffix: String = ""): Unit =
-    val dbFile = File(dbDir, dbFileName)
+    val dbFile = H2.dbFile(dbDir)
     ensure("tool.backup", dbFile.exists(), s"Database file $dbFile does not exist")
-    val plainBackup = File(dbDir, s"$dbFileName.backup")
+    val plainBackup = H2.dbFile(dbDir, ".backup")
     log.info(s"Creating plain database backup: $dbFile -> $plainBackup")
     Files.copy(dbFile.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
@@ -30,16 +30,16 @@ object maintenance extends util.ClassLogging:
 
   def restoreBackup(dbDir: File, from: Option[String]): Unit = from match
     case None =>
-      val dbFile = File(dbDir, dbFileName)
-      val backup = File(dbDir, s"$dbFileName.backup")
-      ensure("tool.restore.notfound", backup.exists(), s"Database backup file $backup does not exist")
+      val dbFile = H2.dbFile(dbDir)
+      val plainBackup = H2.dbFile(dbDir, ".backup")
+      ensure("tool.restore.notfound", plainBackup.exists(), s"Database backup file $backup does not exist")
       log.info(s"Restoring plain database backup: $backup -> $dbFile")
-      Files.copy(backup.toPath, dbFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+      Files.copy(plainBackup.toPath, dbFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 
     case Some(scriptName) =>
       val script = File(dbDir, scriptName)
       ensure("tool.restore.from", script.exists(), s"Database backup script file $script does not exist")
-      val dbFile = File(dbDir, dbFileName)
+      val dbFile = H2.dbFile(dbDir)
       ensure("tool.restore", !dbFile.exists || dbFile.delete, s"Can't delete current database file $dbFile")
       RunScript.main(
         "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
