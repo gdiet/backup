@@ -57,18 +57,23 @@ object Database extends util.ClassLogging:
 class Database(connection: Connection) extends util.ClassLogging:
   connection.withStatement(checkAndMigrateDbVersion)
 
-  private def treeEntry(parentId: Long, name: String, rs: ResultSet): TreeEntry =
-    rs.opt(_.getLong(3)) match
-      case None         => DirEntry (rs.getLong(1), parentId, name, Time(rs.getLong(2))                )
-      case Some(dataId) => FileEntry(rs.getLong(1), parentId, name, Time(rs.getLong(2)), DataId(dataId))
-  
+  /** ResultSet: (id, parentId, name, time, dataId) */
+  private def treeEntry(rs: ResultSet): TreeEntry =
+    TreeEntry(
+      rs.getLong("id"),
+      rs.getLong("parentId"),
+      rs.getString("name"),
+      Time(rs.getLong("time")),
+      rs.opt(_.getLong("dataId")).map(DataId(_))
+    )
+
   private val qChild = connection.prepareStatement(
-    "SELECT id, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
+    "SELECT id, parentId, name, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
   )
   def child(parentId: Long, name: String): Option[TreeEntry] = synchronized {
     qChild.setLong  (1, parentId)
     qChild.setString(2, name    )
-    qChild.query(_.maybeNext(treeEntry(parentId, name, _)))
+    qChild.query(_.maybeNext(treeEntry))
   }
 
   def split(path: String)       : Array[String] = path.split("/").filter(_.nonEmpty)
@@ -80,11 +85,11 @@ class Database(connection: Connection) extends util.ClassLogging:
     }
 
   private val qChildren = connection.prepareStatement(
-    "SELECT id, time, dataId, name FROM TreeEntries WHERE parentId = ? AND deleted = 0"
+    "SELECT id, parentId, name, time, dataId FROM TreeEntries WHERE parentId = ? AND deleted = 0"
   )
   def children(parentId: Long): Seq[TreeEntry] = synchronized {
     qChildren.setLong(1, parentId)
-    qChildren.query(_.seq(rs => treeEntry(parentId, rs.getString(4), rs)))
+    qChildren.query(_.seq(treeEntry))
   }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
   private val qParts = connection.prepareStatement(
