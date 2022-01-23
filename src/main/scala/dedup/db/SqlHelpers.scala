@@ -5,7 +5,7 @@ import java.io.File
 import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
 import scala.util.Using.resource
 
-def withConnection(dbDir: File, readonly: Boolean = true)(f: Connection => Any): Unit =
+def withConnection[T](dbDir: File, readonly: Boolean = true)(f: Connection => T): T =
   resource(H2.connection(dbDir, readonly))(f)
 def withStatement(dbDir: File, readonly: Boolean = true)(f: Statement => Any): Unit =
   withConnection(dbDir, readonly)(_.withStatement(f))

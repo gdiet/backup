@@ -58,8 +58,7 @@ object maintenance extends util.ClassLogging:
     log.info(f"Folders: ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")(_.withNext(_.getLong(1)))}%,d, deleted ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(_.withNext(_.getLong(1)))}%,d")
   }
 
-  def list(dbDir: File, path: String): Unit = withConnection(dbDir) { con =>
-    val db = Database(con)
+  def list(dbDir: File, path: String): Unit = withDb(dbDir) { db =>
     db.entry(path) match
       case None =>
         println(s"The path '$path' does not exist.")
@@ -77,8 +76,7 @@ object maintenance extends util.ClassLogging:
         }
   }
 
-  def del(dbDir: File, path: String): Unit = withConnection(dbDir, readonly = false) { con =>
-    val db = Database(con)
+  def del(dbDir: File, path: String): Unit = withDb(dbDir, readonly = false) { db =>
     db.entry(path) match
       case None =>
         println(s"The path '$path' does not exist.")
