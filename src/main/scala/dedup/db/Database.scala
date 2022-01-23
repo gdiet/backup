@@ -92,6 +92,12 @@ class Database(connection: Connection) extends util.ClassLogging:
     qEntry.query(_.seq(treeEntry))
   }
 
+  private val qEntriesFor = prepare(s"$selectTreeEntry WHERE dataId = ? AND deleted = 0")
+  def entriesFor(dataId: DataId): Seq[TreeEntry] = synchronized {
+    qEntry.setLong(1, dataId.toLong)
+    qEntry.query(_.seq(treeEntry))
+  }
+  
   @annotation.tailrec
   final def pathOf(id: Long, pathEnd: String = ""): String =
     entry(id) match

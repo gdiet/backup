@@ -172,13 +172,12 @@ object blacklist extends util.ClassLogging:
     * @param deleteFiles If true, files in the `blacklistDir` are deleted when they have been taken over
     * @param dfsBlacklist Name of the base blacklist folder in the dedup file system, resolved against root
     * @param deleteCopies If true, mark deleted all blacklisted occurrences except for the original entries in `dfsBlacklist` */
-  def apply(dbDir: File, blacklistDir: String, deleteFiles: Boolean, dfsBlacklist: String, deleteCopies: Boolean): Unit = withConnection(dbDir, readonly = false) { connection =>
-    val db = Database(connection)
+  def apply(dbDir: File, blacklistDir: String, deleteFiles: Boolean, dfsBlacklist: String, deleteCopies: Boolean): Unit = withDb(dbDir, readonly = false) { db =>
     db.mkDir(root.id, dfsBlacklist).foreach(_ => log.info(s"Created blacklist folder DedupFS:/$dfsBlacklist"))
     db.child(root.id, dfsBlacklist) match
       case None                          => log.error(s"Can't run blacklisting - couldn't create DedupFS:/$dfsBlacklist.")
       case Some(_: FileEntry)            => log.error(s"Can't run blacklisting - DedupFS:/$dfsBlacklist is a file, not a directory.")
-      case Some(blacklistRoot: DirEntry) => connection.withStatement { stat =>
+      case Some(blacklistRoot: DirEntry) =>
         log.info(s"Blacklisting now...")
 
         // Add external files to blacklist.
@@ -187,11 +186,10 @@ object blacklist extends util.ClassLogging:
         db.mkDir(blacklistRoot.id, dateString).foreach(externalFilesToInternalBlacklist(db, blacklistFolder, _, deleteFiles))
 
         // Process internal blacklist.
-        processInternalBlacklist(db, stat, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteFiles)
+        processInternalBlacklist(db, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteFiles)
 
         db.shutdownCompact()
         log.info(s"Finished blacklisting.")
-      }
   }
 
   // TODO integration test
@@ -221,21 +219,18 @@ object blacklist extends util.ClassLogging:
     }
 
   // TODO integration test
-  // TODO get rid of stat
-  def processInternalBlacklist(db: Database, stat: Statement, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
+  def processInternalBlacklist(db: Database, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
     db.children(parentId).foreach {
       case dir: DirEntry =>
-        processInternalBlacklist(db, stat, dfsBlacklist, s"$parentPath/${dir.name}", dir.id, deleteCopies)
+        processInternalBlacklist(db, dfsBlacklist, s"$parentPath/${dir.name}", dir.id, deleteCopies)
       case file: FileEntry =>
         if db.storageSize(file.dataId) > 0 then
           log.info(s"Blacklisting $parentPath/${file.name}")
           db.removeStorageAllocation(file.dataId)
         if deleteCopies then
-          val copies = stat.query(
-            s"SELECT id, parentId, name FROM TreeEntries WHERE dataId = ${file.dataId} AND deleted = 0 AND id != ${file.id}"
-          )(_.seq(r => (r.getLong(1), r.getLong(2), r.getString(3))))
+          val copies = db.entriesFor(file.dataId).filterNot(_.id == file.id)
           val filteredCopies = copies
-            .map((id, parentId, name) => (id, db.pathOf(parentId, s"/$name")))
+            .map(entry => (entry.id, db.pathOf(entry.id)))
             .filterNot(_._2.startsWith(s"/$dfsBlacklist/"))
           filteredCopies.foreach { (id, path) =>
             log.info(s"Deleting copy of entry: $path")
