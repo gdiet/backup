@@ -188,8 +188,8 @@ object blacklist extends util.ClassLogging:
 
         // Process internal blacklist.
         processInternalBlacklist(db, connection, stat, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteFiles)
-        log.info("Compacting database...")
-        stat.execute("SHUTDOWN COMPACT;")
+
+        db.shutdownCompact()
         log.info(s"Finished blacklisting.")
       }
   }

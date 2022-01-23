@@ -223,6 +223,10 @@ class Database(connection: Connection) extends util.ClassLogging:
     if (seq == 1) iDataEntry.setBytes(6, hash) else iDataEntry.setNull(3, Types.BINARY)
     ensure("db.add.data.entry.2", iDataEntry.executeUpdate() == 1, s"insertDataEntry update count not 1 for dataId $dataId")
   }
+  
+  def shutdownCompact(): Unit =
+    log.info("Compacting database...")
+    connection.withStatement(_.execute("SHUTDOWN COMPACT;"))
 
 extension (rawSql: String)
   private def prepareSql = rawSql.stripMargin.split(";")
