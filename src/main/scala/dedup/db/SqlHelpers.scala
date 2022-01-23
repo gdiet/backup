@@ -20,6 +20,7 @@ extension (c: Connection)
 
 extension (stat: Statement)
   def query[T](queryString: String)(f: ResultSet => T): T = resource(stat.executeQuery(queryString))(f)
+  def queryLongOrZero(queryString: String): Long = query(queryString)(_.one(_.opt(_.getLong(1)))).getOrElse(0L)
 
 extension (stat: PreparedStatement)
   def query[T](f: ResultSet => T): T = resource(stat.executeQuery())(f)

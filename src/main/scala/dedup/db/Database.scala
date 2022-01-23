@@ -21,6 +21,7 @@ def withDb[T](dbDir: File, readonly: Boolean = true)(f: Database => T): T =
 object Database extends util.ClassLogging:
   val currentDbVersion = "3"
 
+  // TODO move to Database class?
   def dbVersion(stat: Statement): Option[String] =
     stat.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
 
@@ -55,8 +56,9 @@ object Database extends util.ClassLogging:
     (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
 
 class Database(connection: Connection) extends util.ClassLogging:
+  val statement: Statement = connection.createStatement()
   import connection.{prepareStatement => prepare}
-  connection.withStatement(checkAndMigrateDbVersion)
+  checkAndMigrateDbVersion(statement)
 
   def split(path: String)       : Array[String] = path.split("/").filter(_.nonEmpty)
   def entry(path: String)       : Option[TreeEntry] = entry(split(path))
@@ -224,9 +226,20 @@ class Database(connection: Connection) extends util.ClassLogging:
     ensure("db.add.data.entry.2", iDataEntry.executeUpdate() == 1, s"insertDataEntry update count not 1 for dataId $dataId")
   }
   
-  def shutdownCompact(): Unit =
+  def shutdownCompact(): Unit = synchronized {
     log.info("Compacting database...")
-    connection.withStatement(_.execute("SHUTDOWN COMPACT;"))
+    statement.execute("SHUTDOWN COMPACT;")
+  }
+
+  def version(): Option[String] = Database.dbVersion(statement)
+
+  // File system statistics
+  def storageSize()      : Long = statement.queryLongOrZero("SELECT MAX(stop) FROM DataEntries")
+  def countDataEntries() : Long = statement.queryLongOrZero("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")
+  def countFiles()       : Long = statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")
+  def countDeletedFiles(): Long = statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")
+  def countDirs()        : Long = statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")
+  def countDeletedDirs() : Long = statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")
 
 extension (rawSql: String)
   private def prepareSql = rawSql.stripMargin.split(";")

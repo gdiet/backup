@@ -45,17 +45,17 @@ object maintenance extends util.ClassLogging:
         "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
       )
 
-  def stats(dbDir: File): Unit = withStatement(dbDir) { stat =>
-    import Database.*
+  def stats(dbDir: File): Unit = withDb(dbDir) { db =>
+    import Database.currentDbVersion
     log.info(s"Dedup File System Statistics")
-    dbVersion(stat) match
+    db.version() match
       case None => log.error("No database version available.")
       case Some(`currentDbVersion`) => log.info(s"Database version $currentDbVersion - OK.")
       case Some(otherDbVersion) => log.warn(s"Database version $otherDbVersion is INCOMPATIBLE, expected $currentDbVersion.")
-    val storageSize = stat.query("SELECT MAX(stop) FROM DataEntries")(_.withNext(_.getLong(1)))
-    log.info(f"Data storage: ${readableBytes(storageSize)} ($storageSize%,d Bytes) / ${stat.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(_.withNext(_.getLong(1)))}%,d entries")
-    log.info(f"Files: ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(_.withNext(_.getLong(1)))}%,d, deleted ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")(_.withNext(_.getLong(1)))}%,d")
-    log.info(f"Folders: ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")(_.withNext(_.getLong(1)))}%,d, deleted ${stat.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(_.withNext(_.getLong(1)))}%,d")
+    val storageSize = db.storageSize()
+    log.info(f"Data storage: ${readableBytes(storageSize)} ($storageSize%,d bytes) / ${db.countDataEntries()}%,d entries")
+    log.info(f"Files: ${db.countFiles()}%,d, deleted ${db.countDeletedFiles()}%,d")
+    log.info(f"Folders: ${db.countDirs()}%,d, deleted ${db.countDeletedDirs()}%,d")
   }
 
   def list(dbDir: File, path: String): Unit = withDb(dbDir) { db =>
