@@ -93,31 +93,17 @@ object maintenance extends util.ClassLogging:
         log.info(s"Marked deleted ${delete(dir)} files/directories.")
   }
 
-  def find(dbDir: File, matcher: String): Unit = withConnection(dbDir) { con =>
-    println(s"Searching for files matching '$matcher':")
-
-    val qLike = con.prepareStatement(
-      """SELECT id, parentId, name, time, dataId FROM TreeEntries
-        |WHERE deleted = 0 AND name LIKE ?""".stripMargin
-    )
-    val qId = con.prepareStatement(
-      """SELECT id, parentId, name, time, dataId FROM TreeEntries
-        |WHERE id = ? AND deleted = 0""".stripMargin
-    )
-    def treeEntry(rs: ResultSet): TreeEntry = rs.opt(_.getLong(5)) match
-      case None         => DirEntry (rs.getLong(1), rs.getLong(2), rs.getString(3), Time(rs.getLong(4))                )
-      case Some(dataId) => FileEntry(rs.getLong(1), rs.getLong(2), rs.getString(3), Time(rs.getLong(4)), DataId(dataId))
+  def find(dbDir: File, nameLike: String): Unit = withDb(dbDir) { db =>
+    println(s"Searching for files matching '$nameLike':")
 
     @annotation.tailrec
     def path(entry: TreeEntry, acc: List[TreeEntry] = Nil): List[TreeEntry] =
       if entry.id == root.id then entry :: acc else
-        qId.setLong(1, entry.parentId)
-        qId.query(_.maybeNext(treeEntry)) match
+        db.entry(entry.parentId) match // fold can not be used tail recursively
           case None => Nil
           case Some(parent) => path(parent, entry :: acc)
 
-    qLike.setString(1, matcher)
-    qLike.query(_.seq(treeEntry)).foreach { entry =>
+    db.entryLike(nameLike).foreach { entry =>
       path(entry) match
         case Nil => /* deleted entry */
         case entries =>

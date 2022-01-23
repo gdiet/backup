@@ -78,23 +78,23 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   private val selectTreeEntry = "SELECT id, parentId, name, time, dataId FROM TreeEntries"
 
+  private val qEntry = prepare(s"$selectTreeEntry WHERE id = ? AND deleted = 0")
+  def entry(id: Long): Option[TreeEntry] = synchronized {
+    qEntry.setLong(1, id)
+    qEntry.query(_.maybeNext(treeEntry))
+  }
+
+  private val qEntryLike = prepare(s"$selectTreeEntry WHERE deleted = 0 AND name LIKE ?")
+  def entryLike(nameLike: String): Seq[TreeEntry] = synchronized {
+    qEntry.setString(1, nameLike)
+    qEntry.query(_.seq(treeEntry))
+  }
+
   private val qChild = prepare(s"$selectTreeEntry WHERE parentId = ? AND name = ? AND deleted = 0")
   def child(parentId: Long, name: String): Option[TreeEntry] = synchronized {
     qChild.setLong  (1, parentId)
     qChild.setString(2, name    )
     qChild.query(_.maybeNext(treeEntry))
-  }
-
-  private val qEntryLike = prepare(s"$selectTreeEntry WHERE deleted = 0 AND name LIKE ?")
-  def entryLike(nameLike: String): Option[TreeEntry] = synchronized {
-    qEntry.setString(1, nameLike)
-    qEntry.query(_.maybeNext(treeEntry))
-  }
-
-  private val qEntry = prepare(s"$selectTreeEntry WHERE id = ? AND deleted = 0")
-  def entry(id: Long): Option[TreeEntry] = synchronized {
-    qEntry.setLong(1, id)
-    qEntry.query(_.maybeNext(treeEntry))
   }
 
   private val qChildren = prepare(s"$selectTreeEntry WHERE parentId = ? AND deleted = 0")
