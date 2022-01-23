@@ -187,7 +187,7 @@ object blacklist extends util.ClassLogging:
         db.mkDir(blacklistRoot.id, dateString).foreach(externalFilesToInternalBlacklist(db, blacklistFolder, _, deleteFiles))
 
         // Process internal blacklist.
-        processInternalBlacklist(db, connection, stat, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteFiles)
+        processInternalBlacklist(db, stat, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteFiles)
 
         db.shutdownCompact()
         log.info(s"Finished blacklisting.")
@@ -221,33 +221,21 @@ object blacklist extends util.ClassLogging:
     }
 
   // TODO integration test
-  def processInternalBlacklist(db: Database, connection: Connection, stat: Statement, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
+  // TODO get rid of stat
+  def processInternalBlacklist(db: Database, stat: Statement, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
     db.children(parentId).foreach {
       case dir: DirEntry =>
-        processInternalBlacklist(db, connection, stat, dfsBlacklist, s"$parentPath/${dir.name}", dir.id, deleteCopies)
+        processInternalBlacklist(db, stat, dfsBlacklist, s"$parentPath/${dir.name}", dir.id, deleteCopies)
       case file: FileEntry =>
-        val size = stat.query(
-          s"SELECT stop - start FROM DataEntries WHERE ID = ${file.dataId}"
-        )(_.seq(_.getLong(1))).sum
-        if size > 0 then
+        if db.storageSize(file.dataId) > 0 then
           log.info(s"Blacklisting $parentPath/${file.name}")
-          connection.transaction {
-            stat.executeUpdate(s"DELETE FROM DataEntries WHERE id = ${file.dataId} AND seq > 1")
-            stat.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = ${file.dataId}")
-          }
+          db.removeStorageAllocation(file.dataId)
         if deleteCopies then
-          @annotation.tailrec
-          def pathOf(id: Long, pathEnd: String): String =
-            val parentId -> name = stat.query(
-              s"SELECT parentId, name FROM TreeEntries WHERE id = $id"
-            )(_.one(r => (r.getLong(1), r.getString(2))))
-            val path = s"/$name$pathEnd"
-            if parentId == 0 then path else pathOf(parentId, path)
           val copies = stat.query(
             s"SELECT id, parentId, name FROM TreeEntries WHERE dataId = ${file.dataId} AND deleted = 0 AND id != ${file.id}"
           )(_.seq(r => (r.getLong(1), r.getLong(2), r.getString(3))))
           val filteredCopies = copies
-            .map((id, parentId, name) => (id, pathOf(parentId, s"/$name")))
+            .map((id, parentId, name) => (id, db.pathOf(parentId, s"/$name")))
             .filterNot(_._2.startsWith(s"/$dfsBlacklist/"))
           filteredCopies.foreach { (id, path) =>
             log.info(s"Deleting copy of entry: $path")

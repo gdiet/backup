@@ -92,6 +92,17 @@ class Database(connection: Connection) extends util.ClassLogging:
     qEntry.query(_.seq(treeEntry))
   }
 
+  @annotation.tailrec
+  final def pathOf(id: Long, pathEnd: String = ""): String =
+    entry(id) match
+      case None => s"[dangling]$pathEnd"
+      case Some(entry: FileEntry) =>
+        ensure("db.path.end", pathEnd == "", s"File $entry is not the path end, path end is $pathEnd.")
+        pathOf(entry.parentId, entry.name) // Ignore path end if any in case ensure is suppressed.
+      case Some(entry: DirEntry) =>
+        val path = s"${entry.name}/$pathEnd"
+        if entry.parentId == root.id then path else pathOf(entry.parentId, path)
+
   private val qChild = prepare(s"$selectTreeEntry WHERE parentId = ? AND name = ? AND deleted = 0")
   def child(parentId: Long, name: String): Option[TreeEntry] = synchronized {
     qChild.setLong  (1, parentId)
@@ -118,11 +129,15 @@ class Database(connection: Connection) extends util.ClassLogging:
     })
   }.filterNot(_ == _) // Filter blacklisted parts of size 0.
 
-  private val qDataSize = prepare(
-    "SELECT length FROM DataEntries WHERE id = ? AND seq = 1"
-  )
+  private val qDataSize = prepare("SELECT length FROM DataEntries WHERE id = ? AND seq = 1")
+  /** @return the logical file size */
   def dataSize(dataId: DataId): Long = synchronized {
     qDataSize.tap(_.setLong(1, dataId.toLong)).query(_.maybeNext(_.getLong(1))).getOrElse(0)
+  }
+  /** @return the file's storage size */
+  private val qStorageSize = prepare("SELECT stop - start FROM DataEntries WHERE id = ?")
+  def storageSize(dataId: DataId): Long = synchronized {
+    qStorageSize.tap(_.setLong(1, dataId.toLong)).query(_.seq(_.getLong(1))).sum
   }
 
   private val qDataEntry = prepare(
@@ -225,7 +240,14 @@ class Database(connection: Connection) extends util.ClassLogging:
     if (seq == 1) iDataEntry.setBytes(6, hash) else iDataEntry.setNull(3, Types.BINARY)
     ensure("db.add.data.entry.2", iDataEntry.executeUpdate() == 1, s"insertDataEntry update count not 1 for dataId $dataId")
   }
-  
+
+  def removeStorageAllocation(dataId: DataId): Unit = synchronized {
+    connection.transaction { connection.withStatement { statement =>
+      statement.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId AND seq > 1")
+      statement.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = $dataId")
+    } }
+  }
+
   def shutdownCompact(): Unit = synchronized {
     log.info("Compacting database...")
     statement.execute("SHUTDOWN COMPACT;")
