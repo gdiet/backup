@@ -55,7 +55,16 @@ object Database extends util.ClassLogging:
     (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
 
 class Database(connection: Connection) extends util.ClassLogging:
+  import connection.{prepareStatement => prepare}
   connection.withStatement(checkAndMigrateDbVersion)
+
+  def split(path: String)       : Array[String] = path.split("/").filter(_.nonEmpty)
+  def entry(path: String)       : Option[TreeEntry] = entry(split(path))
+  def entry(path: Array[String]): Option[TreeEntry] =
+    path.foldLeft(Option[TreeEntry](root)) {
+      case (Some(dir: DirEntry), name) => child(dir.id, name)
+      case _ => None
+    }
 
   /** ResultSet: (id, parentId, name, time, dataId) */
   private def treeEntry(rs: ResultSet): TreeEntry =
@@ -67,32 +76,34 @@ class Database(connection: Connection) extends util.ClassLogging:
       rs.opt(_.getLong("dataId")).map(DataId(_))
     )
 
-  private val qChild = connection.prepareStatement(
-    "SELECT id, parentId, name, time, dataId FROM TreeEntries WHERE parentId = ? AND name = ? AND deleted = 0"
-  )
+  private val selectTreeEntry = "SELECT id, parentId, name, time, dataId FROM TreeEntries"
+
+  private val qChild = prepare(s"$selectTreeEntry WHERE parentId = ? AND name = ? AND deleted = 0")
   def child(parentId: Long, name: String): Option[TreeEntry] = synchronized {
     qChild.setLong  (1, parentId)
     qChild.setString(2, name    )
     qChild.query(_.maybeNext(treeEntry))
   }
 
-  def split(path: String)       : Array[String] = path.split("/").filter(_.nonEmpty)
-  def entry(path: String)       : Option[TreeEntry] = entry(split(path))
-  def entry(path: Array[String]): Option[TreeEntry] =
-    path.foldLeft(Option[TreeEntry](root)) {
-      case (Some(dir: DirEntry), name) => child(dir.id, name)
-      case _ => None
-    }
+  private val qEntryLike = prepare(s"$selectTreeEntry WHERE deleted = 0 AND name LIKE ?")
+  def entryLike(nameLike: String): Option[TreeEntry] = synchronized {
+    qEntry.setString(1, nameLike)
+    qEntry.query(_.maybeNext(treeEntry))
+  }
 
-  private val qChildren = connection.prepareStatement(
-    "SELECT id, parentId, name, time, dataId FROM TreeEntries WHERE parentId = ? AND deleted = 0"
-  )
+  private val qEntry = prepare(s"$selectTreeEntry WHERE id = ? AND deleted = 0")
+  def entry(id: Long): Option[TreeEntry] = synchronized {
+    qEntry.setLong(1, id)
+    qEntry.query(_.maybeNext(treeEntry))
+  }
+
+  private val qChildren = prepare(s"$selectTreeEntry WHERE parentId = ? AND deleted = 0")
   def children(parentId: Long): Seq[TreeEntry] = synchronized {
     qChildren.setLong(1, parentId)
     qChildren.query(_.seq(treeEntry))
   }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
-  private val qParts = connection.prepareStatement(
+  private val qParts = prepare(
     "SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC"
   )
   def parts(dataId: DataId): Vector[(Long, Long)] = synchronized {
@@ -105,14 +116,14 @@ class Database(connection: Connection) extends util.ClassLogging:
     })
   }.filterNot(_ == _) // Filter blacklisted parts of size 0.
 
-  private val qDataSize = connection.prepareStatement(
+  private val qDataSize = prepare(
     "SELECT length FROM DataEntries WHERE id = ? AND seq = 1"
   )
   def dataSize(dataId: DataId): Long = synchronized {
     qDataSize.tap(_.setLong(1, dataId.toLong)).query(_.maybeNext(_.getLong(1))).getOrElse(0)
   }
 
-  private val qDataEntry = connection.prepareStatement(
+  private val qDataEntry = prepare(
     "SELECT id FROM DataEntries WHERE hash = ? AND length = ?"
   )
   def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = synchronized {
@@ -121,7 +132,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     qDataEntry.query(_.maybeNext(r => DataId(r.getLong(1))))
   }
 
-  private val uTime = connection.prepareStatement(
+  private val uTime = prepare(
     "UPDATE TreeEntries SET time = ? WHERE id = ?"
   )
   def setTime(id: Long, newTime: Long): Unit = synchronized {
@@ -131,7 +142,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
   }
 
-  private val dTreeEntry = connection.prepareStatement(
+  private val dTreeEntry = prepare(
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
   )
   def delete(id: Long): Unit = synchronized {
@@ -141,7 +152,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
   }
 
-  private val iDir = connection.prepareStatement(
+  private val iDir = prepare(
     "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS
   )
   /** @return Some(id) or None if a child entry with the same name already exists. */
@@ -154,7 +165,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
 
-  private val iFile = connection.prepareStatement(
+  private val iFile = prepare(
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)",
     Statement.RETURN_GENERATED_KEYS
   )
@@ -169,7 +180,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
 
-  private val uParentName = connection.prepareStatement(
+  private val uParentName = prepare(
     "UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?"
   )
   def update(id: Long, newParentId: Long, newName: String): Boolean = synchronized {
@@ -179,7 +190,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     uParentName.executeUpdate() == 1
   }
 
-  private val uDataId = connection.prepareStatement(
+  private val uDataId = prepare(
     "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
   )
   def setDataId(id: Long, dataId: DataId): Unit = synchronized {
@@ -188,7 +199,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     ensure("db.set.dataid", uDataId.executeUpdate() == 1, s"setDataId update count not 1 for id $id dataId $dataId")
   }
 
-  private val qNextId = connection.prepareStatement(
+  private val qNextId = prepare(
     "SELECT NEXT VALUE FOR idSeq"
   )
   def nextId: Long = synchronized {
@@ -199,7 +210,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     nextId.pipe(DataId(_)).tap(setDataId(id, _))
   }
 
-  private val iDataEntry = connection.prepareStatement(
+  private val iDataEntry = prepare(
     "INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)"
   )
   def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = synchronized {
