@@ -114,26 +114,20 @@ object maintenance extends util.ClassLogging:
     }
   }
 
-  def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withStatement(dbDir, readonly = false) { stat =>
+  def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withConnection(dbDir, readonly = false) { connection =>
+    val db = Database(connection) // FIXME use withDb when stat isn't needed anymore
+    val stat = connection.createStatement() // FIXME get rid of this
     log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
     log.info(s"Note that stage 2 of reclaiming space modifies the long term store")
     log.info(s"  thus partially invalidates older database backups.")
 
     log.info(s"Deleting tree entries marked for deletion more than $keepDeletedDays days ago...")
-    val deleteBefore = now.toLong - keepDeletedDays*24*60*60*1000
 
     // First un-root, then delete. Deleting directly can violate the foreign key constraint.
     log.info(s"Part 1: Un-rooting the tree entries to delete...")
-    val entriesUnrooted = stat.executeUpdate(
-      s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBefore"
-    )
-    log.info(s"Number of entries un-rooted: $entriesUnrooted")
-
+    log.info(s"Number of entries un-rooted: ${db.unrootDeletedEntries(now.toLong - keepDeletedDays*24*60*60*1000)}")
     log.info(s"Part 2: Deleting un-rooted tree entries...")
-    val treeEntriesDeleted = stat.executeUpdate(
-      s"DELETE FROM TreeEntries WHERE id = parentId AND id != 0"
-    )
-    log.info(s"Number of un-rooted tree entries deleted: $treeEntriesDeleted")
+    log.info(s"Number of un-rooted tree entries deleted: ${db.deleteUnrootedTreeEntries()}")
 
     // Note: Most operations implemented in Scala below could also be run in SQL, but that is much slower...
 

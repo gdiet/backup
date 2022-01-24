@@ -269,6 +269,14 @@ class Database(connection: Connection) extends util.ClassLogging:
   def countDirs()        : Long = statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")
   def countDeletedDirs() : Long = statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")
 
+  // reclaimSpace specific queries
+  /** @return The number of entries that have been un-rooted. */
+  def unrootDeletedEntries(deleteBeforeMillis: Long): Long =
+    statement.executeLargeUpdate(s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBeforeMillis")
+  /** @return The number of entries that have been deleted. */
+  def deleteUnrootedTreeEntries(): Long =
+    statement.executeLargeUpdate(s"DELETE FROM TreeEntries WHERE id = parentId AND id != ${root.id}")
+
 extension (rawSql: String)
   private def prepareSql = rawSql.stripMargin.split(";")
 
