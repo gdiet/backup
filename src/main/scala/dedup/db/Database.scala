@@ -42,6 +42,7 @@ object Database extends util.ClassLogging:
         stop -> gaps.appended(DataArea(lastEnd, start))
     }
 
+  // TODO move to Database class?
   def endOfStorageAndDataGaps(statement: Statement): (Long, Seq[DataArea]) =
     val dataChunks = statement.query("SELECT start, stop FROM DataEntries")(_.seq(r => r.getLong(1) -> r.getLong(2)))
     val sortedChunks = dataChunks.to(scala.collection.SortedMap)
@@ -60,13 +61,16 @@ class Database(connection: Connection) extends util.ClassLogging:
   import connection.{prepareStatement => prepare}
   checkAndMigrateDbVersion(statement)
 
+  def freeAreas(): Seq[DataArea] = synchronized { Database.freeAreas(statement) }
+
   def split(path: String)       : Array[String] = path.split("/").filter(_.nonEmpty)
   def entry(path: String)       : Option[TreeEntry] = entry(split(path))
-  def entry(path: Array[String]): Option[TreeEntry] =
+  def entry(path: Array[String]): Option[TreeEntry] = synchronized {
     path.foldLeft(Option[TreeEntry](root)) {
       case (Some(dir: DirEntry), name) => child(dir.id, name)
       case _ => None
     }
+  }
 
   /** ResultSet: (id, parentId, name, time, dataId) */
   private def treeEntry(rs: ResultSet): TreeEntry =
@@ -97,9 +101,12 @@ class Database(connection: Connection) extends util.ClassLogging:
     qEntry.setLong(1, dataId.toLong)
     qEntry.query(_.seq(treeEntry))
   }
-  
+
+  def pathOf(id: Long): String = synchronized { pathOf(id, "") }
   @annotation.tailrec
-  final def pathOf(id: Long, pathEnd: String = ""): String =
+  private def pathOf(id: Long, pathEnd: String): String =
+    // Why not fold? - https://stackoverflow.com/questions/70821201/why-cant-option-fold-be-used-tail-recursively-in-scala
+    // TODO eventually create a PR for scala-next enabling tailrec fold
     entry(id) match
       case None => s"[dangling]$pathEnd"
       case Some(entry: FileEntry) =>
@@ -259,34 +266,37 @@ class Database(connection: Connection) extends util.ClassLogging:
     statement.execute("SHUTDOWN COMPACT;")
   }
 
-  def version(): Option[String] = Database.dbVersion(statement)
+  def version(): Option[String] = synchronized { Database.dbVersion(statement) }
 
   // File system statistics
-  def storageSize()      : Long = statement.queryLongOrZero("SELECT MAX(stop) FROM DataEntries")
-  def countDataEntries() : Long = statement.queryLongOrZero("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")
-  def countFiles()       : Long = statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")
-  def countDeletedFiles(): Long = statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")
-  def countDirs()        : Long = statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")
-  def countDeletedDirs() : Long = statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")
+  def storageSize()      : Long = synchronized { statement.queryLongOrZero("SELECT MAX(stop) FROM DataEntries") }
+  def countDataEntries() : Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM DataEntries WHERE seq = 1") }
+  def countFiles()       : Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL") }
+  def countDeletedFiles(): Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL") }
+  def countDirs()        : Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL") }
+  def countDeletedDirs() : Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL") }
 
   // reclaimSpace specific queries
   /** @return The number of entries that have been un-rooted. */
-  def unrootDeletedEntries(deleteBeforeMillis: Long): Long =
+  def unrootDeletedEntries(deleteBeforeMillis: Long): Long = synchronized {
     statement.executeLargeUpdate(s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBeforeMillis")
+  }
   /** @return The number of entries that have been deleted. */
-  def deleteUnrootedTreeEntries(): Long =
+  def deleteUnrootedTreeEntries(): Long = synchronized {
     statement.executeLargeUpdate(s"DELETE FROM TreeEntries WHERE id = parentId AND id != ${root.id}")
-  def dataIdsInTree(): Set[Long] = statement.query(
+  }
+  def dataIdsInTree(): Set[Long] = synchronized { statement.query(
     // The WHERE clause makes sure the 'null' entries are not returned
     "SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0"
-  )(_.seq(_.getLong(1))).toSet
-  def dataIdsInStorage(): Set[Long] = statement.query(
+  )(_.seq(_.getLong(1))).toSet }
+  def dataIdsInStorage(): Set[Long] = synchronized { statement.query(
     // The WHERE clause makes sure the 'null' entries are not returned
     "SELECT id FROM DataEntries"
-  )(_.seq(_.getLong(1))).toSet
-  def deleteDataEntry(dataId: Long): Unit =
+  )(_.seq(_.getLong(1))).toSet }
+  def deleteDataEntry(dataId: Long): Unit = synchronized {
     val count = statement.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId")
     ensure("db.delete.dataentry", count == 1, s"For data id $dataId, delete count is $count instead of 1.")
+  }
 
 extension (rawSql: String)
   private def prepareSql = rawSql.stripMargin.split(";")

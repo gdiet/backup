@@ -114,9 +114,7 @@ object maintenance extends util.ClassLogging:
     }
   }
 
-  def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withConnection(dbDir, readonly = false) { connection =>
-    val db = Database(connection) // FIXME use withDb when stat isn't needed anymore
-    val stat = connection.createStatement() // FIXME get rid of this
+  def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withDb(dbDir, readonly = false) { db =>
     log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
     log.info(s"Note that stage 2 of reclaiming space modifies the long term store")
     log.info(s"  thus partially invalidates older database backups.")
@@ -147,7 +145,7 @@ object maintenance extends util.ClassLogging:
 
     // TODO add option to skip this
     log.info(s"Checking compaction potential of the data storage:")
-    Database.freeAreas(stat) // Run for its log output
+    db.freeAreas() // Run for its log output
 
     db.shutdownCompact()
     log.info(s"Finished stage 1 of reclaiming space. Undo by restoring the database from a backup.")
