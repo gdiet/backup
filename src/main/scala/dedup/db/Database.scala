@@ -46,7 +46,6 @@ class Database(connection: Connection) extends util.ClassLogging:
     statement.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
   }
 
-  // TODO integration test
   def freeAreas(): Seq[DataArea] = synchronized {
     val dataChunks = statement.query("SELECT start, stop FROM DataEntries")(_.seq(r => r.getLong(1) -> r.getLong(2)))
     log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
