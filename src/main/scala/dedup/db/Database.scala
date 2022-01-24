@@ -21,18 +21,6 @@ def withDb[T](dbDir: File, readonly: Boolean = true)(f: Database => T): T =
 object Database extends util.ClassLogging:
   val currentDbVersion = "3"
 
-  // TODO move to Database class?
-  def dbVersion(stat: Statement): Option[String] =
-    stat.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
-
-  def checkAndMigrateDbVersion(stat: Statement): Unit =
-    dbVersion(stat) match
-      case None =>
-        ensure("database.no.version", false, s"No database version found.")
-      case Some(dbVersion) =>
-        log.debug(s"Database version: $dbVersion.")
-        ensure("database.illegal.version", dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
-
   def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
     dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
       case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
@@ -59,7 +47,18 @@ object Database extends util.ClassLogging:
 class Database(connection: Connection) extends util.ClassLogging:
   val statement: Statement = connection.createStatement()
   import connection.{prepareStatement => prepare}
-  checkAndMigrateDbVersion(statement)
+
+  // Check and migrate database version
+  version() match
+    case None =>
+      ensure("database.no.version", false, s"No database version found.")
+    case Some(dbVersion) =>
+      log.debug(s"Database version: $dbVersion.")
+      ensure("database.illegal.version", dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
+
+  def version(): Option[String] = synchronized {
+    statement.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
+  }
 
   def freeAreas(): Seq[DataArea] = synchronized { Database.freeAreas(statement) }
 
@@ -265,8 +264,6 @@ class Database(connection: Connection) extends util.ClassLogging:
     log.info("Compacting database...")
     statement.execute("SHUTDOWN COMPACT;")
   }
-
-  def version(): Option[String] = synchronized { Database.dbVersion(statement) }
 
   // File system statistics
   def storageSize()      : Long = synchronized { statement.queryLongOrZero("SELECT MAX(stop) FROM DataEntries") }
