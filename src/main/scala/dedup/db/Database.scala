@@ -24,7 +24,7 @@ object Database extends util.ClassLogging:
   def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
     dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
       case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
-        ensure("data.find.gaps", start == lastEnd, s"Detected overlapping data entry ($start, $stop).")
+        ensure("data.find.gaps", start == lastEnd, s"Detected overlapping data entry: End = $lastEnd, start = $start.")
         stop -> gaps
       case ((lastEnd, gaps), (start, stop)) =>
         stop -> gaps.appended(DataArea(lastEnd, start))
