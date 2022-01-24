@@ -8,8 +8,7 @@ lazy val dedupfs = project
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.7",
     // Update dedup.db.H2.dbName accordingly when updating H2 version.
     // Document migration, similar to 4.x -> 5.x migration.
-    // FIXME 2.0.206 is probably short-lived, the next one might be good.
-    libraryDependencies += "com.h2database" % "h2" % "2.0.206",
+    libraryDependencies += "com.h2database" % "h2" % "2.1.210",
     // Test dependencies
     libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.10" % "test",
   )
