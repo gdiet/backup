@@ -5,7 +5,7 @@ if errorlevel 1 exit /B %errorlevel%
 
 rem ### Parameters ###
 rem # repo=<repository directory> | default: .. (parent of working directory)
-rem # mount=<mount point>         | default: /mnt/dedupfs
+rem # mount=<mount point>         | default: /mnt/dedupfs - the 'mount=' prefix can be omitted
 rem # readOnly=true               | default: false
 rem # dbBackup=false              | default: true
 rem # copyWhenMoving=true         | default: false

@@ -1,10 +1,11 @@
 package dedup
 package server
 
-import java.util.concurrent.{Executors, TimeUnit}
+import dedup.db.withStatement
+
 import java.util.concurrent.atomic.AtomicLong
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
+import java.util.concurrent.{Executors, TimeUnit}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Using.resource
 
 object Level2:
@@ -12,15 +13,30 @@ object Level2:
   private val entryCount = new AtomicLong()
   private val entriesSize = new AtomicLong()
 
+  def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
+    @annotation.tailrec
+    def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
+      ensure("write.algorithm.1", areas.nonEmpty, s"Remaining data areas are empty, data size ${data.length}")
+      val head +: rest = areas
+      if head.size == data.length then
+        write(head.start, data); rest
+      else if head.size > data.length then
+        write(head.start, data); head.drop(data.length) +: rest
+      else
+        val intSize = head.size.toInt // always smaller than MaxInt, see above
+        write(head.start, data.take(intSize)); doStore(rest, data.drop(intSize))
+    val remaining = data.foldLeft(toAreas) { case (storeAt, (_, bytes)) => doStore(storeAt, bytes) }
+    ensure("write.algorithm.2", remaining.isEmpty, s"Remaining data areas not empty: $remaining")
+
 /* Corner case: What happens if a tree entry is deleted and after that the level 2 cache is written?
  * In that case, level 2 cache is written for the deleted file entry, and everything is fine. */
 class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
   import Level2.*
 
   private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
-  private val con = db.H2.connection(settings.dbDir, settings.readonly, dbMustExist = true)
+  private val con = db.H2.connection(settings.dbDir, settings.readonly)
+  private val freeAreas = FreeAreas(if settings.readonly then Seq() else con.withStatement(db.Database.freeAreas))
   private val database = db.Database(con)
-  private val startOfFreeData = new AtomicLong(database.startOfFreeData)
   export database.{child, children, delete, entry, mkDir, mkFile, setTime, split, update}
 
   /** id -> DataEntry. Remember to synchronize. */
@@ -39,9 +55,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       if settings.temp.list().isEmpty then settings.temp.delete()
       else log.warn(s"Temp dir not empty: ${settings.temp}")
     lts.close()
-    if !settings.readonly then
-      log.info("Compacting database...")
-      resource(con.createStatement())(_.execute("SHUTDOWN COMPACT;"))
+    if !settings.readonly then database.shutdownCompact()
     con.close()
     log.info("Shutdown complete.")
 
@@ -92,8 +106,8 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       )
     else
       log.trace(s"readFromLts(parts: $parts, readFrom: $readFrom, readSize: $readSize)")
-      require(readFrom >= 0, s"Read offset $readFrom must be >= 0.")
-      require(readSize > 0, s"Read size $readSize must be > 0.")
+      ensure("read.lts.offset", readFrom >= 0, s"Read offset $readFrom must be >= 0.")
+      ensure("read.lts.size", readSize > 0, s"Read size $readSize must be > 0.")
       val (lengthOfParts, partsToReadFrom) = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
         case ((currentOffset, result), part @ (partPosition, partSize)) =>
           val distance = readFrom - currentOffset
@@ -101,7 +115,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
           else if distance > 0 then currentOffset + partSize -> (result :+ (partPosition + distance, partSize - distance))
           else currentOffset + partSize -> (result :+ part)
       }
-      require(lengthOfParts >= readFrom + readSize, s"Read offset $readFrom size $readSize exceeds parts length $parts.")
+      ensure("read.lts.parts", lengthOfParts >= readFrom + readSize, s"Read offset $readFrom size $readSize exceeds parts length $parts.")
       def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] =
         val (partPosition, partSize) +: rest = remainingParts
         if partSize < readSize then lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
@@ -146,12 +160,15 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       // Not yet known, store ...
       case None =>
         // Reserve storage space
-        val start = startOfFreeData.getAndAdd(dataEntry.size)
+        val reserved = freeAreas.reserve(dataEntry.size)
         // Write to storage
-        data.foreach { (offset, bytes) => lts.write(start + offset, bytes) }
-        // create data entry
+        Level2.writeAlgorithm(data, reserved, lts.write)
+        // Save data entries
         val dataId = database.newDataIdFor(id)
-        database.insertDataEntry(dataId, 1, dataEntry.size, start, start + dataEntry.size, hash)
+        reserved.zipWithIndex.foreach { case (dataArea, index) =>
+          log.debug(s"Data ID $dataId size ${dataEntry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
+          database.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
+        }
         log.trace(s"Persisted $id - new content, dataId $dataId")
         dataId
     }

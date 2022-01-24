@@ -12,7 +12,7 @@ import scala.util.Using.resource
   val dbDir = db.dbDir(repo)
   if dbDir.exists() then main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.")
   store.dataDir(repo).mkdirs() // If dataDir is missing, Server.statfs will report free size 0 on Windows.
-  resource(db.H2.connection(dbDir, readonly = false, dbMustExist = false))(db.initialize)
+  resource(db.H2.connection(dbDir, readonly = false, expectExists = false))(db.initialize)
   main.info(s"Database initialized for repository $repo.")
   Thread.sleep(200) // Give logging some time to display message
 
@@ -32,18 +32,12 @@ import scala.util.Using.resource
   }
 
 @main def dbRestore(opts: (String, String)*): Unit =
-  db.maintenance.restoreBackup(opts.dbDir, opts.get("from"))
+  db.maintenance.restoreBackup(opts.dbDir, opts.unnamedOrGet("from"))
   Thread.sleep(200) // Give logging some time to display message
 
-@main def reclaimSpace1(opts: (String, String)*): Unit =
-  db.maintenance.backup(opts.dbDir)
-  maintain.reclaim.reclaimSpace1(opts.dbDir, opts.getOrElse("keepDays", "0").toInt)
-  Thread.sleep(200) // Give logging some time to display message
-
-@main def reclaimSpace2(opts: (String, String)*): Unit =
-  resource(store.LongTermStore(store.dataDir(opts.repo), false))(lts =>
-    maintain.reclaim.reclaimSpace2(opts.dbDir, lts)
-  )
+@main def reclaimSpace(opts: (String, String)*): Unit =
+  db.maintenance.backup(opts.dbDir, "_before_reclaim")
+  db.maintenance.reclaimSpace(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
   Thread.sleep(200) // Give logging some time to display message
 
 @main def blacklist(opts: (String, String)*): Unit =
@@ -52,7 +46,7 @@ import scala.util.Using.resource
   val dfsBlacklist = opts.getOrElse("dfsBlacklist", "blacklist")
   val deleteCopies = opts.defaultFalse("deleteCopies")
   if opts.defaultTrue("dbBackup") then db.maintenance.backup(opts.dbDir)
-  db.maintenance.blacklist(opts.dbDir, blacklistDir, deleteFiles, dfsBlacklist, deleteCopies)
+  db.blacklist(opts.dbDir, blacklistDir, deleteFiles, dfsBlacklist, deleteCopies)
 
 @main def mount(opts: (String, String)*): Unit =
   val readOnly       = opts.defaultFalse("readOnly")
@@ -61,11 +55,12 @@ import scala.util.Using.resource
   try
     def isWindows = getNativePlatform.getOS == WINDOWS
     val repo           = opts.repo
-    val mount          = File(opts.getOrElse("mount", if isWindows then "J:\\" else "/mnt/dedupfs" )).getCanonicalFile
+    val mount          = File(opts.unnamedOrGet("mount").getOrElse(if isWindows then "J:\\" else "/mnt/dedupfs" )).getCanonicalFile
     val backup         = !readOnly && opts.defaultTrue("dbBackup")
     val temp           = File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
     val dbDir          = db.dbDir(repo)
     if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
+    if !readOnly then db.H2.checkForTraceFile(dbDir)
     if isWindows then
       if !mount.toString.matches(raw"[a-zA-Z]:\\.*") then main.failureExit(s"Mount point not on a local drive: $mount")
       if mount.exists then main.failureExit(s"Mount point already exists: $mount")
@@ -110,7 +105,7 @@ private val baseOptionMatcher = """(\w+)=(\S+)""".r
 given scala.util.CommandLineParser.FromString[(String, String)] with
   def fromString(option: String): (String, String) = option match
     case baseOptionMatcher(key, value) => key.toLowerCase -> value.toLowerCase
-    case _ => throw IllegalArgumentException()
+    case value => "" -> value.toLowerCase
 
 extension(options: Seq[String])
   private def baseAndAdditionalOptions = options.partitionMap {
@@ -123,7 +118,12 @@ extension(options: Seq[String])
     baseAndAdditionalOptions._2
 
 extension(options: Seq[(String, String)])
-  private def opts = options.toMap.map((key, value) => key.toLowerCase -> value)
+  private def opts =
+    val map = options.toMap.map((key, value) => key.toLowerCase -> value)
+    ensure("unnamed.arguments", options.size == map.size, s"Multiple unnamed arguments: $options")
+    map
+  private def unnamedOrGet(name: String): Option[String] =
+    opts.get("").orElse(opts.get(name.toLowerCase))
   private def get(name: String): Option[String] =
     opts.get(name.toLowerCase)
   private def getOrElse(name: String, otherwise: => String): String =

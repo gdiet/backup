@@ -15,9 +15,9 @@ private val fileSize = 100000000
   * @return The relative data file path, the offset in the data file,
   *         and the part of the requested size located on the data file. */
 private def pathOffsetSize(position: Long, size: Long): (String, Long, Int) =
-  require(9000000000000000000L - position - size > 0) // Cap access near MaxLong.
-  require(position >= 0) // No sensible behavior implemented for negative position.
-  require(size >= 0) // No sensible behavior implemented for negative size.
+  ensure("lts.cap", 9000000000000000000L - position - size > 0, s"Exceeded storage cap: $position + $size")
+  ensure("lts.position.negative", position >= 0, s"No sensible behavior implemented for negative position $position.")
+  ensure("lts.size.negative", size >= 0, s"No sensible behavior implemented for negative size $size.")
   val positionInFile = (position % fileSize).toInt     // 100 MB per file
   val dir2 = f"${position / fileSize / 100 % 100}%02d" //  10 GB per dir
   val dir1 = f"${position / fileSize / 100 / 100}%02d" //   1 TB per dir
@@ -37,8 +37,8 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dat
     *                 Attempts to write at/beyond position 9e18 yield an [[IllegalArgumentException]].
     * @param data     The data to write to the store. */
   def write(position: Long, data: Array[Byte]): Unit =
-    require(!readOnly, "Store is read-only, can't write.")
-    require(position >= 0, s"Write position $position must be >= 0.")
+    ensure("lts.protected", !readOnly, "Store is read-only, can't write.")
+    ensure("lts.write.position", position >= 0, s"Write position $position must be >= 0.")
     val (path, offset, bytesToWrite) = pathOffsetSize(position, data.length)
     access(path, write = true) { file => file.seek(offset); file.write(data.take(bytesToWrite)) }
     if (data.length > bytesToWrite) write(position + bytesToWrite, data.drop(bytesToWrite))
@@ -49,8 +49,8 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dat
     * @return (actual size, data), where actual size is capped by [[dedup.memChunk]]
     *         and by the number of bytes available in the data file to accessed. */
   private def readChunk(position: Long, size: Long): (Int, Array[Byte]) =
-    require(position >= 0, s"Read position $position must be >= 0.")
-    require(size >= 0, s"Read size $size must be >= 0.")
+    ensure("lts.read.position", position >= 0, s"Read position $position must be >= 0.")
+    ensure("lts.read.size", size >= 0, s"Read size $size must be >= 0.")
     val (path, offset, bytesFromFile) = pathOffsetSize(position, size)
     val bytesToReturn = math.min(dedup.memChunk, bytesFromFile)
     val bytes = new Array[Byte](bytesToReturn)

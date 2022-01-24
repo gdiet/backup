@@ -21,7 +21,7 @@ trait CacheBase[M]:
   protected def release(sizes: => Iterable[Long]): Unit = {/**/}
 
   extension(m: M)
-    private def _check(distance: Long): Unit      = require(distance > 0 && distance < length(m), s"Distance: $distance")
+    private def _check(distance: Long): Unit      = ensure("cache.check", distance > 0 && distance < length(m), s"Distance: $distance, length ${length(m)}")
     private def _length               : Long      = length(m)
     private def _merge(other   : M   ): Option[M] = merge(m, other)
     private def _drop (distance: Long): M         = { _check(distance); drop (m, distance) }
@@ -37,8 +37,8 @@ trait CacheBase[M]:
 
   /** Clears the specified part of the managed area. */
   def clear(position: Long, size: Long): Unit =
-    require(position >= 0, s"Negative position: $position")
-    require(size     >  0, s"Size not positive: $position")
+    ensure("cache.clear.position", position >= 0, s"Negative position: $position")
+    ensure("cache.clear.size",     size     >  0, s"Size not positive: $position")
     // If necessary, split lower entry.
     Option(entries.lowerEntry(position)).foreach { case JEntry(storedAt, area) =>
       val distance = position - storedAt
@@ -65,7 +65,7 @@ trait CacheBase[M]:
 
   /** Truncates the managed areas to the specified size. */
   def keep(newSize: Long): Unit =
-    require(newSize >= 0, s"Negative new size: $newSize")
+    ensure("cache.keep", newSize >= 0, s"Negative new size: $newSize")
     // Remove higher entries.
     release(entries.tailMap(newSize).asScala.values.map(_._length))
     // Keep all strictly lower entries.
@@ -77,13 +77,13 @@ trait CacheBase[M]:
     }
 
   def mergeIfPossible(position: Long): Unit =
-    require(position >= 0, s"Negative position: $position")
+    ensure("cache.merge.position", position >= 0, s"Negative position: $position")
     Option(entries.lowerEntry(position)).foreach { case JEntry(storedAt, area) =>
       val entryLength = area._length
-      require(storedAt + entryLength <= position, s"Overlapping entries at $position: $entries")
+      ensure("cache.merge", storedAt + entryLength <= position, s"Overlapping entries at $position: $entries")
       if storedAt + entryLength == position then
         Option(entries.get(position)) match
-          case None => throw IllegalArgumentException(s"No entry at position: $position")
+          case None => ensure ("cache.merge", false, s"No entry at position: $position")
           case Some(upperArea) =>
             area._merge(upperArea).foreach { merged =>
               entries.remove(position)
@@ -96,8 +96,8 @@ trait CacheBase[M]:
     * @return An Iterator of (position, gapSize | byte array]). */
   def read(position: Long, size: Long): Iterator[(Long, Either[Long, M])] =
     // Note: For Scala 3.0, generic union types like Long | M seem to still be unwieldy.
-    require(position >= 0, s"Negative position: $position")
-    require(size     >  0, s"Size not positive: $position")
+    ensure("cache.read.position", position >= 0, s"Negative position: $position")
+    ensure("cache.read.size",     size     >  0, s"Size not positive: $position")
     // Identify the relevant entries.
     val startKey = Option(entries.floorKey(position)).getOrElse(position)
     import scala.jdk.CollectionConverters.MapHasAsScala
