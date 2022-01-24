@@ -35,8 +35,8 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
   private val con = db.H2.connection(settings.dbDir, settings.readonly)
-  private val freeAreas = FreeAreas(if settings.readonly then Seq() else con.withStatement(db.Database.freeAreas))
   private val database = db.Database(con)
+  private val freeAreas = FreeAreas(if settings.readonly then Seq() else database.freeAreas())
   export database.{child, children, delete, entry, mkDir, mkFile, setTime, split, update}
 
   /** id -> DataEntry. Remember to synchronize. */

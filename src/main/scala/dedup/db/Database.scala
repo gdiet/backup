@@ -30,20 +30,6 @@ object Database extends util.ClassLogging:
         stop -> gaps.appended(DataArea(lastEnd, start))
     }
 
-  // TODO move to Database class?
-  def endOfStorageAndDataGaps(statement: Statement): (Long, Seq[DataArea]) =
-    val dataChunks = statement.query("SELECT start, stop FROM DataEntries")(_.seq(r => r.getLong(1) -> r.getLong(2)))
-    val sortedChunks = dataChunks.to(scala.collection.SortedMap)
-    log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
-    ensure("data.sort.gaps", sortedChunks.size == dataChunks.size, s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
-    endOfStorageAndDataGaps(sortedChunks)
-
-  def freeAreas(statement: Statement): Seq[DataArea] =
-    val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(statement)
-    log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
-    log.info(s"Free for reclaiming: ${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} gaps.")
-    (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
-
 class Database(connection: Connection) extends util.ClassLogging:
   val statement: Statement = connection.createStatement()
   import connection.{prepareStatement => prepare}
@@ -60,7 +46,17 @@ class Database(connection: Connection) extends util.ClassLogging:
     statement.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
   }
 
-  def freeAreas(): Seq[DataArea] = synchronized { Database.freeAreas(statement) }
+  // TODO integration test
+  def freeAreas(): Seq[DataArea] = synchronized {
+    val dataChunks = statement.query("SELECT start, stop FROM DataEntries")(_.seq(r => r.getLong(1) -> r.getLong(2)))
+    log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
+    val sortedChunks = dataChunks.to(scala.collection.SortedMap)
+    ensure("data.sort.gaps", sortedChunks.size == dataChunks.size, s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
+    val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(sortedChunks)
+    log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
+    log.info(s"Free for reclaiming: ${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} gaps.")
+    (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
+  }
 
   def split(path: String)       : Array[String] = path.split("/").filter(_.nonEmpty)
   def entry(path: String)       : Option[TreeEntry] = entry(split(path))
