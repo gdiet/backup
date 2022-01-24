@@ -276,6 +276,17 @@ class Database(connection: Connection) extends util.ClassLogging:
   /** @return The number of entries that have been deleted. */
   def deleteUnrootedTreeEntries(): Long =
     statement.executeLargeUpdate(s"DELETE FROM TreeEntries WHERE id = parentId AND id != ${root.id}")
+  def dataIdsInTree(): Set[Long] = statement.query(
+    // The WHERE clause makes sure the 'null' entries are not returned
+    "SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0"
+  )(_.seq(_.getLong(1))).toSet
+  def dataIdsInStorage(): Set[Long] = statement.query(
+    // The WHERE clause makes sure the 'null' entries are not returned
+    "SELECT id FROM DataEntries"
+  )(_.seq(_.getLong(1))).toSet
+  def deleteDataEntry(dataId: Long): Unit =
+    val count = statement.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId")
+    ensure("db.delete.dataentry", count == 1, s"For data id $dataId, delete count is $count instead of 1.")
 
 extension (rawSql: String)
   private def prepareSql = rawSql.stripMargin.split(";")
@@ -318,5 +329,5 @@ private def indexDefinitions =
      |CREATE INDEX DataEntriesStopIdx ON DataEntries(stop);
      |-- Find data entries by size & hash --
      |CREATE INDEX DataEntriesLengthHashIdx ON DataEntries(length, hash);
-     |-- Find orphan data entries and blacklisted copies --
+     |-- Find distinct data references, orphan data entries and blacklisted copies --
      |CREATE INDEX TreeEntriesDataIdIdx ON TreeEntries(dataId);""".prepareSql

@@ -134,17 +134,12 @@ object maintenance extends util.ClassLogging:
     // TODO extract to method and add integration test
     { // Run in separate block so the possibly large collections can be garbage collected soon
       log.info(s"Deleting orphan data entries from storage database...")
-      // Note: The WHERE clause also makes sure the 'null' entries are not returned
-      val dataIdsInTree = stat.query(
-        "SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0"
-      )(_.seq(_.getLong(1))).toSet
+      val dataIdsInTree = db.dataIdsInTree()
       log.info(s"Number of data entries found in tree database: ${dataIdsInTree.size}")
-      val dataIdsInStorage = stat.query("SELECT id FROM DataEntries")(_.seq(_.getLong(1))).toSet
+      val dataIdsInStorage = db.dataIdsInStorage()
       log.info(s"Number of data entries in storage database: ${dataIdsInStorage.size}")
       val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree
-      dataIdsToDelete.foreach(dataId => stat.executeUpdate(
-        s"DELETE FROM DataEntries WHERE id = $dataId"
-      ))
+      dataIdsToDelete.foreach(db.deleteDataEntry)
       log.info(s"Number of orphan data entries deleted from storage database: ${dataIdsToDelete.size}")
       val orphanDataIdsInTree = (dataIdsInTree -- dataIdsInStorage).size
       if orphanDataIdsInTree > 0 then log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
@@ -154,8 +149,7 @@ object maintenance extends util.ClassLogging:
     log.info(s"Checking compaction potential of the data storage:")
     Database.freeAreas(stat) // Run for its log output
 
-    log.info(s"Compacting database...")
-    stat.execute("SHUTDOWN COMPACT;")
+    db.shutdownCompact()
     log.info(s"Finished stage 1 of reclaiming space. Undo by restoring the database from a backup.")
   }
 
