@@ -86,14 +86,14 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   private val qEntryLike = prepare(s"$selectTreeEntry WHERE deleted = 0 AND name LIKE ?")
   def entryLike(nameLike: String): Seq[TreeEntry] = synchronized {
-    qEntry.setString(1, nameLike)
-    qEntry.query(_.seq(treeEntry))
+    qEntryLike.setString(1, nameLike)
+    qEntryLike.query(_.seq(treeEntry))
   }
 
   private val qEntriesFor = prepare(s"$selectTreeEntry WHERE dataId = ? AND deleted = 0")
   def entriesFor(dataId: DataId): Seq[TreeEntry] = synchronized {
-    qEntry.setLong(1, dataId.toLong)
-    qEntry.query(_.seq(treeEntry))
+    qEntriesFor.setLong(1, dataId.toLong)
+    qEntriesFor.query(_.seq(treeEntry))
   }
 
   def pathOf(id: Long): String = synchronized { pathOf(id, "") }
