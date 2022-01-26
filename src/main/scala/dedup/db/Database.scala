@@ -134,7 +134,7 @@ class Database(connection: Connection) extends util.ClassLogging:
       ensure("data.part.size", size >= 0, s"Size $size must be >= 0.")
       start -> size
     })
-  }.filterNot(_ == _) // Filter blacklisted parts of size 0.
+  }.filterNot(_._2 == 0) // Filter parts of size 0 as created when blacklisting.
 
   private val qDataSize = prepare("SELECT length FROM DataEntries WHERE id = ? AND seq = 1")
   /** @return the logical file size */
