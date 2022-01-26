@@ -34,3 +34,19 @@ class DatabaseSpec extends org.scalatest.freespec.AnyFreeSpec:
       intercept[IllegalArgumentException] { db.freeAreas() }
     }
   }
+
+  "Integration test for Database.pathOf()" in {
+    MemH2 { connection =>
+      initialize(connection)
+      val db = Database(connection)
+      val dir1 = db.mkDir(root.id, "dir1").get
+      val dir2 = db.mkDir(dir1, "dir2").get
+      val file1 = db.mkFile(dir2, "file1", now, DataId(-1)).get
+      val illegalChild = db.mkFile(file1, "illegalChild", now, DataId(-1)).get
+      assert(db.pathOf(root.id) == "/")
+      assert(db.pathOf(dir1) == "/dir1/")
+      assert(db.pathOf(dir2) == "/dir1/dir2/")
+      assert(db.pathOf(file1) == "/dir1/dir2/file1")
+      intercept[IllegalArgumentException](db.pathOf(illegalChild))
+    }
+  }
