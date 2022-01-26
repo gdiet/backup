@@ -12,17 +12,14 @@ class BlacklistSpec extends org.scalatest.freespec.AnyFreeSpec:
       val black1d = db.newDataIdFor(black1)
       db.insertDataEntry(black1d, 1, 10, 10, 20, Array())
       val black2 = db.mkFile(blacklist, "black2", now, black1d).get
-//
-//      val data1 = db.newDataIdFor(file1)
-//      val dir1 = db.mkDir(root.id, "dir1").get
-//      val dir2 = db.mkDir(dir1, "dir2").get
-//      val file1 = db.mkFile(dir2, "file1", now, DataId(-1)).get
-//      val data1 = db.newDataIdFor(file1)
+      val dir1 = db.mkDir(root.id, "dir1").get
+      val file1 = db.mkFile(dir1, "file1", now, black1d).get
       f(db, Map(
         "blacklist" -> blacklist,
         "black1" -> black1,
         "black1d" -> black1d.toLong,
         "black2" -> black2,
+        "file1" -> file1
       ))
     }
 
@@ -39,5 +36,23 @@ class BlacklistSpec extends org.scalatest.freespec.AnyFreeSpec:
       blacklist.processInternalBlacklist(db, "blacklist", "/blacklist", ids("blacklist"), true)
       assert(db.entry(ids("black1")).get.getClass == classOf[FileEntry])
       assert(db.entry(ids("black2")).get.getClass == classOf[FileEntry])
+    }
+  }
+
+  "processInternalBlacklist doesn't delete copies when requested not to" in {
+    dbWithContents { case (db, ids) =>
+      blacklist.processInternalBlacklist(db, "blacklist", "/blacklist", ids("blacklist"), false)
+      assert(db.entry(ids("black1")).get.getClass == classOf[FileEntry])
+      assert(db.entry(ids("black2")).get.getClass == classOf[FileEntry])
+      assert(db.entry(ids("file1")).get.getClass == classOf[FileEntry])
+    }
+  }
+
+  "processInternalBlacklist deletes copies when requested to" in {
+    dbWithContents { case (db, ids) =>
+      blacklist.processInternalBlacklist(db, "blacklist", "/blacklist", ids("blacklist"), true)
+      assert(db.entry(ids("black1")).get.getClass == classOf[FileEntry])
+      assert(db.entry(ids("black2")).get.getClass == classOf[FileEntry])
+      assert(db.entry(ids("file1")) == None)
     }
   }
