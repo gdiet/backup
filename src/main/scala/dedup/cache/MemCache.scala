@@ -43,11 +43,11 @@ class MemCache(availableMem: AtomicLong) extends CacheBase[Array[Byte]] with Aut
 
   /** @return `false` if data is not cached because not enough free memory is available. */
   def write(position: Long, data: Array[Byte]): Boolean =
-    tryAcquire(data.length).tap(if _ then
+    tryAcquire(data.length).tap(if _ then {
       clear(position, data.length)
       entries.put(position, data)
       mergeIfPossible(position)
-    )
+    })
 
   override def close(): Unit =
     import scala.jdk.CollectionConverters.MapHasAsScala

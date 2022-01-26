@@ -96,14 +96,14 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
       if oldParts.length == 0 || newParts.length == 0 then ENOENT else
       if oldParts.sameElements(newParts)              then OK     else
         backend.entry(oldParts) match
-          case None         => ENOENT // Oldpath does not exist.
+          case None         => ENOENT // oldpath does not exist.
           case Some(origin) => backend.entry(newParts.dropRight(1)) match
             case None                       => ENOENT  // Parent of newpath does not exist.
             case Some(_        : FileEntry) => ENOTDIR // Parent of newpath is a file.
             case Some(targetDir: DirEntry ) =>
               val newName = newParts.last
               origin -> backend.child(targetDir.id, newName) match
-                case (_: FileEntry) -> Some(_: DirEntry) => EISDIR // Oldpath is a file and newpath is a dir.
+                case (_: FileEntry) -> Some(_: DirEntry) => EISDIR // oldpath is a file and newpath is a dir.
                 case  _             -> previous          =>
                   // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
                   // replace operation is not atomic. This is tolerated in order to simplify the code.
