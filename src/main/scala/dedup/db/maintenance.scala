@@ -204,7 +204,6 @@ object blacklist extends util.ClassLogging:
           log.info(s"Copied to DedupFS blacklist: $file")
     }
 
-  // TODO integration test
   def processInternalBlacklist(db: Database, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
     db.children(parentId).foreach {
       case dir: DirEntry =>
