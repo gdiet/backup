@@ -101,14 +101,13 @@ class Database(connection: Connection) extends util.ClassLogging:
   private def pathOf(id: Long, pathEnd: String): String =
     // Why not fold? - https://stackoverflow.com/questions/70821201/why-cant-option-fold-be-used-tail-recursively-in-scala
     // TODO eventually create a PR for scala-next enabling tailrec fold
-    entry(id) match
-      case None => s"[dangling]$pathEnd"
+    if id == root.id then s"/$pathEnd"
+    else entry(id) match
+      case None => s"[not found]/$pathEnd"
       case Some(entry: FileEntry) =>
         ensure("db.path.end", pathEnd == "", s"File $entry is not the path end, path end is $pathEnd.")
         pathOf(entry.parentId, entry.name) // Ignore path end if any in case ensure is suppressed.
-      case Some(entry: DirEntry) =>
-        val path = s"${entry.name}/$pathEnd"
-        if entry.parentId == root.id then path else pathOf(entry.parentId, path)
+      case Some(entry: DirEntry) => pathOf(entry.parentId, s"${entry.name}/$pathEnd")
 
   private val qChild = prepare(s"$selectTreeEntry WHERE parentId = ? AND name = ? AND deleted = 0")
   def child(parentId: Long, name: String): Option[TreeEntry] = synchronized {
