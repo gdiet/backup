@@ -5,10 +5,6 @@ import java.sql.{Connection, DriverManager}
 import scala.collection.SortedMap
 import scala.util.Using.resource
 
-object MemH2:
-  Class.forName("org.h2.Driver")
-  def apply(f: Connection => Any): Unit = resource(DriverManager.getConnection("jdbc:h2:mem:"))(f)
-
 class DatabaseSpec extends org.scalatest.freespec.AnyFreeSpec:
   import Database.endOfStorageAndDataGaps
 
