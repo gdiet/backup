@@ -56,6 +56,8 @@ object maintenance extends util.ClassLogging:
     log.info(f"Data storage: ${readableBytes(storageSize)} ($storageSize%,d bytes) / ${db.countDataEntries()}%,d entries")
     log.info(f"Files: ${db.countFiles()}%,d, deleted ${db.countDeletedFiles()}%,d")
     log.info(f"Folders: ${db.countDirs()}%,d, deleted ${db.countDeletedDirs()}%,d")
+    log.info("Checking compaction potential of the data storage...")
+    db.freeAreas() // Run for its log output
   }
 
   def list(dbDir: File, path: String): Unit = withDb(dbDir) { db =>
