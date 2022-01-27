@@ -178,11 +178,12 @@ object blacklist extends util.ClassLogging:
         log.info(s"Finished blacklisting.")
   }
 
-  // TODO integration test
   def externalFilesToInternalBlacklist(db: Database, currentDir: File, dirId: Long, deleteFiles: Boolean): Unit =
     Option(currentDir.listFiles()).toSeq.flatten.foreach { file =>
       if file.isDirectory then
-        db.mkDir(dirId, file.getName).foreach(externalFilesToInternalBlacklist(db, file, _, deleteFiles))
+        db.mkDir(dirId, file.getName) match
+          case None => ensure("blacklist.create.dir", false, s"can't create internal blacklist directory for $file")
+          case Some(childDirId) => externalFilesToInternalBlacklist(db, file, childDirId, deleteFiles)
         if !deleteFiles then {} else // needed like this to avoid compile problem
           if file.listFiles.isEmpty then file.delete else
             log.warn(s"Blacklist folder not empty after processing it: $file")
@@ -197,7 +198,8 @@ object blacklist extends util.ClassLogging:
         val dataId = db.dataEntry(hash, size).getOrElse(
           DataId(db.nextId).tap(db.insertDataEntry(_, 1, size, 0, 0, hash))
         )
-        db.mkFile(dirId, file.getName, Time(file.lastModified), dataId)
+        ensure("blacklist.create.file", db.mkFile(dirId, file.getName, Time(file.lastModified), dataId).isDefined,
+          s"can't create internal blacklist file for $file")
         if deleteFiles && file.delete then
           log.info(s"Moved to DedupFS blacklist: $file")
         else
