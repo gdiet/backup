@@ -115,40 +115,39 @@ object maintenance extends util.ClassLogging:
   }
 
   def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withDb(dbDir, readonly = false) { db =>
-    log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
-    log.info(s"Note that stage 2 of reclaiming space modifies the long term store")
-    log.info(s"  thus partially invalidates older database backups.")
+    log.info(s"Reclaiming space from deleted files and orphan data entries now.")
 
     log.info(s"Deleting tree entries marked for deletion more than $keepDeletedDays days ago...")
 
     // First un-root, then delete. Deleting directly can violate the foreign key constraint.
-    log.info(s"Part 1: Un-rooting the tree entries to delete...")
-    log.info(s"Number of entries un-rooted: ${db.unrootDeletedEntries(now.toLong - keepDeletedDays*24*60*60*1000)}")
-    log.info(s"Part 2: Deleting un-rooted tree entries...")
-    log.info(s"Number of un-rooted tree entries deleted: ${db.deleteUnrootedTreeEntries()}")
+    log.info(s"Part 1: Mark the tree entries to delete...")
+    log.info(s"Number of entries marked: ${db.unrootDeletedEntries(now.toLong - keepDeletedDays*24*60*60*1000)}")
+    log.info(s"Part 2: Deleting marked tree entries...")
+    log.info(s"Number of tree entries deleted: ${db.deleteUnrootedTreeEntries()}")
 
     // Note: Most operations implemented in Scala below could also be run in SQL, but that is much slower...
 
-    // TODO extract to method and add integration test
     { // Run in separate block so the possibly large collections can be garbage collected soon
-      log.info(s"Deleting orphan data entries from storage database...")
+      log.info(s"Deleting orphan data entries...")
       val dataIdsInTree = db.dataIdsInTree()
       log.info(s"Number of data entries found in tree database: ${dataIdsInTree.size}")
       val dataIdsInStorage = db.dataIdsInStorage()
       log.info(s"Number of data entries in storage database: ${dataIdsInStorage.size}")
       val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree
       dataIdsToDelete.foreach(db.deleteDataEntry)
-      log.info(s"Number of orphan data entries deleted from storage database: ${dataIdsToDelete.size}")
+      log.info(s"Number of orphan data entries deleted: ${dataIdsToDelete.size}")
       val orphanDataIdsInTree = (dataIdsInTree -- dataIdsInStorage).size
       if orphanDataIdsInTree > 0 then log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
     }
 
     // TODO add option to skip this
-    log.info(s"Checking compaction potential of the data storage:")
+    log.info("Checking compaction potential of the data storage:")
     db.freeAreas() // Run for its log output
 
     db.shutdownCompact()
-    log.info(s"Finished stage 1 of reclaiming space. Undo by restoring the database from a backup.")
+    log.info("Finished reclaiming space. Undo by restoring the database from a backup.")
+    log.info("Note: Once new files are stored, restoring a database backup from before")
+    log.info("        the reclaim process will result in partial data corruption.")
   }
 
 object blacklist extends util.ClassLogging:
