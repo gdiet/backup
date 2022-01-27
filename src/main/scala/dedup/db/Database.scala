@@ -47,13 +47,23 @@ class Database(connection: Connection) extends util.ClassLogging:
   }
 
   def freeAreas(): Seq[DataArea] = synchronized {
-    val dataChunks = statement.query("SELECT start, stop FROM DataEntries")(_.seq(r => r.getLong(1) -> r.getLong(2)))
+    val dataChunks = statement
+      .query("SELECT start, stop FROM DataEntries")(_.seq(r => r.getLong(1) -> r.getLong(2)))
+      .filterNot(_ == (0, 0))
     log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
     val sortedChunks = dataChunks.to(scala.collection.SortedMap)
-    ensure("data.sort.gaps", sortedChunks.size == dataChunks.size, s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
     val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(sortedChunks)
     log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
     log.info(s"Free for reclaiming: ${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} gaps.")
+    if sortedChunks.size != dataChunks.size then
+      log.error(s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
+      val problems = dataChunks.groupBy(_._1)
+        .collect { case (_, entries) if entries.length > 1 => entries }.flatten.toSeq
+      if problems.length < 200 then
+        log.error(s"Duplicates: $problems")
+      else
+        log.error(s"First 200 duplicates: ${problems.take(200)}")
+      ensure("data.sort.gaps", false, s"Database might be corrupt. Restore from backup?")
     (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
   }
 
