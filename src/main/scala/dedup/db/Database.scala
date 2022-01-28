@@ -226,13 +226,10 @@ class Database(connection: Connection) extends util.ClassLogging:
   )
   def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = synchronized {
     ensure("db.add.data.entry.1", seq > 0, s"seq not positive: $seq")
-    iDataEntry.setLong(1, dataId.toLong)
-    iDataEntry.setInt(2, seq)
-    if (seq == 1) iDataEntry.setLong(3, length) else iDataEntry.setNull(3, Types.BIGINT)
-    iDataEntry.setLong(4, start)
-    iDataEntry.setLong(5, stop)
-    if (seq == 1) iDataEntry.setBytes(6, hash) else iDataEntry.setNull(3, Types.BINARY)
-    ensure("db.add.data.entry.2", iDataEntry.executeUpdate() == 1, s"insertDataEntry update count not 1 for dataId $dataId")
+    val sqlLength: Long       |SqlNull = if seq == 1 then length else SqlNull(Types.BIGINT)
+    val sqlHash  : Array[Byte]|SqlNull = if seq == 1 then hash   else SqlNull(Types.BINARY)
+    val count = iDataEntry.set(dataId.toLong, seq, sqlLength, start, stop, sqlHash).executeUpdate()
+    ensure("db.add.data.entry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")
   }
 
   def removeStorageAllocation(dataId: DataId): Unit = synchronized {

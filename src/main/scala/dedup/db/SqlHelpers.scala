@@ -22,13 +22,16 @@ extension (stat: Statement)
   def query[T](queryString: String)(f: ResultSet => T): T = resource(stat.executeQuery(queryString))(f)
   def queryLongOrZero(queryString: String): Long = query(queryString)(_.one(_.opt(_.getLong(1)))).getOrElse(0L)
 
+case class SqlNull(sqlType: Int)
+
 extension (stat: PreparedStatement)
   def query[T](f: ResultSet => T): T = resource(stat.executeQuery())(f)
-  def set(params: (Long|String|Array[Byte])*): PreparedStatement =
+  def set(params: (Long|String|Array[Byte]|SqlNull)*): PreparedStatement =
     params.zipWithIndex.foreach {
-      case (param: Long       , position: Int) => stat.setLong  (position + 1, param)
-      case (param: String     , position: Int) => stat.setString(position + 1, param)
-      case (param: Array[Byte], position: Int) => stat.setBytes (position + 1, param)
+      case (param: Long       , position: Int) => stat.setLong  (position + 1, param  )
+      case (param: String     , position: Int) => stat.setString(position + 1, param  )
+      case (param: Array[Byte], position: Int) => stat.setBytes (position + 1, param  )
+      case (SqlNull(sqlType)  , position: Int) => stat.setNull  (position + 1, sqlType)
     }
     stat
 
