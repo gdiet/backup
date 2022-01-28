@@ -24,6 +24,13 @@ extension (stat: Statement)
 
 extension (stat: PreparedStatement)
   def query[T](f: ResultSet => T): T = resource(stat.executeQuery())(f)
+  def set(params: (Long|String|Array[Byte])*): PreparedStatement =
+    params.zipWithIndex.foreach {
+      case (param: Long       , position: Int) => stat.setLong  (position + 1, param)
+      case (param: String     , position: Int) => stat.setString(position + 1, param)
+      case (param: Array[Byte], position: Int) => stat.setBytes (position + 1, param)
+    }
+    stat
 
 extension (rs: ResultSet)
   def withNext[T](f: ResultSet => T): T = { ensure("query.next", rs.next(), "Next element not available"); f(rs) }

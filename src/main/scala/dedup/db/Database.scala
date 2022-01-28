@@ -90,20 +90,17 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   private val qEntry = prepare(s"$selectTreeEntry WHERE id = ? AND deleted = 0")
   def entry(id: Long): Option[TreeEntry] = synchronized {
-    qEntry.setLong(1, id)
-    qEntry.query(_.maybeNext(treeEntry))
+    qEntry.set(id).query(_.maybeNext(treeEntry))
   }
 
   private val qEntryLike = prepare(s"$selectTreeEntry WHERE deleted = 0 AND name LIKE ?")
   def entryLike(nameLike: String): Seq[TreeEntry] = synchronized {
-    qEntryLike.setString(1, nameLike)
-    qEntryLike.query(_.seq(treeEntry))
+    qEntryLike.set(nameLike).query(_.seq(treeEntry))
   }
 
   private val qEntriesFor = prepare(s"$selectTreeEntry WHERE dataId = ? AND deleted = 0")
   def entriesFor(dataId: DataId): Seq[TreeEntry] = synchronized {
-    qEntriesFor.setLong(1, dataId.toLong)
-    qEntriesFor.query(_.seq(treeEntry))
+    qEntriesFor.set(dataId.toLong).query(_.seq(treeEntry))
   }
 
   def pathOf(id: Long): String = synchronized { pathOf(id, "") }
@@ -121,23 +118,19 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   private val qChild = prepare(s"$selectTreeEntry WHERE parentId = ? AND name = ? AND deleted = 0")
   def child(parentId: Long, name: String): Option[TreeEntry] = synchronized {
-    qChild.setLong  (1, parentId)
-    qChild.setString(2, name    )
-    qChild.query(_.maybeNext(treeEntry))
+    qChild.set(parentId, name).query(_.maybeNext(treeEntry))
   }
 
   private val qChildren = prepare(s"$selectTreeEntry WHERE parentId = ? AND deleted = 0")
   def children(parentId: Long): Seq[TreeEntry] = synchronized {
-    qChildren.setLong(1, parentId)
-    qChildren.query(_.seq(treeEntry))
+    qChildren.set(parentId).query(_.seq(treeEntry))
   }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
   private val qParts = prepare(
     "SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC"
   )
   def parts(dataId: DataId): Vector[(Long, Long)] = synchronized {
-    qParts.setLong(1, dataId.toLong)
-    qParts.query(_.seq { rs =>
+    qParts.set(dataId.toLong).query(_.seq { rs =>
       val (start, size) = rs.getLong(1) -> rs.getLong(2)
       ensure("data.part.start", start >= 0, s"Start $start must be >= 0.")
       ensure("data.part.size", size >= 0, s"Size $size must be >= 0.")
@@ -148,30 +141,26 @@ class Database(connection: Connection) extends util.ClassLogging:
   private val qDataSize = prepare("SELECT length FROM DataEntries WHERE id = ? AND seq = 1")
   /** @return the logical file size */
   def dataSize(dataId: DataId): Long = synchronized {
-    qDataSize.tap(_.setLong(1, dataId.toLong)).query(_.maybeNext(_.getLong(1))).getOrElse(0)
+    qDataSize.set(dataId.toLong).query(_.maybeNext(_.getLong(1))).getOrElse(0)
   }
   /** @return the file's storage size */
   private val qStorageSize = prepare("SELECT stop - start FROM DataEntries WHERE id = ?")
   def storageSize(dataId: DataId): Long = synchronized {
-    qStorageSize.tap(_.setLong(1, dataId.toLong)).query(_.seq(_.getLong(1))).sum
+    qStorageSize.set(dataId.toLong).query(_.seq(_.getLong(1))).sum
   }
 
   private val qDataEntry = prepare(
     "SELECT id FROM DataEntries WHERE hash = ? AND length = ?"
   )
   def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = synchronized {
-    qDataEntry.setBytes(1, hash)
-    qDataEntry.setLong(2, size)
-    qDataEntry.query(_.maybeNext(r => DataId(r.getLong(1))))
+    qDataEntry.set(hash, size).query(_.maybeNext(r => DataId(r.getLong(1))))
   }
 
   private val uTime = prepare(
     "UPDATE TreeEntries SET time = ? WHERE id = ?"
   )
   def setTime(id: Long, newTime: Long): Unit = synchronized {
-    uTime.setLong(1, newTime)
-    uTime.setLong(2, id)
-    val count = uTime.executeUpdate()
+    val count = uTime.set(newTime, id).executeUpdate()
     ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
   }
 
@@ -179,9 +168,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
   )
   def delete(id: Long): Unit = synchronized {
-    dTreeEntry.setLong(1, now.nonZero.toLong)
-    dTreeEntry.setLong(2, id)
-    val count = dTreeEntry.executeUpdate()
+    val count = dTreeEntry.set(now.nonZero.toLong, id).executeUpdate()
     ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
   }
 
@@ -190,10 +177,8 @@ class Database(connection: Connection) extends util.ClassLogging:
   )
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = Try(synchronized {
-    iDir.setLong  (1, parentId  )
-    iDir.setString(2, name      )
-    iDir.setLong  (3, now.toLong)
-    val count = iDir.executeUpdate() // Name conflict triggers SQL exception due to unique constraint.
+    // Name conflict triggers SQL exception due to unique constraint.
+    val count = iDir.set(parentId, name, now.toLong).executeUpdate()
     ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
@@ -204,11 +189,8 @@ class Database(connection: Connection) extends util.ClassLogging:
   )
   /** @return `Some(id)` or [[None]] if a child entry with the same name already exists. */
   def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] = Try(synchronized {
-    iFile.setLong  (1, parentId     )
-    iFile.setString(2, name         )
-    iFile.setLong  (3, time.toLong  )
-    iFile.setLong  (4, dataId.toLong)
-    val count = iFile.executeUpdate() // Name conflict triggers SQL exception due to unique constraint.
+    // Name conflict triggers SQL exception due to unique constraint.
+    val count = iFile.set(parentId, name, time.toLong, dataId.toLong).executeUpdate()
     ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
@@ -217,19 +199,15 @@ class Database(connection: Connection) extends util.ClassLogging:
     "UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?"
   )
   def update(id: Long, newParentId: Long, newName: String): Boolean = synchronized {
-    uParentName.setLong  (1, newParentId)
-    uParentName.setString(2, newName    )
-    uParentName.setLong  (3, id         )
-    uParentName.executeUpdate() == 1
+    uParentName.set(newParentId, newName, id).executeUpdate() == 1
   }
 
   private val uDataId = prepare(
     "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
   )
   def setDataId(id: Long, dataId: DataId): Unit = synchronized {
-    uDataId.setLong(1, dataId.toLong)
-    uDataId.setLong(2, id)
-    ensure("db.set.dataid", uDataId.executeUpdate() == 1, s"setDataId update count not 1 for id $id dataId $dataId")
+    val count = uDataId.set(dataId.toLong, id).executeUpdate()
+    ensure("db.set.dataid", count == 1, s"setDataId update count is $count and not 1 for id $id dataId $dataId")
   }
 
   private val qNextId = prepare(
