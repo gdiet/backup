@@ -22,6 +22,7 @@ extension (stat: Statement)
   def query[T](queryString: String)(f: ResultSet => T): T = resource(stat.executeQuery(queryString))(f)
   def queryLongOrZero(queryString: String): Long = query(queryString)(_.one(_.opt(_.getLong(1)))).getOrElse(0L)
 
+// Can't be opaque type Int because Int is already an SQL primitive
 case class SqlNull(sqlType: Int)
 
 type SqlPrimitive = Long|String|Array[Byte]|SqlNull
@@ -32,9 +33,10 @@ extension (stat: PreparedStatement)
     params
       .map(_.asInstanceOf[SqlPrimitive])
       .zipWithIndex.foreach {
-        case (param: Long       , position: Int) => stat.setLong  (position + 1, param  )
-        case (param: String     , position: Int) => stat.setString(position + 1, param  )
-        case (param: Array[Byte], position: Int) => stat.setBytes (position + 1, param  )
+        case (value: Int        , position: Int) => stat.setInt   (position + 1, value  )
+        case (value: Long       , position: Int) => stat.setLong  (position + 1, value  )
+        case (value: String     , position: Int) => stat.setString(position + 1, value  )
+        case (value: Array[Byte], position: Int) => stat.setBytes (position + 1, value  )
         case (SqlNull(sqlType)  , position: Int) => stat.setNull  (position + 1, sqlType)
       }
     stat
