@@ -100,7 +100,7 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   private val qEntriesFor = prepare(s"$selectTreeEntry WHERE dataId = ? AND deleted = 0")
   def entriesFor(dataId: DataId): Seq[TreeEntry] = synchronized {
-    qEntriesFor.set(dataId.toLong).query(_.seq(treeEntry))
+    qEntriesFor.set(dataId).query(_.seq(treeEntry))
   }
 
   def pathOf(id: Long): String = synchronized { pathOf(id, "") }
@@ -130,7 +130,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     "SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC"
   )
   def parts(dataId: DataId): Vector[(Long, Long)] = synchronized {
-    qParts.set(dataId.toLong).query(_.seq { rs =>
+    qParts.set(dataId).query(_.seq { rs =>
       val (start, size) = rs.getLong(1) -> rs.getLong(2)
       ensure("data.part.start", start >= 0, s"Start $start must be >= 0.")
       ensure("data.part.size", size >= 0, s"Size $size must be >= 0.")
@@ -141,12 +141,12 @@ class Database(connection: Connection) extends util.ClassLogging:
   private val qDataSize = prepare("SELECT length FROM DataEntries WHERE id = ? AND seq = 1")
   /** @return the logical file size */
   def dataSize(dataId: DataId): Long = synchronized {
-    qDataSize.set(dataId.toLong).query(_.maybeNext(_.getLong(1))).getOrElse(0)
+    qDataSize.set(dataId).query(_.maybeNext(_.getLong(1))).getOrElse(0)
   }
   /** @return the file's storage size */
   private val qStorageSize = prepare("SELECT stop - start FROM DataEntries WHERE id = ?")
   def storageSize(dataId: DataId): Long = synchronized {
-    qStorageSize.set(dataId.toLong).query(_.seq(_.getLong(1))).sum
+    qStorageSize.set(dataId).query(_.seq(_.getLong(1))).sum
   }
 
   private val qDataEntry = prepare(
@@ -168,7 +168,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
   )
   def delete(id: Long): Unit = synchronized {
-    val count = dTreeEntry.set(now.nonZero.toLong, id).executeUpdate()
+    val count = dTreeEntry.set(now.nonZero, id).executeUpdate()
     ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
   }
 
@@ -178,7 +178,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = Try(synchronized {
     // Name conflict triggers SQL exception due to unique constraint.
-    val count = iDir.set(parentId, name, now.toLong).executeUpdate()
+    val count = iDir.set(parentId, name, now).executeUpdate()
     ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
@@ -190,7 +190,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   /** @return `Some(id)` or [[None]] if a child entry with the same name already exists. */
   def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] = Try(synchronized {
     // Name conflict triggers SQL exception due to unique constraint.
-    val count = iFile.set(parentId, name, time.toLong, dataId.toLong).executeUpdate()
+    val count = iFile.set(parentId, name, time, dataId).executeUpdate()
     ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
@@ -206,7 +206,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
   )
   def setDataId(id: Long, dataId: DataId): Unit = synchronized {
-    val count = uDataId.set(dataId.toLong, id).executeUpdate()
+    val count = uDataId.set(dataId, id).executeUpdate()
     ensure("db.set.dataid", count == 1, s"setDataId update count is $count and not 1 for id $id dataId $dataId")
   }
 
@@ -228,7 +228,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     ensure("db.add.data.entry.1", seq > 0, s"seq not positive: $seq")
     val sqlLength: Long       |SqlNull = if seq == 1 then length else SqlNull(Types.BIGINT)
     val sqlHash  : Array[Byte]|SqlNull = if seq == 1 then hash   else SqlNull(Types.BINARY)
-    val count = iDataEntry.set(dataId.toLong, seq, sqlLength, start, stop, sqlHash).executeUpdate()
+    val count = iDataEntry.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate()
     ensure("db.add.data.entry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")
   }
 

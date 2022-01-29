@@ -24,15 +24,19 @@ extension (stat: Statement)
 
 case class SqlNull(sqlType: Int)
 
+type SqlPrimitive = Long|String|Array[Byte]|SqlNull
+
 extension (stat: PreparedStatement)
   def query[T](f: ResultSet => T): T = resource(stat.executeQuery())(f)
-  def set(params: (Long|String|Array[Byte]|SqlNull)*): PreparedStatement =
-    params.zipWithIndex.foreach {
-      case (param: Long       , position: Int) => stat.setLong  (position + 1, param  )
-      case (param: String     , position: Int) => stat.setString(position + 1, param  )
-      case (param: Array[Byte], position: Int) => stat.setBytes (position + 1, param  )
-      case (SqlNull(sqlType)  , position: Int) => stat.setNull  (position + 1, sqlType)
-    }
+  def set(params: (SqlPrimitive|DataId|Time)*): PreparedStatement =
+    params
+      .map(_.asInstanceOf[SqlPrimitive])
+      .zipWithIndex.foreach {
+        case (param: Long       , position: Int) => stat.setLong  (position + 1, param  )
+        case (param: String     , position: Int) => stat.setString(position + 1, param  )
+        case (param: Array[Byte], position: Int) => stat.setBytes (position + 1, param  )
+        case (SqlNull(sqlType)  , position: Int) => stat.setNull  (position + 1, sqlType)
+      }
     stat
 
 extension (rs: ResultSet)
