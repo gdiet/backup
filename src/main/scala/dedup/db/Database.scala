@@ -246,6 +246,7 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   // File system statistics
   def storageSize()      : Long = synchronized { statement.queryLongOrZero("SELECT MAX(stop) FROM DataEntries") }
+  // TODO only SELECT MAX needs OrZero
   def countDataEntries() : Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM DataEntries WHERE seq = 1") }
   def countFiles()       : Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL") }
   def countDeletedFiles(): Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL") }
@@ -289,9 +290,11 @@ private def tableDefinitions =
       |CREATE TABLE DataEntries (
       |  id     BIGINT NOT NULL,
       |  seq    INTEGER NOT NULL,
+      |  -- length is NULL for all entries with seq > 1
       |  length BIGINT NULL,
       |  start  BIGINT NOT NULL,
       |  stop   BIGINT NOT NULL,
+      |  -- hash is NULL for all entries with seq > 1
       |  hash   BINARY(16) NULL,
       |  CONSTRAINT pk_DataEntries PRIMARY KEY (id, seq)
       |);
