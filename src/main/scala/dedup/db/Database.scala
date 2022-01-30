@@ -214,7 +214,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     "SELECT NEXT VALUE FOR idSeq"
   )
   def nextId: Long = synchronized {
-    qNextId.query(_.tap(_.next()).getLong(1))
+    qNextId.query(_.withNext(_.getLong(1)))
   }
 
   def newDataIdFor(id: Long): DataId = synchronized {
@@ -245,13 +245,14 @@ class Database(connection: Connection) extends util.ClassLogging:
   }
 
   // File system statistics
-  def storageSize()      : Long = synchronized { statement.queryLongOrZero("SELECT MAX(stop) FROM DataEntries") }
-  // TODO only SELECT MAX needs OrZero
-  def countDataEntries() : Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM DataEntries WHERE seq = 1") }
-  def countFiles()       : Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL") }
-  def countDeletedFiles(): Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL") }
-  def countDirs()        : Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL") }
-  def countDeletedDirs() : Long = synchronized { statement.queryLongOrZero("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL") }
+  def storageSize(): Long = synchronized {
+    statement.query("SELECT MAX(stop) FROM DataEntries")(_.one(_.opt(_.getLong(1)))).getOrElse(0L)
+  }
+  def countDataEntries() : Long = synchronized { statement.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(oneLong) }
+  def countFiles()       : Long = synchronized { statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(oneLong) }
+  def countDeletedFiles(): Long = synchronized { statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")(oneLong) }
+  def countDirs()        : Long = synchronized { statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")(oneLong) }
+  def countDeletedDirs() : Long = synchronized { statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(oneLong) }
 
   // reclaimSpace specific queries
   /** @return The number of entries that have been un-rooted. */

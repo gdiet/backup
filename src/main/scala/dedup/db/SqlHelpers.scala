@@ -20,7 +20,6 @@ extension (c: Connection)
 
 extension (stat: Statement)
   def query[T](queryString: String)(f: ResultSet => T): T = resource(stat.executeQuery(queryString))(f)
-  def queryLongOrZero(queryString: String): Long = query(queryString)(_.one(_.opt(_.getLong(1)))).getOrElse(0L)
 
 // Can't be opaque type Int because Int is already an SQL primitive
 case class SqlNull(sqlType: Int)
@@ -47,3 +46,5 @@ extension (rs: ResultSet)
   def one[T](f: ResultSet => T): T = withNext(f).tap(_ => ensure("query.one", !rs.next(), "Unexpectedly another element is available"))
   def opt[T](f: ResultSet => T): Option[T] = f(rs).pipe(t => if rs.wasNull then None else Some(t))
   def seq[T](f: ResultSet => T): Vector[T] = Iterator.continually(Option.when(rs.next)(f(rs))).takeWhile(_.isDefined).flatten.toVector
+
+val oneLong: ResultSet => Long = _.one(_.getLong(1))
