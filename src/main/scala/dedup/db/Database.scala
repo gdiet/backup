@@ -43,7 +43,7 @@ class Database(connection: Connection) extends util.ClassLogging:
       ensure("database.illegal.version", dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
 
   def version(): Option[String] = synchronized {
-    statement.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(_.maybeNext(_.getString(1)))
+    statement.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(maybe(_.getString(1)))
   }
 
   def freeAreas(): Seq[DataArea] = synchronized {
@@ -90,7 +90,7 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   private val qEntry = prepare(s"$selectTreeEntry WHERE id = ? AND deleted = 0")
   def entry(id: Long): Option[TreeEntry] = synchronized {
-    qEntry.set(id).query(_.maybeNext(treeEntry))
+    qEntry.set(id).query(maybe(treeEntry))
   }
 
   private val qEntryLike = prepare(s"$selectTreeEntry WHERE deleted = 0 AND name LIKE ?")
@@ -118,7 +118,7 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   private val qChild = prepare(s"$selectTreeEntry WHERE parentId = ? AND name = ? AND deleted = 0")
   def child(parentId: Long, name: String): Option[TreeEntry] = synchronized {
-    qChild.set(parentId, name).query(_.maybeNext(treeEntry))
+    qChild.set(parentId, name).query(maybe(treeEntry))
   }
 
   private val qChildren = prepare(s"$selectTreeEntry WHERE parentId = ? AND deleted = 0")
@@ -141,7 +141,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   private val qDataSize = prepare("SELECT length FROM DataEntries WHERE id = ? AND seq = 1")
   /** @return the logical file size */
   def dataSize(dataId: DataId): Long = synchronized {
-    qDataSize.set(dataId).query(_.maybeNext(_.getLong(1))).getOrElse(0)
+    qDataSize.set(dataId).query(maybe(_.getLong(1))).getOrElse(0)
   }
   /** @return the file's storage size */
   private val qStorageSize = prepare("SELECT stop - start FROM DataEntries WHERE id = ?")
@@ -153,7 +153,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     "SELECT id FROM DataEntries WHERE hash = ? AND length = ?"
   )
   def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = synchronized {
-    qDataEntry.set(hash, size).query(_.maybeNext(r => DataId(r.getLong(1))))
+    qDataEntry.set(hash, size).query(maybe(r => DataId(r.getLong(1))))
   }
 
   private val uTime = prepare(
@@ -214,7 +214,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     "SELECT NEXT VALUE FOR idSeq"
   )
   def nextId: Long = synchronized {
-    qNextId.query(_.withNext(_.getLong(1)))
+    qNextId.query(next(_.getLong(1)))
   }
 
   def newDataIdFor(id: Long): DataId = synchronized {
@@ -246,7 +246,7 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   // File system statistics
   def storageSize(): Long = synchronized {
-    statement.query("SELECT MAX(stop) FROM DataEntries")(_.one(_.opt(_.getLong(1)))).getOrElse(0L)
+    statement.query("SELECT MAX(stop) FROM DataEntries")(one(_.opt(_.getLong(1)))).getOrElse(0L)
   }
   def countDataEntries() : Long = synchronized { statement.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(oneLong) }
   def countFiles()       : Long = synchronized { statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(oneLong) }

@@ -41,10 +41,15 @@ extension (stat: PreparedStatement)
     stat
 
 extension (rs: ResultSet)
-  def withNext[T](f: ResultSet => T): T = { ensure("query.next", rs.next(), "Next element not available"); f(rs) }
-  def maybeNext[T](f: ResultSet => T): Option[T] = Option.when(rs.next())(f(rs))
-  def one[T](f: ResultSet => T): T = withNext(f).tap(_ => ensure("query.one", !rs.next(), "Unexpectedly another element is available"))
+  /** Return None if the ResultSet.wasNull, else Some(f(resultSet)). */
   def opt[T](f: ResultSet => T): Option[T] = f(rs).pipe(t => if rs.wasNull then None else Some(t))
   def seq[T](f: ResultSet => T): Vector[T] = Iterator.continually(Option.when(rs.next)(f(rs))).takeWhile(_.isDefined).flatten.toVector
 
-val oneLong: ResultSet => Long = _.one(_.getLong(1))
+/** Ensure the ResultSet has a next element and apply it to f. */
+def next[T](f: ResultSet => T): ResultSet => T = { rs => ensure("query.next", rs.next(), "Next element not available"); f(rs) }
+/** Ensure the ResultSet has a SINGLE next element and apply it to f. */
+def one[T](f: ResultSet => T): ResultSet => T = { rs => next(f)(rs).tap(_ => ensure("query.one", !rs.next(), "Unexpectedly another element is available")) }
+/** Return None if the ResultSet is empty, else Some(f(resultSet)). */
+def maybe[T](f: ResultSet => T): ResultSet => Option[T] = rs => Option.when(rs.next())(f(rs))
+/** Return the single Long result of the ResultSet. */
+def oneLong: ResultSet => Long = one(_.getLong(1))
