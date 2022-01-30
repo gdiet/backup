@@ -48,7 +48,7 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   def freeAreas(): Seq[DataArea] = synchronized {
     val dataChunks = statement
-      .query("SELECT start, stop FROM DataEntries")(_.seq(r => r.getLong(1) -> r.getLong(2)))
+      .query("SELECT start, stop FROM DataEntries")(seq(r => r.getLong(1) -> r.getLong(2)))
       .filterNot(_ == (0, 0))
     log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
     val sortedChunks = dataChunks.to(scala.collection.SortedMap)
@@ -95,12 +95,12 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   private val qEntryLike = prepare(s"$selectTreeEntry WHERE deleted = 0 AND name LIKE ?")
   def entryLike(nameLike: String): Seq[TreeEntry] = synchronized {
-    qEntryLike.set(nameLike).query(_.seq(treeEntry))
+    qEntryLike.set(nameLike).query(seq(treeEntry))
   }
 
   private val qEntriesFor = prepare(s"$selectTreeEntry WHERE dataId = ? AND deleted = 0")
   def entriesFor(dataId: DataId): Seq[TreeEntry] = synchronized {
-    qEntriesFor.set(dataId).query(_.seq(treeEntry))
+    qEntriesFor.set(dataId).query(seq(treeEntry))
   }
 
   def pathOf(id: Long): String = synchronized { pathOf(id, "") }
@@ -123,14 +123,14 @@ class Database(connection: Connection) extends util.ClassLogging:
 
   private val qChildren = prepare(s"$selectTreeEntry WHERE parentId = ? AND deleted = 0")
   def children(parentId: Long): Seq[TreeEntry] = synchronized {
-    qChildren.set(parentId).query(_.seq(treeEntry))
+    qChildren.set(parentId).query(seq(treeEntry))
   }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
   private val qParts = prepare(
     "SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC"
   )
-  def parts(dataId: DataId): Vector[(Long, Long)] = synchronized {
-    qParts.set(dataId).query(_.seq { rs =>
+  def parts(dataId: DataId): Seq[(Long, Long)] = synchronized {
+    qParts.set(dataId).query(seq { rs =>
       val (start, size) = rs.getLong(1) -> rs.getLong(2)
       ensure("data.part.start", start >= 0, s"Start $start must be >= 0.")
       ensure("data.part.size", size >= 0, s"Size $size must be >= 0.")
@@ -146,7 +146,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   /** @return the file's storage size */
   private val qStorageSize = prepare("SELECT stop - start FROM DataEntries WHERE id = ?")
   def storageSize(dataId: DataId): Long = synchronized {
-    qStorageSize.set(dataId).query(_.seq(_.getLong(1))).sum
+    qStorageSize.set(dataId).query(seq(_.getLong(1))).sum
   }
 
   private val qDataEntry = prepare(
@@ -266,11 +266,11 @@ class Database(connection: Connection) extends util.ClassLogging:
   def dataIdsInTree(): Set[Long] = synchronized { statement.query(
     // The WHERE clause makes sure the 'null' entries are not returned
     "SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0"
-  )(_.seq(_.getLong(1))).toSet }
+  )(seq(_.getLong(1))).toSet }
   def dataIdsInStorage(): Set[Long] = synchronized { statement.query(
     // The WHERE clause makes sure the 'null' entries are not returned
     "SELECT id FROM DataEntries"
-  )(_.seq(_.getLong(1))).toSet }
+  )(seq(_.getLong(1))).toSet }
   def deleteDataEntry(dataId: Long): Unit = synchronized {
     val count = statement.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId")
     ensure("db.delete.dataentry", count == 1, s"For data id $dataId, delete count is $count instead of 1.")
