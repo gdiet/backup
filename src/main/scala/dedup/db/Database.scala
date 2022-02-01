@@ -107,7 +107,6 @@ class Database(connection: Connection) extends util.ClassLogging:
   @annotation.tailrec
   private def pathOf(id: Long, pathEnd: String): String =
     // Why not fold? - https://stackoverflow.com/questions/70821201/why-cant-option-fold-be-used-tail-recursively-in-scala
-    // TODO eventually create a PR for scala-next enabling tailrec fold
     if id == root.id then s"/$pathEnd"
     else entry(id) match
       case None => s"[not found]/$pathEnd"

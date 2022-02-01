@@ -142,7 +142,6 @@ object maintenance extends util.ClassLogging:
       if orphanDataIdsInTree > 0 then log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
     }
 
-    // TODO add option to skip this
     log.info("Checking compaction potential of the data storage:")
     db.freeAreas() // Run for its log output
 

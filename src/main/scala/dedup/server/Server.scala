@@ -7,7 +7,6 @@ import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 import java.util.concurrent.atomic.AtomicBoolean
 
-// TODO check whether IArray provides more safety with little overhead
 class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
   private val backend = Level1(settings)
 
