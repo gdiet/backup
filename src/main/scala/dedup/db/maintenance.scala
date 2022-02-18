@@ -172,7 +172,7 @@ object blacklist extends util.ClassLogging:
         db.mkDir(blacklistRoot.id, dateString).foreach(externalFilesToInternalBlacklist(db, blacklistFolder, _, deleteFiles))
 
         // Process internal blacklist.
-        processInternalBlacklist(db, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteFiles)
+        processInternalBlacklist(db, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteCopies)
 
         db.shutdownCompact()
         log.info(s"Finished blacklisting.")
@@ -204,23 +204,4 @@ object blacklist extends util.ClassLogging:
           log.info(s"Moved to DedupFS blacklist: $file")
         else
           log.info(s"Copied to DedupFS blacklist: $file")
-    }
-
-  def processInternalBlacklist(db: Database, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
-    db.children(parentId).foreach {
-      case dir: DirEntry =>
-        processInternalBlacklist(db, dfsBlacklist, s"$parentPath/${dir.name}", dir.id, deleteCopies)
-      case file: FileEntry =>
-        if db.storageSize(file.dataId) > 0 then
-          log.info(s"Blacklisting $parentPath/${file.name}")
-          db.removeStorageAllocation(file.dataId)
-        if deleteCopies then
-          val copies = db.entriesFor(file.dataId).filterNot(_.id == file.id)
-          val filteredCopies = copies
-            .map(entry => (entry.id, db.pathOf(entry.id)))
-            .filterNot(_._2.startsWith(s"/$dfsBlacklist/"))
-          filteredCopies.foreach { (id, path) =>
-            log.info(s"Deleting copy of entry: $path")
-            db.delete(id)
-          }
     }
