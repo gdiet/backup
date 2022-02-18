@@ -210,6 +210,8 @@ The `blacklist` utility is for blacklisting files that should be removed from th
 * `dfsBlacklist=<directory name>` (optional, default `blacklist`): Name of the base blacklist folder in the dedup file system, resolved against root.
 * `deleteCopies=true` (optional, default false): If true, mark deleted all blacklisted occurrences except for the original entries in the `dfsBlacklist` folder.
 
+After running the `blacklist` utility, as long as you do not store new files in the dedup file system you can still restore previous file system states by restoring the database from backups. Once new files are stored, restoring a database backup from before the blacklisting process will result in partial data corruption.
+
 ### Reclaim Space
 
 When you delete a file in the dedup file system, internally the file is marked as "deleted" and nothing more. This means, that the dedup file system will **not** free that file's storage space, and that you can make the file available again by restoring a previous state of the database from backup.
