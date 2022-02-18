@@ -314,7 +314,7 @@ To upgrade a DedupFS installation to a newer version:
 * The migration is complete. Don't use dedupfs versions previous to 5.0.0 anymore with the repository.
 * Eventually, manually delete the final version of the 4.x database, that is, the files `dedupfs.mv.db` and `dedupfs.mv.db.backup` in the `fsdb` subdirectory of the repository.
 
-#### 4.1.0 (In Preparation)
+#### 4.1.0 (2022.02.18)
 
 * New `blacklist` utility for blacklisting files that should not be stored at all.
 * Simplified reclaim space process: After running the `reclaim-space` utility, freed up space is automatically used when storing new files.
