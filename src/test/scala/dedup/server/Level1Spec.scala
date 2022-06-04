@@ -45,9 +45,12 @@ class Level1Spec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
 
   "release returns false when already closed" in assert(!level1.release(tenBytesId))
 
-  lazy val tenBytes = level1.entry("/dir/10 bytes").get.asInstanceOf[FileEntry]
+  lazy val tenBytes =
+    Iterator
+      // Wait for persist to finish, seen by the data ID becoming != -1.
+      .continually { Thread.sleep(10); level1.entry("/dir/10 bytes").get.asInstanceOf[FileEntry] }
+      .filter(_.dataId != DataId(-1)).next
   "re-open the open 10 bytes file after some time" in {
-    Thread.sleep(100) // TODO This is needed only if we want to assert the dataId. Is that a good idea?
     assert(tenBytes.id == 2)
     assert(tenBytes.dataId == DataId(3))
     level1.open(tenBytes)

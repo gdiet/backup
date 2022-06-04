@@ -56,6 +56,8 @@ object maintenance extends util.ClassLogging:
     log.info(f"Data storage: ${readableBytes(storageSize)} ($storageSize%,d bytes) / ${db.countDataEntries()}%,d entries")
     log.info(f"Files: ${db.countFiles()}%,d, deleted ${db.countDeletedFiles()}%,d")
     log.info(f"Folders: ${db.countDirs()}%,d, deleted ${db.countDeletedDirs()}%,d")
+    log.info("Checking compaction potential of the data storage...")
+    db.freeAreas() // Run for its log output
   }
 
   def list(dbDir: File, path: String): Unit = withDb(dbDir) { db =>
@@ -115,40 +117,38 @@ object maintenance extends util.ClassLogging:
   }
 
   def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withDb(dbDir, readonly = false) { db =>
-    log.info(s"Starting stage 1 of reclaiming space. Undo by restoring the database from a backup.")
-    log.info(s"Note that stage 2 of reclaiming space modifies the long term store")
-    log.info(s"  thus partially invalidates older database backups.")
+    log.info(s"Reclaiming space from deleted files and orphan data entries now.")
 
     log.info(s"Deleting tree entries marked for deletion more than $keepDeletedDays days ago...")
 
     // First un-root, then delete. Deleting directly can violate the foreign key constraint.
-    log.info(s"Part 1: Un-rooting the tree entries to delete...")
-    log.info(s"Number of entries un-rooted: ${db.unrootDeletedEntries(now.toLong - keepDeletedDays*24*60*60*1000)}")
-    log.info(s"Part 2: Deleting un-rooted tree entries...")
-    log.info(s"Number of un-rooted tree entries deleted: ${db.deleteUnrootedTreeEntries()}")
+    log.info(s"Part 1: Mark the tree entries to delete...")
+    log.info(s"Number of entries marked: ${db.unrootDeletedEntries(now.toLong - keepDeletedDays*24*60*60*1000)}")
+    log.info(s"Part 2: Deleting marked tree entries...")
+    log.info(s"Number of tree entries deleted: ${db.deleteUnrootedTreeEntries()}")
 
     // Note: Most operations implemented in Scala below could also be run in SQL, but that is much slower...
 
-    // TODO extract to method and add integration test
     { // Run in separate block so the possibly large collections can be garbage collected soon
-      log.info(s"Deleting orphan data entries from storage database...")
+      log.info(s"Deleting orphan data entries...")
       val dataIdsInTree = db.dataIdsInTree()
       log.info(s"Number of data entries found in tree database: ${dataIdsInTree.size}")
       val dataIdsInStorage = db.dataIdsInStorage()
       log.info(s"Number of data entries in storage database: ${dataIdsInStorage.size}")
       val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree
       dataIdsToDelete.foreach(db.deleteDataEntry)
-      log.info(s"Number of orphan data entries deleted from storage database: ${dataIdsToDelete.size}")
+      log.info(s"Number of orphan data entries deleted: ${dataIdsToDelete.size}")
       val orphanDataIdsInTree = (dataIdsInTree -- dataIdsInStorage).size
       if orphanDataIdsInTree > 0 then log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
     }
 
-    // TODO add option to skip this
-    log.info(s"Checking compaction potential of the data storage:")
+    log.info("Checking compaction potential of the data storage:")
     db.freeAreas() // Run for its log output
 
     db.shutdownCompact()
-    log.info(s"Finished stage 1 of reclaiming space. Undo by restoring the database from a backup.")
+    log.info("Finished reclaiming space. Undo by restoring the database from a backup.")
+    log.info("Note: Once new files are stored, restoring a database backup from before")
+    log.info("        the reclaim process will result in partial data corruption.")
   }
 
 object blacklist extends util.ClassLogging:
@@ -172,17 +172,18 @@ object blacklist extends util.ClassLogging:
         db.mkDir(blacklistRoot.id, dateString).foreach(externalFilesToInternalBlacklist(db, blacklistFolder, _, deleteFiles))
 
         // Process internal blacklist.
-        processInternalBlacklist(db, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteFiles)
+        processInternalBlacklist(db, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteCopies)
 
         db.shutdownCompact()
         log.info(s"Finished blacklisting.")
   }
 
-  // TODO integration test
   def externalFilesToInternalBlacklist(db: Database, currentDir: File, dirId: Long, deleteFiles: Boolean): Unit =
     Option(currentDir.listFiles()).toSeq.flatten.foreach { file =>
       if file.isDirectory then
-        db.mkDir(dirId, file.getName).foreach(externalFilesToInternalBlacklist(db, file, _, deleteFiles))
+        db.mkDir(dirId, file.getName) match
+          case None => ensure("blacklist.create.dir", false, s"can't create internal blacklist directory for $file")
+          case Some(childDirId) => externalFilesToInternalBlacklist(db, file, childDirId, deleteFiles)
         if !deleteFiles then {} else // needed like this to avoid compile problem
           if file.listFiles.isEmpty then file.delete else
             log.warn(s"Blacklist folder not empty after processing it: $file")
@@ -197,14 +198,14 @@ object blacklist extends util.ClassLogging:
         val dataId = db.dataEntry(hash, size).getOrElse(
           DataId(db.nextId).tap(db.insertDataEntry(_, 1, size, 0, 0, hash))
         )
-        db.mkFile(dirId, file.getName, Time(file.lastModified), dataId)
+        ensure("blacklist.create.file", db.mkFile(dirId, file.getName, Time(file.lastModified), dataId).isDefined,
+          s"can't create internal blacklist file for $file")
         if deleteFiles && file.delete then
           log.info(s"Moved to DedupFS blacklist: $file")
         else
           log.info(s"Copied to DedupFS blacklist: $file")
     }
 
-  // TODO integration test
   def processInternalBlacklist(db: Database, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
     db.children(parentId).foreach {
       case dir: DirEntry =>

@@ -210,13 +210,15 @@ The `blacklist` utility is for blacklisting files that should be removed from th
 * `dfsBlacklist=<directory name>` (optional, default `blacklist`): Name of the base blacklist folder in the dedup file system, resolved against root.
 * `deleteCopies=true` (optional, default false): If true, mark deleted all blacklisted occurrences except for the original entries in the `dfsBlacklist` folder.
 
+After running the `blacklist` utility, as long as you do not store new files in the dedup file system you can still restore previous file system states by restoring the database from backups. Once new files are stored, restoring a database backup from before the blacklisting process will result in partial data corruption.
+
 ### Reclaim Space
 
 When you delete a file in the dedup file system, internally the file is marked as "deleted" and nothing more. This means, that the dedup file system will **not** free that file's storage space, and that you can make the file available again by restoring a previous state of the database from backup.
 
 If you want to re-use the space deleted files take up, run the `reclaim-space` utility. Note that this will not shrink the repository size. Instead, the repository size will not increase for some time if you store new files.
 
-The `reclaim-space` utility purges deleted and orphan entries from the database. After running it, as long as you do not store new files in the dedup file system you can still restore previous file system states by restoring the database from backup. Once new files are stored, restoring a database backup from before the reclaim process will result in partial data corruption.
+The `reclaim-space` utility purges deleted and orphan entries from the database. After running it, as long as you do not store new files in the dedup file system you can still restore previous file system states by restoring the database from backups. Once new files are stored, restoring a database backup from before the reclaim process will result in partial data corruption.
 
 In addition to the usual `repo=<target directory>` parameter, the `reclaim-space` utility accepts an optional `keepDays=[number]` parameter (the `keepDays=` part can be omitted) that can be used to specify that recently deleted files should not be reclaimed. Without this parameter, all deleted files are reclaimed.
 
@@ -312,7 +314,7 @@ To upgrade a DedupFS installation to a newer version:
 * The migration is complete. Don't use dedupfs versions previous to 5.0.0 anymore with the repository.
 * Eventually, manually delete the final version of the 4.x database, that is, the files `dedupfs.mv.db` and `dedupfs.mv.db.backup` in the `fsdb` subdirectory of the repository.
 
-#### 4.1.0 (In Preparation)
+#### 4.1.0 (2022.02.19)
 
 * New `blacklist` utility for blacklisting files that should not be stored at all.
 * Simplified reclaim space process: After running the `reclaim-space` utility, freed up space is automatically used when storing new files.
