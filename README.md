@@ -303,7 +303,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.0.0 (In Preparation)
 
-* Upgrade H2 database from 1.4.200 to 2.1.210.
+* Upgrade H2 database from 1.4.200 to 2.1.212.
 
 **Migration from 4.x to 5.x:**
 
