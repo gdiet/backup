@@ -4,7 +4,7 @@ package server
 class Level2Spec extends org.scalatest.freespec.AnyFreeSpec:
   class Writer:
     var chunks: Vector[(Long, Seq[Byte])] = Vector()
-    def write(position: Long, data: Array[Byte]): Unit = chunks :+= (position, data)
+    def write(position: Long, data: Array[Byte]): Unit = chunks :+= (position, data.toSeq)
   "The level 2 write algorithm used when persisting asynchronously should" - {
     "fail when the data size is less than the reserved size" in {
       intercept[IllegalArgumentException](

@@ -4,6 +4,7 @@ lazy val dedupfs = project
     name := "dedupfs",
     version := "current",
     scalaVersion := "3.1.3",
+    scalacOptions ++= Seq("-deprecation", "-unchecked"),
     libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.11",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.7",
     // Update dedup.db.H2.dbName accordingly when updating H2 version.
