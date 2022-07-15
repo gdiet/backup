@@ -7,9 +7,10 @@ lazy val dedupfs = project
     scalacOptions ++= Seq("-deprecation", "-unchecked"),
     libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.11",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.7",
-    // Update dedup.db.H2.dbName accordingly when updating H2 version.
+    // Update dedup.db.H2.dbName accordingly when updating H2
+    // to a version with incompatible binary storage format.
     // Document migration, similar to 4.x -> 5.x migration.
-    libraryDependencies += "com.h2database" % "h2" % "2.1.212",
+    libraryDependencies += "com.h2database" % "h2" % "2.1.214",
     // Test dependencies
     libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.12" % "test",
   )

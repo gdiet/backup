@@ -6,7 +6,7 @@ import java.sql.{Connection, DriverManager}
 object H2:
   Class.forName("org.h2.Driver")
 
-  val dbName = "dedupfs-210" // H2 version suffix
+  val dbName = "dedupfs-210" // H2 version suffix, can stay 210 for as long as the storage format is binary compatible.
   val dbFileName = s"$dbName.mv.db"
 
   // For SQL debugging, add to the DB URL "...;TRACE_LEVEL_SYSTEM_OUT=2"
