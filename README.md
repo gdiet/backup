@@ -301,9 +301,9 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * The reclaim utilities find & clean up data entry duplicates.
 
-#### 5.0.0 (In Preparation)
+#### 5.0.0 (2022.06.09)
 
-* Upgrade H2 database from 1.4.200 to 2.1.210.
+* Upgrade H2 database from 1.4.200 to 2.1.212.
 
 **Migration from 4.x to 5.x:**
 

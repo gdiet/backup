@@ -6,7 +6,7 @@ import java.sql.{Connection, DriverManager}
 object H2:
   Class.forName("org.h2.Driver")
 
-  val dbName = "dedupfs" // TODO planned next like "dedupfs-210" // H2 version 2.1.210
+  val dbName = "dedupfs-210" // H2 version suffix
   val dbFileName = s"$dbName.mv.db"
 
   // For SQL debugging, add to the DB URL "...;TRACE_LEVEL_SYSTEM_OUT=2"
@@ -24,7 +24,7 @@ object H2:
     java.io.File(dbDir, dbFileName + fileNameSuffix)
 
   def connection(dbDir: java.io.File, readonly: Boolean, expectExists: Boolean = true): Connection =
-    ensure("h2.connection", dbFile(dbDir).exists == expectExists, 
+    ensure("h2.connection", dbFile(dbDir).exists == expectExists,
       s"Database file ${dbFile(dbDir)} does ${if expectExists then "not " else ""}exist.")
     if !readonly then checkForTraceFile(dbDir)
     DriverManager.getConnection(jdbcUrl(dbDir, readonly), "sa", "").tap(_.setAutoCommit(true))
