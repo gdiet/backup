@@ -1,32 +1,23 @@
 package dedup
 package server
 
-/* Notes on how to read free areas from database:
-   We can read the starts and stops of contiguous data areas like this:
-     SELECT b1.start FROM DataEntries b1 LEFT JOIN DataEntries b2 ON b1.start = b2.stop WHERE b2.stop IS NULL ORDER BY b1.start;
-   However, if we simply read all DataEntries and do the sorting in Scala,
-   we are much faster (as long as we don't run out of memory).  */
-object FreeAreas:
-  // Not as constructor so initialFree can be garbage collected after creating it.
-  def apply(initialFree: Seq[DataArea]): FreeAreas =
-    ensure("free.areas", initialFree.last.stop == Long.MaxValue, s"Last chunk doesn't stop at MAXLONG but at ${initialFree.last.stop}.")
-    new FreeAreas().tap(_.free = initialFree)
-  def apply(): FreeAreas = new FreeAreas()
+class FreeAreas(initialFree: Seq[DataArea] = Seq.empty):
+  // Reference initialFree only in the constructor so it can be garbage collected. For details, see
+  // https://stackoverflow.com/questions/8643219/do-constructor-arguments-get-gced/8646148#8646148
+  protected var free: Seq[DataArea] = initialFree
+  ensure("free.areas", free.lastOption.forall(_.stop == Long.MaxValue), s"Last chunk doesn't stop at MAXLONG but at ${free.last.stop}.")
 
-class FreeAreas protected (): // FIXME the +: deconstructor warning shows that something is unsafe
-  protected var free: Seq[DataArea] = Seq()
   def reserve(size: Long): Seq[DataArea] = synchronized {
-    ensure("free.areas.reserve", free.nonEmpty, "No free areas available to reserve.")
     ensure("free.areas.reserve", size > 0, s"Requested free chunk(s) for size $size.")
-    var sizeOfChunks = 0L
-    val completeChunks = free.takeWhile { chunk => sizeOfChunks += chunk.size; sizeOfChunks < size }
-    if sizeOfChunks == size then
-      val lastToUse +: newFree = free.drop(completeChunks.size)
-      free = newFree
-      completeChunks :+ lastToUse
-    else
-      val partialChunk +: completelyFree = free.drop(completeChunks.size)
-      val lastSize = size - (sizeOfChunks - partialChunk.size)
-      free = partialChunk.drop(lastSize) +: completelyFree
-      completeChunks :+ partialChunk.take(lastSize)
+    var sizeOfAreasChecked = 0L
+    free.span { area => sizeOfAreasChecked += area.size; sizeOfAreasChecked < size } match
+      case _ -> Seq() => throw new IllegalStateException(s"free.areas.reserve - Reached free space limit reserving $size.")
+      case areasNeededCompletely -> (lastToUse +: unused) =>
+        if sizeOfAreasChecked == size then
+          free = unused
+          areasNeededCompletely :+ lastToUse
+        else
+          val lastSize = size - (sizeOfAreasChecked - lastToUse.size)
+          free = lastToUse.drop(lastSize) +: unused
+          areasNeededCompletely :+ lastToUse.take(lastSize)
   }

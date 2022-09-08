@@ -46,6 +46,9 @@ class Database(connection: Connection) extends util.ClassLogging:
     statement.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(maybe(_.getString(1)))
   }
 
+  /* The starts and stops of the contiguous data areas can be read like this:
+       SELECT b1.start FROM DataEntries b1 LEFT JOIN DataEntries b2 ON b1.start = b2.stop WHERE b2.stop IS NULL ORDER BY b1.start;
+     However, it's faster to read all DataEntries and sort them in Scala like below, assuming there's enough memory. */
   def freeAreas(): Seq[DataArea] = synchronized {
     val dataChunks = statement
       .query("SELECT start, stop FROM DataEntries")(seq(r => r.getLong(1) -> r.getLong(2)))
