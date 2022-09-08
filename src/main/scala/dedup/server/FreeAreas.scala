@@ -11,10 +11,12 @@ object FreeAreas:
   def apply(initialFree: Seq[DataArea]): FreeAreas =
     ensure("free.areas", initialFree.last.stop == Long.MaxValue, s"Last chunk doesn't stop at MAXLONG but at ${initialFree.last.stop}.")
     new FreeAreas().tap(_.free = initialFree)
+  def apply(): FreeAreas = new FreeAreas()
 
-class FreeAreas:
+class FreeAreas protected (): // FIXME the +: deconstructor warning shows that something is unsafe
   protected var free: Seq[DataArea] = Seq()
   def reserve(size: Long): Seq[DataArea] = synchronized {
+    ensure("free.areas.reserve", free.nonEmpty, "No free areas available to reserve.")
     ensure("free.areas.reserve", size > 0, s"Requested free chunk(s) for size $size.")
     var sizeOfChunks = 0L
     val completeChunks = free.takeWhile { chunk => sizeOfChunks += chunk.size; sizeOfChunks < size }
