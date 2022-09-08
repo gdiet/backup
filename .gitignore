@@ -3,8 +3,7 @@ log/
 target/
 /dedupfs-*.*
 /OpenJDK*-jre_x64_*
-/data/
-/dedupfs-temp/
-/fsdb/
+# The repository created when running tryout sessions manually
+/manual/
 # For temporary notes etc.
 /scratch/
