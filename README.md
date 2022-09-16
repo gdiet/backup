@@ -297,7 +297,8 @@ To upgrade a DedupFS installation to a newer version:
 
 #### May Come Eventually
 
-* Backup script for backing up folders without needing to mound the file system, optionally referencing an existing backup.
+* Create sql db backup from the file backup and start the file system in parallel.
+* Backup script for backing up folders without needing to mount the file system, optionally referencing an existing backup.
 * rename `fsc backup` command renamed to `fsc dbbackup` to avoid confusion with a new store-as-backup command.
 * Change database backup, no need to have the full backup as default every time?
 * Support for soft links.
