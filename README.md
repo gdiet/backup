@@ -297,6 +297,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### May Come Eventually
 
+* Update to Scala 3.2 and try out scoverage.
 * Create sql db backup from the file backup and start the file system in parallel.
 * Backup script for backing up folders without needing to mount the file system, optionally referencing an existing backup.
 * rename `fsc backup` command renamed to `fsc dbbackup` to avoid confusion with a new store-as-backup command.
