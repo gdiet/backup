@@ -1,6 +1,7 @@
 package dedup
 package server
 
+import dedup.backend.{Backend, FileSystemReadOnly}
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
@@ -9,7 +10,7 @@ import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 import java.util.concurrent.atomic.AtomicBoolean
 
 class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
-  private val backend: dedup.backend.Backend = dedup.backend(settings)
+  private val backend: Backend = dedup.backend(settings)
 
   private val rights =
     if Platform.getNativePlatform.getOS == WINDOWS then
@@ -21,7 +22,9 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
 
   /** Utility wrapper for fuse server file system methods. */
   protected def fs(msg: => String, logger: (=> String) => Unit = log.trace)(f: => Int): Int =
-    watch(msg, logger)(f).tap {
+    watch(msg, logger)(
+      try f catch case _: FileSystemReadOnly => EROFS
+    ).tap {
       case EIO => log.error(s"EIO: $msg")
       case EINVAL => log.warn(s"EINVAL: $msg")
       case EOVERFLOW => log.warn(s"EOVERFLOW: $msg")
@@ -65,7 +68,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
     }
 
   override def mkdir(path: String, mode: Long): Int =
-    if settings.readonly then EROFS else fs(s"mkdir $path") {
+    fs(s"mkdir $path") {
       val parts = backend.split(path)
       if parts.length == 0 then ENOENT else
         backend.entry(parts.dropRight(1)) match
