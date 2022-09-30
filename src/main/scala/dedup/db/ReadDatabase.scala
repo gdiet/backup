@@ -4,7 +4,7 @@ package db
 import java.sql.{Connection, ResultSet, Statement}
 
 /** The methods of this class are not thread safe. */
-// Why not? Because prepared statements are stateful.
+// Why not? Because prepared statements are stateful. Synchronize externally as needed.
 class ReadDatabase(connection: Connection):
   import connection.{prepareStatement => prepare}
 
@@ -34,11 +34,3 @@ class ReadDatabase(connection: Connection):
   def children(parentId: Long): Seq[TreeEntry] = {
     qChildren.set(parentId).query(seq(treeEntry))
   }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
-
-
-
-/** The methods of this class are not thread safe. */
-// Why not? Because prepared statements are stateful.
-final class WriteDatabase(connection: Connection) extends ReadDatabase(connection) with AutoCloseable {
-  override def close(): Unit = { ??? }
-}
