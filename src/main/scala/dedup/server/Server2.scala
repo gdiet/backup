@@ -19,8 +19,9 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
     // On Linux, clear the executable flag because it is rather dangerous.
       if settings.readonly then 292 else 438 // o444 else o666
 
-  override protected def watch[T](msg: => String, logger: (=> String) => Unit = log.trace)(f: => T): T =
-    super.watch(msg, logger)(f).tap {
+  /** Utility wrapper for fuse server file system methods. */
+  protected def fs(msg: => String, logger: (=> String) => Unit = log.trace)(f: => Int): Int =
+    watch(msg, logger)(f).tap {
       case EIO => log.error(s"EIO: $msg")
       case EINVAL => log.warn(s"EINVAL: $msg")
       case EOVERFLOW => log.warn(s"EOVERFLOW: $msg")
@@ -28,7 +29,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
     }
 
   override def umount(): Unit =
-    watch(s"umount") {
+    fs(s"umount") {
       log.info(s"Stopping dedup file system...")
       super.umount()
       log.info(s"Dedup file system is stopped.")
@@ -41,7 +42,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   // *************
 
   override def getattr(path: String, stat: FileStat): Int =
-    watch(s"getattr $path") {
+    fs(s"getattr $path") {
       def setCommon(time: Time, nlink: Int): Unit =
         stat.st_nlink.set(nlink)
         stat.st_mtim.tv_sec.set(time.toLong / 1000)
@@ -64,7 +65,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
     }
 
   override def mkdir(path: String, mode: Long): Int =
-    if settings.readonly then EROFS else watch(s"mkdir $path") {
+    if settings.readonly then EROFS else fs(s"mkdir $path") {
       val parts = backend.split(path)
       if parts.length == 0 then ENOENT else
         backend.entry(parts.dropRight(1)) match
@@ -75,7 +76,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
 
   // No benefit expected from implementing opendir/releasedir and handing over a file handle to readdir.
   override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
-    watch(s"readdir $path $offset") {
+    fs(s"readdir $path $offset") {
       backend.entry(path) match
         case Some(dir: DirEntry) =>
           if offset < 0 || offset.toInt != offset then EOVERFLOW else
@@ -91,7 +92,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
 
   // If copyWhenMoving is active, the last persisted state of files is copied - without any current modifications.
   override def rename(oldpath: String, newpath: String): Int = EIO
-  //    if (settings.readonly) EROFS else watch(s"rename $oldpath .. $newpath") {
+  //    if (settings.readonly) EROFS else fs(s"rename $oldpath .. $newpath") {
   //      val oldParts = backend.split(oldpath)
   //      val newParts = backend.split(newpath)
   //      if oldParts.length == 0 || newParts.length == 0 then ENOENT else
@@ -123,7 +124,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //    }
 
   override def rmdir(path: String): Int = EIO
-  //    if settings.readonly then EROFS else watch("rmdir $path") {
+  //    if settings.readonly then EROFS else fs("rmdir $path") {
   //      backend.entry(path) match
   //        case Some(dir: DirEntry) => if backend.children(dir.id).nonEmpty then ENOTEMPTY else { backend.delete(dir); OK }
   //        case Some(_)             => ENOTDIR
@@ -135,7 +136,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   // https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
   // On Linux more of the stbuf struct would need to be filled to get sensible disk space values.
   override def statfs(path: String, stbuf: Statvfs): Int =
-    watch(s"statfs $path") {
+    fs(s"statfs $path") {
       if Platform.getNativePlatform.getOS == WINDOWS then
         stbuf.f_frsize.set(32768) // fs block size
         stbuf.f_bfree.set(settings.dataDir.getFreeSpace / 32768) // free blocks in fs
@@ -145,7 +146,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
 
   // see man UTIMENSAT(2)
   override def utimens(path: String, timespec: Array[Timespec]): Int = EIO
-  //    if settings.readonly then EROFS else watch(s"utimens $path") {
+  //    if settings.readonly then EROFS else fs(s"utimens $path") {
   //      if timespec.length < 2 then EIO else
   //        val sec = timespec(1).tv_sec .get
   //        val nan = timespec(1).tv_nsec.longValue
@@ -156,13 +157,13 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //    }
 
   override def chmod(path: String, mode: Long): Int =
-    watch(s"chmod $path $mode") {
+    fs(s"chmod $path $mode") {
       log.debug(s"No-op chmod: $mode -> $path")
       OK
     }
 
   override def chown(path: String, uid: Long, gid: Long): Int =
-    watch(s"chown $path $uid $gid") {
+    fs(s"chown $path $uid $gid") {
       log.debug(s"No-op chown: uid $uid, gid $gid -> $path")
       OK
     }
@@ -178,7 +179,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //  //  override def readlink(path: String, buf: Pointer, size: Long): Int =
   //
   //  override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
-  //    if settings.readonly then EROFS else watch(s"create $path") {
+  //    if settings.readonly then EROFS else fs(s"create $path") {
   //      val parts = backend.split(path)
   //      if parts.length == 0 then ENOENT // Can't create root.
   //      else backend.entry(parts.dropRight(1)) match // Fetch parent entry.
@@ -193,7 +194,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //    }
   //
   //  override def open(path: String, fi: FuseFileInfo): Int =
-  //    watch(s"open $path") {
+  //    fs(s"open $path") {
   //      backend.entry(path) match
   //        case None => ENOENT
   //        case Some(_: DirEntry) => EISDIR
@@ -201,7 +202,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //    }
   //
   //  override def truncate(path: String, size: Long): Int =
-  //    if settings.readonly then EROFS else watch(s"truncate $path .. $size") {
+  //    if settings.readonly then EROFS else fs(s"truncate $path .. $size") {
   //      backend.entry(path) match
   //        case None => ENOENT
   //        case Some(_: DirEntry) => EISDIR
@@ -209,7 +210,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //    }
   //
   //  override def write(path: String, source: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-  //    if settings.readonly then EROFS else watch(s"write $path .. offset = $offset, size = $size") {
+  //    if settings.readonly then EROFS else fs(s"write $path .. offset = $offset, size = $size") {
   //      val intSize = size.toInt.abs // We need to return an Int size, so here it is.
   //      def data: Iterator[(Long, Array[Byte])] = Iterator.range(0, intSize, memChunk).map { readOffset =>
   //        val chunkSize = math.min(memChunk, intSize - readOffset)
@@ -221,7 +222,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //    }
   //
   //  override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-  //    watch(s"read $path .. offset = $offset, size = $size") {
+  //    fs(s"read $path .. offset = $offset, size = $size") {
   //      val intSize = size.toInt.abs // We need to return an Int size, so here it is.
   //      if offset < 0 || size != intSize then EOVERFLOW else // With intSize being .abs (see above) checks for negative size, too.
   //        val fileHandle = fi.fh.get()
@@ -231,13 +232,13 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //    }
   //
   //  override def release(path: String, fi: FuseFileInfo): Int =
-  //    watch(s"release $path") {
+  //    fs(s"release $path") {
   //      val fileHandle = fi.fh.get()
   //      if backend.release(fileHandle) then OK else EIO // false if called without create or open
   //    }
   //
   //  override def unlink(path: String): Int =
-  //    if settings.readonly then EROFS else watch(s"unlink $path") {
+  //    if settings.readonly then EROFS else fs(s"unlink $path") {
   //      backend.entry(path) match
   //        case None => ENOENT
   //        case Some(_: DirEntry) => EISDIR
