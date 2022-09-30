@@ -44,9 +44,9 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
       }
     }
 
-  def size(id: Long, dataId: DataId): Long =
-    watch(s"size($id, $dataId)") {
-      synchronized(files.get(id)).map(_._2.size).getOrElse(backend.size(id, dataId))
+  def size(file: FileEntry): Long =
+    watch(s"size($file)") {
+      synchronized(files.get(file.id)).map(_._2.size).getOrElse(backend.size(file))
     }
 
   def truncate(id: Long, newSize: Long): Boolean =

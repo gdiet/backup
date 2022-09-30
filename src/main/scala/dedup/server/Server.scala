@@ -58,7 +58,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
         case Some(file: FileEntry) =>
           stat.st_mode.set(FileStat.S_IFREG | rights)
           setCommon(file.time, 1)
-          stat.st_size.set(backend.size(file.id, file.dataId))
+          stat.st_size.set(backend.size(file))
           OK
     }
 
@@ -103,8 +103,8 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
             case Some(targetDir: DirEntry ) =>
               val newName = newParts.last
               origin -> backend.child(targetDir.id, newName) match
-                case (_: FileEntry) -> Some(_: DirEntry) => EISDIR // oldpath is a file and newpath is a dir.
-                case  _             -> previous          =>
+                case (_: FileEntry, Some(_: DirEntry)) => EISDIR // oldpath is a file and newpath is a dir.
+                case (_           , previous         ) =>
                   // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
                   // replace operation is not atomic. This is tolerated in order to simplify the code.
                   previous.foreach(backend.delete)
