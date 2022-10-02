@@ -169,9 +169,13 @@ class Database(connection: Connection) extends util.ClassLogging:
   private val dTreeEntry = prepare(
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
   )
-  def delete(id: Long): Unit = synchronized {
-    val count = dTreeEntry.set(now.nonZero, id).executeUpdate()
-    ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
+  /** Deletes a tree entry unless it has children.
+    * @return [[false]] if the tree entry has children. */
+  def deleteChildless(id: Long): Boolean = synchronized {
+    if children(id).nonEmpty then false else
+      val count = dTreeEntry.set(now.nonZero, id).executeUpdate()
+      ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
+      true
   }
 
   private val iDir = prepare(

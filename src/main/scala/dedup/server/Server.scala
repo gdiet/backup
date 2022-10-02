@@ -108,15 +108,14 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
                 case (_           , previous         ) =>
                   // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
                   // replace operation is not atomic. This is tolerated in order to simplify the code.
-                  // TODO rename here replaces non-empty directories where the contract requires to return ENOTEMPTY or EEXIST
-                  previous.foreach(backend.delete)
-                  if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
+                  if !previous.forall(backend.deleteChildless) then ENOTEMPTY
+                  else if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
                     def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match
                       case file: FileEntry =>
                         backend.copyFile(file, newParentId, newName)
                       case dir : DirEntry =>
                         backend.mkDir(newParentId, newName)
-                          .exists(dirId => backend.children(source.id).forall(child => copy(child, child.name, dirId)))
+                          .exists(dirId => backend.children(dir.id).forall(child => copy(child, child.name, dirId)))
                     if (copy(origin, newName, targetDir.id)) OK else EEXIST
                   else
                     backend.update(origin.id, targetDir.id, newName)
@@ -126,7 +125,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
   override def rmdir(path: String): Int =
     if settings.readonly then EROFS else fs("rmdir $path") {
       backend.entry(path) match
-        case Some(dir: DirEntry) => if backend.children(dir.id).nonEmpty then ENOTEMPTY else { backend.delete(dir); OK }
+        case Some(dir: DirEntry) => if backend.deleteChildless(dir) then OK else ENOTEMPTY
         case Some(_)             => ENOTDIR
         case None                => ENOENT
     }
@@ -242,5 +241,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
       backend.entry(path) match
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
-        case Some(file: FileEntry) => backend.delete(file); OK
+        case Some(file: FileEntry) =>
+          if backend.deleteChildless(file) then OK
+          else { log.warn(s"Can't delete regular file with children: $path"); ENOTEMPTY }
     }
