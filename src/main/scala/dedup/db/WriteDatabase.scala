@@ -3,16 +3,16 @@ package db
 
 import java.sql.{Connection, Statement}
 import scala.util.Try
+import scala.util.Using.resource
 
 /** The methods of this class are not thread safe. */
 // Why not? Because prepared statements are stateful. Synchronize externally as needed.
 final class WriteDatabase(connection: Connection) extends ReadDatabase(connection) with util.ClassLogging:
   import connection.prepareStatement as prepare
-  private val statement: Statement = connection.createStatement()
 
   def shutdownCompact(): Unit =
     log.info("Compacting database...")
-    statement.execute("SHUTDOWN COMPACT;")
+    resource(connection.createStatement())(_.execute("SHUTDOWN COMPACT"))
 
   private val iDir = prepare(
     "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS
@@ -24,3 +24,10 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
   }.toOption
+
+  private val dTreeEntry = prepare(
+    "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
+  )
+  def delete(id: Long): Unit =
+    val count = dTreeEntry.set(now.nonZero, id).executeUpdate()
+    ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")

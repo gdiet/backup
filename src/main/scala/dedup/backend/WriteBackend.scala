@@ -15,3 +15,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   override def size(fileEntry: FileEntry): Long = super.size(fileEntry)
 
   override def mkDir(parentId: Long, name: String): Option[Long] = sync { db.mkDir(parentId, name) }
+
+  override def deleteChildless(entry: TreeEntry): Boolean = sync {
+    if db.children(entry.id).nonEmpty then false else { db.delete(entry.id); true }
+  }

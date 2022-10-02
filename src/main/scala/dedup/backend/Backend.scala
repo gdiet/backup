@@ -34,7 +34,11 @@ trait Backend:
   def entry(path: Array[String]): Option[TreeEntry]
   /** @return The size of the file. */
   def size(fileEntry: FileEntry): Long
-
+  /** @return The child entries of the tree entry. */
+  def children(parentId: Long): Seq[TreeEntry]
+  
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = readOnly
-  def children(parentId: Long): Seq[TreeEntry]
+  /** Deletes a tree entry unless it has children.
+    * @return [[false]] if the tree entry has children. */
+  def deleteChildless(entry: TreeEntry): Boolean = readOnly

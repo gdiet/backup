@@ -31,69 +31,65 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
       case _ => /**/
     }
 
-  override def umount(): Unit =
-    fs(s"umount") {
-      log.info(s"Stopping dedup file system...")
-      super.umount()
-      log.info(s"Dedup file system is stopped.")
-      backend match
-        case writeBackend: WriteBackend => writeBackend.shutdown()
-        case _           : ReadBackend  => /**/
-      OK
-    }
+  override def umount(): Unit = fs(s"umount") {
+    log.info(s"Stopping dedup file system...")
+    super.umount()
+    log.info(s"Dedup file system is stopped.")
+    backend match
+      case writeBackend: WriteBackend => writeBackend.shutdown()
+      case _           : ReadBackend  => /**/
+    OK
+  }
 
   // *************
   // Tree Handling
   // *************
 
-  override def getattr(path: String, stat: FileStat): Int =
-    fs(s"getattr $path") {
-      def setCommon(time: Time, nlink: Int): Unit =
-        stat.st_nlink.set(nlink)
-        stat.st_mtim.tv_sec.set(time.toLong / 1000)
-        stat.st_mtim.tv_nsec.set((time.toLong % 1000) * 1000000)
-        stat.st_uid.set(getContext.uid.get)
-        stat.st_gid.set(getContext.gid.get)
+  override def getattr(path: String, stat: FileStat): Int = fs(s"getattr $path") {
+    def setCommon(time: Time, nlink: Int): Unit =
+      stat.st_nlink.set(nlink)
+      stat.st_mtim.tv_sec.set(time.toLong / 1000)
+      stat.st_mtim.tv_nsec.set((time.toLong % 1000) * 1000000)
+      stat.st_uid.set(getContext.uid.get)
+      stat.st_gid.set(getContext.gid.get)
 
-      backend.entry(path) match
-        case None =>
-          ENOENT
-        case Some(dir: DirEntry) =>
-          stat.st_mode.set(FileStat.S_IFDIR | rights)
-          setCommon(dir.time, 2)
-          OK
-        case Some(file: FileEntry) =>
-          stat.st_mode.set(FileStat.S_IFREG | rights)
-          setCommon(file.time, 1)
-          stat.st_size.set(backend.size(file))
-          OK
-    }
+    backend.entry(path) match
+      case None =>
+        ENOENT
+      case Some(dir: DirEntry) =>
+        stat.st_mode.set(FileStat.S_IFDIR | rights)
+        setCommon(dir.time, 2)
+        OK
+      case Some(file: FileEntry) =>
+        stat.st_mode.set(FileStat.S_IFREG | rights)
+        setCommon(file.time, 1)
+        stat.st_size.set(backend.size(file))
+        OK
+  }
 
-  override def mkdir(path: String, mode: Long): Int =
-    fs(s"mkdir $path") {
-      val parts = backend.split(path)
-      if parts.length == 0 then ENOENT else
-        backend.entry(parts.dropRight(1)) match
-          case None => ENOENT
-          case Some(_: FileEntry) => ENOTDIR
-          case Some(dir: DirEntry) => backend.mkDir(dir.id, parts.last).fold(EEXIST)(_ => OK)
-    }
+  override def mkdir(path: String, mode: Long): Int = fs(s"mkdir $path") {
+    val parts = backend.split(path)
+    if parts.length == 0 then ENOENT else
+      backend.entry(parts.dropRight(1)) match
+        case None => ENOENT
+        case Some(_: FileEntry) => ENOTDIR
+        case Some(dir: DirEntry) => backend.mkDir(dir.id, parts.last).fold(EEXIST)(_ => OK)
+  }
 
   // No benefit expected from implementing opendir/releasedir and handing over a file handle to readdir.
-  override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
-    fs(s"readdir $path $offset") {
-      backend.entry(path) match
-        case Some(dir: DirEntry) =>
-          if offset < 0 || offset.toInt != offset then EOVERFLOW else
-            def names = Seq(".", "..") ++ backend.children(dir.id).map(_.name)
-            // '.exists' used for side effect until a condition is met.
-            // Providing a FileStat would probably save getattr calls but is not straightforward to implement.
-            // The last arg of fill.apply could be set to 0, but then there would be no paging for readdir.
-            names.zipWithIndex.drop(offset.toInt).exists { case (name, k) => fill.apply(buf, name, null, k + 1) != 0 }
-            OK
-        case Some(_: FileEntry) => ENOTDIR
-        case None => ENOENT
-    }
+  override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int = fs(s"readdir $path $offset") {
+    backend.entry(path) match
+      case Some(dir: DirEntry) =>
+        if offset < 0 || offset.toInt != offset then EOVERFLOW else
+          def names = Seq(".", "..") ++ backend.children(dir.id).map(_.name)
+          // '.exists' used for side effect until a condition is met.
+          // Providing a FileStat would probably save getattr calls but is not straightforward to implement.
+          // The last arg of fill.apply could be set to 0, but then there would be no paging for readdir.
+          names.zipWithIndex.drop(offset.toInt).exists { case (name, k) => fill.apply(buf, name, null, k + 1) != 0 }
+          OK
+      case Some(_: FileEntry) => ENOTDIR
+      case None => ENOENT
+  }
 
   // If copyWhenMoving is active, the last persisted state of files is copied - without any current modifications.
   override def rename(oldpath: String, newpath: String): Int = EIO
@@ -128,13 +124,12 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //                    OK
   //    }
 
-  override def rmdir(path: String): Int = EIO
-  //    if settings.readonly then EROFS else fs("rmdir $path") {
-  //      backend.entry(path) match
-  //        case Some(dir: DirEntry) => if backend.children(dir.id).nonEmpty then ENOTEMPTY else { backend.delete(dir); OK }
-  //        case Some(_)             => ENOTDIR
-  //        case None                => ENOENT
-  //    }
+  override def rmdir(path: String): Int = fs("rmdir $path") {
+    backend.entry(path) match // TODO try to implement the deleteChildless logic in the main branch as well
+      case Some(dir: DirEntry) => if backend.deleteChildless(dir) then OK else ENOTEMPTY
+      case Some(_)             => ENOTDIR
+      case None                => ENOENT
+  }
 
   // Implemented for Windows in order to allow for copying data from other devices because winfsp calculates
   // volume size based on statvfs. See ru.serce.jnrfuse.examples.MemoryFS.statfs and
