@@ -108,6 +108,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
                 case (_           , previous         ) =>
                   // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
                   // replace operation is not atomic. This is tolerated in order to simplify the code.
+                  // TODO rename here replaces non-empty directories where the contract requires to return ENOTEMPTY or EEXIST
                   previous.foreach(backend.delete)
                   if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
                     def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match
