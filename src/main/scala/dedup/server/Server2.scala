@@ -105,26 +105,24 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   // volume size based on statvfs. See ru.serce.jnrfuse.examples.MemoryFS.statfs and
   // https://github.com/billziss-gh/winfsp/blob/14e6b402fe3360fdebcc78868de8df27622b565f/src/dll/fuse/fuse_intf.c#L654
   // On Linux more of the stbuf struct would need to be filled to get sensible disk space values.
-  override def statfs(path: String, stbuf: Statvfs): Int =
-    fs(s"statfs $path") {
-      if Platform.getNativePlatform.getOS == WINDOWS then
-        stbuf.f_frsize.set(32768) // fs block size
-        stbuf.f_bfree.set(settings.dataDir.getFreeSpace / 32768) // free blocks in fs
-        stbuf.f_blocks.set(settings.dataDir.getTotalSpace / 32768) // total data blocks in file system
-      OK
-    }
+  override def statfs(path: String, stbuf: Statvfs): Int = fs(s"statfs $path") {
+    if Platform.getNativePlatform.getOS == WINDOWS then
+      stbuf.f_frsize.set(32768) // fs block size
+      stbuf.f_bfree.set(settings.dataDir.getFreeSpace / 32768) // free blocks in fs
+      stbuf.f_blocks.set(settings.dataDir.getTotalSpace / 32768) // total data blocks in file system
+    OK
+  }
 
   // see man UTIMENSAT(2)
-  override def utimens(path: String, timespec: Array[Timespec]): Int = EIO
-  //    if settings.readonly then EROFS else fs(s"utimens $path") {
-  //      if timespec.length < 2 then EIO else
-  //        val sec = timespec(1).tv_sec .get
-  //        val nan = timespec(1).tv_nsec.longValue
-  //        if sec < 0 || nan < 0 || nan > 1000000000 then EINVAL else
-  //          backend.entry(path) match
-  //            case None        => ENOENT
-  //            case Some(entry) => backend.setTime(entry.id, sec*1000 + nan/1000000); OK
-  //    }
+  override def utimens(path: String, timespec: Array[Timespec]): Int = fs(s"utimens $path") {
+    if timespec.length < 2 then EIO else
+      val sec = timespec(1).tv_sec .get
+      val nan = timespec(1).tv_nsec.longValue
+      if sec < 0 || nan < 0 || nan > 1000000000 then EINVAL else
+        backend.entry(path) match
+          case None        => ENOENT
+          case Some(entry) => backend.setTime(entry.id, sec*1000 + nan/1000000); OK
+  }
 
   override def chmod(path: String, mode: Long): Int =
     fs(s"chmod $path $mode") {

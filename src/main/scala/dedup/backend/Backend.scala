@@ -39,6 +39,8 @@ trait Backend:
   
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = readOnly
-  /** Deletes a tree entry unless it has children.
+  /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs. */
+  def setTime(id: Long, newTime: Long): Unit = readOnly
+  /** Deletes a tree entry unless it has children. Should be called only for existing entry IDs.
     * @return [[false]] if the tree entry has children. */
   def deleteChildless(entry: TreeEntry): Boolean = readOnly

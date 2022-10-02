@@ -25,9 +25,18 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
   }.toOption
 
+  private val uTime = prepare(
+    "UPDATE TreeEntries SET time = ? WHERE id = ?"
+  )
+  /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs. */
+  def setTime(id: Long, newTime: Long): Unit =
+    val count = uTime.set(newTime, id).executeUpdate()
+    ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
+
   private val dTreeEntry = prepare(
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
   )
+  /** Deletes a tree entry. Should be called only for existing entry IDs. */
   def delete(id: Long): Unit =
     val count = dTreeEntry.set(now.nonZero, id).executeUpdate()
     ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
