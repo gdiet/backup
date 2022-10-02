@@ -306,8 +306,11 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * The reclaim utilities find & clean up data entry duplicates.
 
+#### NEXT (xxxx.xx.xx)
+
 #### 5.0.1 (2022.09.17)
 
+* Check for children before marking entries deleted. Mainly prevents replacing non-empty directories.
 * Fixed bug that mounting the file system read-only failed.
 * Updated H2 database from 2.1.212 to 2.1.214 - binary compatible, no migration necessary.
 * Updated many libraries.
