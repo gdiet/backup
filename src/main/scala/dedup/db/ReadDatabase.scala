@@ -6,7 +6,7 @@ import java.sql.{Connection, ResultSet, Statement}
 /** The methods of this class are not thread safe. */
 // Why not? Because prepared statements are stateful. Synchronize externally as needed.
 class ReadDatabase(connection: Connection):
-  import connection.{prepareStatement => prepare}
+  import connection.prepareStatement as prepare
 
   private val qLogicalSize = prepare("SELECT length FROM DataEntries WHERE id = ? AND seq = 1")
   /** @return the logical file size for the data entry or 0 if there is no matching data entry. */

@@ -11,12 +11,13 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend:
 
   // *** Tree and meta data operations ***
   
-  override def size(fileEntry: FileEntry): Long = sync(db.logicalSize(fileEntry.dataId))
-  override final def children(parentId: Long): Seq[TreeEntry] = sync(db.children(parentId))
+  override def size(fileEntry: FileEntry): Long = sync { db.logicalSize(fileEntry.dataId) }
+  
+  override final def children(parentId: Long): Seq[TreeEntry] = sync { db.children(parentId) }
 
   override final def entry(path: Array[String]): Option[TreeEntry] =
     path.foldLeft(Option[TreeEntry](root)) {
-      case (Some(dir: DirEntry), name) => sync(db.child(dir.id, name))
+      case (Some(dir: DirEntry), name) => sync { db.child(dir.id, name) }
       case _ => None
     }
 

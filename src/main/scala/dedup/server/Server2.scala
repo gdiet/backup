@@ -1,7 +1,7 @@
 package dedup
 package server
 
-import dedup.backend.{Backend, FileSystemReadOnly}
+import dedup.backend.{Backend, FileSystemReadOnly, ReadBackend, WriteBackend}
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
@@ -36,7 +36,9 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
       log.info(s"Stopping dedup file system...")
       super.umount()
       log.info(s"Dedup file system is stopped.")
-      backend.close()
+      backend match
+        case _           : ReadBackend  => /**/
+        case writeBackend: WriteBackend => writeBackend.shutdown()
       OK
     }
 
