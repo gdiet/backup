@@ -15,13 +15,15 @@ class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
   /** id -> (handle count, dataEntry). Remember to synchronize. */
   private var files = Map[Long, (Int, DataEntry)]()
 
-  def delete(entry: TreeEntry): Unit =
+  /** Deletes a tree entry unless it has children.
+    * @return [[false]] if the tree entry has children. */
+  def deleteChildless(entry: TreeEntry): Boolean =
     watch(s"delete($entry)") {
       // From man unlink(2)
       // If the name was the last link to a file but any processes still have the file open,
       // the file will remain in existence until the last file descriptor referring to it is closed.
       // ... This means that we keep the file open in level 1 if it currently is open ...
-      backend.delete(entry.id)
+      backend.deleteChildless(entry.id)
     }
 
   def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] =
