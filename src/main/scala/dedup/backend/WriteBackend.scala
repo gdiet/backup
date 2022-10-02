@@ -2,7 +2,7 @@ package dedup
 package backend
 
 import dedup.db.WriteDatabase
-import dedup.server.Settings
+import dedup.server.{DataSink, Settings}
 
 /** Don't instantiate more than one backend for a repository. */
 // Why not? Because the backend object is used for synchronization.
@@ -25,3 +25,5 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   override def open(file: FileEntry): Unit = sync { ??? }
 
   override def release(fileId: Long): Boolean = sync { ??? }
+
+  override def read[D: DataSink](id: Long, offset: Long, size: Long, sink: D): Option[Long] = ???

@@ -187,16 +187,15 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //      else if backend.write(fi.fh.get(), data) then intSize
   //      else EIO // false if called without create or open.
   //    }
-  //
-  //  override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
-  //    fs(s"read $path .. offset = $offset, size = $size") {
-  //      val intSize = size.toInt.abs // We need to return an Int size, so here it is.
-  //      if offset < 0 || size != intSize then EOVERFLOW else // With intSize being .abs (see above) checks for negative size, too.
-  //        val fileHandle = fi.fh.get()
-  //        backend
-  //          .read(fileHandle, offset, intSize, sink).map(_.toInt)
-  //          .getOrElse { log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); ENOENT }
-  //    }
+
+  override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = fs(s"read $path .. offset = $offset, size = $size") {
+    val intSize = size.toInt.abs // We need to return an Int size, so here it is.
+    if offset < 0 || size != intSize then EOVERFLOW else // With intSize being .abs (see above) checks for negative size, too.
+      val fileHandle = fi.fh.get()
+      backend
+        .read(fileHandle, offset, intSize, sink).map(_.toInt)
+        .getOrElse { log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); ENOENT }
+  }
 
   override def release(path: String, fi: FuseFileInfo): Int = fs(s"release $path") {
     val fileHandle = fi.fh.get()

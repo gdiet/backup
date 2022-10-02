@@ -34,3 +34,13 @@ class ReadDatabase(connection: Connection):
   def children(parentId: Long): Seq[TreeEntry] = {
     qChildren.set(parentId).query(seq(treeEntry))
   }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
+
+  private val qParts = prepare("SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC")
+  def parts(dataId: DataId): Seq[(Long, Long)] = {
+    qParts.set(dataId).query(seq { rs =>
+      val (start, size) = rs.getLong(1) -> rs.getLong(2)
+      ensure("data.part.start", start >= 0, s"Start $start must be >= 0.")
+      ensure("data.part.size", size >= 0, s"Size $size must be >= 0.")
+      start -> size
+    })
+  }.filterNot(_._2 == 0) // Filter parts of size 0 as created when blacklisting.

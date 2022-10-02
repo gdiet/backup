@@ -2,7 +2,7 @@ package dedup
 package backend
 
 import dedup.db.{ReadDatabase, WriteDatabase}
-import dedup.server.Settings
+import dedup.server.{DataSink, Settings}
 
 /** @return a [[ReadBackend]] or a [[WriteBackend]] depending on [[Settings.readonly]].
   *         Don't instantiate more than one backend for a repository. */
@@ -18,7 +18,9 @@ class FileSystemReadOnly extends IllegalStateException("Write attempt on read-on
 // Why not? Because the backend object is used for synchronization.
 trait Backend:
 
-  /** Use this method for general synchronization. */
+  /** Used for general synchronization. */
+  // Note that if it becomes apparent that synchronization issues cause performance problems,
+  // synchronization could be done more fine-grained, e.g. for each DB prepared statement separately.
   protected inline def sync[T](f: => T): T = synchronized(f)
 
   /** @throws an [[IllegalStateException]] indicating that the file system is read-only. */
@@ -46,8 +48,26 @@ trait Backend:
   def deleteChildless(entry: TreeEntry): Boolean = readOnly
 
   // *** File content operations ***
+
   /** Creates a virtual file handle so read/write operations can be done on the file. */
-  def open(file: FileEntry): Unit = { /* No read backend implementation needed. */ }
+  def open(file: FileEntry): Unit
   /** Releases a virtual file handle. Triggers a write-through if no other handles are open for the file.
     * @return [[false]] if called without create or open. */
-  def release(fileId: Long): Boolean = true // No special read backend implementation needed.
+  def release(fileId: Long): Boolean
+
+  /** Reads bytes from the referenced file and writes them to `sink`.
+    * Reads the requested number of bytes unless end-of-file is reached
+    * first, in that case stops there.
+    *
+    * Note: Providing a `sink` instead of returning the data enables
+    * atomic reads even with mutable cache entries without
+    * incurring the risk of large memory allocations.
+    *
+    * @param id     Id of the file to read from.
+    * @param offset Offset in the file to start reading at.
+    * @param size   Number of bytes to read, NOT limited by the internal size limit for byte arrays.
+    * @param sink   Sink to write data to, starting at sink position 0.
+    * @return The actual size read or [[None]] if called without open or createAndOpen.
+    *         The read-only backend never returns [[None]].
+    */
+  def read[D: DataSink](id: Long, offset: Long, size: Long, sink: D): Option[Long]
