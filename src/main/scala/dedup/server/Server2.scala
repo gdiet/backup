@@ -92,7 +92,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   }
 
   // If copyWhenMoving is active, the last persisted state of files is copied - without any current modifications.
-  override def rename(oldpath: String, newpath: String): Int = EIO // SEE Server
+  override def rename(oldpath: String, newpath: String): Int = EIO // TODO SEE Server
 
   override def rmdir(path: String): Int = fs("rmdir $path") {
     backend.entry(path) match
@@ -160,15 +160,14 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //              fi.fh.set(handle)
   //              OK
   //    }
-  //
-  //  override def open(path: String, fi: FuseFileInfo): Int =
-  //    fs(s"open $path") {
-  //      backend.entry(path) match
-  //        case None => ENOENT
-  //        case Some(_: DirEntry) => EISDIR
-  //        case Some(file: FileEntry) => backend.open(file); fi.fh.set(file.id); OK
-  //    }
-  //
+
+  override def open(path: String, fi: FuseFileInfo): Int = fs(s"open $path") {
+    backend.entry(path) match
+      case None => ENOENT
+      case Some(_: DirEntry) => EISDIR
+      case Some(file: FileEntry) => backend.open(file); fi.fh.set(file.id); OK
+  }
+
   //  override def truncate(path: String, size: Long): Int =
   //    if settings.readonly then EROFS else fs(s"truncate $path .. $size") {
   //      backend.entry(path) match
@@ -198,11 +197,10 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //          .read(fileHandle, offset, intSize, sink).map(_.toInt)
   //          .getOrElse { log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); ENOENT }
   //    }
-  //
-  //  override def release(path: String, fi: FuseFileInfo): Int =
-  //    fs(s"release $path") {
-  //      val fileHandle = fi.fh.get()
-  //      if backend.release(fileHandle) then OK else EIO // false if called without create or open
-  //    }
-  //
-  //  override def unlink(path: String): Int = SEE Server
+
+  override def release(path: String, fi: FuseFileInfo): Int = fs(s"release $path") {
+    val fileHandle = fi.fh.get()
+    if backend.release(fileHandle) then OK else EIO // false if called without create or open
+  }
+
+  //  override def unlink(path: String): Int = TODO SEE Server

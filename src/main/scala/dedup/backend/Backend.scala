@@ -44,3 +44,10 @@ trait Backend:
   /** Deletes a tree entry unless it has children. Should be called only for existing entry IDs.
     * @return [[false]] if the tree entry has children. */
   def deleteChildless(entry: TreeEntry): Boolean = readOnly
+
+  // *** File content operations ***
+  /** Creates a virtual file handle so read/write operations can be done on the file. */
+  def open(file: FileEntry): Unit = { /* No read backend implementation needed. */ }
+  /** Releases a virtual file handle. Triggers a write-through if no other handles are open for the file.
+    * @return [[false]] if called without create or open. */
+  def release(fileId: Long): Boolean = true // No special read backend implementation needed.
