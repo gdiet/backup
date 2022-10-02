@@ -92,40 +92,10 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   }
 
   // If copyWhenMoving is active, the last persisted state of files is copied - without any current modifications.
-  override def rename(oldpath: String, newpath: String): Int = EIO
-  //    if (settings.readonly) EROFS else fs(s"rename $oldpath .. $newpath") {
-  //      val oldParts = backend.split(oldpath)
-  //      val newParts = backend.split(newpath)
-  //      if oldParts.length == 0 || newParts.length == 0 then ENOENT else
-  //      if oldParts.sameElements(newParts)              then OK     else
-  //        backend.entry(oldParts) match
-  //          case None         => ENOENT // oldpath does not exist.
-  //          case Some(origin) => backend.entry(newParts.dropRight(1)) match
-  //            case None                       => ENOENT  // Parent of newpath does not exist.
-  //            case Some(_        : FileEntry) => ENOTDIR // Parent of newpath is a file.
-  //            case Some(targetDir: DirEntry ) =>
-  //              val newName = newParts.last
-  //              origin -> backend.child(targetDir.id, newName) match
-  //                case (_: FileEntry) -> Some(_: DirEntry) => EISDIR // oldpath is a file and newpath is a dir.
-  //                case  _             -> previous          =>
-  //                  // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
-  //                  // replace operation is not atomic. This is tolerated in order to simplify the code.
-  //                  previous.foreach(backend.delete)
-  //                  if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
-  //                    def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match
-  //                      case file: FileEntry =>
-  //                        backend.copyFile(file, newParentId, newName)
-  //                      case dir : DirEntry =>
-  //                        backend.mkDir(newParentId, newName)
-  //                          .exists(dirId => backend.children(source.id).forall(child => copy(child, child.name, dirId)))
-  //                    if (copy(origin, newName, targetDir.id)) OK else EEXIST
-  //                  else
-  //                    backend.update(origin.id, targetDir.id, newName)
-  //                    OK
-  //    }
+  override def rename(oldpath: String, newpath: String): Int = EIO // SEE Server
 
   override def rmdir(path: String): Int = fs("rmdir $path") {
-    backend.entry(path) match // TODO try to implement the deleteChildless logic in the main branch as well
+    backend.entry(path) match
       case Some(dir: DirEntry) => if backend.deleteChildless(dir) then OK else ENOTEMPTY
       case Some(_)             => ENOTDIR
       case None                => ENOENT
@@ -237,10 +207,4 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //      if backend.release(fileHandle) then OK else EIO // false if called without create or open
   //    }
   //
-  //  override def unlink(path: String): Int =
-  //    if settings.readonly then EROFS else fs(s"unlink $path") {
-  //      backend.entry(path) match
-  //        case None => ENOENT
-  //        case Some(_: DirEntry) => EISDIR
-  //        case Some(file: FileEntry) => backend.delete(file); OK
-  //    }
+  //  override def unlink(path: String): Int = SEE Server
