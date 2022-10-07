@@ -64,4 +64,5 @@ trait Backend:
     * @param offset        Offset in the file to start reading at, must be >= 0.
     * @param requestedSize Number of bytes to read.
     * @return A contiguous Iterator(position, bytes) or [[None]] if the file is not open. */
+  // Note that previous implementations provided atomic reads, but this is not really necessary...
   def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]]
