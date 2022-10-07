@@ -18,6 +18,8 @@ class FileSystemReadOnly extends IllegalStateException("Write attempt on read-on
 // Why not? Because the backend object is used for synchronization.
 trait Backend:
 
+  def shutdown(): Unit
+
   /** Used for general synchronization. */
   // Note that if it becomes apparent that synchronization issues cause performance problems,
   // synchronization could be done more fine-grained, e.g. for each DB prepared statement separately.

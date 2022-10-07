@@ -35,9 +35,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
     log.info(s"Stopping dedup file system...")
     super.umount()
     log.info(s"Dedup file system is stopped.")
-    backend match
-      case writeBackend: WriteBackend => writeBackend.shutdown()
-      case _           : ReadBackend  => /**/
+    backend.shutdown()
     OK
   }
 

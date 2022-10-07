@@ -12,9 +12,10 @@ import scala.collection.immutable.LazyList
 // Why not? Because the backend object is used for synchronization.
 class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with ClassLogging:
 
-  // TODO also implement shutdown here and log warn the number of open file handles if any
-  // TODO and close the lts
-  //  def shutdown(): Unit = sync { db.shutdownCompact() }
+  override def shutdown(): Unit = sync {
+    if files.nonEmpty then log.warn(s"Still ${files.size} open file handles when unmounting the file system.")
+    lts.close()
+  }
 
   /** file id -> (handle count, data id). Remember to synchronize. */
   private var files = Map[Long, (Int, DataId)]()
