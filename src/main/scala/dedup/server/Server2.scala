@@ -188,7 +188,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //      else EIO // false if called without create or open.
   //    }
 
-  override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = fs(s"read $path .. offset = $offset, size = $size", log.info) { // FIXME revert to standard logging
+  override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = fs(s"read $path .. offset = $offset, size = $size") {
     val intSize = size.toInt.abs // We need to return an Int size, so here it is.
     if offset < 0 || size != intSize then EOVERFLOW else // With intSize being .abs (see above) checks for negative size, too.
       val fileHandle = fi.fh.get()

@@ -81,11 +81,9 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
   protected def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): Iterator[(Long, Array[Byte])] =
     if readSize < 1 then Iterator.empty
     else if parts.isEmpty then // Read appropriate number of zeros from blacklisted entry.
-      log.info(s"readBlacklisted(parts: $parts, readFrom: $readFrom, readSize: $readSize)") // FIXME remove
       Iterator.range(0L, readSize, memChunk.toLong)
       .map { offset => readFrom + offset -> new Array[Byte](math.min(memChunk, readSize - offset).toInt) }
     else
-      log.info(s"readFromLts(parts: $parts, readFrom: $readFrom, readSize: $readSize)") // FIXME remove
       ensure("read.lts.offset", readFrom >= 0, s"Read offset $readFrom must be >= 0.")
       val partsToReadFrom = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
         case ((currentOffset, result), part@(partPosition, partSize)) =>
@@ -96,7 +94,6 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
       }._2
 
       def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] =
-        log.info(s"recurse(remainingParts: $remainingParts, readSize: $readSize, resultOffset: $resultOffset)") // FIXME remove
         val (partPosition, partSize) +: rest = remainingParts
         if partSize >= readSize then lts.read(partPosition, readSize, resultOffset)
         else
