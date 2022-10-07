@@ -204,4 +204,11 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
     if backend.release(fileHandle) then OK else EIO // false if called without create or open
   }
 
-  //  override def unlink(path: String): Int = TODO see Server
+  override def unlink(path: String): Int = fs(s"unlink $path") {
+    backend.entry(path) match
+      case None => ENOENT
+      case Some(_: DirEntry) => EISDIR
+      case Some(file: FileEntry) =>
+        if backend.deleteChildless(file) then OK
+        else { log.warn(s"Can't delete regular file with children: $path"); ENOTEMPTY }
+  }
