@@ -2,7 +2,7 @@ package dedup
 package backend
 
 import dedup.db.{ReadDatabase, WriteDatabase}
-import dedup.server.{DataSink, Settings}
+import dedup.server.Settings
 
 /** @return a [[ReadBackend]] or a [[WriteBackend]] depending on [[Settings.readonly]].
   *         Don't instantiate more than one backend for a repository. */
@@ -57,19 +57,11 @@ trait Backend:
     * @return [[false]] if called without create or open. */
   def release(fileId: Long): Boolean
 
-  /** Reads bytes from the referenced file and writes them to `sink`.
-    * Reads the requested number of bytes unless end-of-file is reached
-    * first, in that case stops there.
+  /** Provides the requested number of bytes from the referenced file
+    * unless end-of-file is reached - in that case stops there.
     *
-    * Note: Providing a `sink` instead of returning the data enables
-    * atomic reads even with mutable cache entries without
-    * incurring the risk of large memory allocations.
-    *
-    * @param id            Id of the file to read from.
+    * @param fileId        Id of the file to read from.
     * @param offset        Offset in the file to start reading at, must be >= 0.
-    * @param requestedSize Number of bytes to read, ```not``` limited by the internal size limit for byte arrays.
-    * @param sink          Sink to write data to, starting at sink position 0.
-    * @return The actual size read or [[None]] if called without open or createAndOpen.
-    */
-  // FIXME consider whether we need atomic reads at all - maybe life can be easier...
-  def read[D: DataSink](id: Long, offset: Long, requestedSize: Long, sink: D): Option[Long]
+    * @param requestedSize Number of bytes to read.
+    * @return A contiguous Iterator(position, bytes) or [[None]] if the file is not open. */
+  def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]]

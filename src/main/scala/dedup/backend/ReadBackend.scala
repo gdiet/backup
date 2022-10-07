@@ -57,14 +57,10 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
         true
   }
 
-  override def read[D: DataSink](fileId: Long, offset: Long, requestedSize: Long, sink: D): Option[Long] = {
+  override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] = {
     sync(files.get(fileId)).map { case (_, dataId) =>
       val fileSize -> parts = sync(db.logicalSize(dataId) -> db.parts(dataId))
       readFromLts(parts, offset, math.min(requestedSize, fileSize - offset))
-        .map { case (position, data) =>
-          log.info(s"writing... at $position size ${data.length}")
-          sink.write(position - offset, data); data.length.toLong }
-        .sum
     }
   }
 
