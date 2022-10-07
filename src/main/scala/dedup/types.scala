@@ -23,5 +23,4 @@ object types:
   object Time { def apply(t: Long): Time = t }
   extension (t: Time)
     def nonZero: Time = if t == 0 then 1 else t
-    @annotation.targetName("timeToLong")
-    def toLong: Long = t
+    def asLong: Long = t

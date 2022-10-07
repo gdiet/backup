@@ -44,8 +44,8 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
     fs(s"getattr $path") {
       def setCommon(time: Time, nlink: Int): Unit =
         stat.st_nlink.set(nlink)
-        stat.st_mtim.tv_sec .set (time.toLong / 1000)
-        stat.st_mtim.tv_nsec.set((time.toLong % 1000) * 1000000)
+        stat.st_mtim.tv_sec .set (time.asLong / 1000)
+        stat.st_mtim.tv_nsec.set((time.asLong % 1000) * 1000000)
         stat.st_uid.set(getContext.uid.get)
         stat.st_gid.set(getContext.gid.get)
 
