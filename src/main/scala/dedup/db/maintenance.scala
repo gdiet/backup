@@ -125,7 +125,7 @@ object maintenance extends util.ClassLogging:
 
     // First un-root, then delete. Deleting directly can violate the foreign key constraint.
     log.info(s"Part 1: Mark the tree entries to delete...")
-    log.info(s"Number of entries marked: ${db.unrootDeletedEntries(now.toLong - keepDeletedDays*24*60*60*1000)}")
+    log.info(s"Number of entries marked: ${db.unrootDeletedEntries(now.asLong - keepDeletedDays*24*60*60*1000)}")
     log.info(s"Part 2: Deleting marked tree entries...")
     log.info(s"Number of tree entries deleted: ${db.deleteUnrootedTreeEntries()}")
 
