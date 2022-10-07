@@ -25,8 +25,12 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     if db.children(entry.id).nonEmpty then false else { db.delete(entry.id); true }
   }
 
-  override def open(file: FileEntry): Unit = sync { ??? }
+  override def release(fileId: Long): Boolean =
+    sync { releaseInternal(fileId) } match
+      case None => false
+      case Some(count -> dataId) =>
+        if count < 1 then log.info(s"dataId $dataId: write-through not implemented") // TODO implement write-through
+        true
 
-  override def release(fileId: Long): Boolean = sync { ??? }
-
-  override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] = ???
+// TODO implement
+//  override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] = ???

@@ -23,10 +23,10 @@ trait Backend:
   /** Used for general synchronization. */
   // Note that if it becomes apparent that synchronization issues cause performance problems,
   // synchronization could be done more fine-grained, e.g. for each DB prepared statement separately.
-  protected inline def sync[T](f: => T): T = synchronized(f)
+  protected inline final def sync[T](f: => T): T = synchronized(f)
 
   /** @throws an [[IllegalStateException]] indicating that the file system is read-only. */
-  protected def readOnly = throw new FileSystemReadOnly
+  protected final def readOnly = throw new FileSystemReadOnly
 
   // *** Tree and meta data operations ***
   
