@@ -63,11 +63,11 @@ trait Backend:
     * atomic reads even with mutable cache entries without
     * incurring the risk of large memory allocations.
     *
-    * @param id     Id of the file to read from.
-    * @param offset Offset in the file to start reading at.
-    * @param size   Number of bytes to read, NOT limited by the internal size limit for byte arrays.
-    * @param sink   Sink to write data to, starting at sink position 0.
+    * @param id            Id of the file to read from.
+    * @param offset        Offset in the file to start reading at, must be >= 0.
+    * @param requestedSize Number of bytes to read, ```not``` limited by the internal size limit for byte arrays.
+    * @param sink          Sink to write data to, starting at sink position 0.
     * @return The actual size read or [[None]] if called without open or createAndOpen.
-    *         The read-only backend never returns [[None]].
     */
-  def read[D: DataSink](id: Long, offset: Long, size: Long, sink: D): Option[Long]
+  // FIXME consider whether we need atomic reads at all - maybe life can be easier...
+  def read[D: DataSink](id: Long, offset: Long, requestedSize: Long, sink: D): Option[Long]

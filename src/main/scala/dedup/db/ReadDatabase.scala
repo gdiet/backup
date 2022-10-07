@@ -35,6 +35,7 @@ class ReadDatabase(connection: Connection):
     qChildren.set(parentId).query(seq(treeEntry))
   }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
+  // TODO check whether it would be better to return Area instead of position+size
   private val qParts = prepare("SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC")
   def parts(dataId: DataId): Seq[(Long, Long)] = {
     qParts.set(dataId).query(seq { rs =>

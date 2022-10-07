@@ -92,7 +92,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   }
 
   // If copyWhenMoving is active, the last persisted state of files is copied - without any current modifications.
-  override def rename(oldpath: String, newpath: String): Int = EIO // TODO SEE Server
+  override def rename(oldpath: String, newpath: String): Int = EIO // TODO see Server
 
   override def rmdir(path: String): Int = fs("rmdir $path") {
     backend.entry(path) match
@@ -188,7 +188,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //      else EIO // false if called without create or open.
   //    }
 
-  override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = fs(s"read $path .. offset = $offset, size = $size") {
+  override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = fs(s"read $path .. offset = $offset, size = $size", log.info) { // FIXME revert to standard logging
     val intSize = size.toInt.abs // We need to return an Int size, so here it is.
     if offset < 0 || size != intSize then EOVERFLOW else // With intSize being .abs (see above) checks for negative size, too.
       val fileHandle = fi.fh.get()
@@ -202,4 +202,4 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
     if backend.release(fileHandle) then OK else EIO // false if called without create or open
   }
 
-  //  override def unlink(path: String): Int = TODO SEE Server
+  //  override def unlink(path: String): Int = TODO see Server

@@ -26,4 +26,4 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
 
   override def release(fileId: Long): Boolean = sync { ??? }
 
-  override def read[D: DataSink](id: Long, offset: Long, size: Long, sink: D): Option[Long] = ???
+  override def read[D: DataSink](id: Long, offset: Long, requestedSize: Long, sink: D): Option[Long] = ???
