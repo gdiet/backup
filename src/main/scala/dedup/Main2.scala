@@ -33,7 +33,7 @@ import scala.util.Using.resource
       if !temp.isDirectory  then main.failureExit(s"Temp dir is not a directory: $temp")
       if !temp.canWrite     then main.failureExit(s"Temp dir is not writable: $temp")
       if temp.list.nonEmpty then main.warn(s"Note that temp dir is not empty: $temp")
-    cache.MemCache.startupCheck() // TODO not necessary if read-only
+    if !settings.readonly then cache.MemCache.startupCheck()
     if backup then db.maintenance.backup(settings.dbDir)
     main.info (s"Dedup file system settings:")
     main.info (s"Repository:  $repo")
