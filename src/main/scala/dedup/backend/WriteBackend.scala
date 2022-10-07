@@ -8,8 +8,11 @@ import dedup.server.{DataSink, Settings}
 // Why not? Because the backend object is used for synchronization.
 final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBackend(settings, db):
 
-  // TODO Write the cache before closing AND shutdown the ReadBackend some time
-  override def shutdown(): Unit = sync { db.shutdownCompact() }
+  // TODO Write the cache before closing
+  override def shutdown(): Unit = sync {
+    db.shutdownCompact()
+    super.shutdown()
+  }
 
   // TODO Return the cached size if any
   override def size(fileEntry: FileEntry): Long = super.size(fileEntry)
