@@ -46,7 +46,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
     )
   }
 
-  def release(fileId: Long): Boolean = sync { releaseInternal(fileId).isDefined }
+  def release(fileId: Long): Boolean = sync(releaseInternal(fileId)).isDefined
 
   /** @return [[None]] if called without create or open or (new handle count, data id). */
   protected final def releaseInternal(fileId: Long): Option[(Int, DataId)] =
