@@ -83,14 +83,16 @@ object maintenance extends util.ClassLogging:
       case None =>
         println(s"The path '$path' does not exist.")
       case Some(file: FileEntry) =>
-        db.delete(file.id)
-        log.info(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
+        if db.deleteChildless(file.id)
+        then log.info(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
+        else log.warn(s"Could not delete file with children: '$path'")
       case Some(dir: DirEntry) =>
         log.info(s"Marking deleted directory '$path' ...")
         def delete(treeEntry: TreeEntry): Long =
           val childCount = db.children(treeEntry.id).map(delete).sum
-          db.delete(treeEntry.id)
-          log.debug(s"Marked deleted: $treeEntry")
+          if db.deleteChildless(treeEntry.id)
+          then log.debug(s"Marked deleted: $treeEntry")
+          else log.warn(s"Could not delete file with children: '$path'")
           childCount + 1
         log.info(s"Marked deleted ${delete(dir)} files/directories.")
   }
@@ -123,7 +125,7 @@ object maintenance extends util.ClassLogging:
 
     // First un-root, then delete. Deleting directly can violate the foreign key constraint.
     log.info(s"Part 1: Mark the tree entries to delete...")
-    log.info(s"Number of entries marked: ${db.unrootDeletedEntries(now.toLong - keepDeletedDays*24*60*60*1000)}")
+    log.info(s"Number of entries marked: ${db.unrootDeletedEntries(now.asLong - keepDeletedDays*24*60*60*1000)}")
     log.info(s"Part 2: Deleting marked tree entries...")
     log.info(s"Number of tree entries deleted: ${db.deleteUnrootedTreeEntries()}")
 
@@ -221,6 +223,8 @@ object blacklist extends util.ClassLogging:
             .filterNot(_._2.startsWith(s"/$dfsBlacklist/"))
           filteredCopies.foreach { (id, path) =>
             log.info(s"Deleting copy of entry: $path")
-            db.delete(id)
+            if db.deleteChildless(file.id)
+            then log.info(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
+            else log.warn(s"Could not delete file with children: '$path'")
           }
     }
