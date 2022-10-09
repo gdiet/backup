@@ -17,7 +17,7 @@ object Level2:
     @annotation.tailrec
     def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
       ensure("write.algorithm.1", areas.nonEmpty, s"Remaining data areas are empty, data size ${data.length}")
-      val head +: rest = areas
+      val head +: rest = areas : @unchecked // TODO Can we prove that areas is nonempty? Do we need the ensure above?
       if head.size == data.length then
         write(head.start, data); rest
       else if head.size > data.length then
@@ -117,7 +117,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       }
       ensure("read.lts.parts", lengthOfParts >= readFrom + readSize, s"Read offset $readFrom size $readSize exceeds parts length $parts.")
       def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] =
-        val (partPosition, partSize) +: rest = remainingParts
+        val (partPosition, partSize) +: rest = remainingParts : @unchecked // TODO Can we prove that remainingParts is nonempty?
         if partSize < readSize then lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
         else lts.read(partPosition, readSize, resultOffset)
       recurse(partsToReadFrom, readSize, readFrom).iterator
