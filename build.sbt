@@ -5,7 +5,7 @@ lazy val dedupfs = project
     version := "current",
     scalaVersion := "3.2.0",
     scalacOptions ++= Seq("-deprecation", "-unchecked"),
-    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.4.0",
+    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.4.1",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.7",
     // Update dedup.db.H2.dbName accordingly when updating H2
     // to a version with incompatible binary storage format.
