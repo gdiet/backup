@@ -45,7 +45,7 @@ import scala.util.Using.resource
     val nativeFuseOpts = if getNativePlatform.getOS == WINDOWS then Array("-o", "volname=DedupFS") else Array[String]()
     val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
     main.info(s"Starting the dedup file system now...")
-    main.info(s"***** Rewrite Server *****")
+    main.info(s"***** Rewrite Server *****") // TODO remove
     try fs.mount(mount.toPath, true, false, fuseOpts) catch (e: Throwable) => { fs.umount(); throw e }
   catch
     case main.exit =>
