@@ -102,15 +102,15 @@ trait CacheBase[M]:
     val startKey = Option(entries.floorKey(position)).getOrElse(position)
     import scala.jdk.CollectionConverters.MapHasAsScala
     var section = entries.subMap(startKey, position + size).asScala.toVector
-    // Trim or remove the head entry if necessary.
     if section.nonEmpty && startKey < position then
-      val (headPosition -> headData) +: tail = section
+      // Trim or remove the head entry if necessary.
+      val (headPosition -> headData) +: tail = section : @unchecked // section is nonEmpty, see above
       val distance = position - headPosition
       if headData._length <= distance then section = tail
       else section = (position -> headData._drop(distance)) +: tail
     if section.isEmpty then Iterator(position -> Left(size)) else
       // Truncate the last entry if necessary.
-      val lead :+ (tailPosition -> tailData) = section
+      val lead :+ (tailPosition -> tailData) = section : @unchecked // section is nonEmpty, see above
       val keep = position + size - tailPosition
       if keep < tailData._length then section = lead :+ (tailPosition -> tailData._keep(keep))
       // Assemble result.
@@ -118,7 +118,7 @@ trait CacheBase[M]:
         if section.isEmpty then
           if remainingSize == 0 then LazyList() else LazyList(currentPos -> Left(remainingSize))
         else
-          val (entryPos -> data) +: rest = section
+          val (entryPos -> data) +: rest = section : @unchecked // section is nonEmpty, see above
           if entryPos == currentPos then
             (entryPos -> Right(data)) #:: recurse(rest, entryPos + data._length, remainingSize - data._length)
           else

@@ -2,35 +2,65 @@ package dedup
 package backend
 
 import dedup.db.WriteDatabase
-import dedup.server.{DataSink, Settings}
+import dedup.server.Settings
+
+import java.util.concurrent.atomic.AtomicLong
 
 /** Don't instantiate more than one backend for a repository. */
 // Why not? Because the backend object is used for synchronization.
 final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBackend(settings, db):
 
-  // TODO Write the cache before closing
+  /** file id -> (current, storing). Remember to synchronize. */
+  private var files = Map[Long, (Option[DataEntry], Option[DataEntry])]()
+  private val dataSeq = AtomicLong()
+
   override def shutdown(): Unit = sync {
+    // TODO Write the cache before closing
     db.shutdownCompact()
     super.shutdown()
   }
 
-  // TODO Return the cached size if any
-  override def size(fileEntry: FileEntry): Long = super.size(fileEntry)
+  override def size(fileEntry: FileEntry): Long =
+    sync(files.get(fileEntry.id)) match
+      case Some(Some(current), _) => current.size
+      case Some(_, Some(storing)) => storing.size
+      case _ => super.size(fileEntry)
 
-  override def mkDir(parentId: Long, name: String): Option[Long] = sync { db.mkDir(parentId, name) }
+  override def mkDir(parentId: Long, name: String): Option[Long] =
+    sync { db.mkDir(parentId, name) }
 
-  override def setTime(id: Long, newTime: Long): Unit = sync { db.setTime(id, newTime) }
+  override def setTime(id: Long, newTime: Long): Unit =
+    sync { db.setTime(id, newTime) }
 
-  override def deleteChildless(entry: TreeEntry): Boolean = sync {
-    if db.children(entry.id).nonEmpty then false else { db.delete(entry.id); true }
-  }
+  override def deleteChildless(entry: TreeEntry): Boolean =
+    sync { if db.children(entry.id).nonEmpty then false else { db.delete(entry.id); true } }
+
+  override def open(file: FileEntry): Unit =
+    sync { if !files.contains(file.id) then files += file.id -> (None, None) }
+
+  override def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
+    sync(files.get(fileId).map {
+      case (Some(current), _) => current
+      case (None, storing) =>
+        val initialSize = storing.map(_.size).getOrElse(db.logicalSize(dataId(fileId)))
+        DataEntry(dataSeq, initialSize, settings.tempPath)
+          .tap(entry => files += fileId -> (Some(entry), storing))
+    }).map(_.write(data)).isDefined
+
+  override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] =
+//    sync(files.get(fileId).map {
+//      case (Some(current), _) => current.read()
+//      case (None, storing) =>
+//        val initialSize = storing.map(_.size).getOrElse(db.logicalSize(dataId(fileId)))
+//        DataEntry(dataSeq, initialSize, settings.tempPath)
+//          .tap(entry => files += fileId -> (Some(entry), storing))
+//    }).map(_.write(data)).isDefined
+    ???
 
   override def release(fileId: Long): Boolean =
-    sync { releaseInternal(fileId) } match
+    sync(releaseInternal(fileId)) match
       case None => false
       case Some(count -> dataId) =>
-        if count < 1 then log.info(s"dataId $dataId: write-through not implemented") // TODO implement write-through
+        if count < 1 then
+          log.info(s"dataId $dataId: write-through not implemented") // TODO implement write-through
         true
-
-// TODO implement
-//  override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] = ???
