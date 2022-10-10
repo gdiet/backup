@@ -20,6 +20,10 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
   /** file id -> (handle count, data id). Remember to synchronize. */
   private var files = Map[Long, (Int, DataId)]()
 
+  /** Use synchronized.
+    * @throws NoSuchElementException If the file is not open. */
+  protected def dataId(fileId: Long): DataId = files(fileId)._2
+
   private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
 
 
@@ -37,7 +41,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
 
   // *** File content operations ***
 
-  final def open(file: FileEntry): Unit = sync {
+  def open(file: FileEntry): Unit = sync {
     files += file.id -> (files.get(file.id) match
       case None => 1 -> file.dataId
       case Some(count -> dataId) =>
@@ -93,7 +97,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
       }._2
 
       def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] =
-        val (partPosition, partSize) +: rest = remainingParts
+        val (partPosition, partSize) +: rest = remainingParts : @unchecked // TODO Can we prove that remainingParts is nonempty?
         if partSize >= readSize then lts.read(partPosition, readSize, resultOffset)
         else
           lts.read(partPosition, partSize, resultOffset) #::: {
