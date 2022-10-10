@@ -19,12 +19,12 @@ class FileCacheSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
       cache.write(MaxInt + 8000 + memChunk, chunk3)
       val i = cache.readData(0, MaxInt + 20000 + memChunk)
       assert(i.next == 0 -> Left(MaxInt - 1000))
-      val pos1 -> Right(dat1) = i.next
+      val pos1 -> Right(dat1) = i.next : @unchecked // If it's a Left, the test will fail
       assert(pos1 == MaxInt - 1000)
       assert(dat1.length == memChunk)
       assert(dat1.take(10000).toSeq == chunk1.toSeq)
       assert(dat1.drop(10000).toSeq == chunk2.dropRight(10000).toSeq)
-      val pos2 -> Right(dat2) = i.next
+      val pos2 -> Right(dat2) = i.next : @unchecked // If it's a Left, the test will fail
       assert(pos2 == MaxInt - 1000 + memChunk)
       assert(dat2.length == 19000)
       assert(dat2.take(9000).toSeq == chunk2.takeRight(10000).take(9000).toSeq)
