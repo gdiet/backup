@@ -88,39 +88,40 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
           case dataOffset -> Right(data)    => Iterator(dataOffset -> data)
         }
 
-  /** Reads bytes from the long term store from a file defined by `parts`.
+  /** From the long term store, reads file content defined by `parts`.
     *
-    * @param parts    List of (offset, size) defining the parts of the file to read from.
-    *                 `readFrom` + `readSize` must not exceed summed part sizes unless
+    * @param parts    List of (offset, size) defining the file content parts to read.
+    *                 `readFrom` + `readSize` should not exceed summed part sizes unless
     *                 `parts` is the empty list that is used for blacklisted entries.
     * @param readFrom Position in the file to start reading at, must be >= 0.
     * @param readSize Number of bytes to read, must be >= 0.
     *
     * @return A contiguous Iterator(position, bytes) where data chunk size is limited to [[dedup.memChunk]].
-    * @throws IllegalArgumentException if `readFrom` or `readSize` exceed the bounds defined by `parts`.
+    *         If `parts` is too small, the data is filled up with zeros.
+    * @throws IllegalArgumentException if `readFrom` is negative or `readSize` is less than 1.
     */
   private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): Iterator[(Long, Array[Byte])] =
-    if parts.isEmpty then // Read appropriate number of zeros from blacklisted entry.
-      Iterator.range(0L, readSize, memChunk.toLong).map(
-        offset => readFrom + offset -> new Array[Byte](math.min(memChunk, readSize - offset).toInt)
-      )
-    else
-      log.trace(s"readFromLts(parts: $parts, readFrom: $readFrom, readSize: $readSize)")
-      ensure("read.lts.offset", readFrom >= 0, s"Read offset $readFrom must be >= 0.")
-      ensure("read.lts.size", readSize > 0, s"Read size $readSize must be > 0.")
-      val (lengthOfParts, partsToReadFrom) = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
-        case ((currentOffset, result), part @ (partPosition, partSize)) =>
-          val distance = readFrom - currentOffset
-          if distance > partSize then currentOffset + partSize -> result
-          else if distance > 0 then currentOffset + partSize -> (result :+ (partPosition + distance, partSize - distance))
-          else currentOffset + partSize -> (result :+ part)
-      }
-      ensure("read.lts.parts", lengthOfParts >= readFrom + readSize, s"Read offset $readFrom size $readSize exceeds parts length $parts.")
-      def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] =
-        val (partPosition, partSize) +: rest = remainingParts : @unchecked // TODO Can we prove that remainingParts is nonempty?
-        if partSize < readSize then lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
-        else lts.read(partPosition, readSize, resultOffset)
-      recurse(partsToReadFrom, readSize, readFrom).iterator
+    log.trace(s"readFromLts(readFrom: $readFrom, readSize: $readSize, parts: $parts)")
+    ensure("read.lts.offset", readFrom >= 0, s"Read offset $readFrom must be >= 0.")
+    ensure("read.lts.size", readSize > 0, s"Read size $readSize must be > 0.")
+    val partsToReadFrom = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
+      case ((currentOffset, result), part @ (partPosition, partSize)) =>
+        val distance = readFrom - currentOffset
+        if distance > partSize then currentOffset + partSize -> result
+        else if distance > 0 then currentOffset + partSize -> (result :+ (partPosition + distance, partSize - distance))
+        else currentOffset + partSize -> (result :+ part)
+    }._2
+    def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] =
+      remainingParts match
+        case Seq() =>
+          if parts.nonEmpty then log.warn(s"Could not fully read $readSize bytes starting at $readFrom from these parts: $parts")
+          LazyList.range(resultOffset, readSize, memChunk.toLong).map(
+            offset => offset -> new Array[Byte](math.min(memChunk, readSize - offset).toInt)
+          )
+        case (partPosition, partSize) +: rest =>
+          if partSize < readSize then lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
+          else lts.read(partPosition, readSize, resultOffset)
+    recurse(partsToReadFrom, readSize, readFrom).iterator
 
   /* Note: Once in Level2, DataEntry objects are never mutated. */
   def persist(id: Long, dataEntry: DataEntry): Unit =
