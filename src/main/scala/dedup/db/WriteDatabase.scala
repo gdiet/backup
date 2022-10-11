@@ -25,6 +25,18 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
   }.toOption
 
+  private val iFile = prepare(
+    "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)",
+    Statement.RETURN_GENERATED_KEYS
+  )
+  /** @return `Some(id)` or [[None]] if a child entry with the same name already exists. */
+  def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] = Try {
+    // Name conflict triggers SQL exception due to unique constraint.
+    val count = iFile.set(parentId, name, time, dataId).executeUpdate()
+    ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
+    iFile.getGeneratedKeys.tap(_.next()).getLong("id")
+  }.toOption
+
   private val uTime = prepare(
     "UPDATE TreeEntries SET time = ? WHERE id = ?"
   )

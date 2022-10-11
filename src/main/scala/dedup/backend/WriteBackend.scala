@@ -35,8 +35,20 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   override def deleteChildless(entry: TreeEntry): Boolean =
     sync { if db.children(entry.id).nonEmpty then false else { db.delete(entry.id); true } }
 
-  override def open(file: FileEntry): Unit =
-    sync { if !files.contains(file.id) then files += file.id -> (None, None) }
+  override def open(fileId: Long, dataId: DataId): Unit = sync {
+    super.open(fileId, dataId)
+    if !files.contains(fileId) then files += fileId -> (None, None)
+  }
+
+  override def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = sync {
+    // A sensible Option.tapEach might be available in future Scala versions, see
+    // https://stackoverflow.com/questions/67017901/why-does-scala-option-tapeach-return-iterable-not-option
+    // and https://github.com/scala/scala-library-next/pull/80
+    db.mkFile(parentId, name, time, DataId(-1)).tap(_.foreach { fileId =>
+      super.open(fileId, DataId(-1))
+      files += fileId -> (None, None)
+    })
+  }
 
   override def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
     sync(files.get(fileId).map {
@@ -65,6 +77,6 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     sync(releaseInternal(fileId)) match
       case None => false
       case Some(count -> dataId) =>
-        if count < 1 then
+        if count < 1 && files.get(fileId).exists(_._1.isDefined) then
           log.info(s"dataId $dataId: write-through not implemented") // TODO implement write-through
         true

@@ -41,11 +41,11 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
 
   // *** File content operations ***
 
-  def open(file: FileEntry): Unit = sync {
-    files += file.id -> (files.get(file.id) match
-      case None => 1 -> file.dataId
-      case Some(count -> dataId) =>
-        ensure("readbackend.open", file.dataId == dataId, s"Open #$count - dataId ${file.dataId} differs from previous $dataId.")
+  def open(fileId: Long, dataId: DataId): Unit = sync {
+    files += fileId -> (files.get(fileId) match
+      case None => 1 -> dataId
+      case Some(count -> knownDataId) =>
+        ensure("readbackend.open", knownDataId == dataId, s"Open #$count - dataId $dataId differs from previous $knownDataId.")
         count + 1 -> dataId
     )
   }

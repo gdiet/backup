@@ -40,7 +40,9 @@ trait Backend:
   def size(fileEntry: FileEntry): Long
   /** @return The child entries of the tree entry. */
   def children(parentId: Long): Seq[TreeEntry]
-  
+
+  /** @return Some(fileId) or None if a child entry with the same name already exists. */
+  def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = readOnly
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = readOnly
   /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs. */
@@ -52,7 +54,7 @@ trait Backend:
   // *** File content operations ***
 
   /** Creates a virtual file handle so read/write operations can be done on the file. */
-  def open(file: FileEntry): Unit
+  def open(fileId: Long, dataId: DataId): Unit
   /** Releases a virtual file handle. Triggers a write-through if no other handles are open for the file.
     * @return [[false]] if called without create or open. */
   def release(fileId: Long): Boolean

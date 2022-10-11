@@ -144,26 +144,25 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   //  // https://man7.org/linux/man-pages/man2/readlink.2.html
   //  //  override def readlink(path: String, buf: Pointer, size: Long): Int =
   //
-  //  override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
-  //    if settings.readonly then EROFS else fs(s"create $path") {
-  //      val parts = backend.split(path)
-  //      if parts.length == 0 then ENOENT // Can't create root.
-  //      else backend.entry(parts.dropRight(1)) match // Fetch parent entry.
-  //        case None                => ENOENT  // Parent not known.
-  //        case Some(_: FileEntry)  => ENOTDIR // Parent is a file.
-  //        case Some(dir: DirEntry) =>
-  //          backend.createAndOpen(dir.id, parts.last, now) match
-  //            case None         => EEXIST // Entry with the given name already exists.
-  //            case Some(handle) => // Yay, success!
-  //              fi.fh.set(handle)
-  //              OK
-  //    }
+  override def create(path: String, mode: Long, fi: FuseFileInfo): Int = fs(s"create $path") {
+    val parts = backend.split(path)
+    if parts.length == 0 then ENOENT // Can't create root.
+    else backend.entry(parts.dropRight(1)) match // Fetch parent entry.
+      case None                => ENOENT  // Parent not known.
+      case Some(_: FileEntry)  => ENOTDIR // Parent is a file.
+      case Some(dir: DirEntry) =>
+        backend.createAndOpen(dir.id, parts.last, now) match
+          case None         => EEXIST // Entry with the given name already exists.
+          case Some(fileId) => // Yay, success!
+            fi.fh.set(fileId)
+            OK
+  }
 
   override def open(path: String, fi: FuseFileInfo): Int = fs(s"open $path") {
     backend.entry(path) match
       case None => ENOENT
       case Some(_: DirEntry) => EISDIR
-      case Some(file: FileEntry) => backend.open(file); fi.fh.set(file.id); OK
+      case Some(file: FileEntry) => backend.open(file.id, file.dataId); fi.fh.set(file.id); OK
   }
 
   //  override def truncate(path: String, size: Long): Int =
