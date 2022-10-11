@@ -81,7 +81,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
     *         If `parts` is too small, the data is filled up with zeros.
     * @throws IllegalArgumentException if `readFrom` is negative or `readSize` is less than 1.
     */
-  private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): Iterator[(Long, Array[Byte])] =
+  protected def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): Iterator[(Long, Array[Byte])] =
     log.trace(s"readFromLts(readFrom: $readFrom, readSize: $readSize, parts: $parts)")
     ensure("read.lts.offset", readFrom >= 0, s"Read offset $readFrom must be >= 0.")
     ensure("read.lts.size", readSize > 0, s"Read size $readSize must be > 0.")

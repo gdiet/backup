@@ -32,7 +32,7 @@ class DataEntry(idSeq: AtomicLong, initialSize: Long, tempDir: Path) extends Cla
   def write(data: Iterator[(Long, Array[Byte])]): Unit = synchronized {
     data.foreach { (position, bytes) =>
       if cacheLoad > 1000000000L then
-        log.trace(s"Slowing write to reduce cache load ${cacheLoad}.")
+        log.trace(s"Slowing write to reduce cache load $cacheLoad.")
         Thread.sleep(cacheLoad/1000000000L)
       cache.write(position, bytes)
     }
@@ -45,32 +45,11 @@ class DataEntry(idSeq: AtomicLong, initialSize: Long, tempDir: Path) extends Cla
     *
     * @return Iterator(position, holeSize | bytes). If writes occur to this [[DataEntry]] while the iterator is
     *         used, it is not defined which parts of the writes become visible and which parts don't.
-    * @throws IllegalArgumentException if `offset` / `size` exceed the bounds of the virtual file.
+    * @throws IllegalArgumentException if `offset` is negative.
     */
   def read(offset: Long, size: Long): Iterator[(Long, Either[Long, Array[Byte]])] =
     val sizeToRead = math.max(0, math.min(size, cache.size - offset))
-    cache.read(offset, size)
-
-//  /** Reads bytes from this [[DataEntry]] and writes them to `sink`.
-//    * Stops reading at the end of this [[DataEntry]]. Returns the areas
-//    * not cached in this [[DataEntry]].
-//    *
-//    * Note: Providing a `sink` instead of returning the data
-//    * enables synchronized reads even though [[DataEntry]] is mutable
-//    * without incurring the risk of large memory allocations.
-//    *
-//    * @param offset Offset to start reading at.
-//    * @param size   Number of bytes to read, not limited by the internal size limit for byte arrays.
-//    * @param sink   Sink to write data to.
-//    *
-//    * @return (actual size read, Vector((holePosition, holeSize))) */
-//  def read[D: DataSink](offset: Long, size: Long, sink: D): (Long, Vector[(Long, Long)]) = synchronized {
-//    val sizeToRead = math.max(0, math.min(size, cache.size - offset))
-//    sizeToRead -> cache.read(offset, sizeToRead).flatMap {
-//      case position -> Left(hole) => Some(position -> hole)
-//      case position -> Right(data) => sink.write(position - offset, data); None
-//    }.toVector
-//  }
+    cache.read(offset, sizeToRead)
 
   def close(finalDataId: DataId): Unit = synchronized {
     cache.close()
