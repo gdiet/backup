@@ -84,7 +84,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
   protected def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): Iterator[(Long, Array[Byte])] =
     log.trace(s"readFromLts(readFrom: $readFrom, readSize: $readSize, parts: $parts)")
     ensure("read.lts.offset", readFrom >= 0, s"Read offset $readFrom must be >= 0.")
-    ensure("read.lts.size", readSize > 0, s"Read size $readSize must be > 0.")
+    ensure("read.lts.size", readSize >= 0, s"Read size $readSize must be > 0.")
     val partsToReadFrom = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
       case ((currentOffset, result), part@(partPosition, partSize)) =>
         val distance = readFrom - currentOffset
