@@ -54,6 +54,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     sync(files.get(fileId).map {
       case (Some(current), _) => current
       case (None, storing) =>
+        log.info(s"Creating write cache for $fileId.") // FIXME trace or remove
         val initialSize = storing.map(_.size).getOrElse(db.logicalSize(dataId(fileId)))
         DataEntry(dataSeq, initialSize, settings.tempPath)
           .tap(entry => files += fileId -> (Some(entry), storing))
