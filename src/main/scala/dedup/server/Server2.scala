@@ -165,24 +165,23 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
       case Some(file: FileEntry) => backend.open(file.id, file.dataId); fi.fh.set(file.id); OK
   }
 
-  //  override def truncate(path: String, size: Long): Int =
-  //    if settings.readonly then EROFS else fs(s"truncate $path .. $size") {
-  //      backend.entry(path) match
-  //        case None => ENOENT
-  //        case Some(_: DirEntry) => EISDIR
-  //        case Some(file: FileEntry) => if (backend.truncate(file.id, size)) OK else EIO // false if called without create or open
-  //    }
+  override def truncate(path: String, size: Long): Int = fs(s"truncate $path .. $size") {
+    backend.entry(path) match
+      case None => ENOENT
+      case Some(_: DirEntry) => EISDIR
+      case Some(file: FileEntry) => if (backend.truncate(file.id, size)) OK else EIO // false if called without create or open
+  }
 
-    override def write(path: String, source: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = fs(s"write $path .. offset = $offset, size = $size") {
-      val intSize = size.toInt.abs // We need to return an Int size, so here it is.
-      def data: Iterator[(Long, Array[Byte])] = Iterator.range(0, intSize, memChunk).map { readOffset =>
-        val chunkSize = math.min(memChunk, intSize - readOffset)
-        offset + readOffset -> new Array[Byte](chunkSize).tap(source.get(readOffset, _, 0, chunkSize))
-      }
-      if offset < 0 || size != intSize then EOVERFLOW // With intSize being .abs (see above) checks for negative size, too.
-      else if backend.write(fi.fh.get(), data) then intSize
-      else EIO // false if called without create or open.
+  override def write(path: String, source: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = fs(s"write $path .. offset = $offset, size = $size") {
+    val intSize = size.toInt.abs // We need to return an Int size, so here it is.
+    def data: Iterator[(Long, Array[Byte])] = Iterator.range(0, intSize, memChunk).map { readOffset =>
+      val chunkSize = math.min(memChunk, intSize - readOffset)
+      offset + readOffset -> new Array[Byte](chunkSize).tap(source.get(readOffset, _, 0, chunkSize))
     }
+    if offset < 0 || size != intSize then EOVERFLOW // With intSize being .abs (see above) checks for negative size, too.
+    else if backend.write(fi.fh.get(), data) then intSize
+    else EIO // false if called without create or open.
+  }
 
   override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int = fs(s"read $path .. offset = $offset, size = $size") {
     val intSize = size.toInt.abs // We need to return an Int size, so here it is.

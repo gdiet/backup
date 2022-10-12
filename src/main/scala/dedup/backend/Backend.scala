@@ -55,6 +55,7 @@ trait Backend:
 
   /** Creates a virtual file handle so read/write operations can be done on the file. */
   def open(fileId: Long, dataId: DataId): Unit
+  
   /** Releases a virtual file handle. Triggers a write-through if no other handles are open for the file.
     * @return [[false]] if called without create or open. */
   def release(fileId: Long): Boolean
@@ -73,3 +74,8 @@ trait Backend:
     * @param data   Iterator(position -> bytes).
     * @return       [[false]] if the file is not open. */
   def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean = readOnly
+
+  /** @param fileId  Id of the file to truncate.
+    * @param newSize The new size of the file, can be more, less or the same as before.
+    * @return        [[false]] if the file is not open. */
+  def truncate(fileId: Long, newSize: Long): Boolean = readOnly

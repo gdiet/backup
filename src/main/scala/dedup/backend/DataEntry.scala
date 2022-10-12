@@ -18,14 +18,11 @@ class DataEntry(idSeq: AtomicLong, initialSize: Long, tempDir: Path) extends Cla
   def size: Long       = synchronized { cache.size    }
   def written: Boolean = synchronized { cache.written }
 
-//  private val isOpen = CountDownLatch(1)
-//
-//
-//
-//  // For debugging.
-//  override def toString: String = synchronized { s"${getClass.getName}: id $id / size $size / $cache" }
-//
-//  def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
+  // For debugging.
+  override def toString: String = synchronized { s"${getClass.getName}: id $id / size $size / $cache" }
+
+  /** Truncates the cached file to a new size. Zero-pads if the file size increases. */
+  def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
 
   /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
     *             atomically / synchronized. */

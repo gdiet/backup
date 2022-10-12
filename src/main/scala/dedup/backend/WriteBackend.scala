@@ -60,6 +60,16 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
           .tap(entry => files += fileId -> (Some(entry), storing))
     }).map(_.write(data)).isDefined
 
+  override def truncate(fileId: Long, newSize: Long): Boolean =
+    sync(files.get(fileId).map {
+      case (Some(current), _) => current // FIXME duplicate code
+      case (None, storing) =>
+        log.info(s"Creating write cache for $fileId.") // FIXME trace or remove
+        val initialSize = storing.map(_.size).getOrElse(db.logicalSize(dataId(fileId)))
+        DataEntry(dataSeq, initialSize, settings.tempPath)
+          .tap(entry => files += fileId -> (Some(entry), storing))
+    }).map(_.truncate(newSize)).isDefined
+  
   override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] =
     sync(files.get(fileId)).map { case current -> storing =>
       current.map(_.read(offset, requestedSize)).getOrElse(Iterator(offset -> Left(requestedSize)))
