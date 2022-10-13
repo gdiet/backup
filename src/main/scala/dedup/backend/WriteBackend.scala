@@ -50,7 +50,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     })
   }
 
-  override def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
+  private def dataEntry(fileId: Long): Option[DataEntry] =
     sync(files.get(fileId).map {
       case (Some(current), _) => current
       case (None, storing) =>
@@ -58,17 +58,13 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
         val initialSize = storing.map(_.size).getOrElse(db.logicalSize(dataId(fileId)))
         DataEntry(dataSeq, initialSize, settings.tempPath)
           .tap(entry => files += fileId -> (Some(entry), storing))
-    }).map(_.write(data)).isDefined
+    })
+
+  override def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
+    dataEntry(fileId).map(_.write(data)).isDefined
 
   override def truncate(fileId: Long, newSize: Long): Boolean =
-    sync(files.get(fileId).map {
-      case (Some(current), _) => current // FIXME duplicate code
-      case (None, storing) =>
-        log.info(s"Creating write cache for $fileId.") // FIXME trace or remove
-        val initialSize = storing.map(_.size).getOrElse(db.logicalSize(dataId(fileId)))
-        DataEntry(dataSeq, initialSize, settings.tempPath)
-          .tap(entry => files += fileId -> (Some(entry), storing))
-    }).map(_.truncate(newSize)).isDefined
+    dataEntry(fileId).map(_.truncate(newSize)).isDefined
   
   override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] =
     sync(files.get(fileId)).map { case current -> storing =>
