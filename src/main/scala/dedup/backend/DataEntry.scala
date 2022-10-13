@@ -13,6 +13,7 @@ class DataEntry(idSeq: AtomicLong, initialSize: Long, tempDir: Path) extends Cla
   private val id        = idSeq.incrementAndGet()
   private val path      = tempDir.resolve(s"$id")
   private val cache     = WriteCache(MemCache.availableMem, path, initialSize) // TODO eventually try to remove the available constructor arg
+  private val isOpen    = CountDownLatch(1)
   private def cacheLoad = 0L // FIXME Level2.cacheLoad
 
   def size: Long       = synchronized { cache.size    }
@@ -48,18 +49,9 @@ class DataEntry(idSeq: AtomicLong, initialSize: Long, tempDir: Path) extends Cla
     val sizeToRead = math.max(0, math.min(size, cache.size - offset))
     cache.read(offset, sizeToRead)
 
-  def close(finalDataId: DataId): Unit = synchronized {
+  def close(): Unit = synchronized {
     cache.close()
-    ???
-//    closedEntries.incrementAndGet()
-//    isOpen.countDown()
-//    baseDataId.set(finalDataId.toLong)
-//    log.trace(s"Closed $id with new base data ID $baseDataId.")
+    isOpen.countDown()
   }
-//
-//  def awaitClosed(): Unit = isOpen.await()
 
-//object DataEntry:
-//  protected val currentId    : AtomicLong = AtomicLong()
-//  protected val closedEntries: AtomicLong = AtomicLong()
-//  def openEntries: Long = currentId.get - closedEntries.get
+  def awaitClosed(): Unit = isOpen.await()
