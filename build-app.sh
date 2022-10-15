@@ -17,13 +17,14 @@ if [ "$1" ]; then
   echo
 fi
 
+# https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.4.1%2B1/OpenJDK17U-jre_x64_windows_hotspot_17.0.4.1_1.zip
 # Fetch JREs if necessary. Find newer releases here: https://adoptium.net/releases.html
-jreFolder=jdk-17.0.3%2B7
-jre=OpenJDK17U-jre_x64_windows_hotspot_17.0.3_7.zip
+jreFolder=jdk-17.0.4.1%2B1
+jre=OpenJDK17U-jre_x64_windows_hotspot_17.0.4.1_1.zip
 if [ ! -f "$jre" ]; then
   wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jre || exit 1
 fi
-jreLinux=OpenJDK17U-jre_x64_linux_hotspot_17.0.3_7.tar.gz
+jreLinux=OpenJDK17U-jre_x64_linux_hotspot_17.0.4.1_1.tar.gz
 if [ ! -f "$jreLinux" ]; then
   wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jreLinux || exit 1
 fi
