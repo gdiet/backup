@@ -21,7 +21,7 @@ class BlacklistSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
       f(db, Map(
         "blacklist" -> blacklist,
         "black1" -> black1,
-        "black1d" -> black1d.toLong,
+        "black1d" -> black1d.asLong,
         "black2" -> black2,
         "file1" -> file1
       ))

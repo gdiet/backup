@@ -82,7 +82,7 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     cache.close()
     closedEntries.incrementAndGet()
     isOpen.countDown()
-    baseDataId.set(finalDataId.toLong)
+    baseDataId.set(finalDataId.asLong)
     log.trace(s"Closed $id with new base data ID $baseDataId.")
   }
 
