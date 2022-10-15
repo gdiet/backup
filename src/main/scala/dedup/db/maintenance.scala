@@ -223,7 +223,7 @@ object blacklist extends util.ClassLogging:
             .filterNot(_._2.startsWith(s"/$dfsBlacklist/"))
           filteredCopies.foreach { (id, path) =>
             log.info(s"Deleting copy of entry: $path")
-            if db.deleteChildless(file.id)
+            if db.deleteChildless(id)
             then log.info(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
             else log.warn(s"Could not delete file with children: '$path'")
           }
