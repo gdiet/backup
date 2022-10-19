@@ -297,7 +297,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### May Come Eventually
 
-* Update to Scala 3.2 and try out scoverage.
+* Development: Try out scoverage instead of jacoco.
 * Create sql db backup from the file backup and start the file system in parallel.
 * Backup script for backing up folders without needing to mount the file system, optionally referencing an existing backup.
 * rename `fsc backup` command renamed to `fsc dbbackup` to avoid confusion with a new store-as-backup command.
@@ -306,14 +306,13 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * The reclaim utilities find & clean up data entry duplicates.
 
-#### NEXT (xxxx.xx.xx)
+#### 5.0.1 (2022.10.19)
 
-#### 5.0.1 (2022.09.17)
-
+* Fixed a failing test for the blacklisting code that probably is a bug, although the exact faulty behavior has not been researched.
 * Check for children before marking entries deleted. Mainly prevents replacing non-empty directories.
 * Fixed bug that mounting the file system read-only failed.
+* Updated Scala to version 3.2 and Java to 17.0.4.1_1, updated many libraries.
 * Updated H2 database from 2.1.212 to 2.1.214 - binary compatible, no migration necessary.
-* Updated many libraries.
 
 #### 5.0.0 (2022.06.09)
 
