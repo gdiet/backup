@@ -297,6 +297,9 @@ To upgrade a DedupFS installation to a newer version:
 
 #### May Come Eventually
 
+* `fsc backup` and `db-restore` are named inconsistently
+* `db-restore`: document that the `from=` can be omitted
+* `fsc backup`: output to console the correspondig restore command
 * Development: Try out scoverage instead of jacoco.
 * Create sql db backup from the file backup and start the file system in parallel.
 * Backup script for backing up folders without needing to mount the file system, optionally referencing an existing backup.
