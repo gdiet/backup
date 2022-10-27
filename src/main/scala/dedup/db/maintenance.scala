@@ -25,22 +25,21 @@ object maintenance extends util.ClassLogging:
       "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
     )
 
-  def restoreBackup(dbDir: File, from: Option[String]): Unit = from match
-    case None =>
-      val dbFile = H2.dbFile(dbDir)
-      val plainBackup = H2.dbFile(dbDir, ".backup")
-      ensure("tool.restore.notfound", plainBackup.exists(), s"Database backup file $backup does not exist")
-      log.info(s"Restoring plain database backup: $backup -> $dbFile")
-      Files.copy(plainBackup.toPath, dbFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+  def restorePlainBackup(dbDir: File): Unit =
+    val dbFile = H2.dbFile(dbDir)
+    val plainBackup = H2.dbFile(dbDir, ".backup")
+    ensure("tool.restore.notfound", plainBackup.exists(), s"Database backup file $backup does not exist")
+    log.info(s"Restoring plain database backup: $backup -> $dbFile")
+    Files.copy(plainBackup.toPath, dbFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 
-    case Some(scriptName) =>
-      val script = File(dbDir, scriptName)
-      ensure("tool.restore.from", script.exists(), s"Database backup script file $script does not exist")
-      val dbFile = H2.dbFile(dbDir)
-      ensure("tool.restore", !dbFile.exists || dbFile.delete, s"Can't delete current database file $dbFile")
-      RunScript.main(
-        "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
-      )
+  def restoreScriptBackup(dbDir: File, scriptName: String): Unit =
+    val script = File(dbDir, scriptName)
+    ensure("tool.restore.from", script.exists(), s"Database backup script file $script does not exist")
+    val dbFile = H2.dbFile(dbDir)
+    ensure("tool.restore", !dbFile.exists || dbFile.delete, s"Can't delete current database file $dbFile")
+    RunScript.main(
+      "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
+    )
 
   def stats(dbDir: File): Unit = withDb(dbDir) { db =>
     import Database.currentDbVersion

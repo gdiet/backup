@@ -152,6 +152,12 @@ A number of **command line** utilities for the dedup file system is available th
 
 Use `fsc db-backup` to create a database backup.
 
+#### Restore The Database From Backup
+
+Use `fsc db-restore` to restore a previous versions of the DedupFS database, thus effectively resetting the dedup file system to an earlier state. **This command overwrites the current database without further confirmation.**
+
+If run without additional `[file name]` parameter, it restores the database to the way it was before the last write operation was started. Provide a `[file name]` parameter to point the utility to an earlier database backup zip file located in the `fsdb` subdirectory of the repository.
+
 #### Find Files By Name Pattern
 
 Use `fsc find <name pattern>` to find files matching the name pattern. The name pattern supports '`%`' as wildcard for any number of characters and '`_`' as wildcard for a single character.
@@ -199,7 +205,7 @@ DedupFS writes log files that contain all log entries visible on the console and
 
 ### Restore The Database From A Backup
 
-The `db-restore` utility is for restoring previous versions of the DedupFS database. It accepts the usual `repo=<target directory>` parameter. If run without additional `from=[file name]` parameter (the `from=` part can be omitted), it restores the database to the way it was before the last write operation was started, thus effectively resetting the dedup file system to an earlier state. Alternatively, you can use the `from=[file name]` parameter to point the utility to earlier database backups (zip files) that can be found in the `fsdb` subdirectory of the repository.
+The `db-restore` utility is a convenience entry point for the `fsc db-restore` command. Other than the plain command, this utility asks for confirmation before restoring the database.
 
 ### Blacklist Files
 
@@ -297,9 +303,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### May Come Eventually
 
-* `fsc db-backup` and `db-restore` are named inconsistently
-* `db-restore`: document that the `from=` can be omitted
-* `fsc backup`: output to console the correspondig restore command
+* `fsc db-backup`: output to console the corresponding restore command
 * Development: Try out scoverage instead of jacoco.
 * Create sql db backup from the file backup and start the file system in parallel.
 * Backup script for backing up folders without needing to mount the file system, optionally referencing an existing backup.
@@ -310,6 +314,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.1.0 (202?.??.??)
 
+* Introduced `fsc db-restore` command.
 * Renamed `fsc backup` to `fsc db-backup`.
 
 #### 5.0.1 (2022.10.19)
