@@ -55,7 +55,6 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       if settings.temp.list().isEmpty then settings.temp.delete()
       else log.warn(s"Temp dir not empty: ${settings.temp}")
     lts.close()
-    if !settings.readonly then database.shutdownCompact()
     con.close()
     log.info("Shutdown complete.")
 

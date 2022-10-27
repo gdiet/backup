@@ -37,21 +37,21 @@ Whether DedupFS is better than any other backup software depends mostly on how y
 * DedupFS is fast at writing and reading backups (at least for personal requirements).
 * DedupFS is lightweight, meaning it's easy to install and to run, and it needs little RAM compared to other deduplication software.
 * DedupFS uses a simple storage format, so you know that if something goes horribly wrong there is still a good chance to retrieve most of the stored data.
-* "Delete" in DedupFS is a two-step process, so if you accidentally deleted important files from your backups, they are not lost until you explicitly run the "reclaim space" utilities.
+* "Delete" in DedupFS is a two-step process, so if you accidentally deleted important files from your backups, they are not lost until you explicitly run the "reclaim space" utility.
 * DedupFS automatically creates and keeps backups of the file tree and metadata database, so if necessary you can restore the dedup file system to earlier states.
 * DedupFS is designed to make it fast and easy to keep a second offline copy of your backup repository up-to-date, even if the repository is terabytes in size.
 * DedupFS is open source. It consists of less than 2000 lines of production code.
 
 ## What DedupFS Should Not Be Used For
 
-Don't use DedupFS as your everyday file system. It is not fully POSIX compatible. Locking a file for example will probably not work at all. When a file is closed after writing, immediately opening it for reading will show the old file contents - the new contents are available only after some (short) time. Last but not least if you change file contents often this leads to a large amount of unused data entries that eat up space unless you use the "reclaim space" utilities.
+Don't use DedupFS as your everyday file system. It is not fully POSIX compatible. Locking a file for example will probably not work at all. When a file is closed after writing, immediately opening it for reading will show the old file contents - the new contents are available only after some (short) time. Last but not least if you change file contents often this leads to a large amount of unused data entries that eat up space unless you use the "reclaim space" utility.
 
 Don't use DedupFS for security critical things. One reason for that: DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions. Note that this is not a problem when you store backups of your holiday photos...
 
 ## Caveats
 
 * DedupFS only supports regular directories and regular files. It does not support soft or hard links or sparse files. Support for soft links is planned for future versions.
-* Deleting files in DedupFS is a two-step process. Don't expect that the repository size shrinks if you delete files. Even if you run the "reclaim space" utilities, the repository size will not shrink. Instead, it will not grow further for some time if you store new files.
+* Deleting files in DedupFS is a two-step process. Don't expect that the repository size shrinks if you delete files. Even if you run the "reclaim space" utility, the repository size will not shrink. Instead, it will not grow further for some time if you store new files.
 * DedupFS uses MD5 hashes to find duplicate content, and there is no safeguard implemented against hash collisions.
 * Since DedupFS has been used less on Linux, there might be additional issues there.
 * To support a special operation mode, if data files go missing, DedupFS replaces the missing bytes more or less silently with '0' values.
@@ -158,6 +158,10 @@ Use `fsc db-restore` to restore a previous versions of the DedupFS database, thu
 
 If run without additional `[file name]` parameter, it restores the database to the way it was before the last write operation was started. Provide a `[file name]` parameter to point the utility to an earlier database backup zip file located in the `fsdb` subdirectory of the repository.
 
+#### Compact The Database File
+
+Use `fsc db-compact` to compact the database file.
+
 #### Find Files By Name Pattern
 
 Use `fsc find <name pattern>` to find files matching the name pattern. The name pattern supports '`%`' as wildcard for any number of characters and '`_`' as wildcard for a single character.
@@ -179,7 +183,7 @@ The DedupFS utilities come with reasonable default memory settings. You can chan
 * `gui-dedupfs` and `dedupfs` need at least ~96 MB RAM for good operation. When storing large files or using a slow storage device, additional RAM improves performance.
 * `db-restore` might need more than 64 MB RAM, it depends on the database size.
 * `gui-readonly` and `readonly` work fine with ~80 MB RAM. Assigning more will not improve performance.
-* The `reclaim-space` utilities need about ((number of data entries) * 64 B + 64 MB) RAM.
+* The `reclaim-space` utility need about ((number of data entries) * 64 B + 64 MB) RAM.
 
 To change the RAM assignment of a utility, open it in a text editor. After the `$JAVA` or `%JAVA%` call, change `-Xmx` maximum heap memory setting.
 
@@ -228,6 +232,8 @@ The `reclaim-space` utility purges deleted and orphan entries from the database.
 
 In addition to the usual `repo=<target directory>` parameter, the `reclaim-space` utility accepts an optional `keepDays=[number]` parameter (the `keepDays=` part can be omitted) that can be used to specify that recently deleted files should not be reclaimed. Without this parameter, all deleted files are reclaimed.
 
+When the reclaim process is finished, the `reclaim-space` utility compacts the database file, then exits.
+
 ### Clean Up Repository Files
 
 In the `log` subdirectory of the installation directory, up to 1 GB of log files are stored. They are useful for getting insights into how DedupFS was used. You can delete them if you don't need them.
@@ -244,9 +250,9 @@ If you
 
 * create a "database only" copy of the file system,
 * copy (at least) the last active data file in the right location in the `data` directory,
-* be careful: If you ran `reclaim-space-2` some time ago, the last active data file might not be the last data file. In case of doubt, use the `stats` utility to check the data storage size,
+* be careful: If you ran `reclaim-space` some time ago, the last active data file might not be the last data file. In case of doubt, use the `stats` utility to check the data storage size,
 * only use the shallow copy of the file system for some time (and not the original),
-* don't use the `reclaim-space-2` utility on the shallow copy of the file system,
+* don't use the `reclaim-space` utility on the shallow copy of the file system,
 
 then you can merge the shallow repository back to the original file system using standard file sync tools.
 
@@ -309,10 +315,12 @@ To upgrade a DedupFS installation to a newer version:
 * Change database backup, no need to have the full backup as default every time?
 * Support for soft links.
 * Optionally store packed (gz or similar).
-* The reclaim utilities find & clean up data entry duplicates.
+* The reclaim utility finds & cleans up data entry duplicates.
 
 #### 5.1.0 (202?.??.??)
 
+* Full database compaction only when running `reclaim-space` or `fsc db-compact`, for other write commands compact database for at most 2 seconds.
+* Added `fsc db-compact` command.
 * When running `db-backup`, print to console the corresponding restore command.
 * Added `db-backup` utility script.
 * Introduced `fsc db-restore` command.
@@ -343,7 +351,7 @@ To upgrade a DedupFS installation to a newer version:
 
 * New `blacklist` utility for blacklisting files that should not be stored at all.
 * Simplified reclaim space process: After running the `reclaim-space` utility, freed up space is automatically used when storing new files.
-* Compact database when unmounting the dedup file system and after `blacklist` and `reclaim`. (git 548f1803)
+* Compact database when unmounting the dedup file system and after `blacklist` and `reclaim-space`. (git 548f1803)
 * `db-restore`, `mount` and `reclaim-space` accept an unnamed parameter.
 
 #### 4.0.0 (2021.12.30)

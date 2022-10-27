@@ -14,7 +14,7 @@ object H2:
     if readonly then
       s"jdbc:h2:$dbDir/$dbName;ACCESS_MODE_DATA=r"
     else
-      s"jdbc:h2:$dbDir/$dbName;DB_CLOSE_ON_EXIT=FALSE"
+      s"jdbc:h2:$dbDir/$dbName;DB_CLOSE_ON_EXIT=FALSE;MAX_COMPACT_TIME=2000"
 
   def checkForTraceFile(dbDir: java.io.File): Unit =
     val dbTraceFile = java.io.File(dbDir, s"$dbName.trace.db")

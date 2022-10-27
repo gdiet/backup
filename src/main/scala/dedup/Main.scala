@@ -27,6 +27,7 @@ import scala.util.Using.resource
     case "db-backup"  ::             Nil => db.maintenance.backup             (dbDir          )
     case "db-restore" ::             Nil => db.maintenance.restorePlainBackup (dbDir          )
     case "db-restore" :: fileName :: Nil => db.maintenance.restoreScriptBackup(dbDir, fileName)
+    case "db-compact" ::             Nil => db.maintenance.compactDb          (dbDir          )
     case "find"       :: matcher  :: Nil => db.maintenance.find               (dbDir, matcher )
     case "list"       :: path     :: Nil => db.maintenance.list               (dbDir, path    )
     case "del"        :: path     :: Nil => db.maintenance.del                (dbDir, path    )

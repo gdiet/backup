@@ -28,8 +28,6 @@ object blacklist extends util.ClassLogging:
 
         // Process internal blacklist.
         processInternalBlacklist(db, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteCopies)
-
-        db.shutdownCompact()
         log.info(s"Finished blacklisting.")
   }
 
