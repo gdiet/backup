@@ -150,7 +150,7 @@ A number of **command line** utilities for the dedup file system is available th
 
 #### Create A Database Backup
 
-Use `fsc backup` to create a database backup.
+Use `fsc db-backup` to create a database backup.
 
 #### Find Files By Name Pattern
 
@@ -297,17 +297,20 @@ To upgrade a DedupFS installation to a newer version:
 
 #### May Come Eventually
 
-* `fsc backup` and `db-restore` are named inconsistently
+* `fsc db-backup` and `db-restore` are named inconsistently
 * `db-restore`: document that the `from=` can be omitted
 * `fsc backup`: output to console the correspondig restore command
 * Development: Try out scoverage instead of jacoco.
 * Create sql db backup from the file backup and start the file system in parallel.
 * Backup script for backing up folders without needing to mount the file system, optionally referencing an existing backup.
-* rename `fsc backup` command renamed to `fsc dbbackup` to avoid confusion with a new store-as-backup command.
 * Change database backup, no need to have the full backup as default every time?
 * Support for soft links.
 * Optionally store packed (gz or similar).
 * The reclaim utilities find & clean up data entry duplicates.
+
+#### 5.1.0 (202?.??.??)
+
+* Renamed `fsc backup` to `fsc db-backup`.
 
 #### 5.0.1 (2022.10.19)
 

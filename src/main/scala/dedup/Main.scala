@@ -24,7 +24,7 @@ import scala.util.Using.resource
   val dbDir = opts.baseOptions.dbDir
   val cmd = opts.additionalOptions.toList
   cmd match {
-    case "backup"           :: Nil => db.maintenance.backup(dbDir         )
+    case "db-backup"        :: Nil => db.maintenance.backup(dbDir         )
     case "find"  :: matcher :: Nil => db.maintenance.find  (dbDir, matcher)
     case "list"  :: path    :: Nil => db.maintenance.list  (dbDir, path   )
     case "del"   :: path    :: Nil => db.maintenance.del   (dbDir, path   )
