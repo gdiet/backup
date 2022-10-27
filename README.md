@@ -319,6 +319,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.1.0 (202?.??.??)
 
+* Updated libraries, Java to 17.0.5_8, and build system (SBT & sbt-updates plugin).
 * Full database compaction only when running `reclaim-space` or `fsc db-compact`, for other write commands compact database for at most 2 seconds.
 * Added `fsc db-compact` command.
 * When running `db-backup`, print to console the corresponding restore command.
