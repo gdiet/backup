@@ -203,9 +203,9 @@ To enable the "copy when moving" state, either tick the checkbox in the GUI or s
 
 DedupFS writes log files that contain all log entries visible on the console and additionally DEBUG level log entries. DedupFS always creates its `logs` directory in the directory containing the DedupFS utility scripts.
 
-### Restore The Database From A Backup
+### Create A Database Backup Or Restore The Database
 
-The `db-restore` utility is a convenience entry point for the `fsc db-restore` command. Other than the plain command, this utility asks for confirmation before restoring the database.
+The `db-backup` and `db-restore` utilities are convenience entry points for the `fsc db-backup` and `fsc db-restore` commands. Other than the plain commands, these utilities ask for confirmation before execution.
 
 ### Blacklist Files
 
