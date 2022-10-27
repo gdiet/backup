@@ -314,6 +314,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.1.0 (202?.??.??)
 
+* Added `db-backup` utility script.
 * Introduced `fsc db-restore` command.
 * Renamed `fsc backup` to `fsc db-backup`.
 
