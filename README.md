@@ -303,7 +303,6 @@ To upgrade a DedupFS installation to a newer version:
 
 #### May Come Eventually
 
-* `fsc db-backup`: output to console the corresponding restore command
 * Development: Try out scoverage instead of jacoco.
 * Create sql db backup from the file backup and start the file system in parallel.
 * Backup script for backing up folders without needing to mount the file system, optionally referencing an existing backup.
@@ -314,6 +313,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.1.0 (202?.??.??)
 
+* When running `db-backup`, print to console the corresponding restore command.
 * Added `db-backup` utility script.
 * Introduced `fsc db-restore` command.
 * Renamed `fsc backup` to `fsc db-backup`.
