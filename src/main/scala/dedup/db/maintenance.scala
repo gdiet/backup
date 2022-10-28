@@ -21,7 +21,7 @@ object maintenance extends util.ClassLogging:
     val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
     val zipBackup = File(dbDir, s"dedupfs_$dateString$fileNameSuffix.zip")
     log.info(s"Creating sql script database backup: $dbFile -> $zipBackup")
-    log.info(s"To restore the database, run 'db-restore $zipBackup'.")
+    log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
     Script.main(
       "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
     )
