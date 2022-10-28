@@ -30,7 +30,7 @@ object maintenance extends util.ClassLogging:
     val dbFile = H2.dbFile(dbDir)
     val plainBackup = H2.dbFile(dbDir, ".backup")
     ensure("tool.restore.notfound", plainBackup.exists(), s"Database backup file $plainBackup does not exist")
-    log.info(s"Restoring plain database backup: $plainBackup -> $dbFile")
+    log.info(s"Restoring plain database backup: ${plainBackup.getName} -> ${dbFile.getName}")
     Files.copy(plainBackup.toPath, dbFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 
   def restoreScriptBackup(dbDir: File, scriptName: String): Unit =
@@ -38,6 +38,7 @@ object maintenance extends util.ClassLogging:
     ensure("tool.restore.from", script.exists(), s"Database backup script file $script does not exist")
     val dbFile = H2.dbFile(dbDir)
     ensure("tool.restore", !dbFile.exists || dbFile.delete, s"Can't delete current database file $dbFile")
+    log.info(s"Restoring database backup: ${script.getName} -> ${dbFile.getName}")
     RunScript.main(
       "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
     )
