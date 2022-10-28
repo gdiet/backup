@@ -1,7 +1,7 @@
 package dedup
 package db
 
-import dedup.db.H2.{dbFile, dbName, backupFile}
+import dedup.db.H2.{dbFile, dbName, backupFile, backupName}
 import org.h2.tools.{RunScript, Script}
 
 import java.io.File
@@ -18,13 +18,16 @@ object maintenance extends util.ClassLogging:
     log.info(s"Creating plain database backup: ${database.getName} -> ${plainBackup.getName}")
     Files.copy(database.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
-    val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
-    val zipBackup = File(dbDir, s"${dbName}_$dateString$fileNameSuffix.zip")
-    log.info(s"Creating sql script database backup: ${database.getName} -> ${zipBackup.getName}")
-    log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
-    Script.main(
-      "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
-    )
+    new Thread(() => {
+      val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
+      val zipBackup = File(dbDir, s"${dbName}_$dateString$fileNameSuffix.zip")
+      log.info(s"Creating sql script database backup: ${plainBackup.getName} -> ${zipBackup.getName}")
+      log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
+      Script.main(
+        "-url", s"jdbc:h2:$dbDir/$backupName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
+      )
+      log.info(s"Sql script database backup created.")
+    }, "db-backup").start()
 
   def restorePlainBackup(dbDir: File): Unit =
     val database = dbFile(dbDir)

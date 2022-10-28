@@ -310,7 +310,6 @@ To upgrade a DedupFS installation to a newer version:
 #### May Come Eventually
 
 * Development: Try out scoverage instead of jacoco.
-* Create sql db backup from the file backup and start the file system in parallel.
 * Backup script for backing up folders without needing to mount the file system, optionally referencing an existing backup.
 * Change database backup, no need to have the full backup as default every time?
 * Support for soft links.
@@ -319,6 +318,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.1.0 (202?.??.??)
 
+* Performance improvement: Start the file system or run the write command while in parallel creating script database backup from the plain backup.
 * Unified and cleaner logging and console output.
 * Updated libraries, Java to 17.0.5_8, and build system (SBT & sbt-updates plugin).
 * Full database compaction only when running `reclaim-space` or `fsc db-compact`, for other write commands compact database for at most 2 seconds.
