@@ -15,12 +15,12 @@ object maintenance extends util.ClassLogging:
     val dbFile = H2.dbFile(dbDir)
     ensure("tool.backup", dbFile.exists(), s"Database file $dbFile does not exist")
     val plainBackup = H2.dbFile(dbDir, ".backup")
-    log.info(s"Creating plain database backup: $dbFile -> $plainBackup")
+    log.info(s"Creating plain database backup: ${dbFile.getName} -> ${plainBackup.getName}")
     Files.copy(dbFile.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
     val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
     val zipBackup = File(dbDir, s"dedupfs_$dateString$fileNameSuffix.zip")
-    log.info(s"Creating sql script database backup: $dbFile -> $zipBackup")
+    log.info(s"Creating sql script database backup: ${dbFile.getName} -> ${zipBackup.getName}")
     log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
     Script.main(
       "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
