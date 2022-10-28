@@ -29,8 +29,8 @@ object maintenance extends util.ClassLogging:
   def restorePlainBackup(dbDir: File): Unit =
     val dbFile = H2.dbFile(dbDir)
     val plainBackup = H2.dbFile(dbDir, ".backup")
-    ensure("tool.restore.notfound", plainBackup.exists(), s"Database backup file $backup does not exist")
-    log.info(s"Restoring plain database backup: $backup -> $dbFile")
+    ensure("tool.restore.notfound", plainBackup.exists(), s"Database backup file $plainBackup does not exist")
+    log.info(s"Restoring plain database backup: $plainBackup -> $dbFile")
     Files.copy(plainBackup.toPath, dbFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 
   def restoreScriptBackup(dbDir: File, scriptName: String): Unit =
