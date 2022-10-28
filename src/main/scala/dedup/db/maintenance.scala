@@ -43,10 +43,7 @@ object maintenance extends util.ClassLogging:
       "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
     )
 
-  def compactDb(dbDir: File): Unit = withDb(dbDir, readonly = false) { db =>
-    log.info(s"Compacting DedupFS database...")
-    db.shutdownCompact()
-  }
+  def compactDb(dbDir: File): Unit = withDb(dbDir, readonly = false)(_.shutdownCompact())
   
   def stats(dbDir: File): Unit = withDb(dbDir) { db =>
     import Database.currentDbVersion
@@ -150,7 +147,6 @@ object maintenance extends util.ClassLogging:
     log.info("Checking compaction potential of the data storage:")
     db.freeAreas() // Run for its log output
 
-    log.info(s"Compacting DedupFS database...")
     db.shutdownCompact()
     log.info("Finished reclaiming space. Undo by restoring the database from a backup.")
     log.info("Note: Once new files are stored, restoring a database backup from before")

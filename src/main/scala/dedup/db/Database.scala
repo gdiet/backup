@@ -246,7 +246,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   }
 
   def shutdownCompact(): Unit = synchronized {
-    log.info("Compacting database...")
+    log.info("Compacting DedupFS database...")
     statement.execute("SHUTDOWN COMPACT;")
   }
 
