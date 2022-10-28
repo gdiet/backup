@@ -24,6 +24,7 @@ import scala.util.Using.resource
   val dbDir = opts.baseOptions.dbDir
   val cmd   = opts.additionalOptions.toList
   cmd match
+    case "backup"     :: params          => backup(opts.baseOptions, params)
     case "db-backup"  ::             Nil => db.maintenance.backup             (dbDir          )
     case "db-restore" ::             Nil => db.maintenance.restorePlainBackup (dbDir          )
     case "db-restore" :: fileName :: Nil => db.maintenance.restoreScriptBackup(dbDir, fileName)
