@@ -59,21 +59,24 @@ object BackupTool extends ClassLogging:
 //      // otherwise, interpret in a .gitignore like fashion
 //    }
 
-    processRecurse(Seq("/" -> from))
+    processRecurse(Seq((Seq(), "/", from)))
 
   @annotation.tailrec
-  private def processRecurse(sources: Seq[(String, File)]): Unit =
+  private def processRecurse(sources: Seq[(Seq[String], String, File)]): Unit =
     sources match
       case Seq() => /* nothing to do */
-      case (path, source) +: remaining =>
+      case (ignore, path, source) +: remaining =>
         def ignoreFile = File(source, ".backupignore")
-        def sourcePath = s"$path${source.getName}/"
-        if !source.isDirectory then
-          log.info(s"Store file: $path${source.getName}")
+        def sourcePath = s"$path${source.getName}" + (if source.isDirectory then "/" else "")
+        if ignore.exists(sourcePath.matches) then
+          log.info(s"IGNORE MAT: $sourcePath")
+          processRecurse(remaining)
+        else if !source.isDirectory then
+          log.info(s"Store file: $sourcePath")
           processRecurse(remaining)
         else if !ignoreFile.isFile then
           log.info(s"Store dir : $sourcePath")
-          processRecurse(remaining ++ source.listFiles().map(s"$sourcePath" -> _))
+          processRecurse(remaining ++ source.listFiles().map((ignore, sourcePath, _)))
         else if ignoreFile.length() == 0 then
           log.info(s"IGNORE    : $sourcePath")
           processRecurse(remaining)
