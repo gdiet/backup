@@ -4,6 +4,7 @@ import dedup.util.ClassLogging
 
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
+import scala.io.Source
 import scala.util.Using.resource
 
 object BackupTool extends ClassLogging:
@@ -68,18 +69,27 @@ object BackupTool extends ClassLogging:
       case (ignore, path, source) +: remaining =>
         def ignoreFile = File(source, ".backupignore")
         def sourcePath = s"$path${source.getName}" + (if source.isDirectory then "/" else "")
+//        log.info(s"IGNORERULE: $ignore - $sourcePath - ${ignore.exists(sourcePath.matches)}")
         if ignore.exists(sourcePath.matches) then
-          log.info(s"IGNORE MAT: $sourcePath")
+          log.info(s"Skipping/rule: $sourcePath")
           processRecurse(remaining)
         else if !source.isDirectory then
-          log.info(s"Store file: $sourcePath")
+//          log.info(s"Store file: $sourcePath")
           processRecurse(remaining)
         else if !ignoreFile.isFile then
-          log.info(s"Store dir : $sourcePath")
+//          log.info(s"Store dir : $sourcePath")
           processRecurse(remaining ++ source.listFiles().map((ignore, sourcePath, _)))
         else if ignoreFile.length() == 0 then
-          log.info(s"IGNORE    : $sourcePath")
+          log.info(s"Skipping/flag: $sourcePath")
           processRecurse(remaining)
         else
-          log.info(s"*******   : $sourcePath")
-          processRecurse(remaining)
+          val ignoreRules =
+            resource(Source.fromFile(ignoreFile))(_.getLines().toSeq).filter(_.nonEmpty)
+          log.info(s"Ignore rules in source path: $sourcePath")
+          ignoreRules.zipWithIndex.foreach((rule, index) => log.info(s"Rule ${index+1}: $rule"))
+          val additionalIgnore =
+            resource(Source.fromFile(ignoreFile))(_.getLines().toSeq)
+              .filter(_.nonEmpty)
+              .map(_.replaceAll("\\?", "\\\\E.\\\\Q").replaceAll("\\*", "\\\\E.*\\\\Q"))
+              .map("\\Q" + _ + "\\E")
+          processRecurse(remaining ++ source.listFiles().map((ignore ++ additionalIgnore, sourcePath, _)))
