@@ -17,8 +17,8 @@ object BackupTool extends ClassLogging:
 
   def backup(opts: Seq[(String, String)], params: List[String]): Unit =
     val (from, to, reference) = params match
-      case from :: to :: reference :: Nil => (File(from), to, Some(reference))
-      case from :: to              :: Nil => (File(from), to, None)
+      case from :: to :: reference :: Nil => (File(from), insertDate(to), Some(reference))
+      case from :: to              :: Nil => (File(from), insertDate(to), None)
       case other => main.failureExit(s"Expected parameters '[from] [to] [optional: reference]', got '${other.mkString(" ")}'")
 
 //    // TODO lots of copy-paste from '@main def mount(opts: (String, String)*): Unit'
