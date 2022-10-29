@@ -9,6 +9,12 @@ import scala.util.Using.resource
 
 object BackupTool extends ClassLogging:
 
+  /** Replace '<...>' by formatting the contents with the SimpleDateFormat of 'now'. */
+  private def insertDate(string: String): String =
+    val regex = "<.+?>".r
+    val date = java.util.Date.from(java.time.Instant.now())
+    regex.replaceAllIn(string, { m => java.text.SimpleDateFormat(m.group(0).drop(1).dropRight(1)).format(date) })
+
   def backup(opts: Seq[(String, String)], params: List[String]): Unit =
     val (from, to, reference) = params match
       case from :: to :: reference :: Nil => (File(from), to, Some(reference))
