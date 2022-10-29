@@ -60,25 +60,28 @@ object BackupTool extends ClassLogging:
 //      // otherwise, interpret in a .gitignore like fashion
 //    }
 
-    processRecurse(Seq((Seq(), "/", from)))
+    processRecurse(Seq((0, Seq(), "/", from)), (_, _) => 0, (_, _) => ())
 
   @annotation.tailrec
-  private def processRecurse(sources: Seq[(Seq[String], String, File)]): Unit =
+  private def processRecurse(sources: Seq[(Long, Seq[String], String, File)], mkDir: (Long, String) => Long, store: (Long, File) => Unit): Unit =
     sources match
       case Seq() => /* nothing to do */
-      case (ignore, path, source) +: remaining =>
+      case (parent, ignore, path, source) +: remaining =>
         def ignoreFile = File(source, ".backupignore")
         def sourcePath = s"$path${source.getName}" + (if source.isDirectory then "/" else "")
         if ignore.exists(sourcePath.matches) then
-          log.info(s"Skipping/rule: $sourcePath")
-          processRecurse(remaining)
+          log.info(s"Skipping (rule): $sourcePath")
+          processRecurse(remaining, mkDir, store)
         else if !source.isDirectory then
-          processRecurse(remaining)
+          store(parent, source)
+          processRecurse(remaining, mkDir, store)
         else if !ignoreFile.isFile then
-          processRecurse(remaining ++ source.listFiles().map((ignore, sourcePath, _)))
+          val dir = mkDir(parent, source.getName)
+          val add = source.listFiles().map((dir, ignore, sourcePath, _))
+          processRecurse(remaining ++ add, mkDir, store)
         else if ignoreFile.length() == 0 then
-          log.info(s"Skipping/flag: $sourcePath")
-          processRecurse(remaining)
+          log.info(s"Skipping (file): $sourcePath")
+          processRecurse(remaining, mkDir, store)
         else
           val ignoreRules =
             resource(Source.fromFile(ignoreFile))(_.getLines().toSeq).filter(_.nonEmpty)
@@ -89,4 +92,6 @@ object BackupTool extends ClassLogging:
               .filter(_.nonEmpty)
               .map(_.replaceAll("\\?", "\\\\E.\\\\Q").replaceAll("\\*", "\\\\E.*\\\\Q"))
               .map("\\Q" + _ + "\\E")
-          processRecurse(remaining ++ source.listFiles().map((ignore ++ additionalIgnore, sourcePath, _)))
+          val dir = mkDir(parent, source.getName)
+          val add = source.listFiles().map((dir, ignore ++ additionalIgnore, sourcePath, _))
+          processRecurse(remaining ++ add, mkDir, store)
