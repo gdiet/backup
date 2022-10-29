@@ -69,15 +69,12 @@ object BackupTool extends ClassLogging:
       case (ignore, path, source) +: remaining =>
         def ignoreFile = File(source, ".backupignore")
         def sourcePath = s"$path${source.getName}" + (if source.isDirectory then "/" else "")
-//        log.info(s"IGNORERULE: $ignore - $sourcePath - ${ignore.exists(sourcePath.matches)}")
         if ignore.exists(sourcePath.matches) then
           log.info(s"Skipping/rule: $sourcePath")
           processRecurse(remaining)
         else if !source.isDirectory then
-//          log.info(s"Store file: $sourcePath")
           processRecurse(remaining)
         else if !ignoreFile.isFile then
-//          log.info(s"Store dir : $sourcePath")
           processRecurse(remaining ++ source.listFiles().map((ignore, sourcePath, _)))
         else if ignoreFile.length() == 0 then
           log.info(s"Skipping/flag: $sourcePath")
