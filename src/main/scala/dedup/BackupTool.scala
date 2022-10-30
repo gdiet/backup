@@ -67,7 +67,7 @@ object BackupTool extends ClassLogging:
         // TODO implement
         log.info(s"Stored $file")
 
-      processRecurse(Seq((0, Seq(), "/", from)), mkDir, store)
+      processRecurse(Seq((targetId, Seq(), "/", from)), mkDir, store)
     }
 
 
