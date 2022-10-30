@@ -148,6 +148,26 @@ The `stats` utility allows you to read basic file system statistics. Like the ot
 
 A number of **command line** utilities for the dedup file system is available through the `fsc` command. Like the other utilities, `fsc` accepts the optional `repo=<target directory>` parameter. `fsc` is not meant to be run without additional parameters.
 
+#### Copy Files And Folders To The DedupFS
+
+This is an **experimental** utility introduced with version 5.1, meaning it might not work in all details as expected, but it does **not** mean that it might corrupt your repository.
+
+Use `fsc backup <source> <target>` to copy files and folders to the dedup file system without having to mount it first.
+
+`source` must be a readable file or directory on your computer.
+
+`target` can be e.g. `/backups/photos/<yyyy.MM.dd_HH.mm>`. In this example, the backup utility will look in the DedupFS for the folder `/backup/photos/` (and exit if it doesn't exist). There, it will create a folder named by the current date like `2022.10.30_11.14`. Then it will copy the `source` there.
+
+Technically speaking the date formatting is as follows: In `target`, everything within angle brackets `<...>` is used as [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html) for formatting the current date/time.
+
+If you want to exclude certain files or directories from the backup, proceed as follows:
+* Either put an **empty** file `.backupignore` into a source directory to ignore.
+* Or put a text file `.backupignore` into a source directory containing 'ignore' rules. These rules define which entries the backup utility will ignore.
+  * The `*/temp/` rule defines that directories (but not files) named `temp` will be ignored here and in any nested directories.
+  * `*` is the "anything" wildcard.
+  * `?` is the "any single character" wildcard.
+  * The rules are matched against the relative source path, where directory paths always end on `/` (and file paths don't).
+
 #### Create A Database Backup
 
 Use `fsc db-backup` to create a database backup.
