@@ -19,14 +19,18 @@ object maintenance extends util.ClassLogging:
     Files.copy(database.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
     new Thread(() => {
-      val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
-      val zipBackup = File(dbDir, s"${dbName}_$dateString$fileNameSuffix.zip")
-      log.info(s"Creating sql script database backup: ${plainBackup.getName} -> ${zipBackup.getName}")
-      log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
-      Script.main(
-        "-url", s"jdbc:h2:$dbDir/$backupName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
-      )
-      log.info(s"Sql script database backup created.")
+      try
+        cache.MemCache.availableMem.addAndGet(-64000000) // Reserve some RAM for the backup process
+        val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
+        val zipBackup = File(dbDir, s"${dbName}_$dateString$fileNameSuffix.zip")
+        log.info(s"Creating sql script database backup: ${plainBackup.getName} -> ${zipBackup.getName}")
+        log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
+        Script.main(
+          "-url", s"jdbc:h2:$dbDir/$backupName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
+        )
+        log.info(s"Sql script database backup created.")
+      finally
+        cache.MemCache.availableMem.addAndGet(64000000)
     }, "db-backup").start()
 
   def restorePlainBackup(dbDir: File): Unit =
