@@ -97,8 +97,7 @@ object BackupTool extends ClassLogging:
           log.info(s"Ignore rules in source path: $sourcePath")
           ignoreRules.zipWithIndex.foreach((rule, index) => log.info(s"Rule ${index+1}: $rule"))
           val additionalIgnore =
-            resource(Source.fromFile(ignoreFile))(_.getLines().toSeq)
-              .filter(_.nonEmpty)
+            ignoreRules
               .map(_.replaceAll("\\?", "\\\\E.\\\\Q").replaceAll("\\*", "\\\\E.*\\\\Q"))
               .map("\\Q" + _ + "\\E")
           val dir = mkDir(parent, source.getName)
