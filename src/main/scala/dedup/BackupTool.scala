@@ -2,7 +2,7 @@ package dedup
 
 import dedup.util.ClassLogging
 
-import java.io.File
+import java.io.{BufferedInputStream, File, FileInputStream}
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.io.Source
 import scala.util.Using.resource
@@ -43,7 +43,7 @@ object BackupTool extends ClassLogging:
     log.info (s"Repository:       $repo")
     log.info (s"Backup source:    $from")
     log.info (s"Backup target:    $to")
-    log.info (s"Backup reference: $reference")
+    log.info (s"Backup reference: $reference  --  No functionality implemented yet")
     log.debug(s"Temp dir:         $temp")
 
     resource(server.Level1(settings)) { fs =>
@@ -64,8 +64,21 @@ object BackupTool extends ClassLogging:
         fs.mkDir(parent, name).getOrElse(main.failureExit(s"Unexpected name conflict creating folder $name."))
 
       def store(parent: Long, file: File): Unit =
-        // TODO implement
-        log.info(s"Stored $file")
+        val id = fs.createAndOpen(parent, file.getName, Time(file.lastModified()))
+          .getOrElse(main.failureExit(s"Unexpected name conflict creating backup file for $file."))
+        resource(BufferedInputStream(FileInputStream(file))) { in =>
+          var position = 0L
+          val data = Iterator.continually(in.readNBytes(memChunk))
+            .takeWhile(_.nonEmpty)
+            .map { chunk =>
+              val currentPosition = position
+              position += chunk.length
+              currentPosition -> chunk
+            }
+          fs.write(id, data)
+        }
+        fs.release(id)
+        log.info(s"Stored: $file")
 
       processRecurse(Seq((targetId, Seq(), "/", from)), mkDir, store)
     }
