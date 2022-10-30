@@ -14,7 +14,7 @@ echo "Starting database restore..."
 
 ### Parameters ###
 # repo=<repository directory>        | default: '..' (parent of working directory)
-$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -cp "$APPDIR/lib/*" dedup.fsc db-backup "$@"
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx64m -cp "$APPDIR/lib/*" dedup.fsc db-backup "$@"
 ERRORLEVEL=$?
 if [ $ERRORLEVEL -ne 0 ]; then
   echo "Database backup finished with error code $ERRORLEVEL, exiting..."
