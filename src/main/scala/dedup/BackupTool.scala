@@ -48,13 +48,13 @@ object BackupTool extends ClassLogging:
 
     resource(server.Level1(settings)) { fs =>
       val (targetPath, targetName) = fs.split(to).pipe(target =>
-          target.dropRight(1) -> target.lastOption.getOrElse(main.failureExit(s"Invalid target: No file name in '$to'."))
+        target.dropRight(1) -> target.lastOption.getOrElse(main.failureExit(s"Invalid target: No file name in '$to'."))
       )
       def targetPathForLog = s"The target's parent DedupFS:/${targetPath.mkString("/")}"
       val targetParent = fs.entry(targetPath) match
         case Some(dir: DirEntry) => dir
-        case Some(_: FileEntry) => main.failureExit(s"Invalid target: $targetPathForLog points to a file.")
-        case None               => main.failureExit(s"Invalid target: $targetPathForLog does not exist.")
+        case Some(_: FileEntry)  => main.failureExit(s"Invalid target: $targetPathForLog points to a file.")
+        case None                => main.failureExit(s"Invalid target: $targetPathForLog does not exist.")
       val targetId = fs.mkDir(targetParent.id, targetName).getOrElse(
         main.failureExit(s"Invalid target: DedupFS:$to already exists.")
       )
@@ -99,7 +99,7 @@ object BackupTool extends ClassLogging:
           processRecurse(remaining, mkDir, store)
         else if !ignoreFile.isFile then
           val dir = mkDir(parent, source.getName)
-          val add = source.listFiles().map((dir, ignore, sourcePath, _))
+          val add = Option(source.listFiles()).toSeq.flatten.map((dir, ignore, sourcePath, _))
           processRecurse(remaining ++ add, mkDir, store)
         else if ignoreFile.length() == 0 then
           log.info(s"Skipping (file): $sourcePath")
@@ -114,5 +114,5 @@ object BackupTool extends ClassLogging:
               .map(_.replaceAll("\\?", "\\\\E.\\\\Q").replaceAll("\\*", "\\\\E.*\\\\Q"))
               .map("\\Q" + _ + "\\E")
           val dir = mkDir(parent, source.getName)
-          val add = source.listFiles().map((dir, ignore ++ additionalIgnore, sourcePath, _))
+          val add = Option(source.listFiles()).toSeq.flatten.map((dir, ignore ++ additionalIgnore, sourcePath, _))
           processRecurse(remaining ++ add, mkDir, store)

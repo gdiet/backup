@@ -38,7 +38,7 @@ object blacklist extends util.ClassLogging:
           case None => ensure("blacklist.create.dir", false, s"can't create internal blacklist directory for $file")
           case Some(childDirId) => externalFilesToInternalBlacklist(db, file, childDirId, deleteFiles)
         if !deleteFiles then {} else // needed like this to avoid compile problem
-          if file.listFiles.isEmpty then file.delete else
+          if Option(file.listFiles).exists(_.isEmpty) then file.delete else
             log.warn(s"Blacklist folder not empty after processing it: $file")
       else
         val (size, hash) = resource(FileInputStream(file)) { stream =>
