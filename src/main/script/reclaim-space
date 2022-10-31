@@ -6,4 +6,4 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 ### Parameters ###
 # repo=<repository directory>       | default: '..' (parent of working directory)
 # keepDays=<number of days to keep> | default: 0 - the 'keepDays=' prefix can be omitted
-$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx128m -cp "$APPDIR/lib/*" dedup.reclaimSpace "$@"
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx256m -cp "$APPDIR/lib/*" dedup.reclaimSpace "$@"
