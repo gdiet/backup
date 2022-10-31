@@ -150,9 +150,9 @@ A number of **command line** utilities for the dedup file system is available th
 
 #### Copy Files And Directories To The DedupFS
 
-This is an **experimental** utility introduced with version 5.1, meaning it might not work in all details as expected, but it does **not** mean that it might corrupt your repository.
-
 Use `fsc backup <source> <target>` to copy files and directories to the dedup file system without having to mount it first.
+
+This is an **experimental** utility introduced with version 5.1, meaning it might not work in all details as expected, but it does **not** mean that it might corrupt your repository.
 
 `source` must be a readable file or directory on your computer.
 
@@ -162,7 +162,7 @@ Technically speaking the date formatting works as follows: In `target`, everythi
 
 If you want to exclude certain files or directories from the backup, proceed as follows:
 * Either put an **empty** file `.backupignore` into a source directory to ignore.
-* Or put a text file `.backupignore` into a source directory containing 'ignore' rules. These rules define which entries the backup utility will ignore.
+* Or put into a source directory a text file `.backupignore` containing 'ignore' rules. These rules define which entries the backup utility will ignore.
   * The `*/temp/` rule defines that directories (but not files) named `temp` will be ignored here and in any nested directories.
   * `*` is the "anything" wildcard.
   * `?` is the "any single character" wildcard.
