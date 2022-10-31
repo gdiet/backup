@@ -45,7 +45,7 @@ object BackupTool extends ClassLogging:
 
     if !from.canRead then main.failureExit(s"The backup source $from can't be read.")
 
-    log.info (s"Running the backup tool")
+    log.info (s"Running the backup utility")
     log.info (s"Repository:       $repo")
     log.info (s"Backup source:    $from")
     log.info (s"Backup target:    $to")

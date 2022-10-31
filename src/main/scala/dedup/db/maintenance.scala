@@ -13,7 +13,7 @@ object maintenance extends util.ClassLogging:
 
   def backup(dbDir: File, fileNameSuffix: String = ""): Unit =
     val database = dbFile(dbDir)
-    ensure("tool.backup", database.exists(), s"Database file $database does not exist")
+    ensure("utility.backup", database.exists(), s"Database file $database does not exist")
     val plainBackup = backupFile(dbDir)
     log.info(s"Creating plain database backup: ${database.getName} -> ${plainBackup.getName}")
     Files.copy(database.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
@@ -36,15 +36,15 @@ object maintenance extends util.ClassLogging:
   def restorePlainBackup(dbDir: File): Unit =
     val database = dbFile(dbDir)
     val plainBackup = backupFile(dbDir)
-    ensure("tool.restore.notfound", plainBackup.exists(), s"Database backup file $plainBackup does not exist")
+    ensure("utility.restore.notfound", plainBackup.exists(), s"Database backup file $plainBackup does not exist")
     log.info(s"Restoring plain database backup: ${plainBackup.getName} -> ${database.getName}")
     Files.copy(plainBackup.toPath, database.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 
   def restoreScriptBackup(dbDir: File, scriptName: String): Unit =
     val script = File(dbDir, scriptName)
-    ensure("tool.restore.from", script.exists(), s"Database backup script file $script does not exist")
+    ensure("utility.restore.from", script.exists(), s"Database backup script file $script does not exist")
     val database = dbFile(dbDir)
-    ensure("tool.restore", !database.exists || database.delete, s"Can't delete current database file $database")
+    ensure("utility.restore", !database.exists || database.delete, s"Can't delete current database file $database")
     log.info(s"Restoring database backup: ${script.getName} -> ${database.getName}")
     RunScript.main(
       "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
