@@ -15,7 +15,7 @@ object BackupTool extends ClassLogging:
     val date = java.util.Date.from(java.time.Instant.now())
     regex.replaceAllIn(string, { m => java.text.SimpleDateFormat(m.group(0).drop(1).dropRight(1)).format(date) })
 
-  def backup(opts: Seq[(String, String)], params: List[String]): Unit =
+  def backup(opts: Seq[(String, String)], params: List[String]): Unit = try {
     val (from, to, reference) = params match
       case from :: to :: reference :: Nil => (File(from), insertDate(to), Some(reference))
       case from :: to              :: Nil => (File(from), insertDate(to), None)
@@ -82,7 +82,7 @@ object BackupTool extends ClassLogging:
 
       processRecurse(Seq((targetId, Seq(), "/", from)), mkDir, store)
     }
-
+  } catch { case t: Throwable => log.error("Uncaught exception:", t); throw t }
 
   @annotation.tailrec
   private def processRecurse(sources: Seq[(Long, Seq[String], String, File)], mkDir: (Long, String) => Long, store: (Long, File) => Unit): Unit =
