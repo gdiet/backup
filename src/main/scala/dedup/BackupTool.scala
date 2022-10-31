@@ -51,7 +51,6 @@ object BackupTool extends ClassLogging:
     log.info (s"Backup target:    $to")
     log.info (s"Backup reference: $reference  --  No functionality implemented yet")
     log.debug(s"Temp dir:         $temp")
-    sys.exit(0)
 
     resource(server.Level1(settings)) { fs =>
       val (targetPath, targetName) = fs.split(to).pipe(target =>
