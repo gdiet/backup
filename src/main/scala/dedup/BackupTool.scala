@@ -9,11 +9,17 @@ import scala.util.Using.resource
 
 object BackupTool extends ClassLogging:
 
-  /** Replace '<...>' by formatting the contents with the SimpleDateFormat of 'now'. */
+  /** Replace '[...]' by formatting the contents with the SimpleDateFormat of 'now'
+    * unless the opening square bracked is escaped by a backslash.  */
   private def insertDate(string: String): String =
-    val regex = "<.+?>".r
+    // ([^\\])\[(.+?)]   explained:
+    // ([^\\])           a character that is not a backslash as group 1
+    //        \[     ]   followed by opening and later closing angle brackets
+    //          (.+?)    one or more character enclosed by the angle brackets as group 2
+    val regex = """([^\\])\[(.+?)]""".r
     val date = java.util.Date.from(java.time.Instant.now())
-    regex.replaceAllIn(string, { m => java.text.SimpleDateFormat(m.group(0).drop(1).dropRight(1)).format(date) })
+    regex.replaceAllIn(string, { m => m.group(1) + java.text.SimpleDateFormat(m.group(2)).format(date) })
+      .replaceAll("""\\""", "")
 
   def backup(opts: Seq[(String, String)], params: List[String]): Unit = try {
     val (from, to, reference) = params match
@@ -45,6 +51,7 @@ object BackupTool extends ClassLogging:
     log.info (s"Backup target:    $to")
     log.info (s"Backup reference: $reference  --  No functionality implemented yet")
     log.debug(s"Temp dir:         $temp")
+    sys.exit(0)
 
     resource(server.Level1(settings)) { fs =>
       val (targetPath, targetName) = fs.split(to).pipe(target =>

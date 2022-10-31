@@ -156,9 +156,9 @@ Use `fsc backup <source> <target>` to copy files and folders to the dedup file s
 
 `source` must be a readable file or directory on your computer.
 
-`target` can be e.g. `/backups/photos/<yyyy.MM.dd_HH.mm>`. In this example, the backup utility will look in the DedupFS for the folder `/backup/photos/` (and exit if it doesn't exist). There, it will create a folder named by the current date like `2022.10.30_11.14`. Then it will copy the `source` there.
+`target` can be e.g. `/backups/photos/[yyyy.MM.dd_HH.mm]`. In this example, the backup utility will look in the DedupFS for the folder `/backup/photos/` (and exit if the folder doesn't exist). There, it will create a folder named by the current date like `2022.10.30_11.14`. Then it will copy the `source` there.
 
-Technically speaking the date formatting is as follows: In `target`, everything within angle brackets `<...>` is used as [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html) for formatting the current date/time.
+Technically speaking the date formatting works as follows: In `target`, everything within square brackets `[...]` is used as [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html) for formatting the current date/time unless the opening square bracket is escaped with a backslash `\`.
 
 If you want to exclude certain files or directories from the backup, proceed as follows:
 * Either put an **empty** file `.backupignore` into a source directory to ignore.
