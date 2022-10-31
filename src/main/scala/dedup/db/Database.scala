@@ -182,29 +182,34 @@ class Database(connection: Connection) extends util.ClassLogging:
     "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS
   )
   /** @return Some(id) or None if a child entry with the same name already exists. */
-  def mkDir(parentId: Long, name: String): Option[Long] = Try(synchronized {
-    // Name conflict triggers SQL exception due to unique constraint.
-    val count = iDir.set(parentId, name, now).executeUpdate()
-    ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
-    iDir.getGeneratedKeys.tap(_.next()).getLong("id")
-  }).toOption
+  def mkDir(parentId: Long, name: String): Option[Long] =
+    require(name.nonEmpty, "Can't create a directory with an empty name.")
+    Try(synchronized {
+      // Name conflict triggers SQL exception due to unique constraint.
+      val count = iDir.set(parentId, name, now).executeUpdate()
+      ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
+      iDir.getGeneratedKeys.tap(_.next()).getLong("id")
+    }).toOption
 
   private val iFile = prepare(
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)",
     Statement.RETURN_GENERATED_KEYS
   )
   /** @return `Some(id)` or [[None]] if a child entry with the same name already exists. */
-  def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] = Try(synchronized {
-    // Name conflict triggers SQL exception due to unique constraint.
-    val count = iFile.set(parentId, name, time, dataId).executeUpdate()
-    ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
-    iFile.getGeneratedKeys.tap(_.next()).getLong("id")
-  }).toOption
+  def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] =
+    require(name.nonEmpty, "Can't create a file with an empty name.")
+    Try(synchronized {
+      // Name conflict triggers SQL exception due to unique constraint.
+      val count = iFile.set(parentId, name, time, dataId).executeUpdate()
+      ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
+      iFile.getGeneratedKeys.tap(_.next()).getLong("id")
+    }).toOption
 
   private val uParentName = prepare(
     "UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?"
   )
   def update(id: Long, newParentId: Long, newName: String): Boolean = synchronized {
+    require(newName.nonEmpty, "Can't rename to an empty name.")
     uParentName.set(newParentId, newName, id).executeUpdate() == 1
   }
 

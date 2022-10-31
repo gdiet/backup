@@ -61,7 +61,8 @@ object BackupTool extends ClassLogging:
       log.info(s"Created 'DedupFS:$to'.")
 
       def mkDir(parent: Long, name: String): Long =
-        fs.mkDir(parent, name).getOrElse(main.failureExit(s"Unexpected name conflict creating folder $name."))
+        def nameToUse = if name.isEmpty then "[drive]" else name
+        fs.mkDir(parent, nameToUse).getOrElse(main.failureExit(s"Unexpected name conflict creating folder $name."))
 
       def store(parent: Long, file: File): Unit =
         val id = fs.createAndOpen(parent, file.getName, Time(file.lastModified()))
