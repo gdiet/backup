@@ -68,7 +68,7 @@ object BackupTool extends ClassLogging:
 
       def mkDir(parent: Long, name: String): Long =
         def nameToUse = if name.isEmpty then "[drive]" else name
-        fs.mkDir(parent, nameToUse).getOrElse(main.failureExit(s"Unexpected name conflict creating folder $name."))
+        fs.mkDir(parent, nameToUse).getOrElse(main.failureExit(s"Unexpected name conflict creating directory $name."))
 
       def store(parent: Long, file: File): Unit =
         val id = fs.createAndOpen(parent, file.getName, Time(file.lastModified()))

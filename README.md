@@ -20,7 +20,7 @@ Technically speaking, DedupFS is a file system with transparent file content ded
 
 ## Status Of The DedupFS Software
 
-DedupFS is provided "as is", without any warranty. That being said, I use DedupFS since 2018 for backing up my private files. End of 2022 my backup repository contains 4.5 Million files/folders with 630.000 file contents stored comprising 1.7 TB of data. The largest file stored has a size of about 7.5 GB.
+DedupFS is provided "as is", without any warranty. That being said, I use DedupFS since 2018 for backing up my private files. End of 2022 my backup repository contains 4.5 Million files/directories with 630.000 file contents stored comprising 1.7 TB of data. The largest file stored has a size of about 7.5 GB.
 
 Summary: For my personal use it is mature. Decide for yourself.
 
@@ -28,7 +28,7 @@ Summary: For my personal use it is mature. Decide for yourself.
 
 The DedupFS dedup file system is good for keeping a backup archive of your files. Its main advantage is that you don't have to worry storing the same file multiple times, because additional copies of a file need very little space.
 
-For example, each week you can copy "everything" into the dedup file system, into a folder that is named by the current date. That way, you have a nice backup and can access earlier versions of your files by date.
+For example, each week you can copy "everything" into the dedup file system, into a directory that is named by the current date. That way, you have a nice backup and can access earlier versions of your files by date.
 
 ## Why Is DedupFS Better Than ...
 
@@ -102,7 +102,7 @@ Windows / Linux: Unpack the DedupFS archive. I recommend unpacking it to the rep
 The dedup file system stores all its data in a repository directory, inside the subdirectories `fsdb` and `data`. Before the dedup file system can be used, the repository needs to be initialized:
 
 * Create a repository directory for the dedup file system data, for example on an external backup drive.
-* Unpack the DedupFS archive to that repository directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like `repo-init` and `dedupfs` should be located in the `dedupfs-[version]` folder in the repository directory.
+* Unpack the DedupFS archive to that repository directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like `repo-init` and `dedupfs` should be located in the `dedupfs-[version]` directory in the repository directory.
 * Start the DedupFS `repo-init` utility in the `dedupfs-[version]` directory, for example by double-clicking.
 * Check the log output printed to the console where `repo-init` is executed.
 * If successful, this command creates in the repository directory the database directory `fsdb` and in the `dedupfs-[version]` directory the log files directory `logs`.
@@ -123,7 +123,7 @@ If you want to write, update, or read files in the dedup file system, you have t
 Notes:
 
 * The default mount point on Windows is `J:\`, on Linux `/mnt/dedupfs`. To mount the file system somewhere else, call the script with a `mount=<mount point>` parameter (the `mount=` part of the parameter can be omitted).
-* On Windows, mount the dedup file system to a file system root like `J:\` or to a folder like `C:\myFiles\dedupfs`, where `C:\myFiles` must be an existing directory and `C:\myFiles\dedupfs` must not exist yet.
+* On Windows, mount the dedup file system to a file system root like `J:\` or to a directory like `C:\myFiles\dedupfs`, where `C:\myFiles` must be an existing directory and `C:\myFiles\dedupfs` must not exist yet.
 * On Linux, mount the dedup file system to an existing empty writable directory.
 * Don't mount more than one dedup file system if you can avoid it. If you cannot avoid it, make sure the dedup file systems have different `mount=<mount point>` mount points configured.
 * `gui-dedupfs` creates a database backup before mounting the file system, so you can restore the previous state of the file system if something goes wrong. To suppress database backup creation, call the script with the `dbBackup=false` parameter.
@@ -148,15 +148,15 @@ The `stats` utility allows you to read basic file system statistics. Like the ot
 
 A number of **command line** utilities for the dedup file system is available through the `fsc` command. Like the other utilities, `fsc` accepts the optional `repo=<target directory>` parameter. `fsc` is not meant to be run without additional parameters.
 
-#### Copy Files And Folders To The DedupFS
+#### Copy Files And Directories To The DedupFS
 
 This is an **experimental** utility introduced with version 5.1, meaning it might not work in all details as expected, but it does **not** mean that it might corrupt your repository.
 
-Use `fsc backup <source> <target>` to copy files and folders to the dedup file system without having to mount it first.
+Use `fsc backup <source> <target>` to copy files and directories to the dedup file system without having to mount it first.
 
 `source` must be a readable file or directory on your computer.
 
-`target` can be e.g. `/backups/photos/[yyyy.MM.dd_HH.mm]`. In this example, the backup utility will look in the DedupFS for the folder `/backup/photos/` (and exit if the folder doesn't exist). There, it will create a folder named by the current date like `2022.10.30_11.14`. Then it will copy the `source` there.
+`target` can be e.g. `/backups/photos/[yyyy.MM.dd_HH.mm]`. In this example, the backup utility will look in the DedupFS for the directory `/backup/photos/` (and exit if the directory doesn't exist). There, it will create a directory named by the current date like `2022.10.30_11.14`. Then it will copy the `source` there.
 
 Technically speaking the date formatting works as follows: In `target`, everything within square brackets `[...]` is used as [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html) for formatting the current date/time unless the opening square bracket is escaped with a backslash `\`.
 
@@ -235,10 +235,10 @@ The `db-backup` and `db-restore` utilities are convenience entry points for the 
 
 The `blacklist` utility is for blacklisting files that should be removed from the dedup file system if they are currently stored and should not be stored even when added later to the file system. Reading a blacklisted file yields [file length] zeros. In addition to the usual `repo=<target directory>` parameter, the utility accepts the following parameters:
 * `dbBackup=false` (optional, default true): Create a database backup before starting the blacklisting process.
-* `blacklistDir=<directory name>` (optional, default `blacklist`): If the subfolder of `repo` with this name contains files, those are added to the blacklist in the repository, in a folder named with the current timestamp.
+* `blacklistDir=<directory name>` (optional, default `blacklist`): If the subdirectory of `repo` with this name contains files, those are added to the blacklist in the repository, in a directory named with the current timestamp.
 * `deleteFiles=false` (optional, default true): If true, the files in `blacklistDir` are deleted once they have been added to the blacklist in the repository.
-* `dfsBlacklist=<directory name>` (optional, default `blacklist`): Name of the base blacklist folder in the dedup file system, resolved against root.
-* `deleteCopies=true` (optional, default false): If true, mark deleted all blacklisted occurrences except for the original entries in the `dfsBlacklist` folder.
+* `dfsBlacklist=<directory name>` (optional, default `blacklist`): Name of the base blacklist directory in the dedup file system, resolved against root.
+* `deleteCopies=true` (optional, default false): If true, mark deleted all blacklisted occurrences except for the original entries in the `dfsBlacklist` directory.
 
 After running the `blacklist` utility, as long as you do not store new files in the dedup file system you can still restore previous file system states by restoring the database from backups. Once new files are stored, restoring a database backup from before the blacklisting process will result in partial data corruption.
 
@@ -302,8 +302,8 @@ I have two large external storage drives, drive A and drive B.
 
 Every few weeks,
 
-* I store "everything" from the family laptop to a new folder in the dedup file system residing on drive A. This new folder I name by current date, for example "backups_laptop/2020-10-21".
-* To speed things up, before actually creating the new backup, I create a duplicate of the previous backup in a folder with the current date with the `copywhenmoving=true` option enabled. This is fast. After this, I use a tree sync software that mirrors the source to the target, overwriting only those files that have changed (changed size or last modified time) and deleting files in the target that are not present in the source. If few things have changed, this is also fast.
+* I store "everything" from the family laptop to a new directory in the dedup file system residing on drive A. This new directory I name by current date, for example "backups_laptop/2020-10-21".
+* To speed things up, before actually creating the new backup, I create a duplicate of the previous backup in a directory with the current date with the `copywhenmoving=true` option enabled. This is fast. After this, I use a tree sync software that mirrors the source to the target, overwriting only those files that have changed (changed size or last modified time) and deleting files in the target that are not present in the source. If few things have changed, this is also fast.
 
 Every few months,
 
@@ -311,7 +311,7 @@ Every few months,
 
 Additionally,
 
-* in the dedup file system there is a "current" folder where I keep (mostly media) files that are just too big for my laptop and that I need only occasionally.
+* in the dedup file system there is a "current" directory where I keep (mostly media) files that are just too big for my laptop and that I need only occasionally.
 
 For maximum safety,
 
@@ -329,10 +329,10 @@ To upgrade a DedupFS installation to a newer version:
 
 #### May Come Eventually
 
-* In some way give access to deleted files and folders.
+* In some way give access to deleted files and directories.
 * Development: Try out scoverage instead of jacoco (a spike 2022.10 didn't work well).
 * Create sql db backup from the file backup and start the file system in parallel.
-* Backup script for backing up folders without needing to mount the file system, optionally referencing an existing backup.
+* Backup script for backing up directories without needing to mount the file system, optionally referencing an existing backup.
 * Change database backup, no need to have the full backup as default every time?
 * Support for soft links.
 * Optionally store packed (gz or similar).
@@ -340,7 +340,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.1.0 (202?.??.??)
 
-* Experimental `fsc backup` command for backing up folders without needing to mount the dedup file system.
+* Experimental `fsc backup` command for backing up directories without needing to mount the dedup file system.
 * Added explicit memory settings to all start scripts.
 * Unified and cleaner logging and console output; showing log level WARN and ERROR on console for the utilities.
 * Performance improvement: Start the file system or run the write command while in parallel creating script database backup from the plain backup.
@@ -431,7 +431,7 @@ First public release.
 
 Known problems:
 
-* If the drive the temp folder resides in is faster than the target drive, when copying many files the background write-to-target process may still take a long time when the foreground copy-to-DedupFS process has finished.
+* If the drive the temp directory resides in is faster than the target drive, when copying many files the background write-to-target process may still take a long time when the foreground copy-to-DedupFS process has finished.
 * Dirty corner cases when moving a file that currently is just written to.
 
 ## Storage Format

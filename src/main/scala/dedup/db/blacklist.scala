@@ -11,10 +11,10 @@ object blacklist extends util.ClassLogging:
   /** @param dbDir Database directory
     * @param blacklistDir Directory containing files to add to the blacklist
     * @param deleteFiles If true, files in the `blacklistDir` are deleted when they have been taken over
-    * @param dfsBlacklist Name of the base blacklist folder in the dedup file system, resolved against root
+    * @param dfsBlacklist Name of the base blacklist directory in the dedup file system, resolved against root
     * @param deleteCopies If true, mark deleted all blacklisted occurrences except for the original entries in `dfsBlacklist` */
   def apply(dbDir: File, blacklistDir: String, deleteFiles: Boolean, dfsBlacklist: String, deleteCopies: Boolean): Unit = withDb(dbDir, readonly = false) { db =>
-    db.mkDir(root.id, dfsBlacklist).foreach(_ => log.info(s"Created blacklist folder DedupFS:/$dfsBlacklist"))
+    db.mkDir(root.id, dfsBlacklist).foreach(_ => log.info(s"Created blacklist directory DedupFS:/$dfsBlacklist"))
     db.child(root.id, dfsBlacklist) match
       case None                          => log.error(s"Can't run blacklisting - couldn't create DedupFS:/$dfsBlacklist.")
       case Some(_: FileEntry)            => log.error(s"Can't run blacklisting - DedupFS:/$dfsBlacklist is a file, not a directory.")
@@ -39,7 +39,7 @@ object blacklist extends util.ClassLogging:
           case Some(childDirId) => externalFilesToInternalBlacklist(db, file, childDirId, deleteFiles)
         if !deleteFiles then {} else // needed like this to avoid compile problem
           if Option(file.listFiles).exists(_.isEmpty) then file.delete else
-            log.warn(s"Blacklist folder not empty after processing it: $file")
+            log.warn(s"Blacklist directory not empty after processing it: $file")
       else
         val (size, hash) = resource(FileInputStream(file)) { stream =>
           val buffer = new Array[Byte](memChunk)

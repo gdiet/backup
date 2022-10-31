@@ -35,7 +35,7 @@ class BlacklistSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
     }
   }
 
-  "processInternalBlacklist doesn't delete copies in the blacklist folder" in {
+  "processInternalBlacklist doesn't delete copies in the blacklist directory" in {
     dbWithContents { case (db, ids) =>
       blacklist.processInternalBlacklist(db, "blacklist", "/blacklist", ids("blacklist"), true)
       assert(db.entry(ids("black1")).get.getClass == classOf[FileEntry])
