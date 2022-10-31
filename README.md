@@ -278,7 +278,7 @@ then you can merge the shallow repository back to the original file system using
 
 ### Continue On Errors
 
-Hopefully, you will never see an `EnsureFailed` exception the logs. However, if you are reproducibly blocked by an `EnsureFailed` exception, you can tell the dedup file system not to stop processing when the offending condition occurs. (Do this at you own risk!) For this, add `-Dsuppress.[marker]` to the java options in the script, where `[marker]` is the marker string prepended to the actual exception message, e.g. `-Dsuppress.cache.keep` or `-Dsuppress.tool.restore`.
+Hopefully, you will never see an `EnsureFailed` exception the logs. However, if you are reproducibly blocked by an `EnsureFailed` exception, you can tell the dedup file system not to stop processing when the offending condition occurs. (Do this at you own risk!) For this, add `-Dsuppress.[marker]` to the java options in the script, where `[marker]` is the marker string prepended to the actual exception message, e.g. `-Dsuppress.cache.keep` or `-Dsuppress.utility.restore`.
 
 ## Story: How I Use DedupFS
 
