@@ -341,6 +341,7 @@ To upgrade a DedupFS installation to a newer version:
 #### 5.1.0 (202?.??.??)
 
 * Experimental `fsc backup` command for backing up folders without needing to mount the dedup file system.
+* Added explicit memory settings to all start scripts.
 * Unified and cleaner logging and console output; showing log level WARN and ERROR on console for the utilities.
 * Performance improvement: Start the file system or run the write command while in parallel creating script database backup from the plain backup.
 * Updated libraries, Java to 17.0.5_8, and build system (SBT & sbt-updates plugin).
