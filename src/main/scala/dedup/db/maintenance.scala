@@ -157,5 +157,5 @@ object maintenance extends util.ClassLogging:
     db.shutdownCompact()
     log.info("Finished reclaiming space. Undo by restoring the database from a backup.")
     log.info("Note: Once new files are stored, restoring a database backup from before")
-    log.info("        the reclaim process will result in partial data corruption.")
+    log.info("      the reclaim process will result in partial data corruption.")
   }
