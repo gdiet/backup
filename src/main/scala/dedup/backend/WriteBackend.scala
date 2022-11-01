@@ -75,7 +75,14 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
           case data => Iterator(data)
         }
         .flatMap {
-          case (position, Left(holeSize)) => super.read(fileId, position, holeSize).get // FIXME "get" is suspicious
+          case (position, Left(holeSize)) => super.read(fileId, position, holeSize).getOrElse {
+            log.error(s"Reading base layer of file $fileId failed, replacing it with zeros. This is a bug.")
+            Iterator.range(position, position + holeSize, memChunk.toLong).map { localPos =>
+              import cache.asInt
+              val localSize = math.min(position + holeSize - localPos, memChunk).asInt
+              localPos -> new Array[Byte](localSize)
+            }
+          }
           case (position, Right(bytes)) => Iterator(position -> bytes)
         }
     }
