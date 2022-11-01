@@ -5,5 +5,5 @@ if errorlevel 1 exit /B %errorlevel%
 
 rem ### Parameters ###
 rem # repo=<repository directory>     | default: '..' (parent of working directory)
-%JAVA% "-DLOG_BASE=%~dp0log" -cp "%~dp0lib\*" dedup.stats %*
+%JAVA% "-DLOG_BASE=%~dp0log" -Xmx256m -cp "%~dp0lib\*" dedup.stats %*
 pause

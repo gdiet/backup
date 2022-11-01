@@ -10,4 +10,4 @@ rem # backup            | create a database backup
 rem # find <matcher>    | find files with matching file names, e.g. '%.scala'
 rem # list <path>       | list directory or show file info
 rem # del  <path>       | mark a file or recursively mark a directory as deleted
-%JAVA% "-DLOG_BASE=%~dp0log" -Dlogback.configurationFile=fsc-logback.xml -cp "%~dp0lib\*" dedup.fsc %*
+%JAVA% "-DLOG_BASE=%~dp0log" -Xmx256m -cp "%~dp0lib\*" dedup.fsc %*

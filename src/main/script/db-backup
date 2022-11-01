@@ -1,0 +1,24 @@
+#!/bin/bash
+APPDIR=$(dirname "$0")
+JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
+
+
+echo
+echo "This utility will create a plain file backup and a zipped script"
+echo "backup of the DedupFS database.  If you do not want that, simply"
+echo "close the console window where this utility is running."
+echo
+read -n 1 -r -s -p "Press any key to continue..."
+echo
+echo "Starting database restore..."
+
+### Parameters ###
+# repo=<repository directory>        | default: '..' (parent of working directory)
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx64m -cp "$APPDIR/lib/*" dedup.fsc db-backup "$@"
+ERRORLEVEL=$?
+if [ $ERRORLEVEL -ne 0 ]; then
+  echo "Database backup finished with error code $ERRORLEVEL, exiting..."
+  exit 1
+else
+  echo "Database backup finished."
+fi

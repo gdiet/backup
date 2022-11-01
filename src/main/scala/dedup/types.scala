@@ -17,10 +17,11 @@ object types:
 
   opaque type DataId = Long
   object DataId { def apply(d: Long): DataId = d }
-  extension (d: DataId) { def toLong: Long = d }
+  extension (d: DataId) { def asLong: Long = d }
 
   opaque type Time = Long
   object Time { def apply(t: Long): Time = t }
   extension (t: Time)
     def nonZero: Time = if t == 0 then 1 else t
+    @annotation.targetName("timeAsLong")
     def asLong: Long = t

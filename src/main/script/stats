@@ -5,4 +5,4 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 
 ### Parameters ###
 # repo=<repository directory>     | default: '..' (parent of working directory)
-$JAVA "-DLOG_BASE=$APPDIR/log" -cp "$APPDIR/lib/*" dedup.stats "$@"
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx256m -cp "$APPDIR/lib/*" dedup.stats "$@"

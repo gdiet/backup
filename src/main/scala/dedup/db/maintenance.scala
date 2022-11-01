@@ -1,50 +1,57 @@
 package dedup
 package db
 
-import dedup.db.H2.dbName
+import dedup.db.H2.{dbFile, dbName, backupFile, backupName}
 import org.h2.tools.{RunScript, Script}
 
-import java.io.{File, FileInputStream}
+import java.io.File
 import java.nio.file.{Files, StandardCopyOption}
-import java.sql.{Connection, ResultSet, Statement}
 import java.text.SimpleDateFormat
 import java.util.Date
-import scala.collection.SortedMap
-import scala.util.Using.resource
 
 object maintenance extends util.ClassLogging:
 
   def backup(dbDir: File, fileNameSuffix: String = ""): Unit =
-    val dbFile = H2.dbFile(dbDir)
-    ensure("tool.backup", dbFile.exists(), s"Database file $dbFile does not exist")
-    val plainBackup = H2.dbFile(dbDir, ".backup")
-    log.info(s"Creating plain database backup: $dbFile -> $plainBackup")
-    Files.copy(dbFile.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
+    val database = dbFile(dbDir)
+    ensure("utility.backup", database.exists(), s"Database file $database does not exist")
+    val plainBackup = backupFile(dbDir)
+    log.info(s"Creating plain database backup: ${database.getName} -> ${plainBackup.getName}")
+    Files.copy(database.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
-    val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
-    val zipBackup = File(dbDir, s"dedupfs_$dateString$fileNameSuffix.zip")
-    log.info(s"Creating sql script database backup: $dbFile -> $zipBackup")
-    Script.main(
-      "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
+    new Thread(() => {
+      try
+        cache.MemCache.availableMem.addAndGet(-64000000) // Reserve some RAM for the backup process
+        val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
+        val zipBackup = File(dbDir, s"${dbName}_$dateString$fileNameSuffix.zip")
+        log.info(s"Creating sql script database backup: ${plainBackup.getName} -> ${zipBackup.getName}")
+        log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
+        Script.main(
+          "-url", s"jdbc:h2:$dbDir/$backupName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
+        )
+        log.info(s"Sql script database backup created.")
+      finally
+        cache.MemCache.availableMem.addAndGet(64000000)
+    }, "db-backup").start()
+
+  def restorePlainBackup(dbDir: File): Unit =
+    val database = dbFile(dbDir)
+    val plainBackup = backupFile(dbDir)
+    ensure("utility.restore.notfound", plainBackup.exists(), s"Database backup file $plainBackup does not exist")
+    log.info(s"Restoring plain database backup: ${plainBackup.getName} -> ${database.getName}")
+    Files.copy(plainBackup.toPath, database.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+
+  def restoreScriptBackup(dbDir: File, scriptName: String): Unit =
+    val script = File(dbDir, scriptName)
+    ensure("utility.restore.from", script.exists(), s"Database backup script file $script does not exist")
+    val database = dbFile(dbDir)
+    ensure("utility.restore", !database.exists || database.delete, s"Can't delete current database file $database")
+    log.info(s"Restoring database backup: ${script.getName} -> ${database.getName}")
+    RunScript.main(
+      "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
     )
 
-  def restoreBackup(dbDir: File, from: Option[String]): Unit = from match
-    case None =>
-      val dbFile = H2.dbFile(dbDir)
-      val plainBackup = H2.dbFile(dbDir, ".backup")
-      ensure("tool.restore.notfound", plainBackup.exists(), s"Database backup file $backup does not exist")
-      log.info(s"Restoring plain database backup: $backup -> $dbFile")
-      Files.copy(plainBackup.toPath, dbFile.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
-
-    case Some(scriptName) =>
-      val script = File(dbDir, scriptName)
-      ensure("tool.restore.from", script.exists(), s"Database backup script file $script does not exist")
-      val dbFile = H2.dbFile(dbDir)
-      ensure("tool.restore", !dbFile.exists || dbFile.delete, s"Can't delete current database file $dbFile")
-      RunScript.main(
-        "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
-      )
-
+  def compactDb(dbDir: File): Unit = withDb(dbDir, readonly = false)(_.shutdownCompact())
+  
   def stats(dbDir: File): Unit = withDb(dbDir) { db =>
     import Database.currentDbVersion
     log.info(s"Dedup File System Statistics")
@@ -150,81 +157,5 @@ object maintenance extends util.ClassLogging:
     db.shutdownCompact()
     log.info("Finished reclaiming space. Undo by restoring the database from a backup.")
     log.info("Note: Once new files are stored, restoring a database backup from before")
-    log.info("        the reclaim process will result in partial data corruption.")
+    log.info("      the reclaim process will result in partial data corruption.")
   }
-
-object blacklist extends util.ClassLogging:
-
-  /** @param dbDir Database directory
-    * @param blacklistDir Directory containing files to add to the blacklist
-    * @param deleteFiles If true, files in the `blacklistDir` are deleted when they have been taken over
-    * @param dfsBlacklist Name of the base blacklist folder in the dedup file system, resolved against root
-    * @param deleteCopies If true, mark deleted all blacklisted occurrences except for the original entries in `dfsBlacklist` */
-  def apply(dbDir: File, blacklistDir: String, deleteFiles: Boolean, dfsBlacklist: String, deleteCopies: Boolean): Unit = withDb(dbDir, readonly = false) { db =>
-    db.mkDir(root.id, dfsBlacklist).foreach(_ => log.info(s"Created blacklist folder DedupFS:/$dfsBlacklist"))
-    db.child(root.id, dfsBlacklist) match
-      case None                          => log.error(s"Can't run blacklisting - couldn't create DedupFS:/$dfsBlacklist.")
-      case Some(_: FileEntry)            => log.error(s"Can't run blacklisting - DedupFS:/$dfsBlacklist is a file, not a directory.")
-      case Some(blacklistRoot: DirEntry) =>
-        log.info(s"Blacklisting now...")
-
-        // Add external files to blacklist.
-        val blacklistFolder = File(blacklistDir).getCanonicalFile
-        val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
-        db.mkDir(blacklistRoot.id, dateString).foreach(externalFilesToInternalBlacklist(db, blacklistFolder, _, deleteFiles))
-
-        // Process internal blacklist.
-        processInternalBlacklist(db, dfsBlacklist, s"/${blacklistRoot.name}", blacklistRoot.id, deleteCopies)
-
-        db.shutdownCompact()
-        log.info(s"Finished blacklisting.")
-  }
-
-  def externalFilesToInternalBlacklist(db: Database, currentDir: File, dirId: Long, deleteFiles: Boolean): Unit =
-    Option(currentDir.listFiles()).toSeq.flatten.foreach { file =>
-      if file.isDirectory then
-        db.mkDir(dirId, file.getName) match
-          case None => ensure("blacklist.create.dir", false, s"can't create internal blacklist directory for $file")
-          case Some(childDirId) => externalFilesToInternalBlacklist(db, file, childDirId, deleteFiles)
-        if !deleteFiles then {} else // needed like this to avoid compile problem
-          if file.listFiles.isEmpty then file.delete else
-            log.warn(s"Blacklist folder not empty after processing it: $file")
-      else
-        val (size, hash) = resource(FileInputStream(file)) { stream =>
-          val buffer = new Array[Byte](memChunk)
-          val md = java.security.MessageDigest.getInstance(hashAlgorithm)
-          val size = Iterator.continually(stream.read(buffer)).takeWhile(_ > 0)
-            .tapEach(md.update(buffer, 0, _)).map(_.toLong).sum
-          size -> md.digest()
-        }
-        val dataId = db.dataEntry(hash, size).getOrElse(
-          DataId(db.nextId).tap(db.insertDataEntry(_, 1, size, 0, 0, hash))
-        )
-        ensure("blacklist.create.file", db.mkFile(dirId, file.getName, Time(file.lastModified), dataId).isDefined,
-          s"can't create internal blacklist file for $file")
-        if deleteFiles && file.delete then
-          log.info(s"Moved to DedupFS blacklist: $file")
-        else
-          log.info(s"Copied to DedupFS blacklist: $file")
-    }
-
-  def processInternalBlacklist(db: Database, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
-    db.children(parentId).foreach {
-      case dir: DirEntry =>
-        processInternalBlacklist(db, dfsBlacklist, s"$parentPath/${dir.name}", dir.id, deleteCopies)
-      case file: FileEntry =>
-        if db.storageSize(file.dataId) > 0 then
-          log.info(s"Blacklisting $parentPath/${file.name}")
-          db.removeStorageAllocation(file.dataId)
-        if deleteCopies then
-          val copies = db.entriesFor(file.dataId).filterNot(_.id == file.id)
-          val filteredCopies = copies
-            .map(entry => (entry.id, db.pathOf(entry.id)))
-            .filterNot(_._2.startsWith(s"/$dfsBlacklist/"))
-          filteredCopies.foreach { (id, path) =>
-            log.info(s"Deleting copy of entry: $path")
-            if db.deleteChildless(file.id)
-            then log.info(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
-            else log.warn(s"Could not delete file with children: '$path'")
-          }
-    }

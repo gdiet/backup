@@ -1,15 +1,30 @@
 <configuration>
-    <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
+    <appender name="console-info" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%date{HH:mm:ss.SSS} %.-3level %-17logger{17} - %msg%n</pattern>
+            <pattern>%msg%n</pattern>
         </encoder>
-        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+        <filter class="ch.qos.logback.classic.filter.LevelFilter">
             <level>INFO</level>
+            <onMatch>ACCEPT</onMatch>
+            <onMismatch>DENY</onMismatch>
         </filter>
     </appender>
 
-    <appender name="asyncConsole" class="ch.qos.logback.classic.AsyncAppender">
-        <appender-ref ref="console"/>
+    <appender name="asyncConsole-info" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="console-info"/>
+    </appender>
+
+    <appender name="console-warn" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>*** %-5level *** %msg%n</pattern>
+        </encoder>
+        <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+            <level>WARN</level>
+        </filter>
+    </appender>
+
+    <appender name="asyncConsole-warn" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="console-warn"/>
     </appender>
 
     <appender name="timeBasedFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
@@ -31,7 +46,8 @@
     </appender>
 
     <root level="DEBUG">
-        <appender-ref ref="asyncConsole"/>
+        <appender-ref ref="asyncConsole-info"/>
+        <appender-ref ref="asyncConsole-warn"/>
         <appender-ref ref="asyncTimeBasedFile"/>
     </root>
 </configuration>

@@ -22,18 +22,18 @@ import scala.util.Using.resource
 
 @main def fsc(opts: String*): Unit =
   val dbDir = opts.baseOptions.dbDir
-  val cmd = opts.additionalOptions.toList
-  cmd match {
-    case "backup"           :: Nil => db.maintenance.backup(dbDir         )
-    case "find"  :: matcher :: Nil => db.maintenance.find  (dbDir, matcher)
-    case "list"  :: path    :: Nil => db.maintenance.list  (dbDir, path   )
-    case "del"   :: path    :: Nil => db.maintenance.del   (dbDir, path   )
-    case other => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
-  }
-
-@main def dbRestore(opts: (String, String)*): Unit =
-  db.maintenance.restoreBackup(opts.dbDir, opts.unnamedOrGet("from"))
-  Thread.sleep(200) // Give logging some time to display message
+  val cmd   = opts.additionalOptions.toList
+  cmd match
+    case "backup"     :: params          => BackupTool.backup(opts.baseOptions, params)
+    case "db-backup"  ::             Nil => db.maintenance.backup             (dbDir          )
+    case "db-restore" ::             Nil => db.maintenance.restorePlainBackup (dbDir          )
+    case "db-restore" :: fileName :: Nil => db.maintenance.restoreScriptBackup(dbDir, fileName)
+    case "db-compact" ::             Nil => db.maintenance.compactDb          (dbDir          )
+    case "find"       :: matcher  :: Nil => db.maintenance.find               (dbDir, matcher )
+    case "list"       :: path     :: Nil => db.maintenance.list               (dbDir, path    )
+    case "del"        :: path     :: Nil => db.maintenance.del                (dbDir, path    )
+    case _ => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
+  Thread.sleep(200) // Give logging some time to display final messages
 
 @main def reclaimSpace(opts: (String, String)*): Unit =
   db.maintenance.backup(opts.dbDir, "_before_reclaim")
