@@ -88,7 +88,15 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   override def release(fileId: Long): Boolean =
     sync(releaseInternal(fileId)) match
       case None => false
-      case Some(count -> dataId) =>
-        if count < 1 && files.get(fileId).exists(_._1.isDefined) then
-          log.info(s"dataId $dataId: write-through not implemented") // TODO implement write-through
-        true
+      case Some(count -> _) if count > 0 => true
+      case Some(count -> dataId) => sync {
+        files.get(fileId) match
+          case None => log.warn("Unexpected case, should be investigated."); true
+          case Some(None -> None) => true
+          case Some(None -> Some(_)) => true
+          case Some(Some(current) -> None) =>
+            files += fileId -> (None, Some(current))
+            log.warn(s"Write-through not yet implemented.")
+            true
+          case Some(Some(current) -> Some(storing)) => ???
+      }
