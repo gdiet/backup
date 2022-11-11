@@ -62,7 +62,7 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
     * @param position position to start reading at.
     * @param size     number of bytes to read.
     * @return An [[Iterator]] of (position, gapSize | byte array]). In the case of concurrent writes,
-    *         the [[Iterator]] exact contents are undefined, but concurrent writes not cause exceptions.
+    *         the [[Iterator]]'s exact contents are undefined, but concurrent writes not cause exceptions.
     * @throws IllegalArgumentException if `position` is negative or `size` is less than 1. */
   def read(position: Long, size: Long): Iterator[(Long, Either[Long, Array[Byte]])] =
     if size == 0 then Iterator() else guard(s"read($position, $size)") {

@@ -4,7 +4,9 @@ package backend
 import dedup.db.WriteDatabase
 import dedup.server.Settings
 
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
+import scala.concurrent.ExecutionContext
 
 /** Don't instantiate more than one backend for a repository. */
 // Why not? Because the backend object is used for synchronization.
@@ -13,6 +15,8 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   /** file id -> (current, storing). Remember to synchronize. */
   private var files = Map[Long, (Option[DataEntry], Seq[DataEntry])]()
   private val dataSeq = AtomicLong()
+  /** Store logic relies on this being a single thread executor. */
+  private val singleThreadStoreContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
   override def shutdown(): Unit = sync {
     // TODO Write the cache before closing
@@ -99,12 +103,62 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     sync(releaseInternal(fileId)) match
       case None => false
       case Some(count -> _) if count > 0 => true
-      case Some(count -> dataId) => sync {
+      case Some(_ -> dataId) => sync {
         files.get(fileId) match
           case None => log.warn("Unexpected case, should be investigated."); true // FIXME is this good?
           case Some(None -> _) => true
           case Some(Some(current) -> storing) =>
             files += fileId -> (None, current +: storing)
-            log.warn(s"Write-through not yet implemented.") // FIXME remove
+            if storing.isEmpty then enqueue(fileId, dataId, current)
             true
       }
+
+  private def enqueue(fileId: Long, dataId: DataId, dataEntry: DataEntry): Unit =
+    singleThreadStoreContext.execute(() => try {
+      log.warn(s"Write-through for $fileId/$dataId/$dataEntry.") // FIXME remove or so
+      if dataEntry.size == 0 then
+        // If data entry size is zero, explicitly set dataId -1 because it might have contained something else.
+        db.setDataId(fileId, DataId(-1))
+        dataEntry.close()
+      else // FIXME make trace
+        log.warn(s"ID $fileId - persisting data entry, size ${dataEntry.size} / base data id $dataId.")
+        val ltsParts = db.parts(dataId)
+        def data: Iterator[(Long, Array[Byte])] = dataEntry.read(0, dataEntry.size).flatMap {
+          case position -> Right(data) => Iterator(position -> data)
+          case position -> Left(offset) => readFromLts(ltsParts, position, offset)
+        }
+        // Calculate hash
+        val md = java.security.MessageDigest.getInstance(hashAlgorithm)
+        data.foreach(entry => md.update(entry._2))
+        val hash = md.digest()
+        // Check if already known
+        val newDataId = db.dataEntry(hash, dataEntry.size) match {
+          // Already known, simply link
+          case Some(dataId) =>
+            db.setDataId(fileId, dataId)
+            log.trace(s"Persisted $fileId - content known, linking to dataId $dataId")
+            dataId
+          // Not yet known, store ...
+          case None =>
+            ??? // FIXME continue
+//            // Reserve storage space
+//            val reserved = freeAreas.reserve(dataEntry.size)
+//            // Write to storage
+//            Level2.writeAlgorithm(data, reserved, lts.write)
+//            // Save data entries
+//            val dataId = database.newDataIdFor(id)
+//            reserved.zipWithIndex.foreach { case (dataArea, index) =>
+//              log.debug(s"Data ID $dataId size ${dataEntry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
+//              database.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
+//            }
+//            log.trace(s"Persisted $id - new content, dataId $dataId")
+//            dataId
+        }
+        // Release persisted DataEntry.
+        synchronized {
+//          files -= id
+//          entryCount.decrementAndGet()
+//          entriesSize.addAndGet(-dataEntry.size)
+//          dataEntry.close(dataId)
+        }
+    } catch (e: Throwable) => { log.error(s"Persisting $fileId failed: $dataEntry", e); throw e })

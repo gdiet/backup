@@ -14,6 +14,14 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     log.info("Compacting database...")
     resource(connection.createStatement())(_.execute("SHUTDOWN COMPACT"))
 
+  private val qDataEntry = prepare(
+    "SELECT id FROM DataEntries WHERE hash = ? AND length = ?"
+  )
+  // Although this is a pure read method, it's only used in the write backend.
+  def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = synchronized {
+    qDataEntry.set(hash, size).query(maybe(r => DataId(r.getLong(1))))
+  }
+
   private val iDir = prepare(
     "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS
   )
@@ -44,6 +52,14 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
   def setTime(id: Long, newTime: Long): Unit =
     val count = uTime.set(newTime, id).executeUpdate()
     ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
+
+  private val uDataId = prepare(
+    "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
+  )
+  def setDataId(id: Long, dataId: DataId): Unit = synchronized {
+    val count = uDataId.set(dataId, id).executeUpdate()
+    ensure("db.set.dataid", count == 1, s"setDataId update count is $count and not 1 for id $id dataId $dataId")
+  }
 
   private val dTreeEntry = prepare(
     "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
