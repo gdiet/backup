@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicLong
 final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBackend(settings, db):
 
   /** file id -> (current, storing). Remember to synchronize. */
-  private var files = Map[Long, (Option[DataEntry], Option[DataEntry])]()
+  private var files = Map[Long, (Option[DataEntry], Seq[DataEntry])]()
   private val dataSeq = AtomicLong()
 
   override def shutdown(): Unit = sync {
@@ -23,7 +23,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   override def size(fileEntry: FileEntry): Long =
     sync(files.get(fileEntry.id)) match
       case Some(Some(current), _) => current.size
-      case Some(_, Some(storing)) => storing.size
+      case Some(None, head +: _) => head.size
       case _ => super.size(fileEntry)
 
   override def mkDir(parentId: Long, name: String): Option[Long] =
@@ -37,7 +37,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
 
   override def open(fileId: Long, dataId: DataId): Unit = sync {
     super.open(fileId, dataId)
-    if !files.contains(fileId) then files += fileId -> (None, None)
+    if !files.contains(fileId) then files += fileId -> (None, Seq())
   }
 
   override def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = sync {
@@ -46,7 +46,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     // and https://github.com/scala/scala-library-next/pull/80
     db.mkFile(parentId, name, time, DataId(-1)).tap(_.foreach { fileId =>
       super.open(fileId, DataId(-1))
-      files += fileId -> (None, None)
+      files += fileId -> (None, Seq())
     })
   }
 
@@ -55,7 +55,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
       case (Some(current), _) => current
       case (None, storing) =>
         log.info(s"Creating write cache for $fileId.") // FIXME trace or remove
-        val initialSize = storing.map(_.size).getOrElse(db.logicalSize(dataId(fileId)))
+        val initialSize = storing.headOption.map(_.size).getOrElse(db.logicalSize(dataId(fileId)))
         DataEntry(dataSeq, initialSize, settings.tempPath)
           .tap(entry => files += fileId -> (Some(entry), storing))
     })
@@ -68,10 +68,20 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   
   override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] =
     sync(files.get(fileId)).map { case current -> storing =>
+      // read data from current if defined
       current.map(_.read(offset, requestedSize)).getOrElse(Iterator(offset -> Left(requestedSize)))
         .flatMap {
           case (position, Left(holeSize)) =>
-            storing.map(_.read(position, holeSize)).getOrElse(Iterator(offset -> Left(requestedSize)))
+            // fill in holes in data from storing (recurse through the storing sequence
+            def fillHoles(position: Long, holeSize: Long, remaining: Seq[DataEntry]): Iterator[(Long, Either[Long, Array[Byte]])] =
+              remaining match
+                case Seq() => Iterator(offset -> Left(holeSize))
+                case head +: tail =>
+                  head.read(position, holeSize).flatMap {
+                    case (innerPosition, Left(innerHoleSize)) => fillHoles(innerPosition, innerHoleSize, tail)
+                    case other => Iterator(other)
+                  }
+            fillHoles(position, holeSize, storing)
           case data => Iterator(data)
         }
         .flatMap {
@@ -91,12 +101,10 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
       case Some(count -> _) if count > 0 => true
       case Some(count -> dataId) => sync {
         files.get(fileId) match
-          case None => log.warn("Unexpected case, should be investigated."); true
-          case Some(None -> None) => true
-          case Some(None -> Some(_)) => true
-          case Some(Some(current) -> None) =>
-            files += fileId -> (None, Some(current))
-            log.warn(s"Write-through not yet implemented.")
+          case None => log.warn("Unexpected case, should be investigated."); true // FIXME is this good?
+          case Some(None -> _) => true
+          case Some(Some(current) -> storing) =>
+            files += fileId -> (None, current +: storing)
+            log.warn(s"Write-through not yet implemented.") // FIXME remove
             true
-          case Some(Some(current) -> Some(storing)) => ???
       }
