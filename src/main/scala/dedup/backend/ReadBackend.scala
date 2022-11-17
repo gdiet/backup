@@ -50,10 +50,10 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
     )
   }
 
-  def release(fileId: Long): Boolean = sync(releaseInternal(fileId)).isDefined
+  def release(fileId: Long): Boolean = releaseInternal(fileId).isDefined
 
   /** @return [[None]] if called without create or open or (new handle count, data id). */
-  protected final def releaseInternal(fileId: Long): Option[(Int, DataId)] =
+  protected final def releaseInternal(fileId: Long): Option[(Int, DataId)] = sync {
     files.get(fileId) match
       case None =>
         log.warn(s"release($fileId) called for a file handle that is currently not open.")
@@ -62,6 +62,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
         if count > 1 then files += fileId -> (count - 1, dataId) else files -= fileId
         if count < 1 then log.error(s"Handle count $count for id $fileId.")
         Some(count - 1 -> dataId)
+  }
 
   override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] = {
     sync(files.get(fileId)).map { case (_, dataId) =>

@@ -1,7 +1,7 @@
 package dedup
 package db
 
-import java.sql.{Connection, Statement}
+import java.sql.{Connection, Statement, Types}
 import scala.util.Try
 import scala.util.Using.resource
 
@@ -45,7 +45,7 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
         log.error(s"Duplicates: $problems")
       else
         log.error(s"First 200 duplicates: ${problems.take(200)}")
-      ensure("data.sort.gaps", false, s"Database might be corrupt. Restore from backup?")
+      problem("data.sort.gaps", s"Database might be corrupt. Restore from backup?")
     (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
 
   private def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
@@ -81,26 +81,33 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
   }.toOption
 
-  private val uTime = prepare(
-    "UPDATE TreeEntries SET time = ? WHERE id = ?"
-  )
+  private val uTime = prepare("UPDATE TreeEntries SET time = ? WHERE id = ?")
   /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs. */
   def setTime(id: Long, newTime: Long): Unit =
     val count = uTime.set(newTime, id).executeUpdate()
     ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
 
-  private val uDataId = prepare(
-    "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
-  )
+  private val uDataId = prepare("UPDATE TreeEntries SET dataId = ? WHERE id = ?")
   def setDataId(id: Long, dataId: DataId): Unit = synchronized {
     val count = uDataId.set(dataId, id).executeUpdate()
     ensure("db.set.dataid", count == 1, s"setDataId update count is $count and not 1 for id $id dataId $dataId")
   }
 
-  private val dTreeEntry = prepare(
-    "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
-  )
+  private val dTreeEntry = prepare("UPDATE TreeEntries SET deleted = ? WHERE id = ?")
   /** Deletes a tree entry. Should be called only for existing entry IDs. */
   def delete(id: Long): Unit =
     val count = dTreeEntry.set(now.nonZero, id).executeUpdate()
     ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
+
+  private val qNextId = prepare("SELECT NEXT VALUE FOR idSeq")
+  private def nextId: Long = qNextId.query(next(_.getLong(1)))
+  /** Sets a newly created data ID for a tree entry. */
+  def newDataIdFor(id: Long): DataId = DataId(nextId).tap(setDataId(id, _))
+
+  private val iDataEntry = prepare("INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)")
+  def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit =
+    ensure("db.add.data.entry.1", seq > 0, s"seq not positive: $seq")
+    val sqlLength: Long | SqlNull = if seq == 1 then length else SqlNull(Types.BIGINT)
+    val sqlHash: Array[Byte] | SqlNull = if seq == 1 then hash else SqlNull(Types.BINARY)
+    val count = iDataEntry.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate()
+    ensure("db.add.data.entry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")

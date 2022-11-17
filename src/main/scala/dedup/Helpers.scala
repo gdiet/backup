@@ -18,6 +18,8 @@ def readableBytes(l: Long): String =
 
 class EnsureFailed(reason: String) extends IllegalArgumentException(reason)
 
+def problem(marker: String, warningMessage: => String): Unit = ensure(marker, false, warningMessage)
+
 def ensure(marker: String, condition: Boolean, warningMessage: => String): Unit =
   if !condition then
     main.error(s"$marker: $warningMessage")

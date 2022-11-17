@@ -37,7 +37,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   // Check and migrate database version
   version() match
     case None =>
-      ensure("database.no.version", false, s"No database version found.")
+      problem("database.no.version", s"No database version found.")
     case Some(dbVersion) =>
       log.debug(s"Database version: $dbVersion.")
       ensure("database.illegal.version", dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
@@ -66,7 +66,7 @@ class Database(connection: Connection) extends util.ClassLogging:
         log.error(s"Duplicates: $problems")
       else
         log.error(s"First 200 duplicates: ${problems.take(200)}")
-      ensure("data.sort.gaps", false, s"Database might be corrupt. Restore from backup?")
+      problem("data.sort.gaps", s"Database might be corrupt. Restore from backup?")
     (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
   }
 

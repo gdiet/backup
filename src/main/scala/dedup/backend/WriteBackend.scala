@@ -12,24 +12,19 @@ import scala.concurrent.ExecutionContext
 // Why not? Because the backend object is used for synchronization.
 final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBackend(settings, db):
 
-  private var freeAreas = server.FreeAreas(db.freeAreas())
-  /** file id -> (current, storing). Remember to synchronize. */
-  private var files = Map[Long, (Option[DataEntry], Seq[DataEntry])]()
-  private val dataSeq = AtomicLong()
+  private val freeAreas = server.FreeAreas(db.freeAreas())
+  private val files = FileHandlesWrite(settings)
   /** Store logic relies on this being a single thread executor. */
   private val singleThreadStoreContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
   override def shutdown(): Unit = sync {
-    // TODO Write the cache before closing
+    // FIXME Write the cache before closing
     db.shutdownCompact()
     super.shutdown()
   }
 
   override def size(fileEntry: FileEntry): Long =
-    sync(files.get(fileEntry.id)) match
-      case Some(Some(current), _) => current.size
-      case Some(None, head +: _) => head.size
-      case _ => super.size(fileEntry)
+    files.getSize(fileEntry.id).getOrElse(super.size(fileEntry))
 
   override def mkDir(parentId: Long, name: String): Option[Long] =
     sync { db.mkDir(parentId, name) }
@@ -42,7 +37,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
 
   override def open(fileId: Long, dataId: DataId): Unit = sync {
     super.open(fileId, dataId)
-    if !files.contains(fileId) then files += fileId -> (None, Seq())
+    files.addIfMissing(fileId)
   }
 
   override def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = sync {
@@ -51,68 +46,35 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     // and https://github.com/scala/scala-library-next/pull/80
     db.mkFile(parentId, name, time, DataId(-1)).tap(_.foreach { fileId =>
       super.open(fileId, DataId(-1))
-      files += fileId -> (None, Seq())
+      if !files.addIfMissing(fileId) then log.error(s"File handle (write) was already present for file $fileId.")
     })
   }
 
   private def dataEntry(fileId: Long): Option[DataEntry] =
-    sync(files.get(fileId).map {
-      case (Some(current), _) => current
-      case (None, storing) =>
-        log.info(s"Creating write cache for $fileId.") // FIXME trace or remove
-        val initialSize = storing.headOption.map(_.size).getOrElse(db.logicalSize(dataId(fileId)))
-        DataEntry(dataSeq, initialSize, settings.tempPath)
-          .tap(entry => files += fileId -> (Some(entry), storing))
-    })
+    files.dataEntry(fileId, sync(dataId.andThen(db.logicalSize)))
 
   override def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
     dataEntry(fileId).map(_.write(data)).isDefined
 
   override def truncate(fileId: Long, newSize: Long): Boolean =
     dataEntry(fileId).map(_.truncate(newSize)).isDefined
-  
+
   override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] =
-    sync(files.get(fileId)).map { case current -> storing =>
-      // read data from current if defined
-      current.map(_.read(offset, requestedSize)).getOrElse(Iterator(offset -> Left(requestedSize)))
-        .flatMap {
-          case (position, Left(holeSize)) =>
-            // fill in holes in data from storing (recurse through the storing sequence
-            def fillHoles(position: Long, holeSize: Long, remaining: Seq[DataEntry]): Iterator[(Long, Either[Long, Array[Byte]])] =
-              remaining match
-                case Seq() => Iterator(offset -> Left(holeSize))
-                case head +: tail =>
-                  head.read(position, holeSize).flatMap {
-                    case (innerPosition, Left(innerHoleSize)) => fillHoles(innerPosition, innerHoleSize, tail)
-                    case other => Iterator(other)
-                  }
-            fillHoles(position, holeSize, storing)
-          case data => Iterator(data)
+    files.read(fileId, offset, requestedSize).map(_.flatMap {
+      case (position, Left(holeSize)) => super.read(fileId, position, holeSize).getOrElse {
+        log.error(s"Reading base layer of file $fileId failed at $position + $holeSize, inserting zeros. This is a bug.")
+        Iterator.range(position, position + holeSize, memChunk.toLong).map { localPos =>
+          localPos -> new Array[Byte](cache.asInt(math.min(position + holeSize - localPos, memChunk)))
         }
-        .flatMap {
-          case (position, Left(holeSize)) => super.read(fileId, position, holeSize).getOrElse {
-            log.error(s"Reading base layer of file $fileId failed, replacing it with zeros. This is a bug.")
-            Iterator.range(position, position + holeSize, memChunk.toLong).map { localPos =>
-              localPos -> new Array[Byte](cache.asInt(math.min(position + holeSize - localPos, memChunk)))
-            }
-          }
-          case (position, Right(bytes)) => Iterator(position -> bytes)
-        }
-    }
+      }
+      case (position, Right(bytes)) => Iterator(position -> bytes)
+    })
 
   override def release(fileId: Long): Boolean =
-    sync(releaseInternal(fileId)) match
-      case None => false
-      case Some(count -> _) if count > 0 => true
-      case Some(_ -> dataId) => sync {
-        files.get(fileId) match
-          case None => log.warn("Unexpected case, should be investigated."); true // FIXME is this good?
-          case Some(None -> _) => true
-          case Some(Some(current) -> storing) =>
-            files += fileId -> (None, current +: storing)
-            if storing.isEmpty then enqueue(fileId, dataId, current)
-            true
-      }
+    releaseInternal(fileId) match
+      case None => false // warning is logged in releaseInternal
+      case Some(count -> _) if count > 0 => true // still some handles open for the file
+      case Some(_ -> dataId) => files.release(fileId).foreach(enqueue(fileId, dataId, _)); true
 
   private def enqueue(fileId: Long, dataId: DataId, dataEntry: DataEntry): Unit =
     singleThreadStoreContext.execute(() => try {
@@ -132,34 +94,34 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
         data.foreach(entry => md.update(entry._2))
         val hash = md.digest()
         // Check if already known
-        val newDataId = db.dataEntry(hash, dataEntry.size) match {
+        sync(db.dataEntry(hash, dataEntry.size)) match
           // Already known, simply link
           case Some(dataId) =>
-            db.setDataId(fileId, dataId)
+            sync(db.setDataId(fileId, dataId))
             log.trace(s"Persisted $fileId - content known, linking to dataId $dataId")
-            dataId
           // Not yet known, store ...
           case None =>
             // Reserve storage space
             val reserved = freeAreas.reserve(dataEntry.size)
-          ??? // FIXME continue
-//            // Write to storage
+            // Write to storage - FIXME
 //            Level2.writeAlgorithm(data, reserved, lts.write)
-//            // Save data entries
-//            val dataId = database.newDataIdFor(id)
-//            reserved.zipWithIndex.foreach { case (dataArea, index) =>
-//              log.debug(s"Data ID $dataId size ${dataEntry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
-//              database.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
-//            }
-//            log.trace(s"Persisted $id - new content, dataId $dataId")
-//            dataId
-        }
+            // Save data entries
+            val dataId = sync(db.newDataIdFor(fileId))
+            reserved.zipWithIndex.foreach { case (dataArea, index) =>
+              log.debug(s"Data ID $dataId size ${dataEntry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
+              db.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
+            }
+            log.trace(s"Persisted $fileId - new content, dataId $dataId")
+
         // Release persisted DataEntry.
         sync {
+          files.removeAndGetNext(fileId, dataEntry)
+
+          ???
           dataEntry.close()
-          files.get(fileId) match
-            case None => log.error(s"Expected a file entry for $fileId.")
-            case _ => ???
+//          files.get(fileId) match
+//            case None => log.error(s"Expected a file entry for $fileId.")
+//            case _ => ???
 //          entryCount.decrementAndGet()
 //          entriesSize.addAndGet(-dataEntry.size)
 //          dataEntry.close(dataId)
