@@ -12,6 +12,7 @@ import scala.concurrent.ExecutionContext
 // Why not? Because the backend object is used for synchronization.
 final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBackend(settings, db):
 
+  private var freeAreas = server.FreeAreas(db.freeAreas())
   /** file id -> (current, storing). Remember to synchronize. */
   private var files = Map[Long, (Option[DataEntry], Seq[DataEntry])]()
   private val dataSeq = AtomicLong()
@@ -119,7 +120,6 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
       if dataEntry.size == 0 then
         // If data entry size is zero, explicitly set dataId -1 because it might have contained something else.
         db.setDataId(fileId, DataId(-1))
-        dataEntry.close()
       else // FIXME make trace
         log.warn(s"ID $fileId - persisting data entry, size ${dataEntry.size} / base data id $dataId.")
         val ltsParts = db.parts(dataId)
@@ -140,9 +140,9 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
             dataId
           // Not yet known, store ...
           case None =>
-            ??? // FIXME continue
-//            // Reserve storage space
-//            val reserved = freeAreas.reserve(dataEntry.size)
+            // Reserve storage space
+            val reserved = freeAreas.reserve(dataEntry.size)
+          ??? // FIXME continue
 //            // Write to storage
 //            Level2.writeAlgorithm(data, reserved, lts.write)
 //            // Save data entries
@@ -155,8 +155,11 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
 //            dataId
         }
         // Release persisted DataEntry.
-        synchronized {
-//          files -= id
+        sync {
+          dataEntry.close()
+          files.get(fileId) match
+            case None => log.error(s"Expected a file entry for $fileId.")
+            case _ => ???
 //          entryCount.decrementAndGet()
 //          entriesSize.addAndGet(-dataEntry.size)
 //          dataEntry.close(dataId)
