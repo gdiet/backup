@@ -128,9 +128,7 @@ class Database(connection: Connection) extends util.ClassLogging:
     qChildren.set(parentId).query(seq(treeEntry))
   }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
-  private val qParts = prepare(
-    "SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC"
-  )
+  private val qParts = prepare("SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC")
   def parts(dataId: DataId): Seq[(Long, Long)] = synchronized {
     qParts.set(dataId).query(seq { rs =>
       val (start, size) = rs.getLong(1) -> rs.getLong(2)
@@ -151,24 +149,18 @@ class Database(connection: Connection) extends util.ClassLogging:
     qStorageSize.set(dataId).query(seq(_.getLong(1))).sum
   }
 
-  private val qDataEntry = prepare(
-    "SELECT id FROM DataEntries WHERE hash = ? AND length = ?"
-  )
+  private val qDataEntry = prepare("SELECT id FROM DataEntries WHERE hash = ? AND length = ?")
   def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = synchronized {
     qDataEntry.set(hash, size).query(maybe(r => DataId(r.getLong(1))))
   }
 
-  private val uTime = prepare(
-    "UPDATE TreeEntries SET time = ? WHERE id = ?"
-  )
+  private val uTime = prepare("UPDATE TreeEntries SET time = ? WHERE id = ?")
   def setTime(id: Long, newTime: Long): Unit = synchronized {
     val count = uTime.set(newTime, id).executeUpdate()
     ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
   }
 
-  private val dTreeEntry = prepare(
-    "UPDATE TreeEntries SET deleted = ? WHERE id = ?"
-  )
+  private val dTreeEntry = prepare("UPDATE TreeEntries SET deleted = ? WHERE id = ?")
   /** Deletes a tree entry unless it has children.
     * @return [[false]] if the tree entry has children. */
   def deleteChildless(id: Long): Boolean = synchronized {
@@ -179,7 +171,8 @@ class Database(connection: Connection) extends util.ClassLogging:
   }
 
   private val iDir = prepare(
-    "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS
+    "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)",
+    Statement.RETURN_GENERATED_KEYS
   )
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] =
@@ -205,36 +198,28 @@ class Database(connection: Connection) extends util.ClassLogging:
       iFile.getGeneratedKeys.tap(_.next()).getLong("id")
     }).toOption
 
-  private val uParentName = prepare(
-    "UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?"
-  )
+  private val uParentName = prepare("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?")
   def update(id: Long, newParentId: Long, newName: String): Boolean = synchronized {
     require(newName.nonEmpty, "Can't rename to an empty name.")
     uParentName.set(newParentId, newName, id).executeUpdate() == 1
   }
 
-  private val uDataId = prepare(
-    "UPDATE TreeEntries SET dataId = ? WHERE id = ?"
-  )
+  private val uDataId = prepare("UPDATE TreeEntries SET dataId = ? WHERE id = ?")
   def setDataId(id: Long, dataId: DataId): Unit = synchronized {
     val count = uDataId.set(dataId, id).executeUpdate()
     ensure("db.set.dataid", count == 1, s"setDataId update count is $count and not 1 for id $id dataId $dataId")
   }
 
-  private val qNextId = prepare(
-    "SELECT NEXT VALUE FOR idSeq"
-  )
+  private val qNextId = prepare("SELECT NEXT VALUE FOR idSeq")
   def nextId: Long = synchronized {
     qNextId.query(next(_.getLong(1)))
   }
 
   def newDataIdFor(id: Long): DataId = synchronized {
-    nextId.pipe(DataId(_)).tap(setDataId(id, _))
+    DataId(nextId).tap(setDataId(id, _))
   }
 
-  private val iDataEntry = prepare(
-    "INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)"
-  )
+  private val iDataEntry = prepare("INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)")
   def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = synchronized {
     ensure("db.add.data.entry.1", seq > 0, s"seq not positive: $seq")
     val sqlLength: Long       |SqlNull = if seq == 1 then length else SqlNull(Types.BIGINT)
