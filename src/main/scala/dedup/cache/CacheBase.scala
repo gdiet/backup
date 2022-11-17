@@ -83,7 +83,7 @@ trait CacheBase[M]:
       ensure("cache.merge", storedAt + entryLength <= position, s"Overlapping entries at $position: $entries")
       if storedAt + entryLength == position then
         Option(entries.get(position)) match
-          case None => ensure ("cache.merge", false, s"No entry at position: $position")
+          case None => problem("cache.merge", s"No entry at position: $position")
           case Some(upperArea) =>
             area._merge(upperArea).foreach { merged =>
               entries.remove(position)

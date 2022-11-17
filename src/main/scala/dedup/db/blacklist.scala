@@ -35,7 +35,7 @@ object blacklist extends util.ClassLogging:
     Option(currentDir.listFiles()).toSeq.flatten.foreach { file =>
       if file.isDirectory then
         db.mkDir(dirId, file.getName) match
-          case None => ensure("blacklist.create.dir", false, s"can't create internal blacklist directory for $file")
+          case None => problem("blacklist.create.dir", s"can't create internal blacklist directory for $file")
           case Some(childDirId) => externalFilesToInternalBlacklist(db, file, childDirId, deleteFiles)
         if !deleteFiles then {} else // needed like this to avoid compile problem
           if Option(file.listFiles).exists(_.isEmpty) then file.delete else
