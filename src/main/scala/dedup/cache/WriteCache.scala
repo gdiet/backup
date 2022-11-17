@@ -61,11 +61,12 @@ class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extend
     *
     * @param position position to start reading at.
     * @param size     number of bytes to read.
-    * @return An Iterator of (position, gapSize | byte array]).
-    * @throws IllegalArgumentException if `offset` / `size` exceed the bounds of the cached area. */
+    * @return An [[Iterator]] of (position, gapSize | byte array]). In the case of concurrent writes,
+    *         the [[Iterator]]'s exact contents are undefined, but concurrent writes do not cause exceptions.
+    * @throws IllegalArgumentException if `position` is negative, `size` is less than 1,
+    *                                  or `position` + `size` exceeds the bounds of the cached area. */
   def read(position: Long, size: Long): Iterator[(Long, Either[Long, Array[Byte]])] =
     if size == 0 then Iterator() else guard(s"read($position, $size)") {
-      ensure("cache.read.size", size > 0, s"Negative read: $position/$size.")
       ensure("cache.read.position", position + size <= _size, s"Read $position/$size beyond end of cache $_size.")
       memCache.read(position, size).flatMap {
         case right @ _ -> Right(_)      => Iterator(right)
