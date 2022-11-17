@@ -229,7 +229,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   }
 
   def newDataIdFor(id: Long): DataId = synchronized {
-    nextId.pipe(DataId(_)).tap(setDataId(id, _))
+    DataId(nextId).tap(setDataId(id, _))
   }
 
   private val iDataEntry = prepare(
