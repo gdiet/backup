@@ -77,11 +77,17 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
       case Some(_ -> dataId) => files.release(fileId).foreach(enqueue(fileId, dataId, _)); true
 
   private def enqueue(fileId: Long, dataId: DataId, dataEntry: DataEntry): Unit =
-    singleThreadStoreContext.execute(() => try {
+    singleThreadStoreContext.execute(() => try { // TODO do we need db.sync here???
+      def removeAndQueueNext(newDataId: DataId): Unit =
+        files.removeAndGetNext(fileId, dataEntry).foreach(enqueue(fileId, newDataId, _))
+        dataEntry.close()
+
       log.warn(s"Write-through for $fileId/$dataId/$dataEntry.") // FIXME remove or so
       if dataEntry.size == 0 then
         // If data entry size is zero, explicitly set dataId -1 because it might have contained something else.
-        db.setDataId(fileId, DataId(-1))
+        sync(db.setDataId(fileId, DataId(-1)))
+        removeAndQueueNext(DataId(-1))
+
       else // FIXME make trace
         log.warn(s"ID $fileId - persisting data entry, size ${dataEntry.size} / base data id $dataId.")
         val ltsParts = db.parts(dataId)
@@ -99,6 +105,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
           case Some(dataId) =>
             sync(db.setDataId(fileId, dataId))
             log.trace(s"Persisted $fileId - content known, linking to dataId $dataId")
+            removeAndQueueNext(dataId)
           // Not yet known, store ...
           case None =>
             // Reserve storage space
@@ -112,18 +119,5 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
               db.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
             }
             log.trace(s"Persisted $fileId - new content, dataId $dataId")
-
-        // Release persisted DataEntry.
-        sync {
-          files.removeAndGetNext(fileId, dataEntry)
-
-          ???
-          dataEntry.close()
-//          files.get(fileId) match
-//            case None => log.error(s"Expected a file entry for $fileId.")
-//            case _ => ???
-//          entryCount.decrementAndGet()
-//          entriesSize.addAndGet(-dataEntry.size)
-//          dataEntry.close(dataId)
-        }
+            removeAndQueueNext(dataId)
     } catch (e: Throwable) => { log.error(s"Persisting $fileId failed: $dataEntry", e); throw e })
