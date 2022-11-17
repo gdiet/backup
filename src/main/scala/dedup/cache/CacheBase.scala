@@ -94,7 +94,7 @@ trait CacheBase[M]:
   /** Reads available data chunks.
     *
     * @return An [[Iterator]] of (position, gapSize | byte array]). In the case of concurrent writes,
-    *         the [[Iterator]] exact contents are undefined, but concurrent writes not cause exceptions.
+    *         the [[Iterator]] exact contents are undefined, but concurrent writes do not cause exceptions.
     * @throws IllegalArgumentException if `position` is negative or `size` is less than 1. */
   def read(position: Long, size: Long): Iterator[(Long, Either[Long, M])] =
     // Note: For Scala 3.0, generic union types like Long | M seem to still be unwieldy.
