@@ -58,28 +58,31 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     }
   // End: Pure read methods that are only used in the write backend
 
+  private object TreeStructureMonitor
+  private def structureSync[T](f: => T): T = TreeStructureMonitor.synchronized(f)
+
   private val iDir = prepare(
     "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS
   )
   /** @return Some(id) or None if a child entry with the same name already exists. */
-  def mkDir(parentId: Long, name: String): Option[Long] = Try {
+  def mkDir(parentId: Long, name: String): Option[Long] = Try(structureSync {
     // Name conflict triggers SQL exception due to unique constraint.
     val count = iDir.set(parentId, name, now).executeUpdate()
     ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
-  }.toOption
+  }).toOption
 
   private val iFile = prepare(
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)",
     Statement.RETURN_GENERATED_KEYS
   )
   /** @return `Some(id)` or [[None]] if a child entry with the same name already exists. */
-  def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] = Try {
+  def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] = Try(structureSync {
     // Name conflict triggers SQL exception due to unique constraint.
     val count = iFile.set(parentId, name, time, dataId).executeUpdate()
     ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
-  }.toOption
+  }).toOption
 
   private val uTime = prepare("UPDATE TreeEntries SET time = ? WHERE id = ?")
   /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs. */
@@ -94,10 +97,14 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
   }
 
   private val dTreeEntry = prepare("UPDATE TreeEntries SET deleted = ? WHERE id = ?")
-  /** Deletes a tree entry. Should be called only for existing entry IDs. */
-  def delete(id: Long): Unit =
-    val count = dTreeEntry.set(now.nonZero, id).executeUpdate()
-    ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
+  /** Deletes a tree entry. Should be called only for existing entry IDs.
+    * @return `false` if the tree entry has children. */
+  def deleteChildless(id: Long): Boolean = structureSync {
+    if children(id).nonEmpty then false else
+      val count = dTreeEntry.set(now.nonZero, id).executeUpdate()
+      ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
+      true
+  }
 
   private val qNextId = prepare("SELECT NEXT VALUE FOR idSeq")
   private def nextId: Long = qNextId.query(next(_.getLong(1)))

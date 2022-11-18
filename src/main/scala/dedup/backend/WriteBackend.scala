@@ -27,21 +27,20 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     files.getSize(fileEntry.id).getOrElse(super.size(fileEntry))
 
   override def mkDir(parentId: Long, name: String): Option[Long] =
-    sync { db.mkDir(parentId, name) }
+    db.mkDir(parentId, name)
 
   override def setTime(id: Long, newTime: Long): Unit =
     sync { db.setTime(id, newTime) }
 
   override def deleteChildless(entry: TreeEntry): Boolean =
-    // FIXME synchronize on db create node monitor
-    sync { if db.children(entry.id).nonEmpty then false else { db.delete(entry.id); true } }
+    db.deleteChildless(entry.id)
 
   override def open(fileId: Long, dataId: DataId): Unit = sync {
     super.open(fileId, dataId)
     files.addIfMissing(fileId)
   }
 
-  override def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = sync {
+  override def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] =
     // A sensible Option.tapEach might be available in future Scala versions, see
     // https://stackoverflow.com/questions/67017901/why-does-scala-option-tapeach-return-iterable-not-option
     // and https://github.com/scala/scala-library-next/pull/80
@@ -49,7 +48,6 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
       super.open(fileId, DataId(-1))
       if !files.addIfMissing(fileId) then log.error(s"File handle (write) was already present for file $fileId.")
     })
-  }
 
   private def dataEntry(fileId: Long): Option[DataEntry] =
     files.dataEntry(fileId, dataId.andThen(db.logicalSize))
