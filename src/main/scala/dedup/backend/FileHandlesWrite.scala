@@ -12,11 +12,11 @@ class FileHandlesWrite(settings: Settings) extends ClassLogging:
   private val dataSeq = AtomicLong()
 
   def getSize(fileId: Long): Option[Long] =
-    synchronized(files.get(fileId)) match
-      case None => log.error(s"Missing write handle contents for file id $fileId."); None
-      case Some(Some(current) -> _) => Some(current.size)
-      case Some(None -> (head +: _)) => Some(head.size)
-      case Some(None -> _) => None
+    synchronized(files.get(fileId)).flatMap {
+      case Some(current) -> _  => Some(current.size)
+      case None -> (head +: _) => Some(head.size)
+      case None ->          _  => None
+    }
 
   def addIfMissing(fileId: Long): Boolean = synchronized {
     (!files.contains(fileId)).tap { if _ then files += fileId -> (None, Seq()) }
