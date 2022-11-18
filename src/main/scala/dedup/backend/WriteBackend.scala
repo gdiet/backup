@@ -51,7 +51,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   }
 
   private def dataEntry(fileId: Long): Option[DataEntry] =
-    files.dataEntry(fileId, sync(dataId.andThen(db.logicalSize)))
+    files.dataEntry(fileId, dataId.andThen(db.logicalSize))
 
   override def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
     dataEntry(fileId).map(_.write(data)).isDefined

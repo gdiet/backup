@@ -16,6 +16,8 @@ def readableBytes(l: Long): String =
   else if l < 1000000000000L then "%,.2f GB".format(l/1000000000d)
   else                            "%,.2f TB".format(l/1000000000000d)
 
+extension [T <: AnyRef](t: T) def sync[U](f: T => U): U = t.synchronized(f(t))
+
 class EnsureFailed(reason: String) extends IllegalArgumentException(reason)
 
 def problem(marker: String, warningMessage: => String): Unit =

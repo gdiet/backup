@@ -29,7 +29,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
 
   // *** Tree and meta data operations ***
   
-  override def size(fileEntry: FileEntry): Long = sync { db.logicalSize(fileEntry.dataId) }
+  override def size(fileEntry: FileEntry): Long = db.logicalSize(fileEntry.dataId)
   
   override final def children(parentId: Long): Seq[TreeEntry] = sync { db.children(parentId) }
 
@@ -66,7 +66,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
 
   override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] = {
     sync(files.get(fileId)).map { case (_, dataId) =>
-      val fileSize -> parts = sync(db.logicalSize(dataId) -> db.parts(dataId))
+      val fileSize -> parts = db.logicalSize(dataId) -> sync(db.parts(dataId))
       readFromLts(parts, offset, math.min(requestedSize, fileSize - offset))
     }
   }

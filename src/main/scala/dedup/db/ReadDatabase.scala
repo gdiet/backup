@@ -11,7 +11,7 @@ class ReadDatabase(connection: Connection):
   private val qLogicalSize = prepare("SELECT length FROM DataEntries WHERE id = ? AND seq = 1")
   /** @return the logical file size for the data entry or 0 if there is no matching data entry. */
   def logicalSize(dataId: DataId): Long =
-    qLogicalSize.set(dataId).query(maybe(_.getLong(1))).getOrElse(0)
+    qLogicalSize.sync(_.set(dataId).query(maybe(_.getLong(1))).getOrElse(0))
 
   /** ResultSet: (id, parentId, name, time, dataId) */
   private def treeEntry(rs: ResultSet): TreeEntry =
