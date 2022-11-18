@@ -31,7 +31,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
   
   override def size(fileEntry: FileEntry): Long = db.logicalSize(fileEntry.dataId)
   
-  override final def children(parentId: Long): Seq[TreeEntry] = sync { db.children(parentId) }
+  override final def children(parentId: Long): Seq[TreeEntry] = db.children(parentId)
 
   override final def entry(path: Array[String]): Option[TreeEntry] =
     path.foldLeft(Option[TreeEntry](root)) {

@@ -33,6 +33,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     sync { db.setTime(id, newTime) }
 
   override def deleteChildless(entry: TreeEntry): Boolean =
+    // FIXME synchronize on db create node monitor
     sync { if db.children(entry.id).nonEmpty then false else { db.delete(entry.id); true } }
 
   override def open(fileId: Long, dataId: DataId): Unit = sync {

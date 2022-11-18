@@ -30,9 +30,9 @@ class ReadDatabase(connection: Connection):
     qChild.sync(_.set(parentId, name).query(maybe(treeEntry)))
 
   private val qChildren = prepare(s"$selectTreeEntry WHERE parentId = ? AND deleted = 0")
-  def children(parentId: Long): Seq[TreeEntry] = {
-    qChildren.set(parentId).query(seq(treeEntry))
-  }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
+  def children(parentId: Long): Seq[TreeEntry] =
+    // On linux, empty names don't work, and the root node has itself as child...
+    qChildren.sync(_.set(parentId).query(seq(treeEntry))).filterNot(_.name.isEmpty)
 
   // TODO check whether it would be better to return Area instead of position+size
   private val qParts = prepare("SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC")
