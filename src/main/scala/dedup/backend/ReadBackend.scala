@@ -3,6 +3,7 @@ package backend
 
 import dedup.db.{ReadDatabase, WriteDatabase}
 import dedup.server.{DataSink, Settings}
+import dedup.store.LongTermStore
 import dedup.util.ClassLogging
 import dedup.{DirEntry, FileEntry, TreeEntry}
 
@@ -23,7 +24,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
   /** @throws NoSuchElementException If the file is not open. */
   protected def dataId(fileId: Long): DataId = sync(files(fileId)._2)
 
-  private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
+  protected val lts: LongTermStore = store.LongTermStore(settings.dataDir, settings.readonly)
 
 
   // *** Tree and meta data operations ***

@@ -80,13 +80,13 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
         files.removeAndGetNext(fileId, dataEntry).foreach(enqueue(fileId, newDataId, _))
         dataEntry.close()
 
-      log.warn(s"Write-through for $fileId/$dataId/$dataEntry.") // FIXME remove or so
+      log.warn(s"Write-through for $fileId/$dataId/$dataEntry.") // TODO remove or so
       if dataEntry.size == 0 then
         // If data entry size is zero, explicitly set dataId -1 because it might have contained something else.
         db.setDataId(fileId, DataId(-1))
         removeAndQueueNext(DataId(-1))
 
-      else // FIXME make trace
+      else // TODO make trace
         log.warn(s"ID $fileId - persisting data entry, size ${dataEntry.size} / base data id $dataId.")
         val ltsParts = db.parts(dataId)
         def data: Iterator[(Long, Array[Byte])] = dataEntry.read(0, dataEntry.size).flatMap {
@@ -108,8 +108,8 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
           case None =>
             // Reserve storage space
             val reserved = freeAreas.reserve(dataEntry.size)
-            // Write to storage - FIXME
-//            Level2.writeAlgorithm(data, reserved, lts.write)
+            // Write to storage
+            WriteBackend.writeAlgorithm(data, reserved, lts.write)
             // Save data entries
             val dataId = db.newDataIdFor(fileId)
             reserved.zipWithIndex.foreach { case (dataArea, index) =>
@@ -119,3 +119,24 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
             log.trace(s"Persisted $fileId - new content, dataId $dataId")
             removeAndQueueNext(dataId)
     } catch (e: Throwable) => { log.error(s"Persisting $fileId failed: $dataEntry", e); throw e })
+
+object WriteBackend:
+  // TODO check if needed...
+  def cacheLoad: Long = entriesSize.get() * entryCount.get()
+  private val entryCount = new AtomicLong()
+  private val entriesSize = new AtomicLong()
+
+  def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
+    @annotation.tailrec
+    def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
+      ensure("write.algorithm.1", areas.nonEmpty, s"Remaining data areas are empty, data size ${data.length}")
+      val head +: rest = areas: @unchecked // TODO Can we prove that areas is nonempty? Do we need the ensure above?
+      if head.size == data.length then { write(head.start, data); rest }
+      else if head.size > data.length then { write(head.start, data); head.drop(data.length) +: rest }
+      else
+        val intSize = head.size.toInt // always smaller than MaxInt, see above "if head.size > data.length"
+        write(head.start, data.take(intSize))
+        doStore(rest, data.drop(intSize))
+
+    val remaining = data.foldLeft(toAreas) { case (storeAt, (_, bytes)) => doStore(storeAt, bytes) }
+    ensure("write.algorithm.2", remaining.isEmpty, s"Remaining data areas not empty: $remaining")
