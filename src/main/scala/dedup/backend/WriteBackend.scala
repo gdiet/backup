@@ -80,14 +80,14 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
         files.removeAndGetNext(fileId, dataEntry).foreach(enqueue(fileId, newDataId, _))
         dataEntry.close()
 
-      log.warn(s"Write-through for $fileId/$dataId/$dataEntry.") // TODO remove or so
+      log.trace(s"Write through file $fileId / data ID $dataId / size ${dataEntry.size}.")
       if dataEntry.size == 0 then
         // If data entry size is zero, explicitly set dataId -1 because it might have contained something else.
         db.setDataId(fileId, DataId(-1))
         removeAndQueueNext(DataId(-1))
 
-      else // TODO make trace
-        log.warn(s"ID $fileId - persisting data entry, size ${dataEntry.size} / base data id $dataId.")
+      else
+        log.trace (s"File $fileId - persisting data entry / size ${dataEntry.size} / base data id $dataId.")
         val ltsParts = db.parts(dataId)
         def data: Iterator[(Long, Array[Byte])] = dataEntry.read(0, dataEntry.size).flatMap {
           case position -> Right(data) => Iterator(position -> data)

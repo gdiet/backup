@@ -26,7 +26,7 @@ class FileHandlesWrite(settings: Settings) extends ClassLogging:
     files.get(fileId).map {
       case (Some(current), _) => current
       case (None, storing) =>
-        log.info(s"Creating write cache for $fileId.") // FIXME trace or remove
+        log.trace(s"Creating write cache for $fileId.")
         val initialSize = storing.headOption.map(_.size).getOrElse(sizeInDb(fileId))
         DataEntry(dataSeq, initialSize, settings.tempPath)
           .tap(entry => files += fileId -> (Some(entry), storing))
