@@ -16,7 +16,7 @@ class FileHandlesWrite(settings: Settings) extends ClassLogging:
       case None => log.error(s"Missing write handle contents for file id $fileId."); None
       case Some(Some(current) -> _) => Some(current.size)
       case Some(None -> (head +: _)) => Some(head.size)
-      case Some(None -> Seq()) => None
+      case Some(None -> _) => None
 
   def addIfMissing(fileId: Long): Boolean = synchronized {
     !files.contains(fileId).tap { if _ then files += fileId -> (None, Seq()) }
