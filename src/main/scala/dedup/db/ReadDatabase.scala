@@ -14,7 +14,7 @@ class ReadDatabase(connection: Connection):
     qLogicalSize.set(dataId).query(maybe(_.getLong(1))).getOrElse(0)
 
   /** ResultSet: (id, parentId, name, time, dataId) */
-  def treeEntry(rs: ResultSet): TreeEntry =
+  private def treeEntry(rs: ResultSet): TreeEntry =
     TreeEntry(
       rs.getLong("id"),
       rs.getLong("parentId"),
