@@ -35,10 +35,9 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   override def deleteChildless(entry: TreeEntry): Boolean =
     db.deleteChildless(entry.id)
 
-  override def open(fileId: Long, dataId: DataId): Unit = sync {
+  override def open(fileId: Long, dataId: DataId): Unit =
     super.open(fileId, dataId)
     files.addIfMissing(fileId)
-  }
 
   override def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] =
     // A sensible Option.tapEach might be available in future Scala versions, see
@@ -76,7 +75,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
       case Some(_ -> dataId) => files.release(fileId).foreach(enqueue(fileId, dataId, _)); true
 
   private def enqueue(fileId: Long, dataId: DataId, dataEntry: DataEntry): Unit =
-    singleThreadStoreContext.execute(() => try { // TODO do we need db.sync here???
+    singleThreadStoreContext.execute(() => try {
       def removeAndQueueNext(newDataId: DataId): Unit =
         files.removeAndGetNext(fileId, dataEntry).foreach(enqueue(fileId, newDataId, _))
         dataEntry.close()

@@ -20,9 +20,8 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
   /** file id -> (handle count, data id). Remember to synchronize. */
   private var files = Map[Long, (Int, DataId)]()
 
-  /** Use synchronized.
-    * @throws NoSuchElementException If the file is not open. */
-  protected def dataId(fileId: Long): DataId = files(fileId)._2
+  /** @throws NoSuchElementException If the file is not open. */
+  protected def dataId(fileId: Long): DataId = sync(files(fileId)._2)
 
   private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
 
