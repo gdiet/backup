@@ -5,24 +5,19 @@ import java.sql.{Connection, Statement, Types}
 import scala.util.Try
 import scala.util.Using.resource
 
-/** The methods of this class are not thread safe. */
-// Why not? Because prepared statements are stateful. Synchronize externally as needed.
 final class WriteDatabase(connection: Connection) extends ReadDatabase(connection) with util.ClassLogging:
   import connection.prepareStatement as prepare
 
-  def statement[T](f: Statement => T): T = resource(connection.createStatement())(f)
+  private def statement[T](f: Statement => T): T = resource(connection.createStatement())(f)
 
   def shutdownCompact(): Unit =
     log.info("Compacting database...")
     statement(_.execute("SHUTDOWN COMPACT"))
 
   // Start: Pure read methods that are only used in the write backend
-  private val qDataEntry = prepare(
-    "SELECT id FROM DataEntries WHERE hash = ? AND length = ?"
-  )
-  def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = synchronized {
-    qDataEntry.set(hash, size).query(maybe(r => DataId(r.getLong(1))))
-  }
+  private val qDataEntry = prepare("SELECT id FROM DataEntries WHERE hash = ? AND length = ?")
+  def dataEntry(hash: Array[Byte], size: Long): Option[DataId] =
+    qDataEntry.sync(_.set(hash, size).query(maybe(r => DataId(r.getLong(1)))))
 
   /* The starts and stops of the contiguous data areas can be read like this:
      SELECT b1.start FROM DataEntries b1 LEFT JOIN DataEntries b2
@@ -58,11 +53,13 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     }
   // End: Pure read methods that are only used in the write backend
 
+  /** Synchronization monitor used to avoid that tree entries with children are deleted. */
   private object TreeStructureMonitor
   private def structureSync[T](f: => T): T = TreeStructureMonitor.synchronized(f)
 
   private val iDir = prepare(
-    "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", Statement.RETURN_GENERATED_KEYS
+    "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)",
+    Statement.RETURN_GENERATED_KEYS
   )
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = Try(structureSync {
@@ -87,12 +84,12 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
   private val uTime = prepare("UPDATE TreeEntries SET time = ? WHERE id = ?")
   /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs. */
   def setTime(id: Long, newTime: Long): Unit =
-    val count = uTime.set(newTime, id).executeUpdate()
+    val count = uTime.sync(_.set(newTime, id).executeUpdate())
     ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
 
   private val uDataId = prepare("UPDATE TreeEntries SET dataId = ? WHERE id = ?")
   def setDataId(id: Long, dataId: DataId): Unit = synchronized {
-    val count = uDataId.set(dataId, id).executeUpdate()
+    val count = uDataId.sync(_.set(dataId, id).executeUpdate())
     ensure("db.set.dataid", count == 1, s"setDataId update count is $count and not 1 for id $id dataId $dataId")
   }
 
@@ -116,5 +113,5 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     ensure("db.add.data.entry.1", seq > 0, s"seq not positive: $seq")
     val sqlLength: Long | SqlNull = if seq == 1 then length else SqlNull(Types.BIGINT)
     val sqlHash: Array[Byte] | SqlNull = if seq == 1 then hash else SqlNull(Types.BINARY)
-    val count = iDataEntry.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate()
+    val count = iDataEntry.sync(_.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate())
     ensure("db.add.data.entry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")

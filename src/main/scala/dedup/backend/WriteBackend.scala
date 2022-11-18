@@ -30,7 +30,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     db.mkDir(parentId, name)
 
   override def setTime(id: Long, newTime: Long): Unit =
-    sync { db.setTime(id, newTime) }
+    db.setTime(id, newTime)
 
   override def deleteChildless(entry: TreeEntry): Boolean =
     db.deleteChildless(entry.id)
@@ -84,7 +84,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
       log.warn(s"Write-through for $fileId/$dataId/$dataEntry.") // FIXME remove or so
       if dataEntry.size == 0 then
         // If data entry size is zero, explicitly set dataId -1 because it might have contained something else.
-        sync(db.setDataId(fileId, DataId(-1)))
+        db.setDataId(fileId, DataId(-1))
         removeAndQueueNext(DataId(-1))
 
       else // FIXME make trace
@@ -99,10 +99,10 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
         data.foreach(entry => md.update(entry._2))
         val hash = md.digest()
         // Check if already known
-        sync(db.dataEntry(hash, dataEntry.size)) match
+        db.dataEntry(hash, dataEntry.size) match
           // Already known, simply link
           case Some(dataId) =>
-            sync(db.setDataId(fileId, dataId))
+            db.setDataId(fileId, dataId)
             log.trace(s"Persisted $fileId - content known, linking to dataId $dataId")
             removeAndQueueNext(dataId)
           // Not yet known, store ...
@@ -112,7 +112,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
             // Write to storage - FIXME
 //            Level2.writeAlgorithm(data, reserved, lts.write)
             // Save data entries
-            val dataId = sync(db.newDataIdFor(fileId))
+            val dataId = db.newDataIdFor(fileId)
             reserved.zipWithIndex.foreach { case (dataArea, index) =>
               log.debug(s"Data ID $dataId size ${dataEntry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
               db.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
