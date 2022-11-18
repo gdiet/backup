@@ -35,7 +35,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
 
   override final def entry(path: Array[String]): Option[TreeEntry] =
     path.foldLeft(Option[TreeEntry](root)) {
-      case (Some(dir: DirEntry), name) => sync { db.child(dir.id, name) }
+      case (Some(dir: DirEntry), name) => db.child(dir.id, name)
       case _ => None
     }
 

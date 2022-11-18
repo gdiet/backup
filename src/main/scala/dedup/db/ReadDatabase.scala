@@ -26,9 +26,8 @@ class ReadDatabase(connection: Connection):
   private val selectTreeEntry = "SELECT id, parentId, name, time, dataId FROM TreeEntries"
 
   private val qChild = prepare(s"$selectTreeEntry WHERE parentId = ? AND name = ? AND deleted = 0")
-  def child(parentId: Long, name: String): Option[TreeEntry] = {
-    qChild.set(parentId, name).query(maybe(treeEntry))
-  }
+  def child(parentId: Long, name: String): Option[TreeEntry] =
+    qChild.sync(_.set(parentId, name).query(maybe(treeEntry)))
 
   private val qChildren = prepare(s"$selectTreeEntry WHERE parentId = ? AND deleted = 0")
   def children(parentId: Long): Seq[TreeEntry] = {
