@@ -19,7 +19,7 @@ class FileHandlesWrite(settings: Settings) extends ClassLogging:
       case Some(None -> _) => None
 
   def addIfMissing(fileId: Long): Boolean = synchronized {
-    !files.contains(fileId).tap { if _ then files += fileId -> (None, Seq()) }
+    (!files.contains(fileId)).tap { if _ then files += fileId -> (None, Seq()) }
   }
 
   def dataEntry(fileId: Long, sizeInDb: Long => Long): Option[DataEntry] = synchronized {
