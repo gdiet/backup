@@ -75,12 +75,20 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
       case Some(_ -> dataId) => files.release(fileId).foreach(enqueue(fileId, dataId, _)); true
 
   private def enqueue(fileId: Long, dataId: DataId, dataEntry: DataEntry): Unit =
+    WriteBackend.entryCount.incrementAndGet()
+    WriteBackend.entriesSize.addAndGet(dataEntry.size)
+    log.trace(s"Write cache load: ${WriteBackend.entryCount}*${WriteBackend.entriesSize}")
+
     singleThreadStoreContext.execute(() => try {
+
       def removeAndQueueNext(newDataId: DataId): Unit =
         files.removeAndGetNext(fileId, dataEntry).foreach(enqueue(fileId, newDataId, _))
         dataEntry.close()
+        WriteBackend.entryCount.decrementAndGet()
+        WriteBackend.entriesSize.addAndGet(-dataEntry.size)
 
       log.trace(s"Write through file $fileId / data ID $dataId / size ${dataEntry.size}.")
+
       if dataEntry.size == 0 then
         // If data entry size is zero, explicitly set dataId -1 because it might have contained something else.
         db.setDataId(fileId, DataId(-1))
@@ -121,7 +129,6 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     } catch (e: Throwable) => { log.error(s"Persisting $fileId failed: $dataEntry", e); throw e })
 
 object WriteBackend:
-  // TODO check if needed...
   def cacheLoad: Long = entriesSize.get() * entryCount.get()
   private val entryCount = new AtomicLong()
   private val entriesSize = new AtomicLong()

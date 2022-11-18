@@ -14,7 +14,7 @@ class DataEntry(idSeq: AtomicLong, initialSize: Long, tempDir: Path) extends Cla
   private val path      = tempDir.resolve(s"$id")
   private val cache     = WriteCache(MemCache.availableMem, path, initialSize) // TODO eventually try to remove the available constructor arg
 //  private val isOpen    = CountDownLatch(1)
-  private def cacheLoad = 0L // FIXME Level2.cacheLoad
+  private def cacheLoad = WriteBackend.cacheLoad
 
   def size: Long       = synchronized { cache.size    }
   def written: Boolean = synchronized { cache.written }
