@@ -4,7 +4,7 @@ package backend
 import dedup.db.WriteDatabase
 import dedup.server.Settings
 
-import java.util.concurrent.Executors
+import java.util.concurrent.{Executors, TimeUnit}
 import java.util.concurrent.atomic.AtomicLong
 import scala.concurrent.ExecutionContext
 
@@ -18,7 +18,12 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   private val singleThreadStoreContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
   override def shutdown(): Unit = sync {
-    // FIXME Write the cache before closing
+    // Enqueue open files for writing.
+    files.shutdown().foreach(files.release(_).foreach(enqueue(fileId, dataId, _)))
+    // Finish pending writes.
+    singleThreadStoreContext.shutdown()
+    singleThreadStoreContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
+    // Clean up.
     db.shutdownCompact()
     super.shutdown()
   }

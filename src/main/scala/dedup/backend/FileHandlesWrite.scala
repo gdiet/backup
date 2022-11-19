@@ -9,8 +9,16 @@ import java.util.concurrent.atomic.AtomicLong
 class FileHandlesWrite(settings: Settings) extends ClassLogging:
   /** file id -> (current, storing). Remember to synchronize. */
   private var files = Map[Long, (Option[DataEntry], Seq[DataEntry])]()
+  private var closing = false
   private val dataSeq = AtomicLong()
 
+  /** Stop creating new data entries.
+    * @return The file IDs currently handled. */
+  def shutdown(): Iterable[Long] = synchronized {
+    closing = true
+    files.keys
+  }
+  
   def getSize(fileId: Long): Option[Long] =
     synchronized(files.get(fileId)).flatMap {
       case Some(current) -> _  => Some(current.size)
@@ -23,7 +31,7 @@ class FileHandlesWrite(settings: Settings) extends ClassLogging:
   }
 
   def dataEntry(fileId: Long, sizeInDb: Long => Long): Option[DataEntry] = synchronized {
-    files.get(fileId).map {
+    if closing then None else files.get(fileId).map {
       case (Some(current), _) => current
       case (None, storing) =>
         log.trace(s"Creating write cache for $fileId.")

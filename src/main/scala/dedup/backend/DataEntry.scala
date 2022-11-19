@@ -13,8 +13,6 @@ class DataEntry(idSeq: AtomicLong, initialSize: Long, tempDir: Path) extends Cla
   private val id        = idSeq.incrementAndGet()
   private val path      = tempDir.resolve(s"$id")
   private val cache     = WriteCache(MemCache.availableMem, path, initialSize) // TODO eventually try to remove the available constructor arg
-  // FIXME is needed?
-  // private val isOpen    = CountDownLatch(1)
   private def cacheLoad = WriteBackend.cacheLoad
 
   def size: Long       = synchronized { cache.size    }
@@ -52,9 +50,4 @@ class DataEntry(idSeq: AtomicLong, initialSize: Long, tempDir: Path) extends Cla
 
   def close(): Unit = synchronized {
     cache.close()
-    // FIXME is needed?
-    // isOpen.countDown()
   }
-
-  // FIXME is needed?
-  // def awaitClosed(): Unit = isOpen.await()
