@@ -40,6 +40,8 @@ trait Backend:
   def size(fileEntry: FileEntry): Long
   /** @return The child entries of the tree entry. */
   def children(parentId: Long): Seq[TreeEntry]
+  /** @return The named child entry of the tree entry. */
+  def child(parentId: Long, name: String): Option[TreeEntry]
 
   /** @return Some(fileId) or None if a child entry with the same name already exists. */
   def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = readOnly

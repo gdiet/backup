@@ -33,6 +33,8 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
   
   override final def children(parentId: Long): Seq[TreeEntry] = db.children(parentId)
 
+  override final def child(parentId: Long, name: String): Option[TreeEntry] = db.child(parentId, name)
+  
   override final def entry(path: Array[String]): Option[TreeEntry] =
     path.foldLeft(Option[TreeEntry](root)) {
       case (Some(dir: DirEntry), name) => db.child(dir.id, name)
