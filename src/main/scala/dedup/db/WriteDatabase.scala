@@ -63,7 +63,7 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
   )
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = Try(structureSync {
-    // Name conflict triggers SQL exception due to unique constraint.
+    // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
     val count = iDir.set(parentId, name, now).executeUpdate()
     ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
@@ -75,7 +75,8 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
   )
   /** @return `Some(id)` or [[None]] if a child entry with the same name already exists. */
   def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] = Try(structureSync {
-    // Name conflict triggers SQL exception due to unique constraint.
+    // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
+    // TODO ensure by testing, also that missing parent triggers exception
     val count = iFile.set(parentId, name, time, dataId).executeUpdate()
     ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
     iFile.getGeneratedKeys.tap(_.next()).getLong("id")
@@ -93,10 +94,17 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     ensure("db.set.dataid", count == 1, s"setDataId update count is $count and not 1 for id $id dataId $dataId")
   }
 
+  private val uRenameMove = prepare("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?")
+  def renameMove(id: Long, newParentId: Long, newName: String): Boolean = Try(structureSync {
+    require(newName.nonEmpty, "Can't rename to an empty name.")
+    // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
+    uRenameMove.set(newParentId, newName, id).executeUpdate() == 1
+  }).getOrElse(false)
+
   private val dTreeEntry = prepare("UPDATE TreeEntries SET deleted = ? WHERE id = ?")
   /** Deletes a tree entry. Should be called only for existing entry IDs.
     * @return `false` if the tree entry has children. */
-  def deleteChildless(id: Long): Boolean = structureSync {
+  def deleteChildless(id: Long): Boolean = structureSync { // TODO with foreign key relationship, check for exception instead?
     if children(id).nonEmpty then false else
       val count = dTreeEntry.set(now.nonZero, id).executeUpdate()
       ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")

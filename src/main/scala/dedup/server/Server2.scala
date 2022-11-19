@@ -106,20 +106,18 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
               case (_, previous) =>
                 // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
                 // replace operation is not atomic. This is tolerated in order to simplify the code.
-                ???
-//                if !previous.forall(backend.deleteChildless) then ENOTEMPTY
-//                else if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
-//                  def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match
-//                    case file: FileEntry =>
-//                      backend.copyFile(file, newParentId, newName)
-//                    case dir: DirEntry =>
-//                      backend.mkDir(newParentId, newName)
-//                        .exists(dirId => backend.children(dir.id).forall(child => copy(child, child.name, dirId)))
-//
-//                  if (copy(origin, newName, targetDir.id)) OK else EEXIST
-//                else
-//                  backend.update(origin.id, targetDir.id, newName)
-//                  OK
+                if !previous.forall(backend.deleteChildless) then ENOTEMPTY
+                else if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
+                  def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match
+                    case file: FileEntry =>
+                      backend.copyFile(file, newParentId, newName)
+                    case dir: DirEntry =>
+                      backend.mkDir(newParentId, newName)
+                        .exists(dirId => backend.children(dir.id).forall(child => copy(child, child.name, dirId)))
+
+                  if (copy(origin, newName, targetDir.id)) OK else EEXIST
+                else
+                  if backend.renameMove(origin.id, targetDir.id, newName) then OK else EEXIST
   }
 
   override def rmdir(path: String): Int = fs("rmdir $path") {

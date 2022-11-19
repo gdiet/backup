@@ -43,12 +43,16 @@ trait Backend:
   /** @return The named child entry of the tree entry. */
   def child(parentId: Long, name: String): Option[TreeEntry]
 
-  /** @return Some(fileId) or None if a child entry with the same name already exists. */
-  def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = readOnly
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = readOnly
+  /** @return Some(fileId) or None if a child entry with the same name already exists. */
+  def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = readOnly
+  /** Creates a copy of the file's last persisted state without current modifications. */
+  def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean = readOnly
   /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs. */
   def setTime(id: Long, newTime: Long): Unit = readOnly
+  /** @return `true` if setting new name and parent for the tree entry succeeded. */
+  def renameMove(id: Long, newParentId: Long, newName: String): Boolean = readOnly
   /** Deletes a tree entry unless it has children. Should be called only for existing entry IDs.
     * @return [[false]] if the tree entry has children. */
   def deleteChildless(entry: TreeEntry): Boolean = readOnly

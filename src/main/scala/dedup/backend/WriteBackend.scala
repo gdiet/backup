@@ -53,6 +53,9 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
       if !files.addIfMissing(fileId) then log.error(s"File handle (write) was already present for file $fileId.")
     })
 
+  override def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean =
+    db.mkFile(newParentId, newName, file.time, file.dataId).isDefined
+
   private def dataEntry(fileId: Long): Option[DataEntry] =
     files.dataEntry(fileId, dataId.andThen(db.logicalSize))
 
