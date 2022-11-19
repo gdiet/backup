@@ -12,7 +12,7 @@ import java.util.concurrent.atomic.AtomicLong
 class DataEntry(idSeq: AtomicLong, initialSize: Long, tempDir: Path) extends ClassLogging:
   private val id        = idSeq.incrementAndGet()
   private val path      = tempDir.resolve(s"$id")
-  private val cache     = WriteCache(MemCache.availableMem, path, initialSize) // TODO eventually try to remove the available constructor arg
+  private val cache     = WriteCache(path, initialSize)
   private def cacheLoad = WriteBackend.cacheLoad
 
   def size: Long       = synchronized { cache.size    }

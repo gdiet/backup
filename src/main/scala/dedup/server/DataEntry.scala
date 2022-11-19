@@ -19,7 +19,7 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
   log.trace(s"Create $id with base data ID $baseDataId.")
 
   private val path   = tempDir.resolve(s"$id")
-  private val cache  = WriteCache(MemCache.availableMem, path, initialSize)
+  private val cache  = WriteCache(path, initialSize)
   private val isOpen = CountDownLatch(1)
 
   def written: Boolean = synchronized(cache.written)
