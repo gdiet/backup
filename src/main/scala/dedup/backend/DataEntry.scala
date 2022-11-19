@@ -5,7 +5,6 @@ import dedup.cache.{MemCache, WriteCache}
 import dedup.util.ClassLogging
 
 import java.nio.file.Path
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicLong
 
 /** Handler for the mutable contents of a virtual file. Does not need external synchronization. */
