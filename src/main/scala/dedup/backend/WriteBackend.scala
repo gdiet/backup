@@ -19,7 +19,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
 
   override def shutdown(): Unit = sync {
     // Enqueue open files for writing.
-    files.shutdown().foreach(files.release(_).foreach(enqueue(fileId, dataId, _)))
+    files.shutdown().foreach { fileId => while release(fileId) do {} }
     // Finish pending writes.
     singleThreadStoreContext.shutdown()
     singleThreadStoreContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
