@@ -14,7 +14,8 @@ import scala.collection.immutable.LazyList
 class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with ClassLogging:
 
   override def shutdown(): Unit = sync {
-    if files.nonEmpty then log.warn(s"Still ${files.size} open file handles when unmounting the file system.")
+    // On Windows, it's sort of normal to still have read file handles open when shutting down the file system.
+    if files.nonEmpty then log.info(s"Still ${files.size} open read handles when unmounting the file system.")
     lts.close()
   }
 
@@ -44,6 +45,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
   // *** File content operations ***
 
   def open(fileId: Long, dataId: DataId): Unit = sync {
+    log.info(s"Open: $fileId, $dataId - $files") // FIXME
     files += fileId -> (files.get(fileId) match
       case None => 1 -> dataId
       case Some(count -> knownDataId) =>

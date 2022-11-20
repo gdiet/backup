@@ -13,10 +13,11 @@ class FileHandlesWrite(settings: Settings) extends ClassLogging:
   private val dataSeq = AtomicLong()
 
   /** Stop creating new data entries.
-    * @return The file IDs currently handled. */
-  def shutdown(): Iterable[Long] = synchronized {
+    * @return The entries containing an open data entry. */
+  def shutdown(): Map[Long, DataEntry] = synchronized {
+    log.info(s"shutdown - $files") // FIXME debug
     closing = true
-    files.keys
+    files.collect { case fileId -> (Some(current), _) => fileId -> current }
   }
   
   def getSize(fileId: Long): Option[Long] =
@@ -64,6 +65,7 @@ class FileHandlesWrite(settings: Settings) extends ClassLogging:
 
   /** @return The data entry to enqueue for storing. */
   def release(fileId: Long): Option[DataEntry] = synchronized {
+    log.info(s"release handles - $fileId - $files") // FIXME trace
     files.get(fileId) match
       case Some(Some(current) -> storing) =>
         files += fileId -> (None, current +: storing)

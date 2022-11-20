@@ -19,7 +19,16 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
 
   override def shutdown(): Unit = sync {
     // Enqueue open files for writing.
-    files.shutdown().foreach { fileId => while release(fileId) do {} }
+    val openWriteHandles = files.shutdown()
+    if openWriteHandles.nonEmpty then
+      log.warn(s"Still ${openWriteHandles.size} open write handles when unmounting the file system.")
+    openWriteHandles.foreach { case fileId -> dataEntry => // Get data entry that need to be enqueued.
+      releaseInternal(fileId) match // Get read handle for data entry.
+        case None => log.error(s"No read handle for file $fileId - data loss!")
+        case Some(count -> dataId) =>
+          for _ <- 1 to count do releaseInternal(fileId) // Fully release read handle.
+          enqueue(fileId, dataId, dataEntry) // Enqueue open data entry.
+    }
     // Finish pending writes.
     singleThreadStoreContext.shutdown()
     singleThreadStoreContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS)
@@ -77,6 +86,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     })
 
   override def release(fileId: Long): Boolean =
+    log.info(s"release write - $fileId") // FIXME trace
     releaseInternal(fileId) match
       case None => false // warning is logged in releaseInternal
       case Some(count -> _) if count > 0 => true // still some handles open for the file
