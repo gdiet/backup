@@ -79,7 +79,8 @@ class FileHandlesWrite(settings: Settings) extends ClassLogging:
         problem("WriteHandle.removeAndGetNext", s"Missing file handle (write) for file $fileId.")
         None
       case Some((current, others :+ `dataEntry`)) =>
-        files += fileId -> (current, others)
+        if others.isEmpty && current.isEmpty then files -= fileId
+        else files += fileId -> (current, others)
         others.lastOption
       case Some((_, others)) =>
         problem("WriteHandle.removeAndGetNext", s"Previous DataEntry not found for file $fileId.")
