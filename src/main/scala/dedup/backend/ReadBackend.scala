@@ -15,7 +15,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
 
   override def shutdown(): Unit = sync {
     // On Windows, it's sort of normal to still have read file handles open when shutting down the file system.
-    if files.nonEmpty then log.info(s"Still ${files.size} open read handles when unmounting the file system.")
+    if files.nonEmpty then log.debug(s"Still ${files.size} open read handles when unmounting the file system.")
     lts.close()
   }
 
