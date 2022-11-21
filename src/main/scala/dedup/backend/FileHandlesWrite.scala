@@ -1,12 +1,12 @@
 package dedup
 package backend
 
-import dedup.server.Settings
 import dedup.util.ClassLogging
 
+import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
 
-class FileHandlesWrite(settings: Settings) extends ClassLogging:
+class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   /** file id -> (current, storing). Remember to synchronize. */
   private var files = Map[Long, (Option[DataEntry], Seq[DataEntry])]()
   private var closing = false
@@ -37,7 +37,7 @@ class FileHandlesWrite(settings: Settings) extends ClassLogging:
       case (None, storing) =>
         log.trace(s"Creating write cache for $fileId.")
         val initialSize = storing.headOption.map(_.size).getOrElse(sizeInDb(fileId))
-        DataEntry(dataSeq, initialSize, settings.tempPath)
+        DataEntry(dataSeq, initialSize, tempPath)
           .tap(entry => files += fileId -> (Some(entry), storing))
     }
   }

@@ -13,7 +13,7 @@ import scala.concurrent.ExecutionContext
 final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBackend(settings, db):
 
   private val freeAreas = server.FreeAreas(db.freeAreas())
-  private val files = FileHandlesWrite(settings)
+  private val files = FileHandlesWrite(settings.tempPath)
   /** Store logic relies on this being a single thread executor. */
   private val singleThreadStoreContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
