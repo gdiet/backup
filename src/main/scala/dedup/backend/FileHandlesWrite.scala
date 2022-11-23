@@ -6,18 +6,31 @@ import dedup.util.ClassLogging
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
 
+/** As long as a file is open, the [[WriteBackend]] caches all writes to that file in a [[DataEntry]]. [[DataEntry]]
+  * instances are created on demand only, because they need two database reads - for read-only access to files, those
+  * two reads can be spared. This means that the "current" part of a write file handle is an [[Option]]([[DataEntry]]).
+  * When the last handle to a file is released, any written data (i.e., if a "current" [[DataEntry]] is present) needs
+  * to be queued for persisting. This is a queue, because persisting might take some time, and in the meanwhile another
+  * open-write-release cycle may have happened that - to avoid conflicts - must not be persisted before the previous
+  * is persist process finished.
+  *
+  * A single instance of this class is used by the [[WriteBackend]] to manage the write file handles. */
 class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   /** file id -> (current, storing). Remember to synchronize. */
   private var files = Map[Long, (Option[DataEntry], Seq[DataEntry])]()
   private var closing = false
   private val dataSeq = AtomicLong()
 
-  /** Stop creating new data entries.
-    * @return The entries containing an open data entry. */
-  def shutdown(): Map[Long, DataEntry] = synchronized {
+  /** Stop creating new data entries. [[release]] all "current" data entries.
+    * @return The results of [[release]]. For all of them, the read handles need to be released, and if a [[DataEntry]]
+    *         is provided, it must be enqueued for persisting. */
+  def shutdown(): Map[Long, Option[DataEntry]] = synchronized {
     log.info(s"shutdown - $files") // FIXME debug
     closing = true
-    files.collect { case fileId -> (Some(current), _) => fileId -> current }
+    val openWriteHandles = files.collect { case (fileId, Some(_) -> _) => fileId -> release(fileId) }
+    if openWriteHandles.nonEmpty then
+      log.warn(s"Still ${openWriteHandles.size} open write handles when unmounting the file system.")
+    openWriteHandles
   }
 
   /** @return The size of the file handle, [[None]] if handle is missing or empty. */

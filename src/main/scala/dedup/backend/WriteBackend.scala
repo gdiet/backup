@@ -18,16 +18,15 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   private val singleThreadStoreContext = ExecutionContext.fromExecutorService(Executors.newSingleThreadExecutor())
 
   override def shutdown(): Unit = sync {
-    // Enqueue open files for writing.
-    val openWriteHandles = files.shutdown()
-    if openWriteHandles.nonEmpty then
-      log.warn(s"Still ${openWriteHandles.size} open write handles when unmounting the file system.")
-    openWriteHandles.foreach { case fileId -> dataEntry => // Get data entry that need to be enqueued.
-      releaseInternal(fileId) match // Get read handle for data entry.
-        case None => log.error(s"No read handle for file $fileId - data loss!")
+    // Stop creating new write handles and process existing write handles.
+    files.shutdown().foreach { case fileId -> maybeDataEntry =>
+      releaseInternal(fileId) match // Get read handle for the file.
+        case None => if maybeDataEntry.isDefined
+          then log.error(s"No read handle for file $fileId although new data was written - data loss!")
+          else log.warn(s"No read handle for file $fileId although write handle was present.")
         case Some(count -> dataId) =>
           for _ <- 1 to count do releaseInternal(fileId) // Fully release read handle.
-          enqueue(fileId, dataId, dataEntry) // Enqueue open data entry.
+          maybeDataEntry.foreach(enqueue(fileId, dataId, _)) // If necessary, enqueue open data entry.
     }
     // Finish pending writes.
     singleThreadStoreContext.shutdown()
