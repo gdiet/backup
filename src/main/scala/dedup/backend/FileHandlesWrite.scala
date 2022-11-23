@@ -20,7 +20,7 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
     files.collect { case fileId -> (Some(current), _) => fileId -> current }
   }
 
-  /** @return The size of the file handle, [[None]] if missing or empty. */
+  /** @return The size of the file handle, [[None]] if handle is missing or empty. */
   def getSize(fileId: Long): Option[Long] =
     synchronized(files.get(fileId)).flatMap {
       case Some(current) -> _  => Some(current.size)
@@ -28,13 +28,13 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
       case None ->          _  => None
     }
 
-  /** Create and add empty handle if missing
+  /** Create and add empty handle if missing.
     * @return `true` if added, `false` if already present. */
   def addIfMissing(fileId: Long): Boolean = synchronized {
     (!files.contains(fileId)).tap { if _ then files += fileId -> (None, Seq()) }
   }
 
-  /** @return The current data entry of the handle, creating it if missing, but not creating missing handles. */
+  /** @return The data entry (created if missing) of the handle, [[None]] if handle is missing. */
   def dataEntry(fileId: Long, sizeInDb: Long => Long): Option[DataEntry] = synchronized {
     if closing then None else files.get(fileId).map {
       case (Some(current), _) => current
@@ -46,6 +46,7 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
     }
   }
 
+  /** @return [[None]] if handle is missing. */
   def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Either[Long, Array[Byte]])]] =
     synchronized(files.get(fileId)).map { case current -> storing =>
       // read data from current if defined
@@ -67,7 +68,8 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
           case other => Iterator(other)
         }
 
-  /** @return The data entry to enqueue for storing. */
+  /** Move the current data entry to the storing queue, returning it if the storing queue was empty before.
+    * @return The data entry if the storing queue was empty, so the data entry needs to be enqueued immediately. */
   def release(fileId: Long): Option[DataEntry] = synchronized {
     log.info(s"release handles - $fileId - $files") // FIXME trace
     files.get(fileId) match
@@ -82,13 +84,13 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   def removeAndGetNext(fileId: Long, dataEntry: DataEntry): Option[DataEntry] = synchronized {
     files.get(fileId) match
       case None =>
-        problem("WriteHandle.removeAndGetNext", s"Missing file handle (write) for file $fileId.")
+        problem("WriteHandle.removeAndGetNext.missing", s"Missing file handle (write) for file $fileId.")
         None
       case Some((current, others :+ `dataEntry`)) =>
         if others.isEmpty && current.isEmpty then files -= fileId
         else files += fileId -> (current, others)
         others.lastOption
       case Some((_, others)) =>
-        problem("WriteHandle.removeAndGetNext", s"Previous DataEntry not found for file $fileId.")
+        problem("WriteHandle.removeAndGetNext.mismatch", s"Previous DataEntry not found for file $fileId.")
         others.lastOption
   }

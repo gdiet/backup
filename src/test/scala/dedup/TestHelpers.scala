@@ -12,6 +12,10 @@ def delete(file: File): Unit =
 
 def !!! : Nothing = throw new Exception("Should not be reached in test.")
 
+def suppressing[T](marker: String)(f: => T): T =
+  try { sys.props.put(s"suppress.$marker", "true"); f }
+  finally sys.props.remove(s"suppress.$marker")
+
 trait TestFile:
   lazy val testFile: File =
     File(sys.props("java.io.tmpdir") + s"/dedupfs-test/${getClass.getTypeName}")
