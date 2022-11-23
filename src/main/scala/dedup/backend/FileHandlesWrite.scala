@@ -19,7 +19,8 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
     closing = true
     files.collect { case fileId -> (Some(current), _) => fileId -> current }
   }
-  
+
+  /** @return The size of the file handle, [[None]] if missing or empty. */
   def getSize(fileId: Long): Option[Long] =
     synchronized(files.get(fileId)).flatMap {
       case Some(current) -> _  => Some(current.size)
@@ -27,10 +28,13 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
       case None ->          _  => None
     }
 
+  /** Create and add empty handle if missing
+    * @return `true` if added, `false` if already present. */
   def addIfMissing(fileId: Long): Boolean = synchronized {
     (!files.contains(fileId)).tap { if _ then files += fileId -> (None, Seq()) }
   }
 
+  /** @return The current data entry of the handle, creating it if missing, but not creating missing handles. */
   def dataEntry(fileId: Long, sizeInDb: Long => Long): Option[DataEntry] = synchronized {
     if closing then None else files.get(fileId).map {
       case (Some(current), _) => current
