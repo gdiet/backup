@@ -21,30 +21,53 @@ class FileHandlesWriteSpec extends org.scalatest.freespec.AnyFreeSpec with TestF
       }
     }
 
-    "addIfMissing(1) returns true because entry 1 is missing" in {
-      assert(handles.addIfMissing(1))
+    "for file hande 1" - {
+      "addIfMissing returns true because entry is missing, then false because it is already present" in {
+        assert(handles.addIfMissing(1))
+        assert(!handles.addIfMissing(1))
+      }
+      "getSize returns None because entry is empty" in {
+        assert(handles.getSize(1) === None)
+      }
+
+      "dataEntry(1, _ => 10) returns a newly created data entry with size 10" in {
+        assert(handles.dataEntry(1, _ => 10).get.size === 10)
+      }
+      def entry = handles.dataEntry(1, _ => !!!).get
+      "dataEntry(1, _ => !!!) returns the existing data entry with size 10" in {
+        assert(entry.size === 10)
+      }
+      "getSize(1) returns 10 because that is the size of entry 1" in {
+        assert(handles.getSize(1) === Some(10))
+      }
+
+      "writing more data to the entry increases the size" in {
+        entry.write(Iterator(10L -> Array[Byte](1,2,3)))
+        assert(handles.getSize(1) === Some(13))
+      }
+
+      "the data can be read" in {
+        handles.read(1, 9, 3).map(_.toList) match
+          case None => assert(false)
+          case Some(9L -> Left(1L) :: 10L -> Right(bytes) :: Nil) => assert(bytes.toSeq == Seq[Byte](1,2))
+          case other => assert(false, s"bad result: $other")
+      }
+
+      "releasing the entry returns the entry because it must be queued explicitly" in {
+        val theEntry = entry
+        assert(handles.release(1) === Some(theEntry))
+      }
+
+      "the entry is queued, so it's size an data is still returned" in {
+        assert(handles.getSize(1) === Some(13))
+      }
+
+      "the data from the queue can be read" in {
+        handles.read(1, 9, 3).map(_.toList) match
+          case None => assert(false)
+          case Some(9L -> Left(1L) :: 10L -> Right(bytes) :: Nil) => assert(bytes.toSeq == Seq[Byte](1, 2))
+          case other => assert(false, s"bad result: $other")
+      }
+
     }
-
-    "addIfMissing(1) returns false because entry 1 is already present" in {
-      assert(!handles.addIfMissing(1))
-    }
-
-    "getSize(1) returns None because entry 1 is empty" in {
-      assert(handles.getSize(1) === None)
-    }
-
-    "dataEntry(1, _ => 10) returns a data entry with size 10" in {
-      assert(handles.dataEntry(1, _ => 10).get.size === 10)
-    }
-
-    "getSize(1) returns 10 because that is the size of entry 1" in {
-      assert(handles.getSize(1) === Some(10))
-    }
-
-    "dataEntry(1, _ => 12) returns the existing data entry with size 10" in {
-      assert(handles.dataEntry(1, _ => !!!).get.size === 10)
-    }
-
-
-//    handles.dataEntry(1, _ => !!!).get.write(Iterator(3L -> Array[Byte](1,2,3)))
   }
