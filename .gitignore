@@ -2,7 +2,7 @@
 log/
 target/
 /dedupfs-*.*
-/OpenJDK*-jre_x64_*
+/OpenJDK17*-jdk_x64_*
 # The repository created when running tryout sessions manually
 /manual/
 # For temporary notes etc.

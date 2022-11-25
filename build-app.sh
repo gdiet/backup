@@ -1,13 +1,14 @@
 #!/bin/bash
 
-# sudo apt --assume-yes install curl jq zip
+# sudo apt --assume-yes install curl jq zip binutils
+# binutils package is needed for jlink
 
 # Read version from git.
 version=$(git log -1 | sed -n 's/commit //p' | sed 1q | cut -b 1-8) || exit 1
 if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi || exit 1
 versionString=$(date +%Y.%m.%d)-$version$clean || exit 1
 
-# Possibly create release version
+# Possibly create release version.
 if [ "$1" ]; then release=$1; else release=$versionString; fi
 echo "building app $versionString as release $release"
 if [ "$1" ]; then
@@ -17,50 +18,73 @@ if [ "$1" ]; then
   echo
 fi
 
-# Fetch JREs if necessary. Find newer releases here: https://adoptium.net/releases.html
-jreFolder=jdk-17.0.5%2B8
-jre=OpenJDK17U-jre_x64_windows_hotspot_17.0.5_8.zip
-if [ ! -f "$jre" ]; then
-  wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jre || exit 1
+# Fetch JDKs if necessary. Find newer releases here: https://adoptium.net/releases.html
+jdkFolder=jdk-17.0.5%2B8
+jdk=OpenJDK17U-jdk_x64_windows_hotspot_17.0.5_8.zip
+if [ ! -f "$jdk" ]; then
+  echo Load the Windows JDK
+  wget -q --show-progress https://github.com/adoptium/temurin17-binaries/releases/download/$jdkFolder/$jdk || exit 1
 fi
-jreLinux=OpenJDK17U-jre_x64_linux_hotspot_17.0.5_8.tar.gz
-if [ ! -f "$jreLinux" ]; then
-  wget https://github.com/adoptium/temurin17-binaries/releases/download/$jreFolder/$jreLinux || exit 1
+jdkLinux=OpenJDK17U-jdk_x64_linux_hotspot_17.0.5_8.tar.gz
+if [ ! -f "$jdkLinux" ]; then
+  echo Load the Linux JDK
+  wget -q --show-progress https://github.com/adoptium/temurin17-binaries/releases/download/$jdkFolder/$jdkLinux || exit 1
 fi
 
 # Delete previous version of app if any.
 rm -rf dedupfs-* ||  exit 1
 
-# Build the app. Note that the JAR file contains the resource files.
-sbt ';clean;update;createApp' || exit 1
+# Note that the JAR file contains the resource files.
+echo Build the app
+sbt ';clean;update;createApp' > /dev/null || exit 1
 
-# unpack JREs to app.
-tar xfz $jreLinux || exit 1
-mv jdk-*-jre target/app/jrex || exit 1
-unzip -q $jre || exit 1
-mv jdk-*-jre target/app/jre || exit 1
+echo Unpack the Linux JDK
+tar xfz $jdkLinux || exit 1
+mv jdk-17.* target/jdk-linux || exit 1
+echo Unpack the Windows JDK
+unzip -q $jdk || exit 1
+mv jdk-17.* target/jdk-windows || exit 1
 
-# Copy license and version file
-cp LICENSE target/app/ || exit 1
-touch "target/app/$versionString.version" || exit 1
+# Create JREs
+echo Collect Java modules information
+modules=$(target/jdk-linux/bin/jdeps --print-module-deps --ignore-missing-deps --recursive --multi-release 17 --class-path="target/app/lib/*" --module-path="target/app/lib/*" target/app/lib/dedupfs_3-current.jar)
+echo Build the minified Linux JRE
+target/jdk-linux/bin/jlink --verbose --add-modules $modules --strip-debug --no-man-pages --no-header-files --compress=2 --output target/jre-linux > /dev/null
+echo Build the minified Windows JRE
+target/jdk-linux/bin/jlink --verbose --module-path target/jdk-windows/jmods --add-modules $modules --strip-debug --no-man-pages --no-header-files --compress=2 --output target/jre-windows > /dev/null
 
-# Create HTML documentation
+echo Prepare app folders
+
+# Create system specific app folders.
+cp -r target/app target/app-linux
+cp -r target/app target/app-windows
+
+# Final touches for Linux.
+find target/app-linux -type f -name "*.bat" -delete
+chmod +x target/app-linux/*
+cp LICENSE target/app-linux/ || exit 1
+touch "target/app-linux/$versionString.version" || exit 1
+mv target/jre-linux target/app-linux/jrex
+
+# Create HTML documentation.
 # Thanks to https://github.com/jfroche/docker-markdown and to the GitHub api
 jq --slurp --raw-input '{"text": "\(.)", "mode": "markdown"}' < README.md \
-| curl -s --data @- https://api.github.com/markdown > target/app/readme.html  || exit 1
+| curl -s --data @- https://api.github.com/markdown > target/app-linux/readme.html  || exit 1
 
-# Final touches
-chmod +x target/app/*
-chmod -x target/app/LICENSE
-chmod -x target/app/*.bat
-chmod -x target/app/*.html
-chmod -x target/app/*.version
+# Final touches for Windows.
+find target/app-windows -type f ! -name "*.*" -delete
+cp LICENSE target/app-windows/ || exit 1
+touch "target/app-windows/$versionString.version" || exit 1
+cp target/app-linux/readme.html target/app-windows/readme.html
+mv target/jre-windows target/app-windows/jre
 
-# Pack apps
-mv target/app "dedupfs-$release"
-zip -rq "dedupfs-$release.zip" "dedupfs-$release"
-tar cfz "dedupfs-$release.tar.gz" "dedupfs-$release"
-rm -rf "dedupfs-$release"
+echo Package apps
+mv target/app-linux "dedupfs-$release-linux"
+tar cfz "dedupfs-$release-linux.tar.gz" "dedupfs-$release-linux"
+rm -rf "dedupfs-$release-linux"
+mv target/app-windows "dedupfs-$release-windows"
+zip -rq "dedupfs-$release-windows.zip" "dedupfs-$release-windows"
+rm -rf "dedupfs-$release-windows"
 
 echo
-echo "Created dedupfs app as dedupfs-$release.tar.gz and dedupfs-$release.zip"
+echo "Created dedupfs app as dedupfs-$release-linux.tar.gz and dedupfs-$release-windows.zip"

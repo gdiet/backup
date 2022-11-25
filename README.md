@@ -340,6 +340,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.1.0 (2022.11.25)
 
+* Separate Windows and Linux packages, with a minified JRE, to reduce package size from about 100MB to less than 50 MB.
 * Experimental `fsc backup` command for backing up directories without needing to mount the dedup file system.
 * Added explicit memory settings to all start scripts.
 * Unified and cleaner logging and console output; showing log level WARN and ERROR on console for the utilities.
