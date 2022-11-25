@@ -338,13 +338,13 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
 
-#### 5.1.0 (202?.??.??)
+#### 5.1.0 (2022.11.25)
 
 * Experimental `fsc backup` command for backing up directories without needing to mount the dedup file system.
 * Added explicit memory settings to all start scripts.
 * Unified and cleaner logging and console output; showing log level WARN and ERROR on console for the utilities.
 * Performance improvement: Start the file system or run the write command while in parallel creating script database backup from the plain backup.
-* Updated libraries, Java to 17.0.5_8, and build system (SBT & sbt-updates plugin).
+* Updated Scala to 3.2.1, Java to 17.0.5_8, libraries, SBT and sbt-updates plugin.
 * Full database compaction only when running `reclaim-space` or `fsc db-compact`, for other write commands compact database for at most 2 seconds.
 * Added `fsc db-compact` command.
 * When running `db-backup`, print to console the corresponding restore command.
