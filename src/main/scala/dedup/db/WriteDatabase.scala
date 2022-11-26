@@ -1,8 +1,8 @@
 package dedup
 package db
 
-import java.sql.{Connection, Statement, Types}
-import scala.util.Try
+import java.sql.{Connection, SQLException, Statement, Types}
+import scala.util.{Failure, Success, Try}
 import scala.util.Using.resource
 
 final class WriteDatabase(connection: Connection) extends ReadDatabase(connection) with util.ClassLogging:
@@ -65,6 +65,7 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
   def mkDir(parentId: Long, name: String): Option[Long] = Try(structureSync {
     // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
     val count = iDir.set(parentId, name, now).executeUpdate()
+    // FIXME needs match outside of the Try
     ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
     iDir.getGeneratedKeys.tap(_.next()).getLong("id")
   }).toOption
@@ -73,14 +74,22 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)",
     Statement.RETURN_GENERATED_KEYS
   )
-  /** @return `Some(id)` or [[None]] if a child entry with the same name already exists. */
+  /** @return `Some(id)` or [[None]] if a child with the same name exists. */
   def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] = Try(structureSync {
     // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
-    // TODO ensure by testing, also that missing parent triggers exception
     val count = iFile.set(parentId, name, time, dataId).executeUpdate()
     ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
-    iFile.getGeneratedKeys.tap(_.next()).getLong("id")
-  }).toOption
+    iFile.getGeneratedKeys.tap(_.next()).getLong("id").tap { id =>
+      if parentId == id then
+        deleteChildless(id)
+        problem("db.mkFile.2", s"For parentId $parentId $id and name '$name', the id of the created file was the same as the parentId.")
+    }
+  }) match
+    case Success(id) => Some(id)
+    case Failure(e: SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
+      log.debug(s"Name conflict for parent $parentId name '$name'.")
+      None
+    case Failure(other) => throw other
 
   private val uTime = prepare("UPDATE TreeEntries SET time = ? WHERE id = ?")
   /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs. */
@@ -95,11 +104,12 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
   }
 
   private val uRenameMove = prepare("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?")
-  def renameMove(id: Long, newParentId: Long, newName: String): Boolean = Try(structureSync {
+  def renameMove(id: Long, newParentId: Long, newName: String): Boolean =
     require(newName.nonEmpty, "Can't rename to an empty name.")
-    // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
-    uRenameMove.set(newParentId, newName, id).executeUpdate() == 1
-  }).getOrElse(false)
+    Try(structureSync {
+      // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
+      uRenameMove.set(newParentId, newName, id).executeUpdate() == 1
+    }).getOrElse(false) // FIXME log debug name conflict
 
   private val dTreeEntry = prepare("UPDATE TreeEntries SET deleted = ? WHERE id = ?")
   /** Deletes a tree entry. Should be called only for existing entry IDs.

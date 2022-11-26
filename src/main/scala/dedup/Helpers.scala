@@ -18,7 +18,7 @@ def readableBytes(l: Long): String =
 
 extension [T <: AnyRef](t: T) def sync[U](f: T => U): U = t.synchronized(f(t))
 
-class EnsureFailed(reason: String) extends IllegalArgumentException(reason)
+class EnsureFailed(reason: String, cause: Throwable = null) extends IllegalArgumentException(reason, cause)
 
 def problem(marker: String, warningMessage: => String): Unit =
     ensure(marker, false, warningMessage)
