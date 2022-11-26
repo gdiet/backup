@@ -21,7 +21,6 @@ createApp := {
   val appDir = baseDirectory.value / "target" / "app"
   IO.delete(appDir)
   IO.copyDirectory(file("src/main/script"), appDir)
-  (appDir / "dedup.sh").setExecutable(true)
   jars.foreach(file => IO.copyFile(file, appDir / "lib" / file.name))
   streams.value.log.info(s"Built dedup app")
 }
