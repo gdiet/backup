@@ -24,3 +24,23 @@ class WriteDatabaseSpec extends org.scalatest.freespec.AnyFreeSpec:
       }
     }
   }
+
+  "Tests for mkDir()" - {
+    "mkDir fails on name conflict" in {
+      withDb { db =>
+        assert(db.mkDir(0, "one") == Some(1))
+        assert(db.mkDir(0, "one") == None)
+      }
+    }
+    "mkDir fails if parent is missing" in {
+      withDb { db =>
+        // ID 0 (root) is the only existing entry.
+        // ID 1 is the ID of the entry created next, so it's only sort-of-missing.
+        // ID 9 is an 'absolutely missing' ID.
+        intercept[Exception](db.mkDir(1, "one"))
+        intercept[Exception](db.mkDir(9, "one"))
+        // The above attempts have incremented the ID sequence to 3.
+        assert(db.mkDir(0, "one") == Some(3))
+      }
+    }
+  }

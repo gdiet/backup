@@ -61,14 +61,21 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     "INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)",
     Statement.RETURN_GENERATED_KEYS
   )
-  /** @return Some(id) or None if a child entry with the same name already exists. */
+  /** @return `Some(id)` or [[None]] if a child with the same name exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = Try(structureSync {
     // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
     val count = iDir.set(parentId, name, now).executeUpdate()
-    // FIXME needs match outside of the Try
     ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
-    iDir.getGeneratedKeys.tap(_.next()).getLong("id")
-  }).toOption
+    iDir.getGeneratedKeys.tap(_.next()).getLong("id").tap { id =>
+      if parentId == id then
+        deleteChildless(id)
+        problem("db.mkdir.2", s"For parentId $parentId $id and name '$name', the id of the created dir was the same as the parentId.")
+    }
+  }) match
+    case Success(id) => Some(id)
+    case Failure(e: SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
+      log.debug(s"mkDir($parentId, '$name'): Name conflict."); None
+    case Failure(other) => throw other
 
   private val iFile = prepare(
     "INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)",
@@ -87,8 +94,7 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
   }) match
     case Success(id) => Some(id)
     case Failure(e: SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
-      log.debug(s"Name conflict for parent $parentId name '$name'.")
-      None
+      log.debug(s"mkFile($parentId, '$name', $time, $dataId): Name conflict."); None
     case Failure(other) => throw other
 
   private val uTime = prepare("UPDATE TreeEntries SET time = ? WHERE id = ?")
