@@ -53,7 +53,7 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
     }
   // End: Pure read methods that are only used in the write backend
 
-  /** Synchronization monitor used to avoid that tree entries with children are deleted. */
+  /** Synchronization monitor used to prevent race conditions where tree entries with children could be deleted. */
   private object TreeStructureMonitor
   private def structureSync[T](f: => T): T = TreeStructureMonitor.synchronized(f)
 
