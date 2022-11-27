@@ -9,8 +9,6 @@ import dedup.{DirEntry, FileEntry, TreeEntry}
 
 import scala.collection.immutable.LazyList
 
-/** Don't instantiate more than one backend for a repository. */
-// Why not? Because the backend object is used for synchronization.
 class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with ClassLogging:
 
   override def shutdown(): Unit = sync {
