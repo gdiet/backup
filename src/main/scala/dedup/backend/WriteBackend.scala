@@ -92,6 +92,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
       case Some(_ -> dataId) => files.release(fileId).foreach(enqueue(fileId, dataId, _)); true
 
   private def enqueue(fileId: Long, dataId: DataId, dataEntry: DataEntry): Unit =
+    println(s"enqueue $fileId $dataId $dataEntry")
     WriteBackend.entryCount.incrementAndGet()
     WriteBackend.entriesSize.addAndGet(dataEntry.size)
     log.trace(s"Write cache load: ${WriteBackend.entryCount}*${WriteBackend.entriesSize}")
@@ -104,7 +105,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
         WriteBackend.entryCount.decrementAndGet()
         WriteBackend.entriesSize.addAndGet(-dataEntry.size)
 
-      log.trace(s"Write through file $fileId / data ID $dataId / size ${dataEntry.size}.")
+      log.info(s"Write through file $fileId / data ID $dataId / size ${dataEntry.size}.") // TODO trace
 
       if dataEntry.size == 0 then
         // If data entry size is zero, explicitly set dataId -1 because it might have contained something else.
@@ -127,7 +128,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
           // Already known, simply link
           case Some(dataId) =>
             db.setDataId(fileId, dataId)
-            log.trace(s"Persisted $fileId - content known, linking to dataId $dataId")
+            log.info(s"Persisted $fileId - content known, linking to dataId $dataId") // TODO trace
             removeAndQueueNext(dataId)
           // Not yet known, store ...
           case None =>
@@ -141,7 +142,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
               log.debug(s"Data ID $dataId size ${dataEntry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
               db.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
             }
-            log.trace(s"Persisted $fileId - new content, dataId $dataId")
+            log.info(s"Persisted $fileId - new content, dataId $dataId") // TODO trace
             removeAndQueueNext(dataId)
     } catch (e: Throwable) => { log.error(s"Persisting $fileId failed: $dataEntry", e); throw e })
 

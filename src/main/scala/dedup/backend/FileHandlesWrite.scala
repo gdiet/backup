@@ -44,6 +44,7 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   /** Create and add empty handle if missing.
     * @return `true` if added, `false` if already present. */
   def addIfMissing(fileId: Long): Boolean = synchronized {
+    log.info(s"addIfMissing $fileId - $files") // FIXME trace
     (!files.contains(fileId)).tap { if _ then files += fileId -> (None, Seq()) }
   }
 
@@ -62,6 +63,7 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   /** @return [[None]] if handle is missing. */
   def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Either[Long, Array[Byte]])]] =
     synchronized(files.get(fileId)).map { case current -> storing =>
+      println(s"read files: $files") // TODO
       // read data from current if defined
       current.map(_.read(offset, requestedSize)).getOrElse(Iterator(offset -> Left(requestedSize)))
         .flatMap {
