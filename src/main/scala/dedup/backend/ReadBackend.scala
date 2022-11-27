@@ -49,6 +49,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
     files += fileId -> (files.get(fileId) match
       case None => 1 -> dataId
       case Some(count -> knownDataId) =>
+        // FIXME Check whether we can be sure enough that the data ID is the same - what happens if persisting updates the data ID?
         ensure("readbackend.open", knownDataId == dataId, s"Open #$count - dataId $dataId differs from previous $knownDataId.")
         count + 1 -> dataId
     )
