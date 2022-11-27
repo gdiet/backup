@@ -51,26 +51,31 @@ class WriteBackendSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
     assert(!fs.release(tenBytesId))
   }
 
-  // Wait for persist to finish, seen by the data ID becoming != -1.
-  lazy val reopened: FileEntry = Iterator
-    .continually { Thread.sleep(2); fs.entry("/dir/10 bytes").get.asInstanceOf[FileEntry] }
-    .filter(_.dataId != DataId(-1)).next
-  "re-open the open 10 bytes file when it is fully persisted" in {
+  val dataId = DataId(3)
+  "wait for persist to finish, signaled by the file getting a data ID" in {
     println("############### 3") // TODO remove
-    assert(reopened.id == 2)
-    assert(reopened.dataId == DataId(3))
-    fs.open(reopened.id, reopened.dataId)
+    val file = Iterator.continually {
+      Thread.sleep(2);
+      fs.entry("/dir/10 bytes").get.asInstanceOf[FileEntry]
+        .tap(println)
+    }.find(_.dataId != DataId(-1)).get
+    assert(file.dataId == dataId)
+  }
+
+  "reopen the 10 bytes file" in {
+    println("############### 4") // TODO remove
+    fs.open(tenBytesId, dataId)
   }
 
   "read the reopened 10 bytes file" in {
-    println("############### 4") // TODO remove
+    println("############### 4b") // TODO remove
     // Also trying to read past end-of-file...
-    assert(fs.read(reopened.id, 0, 12).data == Seq(0L -> Seq(0, 0, 0, 0, 1, 2, 5, 0, 0, 0)))
+    assert(fs.read(tenBytesId, 0, 12).data == Seq(0L -> Seq(0, 0, 0, 0, 1, 2, 5, 0, 0, 0)))
   }
 
   "release the reopened 10 bytes file" in {
     println("############### 5") // TODO remove
-    assert(fs.release(reopened.id))
+    assert(fs.release(tenBytesId))
   }
 
   "close write backend" in fs.shutdown()

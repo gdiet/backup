@@ -99,7 +99,8 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
 
     singleThreadStoreContext.execute(() => try {
 
-      def removeAndQueueNext(newDataId: DataId): Unit =
+      def writeDataIdRemoveAndQueueNext(newDataId: DataId): Unit =
+        db.setDataId(fileId, newDataId)
         files.removeAndGetNext(fileId, dataEntry).foreach(enqueue(fileId, newDataId, _))
         dataEntry.close()
         WriteBackend.entryCount.decrementAndGet()
@@ -109,8 +110,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
 
       if dataEntry.size == 0 then
         // If data entry size is zero, explicitly set dataId -1 because it might have contained something else.
-        db.setDataId(fileId, DataId(-1))
-        removeAndQueueNext(DataId(-1))
+        writeDataIdRemoveAndQueueNext(DataId(-1))
 
       else
         log.trace (s"File $fileId - persisting data entry / size ${dataEntry.size} / base data id $dataId.")
@@ -127,9 +127,8 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
         db.dataEntry(hash, dataEntry.size) match
           // Already known, simply link
           case Some(dataId) =>
-            db.setDataId(fileId, dataId)
             log.info(s"Persisted $fileId - content known, linking to dataId $dataId") // TODO trace
-            removeAndQueueNext(dataId)
+            writeDataIdRemoveAndQueueNext(dataId)
           // Not yet known, store ...
           case None =>
             // Reserve storage space
@@ -137,13 +136,13 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
             // Write to storage
             WriteBackend.writeAlgorithm(data, reserved, lts.write)
             // Save data entries
-            val dataId = db.newDataIdFor(fileId)
+            val dataId = db.newDataId()
             reserved.zipWithIndex.foreach { case (dataArea, index) =>
               log.debug(s"Data ID $dataId size ${dataEntry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
               db.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
             }
             log.info(s"Persisted $fileId - new content, dataId $dataId") // TODO trace
-            removeAndQueueNext(dataId)
+            writeDataIdRemoveAndQueueNext(dataId)
     } catch (e: Throwable) => { log.error(s"Persisting $fileId failed: $dataEntry", e); throw e })
 
 object WriteBackend:

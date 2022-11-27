@@ -142,9 +142,7 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
   }
 
   private val qNextId = prepare("SELECT NEXT VALUE FOR idSeq")
-  private def nextId: Long = qNextId.query(next(_.getLong(1)))
-  /** Sets a newly created data ID for a tree entry. */
-  def newDataIdFor(id: Long): DataId = DataId(nextId).tap(setDataId(id, _))
+  def newDataId(): DataId = DataId(qNextId.query(next(_.getLong(1))))
 
   private val iDataEntry = prepare("INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)")
   def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit =
