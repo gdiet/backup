@@ -45,6 +45,7 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
     * @return `true` if added, `false` if already present. */
   def addIfMissing(fileId: Long): Boolean = synchronized {
     log.info(s"addIfMissing $fileId - $files") // FIXME trace
+    // FIXME Here is a bug - "current" in fact can be three things: Nothing, a placeholder, or a DataEntry
     (!files.contains(fileId)).tap { if _ then files += fileId -> (None, Seq()) }
   }
 
@@ -97,6 +98,7 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   }
 
   def removeAndGetNext(fileId: Long, dataEntry: DataEntry): Option[DataEntry] = synchronized {
+    log.info(s"removeAndGetNext($fileId, dataEntry Size ${dataEntry.size}) - $files") // TODO trace
     files.get(fileId) match
       case None =>
         problem("WriteHandle.removeAndGetNext.missing", s"Missing file handle (write) for file $fileId.")

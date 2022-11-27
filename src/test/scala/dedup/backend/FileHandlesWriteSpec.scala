@@ -21,7 +21,7 @@ class FileHandlesWriteSpec extends org.scalatest.freespec.AnyFreeSpec with TestF
       }
     }
 
-    "for file hande 1" - {
+    "for file handle 1" - {
       "addIfMissing returns true because entry is missing, then false because it is already present" in {
         assert(handles.addIfMissing(1))
         assert(!handles.addIfMissing(1))
@@ -68,6 +68,10 @@ class FileHandlesWriteSpec extends org.scalatest.freespec.AnyFreeSpec with TestF
           case Some(9L -> Left(1L) :: 10L -> Right(bytes) :: Nil) => assert(bytes.toSeq == Seq[Byte](1, 2))
           case other => assert(false, s"bad result: $other")
       }
+      
+      // TODO Needs test because this was bugged
+//      "adding the entry again returns true because ...?"
+//      handles.addIfMissing(1)
 
     }
   }
