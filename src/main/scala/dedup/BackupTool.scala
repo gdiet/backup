@@ -1,5 +1,6 @@
 package dedup
 
+import dedup.backend.Backend
 import dedup.util.ClassLogging
 
 import java.io.{BufferedInputStream, File, FileInputStream}
@@ -52,11 +53,13 @@ object BackupTool extends ClassLogging:
     log.info (s"Backup reference: $reference  --  No functionality implemented yet")
     log.debug(s"Temp dir:         $temp")
 
-    resource(server.Level1(settings)) { fs =>
+    val fs: Backend = backend(settings)
+    try
       val (targetPath, targetName) = fs.split(to).pipe(target =>
         target.dropRight(1) -> target.lastOption.getOrElse(main.failureExit(s"Invalid target: No file name in '$to'."))
       )
       def targetPathForLog = s"The target's parent DedupFS:/${targetPath.mkString("/")}"
+
       val targetParent = fs.entry(targetPath) match
         case Some(dir: DirEntry) => dir
         case Some(_: FileEntry)  => main.failureExit(s"Invalid target: $targetPathForLog points to a file.")
@@ -68,7 +71,7 @@ object BackupTool extends ClassLogging:
 
       def mkDir(parent: Long, name: String): Long =
         def nameToUse = if name.isEmpty then "[drive]" else name
-        fs.mkDir(parent, nameToUse).getOrElse(main.failureExit(s"Unexpected name conflict creating directory $name."))
+        fs.mkDir(parent, nameToUse).getOrElse(main.failureExit(s"Unexpected name conflict creating directory $nameToUse."))
 
       def store(parent: Long, file: File): Unit =
         val id = fs.createAndOpen(parent, file.getName, Time(file.lastModified()))
@@ -88,7 +91,8 @@ object BackupTool extends ClassLogging:
         log.info(s"Stored: $file")
 
       processRecurse(Seq((targetId, Seq(), "/", from)), mkDir, store)
-    }
+    finally fs.shutdown()
+
   } catch { case t: Throwable => log.error("Uncaught exception:", t); throw t }
 
   @annotation.tailrec
