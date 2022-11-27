@@ -1,8 +1,8 @@
 package dedup
 package backend
 
-import dedup.db.{ReadDatabase, WriteDatabase}
-import dedup.server.{DataSink, Settings}
+import dedup.db.ReadDatabase
+import dedup.server.Settings
 import dedup.store.LongTermStore
 import dedup.util.ClassLogging
 import dedup.{DirEntry, FileEntry, TreeEntry}
@@ -11,29 +11,19 @@ import scala.collection.immutable.LazyList
 
 class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with ClassLogging:
 
-  override def shutdown(): Unit = sync {
+  protected final val lts: LongTermStore = store.LongTermStore(settings.dataDir, settings.readonly)
+  protected final val handlesRead: FileHandlesRead = FileHandlesRead()
+
+  override def shutdown(): Unit =
     // On Windows, it's sort of normal to still have read file handles open when shutting down the file system.
-    if files.nonEmpty then log.debug(s"Still ${files.size} open read handles when unmounting the file system.")
+    val handleCount = handlesRead.shutdown()
+    if handleCount > 0 then log.debug(s"Still $handleCount open read handles when unmounting the file system.")
     lts.close()
-  }
-
-  /** file id -> (handle count, data id). Remember to synchronize. */
-  private var files = Map[Long, (Int, DataId)]()
-
-  /** @throws NoSuchElementException If the file is not open. */
-  protected def dataId(fileId: Long): DataId = sync(files(fileId)._2)
-
-  protected val lts: LongTermStore = store.LongTermStore(settings.dataDir, settings.readonly)
-
 
   // *** Tree and meta data operations ***
-  
   override def size(fileEntry: FileEntry): Long = db.logicalSize(fileEntry.dataId)
-  
   override final def children(parentId: Long): Seq[TreeEntry] = db.children(parentId)
-
   override final def child(parentId: Long, name: String): Option[TreeEntry] = db.child(parentId, name)
-  
   override final def entry(path: Array[String]): Option[TreeEntry] =
     path.foldLeft(Option[TreeEntry](root)) {
       case (Some(dir: DirEntry), name) => db.child(dir.id, name)
@@ -41,34 +31,14 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
     }
 
   // *** File content operations ***
+  def open(fileId: Long, dataId: DataId): Unit =
+    log.info(s"Open: $fileId, $dataId - $handlesRead") // FIXME
+    handlesRead.open(fileId, dataId)
 
-  def open(fileId: Long, dataId: DataId): Unit = sync {
-    log.info(s"Open: $fileId, $dataId - $files") // FIXME
-    files += fileId -> (files.get(fileId) match
-      case None => 1 -> dataId
-      case Some(count -> knownDataId) =>
-        // FIXME Check whether we can be sure enough that the data ID is the same - what happens if persisting updates the data ID?
-        ensure("readbackend.open", knownDataId == dataId, s"Open #$count - dataId $dataId differs from previous $knownDataId.")
-        count + 1 -> dataId
-    )
-  }
-
-  def release(fileId: Long): Boolean = releaseInternal(fileId).isDefined
-
-  /** @return [[None]] if called without create or open or (new handle count, data id). */
-  protected final def releaseInternal(fileId: Long): Option[(Int, DataId)] = sync {
-    files.get(fileId) match
-      case None =>
-        log.warn(s"release($fileId) called for a file handle that is currently not open.")
-        None
-      case Some(count -> dataId) =>
-        if count > 1 then files += fileId -> (count - 1, dataId) else files -= fileId
-        if count < 1 then log.error(s"Handle count $count for id $fileId.")
-        Some(count - 1 -> dataId)
-  }
+  def release(fileId: Long): Option[DataId] = handlesRead.release(fileId)
 
   override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] = {
-    sync(files.get(fileId)).map { case (_, dataId) =>
+    handlesRead.dataId(fileId).map { dataId =>
       val fileSize -> parts = db.logicalSize(dataId) -> db.parts(dataId)
       readFromLts(parts, offset, math.min(requestedSize, fileSize - offset))
     }

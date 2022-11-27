@@ -216,7 +216,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
     if offset < 0 || size != intSize then EOVERFLOW else // With intSize being .abs (see above) checks for negative size, too.
       val fileHandle = fi.fh.get()
       backend.read(fileHandle, offset, intSize) match
-        case None => log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); ENOENT
+        case None => log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); EIO
         case Some(chunks) =>
           chunks.map { case (position, data) =>
             sink.write(position - offset, data)
@@ -226,7 +226,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
 
   override def release(path: String, fi: FuseFileInfo): Int = fs(s"release $path") {
     val fileHandle = fi.fh.get()
-    if backend.release(fileHandle) then OK else EIO // false if called without create or open
+    if backend.release(fileHandle).isDefined then OK else EIO // None if called without create or open.
   }
 
   override def unlink(path: String): Int = fs(s"unlink $path") {

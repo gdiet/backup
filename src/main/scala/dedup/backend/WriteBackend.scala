@@ -18,12 +18,11 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   override def shutdown(): Unit = sync {
     // Stop creating new write handles and process existing write handles.
     files.shutdown().foreach { case fileId -> maybeDataEntry =>
-      releaseInternal(fileId) match // Get read handle for the file.
+      handlesRead.releaseFully(fileId) match
         case None => if maybeDataEntry.isDefined
           then log.error(s"No read handle for file $fileId although new data was written - data loss!")
           else log.warn(s"No read handle for file $fileId although write handle was present.")
-        case Some(count -> dataId) =>
-          for _ <- 1 to count do releaseInternal(fileId) // Fully release read handle.
+        case Some(dataId) =>
           maybeDataEntry.foreach(enqueue(fileId, dataId, _)) // If necessary, enqueue open data entry.
     }
     // Finish pending writes.
@@ -63,7 +62,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     db.mkFile(newParentId, newName, file.time, file.dataId).isDefined
 
   private def dataEntry(fileId: Long): Option[DataEntry] =
-    files.dataEntry(fileId, dataId.andThen(db.logicalSize))
+    files.dataEntry(fileId, handlesRead.dataId.andThen(_.get).andThen(db.logicalSize))
 
   override def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
     dataEntry(fileId).map(_.write(data)).isDefined
@@ -82,12 +81,12 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
       case (position, Right(bytes)) => Iterator(position -> bytes)
     })
 
-  override def release(fileId: Long): Boolean =
+  override def release(fileId: Long): Option[DataId] =
     log.info(s"release write - $fileId") // FIXME trace
-    releaseInternal(fileId) match
-      case None => false // warning is logged in releaseInternal
-      case Some(count -> _) if count > 0 => true // still some handles open for the file
-      case Some(_ -> dataId) => files.release(fileId).foreach(enqueue(fileId, dataId, _)); true
+    super.release(fileId).tap {
+      case Some(dataId) => files.release(fileId).foreach(enqueue(fileId, dataId, _)); false
+      case None => false
+    }
 
   private def enqueue(fileId: Long, dataId: DataId, dataEntry: DataEntry): Unit =
     println(s"enqueue $fileId $dataId $dataEntry")

@@ -43,12 +43,13 @@ class WriteBackendSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
 
   "release the open 10 bytes file" in {
     println("############### 1") // TODO remove
-    assert(fs.release(tenBytesId))
+    // When released here, the actual dataId is not yet known, so it's -1.
+    assert(fs.release(tenBytesId) == Some(-1))
   }
 
-  "release returns false when already closed" in {
+  "release returns None when already closed" in {
     println("############### 2") // TODO remove
-    assert(!fs.release(tenBytesId))
+    assert(fs.release(tenBytesId) == None)
   }
 
   val dataId = DataId(3)
@@ -75,7 +76,8 @@ class WriteBackendSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
 
   "release the reopened 10 bytes file" in {
     println("############### 5") // TODO remove
-    assert(fs.release(tenBytesId))
+    // root: 0, dir: 1, file: 2, dataId: 3
+    assert(fs.release(tenBytesId) == Some(3))
   }
 
   "close write backend" in fs.shutdown()
