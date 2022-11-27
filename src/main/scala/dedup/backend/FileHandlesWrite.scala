@@ -16,8 +16,12 @@ import java.util.concurrent.atomic.AtomicLong
   *
   * A single instance of this class is used by the [[WriteBackend]] to manage the write file handles. */
 class FileHandlesWrite(tempPath: Path) extends ClassLogging:
+  private object Empty
+  private object Placeholder
+  private type Current = Empty.type | Placeholder.type | DataEntry
+
   /** file id -> (current, storing). Remember to synchronize. */
-  private var files = Map[Long, (Option[DataEntry], Seq[DataEntry])]()
+  private var files = Map[Long, (Current, Seq[DataEntry])]()
   private var closing = false
   private val dataSeq = AtomicLong()
 
@@ -27,7 +31,8 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   def shutdown(): Map[Long, Option[DataEntry]] = synchronized {
     log.info(s"shutdown - $files") // FIXME debug
     closing = true
-    val openWriteHandles = files.collect { case (fileId, Some(_) -> _) => fileId -> release(fileId) }
+    // FIXME same thing here - do we need to persist 0 bytes for Placeholder entries?
+    val openWriteHandles = files.collect { case (fileId, (_: DataEntry) -> _) => fileId -> release(fileId) }
     if openWriteHandles.nonEmpty then
       log.warn(s"Still ${openWriteHandles.size} open write handles when unmounting the file system.")
     openWriteHandles
@@ -36,44 +41,49 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   /** @return The size of the file handle, [[None]] if handle is missing or empty. */
   def getSize(fileId: Long): Option[Long] =
     synchronized(files.get(fileId)).flatMap {
-      case Some(current) -> _  => Some(current.size)
-      case None -> (head +: _) => Some(head.size)
-      case None ->          _  => None
+      case (current: DataEntry) -> _ => Some(current.size)
+      case _ -> (head +: _)          => Some(head.size)
+      case _ -> _                    => None
     }
 
-  /** Create and add empty handle if missing.
+  /** Create and add placeholder handle if missing.
     * @return `true` if added, `false` if already present. */
   def addIfMissing(fileId: Long): Boolean = synchronized {
     log.info(s"addIfMissing $fileId - $files") // FIXME trace
-    // FIXME Here is a bug - "current" in fact can be three things: Nothing, a placeholder, or a DataEntry
-    (!files.contains(fileId)).tap { if _ then files += fileId -> (None, Seq()) }
+    files.get(fileId) match
+      case None => files += fileId -> (Placeholder, Seq()); true
+      case Some(Empty -> storing) => files += fileId -> (Placeholder, storing); true
+      case _ => false
   }
 
   /** @return The data entry (created if missing) of the handle, [[None]] if handle is missing. */
   def dataEntry(fileId: Long, sizeInDb: Long => Long): Option[DataEntry] = synchronized {
-    if closing then None else files.get(fileId).map {
-      case (Some(current), _) => current
-      case (None, storing) =>
+    if closing then None else files.get(fileId) match
+      case Some((current: DataEntry) -> _) => Some(current)
+      case Some(Placeholder -> storing) =>
         log.trace(s"Creating write cache for $fileId.")
         val initialSize = storing.headOption.map(_.size).getOrElse(sizeInDb(fileId))
-        DataEntry(dataSeq, initialSize, tempPath)
-          .tap(entry => files += fileId -> (Some(entry), storing))
-    }
+        Some(DataEntry(dataSeq, initialSize, tempPath).tap(entry => files += fileId -> (entry, storing)))
+      case _ =>
+        log.info(s"dataEntry for $fileId not present in files $files") // TODO trace
+        None
   }
 
   /** @return [[None]] if handle is missing. */
   def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Either[Long, Array[Byte]])]] =
-    synchronized(files.get(fileId)).map { case current -> storing =>
-      println(s"read files: $files") // TODO
-      // read data from current if defined
-      current.map(_.read(offset, requestedSize)).getOrElse(Iterator(offset -> Left(requestedSize)))
-        .flatMap {
-          case (position, Left(holeSize)) =>
-            // fill in holes in data by recursing through the storing sequence
-            fillHoles(position, holeSize, storing)
+    println(s"read files: $files") // TODO
+    synchronized(files.get(fileId)) match
+      case Some(current -> storing) =>
+        (current match
+          case dataEntry: DataEntry => Some(dataEntry.read(offset, requestedSize))
+          case Placeholder => Some(Iterator(offset -> Left(requestedSize)))
+          case Empty => log.info(s"read $fileId - Empty in files $files"); None // TODO trace
+        ).map(_.flatMap {
+          // fill in holes in data by recursing through the storing sequence
+          case (position, Left(holeSize)) => fillHoles(position, holeSize, storing)
           case data => Iterator(data)
-        }
-    }
+        })
+      case None => log.info(s"read $fileId - not in files $files"); None // TODO trace
 
   private def fillHoles(position: Long, holeSize: Long, remaining: Seq[DataEntry]): Iterator[(Long, Either[Long, Array[Byte]])] =
     remaining match
@@ -89,11 +99,14 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   def release(fileId: Long): Option[DataEntry] = synchronized {
     log.info(s"release handles - $fileId - $files") // FIXME trace
     files.get(fileId) match
-      case Some(Some(current) -> storing) =>
-        files += fileId -> (None, current +: storing)
+      case Some((current: DataEntry) -> storing) =>
+        files += fileId -> (Empty, current +: storing)
         if storing.isEmpty then Some(current) else None
+      // FIXME if a placeholder is there, are we supposed to persist a 0 length entry?
+      case Some(Placeholder -> storing) => files += fileId -> (Empty, storing); None
       case other =>
-        ensure("WriteHandle.release", other.isDefined, s"Missing file handle (write) for file $fileId.")
+        log.info(s"release: Missing entry for $fileId ... $other") // FIXME trace
+        problem("WriteHandle.release", s"Missing file handle (write) for file $fileId.")
         None
   }
 
@@ -103,10 +116,8 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
       case None =>
         problem("WriteHandle.removeAndGetNext.missing", s"Missing file handle (write) for file $fileId.")
         None
-      case Some((current, others :+ `dataEntry`)) =>
-        if others.isEmpty && current.isEmpty then files -= fileId
-        else files += fileId -> (current, others)
-        others.lastOption
+      case Some(Empty -> Seq(`dataEntry`)) => files -= fileId; None
+      case Some((current, others :+ `dataEntry`)) => files += fileId -> (current, others); others.lastOption
       case Some((_, others)) =>
         problem("WriteHandle.removeAndGetNext.mismatch", s"Previous DataEntry not found for file $fileId.")
         others.lastOption
