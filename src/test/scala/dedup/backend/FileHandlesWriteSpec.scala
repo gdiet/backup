@@ -58,7 +58,7 @@ class FileHandlesWriteSpec extends org.scalatest.freespec.AnyFreeSpec with TestF
         assert(handles.release(1) === Some(theEntry))
       }
 
-      "the entry is queued, so it's size an data is still returned" in {
+      "the entry is queued, so it's size is still returned" in {
         assert(handles.getSize(1) === Some(13))
       }
 
@@ -68,7 +68,7 @@ class FileHandlesWriteSpec extends org.scalatest.freespec.AnyFreeSpec with TestF
           case Some(9L -> Left(1L) :: 10L -> Right(bytes) :: Nil) => assert(bytes.toSeq == Seq[Byte](1, 2))
           case other => assert(false, s"bad result: $other")
       }
-      
+
       // TODO Needs test because this was bugged
 //      "adding the entry again returns true because ...?"
 //      handles.addIfMissing(1)

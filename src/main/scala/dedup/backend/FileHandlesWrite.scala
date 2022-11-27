@@ -76,8 +76,7 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
       case Some(current -> storing) =>
         (current match
           case dataEntry: DataEntry => Some(dataEntry.read(offset, requestedSize))
-          case Placeholder => Some(Iterator(offset -> Left(requestedSize)))
-          case Empty => log.info(s"read $fileId - Empty in files $files"); None // TODO trace
+          case _ => Some(Iterator(offset -> Left(requestedSize)))
         ).map(_.flatMap {
           // fill in holes in data by recursing through the storing sequence
           case (position, Left(holeSize)) => fillHoles(position, holeSize, storing)
@@ -111,7 +110,7 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   }
 
   def removeAndGetNext(fileId: Long, dataEntry: DataEntry): Option[DataEntry] = synchronized {
-    log.info(s"removeAndGetNext($fileId, dataEntry Size ${dataEntry.size}) - $files") // TODO trace
+    log.info(s"removeAndGetNext($fileId, dataEntry $dataEntry) - $files") // TODO trace
     files.get(fileId) match
       case None =>
         problem("WriteHandle.removeAndGetNext.missing", s"Missing file handle (write) for file $fileId.")
