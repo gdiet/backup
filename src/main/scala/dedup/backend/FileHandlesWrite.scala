@@ -28,12 +28,12 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   private val dataSeq = AtomicLong()
 
   /** Stop creating new data entries. [[release]] all "current" data entries.
-    * @return The results of [[release]]. For all of them, the read handles need to be released, and if a [[DataEntry]]
-    *         is provided, it must be enqueued for persisting. */
+    * @return The results of [[release]]. For all of them, the read handles need to be released, and if they contain
+    *         a [[DataEntry]] it must be enqueued for persisting. */
   def shutdown(): Map[Long, Option[DataEntry]] = synchronized {
     log.debug(s"Shutting down - ${files.size} write handles present.")
     closing = true
-    // FIXME same thing here - do we need to persist 0 bytes for Placeholder entries?
+    // We can safely ignore placeholders - they mark files that have not been written yet.
     val openWriteHandles = files.collect { case fileId -> (_: DataEntry, _) => fileId -> release(fileId) }
     if openWriteHandles.nonEmpty then
       log.warn(s"Still ${openWriteHandles.size} open write handles when unmounting the file system.")
@@ -43,37 +43,37 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   /** @return The size of the file handle, [[None]] if handle is missing or empty. */
   def getSize(fileId: Long): Option[Long] =
     synchronized(files.get(fileId)).flatMap {
-      case (current: DataEntry) -> _ => Some(current.size)
-      case _ -> (head +: _)          => Some(head.size)
-      case _ -> _                    => None
+      case (current: DataEntry, _) => Some(current.size)
+      case (_, head +: _)          => Some(head.size)
+      case (_, _)                  => None
     }
 
   /** Create and add placeholder handle if missing.
     * @return `true` if added, `false` if already present. */
   def addIfMissing(fileId: Long): Boolean = synchronized {
-    log.info(s"addIfMissing $fileId - $files") // FIXME trace
+    log.trace(s"addIfMissing $fileId to ${files.keySet}")
     files.get(fileId) match
       case None => files += fileId -> (Placeholder, Seq()); true
       case Some(Empty -> storing) => files += fileId -> (Placeholder, storing); true
       case _ => false
   }
 
-  /** @return The data entry (created if missing) of the handle, [[None]] if handle is missing. */
+  /** @return The data entry (create if missing) or [[None]] if closing or the write handle itself is missing. */
   def dataEntry(fileId: Long, sizeInDb: Long => Long): Option[DataEntry] = synchronized {
     if closing then None else files.get(fileId) match
-      case Some((current: DataEntry) -> _) => Some(current)
+      case Some((current: DataEntry, _)) => Some(current)
       case Some(Placeholder -> storing) =>
         log.trace(s"Creating write cache for $fileId.")
         val initialSize = storing.headOption.map(_.size).getOrElse(sizeInDb(fileId))
         Some(DataEntry(dataSeq, initialSize, tempPath).tap(entry => files += fileId -> (entry, storing)))
       case _ =>
-        log.info(s"dataEntry for $fileId not present in files $files") // TODO trace
+        log.warn(s"No write handle for file $fileId to get the data entry from.")
         None
   }
 
-  /** @return [[None]] if handle is missing. */
+  /** @return All data available from the write cache for the area specified or [[None]] if handle is missing. */
   def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Either[Long, Array[Byte]])]] =
-    println(s"read files: $files") // TODO
+    // FIXME pretty sure that this should not be "None" at all - should be possible to write a test for it first
     synchronized(files.get(fileId)) match
       case Some(current -> storing) =>
         (current match
@@ -86,6 +86,7 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
         })
       case None => log.info(s"read $fileId - not in files $files"); None // TODO trace
 
+  /** @return All available data for the area specified from the provided queue of [[DataEntry]] objects. */
   private def fillHoles(position: Long, holeSize: Long, remaining: Seq[DataEntry]): Iterator[(Long, Either[Long, Array[Byte]])] =
     remaining match
       case Seq() => Iterator(position -> Left(holeSize))
