@@ -6,13 +6,15 @@ import dedup.util.ClassLogging
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicLong
 
-/** As long as a file is open, the [[WriteBackend]] caches all writes to that file in a [[DataEntry]]. [[DataEntry]]
-  * instances are created on demand only, because they need two database reads - for read-only access to files, those
-  * two reads can be spared. This means that the "current" part of a write file handle is an [[Option]]([[DataEntry]]).
-  * When the last handle to a file is released, any written data (i.e., if a "current" [[DataEntry]] is present) needs
-  * to be queued for persisting. This is a queue, because persisting might take some time, and in the meanwhile another
-  * open-write-release cycle may have happened that - to avoid conflicts - must not be persisted before the previous
-  * is persist process finished.
+/** The [[WriteBackend]] needs to keep track of cached writes to open files. For this, when a file is opened (for
+  * reading or writing), a [[Placeholder]] entry is created. On demand - i.e. for write operations -, the placeholder
+  * is replaced by a [[DataEntry]] that caches writes. Creating the data entry on demand only is implemented because
+  * creating it needs two database reads which can be spared for read-only access to files. When the last open handle
+  * for the file is released, the data entry is queued for persisting, and the "current" part of the entry is set to
+  * [[Empty]]. A queue is used because persisting might take some time, and in the meanwhile another open-write-release
+  * cycle may have happened that - to avoid conflicts - must not be persisted before the previous persist process is
+  * finished. When the last data entry for a file has been persisted, the write handle is removed if the "current" part
+  * is still empty.
   *
   * A single instance of this class is used by the [[WriteBackend]] to manage the write file handles. */
 class FileHandlesWrite(tempPath: Path) extends ClassLogging:
@@ -29,10 +31,10 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
     * @return The results of [[release]]. For all of them, the read handles need to be released, and if a [[DataEntry]]
     *         is provided, it must be enqueued for persisting. */
   def shutdown(): Map[Long, Option[DataEntry]] = synchronized {
-    log.info(s"shutdown - $files") // FIXME debug
+    log.debug(s"Shutting down - ${files.size} write handles present.")
     closing = true
     // FIXME same thing here - do we need to persist 0 bytes for Placeholder entries?
-    val openWriteHandles = files.collect { case (fileId, (_: DataEntry) -> _) => fileId -> release(fileId) }
+    val openWriteHandles = files.collect { case fileId -> (_: DataEntry, _) => fileId -> release(fileId) }
     if openWriteHandles.nonEmpty then
       log.warn(s"Still ${openWriteHandles.size} open write handles when unmounting the file system.")
     openWriteHandles
