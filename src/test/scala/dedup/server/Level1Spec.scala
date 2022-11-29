@@ -3,6 +3,7 @@ package server
 
 import java.util.concurrent.atomic.AtomicBoolean
 
+// FIXME now obsolete, kept only for reference
 class Level1Spec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
   def repo = testFile
   val settings = Settings(repo, db.dbDir(repo), java.io.File(repo, "temp"), false, AtomicBoolean(false))

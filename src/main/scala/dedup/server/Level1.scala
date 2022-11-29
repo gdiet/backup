@@ -3,6 +3,7 @@ package server
 
 import java.util.concurrent.atomic.AtomicLong
 
+// FIXME now obsolete, kept only for reference
 class Level1(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   val backend: Level2 = Level2(settings)

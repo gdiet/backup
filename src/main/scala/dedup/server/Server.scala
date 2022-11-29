@@ -7,6 +7,7 @@ import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 import java.util.concurrent.atomic.AtomicBoolean
 
+// FIXME now obsolete, kept only for reference
 class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
   private val backend = Level1(settings)
 
