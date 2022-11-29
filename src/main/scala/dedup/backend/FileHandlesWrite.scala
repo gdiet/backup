@@ -73,18 +73,18 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
 
   /** @return All data from the write cache for the area specified or [[None]] if handle is missing or empty. */
   def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Either[Long, Array[Byte]])]] =
-    synchronized(files.get(fileId)) match
-      case Some(current -> storing) =>
+    synchronized(files.get(fileId)).flatMap {
+      case current -> storing =>
         (current match
           case dataEntry: DataEntry => Some(dataEntry.read(offset, requestedSize))
           case Placeholder => Some(Iterator(offset -> Left(requestedSize)))
           case Empty => None
-        ).map(_.flatMap {
+          ).map(_.flatMap {
           // fill in holes in data by recursing through the storing sequence
           case (position, Left(holeSize)) => fillHoles(position, holeSize, storing)
           case data => Iterator(data)
         })
-      case None => log.info(s"read $fileId - not in files $files"); None // TODO trace & add for the "Empty" case?
+    }
 
   /** @return All available data for the area specified from the provided queue of [[DataEntry]] objects. */
   private def fillHoles(position: Long, holeSize: Long, remaining: Seq[DataEntry]): Iterator[(Long, Either[Long, Array[Byte]])] =
@@ -99,21 +99,20 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   /** Move the current data entry to the storing queue, returning it if the storing queue was empty before.
     * @return The data entry if the storing queue was empty, so the data entry needs to be enqueued immediately. */
   def release(fileId: Long): Option[DataEntry] = synchronized {
-    log.info(s"release handles - $fileId - $files") // FIXME trace
+    log.trace(s"Release $fileId from ${files.keySet}")
     files.get(fileId) match
-      case Some((current: DataEntry) -> storing) =>
+      case Some((current: DataEntry, storing)) =>
         files += fileId -> (Empty, current +: storing)
         if storing.isEmpty then Some(current) else None
       // We can safely ignore (= not handle) placeholders - they mark files that have not been written yet.
       case Some(Placeholder -> storing) => files += fileId -> (Empty, storing); None
       case other =>
-        log.info(s"release: Missing entry for $fileId ... $other") // FIXME trace
-        problem("WriteHandle.release", s"Missing file handle (write) for file $fileId.")
+        problem("WriteHandle.release", s"Missing or empty file handle (write) for file $fileId.")
         None
   }
 
   def removeAndGetNext(fileId: Long, dataEntry: DataEntry): Option[DataEntry] = synchronized {
-    log.info(s"removeAndGetNext($fileId, dataEntry $dataEntry) - $files") // TODO trace
+    log.trace(s"removeAndGetNext($fileId, dataEntry $dataEntry) - ${files.keySet}")
     files.get(fileId) match
       case None =>
         problem("WriteHandle.removeAndGetNext.missing", s"Missing file handle (write) for file $fileId.")
