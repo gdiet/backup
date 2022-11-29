@@ -43,9 +43,9 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
   /** @return The size of the file handle, [[None]] if handle is missing or empty. */
   def getSize(fileId: Long): Option[Long] =
     synchronized(files.get(fileId)).flatMap {
-      case (current: DataEntry, _) => Some(current.size)
-      case (_, head +: _)          => Some(head.size)
-      case (_, _)                  => None
+      case (current: DataEntry, _)  => Some(current.size)
+      case (Placeholder, head +: _) => Some(head.size)
+      case (_, _)                   => None
     }
 
   /** Create and add placeholder handle if missing.
@@ -71,20 +71,20 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
         None
   }
 
-  /** @return All data available from the write cache for the area specified or [[None]] if handle is missing. */
+  /** @return All data from the write cache for the area specified or [[None]] if handle is missing or empty. */
   def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Either[Long, Array[Byte]])]] =
-    // FIXME pretty sure that this should not be "None" at all - should be possible to write a test for it first
     synchronized(files.get(fileId)) match
       case Some(current -> storing) =>
         (current match
           case dataEntry: DataEntry => Some(dataEntry.read(offset, requestedSize))
-          case _ => Some(Iterator(offset -> Left(requestedSize)))
+          case Placeholder => Some(Iterator(offset -> Left(requestedSize)))
+          case Empty => None
         ).map(_.flatMap {
           // fill in holes in data by recursing through the storing sequence
           case (position, Left(holeSize)) => fillHoles(position, holeSize, storing)
           case data => Iterator(data)
         })
-      case None => log.info(s"read $fileId - not in files $files"); None // TODO trace
+      case None => log.info(s"read $fileId - not in files $files"); None // TODO trace & add for the "Empty" case?
 
   /** @return All available data for the area specified from the provided queue of [[DataEntry]] objects. */
   private def fillHoles(position: Long, holeSize: Long, remaining: Seq[DataEntry]): Iterator[(Long, Either[Long, Array[Byte]])] =
@@ -104,7 +104,7 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
       case Some((current: DataEntry) -> storing) =>
         files += fileId -> (Empty, current +: storing)
         if storing.isEmpty then Some(current) else None
-      // FIXME if a placeholder is there, are we supposed to persist a 0 length entry?
+      // We can safely ignore (= not handle) placeholders - they mark files that have not been written yet.
       case Some(Placeholder -> storing) => files += fileId -> (Empty, storing); None
       case other =>
         log.info(s"release: Missing entry for $fileId ... $other") // FIXME trace

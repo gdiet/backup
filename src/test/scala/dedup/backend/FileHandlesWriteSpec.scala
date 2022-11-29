@@ -58,6 +58,16 @@ class FileHandlesWriteSpec extends org.scalatest.freespec.AnyFreeSpec with TestF
         assert(handles.release(1) === Some(theEntry))
       }
 
+      "size() and read() now return None because the entry is empty" in {
+        assert(handles.getSize(1) === None)
+        assert(handles.read(1, 9, 3) === None)
+      }
+
+      "addIfMissing returns true because entry is missing (although queued for storing), then false" in {
+        assert(handles.addIfMissing(1))
+        assert(!handles.addIfMissing(1))
+      }
+
       "the entry is queued, so it's size is still returned" in {
         assert(handles.getSize(1) === Some(13))
       }
