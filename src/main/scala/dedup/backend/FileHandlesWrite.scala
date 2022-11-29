@@ -106,8 +106,8 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
         if storing.isEmpty then Some(current) else None
       // We can safely ignore (= not handle) placeholders - they mark files that have not been written yet.
       case Some(Placeholder -> storing) => files += fileId -> (Empty, storing); None
-      case other =>
-        problem("WriteHandle.release", s"Missing or empty file handle (write) for file $fileId.")
+      case _ =>
+        problem("writehandle.release", s"Missing or empty file handle (write) for file $fileId.")
         None
   }
 
@@ -115,11 +115,11 @@ class FileHandlesWrite(tempPath: Path) extends ClassLogging:
     log.trace(s"removeAndGetNext($fileId, dataEntry $dataEntry) - ${files.keySet}")
     files.get(fileId) match
       case None =>
-        problem("WriteHandle.removeAndGetNext.missing", s"Missing file handle (write) for file $fileId.")
+        problem("writehandle.removeAndGetNext.missing", s"Missing file handle (write) for file $fileId.")
         None
       case Some(Empty -> Seq(`dataEntry`)) => files -= fileId; None
       case Some((current, others :+ `dataEntry`)) => files += fileId -> (current, others); others.lastOption
       case Some((_, others)) =>
-        problem("WriteHandle.removeAndGetNext.mismatch", s"Previous DataEntry not found for file $fileId.")
+        problem("writehandle.removeAndGetNext.mismatch", s"Previous DataEntry not found for file $fileId.")
         others.lastOption
   }
