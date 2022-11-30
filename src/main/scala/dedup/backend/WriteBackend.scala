@@ -18,7 +18,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
   override def shutdown(): Unit = sync {
     // Stop creating new write handles and process existing write handles.
     files.shutdown().foreach { case fileId -> maybeDataEntry =>
-      handlesRead.releaseFully(fileId) match
+      releaseFully(fileId) match
         case None => if maybeDataEntry.isDefined
           then log.error(s"No read handle for file $fileId although new data was written - data loss!")
           else log.warn(s"No read handle for file $fileId although write handle was present.")
@@ -62,7 +62,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     db.mkFile(newParentId, newName, file.time, file.dataId).isDefined
 
   private def dataEntry(fileId: Long): Option[DataEntry] =
-    files.dataEntry(fileId, handlesRead.dataId.andThen(_.get).andThen(db.logicalSize))
+    files.dataEntry(fileId, dataId.andThen(_.get).andThen(db.logicalSize))
 
   override def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
     dataEntry(fileId).map(_.write(data)).isDefined

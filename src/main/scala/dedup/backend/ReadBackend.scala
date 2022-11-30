@@ -12,7 +12,7 @@ import scala.collection.immutable.LazyList
 class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with ClassLogging:
 
   protected final val lts: LongTermStore = store.LongTermStore(settings.dataDir, settings.readonly)
-  protected final val handlesRead: FileHandlesRead = FileHandlesRead()
+  private val handlesRead: FileHandlesRead = FileHandlesRead()
 
   override def shutdown(): Unit =
     // On Windows, it's sort of normal to still have read file handles open when shutting down the file system.
@@ -34,6 +34,10 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
   def open(fileId: Long, dataId: DataId): Unit = handlesRead.open(fileId, dataId)
 
   def release(fileId: Long): Option[DataId] = handlesRead.release(fileId)
+
+  protected def releaseFully(fileId: Long): Option[DataId] = handlesRead.releaseFully(fileId)
+
+  protected def dataId(fileId: Long): Option[DataId] = handlesRead.dataId(fileId)
 
   override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] = {
     handlesRead.dataId(fileId).map { dataId =>
