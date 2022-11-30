@@ -37,7 +37,7 @@ class FileHandlesWriteSpec extends org.scalatest.freespec.AnyFreeSpec with TestF
       "dataEntry(1, _ => !!!) returns the existing data entry with size 10" in {
         assert(entry.size === 10)
       }
-      "getSize(1) returns 10 because that is the size of entry 1" in {
+      "getSize returns 10 because that is the size of entry 1" in {
         assert(handles.getSize(1) === Some(10))
       }
 
@@ -79,9 +79,40 @@ class FileHandlesWriteSpec extends org.scalatest.freespec.AnyFreeSpec with TestF
           case other => assert(false, s"bad result: $other")
       }
 
-      // TODO Needs test because this was bugged
-//      "adding the entry again returns true because ...?"
-//      handles.addIfMissing(1)
+      "more data can be written" in {
+        entry.write(Iterator(3L -> Array[Byte](5, 6, 7)))
+      }
 
+      "the updated data can be read" in {
+        handles.read(1, 0, 100).map(_.toList) match
+          case None => assert(false)
+          case Some(0L -> Left(3L) :: 3L -> Right(b1) :: 6L -> Left(4L) :: 10L -> Right(b2) :: Nil) =>
+            assert(b1.toSeq == Seq[Byte](5, 6, 7))
+            assert(b2.toSeq == Seq[Byte](1, 2, 3))
+          case other => assert(false, s"bad result: $other")
+      }
+
+      "releasing the entry now returns None because it is silently queued after the previous 'storing' entry" in {
+        assert(handles.release(1) === None)
+      }
+
+      "again: size() and read() now return None because the entry is empty" in {
+        assert(handles.getSize(1) === None)
+        assert(handles.read(1, 9, 3) === None)
+      }
+
+      "again: addIfMissing returns true because entry is missing (although queued for storing), then false" in {
+        assert(handles.addIfMissing(1))
+        assert(!handles.addIfMissing(1))
+      }
+
+      "again: the updated data can be read" in {
+        handles.read(1, 0, 100).map(_.toList) match
+          case None => assert(false)
+          case Some(0L -> Left(3L) :: 3L -> Right(b1) :: 6L -> Left(4L) :: 10L -> Right(b2) :: Nil) =>
+            assert(b1.toSeq == Seq[Byte](5, 6, 7))
+            assert(b2.toSeq == Seq[Byte](1, 2, 3))
+          case other => assert(false, s"bad result: $other")
+      }
     }
   }
