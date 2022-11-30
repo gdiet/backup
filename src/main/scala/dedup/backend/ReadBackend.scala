@@ -31,12 +31,9 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
     }
 
   // *** File content operations ***
-  def open(fileId: Long, dataId: DataId): Unit = handlesRead.open(fileId, dataId)
-
-  def release(fileId: Long): Option[DataId] = handlesRead.release(fileId)
-
+  override def open(fileId: Long, dataId: DataId): Unit = handlesRead.open(fileId, dataId)
+  override def release(fileId: Long): Option[DataId] = handlesRead.release(fileId)
   protected def releaseFully(fileId: Long): Option[DataId] = handlesRead.releaseFully(fileId)
-
   protected def dataId(fileId: Long): Option[DataId] = handlesRead.dataId(fileId)
 
   override def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] = {
