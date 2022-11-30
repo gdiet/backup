@@ -134,7 +134,7 @@ final class WriteDatabase(connection: Connection) extends ReadDatabase(connectio
   private val dTreeEntry = prepare("UPDATE TreeEntries SET deleted = ? WHERE id = ?")
   /** Deletes a tree entry. Should be called only for existing entry IDs.
     * @return `false` if the tree entry has children. */
-  def deleteChildless(id: Long): Boolean = structureSync { // TODO with foreign key relationship, check for exception instead?
+  def deleteChildless(id: Long): Boolean = structureSync {
     if children(id).nonEmpty then false else
       val count = dTreeEntry.set(now.nonZero, id).executeUpdate()
       ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
