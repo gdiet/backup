@@ -31,9 +31,7 @@ class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with Cla
     }
 
   // *** File content operations ***
-  def open(fileId: Long, dataId: DataId): Unit =
-    log.info(s"Open: $fileId, $dataId - $handlesRead") // FIXME
-    handlesRead.open(fileId, dataId)
+  def open(fileId: Long, dataId: DataId): Unit = handlesRead.open(fileId, dataId)
 
   def release(fileId: Long): Option[DataId] = handlesRead.release(fileId)
 
