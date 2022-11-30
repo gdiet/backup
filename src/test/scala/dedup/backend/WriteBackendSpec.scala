@@ -42,21 +42,18 @@ class WriteBackendSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
   }
 
   "release the open 10 bytes file" in {
-    println("############### 1") // TODO remove
     // When released here, the actual dataId is not yet known, so it's -1.
     assert(fs.release(tenBytesId) == Some(-1))
   }
 
   "release returns None when already closed" in {
-    println("############### 2") // TODO remove
     assert(fs.release(tenBytesId) == None)
   }
 
   val dataId = DataId(3)
   "wait for persist to finish, signaled by the file getting a data ID" in {
-    println("############### 3") // TODO remove
     val file = Iterator.continually {
-      Thread.sleep(2);
+      Thread.sleep(2)
       fs.entry("/dir/10 bytes").get.asInstanceOf[FileEntry]
         .tap(println)
     }.find(_.dataId != DataId(-1)).get
@@ -64,18 +61,15 @@ class WriteBackendSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
   }
 
   "reopen the 10 bytes file" in {
-    println("############### 4") // TODO remove
     fs.open(tenBytesId, dataId)
   }
 
   "read the reopened 10 bytes file" in {
-    println("############### 4b") // TODO remove
     // Also trying to read past end-of-file...
     assert(fs.read(tenBytesId, 0, 12).data == Seq(0L -> Seq(0, 0, 0, 0, 1, 2, 5, 0, 0, 0)))
   }
 
   "release the reopened 10 bytes file" in {
-    println("############### 5") // TODO remove
     // root: 0, dir: 1, file: 2, dataId: 3
     assert(fs.release(tenBytesId) == Some(3))
   }
