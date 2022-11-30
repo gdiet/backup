@@ -63,7 +63,7 @@ trait Backend:
   def open(fileId: Long, dataId: DataId): Unit
   
   /** Releases a virtual file handle. Triggers a write-through if no other handles are open for the file.
-    * @return [[false]] if called without create or open. TODO description */
+    * @return The data ID if the last handle to the file is released, otherwise [[None]]. */
   def release(fileId: Long): Option[DataId]
 
   /** Provides the requested number of bytes from the referenced file
