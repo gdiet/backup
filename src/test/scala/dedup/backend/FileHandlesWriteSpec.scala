@@ -14,10 +14,10 @@ class FileHandlesWriteSpec extends org.scalatest.freespec.AnyFreeSpec with TestF
       "release throws an IllegalArgumentException" in { intercept[IAE](handles.release(1)) }
       "removeAndGetNext throws an IllegalArgumentException" in { intercept[IAE](handles.removeAndGetNext(1, null)) }
       "release returns None if the exception is suppressed" in {
-        suppressing("WriteHandle.release")(assert(handles.release(1) === None))
+        suppressing("writehandle.release")(assert(handles.release(1) === None))
       }
       "removeAndGetNext returns None if the exception is suppressed" in {
-        suppressing("WriteHandle.removeAndGetNext.missing")(assert(handles.removeAndGetNext(1, null) === None))
+        suppressing("writehandle.removeAndGetNext.missing")(assert(handles.removeAndGetNext(1, null) === None))
       }
     }
 
