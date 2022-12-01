@@ -46,11 +46,11 @@ import scala.util.Using.resource
     val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
     main.info(s"Starting the dedup file system now...")
     main.info(s"***** Rewrite Server *****") // TODO remove
-    try fs.mount(mount.toPath, true, false, fuseOpts) catch (e: Throwable) => { fs.umount(); throw e }
+    try fs.mount(mount.toPath, true, false, fuseOpts) catch { case t: Throwable => fs.umount(); throw t }
   catch
     case main.exit =>
       main.error("Finished abnormally.")
       Thread.sleep(200) // Give logging some time to display message
-    case e: Throwable =>
-      main.error("Mount exception:", e)
+    case t: Throwable =>
+      main.error("Mount exception:", t)
       Thread.sleep(200) // Give logging some time to display message

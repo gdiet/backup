@@ -140,7 +140,7 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
             }
             log.info(s"Persisted $fileId - new content, dataId $dataId") // TODO trace
             writeDataIdRemoveAndQueueNext(dataId)
-    } catch (e: Throwable) => { log.error(s"Persisting $fileId failed: $dataEntry", e); throw e })
+    } catch { case t: Throwable => log.error(s"Persisting $fileId failed: $dataEntry", t); throw t })
 
 object WriteBackend:
   def cacheLoad: Long = entriesSize.get() * entryCount.get()
