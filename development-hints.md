@@ -1,5 +1,12 @@
 # Hints For Developers Of This Project
 
+## Scala
+
+* Do not override `val`s. This avoids ugly order of initialization corner cases.
+  <br>See e.g. https://docs.scala-lang.org/tutorials/FAQ/initialization-order.html
+
+## GIT
+
 ```
 git clone https://github.com/gdiet/backup.git
 ```
@@ -37,5 +44,5 @@ sudo apt install sbt
 Tools:
 
 ```
-sudo apt install zip unzip jq
+sudo apt --assume-yes install curl jq zip binutils
 ```
