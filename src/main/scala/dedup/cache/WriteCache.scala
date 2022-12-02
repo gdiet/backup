@@ -12,7 +12,8 @@ import dedup.util.ClassLogging
   *
   * @param temp Temp directory to use.
   * @param initialSize Size of the underlying file when the cache is instantiated. */
-class WriteCache(availableMem: AtomicLong, temp: Path, initialSize: Long) extends AutoCloseable with ClassLogging:
+class WriteCache(temp: Path, initialSize: Long, availableMem: AtomicLong = MemCache.availableMem)
+  extends AutoCloseable with ClassLogging:
 
   private var _size: Long = initialSize
   def          size: Long = _size
