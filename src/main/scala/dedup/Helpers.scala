@@ -16,7 +16,7 @@ def readableBytes(l: Long): String =
   else if l < 1000000000000L then "%,.2f GB".format(l/1000000000d)
   else                            "%,.2f TB".format(l/1000000000000d)
 
-class EnsureFailed(reason: String) extends IllegalArgumentException(reason)
+class EnsureFailed(reason: String, cause: Throwable = null) extends IllegalArgumentException(reason, cause)
 
 def problem(marker: String, warningMessage: => String): Unit =
     ensure(marker, false, warningMessage)
