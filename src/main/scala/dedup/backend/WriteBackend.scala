@@ -143,6 +143,10 @@ final class WriteBackend(settings: Settings, db: WriteDatabase) extends ReadBack
     } catch { case t: Throwable => log.error(s"Persisting $fileId failed: $dataEntry", t); throw t })
 
 object WriteBackend:
+  def apply(settings: Settings): WriteBackend =
+    val connection = dedup.db.H2.connection(settings.dbDir, readonly = false)
+    new WriteBackend(settings, new WriteDatabase(connection))
+
   def cacheLoad: Long = entriesSize.get() * entryCount.get()
   private val entryCount = new AtomicLong()
   private val entriesSize = new AtomicLong()

@@ -7,6 +7,7 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.Using.resource
 
+// FIXME remove, obsolete?
 @main def mount2(opts: (String, String)*): Unit =
   val readOnly       = opts.defaultFalse("readOnly")
   val copyWhenMoving = AtomicBoolean(opts.defaultFalse("copyWhenMoving"))
@@ -41,7 +42,7 @@ import scala.util.Using.resource
     main.info (s"Readonly:    $readOnly")
     main.debug(s"Temp dir:    $temp")
     if copyWhenMoving.get() then main.info(s"Copy instead of move initially enabled.")
-    val fs             = server.Server2(settings)
+    val fs = if settings.readonly then server.ServerRead(settings) else server.ServerWrite(settings)
     val nativeFuseOpts = if getNativePlatform.getOS == WINDOWS then Array("-o", "volname=DedupFS") else Array[String]()
     val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
     main.info(s"Starting the dedup file system now...")

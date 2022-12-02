@@ -9,6 +9,11 @@ import dedup.{DirEntry, FileEntry, TreeEntry}
 
 import scala.collection.immutable.LazyList
 
+object ReadBackend:
+  def apply(settings: Settings): ReadBackend =
+    val connection = dedup.db.H2.connection(settings.dbDir, readonly = true)
+    new ReadBackend(settings, new ReadDatabase(connection))
+
 class ReadBackend(settings: Settings, db: ReadDatabase) extends Backend with ClassLogging:
 
   protected final val lts: LongTermStore = store.LongTermStore(settings.dataDir, settings.readonly)

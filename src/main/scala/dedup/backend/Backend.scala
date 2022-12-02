@@ -6,7 +6,7 @@ import dedup.server.Settings
 
 /** @return a [[ReadBackend]] or a [[WriteBackend]] depending on [[Settings.readonly]].
   *         Don't instantiate more than one backend for a repository. */
-def apply(settings: Settings): Backend =
+def apply(settings: Settings): Backend = // FIXME remove
   val connection = dedup.db.H2.connection(settings.dbDir, settings.readonly)
   if settings.readonly
   then new ReadBackend(settings, new ReadDatabase(connection))
