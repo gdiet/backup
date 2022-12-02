@@ -2,7 +2,7 @@
 
 ## Scala
 
-* Do not override `val`s. This avoids ugly order of initialization corner cases.
+* Do not override `val`s that are referenced in the constructor. This avoids ugly order of initialization corner cases.
   <br>See e.g. https://docs.scala-lang.org/tutorials/FAQ/initialization-order.html
 
 ## GIT
