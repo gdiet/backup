@@ -9,6 +9,7 @@ import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
 
 import java.util.concurrent.atomic.AtomicBoolean
 
+// FIXME split into ServerRead and ServerWrite
 class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
   private val backend: Backend = dedup.backend(settings)
 
