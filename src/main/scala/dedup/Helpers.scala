@@ -4,7 +4,7 @@ import scala.language.implicitConversions
 import scala.util.ChainingOps
 
 /** @see [[scala.util.ChainingSyntax]] */
-@`inline` implicit final def scalaUtilChainingOps[A](a: A): ChainingOps[A] = ChainingOps(a)
+@`inline` implicit def scalaUtilChainingOps[A](a: A): ChainingOps[A] = ChainingOps(a)
 
 def now = Time(java.lang.System.currentTimeMillis)
 
