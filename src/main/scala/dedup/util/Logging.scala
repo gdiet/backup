@@ -21,10 +21,10 @@ trait ClassLogging:
       else if t/1000000 < 5000 then s"${t/1000000}ms"
       else                          s"${t/1000000000}s"
     try f.tap(t => logger(s"<< $time $msg -> $t"))
-    catch (e: Throwable) => { log.error(s"<< $time $msg -> ERROR", e); throw e }
+    catch { case t: Throwable => log.error(s"<< $time $msg -> ERROR", t); throw t }
 
   protected def guard[T](msg: => String)(f: => T): T =
-    try f catch (e: Throwable) => { log.error(s"$msg -> ERROR", e); throw e }
+    try f catch { case t: Throwable => log.error(s"$msg -> ERROR", t); throw t }
 
 
 class Slf4jLogger(name: String):
