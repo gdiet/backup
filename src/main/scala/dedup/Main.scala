@@ -124,8 +124,6 @@ extension(options: Seq[(String, String)])
     map
   private def unnamedOrGet(name: String): Option[String] =
     opts.get("").orElse(opts.get(name.toLowerCase))
-  private def get(name: String): Option[String] =
-    opts.get(name.toLowerCase)
   private def getOrElse(name: String, otherwise: => String): String =
     opts.getOrElse(name.toLowerCase, otherwise)
   private def defaultFalse(name: String): Boolean =
