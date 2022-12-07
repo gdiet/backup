@@ -1,6 +1,11 @@
 package dedup
 package server
 
+object Backend:
+  private val entryCount = new java.util.concurrent.atomic.AtomicLong()
+  private val entriesSize = new java.util.concurrent.atomic.AtomicLong()
+  def cacheLoad: Long = entriesSize.get() * entryCount.get()
+
 class Backend(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
   private val db = dedup.db.DB(dedup.db.H2.connection(settings.dbDir, settings.readonly))

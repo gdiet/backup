@@ -88,6 +88,6 @@ class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
       case (_, dataId, None, storing) =>
         log.trace(s"Creating write cache for $fileId.")
         val initialSize = storing.headOption.map(_.size).getOrElse(sizeInDb(dataId))
-        Some(DataEntry2(dataSeq, initialSize, tempPath))
+        Some(DataEntry2(tempPath.resolve(dataSeq.incrementAndGet().toString), initialSize))
     }
   }
