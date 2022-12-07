@@ -4,7 +4,7 @@ package server
 class Backend(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val lts = store.LongTermStore(settings.dataDir, settings.readonly)
   private val db = dedup.db.DB(dedup.db.H2.connection(settings.dbDir, settings.readonly))
-  private val handles = Handles()
+  private val handles = Handles(settings.tempPath)
 
   override def close(): Unit =
     handles.shutdown() // FIXME handle the result
@@ -13,3 +13,6 @@ class Backend(settings: Settings) extends AutoCloseable with util.ClassLogging:
   /** @return The size of the file. If the cached size if any or the logical size of the file's data entry. */
   def size(fileEntry: FileEntry): Long =
     handles.cachedSize(fileEntry.id).getOrElse(db.logicalSize(fileEntry.dataId))
+
+  def truncate(id: Long, newSize: Long): Boolean =
+    ???
