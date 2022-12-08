@@ -179,4 +179,4 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       entriesSize.addAndGet(-dataEntry.size)
       dataEntry.close(dataId)
     }
-  } catch (e: Throwable) => { log.error(s"Persisting $id failed: $dataEntry", e); throw e }
+  } catch { case e: Throwable => log.error(s"Persisting $id failed: $dataEntry", e); throw e }

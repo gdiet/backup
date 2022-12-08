@@ -1,14 +1,13 @@
 package dedup
 package db
 
-import dedup.db.Database.*
+import Database.*
 
 import java.io.File
-import java.sql.{Connection, ResultSet, Statement, Types}
+import java.sql.{Connection, PreparedStatement, ResultSet, Statement, Types}
 import scala.util.Try
-import scala.util.Using.resource
 
-def dbDir(repo: java.io.File) = java.io.File(repo, "fsdb")
+def dbDir(repo: File) = File(repo, "fsdb")
 
 def initialize(connection: Connection): Unit = connection.withStatement { stat =>
   tableDefinitions.foreach(stat.executeUpdate)
@@ -31,10 +30,17 @@ object Database extends util.ClassLogging:
     }
 
 class Database(connection: Connection) extends util.ClassLogging:
-  val statement: Statement = connection.createStatement()
-  import connection.{prepareStatement => prepare}
+  val statement: Statement = connection.createStatement() // TODO move all the things needing the statement to a separate class or so?
+  import connection.prepareStatement as prepare
 
-  // Check and migrate database version
+  extension(prep: PreparedStatement)
+    /** Used to synchronize general prepared statements - needed because they are stateful. */
+    private def sync[U](f: PreparedStatement => U): U = prep.synchronized(f(prep))
+
+  /** Synchronization used to prevent race conditions where tree entries with children could be deleted. */
+  private def structureSync[T](f: => T): T = synchronized(f)
+
+  // Check and (possibly) migrate database version
   version() match
     case None =>
       problem("database.no.version", s"No database version found.")
@@ -42,14 +48,13 @@ class Database(connection: Connection) extends util.ClassLogging:
       log.debug(s"Database version: $dbVersion.")
       ensure("database.illegal.version", dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
 
-  def version(): Option[String] = synchronized {
+  def version(): Option[String] =
     statement.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(maybe(_.getString(1)))
-  }
 
   /* The starts and stops of the contiguous data areas can be read like this:
        SELECT b1.start FROM DataEntries b1 LEFT JOIN DataEntries b2 ON b1.start = b2.stop WHERE b2.stop IS NULL ORDER BY b1.start;
      However, it's faster to read all DataEntries and sort them in Scala like below, assuming there's enough memory. */
-  def freeAreas(): Seq[DataArea] = synchronized {
+  def freeAreas(): Seq[DataArea] =
     val dataChunks = statement
       .query("SELECT start, stop FROM DataEntries")(seq(r => r.getLong(1) -> r.getLong(2)))
       .filterNot(_ == (0, 0))
@@ -68,16 +73,14 @@ class Database(connection: Connection) extends util.ClassLogging:
         log.error(s"First 200 duplicates: ${problems.take(200)}")
       problem("data.sort.gaps", s"Database might be corrupt. Restore from backup?")
     (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
-  }
 
   def split(path: String)       : Array[String] = path.split("/").filter(_.nonEmpty)
   def entry(path: String)       : Option[TreeEntry] = entry(split(path))
-  def entry(path: Array[String]): Option[TreeEntry] = synchronized {
+  def entry(path: Array[String]): Option[TreeEntry] =
     path.foldLeft(Option[TreeEntry](root)) {
       case (Some(dir: DirEntry), name) => child(dir.id, name)
       case _ => None
     }
-  }
 
   /** ResultSet: (id, parentId, name, time, dataId) */
   private def treeEntry(rs: ResultSet): TreeEntry =
@@ -92,21 +95,15 @@ class Database(connection: Connection) extends util.ClassLogging:
   private val selectTreeEntry = "SELECT id, parentId, name, time, dataId FROM TreeEntries"
 
   private val qEntry = prepare(s"$selectTreeEntry WHERE id = ? AND deleted = 0")
-  def entry(id: Long): Option[TreeEntry] = synchronized {
-    qEntry.set(id).query(maybe(treeEntry))
-  }
+  def entry(id: Long): Option[TreeEntry] = qEntry.sync(_.set(id).query(maybe(treeEntry)))
 
   private val qEntryLike = prepare(s"$selectTreeEntry WHERE deleted = 0 AND name LIKE ?")
-  def entryLike(nameLike: String): Seq[TreeEntry] = synchronized {
-    qEntryLike.set(nameLike).query(seq(treeEntry))
-  }
+  def entryLike(nameLike: String): Seq[TreeEntry] = qEntryLike.sync(_.set(nameLike).query(seq(treeEntry)))
 
   private val qEntriesFor = prepare(s"$selectTreeEntry WHERE dataId = ? AND deleted = 0")
-  def entriesFor(dataId: DataId): Seq[TreeEntry] = synchronized {
-    qEntriesFor.set(dataId).query(seq(treeEntry))
-  }
+  def entriesFor(dataId: DataId): Seq[TreeEntry] = qEntriesFor.sync(_.set(dataId).query(seq(treeEntry)))
 
-  def pathOf(id: Long): String = synchronized { pathOf(id, "") }
+  def pathOf(id: Long): String = pathOf(id, "")
   @annotation.tailrec
   private def pathOf(id: Long, pathEnd: String): String =
     // Why not fold? - https://stackoverflow.com/questions/70821201/why-cant-option-fold-be-used-tail-recursively-in-scala
@@ -119,51 +116,43 @@ class Database(connection: Connection) extends util.ClassLogging:
       case Some(entry: DirEntry) => pathOf(entry.parentId, s"${entry.name}/$pathEnd")
 
   private val qChild = prepare(s"$selectTreeEntry WHERE parentId = ? AND name = ? AND deleted = 0")
-  def child(parentId: Long, name: String): Option[TreeEntry] = synchronized {
-    qChild.set(parentId, name).query(maybe(treeEntry))
-  }
+  def child(parentId: Long, name: String): Option[TreeEntry] = qChild.sync(_.set(parentId, name).query(maybe(treeEntry)))
 
   private val qChildren = prepare(s"$selectTreeEntry WHERE parentId = ? AND deleted = 0")
-  def children(parentId: Long): Seq[TreeEntry] = synchronized {
-    qChildren.set(parentId).query(seq(treeEntry))
-  }.filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
+  def children(parentId: Long): Seq[TreeEntry] =
+    qChildren.sync(_.set(parentId).query(seq(treeEntry)))
+      .filterNot(_.name.isEmpty) // On linux, empty names don't work, and the root node has itself as child...
 
   private val qParts = prepare("SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC")
-  def parts(dataId: DataId): Seq[(Long, Long)] = synchronized {
-    qParts.set(dataId).query(seq { rs =>
+  def parts(dataId: DataId): Seq[(Long, Long)] =
+    qParts.sync(_.set(dataId).query(seq { rs =>
       val (start, size) = rs.getLong(1) -> rs.getLong(2)
       ensure("data.part.start", start >= 0, s"Start $start must be >= 0.")
       ensure("data.part.size", size >= 0, s"Size $size must be >= 0.")
       start -> size
-    })
-  }.filterNot(_._2 == 0) // Filter parts of size 0 as created when blacklisting.
+    })).filterNot(_._2 == 0) // Filter parts of size 0 as created when blacklisting.
 
   private val qDataSize = prepare("SELECT length FROM DataEntries WHERE id = ? AND seq = 1")
-  /** @return the logical file size */
-  def dataSize(dataId: DataId): Long = synchronized {
-    qDataSize.set(dataId).query(maybe(_.getLong(1))).getOrElse(0)
-  }
-  /** @return the file's storage size */
+  /** @return The logical file size. */
+  def dataSize(dataId: DataId): Long = qDataSize.sync(_.set(dataId).query(maybe(_.getLong(1)))).getOrElse(0)
+
+  def storageSize(dataId: DataId): Long = qStorageSize.sync(_.set(dataId).query(seq(_.getLong(1)))).sum
+  /** @return The file's storage size. */
   private val qStorageSize = prepare("SELECT stop - start FROM DataEntries WHERE id = ?")
-  def storageSize(dataId: DataId): Long = synchronized {
-    qStorageSize.set(dataId).query(seq(_.getLong(1))).sum
-  }
 
   private val qDataEntry = prepare("SELECT id FROM DataEntries WHERE hash = ? AND length = ?")
-  def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = synchronized {
-    qDataEntry.set(hash, size).query(maybe(r => DataId(r.getLong(1))))
-  }
+  def dataEntry(hash: Array[Byte], size: Long): Option[DataId] =
+    qDataEntry.sync(_.set(hash, size).query(maybe(r => DataId(r.getLong(1)))))
 
   private val uTime = prepare("UPDATE TreeEntries SET time = ? WHERE id = ?")
-  def setTime(id: Long, newTime: Long): Unit = synchronized {
-    val count = uTime.set(newTime, id).executeUpdate()
+  def setTime(id: Long, newTime: Long): Unit =
+    val count = uTime.sync(_.set(newTime, id).executeUpdate())
     ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
-  }
 
   private val dTreeEntry = prepare("UPDATE TreeEntries SET deleted = ? WHERE id = ?")
   /** Deletes a tree entry unless it has children.
     * @return [[false]] if the tree entry has children. */
-  def deleteChildless(id: Long): Boolean = synchronized {
+  def deleteChildless(id: Long): Boolean = structureSync {
     if children(id).nonEmpty then false else
       val count = dTreeEntry.set(now.nonZero, id).executeUpdate()
       ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
@@ -177,7 +166,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] =
     require(name.nonEmpty, "Can't create a directory with an empty name.")
-    Try(synchronized {
+    Try(structureSync {
       // Name conflict triggers SQL exception due to unique constraint.
       val count = iDir.set(parentId, name, now).executeUpdate()
       ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
@@ -191,7 +180,7 @@ class Database(connection: Connection) extends util.ClassLogging:
   /** @return `Some(id)` or [[None]] if a child entry with the same name already exists. */
   def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] =
     require(name.nonEmpty, "Can't create a file with an empty name.")
-    Try(synchronized {
+    Try(structureSync {
       // Name conflict triggers SQL exception due to unique constraint.
       val count = iFile.set(parentId, name, time, dataId).executeUpdate()
       ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
@@ -199,78 +188,66 @@ class Database(connection: Connection) extends util.ClassLogging:
     }).toOption
 
   private val uParentName = prepare("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?")
-  def update(id: Long, newParentId: Long, newName: String): Boolean = synchronized {
+  def update(id: Long, newParentId: Long, newName: String): Boolean =
     require(newName.nonEmpty, "Can't rename to an empty name.")
-    uParentName.set(newParentId, newName, id).executeUpdate() == 1
-  }
+    uParentName.sync(_.set(newParentId, newName, id).executeUpdate()) == 1
 
   private val uDataId = prepare("UPDATE TreeEntries SET dataId = ? WHERE id = ?")
-  def setDataId(id: Long, dataId: DataId): Unit = synchronized {
-    val count = uDataId.set(dataId, id).executeUpdate()
+  def setDataId(id: Long, dataId: DataId): Unit =
+    val count = uDataId.sync(_.set(dataId, id).executeUpdate())
     ensure("db.set.dataid", count == 1, s"setDataId update count is $count and not 1 for id $id dataId $dataId")
-  }
 
   private val qNextId = prepare("SELECT NEXT VALUE FOR idSeq")
-  def nextId: Long = synchronized {
-    qNextId.query(next(_.getLong(1)))
-  }
+  def nextId: Long = qNextId.sync(_.query(next(_.getLong(1))))
 
-  def newDataIdFor(id: Long): DataId = synchronized {
-    DataId(nextId).tap(setDataId(id, _))
-  }
+  def newDataIdFor(id: Long): DataId = DataId(nextId).tap(setDataId(id, _))
 
   private val iDataEntry = prepare("INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)")
-  def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit = synchronized {
+  def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit =
     ensure("db.add.data.entry.1", seq > 0, s"seq not positive: $seq")
     val sqlLength: Long       |SqlNull = if seq == 1 then length else SqlNull(Types.BIGINT)
     val sqlHash  : Array[Byte]|SqlNull = if seq == 1 then hash   else SqlNull(Types.BINARY)
-    val count = iDataEntry.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate()
+    val count = iDataEntry.sync(_.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate())
     ensure("db.add.data.entry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")
-  }
 
-  def removeStorageAllocation(dataId: DataId): Unit = synchronized {
+  def removeStorageAllocation(dataId: DataId): Unit =
     connection.transaction { connection.withStatement { statement =>
       statement.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId AND seq > 1")
       statement.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = $dataId")
     } }
-  }
 
-  def shutdownCompact(): Unit = synchronized {
+  def shutdownCompact(): Unit =
     log.info("Compacting DedupFS database...")
     statement.execute("SHUTDOWN COMPACT;")
-  }
 
   // File system statistics
-  def storageSize(): Long = synchronized {
-    statement.query("SELECT MAX(stop) FROM DataEntries")(one(_.opt(_.getLong(1)))).getOrElse(0L)
-  }
-  def countDataEntries() : Long = synchronized { statement.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(oneLong) }
-  def countFiles()       : Long = synchronized { statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(oneLong) }
-  def countDeletedFiles(): Long = synchronized { statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")(oneLong) }
-  def countDirs()        : Long = synchronized { statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")(oneLong) }
-  def countDeletedDirs() : Long = synchronized { statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(oneLong) }
+  def storageSize()      : Long = statement.query("SELECT MAX(stop) FROM DataEntries")(one(_.opt(_.getLong(1)))).getOrElse(0L)
+  def countDataEntries() : Long = statement.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(oneLong)
+  def countFiles()       : Long = statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(oneLong)
+  def countDeletedFiles(): Long = statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")(oneLong)
+  def countDirs()        : Long = statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")(oneLong)
+  def countDeletedDirs() : Long = statement.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(oneLong)
 
   // reclaimSpace specific queries
   /** @return The number of entries that have been un-rooted. */
-  def unrootDeletedEntries(deleteBeforeMillis: Long): Long = synchronized {
+  def unrootDeletedEntries(deleteBeforeMillis: Long): Long =
     statement.executeLargeUpdate(s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBeforeMillis")
-  }
+
   /** @return The number of entries that have been deleted. */
-  def deleteUnrootedTreeEntries(): Long = synchronized {
+  def deleteUnrootedTreeEntries(): Long =
     statement.executeLargeUpdate(s"DELETE FROM TreeEntries WHERE id = parentId AND id != ${root.id}")
-  }
-  def dataIdsInTree(): Set[Long] = synchronized { statement.query(
+
+  def dataIdsInTree(): Set[Long] =
     // The WHERE clause makes sure the 'null' entries are not returned
-    "SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0"
-  )(seq(_.getLong(1))).toSet }
-  def dataIdsInStorage(): Set[Long] = synchronized { statement.query(
+    statement.query("SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0")(seq(_.getLong(1))).toSet
+
+  def dataIdsInStorage(): Set[Long] =
     // The WHERE clause makes sure the 'null' entries are not returned
-    "SELECT id FROM DataEntries"
-  )(seq(_.getLong(1))).toSet }
-  def deleteDataEntry(dataId: Long): Unit = synchronized {
+    statement.query("SELECT id FROM DataEntries")(seq(_.getLong(1))).toSet
+
+  def deleteDataEntry(dataId: Long): Unit =
     val count = statement.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId")
     ensure("db.delete.dataentry", count == 1, s"For data id $dataId, delete count is $count instead of 1.")
-  }
 
 extension (rawSql: String)
   private def prepareSql = rawSql.stripMargin.split(";")
