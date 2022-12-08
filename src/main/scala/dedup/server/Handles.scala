@@ -91,3 +91,27 @@ class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
         Some(DataEntry2(tempPath.resolve(dataSeq.incrementAndGet().toString), initialSize))
     }
   }
+
+  /** @return All cached data for the area specified or [[None]] if handle is missing or empty. */
+  def read(fileId: Long, offset: Long, requestedSize: Long): Option[(DataId, Iterator[(Long, Either[Long, Array[Byte]])])] =
+    synchronized(handles().get(fileId)).flatMap {
+      case (count, dataId, current, storing) if count > 0 => Some(dataId ->
+        current.map(_.read(offset, requestedSize))
+          .getOrElse(Iterator(offset -> Left(requestedSize)))
+          .flatMap {
+            case position -> Left(holeSize) => fillHoles(position, holeSize, storing)
+            case data => Iterator(data)
+          }
+      )
+      case _ => None
+    }
+
+  /** @return All available data for the area specified from the provided queue of [[DataEntry2]] objects. */
+  private def fillHoles(position: Long, holeSize: Long, remaining: Seq[DataEntry2]): Iterator[(Long, Either[Long, Array[Byte]])] =
+    remaining match
+      case Seq() => Iterator(position -> Left(holeSize))
+      case head +: tail =>
+        head.read(position, holeSize).flatMap {
+          case (innerPosition, Left(innerHoleSize)) => fillHoles(innerPosition, innerHoleSize, tail)
+          case other => Iterator(other)
+        }
