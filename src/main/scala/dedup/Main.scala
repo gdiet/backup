@@ -95,6 +95,53 @@ import scala.util.Using.resource
       main.error("Mount exception:", t)
       Thread.sleep(200) // Give logging some time to display message
 
+@main def mount2(opts: (String, String)*): Unit =
+  val readOnly       = opts.defaultFalse("readOnly")
+  val copyWhenMoving = AtomicBoolean(opts.defaultFalse("copyWhenMoving"))
+  if opts.defaultFalse("gui") then ServerGui(copyWhenMoving, readOnly)
+  try
+    def isWindows = getNativePlatform.getOS == WINDOWS
+    val repo           = opts.repo
+    val mount          = File(opts.unnamedOrGet("mount").getOrElse(if isWindows then "J:\\" else "/mnt/dedupfs" )).getCanonicalFile
+    val backup         = !readOnly && opts.defaultTrue("dbBackup")
+    val temp           = File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
+    val dbDir          = db.dbDir(repo)
+    if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
+    if !readOnly then db.H2.checkForTraceFile(dbDir)
+    if isWindows then
+      if !mount.toString.matches(raw"[a-zA-Z]:\\.*") then main.failureExit(s"Mount point not on a local drive: $mount")
+      if mount.exists then main.failureExit(s"Mount point already exists: $mount")
+      if Option(mount.getParentFile).exists(!_.isDirectory) then main.failureExit(s"Mount parent is not a directory: $mount")
+    else
+      if !mount.isDirectory  then main.failureExit(s"Mount point is not a directory: $mount")
+      if !mount.list.isEmpty then main.failureExit(s"Mount point is not empty: $mount")
+    val settings = server.Settings(repo, dbDir, temp, readOnly, copyWhenMoving)
+    if !readOnly then
+      temp.mkdirs()
+      if !temp.isDirectory  then main.failureExit(s"Temp dir is not a directory: $temp")
+      if !temp.canWrite     then main.failureExit(s"Temp dir is not writable: $temp")
+      if temp.list.nonEmpty then main.warn(s"Note that temp dir is not empty: $temp")
+    if !settings.readonly then cache.MemCache.startupCheck()
+    if backup then db.maintenance.backup(settings.dbDir)
+    main.info (s"Dedup file system settings:")
+    main.info (s"Repository:  $repo")
+    main.info (s"Mount point: $mount")
+    main.info (s"Readonly:    $readOnly")
+    main.debug(s"Temp dir:    $temp")
+    if copyWhenMoving.get() then main.info(s"Copy instead of move initially enabled.")
+    val fs             = server.Server2(settings)
+    val nativeFuseOpts = if getNativePlatform.getOS == WINDOWS then Array("-o", "volname=DedupFS") else Array[String]()
+    val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
+    main.info(s"Starting the dedup file system now...")
+    try fs.mount(mount.toPath, true, false, fuseOpts) catch { case t: Throwable => fs.umount(); throw t }
+  catch
+    case main.exit =>
+      main.error("Finished abnormally.")
+      Thread.sleep(200) // Give logging some time to display message
+    case t: Throwable =>
+      main.error("Mount exception:", t)
+      Thread.sleep(200) // Give logging some time to display message
+
 object main extends util.ClassLogging:
   export log.{debug, info, warn, error}
   object exit extends RuntimeException
