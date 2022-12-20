@@ -23,10 +23,21 @@ final class Backend(settings: Settings) extends util.ClassLogging:
 
   /** @return The size of the file, 0 if the file entry does not exist. */
   def size(file: FileEntry): Long = handles.cachedSize(file.id).getOrElse(db.logicalSize(file.dataId))
-  
+
   /** Create a virtual file handle so read/write operations can be done on the file.
     * For each [[open]] or [[createAndOpen]], a corresponding [[release]] call is required for normal operation. */
   def open(file: FileEntry): Unit = handles.open(file.id, file.dataId)
+
+  /** Releases a virtual file handle. Triggers a write-through if no other handles are open for the file.
+    * For each [[open]] or [[createAndOpen]], a corresponding [[release]] call is required for normal operation.
+    *
+    * @return False if called without corresponding [[open]] or [[createAndOpen]]. */
+  def release(fileId: Long): Boolean =
+    handles.release(fileId) match
+      case Handles.NotOpen => false
+      case maybeEntry =>
+        // FIXME handle Some() case
+        true
 
   def child(parentId: Long, name: String): Option[TreeEntry] = ???
   /** @return Some(id) or None if a child entry with the same name already exists. */
@@ -61,10 +72,10 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     * @return Some(actual size read) or None if called without createAndOpen.
     */
   def read[D: DataSink](id: Long, offset: Long, size: Long, sink: D): Option[Long] = ???
-  def release(id: Long): Boolean = ???
 
   /** Clean up and release resources. */
   def shutdown(): Unit =
+    handles.shutdown() // FIXME handle return value
     log.warn("SHUTDOWN NOT COMPLETELY IMPLEMENTED") // FIXME Backend.shutdown code missing
     db.close()
     log.info("Shutdown complete.")
