@@ -23,6 +23,10 @@ final class Backend(settings: Settings) extends util.ClassLogging:
 
   /** @return The size of the file, 0 if the file entry does not exist. */
   def size(file: FileEntry): Long = handles.cachedSize(file.id).getOrElse(db.logicalSize(file.dataId))
+  
+  /** Create a virtual file handle so read/write operations can be done on the file.
+    * For each [[open]] or [[createAndOpen]], a corresponding [[release]] call is required for normal operation. */
+  def open(file: FileEntry): Unit = handles.open(file.id, file.dataId)
 
   def child(parentId: Long, name: String): Option[TreeEntry] = ???
   /** @return Some(id) or None if a child entry with the same name already exists. */
@@ -35,7 +39,6 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     * @return [[false]] if the tree entry has children. */
   def deleteChildless(entry: TreeEntry): Boolean = ???
   def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = ???
-  def open(file: FileEntry): Unit = ???
   def truncate(id: Long, newSize: Long): Boolean = ???
   /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
     *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.
