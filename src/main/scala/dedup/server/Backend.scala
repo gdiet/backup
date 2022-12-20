@@ -17,8 +17,10 @@ final class Backend(settings: Settings) extends util.ClassLogging:
       case _ => None
     }
 
+  /** @return The child entries of the tree entry. */
+  def children(parentId: Long): Seq[TreeEntry] = db.children(parentId)
+
   def child(parentId: Long, name: String): Option[TreeEntry] = ???
-  def children(parentId: Long): Seq[TreeEntry] = ???
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = ???
   def setTime(id: Long, newTime: Long): Unit = ???
