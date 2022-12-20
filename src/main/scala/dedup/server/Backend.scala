@@ -5,6 +5,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 final class Backend(settings: Settings) extends util.ClassLogging:
   private val db = dedup.db.DB(dedup.db.H2.connection(settings.dbDir, settings.readonly))
+  private val handles = Handles(settings.tempPath)
 
   /** @return The [[TreeEntry]] denoted by the file system path or [[None]] if there is no matching entry. */
   def entry(path: String): Option[TreeEntry] = entry(pathElements(path))
@@ -17,8 +18,11 @@ final class Backend(settings: Settings) extends util.ClassLogging:
       case _ => None
     }
 
-  /** @return The child entries of the tree entry. */
+  /** @return The child entries of the tree entry, an empty [[Seq]] if the parent entry does not exist. */
   def children(parentId: Long): Seq[TreeEntry] = db.children(parentId)
+
+  /** @return The size of the file, 0 if the file entry does not exist. */
+  def size(file: FileEntry): Long = handles.cachedSize(file.id).getOrElse(db.logicalSize(file.dataId))
 
   def child(parentId: Long, name: String): Option[TreeEntry] = ???
   /** @return Some(id) or None if a child entry with the same name already exists. */
@@ -32,7 +36,6 @@ final class Backend(settings: Settings) extends util.ClassLogging:
   def deleteChildless(entry: TreeEntry): Boolean = ???
   def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = ???
   def open(file: FileEntry): Unit = ???
-  def size(file: FileEntry): Long = ???
   def truncate(id: Long, newSize: Long): Boolean = ???
   /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
     *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.

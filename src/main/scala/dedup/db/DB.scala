@@ -36,3 +36,8 @@ final class DB(connection: java.sql.Connection) extends AutoCloseable:
   def children(parentId: Long): Seq[TreeEntry] =
     // On linux, empty names don't work, and the root node has itself as child...
     qChildren(_.set(parentId).query(seq(treeEntry))).filterNot(_.name.isEmpty)
+
+  private val qLogicalSize = prepare("SELECT length FROM DataEntries WHERE id = ? AND seq = 1")
+  /** @return the logical file size for the data entry or 0 if there is no matching data entry. */
+  def logicalSize(dataId: DataId): Long =
+    qLogicalSize(_.set(dataId).query(maybe(_.getLong(1))).getOrElse(0))
