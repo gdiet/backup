@@ -67,16 +67,29 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     * @return The number of bytes read or [[None]] if the file is not open. */
   // Note that previous implementations provided atomic reads, but this is not really necessary...
   def read(fileId: Long, offset: Long, requestedSize: Long)(receiver: Iterator[(Long, Array[Byte])] => Any): Option[Long] =
-    handles.get(fileId).map(_.readLock { handle =>
-      ???
+    handles.get(fileId).map(_.readLock { case Handle(_, dataId, current, persisting) =>
+      val dataEntries = current ++: persisting
+      lazy val fileSize = dataEntries.headOption.map(_.size).getOrElse(db.logicalSize(dataId))
+      lazy val parts = db.parts(dataId)
+      val data = fillHoles(offset, requestedSize, current ++: persisting)
+        .flatMap {
+          case position -> Left(size) => readFromLts(parts, offset, math.min(requestedSize, fileSize - offset))
+          case position -> Right(data) => Iterator(position -> data)
+        }
+      var sizeRead: Long = 0L
+      receiver(data.tapEach(sizeRead += _._1))
+      sizeRead
     })
-    ???
-//      lazy val fileSize = knownSize.getOrElse(db.logicalSize(dataId))
-//      lazy val parts = db.parts(dataId)
-//      val data = cachedData.flatMap {
-//        case position -> Left(size) => readFromLts(parts, offset, math.min(requestedSize, fileSize - offset))
-//        case position -> Right(data) => Iterator(position -> data)
-//      }
+
+  /** @return All available data for the area specified from the provided queue of [[DataEntry2]] objects. */
+  private def fillHoles(position: Long, holeSize: Long, remaining: Seq[DataEntry2]): Iterator[(Long, Either[Long, Array[Byte]])] =
+    remaining match
+      case Seq() => Iterator(position -> Left(holeSize))
+      case head +: tail =>
+        head.read(position, holeSize).flatMap {
+          case (innerPosition, Left(innerHoleSize)) => fillHoles(innerPosition, innerHoleSize, tail)
+          case other => Iterator(other)
+        }
 
   /** From the long term store, reads file content defined by `parts`.
     *
