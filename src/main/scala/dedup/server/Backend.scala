@@ -56,22 +56,16 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     *             using defensive copy (Array.clone) that they are not modified later.
     * @return `false` if called without createAndOpen or open. */
   def write(id: Long, data: Iterator[(Long, Array[Byte])]): Boolean = ???
-  /** Reads bytes from the referenced file and writes them to `sink`.
-    * Reads the requested number of bytes unless end-of-file is reached
-    * first, in that case stops there.
+
+  /** Provides the requested number of bytes from the referenced file
+    * unless end-of-file is reached - in that case stops there.
     *
-    * Note: Providing a `sink` instead of returning the data enables
-    * atomic reads in the - at [[Backend]] mutable - [[DataEntry]] without
-    * incurring the risk of large memory allocations.
-    *
-    * @param id     id of the file to read from.
-    * @param offset offset in the file to start reading at.
-    * @param size   number of bytes to read, NOT limited by the internal size limit for byte arrays.
-    * @param sink   sink to write data to, starting at sink position 0.
-    *
-    * @return Some(actual size read) or None if called without createAndOpen.
-    */
-  def read[D: DataSink](id: Long, offset: Long, size: Long, sink: D): Option[Long] = ???
+    * @param fileId        Id of the file to read from.
+    * @param offset        Offset in the file to start reading at, must be >= 0.
+    * @param requestedSize Number of bytes to read.
+    * @return A contiguous Iterator(position, bytes) or [[None]] if the file is not open. */
+  // Note that previous implementations provided atomic reads, but this is not really necessary...
+  def read[D: DataSink](fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] = ???
 
   /** Clean up and release resources. */
   def shutdown(): Unit =
