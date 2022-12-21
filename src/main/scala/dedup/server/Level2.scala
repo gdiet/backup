@@ -165,7 +165,7 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
         Level2.writeAlgorithm(data, reserved, lts.write)
         // Save data entries
         val dataId = database.newDataIdFor(id)
-        reserved.zipWithIndex.foreach { case (dataArea, index) =>
+        reserved.zipWithIndex.foreach { (dataArea, index) =>
           log.debug(s"Data ID $dataId size ${dataEntry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
           database.insertDataEntry(dataId, index + 1, dataEntry.size, dataArea.start, dataArea.stop, hash)
         }
