@@ -63,9 +63,34 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     * @param fileId        Id of the file to read from.
     * @param offset        Offset in the file to start reading at, must be >= 0.
     * @param requestedSize Number of bytes to read.
-    * @return A contiguous Iterator(position, bytes) or [[None]] if the file is not open. */
+    * @param receiver      The receiver of the bytes read.
+    * @return The number of bytes read or [[None]] if the file is not open. */
   // Note that previous implementations provided atomic reads, but this is not really necessary...
-  def read[D: DataSink](fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] = ???
+  def read(fileId: Long, offset: Long, requestedSize: Long)(receiver: Iterator[(Long, Array[Byte])] => Any): Option[Long] =
+    handles.get(fileId).map(_.readLock { handle =>
+      ???
+    })
+    ???
+//      lazy val fileSize = knownSize.getOrElse(db.logicalSize(dataId))
+//      lazy val parts = db.parts(dataId)
+//      val data = cachedData.flatMap {
+//        case position -> Left(size) => readFromLts(parts, offset, math.min(requestedSize, fileSize - offset))
+//        case position -> Right(data) => Iterator(position -> data)
+//      }
+
+  /** From the long term store, reads file content defined by `parts`.
+    *
+    * @param parts    List of (offset, size) defining the file content parts to read.
+    *                 `readFrom` + `readSize` should not exceed summed part sizes unless
+    *                 `parts` is the empty list that is used for blacklisted entries.
+    * @param readFrom Position in the file to start reading at, must be >= 0.
+    * @param readSize Number of bytes to read, must be >= 0.
+    * @return A contiguous Iterator(position, bytes) where data chunk size is limited to [[dedup.memChunk]].
+    *         If `parts` is too small, the data is filled up with zeros.
+    * @throws IllegalArgumentException if `readFrom` is negative or `readSize` is less than 1.
+    */
+  private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): Iterator[(Long, Array[Byte])] =
+    ???
 
   /** Clean up and release resources. */
   def shutdown(): Unit =
