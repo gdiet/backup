@@ -17,7 +17,7 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
   private var closing = false
 
   /** fileId -> [[Handle]]. Remember to synchronize. */
-  private var files = Map[Long, Handle]()
+  private var handles = Map[Long, Handle]()
 
   /** @return The size of the cached entry if any or [[None]]. */
   def cachedSize(fileId: Long): Option[Long] = None // FIXME implementation missing
@@ -25,7 +25,7 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
   /** Create the virtual file handle if missing and increment the handle count. */
   def open(fileId: Long, dataId: DataId): Unit = synchronized {
     ensure("handles.open", !closing, "Attempt to open file while closing the backend.")
-    files += fileId -> (files.get(fileId) match
+    handles += fileId -> (handles.get(fileId) match
       case None => Handle(1, dataId)
       case Some(handle) =>
         ensure("handles.open.dataid.conflict", dataId == handle.dataId, s"Open #${handle.count} - dataId $dataId differs from previous ${handle.dataId}.");
@@ -33,20 +33,30 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
     )
   }
 
-  def get(fileId: Long): Option[Handle] = synchronized(files.get(fileId))
+  def get(fileId: Long): Option[Handle] = synchronized(handles.get(fileId))
 
   /** Releases a virtual file handle:
     *  - If the file was not open, returns [[Handles.NotOpen]].
     *  - Decrements the handle count for the file.
     *  - If there are more handles on the file, returns [[None]].
-    *  - If there was no [[DataEntry2]] write cache, returns [[None]].
-    *  - Enqueues the [[DataEntry2]] to the persist queue.
+    *  - If there was no current [[DataEntry2]] write cache, returns [[None]].
+    *  - Enqueues the current [[DataEntry2]] to the persist queue.
     *  - If the persist queue was empty before, returns the entry to be handled, otherwise returns [[None]]. */
-  def release(fileId: Long): Handles.NotOpen.type | Option[(DataId, DataEntry2)] =
-    synchronized(files.get(fileId)) match
-      case None => Handles.NotOpen
-      case _ => ???
-    None // FIXME implementation missing
+  def release(fileId: Long): Handles.NotOpen.type | Option[(DataId, DataEntry2)] = synchronized {
+    handles.get(fileId) match
+      case None =>
+        log.warn(s"release($fileId) called for a file handle that is currently not open.")
+        Handles.NotOpen
+      case Some(handle @ Handle(count, dataId, current, persisting)) =>
+        if count < 1 then log.warn(s"release($fileId) called for a file having handle count $count.")
+        if count > 1 then { handles += fileId -> handle.copy(count - 1); None }
+        else if current.isEmpty then
+          if persisting.isEmpty then handles -= fileId else handles += fileId -> handle.copy(count = 0)
+          None
+        else
+          handles += fileId -> Handle(0, dataId, None, current ++: persisting)
+          if persisting.isEmpty then current.map(dataId -> _) else None
+  }
 
   /** @return The data entries that still need to be enqueued. */
   def shutdown(): Map[Long, Option[DataEntry2]] = synchronized {

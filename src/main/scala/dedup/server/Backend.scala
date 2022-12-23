@@ -5,6 +5,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 final class Backend(settings: Settings) extends util.ClassLogging:
   private val db = dedup.db.DB(dedup.db.H2.connection(settings.dbDir, settings.readonly))
+  private val lts: store.LongTermStore = store.LongTermStore(settings.dataDir, settings.readonly)
   private val handles = Handles(settings.tempPath)
 
   /** @return The [[TreeEntry]] denoted by the file system path or [[None]] if there is no matching entry. */
@@ -71,13 +72,13 @@ final class Backend(settings: Settings) extends util.ClassLogging:
       val dataEntries = current ++: persisting
       lazy val fileSize = dataEntries.headOption.map(_.size).getOrElse(db.logicalSize(dataId))
       lazy val parts = db.parts(dataId)
-      val data = fillHoles(offset, requestedSize, current ++: persisting)
+      val data = fillHoles(offset, math.min(requestedSize, fileSize - offset), dataEntries)
         .flatMap {
-          case position -> Left(size) => readFromLts(parts, offset, math.min(requestedSize, fileSize - offset))
+          case position -> Left(size) => readFromLts(parts, position, size)
           case position -> Right(data) => Iterator(position -> data)
         }
       var sizeRead: Long = 0L
-      receiver(data.tapEach(sizeRead += _._1))
+      receiver(data.tapEach(sizeRead += _._2.length))
       sizeRead
     })
 
@@ -103,7 +104,30 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     * @throws IllegalArgumentException if `readFrom` is negative or `readSize` is less than 1.
     */
   private def readFromLts(parts: Seq[(Long, Long)], readFrom: Long, readSize: Long): Iterator[(Long, Array[Byte])] =
-    ???
+    log.trace(s"readFromLts(readFrom: $readFrom, readSize: $readSize, parts: $parts)")
+    ensure("read.lts.offset", readFrom >= 0, s"Read offset $readFrom must be >= 0.")
+    ensure("read.lts.size", readSize >= 0, s"Read size $readSize must be > 0.")
+    val partsToReadFrom = parts.foldLeft(0L -> Vector[(Long, Long)]()) {
+      case ((currentOffset, result), part@(partPosition, partSize)) =>
+        val distance = readFrom - currentOffset
+        if distance > partSize then currentOffset + partSize -> result
+        else if distance > 0 then currentOffset + partSize -> (result :+ (partPosition + distance, partSize - distance))
+        else currentOffset + partSize -> (result :+ part)
+    }._2
+
+    def recurse(remainingParts: Seq[(Long, Long)], readSize: Long, resultOffset: Long): LazyList[(Long, Array[Byte])] =
+      log.trace(s"readFromLts recurse(remainingParts: $remainingParts, readSize: $readSize, resultOffset: $resultOffset)")
+      remainingParts match
+        case Seq() =>
+          if parts.nonEmpty then log.warn(s"Could not fully read $readSize bytes starting at $readFrom from these parts: $parts")
+          LazyList.range(resultOffset, readSize, memChunk.toLong).map(
+            offset => offset -> new Array[Byte](math.min(memChunk, readSize - offset).toInt)
+          )
+        case (partPosition, partSize) +: rest =>
+          if partSize < readSize then lts.read(partPosition, partSize, resultOffset) #::: recurse(rest, readSize - partSize, resultOffset + partSize)
+          else lts.read(partPosition, readSize, resultOffset)
+
+    recurse(partsToReadFrom, readSize, readFrom).iterator
 
   /** Clean up and release resources. */
   def shutdown(): Unit =
