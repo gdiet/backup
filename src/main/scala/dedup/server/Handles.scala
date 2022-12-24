@@ -41,17 +41,10 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
     *             using defensive copy (Array.clone) that they are not modified later.
     * @return `false` if called without createAndOpen or open. */
   def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
-    synchronized {
-      handles.get(fileId).map {
-        case Handle(count, dataId, None, persisting) =>
-          val current = DataEntry2()
-          val handle = Handle(count, dataId, Some(current), persisting).tap(handles += fileId -> _)
-          handle -> current
-        case handle @ Handle(_, _, Some(current), _) => handle -> current
-      }
-    }.map( (handle, current) => handle.readLock { _ => // FIXME no lock necessary for writing, remove
-      current.write(data)
-    }).isDefined
+    synchronized(handles.get(fileId).map {
+      case Handle(_, _, Some(current), _) => current
+      case handle => DataEntry2().tap(current => handle.copy(current = Some(current)).tap(handles += fileId -> _))
+    }).map(_.write(data)).isDefined
 
   def get(fileId: Long): Option[Handle] = synchronized(handles.get(fileId))
 
