@@ -19,6 +19,9 @@ final class DataEntry2 extends AutoCloseable:
   def read(offset: Long, size: Long): Iterator[(Long, Either[Long, Array[Byte]])] =
     ???
 
+  def write(data: Iterator[(Long, Array[Byte])]): Unit =
+    ???
+  
   def size: Long = ???
 
   override def close(): Unit =

@@ -52,11 +52,12 @@ final class Backend(settings: Settings) extends util.ClassLogging:
   def deleteChildless(entry: TreeEntry): Boolean = ???
   def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = ???
   def truncate(id: Long, newSize: Long): Boolean = ???
+  
   /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
     *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.
     *             using defensive copy (Array.clone) that they are not modified later.
     * @return `false` if called without createAndOpen or open. */
-  def write(id: Long, data: Iterator[(Long, Array[Byte])]): Boolean = ???
+  def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean = handles.write(fileId, data)
 
   /** Provides the requested number of bytes from the referenced file
     * unless end-of-file is reached - in that case stops there.

@@ -5,9 +5,12 @@ object Handles:
   object NotOpen
 
 final case class Handle(count: Int, dataId: DataId, current: Option[DataEntry2] = None, persisting: Seq[DataEntry2] = Seq()):
+  /** Prevent race conditions when reading from a persisting entry while at the same time that entry is fully written,
+    * gets closed thus becomes unavailable for reading. This race condition can not affect the [[current]] entry because
+    * reading requires to hold a file handle preventing [[current]] to be persisted. */
   def readLock[T](f: Handle => T): T =
-    val handles = (persisting ++ current).tapEach(_.acquire())
-    try f(this) finally handles.foreach(_.release())
+    persisting.foreach(_.acquire())
+    try f(this) finally persisting.foreach(_.release())
 
 /** Manages handles for open files, keeping track of:
   *  - The number of open handles for each file.
@@ -32,6 +35,23 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
         handle.copy(count = handle.count + 1)
     )
   }
+
+  /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
+    *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.
+    *             using defensive copy (Array.clone) that they are not modified later.
+    * @return `false` if called without createAndOpen or open. */
+  def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
+    synchronized {
+      handles.get(fileId).map {
+        case Handle(count, dataId, None, persisting) =>
+          val current = DataEntry2()
+          val handle = Handle(count, dataId, Some(current), persisting).tap(handles += fileId -> _)
+          handle -> current
+        case handle @ Handle(_, _, Some(current), _) => handle -> current
+      }
+    }.map( (handle, current) => handle.readLock { _ => // FIXME no lock necessary for writing, remove
+      current.write(data)
+    }).isDefined
 
   def get(fileId: Long): Option[Handle] = synchronized(handles.get(fileId))
 
