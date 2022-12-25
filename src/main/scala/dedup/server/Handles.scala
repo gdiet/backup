@@ -53,6 +53,17 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
           .tap(current => handle.copy(current = Some(current)).tap(handles += fileId -> _))
     }).map(_.write(data)).isDefined
 
+  /** Truncates the cached file to a new size. Zero-pads if the file size increases.
+    * @return `false` if called without createAndOpen or open. */
+  def truncate(fileId: Long, newSize: Long): Boolean =
+    synchronized(handles.get(fileId).map {
+      case Handle(_, _, Some(current), _) =>
+        current.truncate(newSize)
+      case handle @ Handle(_, _, None, _) =>
+        val current = DataEntry2(dataSeq, newSize, tempPath)
+        handles += fileId -> handle.copy(current = Some(current))
+    }).isDefined
+
   def get(fileId: Long): Option[Handle] = synchronized(handles.get(fileId))
 
   /** Releases a virtual file handle:

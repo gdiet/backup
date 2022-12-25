@@ -59,7 +59,9 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     * @return [[false]] if the tree entry has children. */
   def deleteChildless(entry: TreeEntry): Boolean = ???
 
-  def truncate(id: Long, newSize: Long): Boolean = ???
+  /** Truncates the cached file to a new size. Zero-pads if the file size increases.
+    * @return `false` if called without createAndOpen or open. */
+  def truncate(fileId: Long, newSize: Long): Boolean = handles.truncate(fileId, newSize)
 
   /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
     *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.

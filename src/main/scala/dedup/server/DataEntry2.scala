@@ -37,6 +37,8 @@ final class DataEntry2(idSeq: java.util.concurrent.atomic.AtomicLong, initialSiz
     }
   }
 
+  def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
+
   def size: Long = ???
 
   override def close(): Unit =
