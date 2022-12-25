@@ -3,7 +3,15 @@ package server
 
 import java.util.concurrent.locks.ReentrantReadWriteLock as RWLock
 
-final class DataEntry2 extends AutoCloseable:
+/** Handler for the mutable contents of a virtual file. Does not need external synchronization. */
+final class DataEntry2(idSeq: java.util.concurrent.atomic.AtomicLong, initialSize: Long, tempDir: java.nio.file.Path)
+  extends AutoCloseable with util.ClassLogging:
+  private val id    = idSeq.incrementAndGet()
+  private val path  = tempDir.resolve(s"$id")
+  private val cache = dedup.cache.WriteCache(path, initialSize)
+
+  private def cacheLoad = 0L // FIXME Backend.cacheLoad
+
   private val lock = RWLock()
   def acquire(): Unit = lock.readLock().lock()
   def release(): Unit = lock.readLock().unlock()
@@ -19,9 +27,16 @@ final class DataEntry2 extends AutoCloseable:
   def read(offset: Long, size: Long): Iterator[(Long, Either[Long, Array[Byte]])] =
     ???
 
-  def write(data: Iterator[(Long, Array[Byte])]): Unit =
-    ???
-  
+  /** @param data Iterator(position -> bytes). */
+  def write(data: Iterator[(Long, Array[Byte])]): Unit = synchronized {
+    data.foreach { (position, bytes) =>
+      if cacheLoad > 1000000000L then
+        log.trace(s"Slowing write due to high cache load $cacheLoad.")
+        Thread.sleep(cacheLoad / 1000000000L)
+      cache.write(position, bytes)
+    }
+  }
+
   def size: Long = ???
 
   override def close(): Unit =

@@ -18,6 +18,7 @@ final case class Handle(count: Int, dataId: DataId, current: Option[DataEntry2] 
   *  - The persist queue for the file if any. */
 final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
   private var closing = false
+  private val dataSeq = java.util.concurrent.atomic.AtomicLong()
 
   /** fileId -> [[Handle]]. Remember to synchronize. */
   private var handles = Map[Long, Handle]()
@@ -42,10 +43,14 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
     *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.
     *             using defensive copy (Array.clone) that they are not modified later.
     * @return `false` if called without createAndOpen or open. */
-  def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
+  def write(fileId: Long, sizeInDb: DataId => Long, data: Iterator[(Long, Array[Byte])]): Boolean =
     synchronized(handles.get(fileId).map {
       case Handle(_, _, Some(current), _) => current
-      case handle => DataEntry2().tap(current => handle.copy(current = Some(current)).tap(handles += fileId -> _))
+      case handle @ Handle(_, dataId, None, persisting) =>
+        log.trace(s"Creating write cache for $fileId.")
+        val initialSize = persisting.headOption.map(_.size).getOrElse(sizeInDb(dataId))
+        DataEntry2(dataSeq, initialSize, tempPath)
+          .tap(current => handle.copy(current = Some(current)).tap(handles += fileId -> _))
     }).map(_.write(data)).isDefined
 
   def get(fileId: Long): Option[Handle] = synchronized(handles.get(fileId))

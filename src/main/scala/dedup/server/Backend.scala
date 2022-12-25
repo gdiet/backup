@@ -65,7 +65,7 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.
     *             using defensive copy (Array.clone) that they are not modified later.
     * @return `false` if called without createAndOpen or open. */
-  def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean = handles.write(fileId, data)
+  def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean = handles.write(fileId, db.logicalSize, data)
 
   /** Provides the requested number of bytes from the referenced file
     * unless end-of-file is reached - in that case stops there.
