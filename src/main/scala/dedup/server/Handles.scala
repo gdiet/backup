@@ -24,7 +24,9 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
   private var handles = Map[Long, Handle]()
 
   /** @return The size of the cached entry if any or [[None]]. */
-  def cachedSize(fileId: Long): Option[Long] = None // FIXME implementation missing
+  def cachedSize(fileId: Long): Option[Long] =
+    synchronized(handles.get(fileId))
+      .flatMap { handle => handle.current.orElse(handle.persisting.headOption).map(_.size) }
 
   /** Create the virtual file handle if missing and increment the handle count.
     * @return `true` if the first handle for the file was created, `false` for subsequent ones. */
