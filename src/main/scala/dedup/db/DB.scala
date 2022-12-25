@@ -1,20 +1,31 @@
 package dedup
 package db
 
-final class DB(connection: java.sql.Connection) extends AutoCloseable:
+final class DB(connection: java.sql.Connection) extends AutoCloseable with util.ClassLogging:
 
   override def close(): Unit = connection.close()
 
   /** Utility class making sure a [[java.sql.PreparedStatement]] is used synchronized
     * because in many cases a [[java.sql.PreparedStatement]] is stateful.
     *
-    * @param sql     The SQL string to prepare as [[java.sql.PreparedStatement]].
-    * @param monitor The monitor to use for synchronization.
-    *                If [[None]] (default), synchronizing on this [[prepare]] instance. */
-  private class prepare(sql: String, monitor: Option[Object] = None):
-    private val prep = connection.prepareStatement(sql)
+    * @param sql             The SQL string to prepare as [[java.sql.PreparedStatement]].
+    * @param returnGenerated If [[true]] then [[java.sql.Statement.RETURN_GENERATED_KEYS]] will be set.
+    * @param monitor         The monitor to use for synchronization.
+    *                        If [[None]] (default), synchronizing on this [[prepare]] instance. */
+  private class prepare(sql: String, returnGenerated: Boolean = false, monitor: Option[Object] = None):
+    private val prep =
+      if returnGenerated then connection.prepareStatement(sql, java.sql.Statement.RETURN_GENERATED_KEYS)
+      else connection.prepareStatement(sql)
     private val sync = monitor.getOrElse(this)
     def apply[T](f: java.sql.PreparedStatement => T): T = sync.synchronized(f(prep))
+
+  /** Synchronization monitor used to prevent race conditions where tree entries with children could be deleted. */
+  private object TreeStructureMonitor
+  /** To prevent race conditions where a directory is deleted although it contains children, all statements modifying
+    * the tree structure share a common synchronization monitor. Remember to use this method where needed. */
+  // TODO try out whether using traits for database methods looks better
+  private def prepareTreeModification(sql: String, returnGenerated: Boolean = false) =
+    prepare(sql, returnGenerated, Some(TreeStructureMonitor))
 
   /** From a [[selectTreeEntry]] query extract the [[TreeEntry]] data. */
   private def treeEntry(rs: java.sql.ResultSet): TreeEntry =
@@ -51,3 +62,34 @@ final class DB(connection: java.sql.Connection) extends AutoCloseable:
       ensure("data.part.size", size >= 0, s"Size $size must be >= 0.")
       start -> size
     })).filterNot(_._2 == 0) // Filter parts of size 0 as created when blacklisting.
+
+  private val dTreeEntry = prepareTreeModification("UPDATE TreeEntries SET deleted = ? WHERE id = ?")
+  /** Deletes a tree entry. Should be called only for existing entry IDs.
+    * @return `false` if the tree entry has children. */
+  def deleteChildless(id: Long): Boolean = dTreeEntry { prep =>
+    // Allow to delete 'illegal' nodes that have themselves as parent.
+    if children(id).filterNot(_.id == id).nonEmpty then false else
+      val count = prep.set(now.nonZero, id).executeUpdate()
+      ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
+      count > 0
+  }
+
+  private val iFile = prepareTreeModification("INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)", true)
+  /** @return `Some(id)` or [[None]] if a child with the same name exists.
+    * @throws Exception If parent does not exist. */
+  def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] =
+    require(name.nonEmpty, "Can't create a file with an empty name.")
+    scala.util.Try(iFile { prep =>
+      // Name conflict or missing parent triggers an SQL exception due to unique constraint / foreign key violation.
+      val count = prep.set(parentId, name, time, dataId).executeUpdate()
+      ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
+      prep.getGeneratedKeys.tap(_.next()).getLong("id").tap { id =>
+        if parentId == id then
+          deleteChildless(id)
+          problem("db.mkFile.sameAsParent", s"For parentId $parentId and name '$name', the id of the created file was the same as the parentId.")
+      }
+    }) match
+      case scala.util.Success(id) => Some(id)
+      case scala.util.Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
+        log.debug(s"mkFile($parentId, '$name', $time, $dataId): Name conflict."); None
+      case scala.util.Failure(other) => throw other

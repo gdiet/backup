@@ -29,6 +29,14 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     * For each [[open]] or [[createAndOpen]], a corresponding [[release]] call is required for normal operation. */
   def open(file: FileEntry): Unit = handles.open(file.id, file.dataId)
 
+  /** Create file and a virtual file handle so read/write operations can be done on the file.
+    * For each [[open]] or [[createAndOpen]], a corresponding [[release]] call is required for normal operation.
+    * @return Some(fileId) or None if a child entry with the same name already exists. */
+  def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] =
+    db.mkFile(parentId, name, time, DataId(-1)).tap(_.foreach { fileId =>
+      if !handles.open(fileId, DataId(-1)) then log.warn(s"File handle (write) was already present for file $fileId.")
+    })
+
   /** Releases a virtual file handle. Triggers a write-through if no other handles are open for the file.
     * For each [[open]] or [[createAndOpen]], a corresponding [[release]] call is required for normal operation.
     *
@@ -50,9 +58,9 @@ final class Backend(settings: Settings) extends util.ClassLogging:
   /** Deletes a tree entry unless it has children.
     * @return [[false]] if the tree entry has children. */
   def deleteChildless(entry: TreeEntry): Boolean = ???
-  def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] = ???
+
   def truncate(id: Long, newSize: Long): Boolean = ???
-  
+
   /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
     *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.
     *             using defensive copy (Array.clone) that they are not modified later.

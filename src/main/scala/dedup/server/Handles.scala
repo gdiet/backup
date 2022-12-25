@@ -25,15 +25,17 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
   /** @return The size of the cached entry if any or [[None]]. */
   def cachedSize(fileId: Long): Option[Long] = None // FIXME implementation missing
 
-  /** Create the virtual file handle if missing and increment the handle count. */
-  def open(fileId: Long, dataId: DataId): Unit = synchronized {
+  /** Create the virtual file handle if missing and increment the handle count.
+    * @return `true` if the first handle for the file was created, `false` for subsequent ones. */
+  def open(fileId: Long, dataId: DataId): Boolean = synchronized {
     ensure("handles.open", !closing, "Attempt to open file while closing the backend.")
-    handles += fileId -> (handles.get(fileId) match
-      case None => Handle(1, dataId)
+    val (handle, newlyCreated) = handles.get(fileId) match
+      case None => Handle(1, dataId) -> true
       case Some(handle) =>
-        ensure("handles.open.dataid.conflict", dataId == handle.dataId, s"Open #${handle.count} - dataId $dataId differs from previous ${handle.dataId}.");
-        handle.copy(count = handle.count + 1)
-    )
+        ensure("handles.open.dataid.conflict", dataId == handle.dataId, s"Open #${handle.count} - dataId $dataId differs from previous ${handle.dataId}.")
+        handle.copy(count = handle.count + 1) -> false
+    handles += fileId -> handle
+    newlyCreated
   }
 
   /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
