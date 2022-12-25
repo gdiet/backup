@@ -25,7 +25,7 @@ final class DataEntry2(idSeq: java.util.concurrent.atomic.AtomicLong, initialSiz
     * @throws IllegalArgumentException if `offset` is negative.
     */
   def read(offset: Long, size: Long): Iterator[(Long, Either[Long, Array[Byte]])] =
-    ???
+    synchronized { cache.read(offset, size) }
 
   /** @param data Iterator(position -> bytes). */
   def write(data: Iterator[(Long, Array[Byte])]): Unit = synchronized {
@@ -39,7 +39,7 @@ final class DataEntry2(idSeq: java.util.concurrent.atomic.AtomicLong, initialSiz
 
   def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
 
-  def size: Long = ???
+  def size: Long = synchronized { cache.size }
 
   override def close(): Unit =
     try
