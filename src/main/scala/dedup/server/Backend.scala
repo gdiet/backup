@@ -83,7 +83,7 @@ final class Backend(settings: Settings) extends util.ClassLogging:
       val dataEntries = current ++: persisting
       lazy val fileSize = dataEntries.headOption.map(_.size).getOrElse(db.logicalSize(dataId))
       lazy val parts = db.parts(dataId)
-      val data = fillHoles(offset, math.min(requestedSize, fileSize - offset), dataEntries)
+      val data = readFromDataEntries(offset, math.min(requestedSize, fileSize - offset), dataEntries)
         .flatMap {
           case position -> Left(size) => readFromLts(parts, position, size)
           case position -> Right(data) => Iterator(position -> data)
@@ -94,12 +94,12 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     })
 
   /** @return All available data for the area specified from the provided queue of [[DataEntry2]] objects. */
-  private def fillHoles(position: Long, holeSize: Long, remaining: Seq[DataEntry2]): Iterator[(Long, Either[Long, Array[Byte]])] =
+  private def readFromDataEntries(position: Long, holeSize: Long, remaining: Seq[DataEntry2]): Iterator[(Long, Either[Long, Array[Byte]])] =
     remaining match
       case Seq() => Iterator(position -> Left(holeSize))
       case head +: tail =>
         head.read(position, holeSize).flatMap {
-          case (innerPosition, Left(innerHoleSize)) => fillHoles(innerPosition, innerHoleSize, tail)
+          case (innerPosition, Left(innerHoleSize)) => readFromDataEntries(innerPosition, innerHoleSize, tail)
           case other => Iterator(other)
         }
 
