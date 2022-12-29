@@ -9,9 +9,10 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Using.resource
 
 object Level2:
-  def cacheLoad: Long = entriesSize.get() * entryCount.get()
-  private val entryCount = new AtomicLong()
-  private val entriesSize = new AtomicLong()
+  /** Milliseconds to delay write operations in order to keep cache size manageable. */
+  def cacheLoadDelay: Long = bytesInPersistQueue.get() * persistQueueSize.get() / 1000000000
+  private val persistQueueSize = AtomicLong()
+  private val bytesInPersistQueue = AtomicLong()
 
   def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
     @annotation.tailrec
@@ -47,10 +48,10 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
 
   override def close(): Unit =
     if DataEntry.openEntries > 0 then
-      log.info(s"Closing remaining ${DataEntry.openEntries} entries, combined size ${readableBytes(entriesSize.get())} ...")
+      log.info(s"Closing remaining ${DataEntry.openEntries} entries, combined size ${readableBytes(bytesInPersistQueue.get())} ...")
     singleThreadStoreContext.shutdown()
     singleThreadStoreContext.awaitTermination(Long.MaxValue, TimeUnit.DAYS) // This flushes all pending files.
-    if entryCount.get > 0 then log.warn(s"${entryCount.get} entries have not been reported closed.")
+    if persistQueueSize.get > 0 then log.warn(s"${persistQueueSize.get} entries have not been reported closed.")
     if settings.temp.exists() then
       if settings.temp.list().isEmpty then settings.temp.delete()
       else log.warn(s"Temp dir not empty: ${settings.temp}")
@@ -132,8 +133,8 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
       dataEntry.close(DataId(-1))
     else
       log.trace(s"ID $id - persisting data entry, size ${dataEntry.size} / base data id ${dataEntry.baseDataId}.")
-      entryCount.incrementAndGet()
-      entriesSize.addAndGet(dataEntry.size)
+      persistQueueSize.incrementAndGet()
+      bytesInPersistQueue.addAndGet(dataEntry.size)
       // Persist async. Creating the future synchronized makes sure data entries are processed in the right order.
       synchronized {
         files += id -> dataEntry
@@ -175,8 +176,8 @@ class Level2(settings: Settings) extends AutoCloseable with util.ClassLogging:
     // Release persisted DataEntry.
     synchronized {
       files -= id
-      entryCount.decrementAndGet()
-      entriesSize.addAndGet(-dataEntry.size)
+      persistQueueSize.decrementAndGet()
+      bytesInPersistQueue.addAndGet(-dataEntry.size)
       dataEntry.close(dataId)
     }
   } catch { case e: Throwable => log.error(s"Persisting $id failed: $dataEntry", e); throw e }
