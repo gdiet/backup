@@ -36,9 +36,9 @@ class DataEntry(val baseDataId: AtomicLong, initialSize: Long, tempDir: Path) ex
     *             atomically / synchronized. */
   def write(data: Iterator[(Long, Array[Byte])]): Unit = synchronized {
     data.foreach { (position, bytes) =>
-      if Level2.cacheLoad > 1000000000L then
-        log.trace(s"Slowing write to reduce cache load ${Level2.cacheLoad}.")
-        Thread.sleep(Level2.cacheLoad/1000000000L)
+      if Level2.cacheLoadDelay > 0 then
+        log.trace(s"Slowing write by ${Level2.cacheLoadDelay} ms due to high cache load.")
+        Thread.sleep(Level2.cacheLoadDelay)
       cache.write(position, bytes)
     }
   }
