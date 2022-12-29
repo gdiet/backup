@@ -57,6 +57,20 @@ final class Backend(settings: Settings) extends util.ClassLogging:
   /** @return The child entry by name or None if the child entry is not found. */
   def child(parentId: Long, name: String): Option[TreeEntry] = db.child(parentId, name)
 
+  /** @return Some(id) or None if a child entry with the same name already exists. */
+  def mkDir(parentId: Long, name: String): Option[Long] = db.mkDir(parentId, name)
+
+  def setTime(id: Long, newTime: Long): Unit = ???
+
+  def update(id: Long, newParentId: Long, newName: String): Boolean = ???
+
+  /** Creates a copy of the file's last persisted state without current modifications. */
+  def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean = ???
+
+  /** Deletes a tree entry unless it has children.
+    * @return [[false]] if the tree entry has children. */
+  def deleteChildless(entry: TreeEntry): Boolean = ???
+
   /** @return The size of the file, 0 if the file entry does not exist. */
   def size(file: FileEntry): Long = handles.cachedSize(file.id).getOrElse(db.logicalSize(file.dataId))
 
@@ -132,16 +146,6 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     entry.close()
     Backend.persistQueueSize.decrementAndGet()
     Backend.bytesInPersistQueue.addAndGet(-entry.size)
-
-  /** @return Some(id) or None if a child entry with the same name already exists. */
-  def mkDir(parentId: Long, name: String): Option[Long] = ???
-  def setTime(id: Long, newTime: Long): Unit = ???
-  def update(id: Long, newParentId: Long, newName: String): Boolean = ???
-  /** Creates a copy of the file's last persisted state without current modifications. */
-  def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean = ???
-  /** Deletes a tree entry unless it has children.
-    * @return [[false]] if the tree entry has children. */
-  def deleteChildless(entry: TreeEntry): Boolean = ???
 
   /** Truncates the cached file to a new size. Zero-pads if the file size increases.
     * @return `false` if called without createAndOpen or open. */

@@ -74,11 +74,31 @@ final class DB(connection: java.sql.Connection) extends AutoCloseable with util.
       count > 0
   }
 
+  private val iDir = prepareTreeModification("INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", true)
+  /** @return `Some(id)` or [[None]] if a child with the same name exists.
+    * @throws Exception If parent does not exist. */
+  def mkDir(parentId: Long, name: String): Option[Long] =
+    require(name.nonEmpty, "Can not create a directory with an empty name.")
+    scala.util.Try(iDir { prep =>
+      // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
+      val count = prep.set(parentId, name, now).executeUpdate()
+      ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
+      prep.getGeneratedKeys.tap(_.next()).getLong("id").tap { id =>
+        if parentId == id then
+          deleteChildless(id)
+          problem("db.mkdir.sameAsParent", s"For parentId $parentId and name '$name', the id of the created directory was the same as the parentId.")
+      }
+    }) match
+      case scala.util.Success(id) => Some(id)
+      case scala.util.Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
+        log.debug(s"mkDir($parentId, '$name'): Name conflict."); None
+      case scala.util.Failure(other) => throw other
+
   private val iFile = prepareTreeModification("INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)", true)
   /** @return `Some(id)` or [[None]] if a child with the same name exists.
     * @throws Exception If parent does not exist. */
   def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] =
-    require(name.nonEmpty, "Can't create a file with an empty name.")
+    require(name.nonEmpty, "Can not create a file with an empty name.")
     scala.util.Try(iFile { prep =>
       // Name conflict or missing parent triggers an SQL exception due to unique constraint / foreign key violation.
       val count = prep.set(parentId, name, time, dataId).executeUpdate()
