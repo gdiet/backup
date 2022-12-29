@@ -60,9 +60,9 @@ final class Backend(settings: Settings) extends util.ClassLogging:
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = db.mkDir(parentId, name)
 
-  def setTime(id: Long, newTime: Long): Unit = ???
+  def setTime(id: Long, newTime: Long): Unit = db.setTime(id, newTime)
 
-  def update(id: Long, newParentId: Long, newName: String): Boolean = ???
+  def renameMove(id: Long, newParentId: Long, newName: String): Boolean = db.renameMove(id, newParentId, newName)
 
   /** Creates a copy of the file's last persisted state without current modifications. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean = ???

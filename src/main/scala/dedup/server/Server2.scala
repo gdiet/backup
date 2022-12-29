@@ -119,7 +119,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
                           .exists(dirId => backend.children(dir.id).forall(child => copy(child, child.name, dirId)))
                     if (copy(origin, newName, targetDir.id)) OK else EEXIST
                   else
-                    if backend.update(origin.id, targetDir.id, newName) then OK else EEXIST
+                    if backend.renameMove(origin.id, targetDir.id, newName) then OK else EEXIST
     }
 
   override def rmdir(path: String): Int =

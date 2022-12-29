@@ -63,6 +63,22 @@ final class DB(connection: java.sql.Connection) extends AutoCloseable with util.
       start -> size
     })).filterNot(_._2 == 0) // Filter parts of size 0 as created when blacklisting.
 
+  private val uRenameMove = prepareTreeModification("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?")
+  /** @return `true` on success, `false` in case of a name conflict.
+    * @throws Exception If new parent does not exist or new name is empty. */
+  def renameMove(id: Long, newParentId: Long, newName: String): Boolean =
+    require(newName.nonEmpty, "Can't rename to an empty name.")
+    scala.util.Try(uRenameMove { prep =>
+      // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
+      val count = prep.set(newParentId, newName, id).executeUpdate()
+      ensure("db.renameMove", count == 1, s"For id $id, renameMove count is $count instead of 1.")
+      count > 0 // TODO consider expected and actual behavior if tree node does not exist, is deleted, or parent is deleted.
+    }) match
+      case scala.util.Success(value) => value
+      case scala.util.Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
+        log.debug(s"renameMove($id, $newParentId, '$newName'): Name conflict."); false
+      case scala.util.Failure(other) => throw other
+
   private val dTreeEntry = prepareTreeModification("UPDATE TreeEntries SET deleted = ? WHERE id = ?")
   /** Deletes a tree entry. Should be called only for existing entry IDs.
     * @return `false` if the tree entry has children. */
@@ -113,6 +129,12 @@ final class DB(connection: java.sql.Connection) extends AutoCloseable with util.
       case scala.util.Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
         log.debug(s"mkFile($parentId, '$name', $time, $dataId): Name conflict."); None
       case scala.util.Failure(other) => throw other
+
+  private val uTime = prepare("UPDATE TreeEntries SET time = ? WHERE id = ?")
+  /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs. */
+  def setTime(id: Long, newTime: Long): Unit =
+    val count = uTime(_.set(newTime, id).executeUpdate())
+    ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
 
   private val uDataId = prepare("UPDATE TreeEntries SET dataId = ? WHERE id = ?")
   def setDataId(id: Long, dataId: DataId): Unit = synchronized {
