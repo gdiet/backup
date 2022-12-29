@@ -30,7 +30,7 @@ object Backend:
     ensure("write.algorithm.2", remaining.isEmpty, s"Remaining data areas not empty: $remaining")
 
 
-final class Backend(settings: Settings) extends util.ClassLogging:
+final class Backend(settings: Settings) extends AutoCloseable with util.ClassLogging:
   private val db = dedup.db.DB(dedup.db.H2.connection(settings.dbDir, settings.readonly))
   private val lts: store.LongTermStore = store.LongTermStore(settings.dataDir, settings.readonly)
   private val handles = Handles(settings.tempPath)
@@ -230,7 +230,7 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     recurse(partsToReadFrom, readSize, readFrom).iterator
 
   /** Clean up and release resources. */
-  def shutdown(): Unit =
+  override def close(): Unit =
     handles.shutdown() // FIXME handle return value
     log.warn("SHUTDOWN NOT COMPLETELY IMPLEMENTED") // FIXME Backend.shutdown code missing
     db.close()

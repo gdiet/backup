@@ -33,7 +33,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
       log.info(s"Stopping dedup file system...")
       super.umount()
       log.info(s"Dedup file system is stopped.")
-      backend.shutdown()
+      backend.close()
       OK // Needed for the fs() wrapper utility.
     }
 
