@@ -10,8 +10,6 @@ final class DataEntry2(idSeq: java.util.concurrent.atomic.AtomicLong, initialSiz
   private val path  = tempDir.resolve(s"$id")
   private val cache = dedup.cache.WriteCache(path, initialSize)
 
-  private def cacheLoad = 0L // FIXME Backend.cacheLoad
-
   private val lock = RWLock()
   def acquire(): Unit = lock.readLock().lock()
   def release(): Unit = lock.readLock().unlock()
@@ -30,9 +28,9 @@ final class DataEntry2(idSeq: java.util.concurrent.atomic.AtomicLong, initialSiz
   /** @param data Iterator(position -> bytes). */
   def write(data: Iterator[(Long, Array[Byte])]): Unit = synchronized {
     data.foreach { (position, bytes) =>
-      if cacheLoad > 1000000000L then
-        log.trace(s"Slowing write due to high cache load $cacheLoad.")
-        Thread.sleep(cacheLoad / 1000000000L)
+      if Backend.cacheLoadDelay > 0 then // TODO consider moving this to Backend
+        log.trace(s"Slowing write by ${Backend.cacheLoadDelay} ms due to high cache load.")
+        Thread.sleep(Backend.cacheLoadDelay)
       cache.write(position, bytes)
     }
   }

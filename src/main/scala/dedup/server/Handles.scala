@@ -4,14 +4,6 @@ package server
 object Handles:
   object NotOpen
 
-final case class Handle(count: Int, dataId: DataId, current: Option[DataEntry2] = None, persisting: Seq[DataEntry2] = Seq()):
-  /** Prevent race conditions when reading from a persisting entry while at the same time that entry is fully written,
-    * gets closed thus becomes unavailable for reading. This race condition can not affect the [[current]] entry because
-    * reading requires to hold a file handle preventing [[current]] to be persisted. */
-  def readLock[T](f: Handle => T): T =
-    persisting.foreach(_.acquire())
-    try f(this) finally persisting.foreach(_.release())
-
 /** Manages handles for open files, keeping track of:
   *  - The number of open handles for each file.
   *  - The current write cache for the file if any.
@@ -32,13 +24,14 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
     * @return `true` if the first handle for the file was created, `false` for subsequent ones. */
   def open(fileId: Long, dataId: DataId): Boolean = synchronized {
     ensure("handles.open", !closing, "Attempt to open file while closing the backend.")
-    val (handle, newlyCreated) = handles.get(fileId) match
-      case None => Handle(1, dataId) -> true
+    handles.get(fileId) match
+      case None =>
+        handles += fileId -> Handle(1, dataId)
+        true
       case Some(handle) =>
         ensure("handles.open.dataid.conflict", dataId == handle.dataId, s"Open #${handle.count} - dataId $dataId differs from previous ${handle.dataId}.")
-        handle.copy(count = handle.count + 1) -> false
-    handles += fileId -> handle
-    newlyCreated
+        handles += fileId -> handle.copy(count = handle.count + 1)
+        false
   }
 
   /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
@@ -51,8 +44,7 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
       case handle @ Handle(_, dataId, None, persisting) =>
         log.trace(s"Creating write cache for $fileId.")
         val initialSize = persisting.headOption.map(_.size).getOrElse(sizeInDb(dataId))
-        DataEntry2(dataSeq, initialSize, tempPath)
-          .tap(current => handle.copy(current = Some(current)).tap(handles += fileId -> _))
+        DataEntry2(dataSeq, initialSize, tempPath).tap(handle.withCurrent(_).tap(handles += fileId -> _))
     }).map(_.write(data)).isDefined
 
   /** Truncates the cached file to a new size. Zero-pads if the file size increases.
@@ -62,11 +54,30 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
       case Handle(_, _, Some(current), _) =>
         current.truncate(newSize)
       case handle @ Handle(_, _, None, _) =>
-        val current = DataEntry2(dataSeq, newSize, tempPath)
-        handles += fileId -> handle.copy(current = Some(current))
+        handles += fileId -> handle.withCurrent(DataEntry2(dataSeq, newSize, tempPath))
     }).isDefined
 
   def get(fileId: Long): Option[Handle] = synchronized(handles.get(fileId))
+
+  def removeAndGetNext(fileId: Long, dataEntry: DataEntry2, newDataId: DataId): Option[DataEntry2] = synchronized {
+    log.info(s"removeAndGetNext($fileId, dataEntry $dataEntry) - current handles: ${handles.keySet}") // TODO trace
+    handles.get(fileId) match
+      case None =>
+        problem("handles.removeAndGetNext.missing", s"Missing handle for file $fileId.")
+        None
+      case Some(Handle(0, _, None, Seq(`dataEntry`))) =>
+        log.info(s"Removing handle for $fileId.") // FIXME trace
+        handles -= fileId
+        None
+      case Some(handle @ Handle(_, _, _, others :+ `dataEntry`)) =>
+        log.info(s"Keeping handle for $fileId.") // FIXME trace
+        handles += fileId -> handle.copy(dataId = newDataId, persisting = others)
+        others.lastOption
+      case _ =>
+        problem("handles.removeAndGetNext.mismatch", s"Previous data entry not found for file $fileId.")
+        handles -= fileId
+        None
+  }
 
   /** Releases a virtual file handle:
     *  - If the file was not open, returns [[Handles.NotOpen]].

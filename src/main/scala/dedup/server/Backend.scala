@@ -1,12 +1,44 @@
 package dedup
 package server
 
-import java.util.concurrent.atomic.AtomicLong
+object Backend:
+  /** Milliseconds to delay write operations in order to keep cache size manageable. */
+  def cacheLoadDelay: Long = bytesInPersistQueue.get() * persistQueueSize.get() / 1000000000
+  private val persistQueueSize = java.util.concurrent.atomic.AtomicLong()
+  private val bytesInPersistQueue = java.util.concurrent.atomic.AtomicLong()
+
+  private def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
+    @annotation.tailrec
+    def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
+      areas match
+        case Seq() =>
+          problem("write.algorithm.1", s"Remaining data areas are empty, data size is ${data.length}")
+          Seq()
+        case head +: rest =>
+          if head.size == data.length then
+            write(head.start, data)
+            rest
+          else if head.size > data.length then
+            write(head.start, data)
+            head.drop(data.length) +: rest
+          else
+            val intSize = head.size.toInt // always smaller than MaxInt, see above "if head.size > data.length"
+            write(head.start, data.take(intSize))
+            doStore(rest, data.drop(intSize))
+
+    val remaining = data.foldLeft(toAreas) { case (storeAt, (_, bytes)) => doStore(storeAt, bytes) }
+    ensure("write.algorithm.2", remaining.isEmpty, s"Remaining data areas not empty: $remaining")
+
 
 final class Backend(settings: Settings) extends util.ClassLogging:
   private val db = dedup.db.DB(dedup.db.H2.connection(settings.dbDir, settings.readonly))
   private val lts: store.LongTermStore = store.LongTermStore(settings.dataDir, settings.readonly)
   private val handles = Handles(settings.tempPath)
+  private val freeAreas = server.FreeAreas(db.freeAreas())
+
+  /** Store logic relies on this being a single thread executor. */
+  private val singleThreadStoreContext =
+    concurrent.ExecutionContext.fromExecutorService(java.util.concurrent.Executors.newSingleThreadExecutor())
 
   /** @return The [[TreeEntry]] denoted by the file system path or [[None]] if there is no matching entry. */
   def entry(path: String): Option[TreeEntry] = entry(pathElements(path))
@@ -44,9 +76,59 @@ final class Backend(settings: Settings) extends util.ClassLogging:
   def release(fileId: Long): Boolean =
     handles.release(fileId) match
       case Handles.NotOpen => false
-      case maybeEntry =>
-        // FIXME handle Some() case
+      case None => true
+      case Some(dataId -> entry) =>
+        enqueue(fileId, dataId, entry)
         true
+
+  private def enqueue(fileId: Long, dataId: DataId, entry: DataEntry2): Unit =
+    Backend.persistQueueSize.incrementAndGet()
+    Backend.bytesInPersistQueue.addAndGet(entry.size)
+    log.info(s"enqueue file $fileId dataId $dataId size ${entry.size} - cache load ${Backend.cacheLoadDelay}") // FIXME debug
+    singleThreadStoreContext.execute(() => try {
+      log.info(s"Persist file $fileId / data ID $dataId / size ${entry.size}.") // TODO trace
+
+      // For 0-length data entry explicitly set dataId -1 because it might have contained something else before.
+      if entry.size == 0 then writeDataIdRemoveAndQueueNext(fileId, DataId(-1), entry) else
+
+        val ltsParts = db.parts(dataId)
+        def data: Iterator[(Long, Array[Byte])] = entry.read(0, entry.size).flatMap {
+          case position -> Right(data) => Iterator(position -> data)
+          case position -> Left(offset) => readFromLts(ltsParts, position, offset)
+        }
+        // Calculate hash
+        val md = java.security.MessageDigest.getInstance(hashAlgorithm)
+        data.foreach(entry => md.update(entry._2))
+        val hash = md.digest()
+        // Check if already known
+        db.dataEntry(hash, entry.size) match
+          // Already known, simply link
+          case Some(dataId) =>
+            log.info(s"Persisted $fileId - content known, linking to dataId $dataId") // TODO trace
+            writeDataIdRemoveAndQueueNext(fileId, dataId, entry)
+          // Not yet known, store ...
+          case None =>
+            // Reserve storage space
+            val reserved = freeAreas.reserve(entry.size)
+            // Write to storage
+            Backend.writeAlgorithm(data, reserved, lts.write)
+            // Save data entries
+            val dataId = db.newDataId()
+            reserved.zipWithIndex.foreach { case (dataArea, index) =>
+              log.debug(s"Data ID $dataId size ${entry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
+              db.insertDataEntry(dataId, index + 1, entry.size, dataArea.start, dataArea.stop, hash)
+            }
+            log.info(s"Persisted $fileId - new content, dataId $dataId") // TODO trace
+            writeDataIdRemoveAndQueueNext(fileId, dataId, entry)
+
+    } catch { case t: Throwable => log.error(s"Persisting file $fileId to dataId $dataId failed", t); throw t })
+
+  private def writeDataIdRemoveAndQueueNext(fileId: Long, newDataId: DataId, entry: DataEntry2): Unit =
+    db.setDataId(fileId, newDataId)
+    handles.removeAndGetNext(fileId, entry, newDataId).foreach(enqueue(fileId, newDataId, _))
+    entry.close()
+    Backend.persistQueueSize.decrementAndGet()
+    Backend.bytesInPersistQueue.addAndGet(-entry.size)
 
   def child(parentId: Long, name: String): Option[TreeEntry] = ???
   /** @return Some(id) or None if a child entry with the same name already exists. */

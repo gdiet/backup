@@ -93,3 +93,57 @@ final class DB(connection: java.sql.Connection) extends AutoCloseable with util.
       case scala.util.Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
         log.debug(s"mkFile($parentId, '$name', $time, $dataId): Name conflict."); None
       case scala.util.Failure(other) => throw other
+
+  private val uDataId = prepare("UPDATE TreeEntries SET dataId = ? WHERE id = ?")
+  def setDataId(id: Long, dataId: DataId): Unit = synchronized {
+    val count = uDataId(_.set(dataId, id).executeUpdate())
+    ensure("db.set.dataid", count == 1, s"setDataId update count is $count and not 1 for id $id dataId $dataId")
+  }
+
+  private val qDataEntry = prepare("SELECT id FROM DataEntries WHERE hash = ? AND length = ?")
+  def dataEntry(hash: Array[Byte], size: Long): Option[DataId] =
+    qDataEntry(_.set(hash, size).query(maybe(r => DataId(r.getLong(1)))))
+
+  /* The starts and stops of the contiguous data areas can be read like this:
+     SELECT b1.start FROM DataEntries b1 LEFT JOIN DataEntries b2
+         ON b1.start = b2.stop WHERE b2.stop IS NULL ORDER BY b1.start;
+     However, it's faster to read all DataEntries and sort them in Scala like below, assuming there's enough memory. */
+  def freeAreas(): Seq[DataArea] =
+    val dataChunks = scala.util.Using.resource(connection.createStatement())(
+      _.query("SELECT start, stop FROM DataEntries")(seq(r => r.getLong(1) -> r.getLong(2))).filterNot(_ == (0, 0))
+    )
+    log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
+    val sortedChunks = dataChunks.to(scala.collection.SortedMap)
+    val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(sortedChunks)
+    log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
+    log.info(s"Free for reclaiming: ${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} gaps.")
+    if sortedChunks.size != dataChunks.size then
+      log.error(s"${dataChunks.size - sortedChunks.size} duplicate chunk starts.")
+      val problems = dataChunks.groupBy(_._1)
+        .collect { case (_, entries) if entries.length > 1 => entries }.flatten.toSeq
+      if problems.length < 200 then
+        log.error(s"Duplicates: $problems")
+      else
+        log.error(s"First 200 duplicates: ${problems.take(200)}")
+      problem("data.sort.gaps", s"Database might be corrupt. Restore from backup?")
+    (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
+
+  private def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
+    dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
+      case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
+        ensure("data.find.gaps", start == lastEnd, s"Detected overlapping data entry: End = $lastEnd, start = $start.")
+        stop -> gaps
+      case ((lastEnd, gaps), (start, stop)) =>
+        stop -> gaps.appended(DataArea(lastEnd, start))
+    }
+
+  private val qNextId = prepare("SELECT NEXT VALUE FOR idSeq")
+  def newDataId(): DataId = DataId(qNextId(_.query(next(_.getLong(1)))))
+
+  private val iDataEntry = prepare("INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)")
+  def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit =
+    ensure("db.add.data.entry.1", seq > 0, s"seq not positive: $seq")
+    val sqlLength: Long | SqlNull = if seq == 1 then length else SqlNull(java.sql.Types.BIGINT)
+    val sqlHash: Array[Byte] | SqlNull = if seq == 1 then hash else SqlNull(java.sql.Types.BINARY)
+    val count = iDataEntry(_.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate())
+    ensure("db.add.data.entry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")

@@ -18,8 +18,11 @@ def readableBytes(l: Long): String =
 
 class EnsureFailed(reason: String, cause: Throwable = null) extends IllegalArgumentException(reason, cause)
 
+def failure(failureMessage: String): Nothing = // FIXME remove if not needed
+  throw new EnsureFailed(failureMessage).tap(main.error(failureMessage, _))
+
 def problem(marker: String, warningMessage: => String): Unit =
-    ensure(marker, false, warningMessage)
+  ensure(marker, false, warningMessage)
 
 def ensure(marker: String, condition: Boolean, warningMessage: => String): Unit =
   if !condition then
