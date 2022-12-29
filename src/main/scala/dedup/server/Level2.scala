@@ -17,15 +17,22 @@ object Level2:
   def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
     @annotation.tailrec
     def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
-      ensure("write.algorithm.1", areas.nonEmpty, s"Remaining data areas are empty, data size ${data.length}")
-      val head +: rest = areas : @unchecked // TODO Can we prove that areas is nonempty? Do we need the ensure above?
-      if head.size == data.length then
-        write(head.start, data); rest
-      else if head.size > data.length then
-        write(head.start, data); head.drop(data.length) +: rest
-      else
-        val intSize = head.size.toInt // always smaller than MaxInt, see above
-        write(head.start, data.take(intSize)); doStore(rest, data.drop(intSize))
+      areas match
+        case Seq() =>
+          problem("write.algorithm.1", s"Remaining data areas are empty, data size is ${data.length}")
+          Seq()
+        case head +: rest =>
+          if head.size == data.length then
+            write(head.start, data)
+            rest
+          else if head.size > data.length then
+            write(head.start, data)
+            head.drop(data.length) +: rest
+          else
+            val intSize = head.size.toInt // always smaller than MaxInt, see above "if head.size > data.length"
+            write(head.start, data.take(intSize))
+            doStore(rest, data.drop(intSize))
+
     val remaining = data.foldLeft(toAreas) { case (storeAt, (_, bytes)) => doStore(storeAt, bytes) }
     ensure("write.algorithm.2", remaining.isEmpty, s"Remaining data areas not empty: $remaining")
 
