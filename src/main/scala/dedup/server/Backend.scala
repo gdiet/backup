@@ -102,9 +102,9 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
   private def enqueue(fileId: Long, dataId: DataId, entry: DataEntry2): Unit =
     Backend.persistQueueSize.incrementAndGet()
     Backend.bytesInPersistQueue.addAndGet(entry.size)
-    log.info(s"enqueue file $fileId dataId $dataId size ${entry.size} - cache load ${Backend.cacheLoadDelay}") // FIXME debug
+    log.trace(s"Enqueue file $fileId dataId $dataId size ${entry.size} - cache load ${Backend.cacheLoadDelay}")
     singleThreadStoreContext.execute(() => try {
-      log.info(s"Persist file $fileId / data ID $dataId / size ${entry.size}.") // TODO trace
+      log.debug(s"Persist file $fileId / data ID $dataId / size ${entry.size}.")
 
       // For 0-length data entry explicitly set dataId -1 because it might have contained something else before.
       if entry.size == 0 then writeDataIdRemoveAndQueueNext(fileId, DataId(-1), entry) else
@@ -122,7 +122,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
         db.dataEntry(hash, entry.size) match
           // Already known, simply link
           case Some(dataId) =>
-            log.info(s"Persisted $fileId - content known, linking to dataId $dataId") // TODO trace
+            log.trace(s"Persisted $fileId - content known, linking to dataId $dataId")
             writeDataIdRemoveAndQueueNext(fileId, dataId, entry)
           // Not yet known, store ...
           case None =>
@@ -136,7 +136,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
               log.debug(s"Data ID $dataId size ${entry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
               db.insertDataEntry(dataId, index + 1, entry.size, dataArea.start, dataArea.stop, hash)
             }
-            log.info(s"Persisted $fileId - new content, dataId $dataId") // TODO trace
+            log.trace(s"Persisted $fileId - new content, dataId $dataId")
             writeDataIdRemoveAndQueueNext(fileId, dataId, entry)
 
     } catch { case t: Throwable => log.error(s"Persisting file $fileId to dataId $dataId failed", t); throw t })

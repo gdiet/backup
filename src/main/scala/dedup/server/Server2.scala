@@ -20,7 +20,7 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
       if settings.readonly then 292 else 438 // o444 else o666
 
   /** Utility wrapper for fuse server file system methods. */
-  protected def fs(msg: => String, logger: (=> String) => Unit = log.info)(f: => Int): Int = // FIXME log.trace
+  protected def fs(msg: => String, logger: (=> String) => Unit = log.trace)(f: => Int): Int =
     watch(msg, logger)(f).tap {
       case EIO       => log.error(s"EIO: $msg")
       case EINVAL    => log.warn (s"EINVAL: $msg")
