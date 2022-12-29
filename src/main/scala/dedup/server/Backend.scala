@@ -54,6 +54,9 @@ final class Backend(settings: Settings) extends util.ClassLogging:
   /** @return The child entries of the tree entry, an empty [[Seq]] if the parent entry does not exist. */
   def children(parentId: Long): Seq[TreeEntry] = db.children(parentId)
 
+  /** @return The child entry by name or None if the child entry is not found. */
+  def child(parentId: Long, name: String): Option[TreeEntry] = db.child(parentId, name)
+
   /** @return The size of the file, 0 if the file entry does not exist. */
   def size(file: FileEntry): Long = handles.cachedSize(file.id).getOrElse(db.logicalSize(file.dataId))
 
@@ -130,7 +133,6 @@ final class Backend(settings: Settings) extends util.ClassLogging:
     Backend.persistQueueSize.decrementAndGet()
     Backend.bytesInPersistQueue.addAndGet(-entry.size)
 
-  def child(parentId: Long, name: String): Option[TreeEntry] = ???
   /** @return Some(id) or None if a child entry with the same name already exists. */
   def mkDir(parentId: Long, name: String): Option[Long] = ???
   def setTime(id: Long, newTime: Long): Unit = ???
