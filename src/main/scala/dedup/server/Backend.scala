@@ -65,11 +65,12 @@ final class Backend(settings: Settings) extends util.ClassLogging:
   def renameMove(id: Long, newParentId: Long, newName: String): Boolean = db.renameMove(id, newParentId, newName)
 
   /** Creates a copy of the file's last persisted state without current modifications. */
-  def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean = ???
+  def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean =
+    db.mkFile(newParentId, newName, file.time, file.dataId).isDefined
 
   /** Deletes a tree entry unless it has children.
     * @return [[false]] if the tree entry has children. */
-  def deleteChildless(entry: TreeEntry): Boolean = ???
+  def deleteChildless(entry: TreeEntry): Boolean = db.deleteChildless(entry.id)
 
   /** @return The size of the file, 0 if the file entry does not exist. */
   def size(file: FileEntry): Long = handles.cachedSize(file.id).getOrElse(db.logicalSize(file.dataId))

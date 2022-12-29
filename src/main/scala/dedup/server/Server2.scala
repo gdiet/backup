@@ -244,6 +244,10 @@ class Server2(settings: Settings) extends FuseStubFS with util.ClassLogging:
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
         case Some(file: FileEntry) =>
+          // From man unlink(2)
+          // If the name was the last link to a file but any processes still have the file open,
+          // the file will remain in existence until the last file descriptor referring to it is closed.
+          // ... This means that the file handles need not be updated.
           if backend.deleteChildless(file) then OK
           else { log.warn(s"Can't delete regular file with children: $path"); ENOTEMPTY }
     }
