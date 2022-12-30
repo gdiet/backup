@@ -7,7 +7,7 @@ object Backend:
   private val persistQueueSize = java.util.concurrent.atomic.AtomicLong()
   private val bytesInPersistQueue = java.util.concurrent.atomic.AtomicLong()
 
-  private def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
+  def writeAlgorithm(data: Iterator[(Long, Array[Byte])], toAreas: Seq[DataArea], write: (Long, Array[Byte]) => Unit): Unit =
     @annotation.tailrec
     def doStore(areas: Seq[DataArea], data: Array[Byte]): Seq[DataArea] =
       areas match
