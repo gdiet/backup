@@ -164,22 +164,18 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     * @param fileId        Id of the file to read from.
     * @param offset        Offset in the file to start reading at, must be >= 0.
     * @param requestedSize Number of bytes to read.
-    * @param receiver      The receiver of the bytes read.
-    * @return The number of bytes read or [[None]] if the file is not open. */
+    * @return The (position -> bytes) read or [[None]] if the file is not open. */
   // Note that previous implementations provided atomic reads, but this is not really necessary...
-  def read(fileId: Long, offset: Long, requestedSize: Long)(receiver: (Long, Array[Byte]) => Any): Option[Long] =
+  def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] =
     handles.get(fileId).map(_.readLock { case Handle(_, dataId, current, persisting) => // TODO move code to handles?
       val dataEntries = current ++: persisting
       lazy val fileSize = dataEntries.headOption.map(_.size).getOrElse(db.logicalSize(dataId))
       lazy val parts = db.parts(dataId)
-      val data = readFromDataEntries(offset, math.min(requestedSize, fileSize - offset), dataEntries)
+      readFromDataEntries(offset, math.min(requestedSize, fileSize - offset), dataEntries)
         .flatMap {
           case position -> Left(size) => readFromLts(parts, position, size)
           case position -> Right(data) => Iterator(position -> data)
         }
-      var sizeRead: Long = 0L
-      data.foreach { (position, data) => receiver(position, data); sizeRead += data.length }
-      sizeRead
     })
 
   /** @return All available data for the area specified from the provided queue of [[DataEntry2]] objects. */

@@ -223,11 +223,12 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
       val intSize = size.toInt.abs // We need to return an Int size, so here it is.
       if offset < 0 || size != intSize then EOVERFLOW else // With intSize being .abs (see above) checks for negative size, too.
         val fileHandle = fi.fh.get()
-        backend.read(fileHandle, offset, intSize) {
-          (position, bytes) => sink.put(position - offset, bytes, 0, bytes.length)
-        } match
+        backend.read(fileHandle, offset, intSize) match
           case None => log.error(s"Read from '$path': No data for tree entry $fileHandle."); EIO
-          case Some(size) => size.toInt
+          case Some(data) => data.foldLeft(0) { case (size, position -> bytes) =>
+            sink.put(position - offset, bytes, 0, bytes.length)
+            size + bytes.length
+          }
     }
 
   override def release(path: String, fi: FuseFileInfo): Int =
