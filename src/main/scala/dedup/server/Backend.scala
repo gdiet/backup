@@ -141,7 +141,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
 
     } catch { case t: Throwable => log.error(s"Persisting file $fileId failed", t); throw t })
 
-  private def writeDataIdAndRemove(fileId: Long, newDataId: DataId, entry: DataEntry2): Unit =
+  private def writeDataIdAndRemove(fileId: Long, newDataId: DataId, entry: DataEntry): Unit =
     db.setDataId(fileId, newDataId)
     handles.removePersisted(fileId, newDataId)
     entry.close()
@@ -178,8 +178,8 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
         }
     })
 
-  /** @return All available data for the area specified from the provided queue of [[DataEntry2]] objects. */
-  private def readFromDataEntries(position: Long, holeSize: Long, remaining: Seq[DataEntry2]): Iterator[(Long, Either[Long, Array[Byte]])] =
+  /** @return All available data for the area specified from the provided queue of [[DataEntry]] objects. */
+  private def readFromDataEntries(position: Long, holeSize: Long, remaining: Seq[DataEntry]): Iterator[(Long, Either[Long, Array[Byte]])] =
     remaining match
       case Seq() => Iterator(position -> Left(holeSize))
       case head +: tail =>

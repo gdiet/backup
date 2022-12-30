@@ -42,7 +42,7 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
       case handle @ Handle(_, dataId, None, persisting) =>
         log.trace(s"Creating write cache for $fileId.")
         val initialSize = persisting.headOption.map(_.size).getOrElse(sizeInDb(dataId))
-        DataEntry2(dataSeq, initialSize, tempPath).tap(handle.withCurrent(_).tap(handles += fileId -> _))
+        DataEntry(dataSeq, initialSize, tempPath).tap(handle.withCurrent(_).tap(handles += fileId -> _))
     }).map(_.write(data)).isDefined
 
   /** Truncates the cached file to a new size. Zero-pads if the file size increases.
@@ -52,7 +52,7 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
       case Handle(_, _, Some(current), _) =>
         current.truncate(newSize)
       case handle @ Handle(_, _, None, _) =>
-        handles += fileId -> handle.withCurrent(DataEntry2(dataSeq, newSize, tempPath))
+        handles += fileId -> handle.withCurrent(DataEntry(dataSeq, newSize, tempPath))
     }).isDefined
 
   def get(fileId: Long): Option[Handle] = synchronized(handles.get(fileId))
@@ -76,8 +76,8 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
     *  - If the file handle was not open, returns [[Failed]].
     *  - Decrements the handle count for the file.
     *  - If there are more handles on the file, returns [[None]].
-    *  - If there was no current [[DataEntry2]] write cache, returns [[None]].
-    *  - Enqueues the current [[DataEntry2]] to the persist queue and returns its size. */
+    *  - If there was no current [[DataEntry]] write cache, returns [[None]].
+    *  - Enqueues the current [[DataEntry]] to the persist queue and returns its size. */
   def release(fileId: Long): Failed | Option[Long] = synchronized {
     handles.get(fileId) match
       case None =>

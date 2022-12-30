@@ -2,7 +2,7 @@ package dedup
 package server
 
 /** Thread safe handler for the mutable contents of a virtual file. */
-final class DataEntry2(idSeq: java.util.concurrent.atomic.AtomicLong, initialSize: Long, tempDir: java.nio.file.Path)
+final class DataEntry(idSeq: java.util.concurrent.atomic.AtomicLong, initialSize: Long, tempDir: java.nio.file.Path)
   extends AutoCloseable with util.ClassLogging:
   private val id    = idSeq.incrementAndGet()
   private val path  = tempDir.resolve(s"$id")
@@ -12,11 +12,11 @@ final class DataEntry2(idSeq: java.util.concurrent.atomic.AtomicLong, initialSiz
   def acquire(): Unit = lock.readLock().lock()
   def release(): Unit = lock.readLock().unlock()
 
-  /** Reads the requested number of bytes. Stops reading at the end of this [[DataEntry2]].
+  /** Reads the requested number of bytes. Stops reading at the end of this [[DataEntry]].
     *
     * @param offset Offset to start reading at.
     * @param size   Number of bytes to read, not limited by the internal size limit for byte arrays.
-    * @return Iterator(position, holeSize | bytes). If writes occur to this [[DataEntry2]] while the iterator is
+    * @return Iterator(position, holeSize | bytes). If writes occur to this [[DataEntry]] while the iterator is
     *         used, it is not defined which parts of the writes become visible and which parts don't.
     * @throws IllegalArgumentException if `offset` is negative.
     */
