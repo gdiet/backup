@@ -26,8 +26,7 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
         handles += fileId -> Handle(1, dataId)
         true
       case Some(handle) =>
-        if dataId != handle.dataId then // TODO check - this might even be a normal corner case?
-          log.warn(s"Open #${handle.count} - dataId $dataId differs from previous ${handle.dataId}.")
+        // Keep the dataId of the handle - it might be newer/better than the one provided to the method.
         handles += fileId -> handle.copy(count = handle.count + 1)
         false
   }
