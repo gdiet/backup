@@ -57,14 +57,14 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
   def get(fileId: Long): Option[Handle] = synchronized(handles.get(fileId))
 
   def removePersisted(fileId: Long, newDataId: DataId): Unit = synchronized {
-    log.info(s"removePersisted($fileId, $newDataId) - current handles: ${handles.keySet}") // TODO trace
+    log.trace(s"removePersisted($fileId, $newDataId) - current handles: ${handles.keySet}")
     handles.get(fileId) match
       case None => problem("handles.removeAndGetNext.missing", s"Missing handle for file $fileId.")
       case Some(Handle(0, _, None, Seq(_))) =>
-        log.info(s"Removing handle for $fileId.") // FIXME trace
+        log.debug(s"Removing handle for $fileId.")
         handles -= fileId
-      case Some(handle @ Handle(_, _, _, others :+ _)) =>
-        log.info(s"Keeping handle for $fileId.") // FIXME trace
+      case Some(handle @ Handle(count, _, _, others :+ _)) =>
+        log.debug(s"Keeping handle for $fileId, count $count, persisting ${others.size}.")
         handles += fileId -> handle.copy(dataId = newDataId, persisting = others)
       case Some(handle) =>
         problem("handles.removeAndGetNext.mismatch", s"Persist queue unexpectedly empty in $handle.")
