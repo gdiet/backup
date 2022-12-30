@@ -231,7 +231,10 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
 
   /** Clean up and release resources. */
   override def close(): Unit =
-    handles.shutdown() // FIXME handle return value
-    log.warn("SHUTDOWN NOT COMPLETELY IMPLEMENTED") // FIXME Backend.shutdown code missing
+    handles.shutdown().foreach { case (fileId, dataId -> entry) => enqueue(fileId, dataId, entry) }
+    // FIXME make sure the queue is empty, ??? probably best be immediately enqueueing all entries ???
+    log.warn("SHUTDOWN NOT COMPLETELY IMPLEMENTED")
+    singleThreadStoreContext.shutdown()
+    singleThreadStoreContext.awaitTermination(1, java.util.concurrent.TimeUnit.DAYS)
     db.close()
     log.info("Shutdown complete.")

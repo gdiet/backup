@@ -65,7 +65,7 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
       case None =>
         problem("handles.removeAndGetNext.missing", s"Missing handle for file $fileId.")
         None
-      case Some(Handle(0, _, None, Seq(`dataEntry`))) =>
+      case Some(Handle(0, _, None, Seq(`dataEntry`))) => // TODO what if count is not 0? (robust behavior)
         log.info(s"Removing handle for $fileId.") // FIXME trace
         handles -= fileId
         None
@@ -103,7 +103,15 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
   }
 
   /** @return The data entries that still need to be enqueued. */
-  def shutdown(): Map[Long, Option[DataEntry2]] = synchronized {
+  def shutdown(): Map[Long, (DataId, DataEntry2)] = synchronized {
     closing = true
-    Map() // FIXME implementation missing
+    handles.flatMap {
+      case (fileId, Handle(count, dataId, Some(current), persisting)) =>
+        log.warn(s"Modified file $fileId has still $count open handles on shutdown.")
+        handles += fileId -> Handle(0, dataId, None, current +: persisting)
+        if persisting.isEmpty then Some(fileId -> (dataId, current)) else None
+      case (fileId, Handle(count, _, None, _)) =>
+        if count > 0 then log.info(s"File $fileId has still $count open read handles on shutdown.")
+        None
+    }
   }
