@@ -38,7 +38,5 @@ final class DataEntry(idSeq: java.util.concurrent.atomic.AtomicLong, initialSize
   def size: Long = synchronized { cache.size }
 
   override def close(): Unit =
-    try
-      lock.writeLock().lock()
-      // FIXME clean up resources
-    finally lock.writeLock().unlock()
+    lock.writeLock().lock()
+    cache.close()
