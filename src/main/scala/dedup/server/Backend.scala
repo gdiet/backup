@@ -167,7 +167,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     * @param receiver      The receiver of the bytes read.
     * @return The number of bytes read or [[None]] if the file is not open. */
   // Note that previous implementations provided atomic reads, but this is not really necessary...
-  def read(fileId: Long, offset: Long, requestedSize: Long)(receiver: Iterator[(Long, Array[Byte])] => Any): Option[Long] =
+  def read(fileId: Long, offset: Long, requestedSize: Long)(receiver: (Long, Array[Byte]) => Any): Option[Long] =
     handles.get(fileId).map(_.readLock { case Handle(_, dataId, current, persisting) => // TODO move code to handles?
       val dataEntries = current ++: persisting
       lazy val fileSize = dataEntries.headOption.map(_.size).getOrElse(db.logicalSize(dataId))
@@ -178,7 +178,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
           case position -> Right(data) => Iterator(position -> data)
         }
       var sizeRead: Long = 0L
-      receiver(data.tapEach(sizeRead += _._2.length))
+      data.foreach { (position, data) => receiver(position, data); sizeRead += data.length }
       sizeRead
     })
 
