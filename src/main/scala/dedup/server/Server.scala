@@ -5,10 +5,9 @@ import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.{Platform, Pointer}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs, Timespec}
 import ru.serce.jnrfuse.{FuseFillDir, FuseStubFS}
-import java.util.concurrent.atomic.AtomicBoolean
 
 class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
-  private val backend = Level1(settings)
+  private val backend = Backend(settings)
 
   private val rights =
     if Platform.getNativePlatform.getOS == WINDOWS then
@@ -65,7 +64,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
 
   override def mkdir(path: String, mode: Long): Int =
     if settings.readonly then EROFS else fs(s"mkdir $path") {
-      val parts = backend.split(path)
+      val parts = backend.pathElements(path)
       if parts.length == 0 then ENOENT else
         backend.entry(parts.dropRight(1)) match
           case None                 => ENOENT
@@ -83,7 +82,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
             // '.exists' used for side effect until a condition is met.
             // Providing a FileStat would probably save getattr calls but is not straightforward to implement.
             // The last arg of fill.apply could be set to 0, but then there would be no paging for readdir.
-            names.zipWithIndex.drop(offset.toInt).exists( (name, k) => fill.apply(buf, name, null, k + 1) != 0 )
+            names.zipWithIndex.drop(offset.toInt).exists { case (name, k) => fill.apply(buf, name, null, k + 1) != 0 }
             OK
         case Some(_: FileEntry) => ENOTDIR
         case None               => ENOENT
@@ -92,8 +91,8 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
   // If copyWhenMoving is active, the last persisted state of files is copied - without any current modifications.
   override def rename(oldpath: String, newpath: String): Int =
     if (settings.readonly) EROFS else fs(s"rename $oldpath .. $newpath") {
-      val oldParts = backend.split(oldpath)
-      val newParts = backend.split(newpath)
+      val oldParts = backend.pathElements(oldpath)
+      val newParts = backend.pathElements(newpath)
       if oldParts.length == 0 || newParts.length == 0 then ENOENT else
       if oldParts.sameElements(newParts)              then OK     else
         backend.entry(oldParts) match
@@ -118,7 +117,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
                           .exists(dirId => backend.children(dir.id).forall(child => copy(child, child.name, dirId)))
                     if (copy(origin, newName, targetDir.id)) OK else EEXIST
                   else
-                    if backend.update(origin.id, targetDir.id, newName) then OK else EEXIST
+                    if backend.renameMove(origin.id, targetDir.id, newName) then OK else EEXIST
     }
 
   override def rmdir(path: String): Int =
@@ -178,7 +177,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
 
   override def create(path: String, mode: Long, fi: FuseFileInfo): Int =
     if settings.readonly then EROFS else fs(s"create $path") {
-      val parts = backend.split(path)
+      val parts = backend.pathElements(path)
       if parts.length == 0 then ENOENT // Can't create root.
       else backend.entry(parts.dropRight(1)) match // Fetch parent entry.
         case None                => ENOENT  // Parent not known.
@@ -224,9 +223,11 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
       val intSize = size.toInt.abs // We need to return an Int size, so here it is.
       if offset < 0 || size != intSize then EOVERFLOW else // With intSize being .abs (see above) checks for negative size, too.
         val fileHandle = fi.fh.get()
-        backend
-          .read(fileHandle, offset, intSize, sink).map(_.toInt)
-          .getOrElse { log.warn(s"read - no data for tree entry $fileHandle (path is $path)"); ENOENT }
+        backend.read(fileHandle, offset, intSize) {
+          _.foreach((pos, bytes) => sink.put(pos - offset, bytes, 0, bytes.length))
+        } match
+          case None => log.error(s"Read from '$path': No data for tree entry $fileHandle."); EIO
+          case Some(size) => size.toInt
     }
 
   override def release(path: String, fi: FuseFileInfo): Int =
@@ -241,6 +242,10 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
         case Some(file: FileEntry) =>
+          // From man unlink(2)
+          // If the name was the last link to a file but any processes still have the file open,
+          // the file will remain in existence until the last file descriptor referring to it is closed.
+          // ... This means that the file handles need not be updated.
           if backend.deleteChildless(file) then OK
           else { log.warn(s"Can't delete regular file with children: $path"); ENOTEMPTY }
     }
