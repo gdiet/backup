@@ -26,7 +26,8 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
         handles += fileId -> Handle(1, dataId)
         true
       case Some(handle) =>
-        ensure("handles.open.dataid.conflict", dataId == handle.dataId, s"Open #${handle.count} - dataId $dataId differs from previous ${handle.dataId}.")
+        if dataId != handle.dataId then // TODO check - this might even be a normal corner case?
+          log.warn(s"Open #${handle.count} - dataId $dataId differs from previous ${handle.dataId}.")
         handles += fileId -> handle.copy(count = handle.count + 1)
         false
   }
@@ -83,14 +84,16 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
         log.warn(s"release($fileId) called for a file handle that is currently not open.")
         Failed // TODO use the Failed pattern in other places?
       case Some(handle @ Handle(count, dataId, current, persisting)) =>
-        if count < 1 then log.warn(s"release($fileId) called for a file having handle count $count.")
         if count > 1 then
           handles += fileId -> handle.copy(count - 1)
           None
-        else
+        else if count == 1 then
           if current.isEmpty && persisting.isEmpty then handles -= fileId
           else handles += fileId -> Handle(0, dataId, None, current ++: persisting)
           current.map(_.size)
+        else
+          log.warn(s"release($fileId) called for a file having handle count $count.")
+          Failed
   }
 
   /** @return file ID and entry size of entries that still need to be enqueued. */
