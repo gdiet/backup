@@ -52,8 +52,8 @@ object BackupTool extends ClassLogging:
     log.info (s"Backup reference: $reference  --  No functionality implemented yet")
     log.debug(s"Temp dir:         $temp")
 
-    resource(server.Level1(settings)) { fs =>
-      val (targetPath, targetName) = fs.split(to).pipe(target =>
+    resource(server.Backend(settings)) { fs =>
+      val (targetPath, targetName) = fs.pathElements(to).pipe(target =>
         target.dropRight(1) -> target.lastOption.getOrElse(main.failureExit(s"Invalid target: No file name in '$to'."))
       )
       def targetPathForLog = s"The target's parent DedupFS:/${targetPath.mkString("/")}"
