@@ -93,14 +93,14 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
           current.map(_.size)
   }
 
-  /** @return The data entries that still need to be enqueued. */
-  def shutdown(): Map[Long, DataEntry2] = synchronized { // FIXME just return the entry size?
+  /** @return file ID and entry size of entries that still need to be enqueued. */
+  def shutdown(): Map[Long, Long] = synchronized {
     closing = true
     handles.flatMap {
       case (fileId, Handle(count, dataId, Some(current), persisting)) =>
         log.warn(s"Modified file $fileId has still $count open handles on shutdown.")
         handles += fileId -> Handle(0, dataId, None, current +: persisting)
-        if persisting.isEmpty then Some(fileId -> current) else None
+        if persisting.isEmpty then Some(fileId -> current.size) else None
       case (fileId, Handle(count, _, None, _)) =>
         if count > 0 then log.info(s"File $fileId has still $count open read handles on shutdown.")
         None

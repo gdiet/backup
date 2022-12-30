@@ -231,7 +231,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
 
   /** Clean up and release resources. */
   override def close(): Unit =
-    handles.shutdown().foreach { case (fileId, entry) => enqueue(fileId, entry.size) }
+    handles.shutdown().foreach { case (fileId, entrySize) => enqueue(fileId, entrySize) }
     singleThreadStoreContext.shutdown()
     singleThreadStoreContext.awaitTermination(1, java.util.concurrent.TimeUnit.DAYS)
     db.close()
