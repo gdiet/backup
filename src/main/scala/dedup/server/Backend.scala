@@ -93,23 +93,23 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     * @return False if called without corresponding [[open]] or [[createAndOpen]]. */
   def release(fileId: Long): Boolean =
     handles.release(fileId) match
-      case Handles.NotOpen => false
+      case Failed => false
       case None => true
-      case Some(dataId -> entry) =>
-        enqueue(fileId, dataId, entry)
-        true
+      case Some(entrySize) => enqueue(fileId, entrySize); true
 
-  private def enqueue(fileId: Long, dataId: DataId, entry: DataEntry2): Unit =
+  private def enqueue(fileId: Long, entrySize: Long): Unit =
     Backend.persistQueueSize.incrementAndGet()
-    Backend.bytesInPersistQueue.addAndGet(entry.size)
-    log.trace(s"Enqueue file $fileId dataId $dataId size ${entry.size} - cache load ${Backend.cacheLoadDelay}")
+    Backend.bytesInPersistQueue.addAndGet(entrySize)
+    log.trace(s"Enqueue file $fileId size $entrySize - cache load ${Backend.cacheLoadDelay}")
     singleThreadStoreContext.execute(() => try {
-      log.debug(s"Persist file $fileId / data ID $dataId / size ${entry.size}.")
+      val handle = handles.get(fileId).getOrElse(failure(s"No handle to store for file $fileId."))
+      val entry = handle.persisting.lastOption.getOrElse(failure(s"No entry to store for file $fileId."))
+      log.debug(s"Persist file $fileId / data ID ${handle.dataId} / size ${entry.size}.")
 
       // For 0-length data entry explicitly set dataId -1 because it might have contained something else before.
-      if entry.size == 0 then writeDataIdRemoveAndQueueNext(fileId, DataId(-1), entry) else
+      if entry.size == 0 then writeDataIdAndRemove(fileId, DataId(-1), entry) else
 
-        val ltsParts = db.parts(dataId)
+        val ltsParts = db.parts(handle.dataId)
         def data: Iterator[(Long, Array[Byte])] = entry.read(0, entry.size).flatMap {
           case position -> Right(data) => Iterator(position -> data)
           case position -> Left(offset) => readFromLts(ltsParts, position, offset)
@@ -123,7 +123,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
           // Already known, simply link
           case Some(dataId) =>
             log.trace(s"Persisted $fileId - content known, linking to dataId $dataId")
-            writeDataIdRemoveAndQueueNext(fileId, dataId, entry)
+            writeDataIdAndRemove(fileId, dataId, entry)
           // Not yet known, store ...
           case None =>
             // Reserve storage space
@@ -137,13 +137,13 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
               db.insertDataEntry(dataId, index + 1, entry.size, dataArea.start, dataArea.stop, hash)
             }
             log.trace(s"Persisted $fileId - new content, dataId $dataId")
-            writeDataIdRemoveAndQueueNext(fileId, dataId, entry)
+            writeDataIdAndRemove(fileId, dataId, entry)
 
-    } catch { case t: Throwable => log.error(s"Persisting file $fileId to dataId $dataId failed", t); throw t })
+    } catch { case t: Throwable => log.error(s"Persisting file $fileId failed", t); throw t })
 
-  private def writeDataIdRemoveAndQueueNext(fileId: Long, newDataId: DataId, entry: DataEntry2): Unit =
+  private def writeDataIdAndRemove(fileId: Long, newDataId: DataId, entry: DataEntry2): Unit =
     db.setDataId(fileId, newDataId)
-    handles.removeAndGetNext(fileId, entry, newDataId).foreach(enqueue(fileId, newDataId, _))
+    handles.removePersisted(fileId, newDataId)
     entry.close()
     Backend.persistQueueSize.decrementAndGet()
     Backend.bytesInPersistQueue.addAndGet(-entry.size)
@@ -168,7 +168,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     * @return The number of bytes read or [[None]] if the file is not open. */
   // Note that previous implementations provided atomic reads, but this is not really necessary...
   def read(fileId: Long, offset: Long, requestedSize: Long)(receiver: Iterator[(Long, Array[Byte])] => Any): Option[Long] =
-    handles.get(fileId).map(_.readLock { case Handle(_, dataId, current, persisting) =>
+    handles.get(fileId).map(_.readLock { case Handle(_, dataId, current, persisting) => // TODO move code to handles?
       val dataEntries = current ++: persisting
       lazy val fileSize = dataEntries.headOption.map(_.size).getOrElse(db.logicalSize(dataId))
       lazy val parts = db.parts(dataId)
@@ -231,9 +231,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
 
   /** Clean up and release resources. */
   override def close(): Unit =
-    handles.shutdown().foreach { case (fileId, dataId -> entry) => enqueue(fileId, dataId, entry) }
-    // FIXME make sure the queue is empty, ??? probably best be immediately enqueueing all entries ???
-    log.warn("SHUTDOWN NOT COMPLETELY IMPLEMENTED")
+    handles.shutdown().foreach { case (fileId, entry) => enqueue(fileId, entry.size) }
     singleThreadStoreContext.shutdown()
     singleThreadStoreContext.awaitTermination(1, java.util.concurrent.TimeUnit.DAYS)
     db.close()

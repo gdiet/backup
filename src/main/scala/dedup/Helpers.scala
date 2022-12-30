@@ -18,6 +18,12 @@ def readableBytes(l: Long): String =
 
 class EnsureFailed(reason: String, cause: Throwable = null) extends IllegalArgumentException(reason, cause)
 
+case object Failed
+type Failed = Failed.type
+
+def failure(failureMessage: String): Nothing =
+  throw new EnsureFailed(failureMessage).tap(main.error(failureMessage, _))
+
 def problem(marker: String, warningMessage: => String): Unit =
   ensure(marker, false, warningMessage)
 

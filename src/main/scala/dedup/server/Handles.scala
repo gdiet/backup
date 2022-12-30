@@ -1,9 +1,6 @@
 package dedup
 package server
 
-object Handles:
-  object NotOpen
-
 /** Manages handles for open files, keeping track of:
   *  - The number of open handles for each file.
   *  - The current write cache for the file if any.
@@ -59,57 +56,51 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
 
   def get(fileId: Long): Option[Handle] = synchronized(handles.get(fileId))
 
-  def removeAndGetNext(fileId: Long, dataEntry: DataEntry2, newDataId: DataId): Option[DataEntry2] = synchronized {
-    log.info(s"removeAndGetNext($fileId, dataEntry $dataEntry) - current handles: ${handles.keySet}") // TODO trace
+  def removePersisted(fileId: Long, newDataId: DataId): Unit = synchronized {
+    log.info(s"removePersisted($fileId, $newDataId) - current handles: ${handles.keySet}") // TODO trace
     handles.get(fileId) match
-      case None =>
-        problem("handles.removeAndGetNext.missing", s"Missing handle for file $fileId.")
-        None
-      case Some(Handle(0, _, None, Seq(`dataEntry`))) => // TODO what if count is not 0? (robust behavior)
+      case None => problem("handles.removeAndGetNext.missing", s"Missing handle for file $fileId.")
+      case Some(Handle(0, _, None, Seq(_))) =>
         log.info(s"Removing handle for $fileId.") // FIXME trace
         handles -= fileId
-        None
-      case Some(handle @ Handle(_, _, _, others :+ `dataEntry`)) =>
+      case Some(handle @ Handle(_, _, _, others :+ _)) =>
         log.info(s"Keeping handle for $fileId.") // FIXME trace
         handles += fileId -> handle.copy(dataId = newDataId, persisting = others)
-        others.lastOption
-      case _ =>
-        problem("handles.removeAndGetNext.mismatch", s"Previous data entry not found for file $fileId.")
+      case Some(handle) =>
+        problem("handles.removeAndGetNext.mismatch", s"Persist queue unexpectedly empty in $handle.")
         handles -= fileId
-        None
   }
 
   /** Releases a virtual file handle:
-    *  - If the file was not open, returns [[Handles.NotOpen]].
+    *  - If the file handle was not open, returns [[Failed]].
     *  - Decrements the handle count for the file.
     *  - If there are more handles on the file, returns [[None]].
     *  - If there was no current [[DataEntry2]] write cache, returns [[None]].
-    *  - Enqueues the current [[DataEntry2]] to the persist queue.
-    *  - If the persist queue was empty before, returns the entry to be handled, otherwise returns [[None]]. */
-  def release(fileId: Long): Handles.NotOpen.type | Option[(DataId, DataEntry2)] = synchronized {
+    *  - Enqueues the current [[DataEntry2]] to the persist queue and returns its size. */
+  def release(fileId: Long): Failed | Option[Long] = synchronized {
     handles.get(fileId) match
       case None =>
         log.warn(s"release($fileId) called for a file handle that is currently not open.")
-        Handles.NotOpen
+        Failed // TODO use the Failed pattern in other places?
       case Some(handle @ Handle(count, dataId, current, persisting)) =>
         if count < 1 then log.warn(s"release($fileId) called for a file having handle count $count.")
-        if count > 1 then { handles += fileId -> handle.copy(count - 1); None }
-        else if current.isEmpty then
-          if persisting.isEmpty then handles -= fileId else handles += fileId -> handle.copy(count = 0)
+        if count > 1 then
+          handles += fileId -> handle.copy(count - 1)
           None
         else
-          handles += fileId -> Handle(0, dataId, None, current ++: persisting)
-          if persisting.isEmpty then current.map(dataId -> _) else None
+          if current.isEmpty && persisting.isEmpty then handles -= fileId
+          else handles += fileId -> Handle(0, dataId, None, current ++: persisting)
+          current.map(_.size)
   }
 
   /** @return The data entries that still need to be enqueued. */
-  def shutdown(): Map[Long, (DataId, DataEntry2)] = synchronized {
+  def shutdown(): Map[Long, DataEntry2] = synchronized { // FIXME just return the entry size?
     closing = true
     handles.flatMap {
       case (fileId, Handle(count, dataId, Some(current), persisting)) =>
         log.warn(s"Modified file $fileId has still $count open handles on shutdown.")
         handles += fileId -> Handle(0, dataId, None, current +: persisting)
-        if persisting.isEmpty then Some(fileId -> (dataId, current)) else None
+        if persisting.isEmpty then Some(fileId -> current) else None
       case (fileId, Handle(count, _, None, _)) =>
         if count > 0 then log.info(s"File $fileId has still $count open read handles on shutdown.")
         None
