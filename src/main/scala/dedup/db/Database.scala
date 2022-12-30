@@ -198,9 +198,8 @@ class Database(connection: Connection) extends util.ClassLogging:
     ensure("db.set.dataid", count == 1, s"setDataId update count is $count and not 1 for id $id dataId $dataId")
 
   private val qNextId = prepare("SELECT NEXT VALUE FOR idSeq")
-  def nextId: Long = qNextId.sync(_.query(next(_.getLong(1))))
-
-  def newDataIdFor(id: Long): DataId = DataId(nextId).tap(setDataId(id, _))
+  def newDataId(): DataId = DataId(qNextId.sync(_.query(next(_.getLong(1)))))
+  def newDataIdFor(id: Long): DataId = newDataId().tap(setDataId(id, _))
 
   private val iDataEntry = prepare("INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)")
   def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit =

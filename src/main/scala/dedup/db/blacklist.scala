@@ -49,7 +49,7 @@ object blacklist extends util.ClassLogging:
           size -> md.digest()
         }
         val dataId = db.dataEntry(hash, size).getOrElse(
-          DataId(db.nextId).tap(db.insertDataEntry(_, 1, size, 0, 0, hash))
+          db.newDataId().tap(db.insertDataEntry(_, 1, size, 0, 0, hash))
         )
         ensure("blacklist.create.file", db.mkFile(dirId, file.getName, Time(file.lastModified), dataId).isDefined,
           s"can't create internal blacklist file for $file")
