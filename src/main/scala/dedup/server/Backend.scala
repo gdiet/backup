@@ -41,15 +41,11 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     concurrent.ExecutionContext.fromExecutorService(java.util.concurrent.Executors.newSingleThreadExecutor())
 
   /** @return The [[TreeEntry]] denoted by the file system path or [[None]] if there is no matching entry. */
-  def entry(path: String): Option[TreeEntry] = entry(pathElements(path))
+  def entry(path: String): Option[TreeEntry] = db.entry(path)
   /** @return The path elements of this file system path. */
-  def pathElements(path: String): Array[String] = path.split("/").filter(_.nonEmpty)
+  def pathElements(path: String): Array[String] = db.pathElements(path)
   /** @return The [[TreeEntry]] denoted by the file system path or [[None]] if there is no matching entry. */
-  def entry(path: Array[String]): Option[TreeEntry] =
-    path.foldLeft(Option[TreeEntry](root)) {
-      case (Some(dir: DirEntry), name) => db.child(dir.id, name)
-      case _ => None
-    }
+  def entry(path: Array[String]): Option[TreeEntry] = db.entry(path)
 
   /** @return The child entries of the tree entry, an empty [[Seq]] if the parent entry does not exist. */
   def children(parentId: Long): Seq[TreeEntry] = db.children(parentId)
