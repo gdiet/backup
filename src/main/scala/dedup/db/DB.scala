@@ -4,6 +4,7 @@ package db
 import dedup.db.Database.currentDbVersion
 
 import java.sql.{PreparedStatement, Statement}
+import scala.util.{Failure, Success, Try}
 import scala.util.Using.resource
 
 /** Database queries and related things.
@@ -48,7 +49,7 @@ final class DB(connection: java.sql.Connection, checkVersion: Boolean = true) ex
       ensure("database.illegal.version", dbVersion == currentDbVersion, s"Only database version $currentDbVersion is supported, detected version is $dbVersion.")
 
   /** @return The version string read from the database if any. */
-  def version(): Option[String] = scala.util.Try(
+  def version(): Option[String] = Try(
     statement(_.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(maybe(_.getString(1))))
   ).toOption.flatten
 
@@ -173,29 +174,12 @@ final class DB(connection: java.sql.Connection, checkVersion: Boolean = true) ex
       count > 0
   }
 
-  private lazy val uRenameMove = prepareTreeModification("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?")
-  /** @return `true` on success, `false` in case of a name conflict.
-    * @throws Exception If new parent does not exist or new name is empty. */
-
-  def renameMove(id: Long, newParentId: Long, newName: String): Boolean =
-    require(newName.nonEmpty, "Can't rename to an empty name.")
-    scala.util.Try(uRenameMove { prep =>
-      // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
-      val count = prep.set(newParentId, newName, id).executeUpdate()
-      ensure("db.renameMove", count == 1, s"For id $id, renameMove count is $count instead of 1.")
-      count > 0 // TODO consider expected and actual behavior if tree node does not exist, is deleted, or parent is deleted.
-    }) match
-      case scala.util.Success(value) => value
-      case scala.util.Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
-        log.debug(s"renameMove($id, $newParentId, '$newName'): Name conflict."); false
-      case scala.util.Failure(other) => throw other
-
   private lazy val iDir = prepareTreeModification("INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", true)
   /** @return `Some(id)` or [[None]] if a child with the same name exists.
     * @throws Exception If parent does not exist. */
   def mkDir(parentId: Long, name: String): Option[Long] =
     require(name.nonEmpty, "Can not create a directory with an empty name.")
-    scala.util.Try(iDir { prep =>
+    Try(iDir { prep =>
       // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
       val count = prep.set(parentId, name, now).executeUpdate()
       ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
@@ -205,17 +189,17 @@ final class DB(connection: java.sql.Connection, checkVersion: Boolean = true) ex
           problem("db.mkdir.sameAsParent", s"For parentId $parentId and name '$name', the id of the created directory was the same as the parentId.")
       }
     }) match
-      case scala.util.Success(id) => Some(id)
-      case scala.util.Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
+      case Success(id) => Some(id)
+      case Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
         log.debug(s"mkDir($parentId, '$name'): Name conflict."); None
-      case scala.util.Failure(other) => throw other
+      case Failure(other) => throw other
 
   private lazy val iFile = prepareTreeModification("INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)", true)
   /** @return `Some(id)` or [[None]] if a child with the same name exists.
     * @throws Exception If parent does not exist. */
   def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] =
     require(name.nonEmpty, "Can not create a file with an empty name.")
-    scala.util.Try(iFile { prep =>
+    Try(iFile { prep =>
       // Name conflict or missing parent triggers an SQL exception due to unique constraint / foreign key violation.
       val count = prep.set(parentId, name, time, dataId).executeUpdate()
       ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
@@ -225,25 +209,32 @@ final class DB(connection: java.sql.Connection, checkVersion: Boolean = true) ex
           problem("db.mkFile.sameAsParent", s"For parentId $parentId and name '$name', the id of the created file was the same as the parentId.")
       }
     }) match
-      case scala.util.Success(id) => Some(id)
-      case scala.util.Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
+      case Success(id) => Some(id)
+      case Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
         log.debug(s"mkFile($parentId, '$name', $time, $dataId): Name conflict."); None
-      case scala.util.Failure(other) => throw other
+      case Failure(other) => throw other
+
+  private lazy val uRenameMove = prepareTreeModification("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?")
+  /** @return `true` on success, `false` in case of a name conflict.
+    * @throws Exception If new parent does not exist or new name is empty. */
+  def renameMove(id: Long, newParentId: Long, newName: String): Boolean =
+    require(newName.nonEmpty, "Can't rename to an empty name.")
+    Try(uRenameMove { prep =>
+      // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
+      val count = prep.set(newParentId, newName, id).executeUpdate()
+      ensure("db.renameMove", count == 1, s"For id $id, renameMove count is $count instead of 1.")
+      count > 0 // TODO consider expected and actual behavior if tree node does not exist, is deleted, or parent is deleted.
+    }) match
+      case Success(value) => value
+      case Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
+        log.debug(s"renameMove($id, $newParentId, '$newName'): Name conflict."); false
+      case Failure(other) => throw other
 
   private lazy val uDataId = prepare("UPDATE TreeEntries SET dataId = ? WHERE id = ?")
   def setDataId(id: Long, dataId: DataId): Unit = synchronized {
     val count = uDataId(_.set(dataId, id).executeUpdate())
     ensure("db.set.dataid", count == 1, s"setDataId update count is $count and not 1 for id $id dataId $dataId")
   }
-
-  private def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
-    dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
-      case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
-        ensure("data.find.gaps", start == lastEnd, s"Detected overlapping data entry: End = $lastEnd, start = $start.")
-        stop -> gaps
-      case ((lastEnd, gaps), (start, stop)) =>
-        stop -> gaps.appended(DataArea(lastEnd, start))
-    }
 
   private lazy val qNextId = prepare("SELECT NEXT VALUE FOR idSeq")
   def newDataId(): DataId = DataId(qNextId(_.query(next(_.getLong(1)))))
@@ -255,3 +246,12 @@ final class DB(connection: java.sql.Connection, checkVersion: Boolean = true) ex
     val sqlHash: Array[Byte] | SqlNull = if seq == 1 then hash else SqlNull(java.sql.Types.BINARY)
     val count = iDataEntry(_.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate())
     ensure("db.add.data.entry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")
+
+  private def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
+    dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
+      case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
+        ensure("data.find.gaps", start == lastEnd, s"Detected overlapping data entry: End = $lastEnd, start = $start.")
+        stop -> gaps
+      case ((lastEnd, gaps), (start, stop)) =>
+        stop -> gaps.appended(DataArea(lastEnd, start))
+    }
