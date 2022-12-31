@@ -7,10 +7,10 @@ import scala.util.Using.resource
 
 class BlacklistSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
 
-  def dbWithContents(f: (DB, Map[String, Long]) => Any): Unit =
+  def dbWithContents(f: (Database, Map[String, Long]) => Any): Unit =
     MemH2 { connection =>
       initialize(connection)
-      val db = DB(connection)
+      val db = Database(connection)
       val blacklist = db.mkDir(root.id, "blacklist").get
       val black1 = db.mkFile(blacklist, "black1", now, DataId(-1)).get
       val black1d = db.newDataId().tap(db.setDataId(black1, _))

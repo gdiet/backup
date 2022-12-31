@@ -19,7 +19,7 @@ class DatabaseSpec extends org.scalatest.freespec.AnyFreeSpec:
   "Integration test for Database.freeAreas()" in {
     MemH2 { connection =>
       initialize(connection)
-      val db = DB(connection)
+      val db = Database(connection)
       // empty database
       assert(db.freeAreas() == Seq(DataArea(0, Long.MaxValue)))
       // one blacklisted entry
@@ -38,7 +38,7 @@ class DatabaseSpec extends org.scalatest.freespec.AnyFreeSpec:
   "Integration test for Database.pathOf()" in {
     MemH2 { connection =>
       initialize(connection)
-      val db = DB(connection)
+      val db = Database(connection)
       val dir1 = db.mkDir(root.id, "dir1").get
       val dir2 = db.mkDir(dir1, "dir2").get
       val file1 = db.mkFile(dir2, "file1", now, DataId(-1)).get
