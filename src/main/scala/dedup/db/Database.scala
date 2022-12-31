@@ -238,7 +238,11 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
       case Failure(other) => throw other
 
   private lazy val uRenameMove = prepareTreeModification("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?")
-  /** @return `true` on success, `false` in case of a name conflict.
+  /** Updates the parent/name of a tree entry. The tree entry should exist (is ensured) but may be marked deleted.
+    * The new parent may also be deleted, so calling this method can lead to a non-deleted child entry of a deleted
+    * tree entry.
+    * 
+    * @return `true` on success, `false` in case of a name conflict.
     * @throws Exception If new parent does not exist or new name is empty. */
   def renameMove(id: Long, newParentId: Long, newName: String): Boolean =
     require(newName.nonEmpty, "Can't rename to an empty name.")
@@ -246,7 +250,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
       // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
       val count = prep.set(newParentId, newName, id).executeUpdate()
       ensure("db.renameMove", count == 1, s"For id $id, renameMove count is $count instead of 1.")
-      count > 0 // TODO consider expected and actual behavior if tree node does not exist, is deleted, or parent is deleted.
+      count > 0
     }) match
       case Success(value) => value
       case Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>

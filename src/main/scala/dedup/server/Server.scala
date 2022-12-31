@@ -117,6 +117,9 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
                           .exists(dirId => backend.children(dir.id).forall(child => copy(child, child.name, dirId)))
                     if (copy(origin, newName, targetDir.id)) OK else EEXIST
                   else
+                    // The corner cases documented in Database.renameMove are accepted here: In race conditions,
+                    // they may lead to an Exception (if the origin was deleted) or to the origin becoming the
+                    // child of a deleted node.
                     if backend.renameMove(origin.id, targetDir.id, newName) then OK else EEXIST
     }
 
