@@ -7,13 +7,13 @@ import scala.util.Using.resource
 
 class BlacklistSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
 
-  def dbWithContents(f: (Database, Map[String, Long]) => Any): Unit =
+  def dbWithContents(f: (DB, Map[String, Long]) => Any): Unit =
     MemH2 { connection =>
       initialize(connection)
-      val db = Database(connection)
+      val db = DB(connection)
       val blacklist = db.mkDir(root.id, "blacklist").get
       val black1 = db.mkFile(blacklist, "black1", now, DataId(-1)).get
-      val black1d = db.newDataIdFor(black1)
+      val black1d = db.newDataId().tap(db.setDataId(black1, _))
       db.insertDataEntry(black1d, 1, 10, 10, 20, Array())
       val black2 = db.mkFile(blacklist, "black2", now, black1d).get
       val dir1 = db.mkDir(root.id, "dir1").get
@@ -85,8 +85,8 @@ class BlacklistSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
       val file3 = db.entry("/blacklist/dir1/dir2/file3").get.asInstanceOf[FileEntry]
       assert(file1.dataId == file3.dataId)
       assert(file2.dataId != file3.dataId)
-      assert(db.dataSize(file1.dataId) == 12)
-      assert(db.dataSize(file2.dataId) == 13)
+      assert(db.logicalSize(file1.dataId) == 12)
+      assert(db.logicalSize(file2.dataId) == 13)
       assert(db.storageSize(file1.dataId) == 0)
       assert(db.storageSize(file2.dataId) == 0)
 
@@ -99,7 +99,7 @@ class BlacklistSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
       // some more checks on the second blacklist copy
       val file4 = db.entry("/black2/dir1/dir2/file1").get.asInstanceOf[FileEntry]
       assert(file1.dataId == file4.dataId)
-      assert(db.dataSize(file4.dataId) == 12)
+      assert(db.logicalSize(file4.dataId) == 12)
       assert(db.storageSize(file4.dataId) == 0)
     }
   }

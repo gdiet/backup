@@ -73,7 +73,7 @@ object maintenance extends util.ClassLogging:
         println(s"The path '$path' does not exist.")
       case Some(file: FileEntry) =>
         println(s"File information for path '$path':")
-        println(s"${file.name} .. ${readableBytes(db.dataSize(file.dataId))}")
+        println(s"${file.name} .. ${readableBytes(db.logicalSize(file.dataId))}")
       case Some(dir: DirEntry) =>
         println(s"Listing of directory '$path':")
         db.children(dir.id).sortBy {
@@ -81,7 +81,7 @@ object maintenance extends util.ClassLogging:
           case file: FileEntry => s"f${file.name}"
         }.foreach {
           case dir: DirEntry => println(s"> ${dir.name}")
-          case file: FileEntry => println(s"- ${file.name} ${"." * math.max(2, 38-file.name.length)} ${readableBytes(db.dataSize(file.dataId))}")
+          case file: FileEntry => println(s"- ${file.name} ${"." * math.max(2, 38-file.name.length)} ${readableBytes(db.logicalSize(file.dataId))}")
         }
   }
 
@@ -91,7 +91,7 @@ object maintenance extends util.ClassLogging:
         println(s"The path '$path' does not exist.")
       case Some(file: FileEntry) =>
         if db.deleteChildless(file.id)
-        then log.info(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
+        then log.info(s"Marked deleted file '$path' .. ${readableBytes(db.logicalSize(file.dataId))}")
         else log.warn(s"Could not delete file with children: '$path'")
       case Some(dir: DirEntry) =>
         log.info(s"Marking deleted directory '$path' ...")

@@ -31,7 +31,7 @@ object blacklist extends util.ClassLogging:
         log.info(s"Finished blacklisting.")
   }
 
-  def externalFilesToInternalBlacklist(db: Database, currentDir: File, dirId: Long, deleteFiles: Boolean): Unit =
+  def externalFilesToInternalBlacklist(db: DB, currentDir: File, dirId: Long, deleteFiles: Boolean): Unit =
     Option(currentDir.listFiles()).toSeq.flatten.foreach { file =>
       if file.isDirectory then
         db.mkDir(dirId, file.getName) match
@@ -59,7 +59,7 @@ object blacklist extends util.ClassLogging:
           log.info(s"Copied to DedupFS blacklist: $file")
     }
 
-  def processInternalBlacklist(db: Database, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
+  def processInternalBlacklist(db: DB, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
     db.children(parentId).foreach {
       case dir: DirEntry =>
         processInternalBlacklist(db, dfsBlacklist, s"$parentPath/${dir.name}", dir.id, deleteCopies)
@@ -75,7 +75,7 @@ object blacklist extends util.ClassLogging:
           filteredCopies.foreach { (id, path) =>
             log.info(s"Deleting copy of entry: $path")
             if db.deleteChildless(id)
-            then log.info(s"Marked deleted file '$path' .. ${readableBytes(db.dataSize(file.dataId))}")
+            then log.info(s"Marked deleted file '$path' .. ${readableBytes(db.logicalSize(file.dataId))}")
             else log.warn(s"Could not delete file with children: '$path'")
           }
     }

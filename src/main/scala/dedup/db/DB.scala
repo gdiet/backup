@@ -17,7 +17,7 @@ final class DB(connection: java.sql.Connection, checkVersion: Boolean = true) ex
   /** Close the database connection. */
   override def close(): Unit = connection.close()
 
-  private def statement[T](f: Statement => T): T = resource(connection.createStatement)(f)
+  private def statement[T](f: Statement => T): T = connection.withStatement(f)
 
   /** Utility class making sure a [[PreparedStatement]] is used synchronized
     * because in many cases [[PreparedStatement]]s are stateful.
@@ -63,7 +63,7 @@ final class DB(connection: java.sql.Connection, checkVersion: Boolean = true) ex
     )
     log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
     val sortedChunks = dataChunks.to(scala.collection.SortedMap)
-    val (endOfStorage, dataGaps) = endOfStorageAndDataGaps(sortedChunks)
+    val (endOfStorage, dataGaps) = Database.endOfStorageAndDataGaps(sortedChunks)
     log.info(s"Current size of data storage: ${readableBytes(endOfStorage)}")
     log.info(s"Free for reclaiming: ${readableBytes(dataGaps.map(_.size).sum)} in ${dataGaps.size} gaps.")
     if sortedChunks.size != dataChunks.size then
@@ -247,11 +247,44 @@ final class DB(connection: java.sql.Connection, checkVersion: Boolean = true) ex
     val count = iDataEntry(_.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate())
     ensure("db.add.data.entry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")
 
-  private def endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long]): (Long, Seq[DataArea]) =
-    dataChunks.foldLeft(0L -> Vector.empty[DataArea]) {
-      case ((lastEnd, gaps), (start, stop)) if start <= lastEnd =>
-        ensure("data.find.gaps", start == lastEnd, s"Detected overlapping data entry: End = $lastEnd, start = $start.")
-        stop -> gaps
-      case ((lastEnd, gaps), (start, stop)) =>
-        stop -> gaps.appended(DataArea(lastEnd, start))
+  def removeStorageAllocation(dataId: DataId): Unit =
+    connection.transaction {
+      statement { statement =>
+        statement.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId AND seq > 1")
+        statement.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = $dataId")
+      }
     }
+
+  def shutdownCompact(): Unit =
+    log.info("Compacting DedupFS database...")
+    statement(_.execute("SHUTDOWN COMPACT"))
+
+  // TODO below check usage
+  // File system statistics
+  def storageSize()      : Long = statement(_.query("SELECT MAX(stop) FROM DataEntries")(one(_.opt(_.getLong(1)))).getOrElse(0L))
+  def countDataEntries() : Long = statement(_.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(oneLong))
+  def countFiles()       : Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(oneLong))
+  def countDeletedFiles(): Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")(oneLong))
+  def countDirs()        : Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")(oneLong))
+  def countDeletedDirs() : Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(oneLong))
+
+  // reclaimSpace specific queries
+  /** @return The number of entries that have been un-rooted. */
+  def unrootDeletedEntries(deleteBeforeMillis: Long): Long =
+    statement(_.executeLargeUpdate(s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBeforeMillis"))
+
+  /** @return The number of entries that have been deleted. */
+  def deleteUnrootedTreeEntries(): Long =
+    statement(_.executeLargeUpdate(s"DELETE FROM TreeEntries WHERE id = parentId AND id != ${root.id}"))
+
+  def dataIdsInTree(): Set[Long] =
+  // The WHERE clause makes sure the 'null' entries are not returned
+    statement(_.query("SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0")(seq(_.getLong(1))).toSet)
+
+  def dataIdsInStorage(): Set[Long] =
+  // The WHERE clause makes sure the 'null' entries are not returned
+    statement(_.query("SELECT id FROM DataEntries")(seq(_.getLong(1))).toSet)
+
+  def deleteDataEntry(dataId: Long): Unit =
+    val count = statement(_.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId"))
+    ensure("db.delete.dataentry", count == 1, s"For data id $dataId, delete count is $count instead of 1.")
