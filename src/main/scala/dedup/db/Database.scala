@@ -282,7 +282,6 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     log.info("Compacting DedupFS database...")
     statement(_.execute("SHUTDOWN COMPACT"))
 
-  // TODO below check usage
   // File system statistics
   def storageSize()      : Long = statement(_.query("SELECT MAX(stop) FROM DataEntries")(one(_.opt(_.getLong(1)))).getOrElse(0L))
   def countDataEntries() : Long = statement(_.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(oneLong))
