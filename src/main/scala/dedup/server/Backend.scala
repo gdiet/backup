@@ -3,7 +3,7 @@ package server
 
 object Backend:
   /** Milliseconds to delay write operations in order to keep cache size manageable. */
-  def cacheLoadDelay: Long = bytesInPersistQueue.get() * persistQueueSize.get() / 1000000000
+  private def cacheLoadDelay: Long = bytesInPersistQueue.get() * persistQueueSize.get() / 1000000000
   private val persistQueueSize = java.util.concurrent.atomic.AtomicLong()
   private val bytesInPersistQueue = java.util.concurrent.atomic.AtomicLong()
 
@@ -31,6 +31,7 @@ object Backend:
 
 
 final class Backend(settings: Settings) extends AutoCloseable with util.ClassLogging:
+  import Backend.cacheLoadDelay
   private val db = dedup.db.Database(dedup.db.H2.connection(settings.dbDir, settings.readonly))
   private val lts: store.LongTermStore = store.LongTermStore(settings.dataDir, settings.readonly)
   private val handles = Handles(settings.tempPath)
@@ -59,7 +60,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
   def setTime(id: Long, newTime: Long): Unit = db.setTime(id, newTime)
 
   def synchronizeTreeModification[T](f: => T): T = db.synchronizeTreeModification(f)
-  
+
   def renameMove(id: Long, newParentId: Long, newName: String): Boolean = db.renameMove(id, newParentId, newName)
 
   /** Creates a copy of the file's last persisted state without current modifications. */
@@ -154,7 +155,12 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.
     *             using defensive copy (Array.clone) that they are not modified later.
     * @return `false` if called without createAndOpen or open. */
-  def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean = handles.write(fileId, db.logicalSize, data)
+  def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
+    handles.write(fileId, db.logicalSize, data.tapEach(_ =>
+      if cacheLoadDelay > 0 then
+        log.trace(s"Slowing write by $cacheLoadDelay ms due to high cache load.")
+        Thread.sleep(cacheLoadDelay)
+    ))
 
   /** Provides the requested number of bytes from the referenced file
     * unless end-of-file is reached - in that case stops there.

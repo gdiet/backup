@@ -24,14 +24,7 @@ final class DataEntry(idSeq: java.util.concurrent.atomic.AtomicLong, initialSize
     synchronized { cache.read(offset, size) }
 
   /** @param data Iterator(position -> bytes). The write is executed atomically / synchronized. */
-  def write(data: Iterator[(Long, Array[Byte])]): Unit = synchronized {
-    data.foreach { (position, bytes) =>
-      if Backend.cacheLoadDelay > 0 then // TODO consider moving this to Backend
-        log.trace(s"Slowing write by ${Backend.cacheLoadDelay} ms due to high cache load.")
-        Thread.sleep(Backend.cacheLoadDelay)
-      cache.write(position, bytes)
-    }
-  }
+  def write(data: Iterator[(Long, Array[Byte])]): Unit = synchronized { data.foreach(cache.write) }
 
   def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
 
