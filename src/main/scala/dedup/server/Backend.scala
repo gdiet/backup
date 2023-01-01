@@ -171,7 +171,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     * @return The (position -> bytes) read or [[None]] if the file is not open. */
   // Note that previous implementations provided atomic reads, but this is not really necessary...
   def read(fileId: Long, offset: Long, requestedSize: Long): Option[Iterator[(Long, Array[Byte])]] =
-    handles.get(fileId).map(_.readLock { case Handle(_, dataId, current, persisting) => // TODO move code to handles?
+    handles.get(fileId).map(_.readLock { case Handle(_, dataId, current, persisting) =>
       val dataEntries = current ++: persisting
       lazy val fileSize = dataEntries.headOption.map(_.size).getOrElse(db.logicalSize(dataId))
       lazy val parts = db.parts(dataId)
