@@ -237,13 +237,16 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
         log.debug(s"mkFile($parentId, '$name', $time, $dataId): Name conflict."); None
       case Failure(other) => throw other
 
-  private lazy val uRenameMove = prepareTreeModification("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?")
-  /** Updates the parent/name of a tree entry. The tree entry should exist (is ensured) but may be marked deleted.
-    * The new parent may also be deleted, so calling this method can lead to a non-deleted child entry of a deleted
-    * tree entry.
-    * 
-    * @return `true` on success, `false` in case of a name conflict.
-    * @throws Exception If new parent does not exist or new name is empty. */
+  def synchronizeTreeModification[T](f: => T): T = TreeStructureMonitor.synchronized(f)
+
+  private lazy val uRenameMove = prepareTreeModification("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ? AND deleted = 0")
+
+  /** Updates the parent/name of a tree entry. The tree entry should exist (is ensured). The new parent may be marked
+    * deleted, so calling this method can lead to a non-deleted child entry of a deleted tree entry unless prevented
+    * by the calling code. This can be achieved e.g. by using [[synchronizeTreeModification]] to first read the parent
+    * using the [[entry]] method and then using this method.
+    * @return `true` on success, `false` in case of a name conflict or if the tree entry or the new parent does not
+    *         exist. */
   def renameMove(id: Long, newParentId: Long, newName: String): Boolean =
     require(newName.nonEmpty, "Can't rename to an empty name.")
     Try(uRenameMove { prep =>

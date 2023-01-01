@@ -58,6 +58,8 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
 
   def setTime(id: Long, newTime: Long): Unit = db.setTime(id, newTime)
 
+  def synchronizeTreeModification[T](f: => T): T = db.synchronizeTreeModification(f)
+  
   def renameMove(id: Long, newParentId: Long, newName: String): Boolean = db.renameMove(id, newParentId, newName)
 
   /** Creates a copy of the file's last persisted state without current modifications. */

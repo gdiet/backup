@@ -95,31 +95,32 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
       val newParts = backend.pathElements(newpath)
       if oldParts.length == 0 || newParts.length == 0 then ENOENT else
       if oldParts.sameElements(newParts)              then OK     else
-        backend.entry(oldParts) match
-          case None         => ENOENT // oldpath does not exist.
-          case Some(origin) => backend.entry(newParts.dropRight(1)) match
-            case None                       => ENOENT  // Parent of newpath does not exist.
-            case Some(_        : FileEntry) => ENOTDIR // Parent of newpath is a file.
-            case Some(targetDir: DirEntry ) =>
-              val newName = newParts.last
-              origin -> backend.child(targetDir.id, newName) match
-                case (_: FileEntry, Some(_: DirEntry)) => EISDIR // oldpath is a file and newpath is a dir.
-                case (_           , previous         ) =>
-                  // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
-                  // replace operation is not atomic. This is tolerated in order to simplify the code.
-                  if !previous.forall(backend.deleteChildless) then ENOTEMPTY
-                  else if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
-                    def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match
-                      case file: FileEntry =>
-                        backend.copyFile(file, newParentId, newName)
-                      case dir : DirEntry =>
-                        backend.mkDir(newParentId, newName)
-                          .exists(dirId => backend.children(dir.id).forall(child => copy(child, child.name, dirId)))
-                    if (copy(origin, newName, targetDir.id)) OK else EEXIST
-                  else
-                    // The corner cases documented in Database.renameMove are accepted here.
-                    // In race conditions, they may lead to the origin becoming the child of a deleted directory.
-                    if backend.renameMove(origin.id, targetDir.id, newName) then OK else EEXIST
+        // Prevent race conditions where e.g. the new parent is marked deleted while moving a tree entry there.
+        backend.synchronizeTreeModification {
+          backend.entry(oldParts) match
+            case None         => ENOENT // oldpath does not exist.
+            case Some(origin) => backend.entry(newParts.dropRight(1)) match
+              case None                       => ENOENT  // Parent of newpath does not exist.
+              case Some(_        : FileEntry) => ENOTDIR // Parent of newpath is a file.
+              case Some(targetDir: DirEntry ) =>
+                val newName = newParts.last
+                origin -> backend.child(targetDir.id, newName) match
+                  case (_: FileEntry, Some(_: DirEntry)) => EISDIR // oldpath is a file and newpath is a dir.
+                  case (_           , previous         ) =>
+                    // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
+                    // replace operation is not atomic. This is tolerated in order to simplify the code.
+                    if !previous.forall(backend.deleteChildless) then ENOTEMPTY
+                    else if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
+                      def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match
+                        case file: FileEntry =>
+                          backend.copyFile(file, newParentId, newName)
+                        case dir : DirEntry =>
+                          backend.mkDir(newParentId, newName)
+                            .exists(dirId => backend.children(dir.id).forall(child => copy(child, child.name, dirId)))
+                      if (copy(origin, newName, targetDir.id)) OK else EEXIST
+                    else
+                      if backend.renameMove(origin.id, targetDir.id, newName) then OK else EEXIST
+        }
     }
 
   override def rmdir(path: String): Int =
