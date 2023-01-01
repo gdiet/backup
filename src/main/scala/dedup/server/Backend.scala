@@ -234,5 +234,13 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     handles.shutdown().foreach { case (fileId, entrySize) => enqueue(fileId, entrySize) }
     singleThreadStoreContext.shutdown()
     singleThreadStoreContext.awaitTermination(1, java.util.concurrent.TimeUnit.DAYS)
+    // TODO in a separate thread, all 10 seconds log progress
+    /* FIXME
+    if persistQueueSize.get > 0 then log.warn(s"${persistQueueSize.get} entries have not been reported closed.")
+    if settings.temp.exists() then
+      if settings.temp.list().isEmpty then settings.temp.delete()
+      else log.warn(s"Temp dir not empty: ${settings.temp}")
+    */
+    lts.close()
     db.close()
     log.info("Shutdown complete.")
