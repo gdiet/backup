@@ -81,7 +81,7 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
     handles.get(fileId) match
       case None =>
         log.warn(s"release($fileId) called for a file handle that is currently not open.")
-        Failed // TODO use the Failed pattern in other places?
+        Failed
       case Some(handle @ Handle(count, dataId, current, persisting)) =>
         if count > 1 then
           handles += fileId -> handle.copy(count - 1)

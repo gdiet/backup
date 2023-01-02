@@ -158,7 +158,6 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     // On linux, empty names don't work, and the root node has itself as child...
     qChildren(_.set(parentId).query(seq(treeEntry))).filterNot(_.name.isEmpty)
 
-  // TODO check whether it would be better to return Area instead of position+size
   private lazy val qParts = prepare("SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC")
   def parts(dataId: DataId): Seq[(Long, Long)] =
     qParts(_.set(dataId).query(seq { rs =>
