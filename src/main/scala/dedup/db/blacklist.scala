@@ -13,7 +13,7 @@ object blacklist extends util.ClassLogging:
     * @param deleteFiles If true, files in the `blacklistDir` are deleted when they have been taken over
     * @param dfsBlacklist Name of the base blacklist directory in the dedup file system, resolved against root
     * @param deleteCopies If true, mark deleted all blacklisted occurrences except for the original entries in `dfsBlacklist` */
-  def apply(dbDir: File, blacklistDir: String, deleteFiles: Boolean, dfsBlacklist: String, deleteCopies: Boolean): Unit = withDb(dbDir, readonly = false) { db =>
+  def apply(dbDir: File, blacklistDir: String, deleteFiles: Boolean, dfsBlacklist: String, deleteCopies: Boolean): Unit = withDb(dbDir, readOnly = false) { db =>
     db.mkDir(root.id, dfsBlacklist).foreach(_ => log.info(s"Created blacklist directory DedupFS:/$dfsBlacklist"))
     db.child(root.id, dfsBlacklist) match
       case None                          => log.error(s"Can't run blacklisting - couldn't create DedupFS:/$dfsBlacklist.")

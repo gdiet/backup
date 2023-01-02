@@ -15,8 +15,8 @@ def initialize(connection: Connection): Unit = connection.withStatement { stat =
   indexDefinitions.foreach(stat.executeUpdate)
 }
 
-def withDb[T](dbDir: File, readonly: Boolean = true)(f: Database => T): T =
-  withConnection(dbDir, readonly)(c => f(Database(c)))
+def withDb[T](dbDir: File, readOnly: Boolean = true)(f: Database => T): T =
+  withConnection(dbDir, readOnly)(c => f(Database(c)))
 
 object Database extends util.ClassLogging:
   val currentDbVersion = "3"

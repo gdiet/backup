@@ -31,7 +31,7 @@ object BackupTool extends ClassLogging:
     val backup   = opts.defaultFalse("dbBackup")
     val temp     = main.prepareTempDir(false, opts)
     val dbDir    = main.prepareDbDir(repo, backup = backup, readOnly = false)
-    val settings = server.Settings(repo, dbDir, temp, readonly = false, copyWhenMoving = AtomicBoolean(false))
+    val settings = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
     cache.MemCache.startupCheck()
     if backup then db.maintenance.backup(settings.dbDir)
 

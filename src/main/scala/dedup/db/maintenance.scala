@@ -50,7 +50,7 @@ object maintenance extends util.ClassLogging:
       "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
     )
 
-  def compactDb(dbDir: File): Unit = withDb(dbDir, readonly = false)(_.shutdownCompact())
+  def compactDb(dbDir: File): Unit = withDb(dbDir, readOnly = false)(_.shutdownCompact())
   
   def stats(dbDir: File): Unit = withDb(dbDir) { db =>
     import Database.currentDbVersion
@@ -85,7 +85,7 @@ object maintenance extends util.ClassLogging:
         }
   }
 
-  def del(dbDir: File, path: String): Unit = withDb(dbDir, readonly = false) { db =>
+  def del(dbDir: File, path: String): Unit = withDb(dbDir, readOnly = false) { db =>
     db.entry(path) match
       case None =>
         println(s"The path '$path' does not exist.")
@@ -125,7 +125,7 @@ object maintenance extends util.ClassLogging:
     }
   }
 
-  def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withDb(dbDir, readonly = false) { db =>
+  def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withDb(dbDir, readOnly = false) { db =>
     log.info(s"Reclaiming space from deleted files and orphan data entries now.")
 
     log.info(s"Deleting tree entries marked for deletion more than $keepDeletedDays days ago...")

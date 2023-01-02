@@ -15,8 +15,8 @@ object H2:
   def backupFile(dbDir: java.io.File): java.io.File = java.io.File(dbDir, backupFileName)
 
   // For SQL debugging, add to the DB URL "...;TRACE_LEVEL_SYSTEM_OUT=2"
-  private def jdbcUrl(dbDir: java.io.File, readonly: Boolean) =
-    if readonly then
+  private def jdbcUrl(dbDir: java.io.File, readOnly: Boolean) =
+    if readOnly then
       s"jdbc:h2:$dbDir/$dbName;ACCESS_MODE_DATA=r"
     else
       s"jdbc:h2:$dbDir/$dbName;DB_CLOSE_ON_EXIT=FALSE;MAX_COMPACT_TIME=2000"
@@ -25,8 +25,8 @@ object H2:
     val dbTraceFile = java.io.File(dbDir, s"$dbName.trace.db")
     ensure("h2.trace.file", !dbTraceFile.exists, s"Database trace file $dbTraceFile found. Check for database problems.")
 
-  def connection(dbDir: java.io.File, readonly: Boolean, expectExists: Boolean = true): Connection =
+  def connection(dbDir: java.io.File, readOnly: Boolean, expectExists: Boolean = true): Connection =
     ensure("h2.connection", dbFile(dbDir).exists == expectExists,
       s"Database file ${dbFile(dbDir)} does ${if expectExists then "not " else ""}exist.")
-    if !readonly then checkForTraceFile(dbDir)
-    DriverManager.getConnection(jdbcUrl(dbDir, readonly), "sa", "").tap(_.setAutoCommit(true))
+    if !readOnly then checkForTraceFile(dbDir)
+    DriverManager.getConnection(jdbcUrl(dbDir, readOnly), "sa", "").tap(_.setAutoCommit(true))

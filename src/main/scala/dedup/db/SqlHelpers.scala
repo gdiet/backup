@@ -5,10 +5,10 @@ import java.io.File
 import java.sql.{Connection, PreparedStatement, ResultSet, Statement}
 import scala.util.Using.resource
 
-def withConnection[T](dbDir: File, readonly: Boolean = true)(f: Connection => T): T =
-  resource(H2.connection(dbDir, readonly))(f)
-def withStatement(dbDir: File, readonly: Boolean = true)(f: Statement => Any): Unit =
-  withConnection(dbDir, readonly)(_.withStatement(f))
+def withConnection[T](dbDir: File, readOnly: Boolean = true)(f: Connection => T): T =
+  resource(H2.connection(dbDir, readOnly))(f)
+def withStatement(dbDir: File, readOnly: Boolean = true)(f: Statement => Any): Unit =
+  withConnection(dbDir, readOnly)(_.withStatement(f))
 
 extension (c: Connection)
   def withStatement[T](f: Statement => T): T = resource(c.createStatement())(f) // TODO check usage

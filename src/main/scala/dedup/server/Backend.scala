@@ -32,8 +32,8 @@ object Backend:
 
 final class Backend(settings: Settings) extends AutoCloseable with util.ClassLogging:
   import Backend.*
-  private val db = dedup.db.Database(dedup.db.H2.connection(settings.dbDir, settings.readonly))
-  private val lts: store.LongTermStore = store.LongTermStore(settings.dataDir, settings.readonly)
+  private val db = dedup.db.Database(dedup.db.H2.connection(settings.dbDir, settings.readOnly))
+  private val lts: store.LongTermStore = store.LongTermStore(settings.dataDir, settings.readOnly)
   private val handles = Handles(settings.tempPath)
   private val freeAreas = server.FreeAreas(db.freeAreas())
 

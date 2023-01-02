@@ -10,7 +10,7 @@ import java.io.File
   val dbDir = db.dbDir(repo)
   if dbDir.exists() then main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.")
   store.dataDir(repo).mkdirs() // If dataDir is missing, Server.statfs will report free size 0 on Windows.
-  scala.util.Using.resource(db.H2.connection(dbDir, readonly = false, expectExists = false))(db.initialize)
+  scala.util.Using.resource(db.H2.connection(dbDir, readOnly = false, expectExists = false))(db.initialize)
   main.info(s"Database initialized for repository $repo.")
   Thread.sleep(200) // Give logging some time to display message
 
