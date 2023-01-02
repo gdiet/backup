@@ -63,16 +63,19 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
           OK
     }
 
+  /** Prevent race conditions where e.g. the new parent is marked deleted while moving a tree entry there. */
+  private def synchronizeTreeModification[T](f: => T): T = TreeModificationMonitor.synchronized(f)
+  private object TreeModificationMonitor
+
   override def mkdir(path: String, mode: Long): Int =
     if settings.readOnly then EROFS else fs(s"mkdir $path") {
       val parts = backend.pathElements(path)
-      if parts.length == 0 then ENOENT else
-        backend.synchronizeTreeModification {
-          backend.entry(parts.dropRight(1)) match
-            case None                 => ENOENT
-            case Some(_  : FileEntry) => ENOTDIR
-            case Some(dir: DirEntry ) => backend.mkDir(dir.id, parts.last).fold(EEXIST)(_ => OK)
-        }
+      if parts.length == 0 then ENOENT else synchronizeTreeModification {
+        backend.entry(parts.dropRight(1)) match
+          case None                 => ENOENT
+          case Some(_  : FileEntry) => ENOTDIR
+          case Some(dir: DirEntry ) => backend.mkDir(dir.id, parts.last).fold(EEXIST)(_ => OK)
+      }
     }
 
   // No benefit expected from implementing opendir/releasedir and handing over a file handle to readdir.
@@ -97,42 +100,39 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
       val oldParts = backend.pathElements(oldpath)
       val newParts = backend.pathElements(newpath)
       if oldParts.length == 0 || newParts.length == 0 then ENOENT else
-      if oldParts.sameElements(newParts)              then OK     else
-        // Prevent race conditions where e.g. the new parent is marked deleted while moving a tree entry there.
-        backend.synchronizeTreeModification {
-          backend.entry(oldParts) match
-            case None         => ENOENT // oldpath does not exist.
-            case Some(origin) => backend.entry(newParts.dropRight(1)) match
-              case None                       => ENOENT  // Parent of newpath does not exist.
-              case Some(_        : FileEntry) => ENOTDIR // Parent of newpath is a file.
-              case Some(targetDir: DirEntry ) =>
-                val newName = newParts.last
-                origin -> backend.child(targetDir.id, newName) match
-                  case (_: FileEntry, Some(_: DirEntry)) => EISDIR // oldpath is a file and newpath is a dir.
-                  case (_           , previous         ) =>
-                    // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
-                    // replace operation is not atomic. This is tolerated in order to simplify the code.
-                    if !previous.forall(backend.deleteChildless) then ENOTEMPTY
-                    else if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
-                      def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match
-                        case file: FileEntry =>
-                          backend.copyFile(file, newParentId, newName)
-                        case dir : DirEntry =>
-                          backend.mkDir(newParentId, newName)
-                            .exists(dirId => backend.children(dir.id).forall(child => copy(child, child.name, dirId)))
-                      if (copy(origin, newName, targetDir.id)) OK else EEXIST
-                    else
-                      if backend.renameMove(origin.id, targetDir.id, newName) then OK else EEXIST
-        }
+      if oldParts.sameElements(newParts)              then OK     else synchronizeTreeModification {
+        backend.entry(oldParts) match
+          case None         => ENOENT // oldpath does not exist.
+          case Some(origin) => backend.entry(newParts.dropRight(1)) match
+            case None                       => ENOENT  // Parent of newpath does not exist.
+            case Some(_        : FileEntry) => ENOTDIR // Parent of newpath is a file.
+            case Some(targetDir: DirEntry ) =>
+              val newName = newParts.last
+              origin -> backend.child(targetDir.id, newName) match
+                case (_: FileEntry, Some(_: DirEntry)) => EISDIR // oldpath is a file and newpath is a dir.
+                case (_           , previous         ) =>
+                  // Other than the contract of rename (see https://linux.die.net/man/2/rename), the
+                  // replace operation is not atomic. This is tolerated in order to simplify the code.
+                  if !previous.forall(backend.deleteChildless) then ENOTEMPTY
+                  else if origin.parentId != targetDir.id && settings.copyWhenMoving.get() then
+                    def copy(source: TreeEntry, newName: String, newParentId: Long): Boolean = source match
+                      case file: FileEntry => backend.copyFile(file, newParentId, newName)
+                      case dir : DirEntry  =>
+                        backend.mkDir(newParentId, newName)
+                          .exists(dirId => backend.children(dir.id).forall(child => copy(child, child.name, dirId)))
+                    if (copy(origin, newName, targetDir.id)) OK else EEXIST
+                  else
+                    if backend.renameMove(origin.id, targetDir.id, newName) then OK else EEXIST
+      }
     }
 
   override def rmdir(path: String): Int =
-    if settings.readOnly then EROFS else fs("rmdir $path") {
+    if settings.readOnly then EROFS else fs("rmdir $path") { synchronizeTreeModification {
       backend.entry(path) match
         case Some(dir: DirEntry) => if backend.deleteChildless(dir) then OK else ENOTEMPTY
         case Some(_)             => ENOTDIR
         case None                => ENOENT
-    }
+    } }
 
   // Implemented for Windows in order to allow for copying data from other devices because winfsp calculates
   // volume size based on statvfs. See ru.serce.jnrfuse.examples.MemoryFS.statfs and
@@ -185,7 +185,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
     if settings.readOnly then EROFS else fs(s"create $path") {
       val parts = backend.pathElements(path)
       if parts.length == 0 then ENOENT // Can't create root.
-      else backend.synchronizeTreeModification {
+      else synchronizeTreeModification {
         backend.entry(parts.dropRight(1)) match // Fetch parent entry.
           case None                => ENOENT  // Parent not known.
           case Some(_: FileEntry)  => ENOTDIR // Parent is a file.
@@ -246,7 +246,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
     }
 
   override def unlink(path: String): Int =
-    if settings.readOnly then EROFS else fs(s"unlink $path") {
+    if settings.readOnly then EROFS else fs(s"unlink $path") { synchronizeTreeModification {
       backend.entry(path) match
         case None => ENOENT
         case Some(_: DirEntry) => EISDIR
@@ -257,4 +257,4 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
           // ... This means that the file handles need not be updated.
           if backend.deleteChildless(file) then OK
           else { log.warn(s"Can't delete regular file with children: $path"); ENOTEMPTY }
-    }
+    } }
