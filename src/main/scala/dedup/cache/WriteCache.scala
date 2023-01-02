@@ -18,16 +18,12 @@ class WriteCache(temp: Path, initialSize: Long, availableMem: AtomicLong = MemCa
   private var _size: Long = initialSize
   def          size: Long = _size
 
-  private var _written: Boolean = false
-  def          written: Boolean = _written
-
   private val memCache  = MemCache(availableMem)
   private val zeroCache = Allocation()
   private val fileCache = FileCache(temp)
 
   /** For debugging purposes. */
-  override def toString: String =
-    s"${getClass.getName}: written $written / mem $memCache / file $fileCache / zero $zeroCache"
+  override def toString: String = s"${getClass.getName}: mem $memCache / file $fileCache / zero $zeroCache"
 
   /** Truncates the cache to a new size. Zero-pads if the cache size increases. */
   def truncate(newSize: Long): Unit = if newSize != size then guard(s"truncate $size -> $newSize") {
@@ -38,7 +34,6 @@ class WriteCache(temp: Path, initialSize: Long, availableMem: AtomicLong = MemCa
       memCache .keep(newSize)
       zeroCache.keep(newSize)
       fileCache.keep(newSize)
-    _written = true
     _size = newSize
   }
 
@@ -54,7 +49,6 @@ class WriteCache(temp: Path, initialSize: Long, availableMem: AtomicLong = MemCa
     if position > size then zeroCache.allocate(size, position - size)
     // Write the area.
     if !memCache.write(position, data) then fileCache.write(position, data)
-    _written = true
     _size = math.max(size, position + data.length)
   }
 

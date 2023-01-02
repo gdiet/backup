@@ -218,7 +218,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
         offset + readOffset -> new Array[Byte](chunkSize).tap(source.get(readOffset, _, 0, chunkSize))
       }
       if offset < 0 || size != intSize then EOVERFLOW // With intSize being .abs (see above) checks for negative size, too.
-      else if backend.write(fi.fh.get(), data) then intSize
+      else if size == 0 || backend.write(fi.fh.get(), data) then intSize
       else EIO // false if called without create or open.
     }
 
