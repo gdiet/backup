@@ -67,10 +67,12 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
     if settings.readOnly then EROFS else fs(s"mkdir $path") {
       val parts = backend.pathElements(path)
       if parts.length == 0 then ENOENT else
-        backend.entry(parts.dropRight(1)) match
-          case None                 => ENOENT
-          case Some(_  : FileEntry) => ENOTDIR
-          case Some(dir: DirEntry ) => backend.mkDir(dir.id, parts.last).fold(EEXIST)(_ => OK)
+        backend.synchronizeTreeModification {
+          backend.entry(parts.dropRight(1)) match
+            case None                 => ENOENT
+            case Some(_  : FileEntry) => ENOTDIR
+            case Some(dir: DirEntry ) => backend.mkDir(dir.id, parts.last).fold(EEXIST)(_ => OK)
+        }
     }
 
   // No benefit expected from implementing opendir/releasedir and handing over a file handle to readdir.
@@ -183,15 +185,17 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
     if settings.readOnly then EROFS else fs(s"create $path") {
       val parts = backend.pathElements(path)
       if parts.length == 0 then ENOENT // Can't create root.
-      else backend.entry(parts.dropRight(1)) match // Fetch parent entry.
-        case None                => ENOENT  // Parent not known.
-        case Some(_: FileEntry)  => ENOTDIR // Parent is a file.
-        case Some(dir: DirEntry) =>
-          backend.createAndOpen(dir.id, parts.last, now) match
-            case None         => EEXIST // Entry with the given name already exists.
-            case Some(handle) => // Yay, success!
-              fi.fh.set(handle)
-              OK
+      else backend.synchronizeTreeModification {
+        backend.entry(parts.dropRight(1)) match // Fetch parent entry.
+          case None                => ENOENT  // Parent not known.
+          case Some(_: FileEntry)  => ENOTDIR // Parent is a file.
+          case Some(dir: DirEntry) =>
+            backend.createAndOpen(dir.id, parts.last, now) match
+              case None => EEXIST  // Entry with the given name already exists.
+              case Some(handle) => // Yay, success!
+                fi.fh.set(handle)
+                OK
+      }
     }
 
   override def open(path: String, fi: FuseFileInfo): Int =
