@@ -21,7 +21,7 @@ import java.io.File
 @main def fsc(opts: String*): Unit =
   val dbDir = opts.baseOptions.dbDir
   val cmd   = opts.additionalOptions.toList
-  cmd match
+  try cmd match
     case "backup"     :: params          => BackupTool.backup(opts.baseOptions, params)
     case "db-backup"  ::             Nil => db.maintenance.backup             (dbDir          )
     case "db-restore" ::             Nil => db.maintenance.restorePlainBackup (dbDir          )
@@ -31,6 +31,9 @@ import java.io.File
     case "list"       :: path     :: Nil => db.maintenance.list               (dbDir, path    )
     case "del"        :: path     :: Nil => db.maintenance.del                (dbDir, path    )
     case _ => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
+  catch
+    case main.exit => /**/
+    case other => main.error("Uncaught exception:", other)
   Thread.sleep(200) // Give logging some time to display final messages
 
 @main def reclaimSpace(opts: (String, String)*): Unit =
@@ -88,7 +91,7 @@ import java.io.File
 
 object main extends util.ClassLogging:
   export log.{debug, info, warn, error}
-  object exit extends RuntimeException
+  object exit extends RuntimeException("Exiting...")
   def failureExit(msg: String*): Nothing = { msg.foreach(log.error(_)); throw exit }
 
   def prepareTempDir(readOnly: Boolean, opts: Seq[(String, String)]): File =

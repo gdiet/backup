@@ -21,7 +21,7 @@ object BackupTool extends ClassLogging:
     regex.replaceAllIn(string, { m => m.group(1) + java.text.SimpleDateFormat(m.group(2)).format(date) })
       .replaceAll("""\\""", "")
 
-  def backup(opts: Seq[(String, String)], params: List[String]): Unit = try {
+  def backup(opts: Seq[(String, String)], params: List[String]): Unit =
     val (from, to, reference) = params match
       case from :: to :: reference :: Nil => (File(from), insertDate(to), Some(reference))
       case from :: to              :: Nil => (File(from), insertDate(to), None)
@@ -81,7 +81,6 @@ object BackupTool extends ClassLogging:
 
       processRecurse(Seq((targetId, Seq(), "/", from)), mkDir, store)
     }
-  } catch { case t: Throwable => log.error("Uncaught exception:", t); throw t }
 
   @annotation.tailrec
   private def processRecurse(sources: Seq[(Long, Seq[String], String, File)], mkDir: (Long, String) => Long, store: (Long, File) => Unit): Unit =
