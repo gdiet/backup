@@ -196,8 +196,12 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   }
 
   private lazy val iDir = prepareTreeModification("INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", true)
-  /** @return `Some(id)` or [[None]] if a child with the same name exists.
-    * @throws Exception If parent does not exist. */
+  /** Creates a directory. The parent may a file entry or may be marked deleted, so calling this method can lead to a
+    * child directory of a file or a non-deleted directory being the child of a deleted tree entry, unless prevented by
+    * the calling code. This can be achieved e.g. by using a [[synchronizeTreeModification]] block to first validate
+    * the parent using the [[entry]] method and then using this method.
+    * @return `Some(id)` or [[None]] if a child with the same name exists.
+    * @throws Exception If parent does not exist or name is empty. */
   def mkDir(parentId: Long, name: String): Option[Long] =
     require(name.nonEmpty, "Can not create a directory with an empty name.")
     Try(iDir { prep =>
@@ -205,9 +209,9 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
       val count = prep.set(parentId, name, now).executeUpdate()
       ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
       prep.getGeneratedKeys.tap(_.next()).getLong("id").tap { id =>
-        if parentId == id then
+        if parentId == id then // Special case of "parent does not exist".
           deleteChildless(id)
-          problem("db.mkdir.sameAsParent", s"For parentId $parentId and name '$name', the id of the created directory was the same as the parentId.")
+          failure(s"For parentId $parentId and name '$name', the id of the created directory was the same as the parentId.")
       }
     }) match
       case Success(id) => Some(id)
@@ -243,8 +247,8 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     * deleted, so calling this method can lead to a non-deleted child entry of a deleted tree entry unless prevented
     * by the calling code. This can be achieved e.g. by using [[synchronizeTreeModification]] to first read the parent
     * using the [[entry]] method and then using this method.
-    * @return `true` on success, `false` in case of a name conflict or if the tree entry or the new parent does not
-    *         exist. */
+    * @return `true` on success, `false` in case of a name conflict or if the tree entry or the new parent does not exist.
+    * @throws Exception If parent does not exist or name is empty. */
   def renameMove(id: Long, newParentId: Long, newName: String): Boolean =
     require(newName.nonEmpty, "Can't rename to an empty name.")
     Try(uRenameMove { prep =>

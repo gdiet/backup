@@ -48,3 +48,15 @@ class DatabaseSpec extends org.scalatest.freespec.AnyFreeSpec:
     intercept[IllegalArgumentException](db.pathOf(illegalChild))
     db.close()
   }}
+
+  "Integration test for Database.mkDir()" in { MemH2 { connection =>
+    initialize(connection)
+    val db = Database(connection)
+    intercept[IllegalArgumentException](db.mkDir(root.id, ""), "Empty name")
+    intercept[IllegalArgumentException](db.mkDir(1, "db1"), "Missing parent, special case self-reference")
+    intercept[java.sql.SQLException](db.mkDir(99, "db1"), "Missing parent, standard case")
+    lazy val db1 = db.mkDir(root.id, "db1").get
+    assert(db1 > root.id, "mkdir good case")
+    assert(db.mkDir(root.id, "db1") == None, "Name conflict")
+    db.close()
+  }}
