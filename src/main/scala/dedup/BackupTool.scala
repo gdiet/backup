@@ -27,11 +27,12 @@ object BackupTool extends ClassLogging:
       case from :: to              :: Nil => (File(from), insertDate(to), None)
       case other => main.failureExit(s"Expected parameters '[from] [to] [optional: reference]', got '${other.mkString(" ")}'")
 
-    val repo     = opts.repo
-    val backup   = opts.defaultFalse("dbBackup")
-    val temp     = main.prepareTempDir(false, opts)
-    val dbDir    = main.prepareDbDir(repo, backup = backup, readOnly = false)
-    val settings = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
+    val repo           = opts.repo
+    val backup         = opts.defaultFalse("dbBackup")
+    val forceReference = opts.defaultFalse("forceReference")
+    val temp           = main.prepareTempDir(false, opts)
+    val dbDir          = main.prepareDbDir(repo, backup = backup, readOnly = false)
+    val settings       = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
     cache.MemCache.startupCheck()
     if backup then db.maintenance.backup(settings.dbDir)
 
@@ -41,10 +42,13 @@ object BackupTool extends ClassLogging:
     log.info (s"Repository:       $repo")
     log.info (s"Backup source:    $from")
     log.info (s"Backup target:    $to")
-    log.info (s"Backup reference: $reference  --  No functionality implemented yet")
+    log.info (s"Backup reference: $reference")
+    log.info (s"Force reference:  $forceReference")
     log.debug(s"Temp dir:         $temp")
 
     resource(server.Backend(settings)) { fs =>
+      val referenceId = reference.map(getReferenceId(fs, from, _, forceReference))
+      main.failureExit("All OK, continue...")
       val (targetPath, targetName) = fs.pathElements(to).pipe(target =>
         target.dropRight(1) -> target.lastOption.getOrElse(main.failureExit(s"Invalid target: No file name in '$to'."))
       )
@@ -114,3 +118,18 @@ object BackupTool extends ClassLogging:
           val dir = mkDir(parent, source.getName)
           val add = Option(source.listFiles()).toSeq.flatten.map((dir, ignore ++ additionalIgnore, sourcePath, _))
           processRecurse(remaining ++ add, mkDir, store)
+
+  private def getReferenceId(fs: server.Backend, from: File, reference: String, forceReference: Boolean): Long =
+    fs.entry(reference).map(_.id)
+      .getOrElse(main.failureExit(s"Invalid reference - DedupFS:$reference does not exist."))
+      .tap { ref =>
+        val refListing = fs.children(ref).map(entry => s"${entry.isInstanceOf[DirEntry]}:${entry.name}").toSet
+        if refListing.isEmpty then main.failureExit(s"Reference DedupFS:$reference is empty.")
+        if !forceReference then
+          val srcListing = from.listFiles().map(file => s"${file.isDirectory}:${file.getName}").toSet
+          val intersect  = srcListing.intersect(refListing)
+          if math.max(refListing.size, srcListing.size) > intersect.size * 1.6 + 1 then
+            log.info(srcListing.mkString(", "))
+            log.info(refListing.mkString(", "))
+            main.failureExit(s"Not enough matches (${intersect.size}) between source (${srcListing.size} entries) and reference (${refListing.size} entries).")
+      }
