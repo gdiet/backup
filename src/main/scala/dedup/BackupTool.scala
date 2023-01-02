@@ -27,21 +27,13 @@ object BackupTool extends ClassLogging:
       case from :: to              :: Nil => (File(from), insertDate(to), None)
       case other => main.failureExit(s"Expected parameters '[from] [to] [optional: reference]', got '${other.mkString(" ")}'")
 
-    // TODO lots of copy-paste from '@main def mount(opts: (String, String)*): Unit'
-    val repo = opts.repo
-    val backup = opts.defaultFalse("dbBackup")
-    val temp = File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
-    val dbDir = db.dbDir(repo)
-    if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
-    db.H2.checkForTraceFile(dbDir)
-    val settings = server.Settings(repo, dbDir, temp, false, AtomicBoolean(false))
-    temp.mkdirs()
-    if !temp.isDirectory then main.failureExit(s"Temp dir is not a directory: $temp")
-    if !temp.canWrite then main.failureExit(s"Temp dir is not writable: $temp")
-    if temp.list.nonEmpty then log.warn(s"Note that temp dir is not empty: $temp")
+    val repo     = opts.repo
+    val backup   = opts.defaultFalse("dbBackup")
+    val temp     = main.prepareTempDir(false, opts)
+    val dbDir    = main.prepareDbDir(repo, backup = backup, readOnly = false)
+    val settings = server.Settings(repo, dbDir, temp, readonly = false, copyWhenMoving = AtomicBoolean(false))
     cache.MemCache.startupCheck()
     if backup then db.maintenance.backup(settings.dbDir)
-    // TODO end of copy-paste
 
     if !from.canRead then main.failureExit(s"The backup source $from can't be read.")
 

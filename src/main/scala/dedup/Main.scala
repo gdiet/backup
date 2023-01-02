@@ -52,13 +52,12 @@ import java.io.File
   if opts.defaultFalse("gui") then ServerGui(copyWhenMoving, readOnly)
   try
     def isWindows = getNativePlatform.getOS == WINDOWS
-    val repo           = opts.repo
-    val mount          = File(opts.unnamedOrGet("mount").getOrElse(if isWindows then "J:\\" else "/mnt/dedupfs" )).getCanonicalFile
-    val backup         = !readOnly && opts.defaultTrue("dbBackup")
-    val temp           = File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now"))
-    val dbDir          = db.dbDir(repo)
-    if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
-    if !readOnly then db.H2.checkForTraceFile(dbDir)
+    val mount     = File(opts.unnamedOrGet("mount").getOrElse(if isWindows then "J:\\" else "/mnt/dedupfs" )).getCanonicalFile
+    val repo      = opts.repo
+    val backup    = !readOnly && opts.defaultTrue("dbBackup")
+    val temp      = main.prepareTempDir(readOnly, opts)
+    val dbDir     = main.prepareDbDir(repo, backup = backup, readOnly = readOnly)
+    val settings  = server.Settings(repo, dbDir, temp, readOnly, copyWhenMoving)
     if isWindows then
       if !mount.toString.matches(raw"[a-zA-Z]:\\.*") then main.failureExit(s"Mount point not on a local drive: $mount")
       if mount.exists then main.failureExit(s"Mount point already exists: $mount")
@@ -66,13 +65,7 @@ import java.io.File
     else
       if !mount.isDirectory  then main.failureExit(s"Mount point is not a directory: $mount")
       if !mount.list.isEmpty then main.failureExit(s"Mount point is not empty: $mount")
-    val settings = server.Settings(repo, dbDir, temp, readOnly, copyWhenMoving)
-    if !readOnly then
-      temp.mkdirs()
-      if !temp.isDirectory  then main.failureExit(s"Temp dir is not a directory: $temp")
-      if !temp.canWrite     then main.failureExit(s"Temp dir is not writable: $temp")
-      if temp.list.nonEmpty then main.warn(s"Note that temp dir is not empty: $temp")
-    if !settings.readonly then cache.MemCache.startupCheck()
+    if !readOnly then cache.MemCache.startupCheck()
     if backup then db.maintenance.backup(settings.dbDir)
     main.info (s"Dedup file system settings:")
     main.info (s"Repository:  $repo")
@@ -97,6 +90,23 @@ object main extends util.ClassLogging:
   export log.{debug, info, warn, error}
   object exit extends RuntimeException
   def failureExit(msg: String*): Nothing = { msg.foreach(log.error(_)); throw exit }
+
+  def prepareTempDir(readOnly: Boolean, opts: Seq[(String, String)]): File =
+    File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now")).tap { temp =>
+      if !readOnly then
+        temp.mkdirs()
+        if !temp.isDirectory then failureExit(s"Temp dir is not a directory: $temp")
+        if !temp.canWrite then failureExit(s"Temp dir is not writable: $temp")
+        if temp.list.nonEmpty then warn(s"Note that temp dir is not empty: $temp")
+    }
+
+  def prepareDbDir(repo: File, backup: Boolean, readOnly: Boolean): File =
+    db.dbDir(repo).tap { dbDir =>
+      if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
+      if !readOnly then db.H2.checkForTraceFile(dbDir)
+      if backup then db.maintenance.backup(dbDir)
+    }
+
 
 private val baseOptionMatcher = """(\w+)=(\S+)""".r
 
