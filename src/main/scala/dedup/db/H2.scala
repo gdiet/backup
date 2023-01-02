@@ -7,12 +7,10 @@ object H2:
   Class.forName("org.h2.Driver")
 
   val dbName = "dedupfs-210" // H2 version suffix, can stay 210 for as long as the storage format is binary compatible.
-  val dbFileName = s"$dbName.mv.db"
-  def dbFile(dbDir: java.io.File): java.io.File = java.io.File(dbDir, dbFileName)
+  def dbFile(dbDir: java.io.File): java.io.File = java.io.File(dbDir, s"$dbName.mv.db")
 
   val backupName = s"${dbName}_backup"
-  val backupFileName = s"$backupName.mv.db"
-  def backupFile(dbDir: java.io.File): java.io.File = java.io.File(dbDir, backupFileName)
+  def backupFile(dbDir: java.io.File): java.io.File = java.io.File(dbDir, s"$backupName.mv.db")
 
   // For SQL debugging, add to the DB URL "...;TRACE_LEVEL_SYSTEM_OUT=2"
   private def jdbcUrl(dbDir: java.io.File, readOnly: Boolean) =

@@ -10,7 +10,7 @@ import scala.util.Using.resource
 object BackupTool extends ClassLogging:
 
   /** Replace '[...]' by formatting the contents with the SimpleDateFormat of 'now'
-    * unless the opening square bracked is escaped by a backslash.  */
+    * unless the opening square bracket is escaped by a backslash.  */
   private def insertDate(string: String): String =
     // ([^\\])\[(.+?)]   explained:
     // ([^\\])           a character that is not a backslash as group 1

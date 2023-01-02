@@ -36,7 +36,7 @@ object maintenance extends util.ClassLogging:
   def restorePlainBackup(dbDir: File): Unit =
     val database = dbFile(dbDir)
     val plainBackup = backupFile(dbDir)
-    ensure("utility.restore.notfound", plainBackup.exists(), s"Database backup file $plainBackup does not exist")
+    ensure("utility.restore.notFound", plainBackup.exists(), s"Database backup file $plainBackup does not exist")
     log.info(s"Restoring plain database backup: ${plainBackup.getName} -> ${database.getName}")
     Files.copy(plainBackup.toPath, database.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 

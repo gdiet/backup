@@ -270,11 +270,11 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
 
   private lazy val iDataEntry = prepare("INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)")
   def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit =
-    ensure("db.add.data.entry.1", seq > 0, s"seq not positive: $seq")
+    ensure("db.add.dataEntry.1", seq > 0, s"seq not positive: $seq")
     val sqlLength: Long | SqlNull = if seq == 1 then length else SqlNull(java.sql.Types.BIGINT)
     val sqlHash: Array[Byte] | SqlNull = if seq == 1 then hash else SqlNull(java.sql.Types.BINARY)
     val count = iDataEntry(_.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate())
-    ensure("db.add.data.entry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")
+    ensure("db.add.dataEntry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")
 
   def removeStorageAllocation(dataId: DataId): Unit =
     connection.transaction {
@@ -315,7 +315,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
 
   def deleteDataEntry(dataId: Long): Unit =
     val count = statement(_.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId"))
-    ensure("db.delete.dataentry", count == 1, s"For data id $dataId, delete count is $count instead of 1.")
+    ensure("db.delete.dataEntry", count == 1, s"For data id $dataId, delete count is $count instead of 1.")
 
 
 extension (rawSql: String)

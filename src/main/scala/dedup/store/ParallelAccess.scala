@@ -28,8 +28,14 @@ trait ParallelAccess(dataDir: File) extends AutoCloseable with ClassLogging:
     r.close()
     log.debug(s"Closed data file $path")
 
-  /** @throws java.io.FileNotFoundException when trying read access to a non-existing data file. */
-  @annotation.tailrec @Req_DataFileReadAccess
+  /** Read access to data files should be possible even if they are read-only, e.g. because the user doesn't have write
+    * access to the repository.
+    *
+    * Read access attempts to missing data files must not cause changes in the file system, i.e. must not create any
+    * missing parent directories or the data file itself.
+    *
+    * @throws java.io.FileNotFoundException when trying read access to a non-existing data file. */
+  @annotation.tailrec
   final def access(path: String, write: Boolean)(f: RandomAccessFile => _): Unit = {
     mapLock.lock()
     openFiles.get(path) match
