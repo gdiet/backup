@@ -5,7 +5,6 @@ import dedup.db.Database.currentDbVersion
 
 import java.io.File
 import java.sql.{Connection, PreparedStatement, Statement}
-import scala.util.Using.resource
 import scala.util.{Failure, Success, Try}
 
 def dbDir(repo: File) = File(repo, "fsdb")
@@ -40,7 +39,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   /** Close the database connection. */
   override def close(): Unit = connection.close()
 
-  private def statement[T](f: Statement => T): T = connection.withStatement(f)
+  private def withStatement[T](f: Statement => T): T = connection.withStatement(f)
 
   /** Utility class making sure a [[PreparedStatement]] is used synchronized
     * because in many cases [[PreparedStatement]]s are stateful.
@@ -73,7 +72,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
 
   /** @return The version string read from the database if any. */
   def version(): Option[String] = Try(
-    statement(_.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(maybe(_.getString(1))))
+    withStatement(_.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(maybe(_.getString(1))))
   ).toOption.flatten
 
   /* The starts and stops of the contiguous data areas can be read like this:
@@ -81,7 +80,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
          ON b1.start = b2.stop WHERE b2.stop IS NULL ORDER BY b1.start;
      However, it's faster to read all DataEntries and sort them in Scala like below, assuming there's enough memory. */
   def freeAreas(): Seq[DataArea] =
-    val dataChunks = statement(
+    val dataChunks = withStatement(
       _.query("SELECT start, stop FROM DataEntries")(seq(r => r.getLong(1) -> r.getLong(2))).filterNot(_ == (0, 0))
     )
     log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
@@ -271,14 +270,15 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   private lazy val iDataEntry = prepare("INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)")
   def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit =
     ensure("db.add.dataEntry.1", seq > 0, s"seq not positive: $seq")
-    val sqlLength: Long | SqlNull = if seq == 1 then length else SqlNull(java.sql.Types.BIGINT)
-    val sqlHash: Array[Byte] | SqlNull = if seq == 1 then hash else SqlNull(java.sql.Types.BINARY)
+    val sqlLength: SqlNull | Long        = if seq == 1 then length else SqlNull(java.sql.Types.BIGINT)
+    val sqlHash  : SqlNull | Array[Byte] = if seq == 1 then hash   else SqlNull(java.sql.Types.BINARY)
     val count = iDataEntry(_.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate())
     ensure("db.add.dataEntry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")
 
+  /** Transaction implementation is not thread safe, use in single threaded environment only. */
   def removeStorageAllocation(dataId: DataId): Unit =
     connection.transaction {
-      statement { statement =>
+      withStatement { statement =>
         statement.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId AND seq > 1")
         statement.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = $dataId")
       }
@@ -286,35 +286,35 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
 
   def shutdownCompact(): Unit =
     log.info("Compacting DedupFS database...")
-    statement(_.execute("SHUTDOWN COMPACT"))
+    withStatement(_.execute("SHUTDOWN COMPACT"))
 
   // File system statistics
-  def storageSize()      : Long = statement(_.query("SELECT MAX(stop) FROM DataEntries")(one(_.opt(_.getLong(1)))).getOrElse(0L))
-  def countDataEntries() : Long = statement(_.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(oneLong))
-  def countFiles()       : Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(oneLong))
-  def countDeletedFiles(): Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")(oneLong))
-  def countDirs()        : Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")(oneLong))
-  def countDeletedDirs() : Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(oneLong))
+  def storageSize()      : Long = withStatement(_.query("SELECT MAX(stop) FROM DataEntries")(one(_.opt(_.getLong(1)))).getOrElse(0L))
+  def countDataEntries() : Long = withStatement(_.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(oneLong))
+  def countFiles()       : Long = withStatement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(oneLong))
+  def countDeletedFiles(): Long = withStatement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")(oneLong))
+  def countDirs()        : Long = withStatement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")(oneLong))
+  def countDeletedDirs() : Long = withStatement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(oneLong))
 
   // reclaimSpace specific queries
   /** @return The number of entries that have been un-rooted. */
   def unrootDeletedEntries(deleteBeforeMillis: Long): Long =
-    statement(_.executeLargeUpdate(s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBeforeMillis"))
+    withStatement(_.executeLargeUpdate(s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBeforeMillis"))
 
   /** @return The number of entries that have been deleted. */
   def deleteUnrootedTreeEntries(): Long =
-    statement(_.executeLargeUpdate(s"DELETE FROM TreeEntries WHERE id = parentId AND id != ${root.id}"))
+    withStatement(_.executeLargeUpdate(s"DELETE FROM TreeEntries WHERE id = parentId AND id != ${root.id}"))
 
   def dataIdsInTree(): Set[Long] =
   // The WHERE clause makes sure the 'null' entries are not returned
-    statement(_.query("SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0")(seq(_.getLong(1))).toSet)
+    withStatement(_.query("SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0")(seq(_.getLong(1))).toSet)
 
   def dataIdsInStorage(): Set[Long] =
   // The WHERE clause makes sure the 'null' entries are not returned
-    statement(_.query("SELECT id FROM DataEntries")(seq(_.getLong(1))).toSet)
+    withStatement(_.query("SELECT id FROM DataEntries")(seq(_.getLong(1))).toSet)
 
   def deleteDataEntry(dataId: Long): Unit =
-    val count = statement(_.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId"))
+    val count = withStatement(_.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId"))
     ensure("db.delete.dataEntry", count == 1, s"For data id $dataId, delete count is $count instead of 1.")
 
 

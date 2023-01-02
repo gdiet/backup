@@ -11,7 +11,7 @@ def withStatement(dbDir: File, readOnly: Boolean = true)(f: Statement => Any): U
   withConnection(dbDir, readOnly)(_.withStatement(f))
 
 extension (c: Connection)
-  def withStatement[T](f: Statement => T): T = resource(c.createStatement())(f) // TODO check usage
+  def withStatement[T](f: Statement => T): T = resource(c.createStatement())(f)
   /** Don't use nested or multi-threaded. */
   def transaction[T](f: => T): T =
     try { c.setAutoCommit(false); f.tap(_ => c.commit()) }
