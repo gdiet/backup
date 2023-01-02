@@ -61,7 +61,7 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
     handles.get(fileId) match
       case None => problem("handles.removeAndGetNext.missing", s"Missing handle for file $fileId.")
       case Some(Handle(0, _, None, Seq(_))) =>
-        log.debug(s"Removing handle for $fileId.")
+        log.trace(s"Removing handle for $fileId.")
         handles -= fileId
       case Some(handle @ Handle(count, _, _, others :+ _)) =>
         log.debug(s"Keeping handle for $fileId, count $count, persisting ${others.size}.")

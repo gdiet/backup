@@ -103,7 +103,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     singleThreadStoreContext.execute(() => try {
       val handle = handles.get(fileId).getOrElse(failure(s"No handle to store for file $fileId."))
       val entry = handle.persisting.lastOption.getOrElse(failure(s"No entry to store for file $fileId."))
-      log.debug(s"Persist file $fileId / data ID ${handle.dataId} / size ${entry.size}.")
+      log.trace(s"Persist file $fileId / data ID ${handle.dataId} / size ${entry.size}.")
 
       // For 0-length data entry explicitly set dataId -1 because it might have contained something else before.
       if entry.size == 0 then writeDataIdAndRemove(fileId, DataId(-1), entry) else
@@ -132,7 +132,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
             // Save data entries
             val dataId = db.newDataId()
             reserved.zipWithIndex.foreach { case (dataArea, index) =>
-              log.debug(s"Data ID $dataId size ${entry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
+              log.trace(s"Data ID $dataId size ${entry.size} - persisted at ${dataArea.start} size ${dataArea.size}")
               db.insertDataEntry(dataId, index + 1, entry.size, dataArea.start, dataArea.stop, hash)
             }
             log.trace(s"Persisted $fileId - new content, dataId $dataId")

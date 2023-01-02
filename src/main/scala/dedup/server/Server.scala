@@ -159,13 +159,13 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
 
   override def chmod(path: String, mode: Long): Int =
     fs(s"chmod $path $mode") {
-      log.debug(s"No-op chmod: $mode -> $path")
+      log.trace(s"No-op chmod: $mode -> $path")
       OK
     }
 
   override def chown(path: String, uid: Long, gid: Long): Int =
     fs(s"chown $path $uid $gid") {
-      log.debug(s"No-op chown: uid $uid, gid $gid -> $path")
+      log.trace(s"No-op chown: uid $uid, gid $gid -> $path")
       OK
     }
 

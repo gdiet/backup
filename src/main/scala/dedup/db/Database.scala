@@ -214,7 +214,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     }) match
       case Success(id) => Some(id)
       case Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
-        log.debug(s"mkDir($parentId, '$name'): Name conflict."); None
+        log.trace(s"mkDir($parentId, '$name'): Name conflict."); None
       case Failure(other) => throw other
 
   private lazy val iFile = prepareTreeModification("INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)", true)
