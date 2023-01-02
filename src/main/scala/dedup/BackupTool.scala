@@ -48,13 +48,13 @@ object BackupTool extends ClassLogging:
       val (targetPath, targetName) = fs.pathElements(to).pipe(target =>
         target.dropRight(1) -> target.lastOption.getOrElse(main.failureExit(s"Invalid target: No file name in '$to'."))
       )
-      def targetPathForLog = s"The target's parent DedupFS:/${targetPath.mkString("/")}"
+      def invalidParentForLog = s"Invalid target - the target's parent DedupFS:/${targetPath.mkString("/")}"
       val targetParent = fs.entry(targetPath) match
         case Some(dir: DirEntry) => dir
-        case Some(_: FileEntry)  => main.failureExit(s"Invalid target: $targetPathForLog points to a file.")
-        case None                => main.failureExit(s"Invalid target: $targetPathForLog does not exist.")
+        case Some(_: FileEntry)  => main.failureExit(s"$invalidParentForLog points to a file.")
+        case None                => main.failureExit(s"$invalidParentForLog does not exist.")
       val targetId = fs.mkDir(targetParent.id, targetName).getOrElse(
-        main.failureExit(s"Invalid target: DedupFS:$to already exists.")
+        main.failureExit(s"Invalid target - DedupFS:$to already exists.")
       )
       log.info(s"Created 'DedupFS:$to'.")
 
