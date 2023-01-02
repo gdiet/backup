@@ -31,7 +31,7 @@ object Backend:
 
 
 final class Backend(settings: Settings) extends AutoCloseable with util.ClassLogging:
-  import Backend.cacheLoadDelay
+  import Backend.*
   private val db = dedup.db.Database(dedup.db.H2.connection(settings.dbDir, settings.readonly))
   private val lts: store.LongTermStore = store.LongTermStore(settings.dataDir, settings.readonly)
   private val handles = Handles(settings.tempPath)
@@ -97,9 +97,9 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
       case Some(entrySize) => enqueue(fileId, entrySize); true
 
   private def enqueue(fileId: Long, entrySize: Long): Unit =
-    Backend.persistQueueSize.incrementAndGet()
-    Backend.bytesInPersistQueue.addAndGet(entrySize)
-    log.trace(s"Enqueue file $fileId size $entrySize - cache load ${Backend.cacheLoadDelay}")
+    persistQueueSize.incrementAndGet()
+    bytesInPersistQueue.addAndGet(entrySize)
+    log.trace(s"Enqueue file $fileId size $entrySize - cache load $cacheLoadDelay")
     singleThreadStoreContext.execute(() => try {
       val handle = handles.get(fileId).getOrElse(failure(s"No handle to store for file $fileId."))
       val entry = handle.persisting.lastOption.getOrElse(failure(s"No entry to store for file $fileId."))
@@ -128,7 +128,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
             // Reserve storage space
             val reserved = freeAreas.reserve(entry.size)
             // Write to storage
-            Backend.writeAlgorithm(data, reserved, lts.write)
+            writeAlgorithm(data, reserved, lts.write)
             // Save data entries
             val dataId = db.newDataId()
             reserved.zipWithIndex.foreach { case (dataArea, index) =>
@@ -144,8 +144,8 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     db.setDataId(fileId, newDataId)
     handles.removePersisted(fileId, newDataId)
     entry.close()
-    Backend.persistQueueSize.decrementAndGet()
-    Backend.bytesInPersistQueue.addAndGet(-entry.size)
+    persistQueueSize.decrementAndGet()
+    bytesInPersistQueue.addAndGet(-entry.size)
 
   /** Truncates the cached file to a new size. Zero-pads if the file size increases.
     * @return `false` if called without createAndOpen or open. */
@@ -233,12 +233,20 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
   override def close(): Unit =
     handles.shutdown().foreach { case (fileId, entrySize) => enqueue(fileId, entrySize) }
     singleThreadStoreContext.shutdown()
-    // TODO in a separate thread, all 10 seconds log progress
+    val finished = java.util.concurrent.atomic.AtomicBoolean(false)
+    new Thread(() => {
+      Iterator.from(0).map { count =>
+        if count % 100 == 30 then
+          log.info(s"Stopping: ${readableBytes(bytesInPersistQueue.get)} in $persistQueueSize files still need to be stored.")
+        Thread.sleep(100)
+      }.find(_ => finished.get)
+    }: Unit).start()
     singleThreadStoreContext.awaitTermination(1, java.util.concurrent.TimeUnit.DAYS)
-    if Backend.persistQueueSize.get > 0 then log.warn(s"${Backend.persistQueueSize.get} entries have not been reported closed.")
+    finished.set(true)
+    if persistQueueSize.get != 0 || bytesInPersistQueue.get != 0 then
+      log.warn(s"${persistQueueSize.get} entries with ${bytesInPersistQueue.get} have not been reported closed.")
     if settings.temp.exists() then
       if settings.temp.list().isEmpty then settings.temp.delete()
       else log.warn(s"Temp dir not empty: ${settings.temp}")
     lts.close()
     db.close()
-    log.info("Shutdown complete.")
