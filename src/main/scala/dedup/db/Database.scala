@@ -344,6 +344,7 @@ private def tableDefinitions =
       |  time         BIGINT NOT NULL,
       |  -- deleted == 0 for regular files, deleted == timestamp for deleted files, because NULL does not work with UNIQUE --
       |  deleted      BIGINT NOT NULL DEFAULT 0,
+      |  -- No foreign key relation possible because DataEntries(id) is not unique.
       |  dataId       BIGINT DEFAULT NULL,
       |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id),
       |  CONSTRAINT un_TreeEntries UNIQUE (parentId, name, deleted),
