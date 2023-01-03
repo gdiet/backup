@@ -150,7 +150,7 @@ A number of **command line** utilities for the dedup file system is available th
 
 #### Copy Files And Directories To The DedupFS
 
-Use `fsc backup <source> <target>` to copy files and directories to the dedup file system without having to mount it first.
+Use `fsc backup <source> <target> [reference]` to copy files and directories to the dedup file system without having to mount it first.
 
 This is an **experimental** utility introduced with version 5.1, meaning it might not work in all details as expected, but it does **not** mean that it might corrupt your repository.
 

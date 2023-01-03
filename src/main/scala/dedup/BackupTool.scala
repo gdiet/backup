@@ -7,21 +7,79 @@ import java.util.concurrent.atomic.AtomicBoolean
 import scala.io.Source
 import scala.util.Using.resource
 
+/*
+
+######### OLD - START #########
+Copy a file or a directory to the dedup file system. Source and target are mandatory, reference can be provided when
+copying a directory.
+
+If a target path element starts with "!", create it and subsequent path elements if missing.
+If the target ends with "/", create the copy with in the target directory.
+If the target does not end with "/", create the copy in the target directory.
+
+copy /file /parent/dir/ -> creates file in /parent/dir, /parent/dir must be an existing directory
+copy /file /parent/!dir/ -> creates file in /parent/dir, /parent must be an existing directory, dir is created on demand
+copy /file /parent/dir/copy -> creates copy in /parent/dir/, /parent/dir must be an existing directory
+copy /file /parent/!dir/copy -> creates copy in /parent/dir, /parent must be an existing directory, dir is created on demand
+
+copy /dir /parent/dir/ -> creates dir in /parent/dir, /parent/dir must be an existing directory
+copy /dir /parent/!dir/ -> creates dir in /parent/dir, /parent must be an existing directory, dir is created on demand
+copy /dir /parent/dir/copy -> creates copy in /parent/dir/, /parent/dir must be an existing directory
+copy /dir /parent/!dir/copy -> creates copy in /parent/dir, /parent must be an existing directory, dir is created on demand
+######### OLD - END #########
+
+
+
+fsc backup <source> [<source2> [<source...N>]] <target> [reference=<reference>] [forceReference=true]
+
+Example:
+
+fsc backup /docs /notes/\* /backup/![yyyy]/[yyyy.MM.dd_HH.mm]/ reference=/backup/????/????.??.??_*
+
+If a source contains "?" / "*" wildcards in its last path element, it is resolved as the list of matching files / directories.
+
+If the target ends with "/", creates the backups as children of the target, keeping the original names.
+
+If a reference is specified, first searches for the matching reference directory. "?" and "*" wildcards are resolved
+as the alphanumerically last/highest match.
+
+
+*/
+
 object BackupTool extends ClassLogging:
 
-  /** Replace '[...]' by formatting the contents with the SimpleDateFormat of 'now'
-    * unless the opening square bracket is escaped by a backslash.  */
-  private def insertDate(string: String): String =
-    // ([^\\])\[(.+?)]   explained:
-    // ([^\\])           a character that is not a backslash as group 1
-    //        \[     ]   followed by opening and later closing angle brackets
-    //          (.+?)    one or more character enclosed by the angle brackets as group 2
-    val regex = """([^\\])\[(.+?)]""".r
-    val date = java.util.Date.from(java.time.Instant.now())
-    regex.replaceAllIn(string, { m => m.group(1) + java.text.SimpleDateFormat(m.group(2)).format(date) })
-      .replaceAll("""\\""", "")
-
   def backup(opts: Seq[(String, String)], params: List[String]): Unit =
+    val (sources, target) = sourcesAndTarget(params)
+
+    log.info(s"Running the backup utility")
+//    log.info(s"Repository:       $repo")
+    sources.foreach(source => log.info(s"Backup source:    $source"))
+    log.info(s"Backup target:    $target")
+//    log.info(s"Backup reference: $reference")
+//    log.info(s"Force reference:  $forceReference")
+//    log.debug(s"Temp dir:         $temp")
+
+  def sourcesAndTarget(params: List[String]): (List[String], String) = params.reverse match
+    case Nil => failure("Source and target are missing.")
+    case _ :: Nil => failure("Source or target is missing.")
+    case target :: rawSources =>
+      if !target.endsWith("/") then failure("Target must end with '/'.")
+      rawSources.flatMap(resolveSource) -> target
+
+  def resolveSource(rawSource: String): List[String] =
+    val replaced = rawSource.replace('\\', '/')
+    if replaced.endsWith("/") then failure("""Source may not end with '/' or '\'.""")
+    if !(replaced.contains("*") || replaced.contains("?")) then List(rawSource) else
+      val (path, name) = replaced.splitAt(replaced.lastIndexOf("/") + 1)
+      val parentDir = new File(path)
+      if !parentDir.isDirectory then failure(s"Source parent $parentDir is not a directory.")
+      val namePattern = name.replaceAll("""\.""", """\\.""").replaceAll("""\*""", ".*").replaceAll("""\?""", ".")
+      println(namePattern)
+      parentDir.listFiles().filter(_.getName.matches(namePattern)).map(_.getPath).toList
+
+
+  // FIXME old - remove eventually
+  def backup_old(opts: Seq[(String, String)], params: List[String]): Unit =
     val (from, to, reference) = params match
       case from :: to :: reference :: Nil => (File(from), insertDate(to), Some(reference))
       case from :: to              :: Nil => (File(from), insertDate(to), None)
@@ -85,6 +143,18 @@ object BackupTool extends ClassLogging:
 
       processRecurse(Seq((targetId, Seq(), "/", from)), mkDir, store)
     }
+
+  /** Replace '[...]' by formatting the contents with the SimpleDateFormat of 'now'
+    * unless the opening square bracket is escaped by a backslash. */
+  private def insertDate(string: String): String =
+    // ([^\\])\[(.+?)]   explained:
+    // ([^\\])           a character that is not a backslash as group 1
+    //        \[     ]   followed by opening and later closing angle brackets
+    //          (.+?)    one or more character enclosed by the angle brackets as group 2
+    val regex = """([^\\])\[(.+?)]""".r
+    val date = java.util.Date.from(java.time.Instant.now())
+    regex.replaceAllIn(string, { m => m.group(1) + java.text.SimpleDateFormat(m.group(2)).format(date) })
+      .replaceAll("""\\""", "")
 
   @annotation.tailrec
   private def processRecurse(sources: Seq[(Long, Seq[String], String, File)], mkDir: (Long, String) => Long, store: (Long, File) => Unit): Unit =
