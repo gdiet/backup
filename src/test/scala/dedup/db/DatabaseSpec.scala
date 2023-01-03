@@ -8,7 +8,7 @@ import scala.util.Using.resource
 class DatabaseSpec extends org.scalatest.freespec.AnyFreeSpec:
   import Database.endOfStorageAndDataGaps
 
-  "Unit tests for the method endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long])" in {
+  "test for endOfStorageAndDataGaps(dataChunks: scala.collection.SortedMap[Long, Long])" in {
     assert(endOfStorageAndDataGaps(SortedMap[Long, Long]()) == (0L, Seq()))
     assert(endOfStorageAndDataGaps(SortedMap(10L -> 20L)) == (20L, Seq(DataArea(0, 10))))
     assert(endOfStorageAndDataGaps(SortedMap(0L -> 5L, 10L -> 20L, 30L -> 40L)) == (40L, Seq(DataArea(5, 10), DataArea(20, 30))))
@@ -16,7 +16,7 @@ class DatabaseSpec extends org.scalatest.freespec.AnyFreeSpec:
     intercept[IllegalArgumentException] { endOfStorageAndDataGaps(SortedMap(0L -> 5L, 10L -> 31L, 30L -> 40L)) }
   }
 
-  "Integration test for Database.freeAreas()" in { MemH2 { connection =>
+  "test for freeAreas()" in { MemH2 { connection =>
     initialize(connection)
     val db = Database(connection)
     // empty database
@@ -34,7 +34,7 @@ class DatabaseSpec extends org.scalatest.freespec.AnyFreeSpec:
     db.close()
   }}
 
-  "Integration test for Database.pathOf()" in { MemH2 { connection =>
+  "test for pathOf()" in { MemH2 { connection =>
     initialize(connection)
     val db = Database(connection)
     val dir1 = db.mkDir(root.id, "dir1").get
@@ -49,14 +49,14 @@ class DatabaseSpec extends org.scalatest.freespec.AnyFreeSpec:
     db.close()
   }}
 
-  "Integration test for Database.mkDir()" in { MemH2 { connection =>
+  "test for mkDir()" in { MemH2 { connection =>
     initialize(connection)
     val db = Database(connection)
     intercept[IllegalArgumentException](db.mkDir(root.id, ""), "Empty name")
     intercept[IllegalArgumentException](db.mkDir(1, "db1"), "Missing parent, special case self-reference")
     intercept[java.sql.SQLException](db.mkDir(99, "db1"), "Missing parent, standard case")
-    lazy val db1 = db.mkDir(root.id, "db1").get
-    assert(db1 > root.id, "mkdir good case")
-    assert(db.mkDir(root.id, "db1") == None, "Name conflict")
+    lazy val dir1 = db.mkDir(root.id, "dir1").get
+    assert(dir1 > root.id, "mkdir good case")
+    assert(db.mkDir(root.id, "dir1") == None, "Name conflict")
     db.close()
   }}
