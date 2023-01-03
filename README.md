@@ -338,6 +338,10 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
 
+#### 5.1.1 (2023.??.??)
+
+* Rewritten write cache handling for improved maintainability.
+
 #### 5.1.0 (2022.11.25)
 
 * Separate Windows and Linux packages, with a minified JRE, to reduce package size from about 100MB to less than 50 MB.

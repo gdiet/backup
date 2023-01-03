@@ -54,21 +54,36 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
   /** @return The child entry by name or None if the child entry is not found. */
   def child(parentId: Long, name: String): Option[TreeEntry] = db.child(parentId, name)
 
-  /** @return Some(id) or None if a child entry with the same name already exists. */
+  /** Creates a directory. It is the responsibility of the calling code to guard against creating a directory as child
+    * of a file or as child of a deleted directory.
+    * 
+    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    *
+    * @return [[Some]]`(fileId)` or [[None]] in case of a name conflict.
+    * @throws Exception If the parent does not exist or the name is empty. */
   def mkDir(parentId: Long, name: String): Option[Long] = db.mkDir(parentId, name)
 
   def setTime(id: Long, newTime: Long): Unit = db.setTime(id, newTime)
 
-  def synchronizeTreeModification[T](f: => T): T = db.synchronizeTreeModification(f)
-
+  /** When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * race conditions causing deleted directories to be parent of non-deleted tree entries. */
   def renameMove(id: Long, newParentId: Long, newName: String): Boolean = db.renameMove(id, newParentId, newName)
 
-  /** Creates a copy of the file's last persisted state without current modifications. */
+  /** Creates a copy of the file's last persisted state without current modifications.
+    *
+    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * race conditions causing deleted directories to be parent of non-deleted tree entries. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean =
     db.mkFile(newParentId, newName, file.time, file.dataId).isDefined
 
   /** Deletes a tree entry unless it has children.
-    * @return [[false]] if the tree entry has children. */
+    * 
+    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    *
+    * @return `false` if the tree entry does not exist or has any children, `true` if the entry exists and has no
+    *         children, regardless of whether or not it was already marked deleted. */
   def deleteChildless(entry: TreeEntry): Boolean = db.deleteChildless(entry.id)
 
   /** @return The size of the file, 0 if the file entry does not exist. */
@@ -80,6 +95,10 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
 
   /** Create file and a virtual file handle so read/write operations can be done on the file.
     * For each [[open]] or [[createAndOpen]], a corresponding [[release]] call is required for normal operation.
+    * 
+    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    * 
     * @return Some(fileId) or None if a child entry with the same name already exists. */
   def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] =
     db.mkFile(parentId, name, time, DataId(-1)).tap(_.foreach { fileId =>

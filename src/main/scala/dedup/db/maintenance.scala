@@ -52,7 +52,7 @@ object maintenance extends util.ClassLogging:
 
   def compactDb(dbDir: File): Unit = withDb(dbDir, readOnly = false)(_.shutdownCompact())
   
-  def stats(dbDir: File): Unit = withDb(dbDir) { db =>
+  def stats(dbDir: File): Unit = withDb(dbDir, readOnly = true, checkVersion = false) { db =>
     import Database.currentDbVersion
     log.info(s"Dedup File System Statistics")
     db.version() match
@@ -67,7 +67,7 @@ object maintenance extends util.ClassLogging:
     db.freeAreas() // Run for its log output
   }
 
-  def list(dbDir: File, path: String): Unit = withDb(dbDir) { db =>
+  def list(dbDir: File, path: String): Unit = withDb(dbDir, readOnly = true) { db =>
     db.entry(path) match
       case None =>
         println(s"The path '$path' does not exist.")
@@ -104,7 +104,7 @@ object maintenance extends util.ClassLogging:
         log.info(s"Marked deleted ${delete(dir)} files/directories.")
   }
 
-  def find(dbDir: File, nameLike: String): Unit = withDb(dbDir) { db =>
+  def find(dbDir: File, nameLike: String): Unit = withDb(dbDir, readOnly = true) { db =>
     println(s"Searching for files matching '$nameLike':")
 
     @annotation.tailrec

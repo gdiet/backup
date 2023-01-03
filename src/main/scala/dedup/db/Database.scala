@@ -5,7 +5,6 @@ import dedup.db.Database.currentDbVersion
 
 import java.io.File
 import java.sql.{Connection, PreparedStatement, Statement}
-import scala.util.Using.resource
 import scala.util.{Failure, Success, Try}
 
 def dbDir(repo: File) = File(repo, "fsdb")
@@ -15,8 +14,8 @@ def initialize(connection: Connection): Unit = connection.withStatement { stat =
   indexDefinitions.foreach(stat.executeUpdate)
 }
 
-def withDb[T](dbDir: File, readOnly: Boolean = true)(f: Database => T): T =
-  withConnection(dbDir, readOnly)(c => f(Database(c)))
+def withDb[T](dbDir: File, readOnly: Boolean, checkVersion: Boolean = true)(f: Database => T): T =
+  withConnection(dbDir, readOnly)(connection => f(Database(connection, checkVersion)))
 
 object Database extends util.ClassLogging:
   val currentDbVersion = "3"
@@ -40,28 +39,18 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   /** Close the database connection. */
   override def close(): Unit = connection.close()
 
-  private def statement[T](f: Statement => T): T = connection.withStatement(f)
+  private def withStatement[T](f: Statement => T): T = connection.withStatement(f)
 
   /** Utility class making sure a [[PreparedStatement]] is used synchronized
     * because in many cases [[PreparedStatement]]s are stateful.
     *
     * @param sql             The SQL string to prepare as [[PreparedStatement]].
-    * @param returnGenerated If [[true]] then [[Statement.RETURN_GENERATED_KEYS]] will be set.
-    * @param monitor         The monitor to use for synchronization.
-    *                        If [[None]] (default), synchronizing on this [[prepare]] instance. */
-  private class prepare(sql: String, returnGenerated: Boolean = false, monitor: Option[Object] = None):
+    * @param returnGenerated If [[true]] then [[Statement.RETURN_GENERATED_KEYS]] will be set. */
+  private class prepare(sql: String, returnGenerated: Boolean = false):
     private val prep =
       if returnGenerated then connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)
       else connection.prepareStatement(sql)
-    private val sync = monitor.getOrElse(this)
-    def apply[T](f: PreparedStatement => T): T = sync.synchronized(f(prep))
-
-  /** Synchronization monitor used to prevent race conditions where tree entries with children could be deleted. */
-  private object TreeStructureMonitor
-  /** To prevent race conditions where a directory is deleted although it contains children, all statements modifying
-    * the tree structure share a common synchronization monitor. Remember to use this method where needed. */
-  private def prepareTreeModification(sql: String, returnGenerated: Boolean = false) =
-    prepare(sql, returnGenerated, Some(TreeStructureMonitor))
+    def apply[T](f: PreparedStatement => T): T = synchronized(f(prep))
 
   // Check and (possibly) migrate database version
   if checkVersion then version() match
@@ -73,7 +62,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
 
   /** @return The version string read from the database if any. */
   def version(): Option[String] = Try(
-    statement(_.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(maybe(_.getString(1))))
+    withStatement(_.query("SELECT `VALUE` FROM Context WHERE `KEY` = 'db version'")(maybe(_.getString(1))))
   ).toOption.flatten
 
   /* The starts and stops of the contiguous data areas can be read like this:
@@ -81,7 +70,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
          ON b1.start = b2.stop WHERE b2.stop IS NULL ORDER BY b1.start;
      However, it's faster to read all DataEntries and sort them in Scala like below, assuming there's enough memory. */
   def freeAreas(): Seq[DataArea] =
-    val dataChunks = statement(
+    val dataChunks = withStatement(
       _.query("SELECT start, stop FROM DataEntries")(seq(r => r.getLong(1) -> r.getLong(2))).filterNot(_ == (0, 0))
     )
     log.debug(s"Number of data chunks in storage database: ${dataChunks.size}")
@@ -185,74 +174,81 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     val count = uTime(_.set(newTime, id).executeUpdate())
     ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
 
-  private lazy val dTreeEntry = prepareTreeModification("UPDATE TreeEntries SET deleted = ? WHERE id = ?")
-  /** Deletes a tree entry. Should be called only for existing entry IDs.
-    * @return `false` if the tree entry has children. */
+  private lazy val dTreeEntry = prepare("UPDATE TreeEntries SET deleted = ? WHERE id = ?")
+  /** Marks a childless tree entry deleted.
+    *
+    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    *
+    * @return `false` if the tree entry does not exist or has any children, `true` if the entry exists and has no
+    *         children, regardless of whether or not it was already marked deleted. */
   def deleteChildless(id: Long): Boolean = dTreeEntry { prep =>
     // Allow to delete 'illegal' nodes that have themselves as parent.
-    if children(id).filterNot(_.id == id).nonEmpty then false else
-      val count = prep.set(now.nonZero, id).executeUpdate()
-      ensure("db.delete", count == 1, s"For id $id, delete count is $count instead of 1.")
-      count > 0
+    if children(id).forall(_.id == id) then prep.set(now.nonZero, id).executeUpdate() > 0 else false
   }
 
-  private lazy val iDir = prepareTreeModification("INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", true)
-  /** @return `Some(id)` or [[None]] if a child with the same name exists.
-    * @throws Exception If parent does not exist. */
+  private lazy val iDir = prepare("INSERT INTO TreeEntries (parentId, name, time) VALUES (?, ?, ?)", true)
+  /** Creates a directory. It is the responsibility of the calling code to guard against creating a directory as child
+    * of a file or as child of a deleted directory.
+    *
+    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    *
+    * @return [[Some]]`(fileId)` or [[None]] in case of a name conflict.
+    * @throws Exception If the parent does not exist or the name is empty. */
   def mkDir(parentId: Long, name: String): Option[Long] =
-    require(name.nonEmpty, "Can not create a directory with an empty name.")
+    require(name.nonEmpty, "The name must not be empty.")
     Try(iDir { prep =>
-      // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
-      val count = prep.set(parentId, name, now).executeUpdate()
-      ensure("db.mkdir", count == 1, s"For parentId $parentId and name '$name', mkDir update count is $count instead of 1.")
-      prep.getGeneratedKeys.tap(_.next()).getLong("id").tap { id =>
-        if parentId == id then
-          deleteChildless(id)
-          problem("db.mkdir.sameAsParent", s"For parentId $parentId and name '$name', the id of the created directory was the same as the parentId.")
-      }
-    }) match
-      case Success(id) => Some(id)
-      case Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
-        log.trace(s"mkDir($parentId, '$name'): Name conflict."); None
-      case Failure(other) => throw other
+      // Name conflict or missing parent triggers an SQL exception due to unique constraint / foreign key violation.
+      prep.set(parentId, name, now).executeUpdate()
+      guardedGetGeneratedId(parentId, name, prep)
+    }).pipe(handleMkResult(parentId, name, "mkDir"))
 
-  private lazy val iFile = prepareTreeModification("INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)", true)
-  /** @return `Some(id)` or [[None]] if a child with the same name exists.
-    * @throws Exception If parent does not exist. */
+  private lazy val iFile = prepare("INSERT INTO TreeEntries (parentId, name, time, dataId) VALUES (?, ?, ?, ?)", true)
+  /** Creates a file. It is the responsibility of the calling code to guard against creating a file as child
+    * of a file or as child of a deleted directory.
+    *
+    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    *
+    * @return [[Some]]`(fileId)` or [[None]] in case of a name conflict.
+    * @throws Exception If the parent does not exist or the name is empty. */
   def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] =
-    require(name.nonEmpty, "Can not create a file with an empty name.")
+    require(name.nonEmpty, "The name must not be empty.")
     Try(iFile { prep =>
       // Name conflict or missing parent triggers an SQL exception due to unique constraint / foreign key violation.
-      val count = prep.set(parentId, name, time, dataId).executeUpdate()
-      ensure("db.mkfile", count == 1, s"For parentId $parentId and name '$name', mkFile update count is $count instead of 1.")
-      prep.getGeneratedKeys.tap(_.next()).getLong("id").tap { id =>
-        if parentId == id then
-          deleteChildless(id)
-          problem("db.mkFile.sameAsParent", s"For parentId $parentId and name '$name', the id of the created file was the same as the parentId.")
-      }
-    }) match
-      case Success(id) => Some(id)
-      case Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
-        log.debug(s"mkFile($parentId, '$name', $time, $dataId): Name conflict."); None
-      case Failure(other) => throw other
+      prep.set(parentId, name, time, dataId).executeUpdate()
+      guardedGetGeneratedId(parentId, name, prep)
+    }).pipe(handleMkResult(parentId, name, "mkFile"))
 
-  def synchronizeTreeModification[T](f: => T): T = TreeStructureMonitor.synchronized(f)
+  private def guardedGetGeneratedId(parentId: Long, name: String, prep: PreparedStatement): Long =
+    prep.getGeneratedKeys.tap(_.next()).getLong("id").tap { id =>
+      if parentId == id then // Special case of "parent does not exist" where the created node has a parent self reference.
+        deleteChildless(id)
+        failure(s"For parentId $parentId and name '$name', the id of the created directory was the same as the parentId.")
+    }
 
-  private lazy val uRenameMove = prepareTreeModification("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ? AND deleted = 0")
+  private def handleMkResult(parentId: Long, name: String, methodName: String): Try[Long] => Option[Long] = {
+    case Success(id) => Some(id)
+    case Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
+      log.trace(s"$methodName($parentId, '$name'): Name conflict."); None
+    case Failure(other) => throw other
+  }
 
-  /** Updates the parent/name of a tree entry. The tree entry should exist (is ensured). The new parent may be marked
-    * deleted, so calling this method can lead to a non-deleted child entry of a deleted tree entry unless prevented
-    * by the calling code. This can be achieved e.g. by using [[synchronizeTreeModification]] to first read the parent
-    * using the [[entry]] method and then using this method.
-    * @return `true` on success, `false` in case of a name conflict or if the tree entry or the new parent does not
-    *         exist. */
+  private lazy val uRenameMove = prepare("UPDATE TreeEntries SET parentId = ?, name = ? WHERE id = ?")
+  /** Updates the parent/name of a tree entry. It is the responsibility of the calling code to guard against creating a
+    * a tree entry as child of a file or as child of a deleted directory.
+    *
+    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    *
+    * @return `true` on success, `false` in case of a name conflict or if the tree entry does not exist.
+    * @throws Exception If the new parent does not exist or the new name is empty. */
   def renameMove(id: Long, newParentId: Long, newName: String): Boolean =
-    require(newName.nonEmpty, "Can't rename to an empty name.")
+    require(newName.nonEmpty, "The name must not be empty.")
     Try(uRenameMove { prep =>
-      // Name conflict or missing parent triggers SQL exception due to unique constraint / foreign key.
-      val count = prep.set(newParentId, newName, id).executeUpdate()
-      ensure("db.renameMove", count == 1, s"For id $id, renameMove count is $count instead of 1.")
-      count > 0
+      // Name conflict or missing parent triggers an SQL exception due to unique constraint / foreign key violation.
+      prep.set(newParentId, newName, id).executeUpdate() > 0
     }) match
       case Success(value) => value
       case Failure(e: java.sql.SQLException) if e.getErrorCode == org.h2.api.ErrorCode.DUPLICATE_KEY_1 =>
@@ -271,14 +267,15 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   private lazy val iDataEntry = prepare("INSERT INTO DataEntries (id, seq, length, start, stop, hash) VALUES (?, ?, ?, ?, ?, ?)")
   def insertDataEntry(dataId: DataId, seq: Int, length: Long, start: Long, stop: Long, hash: Array[Byte]): Unit =
     ensure("db.add.dataEntry.1", seq > 0, s"seq not positive: $seq")
-    val sqlLength: Long | SqlNull = if seq == 1 then length else SqlNull(java.sql.Types.BIGINT)
-    val sqlHash: Array[Byte] | SqlNull = if seq == 1 then hash else SqlNull(java.sql.Types.BINARY)
+    val sqlLength: SqlNull | Long        = if seq == 1 then length else SqlNull(java.sql.Types.BIGINT)
+    val sqlHash  : SqlNull | Array[Byte] = if seq == 1 then hash   else SqlNull(java.sql.Types.BINARY)
     val count = iDataEntry(_.set(dataId, seq, sqlLength, start, stop, sqlHash).executeUpdate())
     ensure("db.add.dataEntry.2", count == 1, s"insertDataEntry update count is $count and not 1 for dataId $dataId")
 
+  /** Transaction implementation is not thread safe, use in single threaded environment only. */
   def removeStorageAllocation(dataId: DataId): Unit =
     connection.transaction {
-      statement { statement =>
+      withStatement { statement =>
         statement.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId AND seq > 1")
         statement.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = $dataId")
       }
@@ -286,35 +283,34 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
 
   def shutdownCompact(): Unit =
     log.info("Compacting DedupFS database...")
-    statement(_.execute("SHUTDOWN COMPACT"))
+    withStatement(_.execute("SHUTDOWN COMPACT"))
 
   // File system statistics
-  def storageSize()      : Long = statement(_.query("SELECT MAX(stop) FROM DataEntries")(one(_.opt(_.getLong(1)))).getOrElse(0L))
-  def countDataEntries() : Long = statement(_.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(oneLong))
-  def countFiles()       : Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(oneLong))
-  def countDeletedFiles(): Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")(oneLong))
-  def countDirs()        : Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")(oneLong))
-  def countDeletedDirs() : Long = statement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(oneLong))
+  def storageSize()      : Long = withStatement(_.query("SELECT MAX(stop) FROM DataEntries")(one(_.opt(_.getLong(1)))).getOrElse(0L))
+  def countDataEntries() : Long = withStatement(_.query("SELECT COUNT(id) FROM DataEntries WHERE seq = 1")(oneLong))
+  def countFiles()       : Long = withStatement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NOT NULL")(oneLong))
+  def countDeletedFiles(): Long = withStatement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NOT NULL")(oneLong))
+  def countDirs()        : Long = withStatement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted = 0 AND dataId IS NULL")(oneLong))
+  def countDeletedDirs() : Long = withStatement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(oneLong))
 
   // reclaimSpace specific queries
   /** @return The number of entries that have been un-rooted. */
   def unrootDeletedEntries(deleteBeforeMillis: Long): Long =
-    statement(_.executeLargeUpdate(s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBeforeMillis"))
+    withStatement(_.executeLargeUpdate(s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBeforeMillis"))
 
   /** @return The number of entries that have been deleted. */
-  def deleteUnrootedTreeEntries(): Long =
-    statement(_.executeLargeUpdate(s"DELETE FROM TreeEntries WHERE id = parentId AND id != ${root.id}"))
+  def deleteUnrootedTreeEntries(): Long = // TODO what happens if we have a non-deleted child of a deleted tree entry?
+    withStatement(_.executeLargeUpdate(s"DELETE FROM TreeEntries WHERE id = parentId AND id != ${root.id}"))
 
   def dataIdsInTree(): Set[Long] =
-  // The WHERE clause makes sure the 'null' entries are not returned
-    statement(_.query("SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0")(seq(_.getLong(1))).toSet)
+    // The 'WHERE dataId >= 0' clause filters both 'dataId < 0' and 'dataId IS NULL' entries
+    withStatement(_.query("SELECT DISTINCT(dataId) FROM TreeEntries WHERE dataId >= 0")(seq(_.getLong(1))).toSet)
 
   def dataIdsInStorage(): Set[Long] =
-  // The WHERE clause makes sure the 'null' entries are not returned
-    statement(_.query("SELECT id FROM DataEntries")(seq(_.getLong(1))).toSet)
+    withStatement(_.query("SELECT id FROM DataEntries")(seq(_.getLong(1))).toSet)
 
   def deleteDataEntry(dataId: Long): Unit =
-    val count = statement(_.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId"))
+    val count = withStatement(_.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId"))
     ensure("db.delete.dataEntry", count == 1, s"For data id $dataId, delete count is $count instead of 1.")
 
 
@@ -348,6 +344,7 @@ private def tableDefinitions =
       |  time         BIGINT NOT NULL,
       |  -- deleted == 0 for regular files, deleted == timestamp for deleted files, because NULL does not work with UNIQUE --
       |  deleted      BIGINT NOT NULL DEFAULT 0,
+      |  -- No foreign key relation possible because DataEntries(id) is not unique.
       |  dataId       BIGINT DEFAULT NULL,
       |  CONSTRAINT pk_TreeEntries PRIMARY KEY (id),
       |  CONSTRAINT un_TreeEntries UNIQUE (parentId, name, deleted),

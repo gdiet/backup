@@ -62,4 +62,4 @@ class BackendSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
   "release the file again" in
     assert(backend.release(file1))
 
-  "close level 1" in backend.close()
+  "close the backend" in backend.close()
