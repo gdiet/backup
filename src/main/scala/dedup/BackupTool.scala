@@ -34,12 +34,12 @@ fsc backup <source> [<source2> [<source...N>]] <target> [reference=<reference>] 
 
 Example:
 
-fsc backup /docs /notes/\* /backup/![yyyy]/[yyyy.MM.dd_HH.mm]/ reference=/backup/????/????.??.??_*
+fsc backup /docs /notes/\* /backup/?[yyyy]/![yyyy.MM.dd_HH.mm]/ reference=/backup/????/????.??.??_*
 
-In the source, "?" / "*" wildcards in the last path element are resolved as list of matching files / directories.
+In the source, the wildcards "?" and "*" in the last path element are resolved to a list of matching files / directories.
 
 `target` specifies the DedupFS directory to store the source backups in.
-In `target` only the forward slash "/" is used as path separator. The backslash "\" is used as escape character.
+In `target` only the forward slash "/" a path separator. The backslash "\" is an escape character.
 Everything within square brackets `[...]` is used as
 [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html)
 for formatting the current date/time unless the opening square bracket is escaped with a backslash `\`.
@@ -48,9 +48,9 @@ directory and its children are created if missing. The question mark can be esca
 If a path element starts with the exclamation mark "!", the exclamation mark is removed. It is ensured that the corresponding
 target directory does not exist, then it and its children are created. The exclamation mark can be escaped with a backslash `\`.
 
-In `reference` only the forward slash "/" is used as path separator. If a reference is specified, first searches for
-the matching reference directory. "?" and "*" wildcards are resolved as the alphanumerically last/highest match.
-
+In `reference` only the forward slash "/" is a path separator. If a reference is specified, the tool searches for
+the matching reference directory before resolving the target directory. "?" and "*" wildcards in the reference
+are resolved as the alphanumerically last/highest match.
 
 */
 
@@ -70,9 +70,9 @@ object BackupTool extends ClassLogging:
     log.info  (s"Repository:        $repo")
     sources.foreach(source =>
       log.info(s"Backup source:     $source"))
-    log.info  (s"Backup target:     $target")
+    log.info  (s"Backup target:     DedupFS:$target")
     maybeReference.foreach { reference =>
-      log.info(s"Reference pattern: $reference")
+      log.info(s"Reference pattern: DedupFS:$reference")
       log.info(s"Force reference:   $forceReference")
     }
     log.debug (s"Temp dir:          $temp")
@@ -82,24 +82,22 @@ object BackupTool extends ClassLogging:
     resource(server.Backend(settings)) { fs =>
       val maybeRefId = maybeReference.map(findReference(fs, _))
       val targetId = resolveTarget(fs, target)
-      println(s"Target: $targetId")
     }
 
   def resolveTarget(fs: server.Backend, targetPath: String): Long =
     fs.pathElements(targetPath).foldLeft(("/", false, root.id)) { case ((path, createFlag, parentId), pathElement) =>
       val name = pathElement.replaceFirst("""^[!?]""", "").replace("""\""", "")
       val create = createFlag | pathElement.matches("""^[!?].*""")
-      println(s"### $path $pathElement $createFlag $create")
       fs.child(parentId, name) match
         case None =>
-          if !create then failure(s"Target path $path$name does not exist.")
-          val dirId = fs.mkDir(parentId, name).getOrElse(failure(s"Failed to create target directory '$path$name'."))
+          if !create then failure(s"Target path DedupFS:$path$name does not exist.")
+          val dirId = fs.mkDir(parentId, name).getOrElse(failure(s"Failed to create target directory 'DedupFS:$path$name'."))
           (path + name + "/", create, dirId)
         case Some(dir: DirEntry) =>
-          if pathElement.startsWith("!") then failure(s"Target path $path$name already exists but should not exist.")
+          if pathElement.startsWith("!") then failure(s"Target path DedupFS:$path$name already exists but should not exist.")
           (path + name + "/", create, dir.id)
         case Some(_: FileEntry) =>
-          failure(s"Target path $path$name is a file, not a directory.")
+          failure(s"Target path DedupFS:$path$name is a file, not a directory.")
     }._3
 
   def findReference(fs: server.Backend, refPath: String): Long =
@@ -108,10 +106,11 @@ object BackupTool extends ClassLogging:
       fs.children(parentId).collect {
         case dir: DirEntry if dir.name.matches(pattern) => dir
       }.sortBy(_.name).lastOption match
-        case None => failure(s"Directory not found while resolving reference: $path$pathElement")
+        case None => failure(s"Directory not found while resolving reference: DedupFS:$path$pathElement")
         case Some(dir) => path + dir.name + "/" -> dir.id
     }
-    log.info(s"Reference        : $path")
+    if fs.children(id).isEmpty then main.failureExit(s"Reference directory DedupFS:$path is empty.")
+    log.info(s"Reference        : DedupFS:$path")
     id
 
   def sourcesAndTarget(params: List[String]): (List[File], String) = params.reverse match
