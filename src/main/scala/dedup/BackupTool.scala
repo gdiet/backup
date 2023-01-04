@@ -57,6 +57,8 @@ are resolved as the alphanumerically last/highest match.
 object BackupTool extends ClassLogging:
 
   def backup(opts: Seq[(String, String)], params: List[String]): Unit =
+    log.info  (s"Running the backup utility")
+
     val (sources, target) = sourcesAndTarget(params)
     val repo              = opts.repo
     val backup            = opts.defaultFalse("dbBackup")
@@ -66,25 +68,49 @@ object BackupTool extends ClassLogging:
     val dbDir             = main.prepareDbDir(repo, backup = backup, readOnly = false)
     val settings          = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
 
-    log.info  (s"Running the backup utility")
-    log.info  (s"Repository:        $repo")
-    sources.foreach(source =>
-      log.info(s"Backup source:     $source"))
-    log.info  (s"Backup target:     DedupFS:$target")
-    maybeReference.foreach { reference =>
-      log.info(s"Reference pattern: DedupFS:$reference")
-      log.info(s"Force reference:   $forceReference")
-    }
-    log.debug (s"Temp dir:          $temp")
-
     cache.MemCache.startupCheck()
     if backup then db.maintenance.backup(settings.dbDir)
     resource(server.Backend(settings)) { fs =>
-      val maybeRefId = maybeReference.map(findReference(fs, _))
-      val targetId = resolveTarget(fs, target)
+      log.info(s"Repository:        $repo")
+      sources.foreach(source =>
+        log.info(s"Backup source:     $source"))
+      log.info(s"Backup target:     DedupFS:$target")
+      maybeReference.foreach { reference =>
+        log.info(s"Reference pattern: DedupFS:$reference")
+        log.info(s"Force reference:   $forceReference")
+      }
+      log.debug(s"Temp dir:          $temp")
+
+      val maybeRefId = maybeReference.map(findReferenceId(fs, _))
+      if !forceReference then maybeRefId.foreach(validateReference(fs, sources, _))
+      val targetId = resolveTargetId(fs, target)
     }
 
-  def resolveTarget(fs: server.Backend, targetPath: String): Long =
+  def validateReference(fs: server.Backend, sources: List[File], refId: Long): Unit =
+    def comp1(entry: TreeEntry) = if entry.isInstanceOf[DirEntry] then entry.name   else ":" + entry.name
+    def comp2(file : File     ) = if file.isDirectory             then file.getName else ":" + file.getName
+    val referenceBase = fs.children(refId).map(comp1).toSet
+    val sourcesBase = sources.map(comp2).toSet
+    val referenceListing = fs.children(refId).flatMap {
+      case file: FileEntry => List(":" + file.name)
+      case dir: DirEntry if sourcesBase.contains(dir.name) =>
+        List(dir.name) ++ fs.children(dir.id).map(dir.name + "/" + comp1(_))
+      case dir: DirEntry => List(dir.name)
+    }.sorted
+    val sourceListing = sources.flatMap {
+      case file if !file.isDirectory => List(":" + file.getName)
+      case dir if referenceBase.contains(dir.getName) =>
+        List(dir.getName) ++ dir.listFiles().map(dir.getName + "/" + comp2(_))
+      case dir => List(dir.getName)
+    }.sorted
+    sourceListing   .foreach(entry => log.debug(s"Source listing entry   : $entry"))
+    referenceListing.foreach(entry => log.debug(s"Reference listing entry: $entry"))
+    val intersectCount = sourceListing.toSet.intersect(referenceListing.toSet).size
+    if math.max(referenceListing.size, sourceListing.size) > intersectCount * 1.6 + 1 then
+      main.failureExit(s"Not enough matches ($intersectCount) between source (${sourceListing.size} entries) and reference (${referenceListing.size} entries).")
+    log.info(s"Reference validation OK, $intersectCount matches between source (${sourceListing.size} entries) and reference (${referenceListing.size} entries).")
+
+  def resolveTargetId(fs: server.Backend, targetPath: String): Long =
     fs.pathElements(targetPath).foldLeft(("/", false, root.id)) { case ((path, createFlag, parentId), pathElement) =>
       val name = pathElement.replaceFirst("""^[!?]""", "").replace("""\""", "")
       val create = createFlag | pathElement.matches("""^[!?].*""")
@@ -100,7 +126,7 @@ object BackupTool extends ClassLogging:
           failure(s"Target path DedupFS:$path$name is a file, not a directory.")
     }._3
 
-  def findReference(fs: server.Backend, refPath: String): Long =
+  def findReferenceId(fs: server.Backend, refPath: String): Long =
     val path -> id = fs.pathElements(refPath).foldLeft("/" -> root.id) { case (path -> parentId, pathElement) =>
       val pattern = """\Q""" + pathElement.replace("*", """\E.*\Q""").replace("?", """\E.\Q""") + """\E"""
       fs.children(parentId).collect {
@@ -110,7 +136,7 @@ object BackupTool extends ClassLogging:
         case Some(dir) => path + dir.name + "/" -> dir.id
     }
     if fs.children(id).isEmpty then main.failureExit(s"Reference directory DedupFS:$path is empty.")
-    log.info(s"Reference        : DedupFS:$path")
+    log.info(s"Reference:         DedupFS:$path")
     id
 
   def sourcesAndTarget(params: List[String]): (List[File], String) = params.reverse match
