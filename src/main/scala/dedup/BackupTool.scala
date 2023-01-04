@@ -72,7 +72,7 @@ object BackupTool extends ClassLogging:
     case _ :: Nil => failure("Source or target is missing.")
     case target :: rawSources =>
       if !target.endsWith("/") then failure("Target must end with '/'.")
-      rawSources.flatMap(resolveSource) -> target
+      rawSources.flatMap(resolveSource) -> resolveTarget(target)
 
   def resolveSource(rawSource: String): List[File] =
     val replaced = rawSource.replace('\\', '/')
@@ -88,12 +88,23 @@ object BackupTool extends ClassLogging:
       if !source.canRead then failure(s"Can not read source $rawSource.")
       List(source)
 
+  /** Replace '[...]' by formatting the contents with the SimpleDateFormat of 'now'
+    * unless the opening square bracket is escaped by a backslash. */
+  def resolveTarget(string: String): String =
+    // ([^\\])\[(.+?)]   explained:
+    // ([^\\])           a character that is not a backslash as group 1
+    //        \[     ]   followed by opening and later closing angle brackets
+    //          (.+?)    one or more character enclosed by the angle brackets as group 2
+    val regex = """([^\\])\[(.+?)]""".r
+    val date = java.util.Date.from(java.time.Instant.now())
+    regex.replaceAllIn(string, { m => m.group(1) + java.text.SimpleDateFormat(m.group(2)).format(date) })
+      .replaceAll("""\\""", "")
 
   // FIXME old - remove eventually
   def backup_old(opts: Seq[(String, String)], params: List[String]): Unit =
     val (from, to, reference) = params match
-      case from :: to :: reference :: Nil => (File(from), insertDate(to), Some(reference))
-      case from :: to              :: Nil => (File(from), insertDate(to), None)
+      case from :: to :: reference :: Nil => (File(from), resolveTarget(to), Some(reference))
+      case from :: to              :: Nil => (File(from), resolveTarget(to), None)
       case other => main.failureExit(s"Expected parameters '[from] [to] [optional: reference]', got '${other.mkString(" ")}'")
 
     val repo           = opts.repo
@@ -154,18 +165,6 @@ object BackupTool extends ClassLogging:
 
       processRecurse(Seq((targetId, Seq(), "/", from)), mkDir, store)
     }
-
-  /** Replace '[...]' by formatting the contents with the SimpleDateFormat of 'now'
-    * unless the opening square bracket is escaped by a backslash. */
-  private def insertDate(string: String): String =
-    // ([^\\])\[(.+?)]   explained:
-    // ([^\\])           a character that is not a backslash as group 1
-    //        \[     ]   followed by opening and later closing angle brackets
-    //          (.+?)    one or more character enclosed by the angle brackets as group 2
-    val regex = """([^\\])\[(.+?)]""".r
-    val date = java.util.Date.from(java.time.Instant.now())
-    regex.replaceAllIn(string, { m => m.group(1) + java.text.SimpleDateFormat(m.group(2)).format(date) })
-      .replaceAll("""\\""", "")
 
   @annotation.tailrec
   private def processRecurse(sources: Seq[(Long, Seq[String], String, File)], mkDir: (Long, String) => Long, store: (Long, File) => Unit): Unit =
