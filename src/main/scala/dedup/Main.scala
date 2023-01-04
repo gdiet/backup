@@ -133,8 +133,10 @@ extension(options: Seq[(String, String)])
     val map = options.toMap.map((key, value) => key.toLowerCase -> value)
     ensure("unnamed.arguments", options.size == map.size, s"Multiple unnamed arguments: $options")
     map
+  private def get(name: String): Option[String] =
+    opts.get(name.toLowerCase)
   private def unnamedOrGet(name: String): Option[String] =
-    opts.get("").orElse(opts.get(name.toLowerCase))
+    opts.get("").orElse(get(name))
   private def getOrElse(name: String, otherwise: => String): String =
     opts.getOrElse(name.toLowerCase, otherwise)
   private def defaultFalse(name: String): Boolean =

@@ -50,14 +50,22 @@ object BackupTool extends ClassLogging:
 
   def backup(opts: Seq[(String, String)], params: List[String]): Unit =
     val (sources, target) = sourcesAndTarget(params)
+    val repo              = opts.repo
+    val backup            = opts.defaultFalse("dbBackup")
+    val reference         = opts.get("reference")
+    val forceReference    = opts.defaultFalse("forceReference")
+    val temp              = main.prepareTempDir(false, opts)
+    val dbDir             = main.prepareDbDir(repo, backup = backup, readOnly = false)
+    val settings          = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
 
-    log.info(s"Running the backup utility")
-//    log.info(s"Repository:       $repo")
-    sources.foreach(source => log.info(s"Backup source:    $source"))
-    log.info(s"Backup target:    $target")
-//    log.info(s"Backup reference: $reference")
-//    log.info(s"Force reference:  $forceReference")
-//    log.debug(s"Temp dir:         $temp")
+    log.info  (s"Running the backup utility")
+    log.info  (s"Repository:       $repo")
+    sources.foreach(source =>
+      log.info(s"Backup source:    $source"))
+    log.info  (s"Backup target:    $target")
+    log.info  (s"Backup reference: $reference")
+    log.info  (s"Force reference:  $forceReference")
+    log.debug (s"Temp dir:         $temp")
 
   def sourcesAndTarget(params: List[String]): (List[File], String) = params.reverse match
     case Nil => failure("Source and target are missing.")
