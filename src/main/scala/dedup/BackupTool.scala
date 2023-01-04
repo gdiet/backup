@@ -43,10 +43,10 @@ In `target` only the forward slash "/" is used as path separator. The backslash 
 Everything within square brackets `[...]` is used as
 [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html)
 for formatting the current date/time unless the opening square bracket is escaped with a backslash `\`.
-If a path element starts with the exclamation mark "!", the exclamation mark is removed and the corresponding target
-directory and its children are created if missing. The exclamation mark can be escaped with a backslash `\`.
-If a path element starts with the question mark "?", the question mark is removed. It is ensured that the corresponding
-target directory does not exist, then it and its children are created. The question mark can be escaped with a backslash `\`.
+If a path element starts with the question mark "?", the question mark is removed and the corresponding target
+directory and its children are created if missing. The question mark can be escaped with a backslash `\`.
+If a path element starts with the exclamation mark "!", the exclamation mark is removed. It is ensured that the corresponding
+target directory does not exist, then it and its children are created. The exclamation mark can be escaped with a backslash `\`.
 
 In `reference` only the forward slash "/" is used as path separator. If a reference is specified, first searches for
 the matching reference directory. "?" and "*" wildcards are resolved as the alphanumerically last/highest match.
@@ -81,7 +81,26 @@ object BackupTool extends ClassLogging:
     if backup then db.maintenance.backup(settings.dbDir)
     resource(server.Backend(settings)) { fs =>
       val maybeRefId = maybeReference.map(findReference(fs, _))
+      val targetId = resolveTarget(fs, target)
+      println(s"Target: $targetId")
     }
+
+  def resolveTarget(fs: server.Backend, targetPath: String): Long =
+    fs.pathElements(targetPath).foldLeft(("/", false, root.id)) { case ((path, createFlag, parentId), pathElement) =>
+      val name = pathElement.replaceFirst("""^[!?]""", "").replace("""\""", "")
+      val create = createFlag | pathElement.matches("""^[!?].*""")
+      println(s"### $path $pathElement $createFlag $create")
+      fs.child(parentId, name) match
+        case None =>
+          if !create then failure(s"Target path $path$name does not exist.")
+          val dirId = fs.mkDir(parentId, name).getOrElse(failure(s"Failed to create target directory '$path$name'."))
+          (path + name + "/", create, dirId)
+        case Some(dir: DirEntry) =>
+          if pathElement.startsWith("!") then failure(s"Target path $path$name already exists but should not exist.")
+          (path + name + "/", create, dir.id)
+        case Some(_: FileEntry) =>
+          failure(s"Target path $path$name is a file, not a directory.")
+    }._3
 
   def findReference(fs: server.Backend, refPath: String): Long =
     val path -> id = fs.pathElements(refPath).foldLeft("/" -> root.id) { case (path -> parentId, pathElement) =>
