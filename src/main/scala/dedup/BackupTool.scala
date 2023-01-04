@@ -38,16 +38,18 @@ fsc backup /docs /notes/\* /backup/![yyyy]/[yyyy.MM.dd_HH.mm]/ reference=/backup
 
 In the source, "?" / "*" wildcards in the last path element are resolved as list of matching files / directories.
 
+`target` specifies the DedupFS directory to store the source backups in.
 In `target` only the forward slash "/" is used as path separator. The backslash "\" is used as escape character.
 Everything within square brackets `[...]` is used as
 [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html)
 for formatting the current date/time unless the opening square bracket is escaped with a backslash `\`.
 If a path element starts with the exclamation mark "!", the exclamation mark is removed and the corresponding target
 directory and its children are created if missing. The exclamation mark can be escaped with a backslash `\`.
-The target must end with "/". The source backups are created as children of the target, keeping the original names.
+If a path element starts with the question mark "?", the question mark is removed. It is ensured that the corresponding
+target directory does not exist, then it and its children are created. The question mark can be escaped with a backslash `\`.
 
-If a reference is specified, first searches for the matching reference directory. "?" and "*" wildcards are resolved
-as the alphanumerically last/highest match.
+In `reference` only the forward slash "/" is used as path separator. If a reference is specified, first searches for
+the matching reference directory. "?" and "*" wildcards are resolved as the alphanumerically last/highest match.
 
 
 */
@@ -65,27 +67,38 @@ object BackupTool extends ClassLogging:
     val settings          = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
 
     log.info  (s"Running the backup utility")
-    log.info  (s"Repository:       $repo")
+    log.info  (s"Repository:        $repo")
     sources.foreach(source =>
-      log.info(s"Backup source:    $source"))
-    log.info  (s"Backup target:    $target")
+      log.info(s"Backup source:     $source"))
+    log.info  (s"Backup target:     $target")
     maybeReference.foreach { reference =>
-      log.info(s"Backup reference: $reference")
-      log.info(s"Force reference:  $forceReference")
+      log.info(s"Reference pattern: $reference")
+      log.info(s"Force reference:   $forceReference")
     }
-    log.debug (s"Temp dir:         $temp")
+    log.debug (s"Temp dir:          $temp")
 
     cache.MemCache.startupCheck()
     if backup then db.maintenance.backup(settings.dbDir)
     resource(server.Backend(settings)) { fs =>
+      val maybeRefId = maybeReference.map(findReference(fs, _))
     }
+
+  def findReference(fs: server.Backend, refPath: String): Long =
+    val path -> id = fs.pathElements(refPath).foldLeft("/" -> root.id) { case (path -> parentId, pathElement) =>
+      val pattern = """\Q""" + pathElement.replace("*", """\E.*\Q""").replace("?", """\E.\Q""") + """\E"""
+      fs.children(parentId).collect {
+        case dir: DirEntry if dir.name.matches(pattern) => dir
+      }.sortBy(_.name).lastOption match
+        case None => failure(s"Directory not found while resolving reference: $path$pathElement")
+        case Some(dir) => path + dir.name + "/" -> dir.id
+    }
+    log.info(s"Reference        : $path")
+    id
 
   def sourcesAndTarget(params: List[String]): (List[File], String) = params.reverse match
     case Nil => failure("Source and target are missing.")
     case _ :: Nil => failure("Source or target is missing.")
-    case target :: rawSources =>
-      if !target.endsWith("/") then failure("Target must end with '/'.")
-      rawSources.flatMap(resolveSource) -> resolveDateInTarget(target)
+    case target :: rawSources => rawSources.flatMap(resolveSource) -> resolveDateInTarget(target)
 
   def resolveSource(rawSource: String): List[File] =
     val replaced = rawSource.replace('\\', '/')
