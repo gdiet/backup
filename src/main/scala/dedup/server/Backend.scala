@@ -64,6 +64,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     * @throws Exception If the parent does not exist or the name is empty. */
   def mkDir(parentId: Long, name: String): Option[Long] = db.mkDir(parentId, name)
 
+  // TODO why not use Time alias?
   def setTime(id: Long, newTime: Long): Unit = db.setTime(id, newTime)
 
   /** When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
@@ -84,7 +85,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     *
     * @return `false` if the tree entry does not exist or has any children, `true` if the entry exists and has no
     *         children, regardless of whether or not it was already marked deleted. */
-  def deleteChildless(entry: TreeEntry): Boolean = db.deleteChildless(entry.id)
+  def deleteChildless(entry: TreeEntry): Boolean = db.deleteChildless(entry.id) // TODO review why not to use ID as param
 
   /** @return The size of the file, 0 if the file entry does not exist. */
   def size(file: FileEntry): Long = handles.cachedSize(file.id).getOrElse(db.logicalSize(file.dataId))
