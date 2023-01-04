@@ -29,6 +29,16 @@ object Database extends util.ClassLogging:
         stop -> gaps.appended(DataArea(lastEnd, start))
     }
 
+  /** Characters not allowed in Windows file names. */
+  private val illegalCharsInNames = Set('\\', '/', ':', '*', '?', '"', '<', '>', '|')
+
+  def validateName(fileName: String): Unit =
+    require(fileName.nonEmpty, "The name must not be empty.")
+    val illegalChars = fileName.toSet.intersect(Database.illegalCharsInNames)
+    if illegalChars.nonEmpty then
+      val problemList = illegalChars.mkString("'", "','", "'")
+      throw new IllegalArgumentException(s"The name '$fileName' contains illegal characters: $problemList")
+
 /** Database queries and related things.
   *
   * Database resources are allocated on demand, so all database code can be collected in this class
@@ -197,7 +207,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     * @return [[Some]]`(fileId)` or [[None]] in case of a name conflict.
     * @throws Exception If the parent does not exist or the name is empty. */
   def mkDir(parentId: Long, name: String): Option[Long] =
-    require(name.nonEmpty, "The name must not be empty.")
+    Database.validateName(name)
     Try(iDir { prep =>
       // Name conflict or missing parent triggers an SQL exception due to unique constraint / foreign key violation.
       prep.set(parentId, name, now).executeUpdate()
@@ -214,7 +224,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     * @return [[Some]]`(fileId)` or [[None]] in case of a name conflict.
     * @throws Exception If the parent does not exist or the name is empty. */
   def mkFile(parentId: Long, name: String, time: Time, dataId: DataId): Option[Long] =
-    require(name.nonEmpty, "The name must not be empty.")
+    Database.validateName(name)
     Try(iFile { prep =>
       // Name conflict or missing parent triggers an SQL exception due to unique constraint / foreign key violation.
       prep.set(parentId, name, time, dataId).executeUpdate()
