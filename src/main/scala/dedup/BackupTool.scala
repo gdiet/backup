@@ -36,9 +36,15 @@ Example:
 
 fsc backup /docs /notes/\* /backup/![yyyy]/[yyyy.MM.dd_HH.mm]/ reference=/backup/????/????.??.??_*
 
-If a source contains "?" / "*" wildcards in its last path element, it is resolved as the list of matching files / directories.
+In the source, "?" / "*" wildcards in the last path element are resolved as list of matching files / directories.
 
-If the target ends with "/", creates the backups as children of the target, keeping the original names.
+In `target` only the forward slash "/" is used as path separator. The backslash "\" is used as escape character.
+Everything within square brackets `[...]` is used as
+[java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html)
+for formatting the current date/time unless the opening square bracket is escaped with a backslash `\`.
+If a path element starts with the exclamation mark "!", the exclamation mark is removed and the corresponding target
+directory and its children are created if missing. The exclamation mark can be escaped with a backslash `\`.
+The target must end with "/". The source backups are created as children of the target, keeping the original names.
 
 If a reference is specified, first searches for the matching reference directory. "?" and "*" wildcards are resolved
 as the alphanumerically last/highest match.
@@ -52,7 +58,7 @@ object BackupTool extends ClassLogging:
     val (sources, target) = sourcesAndTarget(params)
     val repo              = opts.repo
     val backup            = opts.defaultFalse("dbBackup")
-    val reference         = opts.get("reference")
+    val maybeReference    = opts.get("reference")
     val forceReference    = opts.defaultFalse("forceReference")
     val temp              = main.prepareTempDir(false, opts)
     val dbDir             = main.prepareDbDir(repo, backup = backup, readOnly = false)
@@ -63,16 +69,23 @@ object BackupTool extends ClassLogging:
     sources.foreach(source =>
       log.info(s"Backup source:    $source"))
     log.info  (s"Backup target:    $target")
-    log.info  (s"Backup reference: $reference")
-    log.info  (s"Force reference:  $forceReference")
+    maybeReference.foreach { reference =>
+      log.info(s"Backup reference: $reference")
+      log.info(s"Force reference:  $forceReference")
+    }
     log.debug (s"Temp dir:         $temp")
+
+    cache.MemCache.startupCheck()
+    if backup then db.maintenance.backup(settings.dbDir)
+    resource(server.Backend(settings)) { fs =>
+    }
 
   def sourcesAndTarget(params: List[String]): (List[File], String) = params.reverse match
     case Nil => failure("Source and target are missing.")
     case _ :: Nil => failure("Source or target is missing.")
     case target :: rawSources =>
       if !target.endsWith("/") then failure("Target must end with '/'.")
-      rawSources.flatMap(resolveSource) -> resolveTarget(target)
+      rawSources.flatMap(resolveSource) -> resolveDateInTarget(target)
 
   def resolveSource(rawSource: String): List[File] =
     val replaced = rawSource.replace('\\', '/')
@@ -90,7 +103,7 @@ object BackupTool extends ClassLogging:
 
   /** Replace '[...]' by formatting the contents with the SimpleDateFormat of 'now'
     * unless the opening square bracket is escaped by a backslash. */
-  def resolveTarget(string: String): String =
+  def resolveDateInTarget(string: String): String =
     // ([^\\])\[(.+?)]   explained:
     // ([^\\])           a character that is not a backslash as group 1
     //        \[     ]   followed by opening and later closing angle brackets
@@ -100,11 +113,14 @@ object BackupTool extends ClassLogging:
     regex.replaceAllIn(string, { m => m.group(1) + java.text.SimpleDateFormat(m.group(2)).format(date) })
       .replaceAll("""\\""", "")
 
+
+
+
   // FIXME old - remove eventually
   def backup_old(opts: Seq[(String, String)], params: List[String]): Unit =
     val (from, to, reference) = params match
-      case from :: to :: reference :: Nil => (File(from), resolveTarget(to), Some(reference))
-      case from :: to              :: Nil => (File(from), resolveTarget(to), None)
+      case from :: to :: reference :: Nil => (File(from), resolveDateInTarget(to), Some(reference))
+      case from :: to              :: Nil => (File(from), resolveDateInTarget(to), None)
       case other => main.failureExit(s"Expected parameters '[from] [to] [optional: reference]', got '${other.mkString(" ")}'")
 
     val repo           = opts.repo
