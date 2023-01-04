@@ -59,23 +59,26 @@ object BackupTool extends ClassLogging:
 //    log.info(s"Force reference:  $forceReference")
 //    log.debug(s"Temp dir:         $temp")
 
-  def sourcesAndTarget(params: List[String]): (List[String], String) = params.reverse match
+  def sourcesAndTarget(params: List[String]): (List[File], String) = params.reverse match
     case Nil => failure("Source and target are missing.")
     case _ :: Nil => failure("Source or target is missing.")
     case target :: rawSources =>
       if !target.endsWith("/") then failure("Target must end with '/'.")
       rawSources.flatMap(resolveSource) -> target
 
-  def resolveSource(rawSource: String): List[String] =
+  def resolveSource(rawSource: String): List[File] =
     val replaced = rawSource.replace('\\', '/')
     if replaced.endsWith("/") then failure("""Source may not end with '/' or '\'.""")
-    if !(replaced.contains("*") || replaced.contains("?")) then List(rawSource) else
+    if replaced.contains("*") || replaced.contains("?") then
       val (path, name) = replaced.splitAt(replaced.lastIndexOf("/") + 1)
-      val parentDir = new File(path)
+      val parentDir = File(path)
       if !parentDir.isDirectory then failure(s"Source parent $parentDir is not a directory.")
       val namePattern = name.replaceAll("""\.""", """\\.""").replaceAll("""\*""", ".*").replaceAll("""\?""", ".")
-      println(namePattern)
-      parentDir.listFiles().filter(_.getName.matches(namePattern)).map(_.getPath).toList
+      parentDir.listFiles().filter(_.getName.matches(namePattern)).toList
+    else
+      val source = File(rawSource)
+      if !source.canRead then failure(s"Can not read source $rawSource.")
+      List(source)
 
 
   // FIXME old - remove eventually
