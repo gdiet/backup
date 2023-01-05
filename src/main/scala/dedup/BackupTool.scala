@@ -1,33 +1,10 @@
 package dedup
 
-import dedup.util.ClassLogging
-
 import java.io.{BufferedInputStream, File, FileInputStream}
 import java.util.concurrent.atomic.AtomicBoolean
-import scala.io.Source
 import scala.util.Using.resource
 
-/*
-
-`target` specifies the DedupFS directory to store the source backups in.
-In `target` only the forward slash "/" a path separator. The backslash "\" is an escape character.
-Everything within square brackets `[...]` is used as
-[java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html)
-for formatting the current date/time unless the opening square bracket is escaped with a backslash `\`.
-If a path element starts with the question mark "?", the question mark is removed and the corresponding target
-directory and its children are created if missing. The question mark can be escaped with a backslash `\`.
-If a path element starts with the exclamation mark "!", the exclamation mark is removed. It is ensured that the corresponding
-target directory does not exist, then it and its children are created. The exclamation mark can be escaped with a backslash `\`.
-
-If sources are written to an existing target, they are integrated into the target, overwriting in case of name conflicts.
-
-In `reference` only the forward slash "/" is a path separator. If a reference is specified, the tool searches for
-the matching reference directory before resolving the target directory. "?" and "*" wildcards in the reference
-are resolved as the alphanumerically last/highest match.
-
-*/
-
-object BackupTool extends ClassLogging:
+object BackupTool extends dedup.util.ClassLogging:
 
   def backup(opts: Seq[(String, String)], params: List[String]): Unit =
     log.info  (s"Running the backup utility")
@@ -87,7 +64,7 @@ object BackupTool extends ClassLogging:
           ignore.filter(_.headOption.exists(name.matches)).map(_.tail).filterNot(_.isEmpty)
         val newIgnores =
           if ignoreFile.isFile && ignoreFile.canRead then
-            val lines = resource(Source.fromFile(ignoreFile))(
+            val lines = resource(scala.io.Source.fromFile(ignoreFile))(
               _.getLines().map(_.trim).filterNot(_.startsWith("#")).filter(_.nonEmpty).toSeq
             )
             lines.flatMap { line =>
