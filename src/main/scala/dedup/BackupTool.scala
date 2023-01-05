@@ -44,15 +44,15 @@ object BackupTool extends ClassLogging:
     cache.MemCache.startupCheck()
     if backup then db.maintenance.backup(settings.dbDir)
     resource(server.Backend(settings)) { fs =>
-      log.info(s"Repository:        $repo")
+      log  .info(s"Repository:        $repo")
       sources.foreach(source =>
         log.info(s"Backup source:     $source"))
-      log.info(s"Backup target:     DedupFS:$target")
+      log  .info(s"Backup target:     DedupFS:$target")
       maybeReference.foreach { reference =>
         log.info(s"Reference pattern: DedupFS:$reference")
         log.info(s"Force reference:   $forceReference")
       }
-      log.debug(s"Temp dir:          $temp")
+      log .debug(s"Temp dir:          $temp")
 
       val maybeRefId = maybeReference.map(findReferenceId(fs, _))
       if !forceReference then maybeRefId.foreach(validateReference(fs, sources, _))
@@ -183,7 +183,7 @@ object BackupTool extends ClassLogging:
 
   def resolveTargetId(fs: server.Backend, targetPath: String): Long =
     fs.pathElements(targetPath).foldLeft(("/", false, root.id)) { case ((path, createFlag, parentId), pathElement) =>
-      val name = pathElement.replaceFirst("""^[!?]""", "")
+      val name = pathElement.replaceFirst("""^[!?]""", "").replace("""\""", "")
       val create = createFlag | pathElement.matches("""^[!?].*""")
       fs.child(parentId, name) match
         case None =>
