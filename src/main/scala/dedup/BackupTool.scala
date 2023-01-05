@@ -58,31 +58,58 @@ object BackupTool extends ClassLogging:
       if !forceReference then maybeRefId.foreach(validateReference(fs, sources, _))
       val targetId = resolveTargetId(fs, target)
 
-      val bytesStored = sources.map(source => process(fs, source, targetId, maybeRefId)).sum
+      val bytesStored = sources.map(source => process(fs, source, Seq(), targetId, maybeRefId)).sum
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
     }
 
-  def process(fs: server.Backend, source: File, targetId: Long, maybeRefId: Option[Long]): Long =
+  def process(fs: server.Backend, source: File, ignore: Seq[List[String]], targetId: Long, maybeRefId: Option[Long]): Long =
+    if ignore.flatten.nonEmpty then log.info(s"Ignore rules for '$source': $ignore") // TODO trace
     val name = source.getName
     if source.isFile then
-      val fileReference = maybeRefId.flatMap(fs.child(_, name)).collect { case f: FileEntry => f }
-      processFile(fs, source, targetId, fileReference)
+      if ignore.collect { case List(rule) => rule }.exists(name.matches) then
+        log.info(s"Ignored file due to rules: $source") // TODO trace
+        0L
+      else
+        log.info(s"Processing file: $source") // TODO trace
+        val fileReference = maybeRefId.flatMap(fs.child(_, name)).collect { case f: FileEntry => f }
+        processFile(fs, source, targetId, fileReference)
+    else if ignore.flatMap(_.headOption).exists(s"$name/".matches) then
+      log.info(s"Ignored directory due to rules: $source") // TODO trace
+      0L
     else
-      val maybeDirId = fs.child(targetId, name) match
-        case Some(dir: DirEntry) => Some(dir.id)
-        case other =>
-          if other.isDefined && !fs.deleteChildless(other.get) then
-            log.warn(s"Could not replace target file for '$source'.")
-            None
-          else
-            fs.mkDir(targetId, name).tap { t =>
-              if t.isEmpty then log.warn(s"Could not create target directory for '$source'.")
-            }
-      maybeDirId match
-        case None => 0L
-        case Some(dirId) =>
-          val newReference = maybeRefId.flatMap(fs.child(_, name)).map(_.id)
-          source.listFiles().map(child => process(fs, child, dirId, newReference)).sum
+      val ignoreFile = File(source, ".backupignore")
+      if ignoreFile.isFile && ignoreFile.length() == 0 then
+        log.info(s"Ignored directory due to ignore file: $source") // TODO trace
+        0L
+      else
+        log.info(s"Processing directory: $source") // TODO trace
+        val updatedIgnores =
+          ignore.filter(_.headOption.exists(name.matches)).map(_.tail).filterNot(_.isEmpty)
+        val newIgnores =
+          if ignoreFile.isFile && ignoreFile.canRead then
+            val lines = resource(Source.fromFile(ignoreFile))(
+              _.getLines().map(_.trim).filterNot(_.startsWith("#")).filter(_.nonEmpty).toSeq
+            )
+            lines.flatMap { line =>
+              val parts = line.split("/").map(_.replaceAll("\\?", "\\\\E.\\\\Q").replaceAll("\\*", "\\\\E.*\\\\Q"))
+                .map("\\Q" + _ + "\\E")
+              if parts.isEmpty then None else
+                if line.endsWith("/") then parts.update(parts.length - 1, parts(parts.length - 1) + "/")
+                Some(parts.toList)
+            }.tap { i => log.info(s"In directory '$source' read ignore rules: $i") } // TODO debug
+          else Seq()
+        val maybeDirId = fs.child(targetId, name) match
+          case Some(dir: DirEntry) => Some(dir.id)
+          case other =>
+            if other.isDefined && !fs.deleteChildless(other.get) then
+              log.warn(s"Could not replace target file for '$source'."); None
+            else fs.mkDir(targetId, name)
+              .tap { id => if id.isEmpty then log.warn(s"Could not create target directory for '$source'.") }
+        maybeDirId match
+          case None => 0L
+          case Some(dirId) =>
+            val newReference = maybeRefId.flatMap(fs.child(_, name)).map(_.id)
+            source.listFiles().map(child => process(fs, child, updatedIgnores ++ newIgnores, dirId, newReference)).sum
 
   def processFile(fs: server.Backend, source: File, targetId: Long, maybeReference: Option[FileEntry]): Long =
     // Check for a reference match
