@@ -180,19 +180,36 @@ target directory does not exist, then it and its children are created. The excla
 
 **The `reference=<reference>` and `forceReference=true` parameters:**
 
-TODO explain
+If a directory containing many and / or large files has been stored in the DedupFS before and most files have not been changed in the meantime, creating another backup can be **significantly accelerated** by using the `reference` parameter. This parameter tells the backup utility to first compare the file size and time stamp of the file to store with the reference file stored previously. If they are found to be the same, the backup tool creates a copy of the reference file in the target location instead of copying the source contents there. Note that using a `reference`, if a file's contents have changed, but its size and time stamp have not changed, **the changed contents are not stored** in the backup.
+
+Example:
+* Create a first backup of `docs`:
+* `fsc backup /docs /backup/?[yyyy]/![yyyy.MM.dd_HH.mm]/`
+* Provide a reference for subsequent backups of `docs`:
+* `fsc backup /docs /backup/?[yyyy]/![yyyy.MM.dd_HH.mm]/ reference=/backup/????/????.??.??_*`
+
+When a `reference` is provided, the backup utility checks whether the source and the reference "look similar". This is to reduce the probability of accidentally specifying an incorrect `reference`. Use the `forceReference=true` parameter to skip this check.
 
 **Excluding files / directories from the backup:**
-
-TODO implement
 
 To exclude files or directories from the backup, proceed as follows:
 * Either put an **empty** file `.backupignore` into a source directory to ignore.
 * Or put into a source directory a text file `.backupignore` containing 'ignore' rules, one per line. These rules define which entries the backup utility will ignore.
-  * The `*/temp/` rule defines that directories (but not files) named `temp` will be ignored here and in any nested directories.
+  * Lines are trimmed, empty lines and lines starting with "`#`" are ignored.
   * `*` is the "anything" wildcard.
   * `?` is the "any single character" wildcard.
-  * The rules are matched against the relative source path, where directory paths always end on `/` (and file paths don't).
+  * Rules for directories end with "`/`", rules for files without.
+  * The rules are matched against the relative source path.
+
+Example for a `.backupignore` file:
+
+    # Do not store the .backupignore itself in the backup.
+    .backupignore
+    # Do not store the 'temp' subdirectory in the backup.
+    temp/
+    # In any subdirectories named 'log*', do not store
+    # files in the backup that are named '*.log'.
+    log*/*.log
 
 #### Create A Database Backup
 

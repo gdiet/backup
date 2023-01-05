@@ -63,26 +63,26 @@ object BackupTool extends ClassLogging:
     }
 
   def process(fs: server.Backend, source: File, ignore: Seq[List[String]], targetId: Long, maybeRefId: Option[Long]): Long =
-    if ignore.flatten.nonEmpty then log.info(s"Ignore rules for '$source': $ignore") // TODO trace
+    if ignore.flatten.nonEmpty then log.trace(s"Ignore rules for '$source': $ignore")
     val name = source.getName
     if source.isFile then
       if ignore.collect { case List(rule) => rule }.exists(name.matches) then
-        log.info(s"Ignored file due to rules: $source") // TODO trace
+        log.trace(s"Ignored file due to rules: $source")
         0L
       else
-        log.info(s"Processing file: $source") // TODO trace
+        log.trace(s"Processing file: $source")
         val fileReference = maybeRefId.flatMap(fs.child(_, name)).collect { case f: FileEntry => f }
         processFile(fs, source, targetId, fileReference)
     else if ignore.flatMap(_.headOption).exists(s"$name/".matches) then
-      log.info(s"Ignored directory due to rules: $source") // TODO trace
+      log.trace(s"Ignored directory due to rules: $source")
       0L
     else
       val ignoreFile = File(source, ".backupignore")
       if ignoreFile.isFile && ignoreFile.length() == 0 then
-        log.info(s"Ignored directory due to ignore file: $source") // TODO trace
+        log.trace(s"Ignored directory due to ignore file: $source")
         0L
       else
-        log.info(s"Processing directory: $source") // TODO trace
+        log.trace(s"Processing directory: $source")
         val updatedIgnores =
           ignore.filter(_.headOption.exists(name.matches)).map(_.tail).filterNot(_.isEmpty)
         val newIgnores =
@@ -96,7 +96,7 @@ object BackupTool extends ClassLogging:
               if parts.isEmpty then None else
                 if line.endsWith("/") then parts.update(parts.length - 1, parts(parts.length - 1) + "/")
                 Some(parts.toList)
-            }.tap { i => log.info(s"In directory '$source' read ignore rules: $i") } // TODO debug
+            }.tap { i => log.debug(s"In directory '$source' read ignore rules: $i") }
           else Seq()
         val maybeDirId = fs.child(targetId, name) match
           case Some(dir: DirEntry) => Some(dir.id)
