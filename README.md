@@ -154,15 +154,41 @@ Use `fsc backup <source> <target> [reference]` to copy files and directories to 
 
 This is an **experimental** utility introduced with version 5.1, meaning it might not work in all details as expected, but it does **not** mean that it might corrupt your repository.
 
-`source` must be a readable file or directory on your computer.
+**Syntax:**
 
-`target` can be e.g. `/backups/photos/[yyyy.MM.dd_HH.mm]`. In this example, the backup utility will look in the DedupFS for the directory `/backup/photos/` (and exit if the directory doesn't exist). There, it will create a directory named by the current date like `2022.10.30_11.14`. Then it will copy the `source` there.
+`fsc [repo=<repository directory>] [dbBackup=false] backup <source> [<source2> [<source...N>]] <target> [reference=<reference>] [forceReference=true]`
 
-Technically speaking the date formatting works as follows: In `target`, everything within square brackets `[...]` is used as [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html) for formatting the current date/time unless the opening square bracket is escaped with a backslash `\`.
+**Example:**
 
-If you want to exclude certain files or directories from the backup, proceed as follows:
+`fsc backup /docs /notes/* /backup/?[yyyy]/![yyyy.MM.dd_HH.mm]/ reference=/backup/????/????.??.??_*`
+
+**The `source` parameters:**
+
+In each `source` parameter's last path element the wildcards "`?`" and "`*`" are resolved to a list of matching files / directories. The resolved sources must be readable files or directories on your computer.
+
+**The `target` parameter:**
+
+The `target` parameter specifies the DedupFS directory to copy the source files / directories to. Only the forward slash "`/`" is interpreted as path separator. The backslash "`\`" is used as escape character.
+
+In the `target` parameter's path elements, everything enclosed by square brackets `[...]` is interpreted as [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html) for formatting the current date/time, unless the opening square bracket is escaped with a backslash "`\`".
+
+If a `target` path element starts with the question mark "`?`", the question mark is removed and the corresponding target
+directory and its children are created if missing.
+
+If a `target` path element starts with the exclamation mark "!", the exclamation mark is removed. It is ensured that the corresponding
+target directory does not exist, then it and its children are created. The exclamation mark can be escaped with a backslash `\`.
+
+**The `reference=<reference>` and `forceReference=true` parameters:**
+
+TODO explain
+
+**Excluding files / directories from the backup:**
+
+TODO implement
+
+To exclude files or directories from the backup, proceed as follows:
 * Either put an **empty** file `.backupignore` into a source directory to ignore.
-* Or put into a source directory a text file `.backupignore` containing 'ignore' rules. These rules define which entries the backup utility will ignore.
+* Or put into a source directory a text file `.backupignore` containing 'ignore' rules, one per line. These rules define which entries the backup utility will ignore.
   * The `*/temp/` rule defines that directories (but not files) named `temp` will be ignored here and in any nested directories.
   * `*` is the "anything" wildcard.
   * `?` is the "any single character" wildcard.

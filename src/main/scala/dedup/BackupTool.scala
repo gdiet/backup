@@ -9,14 +9,6 @@ import scala.util.Using.resource
 
 /*
 
-fsc backup <source> [<source2> [<source...N>]] <target> [reference=<reference>] [forceReference=true]
-
-Example:
-
-fsc backup /docs /notes/\* /backup/?[yyyy]/![yyyy.MM.dd_HH.mm]/ reference=/backup/????/????.??.??_*
-
-In the source, the wildcards "?" and "*" in the last path element are resolved to a list of matching files / directories.
-
 `target` specifies the DedupFS directory to store the source backups in.
 In `target` only the forward slash "/" a path separator. The backslash "\" is an escape character.
 Everything within square brackets `[...]` is used as
@@ -191,7 +183,7 @@ object BackupTool extends ClassLogging:
 
   def resolveTargetId(fs: server.Backend, targetPath: String): Long =
     fs.pathElements(targetPath).foldLeft(("/", false, root.id)) { case ((path, createFlag, parentId), pathElement) =>
-      val name = pathElement.replaceFirst("""^[!?]""", "").replace("""\""", "")
+      val name = pathElement.replaceFirst("""^[!?]""", "")
       val create = createFlag | pathElement.matches("""^[!?].*""")
       fs.child(parentId, name) match
         case None =>
@@ -240,6 +232,11 @@ object BackupTool extends ClassLogging:
   /** Replace '[...]' by formatting the contents with the SimpleDateFormat of 'now'
     * unless the opening square bracket is escaped by a backslash. */
   def resolveDateInTarget(string: String): String =
+    string.split("/").filterNot(_.isEmpty).map(resolveDateInTargetPathElement).mkString("/", "/", "")
+
+  /** Replace '[...]' by formatting the contents with the SimpleDateFormat of 'now'
+    * unless the opening square bracket is escaped by a backslash. */
+  def resolveDateInTargetPathElement(string: String): String =
     // ([^\\])\[(.+?)]   explained:
     // ([^\\])           a character that is not a backslash as group 1
     //        \[     ]   followed by opening and later closing angle brackets
@@ -247,4 +244,4 @@ object BackupTool extends ClassLogging:
     val regex = """([^\\])\[(.+?)]""".r
     val date = java.util.Date.from(java.time.Instant.now())
     regex.replaceAllIn(string, { m => m.group(1) + java.text.SimpleDateFormat(m.group(2)).format(date) })
-      .replaceAll("""\\""", "")
+      .replaceAll("""\\\[""", "[")
