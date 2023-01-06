@@ -44,7 +44,7 @@ object BackupTool extends dedup.util.ClassLogging:
     *               element terminates with `/`, otherwise against file names. If a rule consists of multiple elements,
     *               its tail is handed over to the processing context of all subdirectories matching the head.
     * @return The number of bytes processed. */
-  def process(fs: server.Backend, source: File, ignore: Seq[List[String]], targetId: Long, maybeRefId: Option[Long]): Long =
+  private def process(fs: server.Backend, source: File, ignore: Seq[List[String]], targetId: Long, maybeRefId: Option[Long]): Long =
     if ignore.flatten.nonEmpty then log.trace(s"Ignore rules for '$source': $ignore")
     val name = source.getName
     if source.isFile then
@@ -98,7 +98,7 @@ object BackupTool extends dedup.util.ClassLogging:
   def createWildcardPattern(base: String): String =
     s"\\Q${base.replace("*", "\\E.*\\Q").replace("?", "\\E.\\Q")}\\E"
   
-  def processFile(fs: server.Backend, source: File, targetId: Long, maybeReference: Option[FileEntry]): Long =
+  private def processFile(fs: server.Backend, source: File, targetId: Long, maybeReference: Option[FileEntry]): Long =
     // Check for a reference match
     val matchingReference = maybeReference.filter { file =>
       val timeMatches = file.time == Time(source.lastModified())
@@ -106,32 +106,27 @@ object BackupTool extends dedup.util.ClassLogging:
       log.debug(s"Matching to reference time ($timeMatches) and size ($sizeMatches): $source")
       timeMatches && sizeMatches
     }
-    processFile2(fs, source, targetId, matchingReference)
-
-  def processFile2(fs: server.Backend, source: File, targetId: Long, matchingReference: Option[FileEntry]): Long =
     // Make sure in the target there is no directory where the file will be created.
     fs.child(targetId, source.getName) match {
-      case Some(fileEntry: FileEntry) => matchingReference match
-        case None => updateTargetFile(fs, source, fileEntry)
-        case Some(reference) => updateTargetFile(fs, source, fileEntry, reference)
+      case None =>
+        matchingReference.fold(createTargetFile(fs, source, targetId))(createTargetFile(fs, source, targetId, _))
+      case Some(fileEntry: FileEntry) =>
+        matchingReference.fold(updateTargetFile(fs, source, fileEntry))(updateTargetFile(fs, source, fileEntry, _))
       case Some(dirEntry: DirEntry) =>
-        def delete(treeEntry: TreeEntry): Boolean = fs.children(treeEntry.id).forall(delete) && fs.deleteChildless(treeEntry)
-        if delete(dirEntry) then matchingReference match
-          case None => createTargetFile(fs, source, targetId)
-          case Some(reference) => createTargetFile(fs, source, targetId, reference)
-        else { log.warn(s"Could not replace target directory for file '$source'."); 0L }
-      case None => matchingReference match
-        case None => createTargetFile(fs, source, targetId)
-        case Some(reference) => createTargetFile(fs, source, targetId, reference)
+        if delete(fs, dirEntry) then
+          matchingReference.fold(createTargetFile(fs, source, targetId))(createTargetFile(fs, source, targetId, _))
+        else
+          log.warn(s"Could not replace target directory for file '$source'."); 0L
     }
 
-  def createTargetFile(fs: server.Backend, source: File, targetId: Long, matchingReference: FileEntry): Long =
-    if fs.copyFile(matchingReference, targetId, source.getName) then source.length()
-    else
-      log.warn(s"Could not copy reference for file '$source'.")
-      0L
+  def delete(fs: server.Backend, treeEntry: TreeEntry): Boolean =
+    fs.children(treeEntry.id).forall(delete(fs, _)) && fs.deleteChildless(treeEntry)
 
-  def updateTargetFile(fs: server.Backend, source: File, target: FileEntry, matchingReference: FileEntry): Long =
+  private def createTargetFile(fs: server.Backend, source: File, targetId: Long, matchingReference: FileEntry): Long =
+    if fs.copyFile(matchingReference, targetId, source.getName) then source.length()
+    else { log.warn(s"Could not copy reference for file '$source'."); 0L }
+
+  private def updateTargetFile(fs: server.Backend, source: File, target: FileEntry, matchingReference: FileEntry): Long =
     if target.id == matchingReference.id then
       source.length()
     else
@@ -142,7 +137,7 @@ object BackupTool extends dedup.util.ClassLogging:
         log.warn(s"Could not replace target file for file '$source'.")
         0L
 
-  def createTargetFile(fs: server.Backend, source: File, targetId: Long): Long =
+  private def createTargetFile(fs: server.Backend, source: File, targetId: Long): Long =
     fs.createAndOpen(targetId, source.getName, Time(source.lastModified())) match
       case None =>
         log.warn(s"Could not create target file for file '$source'.")
@@ -150,12 +145,12 @@ object BackupTool extends dedup.util.ClassLogging:
       case Some(id) =>
         writeTargetFile(fs, source, id)
 
-  def updateTargetFile(fs: server.Backend, source: File, target: FileEntry): Long =
+  private def updateTargetFile(fs: server.Backend, source: File, target: FileEntry): Long =
     fs.setTime(target.id, source.lastModified())
     fs.open(target)
     writeTargetFile(fs, source, target.id)
 
-  def writeTargetFile(fs: server.Backend, source: File, targetId: Long): Long =
+  private def writeTargetFile(fs: server.Backend, source: File, targetId: Long): Long =
     resource(BufferedInputStream(FileInputStream(source))) { in =>
       var position = 0L
       val data = Iterator.continually(in.readNBytes(memChunk))
@@ -171,7 +166,7 @@ object BackupTool extends dedup.util.ClassLogging:
     log.info(s"Stored: $source")
     source.length()
 
-  def validateReference(fs: server.Backend, sources: List[File], refId: Long): Unit =
+  private def validateReference(fs: server.Backend, sources: List[File], refId: Long): Unit =
     def comp1(entry: TreeEntry) = if entry.isInstanceOf[DirEntry] then entry.name   else ":" + entry.name
     def comp2(file : File     ) = if file.isDirectory             then file.getName else ":" + file.getName
     val referenceBase = fs.children(refId).map(comp1).toSet
@@ -195,7 +190,7 @@ object BackupTool extends dedup.util.ClassLogging:
       main.failureExit(s"Not enough matches ($intersectCount) between source (${sourceListing.size} entries) and reference (${referenceListing.size} entries).")
     log.info(s"Reference validation OK, $intersectCount matches between source (${sourceListing.size} entries) and reference (${referenceListing.size} entries).")
 
-  def resolveTargetId(fs: server.Backend, targetPath: String): Long =
+  private def resolveTargetId(fs: server.Backend, targetPath: String): Long =
     fs.pathElements(targetPath).foldLeft(("/", false, root.id)) { case ((path, createFlag, parentId), pathElement) =>
       val name = pathElement.replaceFirst("""^[!?]""", "").replace("""\""", "")
       val create = createFlag | pathElement.matches("""^[!?].*""")
@@ -211,7 +206,7 @@ object BackupTool extends dedup.util.ClassLogging:
           failure(s"Target path DedupFS:$path$name is a file, not a directory.")
     }._3
 
-  def findReferenceId(fs: server.Backend, refPath: String): Long =
+  private def findReferenceId(fs: server.Backend, refPath: String): Long =
     val path -> id = fs.pathElements(refPath).foldLeft("/" -> root.id) { case (path -> parentId, pathElement) =>
       val pattern = createWildcardPattern(pathElement)
       fs.children(parentId).collect {
@@ -224,12 +219,12 @@ object BackupTool extends dedup.util.ClassLogging:
     log.info(s"Reference:         DedupFS:$path")
     id
 
-  def sourcesAndTarget(params: List[String]): (List[File], String) = params.reverse match
+  private def sourcesAndTarget(params: List[String]): (List[File], String) = params.reverse match
     case Nil => failure("Source and target are missing.")
     case _ :: Nil => failure("Source or target is missing.")
     case target :: rawSources => rawSources.flatMap(resolveSource) -> resolveDateInTarget(target)
 
-  def resolveSource(rawSource: String): List[File] =
+  private def resolveSource(rawSource: String): List[File] =
     val replaced = rawSource.replace('\\', '/')
     if replaced.endsWith("/") then failure("""Source may not end with '/' or '\'.""")
     if replaced.contains("*") || replaced.contains("?") then
@@ -245,12 +240,12 @@ object BackupTool extends dedup.util.ClassLogging:
 
   /** Replace '[...]' by formatting the contents with the SimpleDateFormat of 'now'
     * unless the opening square bracket is escaped by a backslash. */
-  def resolveDateInTarget(string: String): String =
+  private def resolveDateInTarget(string: String): String =
     string.split("/").filterNot(_.isEmpty).map(resolveDateInTargetPathElement).mkString("/", "/", "")
 
   /** Replace '[...]' by formatting the contents with the SimpleDateFormat of 'now'
     * unless the opening square bracket is escaped by a backslash. */
-  def resolveDateInTargetPathElement(string: String): String =
+  private def resolveDateInTargetPathElement(string: String): String =
     // ([^\\])\[(.+?)]   explained:
     // ([^\\])           a character that is not a backslash as group 1
     //        \[     ]   followed by opening and later closing angle brackets
