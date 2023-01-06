@@ -39,6 +39,11 @@ object BackupTool extends dedup.util.ClassLogging:
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
     }
 
+  /** @param ignore The rules which files or directories to ignore. Each rule is a [[List]][String]. If a rule consists
+    *               of a single element, this element is matched in the current context against directory names if the
+    *               element terminates with `/`, otherwise against file names. If a rule consists of multiple elements,
+    *               its tail is handed over to the processing context of all subdirectories matching the head.
+    * @return The number of bytes processed. */
   def process(fs: server.Backend, source: File, ignore: Seq[List[String]], targetId: Long, maybeRefId: Option[Long]): Long =
     if ignore.flatten.nonEmpty then log.trace(s"Ignore rules for '$source': $ignore")
     val name = source.getName
@@ -64,15 +69,9 @@ object BackupTool extends dedup.util.ClassLogging:
           ignore.filter(_.headOption.exists(name.matches)).map(_.tail).filterNot(_.isEmpty)
         val newIgnores =
           if ignoreFile.isFile && ignoreFile.canRead then
-            val lines = resource(scala.io.Source.fromFile(ignoreFile))(
+            resource(scala.io.Source.fromFile(ignoreFile))(
               _.getLines().map(_.trim).filterNot(_.startsWith("#")).filter(_.nonEmpty).toSeq
-            )
-            lines.flatMap { line =>
-              val parts = line.split("/").map(createWildcardPattern)
-              if parts.isEmpty then None else
-                if line.endsWith("/") then parts.update(parts.length - 1, parts(parts.length - 1) + "/")
-                Some(parts.toList)
-            }.tap { i => log.debug(s"In directory '$source' read ignore rules: $i") }
+            ).pipe(deriveIgnoreRules).tap { i => log.debug(s"In directory '$source' read ignore rules: $i") }
           else Seq()
         val maybeDirId = fs.child(targetId, name) match
           case Some(dir: DirEntry) => Some(dir.id)
@@ -86,6 +85,15 @@ object BackupTool extends dedup.util.ClassLogging:
           case Some(dirId) =>
             val newReference = maybeRefId.flatMap(fs.child(_, name)).map(_.id)
             source.listFiles().map(child => process(fs, child, updatedIgnores ++ newIgnores, dirId, newReference)).sum
+
+  /** @return The ignore rules in their internal format. */
+  def deriveIgnoreRules(ruleStrings: Seq[String]): Seq[List[String]] =
+    ruleStrings.flatMap { line =>
+      val parts = line.split("/").map(createWildcardPattern)
+      if parts.isEmpty then None else
+        if line.endsWith("/") then parts.update(parts.length - 1, parts(parts.length - 1) + "/")
+        Some(parts.toList)
+    }
 
   /** @return A [[java.util.regex.Pattern]] string for wildcard `*` and `?` matching. */
   def createWildcardPattern(base: String): String =

@@ -17,3 +17,9 @@ class BackupToolSpec extends org.scalatest.freespec.AnyFreeSpec:
     assert(!"XaXbc.d".matches(pattern))   // prefix not expected
     assert(!"aXbc.dX".matches(pattern))   // suffix not expected
   }
+
+  "deriveIgnoreRules" in {
+    def w = createWildcardPattern
+    assert(deriveIgnoreRules(Seq()) == Seq())
+    assert(deriveIgnoreRules(Seq("a?b/c*", "d/*e?f")) == Seq( List(w("a?b"), w("c*")), List(w("d"), w("*e?f")) ))
+  }
