@@ -88,10 +88,10 @@ object BackupTool extends dedup.util.ClassLogging:
   /** @return The ignore rules in the internal format. */
   def deriveIgnoreRules(ruleStrings: Seq[String]): Seq[List[String]] =
     ruleStrings.flatMap { line =>
-      val parts = line.split("/").map(createWildcardPattern)
+      val parts = line.split("/")
       if parts.isEmpty then None else
-        if line.endsWith("/") then parts.update(parts.length - 1, parts(parts.length - 1) + "/")
-        Some(parts.toList)
+        if line.endsWith("/") then parts.update(parts.length - 1, parts.last + "/")
+        Some(parts.toList.map(createWildcardPattern))
     }
 
   /** @return A [[java.util.regex.Pattern]] string for wildcard `*` and `?` matching. */
