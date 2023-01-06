@@ -49,30 +49,21 @@ object BackupTool extends dedup.util.ClassLogging:
     val name = source.getName
     if source.isFile then
       if ignore.collect { case List(rule) => rule }.exists(name.matches) then
-        log.trace(s"Ignored file due to rules: $source")
-        0L
+        log.trace(s"Ignored file due to rules: $source"); 0L
       else
         log.trace(s"Processing file: $source")
         val fileReference = maybeRefId.flatMap(fs.child(_, name)).collect { case f: FileEntry => f }
         processFile(fs, source, targetId, fileReference)
     else if ignore.flatMap(_.headOption).exists(s"$name/".matches) then
-      log.trace(s"Ignored directory due to rules: $source")
-      0L
+      log.trace(s"Ignored directory due to rules: $source"); 0L
     else
       val ignoreFile = File(source, ".backupignore")
       if ignoreFile.isFile && ignoreFile.length() == 0 then
-        log.trace(s"Ignored directory due to ignore file: $source")
-        0L
+        log.trace(s"Ignored directory due to ignore file: $source"); 0L
       else
         log.trace(s"Processing directory: $source")
-        val updatedIgnores =
-          ignore.filter(_.headOption.exists(name.matches)).map(_.tail).filterNot(_.isEmpty)
-        val newIgnores =
-          if ignoreFile.isFile && ignoreFile.canRead then
-            resource(scala.io.Source.fromFile(ignoreFile))(
-              _.getLines().map(_.trim).filterNot(_.startsWith("#")).filter(_.nonEmpty).toSeq
-            ).pipe(deriveIgnoreRules).tap { i => log.debug(s"In directory '$source' read ignore rules: $i") }
-          else Seq()
+        val updatedIgnores = ignore.filter(_.headOption.exists(name.matches)).map(_.tail).filterNot(_.isEmpty)
+        val newIgnores = ignoreRulesFromFile(source, ignoreFile)
         val maybeDirId = fs.child(targetId, name) match
           case Some(dir: DirEntry) => Some(dir.id)
           case other =>
@@ -86,7 +77,15 @@ object BackupTool extends dedup.util.ClassLogging:
             val newReference = maybeRefId.flatMap(fs.child(_, name)).map(_.id)
             source.listFiles().map(child => process(fs, child, updatedIgnores ++ newIgnores, dirId, newReference)).sum
 
-  /** @return The ignore rules in their internal format. */
+  /** @return The ignore rules in the internal format. */
+  def ignoreRulesFromFile(source: File, ignoreFile: File): Seq[List[String]] =
+    if ignoreFile.isFile && ignoreFile.canRead then
+      resource(scala.io.Source.fromFile(ignoreFile))(
+        _.getLines().map(_.trim).filterNot(_.startsWith("#")).filter(_.nonEmpty).toSeq
+      ).pipe(deriveIgnoreRules).tap { i => log.debug(s"In directory '$source' read ignore rules: $i") }
+    else Seq()
+
+  /** @return The ignore rules in the internal format. */
   def deriveIgnoreRules(ruleStrings: Seq[String]): Seq[List[String]] =
     ruleStrings.flatMap { line =>
       val parts = line.split("/").map(createWildcardPattern)
