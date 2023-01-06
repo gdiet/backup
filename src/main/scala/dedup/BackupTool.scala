@@ -68,8 +68,7 @@ object BackupTool extends dedup.util.ClassLogging:
               _.getLines().map(_.trim).filterNot(_.startsWith("#")).filter(_.nonEmpty).toSeq
             )
             lines.flatMap { line =>
-              val parts = line.split("/").map(_.replaceAll("\\?", "\\\\E.\\\\Q").replaceAll("\\*", "\\\\E.*\\\\Q"))
-                .map("\\Q" + _ + "\\E")
+              val parts = line.split("/").map(createWildcardPattern)
               if parts.isEmpty then None else
                 if line.endsWith("/") then parts.update(parts.length - 1, parts(parts.length - 1) + "/")
                 Some(parts.toList)
@@ -88,6 +87,10 @@ object BackupTool extends dedup.util.ClassLogging:
             val newReference = maybeRefId.flatMap(fs.child(_, name)).map(_.id)
             source.listFiles().map(child => process(fs, child, updatedIgnores ++ newIgnores, dirId, newReference)).sum
 
+  /** @return A [[java.util.regex.Pattern]] string for wildcard `*` and `?` matching. */
+  def createWildcardPattern(base: String): String =
+    s"\\Q${base.replace("*", "\\E.*\\Q").replace("?", "\\E.\\Q")}\\E"
+  
   def processFile(fs: server.Backend, source: File, targetId: Long, maybeReference: Option[FileEntry]): Long =
     // Check for a reference match
     val matchingReference = maybeReference.filter { file =>
@@ -203,7 +206,7 @@ object BackupTool extends dedup.util.ClassLogging:
 
   def findReferenceId(fs: server.Backend, refPath: String): Long =
     val path -> id = fs.pathElements(refPath).foldLeft("/" -> root.id) { case (path -> parentId, pathElement) =>
-      val pattern = """\Q""" + pathElement.replace("*", """\E.*\Q""").replace("?", """\E.\Q""") + """\E"""
+      val pattern = createWildcardPattern(pathElement)
       fs.children(parentId).collect {
         case dir: DirEntry if dir.name.matches(pattern) => dir
       }.sortBy(_.name).lastOption match
