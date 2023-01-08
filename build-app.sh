@@ -36,7 +36,7 @@ rm -rf dedupfs-* ||  exit 1
 
 # Note that the JAR file contains the resource files.
 echo Build the app
-sbt ';clean;update;createApp' > /dev/null || exit 1
+sbt ';clean;update;createApp' > /dev/null 2>&1 || exit 1
 
 echo Unpack the Linux JDK
 tar xfz $jdkLinux || exit 1
