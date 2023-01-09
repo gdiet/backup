@@ -381,7 +381,7 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
 
-#### 5.2.0 (2023.??.??)
+#### 5.2.0 (2023.01.09)
 
 * Rewritten experimental `fsc backup` command, changed functionality.
 * Rewritten write cache handling for improved maintainability.
