@@ -8,6 +8,7 @@ object BackupTool extends dedup.util.ClassLogging:
 
   def backup(opts: Seq[(String, String)], params: List[String]): Unit =
     log.info  (s"Running the backup utility")
+    cache.MemCache.startupCheck()
 
     val (sources, target) = sourcesAndTarget(params)
     val repo              = opts.repo
@@ -18,8 +19,6 @@ object BackupTool extends dedup.util.ClassLogging:
     val dbDir             = main.prepareDbDir(repo, backup = backup, readOnly = false)
     val settings          = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
 
-    cache.MemCache.startupCheck()
-    if backup then db.maintenance.backup(settings.dbDir)
     resource(server.Backend(settings)) { fs =>
       log  .info(s"Repository:        $repo")
       sources.foreach(source =>

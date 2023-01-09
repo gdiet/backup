@@ -53,34 +53,38 @@ import java.io.File
   val readOnly       = opts.defaultFalse("readOnly")
   val copyWhenMoving = java.util.concurrent.atomic.AtomicBoolean(opts.defaultFalse("copyWhenMoving"))
   if opts.defaultFalse("gui") then ServerGui(copyWhenMoving, readOnly)
+  
   try
-    def isWindows = getNativePlatform.getOS == WINDOWS
+    val isWindows = getNativePlatform.getOS == WINDOWS
     val mount     = File(opts.unnamedOrGet("mount").getOrElse(if isWindows then "J:\\" else "/mnt/dedupfs" )).getCanonicalFile
-    val repo      = opts.repo
-    val backup    = !readOnly && opts.defaultTrue("dbBackup")
-    val temp      = main.prepareTempDir(readOnly, opts)
-    val dbDir     = main.prepareDbDir(repo, backup = backup, readOnly = readOnly)
-    val settings  = server.Settings(repo, dbDir, temp, readOnly, copyWhenMoving)
     if isWindows then
       if !mount.toString.matches(raw"[a-zA-Z]:\\.*") then main.failureExit(s"Mount point not on a local drive: $mount")
       if mount.exists then main.failureExit(s"Mount point already exists: $mount")
       if Option(mount.getParentFile).exists(!_.isDirectory) then main.failureExit(s"Mount parent is not a directory: $mount")
     else
-      if !mount.isDirectory  then main.failureExit(s"Mount point is not a directory: $mount")
+      if !mount.isDirectory then main.failureExit(s"Mount point is not a directory: $mount")
       if !mount.list.isEmpty then main.failureExit(s"Mount point is not empty: $mount")
     if !readOnly then cache.MemCache.startupCheck()
-    if backup then db.maintenance.backup(settings.dbDir)
+    
+    val repo     = opts.repo
+    val backup   = !readOnly && opts.defaultTrue("dbBackup")
+    val temp     = main.prepareTempDir(readOnly, opts)
+    val dbDir    = main.prepareDbDir(repo, backup = backup, readOnly = readOnly)
+    val settings = server.Settings(repo, dbDir, temp, readOnly, copyWhenMoving)
+    
     main.info (s"Dedup file system settings:")
     main.info (s"Repository:  $repo")
     main.info (s"Mount point: $mount")
     main.info (s"Readonly:    $readOnly")
     main.debug(s"Temp dir:    $temp")
+    
     if copyWhenMoving.get() then main.info(s"Copy instead of move initially enabled.")
     val fs             = server.Server(settings)
     val nativeFuseOpts = if getNativePlatform.getOS == WINDOWS then Array("-o", "volname=DedupFS") else Array[String]()
     val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
     main.info(s"Starting the dedup file system now...")
     try fs.mount(mount.toPath, true, false, fuseOpts) catch { case t: Throwable => fs.umount(); throw t }
+    
   catch
     case main.exit =>
       main.error("Finished abnormally.")
