@@ -323,6 +323,10 @@ then you can merge the shallow repository back to the original file system using
 
 Hopefully, you will never see an `EnsureFailed` exception the logs. However, if you are reproducibly blocked by an `EnsureFailed` exception, you can tell the dedup file system not to stop processing when the offending condition occurs. (Do this at you own risk!) For this, add `-Dsuppress.[marker]` to the java options in the script, where `[marker]` is the marker string prepended to the actual exception message, e.g. `-Dsuppress.cache.keep` or `-Dsuppress.utility.restore`.
 
+### Run The H2 Database Server In TCP Mode
+
+For demonstration, investigation or debugging it might be interesting to examine the DedupFS database while the DedupFS file system is mounted. For this, add `-DH2.TcpPort=<TCP port>` to the java options in the script. When running in this mode, at startup time the JDBC connection information to use is logged on WARN level.
+
 ## Story: How I Use DedupFS
 
 ### (Some Of) The Problems DedupFS Solves For Me
@@ -385,6 +389,7 @@ To upgrade a DedupFS installation to a newer version:
 
 * Rewritten experimental `fsc backup` command, changed functionality.
 * Rewritten write cache handling for improved maintainability.
+* Added option to run with a H2 TCP server.
 
 #### 5.1.0 (2022.11.25)
 
