@@ -13,8 +13,11 @@ object H2:
   def backupFile(dbDir: java.io.File): java.io.File = java.io.File(dbDir, s"$backupName.mv.db")
 
   // For SQL debugging, add to the DB URL "...;TRACE_LEVEL_SYSTEM_OUT=2"
-  // To run a H2 server and connect to it, e.g. for demonstration or debugging purposes,
+  // To connect to a local H2 TCP server e.g. for demonstration or debugging purposes,
   // add -DH2.TcpPort=<TCP port> to the Java arguments of the application.
+  // The TCP server can be run from command line or programmatically like this:
+  // java -cp "h2-2.1.214.jar" org.h2.tools.Server -tcp -tcpPort 9876
+  // org.h2.tools.Server.main("-tcp", "-tcpPort", "9876")
   private def jdbcUrl(dbDir: java.io.File, readOnly: Boolean) =
     sys.props.get(s"H2.TcpPort") match
       case None =>
@@ -29,7 +32,6 @@ object H2:
         dedup.main.warn(baseUrl)
         dedup.main.warn(s"User    : sa")
         dedup.main.warn(s"Password: [empty]")
-        org.h2.tools.Server.main("-tcp", "-tcpPort", tcpPort)
         if readOnly then
           s"$baseUrl;ACCESS_MODE_DATA=r"
         else

@@ -325,7 +325,11 @@ Hopefully, you will never see an `EnsureFailed` exception the logs. However, if 
 
 ### Run The H2 Database Server In TCP Mode
 
-For demonstration, investigation or debugging it might be interesting to examine the DedupFS database while the DedupFS file system is mounted. For this, add `-DH2.TcpPort=<TCP port>` to the java options in the script. When running in this mode, at startup time the JDBC connection information to use is logged on WARN level.
+For demonstration, investigation or debugging it might be interesting to examine the DedupFS database while the DedupFS file system is mounted. For this, run a H2 TCP server locally, e.g.
+
+    java -cp "h2-2.1.214.jar" org.h2.tools.Server -tcp -tcpPort 9876
+
+and add `-DH2.TcpPort=<TCP port>` to the java options in the script. When running in this mode, at startup time the JDBC connection information used is logged on WARN level.
 
 ## Story: How I Use DedupFS
 
