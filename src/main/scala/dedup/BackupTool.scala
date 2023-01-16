@@ -7,7 +7,7 @@ import scala.util.Using.resource
 object BackupTool extends dedup.util.ClassLogging:
 
   def backup(opts: Seq[(String, String)], params: List[String]): Unit =
-    log.info  (s"Running the backup utility")
+    log.info  (s"Running the backup utility.")
     cache.MemCache.startupCheck()
 
     val (sources, target) = sourcesAndTarget(params)
@@ -37,6 +37,7 @@ object BackupTool extends dedup.util.ClassLogging:
       val bytesStored = sources.map(source => process(fs, source, Seq(), targetId, maybeRefId)).sum
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
     }
+    log.info  (s"Finished the backup.")
 
   /** @param ignore The rules which files or directories to ignore. Each rule is a [[List]][String]. If a rule consists
     *               of a single element, this element is matched in the current context against directory names if the
