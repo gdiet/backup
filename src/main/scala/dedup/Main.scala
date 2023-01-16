@@ -119,17 +119,19 @@ object main extends util.ClassLogging:
 // (.+?)              any string of at least one character as group 1, reluctant match
 //      (?<!\\)=      negative lookbehind, don't accept an equals sign '=' if preceded by a backslash
 //              (.*)  any string of at least one character as group 2
-private val baseOptionMatcher = """(.+?)(?<!\\)=(.*)""".r // TODO remove the escaping backslash
+private val baseOptionMatcher = """(.+?)(?<!\\)=(.*)""".r
+
+private def unescapeEquals(string: String): String = string.replaceAll("""\\=""", "=")
 
 given scala.util.CommandLineParser.FromString[(String, String)] with
   def fromString(option: String): (String, String) = option match
-    case baseOptionMatcher(key, value) => key.toLowerCase -> value
-    case value => "" -> value
+    case baseOptionMatcher(key, value) => key.toLowerCase -> unescapeEquals(value)
+    case value => "" -> unescapeEquals(value)
 
 extension(options: Seq[String])
   private def baseAndAdditionalOptions = options.partitionMap {
-    case baseOptionMatcher(key, value) => Left(key.toLowerCase -> value)
-    case other => Right(other)
+    case baseOptionMatcher(key, value) => Left(key.toLowerCase -> unescapeEquals(value))
+    case other => Right(unescapeEquals(other))
   }
   /** Key/value options separated by the equals sign '=' unless the equals sign is escaped with a backslash. */
   private def baseOptions: Seq[(String, String)] =
