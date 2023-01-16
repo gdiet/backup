@@ -114,21 +114,27 @@ object main extends util.ClassLogging:
       if backup then db.maintenance.backup(dbDir)
     }
 
-
-private val baseOptionMatcher = """(\w+)=(\S+)""".r
+/** Base options are 'key=value' unless the equals sign is escaped with a backslash. */
+// (.+?)(?<!\\)=(.*)  explained:
+// (.+?)              any string of at least one character as group 1, reluctant match
+//      (?<!\\)=      negative lookbehind, don't accept an equals sign '=' if preceded by a backslash
+//              (.*)  any string of at least one character as group 2
+private val baseOptionMatcher = """(.+?)(?<!\\)=(.*)""".r
 
 given scala.util.CommandLineParser.FromString[(String, String)] with
   def fromString(option: String): (String, String) = option match
-    case baseOptionMatcher(key, value) => key.toLowerCase -> value.toLowerCase
-    case value => "" -> value.toLowerCase
+    case baseOptionMatcher(key, value) => key.toLowerCase -> value
+    case value => "" -> value
 
 extension(options: Seq[String])
   private def baseAndAdditionalOptions = options.partitionMap {
     case baseOptionMatcher(key, value) => Left(key.toLowerCase -> value.toLowerCase)
     case other => Right(other)
   }
+  /** Key/value options separated by the equals sign '=' unless the equals sign is escaped with a backslash. */
   private def baseOptions: Seq[(String, String)] =
     baseAndAdditionalOptions._1
+  /** The remaining options that are not base options. */
   private def additionalOptions: Seq[String] =
     baseAndAdditionalOptions._2
 
@@ -144,7 +150,7 @@ extension(options: Seq[(String, String)])
   private def getOrElse(name: String, otherwise: => String): String =
     opts.getOrElse(name.toLowerCase, otherwise)
   private def defaultFalse(name: String): Boolean =
-    opts.getOrElse(name.toLowerCase, "").equalsIgnoreCase("true")
+    opts.getOrElse(name.toLowerCase, "false").equalsIgnoreCase("true")
   private def defaultTrue(name: String): Boolean =
     opts.getOrElse(name.toLowerCase, "true").equalsIgnoreCase("true")
   private def repo: File =
