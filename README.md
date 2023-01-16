@@ -178,7 +178,7 @@ directory and its children are created if missing.
 If a `target` path element starts with the exclamation mark "!", the exclamation mark is removed. It is ensured that the corresponding
 target directory does not exist, then it and its children are created. The exclamation mark can be escaped with a backslash `\`.
 
-**The `reference=<reference>` and `forceReference=true` parameters:**
+**The `reference` and `forceReference` parameters:**
 
 If a directory containing many and / or large files has been stored in the DedupFS before and most files have not been changed in the meantime, creating another backup can be **significantly accelerated** by using the `reference` parameter. This parameter tells the backup utility to first compare the file size and time stamp of the file to store with the reference file stored previously. If they are found to be the same, the backup tool creates a copy of the reference file in the target location instead of copying the source contents there. Note that using a `reference`, if a file's contents have changed, but its size and time stamp have not changed, **the changed contents are not stored** in the backup.
 
@@ -188,7 +188,7 @@ Example:
 * Provide a reference for subsequent backups of `docs`:
 * `fsc backup /docs /backup/?[yyyy]/![yyyy.MM.dd_HH.mm]/ reference=/backup/????/????.??.??_*`
 
-When a `reference` is provided, the backup utility checks whether the source and the reference "look similar". This is to reduce the probability of accidentally specifying an incorrect `reference`. Use the `forceReference=true` parameter to skip this check.
+When a `reference` is provided, the backup utility looks for the reference directory in the DedupFS, resolving '`*`' and '`?`' wildcards with the alphabetically last match. Then the backup utility checks whether the source and the reference directory "look similar". This is to reduce the probability of accidentally specifying an incorrect `reference`. Use the `forceReference=true` parameter to skip this check.
 
 **Excluding files / directories from the backup:**
 
