@@ -144,6 +144,12 @@ Why mount read-only? This can be handy if for example you want to look up files 
 
 The `stats` utility allows you to read basic file system statistics. Like the other utilities, it accepts the optional `repo=<target directory>` parameter.
 
+### Specify Command Parameters
+
+The following rules apply for command parameters of the DedupFS utilities:
+* The keys of `<key>=<value>` parameters are evaluated case-insensitively.
+* A backslash '`\`' before an equals sign '`=`' is interpreted as escape character (possibly preventing interpretation of the parameter as `<key>=<value>` pair) and is removed before evaluating the actual parameter.
+
 ### Use The `fsc` Command Line Utilities
 
 A number of **command line** utilities for the dedup file system is available through the `fsc` command. Like the other utilities, `fsc` accepts the optional `repo=<target directory>` parameter. `fsc` is not meant to be run without additional parameters.
