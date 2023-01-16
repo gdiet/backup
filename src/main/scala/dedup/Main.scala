@@ -128,7 +128,7 @@ given scala.util.CommandLineParser.FromString[(String, String)] with
 
 extension(options: Seq[String])
   private def baseAndAdditionalOptions = options.partitionMap {
-    case baseOptionMatcher(key, value) => Left(key.toLowerCase -> value.toLowerCase)
+    case baseOptionMatcher(key, value) => Left(key.toLowerCase -> value)
     case other => Right(other)
   }
   /** Key/value options separated by the equals sign '=' unless the equals sign is escaped with a backslash. */
