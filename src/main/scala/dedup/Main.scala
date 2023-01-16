@@ -119,7 +119,7 @@ object main extends util.ClassLogging:
 // (.+?)              any string of at least one character as group 1, reluctant match
 //      (?<!\\)=      negative lookbehind, don't accept an equals sign '=' if preceded by a backslash
 //              (.*)  any string of at least one character as group 2
-private val baseOptionMatcher = """(.+?)(?<!\\)=(.*)""".r
+private val baseOptionMatcher = """(.+?)(?<!\\)=(.*)""".r // TODO remove the escaping backslash
 
 given scala.util.CommandLineParser.FromString[(String, String)] with
   def fromString(option: String): (String, String) = option match
