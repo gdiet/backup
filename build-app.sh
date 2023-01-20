@@ -4,7 +4,7 @@
 # binutils package is needed for jlink
 
 # Read version from git.
-version=$(git log -1 | sed -n 's/commit //p' | sed 1q | cut -b 1-8) || exit 1
+version=$(git log -1 | sed -n 's/commit //p' | sed 1q | cut -b 1-8) > /dev/null 2>&1 || exit 1
 if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi || exit 1
 versionString=$(date +%Y.%m.%d)-$version$clean || exit 1
 
@@ -69,22 +69,28 @@ mv target/jre-linux target/app-linux/jrex
 # Create HTML documentation.
 # Thanks to https://github.com/jfroche/docker-markdown and to the GitHub api
 jq --slurp --raw-input '{"text": "\(.)", "mode": "markdown"}' < README.md \
-| curl -s --data @- https://api.github.com/markdown > target/app-linux/readme.html  || exit 1
+| curl -s --data @- https://api.github.com/markdown > target/app-linux/README.html  || exit 1
+jq --slurp --raw-input '{"text": "\(.)", "mode": "markdown"}' < QUICKSTART.md \
+| curl -s --data @- https://api.github.com/markdown > target/app-linux/QUICKSTART.html  || exit 1
+jq --slurp --raw-input '{"text": "\(.)", "mode": "markdown"}' < SCHNELLSTART.md \
+| curl -s --data @- https://api.github.com/markdown > target/app-linux/SCHNELLSTART.html  || exit 1
 
 # Final touches for Windows.
 find target/app-windows -type f ! -name "*.*" -delete
 cp LICENSE target/app-windows/ || exit 1
 touch "target/app-windows/$versionString.version" || exit 1
-cp target/app-linux/readme.html target/app-windows/readme.html
+cp target/app-linux/*.html target/app-windows
+cp target/app-linux/*.html .
 mv target/jre-windows target/app-windows/jre
 
 echo Package apps
 mv target/app-linux "dedupfs-$release-linux"
-tar cfz "dedupfs-$release-linux.tar.gz" "dedupfs-$release-linux"
+tar cfz "dedupfs-$release-linux.tar.gz" "dedupfs-$release-linux" "README.html" "QUICKSTART.html" "SCHNELLSTART.html"
 rm -rf "dedupfs-$release-linux"
 mv target/app-windows "dedupfs-$release-windows"
-zip -rq "dedupfs-$release-windows.zip" "dedupfs-$release-windows"
+zip -rq "dedupfs-$release-windows.zip" "dedupfs-$release-windows" "README.html" "QUICKSTART.html" "SCHNELLSTART.html"
 rm -rf "dedupfs-$release-windows"
+rm *.html
 
 echo
 echo "Created dedupfs app as dedupfs-$release-linux.tar.gz and dedupfs-$release-windows.zip"
