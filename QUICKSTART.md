@@ -1,24 +1,24 @@
-# Using The DedupFS File System
+# Using The Dedup Filesystem
 
-This is a quickstart description. Find the full description here: [README.html](README.html).
+This is a quick start guide. The full description is here: [README.html](README.html).
 
-If you have found this text in an archive file like `dedupfs-[version].zip` and you want to get started quickly then continue reading at [Start A New DedupFS File System](#start-a-new-dedupfs-file-system). If you are reading this text because you have found it in a directory that looks more or less like this
+If you have found this text in an archive file like `dedupfs-[version].zip` and you want to get started quickly, read [Start A New Dedup Filesystem](#start-a-new-dedup-filesystem). If you are reading this text because you have found it in a directory that looks more or less like this
 
     [directory]  data
     [directory]  dedupfs-[version]
     [directory]  fsdb
     [  file   ]  QUICKSTART.html
 
-and you want to use what's in here, then keep reading. 
+and you want to use what's in it, then read on. 
 
-## Use An Existing DedupFS File System
+## Use An Existing Dedup Filesystem
 
-You have probably found a directory containing a file system, and that file system might contain interesting things. To take a look at these things, proceed as follows:
+You have probably found a directory containing a filesystem, and that filesystem may contain interesting things. To take a look at them, proceed as follows:
 
-* Open the directory `dedupfs-[version]`.
-* Start the script `readonly.bat` (on Linux: `readonly`).
-* Things might go wrong now. If they do, and you are on Windows, possibly `WinFSP` is not installed. Good look reading the [README.html](README.html).
-* If all goes well, you see output like this:
+* Open the `dedupfs-[version]` directory.
+* Run the `readonly.bat` script (`readonly` on Linux).
+* Now things may go wrong. If they do, and you are on Windows, you may not have `WinFSP` installed. Good luck reading the [README.html](README.html).
+* If all goes well, you should see output like this:
 
 
     [...] - Dedup file system settings:
@@ -28,17 +28,47 @@ You have probably found a directory containing a file system, and that file syst
     [...] - Starting the dedup file system now...
     The service java has been started.
 
-The most interesting thing is the "`Mount point: J:\`" message. In this example (it's from a Windows system) the message tells you that you can open the `J:\` drive to find those interesting things like backups or other files. Enjoy!
+The most interesting thing is the message "`Mount point: J:\`". In this example (it is from a Windows system) the message tells you that you can open the `J:\` drive to find those interesting things like backups or other files. Have fun!
 
-When you have finished browsing the files in the `J:\` drive, switch to the window with the output and press `CTRL-C` to stop the file system. You will see output like this:
+When you are finished browsing the files in the `J:\` drive, switch to the window with the output above and press `CTRL-C` to stop the file system. You will see output like this:
 
     The service java has been stopped.
     [...] - Stopping dedup file system...
     [...] - Dedup file system is stopped.
     [...] - Shutdown complete.
 
-That's all for a quick start. Find the full description here: [README.html](README.html).
+That's all for a quick start. The full description is here: [README.html](README.html).
 
-## Start A New DedupFS File System
+## Start A New Dedup Filesystem
 
-TODO
+If you have found this text in an archive file like `dedupfs-[version].zip` and you want to get started quickly, do the following:
+
+* If you are running Windows, download and install [WinFSP](https://github.com/billziss-gh/winfsp/releases).
+* Create a new directory called e.g. `dedup_storage` somewhere, e.g. on your backup USB hard drive, and extract the archive into it.
+* Open the `dedup_storage/dedupfs-<version>` directory.
+* Run the `repo-init.bat` script (`repo-init` on Linux). This will initialize the Dedup filesystem in `dedup_storage`.
+* Run the `dedupfs.bat` script (`dedupfs` on Linux). This will start the dedup filesystem.
+* If all goes well, you should see output like this:
+
+
+    [...] - Dedup file system settings:
+    [...] - Repository:  [some directory]
+    [...] - Mount point: J:\
+    [...] - Readonly:    false
+    [...] - Starting the dedup file system now...
+    The service java has been started.
+
+The most interesting thing is the "`Mount point: J:\`" message. In this example (it is from a Windows system) the message tells you that you can open the `J:\` drive and copy some files you want to back up there. Enjoy!
+
+When you have finished copying files to the `J:\` drive, switch to the window with the output and press `CTRL-C` to stop the file system. You will see output like this:
+
+    The service java has been stopped.
+    [...] - Stopping dedup file system...
+    [...] - Dedup file system is stopped.
+    [...] - Shutdown complete.
+
+Whenever you want to add more backups or access your existing backups, run the `dedupfs.bat` script (`dedupfs` on Linux) again.
+
+The nice thing about using DedupFS for backups is that stored files are deduplicated, meaning: If you store the same files more than once, the storage space (almost) does not grow! For example, today you can store a backup of all your documents in DedupFS in the `/documents/2022.12.30` directory. If next week you store another backup of all your documents in DedupFS, this time in the `/documents/2023.01.06` directory, it will take up almost no additional space on the drive where your `dedup_storage` folder is located. So, in general, you can think of DedupFS as a backup storage drive where you can store considerably more files than on a normal drive.
+
+That's all for a quick start. The full description is here: [README.html](README.html).

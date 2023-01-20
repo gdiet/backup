@@ -1,6 +1,8 @@
 # DedupFS: A Lightweight Deduplicating File System
 
-DedupFS is a file system for storing many backups of large collections of files - for example your photo collection. The stored files are deduplicated, meaning: If you store the same files multiple times, the storage (almost) doesn't grow! So you can regard DedupFS as a backup storage drive where you can store considerably more files than on an ordinary drive. And if you like to script your backups, DedupFS comes with nice utilities for that, too.
+For a quick start, take a look at [QUICKSTART.html](QUICKSTART.html) or the German [SCHNELLSTART.html](SCHNELLSTART.html).
+
+DedupFS is a file system for storing many backups of large collections of files - for example your photo collection. The stored files are deduplicated, meaning: If you store the same files multiple times, the storage (almost) doesn't grow! For example, today you can store a backup of all your documents in DedupFS in the `/documents/2022.12.30` directory. If next week you store a backup of all your documents in DedupFS again, this time in the `/documents/2023.01.06` directory, this needs almost no additional space on the drive where your DedupFS data folder is located. So, in general, you can regard DedupFS as a backup storage drive where you can store considerably more files than on an ordinary drive. And if you like to script your backups, DedupFS comes with nice utilities for that, too.
 
 Technically speaking, DedupFS is a file system with transparent file content deduplication: If you store multiple files containing exactly the same sequence of bytes, DedupFS stores the contents only once and references them multiple times. Of course, you can still update the contents of any file without impact on the contents of other files.
 
@@ -13,7 +15,7 @@ Technically speaking, DedupFS is a file system with transparent file content ded
 * [System Requirements](#system-requirements)
 * [Basic Steps To Use DedupFS](#basic-steps-to-use-dedupfs)
 * [How To ...](#how-to-)
-* [Story: How I Use DedupFS](#story-how-i-use-dedupfs)
+* [How I Do It](#how-i-do-it)
 * [Upgrading And Version History](#upgrading-and-version-history)
 * [Storage Format](#storage-format)
 * [License](#license)
