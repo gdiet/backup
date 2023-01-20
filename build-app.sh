@@ -32,7 +32,7 @@ if [ ! -f "$jdkLinux" ]; then
 fi
 
 # Delete previous version of app if any.
-rm -rf dedupfs-* ||  exit 1
+rm dedupfs-* > /dev/null 2>&1
 
 # Note that the JAR file contains the resource files.
 echo Build the app
@@ -79,18 +79,19 @@ jq --slurp --raw-input '{"text": "\(.)", "mode": "markdown"}' < SCHNELLSTART.md 
 find target/app-windows -type f ! -name "*.*" -delete
 cp LICENSE target/app-windows/ || exit 1
 touch "target/app-windows/$versionString.version" || exit 1
-cp target/app-linux/*.html target/app-windows
-cp target/app-linux/*.html .
+cp target/app-linux/*.html target/app-windows/
 mv target/jre-windows target/app-windows/jre
 
 echo Package apps
-mv target/app-linux "dedupfs-$release-linux"
-tar cfz "dedupfs-$release-linux.tar.gz" "dedupfs-$release-linux" "README.html" "QUICKSTART.html" "SCHNELLSTART.html"
-rm -rf "dedupfs-$release-linux"
-mv target/app-windows "dedupfs-$release-windows"
-zip -rq "dedupfs-$release-windows.zip" "dedupfs-$release-windows" "README.html" "QUICKSTART.html" "SCHNELLSTART.html"
-rm -rf "dedupfs-$release-windows"
-rm *.html
+rm -r target/packaging > /dev/null 2>&1
+mkdir target/packaging
+cp target/app-linux/*.html target/packaging/
+mv target/app-linux "target/packaging/dedupfs-$release-linux"
+mv target/app-windows "target/packaging/dedupfs-$release-windows"
+cd target/packaging || exit 1
+tar cfz "../../dedupfs-$release-linux.tar.gz" "dedupfs-$release-linux" "README.html" "QUICKSTART.html" "SCHNELLSTART.html"
+zip -rq "../../dedupfs-$release-windows.zip" "dedupfs-$release-windows" "README.html" "QUICKSTART.html" "SCHNELLSTART.html"
+cd ../.. || exit 1
 
 echo
 echo "Created dedupfs app as dedupfs-$release-linux.tar.gz and dedupfs-$release-windows.zip"
