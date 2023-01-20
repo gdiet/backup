@@ -19,13 +19,13 @@ if [ "$1" ]; then
 fi
 
 # Fetch JDKs if necessary. Find newer releases here: https://adoptium.net/releases.html
-jdkFolder=jdk-17.0.5%2B8
-jdk=OpenJDK17U-jdk_x64_windows_hotspot_17.0.5_8.zip
+jdkFolder=jdk-17.0.6%2B10
+jdk=OpenJDK17U-jdk_x64_windows_hotspot_17.0.6_10.zip
 if [ ! -f "$jdk" ]; then
   echo Load the Windows JDK
   wget -q --show-progress https://github.com/adoptium/temurin17-binaries/releases/download/$jdkFolder/$jdk || exit 1
 fi
-jdkLinux=OpenJDK17U-jdk_x64_linux_hotspot_17.0.5_8.tar.gz
+jdkLinux=OpenJDK17U-jdk_x64_linux_hotspot_17.0.6_10.tar.gz
 if [ ! -f "$jdkLinux" ]; then
   echo Load the Linux JDK
   wget -q --show-progress https://github.com/adoptium/temurin17-binaries/releases/download/$jdkFolder/$jdkLinux || exit 1

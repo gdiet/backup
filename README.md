@@ -399,6 +399,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 5.2.0 (2023.01.20)
 
+* Updated Java to 17.0.6_10, some libraries, and SBT.
 * Added QUICKSTART.html and German SCHNELLSTART.html documentation.
 * Rewritten experimental `fsc backup` command, changed functionality.
 * Rewritten write cache handling for improved maintainability.
