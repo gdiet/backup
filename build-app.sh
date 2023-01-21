@@ -4,7 +4,7 @@
 # binutils package is needed for jlink
 
 # Read version from git.
-version=$(git log -1 | sed -n 's/commit //p' | sed 1q | cut -b 1-8) > /dev/null 2>&1 || exit 1
+version=$(git log -1 2>/dev/null | sed -n 's/commit //p' | sed 1q | cut -b 1-8 ) || exit 1
 if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi || exit 1
 versionString=$(date +%Y.%m.%d)-$version$clean || exit 1
 
