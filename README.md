@@ -85,6 +85,7 @@ DedupFS needs *libfuse* to create a filesystem in userspace. *libfuse* is pre-in
 
 The following are the basic steps needed to use DedupFS. For details, see the [How To ...](#how-to-) section of this document.
 
+* Make sure the [system requirements](#system-requirements) are fulfilled.
 * Initialize the DedupFS data repository, for example on an external drive.
 * Mount the file system, then use it to store backups of your files.
 * Stop the file system.
@@ -92,12 +93,6 @@ The following are the basic steps needed to use DedupFS. For details, see the [H
 * If required, reclaim space by trashing files that have been marked deleted in the dedup file system.
 
 ## How To ...
-
-### Install DedupFS
-
-Windows: Make sure WinFSP is installed, see [System Requirements](#system-requirements).
-
-Windows / Linux: Unpack the DedupFS archive. I recommend unpacking it to the repository directory where the dedup file system data will be stored. For details, see the next paragraph.
 
 ### Initialize The File System
 
@@ -380,9 +375,9 @@ For maximum safety,
 
 To upgrade a DedupFS installation to a newer version:
 
-* Unpack the new DedupFS archive to the installation directory, next to the existing installation.
+* Unpack the new DedupFS archive to the DedupFS repository directory, next to the existing installation, possibly overwriting existing `*.html` documentation files in the installation directory.
 * Follow any release specific upgrade instructions (see below).
-* Check whether everything works as expected. If yes, you can delete the old installation directory.
+* Check whether everything works as expected. If yes, you can delete the old `dedupfs-<version>` installation directory.
 
 ### Version History And Release Specific Update Instructions
 
