@@ -11,7 +11,7 @@
 * 31.05.2006 Started complete re-write
 * 17.07.2007 mbox Mailbox split tool, later dropped, see https://en.wikipedia.org/wiki/Mbox
 * 04.12.2007 First commit for an SQL database (HSQLDB https://hsqldb.org/, later replaced by H2 https://www.h2database.com/)
-* 11.02.2008 Last real commit in the Sourceforge CVS repository
+* 11.02.2008 Last of a few hundred commits in the Sourceforge CVS repository
 * 15.02.2002 Sourceforge jabak SVN repository
 * 2008-09-15 "started serious sql database implementation"
 * 2008-11-03 "initial checkin of first partial jabak grovvy implementation" https://groovy-lang.org/
