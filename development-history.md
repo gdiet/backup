@@ -21,7 +21,7 @@
 * 2010-05-10 "preparing clean re-write"
 * 2011-05-07 "initial commit of first scala code (file system interface)"
 * 24.05.2011 last of 670 commits to the Sourceforge jabak SVN repository
-* 11.06.2011 First commit GitHub backup repository
+* 11.06.2011 First commit GitHub backup repository https://github.com/gdiet/backup
   - Mercurial VS
   - Scala code
   - MIT License
@@ -40,3 +40,4 @@
 * 2021-12-30 Release 4.0.0, updated to Java 17
 * 2022-06-09 Release 5.0.0, H2 database updated from 1.4.200 to 2.1.212
 * 2022-11-26 Release 5.1.0, separate Windows and Linux packages
+* 2023-01-22 In total 2626 commits in the git project https://github.com/gdiet/backup
