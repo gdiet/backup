@@ -1,6 +1,6 @@
 @echo off
 title Statistics - DedupFS
-call %~dp0helpers\set-java.bat
+call "%~dp0helpers\set-java.bat"
 if errorlevel 1 exit /B %errorlevel%
 
 rem ### Parameters ###

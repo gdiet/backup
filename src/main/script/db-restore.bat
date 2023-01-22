@@ -1,6 +1,6 @@
 @echo off
 title DB Restore - DedupFS
-call %~dp0helpers\set-java.bat
+call "%~dp0helpers\set-java.bat"
 if errorlevel 1 exit /B %errorlevel%
 
 echo.
