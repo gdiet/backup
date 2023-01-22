@@ -1,6 +1,6 @@
 @echo off
 title DedupFS
-call %~dp0helpers\set-javaw.bat
+call "%~dp0helpers\set-javaw.bat"
 if errorlevel 1 exit /B %errorlevel%
 
 rem ### Parameters ###
