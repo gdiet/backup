@@ -1,34 +1,78 @@
 #!/bin/bash
 
-# sudo apt --assume-yes install curl jq zip binutils
-# binutils package is needed for jlink
+# When run on ubuntu-22.04-lts-jammy-wsl-amd64-wsl, the following additional packages are needed:
+# sudo apt --assume-yes install jq zip
+# Note: jlink needs the binutils package, but that is contained in the above ubuntu distribution.
 
 # Read version from git.
 version=$(git log -1 2>/dev/null | sed -n 's/commit //p' | sed 1q | cut -b 1-8 ) || exit 1
 if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi || exit 1
-versionString=$(date +%Y.%m.%d)-$version$clean || exit 1
+versionString="$(date +%Y.%m.%d)-$version$clean" || exit 1
 
-# Possibly create release version.
-if [ "$1" ]; then release=$1; else release=$versionString; fi
-echo "building app $versionString as release $release"
+# If $1 is set, use it as name of the release version.
 if [ "$1" ]; then
+  release="$1"
+  echo "building app $versionString as release $release"
   echo
-  read -r -s -p "RELEASE BUILD - Press enter to confirm..." _
+  read -r -s -p "RELEASE BUILD version $release - Press enter to confirm..." _
   echo
   echo
+  # For release builds clean everything.
+  rm -r .build > /dev/null 2>&1
+else
+  release="$versionString"
+  echo "building app $versionString"
 fi
 
-# Fetch JDKs if necessary. Find newer releases here: https://adoptium.net/releases.html
-jdkFolder=jdk-17.0.6%2B10
-jdk=OpenJDK17U-jdk_x64_windows_hotspot_17.0.6_10.zip
-if [ ! -f "$jdk" ]; then
-  echo Load the Windows JDK
-  wget -q --show-progress https://github.com/adoptium/temurin17-binaries/releases/download/$jdkFolder/$jdk || exit 1
+# Create download and build directory if missing.
+mkdir -p .build
+mkdir -p .download
+
+# Fetch SBT if missing. Find newer releases here: https://www.scala-sbt.org/download.html
+sbtVersion="1.8.2"
+sbtArchive="sbt-$sbtVersion.tgz"
+if [ ! -f ".download/$sbtArchive" ]; then
+  echo "Load SBT"
+  wget -P .download -q --show-progress "https://github.com/sbt/sbt/releases/download/v$sbtVersion/$sbtArchive" || exit 1
 fi
-jdkLinux=OpenJDK17U-jdk_x64_linux_hotspot_17.0.6_10.tar.gz
-if [ ! -f "$jdkLinux" ]; then
+
+# Unpack SBT if missing.
+sbtDir=".build/sbt-$sbtVersion"
+if [ ! -d "$sbtDir" ]; then
+  echo Unpack SBT
+  mkdir -p "$sbtDir"
+  tar xfz ".download/$sbtArchive" -C "$sbtDir" --strip-components=1 || exit 1
+fi
+
+# Fetch JDKs if missing. Find newer releases here: https://adoptium.net/releases.html
+# Set version both in jdkBase and in jdkVersion.
+jdkVersion="17.0.6_10"
+jdkBase="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.6%2B10"
+jdkWindows="OpenJDK17U-jdk_x64_windows_hotspot_$jdkVersion.zip"
+jdkLinux="OpenJDK17U-jdk_x64_linux_hotspot_$jdkVersion.tar.gz"
+if [ ! -f ".download/$jdkWindows" ]; then
+  echo Load the Windows JDK
+  wget -P .download -q --show-progress "$jdkBase/$jdkWindows" || exit 1
+fi
+if [ ! -f ".download/$jdkLinux" ]; then
   echo Load the Linux JDK
-  wget -q --show-progress https://github.com/adoptium/temurin17-binaries/releases/download/$jdkFolder/$jdkLinux || exit 1
+  wget -P .download -q --show-progress "$jdkBase/$jdkLinux" || exit 1
+fi
+
+# Unpack JDKs if missing.
+jdkDir=".build/jdk-$jdkVersion"
+if [ ! -d "$jdkDir" ]; then
+  echo Unpack the Linux JDK
+  mkdir -p "$jdkDir"
+  tar xfz ".download/$jdkLinux" -C "$jdkDir" --strip-components=1 || exit 1
+fi
+jdkDirWin="$jdkDir-windows"
+if [ ! -d "$jdkDirWin" ]; then
+  echo Unpack the Windows JDK
+  mkdir -p "$jdkDirWin"
+  unzip -q ".download/$jdkWindows" -d "$jdkDirWin-temp" || exit 1
+  mv "$jdkDirWin-temp"/*/* "$jdkDirWin"
+  rm -r "$jdkDirWin-temp"
 fi
 
 # Delete previous version of app if any.
@@ -36,22 +80,16 @@ rm dedupfs-* > /dev/null 2>&1
 
 # Note that the JAR file contains the resource files.
 echo Build the app
-sbt ';clean;update;createApp' > /dev/null 2>&1 || exit 1
+if [ "$1" ]; then clean=";clean"; else clean=""; fi
+"$jdkDir/bin/java" -cp "$sbtDir/bin/sbt-launch.jar" -Xmx512M xsbt.boot.Boot "$clean;update;createApp" > /dev/null 2>&1 || exit 1
 
-echo Unpack the Linux JDK
-tar xfz $jdkLinux || exit 1
-mv jdk-17.* target/jdk-linux || exit 1
-echo Unpack the Windows JDK
-unzip -q $jdk || exit 1
-mv jdk-17.* target/jdk-windows || exit 1
-
-# Create JREs
+# Create JREs.
 echo Collect Java modules information
-modules=$(target/jdk-linux/bin/jdeps --print-module-deps --ignore-missing-deps --recursive --multi-release 17 --class-path="target/app/lib/*" --module-path="target/app/lib/*" target/app/lib/dedupfs_3-current.jar)
+modules=$("$jdkDir/bin/jdeps" --print-module-deps --ignore-missing-deps --recursive --multi-release 17 --class-path="target/app/lib/*" --module-path="target/app/lib/*" target/app/lib/dedupfs_3-current.jar)
 echo Build the minified Linux JRE
-target/jdk-linux/bin/jlink --verbose --add-modules $modules --strip-debug --no-man-pages --no-header-files --compress=2 --output target/jre-linux > /dev/null
+"$jdkDir/bin/jlink" --verbose --add-modules "$modules" --strip-debug --no-man-pages --no-header-files --compress=2 --output target/jre-linux > /dev/null
 echo Build the minified Windows JRE
-target/jdk-linux/bin/jlink --verbose --module-path target/jdk-windows/jmods --add-modules $modules --strip-debug --no-man-pages --no-header-files --compress=2 --output target/jre-windows > /dev/null
+"$jdkDir/bin/jlink" --verbose --module-path "$jdkDirWin/jmods" --add-modules "$modules" --strip-debug --no-man-pages --no-header-files --compress=2 --output target/jre-windows > /dev/null
 
 echo Prepare app folders
 
