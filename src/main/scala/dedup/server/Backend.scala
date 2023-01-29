@@ -84,9 +84,12 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
     * race conditions causing deleted directories to be parent of non-deleted tree entries.
     *
+    * Though technically only the tree entry ID is needed, in many places where this method is used it's nicer
+    * if the method accepts the TreeEntry.
+    *
     * @return `false` if the tree entry does not exist or has any children, `true` if the entry exists and has no
     *         children, regardless of whether or not it was already marked deleted. */
-  def deleteChildless(entry: TreeEntry): Boolean = db.deleteChildless(entry.id) // TODO review why not to use ID as param
+  def deleteChildless(entry: TreeEntry): Boolean = db.deleteChildless(entry.id)
 
   /** @return The size of the file, 0 if the file entry does not exist. */
   def size(file: FileEntry): Long = handles.cachedSize(file.id).getOrElse(db.logicalSize(file.dataId))
