@@ -146,7 +146,7 @@ object BackupTool extends dedup.util.ClassLogging:
         writeTargetFile(fs, source, id)
 
   private def updateTargetFile(fs: server.Backend, source: File, target: FileEntry): Long =
-    fs.setTime(target.id, source.lastModified())
+    fs.setTime(target.id, Time(source.lastModified))
     fs.open(target)
     writeTargetFile(fs, source, target.id)
 

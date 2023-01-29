@@ -64,8 +64,9 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     * @throws Exception If the parent does not exist or the name is empty. */
   def mkDir(parentId: Long, name: String): Option[Long] = db.mkDir(parentId, name)
 
-  // TODO why not use Time alias?
-  def setTime(id: Long, newTime: Long): Unit = db.setTime(id, newTime)
+  /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs, but may be
+    * called for deleted entries. */
+  def setTime(id: Long, newTime: Time): Unit = db.setTime(id, newTime)
 
   /** When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
     * race conditions causing deleted directories to be parent of non-deleted tree entries. */

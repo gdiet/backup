@@ -179,8 +179,9 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = qDataEntry(_.set(hash, size).query(maybe(r => DataId(r.getLong(1)))))
 
   private lazy val uTime = prepare("UPDATE TreeEntries SET time = ? WHERE id = ?")
-  /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs. */
-  def setTime(id: Long, newTime: Long): Unit =
+  /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs, but may be
+    * called for deleted entries. */
+  def setTime(id: Long, newTime: Time): Unit =
     val count = uTime(_.set(newTime, id).executeUpdate())
     ensure("db.set.time", count == 1, s"For id $id, setTime update count is $count instead of 1.")
 

@@ -156,7 +156,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
         if sec < 0 || nan < 0 || nan > 1000000000 then EINVAL else
           backend.entry(path) match
             case None        => ENOENT
-            case Some(entry) => backend.setTime(entry.id, sec*1000 + nan/1000000); OK
+            case Some(entry) => backend.setTime(entry.id, Time(sec*1000 + nan/1000000)); OK
     }
 
   override def chmod(path: String, mode: Long): Int =
