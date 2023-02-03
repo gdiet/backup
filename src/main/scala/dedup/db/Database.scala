@@ -305,12 +305,24 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   def countDeletedDirs() : Long = withStatement(_.query("SELECT COUNT(id) FROM TreeEntries WHERE deleted <> 0 AND dataId IS NULL")(oneLong))
 
   // reclaimSpace specific queries
-  /** @return The number of entries that have been un-rooted. */
+  /** @return The number of tree entries that have been un-rooted. */
   def unrootDeletedEntries(deleteBeforeMillis: Long): Long =
     withStatement(_.executeLargeUpdate(s"UPDATE TreeEntries SET parentId = id WHERE deleted != 0 AND deleted < $deleteBeforeMillis"))
 
-  /** @return The number of entries that have been deleted. */
-  def deleteUnrootedTreeEntries(): Long = // TODO what happens if we have a non-deleted child of a deleted tree entry?
+  /** @return The IDs of tree entries having un-rooted deleted parents. */
+  def childrenOfDeletedUnrootedElements(): Seq[Long] =
+    withStatement(_.query(
+      "SELECT Child.id FROM TreeEntries Parent LEFT JOIN TreeEntries Child ON Parent.id = Child.parentId " +
+      "WHERE Parent.id != Child.id AND Parent.id = Parent.ParentId AND Parent.deleted != 0"
+    )(seq(_.getLong(1))))
+
+  /** The ID of the tree entry to unroot should exist. */
+  def unrootAndMarkDeleted(id: Long): Unit =
+    val count = withStatement(_.executeUpdate(s"UPDATE TreeEntries SET parentId = $id, deleted = 1 WHERE id = $id"))
+    ensure("db.unrootEntry", count == 1, s"unrootEntry update count is $count and not 1 for id $id")
+
+  /** @return The number of tree entries that have been deleted. */
+  def deleteUnrootedEntries(): Long =
     withStatement(_.executeLargeUpdate(s"DELETE FROM TreeEntries WHERE id = parentId AND id != ${root.id}"))
 
   def dataIdsInTree(): Set[Long] =

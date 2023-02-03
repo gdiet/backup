@@ -132,9 +132,16 @@ object maintenance extends util.ClassLogging:
 
     // First un-root, then delete. Deleting directly can violate the foreign key constraint.
     log.info(s"Part 1: Mark the tree entries to delete...")
-    log.info(s"Number of entries marked: ${db.unrootDeletedEntries(now.asLong - keepDeletedDays*24*60*60*1000)}")
+    while
+      log.info(s"Number of entries marked: ${db.unrootDeletedEntries(now.asLong - keepDeletedDays*24*60*60*1000)}")
+      // The following takes care of a special case that is supposed never to happen.
+      val fixedEntries = db.childrenOfDeletedUnrootedElements().tapEach(db.unrootAndMarkDeleted).size
+      if fixedEntries > 0 then log.info(s"Fixed $fixedEntries incompletely deleted entries.")
+      fixedEntries > 0
+    do ()
+
     log.info(s"Part 2: Deleting marked tree entries...")
-    log.info(s"Number of tree entries deleted: ${db.deleteUnrootedTreeEntries()}")
+    log.info(s"Number of tree entries deleted: ${db.deleteUnrootedEntries()}")
 
     // Note: Most operations implemented in Scala below could also be run in SQL, but that is much slower...
 
