@@ -9,6 +9,8 @@ If you have found this text in an archive file like `dedupfs-[version].zip` and 
 [directory]  dedupfs-[version]
 [directory]  fsdb
 [  file   ]  QUICKSTART.html
+[  file   ]  README.html
+[  file   ]  SCHNELLSTART.html
 ```
 
 and you want to use what's in it, then read on. 
@@ -49,11 +51,19 @@ That's all for a quick start. The full description is here: [README.html](README
 If you have found this text in an archive file like `dedupfs-[version].zip` and you want to get started quickly, do the following:
 
 * If you are running Windows, download and install [WinFSP](https://github.com/billziss-gh/winfsp/releases).
-* Create a new directory called e.g. `dedup_storage` somewhere, e.g. on your backup USB hard drive, and extract the archive into it.
-* Open the `dedup_storage/dedupfs-<version>` directory.
-* Run the `repo-init.bat` script (`repo-init` on Linux). This will initialize the Dedup filesystem in `dedup_storage`.
+* Create a new repository directory called e.g. `dedup_storage` somewhere, for example on your backup USB hard drive, and extract the archive into it. The repository directory now should contain this:
+
+```
+[directory]  dedupfs-[version]
+[  file   ]  QUICKSTART.html
+[  file   ]  README.html
+[  file   ]  SCHNELLSTART.html
+```
+
+* Open the `dedupfs-[version]` directory.
+* Run the `repo-init.bat` script (`repo-init` on Linux). This will initialize the Dedup filesystem in the repository directory.
 * Run the `dedupfs.bat` script (`dedupfs` on Linux). This will start the dedup filesystem.
-* If all goes well, you should see output like this:
+* If all goes well, you will see output like this:
 
 ```
 [...] - Dedup file system settings:

@@ -99,7 +99,16 @@ The following are the basic steps needed to use DedupFS. For details, see the [H
 The dedup file system stores all its data in a repository directory, inside the subdirectories `fsdb` and `data`. Before the dedup file system can be used, the repository needs to be initialized:
 
 * Create a repository directory for the dedup file system data, for example on an external backup drive.
-* Unpack the DedupFS archive to that repository directory. That way, the DedupFS software is always available together with the DedupFS data. After unpacking, the DedupFS utility scripts like `repo-init` and `dedupfs` should be located in the `dedupfs-[version]` directory in the repository directory.
+* Unpack the DedupFS archive to that repository directory. The repository directory now should contain this:
+
+```
+[directory]  dedupfs-[version]
+[  file   ]  QUICKSTART.html
+[  file   ]  README.html
+[  file   ]  SCHNELLSTART.html
+```
+
+* Now, the DedupFS utility scripts like `repo-init` and `dedupfs` should be located in the `dedupfs-[version]` directory in the repository directory.
 * Start the DedupFS `repo-init` utility in the `dedupfs-[version]` directory, for example by double-clicking.
 * Check the log output printed to the console where `repo-init` is executed.
 * If successful, this command creates in the repository directory the database directory `fsdb` and in the `dedupfs-[version]` directory the log files directory `logs`.
@@ -154,8 +163,6 @@ A number of **command line** utilities for the dedup file system is available th
 #### Copy Files And Directories To The DedupFS
 
 Use `fsc backup <source> <target> [reference]` to copy files and directories to the dedup file system without having to mount it first.
-
-This is an **experimental** utility introduced with version 5.1, meaning it might not work in all details as expected, but it does **not** mean that it might corrupt your repository.
 
 **Syntax:**
 
@@ -308,7 +315,7 @@ In the `fsdb` subdirectory of the repository directory, DedupFS stores database 
 
 ### Run A Shallow Copy Of The File System
 
-Advanced usage pattern, only use if you understand what you are doing!
+This is an advanced usage pattern. **Only use if you understand what you are doing!**
 
 If you have the repository on a removable device, you can create a copy of it on a local device without the data files in the `data` directory. This "shallow" copy of the file system allows you to browse the directories and files, but it will show '0' bytes instead of the actual content when you open files.
 
@@ -375,7 +382,18 @@ For maximum safety,
 
 To upgrade a DedupFS installation to a newer version:
 
-* Unpack the new DedupFS archive to the DedupFS repository directory, next to the existing installation, possibly overwriting existing `*.html` documentation files in the installation directory.
+* Unpack the new DedupFS archive to the DedupFS repository directory, next to the existing installation, possibly overwriting existing `*.html` documentation files in the installation directory. The repository directory now should look like this:
+
+```
+[directory]  data
+[directory]  dedupfs-[old version]
+[directory]  dedupfs-[new version]
+[directory]  fsdb
+[  file   ]  QUICKSTART.html
+[  file   ]  README.html
+[  file   ]  SCHNELLSTART.html
+```
+
 * Follow any release specific upgrade instructions (see below).
 * Check whether everything works as expected. If yes, you can delete the old `dedupfs-<version>` installation directory.
 
@@ -385,15 +403,15 @@ To upgrade a DedupFS installation to a newer version:
 
 * In some way give access to deleted files and directories.
 * Development: Try out scoverage instead of jacoco (a spike 2022.10 didn't work well).
-* Create sql db backup from the file backup and start the file system in parallel.
-* Backup script for backing up directories without needing to mount the file system, optionally referencing an existing backup.
 * Change database backup, no need to have the full backup as default every time?
 * Support for soft links.
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
 
-#### 5.2.0 (2023.01.20)
+#### 5.2.0 (2023.02.04)
 
+* The `fsc backup` command is mature enough now.
+* Faster file system start: No waiting for the zip database backup because that is running in parallel.
 * Updated Java to 17.0.6_10, some libraries, and SBT.
 * Added QUICKSTART.html and German SCHNELLSTART.html documentation.
 * Rewritten experimental `fsc backup` command, changed functionality.

@@ -8,6 +8,8 @@ Wenn Sie diesen Text in einer Archivdatei wie `dedupfs-[Version].zip` gefunden h
 [Verzeichnis]  data
 [Verzeichnis]  dedupfs-[Version]
 [Verzeichnis]  fsdb
+[   Datei   ]  QUICKSTART.html
+[   Datei   ]  README.html
 [   Datei   ]  SCHNELLSTART.html
 ```
 
@@ -49,11 +51,19 @@ Das ist alles für den Schnellstart. Die vollständige Beschreibung finden Sie h
 Wenn Sie diesen Text in einer Archivdatei wie `dedupfs-[Version].zip` gefunden haben und schnell loslegen wollen, gehen Sie wie folgt vor:
 
 * Wenn Sie mit Windows arbeiten, laden Sie [WinFSP](https://github.com/billziss-gh/winfsp/releases) herunter und installieren Sie es.
-* Erstellen Sie irgendwo ein neues Verzeichnis mit dem Namen `dedup_storage`, z.B. auf Ihrer Backup-USB-Festplatte, und entpacken Sie das Archiv dorthin.
-* Öffnen Sie das Verzeichnis `dedup_storage/dedupfs-<Version>`.
-* Führen Sie das Skript `repo-init.bat` (`repo-init` unter Linux) aus. Damit wird das Dedup Dateisystem in `dedup_storage` initialisiert.
+* Erstellen Sie - z.B. auf Ihrer Backup-USB-Festplatte - ein neues Verzeichnis mit dem Namen `dedup_storage` für die Dateien des Dedup-Dateisystems und entpacken Sie das Archiv dorthin. Das Verzeichnis sollte jetzt folgendes enthalten:
+
+```
+[Verzeichnis]  dedupfs-[Version]
+[   Datei   ]  QUICKSTART.html
+[   Datei   ]  README.html
+[   Datei   ]  SCHNELLSTART.html
+```
+
+* Öffnen Sie das Unterverzeichnis `dedupfs-[Version]`.
+* Führen Sie das Skript `repo-init.bat` (`repo-init` unter Linux) aus. Damit wird das Dedup-Dateisystem in `dedup_storage` initialisiert.
 * Starten Sie das Skript `dedupfs.bat` (`dedupfs` unter Linux). Dadurch wird das Dedup-Dateisystem gestartet.
-* Wenn alles gut geht, sollten Sie eine Ausgabe wie diese sehen:
+* Wenn alles gut geht sehen Sie die folgende Ausgabe:
 
 ```
 [...] - Dedup file system settings:
