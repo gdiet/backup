@@ -97,8 +97,12 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
       else
         log.error(s"First 200 duplicates: ${problems.take(200)}")
       problem("data.sort.gaps", s"Database might be corrupt. Restore from backup?")
-    (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(free => log.debug(s"Free areas: $free"))
+    (dataGaps :+ DataArea(endOfStorage, Long.MaxValue)).tap(logFreeAreas)
 
+  private def logFreeAreas(free: Seq[DataArea]): Unit =
+    if free.size < 100 then log.debug(s"Free areas: $free")
+    else log.debug(s"First 100 of ${free.size} free areas: ${free.take(100)}")
+  
   /** @return The path elements of this file system path. */
   def pathElements(path: String): Array[String] = path.split("/").filter(_.nonEmpty)
   /** @return The [[TreeEntry]] denoted by the file system path or [[None]] if there is no matching entry. */
