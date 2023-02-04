@@ -1,10 +1,13 @@
 package dedup
 package db
 
+import dedup.util.ClassLogging
+
 import java.sql.{Connection, DriverManager}
 
-object H2:
+object H2 extends ClassLogging:
   Class.forName("org.h2.Driver")
+  private def tcpPortProp = sys.props.get(s"H2.TcpPort")
 
   val dbName = "dedupfs-210" // H2 version suffix, can stay 210 for as long as the storage format is binary compatible.
   def dbFile(dbDir: java.io.File): java.io.File = java.io.File(dbDir, s"$dbName.mv.db")
@@ -19,7 +22,7 @@ object H2:
   // java -cp "h2-2.1.214.jar" org.h2.tools.Server -tcp -tcpPort 9876
   // org.h2.tools.Server.main("-tcp", "-tcpPort", "9876")
   private def jdbcUrl(dbDir: java.io.File, readOnly: Boolean) =
-    sys.props.get(s"H2.TcpPort") match
+    tcpPortProp match
       case None =>
         val baseUrl = s"jdbc:h2:$dbDir/$dbName"
         if readOnly then
@@ -46,3 +49,7 @@ object H2:
       s"Database file ${dbFile(dbDir)} does ${if expectExists then "not " else ""}exist.")
     if !readOnly then checkForTraceFile(dbDir)
     DriverManager.getConnection(jdbcUrl(dbDir, readOnly), "sa", "").tap(_.setAutoCommit(true))
+
+  def shutdownCompact(connection: Connection): Unit =
+    if tcpPortProp.isDefined then connection.close() // Another application might still be connected to the database.
+    else { log.info("Compacting DedupFS database..."); connection.createStatement().execute("SHUTDOWN COMPACT") }

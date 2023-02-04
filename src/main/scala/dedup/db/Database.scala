@@ -292,9 +292,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
       }
     }
 
-  def shutdownCompact(): Unit =
-    log.info("Compacting DedupFS database...")
-    withStatement(_.execute("SHUTDOWN COMPACT"))
+  def shutdownCompact(): Unit = H2.shutdownCompact(connection)
 
   // File system statistics
   def storageSize()      : Long = withStatement(_.query("SELECT MAX(stop) FROM DataEntries")(one(_.opt(_.getLong(1)))).getOrElse(0L))
