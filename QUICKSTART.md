@@ -1,6 +1,6 @@
 # Using The Dedup Filesystem
 
-This is a quick start guide. The full description is here: [README.html](README.html).
+This is a quick start guide. The full description is here: [README](README.md).
 
 If you have found this text in an archive file like `dedupfs-[version].zip` and you want to get started quickly, read [Start A New Dedup Filesystem](#start-a-new-dedup-filesystem). If you are reading this text because you have found it in a directory that looks more or less like this
 
@@ -21,7 +21,7 @@ You have probably found a directory containing a filesystem, and that filesystem
 
 * Open the `dedupfs-[version]` directory.
 * Run the `readonly.bat` script (`readonly` on Linux).
-* Now things may go wrong. If they do, and you are on Windows, you may not have `WinFSP` installed. Good luck reading the [README.html](README.html).
+* Now things may go wrong. If they do, and you are on Windows, you may not have `WinFSP` installed. Good luck reading the [README](README.md).
 * If all goes well, you should see output like this:
 
 ```
@@ -44,7 +44,7 @@ The service java has been stopped.
 [...] - Shutdown complete.
 ```
 
-That's all for a quick start. The full description is here: [README.html](README.html).
+That's all for a quick start. The full description is here: [README](README.md).
 
 ## Start A New Dedup Filesystem
 
@@ -89,4 +89,4 @@ Whenever you want to add more backups or access your existing backups, run the `
 
 The nice thing about using DedupFS for backups is that stored files are deduplicated, meaning: If you store the same files more than once, the storage space (almost) does not grow! For example, today you can store a backup of all your documents in DedupFS in the `/documents/2022.12.30` directory. If next week you store another backup of all your documents in DedupFS, this time in the `/documents/2023.01.06` directory, it will take up almost no additional space on the drive where your `dedup_storage` folder is located. So, in general, you can think of DedupFS as a backup storage drive where you can store considerably more files than on a normal drive.
 
-That's all for a quick start. The full description is here: [README.html](README.html).
+That's all for a quick start. The full description is here: [README](README.md).

@@ -1,6 +1,6 @@
 # DedupFS: A Lightweight Deduplicating File System
 
-For a quick start, take a look at [QUICKSTART.html](QUICKSTART.html) or the German [SCHNELLSTART.html](SCHNELLSTART.html).
+For a quick start, take a look at [QUICKSTART](QUICKSTART.md) or the German [SCHNELLSTART](SCHNELLSTART.md).
 
 DedupFS is a file system for storing many backups of large collections of files - for example your photo collection. The stored files are deduplicated, meaning: If you store the same files multiple times, the storage (almost) doesn't grow! For example, today you can store a backup of all your documents in DedupFS in the `/documents/2022.12.30` directory. If next week you store a backup of all your documents in DedupFS again, this time in the `/documents/2023.01.06` directory, this needs almost no additional space on the drive where your DedupFS data folder is located. So, in general, you can regard DedupFS as a backup storage drive where you can store considerably more files than on an ordinary drive. And if you like to script your backups, DedupFS comes with nice utilities for that, too.
 

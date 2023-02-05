@@ -106,12 +106,16 @@ mv target/jre-linux target/app-linux/jrex
 
 # Create HTML documentation.
 # Thanks to https://github.com/jfroche/docker-markdown and to the GitHub api
+# The perl commands translate .md links to .html links.
 jq --slurp --raw-input '{"text": "\(.)", "mode": "markdown"}' < README.md \
-| curl -s --data @- https://api.github.com/markdown > target/app-linux/README.html  || exit 1
+| curl -s --data @- https://api.github.com/markdown \
+| perl -pe 's/(<a href=".*?)\.md(">)/\1.html\2/g' > target/app-linux/README.html  || exit 1
 jq --slurp --raw-input '{"text": "\(.)", "mode": "markdown"}' < QUICKSTART.md \
-| curl -s --data @- https://api.github.com/markdown > target/app-linux/QUICKSTART.html  || exit 1
+| curl -s --data @- https://api.github.com/markdown \
+| perl -pe 's/(<a href=".*?)\.md(">)/\1.html\2/g' > target/app-linux/QUICKSTART.html  || exit 1
 jq --slurp --raw-input '{"text": "\(.)", "mode": "markdown"}' < SCHNELLSTART.md \
-| curl -s --data @- https://api.github.com/markdown > target/app-linux/SCHNELLSTART.html  || exit 1
+| curl -s --data @- https://api.github.com/markdown \
+| perl -pe 's/(<a href=".*?)\.md(">)/\1.html\2/g' > target/app-linux/SCHNELLSTART.html  || exit 1
 
 # Final touches for Windows.
 find target/app-windows -type f ! -name "*.*" -delete

@@ -1,6 +1,6 @@
 # Verwendung des Dedup Dateisystems
 
-Dies ist die Schnellstart-Anleitung. Die vollständige Beschreibung finden Sie hier: [README.html](README.html).
+Dies ist die Schnellstart-Anleitung. Die vollständige Beschreibung finden Sie hier: [README](README.md).
 
 Wenn Sie diesen Text in einer Archivdatei wie `dedupfs-[Version].zip` gefunden haben und schnell loslegen wollen, lesen Sie [Ein neues Dedup Dateisystem starten](#ein-neues-dedup-dateisystem-starten). Wenn Sie diesen Text lesen, weil Sie ihn in einem Verzeichnis gefunden haben, das mehr oder weniger so aussieht
 
@@ -21,7 +21,7 @@ Sie haben wahrscheinlich ein Verzeichnis gefunden, das ein Dateisystem enthält,
 
 * Öffnen Sie das Verzeichnis `dedupfs-[Version]`.
 * Führen Sie das Skript `readonly.bat` (`readonly` unter Linux) aus.
-* Jetzt könnte etwas schiefgehen. Wenn das der Fall ist und Sie unter Windows arbeiten, haben Sie vielleicht `WinFSP` nicht installiert. Viel Glück beim Lesen der [README.html](README.html).
+* Jetzt könnte etwas schiefgehen. Wenn das der Fall ist und Sie unter Windows arbeiten, haben Sie vielleicht `WinFSP` nicht installiert. Viel Glück beim Lesen der [README](README.md).
 * Wenn alles gut geht, sollten Sie eine Ausgabe wie diese sehen:
 
 ```
@@ -44,7 +44,7 @@ The service java has been stopped.
 [...] - Shutdown complete.
 ```
 
-Das ist alles für den Schnellstart. Die vollständige Beschreibung finden Sie hier: [README.html](README.html).
+Das ist alles für den Schnellstart. Die vollständige Beschreibung finden Sie hier: [README](README.md).
 
 ## Ein neues Dedup Dateisystem starten
 
@@ -89,6 +89,6 @@ Wann immer Sie weitere Backups hinzufügen oder auf Ihre bestehenden Backups zug
 
 Das Schöne an der Verwendung von DedupFS für Backups ist, dass die gespeicherten Dateien dedupliziert werden, das heißt: Wenn Sie die gleichen Dateien mehrmals speichern, wächst der Speicherplatz (fast) nicht! Zum Beispiel können Sie heute ein Backup aller Ihrer Dokumente in DedupFS im Verzeichnis `/documents/2022.12.30` speichern. Wenn Sie nächste Woche eine weitere Sicherung all Ihrer Dokumente in DedupFS speichern, dieses Mal im Verzeichnis `/documents/2023.01.06`, wird sie fast keinen zusätzlichen Platz auf dem Laufwerk beanspruchen, auf dem sich Ihr Ordner `dedup_storage` befindet. Im Allgemeinen können Sie sich DedupFS also als ein Backup-Speicherlaufwerk vorstellen, auf dem Sie wesentlich mehr Dateien speichern können als auf einem normalen Laufwerk.
 
-Das ist alles für den Schnellstart. Die vollständige Beschreibung finden Sie hier: [README.html](README.html).
+Das ist alles für den Schnellstart. Die vollständige Beschreibung finden Sie hier: [README](README.md).
 
 Übersetzt mit [DeepL](https://www.DeepL.com/Translator).
