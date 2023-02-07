@@ -19,7 +19,15 @@ object BackupTool extends dedup.util.ClassLogging:
     val dbDir             = main.prepareDbDir(repo, backup = backup, readOnly = false)
     val settings          = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
 
-    resource(server.Backend(settings)) { fs =>
+    val interrupted      = AtomicBoolean(false)
+    val shutdownFinished = java.util.concurrent.CountDownLatch(1)
+    sys.addShutdownHook {
+      log.info(s"Interrupted, stopping ...")
+      interrupted.set(true)
+      shutdownFinished.await()
+    }
+
+    try resource(server.Backend(settings)) { fs =>
       log  .info(s"Repository:        $repo")
       sources.foreach(source =>
         log.info(s"Backup source:     $source"))
@@ -34,48 +42,54 @@ object BackupTool extends dedup.util.ClassLogging:
       if !forceReference then maybeRefId.foreach(validateReference(fs, sources, _))
       val targetId = resolveTargetId(fs, target)
 
-      val bytesStored = sources.map(source => process(fs, source, Seq(), targetId, maybeRefId)).sum
+      val bytesStored = sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
-    }
-    log.info  (s"Finished the backup.")
+    } catch
+      case e: Throwable =>
+        log.error(s"Uncaught exception", e)
+    finally
+      log.info(s"Finished the backup.")
+      Thread.sleep(200)
+      shutdownFinished.countDown()
 
   /** @param ignore The rules which files or directories to ignore. Each rule is a [[List]][String]. If a rule consists
     *               of a single element, this element is matched in the current context against directory names if the
     *               element terminates with `/`, otherwise against file names. If a rule consists of multiple elements,
     *               its tail is handed over to the processing context of all subdirectories matching the head.
     * @return The number of bytes processed. */
-  private def process(fs: server.Backend, source: File, ignore: Seq[List[String]], targetId: Long, maybeRefId: Option[Long]): Long =
-    if ignore.flatten.nonEmpty then log.trace(s"Ignore rules for '$source': $ignore")
-    val name = source.getName
-    if source.isFile then
-      if ignore.collect { case List(rule) => rule }.exists(name.matches) then
-        log.trace(s"Ignored file due to rules: $source"); 0L
+  private def process(interrupted: AtomicBoolean, fs: server.Backend, source: File, ignore: Seq[List[String]], targetId: Long, maybeRefId: Option[Long]): Long =
+    if interrupted.get then 0 else
+      if ignore.flatten.nonEmpty then log.trace(s"Ignore rules for '$source': $ignore")
+      val name = source.getName
+      if source.isFile then
+        if ignore.collect { case List(rule) => rule }.exists(name.matches) then
+          log.trace(s"Ignored file due to rules: $source"); 0L
+        else
+          log.trace(s"Processing file: $source")
+          val fileReference = maybeRefId.flatMap(fs.child(_, name)).collect { case f: FileEntry => f }
+          processFile(fs, source, targetId, fileReference)
+      else if ignore.flatMap(_.headOption).exists(s"$name/".matches) then
+        log.trace(s"Ignored directory due to rules: $source"); 0L
       else
-        log.trace(s"Processing file: $source")
-        val fileReference = maybeRefId.flatMap(fs.child(_, name)).collect { case f: FileEntry => f }
-        processFile(fs, source, targetId, fileReference)
-    else if ignore.flatMap(_.headOption).exists(s"$name/".matches) then
-      log.trace(s"Ignored directory due to rules: $source"); 0L
-    else
-      val ignoreFile = File(source, ".backupignore")
-      if ignoreFile.isFile && ignoreFile.length() == 0 then
-        log.trace(s"Ignored directory due to ignore file: $source"); 0L
-      else
-        log.trace(s"Processing directory: $source")
-        val updatedIgnores = ignore.filter(_.headOption.exists(name.matches)).map(_.tail).filterNot(_.isEmpty)
-        val newIgnores = ignoreRulesFromFile(source, ignoreFile)
-        val maybeDirId = fs.child(targetId, name) match
-          case Some(dir: DirEntry) => Some(dir.id)
-          case other =>
-            if other.isDefined && !fs.deleteChildless(other.get) then
-              log.warn(s"Could not replace target file for '$source'."); None
-            else fs.mkDir(targetId, name)
-              .tap { id => if id.isEmpty then log.warn(s"Could not create target directory for '$source'.") }
-        maybeDirId match
-          case None => 0L
-          case Some(dirId) =>
-            val newReference = maybeRefId.flatMap(fs.child(_, name)).map(_.id)
-            source.listFiles().map(child => process(fs, child, updatedIgnores ++ newIgnores, dirId, newReference)).sum
+        val ignoreFile = File(source, ".backupignore")
+        if ignoreFile.isFile && ignoreFile.length() == 0 then
+          log.trace(s"Ignored directory due to ignore file: $source"); 0L
+        else
+          log.trace(s"Processing directory: $source")
+          val updatedIgnores = ignore.filter(_.headOption.exists(name.matches)).map(_.tail).filterNot(_.isEmpty)
+          val newIgnores = ignoreRulesFromFile(source, ignoreFile)
+          val maybeDirId = fs.child(targetId, name) match
+            case Some(dir: DirEntry) => Some(dir.id)
+            case other =>
+              if other.isDefined && !fs.deleteChildless(other.get) then
+                log.warn(s"Could not replace target file for '$source'."); None
+              else fs.mkDir(targetId, name)
+                .tap { id => if id.isEmpty then log.warn(s"Could not create target directory for '$source'.") }
+          maybeDirId match
+            case None => 0L
+            case Some(dirId) =>
+              val newReference = maybeRefId.flatMap(fs.child(_, name)).map(_.id)
+              source.listFiles().map(child => process(interrupted, fs, child, updatedIgnores ++ newIgnores, dirId, newReference)).sum
 
   /** @return The ignore rules in the internal format. */
   def ignoreRulesFromFile(source: File, ignoreFile: File): Seq[List[String]] =
