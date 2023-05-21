@@ -412,6 +412,7 @@ To upgrade a DedupFS installation to a newer version:
 #### 5.2.1 (Next Release)
 
 * `fsc backup` doesn't log 'interrupted' when terminating normally.
+* In read-only mode, don't look for free areas during startup - it's not needed and might require much memory and/or time.
 
 #### 5.2.0 (2023.03.05)
 

@@ -35,7 +35,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
   private val db = dedup.db.Database(dedup.db.H2.connection(settings.dbDir, settings.readOnly))
   private val lts: store.LongTermStore = store.LongTermStore(settings.dataDir, settings.readOnly)
   private val handles = Handles(settings.tempPath)
-  private val freeAreas = server.FreeAreas(db.freeAreas())
+  private val freeAreas = Option.when(!settings.readOnly)(server.FreeAreas(db.freeAreas()))
 
   /** Store logic relies on this being a single thread executor. */
   private val singleThreadStoreContext =
@@ -150,7 +150,9 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
           // Not yet known, store ...
           case None =>
             // Reserve storage space
-            val reserved = freeAreas.reserve(entry.size)
+            val reserved = freeAreas.getOrElse(
+              throw new IllegalStateException(s"store.reserve - freeAreas not available.")
+            ).reserve(entry.size)
             // Write to storage
             writeAlgorithm(data, reserved, lts.write)
             // Save data entries
