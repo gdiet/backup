@@ -19,9 +19,9 @@ object BackupTool extends dedup.util.ClassLogging:
     val dbDir             = main.prepareDbDir(repo, backup = backup, readOnly = false)
     val settings          = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
 
-    val interrupted      = AtomicBoolean(false)
-    val shutdownFinished = java.util.concurrent.CountDownLatch(1)
-    sys.addShutdownHook {
+    val interrupted        = AtomicBoolean(false)
+    val shutdownFinished   = java.util.concurrent.CountDownLatch(1)
+    val shutdownHookThread = sys.addShutdownHook {
       log.info(s"Interrupted, stopping ...")
       interrupted.set(true)
       shutdownFinished.await()
@@ -44,6 +44,7 @@ object BackupTool extends dedup.util.ClassLogging:
 
       val bytesStored = sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
+      shutdownHookThread.remove()
     } catch
       case e: Throwable =>
         log.error(s"Uncaught exception", e)
