@@ -69,6 +69,9 @@ object BackupTool extends dedup.util.ClassLogging:
           log.trace(s"Processing file: $source")
           val fileReference = maybeRefId.flatMap(fs.child(_, name)).collect { case f: FileEntry => f }
           processFile(fs, source, targetId, fileReference)
+      else if !source.isDirectory then
+        log.warn(s"Not a file or a directory - can't process: $source")
+        0L
       else if ignore.flatMap(_.headOption).exists(s"$name/".matches) then
         log.trace(s"Ignored directory due to rules: $source"); 0L
       else
