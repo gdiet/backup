@@ -29,7 +29,8 @@ mkdir -p .build
 mkdir -p .download
 
 # Fetch SBT if missing. Find newer releases here: https://www.scala-sbt.org/download.html
-sbtVersion="1.8.2"
+# When updating, also update in project/build.properties
+sbtVersion="1.8.3"
 sbtArchive="sbt-$sbtVersion.tgz"
 if [ ! -f ".download/$sbtArchive" ]; then
   echo "Load SBT"
@@ -46,8 +47,8 @@ fi
 
 # Fetch JDKs if missing. Find newer releases here: https://adoptium.net/releases.html
 # Set version both in jdkBase and in jdkVersion.
-jdkVersion="17.0.6_10"
-jdkBase="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.6%2B10"
+jdkVersion="17.0.7_7"
+jdkBase="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.7%2B7"
 jdkWindows="OpenJDK17U-jdk_x64_windows_hotspot_$jdkVersion.zip"
 jdkLinux="OpenJDK17U-jdk_x64_linux_hotspot_$jdkVersion.tar.gz"
 if [ ! -f ".download/$jdkWindows" ]; then

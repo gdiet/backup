@@ -414,6 +414,7 @@ To upgrade a DedupFS installation to a newer version:
 * `fsc backup` doesn't log 'interrupted' when terminating normally.
 * In read-only mode, don't look for free areas during startup - it's not needed and might require much memory and/or time.
 * In `fsc backup`, check whether a file reference is neither file nor directory to avoid a possible NPE.
+* Updated Scala to 3.2.1, Java to 17.0.7, and SBT and some dependencies.
 
 #### 5.2.0 (2023.03.05)
 
