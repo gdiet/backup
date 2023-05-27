@@ -18,7 +18,7 @@ if [ "$1" ]; then
   echo
   echo
   # For release builds clean everything.
-  rm -r .build > /dev/null 2>&1
+  rm -r --interactive=never .build > /dev/null 2>&1
 else
   release="$versionString"
   echo "building app $versionString"
@@ -73,7 +73,7 @@ if [ ! -d "$jdkDirWin" ]; then
   mkdir -p "$jdkDirWin"
   unzip -q ".download/$jdkWindows" -d "$jdkDirWin-temp" || exit 1
   mv "$jdkDirWin-temp"/*/* "$jdkDirWin"
-  rm -r "$jdkDirWin-temp"
+  rm -r --interactive=never "$jdkDirWin-temp" > /dev/null 2>&1
 fi
 
 # Delete previous version of app if any.
@@ -95,6 +95,7 @@ echo Build the minified Windows JRE
 echo Prepare app folders
 
 # Create system specific app folders.
+rm -r --interactive=never target/app-* > /dev/null 2>&1
 cp -r target/app target/app-linux
 cp -r target/app target/app-windows
 
@@ -126,7 +127,7 @@ cp target/app-linux/*.html target/app-windows/
 mv target/jre-windows target/app-windows/jre
 
 echo Package apps
-rm -r target/packaging > /dev/null 2>&1
+rm -r --interactive=never target/packaging > /dev/null 2>&1
 mkdir target/packaging
 cp target/app-linux/*.html target/packaging/
 mv target/app-linux "target/packaging/dedupfs-$release-linux"
