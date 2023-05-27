@@ -1,6 +1,6 @@
 package dedup
 
-import java.io.{BufferedInputStream, File, FileInputStream}
+import java.io.{BufferedInputStream, File, FileInputStream, IOException}
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.util.Using.resource
 
@@ -169,20 +169,23 @@ object BackupTool extends dedup.util.ClassLogging:
     writeTargetFile(fs, source, target.id)
 
   private def writeTargetFile(fs: server.Backend, source: File, targetId: Long): Long =
-    resource(BufferedInputStream(FileInputStream(source))) { in =>
-      var position = 0L
-      val data = Iterator.continually(in.readNBytes(memChunk))
-        .takeWhile(_.nonEmpty)
-        .map { chunk =>
-          val currentPosition = position
-          position += chunk.length
-          currentPosition -> chunk
-        }
-      fs.write(targetId, data)
-    }
-    fs.release(targetId)
-    log.info(s"Stored: $source")
-    source.length()
+    try
+      resource(BufferedInputStream(FileInputStream(source))) { in =>
+        var position = 0L
+        val data = Iterator.continually(in.readNBytes(memChunk))
+          .takeWhile(_.nonEmpty)
+          .map { chunk =>
+            val currentPosition = position
+            position += chunk.length
+            currentPosition -> chunk
+          }
+        fs.write(targetId, data)
+      }
+      log.info(s"Stored: $source")
+      source.length() // TODO it would be better to get the length back from fs.write.
+    catch
+      case e: IOException => log.warn(s"Could not read: $source"); 0
+    finally fs.release(targetId)
 
   private def validateReference(fs: server.Backend, sources: List[File], refId: Long): Unit =
     def comp1(entry: TreeEntry) = if entry.isInstanceOf[DirEntry] then entry.name   else ":" + entry.name
