@@ -114,15 +114,22 @@ object maintenance extends util.ClassLogging:
           case None => Nil
           case Some(parent) => path(parent, entry :: acc)
 
-    db.entryLike(nameLike).foreach { entry =>
-      path(entry) match
-        case Nil => /* deleted entry */
-        case entries =>
-          println(entries.map {
-            case dirEntry: DirEntry => s"${dirEntry.name}/"
-            case fileEntry: FileEntry => fileEntry.name
-          }.mkString)
-    }
+    nameLike.split("/").filter(_.nonEmpty).lastOption match
+      case None =>
+        println("Matcher is empty, can't search.")
+      case Some(last) =>
+        val sqlMatcher = last.replaceAll("\\*", "%").replaceAll("\\?", "_")
+        val pathMatcher = nameLike.replaceAll("\\.", "\\.").replaceAll("\\*", ".*").replaceAll("\\?", ".")
+        db.entryLike(sqlMatcher).foreach { entry =>
+          path(entry) match
+            case Nil => /* deleted entry */
+            case entries =>
+              val fullPath = entries.map {
+                case dirEntry: DirEntry => s"${dirEntry.name}/"
+                case fileEntry: FileEntry => fileEntry.name
+              }.mkString
+              if fullPath.matches(s".*$pathMatcher.*") then println(fullPath)
+        }
   }
 
   def reclaimSpace(dbDir: File, keepDeletedDays: Int): Unit = withDb(dbDir, readOnly = false) { db =>

@@ -237,7 +237,7 @@ Use `fsc db-compact` to compact the database file.
 
 #### Find Files By Name Pattern
 
-Use `fsc find <name pattern>` to find files matching the name pattern. The name pattern supports '`%`' as wildcard for any number of characters and '`_`' as wildcard for a single character.
+Use `fsc find <pattern>` to find files matching the name or path fragment pattern provided. You can search for file names like `java.exe`, directory names like `bin`, or for path fragments like `jre/bin/java`. The patterns support '`*`' as wildcard for any number of characters and '`?`' as wildcard for a single character. The find behavior of patterns containing '`%`' or '`_`' is not fully defined and may yield unexpected results.
 
 #### List Files
 
@@ -408,6 +408,10 @@ To upgrade a DedupFS installation to a newer version:
 * Support for soft links.
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
+
+#### 5.3.0 (Next Release)
+
+* `fsc find` syntax changed, now allows to search for path fragments, not only for single entry names.
 
 #### 5.2.1 (2023.05.28)
 
