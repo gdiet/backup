@@ -409,12 +409,13 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
 
-#### 5.2.1 (Next Release)
+#### 5.2.1 (2023.05.28)
 
 * `fsc backup` doesn't log 'interrupted' when terminating normally.
 * In read-only mode, don't look for free areas during startup - it's not needed and might require much memory and/or time.
-* In `fsc backup`, check whether a file reference is neither file nor directory to avoid a possible NPE.
-* Updated Scala to 3.2.1, Java to 17.0.7, and SBT and some dependencies.
+* In `fsc backup`, check whether a file reference is neither file nor directory to avoid a possible exception.
+* In `fsc backup`, handle exceptions when reading files to back up.
+* Updated Scala to 3.2.1 and Java to 17.0.7 together with SBT and some dependencies.
 
 #### 5.2.0 (2023.03.05)
 
