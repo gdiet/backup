@@ -23,13 +23,13 @@ import java.io.File
   val cmd   = opts.additionalOptions.toList
   try cmd match
     case "backup"     :: params          => BackupTool.backup(opts.baseOptions, params)
-    case "db-backup"  ::             Nil => db.maintenance.backup             (dbDir          )
-    case "db-restore" ::             Nil => db.maintenance.restorePlainBackup (dbDir          )
-    case "db-restore" :: fileName :: Nil => db.maintenance.restoreScriptBackup(dbDir, fileName)
-    case "db-compact" ::             Nil => db.maintenance.compactDb          (dbDir          )
-    case "find"       :: matcher  :: Nil => db.maintenance.find               (dbDir, matcher )
-    case "list"       :: path     :: Nil => db.maintenance.list               (dbDir, path    )
-    case "del"        :: path     :: Nil => db.maintenance.del                (dbDir, path    )
+    case "db-backup"  ::             Nil => db.maintenance.dbBackup            (dbDir          )
+    case "db-restore" ::             Nil => db.maintenance.restorePlainDbBackup(dbDir          )
+    case "db-restore" :: fileName :: Nil => db.maintenance.restoreSqlDbBackup  (dbDir, fileName)
+    case "db-compact" ::             Nil => db.maintenance.compactDb           (dbDir          )
+    case "find"       :: matcher  :: Nil => db.maintenance.find                (dbDir, matcher )
+    case "list"       :: path     :: Nil => db.maintenance.list                (dbDir, path    )
+    case "del"        :: path     :: Nil => db.maintenance.del                 (dbDir, path    )
     case _ => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
   catch
     case main.exit => /**/
@@ -37,7 +37,7 @@ import java.io.File
   Thread.sleep(200) // Give logging some time to display final messages
 
 @main def reclaimSpace(opts: (String, String)*): Unit =
-  db.maintenance.backup(opts.dbDir, "_before_reclaim")
+  db.maintenance.dbBackup(opts.dbDir, "_before_reclaim")
   db.maintenance.reclaimSpace(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
   Thread.sleep(200) // Give logging some time to display message
 
@@ -46,7 +46,7 @@ import java.io.File
   val deleteFiles  = opts.defaultTrue("deleteFiles")
   val dfsBlacklist = opts.getOrElse("dfsBlacklist", "blacklist")
   val deleteCopies = opts.defaultFalse("deleteCopies")
-  if opts.defaultTrue("dbBackup") then db.maintenance.backup(opts.dbDir)
+  if opts.defaultTrue("dbBackup") then db.maintenance.dbBackup(opts.dbDir)
   db.blacklist(opts.dbDir, blacklistDir, deleteFiles, dfsBlacklist, deleteCopies)
 
 @main def mount(opts: (String, String)*): Unit =
@@ -111,7 +111,7 @@ object main extends util.ClassLogging:
     db.dbDir(repo).tap { dbDir =>
       if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
       if !readOnly then db.H2.checkForTraceFile(dbDir)
-      if backup then db.maintenance.backup(dbDir)
+      if backup then db.maintenance.dbBackup(dbDir)
     }
 
 /** Base options are 'key=value' unless the equals sign is escaped with a backslash. */

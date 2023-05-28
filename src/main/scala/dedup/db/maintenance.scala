@@ -11,7 +11,7 @@ import java.util.Date
 
 object maintenance extends util.ClassLogging:
 
-  def backup(dbDir: File, fileNameSuffix: String = ""): Unit =
+  def dbBackup(dbDir: File, fileNameSuffix: String = ""): Unit =
     val database = dbFile(dbDir)
     ensure("utility.backup", database.exists(), s"Database file $database does not exist")
     val plainBackup = backupFile(dbDir)
@@ -33,14 +33,14 @@ object maintenance extends util.ClassLogging:
         cache.MemCache.availableMem.addAndGet(64000000)
     }, "db-backup").start()
 
-  def restorePlainBackup(dbDir: File): Unit =
+  def restorePlainDbBackup(dbDir: File): Unit =
     val database = dbFile(dbDir)
     val plainBackup = backupFile(dbDir)
     ensure("utility.restore.notFound", plainBackup.exists(), s"Database backup file $plainBackup does not exist")
     log.info(s"Restoring plain database backup: ${plainBackup.getName} -> ${database.getName}")
     Files.copy(plainBackup.toPath, database.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 
-  def restoreScriptBackup(dbDir: File, scriptName: String): Unit =
+  def restoreSqlDbBackup(dbDir: File, scriptName: String): Unit =
     val script = File(dbDir, scriptName)
     ensure("utility.restore.from", script.exists(), s"Database backup script file $script does not exist")
     val database = dbFile(dbDir)
