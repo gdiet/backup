@@ -245,7 +245,7 @@ Use `fsc list <path>` to list the contents of the directory denoted by `<path>`.
 
 #### Delete A File Or A Directory
 
-Use `fsc del <path>` to delete the file or **recursively** delete the directory denoted by `<path>`. **This utility does not create a database backup.** If required, use `fsc backup` before using `fsc del <path>`.
+Use `fsc del <path>` to delete the file or **recursively** delete the directory denoted by `<path>`. **This utility does not create a database backup.** If required, use `fsc db-backup` before using `fsc del <path>`.
 
 ### Configure Memory Settings
 
@@ -457,7 +457,7 @@ To upgrade a DedupFS installation to a newer version:
 **Migration from 4.x to 5.x:**
 
 * **Direct migration of repositories from versions prior to 4.x is not supported.**
-* Use the 4.x dedupfs software to run the command `fsc backup` in order to make sure a current database backup exists.
+* Use the 4.x dedupfs software to run the command `fsc backup` in order to make sure a current database backup exists. Note that in later releases, this utilits is renamed `fsc db-backup`.
 * Unpack the 5.x dedupfs software into the repository.
 * Use the 5.x `db-restore` utility like this:<br> `db-restore from=dedupfs_[timestamp].zip`<br> to point the utility to the database backup zip file created above. Look for the exact timestamp to use in the `fsdb` subdirectory of the repository.
 * The migration is complete. Don't use dedupfs versions previous to 5.0.0 anymore with the repository.
