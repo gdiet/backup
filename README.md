@@ -166,7 +166,7 @@ Use `fsc backup <source> <target> [reference]` to copy files and directories to 
 
 **Syntax:**
 
-`fsc [repo=<repository directory>] [dbBackup=false] backup <source> [<source2> [<source...N>]] <target> [reference=<reference>] [forceReference=true]`
+`fsc [repo=<repository directory>] [dbBackup=true] backup <source> [<source2> [<source...N>]] <target> [reference=<reference>] [forceReference=true]`
 
 **Example:**
 
