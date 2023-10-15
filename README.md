@@ -185,7 +185,7 @@ In the `target` parameter's path elements, everything enclosed by square bracket
 If a `target` path element starts with the question mark "`?`", the question mark is removed and the corresponding target
 directory and its children are created if missing.
 
-If a `target` path element starts with the exclamation mark "!", the exclamation mark is removed. It is ensured that the corresponding
+If a `target` path element starts with the exclamation mark "`!`", the exclamation mark is removed. It is ensured that the corresponding
 target directory does not exist, then it and its children are created. The exclamation mark can be escaped with a backslash `\`.
 
 **The `reference` and `forceReference` parameters:**
