@@ -46,7 +46,7 @@ import java.io.File
   val deleteFiles  = opts.defaultTrue("deleteFiles")
   val dfsBlacklist = opts.getOrElse("dfsBlacklist", "blacklist")
   val deleteCopies = opts.defaultFalse("deleteCopies")
-  if opts.defaultTrue("dbBackup") then db.maintenance.dbBackup(opts.dbDir)
+  if opts.defaultTrue("dbBackup") then db.maintenance.dbBackup(opts.dbDir, "_before_blacklisting")
   db.blacklist(opts.dbDir, blacklistDir, deleteFiles, dfsBlacklist, deleteCopies)
 
 @main def mount(opts: (String, String)*): Unit =
