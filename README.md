@@ -170,7 +170,11 @@ Use `fsc backup <source> <target> [reference]` to copy files and directories to 
 
 **Example:**
 
-`fsc backup /docs /notes/* /backup/?[yyyy]/![yyyy.MM.dd_HH.mm]/ reference=/backup/????/????.??.??_*`
+`fsc backup /docs /notes/* /backup/?[yyyy]/![yyyy.MM.dd_HH.mm] reference=/backup/????/????.??.??*`
+
+On Windows:
+
+`fsc backup "C:/my files/documents" "C:/my files/notes/*" /backup/?[yyyy]/![yyyy.MM.dd_HH.mm] reference=/backup/????/????.??.??*`
 
 **The `source` parameters:**
 
@@ -178,15 +182,13 @@ In each `source` parameter's last path element the wildcards "`?`" and "`*`" are
 
 **The `target` parameter:**
 
-The `target` parameter specifies the DedupFS directory to copy the source files / directories to. Only the forward slash "`/`" is interpreted as path separator. The backslash "`\`" is used as escape character.
+The `target` parameter specifies the DedupFS directory to copy the source files and directories to. Only the forward slash "`/`" is interpreted as path separator. The backslash "`\`" is used as escape character.
 
 In the `target` parameter's path elements, everything enclosed by square brackets `[...]` is interpreted as [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/17/docs/api/java.base/java/text/SimpleDateFormat.html) for formatting the current date/time, unless the opening square bracket is escaped with a backslash "`\`".
 
-If a `target` path element starts with the question mark "`?`", the question mark is removed and the corresponding target
-directory and its children are created if missing.
+If a `target` path element starts with the question mark "`?`", the question mark is removed and the corresponding target directory and its children are created if missing.
 
-If a `target` path element starts with the exclamation mark "`!`", the exclamation mark is removed. It is ensured that the corresponding
-target directory does not exist, then it and its children are created. The exclamation mark can be escaped with a backslash `\`.
+If a `target` path element starts with the exclamation mark "`!`", the exclamation mark is removed. It is ensured that the corresponding target directory does not exist, then it and its children are created. The exclamation mark can be escaped with a backslash `\`.
 
 **The `reference` and `forceReference` parameters:**
 
