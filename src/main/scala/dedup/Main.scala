@@ -42,7 +42,8 @@ import java.io.File
   Thread.sleep(200) // Give logging some time to display message
 
 @main def blacklist(opts: (String, String)*): Unit =
-  val blacklistDir = File(opts.repo, opts.getOrElse("blacklistDir", "blacklist")).getPath
+  // (Here and in other places:) .getCanonicalPath fails fast for illegal file names like ["/hello].
+  val blacklistDir = File(opts.repo, opts.getOrElse("blacklistDir", "blacklist")).getCanonicalPath
   val deleteFiles  = opts.defaultTrue("deleteFiles")
   val dfsBlacklist = opts.getOrElse("dfsBlacklist", "blacklist")
   val deleteCopies = opts.defaultFalse("deleteCopies")
