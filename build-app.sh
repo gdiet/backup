@@ -30,7 +30,7 @@ mkdir -p .download
 
 # Fetch SBT if missing. Find newer releases here: https://www.scala-sbt.org/download.html
 # When updating, also update in project/build.properties
-sbtVersion="1.8.3"
+sbtVersion="1.9.6"
 sbtArchive="sbt-$sbtVersion.tgz"
 if [ ! -f ".download/$sbtArchive" ]; then
   echo "Load SBT"
