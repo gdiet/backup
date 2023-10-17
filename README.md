@@ -414,6 +414,10 @@ To upgrade a DedupFS installation to a newer version:
 #### 5.3.0 (Next Release)
 
 * `fsc find` syntax changed, now allows to search for path fragments, not only for single entry names.
+* Mark database backups created by `blacklist` because restoring from them can be dangerous.
+* Fixed handling of illegal file names in `blacklist`.
+* Updated Scala to 3.3.1 and Java to 21+35 together with SBT and some dependencies.
+* Tested operations with WinFSP 2023 which is now the recommended version.
 
 #### 5.2.1 (2023.05.28)
 
