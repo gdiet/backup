@@ -45,12 +45,15 @@ if [ ! -d "$sbtDir" ]; then
   tar xfz ".download/$sbtArchive" -C "$sbtDir" --strip-components=1 || exit 1
 fi
 
-# Fetch JDKs if missing. Find newer releases here: https://adoptium.net/releases.html
+# Fetch JDKs if missing. Find newer releases here:
+# https://adoptium.net/releases.html
+# https://github.com/adoptium/temurin21-binaries
+# https://github.com/orgs/adoptium/repositories
 # Set version both in jdkBase and in jdkVersion.
-jdkVersion="17.0.7_7"
-jdkBase="https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.7%2B7"
-jdkWindows="OpenJDK17U-jdk_x64_windows_hotspot_$jdkVersion.zip"
-jdkLinux="OpenJDK17U-jdk_x64_linux_hotspot_$jdkVersion.tar.gz"
+jdkVersion="21_35"
+jdkBase="https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21%2B35"
+jdkWindows="OpenJDK21U-jdk_x64_windows_hotspot_$jdkVersion.zip"
+jdkLinux="OpenJDK21U-jdk_x64_linux_hotspot_$jdkVersion.tar.gz"
 if [ ! -f ".download/$jdkWindows" ]; then
   echo Load the Windows JDK
   wget -P .download -q --show-progress "$jdkBase/$jdkWindows" || exit 1
@@ -88,9 +91,9 @@ if [ "$1" ]; then clean=";clean"; else clean=""; fi
 echo Collect Java modules information
 modules=$("$jdkDir/bin/jdeps" --print-module-deps --ignore-missing-deps --recursive --multi-release 17 --class-path="target/app/lib/*" --module-path="target/app/lib/*" target/app/lib/dedupfs_3-current.jar)
 echo Build the minified Linux JRE
-"$jdkDir/bin/jlink" --verbose --add-modules "$modules" --strip-debug --no-man-pages --no-header-files --compress=2 --output target/jre-linux > /dev/null
+"$jdkDir/bin/jlink" --verbose --add-modules "$modules" --strip-debug --no-man-pages --no-header-files --compress=zip-9 --output target/jre-linux > /dev/null
 echo Build the minified Windows JRE
-"$jdkDir/bin/jlink" --verbose --module-path "$jdkDirWin/jmods" --add-modules "$modules" --strip-debug --no-man-pages --no-header-files --compress=2 --output target/jre-windows > /dev/null
+"$jdkDir/bin/jlink" --verbose --module-path "$jdkDirWin/jmods" --add-modules "$modules" --strip-debug --no-man-pages --no-header-files --compress=zip-9 --output target/jre-windows > /dev/null
 
 echo Prepare app folders
 
