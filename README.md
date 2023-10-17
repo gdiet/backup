@@ -138,7 +138,7 @@ Notes:
 
 ### Mount The File System Without GUI
 
-If you want to mount the dedup file system without a GUI, run `dedupfs`. This behaves like `gui-dedupfs` except that it does not start a GUI. So see above for more details on how `dedupfs` works.
+If you want to mount the dedup file system without a GUI, run `dedupfs`. This behaves like `gui-dedupfs` except that it does not start a GUI. So see above for more details on how `dedupfs` works. Note that to stop the filesystem you may have to press `CTRL-C` **twice** in the `dedupfs` console.
 
 ### Mount The File System Read-Only
 
