@@ -73,7 +73,7 @@ DedupFS runs fine with approximately 128 MB RAM assigned to its process. See be
 
 Tested on Windows 10 64-bit.
 
-Download and install a [WinFSP Release](https://github.com/billziss-gh/winfsp/releases) to make FUSE (Filesystem in Userspace) available. I use `WinFsp 2021` a.k.a. `winfsp-1.9.21096` for running DedupFS.
+Download and install a [WinFSP Release](https://github.com/winfsp/winfsp/releases) to make FUSE (Filesystem in Userspace) available. I use `WinFsp 2021` a.k.a. `winfsp-1.9.21096` for running DedupFS.
 
 ### Linux
 
