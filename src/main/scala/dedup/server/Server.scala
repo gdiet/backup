@@ -222,9 +222,12 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
         offset + readOffset -> new Array[Byte](chunkSize).tap(source.get(readOffset, _, 0, chunkSize))
       }
       if offset < 0 || size != intSize then EOVERFLOW // With intSize being .abs (see above) checks for negative size, too.
-      // FIXME maybe compare intSize with reported size written?
-      else if backend.write(fi.fh.get(), data).isDefined then intSize // Write even if size = 0, else "touch" would not create a new file.
-      else EIO // false if called without create or open.
+      else backend.write(fi.fh.get(), data) match
+        case None =>
+          EIO
+        case Some(sizeWritten) =>
+          ensure("server.write", intSize == sizeWritten, s"written size $sizeWritten not as expected $intSize")
+          intSize
     }
 
   override def read(path: String, sink: Pointer, size: Long, offset: Long, fi: FuseFileInfo): Int =
