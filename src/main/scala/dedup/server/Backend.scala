@@ -178,10 +178,11 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
   def truncate(fileId: Long, newSize: Long): Boolean = handles.truncate(fileId, newSize)
 
   /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
-    *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.
-    *             using defensive copy (Array.clone) that they are not modified later.
-    * @return `false` if called without createAndOpen or open. */
-  def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Boolean =
+    *             atomically / synchronized. Overlapping data chunks are written in the order of iteration, i.e.,
+    *             overwriting data written just before. Note that the byte arrays may be kept in memory, so make
+    *             sure e.g. using defensive copy (Array.clone) that they are not modified later.
+    * @return The number of bytes written or `None` if called without createAndOpen or open. */
+  def write(fileId: Long, data: Iterator[(Long, Array[Byte])]): Option[Long] =
     handles.write(fileId, db.logicalSize, data.tapEach(_ =>
       if cacheLoadDelay > 0 then
         log.trace(s"Slowing write by $cacheLoadDelay ms due to high cache load.")

@@ -37,20 +37,24 @@ class WriteCache(temp: Path, initialSize: Long, availableMem: AtomicLong = MemCa
     _size = newSize
   }
 
-  /** Writes data to the cache. Data size should not exceed `memChunk`. */
-  def write(position: Long, data: Array[Byte]): Unit = if data.length > 0 then guard(s"write $position [${data.length}]") {
-    ensure("cache.write", data.length <= memChunk, s"Data array too large: [${data.length}]")
-    // Clear the area in all caches.
-    if position < size then
-      memCache .clear(position, data.length)
-      zeroCache.clear(position, data.length)
-      fileCache.clear(position, data.length)
-    // Allocate zeros if writing starts beyond end of file.
-    if position > size then zeroCache.allocate(size, position - size)
-    // Write the area.
-    if !memCache.write(position, data) then fileCache.write(position, data)
-    _size = math.max(size, position + data.length)
-  }
+  /** Writes data to the cache. Data size should not exceed `memChunk`.
+    * 
+    * @return The number of bytes written. */
+  def write(position: Long, data: Array[Byte]): Int =
+    if data.length > 0 then guard(s"write $position [${data.length}]") {
+      ensure("cache.write", data.length <= memChunk, s"Data array too large: [${data.length}]")
+      // Clear the area in all caches.
+      if position < size then
+        memCache.clear(position, data.length)
+        zeroCache.clear(position, data.length)
+        fileCache.clear(position, data.length)
+      // Allocate zeros if writing starts beyond end of file.
+      if position > size then zeroCache.allocate(size, position - size)
+      // Write the area.
+      if !memCache.write(position, data) then fileCache.write(position, data)
+      _size = math.max(size, position + data.length)
+    }
+    data.length
 
   /** Reads cached byte areas from this [[WriteCache]].
     *

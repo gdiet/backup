@@ -25,7 +25,7 @@ class BackendSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
     assert(backend.entry("/dir1/file1").get.isInstanceOf[FileEntry])
 
   "write some bytes" in
-    assert(backend.write(file1, Iterator(4L -> Array[Byte](1, 2, 3, 4), 6L -> Array[Byte](5, 6, 7, 8))))
+    assert(backend.write(file1, Iterator(4L -> Array[Byte](1, 2, 3, 4), 6L -> Array[Byte](5, 6, 7, 8))) == Some(8))
 
   "read some bytes past end of file" in
     assert(backend.testRead(file1, 2, 10).toSeq == Seq(0,0,1,2,5,6,7,8))

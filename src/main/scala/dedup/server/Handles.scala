@@ -32,17 +32,18 @@ final class Handles(tempPath: java.nio.file.Path) extends util.ClassLogging:
   }
 
   /** @param data Iterator(position -> bytes). Providing the complete data as Iterator allows running the update
-    *             atomically / synchronized. Note that the byte arrays may be kept in memory, so make sure e.g.
-    *             using defensive copy (Array.clone) that they are not modified later.
-    * @return `false` if called without createAndOpen or open. */
-  def write(fileId: Long, sizeInDb: DataId => Long, data: Iterator[(Long, Array[Byte])]): Boolean =
+    *             atomically / synchronized. Overlapping data chunks are written in the order of iteration, i.e.,
+    *             overwriting data written just before. Note that the byte arrays may be kept in memory, so make
+    *             sure e.g. using defensive copy (Array.clone) that they are not modified later.
+    * @return The number of bytes written or `None` if called without createAndOpen or open. */
+  def write(fileId: Long, sizeInDb: DataId => Long, data: Iterator[(Long, Array[Byte])]): Option[Long] =
     synchronized(handles.get(fileId).map {
       case Handle(_, _, Some(current), _) => current
       case handle @ Handle(_, dataId, None, persisting) =>
         log.trace(s"Creating write cache for $fileId.")
         val initialSize = persisting.headOption.map(_.size).getOrElse(sizeInDb(dataId))
         DataEntry(dataSeq, initialSize, tempPath).tap(handle.withCurrent(_).tap(handles += fileId -> _))
-    }).map(_.write(data)).isDefined
+    }).map(_.write(data))
 
   /** Truncates the cached file to a new size. Zero-pads if the file size increases.
     * @return `false` if called without createAndOpen or open. */

@@ -23,8 +23,10 @@ final class DataEntry(idSeq: java.util.concurrent.atomic.AtomicLong, initialSize
   def read(offset: Long, size: Long): Iterator[(Long, Either[Long, Array[Byte]])] =
     synchronized { cache.read(offset, size) }
 
-  /** @param data Iterator(position -> bytes). The write is executed atomically / synchronized. */
-  def write(data: Iterator[(Long, Array[Byte])]): Unit = synchronized { data.foreach(cache.write) }
+  /** @param data Iterator(position -> bytes). The write is executed atomically / synchronized. Overlapping data chunks 
+    *             are written in the order of iteration, i.e., overwriting data written just before. 
+    * @return The number of bytes written. */
+  def write(data: Iterator[(Long, Array[Byte])]): Long = synchronized { data.map[Long](cache.write).sum }
 
   def truncate(newSize: Long): Unit = synchronized { cache.truncate(newSize) }
 

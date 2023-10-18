@@ -180,9 +180,12 @@ object BackupTool extends dedup.util.ClassLogging:
             currentPosition -> chunk
           }
         fs.write(targetId, data)
-      }
-      log.info(s"Stored: $source")
-      source.length() // TODO it would be better to get the length back from fs.write.
+      } match
+        case None =>
+          ??? // FIXME
+        case Some(size) =>
+          log.info(s"Stored: $source")
+          size
     catch
       case e: IOException => log.warn(s"Could not read: $source"); 0
     finally fs.release(targetId)
