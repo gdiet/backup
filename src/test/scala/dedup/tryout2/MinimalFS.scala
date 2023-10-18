@@ -10,7 +10,7 @@ import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 object MinimalFS extends App {
   val mountPoint = if (Platform.getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnth"
   val fs = new MinimalFS()
-  try fs.mount(Paths.get(mountPoint), true, true)
+  try fs.mount(Paths.get(mountPoint), true, false)
   finally fs.umount()
 }
 
@@ -19,8 +19,8 @@ class MinimalFS extends FuseStubFS {
   private val helloPath = "/hello.txt"
   private val content = "Hello World!".getBytes("UTF-8")
 
-  /* Note: Calling FileStat.toString DOES NOT WORK, there's a PR: https://github.com/jnr/jnr-ffi/pull/176 */
   override def getattr(path: String, stat: FileStat): Int =
+    System.err.println(s"getattr('$path', $stat)")
     if (path == "/") {
       stat.st_mode.set(FileStat.S_IFDIR | O777)
       stat.st_nlink.set(2)
