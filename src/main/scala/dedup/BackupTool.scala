@@ -182,7 +182,8 @@ object BackupTool extends dedup.util.ClassLogging:
         fs.write(targetId, data)
       } match
         case None =>
-          ??? // FIXME
+          log.warn(s"Could not write target file for file '$source'.")
+          0
         case Some(size) =>
           log.info(s"Stored: $source")
           size
