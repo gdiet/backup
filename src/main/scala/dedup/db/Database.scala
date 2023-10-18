@@ -32,7 +32,7 @@ object Database extends util.ClassLogging:
   /** Characters not allowed in Windows file names. */
   private val illegalCharsInNames = Set('\\', '/', ':', '*', '?', '"', '<', '>', '|')
 
-  def validateName(fileName: String): Unit =
+  private def validateName(fileName: String): Unit =
     require(fileName.nonEmpty, "The name must not be empty.")
     val illegalChars = fileName.toSet.intersect(Database.illegalCharsInNames)
     if illegalChars.nonEmpty then

@@ -3,6 +3,7 @@ package dedup
 import java.io.File
 import scala.reflect.*
 
+@scala.annotation.targetName("getTypeName")
 def °[T: ClassTag]: String = classTag[T].runtimeClass.getTypeName
 
 def delete(file: File): Unit =
