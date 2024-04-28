@@ -12,7 +12,7 @@ lazy val dedupfs = project
     // Document migration, similar to 4.x -> 5.x migration.
     libraryDependencies += "com.h2database" % "h2" % "2.1.214",
     // Test dependencies
-    libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.17" % "test",
+    libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.18" % "test",
   )
 
 lazy val createApp = taskKey[Unit]("Create the app.")
