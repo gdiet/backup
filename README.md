@@ -337,7 +337,7 @@ Hopefully, you will never see an `EnsureFailed` exception the logs. However, if 
 
 ### Run The H2 Database Server In TCP Mode
 
-For demonstration, investigation or debugging it might be interesting to examine the DedupFS database while the DedupFS file system is mounted. For this, run a H2 TCP server locally, e.g.
+For demonstration, investigation or debugging it might be interesting to examine the DedupFS database while the DedupFS file system is mounted. For this, run an H2 TCP server locally, e.g.
 
     java -cp "h2-2.1.214.jar" org.h2.tools.Server -tcp -tcpPort 9876
 
@@ -435,7 +435,7 @@ To upgrade a DedupFS installation to a newer version:
 * Added QUICKSTART.html and German SCHNELLSTART.html documentation.
 * Rewritten experimental `fsc backup` command, changed functionality.
 * Rewritten write cache handling for improved maintainability.
-* Added option to run with a H2 TCP server.
+* Added option to run with an H2 TCP server.
 
 #### 5.1.0 (2022.11.25)
 
@@ -467,7 +467,7 @@ To upgrade a DedupFS installation to a newer version:
 **Migration from 4.x to 5.x:**
 
 * **Direct migration of repositories from versions prior to 4.x is not supported.**
-* Use the 4.x dedupfs software to run the command `fsc backup` in order to make sure a current database backup exists. Note that in later releases, this utilits is renamed `fsc db-backup`.
+* Use the 4.x dedupfs software to run the command `fsc backup` in order to make sure a current database backup exists. Note that in later releases, this utility is renamed `fsc db-backup`.
 * Unpack the 5.x dedupfs software into the repository.
 * Use the 5.x `db-restore` utility like this:<br> `db-restore from=dedupfs_[timestamp].zip`<br> to point the utility to the database backup zip file created above. Look for the exact timestamp to use in the `fsdb` subdirectory of the repository.
 * The migration is complete. Don't use dedupfs versions previous to 5.0.0 anymore with the repository.
