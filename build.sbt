@@ -3,7 +3,7 @@ lazy val dedupfs = project
   .settings(
     name := "dedupfs",
     version := "current",
-    scalaVersion := "3.3.1",
+    scalaVersion := "3.3.3", // 3.3.x is LTS
     scalacOptions ++= Seq("-deprecation", "-unchecked"),
     libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.5.6",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.7",
