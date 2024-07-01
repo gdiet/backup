@@ -1,8 +1,8 @@
 package dedup.tryout
 
 import jnr.ffi.Pointer
-import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo, Statvfs}
+import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
 
 @main def tryout(): Unit =
   val fs = new Server

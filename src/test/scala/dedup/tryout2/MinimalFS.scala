@@ -1,11 +1,11 @@
 package dedup.tryout2
 
-import java.nio.file.Paths
-
 import jnr.ffi.Platform.OS
 import jnr.ffi.{Platform, Pointer}
 import ru.serce.jnrfuse.struct.{FileStat, FuseFileInfo}
 import ru.serce.jnrfuse.{ErrorCodes, FuseFillDir, FuseStubFS}
+
+import java.nio.file.Paths
 
 object MinimalFS extends App {
   val mountPoint = if (Platform.getNativePlatform.getOS == OS.WINDOWS) "J:\\" else "/tmp/mnth"

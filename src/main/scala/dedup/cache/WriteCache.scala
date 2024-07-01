@@ -1,9 +1,10 @@
 package dedup
 package cache
 
-import java.util.concurrent.atomic.AtomicLong
-import java.nio.file.Path
 import dedup.util.ClassLogging
+
+import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicLong
 
 /** Caches byte arrays with positions, where the byte arrays are not necessarily contiguous.
   * Used keep track of changes to a singe file's contents for as long as that file is kept open.

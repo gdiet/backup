@@ -3,7 +3,7 @@ package cache
 
 import dedup.util.ClassLogging
 
-import java.lang.Runtime.{getRuntime => rt}
+import java.lang.Runtime.getRuntime as rt
 import java.util.concurrent.atomic.AtomicLong
 
 object MemCache extends ClassLogging:

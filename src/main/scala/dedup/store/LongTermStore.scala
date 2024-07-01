@@ -1,7 +1,7 @@
 package dedup
 package store
 
-import java.io.{File, FileNotFoundException, RandomAccessFile}
+import java.io.{File, FileNotFoundException}
 import java.util.concurrent.atomic.AtomicLong
 
 def dataDir(repo: File) = File(repo, "data")

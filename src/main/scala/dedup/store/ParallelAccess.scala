@@ -6,8 +6,6 @@ import dedup.util.ClassLogging
 import java.io.{File, RandomAccessFile}
 import java.util.concurrent.locks.ReentrantLock
 import scala.collection.mutable
-import scala.util.Try
-import dedup.store.ParallelAccess
 
 /** Manages thread safe parallel access to dedupfs data files so that only a limited
   * number of files is kept open and that write access is only used where necessary. */
