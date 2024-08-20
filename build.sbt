@@ -5,14 +5,14 @@ lazy val dedupfs = project
     version := "current",
     scalaVersion := "3.3.3", // 3.3.x is LTS
     scalacOptions ++= Seq("-deprecation", "-unchecked"),
-    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.5.6",
+    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.5.7",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.7",
     // Update dedup.db.H2.dbName accordingly when updating H2
     // to a version with incompatible binary storage format.
     // Document migration, similar to 4.x -> 5.x migration.
     libraryDependencies += "com.h2database" % "h2" % "2.1.214",
     // Test dependencies
-    libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.18" % "test",
+    libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.19" % "test",
   )
 
 lazy val createApp = taskKey[Unit]("Create the app.")
