@@ -411,6 +411,11 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
 
+#### 5.3.1 (2024.08.24)
+
+* Update Scala to 3.3.3 and Java to 21.0.4+7 together with SBT and some dependencies.
+* Documentation updates
+
 #### 5.3.0 (2023.12.02)
 
 * `fsc find` syntax changed, now allows to search for path fragments, not only for single entry names.
