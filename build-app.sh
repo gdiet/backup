@@ -4,6 +4,16 @@
 # sudo apt --assume-yes install jq zip
 # Note: jlink needs the binutils package, but that is contained in the above ubuntu distribution.
 
+if ! jq --version > /dev/null 2>&1; then
+  echo "It seems that jq is not installed - exiting..."
+  exit 1
+fi
+
+if ! zip --version > /dev/null 2>&1; then
+  echo "It seems that jq is not installed - exiting..."
+  exit 1
+fi
+
 # Read version from git.
 version=$(git log -1 2>/dev/null | sed -n 's/commit //p' | sed 1q | cut -b 1-8 ) || exit 1
 if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi || exit 1
