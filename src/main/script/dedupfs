@@ -11,4 +11,4 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 # copyWhenMoving=true         | default: false
 # gui=true                    | default: false - true to show server GUI
 # temp=<temp dir>             | default: dedupfs-temp in the user's temp dir
-$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -Dfile.encoding=UTF-8 -Dlogback.configurationFile=logback-server.xml -cp "$APPDIR/lib/*" dedup.mount "$@"
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -Dfile.encoding=UTF-8 -Dlogback.configurationFile=logback-server.xml -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.mount "$@"

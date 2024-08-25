@@ -10,4 +10,4 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 # deleteFiles=<delete files in blacklistDir when blacklisted?>    | default: true
 # dfsBlacklist=<name of blacklist directory in dedup file system> | default: blacklist
 # deleteCopies=<delete all copies of blacklisted files?>          | default: false
-$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx128m -cp "$APPDIR/lib/*" dedup.blacklist "$@"
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx128m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.blacklist "$@"
