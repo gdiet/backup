@@ -89,7 +89,7 @@ if [ "$1" ]; then clean=";clean"; else clean=""; fi
 
 # Create JREs.
 echo Collect Java modules information
-modules=$("$jdkDir/bin/jdeps" --print-module-deps --ignore-missing-deps --recursive --multi-release 17 --class-path="target/app/lib/*" --module-path="target/app/lib/*" target/app/lib/dedupfs_3-current.jar)
+modules=$("$jdkDir/bin/jdeps" --print-module-deps --ignore-missing-deps --recursive --multi-release 17 --class-path="target/app/lib/*:target/app/lib-h2/*" --module-path="target/app/lib/*:target/app/lib-h2/*" target/app/lib/dedupfs_3-current.jar)
 echo Build the minified Linux JRE
 "$jdkDir/bin/jlink" --verbose --add-modules "$modules" --strip-debug --no-man-pages --no-header-files --compress=zip-9 --output target/jre-linux > /dev/null
 echo Build the minified Windows JRE
