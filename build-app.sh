@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Fail reliably and fail fast. For debugging, add -x.
+# See https://gist.github.com/mohanpedala/1e2ff5661761d3abd0385e8223e16425
 set -e -o pipefail
 
 # When run on ubuntu-22.04-lts-jammy-wsl-amd64-wsl, the following additional packages are needed:
