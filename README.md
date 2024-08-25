@@ -406,7 +406,6 @@ To upgrade a DedupFS installation to a newer version:
 * Ensure the backup script can be gracefully interrupted.
 * In some way give access to deleted files and directories.
 * Development: Try out scoverage instead of jacoco (a spike 2022.10 didn't work well).
-* Change database backup, no need to have the full backup as default every time?
 * Support for soft links.
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
