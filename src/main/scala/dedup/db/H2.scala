@@ -9,7 +9,7 @@ object H2 extends ClassLogging:
   Class.forName("org.h2.Driver")
   private def tcpPortProp = sys.props.get(s"H2.TcpPort")
 
-  val dbName = "dedupfs-210" // H2 version suffix, can stay 210 for as long as the storage format is binary compatible.
+  val dbName = "dedupfs-232" // H2 version suffix, can stay 232 for as long as the storage format is binary compatible.
   def dbFile(dbDir: java.io.File): java.io.File = java.io.File(dbDir, s"$dbName.mv.db")
 
   val backupName = s"${dbName}_backup"
