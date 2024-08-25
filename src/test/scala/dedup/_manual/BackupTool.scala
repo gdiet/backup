@@ -7,3 +7,7 @@ object BackupTool extends App:
     "/?backup/[yyyy]/![yyyy.MM.dd_HH.mm_ss]",
     "reference=/backup/*/*"
   )
+//  dedup.fsc("repo=./manual", "dbBackup=false", "backup",
+//    """src""",
+//    "/?backup/[yyyy]/![yyyy.MM.dd_HH.mm_ss]"
+//  )
