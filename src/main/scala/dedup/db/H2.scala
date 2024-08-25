@@ -5,14 +5,17 @@ import dedup.util.ClassLogging
 
 import java.sql.{Connection, DriverManager}
 
+// TODO the handling of db file names, paths etc. feels brittle and confusing => clean up.
 object H2 extends ClassLogging:
   Class.forName("org.h2.Driver")
   private def tcpPortProp = sys.props.get(s"H2.TcpPort")
-
-  val dbName = "dedupfs-232" // H2 version suffix, can stay 232 for as long as the storage format is binary compatible.
+  
+  val dbName = "dedupfs-232" // H2 version 232 suffix since 6.0, can stay for as long as the storage format is binary compatible.
   def dbFile(dbDir: java.io.File): java.io.File = java.io.File(dbDir, s"$dbName.mv.db")
+  val previousDbName = "dedupfs-210" // Used with version 5.x.
+  def previousDbFile(dbDir: java.io.File): java.io.File = java.io.File(dbDir, s"$previousDbName.mv.db")
 
-  val backupName = s"${dbName}_backup"
+  private val backupName = s"${dbName}_backup"
   def backupFile(dbDir: java.io.File): java.io.File = java.io.File(dbDir, s"$backupName.mv.db")
 
   // For SQL debugging, add to the DB URL "...;TRACE_LEVEL_SYSTEM_OUT=2"
@@ -45,6 +48,8 @@ object H2 extends ClassLogging:
     ensure("h2.trace.file", !dbTraceFile.exists, s"Database trace file $dbTraceFile found. Check for database problems.")
 
   def connection(dbDir: java.io.File, readOnly: Boolean, expectExists: Boolean = true): Connection =
+    ensure("h2.previousDb", !previousDbFile(dbDir).exists(),
+      s"A database file from an earlier version of this software exists in $dbDir.")
     ensure("h2.connection", dbFile(dbDir).exists == expectExists,
       s"Database file ${dbFile(dbDir)} does ${if expectExists then "not " else ""}exist.")
     if !readOnly then checkForTraceFile(dbDir)

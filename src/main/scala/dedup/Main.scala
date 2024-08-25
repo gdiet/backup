@@ -23,6 +23,8 @@ import java.io.File
   val cmd   = opts.additionalOptions.toList
   try cmd match
     case "backup"     :: params          => BackupTool.backup(opts.baseOptions, params)
+    case "db-migrate1"::             Nil => db.maintenance.migrateDbStep1      (dbDir          )
+    case "db-migrate2"::             Nil => db.maintenance.migrateDbStep2      (dbDir          )
     case "db-backup"  ::             Nil => db.maintenance.dbBackup            (dbDir          )
     case "db-restore" ::             Nil => db.maintenance.restorePlainDbBackup(dbDir          )
     case "db-restore" :: fileName :: Nil => db.maintenance.restoreSqlDbBackup  (dbDir, fileName)
