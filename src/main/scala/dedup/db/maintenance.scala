@@ -1,7 +1,7 @@
 package dedup
 package db
 
-import dedup.db.H2.{dbFile, dbName, backupFile, backupName, previousDbFile}
+import dedup.db.H2.{backupFile, dbFile, dbName, previousDbFile}
 import org.h2.tools.{RunScript, Script}
 
 import java.io.File
