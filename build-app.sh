@@ -14,7 +14,7 @@ if ! jq --version > /dev/null 2>&1; then
 fi
 
 if ! zip --version > /dev/null 2>&1; then
-  echo "It seems that jq is not installed - exiting..."
+  echo "It seems that zip is not installed - exiting..."
   exit 1
 fi
 
