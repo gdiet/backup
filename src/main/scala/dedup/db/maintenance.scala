@@ -26,11 +26,11 @@ object maintenance extends util.ClassLogging:
     ensure("maintenance.migrateDB.step1", previousDbFile.exists(),
       s"Can't migrate old database, not found: $previousDbFile")
 
+    plainDbBackup(dbDir, previousDbRef, previousDbRef.beforeUpgrade)
     sqlDbBackup(dbDir, previousDbRef, previousDbRef.beforeUpgrade).await()
 
-    val renameTo = previousDbRef.beforeUpgrade.dbFile(dbDir)
-    ensure("maintenance.migrateDB.step1", previousDbFile.renameTo(renameTo),
-      s"Could not rename $previousDbFile to $renameTo.")
+    ensure("maintenance.migrateDB.step1", previousDbFile.delete(),
+      s"Could not delete $previousDbFile.")
 
   /** Restore the database from the file created in step 1,
    *  this time with the current database driver. */
@@ -50,13 +50,13 @@ object maintenance extends util.ClassLogging:
 
   /** @return A CountDownLatch that becomes available when the SQL backup is complete. */
   def dbBackup(dbDir: File, fileNameSuffix: String = ""): CountDownLatch =
-    plainDbBackup(dbDir)
+    plainDbBackup(dbDir, dbRef, dbRef.backup)
     sqlDbBackup(dbDir, dbRef, dbRef.backup)
 
-  private def plainDbBackup(dbDir: File): Unit =
-    val database = dbRef.dbFile(dbDir)
+  private def plainDbBackup(dbDir: File, source: DBRef, target: DBRef): Unit =
+    val database = source.dbFile(dbDir)
     ensure("utility.backup", database.exists(), s"Database file $database does not exist")
-    val plainBackup = dbRef.backup.dbFile(dbDir)
+    val plainBackup = target.dbFile(dbDir)
     log.info(s"Creating plain database backup: ${database.getName} -> ${plainBackup.getName}")
     Files.copy(database.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
@@ -81,7 +81,7 @@ object maintenance extends util.ClassLogging:
     }, "db-backup").start()
     awaitable
 
-  def restorePlainDbBackup(dbDir: File): Unit =
+  def restorePlainDbBackup(dbDir: File): Unit = // FIXME add db ref parameter
     val backupFile = dbRef.backup.dbFile(dbDir)
     ensure("utility.restore.notFound", backupFile.exists(), s"Database backup file $backupFile does not exist")
     val database = dbRef.dbFile(dbDir)
@@ -89,13 +89,15 @@ object maintenance extends util.ClassLogging:
     Files.copy(backupFile.toPath, database.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 
   def restoreSqlDbBackup(dbDir: File, zipFileName: String): Unit =
+    log.info(s"## zipFileName = $zipFileName") // FIXME remove
     val zipFile = File(dbDir, zipFileName)
     ensure("utility.restore.from", zipFile.exists(), s"Database backup script zip file $zipFile does not exist")
     val database = dbRef.dbFile(dbDir)
+    log.info(s"## database = $database") // FIXME remove
     ensure("utility.restore", !database.exists || database.delete, s"Can't delete current database file $database")
     log.info(s"Restoring database backup: ${zipFile.getName} -> ${database.getName}")
     RunScript.main(
-      "-url", s"jdbc:h2:$dbDir/${dbRef.dbScriptPath(dbDir)}", "-script", s"$zipFile", "-user", "sa", "-options", "compression", "zip"
+      "-url", s"jdbc:h2:${dbRef.dbScriptPath(dbDir)}", "-script", s"$zipFile", "-user", "sa", "-options", "compression", "zip"
     )
 
   def compactDb(dbDir: File): Unit = withDb(dbDir, readOnly = false)(_.shutdownCompact())
