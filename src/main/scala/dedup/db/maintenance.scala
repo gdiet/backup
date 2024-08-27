@@ -6,8 +6,6 @@ import org.h2.tools.{RunScript, Script}
 
 import java.io.File
 import java.nio.file.{Files, StandardCopyOption}
-import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.concurrent.CountDownLatch
 
 object maintenance extends util.ClassLogging:
@@ -39,10 +37,8 @@ object maintenance extends util.ClassLogging:
     ensure("maintenance.migrateDB.step1", ! currentDbFile.exists(),
       s"Can't migrate old database - a new database is already present: $currentDbFile")
 
-    val pattern = previousDbRef.beforeUpgrade.dbZipNamePattern // FIXME inline
-    val backupCandidates = dbDir.listFiles().filter(_.getName.matches(pattern))
-    log.info("xx " + pattern) // FIXME remove
-    log.info("xx " + dbDir.listFiles().toList) // FIXME remove
+    val backupFileNamePattern = previousDbRef.beforeUpgrade.dbZipNamePattern
+    val backupCandidates = dbDir.listFiles().filter(_.getName.matches(backupFileNamePattern))
     ensure("maintenance.migrateDB.step2", backupCandidates.length == 1,
       s"Found no or too many DB backup candidates for migration step 2: ${backupCandidates.toList}")
 
@@ -56,8 +52,10 @@ object maintenance extends util.ClassLogging:
   private def plainDbBackup(dbDir: File, source: DBRef, target: DBRef): Unit =
     val database = source.dbFile(dbDir)
     ensure("utility.backup", database.exists(), s"Database file $database does not exist")
+    
     val plainBackup = target.dbFile(dbDir)
     log.info(s"Creating plain database backup: ${database.getName} -> ${plainBackup.getName}")
+    
     Files.copy(database.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
   /** @return A CountDownLatch that becomes available when the SQL backup is complete. */
@@ -66,13 +64,11 @@ object maintenance extends util.ClassLogging:
     new Thread(() => {
       try
         cache.MemCache.availableMem.addAndGet(-64000000) // Reserve some RAM for the backup process
-        val dbScriptPath = source.dbScriptPath(dbDir) // FIXME inline
-        val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
         val zipBackup = target.dbZipFile(dbDir)
         log.info(s"Creating sql script database backup: ${source.dbFile(dbDir).getName} -> ${zipBackup.getName}")
         log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
         Script.main(
-          "-url", s"jdbc:h2:$dbScriptPath", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
+          "-url", s"jdbc:h2:${source.dbScriptPath(dbDir)}", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
         )
         log.info(s"Sql script database backup created.")
       finally
@@ -81,20 +77,22 @@ object maintenance extends util.ClassLogging:
     }, "db-backup").start()
     awaitable
 
-  def restorePlainDbBackup(dbDir: File): Unit = // FIXME add db ref parameter
+  def restorePlainDbBackup(dbDir: File): Unit =
     val backupFile = dbRef.backup.dbFile(dbDir)
     ensure("utility.restore.notFound", backupFile.exists(), s"Database backup file $backupFile does not exist")
+    
     val database = dbRef.dbFile(dbDir)
     log.info(s"Restoring plain database backup: ${backupFile.getName} -> ${database.getName}")
+    
     Files.copy(backupFile.toPath, database.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 
   def restoreSqlDbBackup(dbDir: File, zipFileName: String): Unit =
-    log.info(s"## zipFileName = $zipFileName") // FIXME remove
     val zipFile = File(dbDir, zipFileName)
     ensure("utility.restore.from", zipFile.exists(), s"Database backup script zip file $zipFile does not exist")
+
     val database = dbRef.dbFile(dbDir)
-    log.info(s"## database = $database") // FIXME remove
     ensure("utility.restore", !database.exists || database.delete, s"Can't delete current database file $database")
+
     log.info(s"Restoring database backup: ${zipFile.getName} -> ${database.getName}")
     RunScript.main(
       "-url", s"jdbc:h2:${dbRef.dbScriptPath(dbDir)}", "-script", s"$zipFile", "-user", "sa", "-options", "compression", "zip"
