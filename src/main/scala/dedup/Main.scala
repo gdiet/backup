@@ -5,45 +5,53 @@ import jnr.ffi.Platform.getNativePlatform
 
 import java.io.File
 
-@main def init(opts: (String, String)*): Unit =
+private def guard(f: => Any): Unit = // FIXME find a good place for this
+  try f catch
+    case throwable =>
+      throwable match
+        case _: EnsureFailed | main.FailureExit => // Already logged
+        case other => main.error("Uncaught exception:", other)
+      main.error("Finished abnormally.")
+      Thread.sleep(200) // Give logging some time to display final messages
+      System.exit(1)
+  Thread.sleep(200) // Give logging some time to display final messages
+
+@main def init(opts: (String, String)*): Unit = guard {
   val repo  = opts.repo
   val dbDir = db.dbDir(repo)
   if dbDir.exists() then main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.")
   store.dataDir(repo).mkdirs() // If dataDir is missing, Server.statfs will report free size 0 on Windows.
   scala.util.Using.resource(db.H2.connection(dbDir, readOnly = false, expectExists = false))(db.initialize)
   main.info(s"Database initialized for repository $repo.")
-  Thread.sleep(200) // Give logging some time to display message
+}
 
-@main def stats(opts: (String, String)*): Unit =
+@main def stats(opts: (String, String)*): Unit = guard {
   db.maintenance.stats(opts.dbDir)
-  Thread.sleep(200) // Give logging some time to display message
+}
 
-@main def fsc(opts: String*): Unit =
+@main def fsc(opts: String*): Unit = guard {
   val dbDir = opts.baseOptions.dbDir
-  val cmd   = opts.additionalOptions.toList
-  try cmd match
-    case "backup"     :: params          => BackupTool.backup(opts.baseOptions, params)
-    case "db-migrate1"::             Nil => db.maintenance.migrateDbStep1      (dbDir          )
-    case "db-migrate2"::             Nil => db.maintenance.migrateDbStep2      (dbDir          )
-    case "db-backup"  ::             Nil => db.maintenance.dbBackup            (dbDir          )
-    case "db-restore" ::             Nil => db.maintenance.restorePlainDbBackup(dbDir          )
-    case "db-restore" :: fileName :: Nil => db.maintenance.restoreSqlDbBackup  (dbDir, fileName)
-    case "db-compact" ::             Nil => db.maintenance.compactDb           (dbDir          )
-    case "find"       :: matcher  :: Nil => db.maintenance.find                (dbDir, matcher )
-    case "list"       :: path     :: Nil => db.maintenance.list                (dbDir, path    )
-    case "del"        :: path     :: Nil => db.maintenance.del                 (dbDir, path    )
+  val cmd = opts.additionalOptions.toList
+  cmd match
+    case "backup"      ::             params => BackupTool.backup(opts.baseOptions, params)
+    case "db-migrate1" ::             Nil    => db.maintenance.migrateDbStep1(dbDir)
+    case "db-migrate2" ::             Nil    => db.maintenance.migrateDbStep2(dbDir)
+    case "db-backup"   ::             Nil    => db.maintenance.dbBackup(dbDir)
+    case "db-restore"  ::             Nil    => db.maintenance.restorePlainDbBackup(dbDir)
+    case "db-restore"  :: fileName :: Nil    => db.maintenance.restoreSqlDbBackup(dbDir, fileName)
+    case "db-compact"  ::             Nil    => db.maintenance.compactDb(dbDir)
+    case "find"        :: matcher  :: Nil    => db.maintenance.find(dbDir, matcher)
+    case "list"        :: path     :: Nil    => db.maintenance.list(dbDir, path)
+    case "del"         :: path     :: Nil    => db.maintenance.del(dbDir, path)
     case _ => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
-  catch
-    case main.exit => /**/
-    case other => main.error("Uncaught exception:", other)
-  Thread.sleep(200) // Give logging some time to display final messages
+}
 
-@main def reclaimSpace(opts: (String, String)*): Unit =
+@main def reclaimSpace(opts: (String, String)*): Unit = guard {
   db.maintenance.dbBackup(opts.dbDir, "_before_reclaim")
   db.maintenance.reclaimSpace(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
-  Thread.sleep(200) // Give logging some time to display message
+}
 
-@main def blacklist(opts: (String, String)*): Unit =
+@main def blacklist(opts: (String, String)*): Unit = guard {
   // (Here and in other places:) .getCanonicalPath fails fast for illegal file names like ["/hello].
   val blacklistDir = File(opts.repo, opts.getOrElse("blacklistDir", "blacklist")).getCanonicalPath
   val deleteFiles  = opts.defaultTrue("deleteFiles")
@@ -51,6 +59,7 @@ import java.io.File
   val deleteCopies = opts.defaultFalse("deleteCopies")
   if opts.defaultTrue("dbBackup") then db.maintenance.dbBackup(opts.dbDir, "_before_blacklisting")
   db.blacklist(opts.dbDir, blacklistDir, deleteFiles, dfsBlacklist, deleteCopies)
+}
 
 @main def mount(opts: (String, String)*): Unit =
   val readOnly       = opts.defaultFalse("readOnly")
@@ -89,7 +98,7 @@ import java.io.File
     try fs.mount(mount.toPath, true, false, fuseOpts) catch { case t: Throwable => fs.umount(); throw t }
     
   catch
-    case main.exit =>
+    case _: EnsureFailed | main.FailureExit => // TODO can we re-use guard here?
       main.error("Finished abnormally.")
       Thread.sleep(200) // Give logging some time to display message
     case t: Throwable =>
@@ -98,8 +107,8 @@ import java.io.File
 
 object main extends util.ClassLogging:
   export log.{debug, info, warn, error}
-  object exit extends RuntimeException("Exiting...")
-  def failureExit(msg: String*): Nothing = { msg.foreach(log.error(_)); throw exit }
+  object FailureExit extends RuntimeException("Exiting...")
+  def failureExit(msg: String*): Nothing = { msg.foreach(log.error(_)); log.error("Exiting..."); throw FailureExit }
 
   def prepareTempDir(readOnly: Boolean, opts: Seq[(String, String)]): File =
     File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now")).tap { temp =>
