@@ -52,10 +52,10 @@ object maintenance extends util.ClassLogging:
   private def plainDbBackup(dbDir: File, source: DBRef, target: DBRef): Unit =
     val database = source.dbFile(dbDir)
     ensure("utility.backup", database.exists(), s"Database file $database does not exist")
-    
+
     val plainBackup = target.dbFile(dbDir)
     log.info(s"Creating plain database backup: ${database.getName} -> ${plainBackup.getName}")
-    
+
     Files.copy(database.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
   /** @return A CountDownLatch that becomes available when the SQL backup is complete. */
@@ -80,10 +80,10 @@ object maintenance extends util.ClassLogging:
   def restorePlainDbBackup(dbDir: File): Unit =
     val backupFile = dbRef.backup.dbFile(dbDir)
     ensure("utility.restore.notFound", backupFile.exists(), s"Database backup file $backupFile does not exist")
-    
+
     val database = dbRef.dbFile(dbDir)
     log.info(s"Restoring plain database backup: ${backupFile.getName} -> ${database.getName}")
-    
+
     Files.copy(backupFile.toPath, database.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 
   def restoreSqlDbBackup(dbDir: File, zipFileName: String): Unit =
