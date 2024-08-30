@@ -16,7 +16,7 @@ rem ### Parameters ###
 rem # repo=<repository directory>        | default: '..' (parent of working directory)
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx64m -cp "%~dp0lib\*;%~dp0lib-h2\*" dedup.fsc db-backup %*
 if errorlevel 0 if not errorlevel 1 (
-    echo Database backup finished.
+    echo Database backup finished successfully.
     pause
 ) else (
     echo Database backup finished with error code %errorlevel%, exiting...

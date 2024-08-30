@@ -18,7 +18,7 @@ if [ $ERRORLEVEL -ne 0 ]; then
   echo "Database migration step 1 finished with error code $ERRORLEVEL, exiting..."
   exit $ERRORLEVEL
 else
-  echo "Database migration step 1 finished."
+  echo "Database migration step 1 finished successfully."
 fi
 $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.fsc db-migrate2
 ERRORLEVEL=$?
@@ -26,5 +26,5 @@ if [ $ERRORLEVEL -ne 0 ]; then
   echo "Database migration step 2 finished with error code $ERRORLEVEL, exiting..."
   exit $ERRORLEVEL
 else
-  echo "Database migration step 2 finished."
+  echo "Database migration step 2 finished successfully."
 fi

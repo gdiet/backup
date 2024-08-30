@@ -14,7 +14,7 @@ echo Starting database migration...
 
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx256m -cp "%~dp0lib\*;%~dp0lib-h2-previous\*" dedup.fsc db-migrate1
 if errorlevel 0 if not errorlevel 1 (
-    echo Database migration step 1 finished.
+    echo Database migration step 1 finished successfully.
 ) else (
     echo Database migration step 1 finished with error code %errorlevel%, exiting...
     pause
@@ -22,7 +22,7 @@ if errorlevel 0 if not errorlevel 1 (
 )
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx256m -cp "%~dp0lib\*;%~dp0lib-h2\*"          dedup.fsc db-migrate2
 if errorlevel 0 if not errorlevel 1 (
-    echo Database migration step 2 finished.
+    echo Database migration step 2 finished successfully.
     pause
 ) else (
     echo Database migration step 2 finished with error code %errorlevel%, exiting...

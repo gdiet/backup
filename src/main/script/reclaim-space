@@ -7,3 +7,10 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 # repo=<repository directory>       | default: '..' (parent of working directory)
 # keepDays=<number of days to keep> | default: 0 - the 'keepDays=' prefix can be omitted
 $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx256m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.reclaimSpace "$@"
+ERRORLEVEL=$?
+if [ $ERRORLEVEL -ne 0 ]; then
+  echo "Reclaim space finished with error code $ERRORLEVEL, exiting..."
+  exit $ERRORLEVEL
+fielse
+  echo "Reclaim space finished successfully."
+fi

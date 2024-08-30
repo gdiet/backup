@@ -12,4 +12,10 @@ rem # copyWhenMoving=true         | default: false
 rem # gui=true                    | default: false - true to show server GUI
 rem # temp=<temp dir>             | default: 'dedupfs-temp' in the user's temp dir
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx80m -Dfile.encoding=UTF-8 -Dlogback.configurationFile=logback-server.xml -cp "%~dp0lib\*;%~dp0lib-h2\*" dedup.mount readOnly=true %*
-pause
+if errorlevel 0 if not errorlevel 1 (
+    pause
+) else (
+    echo Dedupfs process finished with error code %errorlevel%, exiting...
+    pause
+    exit /b %errorlevel%
+)

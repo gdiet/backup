@@ -20,5 +20,5 @@ if [ $ERRORLEVEL -ne 0 ]; then
   echo "Database backup finished with error code $ERRORLEVEL, exiting..."
   exit $ERRORLEVEL
 else
-  echo "Database backup finished."
+  echo "Database backup finished successfully."
 fi

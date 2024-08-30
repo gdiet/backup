@@ -12,3 +12,8 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 # gui=true                    | default: false - true to show server GUI
 # temp=<temp dir>             | default: 'dedupfs-temp' in the user's temp dir
 $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx80m -Dfile.encoding=UTF-8 -Dlogback.configurationFile=logback-server.xml -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.mount readOnly=true "$@"
+ERRORLEVEL=$?
+if [ $ERRORLEVEL -ne 0 ]; then
+  echo "Dedupfs process finished with error code $ERRORLEVEL, exiting..."
+  exit $ERRORLEVEL
+fi
