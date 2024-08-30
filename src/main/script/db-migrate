@@ -1,0 +1,30 @@
+#!/bin/bash
+APPDIR=$(dirname "$0")
+JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
+
+
+echo
+echo "This utility will update a DedupFS database created by the previous"
+echo "major release to the current major release.  If you do not want"
+echo "that, simply close the console window where this utility is running."
+echo
+read -n 1 -r -s -p "Press any key to continue..."
+echo
+echo "Starting database migration..."
+
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -cp "$APPDIR/lib/*:$APPDIR/lib-h2-previous/*" dedup.fsc db-migrate1
+ERRORLEVEL=$?
+if [ $ERRORLEVEL -ne 0 ]; then
+  echo "Database migration step 1 finished with error code $ERRORLEVEL, exiting..."
+  exit $ERRORLEVEL
+else
+  echo "Database migration step 1 finished."
+fi
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.fsc db-migrate2
+ERRORLEVEL=$?
+if [ $ERRORLEVEL -ne 0 ]; then
+  echo "Database migration step 2 finished with error code $ERRORLEVEL, exiting..."
+  exit $ERRORLEVEL
+else
+  echo "Database migration step 2 finished."
+fi
