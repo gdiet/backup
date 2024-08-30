@@ -23,7 +23,7 @@ if errorlevel 1 (
 ) else if errorlevel 0 (
     echo Database migration step 2 finished.
     pause
-) else(
+) else (
     echo Database migration step 2 finished with error code %errorlevel%, exiting...
     pause
     exit /b %errorlevel%
