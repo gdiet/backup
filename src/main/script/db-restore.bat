@@ -16,11 +16,11 @@ rem ### Parameters ###
 rem # repo=<repository directory>        | default: '..' (parent of working directory)
 rem # <database backup zip file name>    | default: none - for plain db file restore.
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx512m -cp "%~dp0lib\*;%~dp0lib-h2\*" dedup.fsc db-restore %*
-if not errorlevel 0 (
-    echo Database restore finished with error code %errorlevel%, exiting...
-    pause
-    exit /b 1
-) else (
+if errorlevel 0 if not errorlevel 1 (
     echo Database restore finished.
     pause
+) else (
+    echo Database restore finished with error code %errorlevel%, exiting...
+    pause
+    exit /b %errorlevel%
 )

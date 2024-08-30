@@ -11,4 +11,11 @@ rem # deleteFiles=<delete files in blacklistDir when blacklisted?>    | default:
 rem # dfsBlacklist=<name of blacklist directory in dedup file system> | default: blacklist
 rem # deleteCopies=<delete all copies of blacklisted files?>          | default: false
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx128m -cp "%~dp0lib\*;%~dp0lib-h2\*" dedup.blacklist %*
-pause
+if errorlevel 0 if not errorlevel 1 (
+    echo Blacklisting finished successfully.
+    pause
+) else (
+    echo Blacklisting finished with error code %errorlevel%, exiting...
+    pause
+    exit /b %errorlevel%
+)

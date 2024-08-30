@@ -1,9 +1,9 @@
 @echo off
+title DB Migrate - DedupFS
 call "%~dp0helpers\set-java.bat"
 if errorlevel 1 exit /B %errorlevel%
 
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx256m -cp "%~dp0lib\*;%~dp0lib-h2-previous\*" dedup.fsc db-migrate1
-rem clean up errorlevel handling everywhere else
 if errorlevel 0 if not errorlevel 1 (
     echo Database migration step 1 finished.
 ) else (
