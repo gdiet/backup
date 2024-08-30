@@ -79,7 +79,7 @@ Download and install a [WinFSP Release](https://github.com/winfsp/winfsp/release
 
 Tested on Debian 64-bit.
 
-DedupFS needs *libfuse* to create a filesystem in userspace. *libfuse* is pre-installed in most Linux distributions.
+DedupFS needs *libfuse2* to create a filesystem in userspace. If *libfuse2* is installed, install it using `sudo apt install libfuse2`.
 
 ## Basic Steps To Use DedupFS
 
