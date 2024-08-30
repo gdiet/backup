@@ -19,7 +19,7 @@ $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" ded
 ERRORLEVEL=$?
 if [ $ERRORLEVEL -ne 0 ]; then
   echo "Database restore finished with error code $ERRORLEVEL, exiting..."
-  exit 1
+  exit $ERRORLEVEL
 else
   echo "Database restore finished."
 fi
