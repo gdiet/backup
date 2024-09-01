@@ -10,6 +10,6 @@ ERRORLEVEL=$?
 if [ $ERRORLEVEL -ne 0 ]; then
   echo "Repository initialization finished with error code $ERRORLEVEL, exiting..."
   exit $ERRORLEVEL
-fielse
+else
   echo "Repository initialization finished successfully."
 fi
