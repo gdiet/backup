@@ -5,8 +5,16 @@ import jnr.ffi.Platform.getNativePlatform
 
 import java.io.File
 
-private def guard(f: => Any): Unit = // FIXME find a good place for this
-  try f catch
+private def guard(app: String, opts: Seq[(String, String)])(f: => Any): Unit = // FIXME find a good place for this
+  guardSingle(app, opts.map((k, v) => s"$k=$v"))(f)
+
+private def guardSingle(app: String, opts: Seq[String])(f: => Any): Unit = // FIXME find a good place for this
+  if (opts.isEmpty) main.info(s"Starting $app.")
+  else main.info(s"Starting $app with options: ${opts.mkString(" ")}")
+  guardNoLog(f)
+
+private def guardNoLog(f: => Any): Unit = // FIXME find a good place for this
+  try f catch // FIXME if a script that can't change data fails, it still logs the error - do we want this?
     case throwable =>
       throwable match
         case _: EnsureFailed | main.FailureExit => // Already logged
@@ -16,7 +24,7 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
       System.exit(1)
   Thread.sleep(200) // Give logging some time to display final messages
 
-@main def init(opts: (String, String)*): Unit = guard {
+@main def init(opts: (String, String)*): Unit = guard("init", opts) {
   val repo  = opts.repo
   val dbDir = db.dbDir(repo)
   if dbDir.exists() then main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.")
@@ -25,11 +33,11 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
   main.info(s"Database initialized for repository $repo.")
 }
 
-@main def stats(opts: (String, String)*): Unit = guard {
+@main def stats(opts: (String, String)*): Unit = guardNoLog {
   db.maintenance.stats(opts.dbDir)
 }
 
-@main def fsc(opts: String*): Unit = guard {
+@main def fsc(opts: String*): Unit = guardSingle("fsc", opts) {
   val dbDir = opts.baseOptions.dbDir
   val cmd = opts.additionalOptions.toList
   cmd match
@@ -46,12 +54,12 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
     case _ => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
 }
 
-@main def reclaimSpace(opts: (String, String)*): Unit = guard {
+@main def reclaimSpace(opts: (String, String)*): Unit = guard("reclaimSpace", opts) {
   db.maintenance.dbBackup(opts.dbDir, "_before_reclaim")
   db.maintenance.reclaimSpace(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
 }
 
-@main def blacklist(opts: (String, String)*): Unit = guard {
+@main def blacklist(opts: (String, String)*): Unit = guard("blacklist", opts) {
   // (Here and in other places:) .getCanonicalPath fails fast for illegal file names like ["/hello].
   val blacklistDir = File(opts.repo, opts.getOrElse("blacklistDir", "blacklist")).getCanonicalPath
   val deleteFiles  = opts.defaultTrue("deleteFiles")
@@ -98,17 +106,17 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
     try fs.mount(mount.toPath, true, false, fuseOpts) catch { case t: Throwable => fs.umount(); throw t }
     
   catch
-    case _: EnsureFailed | main.FailureExit => // TODO can we re-use guard here?
+    case _: EnsureFailed | main.FailureExit => // already logged
       main.error("Finished abnormally.")
       Thread.sleep(200) // Give logging some time to display message
     case t: Throwable =>
-      main.error("Mount exception:", t)
+      main.error("Mount exception, finished abnormally:", t)
       Thread.sleep(200) // Give logging some time to display message
 
 object main extends util.ClassLogging:
   export log.{debug, info, warn, error}
-  object FailureExit extends RuntimeException("Exiting...")
-  def failureExit(msg: String*): Nothing = { msg.foreach(log.error(_)); log.error("Exiting..."); throw FailureExit }
+  object FailureExit extends RuntimeException()
+  def failureExit(msg: String*): Nothing = { msg.foreach(log.error(_)); throw FailureExit }
 
   def prepareTempDir(readOnly: Boolean, opts: Seq[(String, String)]): File =
     File(opts.getOrElse("temp", sys.props("java.io.tmpdir") + s"/dedupfs-temp/$now")).tap { temp =>
