@@ -414,7 +414,8 @@ To upgrade a DedupFS installation to a newer version:
 
 * Update H2 database to 2.3.232.
 * Add database migration script.
-* ??? blacklisting fails if called without anything ???
+* Improve failure handling of the utilities.
+* Fix Linux scripts to work with Java 21.0.x.
 
 #### 5.3.1 (2024.08.24)
 
