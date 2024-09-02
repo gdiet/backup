@@ -73,13 +73,13 @@ DedupFS runs fine with approximately 128 MB RAM assigned to its process. See be
 
 Tested on Windows 10 64-bit.
 
-Download and install a [WinFSP Release](https://github.com/winfsp/winfsp/releases) to make FUSE (Filesystem in Userspace) available. For DedupFS, only the WinFsp "Core" package is needed. I use `WinFsp 2023` a.k.a. `winfsp-2.0.23075` for running DedupFS. Until October 2023, I used `WinFsp 2021` a.k.a. `winfsp-1.9.21096` which also worked fine for me.
+Download and install a [WinFSP Release](https://github.com/winfsp/winfsp/releases) to make *fuse* (Filesystem in Userspace) available. For DedupFS, only the WinFsp "Core" package is needed. I use `WinFsp 2023` a.k.a. `winfsp-2.0.23075` for running DedupFS. Until October 2023, I used `WinFsp 2021` a.k.a. `winfsp-1.9.21096` which also worked fine for me.
 
 ### Linux
 
 Tested on Debian 64-bit.
 
-DedupFS needs *libfuse2* to create a filesystem in userspace. If *libfuse2* is installed, install it using `sudo apt install libfuse2`.
+DedupFS needs *fuse* (Filesystem in Userspace) to create a filesystem in userspace. If DedupFS doesn't find it, install it using `sudo apt install libfuse2`.
 
 ## Basic Steps To Use DedupFS
 
