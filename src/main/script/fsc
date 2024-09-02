@@ -13,9 +13,9 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 # find <pattern>   | find files with matching file names, e.g. '*.scala'
 # list <path>      | list directory or show file info
 # del <path>       | mark a file or recursively mark a directory as deleted
-$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx256m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.fsc "$@"
-ERRORLEVEL=$?
-if [ $ERRORLEVEL -ne 0 ]; then
-  echo "fsc finished with error code $ERRORLEVEL, exiting..."
-  exit $ERRORLEVEL
+if [ "$1" = "find" ] || [ "$1" = "list" ]; then
+  $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx256m -Dlogback.configurationFile=logback-readonly.xml -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.fsc "$@"
+else
+  $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx256m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.fsc "$@"
 fi
+# No confirmation, no additional output, fsc is a plain command line tool.
