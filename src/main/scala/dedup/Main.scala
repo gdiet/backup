@@ -5,16 +5,8 @@ import jnr.ffi.Platform.getNativePlatform
 
 import java.io.File
 
-private def guard(app: String, opts: Seq[(String, String)])(f: => Any): Unit = // FIXME find a good place for this
-  guardSingle(app, opts.map((k, v) => s"$k=$v"))(f)
-
-private def guardSingle(app: String, opts: Seq[String])(f: => Any): Unit = // FIXME find a good place for this
-  if (opts.isEmpty) main.info(s"Starting $app.")
-  else main.info(s"Starting $app with options: ${opts.mkString(" ")}")
-  guardNoLog(f)
-
-private def guardNoLog(f: => Any): Unit = // FIXME find a good place for this
-  try f catch // FIXME if a script that can't change data fails, it still logs the error - do we want this?
+private def guard(f: => Any): Unit = // FIXME find a good place for this
+  try f catch
     case throwable =>
       throwable match
         case _: EnsureFailed | main.FailureExit => // Already logged
@@ -24,7 +16,10 @@ private def guardNoLog(f: => Any): Unit = // FIXME find a good place for this
       System.exit(1)
   Thread.sleep(200) // Give logging some time to display final messages
 
-@main def init(opts: (String, String)*): Unit = guard("init", opts) {
+@main def init(opts: (String, String)*): Unit = guard {
+  // TODO add similar logging to the other write methods
+  if opts.isEmpty then main.info("Initializing dedup file system database.")
+  else main.info("Initializing dedup file system database, options: " + opts.forOutput)
   val repo  = opts.repo
   val dbDir = db.dbDir(repo)
   if dbDir.exists() then main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.")
@@ -33,11 +28,11 @@ private def guardNoLog(f: => Any): Unit = // FIXME find a good place for this
   main.info(s"Database initialized for repository $repo.")
 }
 
-@main def stats(opts: (String, String)*): Unit = guardNoLog {
+@main def stats(opts: (String, String)*): Unit = guard { // TODO read-only logging
   db.maintenance.stats(opts.dbDir)
 }
 
-@main def fsc(opts: String*): Unit = guardSingle("fsc", opts) {
+@main def fsc(opts: String*): Unit = guard { // TODO add intro+exit logging where appropriate
   val dbDir = opts.baseOptions.dbDir
   val cmd = opts.additionalOptions.toList
   cmd match
@@ -54,12 +49,12 @@ private def guardNoLog(f: => Any): Unit = // FIXME find a good place for this
     case _ => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
 }
 
-@main def reclaimSpace(opts: (String, String)*): Unit = guard("reclaimSpace", opts) {
+@main def reclaimSpace(opts: (String, String)*): Unit = guard {
   db.maintenance.dbBackup(opts.dbDir, "_before_reclaim")
   db.maintenance.reclaimSpace(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
 }
 
-@main def blacklist(opts: (String, String)*): Unit = guard("blacklist", opts) {
+@main def blacklist(opts: (String, String)*): Unit = guard {
   // (Here and in other places:) .getCanonicalPath fails fast for illegal file names like ["/hello].
   val blacklistDir = File(opts.repo, opts.getOrElse("blacklistDir", "blacklist")).getCanonicalPath
   val deleteFiles  = opts.defaultTrue("deleteFiles")
@@ -165,6 +160,7 @@ extension(options: Seq[(String, String)])
     val map = options.toMap.map((key, value) => key.toLowerCase -> value)
     ensure("unnamed.arguments", options.size == map.size, s"Multiple unnamed arguments: $options")
     map
+  private def forOutput: String = opts.map(_+"="+_).mkString(", ")
   private def get(name: String): Option[String] =
     opts.get(name.toLowerCase)
   private def unnamedOrGet(name: String): Option[String] =
