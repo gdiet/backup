@@ -16,6 +16,7 @@ object maintenance extends util.ClassLogging:
    *  This method assumes that the right database driver for the previous
    *  version's database is in the classpath. */
   def migrateDbStep1(dbDir: File): Unit =
+    main.info(s"Migrating old database to new version, step 1...")
     val currentDbFile = dbRef.dbFile(dbDir)
     ensure("maintenance.migrateDB.step1", ! currentDbFile.exists(),
       s"Can't migrate old database - a new database is already present: $currentDbFile")
@@ -29,10 +30,12 @@ object maintenance extends util.ClassLogging:
 
     ensure("maintenance.migrateDB.step1", previousDbFile.delete(),
       s"Could not delete $previousDbFile.")
+    main.info(s"Migrating old database to new version, step 1 finished.")
 
   /** Restore the database from the file created in step 1,
    *  this time with the current database driver. */
   def migrateDbStep2(dbDir: File): Unit =
+    main.info(s"Migrating old database to new version, step 2...")
     val currentDbFile = dbRef.dbFile(dbDir)
     ensure("maintenance.migrateDB.step1", ! currentDbFile.exists(),
       s"Can't migrate old database - a new database is already present: $currentDbFile")
@@ -43,6 +46,7 @@ object maintenance extends util.ClassLogging:
       s"Found no or too many DB backup candidates for migration step 2: ${backupCandidates.toList}")
 
     restoreSqlDbBackup(dbDir, backupCandidates(0).getName)
+    main.info(s"Migrating old database to new version, step 2 finished.")
 
   /** @return A CountDownLatch that becomes available when the SQL backup is complete. */
   def dbBackup(dbDir: File, fileNameSuffix: String = ""): CountDownLatch =
@@ -98,7 +102,9 @@ object maintenance extends util.ClassLogging:
       "-url", s"jdbc:h2:${dbRef.dbScriptPath(dbDir)}", "-script", s"$zipFile", "-user", "sa", "-options", "compression", "zip"
     )
 
-  def compactDb(dbDir: File): Unit = withDb(dbDir, readOnly = false)(_.shutdownCompact())
+  def compactDb(dbDir: File): Unit =
+    main.info(s"Compacting database...")
+    withDb(dbDir, readOnly = false)(_.shutdownCompact())
   
   def stats(dbDir: File): Unit = withDb(dbDir, readOnly = true, checkVersion = false) { db =>
     import Database.currentDbVersion
@@ -134,6 +140,7 @@ object maintenance extends util.ClassLogging:
   }
 
   def del(dbDir: File, path: String): Unit = withDb(dbDir, readOnly = false) { db =>
+    main.info(s"Marking deleted '$path' ...")
     db.entry(path) match
       case None =>
         println(s"The path '$path' does not exist.")

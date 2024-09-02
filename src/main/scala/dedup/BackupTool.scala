@@ -7,7 +7,7 @@ import scala.util.Using.resource
 object BackupTool extends dedup.util.ClassLogging:
 
   def backup(opts: Seq[(String, String)], params: List[String]): Unit =
-    log.info  (s"Running the backup utility.")
+    log.info  (s"Running the backup utility, options: [${opts.forOutput}], parameters: [${params.mkString(", ")}]")
     cache.MemCache.startupCheck()
 
     val (sources, target) = sourcesAndTarget(params)
