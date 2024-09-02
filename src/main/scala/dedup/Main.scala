@@ -17,7 +17,6 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
   Thread.sleep(200) // Give logging some time to display final messages
 
 @main def init(opts: (String, String)*): Unit = guard {
-  // TODO add similar logging to the other write methods
   if opts.isEmpty then main.info("Initializing dedup file system database.")
   else main.info("Initializing dedup file system database, options: " + opts.forOutput)
   val repo  = opts.repo
@@ -28,10 +27,11 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
   main.info(s"Database initialized for repository $repo.")
 }
 
-@main def stats(opts: (String, String)*): Unit = guard { // TODO read-only logging
+@main def stats(opts: (String, String)*): Unit = guard {
   db.maintenance.stats(opts.dbDir)
 }
 
+// TODO consider making init, stats, reclaimSpace, blacklist available through fsc, deprecate it and remove it in 7.0?
 @main def fsc(opts: String*): Unit = guard { // TODO add intro+exit logging where appropriate
   val dbDir = opts.baseOptions.dbDir
   val cmd = opts.additionalOptions.toList
@@ -50,12 +50,14 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
 }
 
 @main def reclaimSpace(opts: (String, String)*): Unit = guard {
+  // All required logging is done in the called functions.
   db.maintenance.dbBackup(opts.dbDir, "_before_reclaim")
   db.maintenance.reclaimSpace(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
 }
 
 @main def blacklist(opts: (String, String)*): Unit = guard {
-  // (Here and in other places:) .getCanonicalPath fails fast for illegal file names like ["/hello].
+  // All required logging is done in the called functions.
+  // Here and in other places: '.getCanonicalPath' fails fast for illegal file names like ["/hello].
   val blacklistDir = File(opts.repo, opts.getOrElse("blacklistDir", "blacklist")).getCanonicalPath
   val deleteFiles  = opts.defaultTrue("deleteFiles")
   val dfsBlacklist = opts.getOrElse("dfsBlacklist", "blacklist")
