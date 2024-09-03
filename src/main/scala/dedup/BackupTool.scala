@@ -45,11 +45,7 @@ object BackupTool extends dedup.util.ClassLogging:
       val bytesStored = sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
       shutdownHookThread.remove()
-    } catch
-      case e: Throwable =>
-        log.error(s"Uncaught exception", e)
-    finally
-      log.info(s"Finished the backup.")
+    } finally
       Thread.sleep(200)
       shutdownFinished.countDown()
 
