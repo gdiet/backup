@@ -31,7 +31,14 @@
   - good failure information is displayed
   - good failure information is logged
   - doesn't wait for confirmation
+  - [x] 2024-09-03 6.0.0-M6 dfaffe8d Windows
   - [o] 2024-09-03 6.0.0-M5 ed880216 Windows
+
+- Called with `jre /!jre` (is supposed to work)
+  - good success information is displayed
+  - good success information is logged
+  - doesn't wait for confirmation
+  - [x] 2024-09-03 6.0.0-M6 dfaffe8d Windows
 
 ## stats
 

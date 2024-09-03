@@ -46,7 +46,7 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
     case "find"        :: matcher  :: Nil    => db.maintenance.find(dbDir, matcher)
     case "list"        :: path     :: Nil    => db.maintenance.list(dbDir, path)
     case "del"         :: path     :: Nil    => db.maintenance.del(dbDir, path)
-    case _ => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
+    case _ => println(s"Command '${cmd.mkString(" ")}' not available - missing parameters? Exiting...")
 }
 
 @main def reclaimSpace(opts: (String, String)*): Unit = guard {
