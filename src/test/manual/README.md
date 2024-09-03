@@ -33,7 +33,20 @@
   - doesn't wait for confirmation
   - [o] 2024-09-03 6.0.0-M5 ed880216 Windows
 
+## stats
 
-## Plans for Logging and Command Line Output
+- Called without valid repository
+  - good failure information is displayed
+  - nothing is logged
+  - Windows script waits for confirmation
+  - [x] 2024-09-03 6.0.0-M6 dfaffe8d Windows
 
-Write operations should write to logfile. Read-only operations should only write to console. They should be silent except for the actual command output unless an error occurs.
+- Called with a valid repository
+  - good success information is displayed
+  - nothing is logged
+  - Windows script waits for confirmation
+  - [x] 2024-09-03 6.0.0-M6 dfaffe8d Windows
+
+## Logging and Command Line Output
+
+Write operations write to logfile. Read-only operations only write to console. They should be silent except for the actual command output unless an error occurs.
