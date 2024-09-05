@@ -2,7 +2,8 @@
 
 ## Linux Files
 
-- Linux scripts in app and app/helpers are executable
+- Only Linux scripts/apps in app, app/helpers and jrex are executable
+  - [x] 2024-09-05 6.0.0-M8 a8d1ccbd
   - [x] 2024-09-01 6.0.0-M3 c919ca34
 
 ## Repository Initialization
@@ -17,6 +18,7 @@
   - good failure information is displayed
   - good failure information is logged
   - Windows script waits for confirmation
+  - [x] 2024-09-05 6.0.0-M8 a8d1ccbd Linux
   - [x] 2024-09-03 6.0.0-M5 ed880216 Windows
 
 ## fsc backup
@@ -31,6 +33,7 @@
   - good failure information is displayed
   - good failure information is logged
   - doesn't wait for confirmation
+  - [o] 2024-09-05 6.0.0-M8 a8d1ccbd Linux
   - [x] 2024-09-03 6.0.0-M6 dfaffe8d Windows
   - [o] 2024-09-03 6.0.0-M5 ed880216 Windows
 

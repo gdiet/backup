@@ -124,11 +124,12 @@ object main extends util.ClassLogging:
         if temp.list.nonEmpty then warn(s"Note that temp dir is not empty: $temp")
     }
 
+  // TODO use this in all tools?
   def prepareDbDir(repo: File, backup: Boolean, readOnly: Boolean): File =
     db.dbDir(repo).tap { dbDir =>
       if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
       if !readOnly then db.H2.checkForTraceFile(dbDir)
-      if backup then db.maintenance.dbBackup(dbDir)
+      if backup then db.maintenance.dbBackup(dbDir) // FIXME where do we await the result?
     }
 
 /** Base options are 'key=value' unless the equals sign is escaped with a backslash. */

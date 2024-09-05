@@ -21,11 +21,6 @@ object BackupTool extends dedup.util.ClassLogging:
 
     val interrupted        = AtomicBoolean(false)
     val shutdownFinished   = java.util.concurrent.CountDownLatch(1)
-    val shutdownHookThread = sys.addShutdownHook {
-      log.info(s"Interrupted, stopping ...")
-      interrupted.set(true)
-      shutdownFinished.await()
-    }
 
     try resource(server.Backend(settings)) { fs =>
       log  .info(s"Repository:        $repo")
@@ -42,9 +37,15 @@ object BackupTool extends dedup.util.ClassLogging:
       if !forceReference then maybeRefId.foreach(validateReference(fs, sources, _))
       val targetId = resolveTargetId(fs, target)
 
-      val bytesStored = sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum
+      val shutdownHookThread = sys.addShutdownHook {
+        log.info(s"Interrupted, stopping ...")
+        interrupted.set(true)
+        shutdownFinished.await()
+      }
+      val bytesStored =
+        try sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum
+        finally shutdownHookThread.remove()
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
-      shutdownHookThread.remove()
     } finally
       Thread.sleep(200)
       shutdownFinished.countDown()

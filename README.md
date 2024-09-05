@@ -190,6 +190,8 @@ If a `target` path element starts with the question mark "`?`", the question mar
 
 If a `target` path element starts with the exclamation mark "`!`", the exclamation mark is removed. It is ensured that the corresponding target directory does not exist, then it and its children are created. The exclamation mark can be escaped with a backslash `\`.
 
+> Note that on Linux / Bash, `!` and `\` are special characters. To use them, escape them with a backslash `\`.
+
 **The `reference` and `forceReference` parameters:**
 
 If a directory containing many and / or large files has been stored in the DedupFS before and most files have not been changed in the meantime, creating another backup can be **significantly accelerated** by using the `reference` parameter. This parameter tells the backup utility to first compare the file size and time stamp of the file to store with the reference file stored previously. If they are found to be the same, the backup tool creates a copy of the reference file in the target location instead of copying the source contents there. Note that using a `reference`, if a file's contents have changed, but its size and time stamp have not changed, **the changed contents are not stored** in the backup.
@@ -409,6 +411,7 @@ To upgrade a DedupFS installation to a newer version:
 * Support for soft links.
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
+* Replace `!` and `\` by something else for `fsc backup` because they are special characters on Linux / Bash.
 
 #### 6.0.0 (???)
 
