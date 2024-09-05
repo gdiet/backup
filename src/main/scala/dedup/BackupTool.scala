@@ -41,6 +41,8 @@ object BackupTool extends dedup.util.ClassLogging:
         log.info(s"Interrupted, stopping ...")
         interrupted.set(true)
         shutdownFinished.await()
+        log.info(s"Interrupted, stopped.")
+        Thread.sleep(200) // Give logging some time to display message.
       }
       val bytesStored =
         try sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum

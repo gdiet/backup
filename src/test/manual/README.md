@@ -43,6 +43,12 @@
   - doesn't wait for confirmation
   - [x] 2024-09-03 6.0.0-M6 dfaffe8d Windows
 
+- An ongoing backup is interrupted
+  - good information is displayed
+  - good information is logged
+  - doesn't wait for confirmation
+  - [?] TODO
+
 ## fsc list
 
 - Called without parameters
