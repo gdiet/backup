@@ -69,12 +69,12 @@ object maintenance extends util.ClassLogging:
       try
         cache.MemCache.availableMem.addAndGet(-64000000) // Reserve some RAM for the backup process
         val zipBackup = target.dbZipFile(dbDir)
-        log.info(s"Creating sql script database backup: ${source.dbFile(dbDir).getName} -> ${zipBackup.getName}")
+        log.info(s"Creating zipped SQL script database backup: ${source.dbFile(dbDir).getName} -> ${zipBackup.getName}")
         log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
         Script.main(
           "-url", s"jdbc:h2:${source.dbScriptPath(dbDir)}", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
         )
-        log.info(s"Sql script database backup created.")
+        log.info(s"Zipped SQL script database backup created.")
       finally
         cache.MemCache.availableMem.addAndGet(64000000)
         awaitable.countDown()
