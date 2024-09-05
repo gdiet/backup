@@ -3,6 +3,16 @@ APPDIR=$(dirname "$0")
 JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 
 
+echo
+echo "This utility will clean deleted file entries and orphan data entries from the"
+echo "DedupFS database, so their disk space is released and can be used when storing"
+echo "new files. If you do not want that, simply close the console window where this"
+echo "utility is running."
+echo
+read -n 1 -r -s -p "Press any key to continue..."
+echo
+echo "Starting database migration..."
+
 ### Parameters ###
 # repo=<repository directory>       | default: '..' (parent of working directory)
 # keepDays=<number of days to keep> | default: 0 - the 'keepDays=' prefix can be omitted
