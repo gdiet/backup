@@ -386,7 +386,7 @@ For maximum safety,
 
 To upgrade a DedupFS installation to a newer version:
 
-* Unpack the new DedupFS archive to the DedupFS repository directory, next to the existing installation, possibly overwriting existing `*.html` documentation files in the installation directory. The repository directory now should look like this:
+* Unpack the new DedupFS apps archive to the DedupFS repository directory, next to the existing DedupFS apps installation, possibly overwriting existing `*.html` documentation files in the installation directory. The repository directory now should look like this:
 
 ```
 [directory]  data
@@ -415,10 +415,20 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 6.0.0 (???)
 
-* Update H2 database to 2.3.232.
+* Upgrade H2 database from 2.1.212 to 2.3.232.
 * Add database migration script.
 * Improve failure handling of the utilities.
 * Fix Linux scripts to work with Java 21.0.x.
+
+**Migration from 5.x to 6.x:**
+
+* Unpack the new version of DedupFS apps in the repository directory next to the old version.
+* Run the `db-migrate[.bat]` utility upgrade the database for use with DedupFS 6.x.
+* When the database upgrade has finished successfully, delete the directory containing the old DedupFS file system apps (**but not the `data/` and `fsdb/` directories**).
+
+**Migration from earlier versions to 6.x:**
+
+Do a step-by-step migration. See below for details how to upgrade to DedupFS 5.x.
 
 #### 5.3.1 (2024.08.24)
 
