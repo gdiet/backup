@@ -1,9 +1,11 @@
 package dedup
 
+import dedup.db.H2
 import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.Platform.getNativePlatform
 
 import java.io.File
+import scala.concurrent.Future
 
 private def guard(f: => Any): Unit = // FIXME find a good place for this
   try { f; finishLogging() }
@@ -39,7 +41,7 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
     case "backup"      ::             params => BackupTool.backup(opts.baseOptions, params)
     case "db-migrate1" ::             Nil    => db.maintenance.migrateDbStep1(dbDir)
     case "db-migrate2" ::             Nil    => db.maintenance.migrateDbStep2(dbDir)
-    case "db-backup"   ::             Nil    => db.maintenance.dbBackup(dbDir)
+    case "db-backup"   ::             Nil    => db.maintenance.dbBackup(dbDir).await
     case "db-restore"  ::             Nil    => db.maintenance.restorePlainDbBackup(dbDir)
     case "db-restore"  :: fileName :: Nil    => db.maintenance.restoreSqlDbBackup(dbDir, fileName)
     case "db-compact"  ::             Nil    => db.maintenance.compactDb(dbDir)
@@ -51,7 +53,7 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
 
 @main def reclaimSpace(opts: (String, String)*): Unit = guard {
   // All required logging is done in the called functions.
-  db.maintenance.dbBackup(opts.dbDir, "_before_reclaim")
+  db.maintenance.dbBackup(opts.dbDir, H2.dbRef, H2.dbRef.beforeReclaim).await
   db.maintenance.reclaimSpace(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
 }
 
@@ -62,7 +64,7 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
   val deleteFiles  = opts.defaultTrue("deleteFiles")
   val dfsBlacklist = opts.getOrElse("dfsBlacklist", "blacklist")
   val deleteCopies = opts.defaultFalse("deleteCopies")
-  if opts.defaultTrue("dbBackup") then db.maintenance.dbBackup(opts.dbDir, "_before_blacklisting")
+  if opts.defaultTrue("dbBackup") then db.maintenance.dbBackup(opts.dbDir, H2.dbRef, H2.dbRef.beforeBlacklisting).await
   db.blacklist(opts.dbDir, blacklistDir, deleteFiles, dfsBlacklist, deleteCopies)
 }
 
@@ -86,7 +88,7 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
     val repo     = opts.repo
     val backup   = !readOnly && opts.defaultTrue("dbBackup")
     val temp     = main.prepareTempDir(readOnly, opts)
-    val dbDir    = main.prepareDbDir(repo, backup = backup, readOnly = readOnly)
+    val dbDir -> backupFuture = main.prepareDbDir(repo, backup = backup, readOnly = readOnly)
     val settings = server.Settings(repo, dbDir, temp, readOnly, copyWhenMoving)
     
     main.info (s"Dedup file system settings:")
@@ -100,7 +102,12 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
     val nativeFuseOpts = if getNativePlatform.getOS == WINDOWS then Array("-o", "volname=DedupFS") else Array[String]()
     val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
     main.info(s"Starting the dedup file system now...")
-    try fs.mount(mount.toPath, true, false, fuseOpts) catch { case t: Throwable => fs.umount(); throw t }
+    
+    try fs.mount(mount.toPath, true, false, fuseOpts)
+    catch { case t: Throwable => fs.umount(); throw t }
+    finally
+      if !backupFuture.isCompleted then main.info("Waiting for database backup to finish...")
+      backupFuture.await
     
   catch
     case _: EnsureFailed | main.FailureExit => // already logged
@@ -125,11 +132,11 @@ object main extends util.ClassLogging:
     }
 
   // TODO use this in all tools?
-  def prepareDbDir(repo: File, backup: Boolean, readOnly: Boolean): File =
-    db.dbDir(repo).tap { dbDir =>
+  def prepareDbDir(repo: File, backup: Boolean, readOnly: Boolean): (File, Future[Unit]) =
+    db.dbDir(repo).pipe { dbDir =>
       if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
       if !readOnly then db.H2.checkForTraceFile(dbDir)
-      if backup then db.maintenance.dbBackup(dbDir) // FIXME where do we await the result?
+      dbDir -> (if backup then db.maintenance.dbBackup(dbDir) else Future.successful(()))
     }
 
 /** Base options are 'key=value' unless the equals sign is escaped with a backslash. */

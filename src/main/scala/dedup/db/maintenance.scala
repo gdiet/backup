@@ -6,7 +6,7 @@ import org.h2.tools.{RunScript, Script}
 
 import java.io.File
 import java.nio.file.{Files, StandardCopyOption}
-import java.util.concurrent.CountDownLatch
+import scala.concurrent.{ExecutionContext, Future}
 
 object maintenance extends util.ClassLogging:
 
@@ -25,8 +25,7 @@ object maintenance extends util.ClassLogging:
     ensure("maintenance.migrateDB.step1", previousDbFile.exists(),
       s"Can't migrate old database, not found: $previousDbFile")
 
-    plainDbBackup(dbDir, previousDbRef, previousDbRef.beforeUpgrade)
-    sqlDbBackup(dbDir, previousDbRef, previousDbRef.beforeUpgrade).await()
+    dbBackup(dbDir, previousDbRef, previousDbRef.beforeUpgrade).await
 
     ensure("maintenance.migrateDB.step1", previousDbFile.delete(),
       s"Could not delete $previousDbFile.")
@@ -48,10 +47,10 @@ object maintenance extends util.ClassLogging:
     restoreSqlDbBackup(dbDir, backupCandidates(0).getName)
     main.info(s"Migrating old database to new version, step 2 finished.")
 
-  /** @return A CountDownLatch that becomes available when the SQL backup is complete. */
-  def dbBackup(dbDir: File, fileNameSuffix: String = ""): CountDownLatch =
-    plainDbBackup(dbDir, dbRef, dbRef.backup)
-    sqlDbBackup(dbDir, dbRef, dbRef.backup)
+  /** @return A future that completes when the database backup is finished. */
+  def dbBackup(dbDir: File, source: DBRef = dbRef, target: DBRef = dbRef.backup): Future[Unit] =
+    plainDbBackup(dbDir, source, target)
+    sqlDbBackup(dbDir, target, target)
 
   private def plainDbBackup(dbDir: File, source: DBRef, target: DBRef): Unit =
     val database = source.dbFile(dbDir)
@@ -62,10 +61,8 @@ object maintenance extends util.ClassLogging:
 
     Files.copy(database.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
-  /** @return A CountDownLatch that becomes available when the SQL backup is complete. */
-  private def sqlDbBackup(dbDir: File, source: DBRef, target: DBRef): CountDownLatch =
-    val awaitable = java.util.concurrent.CountDownLatch(1)
-    new Thread(() => {
+  private def sqlDbBackup(dbDir: File, source: DBRef, target: DBRef): Future[Unit] =
+    Future {
       try
         cache.MemCache.availableMem.addAndGet(-64000000) // Reserve some RAM for the backup process
         val zipBackup = target.dbZipFile(dbDir)
@@ -75,11 +72,8 @@ object maintenance extends util.ClassLogging:
           "-url", s"jdbc:h2:${source.dbScriptPath(dbDir)}", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
         )
         log.info(s"Zipped SQL script database backup created.")
-      finally
-        cache.MemCache.availableMem.addAndGet(64000000)
-        awaitable.countDown()
-    }, "db-backup").start()
-    awaitable
+      finally cache.MemCache.availableMem.addAndGet(64000000)
+    }(ExecutionContext.global)
 
   def restorePlainDbBackup(dbDir: File): Unit =
     val backupFile = dbRef.backup.dbFile(dbDir)

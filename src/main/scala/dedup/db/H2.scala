@@ -21,6 +21,8 @@ object H2 extends ClassLogging:
       s"${dbName}_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}$suffix.zip"
     def backup: DBRef = DBRef(dbName, s"${suffix}_backup")
     def beforeUpgrade: DBRef = DBRef(dbName, s"${suffix}_before_upgrade")
+    def beforeReclaim: DBRef = DBRef(dbName, s"${suffix}_before_reclaim")
+    def beforeBlacklisting: DBRef = DBRef(dbName, s"${suffix}_before_blacklisting")
 
   Class.forName("org.h2.Driver")
   private def tcpPortProp = sys.props.get(s"H2.TcpPort")
