@@ -6,15 +6,15 @@ import jnr.ffi.Platform.getNativePlatform
 import java.io.File
 
 private def guard(f: => Any): Unit = // FIXME find a good place for this
-  try f catch
+  try { f; finishLogging() }
+  catch
     case throwable =>
       throwable match
         case _: EnsureFailed | main.FailureExit => // Already logged
         case other => main.error("Uncaught exception:", other)
       main.error("Finished abnormally.")
-      Thread.sleep(200) // Give logging some time to display final messages
+      finishLogging()
       System.exit(1)
-  Thread.sleep(200) // Give logging some time to display final messages
 
 @main def init(opts: (String, String)*): Unit = guard {
   if opts.isEmpty then main.info("Initializing dedup file system database.")
@@ -105,10 +105,10 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
   catch
     case _: EnsureFailed | main.FailureExit => // already logged
       main.error("Finished abnormally.")
-      Thread.sleep(200) // Give logging some time to display message
+      finishLogging()
     case t: Throwable =>
       main.error("Mount exception, finished abnormally:", t)
-      Thread.sleep(200) // Give logging some time to display message
+      finishLogging()
 
 object main extends util.ClassLogging:
   export log.{debug, info, warn, error}

@@ -42,14 +42,14 @@ object BackupTool extends dedup.util.ClassLogging:
         interrupted.set(true)
         shutdownFinished.await()
         log.info(s"Interrupted, stopped.")
-        Thread.sleep(200) // Give logging some time to display message.
+        finishLogging()
       }
       val bytesStored =
         try sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum
         finally shutdownHookThread.remove()
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
     } finally
-      Thread.sleep(200)
+      finishLogging()
       shutdownFinished.countDown()
 
   /** @param ignore The rules which files or directories to ignore. Each rule is a [[List]][String]. If a rule consists
