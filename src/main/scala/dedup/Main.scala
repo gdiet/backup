@@ -33,7 +33,6 @@ private def guard(f: => Any): Unit = // FIXME find a good place for this
   db.maintenance.stats(opts.dbDir)
 }
 
-// TODO consider making init, stats, reclaimSpace, blacklist available through fsc, deprecate it and remove it in 7.0?
 @main def fsc(opts: String*): Unit = guard {
   val dbDir = opts.baseOptions.dbDir
   val cmd = opts.additionalOptions.toList
