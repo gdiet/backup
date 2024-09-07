@@ -1,7 +1,7 @@
 #!/bin/bash
 if [ -f "$2" ]; then JAVA="$2"; else JAVA="$1"; fi
 JAVAVERSION=$("$JAVA" -fullversion 2>&1)
-if [[ $JAVAVERSION == *"\"21+"*"-LTS"* ]]; then
+if [[ $JAVAVERSION == *"\"21"*"-LTS"* ]]; then
   echo "$JAVA"
 else
   >&2 echo "This software has been tested with Java 21 only."

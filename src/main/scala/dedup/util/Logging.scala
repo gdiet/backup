@@ -3,7 +3,7 @@ package util
 
 /** Provides logging methods. For optimum performance uses by-name string parameters.
   *
-  * Instantiation needs e.g. 30 ns. When used in a class that might be instantiated million times per second,
+  * Instantiation needs e.g. 30 ns. When used in a class that might be instantiated a million times per second,
   * consider using the companion object for class logging. In this case see also
   *
   * @see https://stackoverflow.com/questions/13713557/scala-accessing-protected-field-of-companion-objects-trait */

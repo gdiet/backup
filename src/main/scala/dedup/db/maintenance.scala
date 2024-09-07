@@ -1,56 +1,104 @@
 package dedup
 package db
 
-import dedup.db.H2.{backupFile, backupName, dbFile, dbName}
+import dedup.db.H2.{DBRef, dbRef, previousDbRef}
 import org.h2.tools.{RunScript, Script}
 
 import java.io.File
 import java.nio.file.{Files, StandardCopyOption}
-import java.text.SimpleDateFormat
-import java.util.Date
+import scala.concurrent.{ExecutionContext, Future}
 
 object maintenance extends util.ClassLogging:
 
-  def dbBackup(dbDir: File, fileNameSuffix: String = ""): Unit =
-    val database = dbFile(dbDir)
+  /** Create an SQL backup from the previous version's database file,
+   *  then rename the file to "before_upgrade".
+   *
+   *  This method assumes that the right database driver for the previous
+   *  version's database is in the classpath. */
+  def migrateDbStep1(dbDir: File): Unit =
+    main.info(s"Migrating old database to new version, step 1...")
+    val currentDbFile = dbRef.dbFile(dbDir)
+    ensure("maintenance.migrateDB.step1", ! currentDbFile.exists(),
+      s"Can't migrate old database - a new database is already present: $currentDbFile")
+
+    val previousDbFile = previousDbRef.dbFile(dbDir)
+    ensure("maintenance.migrateDB.step1", previousDbFile.exists(),
+      s"Can't migrate old database, not found: $previousDbFile")
+
+    dbBackup(dbDir, previousDbRef, previousDbRef.beforeUpgrade).await
+
+    ensure("maintenance.migrateDB.step1", previousDbFile.delete(),
+      s"Could not delete $previousDbFile.")
+    main.info(s"Migrating old database to new version, step 1 finished.")
+
+  /** Restore the database from the file created in step 1,
+   *  this time with the current database driver. */
+  def migrateDbStep2(dbDir: File): Unit =
+    main.info(s"Migrating old database to new version, step 2...")
+    val currentDbFile = dbRef.dbFile(dbDir)
+    ensure("maintenance.migrateDB.step1", ! currentDbFile.exists(),
+      s"Can't migrate old database - a new database is already present: $currentDbFile")
+
+    val backupFileNamePattern = previousDbRef.beforeUpgrade.dbZipNamePattern
+    val backupCandidates = dbDir.listFiles().filter(_.getName.matches(backupFileNamePattern))
+    ensure("maintenance.migrateDB.step2", backupCandidates.length == 1,
+      s"Found no or too many DB backup candidates for migration step 2: ${backupCandidates.toList}")
+
+    restoreSqlDbBackup(dbDir, backupCandidates(0).getName)
+    main.info(s"Migrating old database to new version, step 2 finished.")
+
+  /** @return A future that completes when the database backup is finished. */
+  def dbBackup(dbDir: File, source: DBRef = dbRef, target: DBRef = dbRef.backup): Future[Unit] =
+    plainDbBackup(dbDir, source, target)
+    sqlDbBackup(dbDir, target, target)
+
+  private def plainDbBackup(dbDir: File, source: DBRef, target: DBRef): Unit =
+    val database = source.dbFile(dbDir)
     ensure("utility.backup", database.exists(), s"Database file $database does not exist")
-    val plainBackup = backupFile(dbDir)
+
+    val plainBackup = target.dbFile(dbDir)
     log.info(s"Creating plain database backup: ${database.getName} -> ${plainBackup.getName}")
+
     Files.copy(database.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
-    new Thread(() => {
+  private def sqlDbBackup(dbDir: File, source: DBRef, target: DBRef): Future[Unit] =
+    Future {
       try
         cache.MemCache.availableMem.addAndGet(-64000000) // Reserve some RAM for the backup process
-        val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
-        val zipBackup = File(dbDir, s"${dbName}_$dateString$fileNameSuffix.zip")
-        log.info(s"Creating sql script database backup: ${plainBackup.getName} -> ${zipBackup.getName}")
+        val zipBackup = target.dbZipFile(dbDir)
+        log.info(s"Creating zipped SQL script database backup: ${source.dbFile(dbDir).getName} -> ${zipBackup.getName}")
         log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
         Script.main(
-          "-url", s"jdbc:h2:$dbDir/$backupName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
+          "-url", s"jdbc:h2:${source.dbScriptPath(dbDir)}", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
         )
-        log.info(s"Sql script database backup created.")
-      finally
-        cache.MemCache.availableMem.addAndGet(64000000)
-    }, "db-backup").start()
+        log.info(s"Zipped SQL script database backup created.")
+      finally cache.MemCache.availableMem.addAndGet(64000000)
+    }(ExecutionContext.global)
 
   def restorePlainDbBackup(dbDir: File): Unit =
-    val database = dbFile(dbDir)
-    val plainBackup = backupFile(dbDir)
-    ensure("utility.restore.notFound", plainBackup.exists(), s"Database backup file $plainBackup does not exist")
-    log.info(s"Restoring plain database backup: ${plainBackup.getName} -> ${database.getName}")
-    Files.copy(plainBackup.toPath, database.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+    val backupFile = dbRef.backup.dbFile(dbDir)
+    ensure("utility.restore.notFound", backupFile.exists(), s"Database backup file $backupFile does not exist")
 
-  def restoreSqlDbBackup(dbDir: File, scriptName: String): Unit =
-    val script = File(dbDir, scriptName)
-    ensure("utility.restore.from", script.exists(), s"Database backup script file $script does not exist")
-    val database = dbFile(dbDir)
+    val database = dbRef.dbFile(dbDir)
+    log.info(s"Restoring plain database backup: ${backupFile.getName} -> ${database.getName}")
+
+    Files.copy(backupFile.toPath, database.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
+
+  def restoreSqlDbBackup(dbDir: File, zipFileName: String): Unit =
+    val zipFile = File(dbDir, zipFileName)
+    ensure("utility.restore.from", zipFile.exists(), s"Database backup script zip file $zipFile does not exist")
+
+    val database = dbRef.dbFile(dbDir)
     ensure("utility.restore", !database.exists || database.delete, s"Can't delete current database file $database")
-    log.info(s"Restoring database backup: ${script.getName} -> ${database.getName}")
+
+    log.info(s"Restoring database backup: ${zipFile.getName} -> ${database.getName}")
     RunScript.main(
-      "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
+      "-url", s"jdbc:h2:${dbRef.dbScriptPath(dbDir)}", "-script", s"$zipFile", "-user", "sa", "-options", "compression", "zip"
     )
 
-  def compactDb(dbDir: File): Unit = withDb(dbDir, readOnly = false)(_.shutdownCompact())
+  def compactDb(dbDir: File): Unit =
+    main.info(s"Compacting database...")
+    withDb(dbDir, readOnly = false)(_.shutdownCompact())
   
   def stats(dbDir: File): Unit = withDb(dbDir, readOnly = true, checkVersion = false) { db =>
     import Database.currentDbVersion
@@ -86,6 +134,7 @@ object maintenance extends util.ClassLogging:
   }
 
   def del(dbDir: File, path: String): Unit = withDb(dbDir, readOnly = false) { db =>
+    main.info(s"Marking deleted '$path' ...")
     db.entry(path) match
       case None =>
         println(s"The path '$path' does not exist.")

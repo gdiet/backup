@@ -2,30 +2,26 @@ package dedup
 
 import java.io.{BufferedInputStream, File, FileInputStream, IOException}
 import java.util.concurrent.atomic.AtomicBoolean
+import scala.concurrent.Promise
 import scala.util.Using.resource
 
 object BackupTool extends dedup.util.ClassLogging:
 
   def backup(opts: Seq[(String, String)], params: List[String]): Unit =
-    log.info  (s"Running the backup utility.")
+    log.info  (s"Running the backup utility, options: [${opts.forOutput}], parameters: [${params.mkString(", ")}]")
     cache.MemCache.startupCheck()
 
-    val (sources, target) = sourcesAndTarget(params)
-    val repo              = opts.repo
-    val backup            = opts.defaultFalse("dbBackup")
-    val maybeReference    = opts.get("reference")
-    val forceReference    = opts.defaultFalse("forceReference")
-    val temp              = main.prepareTempDir(false, opts)
-    val dbDir             = main.prepareDbDir(repo, backup = backup, readOnly = false)
-    val settings          = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
+    val (sources, target)     = sourcesAndTarget(params)
+    val repo                  = opts.repo
+    val backup                = opts.defaultFalse("dbBackup")
+    val maybeReference        = opts.get("reference")
+    val forceReference        = opts.defaultFalse("forceReference")
+    val temp                  = main.prepareTempDir(false, opts)
+    val dbDir -> backupFuture = main.prepareDbDir(repo, backup = backup, readOnly = false)
+    val settings              = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
 
-    val interrupted        = AtomicBoolean(false)
-    val shutdownFinished   = java.util.concurrent.CountDownLatch(1)
-    val shutdownHookThread = sys.addShutdownHook {
-      log.info(s"Interrupted, stopping ...")
-      interrupted.set(true)
-      shutdownFinished.await()
-    }
+    val interrupted           = AtomicBoolean(false)
+    val shutdownFinished      = Promise[Unit]()
 
     try resource(server.Backend(settings)) { fs =>
       log  .info(s"Repository:        $repo")
@@ -42,16 +38,22 @@ object BackupTool extends dedup.util.ClassLogging:
       if !forceReference then maybeRefId.foreach(validateReference(fs, sources, _))
       val targetId = resolveTargetId(fs, target)
 
-      val bytesStored = sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum
+      val shutdownHookThread = sys.addShutdownHook {
+        log.info(s"Interrupted, stopping ...")
+        interrupted.set(true)
+        shutdownFinished.future.await
+        log.info(s"Interrupted, stopped.")
+        finishLogging()
+      }
+      val bytesStored =
+        try sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum
+        finally shutdownHookThread.remove()
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
-      shutdownHookThread.remove()
-    } catch
-      case e: Throwable =>
-        log.error(s"Uncaught exception", e)
-    finally
-      log.info(s"Finished the backup.")
-      Thread.sleep(200)
-      shutdownFinished.countDown()
+    } finally
+      if !backupFuture.isCompleted then main.info("Waiting for database backup to finish...")
+      backupFuture.await
+      finishLogging()
+      shutdownFinished.success(())
 
   /** @param ignore The rules which files or directories to ignore. Each rule is a [[List]][String]. If a rule consists
     *               of a single element, this element is matched in the current context against directory names if the
