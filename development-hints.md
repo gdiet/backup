@@ -20,7 +20,7 @@ See also `git.conf`.
 
 ## Retiring Branches
 
-If a branch will not go to the main branch any time soon, consider doing a 'fake merge' to the `retired_branches` branch and then delete it. That way it will still be available 'just in case' while not cluttering the branch list:
+If a branch is not going to the main branch anytime soon, consider doing a 'fake merge' to the `retired_branches` branch and then delete it. That way it will still be available 'just in case' while not cluttering the branch list:
 
     git checkout retired_branches
     git merge -s ours origin/branch-to-retire
