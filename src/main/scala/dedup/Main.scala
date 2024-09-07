@@ -7,17 +7,6 @@ import jnr.ffi.Platform.getNativePlatform
 import java.io.File
 import scala.concurrent.Future
 
-private def guard(f: => Any): Unit = // FIXME find a good place for this
-  try { f; finishLogging() }
-  catch
-    case throwable =>
-      throwable match
-        case _: EnsureFailed | main.FailureExit => // Already logged
-        case other => main.error("Uncaught exception:", other)
-      main.error("Finished abnormally.")
-      finishLogging()
-      System.exit(1)
-
 @main def init(opts: (String, String)*): Unit = guard {
   if opts.isEmpty then main.info("Initializing dedup file system database.")
   else main.info("Initializing dedup file system database, options: " + opts.forOutput)
@@ -137,6 +126,17 @@ object main extends util.ClassLogging:
       if !readOnly then db.H2.checkForTraceFile(dbDir)
       dbDir -> (if backup then db.maintenance.dbBackup(dbDir) else Future.successful(()))
     }
+
+private def guard(f: => Any): Unit =
+  try { f; finishLogging() }
+  catch
+    case throwable =>
+      throwable match
+        case _: EnsureFailed | main.FailureExit => // Already logged
+        case other => main.error("Uncaught exception:", other)
+      main.error("Finished abnormally.")
+      finishLogging()
+      System.exit(1)
 
 /** Base options are 'key=value' unless the equals sign is escaped with a backslash. */
 // (.+?)(?<!\\)=(.*)  explained:
