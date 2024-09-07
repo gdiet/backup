@@ -2,6 +2,7 @@ package dedup
 
 import java.io.{BufferedInputStream, File, FileInputStream, IOException}
 import java.util.concurrent.atomic.AtomicBoolean
+import scala.concurrent.Promise
 import scala.util.Using.resource
 
 object BackupTool extends dedup.util.ClassLogging:
@@ -20,7 +21,7 @@ object BackupTool extends dedup.util.ClassLogging:
     val settings              = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
 
     val interrupted           = AtomicBoolean(false)
-    val shutdownFinished      = java.util.concurrent.CountDownLatch(1) // TODO consider Promise[Unit] instead
+    val shutdownFinished      = Promise[Unit]()
 
     try resource(server.Backend(settings)) { fs =>
       log  .info(s"Repository:        $repo")
@@ -40,7 +41,7 @@ object BackupTool extends dedup.util.ClassLogging:
       val shutdownHookThread = sys.addShutdownHook {
         log.info(s"Interrupted, stopping ...")
         interrupted.set(true)
-        shutdownFinished.await()
+        shutdownFinished.future.await
         log.info(s"Interrupted, stopped.")
         finishLogging()
       }
@@ -52,7 +53,7 @@ object BackupTool extends dedup.util.ClassLogging:
       if !backupFuture.isCompleted then main.info("Waiting for database backup to finish...")
       backupFuture.await
       finishLogging()
-      shutdownFinished.countDown()
+      shutdownFinished.success(())
 
   /** @param ignore The rules which files or directories to ignore. Each rule is a [[List]][String]. If a rule consists
     *               of a single element, this element is matched in the current context against directory names if the
