@@ -9,6 +9,6 @@ $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx256m -Dlogback.configurationFile=logback-read
 if [ $ERRORLEVEL -ne 0 ]; then
   echo "Statistics finished with error code $ERRORLEVEL, exiting..."
   exit $ERRORLEVEL
-fielse
+else
   echo "Statistics finished successfully."
 fi

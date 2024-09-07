@@ -21,6 +21,6 @@ ERRORLEVEL=$?
 if [ $ERRORLEVEL -ne 0 ]; then
   echo "Reclaim space finished with error code $ERRORLEVEL, exiting..."
   exit $ERRORLEVEL
-fielse
+else
   echo "Reclaim space finished successfully."
 fi
