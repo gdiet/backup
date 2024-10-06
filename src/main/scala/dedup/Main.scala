@@ -41,19 +41,21 @@ import scala.concurrent.Future
 
 @main def reclaimSpace(opts: (String, String)*): Unit = guard {
   // All required logging is done in the called functions.
-  db.maintenance.dbBackup(opts.dbDir, H2.dbRef, H2.dbRef.beforeReclaim).await
-  db.maintenance.reclaimSpace(opts.dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
+  val dbDir = opts.dbDir.tap(main.checkDbDir(_, false))
+  db.maintenance.dbBackup(dbDir, H2.dbRef, H2.dbRef.beforeReclaim).await
+  db.maintenance.reclaimSpace(dbDir, opts.unnamedOrGet("keepDays").getOrElse("0").toInt)
 }
 
 @main def blacklist(opts: (String, String)*): Unit = guard {
   // All required logging is done in the called functions.
   // Here and in other places: '.getCanonicalPath' fails fast for illegal file names like ["/hello].
+  val dbDir        = opts.dbDir.tap(main.checkDbDir(_, false))
   val blacklistDir = File(opts.repo, opts.getOrElse("blacklistDir", "blacklist")).getCanonicalPath
   val deleteFiles  = opts.defaultTrue("deleteFiles")
   val dfsBlacklist = opts.getOrElse("dfsBlacklist", "blacklist")
   val deleteCopies = opts.defaultFalse("deleteCopies")
-  if opts.defaultTrue("dbBackup") then db.maintenance.dbBackup(opts.dbDir, H2.dbRef, H2.dbRef.beforeBlacklisting).await
-  db.blacklist(opts.dbDir, blacklistDir, deleteFiles, dfsBlacklist, deleteCopies)
+  if opts.defaultTrue("dbBackup") then db.maintenance.dbBackup(dbDir, H2.dbRef, H2.dbRef.beforeBlacklisting).await
+  db.blacklist(dbDir, blacklistDir, deleteFiles, dfsBlacklist, deleteCopies)
 }
 
 @main def mount(opts: (String, String)*): Unit =
@@ -119,13 +121,16 @@ object main extends util.ClassLogging:
         if temp.list.nonEmpty then warn(s"Note that temp dir is not empty: $temp")
     }
 
-  // TODO use this in all tools?
   def prepareDbDir(repo: File, backup: Boolean, readOnly: Boolean): (File, Future[Unit]) =
-    db.dbDir(repo).pipe { dbDir =>
-      if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
-      if !readOnly then db.H2.checkForTraceFile(dbDir)
+    db.dbDir(repo).tap(checkDbDir(_, readOnly)).pipe { dbDir =>
       dbDir -> (if backup then db.maintenance.dbBackup(dbDir) else Future.successful(()))
     }
+    
+  // TODO check whether we should use this in more places
+  // TODO and/or make it part of the command line args .dbDir handling
+  def checkDbDir(dbDir: File, readOnly: Boolean): Unit =
+    if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
+    if !readOnly then db.H2.checkForTraceFile(dbDir)
 
 private def guard(f: => Any): Unit =
   try { f; finishLogging() }
