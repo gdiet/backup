@@ -14,4 +14,12 @@ rem # db-compact                         | compact the database file
 rem # find <pattern>   | find files with matching file names, e.g. '*.scala'
 rem # list <path>      | list directory or show file info
 rem # del <path>       | mark a file or recursively mark a directory as deleted
-%JAVA% "-DLOG_BASE=%~dp0log" -Xmx256m -cp "%~dp0lib\*" dedup.fsc %*
+set readonly=false
+IF "%1" == "find" set readonly=true
+IF "%1" == "list" set readonly=true
+IF "%readonly%" == "false" (
+  %JAVA% "-DLOG_BASE=%~dp0log" -Xmx256m -cp "%~dp0lib\*" dedup.fsc %*
+) ELSE (
+  %JAVA% "-DLOG_BASE=%~dp0log" -Xmx256m -Dlogback.configurationFile=logback-readonly.xml -cp "%~dp0lib\*" dedup.fsc %*
+)
+rem # No pause, no additional output, fsc is a plain command line tool.
