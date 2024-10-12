@@ -34,7 +34,7 @@ class Server extends FuseStubFS:
     result
 
 //  /* Note: No benefit expected in implementing opendir/releasedir and handing over the file handle to readdir.
-//   * Note: offset is not handled (but also it not necessary in this simple case). */
+//   * Note: offset is not handled (but also is not necessary in this simple case). */
 //  override def readdir(path: String, buf: Pointer, fill: FuseFillDir, offset: Long, fi: FuseFileInfo): Int =
 //    val result = if (path == "/") {
 //      fill(buf, ".", null, 0)
