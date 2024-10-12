@@ -12,7 +12,7 @@ def withStatement(dbDir: File, readOnly: Boolean = true)(f: Statement => Any): U
 
 extension (c: Connection)
   def withStatement[T](f: Statement => T): T = resource(c.createStatement())(f)
-  /** Don't use nested or multi-threaded. */
+  /** Don't use nested or multithreaded. */
   def transaction[T](f: => T): T =
     try { c.setAutoCommit(false); f.tap(_ => c.commit()) }
     catch { case t: Throwable => c.rollback(); throw t }

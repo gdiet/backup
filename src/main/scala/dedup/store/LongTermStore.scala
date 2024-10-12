@@ -47,7 +47,7 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dat
     *                 Attempts to read from/beyond position 9e18 yield an [[IllegalArgumentException]].
     * @param size     The number of bytes to read, must be >= 0.
     * @return (actual size, data), where actual size is capped by [[dedup.memChunk]]
-    *         and by the number of bytes available in the data file to accessed. */
+    *         and by the number of bytes available in the data file to access. */
   private def readChunk(position: Long, size: Long): (Int, Array[Byte]) =
     ensure("lts.read.position", position >= 0, s"Read position $position must be >= 0.")
     ensure("lts.read.size", size >= 0, s"Read size $size must be >= 0.")

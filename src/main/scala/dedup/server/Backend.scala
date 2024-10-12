@@ -57,7 +57,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
   /** Creates a directory. It is the responsibility of the calling code to guard against creating a directory as child
     * of a file or as child of a deleted directory.
     * 
-    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
     * race conditions causing deleted directories to be parent of non-deleted tree entries.
     *
     * @return [[Some]]`(fileId)` or [[None]] in case of a name conflict.
@@ -68,27 +68,27 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     * called for deleted entries. */
   def setTime(id: Long, newTime: Time): Unit = db.setTime(id, newTime)
 
-  /** When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+  /** When used multithreaded together with other tree structure methods, needs external synchronization to prevent
     * race conditions causing deleted directories to be parent of non-deleted tree entries. */
   def renameMove(id: Long, newParentId: Long, newName: String): Boolean = db.renameMove(id, newParentId, newName)
 
   /** Creates a copy of the file's last persisted state without current modifications.
     *
-    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
     * race conditions causing deleted directories to be parent of non-deleted tree entries. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean =
     db.mkFile(newParentId, newName, file.time, file.dataId).isDefined
 
   /** Deletes a tree entry unless it has children.
     * 
-    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
     * race conditions causing deleted directories to be parent of non-deleted tree entries.
     *
     * Though technically only the tree entry ID is needed, in many places where this method is used it's nicer
     * if the method accepts the TreeEntry.
     *
     * @return `false` if the tree entry does not exist or has any children, `true` if the entry exists and has no
-    *         children, regardless of whether or not it was already marked deleted. */
+    *         children, regardless of whether it was already marked deleted. */
   def deleteChildless(entry: TreeEntry): Boolean = db.deleteChildless(entry.id)
 
   /** @return The size of the file, 0 if the file entry does not exist. */
@@ -101,7 +101,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
   /** Create file and a virtual file handle so read/write operations can be done on the file.
     * For each [[open]] or [[createAndOpen]], a corresponding [[release]] call is required for normal operation.
     * 
-    * When used multi-threaded together with other tree structure methods, needs external synchronization to prevent
+    * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
     * race conditions causing deleted directories to be parent of non-deleted tree entries.
     * 
     * @return Some(fileId) or None if a child entry with the same name already exists. */
@@ -192,7 +192,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
   /** Provides the requested number of bytes from the referenced file
     * unless end-of-file is reached - in that case stops there.
     *
-    * @param fileId        Id of the file to read from.
+    * @param fileId        ID of the file to read from.
     * @param offset        Offset in the file to start reading at, must be >= 0.
     * @param requestedSize Number of bytes to read.
     * @return The (position -> bytes) read or [[None]] if the file is not open. */
