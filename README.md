@@ -73,13 +73,13 @@ DedupFS runs fine with approximately 128 MB RAM assigned to its process. See be
 
 Tested on Windows 10 64-bit.
 
-Download and install a [WinFSP Release](https://github.com/winfsp/winfsp/releases) to make FUSE (Filesystem in Userspace) available. For DedupFS, only the WinFsp "Core" package is needed. I use `WinFsp 2023` a.k.a. `winfsp-2.0.23075` for running DedupFS. Until October 2023, I used `WinFsp 2021` a.k.a. `winfsp-1.9.21096` which also worked fine for me.
+Download and install a [WinFSP Release](https://github.com/winfsp/winfsp/releases) to make *fuse* (Filesystem in Userspace) available. For DedupFS, only the WinFsp "Core" package is needed. I use `WinFsp 2023` a.k.a. `winfsp-2.0.23075` for running DedupFS. Until October 2023, I used `WinFsp 2021` a.k.a. `winfsp-1.9.21096` which also worked fine for me.
 
 ### Linux
 
-Tested on Debian 64-bit.
+Tested on Ubuntu 64-bit.
 
-DedupFS needs *libfuse* to create a filesystem in userspace. *libfuse* is pre-installed in most Linux distributions.
+DedupFS needs *fuse* (Filesystem in Userspace) to create a filesystem in userspace. If DedupFS doesn't find it, install it using `sudo apt install libfuse2`.
 
 ## Basic Steps To Use DedupFS
 
@@ -189,6 +189,8 @@ In the `target` parameter's path elements, everything enclosed by square bracket
 If a `target` path element starts with the question mark "`?`", the question mark is removed and the corresponding target directory and its children are created if missing.
 
 If a `target` path element starts with the exclamation mark "`!`", the exclamation mark is removed. It is ensured that the corresponding target directory does not exist, then it and its children are created. The exclamation mark can be escaped with a backslash `\`.
+
+> Note that on Linux / Bash, `!` and `\` are special characters. To use them, escape them with a backslash `\`.
 
 **The `reference` and `forceReference` parameters:**
 
@@ -384,7 +386,7 @@ For maximum safety,
 
 To upgrade a DedupFS installation to a newer version:
 
-* Unpack the new DedupFS archive to the DedupFS repository directory, next to the existing installation, possibly overwriting existing `*.html` documentation files in the installation directory. The repository directory now should look like this:
+* Unpack the new DedupFS apps archive to the DedupFS repository directory, next to the existing DedupFS apps installation, possibly overwriting existing `*.html` documentation files in the installation directory. The repository directory now should look like this:
 
 ```
 [directory]  data
@@ -406,15 +408,15 @@ To upgrade a DedupFS installation to a newer version:
 * Ensure the backup script can be gracefully interrupted.
 * In some way give access to deleted files and directories.
 * Development: Try out scoverage instead of jacoco (a spike 2022.10 didn't work well).
-* Change database backup, no need to have the full backup as default every time?
 * Support for soft links.
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
+* Replace `!` and `\` by something else for `fsc backup` because they are special characters on Linux / Bash.
 
 #### 5.3.1 (2024.08.24)
 
 * Update Scala to 3.3.3 and Java to 21.0.4+7 together with SBT and some dependencies.
-* Documentation updates
+* Documentation updates.
 
 #### 5.3.0 (2023.12.02)
 
