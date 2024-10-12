@@ -18,7 +18,7 @@ $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx64m -cp "$APPDIR/lib/*" dedup.fsc db-backup "
 ERRORLEVEL=$?
 if [ $ERRORLEVEL -ne 0 ]; then
   echo "Database backup finished with error code $ERRORLEVEL, exiting..."
-  exit 1
+  exit $ERRORLEVEL
 else
-  echo "Database backup finished."
+  echo "Database backup finished successfully."
 fi

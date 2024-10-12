@@ -11,3 +11,10 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 # dfsBlacklist=<name of blacklist directory in dedup file system> | default: blacklist
 # deleteCopies=<delete all copies of blacklisted files?>          | default: false
 $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx128m -cp "$APPDIR/lib/*" dedup.blacklist "$@"
+ERRORLEVEL=$?
+if [ $ERRORLEVEL -ne 0 ]; then
+  echo "Blacklisting finished with error code $ERRORLEVEL, exiting..."
+  exit $ERRORLEVEL
+else
+  echo "Blacklisting finished successfully."
+fi

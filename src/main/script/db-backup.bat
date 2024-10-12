@@ -15,11 +15,11 @@ echo Starting database backup...
 rem ### Parameters ###
 rem # repo=<repository directory>        | default: '..' (parent of working directory)
 %JAVA% "-DLOG_BASE=%~dp0log" -Xmx64m -cp "%~dp0lib\*" dedup.fsc db-backup %*
-if not errorlevel 0 (
+if errorlevel 0 if not errorlevel 1 (
+    echo Database backup finished successfully.
+    pause
+) else (
     echo Database backup finished with error code %errorlevel%, exiting...
     pause
-    exit /b 1
-) else (
-    echo Database backup finished.
-    pause
+    exit /b %errorlevel%
 )
