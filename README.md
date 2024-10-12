@@ -77,7 +77,7 @@ Download and install a [WinFSP Release](https://github.com/winfsp/winfsp/release
 
 ### Linux
 
-Tested on Debian 64-bit.
+Tested on Ubuntu 64-bit.
 
 DedupFS needs *fuse* (Filesystem in Userspace) to create a filesystem in userspace. If DedupFS doesn't find it, install it using `sudo apt install libfuse2`.
 
