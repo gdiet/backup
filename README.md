@@ -413,6 +413,7 @@ To upgrade a DedupFS installation to a newer version:
 * The reclaim utility finds & cleans up data entry duplicates.
 * Replace `!` and `\` by something else for `fsc backup` because they are special characters on Linux / Bash.
 * Support for fuse3 on Linux systems.
+* On Linux, don't hang if the mount point exists but is not writable or owned by mounting user. Possibly check for directory write permission first?
 
 #### 5.3.1 (2024.08.24)
 
