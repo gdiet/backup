@@ -79,7 +79,7 @@ Download and install a [WinFSP Release](https://github.com/winfsp/winfsp/release
 
 Tested on Ubuntu 64-bit.
 
-DedupFS needs *fuse* (Filesystem in Userspace) to create a filesystem in userspace. If DedupFS doesn't find it, install it using `sudo apt install libfuse2`.
+DedupFS needs *fuse* (Filesystem in Userspace) to create a filesystem in userspace. If DedupFS doesn't find it, install it using `sudo apt install libfuse2`. *fuse3* is not yet supported.
 
 ## Basic Steps To Use DedupFS
 
@@ -412,6 +412,7 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
 * Replace `!` and `\` by something else for `fsc backup` because they are special characters on Linux / Bash.
+* Support for fuse3 on Linux systems.
 
 #### 5.3.1 (2024.08.24)
 
