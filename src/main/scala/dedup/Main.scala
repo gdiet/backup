@@ -32,7 +32,7 @@ import java.io.File
     case "del"        :: path     :: Nil => db.maintenance.del                 (dbDir, path    )
     case _ => println(s"Command '${cmd.mkString(" ")}' not recognized, exiting...")
   catch
-    case main.exit => /**/
+    case main.exit | _: EnsureFailed => /**/
     case other => main.error("Uncaught exception:", other)
   Thread.sleep(200) // Give logging some time to display final messages
 
