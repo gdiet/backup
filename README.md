@@ -415,6 +415,21 @@ To upgrade a DedupFS installation to a newer version:
 * Support for fuse3 on Linux systems.
 * On Linux, don't hang if the mount point exists but is not writable or owned by mounting user. Possibly check for directory write permission first?
 
+#### 6.0.0 (???)
+
+* Upgrade H2 database from 2.1.212 to 2.3.232.
+* Add database migration script.
+
+**Migration from 5.x to 6.x:**
+
+* Unpack the new version of DedupFS apps in the repository directory next to the old version.
+* Run the `db-migrate[.bat]` utility to upgrade the database for use with DedupFS 6.x.
+* When the database upgrade has finished successfully, delete the directory containing the old DedupFS file system apps (**but not the `data/` and `fsdb/` directories**).
+
+**Migration from earlier versions to 6.x:**
+
+Do a step-by-step migration. See below for details how to upgrade to DedupFS 5.x.
+
 #### 5.3.2 (2024.10.19)
 
 * Read-only apps do not write to logfile.
@@ -423,23 +438,6 @@ To upgrade a DedupFS installation to a newer version:
 * Improve error messages and failure handling when apps terminate with failure code.
 * Add explaining text with confirmation to `reclaim-space` utility.
 * Update `jnr-fuse` library to version 0.5.8.
-
-#### 6.0.0 (???)
-
-* Upgrade H2 database from 2.1.212 to 2.3.232.
-* Add database migration script.
-* Improve failure handling of the utilities.
-* Fix Linux scripts to work with Java 21.0.x.
-
-**Migration from 5.x to 6.x:**
-
-* Unpack the new version of DedupFS apps in the repository directory next to the old version.
-* Run the `db-migrate[.bat]` utility upgrade the database for use with DedupFS 6.x.
-* When the database upgrade has finished successfully, delete the directory containing the old DedupFS file system apps (**but not the `data/` and `fsdb/` directories**).
-
-**Migration from earlier versions to 6.x:**
-
-Do a step-by-step migration. See below for details how to upgrade to DedupFS 5.x.
 
 #### 5.3.1 (2024.08.24)
 
