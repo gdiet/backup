@@ -79,7 +79,7 @@ Download and install a [WinFSP Release](https://github.com/winfsp/winfsp/release
 
 Tested on Ubuntu 64-bit.
 
-DedupFS needs *fuse* (Filesystem in Userspace) to create a filesystem in userspace. If DedupFS doesn't find it, install it using `sudo apt install libfuse2`.
+DedupFS needs *fuse* (Filesystem in Userspace) to create a filesystem in userspace. If DedupFS doesn't find it, install it using `sudo apt install libfuse2`. *fuse3* is not yet supported.
 
 ## Basic Steps To Use DedupFS
 
@@ -412,6 +412,17 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
 * Replace `!` and `\` by something else for `fsc backup` because they are special characters on Linux / Bash.
+* Support for fuse3 on Linux systems.
+* On Linux, don't hang if the mount point exists but is not writable or owned by mounting user. Possibly check for directory write permission first?
+
+#### 5.3.2 (2024.10.19)
+
+* Read-only apps do not write to logfile.
+* Fixed: Linux apps reported incompatible Java version.
+* Fixed: Bad Java version compatibility error message on Windows.
+* Improve error messages and failure handling when apps terminate with failure code.
+* Add explaining text with confirmation to `reclaim-space` utility.
+* Update `jnr-fuse` library to version 0.5.8.
 
 #### 6.0.0 (???)
 
