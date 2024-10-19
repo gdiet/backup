@@ -415,13 +415,13 @@ To upgrade a DedupFS installation to a newer version:
 * Support for fuse3 on Linux systems.
 * On Linux, don't hang if the mount point exists but is not writable or owned by mounting user. Possibly check for directory write permission first?
 
-#### 5.3.2 (2024.??.??)
+#### 5.3.2 (2024.10.19)
 
 * Read-only apps do not write to logfile.
 * Fixed: Linux apps reported incompatible Java version.
 * Fixed: Bad Java version compatibility error message on Windows.
-* Improved error messages and failure handling when apps terminate with failure code.
-* Added explaining text with confirmation to `reclaim-space` utility.
+* Improve error messages and failure handling when apps terminate with failure code.
+* Add explaining text with confirmation to `reclaim-space` utility.
 * Update `jnr-fuse` library to version 0.5.8.
 
 #### 5.3.1 (2024.08.24)
