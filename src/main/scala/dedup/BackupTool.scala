@@ -22,13 +22,6 @@ object BackupTool extends dedup.util.ClassLogging:
 
     val interrupted        = AtomicBoolean(false)
     val shutdownFinished   = Promise[Unit]()
-    val shutdownHookThread = sys.addShutdownHook {
-      log.info(s"Interrupted, stopping ...")
-      interrupted.set(true)
-      shutdownFinished.future.await
-      log.info(s"Interrupted, stopped.")
-      finishLogging()
-    }
 
     try resource(server.Backend(settings)) { fs =>
       log  .info(s"Repository:        $repo")
@@ -45,15 +38,19 @@ object BackupTool extends dedup.util.ClassLogging:
       if !forceReference then maybeRefId.foreach(validateReference(fs, sources, _))
       val targetId = resolveTargetId(fs, target)
 
-      val bytesStored = sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum
+      val shutdownHookThread = sys.addShutdownHook {
+        log.info(s"Interrupted, stopping ...")
+        interrupted.set(true)
+        shutdownFinished.future.await
+        log.info(s"Interrupted, stopped.")
+        finishLogging()
+      }
+      val bytesStored =
+        try sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum
+        finally shutdownHookThread.remove()
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
-      shutdownHookThread.remove()
-    } catch
-      case main.FailureExit | _: EnsureFailed => /**/
-      case             e: Throwable    => log.error(s"Uncaught exception", e)
-    finally
-      log.info(s"Finished the backup.")
-      Thread.sleep(200)
+    } finally
+      finishLogging()
       shutdownFinished.success(())
 
   /** @param ignore The rules which files or directories to ignore. Each rule is a [[List]][String]. If a rule consists
