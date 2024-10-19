@@ -16,7 +16,7 @@ object maintenance extends util.ClassLogging:
   def dbBackup(dbDir: File, fileNameSuffix: String = ""): Unit =
     plainDbBackup(dbDir)
     sqlDbBackup(dbDir, fileNameSuffix).await
-    
+
   private def plainDbBackup(dbDir: File): Unit =
     val database = dbFile(dbDir)
     ensure("utility.backup", database.exists(), s"Database file $database does not exist")
@@ -44,20 +44,26 @@ object maintenance extends util.ClassLogging:
     val database = dbFile(dbDir)
     val plainBackup = backupFile(dbDir)
     ensure("utility.restore.notFound", plainBackup.exists(), s"Database backup file $plainBackup does not exist")
+
     log.info(s"Restoring plain database backup: ${plainBackup.getName} -> ${database.getName}")
+
     Files.copy(plainBackup.toPath, database.toPath, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES)
 
-  def restoreSqlDbBackup(dbDir: File, scriptName: String): Unit =
-    val script = File(dbDir, scriptName)
-    ensure("utility.restore.from", script.exists(), s"Database backup script file $script does not exist")
+  def restoreSqlDbBackup(dbDir: File, zipFileName: String): Unit =
+    val zipFile = File(dbDir, zipFileName)
+    ensure("utility.restore.from", zipFile.exists(), s"Database backup script zip file $zipFile does not exist")
+
     val database = dbFile(dbDir)
     ensure("utility.restore", !database.exists || database.delete, s"Can't delete current database file $database")
-    log.info(s"Restoring database backup: ${script.getName} -> ${database.getName}")
+
+    log.info(s"Restoring database backup: ${zipFile.getName} -> ${database.getName}")
     RunScript.main(
-      "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$script", "-user", "sa", "-options", "compression", "zip"
+      "-url", s"jdbc:h2:$dbDir/$dbName", "-script", s"$zipFile", "-user", "sa", "-options", "compression", "zip"
     )
 
-  def compactDb(dbDir: File): Unit = withDb(dbDir, readOnly = false)(_.shutdownCompact())
+  def compactDb(dbDir: File): Unit =
+    main.info(s"Compacting database...")
+    withDb(dbDir, readOnly = false)(_.shutdownCompact())
   
   def stats(dbDir: File): Unit = withDb(dbDir, readOnly = true, checkVersion = false) { db =>
     import Database.currentDbVersion
@@ -93,6 +99,7 @@ object maintenance extends util.ClassLogging:
   }
 
   def del(dbDir: File, path: String): Unit = withDb(dbDir, readOnly = false) { db =>
+    main.info(s"Marking deleted '$path' ...")
     db.entry(path) match
       case None =>
         println(s"The path '$path' does not exist.")
