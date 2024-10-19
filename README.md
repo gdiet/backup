@@ -414,11 +414,14 @@ To upgrade a DedupFS installation to a newer version:
 * Replace `!` and `\` by something else for `fsc backup` because they are special characters on Linux / Bash.
 * Support for fuse3 on Linux systems.
 * On Linux, don't hang if the mount point exists but is not writable or owned by mounting user. Possibly check for directory write permission first?
+* Only log stack traces for unexpected exceptions.
+* Backup tool: Ensure that the last file listed as "stored" is actually stored when interrupting.
 
 #### 6.0.0 (???)
 
 * Upgrade H2 database from 2.1.212 to 2.3.232.
 * Add database migration script.
+* Fixed: `stats` utility on Linux didn't handle failures correctly.
 
 **Migration from 5.x to 6.x:**
 
