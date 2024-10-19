@@ -4,6 +4,7 @@ import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.Platform.getNativePlatform
 
 import java.io.File
+import scala.concurrent.Future
 
 @main def init(opts: (String, String)*): Unit = guard {
   if opts.isEmpty then main.info("Initializing dedup file system database.")
@@ -70,7 +71,7 @@ import java.io.File
     val repo     = opts.repo
     val backup   = !readOnly && opts.defaultTrue("dbBackup")
     val temp     = main.prepareTempDir(readOnly, opts)
-    val dbDir    = main.prepareDbDir(repo, backup = backup, readOnly = readOnly)
+    val dbDir -> backupFuture = main.prepareDbDir(repo, backup = backup, readOnly = readOnly)
     val settings = server.Settings(repo, dbDir, temp, readOnly, copyWhenMoving)
     
     main.info (s"Dedup file system settings:")
@@ -84,8 +85,13 @@ import java.io.File
     val nativeFuseOpts = if getNativePlatform.getOS == WINDOWS then Array("-o", "volname=DedupFS") else Array[String]()
     val fuseOpts       = nativeFuseOpts ++ Array("-o", "big_writes", "-o", "max_write=131072")
     main.info(s"Starting the dedup file system now...")
-    try fs.mount(mount.toPath, true, false, fuseOpts) catch { case t: Throwable => fs.umount(); throw t }
     
+    try fs.mount(mount.toPath, true, false, fuseOpts)
+    catch { case t: Throwable => fs.umount(); throw t }
+    finally
+      if !backupFuture.isCompleted then main.info("Waiting for database backup to finish...")
+      backupFuture.await
+
   catch
     case _: EnsureFailed | main.FailureExit => // already logged
       main.error("Finished abnormally.")
@@ -108,14 +114,16 @@ object main extends util.ClassLogging:
         if temp.list.nonEmpty then warn(s"Note that temp dir is not empty: $temp")
     }
 
+  def prepareDbDir(repo: File, backup: Boolean, readOnly: Boolean): (File, Future[Unit]) =
+    db.dbDir(repo).tap(checkDbDir(_, readOnly)).pipe { dbDir =>
+      dbDir -> (if backup then db.maintenance.dbBackup(dbDir) else Future.successful(()))
+    }
+
   // TODO check whether we should use this in more places
   // TODO and/or make it part of the command line args .dbDir handling
-  def prepareDbDir(repo: File, backup: Boolean, readOnly: Boolean): File =
-    db.dbDir(repo).tap { dbDir =>
-      if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
-      if !readOnly then db.H2.checkForTraceFile(dbDir)
-      if backup then db.maintenance.dbBackup(dbDir)
-    }
+  def checkDbDir(dbDir: File, readOnly: Boolean): Unit =
+    if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
+    if !readOnly then db.H2.checkForTraceFile(dbDir)
 
 private def guard(f: => Any): Unit =
   try { f; finishLogging() }

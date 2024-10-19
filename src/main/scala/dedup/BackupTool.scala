@@ -11,17 +11,17 @@ object BackupTool extends dedup.util.ClassLogging:
     log.info  (s"Running the backup utility, options: [${opts.forOutput}], parameters: [${params.mkString(", ")}]")
     cache.MemCache.startupCheck()
 
-    val (sources, target) = sourcesAndTarget(params)
-    val repo              = opts.repo
-    val backup            = opts.defaultFalse("dbBackup")
-    val maybeReference    = opts.get("reference")
-    val forceReference    = opts.defaultFalse("forceReference")
-    val temp              = main.prepareTempDir(false, opts)
-    val dbDir             = main.prepareDbDir(repo, backup = backup, readOnly = false)
-    val settings          = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
+    val (sources, target)     = sourcesAndTarget(params)
+    val repo                  = opts.repo
+    val backup                = opts.defaultFalse("dbBackup")
+    val maybeReference        = opts.get("reference")
+    val forceReference        = opts.defaultFalse("forceReference")
+    val temp                  = main.prepareTempDir(false, opts)
+    val dbDir -> backupFuture = main.prepareDbDir(repo, backup = backup, readOnly = false)
+    val settings              = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
 
-    val interrupted        = AtomicBoolean(false)
-    val shutdownFinished   = Promise[Unit]()
+    val interrupted           = AtomicBoolean(false)
+    val shutdownFinished      = Promise[Unit]()
 
     try resource(server.Backend(settings)) { fs =>
       log  .info(s"Repository:        $repo")
@@ -50,6 +50,8 @@ object BackupTool extends dedup.util.ClassLogging:
         finally shutdownHookThread.remove()
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
     } finally
+      if !backupFuture.isCompleted then main.info("Waiting for database backup to finish...")
+      backupFuture.await
       finishLogging()
       shutdownFinished.success(())
 

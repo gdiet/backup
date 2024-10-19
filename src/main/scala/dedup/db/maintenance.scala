@@ -13,9 +13,9 @@ import scala.concurrent.{ExecutionContext, Future}
 object maintenance extends util.ClassLogging:
 
   /** @return A future that completes when the database backup is finished. */
-  def dbBackup(dbDir: File, fileNameSuffix: String = ""): Unit =
+  def dbBackup(dbDir: File, fileNameSuffix: String = ""): Future[Unit] =
     plainDbBackup(dbDir)
-    sqlDbBackup(dbDir, fileNameSuffix).await
+    sqlDbBackup(dbDir, fileNameSuffix)
 
   private def plainDbBackup(dbDir: File): Unit =
     val database = dbFile(dbDir)
