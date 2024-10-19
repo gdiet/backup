@@ -98,7 +98,7 @@ import scala.concurrent.Future
     finally
       if !backupFuture.isCompleted then main.info("Waiting for database backup to finish...")
       backupFuture.await
-    
+
   catch
     case _: EnsureFailed | main.FailureExit => // already logged
       main.error("Finished abnormally.")
@@ -125,7 +125,7 @@ object main extends util.ClassLogging:
     db.dbDir(repo).tap(checkDbDir(_, readOnly)).pipe { dbDir =>
       dbDir -> (if backup then db.maintenance.dbBackup(dbDir) else Future.successful(()))
     }
-    
+
   // TODO check whether we should use this in more places
   // TODO and/or make it part of the command line args .dbDir handling
   def checkDbDir(dbDir: File, readOnly: Boolean): Unit =
