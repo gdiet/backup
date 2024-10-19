@@ -16,6 +16,7 @@
   - [x] 2024-10-14 5.3.2-M1 a8044ff1 Linux
   - ... and Windows script waits for confirmation
   - [x] 2024-09-03 6.0.0-M5 ed880216 Windows
+  - [x] 2024-09-01 6.0.0-M3 c919ca34 Linux
 - Trying to create a new repository when repository is already initialized
   - good failure information is displayed
   - good failure information is logged
