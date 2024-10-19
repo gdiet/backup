@@ -46,7 +46,7 @@ object BackupTool extends dedup.util.ClassLogging:
       log.info(s"Finished storing in total ${readableBytes(bytesStored)}.")
       shutdownHookThread.remove()
     } catch
-      case main.exit | _: EnsureFailed => /**/
+      case main.FailureExit | _: EnsureFailed => /**/
       case             e: Throwable    => log.error(s"Uncaught exception", e)
     finally
       log.info(s"Finished the backup.")

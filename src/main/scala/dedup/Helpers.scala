@@ -31,3 +31,6 @@ def ensure(marker: String, condition: Boolean, warningMessage: => String): Unit 
   if !condition then
     main.error(s"$marker: $warningMessage")
     if !sys.props.isDefinedAt(s"suppress.$marker") then throw new EnsureFailed(s"$marker - $warningMessage")
+
+/** Call this function before exiting to give logging some time to finish writing messages. */
+def finishLogging(): Unit = Thread.sleep(200)
