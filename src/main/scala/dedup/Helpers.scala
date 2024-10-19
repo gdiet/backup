@@ -1,5 +1,6 @@
 package dedup
 
+import scala.concurrent.Future
 import scala.language.implicitConversions
 import scala.util.ChainingOps
 
@@ -34,3 +35,6 @@ def ensure(marker: String, condition: Boolean, warningMessage: => String): Unit 
 
 /** Call this function before exiting to give logging some time to finish writing messages. */
 def finishLogging(): Unit = Thread.sleep(200)
+
+extension[T] (f: Future[T])
+  def await: T = scala.concurrent.Await.result(f, scala.concurrent.duration.Duration.Inf)

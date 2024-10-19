@@ -8,30 +8,37 @@ import java.io.File
 import java.nio.file.{Files, StandardCopyOption}
 import java.text.SimpleDateFormat
 import java.util.Date
+import scala.concurrent.{ExecutionContext, Future}
 
 object maintenance extends util.ClassLogging:
 
+  /** @return A future that completes when the database backup is finished. */
   def dbBackup(dbDir: File, fileNameSuffix: String = ""): Unit =
+    plainDbBackup(dbDir)
+    sqlDbBackup(dbDir, fileNameSuffix).await
+    
+  private def plainDbBackup(dbDir: File): Unit =
     val database = dbFile(dbDir)
     ensure("utility.backup", database.exists(), s"Database file $database does not exist")
+
     val plainBackup = backupFile(dbDir)
     log.info(s"Creating plain database backup: ${database.getName} -> ${plainBackup.getName}")
+
     Files.copy(database.toPath, plainBackup.toPath, StandardCopyOption.REPLACE_EXISTING)
 
-    new Thread(() => {
-      try
-        cache.MemCache.availableMem.addAndGet(-64000000) // Reserve some RAM for the backup process
-        val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
-        val zipBackup = File(dbDir, s"${dbName}_$dateString$fileNameSuffix.zip")
-        log.info(s"Creating sql script database backup: ${plainBackup.getName} -> ${zipBackup.getName}")
-        log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
-        Script.main(
-          "-url", s"jdbc:h2:$dbDir/$backupName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
-        )
-        log.info(s"Sql script database backup created.")
-      finally
-        cache.MemCache.availableMem.addAndGet(64000000)
-    }, "db-backup").start()
+  private def sqlDbBackup(dbDir: File, fileNameSuffix: String): Future[Unit] = Future {
+    try
+      cache.MemCache.availableMem.addAndGet(-64000000) // Reserve some RAM for the backup process
+      val dateString = SimpleDateFormat("yyyy-MM-dd_HH-mm").format(Date())
+      val zipBackup = File(dbDir, s"${dbName}_$dateString$fileNameSuffix.zip")
+      log.info(s"Creating zipped SQL script database backup: ${backupFile(dbDir).getName} -> ${zipBackup.getName}")
+      log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
+      Script.main(
+        "-url", s"jdbc:h2:$dbDir/$backupName", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
+      )
+      log.info(s"Zipped SQL script database backup created.")
+    finally cache.MemCache.availableMem.addAndGet(64000000)
+  }(ExecutionContext.global)
 
   def restorePlainDbBackup(dbDir: File): Unit =
     val database = dbFile(dbDir)
