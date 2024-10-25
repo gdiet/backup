@@ -412,6 +412,10 @@ To upgrade a DedupFS installation to a newer version:
 * Optionally store packed (gz or similar).
 * The reclaim utility finds & cleans up data entry duplicates.
 * Replace `!` and `\` by something else for `fsc backup` because they are special characters on Linux / Bash.
+* Check for previous database version file when starting dedupfs or its variants.
+* Stats tool does not behave nicely (no harm done) when encountering too old database.
+* Reclaim tool does not behave nicely (no harm done) when encountering too old database.
+* Reclaim tool prints misleading 'Starting database migration...'.
 
 #### 6.0.0 (???)
 

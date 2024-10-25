@@ -6,18 +6,17 @@
   - [x] 2024-09-05 6.0.0-M8 a8d1ccbd
   - [x] 2024-09-01 6.0.0-M3 c919ca34
 
-## Repository Initialization
+## repo-init
 
 - Create a new repository
-  - good success information is displayed
-  - good success information is logged
+  - good success information is displayed and logged
   - Windows script waits for confirmation
   - [x] 2024-09-03 6.0.0-M5 ed880216 Windows
   - [x] 2024-09-01 6.0.0-M3 c919ca34 Linux
 - Trying to create a new repository when repository is already initialized
-  - good failure information is displayed
-  - good failure information is logged
+  - good failure information is displayed and logged
   - Windows script waits for confirmation
+  - [x] 2024-10-25 6.0.0-M9 c5308d19 Windows
   - [x] 2024-09-05 6.0.0-M8 a8d1ccbd Linux
   - [x] 2024-09-03 6.0.0-M5 ed880216 Windows
 
@@ -51,6 +50,12 @@
 
 ## fsc list
 
+- Called with a database file from the previous database format
+  - good failure information is displayed
+  - nothing is logged
+  - doesn't wait for confirmation
+  - [x] 2024-10-25 6.0.0-M9 c5308d19 Windows
+
 - Called without parameters
   - good failure information is displayed
   - nothing is logged
@@ -71,6 +76,12 @@
 
 ## stats
 
+- Called with a database file from the previous database format
+  - good failure information is displayed
+  - nothing is logged
+  - Windows script waits for confirmation
+  - [-] 2024-10-25 6.0.0-M9 c5308d19 Windows
+
 - Called without valid repository
   - good failure information is displayed
   - nothing is logged
@@ -82,6 +93,22 @@
   - nothing is logged
   - Windows script waits for confirmation
   - [x] 2024-09-03 6.0.0-M6 dfaffe8d Windows
+
+## db-migrate
+
+- Called with a database file from the previous database format
+  - good success information is displayed and logged
+  - Windows script waits for confirmation
+  - [x] 2024-10-25 6.0.0-M9 c5308d19 Windows
+
+- Called with a current repository
+  - good failure information is displayed and logged
+  - Windows script waits for confirmation
+  - [x] 2024-10-25 6.0.0-M9 c5308d19 Windows
+
+- Called without valid repository
+  - good failure information is displayed and logged
+  - Windows script waits for confirmation
 
 ## Logging and Command Line Output
 
