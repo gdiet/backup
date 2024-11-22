@@ -12,6 +12,9 @@ lazy val dedupfs = project
     // see https://github.com/qos-ch/slf4j/issues/422
     // still present in 1.5.11, so let's wait ...
     // see https://github.com/qos-ch/logback/blob/ea3cec87a154efec8d8f62a312020827d88b11dc/pom.xml#L77
+    // will possibly fixed in 1.5.13, if that includes slf4j 2.0.16
+    // see https://github.com/qos-ch/logback/pull/881
+    // for investigation in SBT, use dependencyTree or dependencyBrowseGraph
     libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.5.6",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.8",
     // Update dedup.db.H2.dbName accordingly when updating H2
