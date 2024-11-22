@@ -421,6 +421,7 @@ To upgrade a DedupFS installation to a newer version:
 
 * Upgrade H2 database from 2.1.212 to 2.3.232.
 * Add database migration script.
+* Minor updates to Scala, Java, SBT, and some libraries.
 * Fixed: `stats` utility on Linux didn't handle failures correctly.
 
 **Migration from 5.x to 6.x:**
