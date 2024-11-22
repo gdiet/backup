@@ -6,7 +6,7 @@ lazy val dedupfs = project
   .settings(
     name := "dedupfs",
     version := "current",
-    scalaVersion := "3.3.3", // 3.3.x is LTS
+    scalaVersion := "3.3.4", // 3.3.x is LTS
     scalacOptions ++= Seq("-deprecation", "-unchecked"),
     // logback 1.5.7 brings an unexpected message to stderr,
     // see https://github.com/qos-ch/slf4j/issues/422
