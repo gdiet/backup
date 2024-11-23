@@ -68,9 +68,10 @@ object maintenance extends util.ClassLogging:
         val zipBackup = target.dbZipFile(dbDir)
         log.info(s"Creating zipped SQL script database backup: ${source.dbFile(dbDir).getName} -> ${zipBackup.getName}")
         log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
+        // Open the source DB readonly to avoid changing it while creating the backup.
         Script.main(
-          "-url", s"jdbc:h2:${source.dbScriptPath(dbDir)}", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
-        )
+          "-url", s"jdbc:h2:${source.dbScriptPath(dbDir)};ACCESS_MODE_DATA=r", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
+        ) // TODO use H2.jdbcUrl(...)
         log.info(s"Zipped SQL script database backup created.")
       finally cache.MemCache.availableMem.addAndGet(64000000)
     }(ExecutionContext.global)

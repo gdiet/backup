@@ -416,6 +416,7 @@ To upgrade a DedupFS installation to a newer version:
 * On Linux, don't hang if the mount point exists but is not writable or owned by mounting user. Possibly check for directory write permission first?
 * Only log stack traces for unexpected exceptions.
 * Backup tool: Ensure that the last file listed as "stored" is actually stored when interrupting.
+* A command line restore tool, possibly with the option to forward the output to console.
 
 #### 6.0.0 (???)
 
