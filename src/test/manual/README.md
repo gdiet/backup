@@ -1,5 +1,10 @@
 # Manual Tests
 
+## DB Migration
+
+- When migrating a 5.x database to 6.x, an unchanged backup copy of the 5.x database is created
+  - [x] 2024-11-23 6.0.0-RC1 e95dd4f2 Windows & Linux
+
 ## Linux Files
 
 - Only Linux scripts/apps in app, app/helpers and jrex/bin are executable

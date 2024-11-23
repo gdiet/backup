@@ -29,7 +29,7 @@ object maintenance extends util.ClassLogging:
 
     ensure("maintenance.migrateDB.step1", previousDbFile.delete(),
       s"Could not delete $previousDbFile.")
-    main.info(s"Migrating old database to new version, step 1 finished.")
+    main.info(s"Migrating old database to new version: Step 1 of 2 finished.")
 
   /** Restore the database from the file created in step 1,
    *  this time with the current database driver. */
@@ -45,7 +45,7 @@ object maintenance extends util.ClassLogging:
       s"Found no or too many DB backup candidates for migration step 2: ${backupCandidates.toList}")
 
     restoreSqlDbBackup(dbDir, backupCandidates(0).getName)
-    main.info(s"Migrating old database to new version, step 2 finished.")
+    main.info(s"Migrating old database to new version: Step 2 of 2 finished.")
 
   /** @return A future that completes when the database backup is finished. */
   def dbBackup(dbDir: File, source: DBRef = dbRef, target: DBRef = dbRef.backup): Future[Unit] =
