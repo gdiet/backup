@@ -193,7 +193,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   /** Marks a childless tree entry deleted.
     *
     * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
-    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    * race conditions causing deleted directories being parent of non-deleted tree entries.
     *
     * @return `false` if the tree entry does not exist or has any children, `true` if the entry exists and has no
     *         children, regardless of whether it was already marked deleted. */
@@ -207,7 +207,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     * of a file or as child of a deleted directory.
     *
     * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
-    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    * race conditions causing deleted directories being parent of non-deleted tree entries.
     *
     * @return [[Some]]`(fileId)` or [[None]] in case of a name conflict.
     * @throws Exception If the parent does not exist or the name is empty. */
@@ -224,7 +224,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     * of a file or as child of a deleted directory.
     *
     * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
-    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    * race conditions causing deleted directories being parent of non-deleted tree entries.
     *
     * @return [[Some]]`(fileId)` or [[None]] in case of a name conflict.
     * @throws Exception If the parent does not exist or the name is empty. */
@@ -255,7 +255,7 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     * a tree entry as child of a file or as child of a deleted directory.
     *
     * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
-    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    * race conditions causing deleted directories being parent of non-deleted tree entries.
     *
     * @return `true` on success, `false` in case of a name conflict or if the tree entry does not exist.
     * @throws Exception If the new parent does not exist or the new name is empty. */

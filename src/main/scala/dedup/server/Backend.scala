@@ -58,7 +58,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     * of a file or as child of a deleted directory.
     * 
     * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
-    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    * race conditions causing deleted directories being parent of non-deleted tree entries.
     *
     * @return [[Some]]`(fileId)` or [[None]] in case of a name conflict.
     * @throws Exception If the parent does not exist or the name is empty. */
@@ -69,20 +69,20 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
   def setTime(id: Long, newTime: Time): Unit = db.setTime(id, newTime)
 
   /** When used multithreaded together with other tree structure methods, needs external synchronization to prevent
-    * race conditions causing deleted directories to be parent of non-deleted tree entries. */
+    * race conditions causing deleted directories being parent of non-deleted tree entries. */
   def renameMove(id: Long, newParentId: Long, newName: String): Boolean = db.renameMove(id, newParentId, newName)
 
   /** Creates a copy of the file's last persisted state without current modifications.
     *
     * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
-    * race conditions causing deleted directories to be parent of non-deleted tree entries. */
+    * race conditions causing deleted directories being parent of non-deleted tree entries. */
   def copyFile(file: FileEntry, newParentId: Long, newName: String): Boolean =
     db.mkFile(newParentId, newName, file.time, file.dataId).isDefined
 
   /** Deletes a tree entry unless it has children.
     * 
     * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
-    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    * race conditions causing deleted directories being parent of non-deleted tree entries.
     *
     * Though technically only the tree entry ID is needed, in many places where this method is used it's nicer
     * if the method accepts the TreeEntry.
@@ -102,7 +102,7 @@ final class Backend(settings: Settings) extends AutoCloseable with util.ClassLog
     * For each [[open]] or [[createAndOpen]], a corresponding [[release]] call is required for normal operation.
     * 
     * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
-    * race conditions causing deleted directories to be parent of non-deleted tree entries.
+    * race conditions causing deleted directories being parent of non-deleted tree entries.
     * 
     * @return Some(fileId) or None if a child entry with the same name already exists. */
   def createAndOpen(parentId: Long, name: String, time: Time): Option[Long] =
