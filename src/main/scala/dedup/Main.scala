@@ -7,17 +7,6 @@ import jnr.ffi.Platform.getNativePlatform
 import java.io.File
 import scala.concurrent.Future
 
-@main def init(opts: (String, String)*): Unit = guard {
-  if opts.isEmpty then main.info("Initializing dedup file system database.")
-  else main.info("Initializing dedup file system database, options: " + opts.forOutput)
-  val repo  = opts.repo
-  val dbDir = db.dbDir(repo)
-  if dbDir.exists() then main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.")
-  store.dataDir(repo).mkdirs() // If dataDir is missing, Server.statfs will report free size 0 on Windows.
-  scala.util.Using.resource(db.H2.connection(dbDir, readOnly = false, expectExists = false))(db.initialize)
-  main.info(s"Database initialized for repository $repo.")
-}
-
 @main def fsc(opts: String*): Unit = guard {
   val dbDir = opts.baseOptions.dbDir
   val cmd = opts.additionalOptions.toList
@@ -30,6 +19,7 @@ import scala.concurrent.Future
     case "del"         :: path     :: Nil    => db.maintenance.del(dbDir, path)
     case "find"        :: matcher  :: Nil    => db.maintenance.find(dbDir, matcher)
     case "help"        ::             params => fscHelp()
+    case "init"        ::             params => db.maintenance.init(opts.baseOptions)
     case "list"        :: path     :: Nil    => db.maintenance.list(dbDir, path)
     case "stats"       ::             Nil    => db.maintenance.stats(dbDir)
     case _ => println(s"Command '${cmd.mkString(" ")}' not available - missing parameters? Exiting...")
@@ -46,6 +36,7 @@ Commands:
   del <path>        Mark a file or directory as deleted in the repository.
   find <matcher>    Find files and directories in the repository using a glob matcher.
   help              Show this help.
+  init [options]    Initialize the repository. See README for details.
   list <path>       List the files and directories in the specified path.
   stats             Show repository statistics.""".stripMargin)
 

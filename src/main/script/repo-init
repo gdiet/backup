@@ -5,4 +5,8 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 
 ### Parameters ###
 # repo=<repository directory>     | default: '..' (parent of working directory)
-$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx64m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.init "$@"
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx64m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.fsc "$@" init
+if [ $ERRORLEVEL -ne 0 ]; then
+  echo "Repository initialization finished with error code $ERRORLEVEL, exiting..."
+  exit $ERRORLEVEL
+fi

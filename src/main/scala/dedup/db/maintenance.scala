@@ -10,6 +10,16 @@ import scala.concurrent.{ExecutionContext, Future}
 
 object maintenance extends util.ClassLogging:
 
+  def init(opts: Seq[(String, String)]): Unit =
+    if opts.isEmpty then main.info("Initializing dedup file system database.")
+    else main.info("Initializing dedup file system database, options: " + opts.forOutput)
+    val repo = opts.repo
+    val dbDir = db.dbDir(repo)
+    if dbDir.exists() then main.failureExit(s"Database directory $dbDir exists - repository is probably already initialized.")
+    store.dataDir(repo).mkdirs() // If dataDir is missing, Server.statfs will report free size 0 on Windows.
+    scala.util.Using.resource(db.H2.connection(dbDir, readOnly = false, expectExists = false))(db.initialize)
+    log.info(s"Database initialized for repository $repo.")
+  
   /** Create an SQL backup from the previous version's database file,
    *  then rename the file to "before_upgrade".
    *

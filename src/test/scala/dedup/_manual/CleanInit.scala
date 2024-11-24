@@ -4,4 +4,4 @@ object CleanInit extends App:
   val repo = java.io.File("./manual")
   dedup.delete(repo)
   require(repo.mkdir())
-  dedup.init(("repo", "./manual"))
+  dedup.fsc("repo=./manual", "init")

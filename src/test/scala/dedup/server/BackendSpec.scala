@@ -6,7 +6,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class BackendSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
   def repo     = testFile
   val settings = Settings(repo, db.dbDir(repo), java.io.File(repo, "temp"), false, AtomicBoolean(false))
-  init("repo" -> repo.getPath)
+  fsc(s"repo=$repo", "init")
   val backend  = Backend(settings)
   
   lazy val root = backend.entry("/").get.asInstanceOf[DirEntry]
