@@ -1,4 +1,19 @@
-# Manual Tests
+# Manual Tests for release 6.1.0
+
+## DB Migration
+
+- `db-migrate` works
+- `db-migrate` works with `repo=...` parameter
+
+## `fsc stats` and `stats`
+
+- fsc stats works
+- stats works
+- fsc stats works with `repo=...` parameter
+- stats works with `repo=...` parameter
+- stats on Windows waits for confirmation
+
+# Manual Tests for release 6.0.0
 
 ## DB Migration
 

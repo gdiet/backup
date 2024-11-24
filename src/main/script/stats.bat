@@ -5,7 +5,7 @@ if errorlevel 1 exit /B %errorlevel%
 
 rem ### Parameters ###
 rem # repo=<repository directory>     | default: '..' (parent of working directory)
-%JAVA% "-DLOG_BASE=%~dp0log" -Xmx256m -Dlogback.configurationFile=logback-readonly.xml -cp "%~dp0lib\*;%~dp0lib-h2\*" dedup.stats %*
+%JAVA% "-DLOG_BASE=%~dp0log" -Xmx256m -Dlogback.configurationFile=logback-readonly.xml -cp "%~dp0lib\*;%~dp0lib-h2\*" dedup.fsc stats %*
 if errorlevel 0 if not errorlevel 1 (
     echo Statistics finished successfully.
     pause

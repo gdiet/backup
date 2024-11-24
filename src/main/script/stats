@@ -5,7 +5,7 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 
 ### Parameters ###
 # repo=<repository directory>     | default: '..' (parent of working directory)
-$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx256m -Dlogback.configurationFile=logback-readonly.xml -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.stats "$@"
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx256m -Dlogback.configurationFile=logback-readonly.xml -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.fsc stats "$@"
 ERRORLEVEL=$?
 if [ $ERRORLEVEL -ne 0 ]; then
   echo "Statistics finished with error code $ERRORLEVEL, exiting..."

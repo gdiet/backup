@@ -18,10 +18,6 @@ import scala.concurrent.Future
   main.info(s"Database initialized for repository $repo.")
 }
 
-@main def stats(opts: (String, String)*): Unit = guard {
-  db.maintenance.stats(opts.dbDir)
-}
-
 @main def fsc(opts: String*): Unit = guard {
   val dbDir = opts.baseOptions.dbDir
   val cmd = opts.additionalOptions.toList
@@ -31,9 +27,10 @@ import scala.concurrent.Future
     case "db-restore"  ::             Nil    => db.maintenance.restorePlainDbBackup(dbDir)
     case "db-restore"  :: fileName :: Nil    => db.maintenance.restoreSqlDbBackup(dbDir, fileName)
     case "db-compact"  ::             Nil    => db.maintenance.compactDb(dbDir)
+    case "del"         :: path     :: Nil    => db.maintenance.del(dbDir, path)
     case "find"        :: matcher  :: Nil    => db.maintenance.find(dbDir, matcher)
     case "list"        :: path     :: Nil    => db.maintenance.list(dbDir, path)
-    case "del"         :: path     :: Nil    => db.maintenance.del(dbDir, path)
+    case "stats"       ::             Nil    => db.maintenance.stats(dbDir)
     case _ => println(s"Command '${cmd.mkString(" ")}' not available - missing parameters? Exiting...")
 }
 

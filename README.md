@@ -418,6 +418,8 @@ To upgrade a DedupFS installation to a newer version:
 * Backup tool: Ensure that the last file listed as "stored" is actually stored when interrupting.
 * A command line restore tool, possibly with the option to forward the output to console.
 
+#### 6.1.0 (???)
+
 #### 6.0.0 (2024.11.24)
 
 * Upgrade H2 database from 2.1.212 to 2.3.232.
