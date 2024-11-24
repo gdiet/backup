@@ -27,8 +27,6 @@ import scala.concurrent.Future
   val cmd = opts.additionalOptions.toList
   cmd match
     case "backup"      ::             params => BackupTool.backup(opts.baseOptions, params)
-    case "db-migrate1" ::             Nil    => db.maintenance.migrateDbStep1(dbDir)
-    case "db-migrate2" ::             Nil    => db.maintenance.migrateDbStep2(dbDir)
     case "db-backup"   ::             Nil    => db.maintenance.dbBackup(dbDir).await
     case "db-restore"  ::             Nil    => db.maintenance.restorePlainDbBackup(dbDir)
     case "db-restore"  :: fileName :: Nil    => db.maintenance.restoreSqlDbBackup(dbDir, fileName)
@@ -37,6 +35,14 @@ import scala.concurrent.Future
     case "list"        :: path     :: Nil    => db.maintenance.list(dbDir, path)
     case "del"         :: path     :: Nil    => db.maintenance.del(dbDir, path)
     case _ => println(s"Command '${cmd.mkString(" ")}' not available - missing parameters? Exiting...")
+}
+
+@main def dbMigrateStep1(opts: (String, String)*): Unit = guard {
+  db.maintenance.migrateDbStep1(opts.dbDir)
+}
+
+@main def dbMigrateStep2(opts: (String, String)*): Unit = guard {
+  db.maintenance.migrateDbStep2(opts.dbDir)
 }
 
 @main def reclaimSpace(opts: (String, String)*): Unit = guard {

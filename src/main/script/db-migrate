@@ -12,7 +12,7 @@ read -n 1 -r -s -p "Press any key to continue..."
 echo
 echo "Starting database migration..."
 
-$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -cp "$APPDIR/lib/*:$APPDIR/lib-h2-previous/*" dedup.fsc db-migrate1
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -cp "$APPDIR/lib/*:$APPDIR/lib-h2-previous/*" dedup.dbMigrateStep1
 ERRORLEVEL=$?
 if [ $ERRORLEVEL -ne 0 ]; then
   echo "Database migration step 1 finished with error code $ERRORLEVEL, exiting..."
@@ -20,7 +20,7 @@ if [ $ERRORLEVEL -ne 0 ]; then
 else
   echo "Database migration step 1 finished successfully."
 fi
-$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.fsc db-migrate2
+$JAVA "-DLOG_BASE=$APPDIR/log" -Xmx512m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.dbMigrateStep2
 ERRORLEVEL=$?
 if [ $ERRORLEVEL -ne 0 ]; then
   echo "Database migration step 2 finished with error code $ERRORLEVEL, exiting..."
