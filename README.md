@@ -420,6 +420,8 @@ To upgrade a DedupFS installation to a newer version:
 
 #### 6.1.0 (???)
 
+* Add `fsc help` command.
+
 #### 6.0.0 (2024.11.24)
 
 * Upgrade H2 database from 2.1.212 to 2.3.232.

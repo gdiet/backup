@@ -5,6 +5,11 @@
 - `db-migrate` works
 - `db-migrate` works with `repo=...` parameter
 
+## `fsc` commands
+
+- help works
+- read-only commands don't create a database backup
+
 ## `fsc stats` and `stats`
 
 - fsc stats works

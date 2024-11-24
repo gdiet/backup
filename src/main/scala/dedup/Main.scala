@@ -29,10 +29,25 @@ import scala.concurrent.Future
     case "db-compact"  ::             Nil    => db.maintenance.compactDb(dbDir)
     case "del"         :: path     :: Nil    => db.maintenance.del(dbDir, path)
     case "find"        :: matcher  :: Nil    => db.maintenance.find(dbDir, matcher)
+    case "help"        ::             params => fscHelp()
     case "list"        :: path     :: Nil    => db.maintenance.list(dbDir, path)
     case "stats"       ::             Nil    => db.maintenance.stats(dbDir)
     case _ => println(s"Command '${cmd.mkString(" ")}' not available - missing parameters? Exiting...")
 }
+
+def fscHelp(): Unit = println("""
+Usage: fsc <command> [parameters]
+Commands:
+  backup [options]  Store directories/files in the repository. See README for details.
+  db-backup         Create one plain and one zipped-sql database backup file.
+  db-restore        Restore the database from the plain backup file.
+  db-restore <file> Restore the database from the specified zipped-sql backup file.
+  db-compact        Compact the database.
+  del <path>        Mark a file or directory as deleted in the repository.
+  find <matcher>    Find files and directories in the repository using a glob matcher.
+  help              Show this help.
+  list <path>       List the files and directories in the specified path.
+  stats             Show repository statistics.""".stripMargin)
 
 @main def dbMigrateStep1(opts: (String, String)*): Unit = guard {
   db.maintenance.migrateDbStep1(opts.dbDir)
