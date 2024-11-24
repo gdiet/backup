@@ -6,14 +6,8 @@ JAVA=$("$APPDIR/helpers/set-java" java "$APPDIR/jrex/bin/java") || exit 1
 ### Parameters ###
 # repo=<repository directory> | default: '..' (parent of working directory)
 ### Commands ###
-# backup <source> <target> [options] | store files in the backup repository
-# db-backup                          | create a database backup
-# db-restore [backup-zip]            | restore a database backup
-# db-compact                         | compact the database file
-# find <pattern>   | find files with matching file names, e.g. '*.scala'
-# list <path>      | list directory or show file info
-# del <path>       | mark a file or recursively mark a directory as deleted
-if [ "$1" = "find" ] || [ "$1" = "list" ]; then
+# call 'fsc help' for more information
+if [ "$1" = "find" ] || [ "$1" = "list" ] || [ "$1" = "stats" ]; then
   $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx256m -Dlogback.configurationFile=logback-readonly.xml -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.fsc "$@"
 else
   $JAVA "-DLOG_BASE=$APPDIR/log" -Xmx256m -cp "$APPDIR/lib/*:$APPDIR/lib-h2/*" dedup.fsc "$@"

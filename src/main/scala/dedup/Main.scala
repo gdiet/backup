@@ -33,11 +33,11 @@ Commands:
   db-restore        Restore the database from the plain backup file.
   db-restore <file> Restore the database from the specified zipped-sql backup file.
   db-compact        Compact the database.
-  del <path>        Mark a file or directory as deleted in the repository.
+  del <path>        Mark a file or recursively mark a directory as deleted in the repository.
   find <matcher>    Find files and directories in the repository using a glob matcher.
   help              Show this help.
-  init [options]    Initialize the repository. See README for details.
-  list <path>       List the files and directories in the specified path.
+  init [options]    Initialize the repository.
+  list <path>       List a directory or show the file info for the specified repository path.
   stats             Show repository statistics.""".stripMargin)
 
 @main def dbMigrateStep1(opts: (String, String)*): Unit = guard {
