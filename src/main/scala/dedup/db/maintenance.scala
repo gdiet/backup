@@ -126,6 +126,27 @@ object maintenance extends util.ClassLogging:
     db.freeAreas() // Run for its log output
   }
 
+  def stats(dbDir: File, path: String): Unit = withDb(dbDir, readOnly = true) { db =>
+    db.entry(path) match
+      case None =>
+        println(s"The path '$path' does not exist.")
+      case Some(file: FileEntry) =>
+        println(s"File information for path '$path':")
+        println(s"${file.name} .. ${readableBytes(db.logicalSize(file.dataId))}")
+      case Some(dir: DirEntry) =>
+        def getStats(dir: DirEntry): (Int, Int, Long) =
+          db.children(dir.id).foldLeft((0, 0, 0L)) {
+            case ((files, dirs, totalSize), file: FileEntry) =>
+              (files + 1, dirs, totalSize + db.logicalSize(file.dataId))
+            case ((files, dirs, totalSize), dir: DirEntry) =>
+              val (childFiles, childDirs, childLogicalSize) = getStats(dir)
+              (files + childFiles, dirs + childDirs + 1, totalSize + childLogicalSize)
+          }
+        val (files, dirs, totalSize) = getStats(dir)
+        println(s"Directory information for path '$path':")
+        println(s"Files: $files, directories: $dirs, total size: ${readableBytes(totalSize)}")
+  }
+
   def list(dbDir: File, path: String): Unit = withDb(dbDir, readOnly = true) { db =>
     db.entry(path) match
       case None =>

@@ -22,6 +22,7 @@ import scala.concurrent.Future
     case "init"        ::             params => db.maintenance.init(opts.baseOptions)
     case "list"        :: path     :: Nil    => db.maintenance.list(dbDir, path)
     case "stats"       ::             Nil    => db.maintenance.stats(dbDir)
+    case "stats"       :: path     :: Nil    => db.maintenance.stats(dbDir, path)
     case _ => println(s"Command '${cmd.mkString(" ")}' not available - missing parameters? Exiting...")
 }
 

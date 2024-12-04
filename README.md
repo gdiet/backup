@@ -247,6 +247,10 @@ Use `fsc find <pattern>` to find files matching the name or path fragment patter
 
 Use `fsc list <path>` to list the contents of the directory denoted by `<path>`.
 
+#### Get Size And Other Statistics For A Stored Directory Or File
+
+Use `fsc stats <path>` to get size and other statistics for the directory or file denoted by `<path>`.
+
 #### Delete A File Or A Directory
 
 Use `fsc del <path>` to delete the file or **recursively** delete the directory denoted by `<path>`. **This utility does not create a database backup.** If required, use `fsc db-backup` before using `fsc del <path>`.
@@ -421,6 +425,7 @@ To upgrade a DedupFS installation to a newer version:
 #### 6.1.0 (???)
 
 * Add `fsc help` command.
+* Add `fsc stats <repository path>` command
 
 #### 6.0.0 (2024.11.24)
 

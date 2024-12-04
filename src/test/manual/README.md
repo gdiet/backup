@@ -9,14 +9,17 @@
 
 - help works
 - read-only commands don't create a database backup
+- `fsc` commands work with `repo=...` parameter
 
 ## `fsc stats` and `stats`
 
 - fsc stats works
-- stats works
 - fsc stats works with `repo=...` parameter
+- stats works
 - stats works with `repo=...` parameter
 - stats on Windows waits for confirmation
+- fsc stats works with repository path
+- stats works with repository path
 
 # Manual Tests for release 6.0.0
 
