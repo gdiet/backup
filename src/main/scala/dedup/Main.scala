@@ -21,6 +21,7 @@ import scala.concurrent.Future
     case "help"        ::             params => fscHelp()
     case "init"        ::             params => db.maintenance.init(opts.baseOptions)
     case "list"        :: path     :: Nil    => db.maintenance.list(dbDir, path)
+    case "restore"     ::             params => BackupTool.restore(opts.baseOptions, params)
     case "stats"       ::             Nil    => db.maintenance.stats(dbDir)
     case "stats"       :: path     :: Nil    => db.maintenance.stats(dbDir, path)
     case _ =>

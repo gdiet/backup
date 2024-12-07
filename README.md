@@ -225,6 +225,10 @@ Example for a `.backupignore` file:
     # files in the backup that are named '*.log'.
     log*/*.log
 
+#### Restore Files And Directories From The DedupFS
+
+Use `fsc restore <source> <target>` to restore files and directories from the dedup file system without having to mount it first.
+
 #### Create A Database Backup
 
 Use `fsc db-backup` to create a database backup. The database backup is created in the repository's `fsdb` directory.
@@ -409,7 +413,7 @@ To upgrade a DedupFS installation to a newer version:
 
 #### May Come Eventually
 
-* Ensure the backup script can be gracefully interrupted.
+* Ensure the backup and restore scripts can in fact be gracefully interrupted.
 * In some way give access to deleted files and directories.
 * Development: Try out scoverage instead of jacoco (a spike 2022.10 didn't work well).
 * Support for soft links.
@@ -420,7 +424,6 @@ To upgrade a DedupFS installation to a newer version:
 * On Linux, don't hang if the mount point exists but is not writable or owned by mounting user. Possibly check for directory write permission first?
 * Only log stack traces for unexpected exceptions.
 * Backup tool: Ensure that the last file listed as "stored" is actually stored when interrupting.
-* A command line restore tool, possibly with the option to forward the output to console.
 * Check for previous database version file when starting dedupfs or its variants.
 * Stats tool does not behave nicely (no harm done) when encountering too old database.
 * Reclaim tool does not behave nicely (no harm done) when encountering too old database.
@@ -429,7 +432,8 @@ To upgrade a DedupFS installation to a newer version:
 #### 6.1.0 (???)
 
 * Add `fsc help` command.
-* Add `fsc stats <repository path>` command
+* Add `fsc stats <repository path>` command.
+* Add `fsc restore <source> <target>` command.
 
 #### 6.0.0 (2024.11.24)
 

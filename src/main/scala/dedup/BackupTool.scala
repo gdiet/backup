@@ -1,14 +1,77 @@
 package dedup
 
-import java.io.{BufferedInputStream, File, FileInputStream, IOException}
+import java.io.{BufferedInputStream, File, FileInputStream, FileOutputStream, IOException}
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.concurrent.Promise
 import scala.util.Using.resource
 
 object BackupTool extends dedup.util.ClassLogging:
 
+  def restore(opts: Seq[(String, String)], params: List[String]): Unit =
+    log.info (s"Running the restore utility, options: [${opts.forOutput}], parameters: [${params.mkString(", ")}]")
+
+    val source -> target = params match
+      case Nil => failure("Source and target are missing.")
+      case _ :: Nil => failure("Source or target is missing.")
+      case source :: targetPath :: Nil =>
+        val target = File(targetPath)
+        if ! target.isDirectory then failure("Target is not a directory.")
+        if ! target.canWrite then failure("Can't write to target.")
+        source -> target
+      case other => failure("Too many source or target parameters.")
+
+    val repo       = opts.repo
+    val temp       = main.prepareTempDir(false, opts)
+    val dbDir -> _ = main.prepareDbDir(repo, backup = false, readOnly = true)
+    val settings   = server.Settings(repo, dbDir, temp, readOnly = true, copyWhenMoving = AtomicBoolean(false))
+
+    val interrupted      = AtomicBoolean(false)
+    val shutdownFinished = Promise[Unit]()
+
+    try resource(server.Backend(settings)) { fs =>
+      val sourceEntry = fs.entry(source).getOrElse(failure(s"Source path DedupFS:$source does not exist."))
+      if File(target, sourceEntry.name).exists() then failure(s"${sourceEntry.name} already exists in target $target")
+
+      log.info(s"Repository: $repo")
+      log.info(s"Source:     $source")
+      log.info(s"Target:     $target")
+
+      val shutdownHookThread = sys.addShutdownHook { // FIXME duplicate code
+        log.info(s"Interrupted, stopping ...")
+        interrupted.set(true)
+        shutdownFinished.future.await
+        log.info(s"Interrupted, stopped.")
+        finishLogging()
+      }
+
+      def process(source: TreeEntry, target: File): Unit = source match
+        case dir: DirEntry =>
+          log.info(s"Restoring directory ${dir.name} to $target")
+          val newTarget = File(target, dir.name).tap(_.mkdir())
+          fs.children(dir.id).foreach(process(_, newTarget))
+        case file: FileEntry =>
+          log.info(s"Restoring file ${file.name} to $target")
+          fs.open(file)
+          try
+            fs.read(file.id, 0, Long.MaxValue) match
+              case None =>
+                log.warn(s"Could not read file ${file.name} for restoring to $target")
+              case Some(chunks) =>
+                resource(FileOutputStream(File(target, file.name))) { out =>
+                  chunks.foreach(chunk => out.write(chunk._2))
+                }
+          finally
+            fs.release(file.id)
+
+      try process(sourceEntry, target)
+      finally shutdownHookThread.remove()
+
+    } finally
+      finishLogging()
+      shutdownFinished.success(())
+
   def backup(opts: Seq[(String, String)], params: List[String]): Unit =
-    log.info  (s"Running the backup utility, options: [${opts.forOutput}], parameters: [${params.mkString(", ")}]")
+    log.info (s"Running the backup utility, options: [${opts.forOutput}], parameters: [${params.mkString(", ")}]")
     cache.MemCache.startupCheck()
 
     val (sources, target)     = sourcesAndTarget(params)
