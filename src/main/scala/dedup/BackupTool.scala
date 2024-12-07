@@ -16,7 +16,7 @@ object BackupTool extends dedup.util.ClassLogging:
       case source :: targetPath :: Nil =>
         val target = File(targetPath)
         if ! target.isDirectory then failure("Target is not a directory.")
-        if ! target.canWrite then failure("Can't write to target.")
+        if ! target.canWrite then failure("Can not write to target.")
         source -> target
       case other => failure("Too many source or target parameters.")
 
@@ -25,7 +25,6 @@ object BackupTool extends dedup.util.ClassLogging:
     val dbDir -> _ = main.prepareDbDir(repo, backup = false, readOnly = true)
     val settings   = server.Settings(repo, dbDir, temp, readOnly = true, copyWhenMoving = AtomicBoolean(false))
 
-    val interrupted      = AtomicBoolean(false)
     val shutdownFinished = Promise[Unit]()
 
     try resource(server.Backend(settings)) { fs =>
@@ -36,15 +35,9 @@ object BackupTool extends dedup.util.ClassLogging:
       log.info(s"Source:     $source")
       log.info(s"Target:     $target")
 
-      val shutdownHookThread = sys.addShutdownHook { // FIXME duplicate code
-        log.info(s"Interrupted, stopping ...")
-        interrupted.set(true)
-        shutdownFinished.future.await
-        log.info(s"Interrupted, stopped.")
-        finishLogging()
-      }
+      val interrupted -> shutdownHookThread = setupShutdownHook(shutdownFinished)
 
-      def process(source: TreeEntry, target: File): Unit = source match
+      def process(source: TreeEntry, target: File): Unit = if !interrupted.get() then source match
         case dir: DirEntry =>
           log.info(s"Restoring directory ${dir.name} to $target")
           val newTarget = File(target, dir.name).tap(_.mkdir())
@@ -83,7 +76,6 @@ object BackupTool extends dedup.util.ClassLogging:
     val dbDir -> backupFuture = main.prepareDbDir(repo, backup = backup, readOnly = false)
     val settings              = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
 
-    val interrupted           = AtomicBoolean(false)
     val shutdownFinished      = Promise[Unit]()
 
     try resource(server.Backend(settings)) { fs =>
@@ -101,13 +93,7 @@ object BackupTool extends dedup.util.ClassLogging:
       if !forceReference then maybeRefId.foreach(validateReference(fs, sources, _))
       val targetId = resolveTargetId(fs, target)
 
-      val shutdownHookThread = sys.addShutdownHook {
-        log.info(s"Interrupted, stopping ...")
-        interrupted.set(true)
-        shutdownFinished.future.await
-        log.info(s"Interrupted, stopped.")
-        finishLogging()
-      }
+      val interrupted -> shutdownHookThread = setupShutdownHook(shutdownFinished)
       val bytesStored =
         try sources.map(source => process(interrupted, fs, source, Seq(), targetId, maybeRefId)).sum
         finally shutdownHookThread.remove()
@@ -344,3 +330,14 @@ object BackupTool extends dedup.util.ClassLogging:
     val regex = """(?<!\\)\[(.+?)]""".r
     regex.replaceAllIn(string, { m => java.text.SimpleDateFormat(m.group(1)).format(date) })
       .replaceAll("""\\\[""", "[")
+
+  private def setupShutdownHook(shutdownFinished: Promise[Unit]) = {
+    val interrupted = AtomicBoolean(false)
+    interrupted -> sys.addShutdownHook {
+      log.info(s"Interrupted, stopping ...")
+      interrupted.set(true)
+      shutdownFinished.future.await
+      log.info(s"Interrupted, stopped.")
+      finishLogging()
+    }
+  }
