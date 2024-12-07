@@ -23,7 +23,9 @@ import scala.concurrent.Future
     case "list"        :: path     :: Nil    => db.maintenance.list(dbDir, path)
     case "stats"       ::             Nil    => db.maintenance.stats(dbDir)
     case "stats"       :: path     :: Nil    => db.maintenance.stats(dbDir, path)
-    case _ => println(s"Command '${cmd.mkString(" ")}' not available - missing parameters? Exiting...")
+    case _ =>
+      println(s"Command '${cmd.mkString(" ")}' not available - missing parameters?")
+      fscHelp()
 }
 
 def fscHelp(): Unit = println("""
