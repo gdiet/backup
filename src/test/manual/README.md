@@ -36,7 +36,7 @@
   - [x] 2024-09-01 6.0.0-M3 c919ca34 Linux
   - [x] 2024-10-14 5.3.2-M1 a8044ff1 Linux
 
-## Repository Initialization
+## repo-init
 
 - Create a new repository
   - good success information is displayed
@@ -103,6 +103,12 @@
 
 ## fsc list
 
+- Called with a database file from the previous database format
+  - good failure information is displayed
+  - nothing is logged
+  - doesn't wait for confirmation
+  - [x] 2024-10-25 6.0.0-M9 c5308d19 Windows
+
 - Called without parameters
   - good failure information is displayed
   - nothing is logged
@@ -126,6 +132,12 @@
 
 ## stats
 
+- Called with a database file from the previous database format
+  - good failure information is displayed
+  - nothing is logged
+  - Windows script waits for confirmation
+  - [-] 2024-10-25 6.0.0-M9 c5308d19 Windows
+
 - Called without valid repository
   - good failure information is displayed
   - nothing is logged
@@ -138,6 +150,22 @@
   - [o] 2024-10-19 6.0.0-M9 0e008d63 Linux
   - ... and Windows script waits for confirmation
   - [x] 2024-09-03 6.0.0-M6 dfaffe8d Windows
+
+## db-migrate
+
+- Called with a database file from the previous database format
+  - good success information is displayed and logged
+  - Windows script waits for confirmation
+  - [x] 2024-10-25 6.0.0-M9 c5308d19 Windows
+
+- Called with a current repository
+  - good failure information is displayed and logged
+  - Windows script waits for confirmation
+  - [x] 2024-10-25 6.0.0-M9 c5308d19 Windows
+
+- Called without valid repository
+  - good failure information is displayed and logged
+  - Windows script waits for confirmation
 
 ## Logging and Command Line Output
 

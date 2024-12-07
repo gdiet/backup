@@ -3,8 +3,8 @@
 ## Logging and Command Line Output
 
 - When a process is started that might change data, this should be logged in Scala at info level.
-- When a user expects confirmation of a successful operation, this should also be logged in Scala - the scripts do not need to print a "finished successfully" message.
-- When a process terminates abnormally, this should be logged and printed to the console in Scala - the scripts do not need to print a "finished abnormally" message.
+- When a user expects confirmation of a successful operation, this should be logged in Scala - the scripts should not need to print a "finished successfully" message.
+- When a process terminates abnormally, this should be logged and printed to the console in Scala - the scripts should not need to print a "finished abnormally" message.
 
 ## Scala
 
