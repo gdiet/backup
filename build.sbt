@@ -15,7 +15,7 @@ lazy val dedupfs = project
     // will possibly be fixed in 1.5.13, if that includes slf4j 2.0.16
     // see https://github.com/qos-ch/logback/pull/881
     // for investigation in SBT, use dependencyTree or dependencyBrowseGraph
-    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.5.6",
+    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.5.16",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.8",
     // Update dedup.db.H2.dbName accordingly when updating H2
     // to a version with incompatible binary storage format.

@@ -434,6 +434,8 @@ To upgrade a DedupFS installation to a newer version:
 * Add `fsc help` command.
 * Add `fsc stats <repository path>` command.
 * Add `fsc restore <source> <target>` command.
+* Update logback from 1.5.6 to 1.5.16 (intermediate versions were broken).
+* Minor SBT update.
 
 #### 6.0.0 (2024.11.24)
 
