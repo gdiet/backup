@@ -1,5 +1,22 @@
 # Manual Tests for release 6.1.0
 
+## `fsc restore`
+
+- works for existing source file -> existing directory
+  - [x] 2025-01-22 6.1.0-M4 3e359dcc Linux
+- works for existing source directory -> existing directory
+  - [x] 2025-01-22 6.1.0-M4 3e359dcc Linux
+- good information in good case
+  - [?] 2025-01-22 6.1.0-M4 3e359dcc Linux
+- doesn't write to log file
+  - [0] 2025-01-22 6.1.0-M4 3e359dcc Linux
+- good information if source path does not exist
+  - [?] 2025-01-22 6.1.0-M4 3e359dcc Linux
+- good information if target path does not exist
+  - [?] 2025-01-22 6.1.0-M4 3e359dcc Linux
+- good information if target path is a file, not a directory
+  - [?] 2025-01-22 6.1.0-M4 3e359dcc Linux
+
 ## DB Migration
 
 - `db-migrate` works
@@ -20,6 +37,8 @@
 - stats on Windows waits for confirmation
 - fsc stats works with repository path
 - stats works with repository path
+- fsc stats works with path parameter
+- stats works with path parameter
 
 # Manual Tests for release 6.0.0
 

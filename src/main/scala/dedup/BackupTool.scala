@@ -8,14 +8,12 @@ import scala.util.Using.resource
 object BackupTool extends dedup.util.ClassLogging:
 
   def restore(opts: Seq[(String, String)], params: List[String]): Unit =
-    log.info (s"Running the restore utility, options: [${opts.forOutput}], parameters: [${params.mkString(", ")}]")
-
     val source -> target = params match
       case Nil => failure("Source and target are missing.")
       case _ :: Nil => failure("Source or target is missing.")
       case source :: targetPath :: Nil =>
         val target = File(targetPath)
-        if ! target.isDirectory then failure("Target is not a directory.")
+        if ! target.isDirectory then failure(s"Target is not a directory: $targetPath")
         if ! target.canWrite then failure("Can not write to target.")
         source -> target
       case other => failure("Too many source or target parameters.")
@@ -31,6 +29,7 @@ object BackupTool extends dedup.util.ClassLogging:
       val sourceEntry = fs.entry(source).getOrElse(failure(s"Source path DedupFS:$source does not exist."))
       if File(target, sourceEntry.name).exists() then failure(s"${sourceEntry.name} already exists in target $target")
 
+      log.info(s"Running the restore utility.")
       log.info(s"Repository: $repo")
       log.info(s"Source:     $source")
       log.info(s"Target:     $target")

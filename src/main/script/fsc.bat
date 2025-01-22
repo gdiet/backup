@@ -10,6 +10,7 @@ rem # call 'fsc help' for more information
 set readonly=false
 IF "%1" == "find" set readonly=true
 IF "%1" == "list" set readonly=true
+IF "%1" == "restore" set readonly=true
 IF "%1" == "stats" set readonly=true
 IF "%readonly%" == "false" (
   %JAVA% "-DLOG_BASE=%~dp0log" -Xmx256m -cp "%~dp0lib\*;%~dp0lib-h2\*" dedup.fsc %*
