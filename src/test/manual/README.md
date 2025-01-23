@@ -20,7 +20,9 @@
 ## DB Migration
 
 - `db-migrate` works
+  - [x] 2025-01-23 6.1.0-M4 3e359dcc Linux
 - `db-migrate` works with `repo=...` parameter
+  - [0] 2025-01-23 6.1.0-M4 3e359dcc Linux
 
 ## `fsc` commands
 
