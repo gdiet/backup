@@ -42,7 +42,10 @@ Commands:
   help              Show this help.
   init [options]    Initialize the repository.
   list <path>       List a directory or show the file info for the specified repository path.
-  stats             Show repository statistics.""".stripMargin)
+  restore <source> <target> [options] Restore directories/files from the repository. See README for details.
+  stats             Show repository statistics.
+  stats <path>      Show statistics for the specified directory or file in the repository.
+  """.stripMargin)
 
 @main def dbMigrateStep1(opts: (String, String)*): Unit = guard {
   db.maintenance.migrateDbStep1(opts.dbDir)

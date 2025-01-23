@@ -27,19 +27,26 @@
 ## `fsc` commands
 
 - help works
+  - [0] 2025-01-23 6.1.0-M4 3e359dcc Linux - some entries are missing
 - read-only commands don't create a database backup
 - `fsc` commands work with `repo=...` parameter
 
 ## `fsc stats` and `stats`
 
 - fsc stats works
+  - [x] 2025-01-23 6.1.0-M4 3e359dcc Linux
 - fsc stats works with `repo=...` parameter
 - stats works
 - stats works with `repo=...` parameter
 - stats on Windows waits for confirmation
 - fsc stats works with repository path
 - stats works with repository path
-- fsc stats works with path parameter
+- fsc stats works with path parameter for directory
+  - [x] 2025-01-23 6.1.0-M4 3e359dcc Linux
+- fsc stats works with path parameter for file
+  - [x] 2025-01-23 6.1.0-M4 3e359dcc Linux
+- fsc stats works with path parameter for no-such-file
+  - [x] 2025-01-23 6.1.0-M4 3e359dcc Linux
 - stats works with path parameter
 
 # Manual Tests for release 6.0.0
