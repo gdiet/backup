@@ -190,7 +190,7 @@ If a `target` path element starts with the question mark "`?`", the question mar
 
 If a `target` path element starts with the exclamation mark "`!`", the exclamation mark is removed. It is ensured that the corresponding target directory does not exist, then it and its children are created. The exclamation mark can be escaped with a backslash `\`.
 
-> Note that on Linux / Bash, `!` and `\` are special characters. To use them, escape them with a backslash `\`.
+> Note that on Linux / Bash, `!` and `\` are special characters. To use them, escape them with a backslash `\` or enclose the parameter in single quotes `'`.
 
 **The `reference` and `forceReference` parameters:**
 
@@ -246,6 +246,8 @@ Use `fsc db-compact` to compact the database file.
 #### Find Files By Name Pattern
 
 Use `fsc find <pattern>` to find files matching the name or path fragment pattern provided. You can search for file names like `java.exe`, directory names like `bin`, or for path fragments like `jre/bin/java`. The patterns support '`*`' as wildcard for any number of characters and '`?`' as wildcard for a single character. The find behavior of patterns containing '`%`' or '`_`' is not fully defined and may yield unexpected results.
+
+> Note that on Linux / Bash, `!` and `\` are special characters. To use them, escape them with a backslash `\` or enclose the parameter in single quotes `'`.
 
 #### List Files
 
