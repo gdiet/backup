@@ -22,11 +22,13 @@
 - `db-migrate` works
   - [x] 2025-01-23 6.1.0-M4 3e359dcc Linux
 - `db-migrate` works with `repo=...` parameter
+  - [x] 2025-01-25 6.1.0-M5 47d26f2c Windows
   - [0] 2025-01-23 6.1.0-M4 3e359dcc Linux
 
 ## `fsc` commands
 
 - help works
+  - [x] 2025-01-25 6.1.0-M5 47d26f2c Windows
   - [0] 2025-01-23 6.1.0-M4 3e359dcc Linux - some entries are missing
 - read-only commands don't create a database backup:
   - find
@@ -38,15 +40,18 @@
   - stats <path>
     - [x] 2025-01-23 6.1.0-M4 3e359dcc Linux
 - `fsc` commands work with `repo=...` parameter
+  - [x] 2025-01-25 6.1.0-M5 47d26f2c Windows
 
 ## `fsc stats` and `stats`
   
 - fsc stats works
   - [x] 2025-01-23 6.1.0-M4 3e359dcc Linux
-- fsc stats works with `repo=...` parameter
 - stats works
+  - [x] 2025-01-25 6.1.0-M5 47d26f2c Windows
 - stats works with `repo=...` parameter
+  - [x] 2025-01-25 6.1.0-M5 47d26f2c Windows
 - stats on Windows waits for confirmation
+  - [x] 2025-01-25 6.1.0-M5 47d26f2c Windows
 - fsc stats works with path parameter for directory
   - [x] 2025-01-23 6.1.0-M4 3e359dcc Linux
 - fsc stats works with path parameter for file
@@ -54,6 +59,7 @@
 - fsc stats works with path parameter for no-such-file
   - [x] 2025-01-23 6.1.0-M4 3e359dcc Linux
 - stats works with path parameter
+  - [x] 2025-01-25 6.1.0-M5 47d26f2c Windows
 
 # Manual Tests for release 6.0.0
 
