@@ -569,7 +569,7 @@ Named "3" because this release is a Scala 3 re-write of dedupfs.
 
 Known problems:
 
-* Occasional deadlock and out-of-memory conditions.
+* On Windows, the dedupfs process sometimes terminates with an error code after the 'Resources are closed. Good bye!' message. No negative impact known.
 
 #### 2.5 (2020.10.23)
 
