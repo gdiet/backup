@@ -36,7 +36,7 @@ object H2 extends ClassLogging:
   // The TCP server can be run from command line or programmatically like this:
   // java -cp "h2-2.1.214.jar" org.h2.tools.Server -tcp -tcpPort 9876
   // org.h2.tools.Server.main("-tcp", "-tcpPort", "9876")
-  private def jdbcUrl(dbDir: File, readOnly: Boolean) =
+  def jdbcUrl(dbDir: File, readOnly: Boolean, dbRef: DBRef = dbRef): String =
     tcpPortProp match
       case None =>
         val baseUrl = s"jdbc:h2:${dbRef.dbScriptPath(dbDir)}"

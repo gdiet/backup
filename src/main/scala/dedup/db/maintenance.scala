@@ -80,8 +80,8 @@ object maintenance extends util.ClassLogging:
         log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
         // Open the source DB readonly to avoid changing it while creating the backup.
         Script.main(
-          "-url", s"jdbc:h2:${source.dbScriptPath(dbDir)};ACCESS_MODE_DATA=r", "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
-        ) // TODO use H2.jdbcUrl(...)
+          "-url", H2.jdbcUrl(dbDir, readOnly = true, dbRef = source), "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
+        )
         log.info(s"Zipped SQL script database backup created.")
       finally cache.MemCache.availableMem.addAndGet(64000000)
     }(ExecutionContext.global)
