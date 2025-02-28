@@ -142,7 +142,7 @@ object main extends util.ClassLogging:
       dbDir -> (if backup then db.maintenance.dbBackup(dbDir) else Future.successful(()))
     }
 
-  // TODO check whether we should use this in more places
+  // TODO check whether we should use this in withDb()
   // TODO and/or make it part of the command line args .dbDir handling
   def checkDbDir(dbDir: File, readOnly: Boolean): Unit =
     if !dbDir.exists() then main.failureExit(s"It seems the repository is not initialized - can't find the database directory: $dbDir")
