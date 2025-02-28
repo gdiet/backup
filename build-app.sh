@@ -64,8 +64,8 @@ fi
 # https://github.com/adoptium/temurin21-binaries
 # https://github.com/orgs/adoptium/repositories
 # Set version both in jdkBase and in jdkVersion.
-jdkVersion="21.0.5_11"
-jdkBase="https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.5%2B11"
+jdkVersion="21.0.6_7"
+jdkBase="https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.6%2B7"
 jdkWindows="OpenJDK21U-jdk_x64_windows_hotspot_$jdkVersion.zip"
 jdkLinux="OpenJDK21U-jdk_x64_linux_hotspot_$jdkVersion.tar.gz"
 if [ ! -f ".download/$jdkWindows" ]; then
