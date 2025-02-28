@@ -431,7 +431,7 @@ To upgrade a DedupFS installation to a newer version:
 * Reclaim tool does not behave nicely (no harm done) when encountering too old database.
 * Reclaim tool prints misleading 'Starting database migration...'.
 
-#### 6.1.0 (???)
+#### 6.1.0 (2025.02.28)
 
 * Add `fsc help` command.
 * Add `fsc stats <repository path>` command.
