@@ -446,6 +446,10 @@ To upgrade a DedupFS installation to a newer version:
 * Minor updates to Scala, Java, SBT, and some libraries.
 * Fixed: `stats` utility on Linux didn't handle failures correctly.
 
+Known problems:
+
+* On Windows, the dedupfs process sometimes terminates with an error code after the 'Resources are closed. Good bye!' message. No negative impact known.
+
 **Migration from 5.x to 6.x:**
 
 * Unpack the new version of DedupFS apps in the repository directory next to the old version.
@@ -569,7 +573,7 @@ Named "3" because this release is a Scala 3 re-write of dedupfs.
 
 Known problems:
 
-* On Windows, the dedupfs process sometimes terminates with an error code after the 'Resources are closed. Good bye!' message. No negative impact known.
+* Occasional deadlock and out-of-memory conditions.
 
 #### 2.5 (2020.10.23)
 
