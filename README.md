@@ -430,10 +430,12 @@ To upgrade a DedupFS installation to a newer version:
 * Stats tool does not behave nicely (no harm done) when encountering too old database.
 * Reclaim tool does not behave nicely (no harm done) when encountering too old database.
 * Reclaim tool prints misleading 'Starting database migration...'.
+* `fsc find` escapes `%` and `_` in the SQL search string.
 
 #### 6.2.0 (2025.??.??)
 
 * Add `fsc check` command for checking file integrity.
+* Make `fsc find` search case insensitively.
 
 #### 6.1.0 (2025.02.28)
 
