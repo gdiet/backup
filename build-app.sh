@@ -54,7 +54,7 @@ mkdir -p .download
 
 # Fetch SBT if missing. Find newer releases here: https://www.scala-sbt.org/download.html
 # When updating, also update in project/build.properties
-sbtVersion="1.10.7"
+sbtVersion="1.10.11"
 sbtArchive="sbt-$sbtVersion.tgz"
 if [ ! -f ".download/$sbtArchive" ]; then
   echo "Load SBT"
@@ -74,8 +74,8 @@ fi
 # https://github.com/adoptium/temurin21-binaries
 # https://github.com/orgs/adoptium/repositories
 # Set version both in jdkBase and in jdkVersion.
-jdkVersion="21.0.6_7"
-jdkBase="https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.6%2B7"
+jdkVersion="21.0.7_6"
+jdkBase="https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.7%2B6"
 jdkWindows="OpenJDK21U-jdk_x64_windows_hotspot_$jdkVersion.zip"
 jdkLinux="OpenJDK21U-jdk_x64_linux_hotspot_$jdkVersion.tar.gz"
 if [ ! -f ".download/$jdkWindows" ]; then
