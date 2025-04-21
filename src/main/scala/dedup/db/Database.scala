@@ -182,6 +182,10 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   /** @return The matching [[DataId]] if any. */
   def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = qDataEntry(_.set(hash, size).query(maybe(r => DataId(r.getLong(1)))))
 
+  private val qHash = prepare("SELECT hash FROM DataEntries WHERE id = ? AND seq = 1")
+  /** @return The hash for the data entry if any. */
+  def hash(dataId: DataId): Option[Array[Byte]] = qHash(_.set(dataId).query(maybe(r => r.getBytes(1))))
+  
   private lazy val uTime = prepare("UPDATE TreeEntries SET time = ? WHERE id = ?")
   /** Sets the last modified time stamp for a tree entry. Should be called only for existing entry IDs, but may be
     * called for deleted entries. */

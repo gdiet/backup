@@ -29,10 +29,16 @@ object Backend:
     val remaining = data.foldLeft(toAreas) { case (storeAt, (_, bytes)) => doStore(storeAt, bytes) }
     ensure("write.algorithm.2", remaining.isEmpty, s"Remaining data areas not empty: $remaining")
 
+  def apply(settings: Settings): Backend =
+    create(settings)._2
 
-final class Backend(settings: Settings) extends AutoCloseable with util.ClassLogging:
+  /** @return Database and backend. Closing the backend also closes the database. */
+  def create(settings: Settings): (dedup.db.Database, Backend) =
+    val db = dedup.db.Database(dedup.db.H2.connection(settings.dbDir, settings.readOnly))
+    db -> new Backend(settings, db)
+
+final class Backend private (settings: Settings, db: dedup.db.Database) extends AutoCloseable with util.ClassLogging:
   import Backend.*
-  private val db = dedup.db.Database(dedup.db.H2.connection(settings.dbDir, settings.readOnly))
   private val lts: store.LongTermStore = store.LongTermStore(settings.dataDir, settings.readOnly)
   private val handles = Handles(settings.tempPath)
   private val freeAreas = Option.when(!settings.readOnly)(server.FreeAreas(db.freeAreas()))

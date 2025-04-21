@@ -12,6 +12,7 @@ import scala.concurrent.Future
   val cmd = opts.additionalOptions.toList
   cmd match
     case "backup"      ::             params => BackupTool.backup(opts.baseOptions, params)
+    case "check"       :: path     :: Nil    => FSTools.check(opts.baseOptions, path)
     case "db-backup"   ::             Nil    => db.maintenance.dbBackup(dbDir).await
     case "db-restore"  ::             Nil    => db.maintenance.restorePlainDbBackup(dbDir)
     case "db-restore"  :: fileName :: Nil    => db.maintenance.restoreSqlDbBackup(dbDir, fileName)
@@ -33,6 +34,7 @@ def fscHelp(): Unit = println("""
 Usage: fsc <command> [parameters]
 Commands:
   backup [options]  Store directories/files in the repository. See README for details.
+  check <path>      Check file integrity.
   db-backup         Create one plain and one zipped-sql database backup file.
   db-restore        Restore the database from the plain backup file.
   db-restore <file> Restore the database from the specified zipped-sql backup file.
