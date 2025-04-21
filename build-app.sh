@@ -18,6 +18,16 @@ if ! zip --version > /dev/null 2>&1; then
   exit 1
 fi
 
+if ! objcopy --version > /dev/null 2>&1; then
+  echo "It seems that objcopy from binutils is not installed - exiting..."
+  exit 1
+fi
+
+if ! curl --version > /dev/null 2>&1; then
+  echo "It seems that curl is not installed - exiting..."
+  exit 1
+fi
+
 # Read version from git.
 version=$(git log -1 2>/dev/null | sed -n 's/commit //p' | sed 1q | cut -b 1-8 )
 if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi
