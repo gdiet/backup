@@ -436,6 +436,7 @@ To upgrade a DedupFS installation to a newer version:
 
 * Add `fsc check` command for checking file integrity.
 * Make `fsc find` search case insensitively.
+* Minor updates for logback, Scala and SBT.
 
 #### 6.1.0 (2025.02.28)
 

@@ -6,9 +6,9 @@ lazy val dedupfs = project
   .settings(
     name := "dedupfs",
     version := "current",
-    scalaVersion := "3.3.4", // 3.3.x is LTS
+    scalaVersion := "3.3.5", // 3.3.x is LTS
     scalacOptions ++= Seq("-deprecation", "-unchecked"),
-    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.5.16",
+    libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.5.18",
     libraryDependencies += "com.github.serceman" % "jnr-fuse" % "0.5.8",
     // Update dedup.db.H2.dbName accordingly when updating H2
     // to a version with incompatible binary storage format.
@@ -36,6 +36,7 @@ createApp := {
   val previousH2url = url(s"https://repo1.maven.org/maven2/com/h2database/h2/$PREVIOUS_H2_VERSION/$previousH2jarName")
   IO.createDirectory(appDir / "lib-h2-previous")
   import scala.sys.process.*
+  import scala.language.postfixOps
   previousH2url #> (appDir / "lib-h2-previous" / previousH2jarName) !
 
   streams.value.log.info(s"Built dedup app")
