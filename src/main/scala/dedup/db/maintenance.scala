@@ -209,7 +209,7 @@ object maintenance extends util.ClassLogging:
                 case dirEntry: DirEntry => s"${dirEntry.name}/"
                 case fileEntry: FileEntry => fileEntry.name
               }.mkString
-              if fullPath.matches(s".*$pathMatcher.*") then println(fullPath)
+              if fullPath.matches(s"(?i).*$pathMatcher.*") then println(fullPath)
         }
   }
 

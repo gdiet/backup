@@ -130,8 +130,8 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   /** @return The [[TreeEntry]] if any. */
   def entry(id: Long): Option[TreeEntry] = qEntry(_.set(id).query(maybe(treeEntry)))
 
-  private lazy val qEntryLike = prepare(s"$selectTreeEntry WHERE deleted = 0 AND name LIKE ?")
-  /** @return All [[TreeEntry]] instances having a name `SQL:like` the requested. */
+  private lazy val qEntryLike = prepare(s"$selectTreeEntry WHERE deleted = 0 AND LOWER(name) LIKE LOWER(?)")
+  /** @return All [[TreeEntry]] instances having a name case insensitively `SQL:like` the requested. */
   def entryLike(nameLike: String): Seq[TreeEntry] = qEntryLike(_.set(nameLike).query(seq(treeEntry)))
 
   private lazy val qEntriesFor = prepare(s"$selectTreeEntry WHERE dataId = ? AND deleted = 0")
