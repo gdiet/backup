@@ -38,7 +38,7 @@ trait CacheBase[M]:
   /** Clears the specified part of the managed area. */
   def clear(position: Long, size: Long): Unit =
     ensure("cache.clear.position", position >= 0, s"Negative position: $position")
-    ensure("cache.clear.size",     size     >  0, s"Size not positive: $position")
+    ensure("cache.clear.size",     size     >  0, s"Size not positive: $size")
     // If necessary, split lower entry.
     Option(entries.lowerEntry(position)).foreach { case JEntry(storedAt, area) =>
       val distance = position - storedAt
