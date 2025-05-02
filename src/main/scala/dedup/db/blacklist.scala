@@ -37,7 +37,7 @@ object blacklist extends util.ClassLogging:
         db.mkDir(dirId, file.getName) match
           case None => problem("blacklist.create.dir", s"can't create internal blacklist directory for $file")
           case Some(childDirId) => externalFilesToInternalBlacklist(db, file, childDirId, deleteFiles)
-        if !deleteFiles then {} else // needed like this to avoid compile problem
+        if deleteFiles then
           if Option(file.listFiles).exists(_.isEmpty) then file.delete else
             log.warn(s"Blacklist directory not empty after processing it: $file")
       else
