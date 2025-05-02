@@ -58,7 +58,6 @@ trait CacheBase[M]:
           release(Seq(overlap))
           false
         else
-          entries.remove(storedAt)
           release(Seq(area._length))
           true
     } do {/**/}
