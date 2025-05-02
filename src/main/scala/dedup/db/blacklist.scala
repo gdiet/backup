@@ -35,7 +35,7 @@ object blacklist extends util.ClassLogging:
     Option(currentDir.listFiles()).toSeq.flatten.foreach { file =>
       if file.isDirectory then
         db.mkDir(dirId, file.getName) match
-          case None => problem("blacklist.create.dir", s"can't create internal blacklist directory for $file")
+          case None => problem("blacklist.create.dir", s"Can't create internal blacklist directory for $file")
           case Some(childDirId) => externalFilesToInternalBlacklist(db, file, childDirId, deleteFiles)
         if deleteFiles then
           if Option(file.listFiles).exists(_.isEmpty) then file.delete else
@@ -52,7 +52,7 @@ object blacklist extends util.ClassLogging:
           db.newDataId().tap(db.insertDataEntry(_, 1, size, 0, 0, hash))
         )
         ensure("blacklist.create.file", db.mkFile(dirId, file.getName, Time(file.lastModified), dataId).isDefined,
-          s"can't create internal blacklist file for $file")
+          s"Can't create internal blacklist file for $file")
         if deleteFiles && file.delete then
           log.info(s"Moved to DedupFS blacklist: $file")
         else

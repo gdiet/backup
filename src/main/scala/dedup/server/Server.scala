@@ -226,7 +226,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
         case None =>
           EIO
         case Some(sizeWritten) =>
-          ensure("server.write", intSize == sizeWritten, s"written size $sizeWritten not as expected $intSize")
+          ensure("server.write", intSize == sizeWritten, s"Written size $sizeWritten not as expected $intSize")
           intSize
     }
 
