@@ -199,8 +199,8 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     * When used multithreaded together with other tree structure methods, needs external synchronization to prevent
     * race conditions causing deleted directories being parent of non-deleted tree entries.
     *
-    * @return `false` if the tree entry does not exist or has any children, `true` if the entry exists and has no
-    *         children, regardless of whether it was already marked deleted. */
+    * @return `false` if the tree entry does not exist or has children, `true` if the entry exists
+    *         and has no children, regardless of whether it was already marked deleted. */
   def deleteChildless(id: Long): Boolean = dTreeEntry { prep =>
     // Allow to delete 'illegal' nodes that have themselves as parent.
     if children(id).forall(_.id == id) then prep.set(now.nonZero, id).executeUpdate() > 0 else false
