@@ -9,6 +9,7 @@ case class Settings( repo          : File,
                      dbDir         : File,
                      temp          : File,
                      readOnly      : Boolean,
+                     showDeleted   : AtomicBoolean,
                      copyWhenMoving: AtomicBoolean ):
 
   val tempPath: Path = temp.toPath

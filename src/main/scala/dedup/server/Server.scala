@@ -42,6 +42,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
 
   override def getattr(path: String, stat: FileStat): Int =
     fs(s"getattr $path") {
+      println(s"getattr $path")
       def setCommon(time: Time, nlink: Int): Unit =
         stat.st_nlink.set(nlink)
         stat.st_mtim.tv_sec .set (time.asLong / 1000)
@@ -85,6 +86,7 @@ class Server(settings: Settings) extends FuseStubFS with util.ClassLogging:
         case Some(dir: DirEntry) =>
           if offset < 0 || offset.toInt != offset then EOVERFLOW else
             def names = Seq(".", "..") ++ backend.children(dir.id).map(_.name)
+            println("names: " + names)
             // '.exists' used for side effect until a condition is met.
             // Providing a FileStat would probably save getattr calls but is not straightforward to implement.
             // The last arg of fill.apply could be set to 0, but then there would be no paging for readdir.

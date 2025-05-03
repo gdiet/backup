@@ -5,6 +5,7 @@ import jnr.ffi.Platform.OS.WINDOWS
 import jnr.ffi.Platform.getNativePlatform
 
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.concurrent.Future
 
 @main def fsc(opts: String*): Unit = guard {
@@ -97,7 +98,7 @@ Commands:
     val backup   = !readOnly && opts.defaultTrue("dbBackup")
     val temp     = main.prepareTempDir(readOnly, opts)
     val dbDir -> backupFuture = main.prepareDbDir(repo, backup = backup, readOnly = readOnly)
-    val settings = server.Settings(repo, dbDir, temp, readOnly, copyWhenMoving)
+    val settings = server.Settings(repo, dbDir, temp, readOnly,  showDeleted = AtomicBoolean(true), copyWhenMoving)
     
     main.info (s"Dedup file system settings:")
     main.info (s"Repository:  $repo")

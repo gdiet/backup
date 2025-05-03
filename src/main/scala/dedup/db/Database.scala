@@ -126,6 +126,20 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   /** Select [[TreeEntry]] data that can be extracted using the [[treeEntry]] method. */
   private val selectTreeEntry = "SELECT id, parentId, name, time, dataId FROM TreeEntries"
 
+  /** From a [[selectTreeEntry]] query extract the [[TreeEntry]] data. */
+  private def treeEntryIncludingDeleted(rs: java.sql.ResultSet): TreeEntry =
+    TreeEntry.includingDeleted(
+      rs.getLong("id"),
+      rs.getLong("parentId"),
+      rs.getString("name"),
+      Time(rs.getLong("time")),
+      Time(rs.getLong("deleted")),
+      rs.opt(_.getLong("dataId")).map(DataId(_))
+    )
+
+  /** Select [[TreeEntry]] data that can be extracted using the [[treeEntry]] method. */
+  private val selectTreeEntryIncludingDeleted = "SELECT id, parentId, name, time, deleted, dataId FROM TreeEntries"
+  
   private lazy val qEntry = prepare(s"$selectTreeEntry WHERE id = ? AND deleted = 0")
   /** @return The [[TreeEntry]] if any. */
   def entry(id: Long): Option[TreeEntry] = qEntry(_.set(id).query(maybe(treeEntry)))
@@ -161,6 +175,11 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
     // On linux, empty names don't work, and the root node has itself as child...
     qChildren(_.set(parentId).query(seq(treeEntry))).filterNot(_.name.isEmpty)
 
+  private lazy val qChildrenIncludingDeleted = prepare(s"$selectTreeEntryIncludingDeleted WHERE parentId = ?")
+  def childrenIncludingDeleted(parentId: Long): Seq[TreeEntry] =
+    // On linux, empty names don't work, and the root node has itself as child...
+    qChildrenIncludingDeleted(_.set(parentId).query(seq(treeEntryIncludingDeleted))).filterNot(_.name.isEmpty)
+  
   private lazy val qParts = prepare("SELECT start, stop-start FROM DataEntries WHERE id = ? ORDER BY seq ASC")
   def parts(dataId: DataId): Seq[(Long, Long)] =
     qParts(_.set(dataId).query(seq { rs =>

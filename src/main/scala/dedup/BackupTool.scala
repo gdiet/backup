@@ -21,7 +21,7 @@ object BackupTool extends dedup.util.ClassLogging:
     val repo       = opts.repo
     val temp       = main.prepareTempDir(false, opts)
     val dbDir -> _ = main.prepareDbDir(repo, backup = false, readOnly = true)
-    val settings   = server.Settings(repo, dbDir, temp, readOnly = true, copyWhenMoving = AtomicBoolean(false))
+    val settings   = server.Settings(repo, dbDir, temp, readOnly = true, showDeleted = AtomicBoolean(false), copyWhenMoving = AtomicBoolean(false))
 
     val shutdownFinished = Promise[Unit]()
 
@@ -73,7 +73,7 @@ object BackupTool extends dedup.util.ClassLogging:
     val forceReference        = opts.defaultFalse("forceReference")
     val temp                  = main.prepareTempDir(false, opts)
     val dbDir -> backupFuture = main.prepareDbDir(repo, backup = backup, readOnly = false)
-    val settings              = server.Settings(repo, dbDir, temp, readOnly = false, copyWhenMoving = AtomicBoolean(false))
+    val settings              = server.Settings(repo, dbDir, temp, readOnly = false, showDeleted = AtomicBoolean(false), copyWhenMoving = AtomicBoolean(false))
 
     val shutdownFinished      = Promise[Unit]()
 

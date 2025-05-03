@@ -1,6 +1,8 @@
 package dedup
 package server
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 object Backend:
   /** Milliseconds to delay write operations in order to keep cache size manageable. */
   private def cacheLoadDelay: Long = bytesInPersistQueue.get() * persistQueueSize.get() / 1000000000
@@ -55,7 +57,10 @@ final class Backend private (settings: Settings, db: dedup.db.Database) extends 
   def entry(path: Array[String]): Option[TreeEntry] = db.entry(path)
 
   /** @return The child entries of the tree entry, an empty [[Seq]] if the parent entry does not exist. */
-  def children(parentId: Long): Seq[TreeEntry] = db.children(parentId)
+  def children(parentId: Long): Seq[TreeEntry] = {
+    println(settings.showDeleted.get)
+    if settings.showDeleted.get then db.childrenIncludingDeleted(parentId) else db.children(parentId)
+  }
 
   /** @return The child entry by name or None if the child entry is not found. */
   def child(parentId: Long, name: String): Option[TreeEntry] = db.child(parentId, name)

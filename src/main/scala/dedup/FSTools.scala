@@ -10,7 +10,7 @@ object FSTools extends dedup.util.ClassLogging:
     val repo = opts.repo
     val temp = main.prepareTempDir(false, opts)
     val dbDir -> _ = main.prepareDbDir(repo, backup = false, readOnly = true)
-    val settings = server.Settings(repo, dbDir, temp, readOnly = true, copyWhenMoving = AtomicBoolean(false))
+    val settings = server.Settings(repo, dbDir, temp, readOnly = true, showDeleted = AtomicBoolean(false), copyWhenMoving = AtomicBoolean(false))
     val (db, fs) = server.Backend.create(settings)
     resource(fs) { fs =>
       fs.entry(path) match
