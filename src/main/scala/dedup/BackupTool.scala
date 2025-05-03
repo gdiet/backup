@@ -1,6 +1,6 @@
 package dedup
 
-import java.io.{BufferedInputStream, File, FileInputStream, FileOutputStream, IOException}
+import java.io.*
 import java.util.concurrent.atomic.AtomicBoolean
 import scala.concurrent.Promise
 import scala.util.Using.resource
