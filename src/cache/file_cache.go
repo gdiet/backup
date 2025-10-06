@@ -30,7 +30,17 @@ type Cache interface {
 
 // FIXME review locking strategy
 
-// FileCache implements a file-based cache that stores cached data as files in a directory
+// FileCache implements a file-based cache that stores cached data as files in a directory.
+//
+// Sparse File Support:
+// This implementation automatically supports sparse files on filesystems that support them:
+//   - Linux: ext4, XFS, Btrfs (full support), ext3 (limited)
+//   - Windows: NTFS (Vista+, holes >64KB), FAT32 (no support)
+//   - macOS: APFS, HFS+ (full support)
+//
+// When using WriteAt() with gaps or Truncate() to extend files, the filesystem will create
+// sparse holes automatically, saving significant disk space. ReadAt() operations in sparse
+// regions return zeros as expected.
 type FileCache struct {
 	baseDir    string
 	openFiles  map[string]*os.File
