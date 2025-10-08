@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 )
@@ -137,10 +136,10 @@ func (ds *dataStore) lease(fileID int, forWriting bool) (*fileHandle, error) {
 	}
 
 	// Create the handle and lease it.
-	// FIXME try out
-	fileName14 := fmt.Sprintf("%014d", fileID)
-	dirPath := filepath.Join(ds.baseDir, fileName14[12:14], fileName14[10:12])
-	filePath := filepath.Join(dirPath, strconv.Itoa(fileID))
+	fileName := fmt.Sprintf("%010d", fileID*int(ds.fileSize))
+	dirNames := fmt.Sprintf("%06d", fileID)
+	dirPath := filepath.Join(ds.baseDir, dirNames[:len(dirNames)-4], dirNames[len(dirNames)-4:len(dirNames)-2])
+	filePath := filepath.Join(dirPath, fileName)
 	// Open for read/write even if only for reading, because the file handle might be reused for writing later.
 	fileOpenFlags := os.O_RDWR
 	if forWriting {
