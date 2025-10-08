@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 )
 
@@ -64,7 +65,7 @@ func NewFileCache(baseDir string) (*FileCache, error) {
 
 // getFilePath returns the full file path for a given fileId
 func (fc *FileCache) getFilePath(fileId int) string {
-	return filepath.Join(fc.baseDir, fmt.Sprintf("%d", fileId))
+	return filepath.Join(fc.baseDir, strconv.Itoa(fileId))
 }
 
 // getOrCreateFile returns an open file handle for the given fileId
