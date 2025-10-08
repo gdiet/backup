@@ -10,19 +10,19 @@ import (
 // Cache defines the interface for file caching operations
 type Cache interface {
 	// Truncate sets the file to the specified length, extending with zeros if necessary
-	Truncate(fileId string, length int64) error
+	Truncate(fileId int, length int64) error
 
 	// Read reads data from the cached file at the specified position
-	Read(fileId string, position int64, length int64) ([]byte, error)
+	Read(fileId int, position int64, length int) ([]byte, error)
 
 	// Write writes data to the cached file at the specified position
-	Write(fileId string, position int64, data []byte) error
+	Write(fileId int, position int64, data []byte) error
 
 	// Length returns the current length of the cached file
-	Length(fileId string) (int64, error)
+	Length(fileId int) (int64, error)
 
 	// Dispose removes the cached file and cleans up resources
-	Dispose(fileId string) error
+	Dispose(fileId int) error
 
 	// Close closes the cache and cleans up all resources
 	Close() error
@@ -43,8 +43,8 @@ type Cache interface {
 // regions return zeros as expected.
 type FileCache struct {
 	baseDir    string
-	openFiles  map[string]*os.File
-	fileLocks  map[string]*sync.RWMutex
+	openFiles  map[int]*os.File
+	fileLocks  map[int]*sync.RWMutex
 	globalLock sync.RWMutex
 }
 
@@ -57,18 +57,19 @@ func NewFileCache(baseDir string) (*FileCache, error) {
 
 	return &FileCache{
 		baseDir:   baseDir,
-		openFiles: make(map[string]*os.File),
-		fileLocks: make(map[string]*sync.RWMutex),
+		openFiles: make(map[int]*os.File),
+		fileLocks: make(map[int]*sync.RWMutex),
 	}, nil
 }
 
 // getFilePath returns the full file path for a given fileId
-func (fc *FileCache) getFilePath(fileId string) string {
-	return filepath.Join(fc.baseDir, fileId)
+func (fc *FileCache) getFilePath(fileId int) string {
+	return filepath.Join(fc.baseDir, fmt.Sprintf("%d", fileId))
 }
 
 // getOrCreateFile returns an open file handle for the given fileId
-func (fc *FileCache) getOrCreateFile(fileId string) (*os.File, error) {
+// getOrCreateFile opens or creates a file for the given fileId
+func (fc *FileCache) getOrCreateFile(fileId int) (*os.File, error) {
 	fc.globalLock.Lock()
 	defer fc.globalLock.Unlock()
 
@@ -91,7 +92,7 @@ func (fc *FileCache) getOrCreateFile(fileId string) (*os.File, error) {
 }
 
 // getFileLock returns the mutex for a specific fileId
-func (fc *FileCache) getFileLock(fileId string) *sync.RWMutex {
+func (fc *FileCache) getFileLock(fileId int) *sync.RWMutex {
 	fc.globalLock.RLock()
 	defer fc.globalLock.RUnlock()
 
@@ -102,7 +103,7 @@ func (fc *FileCache) getFileLock(fileId string) *sync.RWMutex {
 }
 
 // Truncate sets the file to the specified length
-func (fc *FileCache) Truncate(fileId string, length int64) error {
+func (fc *FileCache) Truncate(fileId int, length int64) error {
 	if length < 0 {
 		return fmt.Errorf("length cannot be negative: %d", length)
 	}
@@ -115,7 +116,7 @@ func (fc *FileCache) Truncate(fileId string, length int64) error {
 	// Get file-specific lock
 	fileLock := fc.getFileLock(fileId)
 	if fileLock == nil {
-		return fmt.Errorf("file lock not found for fileId %q", fileId)
+		return fmt.Errorf("file lock not found for fileId %d", fileId)
 	}
 
 	fileLock.Lock()
@@ -123,19 +124,19 @@ func (fc *FileCache) Truncate(fileId string, length int64) error {
 
 	// Truncate the file
 	if err := file.Truncate(length); err != nil {
-		return fmt.Errorf("failed to truncate file %q to length %d: %v", fileId, length, err)
+		return fmt.Errorf("failed to truncate file %d to length %d: %v", fileId, length, err)
 	}
 
 	// Ensure the change is written to disk
 	if err := file.Sync(); err != nil {
-		return fmt.Errorf("failed to sync file %q after truncate: %v", fileId, err)
+		return fmt.Errorf("failed to sync file %d after truncate: %v", fileId, err)
 	}
 
 	return nil
 }
 
 // Read reads data from the cached file at the specified position
-func (fc *FileCache) Read(fileId string, position int64, length int64) ([]byte, error) {
+func (fc *FileCache) Read(fileId int, position int64, length int) ([]byte, error) {
 	if position < 0 {
 		return nil, fmt.Errorf("position cannot be negative: %d", position)
 	}
@@ -154,7 +155,7 @@ func (fc *FileCache) Read(fileId string, position int64, length int64) ([]byte, 
 	// Get file-specific lock for reading
 	fileLock := fc.getFileLock(fileId)
 	if fileLock == nil {
-		return nil, fmt.Errorf("file lock not found for fileId %q", fileId)
+		return nil, fmt.Errorf("file lock not found for fileId %d", fileId)
 	}
 
 	fileLock.RLock()
@@ -165,7 +166,7 @@ func (fc *FileCache) Read(fileId string, position int64, length int64) ([]byte, 
 	n, err := file.ReadAt(data, position)
 
 	if err != nil && err.Error() != "EOF" {
-		return nil, fmt.Errorf("failed to read from file %q at position %d: %v", fileId, position, err)
+		return nil, fmt.Errorf("failed to read from file %d at position %d: %v", fileId, position, err)
 	}
 
 	// Return only the bytes that were actually read
@@ -173,7 +174,7 @@ func (fc *FileCache) Read(fileId string, position int64, length int64) ([]byte, 
 }
 
 // Write writes data to the cached file at the specified position
-func (fc *FileCache) Write(fileId string, position int64, data []byte) error {
+func (fc *FileCache) Write(fileId int, position int64, data []byte) error {
 	if position < 0 {
 		return fmt.Errorf("position cannot be negative: %d", position)
 	}
@@ -189,7 +190,7 @@ func (fc *FileCache) Write(fileId string, position int64, data []byte) error {
 	// Get file-specific lock for writing
 	fileLock := fc.getFileLock(fileId)
 	if fileLock == nil {
-		return fmt.Errorf("file lock not found for fileId %q", fileId)
+		return fmt.Errorf("file lock not found for fileId %d", fileId)
 	}
 
 	fileLock.Lock()
@@ -198,23 +199,23 @@ func (fc *FileCache) Write(fileId string, position int64, data []byte) error {
 	// Write data at the specified position
 	n, err := file.WriteAt(data, position)
 	if err != nil {
-		return fmt.Errorf("failed to write to file %q at position %d: %v", fileId, position, err)
+		return fmt.Errorf("failed to write to file %d at position %d: %v", fileId, position, err)
 	}
 
 	if n != len(data) {
-		return fmt.Errorf("incomplete write to file %q: wrote %d bytes, expected %d", fileId, n, len(data))
+		return fmt.Errorf("incomplete write to file %d: wrote %d bytes, expected %d", fileId, n, len(data))
 	}
 
 	// Ensure the change is written to disk
 	if err := file.Sync(); err != nil {
-		return fmt.Errorf("failed to sync file %q after write: %v", fileId, err)
+		return fmt.Errorf("failed to sync file %d after write: %v", fileId, err)
 	}
 
 	return nil
 }
 
 // Length returns the current length of the cached file
-func (fc *FileCache) Length(fileId string) (int64, error) {
+func (fc *FileCache) Length(fileId int) (int64, error) {
 	file, err := fc.getOrCreateFile(fileId)
 	if err != nil {
 		return 0, err
@@ -223,7 +224,7 @@ func (fc *FileCache) Length(fileId string) (int64, error) {
 	// Get file-specific lock for reading
 	fileLock := fc.getFileLock(fileId)
 	if fileLock == nil {
-		return 0, fmt.Errorf("file lock not found for fileId %q", fileId)
+		return 0, fmt.Errorf("file lock not found for fileId %d", fileId)
 	}
 
 	fileLock.RLock()
@@ -232,21 +233,21 @@ func (fc *FileCache) Length(fileId string) (int64, error) {
 	// Get file info to determine size
 	fileInfo, err := file.Stat()
 	if err != nil {
-		return 0, fmt.Errorf("failed to get file info for %q: %v", fileId, err)
+		return 0, fmt.Errorf("failed to get file info for %d: %v", fileId, err)
 	}
 
 	return fileInfo.Size(), nil
 }
 
 // Dispose removes the cached file and cleans up resources
-func (fc *FileCache) Dispose(fileId string) error {
+func (fc *FileCache) Dispose(fileId int) error {
 	fc.globalLock.Lock()
 	defer fc.globalLock.Unlock()
 
 	// Close the file if it's open
 	if file, exists := fc.openFiles[fileId]; exists {
 		if err := file.Close(); err != nil {
-			return fmt.Errorf("failed to close file %q: %v", fileId, err)
+			return fmt.Errorf("failed to close file %d: %v", fileId, err)
 		}
 		delete(fc.openFiles, fileId)
 	}
@@ -273,13 +274,13 @@ func (fc *FileCache) Close() error {
 	// Close all open files
 	for fileId, file := range fc.openFiles {
 		if err := file.Close(); err != nil {
-			errors = append(errors, fmt.Errorf("failed to close file %q: %v", fileId, err))
+			errors = append(errors, fmt.Errorf("failed to close file %d: %v", fileId, err))
 		}
 	}
 
 	// Clear all maps
-	fc.openFiles = make(map[string]*os.File)
-	fc.fileLocks = make(map[string]*sync.RWMutex)
+	fc.openFiles = make(map[int]*os.File)
+	fc.fileLocks = make(map[int]*sync.RWMutex)
 
 	// Return combined errors if any
 	if len(errors) > 0 {
@@ -307,8 +308,8 @@ func (fc *FileCache) GetStats() map[string]interface{} {
 }
 
 // getOpenFilesList returns a list of currently open file IDs
-func (fc *FileCache) getOpenFilesList() []string {
-	var fileIds []string
+func (fc *FileCache) getOpenFilesList() []int {
+	var fileIds []int
 	for fileId := range fc.openFiles {
 		fileIds = append(fileIds, fileId)
 	}

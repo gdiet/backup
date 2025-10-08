@@ -16,7 +16,7 @@ func main() {
 	defer cache.Close()
 
 	// Example file ID
-	fileId := "example-file"
+	fileId := 42
 
 	fmt.Println("=== FileCache Example ===")
 
@@ -31,7 +31,7 @@ func main() {
 	fmt.Println("✓ Data written successfully")
 
 	// 2. Read the data back
-	readData, err := cache.Read(fileId, 0, int64(len(data)))
+	readData, err := cache.Read(fileId, 0, len(data))
 	if err != nil {
 		log.Fatalf("Read failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func main() {
 
 	// 4. Read the complete file
 	totalLength := int64(len(data) + len(moreData))
-	completeData, err := cache.Read(fileId, 0, totalLength)
+	completeData, err := cache.Read(fileId, 0, int(totalLength))
 	if err != nil {
 		log.Fatalf("Complete read failed: %v", err)
 	}
@@ -62,7 +62,7 @@ func main() {
 	fmt.Printf("✓ File truncated to %d bytes\n", newLength)
 
 	// 6. Read truncated data
-	truncatedData, err := cache.Read(fileId, 0, newLength)
+	truncatedData, err := cache.Read(fileId, 0, int(newLength))
 	if err != nil {
 		log.Fatalf("Read after truncate failed: %v", err)
 	}
@@ -76,7 +76,7 @@ func main() {
 	fmt.Printf("  Tracked Files: %d\n", stats["trackedFiles"])
 
 	// 8. Create another file
-	fileId2 := "second-file"
+	fileId2 := 123
 	err = cache.Write(fileId2, 0, []byte("Second file content"))
 	if err != nil {
 		log.Fatalf("Second file write failed: %v", err)

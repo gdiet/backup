@@ -37,7 +37,7 @@ func TestFileCache_BasicOperations(t *testing.T) {
 	}
 	defer cache.Close()
 
-	fileId := "test-file-1"
+	fileId := 1
 	testData := []byte("Hello, FileCache!")
 
 	// Test Write
@@ -47,7 +47,7 @@ func TestFileCache_BasicOperations(t *testing.T) {
 	}
 
 	// Test Read
-	readData, err := cache.Read(fileId, 0, int64(len(testData)))
+	readData, err := cache.Read(fileId, 0, len(testData))
 	if err != nil {
 		t.Fatalf("Read failed: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestFileCache_BasicOperations(t *testing.T) {
 	}
 
 	// Verify file was created on disk
-	filePath := filepath.Join(tempDir, fileId)
+	filePath := filepath.Join(tempDir, fmt.Sprintf("%d", fileId))
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		t.Errorf("File was not created on disk: %s", filePath)
 	}
@@ -80,7 +80,7 @@ func TestFileCache_Length(t *testing.T) {
 	}
 	defer cache.Close()
 
-	fileId := "test-length"
+	fileId := 2
 
 	// Test Length on non-existent file (should create empty file)
 	length, err := cache.Length(fileId)
@@ -162,7 +162,7 @@ func TestFileCache_Truncate(t *testing.T) {
 	}
 	defer cache.Close()
 
-	fileId := "test-truncate"
+	fileId := 3
 	testData := []byte("This is a longer test string for truncation")
 
 	// Write initial data
@@ -179,7 +179,7 @@ func TestFileCache_Truncate(t *testing.T) {
 	}
 
 	// Read the truncated data
-	readData, err := cache.Read(fileId, 0, int64(len(testData)))
+	readData, err := cache.Read(fileId, 0, len(testData))
 	if err != nil {
 		t.Fatalf("Read after truncate failed: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestFileCache_Truncate(t *testing.T) {
 	}
 
 	// Read extended data
-	extendedData, err := cache.Read(fileId, 0, extendLength)
+	extendedData, err := cache.Read(fileId, 0, int(extendLength))
 	if err != nil {
 		t.Fatalf("Read after extend failed: %v", err)
 	}
@@ -220,7 +220,7 @@ func TestFileCache_RandomAccess(t *testing.T) {
 	}
 	defer cache.Close()
 
-	fileId := "test-random-access"
+	fileId := 4
 
 	// Write data at different positions
 	data1 := []byte("AAAA")
@@ -286,7 +286,7 @@ func TestFileCache_Dispose(t *testing.T) {
 	}
 	defer cache.Close()
 
-	fileId := "test-dispose"
+	fileId := 5
 	testData := []byte("Data to be disposed")
 
 	// Write some data
@@ -296,7 +296,7 @@ func TestFileCache_Dispose(t *testing.T) {
 	}
 
 	// Verify file exists
-	filePath := filepath.Join(tempDir, fileId)
+	filePath := filepath.Join(tempDir, fmt.Sprintf("%d", fileId))
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		t.Errorf("File should exist before dispose: %s", filePath)
 	}
@@ -328,29 +328,29 @@ func TestFileCache_MultipleFiles(t *testing.T) {
 	defer cache.Close()
 
 	// Create multiple files
-	files := map[string][]byte{
-		"file1": []byte("Content of file 1"),
-		"file2": []byte("Content of file 2"),
-		"file3": []byte("Content of file 3"),
+	files := map[int][]byte{
+		10: []byte("Content of file 1"),
+		20: []byte("Content of file 2"),
+		30: []byte("Content of file 3"),
 	}
 
 	// Write all files
 	for fileId, data := range files {
 		err = cache.Write(fileId, 0, data)
 		if err != nil {
-			t.Fatalf("Write to %s failed: %v", fileId, err)
+			t.Fatalf("Write to %d failed: %v", fileId, err)
 		}
 	}
 
 	// Read all files back
 	for fileId, expectedData := range files {
-		readData, err := cache.Read(fileId, 0, int64(len(expectedData)))
+		readData, err := cache.Read(fileId, 0, len(expectedData))
 		if err != nil {
-			t.Fatalf("Read from %s failed: %v", fileId, err)
+			t.Fatalf("Read from %d failed: %v", fileId, err)
 		}
 
 		if !bytes.Equal(expectedData, readData) {
-			t.Errorf("Data mismatch for %s: expected %q, got %q", fileId, expectedData, readData)
+			t.Errorf("Data mismatch for %d: expected %q, got %q", fileId, expectedData, readData)
 		}
 	}
 
@@ -369,7 +369,7 @@ func TestFileCache_ConcurrentAccess(t *testing.T) {
 	}
 	defer cache.Close()
 
-	fileId := "test-concurrent"
+	fileId := 6
 	numWorkers := 10
 	numOperations := 100
 
@@ -439,7 +439,7 @@ func TestFileCache_ErrorConditions(t *testing.T) {
 	}
 	defer cache.Close()
 
-	fileId := "test-errors"
+	fileId := 7
 
 	// Test negative position for read
 	_, err = cache.Read(fileId, -1, 10)
@@ -486,13 +486,13 @@ func TestFileCache_InternalConsistency(t *testing.T) {
 	defer cache.Close()
 
 	// Test that openFiles and fileLocks are always in sync
-	testFiles := []string{"file1", "file2", "file3"}
+	testFiles := []int{100, 200, 300}
 
 	// Create files and check consistency
 	for _, fileId := range testFiles {
 		err = cache.Write(fileId, 0, []byte("test data"))
 		if err != nil {
-			t.Fatalf("Failed to write to %s: %v", fileId, err)
+			t.Fatalf("Failed to write to %d: %v", fileId, err)
 		}
 
 		// Check that both maps have the same keys
@@ -518,7 +518,7 @@ func TestFileCache_InternalConsistency(t *testing.T) {
 	for _, fileId := range testFiles {
 		err = cache.Dispose(fileId)
 		if err != nil {
-			t.Fatalf("Failed to dispose %s: %v", fileId, err)
+			t.Fatalf("Failed to dispose %d: %v", fileId, err)
 		}
 
 		// Check consistency after each disposal
@@ -527,7 +527,7 @@ func TestFileCache_InternalConsistency(t *testing.T) {
 		trackedFiles := stats["trackedFiles"].(int)
 
 		if openFiles != trackedFiles {
-			t.Errorf("Inconsistency after dispose of %s: openFiles=%d, trackedFiles=%d", fileId, openFiles, trackedFiles)
+			t.Errorf("Inconsistency after dispose of %d: openFiles=%d, trackedFiles=%d", fileId, openFiles, trackedFiles)
 		}
 	}
 
@@ -559,7 +559,7 @@ func TestFileCache_Close(t *testing.T) {
 
 	// Create some files
 	for i := 0; i < 3; i++ {
-		fileId := fmt.Sprintf("file%d", i)
+		fileId := i + 1000
 		err = cache.Write(fileId, 0, []byte("test data"))
 		if err != nil {
 			t.Fatalf("Write failed: %v", err)
@@ -603,7 +603,7 @@ func BenchmarkFileCache_Write(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		fileId := fmt.Sprintf("bench-file-%d", i%100) // Reuse file IDs
+		fileId := i%100 + 2000 // Reuse file IDs
 		position := int64(i % 1000 * 1024)
 		err := cache.Write(fileId, position, data)
 		if err != nil {
@@ -627,7 +627,7 @@ func BenchmarkFileCache_Read(b *testing.B) {
 	}
 
 	for i := 0; i < 100; i++ {
-		fileId := fmt.Sprintf("bench-file-%d", i)
+		fileId := i + 3000
 		for j := 0; j < 10; j++ {
 			err := cache.Write(fileId, int64(j*1024), data)
 			if err != nil {
@@ -640,7 +640,7 @@ func BenchmarkFileCache_Read(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		fileId := fmt.Sprintf("bench-file-%d", i%100)
+		fileId := i%100 + 4000
 		position := int64(i % 10 * 1024)
 		_, err := cache.Read(fileId, position, 1024)
 		if err != nil {
