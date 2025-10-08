@@ -29,7 +29,7 @@ type Cache interface {
 	Close() error
 }
 
-// FIXME review locking strategy
+// FIXME review locking strategy - it's not yet good
 
 // FileCache implements a file-based cache that stores cached data as files in a directory.
 //
@@ -109,19 +109,29 @@ func (fc *FileCache) Truncate(fileId int, length int64) error {
 		return fmt.Errorf("length cannot be negative: %d", length)
 	}
 
-	file, err := fc.getOrCreateFile(fileId)
-	if err != nil {
-		return err
-	}
-
-	// Get file-specific lock
+	// Get file-specific lock FIRST to prevent race with Dispose
 	fileLock := fc.getFileLock(fileId)
 	if fileLock == nil {
-		return fmt.Errorf("file lock not found for fileId %d", fileId)
+		// File doesn't exist yet, try to create it
+		_, err := fc.getOrCreateFile(fileId)
+		if err != nil {
+			return err
+		}
+		// Get the lock that was just created
+		fileLock = fc.getFileLock(fileId)
+		if fileLock == nil {
+			return fmt.Errorf("failed to create file lock for fileId %d", fileId)
+		}
 	}
 
 	fileLock.Lock()
 	defer fileLock.Unlock()
+
+	// Now safely get the file handle (protected by file-specific lock)
+	file, err := fc.getOrCreateFile(fileId)
+	if err != nil {
+		return err
+	}
 
 	// Truncate the file
 	if err := file.Truncate(length); err != nil {
@@ -148,19 +158,29 @@ func (fc *FileCache) Read(fileId int, position int64, length int) ([]byte, error
 		return []byte{}, nil
 	}
 
-	file, err := fc.getOrCreateFile(fileId)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get file-specific lock for reading
+	// Get file-specific lock FIRST to prevent race with Dispose
 	fileLock := fc.getFileLock(fileId)
 	if fileLock == nil {
-		return nil, fmt.Errorf("file lock not found for fileId %d", fileId)
+		// File doesn't exist yet, try to create it
+		_, err := fc.getOrCreateFile(fileId)
+		if err != nil {
+			return nil, err
+		}
+		// Get the lock that was just created
+		fileLock = fc.getFileLock(fileId)
+		if fileLock == nil {
+			return nil, fmt.Errorf("failed to create file lock for fileId %d", fileId)
+		}
 	}
 
 	fileLock.RLock()
 	defer fileLock.RUnlock()
+
+	// Now safely get the file handle (protected by file-specific lock)
+	file, err := fc.getOrCreateFile(fileId)
+	if err != nil {
+		return nil, err
+	}
 
 	// Read data from the specified position
 	data := make([]byte, length)
@@ -183,19 +203,29 @@ func (fc *FileCache) Write(fileId int, position int64, data []byte) error {
 		return nil // Nothing to write
 	}
 
-	file, err := fc.getOrCreateFile(fileId)
-	if err != nil {
-		return err
-	}
-
-	// Get file-specific lock for writing
+	// Get file-specific lock FIRST to prevent race with Dispose
 	fileLock := fc.getFileLock(fileId)
 	if fileLock == nil {
-		return fmt.Errorf("file lock not found for fileId %d", fileId)
+		// File doesn't exist yet, try to create it
+		_, err := fc.getOrCreateFile(fileId)
+		if err != nil {
+			return err
+		}
+		// Get the lock that was just created
+		fileLock = fc.getFileLock(fileId)
+		if fileLock == nil {
+			return fmt.Errorf("failed to create file lock for fileId %d", fileId)
+		}
 	}
 
 	fileLock.Lock()
 	defer fileLock.Unlock()
+
+	// Now safely get the file handle (protected by file-specific lock)
+	file, err := fc.getOrCreateFile(fileId)
+	if err != nil {
+		return err
+	}
 
 	// Write data at the specified position
 	n, err := file.WriteAt(data, position)
@@ -217,19 +247,29 @@ func (fc *FileCache) Write(fileId int, position int64, data []byte) error {
 
 // Length returns the current length of the cached file
 func (fc *FileCache) Length(fileId int) (int64, error) {
-	file, err := fc.getOrCreateFile(fileId)
-	if err != nil {
-		return 0, err
-	}
-
-	// Get file-specific lock for reading
+	// Get file-specific lock FIRST to prevent race with Dispose
 	fileLock := fc.getFileLock(fileId)
 	if fileLock == nil {
-		return 0, fmt.Errorf("file lock not found for fileId %d", fileId)
+		// File doesn't exist yet, try to create it
+		_, err := fc.getOrCreateFile(fileId)
+		if err != nil {
+			return 0, err
+		}
+		// Get the lock that was just created
+		fileLock = fc.getFileLock(fileId)
+		if fileLock == nil {
+			return 0, fmt.Errorf("failed to create file lock for fileId %d", fileId)
+		}
 	}
 
 	fileLock.RLock()
 	defer fileLock.RUnlock()
+
+	// Now safely get the file handle (protected by file-specific lock)
+	file, err := fc.getOrCreateFile(fileId)
+	if err != nil {
+		return 0, err
+	}
 
 	// Get file info to determine size
 	fileInfo, err := file.Stat()
@@ -242,6 +282,18 @@ func (fc *FileCache) Length(fileId int) (int64, error) {
 
 // Dispose removes the cached file and cleans up resources
 func (fc *FileCache) Dispose(fileId int) error {
+	// First get the file-specific lock to wait for all operations to complete
+	fc.globalLock.RLock()
+	fileLock, exists := fc.fileLocks[fileId]
+	fc.globalLock.RUnlock()
+
+	if exists {
+		// Wait for all ongoing operations to complete
+		fileLock.Lock()
+		defer fileLock.Unlock()
+	}
+
+	// Now safely dispose of the file
 	fc.globalLock.Lock()
 	defer fc.globalLock.Unlock()
 
