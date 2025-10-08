@@ -32,6 +32,31 @@ type DataStore interface {
 //
 // openFilesSoftLimit is an important performance factor for parallel access. Set it at least to the expected
 // number of concurrent accesses and to not less than 5.
+//
+// A locking strategy is implemented to optimize for concurrent access. It has been closely reviewed:
+//
+// func (ds *dataStore) Read(offset int64, length int64) ([]byte, []string)
+// => lease(fileID int, forWriting bool)
+// => handle.lock.Lock() ... handle.lock.Unlock()
+// => release(fileID int)
+//
+// func (ds *dataStore) Write(offset int64, data []byte) error
+// => lease(fileID int, forWriting bool)
+// => handle.lock.Lock() ... handle.lock.Unlock()
+// => release(fileID int)
+//
+// func (ds *dataStore) lease(fileID int, forWriting bool) (*fileHandle, error)
+// => ds.lock.Lock() ... ds.lock.Unlock() --- or ---
+// => ds.lock.Lock() ... handle.lock.Lock() ... handle.lock.Unlock() ... ds.lock.Unlock()
+//
+// func (ds *dataStore) gc()
+// => ds.lock.Lock() ... ds.lock.Unlock()
+//
+// func (ds *dataStore) release(fileID int)
+// => ds.lock.Lock() ... ds.lock.Unlock()
+//
+// func (ds *dataStore) Close()
+// => ds.lock.Lock() ... ds.lock.Unlock()
 func FileBackedDataStore(baseDir string, fileSize int64, openFilesSoftLimit int) (DataStore, error) {
 	if fileSize <= 0 {
 		return nil, fmt.Errorf("fileSize must be greater than 0, got: %d", fileSize)
