@@ -29,7 +29,10 @@ type Cache interface {
 	Close() error
 }
 
-// FIXME review locking strategy - it's not yet good
+// FIXME review locking strategy
+// Locking Strategy: Thread-safe with two-level locking:
+// 1. globalLock (RWMutex) protects openFiles/fileLocks maps
+// 2. per-file locks (RWMutex) allow concurrent reads, exclusive writes
 
 // FileCache implements a file-based cache that stores cached data as files in a directory.
 //
@@ -68,39 +71,58 @@ func (fc *FileCache) getFilePath(fileId int) string {
 	return filepath.Join(fc.baseDir, strconv.Itoa(fileId))
 }
 
-// getOrCreateFile returns an open file handle for the given fileId
-// getOrCreateFile opens or creates a file for the given fileId
-func (fc *FileCache) getOrCreateFile(fileId int) (*os.File, error) {
+// getOrCreateFile returns an open file handle and its lock for the given fileId
+func (fc *FileCache) getOrCreateFile(fileId int) (*os.File, *sync.RWMutex, error) {
 	fc.globalLock.Lock()
 	defer fc.globalLock.Unlock()
 
 	// Check if file is already open
 	if file, exists := fc.openFiles[fileId]; exists {
-		return file, nil
+		fileLock := fc.fileLocks[fileId] // Lock must exist if file exists
+		return file, fileLock, nil
 	}
 
 	// Open or create the file first
 	filePath := fc.getFilePath(fileId)
 	file, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open/create file %q: %v", filePath, err)
+		return nil, nil, fmt.Errorf("failed to open/create file %q: %v", filePath, err)
 	}
 
 	// Create file lock only after successful file opening
-	fc.fileLocks[fileId] = &sync.RWMutex{}
+	fileLock := &sync.RWMutex{}
+	fc.fileLocks[fileId] = fileLock
 	fc.openFiles[fileId] = file
-	return file, nil
+	return file, fileLock, nil
 }
 
-// getFileLock returns the mutex for a specific fileId
-func (fc *FileCache) getFileLock(fileId int) *sync.RWMutex {
-	fc.globalLock.RLock()
-	defer fc.globalLock.RUnlock()
-
-	if lock, exists := fc.fileLocks[fileId]; exists {
-		return lock
+// getLockedFile returns a file handle with appropriate lock already acquired.
+// The returned unlock function MUST be called (preferably with defer) to release the lock.
+// forWriting=true acquires exclusive lock, forWriting=false acquires shared lock.
+func (fc *FileCache) getLockedFile(fileId int, forWriting bool) (*os.File, func(), error) {
+	// Get or create the file and its lock atomically
+	file, fileLock, err := fc.getOrCreateFile(fileId)
+	if err != nil {
+		return nil, nil, err
 	}
-	return nil
+
+	// Acquire the appropriate lock
+	if forWriting {
+		fileLock.Lock()
+	} else {
+		fileLock.RLock()
+	}
+
+	// Return unlock function
+	unlock := func() {
+		if forWriting {
+			fileLock.Unlock()
+		} else {
+			fileLock.RUnlock()
+		}
+	}
+
+	return file, unlock, nil
 }
 
 // Truncate sets the file to the specified length
@@ -109,29 +131,12 @@ func (fc *FileCache) Truncate(fileId int, length int64) error {
 		return fmt.Errorf("length cannot be negative: %d", length)
 	}
 
-	// Get file-specific lock FIRST to prevent race with Dispose
-	fileLock := fc.getFileLock(fileId)
-	if fileLock == nil {
-		// File doesn't exist yet, try to create it
-		_, err := fc.getOrCreateFile(fileId)
-		if err != nil {
-			return err
-		}
-		// Get the lock that was just created
-		fileLock = fc.getFileLock(fileId)
-		if fileLock == nil {
-			return fmt.Errorf("failed to create file lock for fileId %d", fileId)
-		}
-	}
-
-	fileLock.Lock()
-	defer fileLock.Unlock()
-
-	// Now safely get the file handle (protected by file-specific lock)
-	file, err := fc.getOrCreateFile(fileId)
+	// Get locked file handle (exclusive lock for truncating)
+	file, unlock, err := fc.getLockedFile(fileId, true)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 
 	// Truncate the file
 	if err := file.Truncate(length); err != nil {
@@ -158,29 +163,12 @@ func (fc *FileCache) Read(fileId int, position int64, length int) ([]byte, error
 		return []byte{}, nil
 	}
 
-	// Get file-specific lock FIRST to prevent race with Dispose
-	fileLock := fc.getFileLock(fileId)
-	if fileLock == nil {
-		// File doesn't exist yet, try to create it
-		_, err := fc.getOrCreateFile(fileId)
-		if err != nil {
-			return nil, err
-		}
-		// Get the lock that was just created
-		fileLock = fc.getFileLock(fileId)
-		if fileLock == nil {
-			return nil, fmt.Errorf("failed to create file lock for fileId %d", fileId)
-		}
-	}
-
-	fileLock.RLock()
-	defer fileLock.RUnlock()
-
-	// Now safely get the file handle (protected by file-specific lock)
-	file, err := fc.getOrCreateFile(fileId)
+	// Get locked file handle (shared lock for reading)
+	file, unlock, err := fc.getLockedFile(fileId, false)
 	if err != nil {
 		return nil, err
 	}
+	defer unlock()
 
 	// Read data from the specified position
 	data := make([]byte, length)
@@ -203,29 +191,12 @@ func (fc *FileCache) Write(fileId int, position int64, data []byte) error {
 		return nil // Nothing to write
 	}
 
-	// Get file-specific lock FIRST to prevent race with Dispose
-	fileLock := fc.getFileLock(fileId)
-	if fileLock == nil {
-		// File doesn't exist yet, try to create it
-		_, err := fc.getOrCreateFile(fileId)
-		if err != nil {
-			return err
-		}
-		// Get the lock that was just created
-		fileLock = fc.getFileLock(fileId)
-		if fileLock == nil {
-			return fmt.Errorf("failed to create file lock for fileId %d", fileId)
-		}
-	}
-
-	fileLock.Lock()
-	defer fileLock.Unlock()
-
-	// Now safely get the file handle (protected by file-specific lock)
-	file, err := fc.getOrCreateFile(fileId)
+	// Get locked file handle (exclusive lock for writing)
+	file, unlock, err := fc.getLockedFile(fileId, true)
 	if err != nil {
 		return err
 	}
+	defer unlock()
 
 	// Write data at the specified position
 	n, err := file.WriteAt(data, position)
@@ -247,29 +218,12 @@ func (fc *FileCache) Write(fileId int, position int64, data []byte) error {
 
 // Length returns the current length of the cached file
 func (fc *FileCache) Length(fileId int) (int64, error) {
-	// Get file-specific lock FIRST to prevent race with Dispose
-	fileLock := fc.getFileLock(fileId)
-	if fileLock == nil {
-		// File doesn't exist yet, try to create it
-		_, err := fc.getOrCreateFile(fileId)
-		if err != nil {
-			return 0, err
-		}
-		// Get the lock that was just created
-		fileLock = fc.getFileLock(fileId)
-		if fileLock == nil {
-			return 0, fmt.Errorf("failed to create file lock for fileId %d", fileId)
-		}
-	}
-
-	fileLock.RLock()
-	defer fileLock.RUnlock()
-
-	// Now safely get the file handle (protected by file-specific lock)
-	file, err := fc.getOrCreateFile(fileId)
+	// Get locked file handle (shared lock for reading file info)
+	file, unlock, err := fc.getLockedFile(fileId, false)
 	if err != nil {
 		return 0, err
 	}
+	defer unlock()
 
 	// Get file info to determine size
 	fileInfo, err := file.Stat()
