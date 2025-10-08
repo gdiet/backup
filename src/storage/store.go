@@ -92,10 +92,10 @@ type dataStore struct {
 }
 
 type fileHandle struct {
-	lock sync.Mutex
-	// Syncronized by fileHandle.lock.
+	lock sync.RWMutex // allows concurrent reads
+	// Synchronized by fileHandle.lock.
 	file *os.File
-	// Syncronized by dataStore.lock.
+	// Synchronized by dataStore.lock.
 	queued int
 }
 
@@ -153,7 +153,7 @@ func (ds *dataStore) lease(fileID int, forWriting bool) (*fileHandle, error) {
 	}
 	handle := &fileHandle{
 		file:   file,
-		lock:   sync.Mutex{},
+		lock:   sync.RWMutex{},
 		queued: 1,
 	}
 
@@ -220,7 +220,7 @@ func (ds *dataStore) Write(offset int64, data []byte) error {
 		if err != nil {
 			return fmt.Errorf("ERROR: Unable to lease data file %d: %v", fileID, err)
 		}
-		handle.lock.Lock()
+		handle.lock.Lock() // Exclusive lock for writes
 		_, err = handle.file.WriteAt(data[:bytesToWrite], offsetInFile)
 		handle.lock.Unlock()
 		ds.release(fileID)
@@ -256,9 +256,9 @@ func (ds *dataStore) Read(offset int64, length int64) ([]byte, []string) {
 			continue
 		}
 
-		handle.lock.Lock()
+		handle.lock.RLock() // Shared lock for reads
 		_, err = handle.file.ReadAt(result[position:position+bytesToRead], offsetInFile)
-		handle.lock.Unlock()
+		handle.lock.RUnlock()
 		ds.release(fileID)
 
 		if err == io.EOF {
