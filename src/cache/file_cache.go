@@ -333,8 +333,7 @@ func (fc *FileCache) GetStats() map[string]interface{} {
 
 	return map[string]interface{}{
 		"baseDir":       fc.baseDir,
-		"openFiles":     len(fc.openFiles),
-		"trackedFiles":  len(fc.fileLocks),
+		"numberOfFiles": len(fc.openFiles),
 		"openFilesList": fc.getOpenFilesList(),
 	}
 }

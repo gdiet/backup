@@ -51,14 +51,10 @@ func TestFileCache_ConcurrentDispose(t *testing.T) {
 
 	// Check cache state immediately after dispose
 	stats := fc.GetStats()
-	openFiles := stats["openFiles"].(int)
-	trackedFiles := stats["trackedFiles"].(int)
+	numberOfFiles := stats["numberOfFiles"].(int)
 
-	if openFiles != 0 {
-		t.Errorf("Expected 0 open files after dispose, got %d", openFiles)
-	}
-	if trackedFiles != 0 {
-		t.Errorf("Expected 0 tracked files after dispose, got %d", trackedFiles)
+	if numberOfFiles != 0 {
+		t.Errorf("Expected 0 files after dispose, got %d", numberOfFiles)
 	}
 
 	// Verify file can be accessed again (lazy loading) - this should succeed

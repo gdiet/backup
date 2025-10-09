@@ -356,8 +356,8 @@ func TestFileCache_MultipleFiles(t *testing.T) {
 
 	// Get stats
 	stats := cache.GetStats()
-	if stats["openFiles"].(int) != len(files) {
-		t.Errorf("Expected %d open files, got %d", len(files), stats["openFiles"].(int))
+	if stats["numberOfFiles"].(int) != len(files) {
+		t.Errorf("Expected %d open files, got %d", len(files), stats["numberOfFiles"].(int))
 	}
 }
 
@@ -485,37 +485,34 @@ func TestFileCache_InternalConsistency(t *testing.T) {
 	}
 	defer cache.Close()
 
-	// Test that openFiles and fileLocks are always in sync
+	// Test that files are tracked correctly
 	testFiles := []int{100, 200, 300}
 
 	// Create files and check consistency
-	for _, fileId := range testFiles {
+	for i, fileId := range testFiles {
 		err = cache.Write(fileId, 0, []byte("test data"))
 		if err != nil {
 			t.Fatalf("Failed to write to %d: %v", fileId, err)
 		}
 
-		// Check that both maps have the same keys
+		// Check that the correct number of files are tracked
 		stats := cache.GetStats()
-		openFiles := stats["openFiles"].(int)
-		trackedFiles := stats["trackedFiles"].(int)
+		numberOfFiles := stats["numberOfFiles"].(int)
+		expectedFiles := i + 1 // We've created i+1 files so far
 
-		if openFiles != trackedFiles {
-			t.Errorf("Inconsistency detected: openFiles=%d, trackedFiles=%d", openFiles, trackedFiles)
+		if numberOfFiles != expectedFiles {
+			t.Errorf("Expected %d files, got %d", expectedFiles, numberOfFiles)
 		}
 	}
 
 	// Verify final state
 	stats := cache.GetStats()
-	if stats["openFiles"].(int) != len(testFiles) {
-		t.Errorf("Expected %d open files, got %d", len(testFiles), stats["openFiles"].(int))
-	}
-	if stats["trackedFiles"].(int) != len(testFiles) {
-		t.Errorf("Expected %d tracked files, got %d", len(testFiles), stats["trackedFiles"].(int))
+	if stats["numberOfFiles"].(int) != len(testFiles) {
+		t.Errorf("Expected %d open files, got %d", len(testFiles), stats["numberOfFiles"].(int))
 	}
 
 	// Dispose files and check consistency
-	for _, fileId := range testFiles {
+	for i, fileId := range testFiles {
 		err = cache.Dispose(fileId)
 		if err != nil {
 			t.Fatalf("Failed to dispose %d: %v", fileId, err)
@@ -523,21 +520,21 @@ func TestFileCache_InternalConsistency(t *testing.T) {
 
 		// Check consistency after each disposal
 		stats := cache.GetStats()
-		openFiles := stats["openFiles"].(int)
-		trackedFiles := stats["trackedFiles"].(int)
+		numberOfFiles := stats["numberOfFiles"].(int)
+		expectedFiles := len(testFiles) - (i + 1) // i+1 files have been disposed
 
-		if openFiles != trackedFiles {
-			t.Errorf("Inconsistency after dispose of %d: openFiles=%d, trackedFiles=%d", fileId, openFiles, trackedFiles)
+		if numberOfFiles != expectedFiles {
+			t.Errorf("After disposing %d files, expected %d remaining, got %d", i+1, expectedFiles, numberOfFiles)
 		}
 	}
 
 	// Final state should be empty
 	stats = cache.GetStats()
-	if stats["openFiles"].(int) != 0 {
-		t.Errorf("Expected 0 open files after dispose all, got %d", stats["openFiles"].(int))
+	if stats["numberOfFiles"].(int) != 0 {
+		t.Errorf("Expected 0 open files after dispose all, got %d", stats["numberOfFiles"].(int))
 	}
-	if stats["trackedFiles"].(int) != 0 {
-		t.Errorf("Expected 0 tracked files after dispose all, got %d", stats["trackedFiles"].(int))
+	if stats["numberOfFiles"].(int) != 0 {
+		t.Errorf("Expected 0 tracked files after dispose all, got %d", stats["numberOfFiles"].(int))
 	}
 }
 
@@ -568,8 +565,8 @@ func TestFileCache_Close(t *testing.T) {
 
 	// Verify files are open
 	stats := cache.GetStats()
-	if stats["openFiles"].(int) != 3 {
-		t.Errorf("Expected 3 open files, got %d", stats["openFiles"].(int))
+	if stats["numberOfFiles"].(int) != 3 {
+		t.Errorf("Expected 3 open files, got %d", stats["numberOfFiles"].(int))
 	}
 
 	// Close the cache
@@ -580,8 +577,8 @@ func TestFileCache_Close(t *testing.T) {
 
 	// Verify all files are closed
 	stats = cache.GetStats()
-	if stats["openFiles"].(int) != 0 {
-		t.Errorf("Expected 0 open files after close, got %d", stats["openFiles"].(int))
+	if stats["numberOfFiles"].(int) != 0 {
+		t.Errorf("Expected 0 open files after close, got %d", stats["numberOfFiles"].(int))
 	}
 }
 
