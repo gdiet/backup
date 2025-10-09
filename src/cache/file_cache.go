@@ -1,7 +1,9 @@
 package cache
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -252,35 +254,37 @@ func (fc *FileCache) Flush(fileId int) error {
 
 // Dispose removes the cached file and cleans up resources
 func (fc *FileCache) Dispose(fileId int) error {
-	// First get the file-specific lock to wait for all operations to complete
-	fc.globalLock.RLock()
-	fileLock, exists := fc.fileLocks[fileId]
-	fc.globalLock.RUnlock()
-
-	if exists {
-		// Wait for all ongoing operations to complete
-		fileLock.Lock()
-		defer fileLock.Unlock()
-	}
-
-	// Now safely dispose of the file
+	// Acquire global lock first to atomically check and mark for disposal
 	fc.globalLock.Lock()
-	defer fc.globalLock.Unlock()
 
-	// Close the file if it's open
-	if file, exists := fc.openFiles[fileId]; exists {
-		if err := file.Close(); err != nil {
-			return fmt.Errorf("failed to close file %d: %v", fileId, err)
-		}
-		delete(fc.openFiles, fileId)
+	// Check if file exists and get its lock
+	fileLock, exists := fc.fileLocks[fileId]
+	if !exists {
+		// File already disposed or never existed
+		fc.globalLock.Unlock()
+		return nil
 	}
 
-	// Remove the file lock
+	// File exists - remove it from maps first to prevent other dispose attempts
+	file := fc.openFiles[fileId]
+	delete(fc.openFiles, fileId)
 	delete(fc.fileLocks, fileId)
+
+	// Now we can release global lock - we're the only one disposing this file
+	fc.globalLock.Unlock()
+
+	// Wait for all ongoing operations to complete
+	fileLock.Lock()
+	defer fileLock.Unlock()
+
+	// Close the file (guaranteed to be non-nil due to our invariants)
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("failed to close file %d: %v", fileId, err)
+	}
 
 	// Remove the actual file
 	filePath := fc.getFilePath(fileId)
-	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(filePath); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fmt.Errorf("failed to remove file %q: %v", filePath, err)
 	}
 
