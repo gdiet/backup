@@ -108,24 +108,14 @@ func (ds *dataStore) leaseFile(fileID int, forWriting bool) (*os.File, func(), e
 		return nil, nil, err
 	}
 
-	// Acquire the appropriate lock
+	// Acquire the appropriate lock and return release function
 	if forWriting {
 		handle.lock.Lock()
+		return handle.file, func() { handle.lock.Unlock(); ds.releaseFileHandle(fileID) }, nil
 	} else {
 		handle.lock.RLock()
+		return handle.file, func() { handle.lock.RUnlock(); ds.releaseFileHandle(fileID) }, nil
 	}
-
-	// Return release function that handles both lock and release
-	release := func() {
-		if forWriting {
-			handle.lock.Unlock()
-		} else {
-			handle.lock.RUnlock()
-		}
-		ds.releaseFileHandle(fileID)
-	}
-
-	return handle.file, release, nil
 }
 
 // leaseFileHandle obtains a file handle for the specified fileID with reference counting.
