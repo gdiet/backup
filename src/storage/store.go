@@ -99,7 +99,42 @@ type fileHandle struct {
 	queued int
 }
 
-func (ds *dataStore) lease(fileID int, forWriting bool) (*fileHandle, error) {
+// leaseFile returns a file handle (os.File) with appropriate lock already acquired.
+// The returned release function MUST be called to release both lock and handle.
+// forWriting=true acquires exclusive lock, forWriting=false acquires shared lock.
+func (ds *dataStore) leaseFile(fileID int, forWriting bool) (*os.File, func(), error) {
+	handle, err := ds.leaseFileHandle(fileID, forWriting)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Acquire the appropriate lock
+	if forWriting {
+		handle.lock.Lock()
+	} else {
+		handle.lock.RLock()
+	}
+
+	// Return release function that handles both lock and release
+	release := func() {
+		if forWriting {
+			handle.lock.Unlock()
+		} else {
+			handle.lock.RUnlock()
+		}
+		ds.releaseFileHandle(fileID)
+	}
+
+	return handle.file, release, nil
+}
+
+// leaseFileHandle obtains a file handle for the specified fileID with reference counting.
+// The handle must be released using releaseFileHandle() when no longer needed.
+//
+// Parameters:
+//   - fileID: The ID of the file to lease (determines file path and name)
+//   - forWriting: If true, creates directories and file if they don't exist
+func (ds *dataStore) leaseFileHandle(fileID int, forWriting bool) (*fileHandle, error) {
 	ds.lock.Lock()
 	// Can't defer unlock because in one case we need to unlock earlier.
 
@@ -132,7 +167,7 @@ func (ds *dataStore) lease(fileID int, forWriting bool) (*fileHandle, error) {
 		{ // When the lock is acquired, the eviction is finished.
 		}
 		handle.lock.Unlock()
-		return ds.lease(fileID, forWriting)
+		return ds.leaseFileHandle(fileID, forWriting)
 	}
 
 	// Create the handle and lease it.
@@ -163,7 +198,7 @@ func (ds *dataStore) lease(fileID int, forWriting bool) (*fileHandle, error) {
 	return handle, nil
 }
 
-func (ds *dataStore) release(fileID int) {
+func (ds *dataStore) releaseFileHandle(fileID int) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
@@ -216,14 +251,13 @@ func (ds *dataStore) Write(offset int64, data []byte) error {
 		offsetInFile := offset % ds.fileSize
 		bytesToWrite := min(int64(len(data)), ds.fileSize-offsetInFile)
 
-		handle, err := ds.lease(fileID, true)
+		file, release, err := ds.leaseFile(fileID, true)
 		if err != nil {
 			return fmt.Errorf("ERROR: Unable to lease data file %d: %v", fileID, err)
 		}
-		handle.lock.Lock() // Exclusive lock for writes
-		_, err = handle.file.WriteAt(data[:bytesToWrite], offsetInFile)
-		handle.lock.Unlock()
-		ds.release(fileID)
+
+		_, err = file.WriteAt(data[:bytesToWrite], offsetInFile)
+		release()
 		if err != nil {
 			return fmt.Errorf("ERROR: Write error for data file %d: %v", fileID, err)
 		}
@@ -245,7 +279,7 @@ func (ds *dataStore) Read(offset int64, length int64) ([]byte, []string) {
 		offsetInFile := offset % ds.fileSize
 		bytesToRead := min(length, ds.fileSize-offsetInFile)
 
-		handle, err := ds.lease(fileID, false)
+		file, release, err := ds.leaseFile(fileID, false)
 		if err != nil {
 			// If the file does not exist, we just return zeros.
 			// Other errors are logged and we return zeros.
@@ -256,10 +290,8 @@ func (ds *dataStore) Read(offset int64, length int64) ([]byte, []string) {
 			continue
 		}
 
-		handle.lock.RLock() // Shared lock for reads
-		_, err = handle.file.ReadAt(result[position:position+bytesToRead], offsetInFile)
-		handle.lock.RUnlock()
-		ds.release(fileID)
+		_, err = file.ReadAt(result[position:position+bytesToRead], offsetInFile)
+		release()
 
 		if err == io.EOF {
 			warnings = append(warnings, fmt.Sprintf("WARNING: Reached EOF for data file %d: %v. Padding with zeros.", fileID, err))
