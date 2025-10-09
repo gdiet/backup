@@ -298,11 +298,16 @@ func (fc *FileCache) Close() error {
 
 	var errors []error
 
-	// Close all open files
+	// Close all open files with proper locking
 	for fileId, file := range fc.openFiles {
+		fileLock := fc.fileLocks[fileId]
+
+		// Acquire exclusive lock to ensure no ongoing operations
+		fileLock.Lock()
 		if err := file.Close(); err != nil {
 			errors = append(errors, fmt.Errorf("failed to close file %d: %v", fileId, err))
 		}
+		fileLock.Unlock()
 	}
 
 	// Clear all maps
