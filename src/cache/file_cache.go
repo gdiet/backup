@@ -29,10 +29,10 @@ type Cache interface {
 	Close() error
 }
 
-// FIXME review locking strategy
-// Locking Strategy: Thread-safe with two-level locking:
-// 1. globalLock (RWMutex) protects openFiles/fileLocks maps
+// Locking Strategy: Thread-safe with optimized two-level locking:
+// 1. globalLock (RWMutex) protects openFiles/fileLocks maps with double-checked locking
 // 2. per-file locks (RWMutex) allow concurrent reads, exclusive writes
+// Double-checked locking minimizes time holding globalLock during slow file I/O operations
 
 // FileCache implements a file-based cache that stores cached data as files in a directory.
 //
@@ -71,25 +71,40 @@ func (fc *FileCache) getFilePath(fileId int) string {
 	return filepath.Join(fc.baseDir, strconv.Itoa(fileId))
 }
 
-// getOrCreateFile returns an open file handle and its lock for the given fileId
+// getOrCreateFile returns an open file handle and its lock for the given fileId.
+// Uses double-checked locking to minimize time holding the globalLock during file I/O operations.
 func (fc *FileCache) getOrCreateFile(fileId int) (*os.File, *sync.RWMutex, error) {
-	fc.globalLock.Lock()
-	defer fc.globalLock.Unlock()
-
-	// Check if file is already open
+	// First check: read lock only (fast path for existing files)
+	fc.globalLock.RLock()
 	if file, exists := fc.openFiles[fileId]; exists {
-		fileLock := fc.fileLocks[fileId] // Lock must exist if file exists
+		fileLock := fc.fileLocks[fileId] // Invariant: lock always exists when file is open
+		fc.globalLock.RUnlock()
 		return file, fileLock, nil
 	}
+	fc.globalLock.RUnlock()
 
-	// Open or create the file first
+	// File doesn't exist, we need to create it
+	// Open the file WITHOUT holding the global lock (possibly slow I/O operation)
 	filePath := fc.getFilePath(fileId)
 	file, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
+		// Normally, no error should occur if the file has already been opened by another thread
 		return nil, nil, fmt.Errorf("failed to open/create file %q: %v", filePath, err)
 	}
 
-	// Create file lock only after successful file opening
+	// Second check: acquire write lock and check again (another goroutine might have created it)
+	fc.globalLock.Lock()
+	defer fc.globalLock.Unlock()
+
+	// Double-check: another goroutine might have opened the same file while we were doing I/O
+	if existingFile, exists := fc.openFiles[fileId]; exists {
+		// Close our file since another goroutine already opened it
+		file.Close()
+		fileLock := fc.fileLocks[fileId] // Invariant: lock always exists when file is open
+		return existingFile, fileLock, nil
+	}
+
+	// We're the first to open this file, register it
 	fileLock := &sync.RWMutex{}
 	fc.fileLocks[fileId] = fileLock
 	fc.openFiles[fileId] = file
@@ -106,23 +121,14 @@ func (fc *FileCache) getLockedFile(fileId int, forWriting bool) (*os.File, func(
 		return nil, nil, err
 	}
 
-	// Acquire the appropriate lock
+	// Acquire the appropriate lock and return unlock function
 	if forWriting {
 		fileLock.Lock()
+		return file, func() { fileLock.Unlock() }, nil
 	} else {
 		fileLock.RLock()
+		return file, func() { fileLock.RUnlock() }, nil
 	}
-
-	// Return unlock function
-	unlock := func() {
-		if forWriting {
-			fileLock.Unlock()
-		} else {
-			fileLock.RUnlock()
-		}
-	}
-
-	return file, unlock, nil
 }
 
 // Truncate sets the file to the specified length
