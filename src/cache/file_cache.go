@@ -25,6 +25,9 @@ type Cache interface {
 	// Dispose removes the cached file and cleans up resources
 	Dispose(fileId int) error
 
+	// Flush ensures all pending writes for the specified file are written to disk
+	Flush(fileId int) error
+
 	// Close closes the cache and cleans up all resources
 	Close() error
 }
@@ -149,11 +152,6 @@ func (fc *FileCache) Truncate(fileId int, length int64) error {
 		return fmt.Errorf("failed to truncate file %d to length %d: %v", fileId, length, err)
 	}
 
-	// Ensure the change is written to disk
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("failed to sync file %d after truncate: %v", fileId, err)
-	}
-
 	return nil
 }
 
@@ -214,11 +212,6 @@ func (fc *FileCache) Write(fileId int, position int64, data []byte) error {
 		return fmt.Errorf("incomplete write to file %d: wrote %d bytes, expected %d", fileId, n, len(data))
 	}
 
-	// Ensure the change is written to disk
-	if err := file.Sync(); err != nil {
-		return fmt.Errorf("failed to sync file %d after write: %v", fileId, err)
-	}
-
 	return nil
 }
 
@@ -238,6 +231,23 @@ func (fc *FileCache) Length(fileId int) (int64, error) {
 	}
 
 	return fileInfo.Size(), nil
+}
+
+// Flush ensures all pending writes for the specified file are written to disk
+func (fc *FileCache) Flush(fileId int) error {
+	// Get locked file handle (shared lock sufficient for sync)
+	file, unlock, err := fc.getLockedFile(fileId, false)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	// Sync the file to disk
+	if err := file.Sync(); err != nil {
+		return fmt.Errorf("failed to sync file %d: %v", fileId, err)
+	}
+
+	return nil
 }
 
 // Dispose removes the cached file and cleans up resources
