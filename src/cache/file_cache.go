@@ -32,6 +32,9 @@ type Cache interface {
 
 	// Close closes the cache and cleans up all resources
 	Close() error
+
+	// GetStats returns statistics about the cache
+	GetStats() map[string]interface{}
 }
 
 // Locking Strategy: Thread-safe with optimized two-level locking:
