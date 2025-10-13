@@ -10,7 +10,7 @@ func TestSparse_Truncate(t *testing.T) {
 	t.Run("NoSizeChange", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 10,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 2, Len: 3},
 			},
 		}
@@ -29,7 +29,7 @@ func TestSparse_Truncate(t *testing.T) {
 	t.Run("FileGrows", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 10,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 2, Len: 3},
 			},
 		}
@@ -43,7 +43,7 @@ func TestSparse_Truncate(t *testing.T) {
 			t.Errorf("Expected size 15, got %d", sparse.Size())
 		}
 		// Should add new sparse area [10-15)
-		expectedAreas := DataAreas{
+		expectedAreas := Areas{
 			{Off: 2, Len: 3},  // Original area
 			{Off: 10, Len: 5}, // New sparse area
 		}
@@ -56,7 +56,7 @@ func TestSparse_Truncate(t *testing.T) {
 	t.Run("FileShrinks_RemoveAreas", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 20,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 2, Len: 3},  // [2-5) - should remain
 				{Off: 15, Len: 3}, // [15-18) - should be removed
 				{Off: 25, Len: 5}, // [25-30) - should be removed
@@ -72,7 +72,7 @@ func TestSparse_Truncate(t *testing.T) {
 			t.Errorf("Expected size 10, got %d", sparse.Size())
 		}
 		// Should only keep the area that's completely within new size
-		expectedAreas := DataAreas{
+		expectedAreas := Areas{
 			{Off: 2, Len: 3}, // Only this area remains
 		}
 		if !reflect.DeepEqual(sparse.sparseAreas, expectedAreas) {
@@ -84,7 +84,7 @@ func TestSparse_Truncate(t *testing.T) {
 	t.Run("FileShrinks_TruncateAreas", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 20,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 2, Len: 3}, // [2-5) - should remain unchanged
 				{Off: 7, Len: 8}, // [7-15) - should be truncated to [7-12)
 			},
@@ -99,7 +99,7 @@ func TestSparse_Truncate(t *testing.T) {
 			t.Errorf("Expected size 12, got %d", sparse.Size())
 		}
 		// Should truncate the second area
-		expectedAreas := DataAreas{
+		expectedAreas := Areas{
 			{Off: 2, Len: 3}, // [2-5) unchanged
 			{Off: 7, Len: 5}, // [7-12) truncated from [7-15)
 		}
@@ -112,7 +112,7 @@ func TestSparse_Truncate(t *testing.T) {
 	t.Run("FileShrinks_ToZero", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 10,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 2, Len: 3},
 				{Off: 7, Len: 2},
 			},

@@ -3,7 +3,7 @@ package cache
 // Sparse is a file cache layer that manages the sparse parts of a cached file and the actual file size.
 type Sparse struct {
 	size        int64
-	sparseAreas DataAreas
+	sparseAreas Areas
 }
 
 // Size returns the current size of the file.
@@ -12,20 +12,20 @@ func (sparse *Sparse) Size() int64 {
 }
 
 // Read reads data from the sparse entry, filling sparse data areas with zeros.
-// Returns the DataAreas that were not read and the number of bytes total
+// Returns the Areas that were not read and the number of bytes total
 // for the read operation, which may be less than len(data) if EOF is reached.
-func (sparse *Sparse) Read(position int64, data Bytes) (DataAreas, int) {
+func (sparse *Sparse) Read(position int64, data Bytes) (Areas, int) {
 	// Calculate total read size, considering EOF
 	totalReadSize := max(0, min(data.Size(), sparse.size-position))
 	if totalReadSize == 0 {
-		return DataAreas{}, 0 // Nothing to read
+		return Areas{}, 0 // Nothing to read
 	}
 	// Adjust data to available size
 	data = data[:totalReadSize]
 
 	// Initialize non-sparse areas with the full requested area
-	var nonSparseAreas DataAreas
-	nonSparseAreas = append(nonSparseAreas, DataArea{Off: position, Len: totalReadSize})
+	var nonSparseAreas Areas
+	nonSparseAreas = append(nonSparseAreas, Area{Off: position, Len: totalReadSize})
 
 	// Process sparse areas
 	for _, sparseArea := range sparse.sparseAreas {
@@ -41,7 +41,7 @@ func (sparse *Sparse) Read(position int64, data Bytes) (DataAreas, int) {
 			data[i-position] = 0
 		}
 		// Adjust non-sparse areas
-		nonSparseAreas = nonSparseAreas.RemoveOverlappingAreas(DataArea{Off: overlapStart, Len: overlapSize})
+		nonSparseAreas = nonSparseAreas.RemoveOverlappingAreas(Area{Off: overlapStart, Len: overlapSize})
 	}
 
 	return nonSparseAreas, int(totalReadSize)
@@ -55,12 +55,12 @@ func (sparse *Sparse) Truncate(newSize int64) bool {
 	}
 	// File grows, add new sparse area at the end
 	if newSize > sparse.size {
-		sparse.sparseAreas = append(sparse.sparseAreas, DataArea{Off: sparse.size, Len: newSize - sparse.size})
+		sparse.sparseAreas = append(sparse.sparseAreas, Area{Off: sparse.size, Len: newSize - sparse.size})
 		sparse.size = newSize
 		return false // No truncation needed
 	}
 	// File shrinks, remove or truncate sparse areas beyond new size
-	var filteredAreas DataAreas
+	var filteredAreas Areas
 	for _, area := range sparse.sparseAreas {
 		if area.Off >= newSize {
 			continue // Area starts beyond new size, remove it
@@ -86,5 +86,11 @@ func (sparse *Sparse) Write(position int64, data Bytes) {
 		sparse.size = endPosition
 	}
 	// Remove overlapping sparse areas
-	sparse.sparseAreas = sparse.sparseAreas.RemoveOverlappingAreas(DataArea{Off: position, Len: data.Size()})
+	sparse.sparseAreas = sparse.sparseAreas.RemoveOverlappingAreas(Area{Off: position, Len: data.Size()})
+}
+
+// Close clears the sparse entry.
+func (sparse *Sparse) Close() {
+	sparse.size = 0
+	sparse.sparseAreas = nil
 }

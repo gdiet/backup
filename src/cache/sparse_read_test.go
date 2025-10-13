@@ -10,7 +10,7 @@ func TestSparse_Read(t *testing.T) {
 	t.Run("NoSparseAreas", func(t *testing.T) {
 		sparse := &Sparse{
 			size:        20,
-			sparseAreas: DataAreas{},
+			sparseAreas: Areas{},
 		}
 		data := make(Bytes, 10)
 		for i := range data {
@@ -20,7 +20,7 @@ func TestSparse_Read(t *testing.T) {
 		nonSparseAreas, totalRead := sparse.Read(5, data)
 
 		// Should return the full requested area as non-sparse
-		expected := DataAreas{{Off: 5, Len: 10}}
+		expected := Areas{{Off: 5, Len: 10}}
 		if !reflect.DeepEqual(nonSparseAreas, expected) {
 			t.Errorf("Expected %v, got %v", expected, nonSparseAreas)
 		}
@@ -39,14 +39,14 @@ func TestSparse_Read(t *testing.T) {
 	t.Run("ReadBeyondEOF", func(t *testing.T) {
 		sparse := &Sparse{
 			size:        10,
-			sparseAreas: DataAreas{},
+			sparseAreas: Areas{},
 		}
 		data := make(Bytes, 10)
 
 		nonSparseAreas, totalRead := sparse.Read(8, data)
 
 		// Should only read 2 bytes (from position 8 to size 10)
-		expected := DataAreas{{Off: 8, Len: 2}}
+		expected := Areas{{Off: 8, Len: 2}}
 		if !reflect.DeepEqual(nonSparseAreas, expected) {
 			t.Errorf("Expected %v, got %v", expected, nonSparseAreas)
 		}
@@ -59,7 +59,7 @@ func TestSparse_Read(t *testing.T) {
 	t.Run("ReadCompletelyBeyondEOF", func(t *testing.T) {
 		sparse := &Sparse{
 			size:        10,
-			sparseAreas: DataAreas{},
+			sparseAreas: Areas{},
 		}
 		data := make(Bytes, 5)
 
@@ -78,7 +78,7 @@ func TestSparse_Read(t *testing.T) {
 	t.Run("SparseAreaOverlap", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 20,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 5, Len: 5}, // [5-10) is sparse
 			},
 		}
@@ -90,7 +90,7 @@ func TestSparse_Read(t *testing.T) {
 		nonSparseAreas, totalRead := sparse.Read(3, data)
 
 		// Should return two non-sparse areas: [3-5) and [10-13)
-		expected := DataAreas{
+		expected := Areas{
 			{Off: 3, Len: 2},  // [3-5)
 			{Off: 10, Len: 3}, // [10-13)
 		}
@@ -123,7 +123,7 @@ func TestSparse_Read(t *testing.T) {
 	t.Run("MultipleSparseAreas", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 20,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 2, Len: 3}, // [2-5) is sparse
 				{Off: 8, Len: 2}, // [8-10) is sparse
 			},
@@ -136,7 +136,7 @@ func TestSparse_Read(t *testing.T) {
 		nonSparseAreas, totalRead := sparse.Read(0, data)
 
 		// Should return three non-sparse areas: [0-2), [5-8), [10-20)
-		expected := DataAreas{
+		expected := Areas{
 			{Off: 0, Len: 2}, // [0-2)
 			{Off: 5, Len: 3}, // [5-8)
 		}
@@ -163,7 +163,7 @@ func TestSparse_Read(t *testing.T) {
 	t.Run("NoSparseOverlap", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 20,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 10, Len: 5}, // [10-15) is sparse
 			},
 		}
@@ -175,7 +175,7 @@ func TestSparse_Read(t *testing.T) {
 		nonSparseAreas, totalRead := sparse.Read(0, data)
 
 		// Should return the full requested area as non-sparse
-		expected := DataAreas{{Off: 0, Len: 5}}
+		expected := Areas{{Off: 0, Len: 5}}
 		if !reflect.DeepEqual(nonSparseAreas, expected) {
 			t.Errorf("Expected %v, got %v", expected, nonSparseAreas)
 		}

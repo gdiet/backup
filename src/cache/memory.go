@@ -1,5 +1,35 @@
 package cache
 
+type Bytes []byte
+
+func (data Bytes) Size() int64 {
+	return int64(len(data))
+}
+
+// DataArea represents a contiguous area of bytes in a file.
+type DataArea struct {
+	Off  int64
+	Data Bytes
+}
+
+// DataAreas represents a collection of data areas.
+// Recommended general invariants (not enforced by the type system):
+// - Sorted by Offset
+// - Non-overlapping
+// - Mostly merged (adjacent areas combined)
+type DataAreas []DataArea
+
+// Memory is a file cache layer that stores parts of a cached file in memory.
+type Memory struct {
+	areas DataAreas
+}
+
+// Read reads data from the memory entry.
+// Returns the Areas that were not read.
+func (memory *Memory) Read(position int64, data Bytes) Areas {
+	return nil
+}
+
 // import (
 // 	"fmt"
 // 	"sync"

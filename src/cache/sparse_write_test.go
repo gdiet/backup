@@ -10,7 +10,7 @@ func TestSparse_Write(t *testing.T) {
 	t.Run("WriteToEmpty", func(t *testing.T) {
 		sparse := &Sparse{
 			size:        0,
-			sparseAreas: DataAreas{},
+			sparseAreas: Areas{},
 		}
 		data := Bytes("hello")
 
@@ -30,11 +30,11 @@ func TestSparse_Write(t *testing.T) {
 	t.Run("WriteZeroLength", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 10,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 5, Len: 3},
 			},
 		}
-		originalAreas := append(DataAreas{}, sparse.sparseAreas...) // Copy
+		originalAreas := append(Areas{}, sparse.sparseAreas...) // Copy
 
 		sparse.Write(2, Bytes{}) // Empty write
 
@@ -51,7 +51,7 @@ func TestSparse_Write(t *testing.T) {
 	t.Run("WriteExtendsSize", func(t *testing.T) {
 		sparse := &Sparse{
 			size:        10,
-			sparseAreas: DataAreas{{Off: 2, Len: 3}}, // [2-5) sparse
+			sparseAreas: Areas{{Off: 2, Len: 3}}, // [2-5) sparse
 		}
 		data := Bytes("extended")
 
@@ -63,7 +63,7 @@ func TestSparse_Write(t *testing.T) {
 			t.Errorf("Expected size %d, got %d", expectedSize, sparse.Size())
 		}
 		// Sparse areas should remain unchanged (no overlap)
-		expected := DataAreas{{Off: 2, Len: 3}}
+		expected := Areas{{Off: 2, Len: 3}}
 		if !reflect.DeepEqual(sparse.sparseAreas, expected) {
 			t.Errorf("Expected sparse areas %v, got %v", expected, sparse.sparseAreas)
 		}
@@ -73,7 +73,7 @@ func TestSparse_Write(t *testing.T) {
 	t.Run("WriteCompleteOverlap", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 20,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 0, Len: 5},  // [0-5) sparse
 				{Off: 10, Len: 5}, // [10-15) sparse - will be completely removed
 				{Off: 18, Len: 2}, // [18-20) sparse
@@ -84,7 +84,7 @@ func TestSparse_Write(t *testing.T) {
 		sparse.Write(8, data) // [8-15) - completely covers [10-15)
 
 		// Should remove the overlapping sparse area [10-15)
-		expected := DataAreas{
+		expected := Areas{
 			{Off: 0, Len: 5},  // [0-5) unchanged
 			{Off: 18, Len: 2}, // [18-20) unchanged
 		}
@@ -97,7 +97,7 @@ func TestSparse_Write(t *testing.T) {
 	t.Run("WritePartialOverlap", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 20,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 5, Len: 10}, // [5-15) sparse
 			},
 		}
@@ -106,7 +106,7 @@ func TestSparse_Write(t *testing.T) {
 		sparse.Write(8, data) // [8-12) - overlaps middle of [5-15)
 
 		// Should split sparse area into [5-8) and [12-15)
-		expected := DataAreas{
+		expected := Areas{
 			{Off: 5, Len: 3},  // [5-8) - part before write
 			{Off: 12, Len: 3}, // [12-15) - part after write
 		}
@@ -119,7 +119,7 @@ func TestSparse_Write(t *testing.T) {
 	t.Run("WriteMultipleOverlaps", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 30,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 0, Len: 5},  // [0-5) sparse - no overlap
 				{Off: 8, Len: 4},  // [8-12) sparse - completely overlapped
 				{Off: 15, Len: 8}, // [15-23) sparse - partially overlapped
@@ -131,7 +131,7 @@ func TestSparse_Write(t *testing.T) {
 		sparse.Write(10, data) // [10-23) - overlaps [8-12) completely and [15-23) completely
 
 		// Should remove/adjust overlapping areas
-		expected := DataAreas{
+		expected := Areas{
 			{Off: 0, Len: 5},  // [0-5) unchanged
 			{Off: 8, Len: 2},  // [8-10) remaining part of [8-12) after [10-23) write
 			{Off: 25, Len: 3}, // [25-28) unchanged
@@ -145,7 +145,7 @@ func TestSparse_Write(t *testing.T) {
 	t.Run("WriteAtSparseStart", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 20,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 10, Len: 8}, // [10-18) sparse
 			},
 		}
@@ -154,7 +154,7 @@ func TestSparse_Write(t *testing.T) {
 		sparse.Write(10, data) // [10-12) - starts at sparse area beginning
 
 		// Should remove overlapping part, leave [12-18)
-		expected := DataAreas{
+		expected := Areas{
 			{Off: 12, Len: 6}, // [12-18) remaining part
 		}
 		if !reflect.DeepEqual(sparse.sparseAreas, expected) {
@@ -166,7 +166,7 @@ func TestSparse_Write(t *testing.T) {
 	t.Run("WriteAtSparseEnd", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 20,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 5, Len: 10}, // [5-15) sparse
 			},
 		}
@@ -175,7 +175,7 @@ func TestSparse_Write(t *testing.T) {
 		sparse.Write(12, data) // [12-15) - ends at sparse area end
 
 		// Should remove overlapping part, leave [5-12)
-		expected := DataAreas{
+		expected := Areas{
 			{Off: 5, Len: 7}, // [5-12) remaining part
 		}
 		if !reflect.DeepEqual(sparse.sparseAreas, expected) {
@@ -187,7 +187,7 @@ func TestSparse_Write(t *testing.T) {
 	t.Run("WriteExactMatch", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 20,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 3, Len: 2},  // [3-5) sparse
 				{Off: 10, Len: 5}, // [10-15) sparse - exact match
 				{Off: 18, Len: 1}, // [18-19) sparse
@@ -198,7 +198,7 @@ func TestSparse_Write(t *testing.T) {
 		sparse.Write(10, data) // [10-15) - exactly matches sparse area
 
 		// Should remove the exactly matching sparse area
-		expected := DataAreas{
+		expected := Areas{
 			{Off: 3, Len: 2},  // [3-5) unchanged
 			{Off: 18, Len: 1}, // [18-19) unchanged
 		}
@@ -211,7 +211,7 @@ func TestSparse_Write(t *testing.T) {
 	t.Run("WriteNoOverlap", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 20,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 5, Len: 3},  // [5-8) sparse
 				{Off: 15, Len: 3}, // [15-18) sparse
 			},
@@ -221,7 +221,7 @@ func TestSparse_Write(t *testing.T) {
 		sparse.Write(10, data) // [10-13) - no overlap with sparse areas
 
 		// Should leave sparse areas unchanged
-		expected := DataAreas{
+		expected := Areas{
 			{Off: 5, Len: 3},  // [5-8) unchanged
 			{Off: 15, Len: 3}, // [15-18) unchanged
 		}
@@ -234,7 +234,7 @@ func TestSparse_Write(t *testing.T) {
 	t.Run("WriteExtendWithSparse", func(t *testing.T) {
 		sparse := &Sparse{
 			size: 10,
-			sparseAreas: DataAreas{
+			sparseAreas: Areas{
 				{Off: 2, Len: 4}, // [2-6) sparse
 			},
 		}
@@ -246,7 +246,7 @@ func TestSparse_Write(t *testing.T) {
 		if sparse.Size() != 21 {
 			t.Errorf("Expected size 21, got %d", sparse.Size())
 		}
-		expected := DataAreas{
+		expected := Areas{
 			{Off: 2, Len: 4}, // [2-6) unchanged
 		}
 		if !reflect.DeepEqual(sparse.sparseAreas, expected) {
