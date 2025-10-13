@@ -27,7 +27,29 @@ type Memory struct {
 // Read reads data from the memory entry.
 // Returns the Areas that were not read.
 func (memory *Memory) Read(position int64, data Bytes) Areas {
-	return nil
+	if len(data) == 0 {
+		return Areas{} // Nothing to read
+	}
+
+	// Initialize unread areas with the full requested area
+	unreadAreas := Areas{Area{Off: position, Len: data.Size()}}
+
+	// For each memory area, try to satisfy parts of the read request
+	for _, memArea := range memory.areas {
+		readStart := max(position, memArea.Off)
+		readEnd := min(position+data.Size(), memArea.Off+memArea.Data.Size())
+		if readStart >= readEnd {
+			continue // No overlap
+		}
+
+		// Copy data from memory area to output buffer
+		copy(data[readStart-position:readEnd-position], memArea.Data[readStart-memArea.Off:readEnd-memArea.Off])
+
+		// Adjust unread areas
+		unreadAreas = unreadAreas.RemoveOverlappingAreas(Area{Off: readStart, Len: readEnd - readStart})
+	}
+
+	return unreadAreas
 }
 
 // import (

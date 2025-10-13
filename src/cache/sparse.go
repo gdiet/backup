@@ -24,8 +24,7 @@ func (sparse *Sparse) Read(position int64, data Bytes) (Areas, int) {
 	data = data[:totalReadSize]
 
 	// Initialize non-sparse areas with the full requested area
-	var nonSparseAreas Areas
-	nonSparseAreas = append(nonSparseAreas, Area{Off: position, Len: totalReadSize})
+	nonSparseAreas := Areas{Area{Off: position, Len: totalReadSize}}
 
 	// Process sparse areas
 	for _, sparseArea := range sparse.sparseAreas {
