@@ -112,6 +112,11 @@ func (memory *Memory) Write(position int64, data Bytes, maxMergeSize int64) {
 	memory.areas = newAreas
 }
 
+// Close clears the memory entry.
+func (memory *Memory) Close() {
+	memory.areas = nil
+}
+
 // tryMergingDataAreas merges two overlapping or adjacent data areas into one.
 // Returns the merged area and true if merging was successful.
 func tryMergingDataAreas(current, existing DataArea, maxMergeSize int64) (DataArea, bool) {
