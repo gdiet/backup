@@ -1,6 +1,6 @@
 package cache
 
-// Sparse manages the sparse parts of a cached file and the actual file size.
+// Sparse is a file cache layer that manages the sparse parts of a cached file and the actual file size.
 type Sparse struct {
 	size        int64
 	sparseAreas DataAreas
@@ -73,4 +73,18 @@ func (sparse *Sparse) Truncate(newSize int64) bool {
 	sparse.size = newSize
 	sparse.sparseAreas = filteredAreas
 	return true // Truncation occurred
+}
+
+// Write updates the sparse entry.
+func (sparse *Sparse) Write(position int64, data Bytes) {
+	if data.Size() == 0 {
+		return // Nothing to write
+	}
+	endPosition := position + data.Size()
+	// Update size if writing beyond current size
+	if endPosition > sparse.size {
+		sparse.size = endPosition
+	}
+	// Remove overlapping sparse areas
+	sparse.sparseAreas = sparse.sparseAreas.RemoveOverlappingAreas(DataArea{Off: position, Len: data.Size()})
 }
