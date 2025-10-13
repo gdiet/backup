@@ -28,7 +28,7 @@ type Memory struct {
 // Returns the Areas that were not read.
 func (memory *Memory) Read(position int64, data Bytes) Areas {
 	if len(data) == 0 {
-		return Areas{} // Nothing to read
+		return nil // Nothing to read
 	}
 
 	// Initialize unread areas with the full requested area
@@ -50,6 +50,22 @@ func (memory *Memory) Read(position int64, data Bytes) Areas {
 	}
 
 	return unreadAreas
+}
+
+// Truncate changes the size of the memory entry, adjusting cached areas as needed.
+func (memory *Memory) Truncate(newSize int64) {
+	var filteredAreas DataAreas
+	for _, area := range memory.areas {
+		if area.Off >= newSize {
+			continue // Area starts beyond new size, remove it
+		}
+		if area.Off+area.Data.Size() > newSize {
+			area.Data = area.Data[:newSize-area.Off] // Truncate area data
+		}
+		filteredAreas = append(filteredAreas, area)
+	}
+
+	memory.areas = filteredAreas
 }
 
 // import (

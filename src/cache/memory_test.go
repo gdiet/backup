@@ -28,7 +28,7 @@ func TestMemory_Read(t *testing.T) {
 			position:      0,
 			dataLen:       0,
 			expectedData:  []byte{},
-			expectedAreas: Areas{}, // Implementation returns Areas{}, not nil
+			expectedAreas: nil, // Implementation returns nil for empty reads
 		},
 		{
 			name:          "ExactMatch",
