@@ -50,9 +50,12 @@ func TestTieredWriteToMemory(t *testing.T) {
 
 	// Position 0 with size 10 -> (0 + 10) % 2 = 0 -> goes to memory
 	data := Bytes([]byte("0123456789"))
-	err := tiered.Write(0, data, 1024)
+	memoryDelta, err := tiered.Write(0, data, 1024)
 	if err != nil {
 		t.Errorf(writeFailedMsg, err)
+	}
+	if memoryDelta <= 0 {
+		t.Errorf("Expected positive memory delta from write to memory, got %d", memoryDelta)
 	}
 }
 
@@ -69,9 +72,13 @@ func TestTieredWriteToDisk(t *testing.T) {
 
 	// Position 1 with size 10 -> (1 + 10) % 2 = 1 -> goes to disk
 	data := Bytes([]byte("ABCDEFGHIJ"))
-	err := tiered.Write(1, data, 1024)
+	memoryDelta, err := tiered.Write(1, data, 1024)
 	if err != nil {
 		t.Errorf(writeFailedMsg, err)
+	}
+	// Disk writes should not change memory usage (or might free some)
+	if memoryDelta > 0 {
+		t.Errorf("Expected zero or negative memory delta from disk write, got %d", memoryDelta)
 	}
 }
 
@@ -85,20 +92,21 @@ func TestTieredWriteMemoryThenTruncate(t *testing.T) {
 
 	// First write to memory (position 0 + size 10 = even -> memory)
 	data := Bytes([]byte("0123456789"))
-	err := tiered.Write(0, data, 1024)
+	memoryDelta, err := tiered.Write(0, data, 1024)
 	if err != nil {
 		t.Errorf(writeFailedMsg, err)
 	}
+	t.Logf("Memory delta from write: %d", memoryDelta)
 
 	// Then truncate to smaller size
-	memoryDelta, err := tiered.Truncate(5)
+	truncateDelta, err := tiered.Truncate(5)
 	if err != nil {
 		t.Errorf("Truncate() failed: %v", err)
 	}
 
 	// Should have freed some memory (negative delta)
-	if memoryDelta >= 0 {
-		t.Errorf("Expected negative memory delta from truncate, got %d", memoryDelta)
+	if truncateDelta >= 0 {
+		t.Errorf("Expected negative memory delta from truncate, got %d", truncateDelta)
 	}
 }
 
@@ -113,10 +121,11 @@ func TestTieredMemoryUsageIntegration(t *testing.T) {
 	// Test sequence: Write to memory, write to disk, then cleanup
 	t.Log("Writing data that should go to memory")
 	memoryData := Bytes([]byte("MemoryData")) // pos 0 + size 10 = 10 % 2 = 0 -> memory
-	err := tiered.Write(0, memoryData, 1024)
+	writeMemoryDelta, err := tiered.Write(0, memoryData, 1024)
 	if err != nil {
 		t.Fatalf(writeFailedMsg, err)
 	}
+	t.Logf("Memory delta from write: %d", writeMemoryDelta)
 
 	// Skip disk write test for now due to file initialization requirement
 	t.Log("Skipping disk write - requires file initialization")

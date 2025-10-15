@@ -61,9 +61,10 @@ func (tiered *Tiered) Truncate(newSize int64) (int, error) {
 }
 
 // Write writes data to the cache entry at the specified position.
-func (tiered *Tiered) Write(position int64, data Bytes, maxMergeSize int64) error {
+// Returns the memory usage change (negative if memory was freed, positive if more memory was used).
+func (tiered *Tiered) Write(position int64, data Bytes, maxMergeSize int64) (int, error) {
 	if len(data) == 0 {
-		return nil // Nothing to write
+		return 0, nil // Nothing to write, no memory change
 	}
 
 	// Step 1: Write to sparse layer - this updates size and removes sparse areas
@@ -76,23 +77,24 @@ func (tiered *Tiered) Write(position int64, data Bytes, maxMergeSize int64) erro
 	if hasMemory {
 		// Write to memory cache and track memory usage change
 		memoryDelta := tiered.memory.Write(position, data, maxMergeSize)
-		_ = memoryDelta // Memory usage tracked but not yet exposed to caller
+		return memoryDelta, nil
 	} else {
 		// Memory full - check if there's existing data at position and remove it
 		existingAreas := tiered.memory.Read(position, make(Bytes, data.Size()))
+		totalMemoryDelta := 0
 		if len(existingAreas) == 0 {
 			// Data exists at this position in memory, remove it by truncating and rewriting
 			memoryDelta := tiered.memory.Truncate(position)
-			_ = memoryDelta // Memory freed from removal
+			totalMemoryDelta += memoryDelta // Memory freed from removal
 		}
 
 		// Write directly to disk
 		if err := tiered.disk.Write(position, data); err != nil {
-			return err
+			return totalMemoryDelta, err
 		}
-	}
 
-	return nil
+		return totalMemoryDelta, nil
+	}
 }
 
 // Close clears all cached data from memory and closes disk file.
