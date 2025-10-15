@@ -7,7 +7,8 @@ import (
 
 // Disk is a file cache layer that stores parts of a cached file on disk.
 type Disk struct {
-	file *os.File
+	file     *os.File
+	filePath string
 }
 
 func (disk *Disk) Read(off int64, data Bytes) error {
@@ -44,17 +45,31 @@ func (disk *Disk) Read(off int64, data Bytes) error {
 }
 
 // Truncate changes the size cache file.
+// Invariant: This method should only be called when the file is already open
+// (i.e., after previous Write operations). For the cache architecture,
+// we don't need to truncate files that were never written to.
 func (disk *Disk) Truncate(newSize int64) error {
-	if err := disk.file.Truncate(newSize); err != nil {
-		return err
+	if disk.file == nil {
+		return nil // File not open - nothing to truncate, which is fine
 	}
-	return nil
+
+	return disk.file.Truncate(newSize)
 }
 
 // Write writes data to the cache file at the specified position.
-func (disk Disk) Write(off int64, data Bytes) error {
+// Opens the file automatically if it's not already open (for both reading and writing).
+func (disk *Disk) Write(off int64, data Bytes) error {
+	// Open file if not already open
 	if disk.file == nil {
-		panic("TODO: wir müssen die Datei erst öffnen")
+		if disk.filePath == "" {
+			return io.ErrClosedPipe // No file path configured
+		}
+
+		file, err := os.OpenFile(disk.filePath, os.O_CREATE|os.O_RDWR, 0644)
+		if err != nil {
+			return err
+		}
+		disk.file = file
 	}
 
 	totalWritten := 0
@@ -77,15 +92,19 @@ func (disk Disk) Write(off int64, data Bytes) error {
 
 // Close closes the underlying file.
 func (disk *Disk) Close() error {
-	if disk.file != nil {
-		err := disk.file.Sync()
-		if err != nil {
-			err = disk.file.Close()
-			if err != nil {
-				disk.file = nil
-			}
-		}
-		return err
+	file := disk.file
+	if file == nil {
+		return nil
 	}
-	return nil
+	disk.file = nil
+
+	// Try to sync first - preserve sync error if close succeeds
+	syncErr := file.Sync()
+	closeErr := file.Close()
+
+	// Return the more critical error (close failure is usually more severe)
+	if closeErr != nil {
+		return closeErr
+	}
+	return syncErr
 }
