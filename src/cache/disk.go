@@ -52,13 +52,27 @@ func (disk *Disk) Truncate(newSize int64) error {
 }
 
 // Write writes data to the cache file at the specified position.
-func (disk *Disk) Write(off int64, data Bytes) error {
+func (disk Disk) Write(off int64, data Bytes) error {
 	if disk.file == nil {
 		panic("TODO: wir müssen die Datei erst öffnen")
 	}
 
-	_, err := disk.file.WriteAt(data, off)
-	return err
+	totalWritten := 0
+	for totalWritten < len(data) {
+		bytesWritten, err := disk.file.WriteAt(data[totalWritten:], off+int64(totalWritten))
+		if err != nil {
+			return err
+		}
+
+		if bytesWritten == 0 {
+			// No progress made - avoid infinite loop
+			return io.ErrShortWrite
+		}
+
+		totalWritten += bytesWritten
+	}
+
+	return nil
 }
 
 // Close closes the underlying file.
