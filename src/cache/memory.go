@@ -53,30 +53,43 @@ func (memory *Memory) Read(position int64, data Bytes) Areas {
 }
 
 // Truncate changes the size of the memory entry, adjusting cached areas as needed.
-func (memory *Memory) Truncate(newSize int64) {
+// Returns the change in memory usage (bytes allocated) caused by this operation.
+func (memory *Memory) Truncate(newSize int64) int {
+	memoryFreed := 0 // Track only the memory that gets freed
 	var filteredAreas DataAreas
+
 	for _, area := range memory.areas {
-		if area.Off >= newSize {
-			continue // Area starts beyond new size, remove it
+		maxIncluded := newSize - area.Off
+
+		if maxIncluded <= 0 {
+			// Area starts beyond new size, remove it entirely
+			memoryFreed += len(area.Data)
+			continue
 		}
-		if area.Off+area.Data.Size() > newSize {
-			area.Data = area.Data[:newSize-area.Off] // Truncate area data
+		if area.Data.Size() > maxIncluded {
+			// Area extends beyond new size, truncate it
+			memoryFreed += len(area.Data) - int(maxIncluded)
+			area.Data = area.Data[:maxIncluded]
 		}
 		filteredAreas = append(filteredAreas, area)
 	}
 
 	memory.areas = filteredAreas
+	return -memoryFreed // Return negative value since memory was freed
 }
 
 // Write caches the data in the memory at the specified position, overwriting and merging where needed.
 // Required invariants: Sorted by Offset, Non-overlapping.
-func (memory *Memory) Write(position int64, data Bytes, maxMergeSize int64) {
+// Returns the change in memory usage (bytes allocated) caused by this operation.
+func (memory *Memory) Write(position int64, data Bytes, maxMergeSize int64) int {
 	if len(data) == 0 {
-		return // Nothing to write
+		return 0 // Nothing to write, no memory change
 	}
-	// Add the new area at the correct position
+
+	memoryDelta := len(data) // Start with the new data being added
 	var newAreas DataAreas
 	current := DataArea{Off: position, Data: data}
+
 	for index, area := range memory.areas {
 		if current.Off > area.Off+area.Data.Size() {
 			// Current starts after end of area, keep area
@@ -92,11 +105,17 @@ func (memory *Memory) Write(position int64, data Bytes, maxMergeSize int64) {
 		}
 		// There is overlap or adjacency, try to merge areas
 		if merged, canMerge := tryMergingDataAreas(current, area, maxMergeSize); canMerge {
+			// Account for the area being replaced by the merge
+			memoryDelta -= len(area.Data)    // Subtract existing area that gets replaced
+			memoryDelta -= len(current.Data) // Subtract current area (already counted)
+			memoryDelta += len(merged.Data)  // Add merged result
 			current = merged
 			continue
 		} else {
-			// Trim areas to avoid overlap
+			// Trim areas to avoid overlap - area will be replaced by trimmed version
 			first, second := trimOverlappingAreas(current, area)
+			memoryDelta -= len(area.Data)   // Subtract original area
+			memoryDelta += len(second.Data) // Add trimmed area back
 			newAreas = append(newAreas, first, second)
 			newAreas = append(newAreas, memory.areas[index+1:]...)
 			current = DataArea{} // Mark as processed
@@ -110,11 +129,19 @@ func (memory *Memory) Write(position int64, data Bytes, maxMergeSize int64) {
 	}
 
 	memory.areas = newAreas
+	return memoryDelta
 }
 
 // Close clears the memory entry.
-func (memory *Memory) Close() {
+// Returns the change in memory usage (bytes allocated) caused by this operation.
+func (memory *Memory) Close() int {
+	// Calculate current memory usage before clearing
+	totalBytes := 0
+	for _, area := range memory.areas {
+		totalBytes += len(area.Data)
+	}
 	memory.areas = nil
+	return -totalBytes // All memory is freed, so negative change
 }
 
 // tryMergingDataAreas merges two overlapping or adjacent data areas into one.

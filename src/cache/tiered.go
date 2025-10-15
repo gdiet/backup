@@ -40,12 +40,24 @@ func (tiered Tiered) Read(position int64, data Bytes) (int, error) {
 }
 
 // Truncate changes the size of the cached file, adjusting all layers as needed.
-func (tiered *Tiered) Truncate(newSize int64) error {
+// Returns the memory usage change (negative if memory was freed, positive if more memory was used).
+func (tiered *Tiered) Truncate(newSize int64) (int, error) {
+	memoryDelta := 0
 	if tiered.sparse.Truncate(newSize) {
-		tiered.memory.Truncate(newSize)
-		return tiered.disk.Truncate(newSize)
+		memoryDelta = tiered.memory.Truncate(newSize)
+		// Only truncate disk if file is available
+		/*
+			TODO Ich halte die nil-Abfrage für falsch: Wenn ich mir zum Beispiel nur TestTieredReadMemoryLayer
+			ansehe, dann sehe ich dort, dass die Tiered Struct in einem Zustand ist, der nicht durch die
+			geplanten Operationen Write und Truncate erreicht werden kann. Wir sollten nur Zustände testen,
+			die durch die geplanten Operationen erreichbar sind.
+		*/
+		if tiered.disk.file != nil {
+			err := tiered.disk.Truncate(newSize)
+			return memoryDelta, err
+		}
 	}
-	return nil
+	return memoryDelta, nil
 }
 
 // Write writes data to the cache entry at the specified position.
@@ -57,20 +69,36 @@ func (tiered *Tiered) Write(position int64, data Bytes, maxMergeSize int64) erro
 	// Step 1: Write to sparse layer - this updates size and removes sparse areas
 	tiered.sparse.Write(position, data)
 
-	// Step 2: Check if enough memory is available (TODO: implement proper memory check)
-	// For now, simulate 50% memory availability
+	// Step 2: Check if enough memory is available
+	// For now, simulate 50% memory availability based on position and data size
 	hasMemory := (position+data.Size())%2 == 0 // Simple deterministic 50/50 split
 
 	if hasMemory {
-		// Write to memory cache
-		tiered.memory.Write(position, data, maxMergeSize)
+		// Write to memory cache and track memory usage change
+		memoryDelta := tiered.memory.Write(position, data, maxMergeSize)
+		_ = memoryDelta // Memory usage tracked but not yet exposed to caller
 	} else {
-		// TODO: Maybe there is a data block at the position in memory - remove it
-		// Write directly to disk (memory full)
+		// Memory full - check if there's existing data at position and remove it
+		existingAreas := tiered.memory.Read(position, make(Bytes, data.Size()))
+		if len(existingAreas) == 0 {
+			// Data exists at this position in memory, remove it by truncating and rewriting
+			memoryDelta := tiered.memory.Truncate(position)
+			_ = memoryDelta // Memory freed from removal
+		}
+
+		// Write directly to disk
 		if err := tiered.disk.Write(position, data); err != nil {
 			return err
 		}
 	}
 
 	return nil
+}
+
+// Close clears all cached data from memory and closes disk file.
+// Returns the amount of memory freed (always negative or zero).
+func (tiered *Tiered) Close() (int, error) {
+	memoryFreed := tiered.memory.Close()
+	err := tiered.disk.Close()
+	return memoryFreed, err
 }

@@ -55,8 +55,11 @@ func TestMemoryClose(t *testing.T) {
 				return
 			}
 
-			// Call Close
-			memory.Close()
+			// Calculate initial memory usage
+			initialMemoryUsage := memory.calculateMemoryUsage()
+
+			// Call Close and capture memory change
+			memoryChange := memory.Close()
 
 			// Verify areas are cleared
 			if memory.areas != nil {
@@ -66,6 +69,18 @@ func TestMemoryClose(t *testing.T) {
 			// Verify length is 0
 			if len(memory.areas) != 0 {
 				t.Errorf("Expected 0 areas after Close(), got %d", len(memory.areas))
+			}
+
+			// Verify memory change is negative (memory freed)
+			expectedMemoryChange := -initialMemoryUsage
+			if memoryChange != expectedMemoryChange {
+				t.Errorf("Close() memory change = %d, want %d", memoryChange, expectedMemoryChange)
+			}
+
+			// Verify final memory usage is 0
+			finalMemoryUsage := memory.calculateMemoryUsage()
+			if finalMemoryUsage != 0 {
+				t.Errorf("Expected 0 memory usage after Close(), got %d", finalMemoryUsage)
 			}
 		})
 	}
