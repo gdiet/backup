@@ -1,0 +1,9 @@
+{
+  "go.coverageOptions": "showCoveredCodeOnly",
+  "go.coverMode": "count",
+  "go.coverOnSave": true,
+  "go.coverageDecorator": {
+    "coveredHighlightColor": "rgba(64,128,128,0.1)",
+    "coveredBorderColor": "rgba(64,128,128,0.1)"
+  }
+}
