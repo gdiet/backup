@@ -2,7 +2,6 @@ package cache
 
 import (
 	"io"
-	"os"
 	"testing"
 )
 
@@ -11,16 +10,20 @@ const (
 	createFileFailMsg = "Failed to create test file: %v"
 	openFileFailMsg   = "Failed to open test file: %v"
 	tenBytesReadMsg   = "Expected 10 bytes read, got %d"
+	cacheFileName     = "/cache.dat"
 )
 
 // TestTieredReadBasic tests basic Tiered.Read functionality
 func TestTieredReadBasic(t *testing.T) {
-	// Test empty cache
+	// Test empty cache with proper disk initialization
+	tempDir := t.TempDir()
 	tiered := Tiered{
 		sparse: Sparse{size: 100},
 		memory: Memory{},
-		disk:   Disk{},
+		disk:   Disk{filePath: tempDir + cacheFileName},
 	}
+	// Ensure disk file exists for read
+	_ = tiered.disk.Write(0, make([]byte, 100))
 
 	data := make([]byte, 10)
 	bytesRead, err := tiered.Read(0, data)
@@ -41,11 +44,14 @@ func TestTieredReadBasic(t *testing.T) {
 
 // TestTieredReadZeroLength tests zero-length reads
 func TestTieredReadZeroLength(t *testing.T) {
+	tempDir := t.TempDir()
 	tiered := Tiered{
 		sparse: Sparse{size: 100},
 		memory: Memory{},
-		disk:   Disk{},
+		disk:   Disk{filePath: tempDir + cacheFileName},
 	}
+	// Ensure disk file exists for read
+	_ = tiered.disk.Write(0, make([]byte, 100))
 
 	data := make([]byte, 0)
 	bytesRead, err := tiered.Read(0, data)
@@ -60,11 +66,14 @@ func TestTieredReadZeroLength(t *testing.T) {
 
 // TestTieredReadEOF tests reading beyond EOF
 func TestTieredReadEOF(t *testing.T) {
+	tempDir := t.TempDir()
 	tiered := Tiered{
 		sparse: Sparse{size: 50},
 		memory: Memory{},
-		disk:   Disk{},
+		disk:   Disk{filePath: tempDir + cacheFileName},
 	}
+	// Ensure disk file exists for read
+	_ = tiered.disk.Write(0, make([]byte, 50))
 
 	data := make([]byte, 10)
 	bytesRead, err := tiered.Read(45, data)
@@ -82,11 +91,14 @@ func TestTieredReadMemoryLayer(t *testing.T) {
 	memory := Memory{}
 	memory.Write(10, []byte("Hello"), 1000)
 
+	tempDir := t.TempDir()
 	tiered := Tiered{
 		sparse: Sparse{size: 100},
 		memory: memory,
-		disk:   Disk{},
+		disk:   Disk{filePath: tempDir + cacheFileName},
 	}
+	// Ensure disk file exists for read
+	_ = tiered.disk.Write(0, make([]byte, 100))
 
 	data := make([]byte, 10)
 	bytesRead, err := tiered.Read(8, data)
@@ -114,26 +126,20 @@ func TestTieredReadWithDiskOnly(t *testing.T) {
 	testFile := tempDir + "/tiered_test.dat"
 
 	diskData := []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	err := os.WriteFile(testFile, diskData, 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	file, err := os.Open(testFile)
-	if err != nil {
-		t.Fatalf("Failed to open test file: %v", err)
-	}
-	defer file.Close()
-
 	tiered := Tiered{
 		sparse: Sparse{size: int64(len(diskData))},
 		memory: Memory{},
-		disk:   Disk{file: file},
+		disk:   Disk{filePath: testFile},
+	}
+	// Schreibe die Daten mit Disk.Write
+	err := tiered.disk.Write(0, diskData)
+	if err != nil {
+		t.Fatalf("Disk.Write failed: %v", err)
 	}
 
+	// Lese die Daten mit Tiered.Read
 	data := make([]byte, 5)
 	bytesRead, err := tiered.Read(0, data)
-
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}
@@ -141,7 +147,7 @@ func TestTieredReadWithDiskOnly(t *testing.T) {
 		t.Errorf("Expected 5 bytes read, got %d", bytesRead)
 	}
 	if string(data) != "ABCDE" {
-		t.Errorf("Expected 'ABCDE', got %q", string(data))
+		t.Errorf("Expected 'ABCDE', got '%s'", string(data))
 	}
 }
 
@@ -151,37 +157,32 @@ func TestTieredReadMemoryOverridesDisk(t *testing.T) {
 	testFile := tempDir + "/override_test.dat"
 
 	diskData := []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	err := os.WriteFile(testFile, diskData, 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	file, err := os.Open(testFile)
-	if err != nil {
-		t.Fatalf("Failed to open test file: %v", err)
-	}
-	defer file.Close()
-
 	memory := Memory{}
 	memory.Write(2, []byte("123"), 1000)
 
 	tiered := Tiered{
 		sparse: Sparse{size: int64(len(diskData))},
 		memory: memory,
-		disk:   Disk{file: file},
+		disk:   Disk{filePath: testFile},
+	}
+	// Schreibe die Daten mit Disk.Write
+	err := tiered.disk.Write(0, diskData)
+	if err != nil {
+		t.Fatalf("Disk.Write failed: %v", err)
 	}
 
+	// Verify disk read via Tiered.Read
 	data := make([]byte, 7)
 	bytesRead, err := tiered.Read(0, data)
-
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}
 	if bytesRead != 7 {
 		t.Errorf("Expected 7 bytes read, got %d", bytesRead)
 	}
-	if string(data) != "AB123FG" {
-		t.Errorf("Expected 'AB123FG', got %q", string(data))
+	expected := []byte("AB123FG")
+	if string(data) != string(expected) {
+		t.Errorf("Expected '%s', got '%s'", string(expected), string(data))
 	}
 }
 
@@ -191,17 +192,6 @@ func TestTieredReadSparseWithDisk(t *testing.T) {
 	testFile := tempDir + "/sparse_test.dat"
 
 	diskData := []byte("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	err := os.WriteFile(testFile, diskData, 0644)
-	if err != nil {
-		t.Fatalf("Failed to create test file: %v", err)
-	}
-
-	file, err := os.Open(testFile)
-	if err != nil {
-		t.Fatalf("Failed to open test file: %v", err)
-	}
-	defer file.Close()
-
 	sparse := Sparse{
 		size:        int64(len(diskData)),
 		sparseAreas: Areas{{Off: 5, Len: 5}}, // Bytes 5-9 are sparse
@@ -210,22 +200,26 @@ func TestTieredReadSparseWithDisk(t *testing.T) {
 	tiered := Tiered{
 		sparse: sparse,
 		memory: Memory{},
-		disk:   Disk{file: file},
+		disk:   Disk{filePath: testFile},
+	}
+	// Schreibe die Daten mit Disk.Write
+	err := tiered.disk.Write(0, diskData)
+	if err != nil {
+		t.Fatalf("Disk.Write failed: %v", err)
 	}
 
+	// Verify disk read via Tiered.Read
 	data := make([]byte, 10)
 	bytesRead, err := tiered.Read(3, data)
-
 	if err != nil {
 		t.Errorf("Expected no error, got: %v", err)
 	}
 	if bytesRead != 10 {
 		t.Errorf("Expected 10 bytes read, got %d", bytesRead)
 	}
-
 	// Expected: "DE" + 5 zeros + "KLM"
-	expected := "DE\x00\x00\x00\x00\x00KLM"
-	if string(data) != expected {
-		t.Errorf("Expected %q, got %q", expected, string(data))
+	expected := []byte{'D', 'E', 0, 0, 0, 0, 0, 'K', 'L', 'M'}
+	if string(data) != string(expected) {
+		t.Errorf("Expected %q, got %q", string(expected), string(data))
 	}
 }

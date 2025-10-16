@@ -27,6 +27,7 @@ func (tiered Tiered) Read(position int64, data Bytes) (int, error) {
 		// Step 3: Read from disk layer for remaining unread areas
 		for _, remainingArea := range remainingAreas {
 			remainingAreaData := nonSparseAreaData[remainingArea.Off-nonSparseArea.Off : remainingArea.Off-nonSparseArea.Off+remainingArea.Len]
+			// Invariant: disk.file is always open here
 			if err := tiered.disk.Read(remainingArea.Off, remainingAreaData); err != nil {
 				return totalRead, err
 			}
@@ -45,17 +46,8 @@ func (tiered *Tiered) Truncate(newSize int64) (int, error) {
 	memoryDelta := 0
 	if tiered.sparse.Truncate(newSize) {
 		memoryDelta = tiered.memory.Truncate(newSize)
-		// Only truncate disk if file is available
-		/*
-			TODO Ich halte die nil-Abfrage für falsch: Wenn ich mir zum Beispiel nur TestTieredReadMemoryLayer
-			ansehe, dann sehe ich dort, dass die Tiered Struct in einem Zustand ist, der nicht durch die
-			geplanten Operationen Write und Truncate erreicht werden kann. Wir sollten nur Zustände testen,
-			die durch die geplanten Operationen erreichbar sind.
-		*/
-		if tiered.disk.file != nil {
-			err := tiered.disk.Truncate(newSize)
-			return memoryDelta, err
-		}
+		err := tiered.disk.Truncate(newSize)
+		return memoryDelta, err
 	}
 	return memoryDelta, nil
 }

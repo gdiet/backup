@@ -4,15 +4,21 @@ import (
 	"testing"
 )
 
+// Helper function to create a properly initialized Tiered for testing
+func createTestTiered(t *testing.T) *Tiered {
+	tempDir := t.TempDir()
+	return &Tiered{
+		sparse: Sparse{size: 0},
+		memory: Memory{areas: nil},
+		disk:   Disk{filePath: tempDir + "/cache.dat"},
+	}
+}
+
 const writeFailedMsg = "Write() failed: %v"
 
 // TestTieredCloseEmpty tests that Close on empty tiered returns zero memory freed.
 func TestTieredCloseEmpty(t *testing.T) {
-	tiered := &Tiered{
-		sparse: Sparse{size: 0},
-		memory: Memory{areas: nil},
-		disk:   Disk{},
-	}
+	tiered := createTestTiered(t)
 
 	memoryDelta, err := tiered.Close()
 	if err != nil {
@@ -62,12 +68,12 @@ func TestTieredWriteToMemory(t *testing.T) {
 // TestTieredWriteToDisk tests that writes going to disk work correctly.
 // NOTE: Currently skipped because Disk layer requires file initialization.
 func TestTieredWriteToDisk(t *testing.T) {
-	t.Skip("Skipping disk write test - Disk layer requires file initialization (TODO)")
-
+	tempDir := t.TempDir()
+	filePath := tempDir + "/cache_disk_test.dat"
 	tiered := &Tiered{
 		sparse: Sparse{size: 0},
 		memory: Memory{areas: nil},
-		disk:   Disk{},
+		disk:   Disk{filePath: filePath},
 	}
 
 	// Position 1 with size 10 -> (1 + 10) % 2 = 1 -> goes to disk
@@ -79,6 +85,16 @@ func TestTieredWriteToDisk(t *testing.T) {
 	// Disk writes should not change memory usage (or might free some)
 	if memoryDelta > 0 {
 		t.Errorf("Expected zero or negative memory delta from disk write, got %d", memoryDelta)
+	}
+
+	// Verify that the data was written to disk using Disk.Read
+	readBack := make([]byte, 10)
+	err = tiered.disk.Read(1, readBack)
+	if err != nil {
+		t.Errorf("Disk.Read failed: %v", err)
+	}
+	if string(readBack) != "ABCDEFGHIJ" {
+		t.Errorf("Expected 'ABCDEFGHIJ' on disk, got '%s'", string(readBack))
 	}
 }
 

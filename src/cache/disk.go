@@ -11,22 +11,10 @@ type Disk struct {
 	filePath string
 }
 
+// Read reads data from the cache file.
+// Invariant: The file must already be open (i.e., Write was called before).
+// This method should only be called after previous Write operations.
 func (disk *Disk) Read(off int64, data Bytes) error {
-	/*
-		TODO Ich halte die nil-Abfrage für falsch: Wenn ich mir zum Beispiel nur TestTieredReadMemoryLayer
-		ansehe, dann sehe ich dort, dass die Tiered Struct in einem Zustand ist, der nicht durch die
-		geplanten Operationen Write und Truncate erreicht werden kann. Wir sollten nur Zustände testen,
-		die durch die geplanten Operationen erreichbar sind.
-	*/
-
-	// If no file is available, fill with zeros (cache miss)
-	if disk.file == nil {
-		for i := range data {
-			data[i] = 0
-		}
-		return nil
-	}
-
 	bytesRead, err := disk.file.ReadAt(data, off)
 
 	// EOF is expected when reading beyond file end - not an error for us
