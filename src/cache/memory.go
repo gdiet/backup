@@ -85,7 +85,7 @@ type memory struct {
 // }
 
 // removeOverlaps removes overlaps of two areas. Areas must overlap.
-// Returns the areas ordered by position.
+// Returns the 1..3 resulting areas ordered by position.
 func removeOverlaps(topLayer, bottomLayer dataArea) dataAreas {
 	deltaPosition := bottomLayer.position - topLayer.position
 	deltaEnd := deltaPosition + len(bottomLayer.data) - len(topLayer.data)
