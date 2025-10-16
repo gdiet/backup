@@ -1,4 +1,4 @@
-package cache
+package cache_old2
 
 // Test helper functions for Memory testing.
 // These functions are only compiled when running tests (due to _test.go suffix naming convention).

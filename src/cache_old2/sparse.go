@@ -1,4 +1,4 @@
-package cache
+package cache_old2
 
 // Sparse is a file cache layer that manages the sparse parts of a cached file and the actual file size.
 type Sparse struct {

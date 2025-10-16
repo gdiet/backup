@@ -1,4 +1,4 @@
-package cache
+package cache_old2
 
 // Area represents a contiguous area of data in a file.
 // Invariant: Length must be >= 0 (non-negative).

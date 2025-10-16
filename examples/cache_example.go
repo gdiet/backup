@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gdiet/backup/src/cache"
+	"github.com/gdiet/backup/src/cache_old2"
 )
 
 func main() {
 	// Create a new file cache in /tmp/cache-example
-	cache, err := cache.NewFileCache("/tmp/cache-example")
+	cache, err := cache_old2.NewFileCache("/tmp/cache-example")
 	if err != nil {
 		log.Fatalf("Failed to create cache: %v", err)
 	}
