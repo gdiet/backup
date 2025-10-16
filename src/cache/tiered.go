@@ -55,38 +55,23 @@ func (tiered *Tiered) Truncate(newSize int64) (int, error) {
 
 // Write writes data to the cache entry at the specified position.
 // Returns the memory usage change (negative if memory was freed, positive if more memory was used).
-func (tiered *Tiered) Write(position int64, data Bytes, maxMergeSize int64) (int, error) {
+func (tiered *Tiered) Write(position int64, data Bytes, storeInMemory bool, maxMergeSize int64) (int, error) {
 	if len(data) == 0 {
 		return 0, nil // Nothing to write, no memory change
 	}
 
-	// Step 1: Write to sparse layer - this updates size and removes sparse areas
+	// Update sparse layer (updates size and removes sparse areas)
 	tiered.sparse.Write(position, data)
 
-	// Step 2: Check if enough memory is available
-	// For now, simulate 50% memory availability based on position and data size
-	hasMemory := (position+data.Size())%2 == 0 // Simple deterministic 50/50 split
-
-	if hasMemory {
-		// Write to memory cache and track memory usage change
+	if storeInMemory {
+		// Either write to memory cache
 		memoryDelta := tiered.memory.Write(position, data, maxMergeSize)
 		return memoryDelta, nil
 	} else {
-		// Memory full - check if there's existing data at position and remove it
-		existingAreas := tiered.memory.Read(position, make(Bytes, data.Size()))
-		totalMemoryDelta := 0
-		if len(existingAreas) == 0 {
-			// Data exists at this position in memory, remove it by truncating and rewriting
-			memoryDelta := tiered.memory.Truncate(position)
-			totalMemoryDelta += memoryDelta // Memory freed from removal
-		}
-
-		// Write directly to disk
-		if err := tiered.disk.Write(position, data); err != nil {
-			return totalMemoryDelta, err
-		}
-
-		return totalMemoryDelta, nil
+		// Or write to disk, clearing any overlapping memory areas
+		memoryDelta := tiered.memory.Clear(Area{Off: position, Len: data.Size()})
+		err := tiered.disk.Write(position, data)
+		return memoryDelta, err
 	}
 }
 

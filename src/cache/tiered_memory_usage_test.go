@@ -56,7 +56,7 @@ func TestTieredWriteToMemory(t *testing.T) {
 
 	// Position 0 with size 10 -> (0 + 10) % 2 = 0 -> goes to memory
 	data := Bytes([]byte("0123456789"))
-	memoryDelta, err := tiered.Write(0, data, 1024)
+	memoryDelta, err := tiered.Write(0, data, true, 1024)
 	if err != nil {
 		t.Errorf(writeFailedMsg, err)
 	}
@@ -78,7 +78,7 @@ func TestTieredWriteToDisk(t *testing.T) {
 
 	// Position 1 with size 10 -> (1 + 10) % 2 = 1 -> goes to disk
 	data := Bytes([]byte("ABCDEFGHIJ"))
-	memoryDelta, err := tiered.Write(1, data, 1024)
+	memoryDelta, err := tiered.Write(1, data, false, 1024)
 	if err != nil {
 		t.Errorf(writeFailedMsg, err)
 	}
@@ -108,7 +108,7 @@ func TestTieredWriteMemoryThenTruncate(t *testing.T) {
 
 	// First write to memory (position 0 + size 10 = even -> memory)
 	data := Bytes([]byte("0123456789"))
-	memoryDelta, err := tiered.Write(0, data, 1024)
+	memoryDelta, err := tiered.Write(0, data, true, 1024)
 	if err != nil {
 		t.Errorf(writeFailedMsg, err)
 	}
@@ -137,7 +137,7 @@ func TestTieredMemoryUsageIntegration(t *testing.T) {
 	// Test sequence: Write to memory, write to disk, then cleanup
 	t.Log("Writing data that should go to memory")
 	memoryData := Bytes([]byte("MemoryData")) // pos 0 + size 10 = 10 % 2 = 0 -> memory
-	writeMemoryDelta, err := tiered.Write(0, memoryData, 1024)
+	writeMemoryDelta, err := tiered.Write(0, memoryData, true, 1024)
 	if err != nil {
 		t.Fatalf(writeFailedMsg, err)
 	}
