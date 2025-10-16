@@ -21,12 +21,14 @@ func (tiered Tiered) Read(position int64, data Bytes) (int, error) {
 
 	// Step 2: Read from memory layer for non-sparse areas
 	for _, nonSparseArea := range nonSparseAreas {
-		nonSparseAreaData := data[nonSparseArea.Off-position : nonSparseArea.Off-position+nonSparseArea.Len]
+		nonSparseDataStart := nonSparseArea.Off - position
+		nonSparseAreaData := data[nonSparseDataStart : nonSparseDataStart+nonSparseArea.Len]
 		remainingAreas := tiered.memory.Read(nonSparseArea.Off, nonSparseAreaData)
 
 		// Step 3: Read from disk layer for remaining unread areas
 		for _, remainingArea := range remainingAreas {
-			remainingAreaData := nonSparseAreaData[remainingArea.Off-nonSparseArea.Off : remainingArea.Off-nonSparseArea.Off+remainingArea.Len]
+			remainingDataStart := remainingArea.Off - nonSparseArea.Off
+			remainingAreaData := nonSparseAreaData[remainingDataStart : remainingDataStart+remainingArea.Len]
 			// Invariant: disk.file is always open here
 			if err := tiered.disk.Read(remainingArea.Off, remainingAreaData); err != nil {
 				return totalRead, err
@@ -43,13 +45,12 @@ func (tiered Tiered) Read(position int64, data Bytes) (int, error) {
 // Truncate changes the size of the cached file, adjusting all layers as needed.
 // Returns the memory usage change (negative if memory was freed, positive if more memory was used).
 func (tiered *Tiered) Truncate(newSize int64) (int, error) {
-	memoryDelta := 0
 	if tiered.sparse.Truncate(newSize) {
-		memoryDelta = tiered.memory.Truncate(newSize)
+		memoryDelta := tiered.memory.Truncate(newSize)
 		err := tiered.disk.Truncate(newSize)
 		return memoryDelta, err
 	}
-	return memoryDelta, nil
+	return 0, nil
 }
 
 // Write writes data to the cache entry at the specified position.
