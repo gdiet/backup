@@ -132,6 +132,70 @@ func (memory *Memory) Write(position int64, data Bytes, maxMergeSize int64) int 
 	return memoryDelta
 }
 
+// Clear removes data in the specified area from the memory entry.
+// Required invariants: Sorted by Offset, Non-overlapping.
+// Returns the change in memory usage (bytes allocated) caused by this operation.
+func (memory *Memory) Clear(area Area) int {
+	areaEnd := area.Off + area.Len
+	memoryDelta := 0
+	newAreas := make([]DataArea, 0, len(memory.areas))
+	for index, current := range memory.areas {
+		currentEnd := current.Off + current.Data.Size()
+		// current behind area?
+		if current.Off >= areaEnd {
+			newAreas = append(newAreas, memory.areas[index:]...)
+			break
+		}
+		// current before area?
+		if currentEnd <= area.Off {
+			newAreas = append(newAreas, current)
+			continue
+		}
+		// current fully contained in area?
+		if current.Off >= area.Off && currentEnd <= areaEnd {
+			memoryDelta -= int(current.Data.Size())
+			continue // Remove area
+		}
+		// clear region strictly inside current area: split into two
+		if current.Off < area.Off && currentEnd > areaEnd {
+			leftLen := area.Off - current.Off
+			rightLen := currentEnd - areaEnd
+			leftData := make(Bytes, leftLen)
+			copy(leftData, current.Data[:leftLen])
+			rightData := make(Bytes, rightLen)
+			copy(rightData, current.Data[current.Data.Size()-rightLen:])
+			memoryDelta -= int(current.Data.Size() - (leftLen + rightLen))
+			newAreas = append(newAreas, DataArea{Off: current.Off, Data: leftData})
+			newAreas = append(newAreas, DataArea{Off: areaEnd, Data: rightData})
+			newAreas = append(newAreas, memory.areas[index+1:]...)
+			break
+		}
+		// overlap at start of area?
+		if current.Off < area.Off {
+			// Trim right
+			trimLen := area.Off - current.Off
+			newData := make(Bytes, trimLen)
+			copy(newData, current.Data[:trimLen])
+			memoryDelta -= len(current.Data) - len(newData)
+			current.Data = newData
+			newAreas = append(newAreas, current)
+			continue
+		}
+		// overlap at end of area ... trim left
+		trimLen := currentEnd - areaEnd
+		newData := make(Bytes, trimLen)
+		copy(newData, current.Data[current.Data.Size()-trimLen:])
+		memoryDelta -= len(current.Data) - len(newData)
+		current.Off = areaEnd
+		current.Data = newData
+		newAreas = append(newAreas, current)
+		newAreas = append(newAreas, memory.areas[index+1:]...)
+		break
+	}
+	memory.areas = newAreas
+	return memoryDelta
+}
+
 // Close clears the memory entry.
 // Returns the change in memory usage (bytes allocated) caused by this operation.
 func (memory *Memory) Close() int {
