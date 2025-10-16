@@ -7,6 +7,7 @@ type Tiered struct {
 	sparse Sparse
 	memory Memory
 	disk   Disk
+	base   func(position int64, data Bytes) (int, error) // optional base layer reader
 }
 
 // Read reads data from the cache entry.

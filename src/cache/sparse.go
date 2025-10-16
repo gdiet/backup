@@ -17,7 +17,7 @@ func (sparse *Sparse) Size() int64 {
 func (sparse *Sparse) Read(position int64, data Bytes) (Areas, int) {
 	// Calculate total read size, considering EOF
 	totalReadSize := max(0, min(data.Size(), sparse.size-position))
-	if totalReadSize == 0 {
+	if totalReadSize == 0 { // TODO check whether this condition is needed or helpful
 		return Areas{}, 0 // Nothing to read
 	}
 	// Adjust data to available size

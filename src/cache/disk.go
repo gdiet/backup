@@ -7,29 +7,50 @@ import (
 
 // Disk is a file cache layer that stores parts of a cached file on disk.
 type Disk struct {
-	file     *os.File
-	filePath string
+	file         *os.File
+	filePath     string
+	areasWritten Areas
 }
 
 // Read reads data from the cache file.
 // Invariant: The file must already be open (i.e., Write was called before).
 // This method should only be called after previous Write operations.
-func (disk *Disk) Read(off int64, data Bytes) error {
-	bytesRead, err := disk.file.ReadAt(data, off)
-
-	// EOF is expected when reading beyond file end - not an error for us
-	if err != nil && err != io.EOF {
-		return err
+// Returns the Areas that were not read.
+func (disk *Disk) Read(position int64, data Bytes) (Areas, error) {
+	if len(data) == 0 { // TODO check whether this condition is needed or helpful
+		return nil, nil // Nothing to read
 	}
 
-	// Fill remaining bytes with zeros if we read less than requested
-	if bytesRead < len(data) {
-		for i := bytesRead; i < len(data); i++ {
-			data[i] = 0
+	// Initialize unread areas with the full requested area
+	unreadAreas := Areas{Area{Off: position, Len: data.Size()}}
+
+	// For each written area, try to satisfy parts of the read request
+	for _, writtenArea := range disk.areasWritten {
+		readStart := max(position, writtenArea.Off)
+		readEnd := min(position+data.Size(), writtenArea.Off+writtenArea.Len)
+		if readStart >= readEnd {
+			continue // No overlap
 		}
+
+		// Read from cache file
+		bytesRead, err := disk.file.ReadAt(data[readStart-position:readEnd-position], readStart)
+		// EOF is expected when reading beyond file end - not an error for us
+		if err != nil && err != io.EOF {
+			return unreadAreas, err
+		}
+		// Fill remaining bytes with zeros if we read less than requested
+		if bytesRead < len(data) { // TODO it should be an invariant that we always read the full requested area here
+			// TODO so maybe add a panic or log a warning here?
+			for i := bytesRead; i < len(data); i++ {
+				data[i] = 0
+			}
+		}
+
+		// Adjust unread areas
+		unreadAreas = unreadAreas.RemoveOverlappingAreas(Area{Off: readStart, Len: readEnd - readStart})
 	}
 
-	return nil
+	return unreadAreas, nil
 }
 
 // Truncate changes the size cache file.
@@ -40,7 +61,19 @@ func (disk *Disk) Truncate(newSize int64) error {
 	if disk.file == nil {
 		return nil // File not open - nothing to truncate, which is fine
 	}
-
+	// Remove or truncate written areas beyond new size
+	var filteredAreas Areas
+	for _, writtenArea := range disk.areasWritten {
+		if writtenArea.Off >= newSize {
+			continue // Area starts beyond new size, remove it
+		}
+		if writtenArea.Off+writtenArea.Len > newSize {
+			writtenArea.Len = newSize - writtenArea.Off // Area extends beyond new size, truncate it
+		}
+		filteredAreas = append(filteredAreas, writtenArea)
+	}
+	// In certain edge cases we would profit from truncating the file only if it shrinks,
+	// but for simplicity, we always call Truncate here.
 	return disk.file.Truncate(newSize)
 }
 

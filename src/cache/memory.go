@@ -27,7 +27,7 @@ type Memory struct {
 // Read reads data from the memory entry.
 // Returns the Areas that were not read.
 func (memory *Memory) Read(position int64, data Bytes) Areas {
-	if len(data) == 0 {
+	if len(data) == 0 { // TODO check whether this condition is needed or helpful
 		return nil // Nothing to read
 	}
 
