@@ -45,14 +45,18 @@ func splitAreasForProcessing(areas dataAreas, position int, length int) (
 			memoryDelta -= len(area.data)
 			continue
 		}
+		deltaApplied := false
 		if position > area.position {
 			// Area is partially left of current, mark for merge left and update memory delta
 			memoryDelta -= min(end, areaEnd) - position
+			deltaApplied = true
 			mergeLeft = &dataArea{position: area.position, data: area.data[:position-area.position]}
 		}
 		if end < areaEnd {
 			// Area is partially right of current, mark for merge right and update memory delta
-			memoryDelta -= end - max(position, area.position)
+			if !deltaApplied {
+				memoryDelta -= end - max(position, area.position)
+			}
 			mergeRight = &dataArea{position: end, data: area.data[end-area.position:]}
 		}
 	}
