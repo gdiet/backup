@@ -2,6 +2,8 @@ package cache
 
 // memory is a file cache layer that stores parts of a cached file in memory.
 type memory struct {
+	// areas holds cached data areas in memory.
+	// Invariants: Sorted by position, non-overlapping.
 	areas dataAreas
 }
 
@@ -83,6 +85,51 @@ type memory struct {
 
 // 	return dataArea{position: mergeStart, data: mergedData}, true
 // }
+
+// merge handles merging of two data areas, removing overlaps.
+// In overlapping positions, topLayer takes precedence.
+// The result contains a copy of the topLayer.
+// The result re-uses bottomLayer if the size of bottomLayer does not change.
+// The resulting byte slices are trimmed to the actual data size.
+// If an avoidable copy operation would exceed mergeSizeHint, two areas are returned.
+func merge(topLayer, bottomLayer dataArea, mergeSizeHint int) dataAreas {
+	deltaPosition := bottomLayer.position - topLayer.position
+	deltaEnd := deltaPosition + len(bottomLayer.data) - len(topLayer.data)
+
+	if deltaPosition < 0 {
+		// bottomLayer starts before topLayer
+
+	}
+
+	// if deltaPosition >= 0 {
+	// 	if deltaEnd > 0 {
+	// 		offsetInBottomLayer := len(topLayer.data) - deltaPosition
+	// 		if len(bottomLayer.data)-offsetInBottomLayer > mergeSizeHint {
+	// 			// Avoidable copy would exceed mergeSizeHint, return two areas
+	// 			topLayer.data = append(bytes{}, topLayer.data...) // Ensure copy
+	// 			return dataAreas{topLayer, bottomLayer}
+	// 		}
+
+	// 		// bottomLayer starts beneath topLayer and ends after it
+	// 		bottomLayer.position = topLayer.position + len(topLayer.data)
+	// 		bottomLayer.data = bottomLayer.data[len(topLayer.data)-deltaPosition:]
+	// 		return dataAreas{topLayer, bottomLayer}
+	// 	}
+	// 	// bottomLayer is fully hidden beneath topLayer
+	// 	topLayer.data = append(bytes{}, topLayer.data...) // Ensure copy
+	// 	return dataAreas{topLayer}
+	// }
+	// if deltaEnd <= 0 {
+	// 	// Bottom starts before top and ends inside
+	// 	bottomLayer.data = bottomLayer.data[:-deltaPosition]
+	// 	return dataAreas{bottomLayer, topLayer}
+	// }
+	// // Bottom starts before top and ends after
+	// bottomStart := dataArea{position: bottomLayer.position, data: bottomLayer.data[:-deltaPosition]}
+	// bottomEnd := dataArea{position: topLayer.position + len(topLayer.data), data: bottomLayer.data[len(topLayer.data)-deltaPosition:]}
+	// return dataAreas{bottomStart, topLayer, bottomEnd}
+	panic("Not implemented")
+}
 
 // removeOverlaps removes overlaps of two areas. Areas must overlap.
 // Returns the 1..3 resulting areas ordered by position.
