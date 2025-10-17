@@ -13,14 +13,68 @@ type memory struct {
 	areas dataAreas
 }
 
-// Write caches a copy of the data in the memory at the specified position, overwriting and merging where needed.
-// Returns the change in memory usage (bytes allocated) caused by this operation.
-func (memory *memory) Write(position int, data bytes, maxMergeSize int) int {
+// Write caches a copy of the data in the memory at the specified position, overwriting and merging
+// where needed. It merges areas unless they exceed mergeSizeHint.
+//
+// Returns:
+//
+// memoryDelta: the change in memory usage (bytes allocated) caused by this operation.
+func (memory *memory) Write(position int, data bytes, mergeSizeHint int) (memoryDelta int) {
 	defer func() {
 		validateDataAreasInvariants(memory.areas)
 	}()
-	// before, mergeLeft, mergeRight, after, memoryDelta := splitAreasForProcessing(memory.areas, position, len(data))
-	panic("not implemented yet")
+	if len(data) == 0 {
+		return 0 // Nothing to write, no memory change
+	}
+
+	dataLen := len(data)
+	before, mergeLeft, mergeRight, after, memoryDelta := splitAreasForProcessing(memory.areas, position, dataLen)
+	leftLen := mergeLeft.len()
+	rightLen := mergeRight.len()
+
+	memory.areas = before
+
+	if dataLen+leftLen+rightLen <= mergeSizeHint {
+		// Merge all three areas
+		data := make(bytes, 0, leftLen+dataLen+rightLen)
+		data = append(data, mergeLeft.data...)
+		data = append(data, data...)
+		data = append(data, mergeRight.data...)
+		if mergeLeft.len() > 0 {
+			memory.areas = append(memory.areas, dataArea{position: mergeLeft.position, data: data})
+		} else {
+			memory.areas = append(memory.areas, dataArea{position: position, data: data})
+		}
+
+	} else if dataLen+leftLen <= mergeSizeHint {
+		// Merge left and current, keep right separate
+		data := make(bytes, 0, leftLen+dataLen)
+		data = append(data, mergeLeft.data...)
+		data = append(data, data...)
+		if mergeLeft.len() > 0 {
+			memory.areas = append(memory.areas, dataArea{position: mergeLeft.position, data: data})
+		} else {
+			memory.areas = append(memory.areas, dataArea{position: position, data: data})
+		}
+		memory.areas = append(memory.areas, mergeRight.copy())
+
+	} else if dataLen+rightLen <= mergeSizeHint {
+		// Keep left separate, merge current and right
+		memory.areas = append(memory.areas, mergeLeft.copy())
+		data := make(bytes, 0, dataLen+rightLen)
+		data = append(data, data...)
+		data = append(data, mergeRight.data...)
+		memory.areas = append(memory.areas, dataArea{position: position, data: data})
+
+	} else {
+		// No merges possible, keep all separate
+		memory.areas = append(memory.areas, mergeLeft.copy())
+		memory.areas = append(memory.areas, (&dataArea{position: position, data: data}).copy())
+		memory.areas = append(memory.areas, mergeRight.copy())
+	}
+
+	memory.areas = append(memory.areas, after...)
+	return
 }
 
 // splitAreasForProcessing determines how a new data region (defined by position and length)
@@ -35,9 +89,13 @@ func (memory *memory) Write(position int, data bytes, maxMergeSize int) int {
 //	after: areas completely after the new region (not adjacent, no overlap)
 //	memoryDelta: net change in memory usage (bytes)
 func splitAreasForProcessing(areas dataAreas, position int, length int) (
-	before dataAreas, mergeLeft, mergeRight *dataArea, after dataAreas, memoryDelta int) {
-	end := position + length
+	before dataAreas, mergeLeft, mergeRight dataArea, after dataAreas, memoryDelta int) {
+
+	mergeLeft = dataArea{}
+	mergeRight = dataArea{}
 	memoryDelta = length
+
+	end := position + length
 	// for very large numbers of areas, a binary search could be more efficient here
 	for index, area := range areas {
 		areaEnd := area.end()
@@ -61,14 +119,14 @@ func splitAreasForProcessing(areas dataAreas, position int, length int) (
 			// Area is partially left of current, mark for merge left and update memory delta
 			memoryDelta -= min(end, areaEnd) - position
 			deltaApplied = true
-			mergeLeft = &dataArea{position: area.position, data: area.data[:position-area.position]}
+			mergeLeft = dataArea{position: area.position, data: area.data[:position-area.position]}
 		}
 		if end < areaEnd {
 			// Area is partially right of current, mark for merge right and update memory delta
 			if !deltaApplied {
 				memoryDelta -= end - max(position, area.position)
 			}
-			mergeRight = &dataArea{position: end, data: area.data[end-area.position:]}
+			mergeRight = dataArea{position: end, data: area.data[end-area.position:]}
 		}
 	}
 	return

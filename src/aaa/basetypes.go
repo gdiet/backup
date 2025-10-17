@@ -8,6 +8,14 @@ type dataArea struct {
 	data     bytes
 }
 
+func (area *dataArea) copy() dataArea {
+	return dataArea{position: area.position, data: append(bytes{}, area.data...)}
+}
+
+func (area *dataArea) len() int {
+	return len(area.data)
+}
+
 func (area *dataArea) end() int {
 	return area.position + len(area.data)
 }
