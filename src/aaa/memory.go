@@ -23,6 +23,17 @@ func (memory *memory) Write(position int, data bytes, maxMergeSize int) int {
 	panic("not implemented yet")
 }
 
+// splitAreasForProcessing determines how a new data region (defined by position and length)
+// would interact with the existing areas and calculates the net change in memory usage if the new
+// region is written. The function assumes that areas are non-overlapping and sorted by position.
+//
+// Returns:
+//
+//	before: areas completely before the new region (not adjacent, no overlap)
+//	mergeLeft: the left part of an area that partially overlaps (if any)
+//	mergeRight: the right part of an area that partially overlaps (if any)
+//	after: areas completely after the new region (not adjacent, no overlap)
+//	memoryDelta: net change in memory usage (bytes)
 func splitAreasForProcessing(areas dataAreas, position int, length int) (
 	before dataAreas, mergeLeft, mergeRight *dataArea, after dataAreas, memoryDelta int) {
 	end := position + length
@@ -62,47 +73,3 @@ func splitAreasForProcessing(areas dataAreas, position int, length int) (
 	}
 	return
 }
-
-// func splitAreasForProcessing(areas dataAreas, position int, length int) (
-// 	before dataAreas, mergeLeft, mergeRight *dataArea, after dataAreas, memoryDelta int) {
-// 	end := position + length
-// 	memoryDelta = length
-// 	for i, area := range areas {
-// 		areaEnd := area.end()
-// 		// No overlap, area is completely before new data
-// 		if areaEnd <= position {
-// 			before = append(before, area)
-// 			continue
-// 		}
-// 		// No overlap, area is completely after new data
-// 		if area.position >= end {
-// 			after = append(after, areas[i:]...)
-// 			break
-// 		}
-// 		// Full overwrite: new data fully covers area
-// 		if position <= area.position && end >= areaEnd {
-// 			memoryDelta -= len(area.data)
-// 			continue
-// 		}
-// 		// Partial left overlap: area overlaps left side of new data
-// 		if area.position < position && areaEnd > position && areaEnd <= end {
-// 			mergeLeft = &dataArea{position: area.position, data: area.data[:position-area.position]}
-// 			memoryDelta -= areaEnd - position
-// 			continue
-// 		}
-// 		// Partial right overlap: area overlaps right side of new data
-// 		if area.position < end && area.position >= position && areaEnd > end {
-// 			mergeRight = &dataArea{position: end, data: area.data[end-area.position:]}
-// 			memoryDelta -= areaEnd - end
-// 			continue
-// 		}
-// 		// New data is inside an existing area (should not happen for non-overlapping areas, but handle gracefully)
-// 		if area.position < position && areaEnd > end {
-// 			mergeLeft = &dataArea{position: area.position, data: area.data[:position-area.position]}
-// 			mergeRight = &dataArea{position: end, data: area.data[end-area.position:]}
-// 			memoryDelta -= len(area.data)
-// 			continue
-// 		}
-// 	}
-// 	return
-// }
