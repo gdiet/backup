@@ -43,12 +43,14 @@ func TestMemoryWrite(t *testing.T) {
 			{position: 2, data: bytesOf(3, 4)},
 		}}
 		mem.write(4, bytesOf(5, 6), 1024)
-		// Should merge all into one area
-		want := dataAreas{{position: 0, data: bytesOf(1, 2, 3, 4, 5, 6)}}
+		// Expect: [1 2] [3 4 5 6]
+		want := dataAreas{{position: 0, data: bytesOf(1, 2)}, {position: 2, data: bytesOf(3, 4, 5, 6)}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
 	})
+
+	// FIXME more tests...
 }
 
 func bytesOf(b ...byte) bytes {
