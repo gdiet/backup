@@ -13,21 +13,22 @@ type memory struct {
 	areas dataAreas
 }
 
-// Write caches a copy of the data in the memory at the specified position, overwriting and merging
+// write caches a copy of the data in the memory at the specified position, overwriting and merging
 // where needed. It merges areas unless they exceed mergeSizeHint.
 //
 // Returns:
 //
 // memoryDelta: the change in memory usage (bytes allocated) caused by this operation.
-func (memory *memory) Write(position int, data bytes, mergeSizeHint int) (memoryDelta int) {
+func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memoryDelta int) {
 	defer func() {
 		validateDataAreasInvariants(memory.areas)
 	}()
-	if len(data) == 0 {
+
+	dataLen := len(data)
+	if dataLen == 0 {
 		return 0 // Nothing to write, no memory change
 	}
 
-	dataLen := len(data)
 	before, mergeLeft, mergeRight, after, memoryDelta := splitAreasForProcessing(memory.areas, position, dataLen)
 	leftLen := mergeLeft.len()
 	rightLen := mergeRight.len()
@@ -36,35 +37,35 @@ func (memory *memory) Write(position int, data bytes, mergeSizeHint int) (memory
 
 	if dataLen+leftLen+rightLen <= mergeSizeHint {
 		// Merge all three areas
-		data := make(bytes, 0, leftLen+dataLen+rightLen)
-		data = append(data, mergeLeft.data...)
-		data = append(data, data...)
-		data = append(data, mergeRight.data...)
+		merged := make(bytes, 0, leftLen+dataLen+rightLen)
+		merged = append(merged, mergeLeft.data...)
+		merged = append(merged, data...)
+		merged = append(merged, mergeRight.data...)
 		if mergeLeft.len() > 0 {
-			memory.areas = append(memory.areas, dataArea{position: mergeLeft.position, data: data})
+			memory.areas = append(memory.areas, dataArea{position: mergeLeft.position, data: merged})
 		} else {
-			memory.areas = append(memory.areas, dataArea{position: position, data: data})
+			memory.areas = append(memory.areas, dataArea{position: position, data: merged})
 		}
 
 	} else if dataLen+leftLen <= mergeSizeHint {
 		// Merge left and current, keep right separate
-		data := make(bytes, 0, leftLen+dataLen)
-		data = append(data, mergeLeft.data...)
-		data = append(data, data...)
+		merged := make(bytes, 0, leftLen+dataLen)
+		merged = append(merged, mergeLeft.data...)
+		merged = append(merged, data...)
 		if mergeLeft.len() > 0 {
-			memory.areas = append(memory.areas, dataArea{position: mergeLeft.position, data: data})
+			memory.areas = append(memory.areas, dataArea{position: mergeLeft.position, data: merged})
 		} else {
-			memory.areas = append(memory.areas, dataArea{position: position, data: data})
+			memory.areas = append(memory.areas, dataArea{position: position, data: merged})
 		}
 		memory.areas = append(memory.areas, mergeRight.copy())
 
 	} else if dataLen+rightLen <= mergeSizeHint {
 		// Keep left separate, merge current and right
 		memory.areas = append(memory.areas, mergeLeft.copy())
-		data := make(bytes, 0, dataLen+rightLen)
-		data = append(data, data...)
-		data = append(data, mergeRight.data...)
-		memory.areas = append(memory.areas, dataArea{position: position, data: data})
+		merged := make(bytes, 0, dataLen+rightLen)
+		merged = append(merged, data...)
+		merged = append(merged, mergeRight.data...)
+		memory.areas = append(memory.areas, dataArea{position: position, data: merged})
 
 	} else {
 		// No merges possible, keep all separate
