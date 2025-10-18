@@ -122,7 +122,7 @@ func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memory
 		merged = append(merged, mergeLeft.data...)
 		merged = append(merged, data...)
 		merged = append(merged, mergeRight.data...)
-		if mergeLeft.len() > 0 {
+		if leftLen > 0 {
 			memory.areas = append(memory.areas, dataArea{position: mergeLeft.position, data: merged})
 		} else {
 			memory.areas = append(memory.areas, dataArea{position: position, data: merged})
@@ -133,16 +133,20 @@ func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memory
 		merged := make(bytes, 0, leftLen+dataLen)
 		merged = append(merged, mergeLeft.data...)
 		merged = append(merged, data...)
-		if mergeLeft.len() > 0 {
+		if leftLen > 0 {
 			memory.areas = append(memory.areas, dataArea{position: mergeLeft.position, data: merged})
 		} else {
 			memory.areas = append(memory.areas, dataArea{position: position, data: merged})
 		}
-		memory.areas = append(memory.areas, mergeRight.copy())
+		if rightLen > 0 { // not necessary here, just for clarity
+			memory.areas = append(memory.areas, mergeRight.copy())
+		}
 
 	} else if dataLen+rightLen <= mergeSizeHint {
 		// Keep left separate, merge current and right
-		memory.areas = append(memory.areas, mergeLeft.copy())
+		if leftLen > 0 { // not necessary here, just for clarity
+			memory.areas = append(memory.areas, mergeLeft.copy())
+		}
 		merged := make(bytes, 0, dataLen+rightLen)
 		merged = append(merged, data...)
 		merged = append(merged, mergeRight.data...)
@@ -150,9 +154,13 @@ func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memory
 
 	} else {
 		// No merges possible, keep all separate
-		memory.areas = append(memory.areas, mergeLeft.copy())
+		if leftLen > 0 {
+			memory.areas = append(memory.areas, mergeLeft.copy())
+		}
 		memory.areas = append(memory.areas, (&dataArea{position: position, data: data}).copy())
-		memory.areas = append(memory.areas, mergeRight.copy())
+		if rightLen > 0 {
+			memory.areas = append(memory.areas, mergeRight.copy())
+		}
 	}
 
 	memory.areas = append(memory.areas, after...)

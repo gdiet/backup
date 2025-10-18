@@ -6,6 +6,24 @@ import (
 )
 
 func TestMemoryWrite(t *testing.T) {
+	t.Run("no merge possible", func(t *testing.T) {
+		mem := &memory{}
+		// Prepare left and right areas
+		left := dataArea{position: 0, data: bytes{1, 2, 3}}
+		right := dataArea{position: 10, data: bytes{7, 8, 9}}
+		mem.areas = dataAreas{left, right}
+
+		// Write new data in the gap, mergeSizeHint too small for any merge
+		pos := 5
+		data := bytes{4, 5, 6}
+		mergeSizeHint := 2 // deliberately too small
+		mem.write(pos, data, mergeSizeHint)
+
+		want := dataAreas{left, {position: pos, data: data}, right}
+		if !reflect.DeepEqual(mem.areas, want) {
+			t.Errorf("areas after no-merge write: got %+v, want %+v", mem.areas, want)
+		}
+	})
 
 	t.Run("write to empty memory", func(t *testing.T) {
 		mem := &memory{}
