@@ -13,10 +13,62 @@ type memory struct {
 	areas dataAreas
 }
 
+// Clear removes data in the specified area from the memory entry.
+//
+// Returns the change in memory usage (bytes allocated) caused by this operation.
+func (memory *memory) clear(area area) (memoryDelta int) {
+	defer func() {
+		validateDataAreasInvariants(memory.areas)
+	}()
+
+	newAreas := dataAreas{}
+	for index, data := range memory.areas {
+		if data.end() <= area.off {
+			// dataArea ends before the cleared area starts, keep dataArea
+			newAreas = append(newAreas, data)
+			continue
+		}
+		if data.position >= area.end() {
+			// dataArea starts after the cleared area ends, keep remaining dataAreas
+			newAreas = append(newAreas, memory.areas[index:]...)
+			break
+		}
+		if data.position >= area.off && data.end() <= area.end() {
+			// dataArea fully within cleared area, remove it
+			memoryDelta -= len(data.data)
+			continue
+		}
+		deltaApplied := false
+		if data.position < area.off {
+			// dataArea partially left of cleared area, trim it
+			trimmedLen := area.off - data.position
+			trimmed := data.data[:trimmedLen]
+			newAreas = append(newAreas, dataArea{position: data.position, data: trimmed.copy()})
+			memoryDelta -= len(data.data) - trimmedLen
+			deltaApplied = true
+		}
+		if data.end() > area.end() {
+			// dataArea partially right of cleared area, trim it
+			trimmedLen := data.end() - area.end()
+			trimmed := data.data[len(data.data)-trimmedLen:]
+			newAreas = append(newAreas, dataArea{position: area.end(), data: trimmed.copy()})
+			if !deltaApplied {
+				memoryDelta -= len(data.data) - trimmedLen
+			}
+		}
+	}
+	memory.areas = newAreas
+	return
+}
+
 // truncate changes the size of the memory entry, adjusting cached areas as needed.
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.
-func (memory *memory) truncate(newSize int) int {
+func (memory *memory) truncate(newSize int) int { // FIXME use named return value
+	defer func() {
+		validateDataAreasInvariants(memory.areas)
+	}()
+
 	memoryFreed := 0 // Track only the memory that gets freed
 	for index := len(memory.areas) - 1; index >= -1; index-- {
 		if index == -1 {

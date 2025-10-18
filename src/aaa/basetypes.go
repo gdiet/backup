@@ -1,5 +1,14 @@
 package aaa
 
+type area struct {
+	off int
+	len int
+}
+
+func (area *area) end() int {
+	return area.off + area.len
+}
+
 type bytes []byte
 
 func (data *bytes) copy() bytes {
