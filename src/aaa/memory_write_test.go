@@ -46,6 +46,24 @@ func TestMemoryWrite(t *testing.T) {
 		}
 	})
 
+	t.Run("write zero length data", func(t *testing.T) {
+		mem := &memory{areas: dataAreas{{position: 0, data: bytesOf(1, 2, 3, 4, 5)}}}
+		pos := 1
+		data := bytesOf()
+		memoryDelta := mem.write(pos, data, 1024)
+
+		// Expect: [1 2 3 4 5] - merged into one area
+		want := dataAreas{
+			{position: 0, data: bytesOf(1, 2, 3, 4, 5)},
+		}
+		if !reflect.DeepEqual(mem.areas, want) {
+			t.Errorf("areas after overwrite: got %+v, want %+v", mem.areas, want)
+		}
+		if memoryDelta != 0 {
+			t.Errorf("unexpected memoryDelta: got %d, want %d", memoryDelta, 0)
+		}
+	})
+
 	t.Run("overwrite existing area", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{{position: 0, data: bytesOf(1, 2, 3, 4, 5)}}}
 		pos := 1
