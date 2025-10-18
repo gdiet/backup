@@ -2,6 +2,10 @@ package aaa
 
 type bytes []byte
 
+func (data *bytes) copy() bytes {
+	return append(bytes{}, (*data)...)
+}
+
 // dataArea is a located contiguous area of bytes, e.g. in a file.
 type dataArea struct {
 	position int
@@ -9,7 +13,7 @@ type dataArea struct {
 }
 
 func (area *dataArea) copy() dataArea {
-	return dataArea{position: area.position, data: append(bytes{}, area.data...)}
+	return dataArea{position: area.position, data: area.data.copy()}
 }
 
 func (area *dataArea) len() int {

@@ -13,12 +13,41 @@ type memory struct {
 	areas dataAreas
 }
 
+// truncate changes the size of the memory entry, adjusting cached areas as needed.
+//
+// Returns the change in memory usage (bytes allocated) caused by this operation.
+func (memory *memory) truncate(newSize int) int {
+	memoryFreed := 0 // Track only the memory that gets freed
+	for index := len(memory.areas) - 1; index >= -1; index-- {
+		if index == -1 {
+			// All areas processed
+			memory.areas = memory.areas[:0]
+			break
+		}
+		area := memory.areas[index]
+		if area.position >= newSize {
+			// Area starts beyond new size, will be removed entirely
+			memoryFreed += len(area.data)
+			continue
+		}
+		truncate := area.end() - newSize
+		if truncate > 0 {
+			// Area extends beyond new size, truncate it
+			memoryFreed += truncate
+			truncated := area.data[:area.len()-truncate]
+			area.data = truncated.copy()
+		}
+		// Area is fully within new size, finish processing
+		memory.areas = memory.areas[:index+1]
+		break
+	}
+	return -memoryFreed
+}
+
 // write caches a copy of the data in the memory at the specified position, overwriting and merging
 // where needed. It merges areas unless they exceed mergeSizeHint.
 //
-// Returns:
-//
-// memoryDelta: the change in memory usage (bytes allocated) caused by this operation.
+// Returns the change in memory usage (bytes allocated) caused by this operation.
 func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memoryDelta int) {
 	defer func() {
 		validateDataAreasInvariants(memory.areas)

@@ -153,7 +153,7 @@ func TestMemoryWrite(t *testing.T) {
 		}
 	})
 
-	// FIXME add test for no merge due to size limit
+	// FIXME add test for memory released when splitting or truncating
 }
 
 func bytesOf(b ...byte) bytes {
