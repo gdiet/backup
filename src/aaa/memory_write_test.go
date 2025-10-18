@@ -106,6 +106,26 @@ func TestMemoryWrite(t *testing.T) {
 		}
 	})
 
+	t.Run("no merge left because there is nothing, no merge right due to size limit", func(t *testing.T) {
+		mem := &memory{areas: dataAreas{
+			{position: 2, data: bytesOf(3, 4)},
+		}}
+		data := bytesOf(5, 6)
+		memoryDelta := mem.write(0, data, 3)
+
+		// overwrite data in place to prove write has used a deep copy
+		copy(data, make(bytes, len(data)))
+
+		// Expect: [5 6] [3 4]
+		want := dataAreas{{position: 0, data: bytesOf(5, 6)}, {position: 2, data: bytesOf(3, 4)}}
+		if !reflect.DeepEqual(mem.areas, want) {
+			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
+		}
+		if memoryDelta != 2 {
+			t.Errorf("unexpected memoryDelta: got %d, want %d", memoryDelta, 2)
+		}
+	})
+
 	t.Run("merge from the middle", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
 			{position: 0, data: bytesOf(1, 2)},
