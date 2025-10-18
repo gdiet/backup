@@ -24,7 +24,7 @@ func (memory *memory) truncate(newSize int) int {
 			memory.areas = memory.areas[:0]
 			break
 		}
-		area := memory.areas[index]
+		area := &memory.areas[index]
 		if area.position >= newSize {
 			// Area starts beyond new size, will be removed entirely
 			memoryFreed += len(area.data)
