@@ -11,6 +11,7 @@ func (area *area) end() int {
 
 type bytes []byte
 
+// copy creates a compact deep copy of the bytes slice.
 func (data *bytes) copy() bytes {
 	result := make(bytes, len(*data))
 	copy(result, *data)
@@ -23,6 +24,7 @@ type dataArea struct {
 	data     bytes
 }
 
+// copy creates a compact deep copy of the data area.
 func (area *dataArea) copy() dataArea {
 	return dataArea{position: area.position, data: area.data.copy()}
 }
