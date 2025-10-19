@@ -13,6 +13,16 @@ type memory struct {
 	areas dataAreas
 }
 
+// close clears the memory entry.
+// Returns the change in memory usage (bytes allocated) caused by this operation.
+func (memory *memory) close() (memoryDelta int) {
+	for _, area := range memory.areas {
+		memoryDelta -= area.len()
+	}
+	memory.areas = nil
+	return
+}
+
 // Clear removes data in the specified area from the memory entry.
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.
