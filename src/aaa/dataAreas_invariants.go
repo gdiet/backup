@@ -12,6 +12,11 @@ func validateDataAreasInvariants(areas dataAreas) {
 		if len(curr.data) == 0 {
 			panic(fmt.Sprintf("dataAreas invariant violated: area %d is empty", i))
 		}
+		// Check compactness
+		if cap(curr.data) != len(curr.data) {
+			panic(fmt.Sprintf("dataAreas invariant violated: area %d data not compact", i))
+		}
+		// Check relations to previous area
 		if i == 0 {
 			continue
 		}
@@ -23,10 +28,6 @@ func validateDataAreasInvariants(areas dataAreas) {
 		// Check non-overlapping
 		if prev.position+len(prev.data) > curr.position {
 			panic(fmt.Sprintf("dataAreas invariant violated: area %d overlaps with area %d", i-1, i))
-		}
-		// Check compactness
-		if cap(curr.data) != len(curr.data) {
-			panic(fmt.Sprintf("dataAreas invariant violated: area %d data not compact", i))
 		}
 	}
 }

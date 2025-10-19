@@ -27,6 +27,13 @@ func TestValidateDataAreasInvariants(t *testing.T) {
 		})
 	}, "overlapping areas should cause panic")
 
+	require.Panics(t, func() {
+		data := make(bytes, 10, 20)
+		validateDataAreasInvariants(dataAreas{
+			dataArea{position: 8, data: data},
+		})
+	}, "non-compact areas should cause panic")
+
 	require.NotPanics(t, func() {
 		validateDataAreasInvariants(dataAreas{
 			dataArea{position: 8, data: bytes("data")},
