@@ -24,5 +24,9 @@ func validateDataAreasInvariants(areas dataAreas) {
 		if prev.position+len(prev.data) > curr.position {
 			panic(fmt.Sprintf("dataAreas invariant violated: area %d overlaps with area %d", i-1, i))
 		}
+		// Check compactness
+		if cap(curr.data) != len(curr.data) {
+			panic(fmt.Sprintf("dataAreas invariant violated: area %d data not compact", i))
+		}
 	}
 }

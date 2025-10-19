@@ -12,7 +12,9 @@ func (area *area) end() int {
 type bytes []byte
 
 func (data *bytes) copy() bytes {
-	return append(bytes{}, (*data)...)
+	result := make(bytes, len(*data))
+	copy(result, *data)
+	return result
 }
 
 // dataArea is a located contiguous area of bytes, e.g. in a file.
