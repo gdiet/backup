@@ -83,5 +83,5 @@ func TestMemoryTruncate(t *testing.T) {
 		}
 	})
 
-	// FIXME truncate releases memory when truncating to smaller size test
+	// TODO test: truncate releases memory when truncating to smaller size test
 }

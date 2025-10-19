@@ -23,6 +23,48 @@ func (memory *memory) close() (memoryDelta int) {
 	return
 }
 
+// read reads data from the memory entry into the provided buffer.
+// Returns the areas that were not read because they are not cached.
+func (memory *memory) read(position int, data bytes) (unreadAreas areas) {
+	end := position + len(data)
+	if position == end {
+		return nil // Nothing to read
+	}
+
+	lastUnread := area{off: position, len: len(data)}
+
+	// For each memory area, try to satisfy parts of the read request
+	for _, memArea := range memory.areas {
+		if memArea.position >= end {
+			break // No further areas can satisfy the read
+		}
+		if memArea.end() <= position {
+			continue // This area is before the requested read
+		}
+
+		// Determine overlapping range
+		readStart := max(position, memArea.position)
+		readEnd := min(end, memArea.end())
+
+		// Copy data from memory area to output buffer
+		copy(data[readStart-position:], memArea.data[readStart-memArea.position:readEnd-memArea.position])
+
+		// Adjust unread areas
+		if readStart > lastUnread.off {
+			// There is an unread area before the readStart
+			unreadAreas = append(unreadAreas, area{off: lastUnread.off, len: readStart - lastUnread.off})
+		}
+		lastUnread.off = readEnd
+		lastUnread.len = end - readEnd
+	}
+
+	if lastUnread.len > 0 {
+		return append(unreadAreas, lastUnread)
+	}
+
+	return unreadAreas
+}
+
 // Clear removes data in the specified area from the memory entry.
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.

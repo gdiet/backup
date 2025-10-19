@@ -9,6 +9,8 @@ func (area *area) end() int {
 	return area.off + area.len
 }
 
+type areas []area
+
 type bytes []byte
 
 // copy creates a compact deep copy of the bytes slice.
@@ -37,5 +39,4 @@ func (area *dataArea) end() int {
 	return area.position + len(area.data)
 }
 
-// dataAreas is a collection of data areas.
 type dataAreas []dataArea
