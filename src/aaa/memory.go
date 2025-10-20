@@ -153,14 +153,14 @@ func (memory *memory) truncate(newSize int) int { // FIXME use named return valu
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.
 func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memoryDelta int) {
-	defer func() {
-		validateDataAreasInvariants(memory.areas)
-	}()
-
 	dataLen := len(data)
 	if dataLen == 0 {
 		return 0 // Nothing to write, no memory change
 	}
+
+	defer func() {
+		validateDataAreasInvariants(memory.areas)
+	}()
 
 	before, mergeLeft, mergeRight, after, memoryDelta := splitAreasForProcessing(memory.areas, position, dataLen)
 	leftLen := mergeLeft.len()

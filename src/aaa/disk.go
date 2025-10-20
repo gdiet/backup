@@ -67,3 +67,38 @@ func (disk *disk) read(position int, data bytes) (unreadAreas areas, err error) 
 
 	return unreadAreas, nil
 }
+
+// write writes data to the cache file at the specified position.
+// Opens the file automatically for reading and writing if it's not already open.
+func (disk *disk) write(position int, data bytes) (err error) { // TODO align signature with os.File?
+	dataLen := len(data)
+	if dataLen == 0 {
+		return nil // Nothing to write, no memory change
+	}
+
+	// TODO validate invariants
+
+	// Open file if not already open
+	if disk.file == nil {
+		file, err := os.OpenFile(disk.filePath, os.O_CREATE|os.O_RDWR, 0644)
+		if err != nil {
+			return err
+		}
+		disk.file = file
+	}
+
+	totalWritten := 0
+	for totalWritten < dataLen {
+		bytesWritten, err := disk.file.WriteAt(data[totalWritten:], int64(position+totalWritten))
+		if err != nil {
+			return err
+		}
+		if bytesWritten == 0 {
+			return io.ErrShortWrite // No progress made - avoid infinite loop
+		}
+		// network file systems and FUSE file systems might return n < len(p) without error
+		totalWritten += bytesWritten
+	}
+
+	return nil
+}
