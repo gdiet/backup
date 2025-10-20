@@ -27,6 +27,9 @@ func TestDiskWrite(t *testing.T) {
 		if !reflect.DeepEqual(buf, []byte{1, 2, 3, 4, 5}) {
 			t.Errorf("expected file contents [1 2 3 4 5], got %v", buf)
 		}
+		if !reflect.DeepEqual(d.areas, areas{{off: 0, len: 5}}) {
+			t.Errorf("expected disk areas [{0 5}], got %v", d.areas)
+		}
 	})
 
 	t.Run("write at offset", func(t *testing.T) {
@@ -50,6 +53,9 @@ func TestDiskWrite(t *testing.T) {
 		if !reflect.DeepEqual(buf, want) {
 			t.Errorf("expected file contents %v, got %v", want, buf)
 		}
+		if !reflect.DeepEqual(d.areas, areas{{off: 5, len: 3}}) {
+			t.Errorf("expected disk areas [{5 3}], got %v", d.areas)
+		}
 	})
 
 	t.Run("write empty data", func(t *testing.T) {
@@ -63,6 +69,9 @@ func TestDiskWrite(t *testing.T) {
 		}
 		if d.file != nil {
 			t.Errorf("file should not be opened for empty write")
+		}
+		if len(d.areas) != 0 {
+			t.Errorf("expected no disk areas, got %v", d.areas)
 		}
 	})
 
@@ -89,6 +98,9 @@ func TestDiskWrite(t *testing.T) {
 		want := []byte{1, 2, 9, 8}
 		if !reflect.DeepEqual(buf, want) {
 			t.Errorf("expected file contents %v, got %v", want, buf)
+		}
+		if !reflect.DeepEqual(d.areas, areas{{off: 0, len: 4}}) {
+			t.Errorf("expected disk areas [{0 4}], got %v", d.areas)
 		}
 	})
 }
