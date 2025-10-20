@@ -1,0 +1,69 @@
+package aaa
+
+import (
+	"io"
+	"os"
+)
+
+// Disk is a file cache layer that stores parts of a cached file on disk.
+type disk struct {
+	// file is the underlying file being cached, or nil if not open.
+	file *os.File
+	// filePath is the path to the underlying file.
+	filePath string
+	// areas holds the areas that have been written to the file.
+	areas areas
+}
+
+// read reads data from the cache file. The file must already be open (i.e., write was called before).
+// Returns the areas that were not read.
+// TODO tests
+func (disk *disk) read(position int, data bytes) (unreadAreas areas, err error) {
+	end := position + len(data)
+	if position == end {
+		return nil, nil // Nothing to read
+	}
+
+	lastUnread := area{off: position, len: len(data)}
+
+	// For each disk area, try to satisfy parts of the read request
+	for _, diskArea := range disk.areas {
+		if diskArea.off >= end {
+			break // No further areas can satisfy the read
+		}
+		if diskArea.end() <= position {
+			continue // This area is before the requested read
+		}
+
+		// Determine overlapping range
+		readStart := max(position, diskArea.off)
+		readEnd := min(end, diskArea.end())
+
+		// Read data from disk to output buffer
+		bytesRead, err := disk.file.ReadAt(data[readStart-position:readEnd-position], int64(readStart))
+
+		// EOF is expected when reading beyond file end - not an error for us
+		if err != nil && err != io.EOF {
+			return unreadAreas, err
+		}
+
+		// Fill remaining bytes with zeros if we read less than requested
+		if bytesRead < len(data) {
+			// The system should not request areas that are not fully present on disk
+			assert(false, "partial read from disk cache file")
+			for i := bytesRead; i < len(data); i++ {
+				data[i] = 0
+			}
+		}
+
+		// Adjust unread areas
+		if readStart > lastUnread.off {
+			// There is an unread area before the readStart
+			unreadAreas = append(unreadAreas, area{off: lastUnread.off, len: readStart - lastUnread.off})
+		}
+		lastUnread.off = readEnd
+		lastUnread.len = end - readEnd
+	}
+
+	return unreadAreas, nil
+}

@@ -1,7 +1,12 @@
 package aaa
 
+type baseFile interface {
+	read(position int, data bytes) (err error)
+	length() int
+}
+
 type area struct {
-	off int
+	off int // TODO or rename to position for consistency, and length?
 	len int
 }
 
@@ -22,7 +27,7 @@ func (data *bytes) copy() bytes {
 
 // dataArea is a located contiguous area of bytes, e.g. in a file.
 type dataArea struct {
-	position int
+	position int // TODO rename to off for consistency?
 	data     bytes
 }
 
