@@ -87,6 +87,7 @@ func (disk *disk) write(position int, data bytes) (err error) { // TODO align si
 		disk.file = file
 	}
 
+	// Write data to file
 	totalWritten := 0
 	for totalWritten < dataLen {
 		bytesWritten, err := disk.file.WriteAt(data[totalWritten:], int64(position+totalWritten))
@@ -100,5 +101,30 @@ func (disk *disk) write(position int, data bytes) (err error) { // TODO align si
 		totalWritten += bytesWritten
 	}
 
+	disk.areas = insert(disk.areas, position, dataLen) // Update areas
 	return nil
+}
+
+func insert(previous areas, insertAt int, insertLen int) areas {
+	insertEnd := insertAt + insertLen
+	var result areas
+
+	for index, current := range previous {
+		if current.end() < insertAt {
+			// current before insert, keep current
+			result = append(result, current)
+			continue
+		}
+		if current.off > insertEnd {
+			// current after insert, add insert and remaining areas and return
+			result = append(result, area{off: insertAt, len: insertEnd - insertAt})
+			result = append(result, previous[index:]...)
+			return result
+		}
+		// merge
+		insertAt = min(insertAt, current.off)
+		insertEnd = max(insertEnd, current.end())
+	}
+	result = append(result, area{off: insertAt, len: insertEnd - insertAt})
+	return result
 }
