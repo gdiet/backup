@@ -49,10 +49,10 @@ func (disk *disk) read(position int, data bytes) (unreadAreas areas, err error) 
 		// Fill remaining bytes with zeros if we read less than requested
 		if bytesRead < readEnd-readStart {
 			// The system should not request areas that are not fully present on disk
-			assert(false, "partial read from disk cache file")
 			for i := bytesRead; i < len(data); i++ {
 				data[i] = 0
 			}
+			assert(false, "partial read from disk cache file")
 		}
 
 		// Adjust unread areas
