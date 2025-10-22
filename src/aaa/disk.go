@@ -17,7 +17,6 @@ type disk struct {
 
 // read reads data from the cache file. The file must already be open (i.e., write was called before).
 // Returns the areas that were not read.
-// TODO tests
 func (disk *disk) read(position int, data bytes) (unreadAreas areas, err error) {
 	end := position + len(data)
 	if position == end {
@@ -48,7 +47,7 @@ func (disk *disk) read(position int, data bytes) (unreadAreas areas, err error) 
 		}
 
 		// Fill remaining bytes with zeros if we read less than requested
-		if bytesRead < len(data) {
+		if bytesRead < readEnd-readStart {
 			// The system should not request areas that are not fully present on disk
 			assert(false, "partial read from disk cache file")
 			for i := bytesRead; i < len(data); i++ {
@@ -65,6 +64,9 @@ func (disk *disk) read(position int, data bytes) (unreadAreas areas, err error) 
 		lastUnread.len = end - readEnd
 	}
 
+	if lastUnread.len > 0 {
+		return append(unreadAreas, lastUnread), nil
+	}
 	return unreadAreas, nil
 }
 
