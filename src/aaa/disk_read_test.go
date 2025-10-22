@@ -4,6 +4,8 @@ import (
 	"os"
 	"reflect"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestDiskRead(t *testing.T) {
@@ -147,6 +149,24 @@ func TestDiskRead(t *testing.T) {
 		want := areas{{off: 6, len: 2}, {off: 10, len: 2}}
 		if !reflect.DeepEqual(unread, want) {
 			t.Errorf("expected unreadAreas %v, got %v", want, unread)
+		}
+	})
+
+	t.Run("read from file get EOF", func(t *testing.T) {
+		// mainly here for code coverage
+		path := "test_disk_read_EOF.tmp"
+		_ = os.Remove(path)
+		d := &disk{filePath: path}
+		_ = d.write(0, bytes([]byte{1, 2}))
+		// manipulate areas to cause read beyond EOF
+		d.areas = append(d.areas, area{off: 5, len: 5})
+		buf := []byte{9, 9, 9, 9, 9}
+		require.Panics(t, func() {
+			d.read(1, bytes(buf))
+		})
+		_ = os.Remove(path)
+		if !reflect.DeepEqual(buf, []byte{2, 9, 9, 9, 0}) {
+			t.Errorf("expected buffer to be [2 9 9 9 0], got %v", buf)
 		}
 	})
 
