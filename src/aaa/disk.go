@@ -90,20 +90,17 @@ func (disk *disk) write(position int, data bytes) (err error) { // TODO align si
 	}
 
 	// Write data to file
-	totalWritten := 0
-	for totalWritten < dataLen {
-		bytesWritten, err := disk.file.WriteAt(data[totalWritten:], int64(position+totalWritten))
-		if err != nil {
-			return err
-		}
-		if bytesWritten == 0 {
-			return io.ErrShortWrite // No progress made - avoid infinite loop
-		}
-		// network file systems and FUSE file systems might return n < len(p) without error
-		totalWritten += bytesWritten
+	// os.File.WriteAt returns a non-nil error when n != len(b).
+	// On network file systems and FUSE file systems the system call might write less
+	// than requested without error. The go method loops the underlying system write call
+	// until all bytes are written.
+	_, err = disk.file.WriteAt(data, int64(position))
+	if err != nil {
+		return err
 	}
 
-	disk.areas = insert(disk.areas, position, dataLen) // Update areas
+	// Update areas
+	disk.areas = insert(disk.areas, position, dataLen)
 	return nil
 }
 

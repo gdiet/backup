@@ -103,4 +103,28 @@ func TestDiskWrite(t *testing.T) {
 			t.Errorf("expected disk areas [{0 4}], got %v", d.areas)
 		}
 	})
+
+	t.Run("write to file fails", func(t *testing.T) {
+		// mainly here for code coverage
+		path := "test_disk_write_fails.tmp"
+		_ = os.Remove(path)
+		file, _ := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0644)
+		d := &disk{filePath: path, file: file}
+		data := bytes([]byte{9, 8, 7})
+		err := d.write(5, data)
+		_ = os.Remove(path)
+		if err == nil {
+			t.Fatalf("expected error, but got none")
+		}
+	})
+
+	t.Run("write - open file fails", func(t *testing.T) {
+		// mainly here for code coverage
+		d := &disk{filePath: ""}
+		data := bytes([]byte{9, 8, 7})
+		err := d.write(5, data)
+		if err == nil {
+			t.Fatalf("expected error, but got none")
+		}
+	})
 }
