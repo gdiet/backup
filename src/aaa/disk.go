@@ -83,6 +83,33 @@ func (disk *disk) read(position int, data bytes) (unreadAreas areas, err error) 
 	return unreadAreas, nil
 }
 
+// truncate changes the size of the cache file, adjusting cached areas as needed.
+// The file must already be open (i.e., write was called before).
+func (disk *disk) truncate(newSize int) (err error) {
+	err = disk.file.Truncate(int64(newSize))
+	if err != nil {
+		return err
+	}
+
+	// Adjust areas
+	for index, current := range disk.areas {
+		maxLen := newSize - current.off
+		if maxLen <= 0 {
+			// This area is beyond new size, remove it and all following areas
+			disk.areas = disk.areas[:index]
+			break
+		}
+		if current.len > maxLen {
+			// This area extends beyond new size, trim it and remove all following areas
+			disk.areas[index].len = maxLen
+			disk.areas = disk.areas[:index+1]
+			break
+		}
+		// Otherwise, area is fully within new size, keep it
+	}
+	return nil
+}
+
 // write writes data to the cache file at the specified position.
 // Opens the file automatically for reading and writing if it's not already open.
 func (disk *disk) write(position int, data bytes) (err error) { // TODO align signature with os.File?
