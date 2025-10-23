@@ -18,13 +18,13 @@ type disk struct {
 
 // close closes and deletes the cache file and clears the areas.
 // The file must already be open (i.e., write was called before).
-func (disk *disk) close() {
+func (disk *disk) close() error {
 	err := disk.file.Close()
 	assert(err == nil, fmt.Sprintf("failed to close disk cache file %q: %v", disk.filePath, err))
 	err = os.Remove(disk.filePath)
-	assert(err == nil, fmt.Sprintf("failed to remove disk cache file %q: %v", disk.filePath, err))
 	disk.file = nil
 	disk.areas = nil
+	return err
 }
 
 // read reads data from the cache file.
