@@ -1,6 +1,7 @@
 package aaa
 
 import (
+	"fmt"
 	"io"
 	"os"
 )
@@ -13,6 +14,18 @@ type disk struct {
 	filePath string
 	// areas holds the areas that have been written to the file.
 	areas areas
+}
+
+// close closes and deletes the cache file and clears the areas.
+func (disk *disk) close() {
+	if disk.file != nil {
+		err := disk.file.Close()
+		assert(err == nil, fmt.Sprintf("failed to close disk cache file %q: %v", disk.filePath, err))
+		err = os.Remove(disk.filePath)
+		assert(err == nil, fmt.Sprintf("failed to remove disk cache file %q: %v", disk.filePath, err))
+		disk.file = nil
+	}
+	disk.areas = nil
 }
 
 // read reads data from the cache file. The file must already be open (i.e., write was called before).
