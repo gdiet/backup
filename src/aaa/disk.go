@@ -78,7 +78,9 @@ func (disk *disk) write(position int, data bytes) (err error) { // TODO align si
 		return nil // Nothing to write, no memory change
 	}
 
-	// TODO validate invariants
+	defer func() {
+		validateAreasInvariants(disk.areas)
+	}()
 
 	// Open file if not already open
 	if disk.file == nil {
