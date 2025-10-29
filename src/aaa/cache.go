@@ -11,12 +11,12 @@ type Cache struct {
 	base   baseFile
 }
 
-func NewCache(baseFile baseFile) Cache {
+func NewCache(cacheFile string, baseFile baseFile) Cache {
 	return Cache{
 		size:   baseFile.length(),
 		sparse: sparse{},
 		memory: memory{},
-		disk:   disk{},
+		disk:   disk{filePath: cacheFile},
 		base:   baseFile,
 	}
 }
@@ -24,7 +24,7 @@ func NewCache(baseFile baseFile) Cache {
 // Read reads data from the cache entry.
 // Returns the total number of bytes read, which may be less than len(data) if EOF is reached.
 func (cache Cache) Read(position int, data bytes) (int, error) {
-	if cache.size <= position {
+	if cache.size < position+len(data) {
 		return 0, io.EOF // Nothing to read due to EOF
 	}
 	if len(data) <= 0 {
