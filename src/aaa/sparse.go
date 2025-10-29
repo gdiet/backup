@@ -49,33 +49,29 @@ func (sparse *sparse) read(position int, data bytes) (unreadAreas areas) {
 	return unreadAreas
 }
 
-// Truncate changes the size of the sparse file, adjusting sparse areas as needed.
-// Returns true if following cache stages might need truncation as well.
-func (sparse *sparse) truncate(newSize int) bool {
-	// if newSize == sparse.size {
-	// 	return false // No change
-	// }
-	// // File grows, add new sparse area at the end
-	// if newSize > sparse.size {
-	// 	sparse.sparseAreas = append(sparse.sparseAreas, Area{Off: sparse.size, Len: newSize - sparse.size})
-	// 	sparse.size = newSize
-	// 	return false // No truncation needed
-	// }
-	// // File shrinks, remove or truncate sparse areas beyond new size
-	// var filteredAreas Areas
-	// for _, area := range sparse.sparseAreas {
-	// 	if area.Off >= newSize {
-	// 		continue // Area starts beyond new size, remove it
-	// 	}
-	// 	if area.Off+area.Len > newSize {
-	// 		area.Len = newSize - area.Off // Area extends beyond new size, truncate it
-	// 	}
-	// 	filteredAreas = append(filteredAreas, area)
-	// }
-	// sparse.size = newSize
-	// sparse.sparseAreas = filteredAreas
-	// return true // Truncation occurred
-	panic("not implemented")
+// Truncate adjusts sparse areas as needed.
+func (sparse *sparse) truncate(newSize int) {
+	// TODO add invariants check
+	// Remove or truncate sparse areas beyond new size
+	for index, area := range sparse.sparseAreas {
+		if area.off >= newSize {
+			// Area is beyond new size, skip remaining areas
+			sparse.sparseAreas = sparse.sparseAreas[:index]
+			break
+		}
+		if area.off+area.len > newSize {
+			// Area extends beyond new size, truncate it and skip remaining areas
+			sparse.sparseAreas[index].len = newSize - area.off
+			sparse.sparseAreas = sparse.sparseAreas[:index+1]
+			break
+		}
+	}
+}
+
+// Add adds a new sparse area. Assumes the area's position is beyond the current sparse areas.
+func (sparse *sparse) add(area area) {
+	// TODO add invariants check
+	sparse.sparseAreas = append(sparse.sparseAreas, area)
 }
 
 // Write updates the sparse entry.

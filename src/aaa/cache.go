@@ -76,13 +76,22 @@ func (cache Cache) Read(position int, data bytes) (int, error) {
 
 // Truncate changes the size of cache entry, adjusting all layers as needed.
 // Returns the memory usage change (negative if memory was freed, positive if more memory was used).
-func (cache *Cache) Truncate(newSize int) (int, error) {
-	if cache.sparse.truncate(newSize) {
-		memoryDelta := cache.memory.truncate(newSize)
-		err := cache.disk.truncate(newSize)
-		return memoryDelta, err
+func (cache *Cache) Truncate(newSize int) (memoryDelta int, err error) {
+	if newSize == cache.size {
+		return 0, nil // No size change
 	}
-	return 0, nil
+	if newSize > cache.size {
+		// New sparse area from old size to new size
+		cache.sparse.add(area{off: cache.size, len: newSize - cache.size})
+		cache.size = newSize
+		return 0, nil // No memory change when growing
+	}
+	// Shrink the cache
+	cache.size = newSize
+	cache.sparse.truncate(newSize)
+	memoryDelta = cache.memory.truncate(newSize)
+	err = cache.disk.truncate(newSize)
+	return memoryDelta, err
 }
 
 // Write writes data to the cache entry at the specified position.
