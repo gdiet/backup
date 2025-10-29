@@ -101,8 +101,8 @@ func (cache *Cache) Write(position int, data bytes, storeInMemory bool, maxMerge
 		return 0, nil // Nothing to write, no memory change
 	}
 
-	// Update sparse layer (updates size and removes sparse areas)
-	cache.sparse.write(position, data)
+	// Update sparse layer (removes sparse areas)
+	cache.sparse.remove(position, len(data))
 
 	if storeInMemory {
 		// Either write to memory cache ...
