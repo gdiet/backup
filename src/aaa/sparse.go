@@ -2,48 +2,51 @@ package aaa
 
 // sparse is a file cache layer that manages the sparse parts of a cached file and the actual file size.
 type sparse struct {
-	size        int
 	sparseAreas areas
 }
 
-// Size returns the current size of the file.
-func (sparse *sparse) Size() int {
-	return sparse.size
-}
-
 // Read reads data from the sparse entry, filling sparse data areas with zeros.
-// Returns the Areas that were not read and the number of bytes total
-// for the read operation, which may be less than len(data) if EOF is reached.
-func (sparse *sparse) read(position int, data bytes) (areas, int) {
-	// // Calculate total read size, considering EOF
-	// totalReadSize := max(0, min(len(data), sparse.size-position))
-	// if totalReadSize == 0 { // TODO check whether this condition is needed or helpful
-	// 	return areas{}, 0 // Nothing to read
-	// }
-	// // Adjust data to available size
-	// data = data[:totalReadSize]
+// Returns the Areas that were not read.
+func (sparse *sparse) read(position int, data bytes) (unreadAreas areas) {
+	end := position + len(data)
+	if position == end {
+		return areas{} // Nothing to read
+	}
 
-	// // Initialize non-sparse areas with the full requested area
-	// nonSparseAreas := areas{{off: position, len: totalReadSize}}
+	lastUnread := area{off: position, len: len(data)}
 
-	// // Process sparse areas
-	// for _, sparseArea := range sparse.sparseAreas {
-	// 	// Calculate overlap
-	// 	overlapStart := max(position, sparseArea.off)
-	// 	overlapEnd := min(position+totalReadSize, sparseArea.off+sparseArea.len)
-	// 	overlapSize := overlapEnd - overlapStart
-	// 	if overlapStart >= overlapEnd {
-	// 		continue // No overlap
-	// 	}
-	// 	// Fill overlap data area with zeros
-	// 	for i := overlapStart; i < overlapEnd; i++ {
-	// 		data[i-position] = 0
-	// 	}
-	// 	// Adjust non-sparse areas
-	// 	// nonSparseAreas = nonSparseAreas.RemoveOverlappingAreas(area{off: overlapStart, len: overlapSize})
-	// }
-	// return nonSparseAreas, int(totalReadSize)
-	panic("not implemented")
+	// For each sparse area, try to satisfy part of the read request
+	for _, sparseArea := range sparse.sparseAreas {
+		if sparseArea.off >= end {
+			break // No further areas can satisfy the read
+		}
+		if sparseArea.end() <= position {
+			continue // This area is before the requested read
+		}
+
+		// Determine overlapping range
+		readStart := max(position, sparseArea.off)
+		readEnd := min(end, sparseArea.end())
+
+		// Fill sparse data area with zeros
+		for i := readStart; i < readEnd; i++ {
+			data[i-position] = 0
+		}
+
+		// Adjust unread areas
+		if readStart > lastUnread.off {
+			// There is an unread area before the readStart
+			unreadAreas = append(unreadAreas, area{off: lastUnread.off, len: readStart - lastUnread.off})
+		}
+		lastUnread.off = readEnd
+		lastUnread.len = end - readEnd
+	}
+
+	if lastUnread.len > 0 {
+		return append(unreadAreas, lastUnread)
+	}
+
+	return unreadAreas
 }
 
 // Truncate changes the size of the sparse file, adjusting sparse areas as needed.
@@ -92,6 +95,5 @@ func (sparse *sparse) write(position int, data bytes) {
 
 // close clears the sparse entry.
 func (sparse *sparse) close() {
-	sparse.size = 0
 	sparse.sparseAreas = nil
 }

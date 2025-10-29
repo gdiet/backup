@@ -33,7 +33,7 @@ func (memory *memory) read(position int, data bytes) (unreadAreas areas) {
 
 	lastUnread := area{off: position, len: len(data)}
 
-	// For each memory area, try to satisfy parts of the read request
+	// For each memory area, try to satisfy part of the read request
 	for _, memArea := range memory.areas {
 		if memArea.position >= end {
 			break // No further areas can satisfy the read

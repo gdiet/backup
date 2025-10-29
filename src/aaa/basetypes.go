@@ -2,7 +2,6 @@ package aaa
 
 type baseFile interface {
 	// read reads data from the base file. Unless an error occurs, always fills the entire data slice.
-	// Returns io.EOF if EOF is reached before filling data completely.
 	read(position int, data bytes) (err error)
 	length() int
 }

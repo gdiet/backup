@@ -4,6 +4,7 @@ import "io"
 
 // Cache is a file contents cache that combines the memory and disk cache layers.
 type Cache struct {
+	size   int
 	sparse sparse
 	memory memory
 	disk   disk
@@ -12,7 +13,8 @@ type Cache struct {
 
 func NewCache(baseFile baseFile) Cache {
 	return Cache{
-		sparse: sparse{size: baseFile.length()},
+		size:   baseFile.length(),
+		sparse: sparse{},
 		memory: memory{},
 		disk:   disk{},
 		base:   baseFile,
@@ -22,12 +24,20 @@ func NewCache(baseFile baseFile) Cache {
 // Read reads data from the cache entry.
 // Returns the total number of bytes read, which may be less than len(data) if EOF is reached.
 func (cache Cache) Read(position int, data bytes) (int, error) {
-	if len(data) == 0 {
+	if cache.size <= position {
+		return 0, io.EOF // Nothing to read due to EOF
+	}
+	if len(data) <= 0 {
 		return 0, nil // Nothing to read
 	}
+	// Calculate total read size to prevent reading past EOF
+	totalReadSize := min(len(data), cache.size-position)
+
+	// Adjust data to available size
+	data = data[:totalReadSize]
 
 	// Step 1: Read from sparse layer
-	nonSparseAreas, totalRead := cache.sparse.read(position, data)
+	nonSparseAreas := cache.sparse.read(position, data)
 
 	// Step 2: Read from memory layer all non-sparse areas
 	for _, nonSparseArea := range nonSparseAreas {
@@ -42,7 +52,7 @@ func (cache Cache) Read(position int, data bytes) (int, error) {
 			// Invariant: disk.file is always open here
 			toBeReadFromBase, err := cache.disk.read(remainingArea.off, remainingAreaData)
 			if err != nil {
-				return totalRead, err
+				return totalReadSize, err
 			}
 
 			// Step 4: Read from base layer any remaining areas not present in disk cache
@@ -52,16 +62,16 @@ func (cache Cache) Read(position int, data bytes) (int, error) {
 				err := cache.base.read(baseArea.off, baseAreaData)
 				assert(err != io.EOF, "base read returned EOF unexpectedly")
 				if err != nil && err != io.EOF {
-					return totalRead, err
+					return totalReadSize, err
 				}
 			}
 		}
 	}
 
-	if totalRead < len(data) {
-		return totalRead, io.EOF
+	if totalReadSize < len(data) {
+		return totalReadSize, io.EOF
 	}
-	return totalRead, nil
+	return totalReadSize, nil
 }
 
 // Truncate changes the size of cache entry, adjusting all layers as needed.
