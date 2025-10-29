@@ -55,5 +55,10 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 	if memoryDelta != 0 || err != nil {
 		t.Fatalf("expected truncate to return 0, nil; got %d, %v", memoryDelta, err)
 	}
+	cache.Write(0, []byte{1, 2, 3}, true, 1000)       // memory
+	cache.Write(5, []byte{9, 8, 7, 4, 5}, true, 1000) // memory, 5..7 will be overwritten by disk
+	cache.Write(5, []byte{5, 4, 3}, false, 1000)      // disk
+	cache.Write(10, []byte{2, 1, 9}, false, 1000)     // disk, 12 will be overwritten by memory
+	cache.Write(12, []byte{6}, true, 1000)            // memory
 	// FIXME continue...
 }
