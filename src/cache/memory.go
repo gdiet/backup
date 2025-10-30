@@ -1,4 +1,4 @@
-package aaa
+package cache
 
 // memory is a file cache layer that stores parts of a cached file in memory.
 type memory struct {

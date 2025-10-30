@@ -1,6 +1,6 @@
 //go:build !prod
 
-package aaa
+package cache
 
 func assert(condition bool, message string) {
 	if !condition {

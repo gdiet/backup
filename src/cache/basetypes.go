@@ -1,4 +1,4 @@
-package aaa
+package cache
 
 type baseFile interface {
 	// read reads data from the base file. Unless an error occurs, always fills the entire data slice.
