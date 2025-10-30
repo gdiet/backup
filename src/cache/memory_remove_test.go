@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-func TestMemoryClear(t *testing.T) {
-	t.Run("clear empty memory", func(t *testing.T) {
+func TestMemoryRemove(t *testing.T) {
+	t.Run("remove called on empty memory", func(t *testing.T) {
 		mem := &memory{}
-		delta := mem.clear(area{off: 0, len: 10})
+		delta := mem.remove(area{off: 0, len: 10})
 		if len(mem.areas) != 0 {
 			t.Errorf("expected no areas, got %d", len(mem.areas))
 		}
@@ -17,9 +17,9 @@ func TestMemoryClear(t *testing.T) {
 		}
 	})
 
-	t.Run("clear single area", func(t *testing.T) {
+	t.Run("remove single area", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{{position: 5, data: bytes{1, 2, 3}}}}
-		delta := mem.clear(area{off: 4, len: 5})
+		delta := mem.remove(area{off: 4, len: 5})
 		if len(mem.areas) != 0 {
 			t.Errorf("expected no areas, got %d", len(mem.areas))
 		}
@@ -28,7 +28,7 @@ func TestMemoryClear(t *testing.T) {
 		}
 	})
 
-	t.Run("clear multiple areas, two of them partially", func(t *testing.T) {
+	t.Run("remove multiple areas, two of them partially", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
 			{position: 0, data: bytes{1, 2}},
 			{position: 2, data: bytes{3, 4, 5}},
@@ -36,7 +36,7 @@ func TestMemoryClear(t *testing.T) {
 			{position: 7, data: bytes{4, 5}},
 			{position: 9, data: bytes{6, 7}},
 		}}
-		delta := mem.clear(area{off: 4, len: 4})
+		delta := mem.remove(area{off: 4, len: 4})
 		if len(mem.areas) != 4 {
 			t.Errorf("expected 4 areas, got %d", len(mem.areas))
 		}
@@ -57,11 +57,11 @@ func TestMemoryClear(t *testing.T) {
 		}
 	})
 
-	t.Run("clear after truncate", func(t *testing.T) {
+	t.Run("remove after truncate", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{{position: 0, data: bytes{1, 2, 3, 4, 5}}}}
 		mem.truncate(3)
 		da := mem.areas[0]
-		delta := mem.clear(area{off: da.position, len: len(da.data)})
+		delta := mem.remove(area{off: da.position, len: len(da.data)})
 		if len(mem.areas) != 0 {
 			t.Errorf("expected no areas, got %d", len(mem.areas))
 		}
@@ -70,11 +70,11 @@ func TestMemoryClear(t *testing.T) {
 		}
 	})
 
-	t.Run("clear after write", func(t *testing.T) {
+	t.Run("remove after write", func(t *testing.T) {
 		mem := &memory{}
 		mem.write(0, bytes{1, 2, 3, 4}, 1024)
 		da := mem.areas[0]
-		delta := mem.clear(area{off: da.position, len: len(da.data)})
+		delta := mem.remove(area{off: da.position, len: len(da.data)})
 		if len(mem.areas) != 0 {
 			t.Errorf("expected no areas, got %d", len(mem.areas))
 		}
@@ -83,14 +83,14 @@ func TestMemoryClear(t *testing.T) {
 		}
 	})
 
-	t.Run("clear after multiple writes", func(t *testing.T) {
+	t.Run("remove after multiple writes", func(t *testing.T) {
 		mem := &memory{}
 		mem.write(0, bytes{1, 2}, 1024)
 		mem.write(2, bytes{3, 4, 5}, 1024)
 		mem.write(5, bytes{6}, 1024)
 		delta := 0
 		for _, da := range mem.areas {
-			delta += mem.clear(area{off: da.position, len: len(da.data)})
+			delta += mem.remove(area{off: da.position, len: len(da.data)})
 		}
 		if len(mem.areas) != 0 {
 			t.Errorf("expected no areas, got %d", len(mem.areas))

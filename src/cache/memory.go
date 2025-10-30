@@ -65,10 +65,10 @@ func (memory *memory) read(position int, data bytes) (unreadAreas areas) {
 	return unreadAreas
 }
 
-// Clear removes data in the specified area from the memory entry.
+// remove removes memory areas overlapping with the specified area.
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.
-func (memory *memory) clear(area area) (memoryDelta int) { // TODO rename to remove as in sparse?
+func (memory *memory) remove(area area) (memoryDelta int) {
 	defer func() {
 		validateDataAreasInvariants(memory.areas)
 	}()
