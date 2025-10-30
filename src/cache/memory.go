@@ -14,7 +14,7 @@ type memory struct {
 }
 
 // close clears the memory entry.
-// Returns the change in memory usage (bytes allocated) caused by this operation.
+// Returns the change in memory usage (bytes allocated) caused by this operation (always negative or zero).
 func (memory *memory) close() (memoryDelta int) {
 	for _, area := range memory.areas {
 		memoryDelta -= area.len()
@@ -116,12 +116,11 @@ func (memory *memory) clear(area area) (memoryDelta int) { // TODO rename to rem
 // truncate changes the size of the memory entry, adjusting cached areas as needed.
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.
-func (memory *memory) truncate(newSize int) int { // FIXME use named return value
+func (memory *memory) truncate(newSize int) (memoryDelta int) {
 	defer func() {
 		validateDataAreasInvariants(memory.areas)
 	}()
 
-	memoryFreed := 0 // Track only the memory that gets freed
 	for index := len(memory.areas) - 1; index >= -1; index-- {
 		if index == -1 {
 			// All areas processed
@@ -131,13 +130,13 @@ func (memory *memory) truncate(newSize int) int { // FIXME use named return valu
 		area := &memory.areas[index]
 		if area.position >= newSize {
 			// Area starts beyond new size, will be removed entirely
-			memoryFreed += len(area.data)
+			memoryDelta -= len(area.data)
 			continue
 		}
 		truncate := area.end() - newSize
 		if truncate > 0 {
 			// Area extends beyond new size, truncate it
-			memoryFreed += truncate
+			memoryDelta -= truncate
 			truncated := area.data[:area.len()-truncate]
 			area.data = truncated.copy()
 		}
@@ -145,7 +144,7 @@ func (memory *memory) truncate(newSize int) int { // FIXME use named return valu
 		memory.areas = memory.areas[:index+1]
 		break
 	}
-	return -memoryFreed
+	return memoryDelta
 }
 
 // write caches a copy of the data in the memory at the specified position, overwriting and merging

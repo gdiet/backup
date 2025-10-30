@@ -11,19 +11,19 @@ type Cache struct {
 	base   baseFile
 }
 
-func NewCache(cacheFile string, baseFile baseFile) Cache {
+func NewCache(cacheFilePath string, baseFile baseFile) Cache {
 	return Cache{
 		size:   baseFile.length(),
 		sparse: sparse{},
 		memory: memory{},
-		disk:   disk{filePath: cacheFile},
+		disk:   disk{filePath: cacheFilePath},
 		base:   baseFile,
 	}
 }
 
 // Read reads data from the cache entry.
 // Returns the total number of bytes read, which may be less than len(data) if EOF is reached.
-func (cache Cache) Read(position int, data bytes) (int, error) {
+func (cache Cache) Read(position int, data bytes) (bytesRead int, err error) {
 	if cache.size < position+len(data) {
 		return 0, io.EOF // Nothing to read due to EOF
 	}
@@ -31,10 +31,10 @@ func (cache Cache) Read(position int, data bytes) (int, error) {
 		return 0, nil // Nothing to read
 	}
 	// Calculate total read size to prevent reading past EOF
-	totalReadSize := min(len(data), cache.size-position)
+	bytesRead = min(len(data), cache.size-position)
 
 	// Adjust data to available size
-	data = data[:totalReadSize]
+	data = data[:bytesRead]
 
 	// Step 1: Read from sparse layer
 	nonSparseAreas := cache.sparse.read(position, data)
@@ -52,7 +52,7 @@ func (cache Cache) Read(position int, data bytes) (int, error) {
 			// Invariant: disk.file is always open here
 			toBeReadFromBase, err := cache.disk.read(remainingArea.off, remainingAreaData)
 			if err != nil {
-				return totalReadSize, err
+				return bytesRead, err
 			}
 
 			// Step 4: Read from base layer any remaining areas not present in disk cache
@@ -62,16 +62,16 @@ func (cache Cache) Read(position int, data bytes) (int, error) {
 				err := cache.base.read(baseArea.off, baseAreaData)
 				assert(err != io.EOF, "base read returned EOF unexpectedly")
 				if err != nil && err != io.EOF {
-					return totalReadSize, err
+					return bytesRead, err
 				}
 			}
 		}
 	}
 
-	if totalReadSize < len(data) {
-		return totalReadSize, io.EOF
+	if bytesRead < len(data) {
+		return bytesRead, io.EOF
 	}
-	return totalReadSize, nil
+	return bytesRead, nil
 }
 
 // Truncate changes the size of cache entry, adjusting all layers as needed.
@@ -96,7 +96,7 @@ func (cache *Cache) Truncate(newSize int) (memoryDelta int, err error) {
 
 // Write writes data to the cache entry at the specified position.
 // Returns the memory usage change (negative if memory was freed, positive if more memory was used).
-func (cache *Cache) Write(position int, data bytes, storeInMemory bool, maxMergeSize int) (int, error) {
+func (cache *Cache) Write(position int, data bytes, storeInMemory bool, maxMergeSize int) (memoryDelta int, err error) {
 	if len(data) == 0 {
 		return 0, nil // Nothing to write, no memory change
 	}
@@ -106,11 +106,12 @@ func (cache *Cache) Write(position int, data bytes, storeInMemory bool, maxMerge
 
 	if storeInMemory {
 		// Either write to memory cache ...
-		memoryDelta := cache.memory.write(position, data, maxMergeSize)
+		memoryDelta = cache.memory.write(position, data, maxMergeSize)
+		// TODO clear disk areas that overlap with this memory area
 		return memoryDelta, nil
 	} else {
 		// ... or write to disk, clearing any overlapping memory areas
-		memoryDelta := cache.memory.clear(area{off: position, len: len(data)})
+		memoryDelta = cache.memory.clear(area{off: position, len: len(data)})
 		err := cache.disk.write(position, data)
 		return memoryDelta, err
 	}
@@ -118,8 +119,8 @@ func (cache *Cache) Write(position int, data bytes, storeInMemory bool, maxMerge
 
 // Close clears all cached data from memory and closes and deletes the cache file.
 // Returns the amount of memory freed (always negative or zero).
-func (cache *Cache) Close() (int, error) {
-	memoryFreed := cache.memory.close()
-	err := cache.disk.close()
-	return memoryFreed, err
+func (cache *Cache) Close() (memoryDelta int, err error) {
+	memoryDelta = cache.memory.close()
+	err = cache.disk.close()
+	return memoryDelta, err
 }

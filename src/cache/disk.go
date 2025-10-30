@@ -18,8 +18,8 @@ type disk struct {
 
 // close closes and deletes the cache file and clears the areas.
 // The file must already be open (i.e., write was called before).
-func (disk *disk) close() error {
-	err := disk.file.Close()
+func (disk *disk) close() (err error) {
+	err = disk.file.Close()
 	assert(err == nil, fmt.Sprintf("failed to close disk cache file %q: %v", disk.filePath, err))
 	err = os.Remove(disk.filePath)
 	disk.file = nil
@@ -146,9 +146,8 @@ func (disk *disk) write(position int, data bytes) (err error) { // TODO align si
 	return nil
 }
 
-func insert(previous areas, insertAt int, insertLen int) areas {
+func insert(previous areas, insertAt int, insertLen int) (result areas) {
 	insertEnd := insertAt + insertLen
-	var result areas
 
 	for index, current := range previous {
 		if current.end() < insertAt {
