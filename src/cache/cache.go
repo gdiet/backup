@@ -107,7 +107,7 @@ func (cache *Cache) Write(position int, data bytes, storeInMemory bool, maxMerge
 	if storeInMemory {
 		// Either write to memory cache ...
 		memoryDelta = cache.memory.write(position, data, maxMergeSize)
-		// TODO clear disk areas that overlap with this memory area
+		cache.disk.remove(position, len(data))
 		return memoryDelta, nil
 	} else {
 		// ... or write to disk, clearing any overlapping memory areas

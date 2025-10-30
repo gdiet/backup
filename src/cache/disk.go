@@ -19,6 +19,10 @@ type disk struct {
 // close closes and deletes the cache file and clears the areas.
 // The file must already be open (i.e., write was called before).
 func (disk *disk) close() (err error) {
+	defer func() {
+		validateAreasInvariants(disk.areas)
+	}()
+
 	err = disk.file.Close()
 	assert(err == nil, fmt.Sprintf("failed to close disk cache file %q: %v", disk.filePath, err))
 	err = os.Remove(disk.filePath)
@@ -91,6 +95,10 @@ func (disk *disk) truncate(newSize int) (err error) {
 		return err
 	}
 
+	defer func() {
+		validateAreasInvariants(disk.areas)
+	}()
+
 	// Adjust areas
 	for index, current := range disk.areas {
 		maxLen := newSize - current.off
@@ -118,10 +126,6 @@ func (disk *disk) write(position int, data bytes) (err error) { // TODO align si
 		return nil // Nothing to write, no memory change
 	}
 
-	defer func() {
-		validateAreasInvariants(disk.areas)
-	}()
-
 	// Open file if not already open
 	if disk.file == nil {
 		file, err := os.OpenFile(disk.filePath, os.O_CREATE|os.O_RDWR, 0644)
@@ -140,6 +144,10 @@ func (disk *disk) write(position int, data bytes) (err error) { // TODO align si
 	if err != nil {
 		return err
 	}
+
+	defer func() {
+		validateAreasInvariants(disk.areas)
+	}()
 
 	// Update areas
 	disk.areas = insert(disk.areas, position, dataLen)
@@ -167,4 +175,38 @@ func insert(previous areas, insertAt int, insertLen int) (result areas) {
 	}
 	result = append(result, area{off: insertAt, len: insertEnd - insertAt})
 	return result
+}
+
+// remove removes disk areas overlapping with the specified area.
+func (disk *disk) remove(position int, len int) {
+	if len == 0 {
+		return // Nothing to do
+	}
+	defer func() {
+		validateAreasInvariants(disk.areas)
+	}()
+
+	end := position + len
+	newAreas := areas{}
+	for index, currentArea := range disk.areas {
+		if currentArea.end() <= position {
+			// Area is completely before the removed area
+			newAreas = append(newAreas, currentArea)
+		} else if currentArea.off >= end {
+			// Area is completely after the removed area
+			newAreas = append(newAreas, disk.areas[index:]...)
+			break
+		} else {
+			// Area overlaps with the removed area
+			if currentArea.off < position {
+				// There is a part left of the removed area
+				newAreas = append(newAreas, area{off: currentArea.off, len: position - currentArea.off})
+			}
+			if currentArea.end() > end {
+				// There is a part right of the removed area
+				newAreas = append(newAreas, area{off: end, len: currentArea.end() - end})
+			}
+		}
+	}
+	disk.areas = newAreas
 }
