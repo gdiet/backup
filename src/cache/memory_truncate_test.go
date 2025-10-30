@@ -82,6 +82,4 @@ func TestMemoryTruncate(t *testing.T) {
 			t.Errorf("unexpected memoryDelta: got %d, want %d", memoryDelta, 0)
 		}
 	})
-
-	// TODO test: truncate releases memory when truncating to smaller size test
 }

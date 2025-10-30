@@ -208,8 +208,6 @@ func TestMemoryWrite(t *testing.T) {
 			t.Errorf("unexpected memoryDelta: got %d, want %d", memoryDelta, 2)
 		}
 	})
-
-	// FIXME add test for memory released when splitting or truncating
 }
 
 func bytesOf(b ...byte) bytes {
