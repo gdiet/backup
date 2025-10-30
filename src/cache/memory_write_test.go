@@ -9,8 +9,8 @@ func TestMemoryWrite(t *testing.T) {
 	t.Run("no merge possible", func(t *testing.T) {
 		mem := &memory{}
 		// Prepare left and right areas
-		left := dataArea{position: 0, data: bytes{1, 2, 3}}
-		right := dataArea{position: 10, data: bytes{7, 8, 9}}
+		left := dataArea{0, bytes{1, 2, 3}}
+		right := dataArea{10, bytes{7, 8, 9}}
 		mem.areas = dataAreas{left, right}
 
 		// Write new data in the gap, mergeSizeHint too small for any merge
@@ -19,7 +19,7 @@ func TestMemoryWrite(t *testing.T) {
 		mergeSizeHint := 2 // deliberately too small
 		mem.write(pos, data, mergeSizeHint)
 
-		want := dataAreas{left, {position: pos, data: data}, right}
+		want := dataAreas{left, {pos, data}, right}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after no-merge write: got %+v, want %+v", mem.areas, want)
 		}
@@ -28,7 +28,7 @@ func TestMemoryWrite(t *testing.T) {
 	t.Run("write to empty memory", func(t *testing.T) {
 		mem := &memory{}
 		area := dataArea{0, bytesOf(1, 2, 3)}
-		memoryDelta := mem.write(area.position, area.data, 1024)
+		memoryDelta := mem.write(area.off, area.data, 1024)
 
 		// create a deep copy of area for comparison
 		areaCopy := area.copy()
@@ -38,7 +38,7 @@ func TestMemoryWrite(t *testing.T) {
 		if len(mem.areas) != 1 {
 			t.Fatalf("expected 1 area, got %d", len(mem.areas))
 		}
-		if mem.areas[0].position != areaCopy.position || !reflect.DeepEqual(mem.areas[0].data, areaCopy.data) {
+		if mem.areas[0].off != areaCopy.off || !reflect.DeepEqual(mem.areas[0].data, areaCopy.data) {
 			t.Errorf("unexpected area: got %+v", mem.areas[0])
 		}
 		if memoryDelta != areaCopy.len() {
@@ -47,14 +47,14 @@ func TestMemoryWrite(t *testing.T) {
 	})
 
 	t.Run("write zero length data", func(t *testing.T) {
-		mem := &memory{areas: dataAreas{{position: 0, data: bytesOf(1, 2, 3, 4, 5)}}}
+		mem := &memory{areas: dataAreas{{0, bytesOf(1, 2, 3, 4, 5)}}}
 		pos := 1
 		data := bytesOf()
 		memoryDelta := mem.write(pos, data, 1024)
 
 		// Expect: [1 2 3 4 5] - merged into one area
 		want := dataAreas{
-			{position: 0, data: bytesOf(1, 2, 3, 4, 5)},
+			{0, bytesOf(1, 2, 3, 4, 5)},
 		}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after overwrite: got %+v, want %+v", mem.areas, want)
@@ -65,7 +65,7 @@ func TestMemoryWrite(t *testing.T) {
 	})
 
 	t.Run("overwrite existing area", func(t *testing.T) {
-		mem := &memory{areas: dataAreas{{position: 0, data: bytesOf(1, 2, 3, 4, 5)}}}
+		mem := &memory{areas: dataAreas{{0, bytesOf(1, 2, 3, 4, 5)}}}
 		pos := 1
 		data := bytesOf(9, 9, 9)
 		memoryDelta := mem.write(pos, data, 1024)
@@ -75,7 +75,7 @@ func TestMemoryWrite(t *testing.T) {
 
 		// Expect: [1 9 9 9 5] - merged into one area
 		want := dataAreas{
-			{position: 0, data: bytesOf(1, 9, 9, 9, 5)},
+			{0, bytesOf(1, 9, 9, 9, 5)},
 		}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after overwrite: got %+v, want %+v", mem.areas, want)
@@ -87,8 +87,8 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("merge adjacent areas", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{position: 0, data: bytesOf(1, 2)},
-			{position: 2, data: bytesOf(3, 4)},
+			{0, bytesOf(1, 2)},
+			{2, bytesOf(3, 4)},
 		}}
 		data := bytesOf(5, 6)
 		memoryDelta := mem.write(4, data, 1024)
@@ -97,7 +97,7 @@ func TestMemoryWrite(t *testing.T) {
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [1 2] [3 4 5 6]
-		want := dataAreas{{position: 0, data: bytesOf(1, 2)}, {position: 2, data: bytesOf(3, 4, 5, 6)}}
+		want := dataAreas{{0, bytesOf(1, 2)}, {2, bytesOf(3, 4, 5, 6)}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
@@ -108,7 +108,7 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("no merge left because there is nothing, no merge right due to size limit", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{position: 2, data: bytesOf(3, 4)},
+			{2, bytesOf(3, 4)},
 		}}
 		data := bytesOf(5, 6)
 		memoryDelta := mem.write(0, data, 3)
@@ -117,7 +117,7 @@ func TestMemoryWrite(t *testing.T) {
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [5 6] [3 4]
-		want := dataAreas{{position: 0, data: bytesOf(5, 6)}, {position: 2, data: bytesOf(3, 4)}}
+		want := dataAreas{{0, bytesOf(5, 6)}, {2, bytesOf(3, 4)}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
@@ -128,8 +128,8 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("merge from the middle", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{position: 0, data: bytesOf(1, 2)},
-			{position: 4, data: bytesOf(3, 4)},
+			{0, bytesOf(1, 2)},
+			{4, bytesOf(3, 4)},
 		}}
 		data := bytesOf(5, 6)
 		memoryDelta := mem.write(2, data, 1024)
@@ -138,7 +138,7 @@ func TestMemoryWrite(t *testing.T) {
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [1 2 5 6 3 4]
-		want := dataAreas{{position: 0, data: bytesOf(1, 2, 5, 6, 3, 4)}}
+		want := dataAreas{{0, bytesOf(1, 2, 5, 6, 3, 4)}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
@@ -149,8 +149,8 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("merge from the middle, no merge right due to size limit", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{position: 0, data: bytesOf(1, 2)},
-			{position: 4, data: bytesOf(3, 4)},
+			{0, bytesOf(1, 2)},
+			{4, bytesOf(3, 4)},
 		}}
 		data := bytesOf(5, 6)
 		memoryDelta := mem.write(2, data, 5)
@@ -159,7 +159,7 @@ func TestMemoryWrite(t *testing.T) {
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [1 2 5 6] [3 4]
-		want := dataAreas{{position: 0, data: bytesOf(1, 2, 5, 6)}, {position: 4, data: bytesOf(3, 4)}}
+		want := dataAreas{{0, bytesOf(1, 2, 5, 6)}, {4, bytesOf(3, 4)}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
@@ -170,7 +170,7 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("merge from the middle, no merge left due to size limit", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{position: 0, data: bytesOf(1, 2, 3, 4, 5, 6, 7, 8, 9)},
+			{0, bytesOf(1, 2, 3, 4, 5, 6, 7, 8, 9)},
 		}}
 		data := bytesOf(5, 6)
 		memoryDelta := mem.write(5, data, 4)
@@ -179,7 +179,7 @@ func TestMemoryWrite(t *testing.T) {
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [1 2 3 4 5] [5 6 8 9]
-		want := dataAreas{{position: 0, data: bytesOf(1, 2, 3, 4, 5)}, {position: 5, data: bytesOf(5, 6, 8, 9)}}
+		want := dataAreas{{0, bytesOf(1, 2, 3, 4, 5)}, {5, bytesOf(5, 6, 8, 9)}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
@@ -190,8 +190,8 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("put into the middle, no merge due to size limit", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{position: 0, data: bytesOf(1, 2)},
-			{position: 4, data: bytesOf(3, 4)},
+			{0, bytesOf(1, 2)},
+			{4, bytesOf(3, 4)},
 		}}
 		data := bytesOf(5, 6, 7)
 		memoryDelta := mem.write(1, data, 3)
@@ -200,7 +200,7 @@ func TestMemoryWrite(t *testing.T) {
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [1] [5 6 7] [3 4]
-		want := dataAreas{{position: 0, data: bytesOf(1)}, {position: 1, data: bytesOf(5, 6, 7)}, {position: 4, data: bytesOf(3, 4)}}
+		want := dataAreas{{0, bytesOf(1)}, {1, bytesOf(5, 6, 7)}, {4, bytesOf(3, 4)}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}

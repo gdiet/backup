@@ -4,7 +4,7 @@ package cache
 type memory struct {
 	// areas holds cached data areas in memory.
 	//
-	// Invariants: The areas are non-empty, sorted by position, non-overlapping.
+	// Invariants: The areas are non-empty, sorted by offset, non-overlapping.
 	// Use validateDataAreasInvariants to check invariants.
 	//
 	// Additional implementation goals:
@@ -25,29 +25,29 @@ func (memory *memory) close() (memoryDelta int) {
 
 // read reads data from the memory entry into the provided buffer.
 // Returns the areas that were not read because they are not cached.
-func (memory *memory) read(position int, data bytes) (unreadAreas areas) {
-	end := position + len(data)
-	if position == end {
+func (memory *memory) read(off int, data bytes) (unreadAreas areas) {
+	end := off + len(data)
+	if off == end {
 		return nil // Nothing to read
 	}
 
-	lastUnread := area{off: position, len: len(data)}
+	lastUnread := area{off: off, len: len(data)}
 
 	// For each memory area, try to satisfy part of the read request
 	for _, memArea := range memory.areas {
-		if memArea.position >= end {
+		if memArea.off >= end {
 			break // No further areas can satisfy the read
 		}
-		if memArea.end() <= position {
+		if memArea.end() <= off {
 			continue // This area is before the requested read
 		}
 
 		// Determine overlapping range
-		readStart := max(position, memArea.position)
+		readStart := max(off, memArea.off)
 		readEnd := min(end, memArea.end())
 
 		// Copy data from memory area to output buffer
-		copy(data[readStart-position:], memArea.data[readStart-memArea.position:readEnd-memArea.position])
+		copy(data[readStart-off:], memArea.data[readStart-memArea.off:readEnd-memArea.off])
 
 		// Adjust unread areas
 		if readStart > lastUnread.off {
@@ -80,22 +80,22 @@ func (memory *memory) remove(area area) (memoryDelta int) { // TODO align signat
 			newAreas = append(newAreas, data)
 			continue
 		}
-		if data.position >= area.end() {
+		if data.off >= area.end() {
 			// dataArea starts after the cleared area ends, keep remaining dataAreas
 			newAreas = append(newAreas, memory.areas[index:]...)
 			break
 		}
-		if data.position >= area.off && data.end() <= area.end() {
+		if data.off >= area.off && data.end() <= area.end() {
 			// dataArea fully within cleared area, remove it
 			memoryDelta -= len(data.data)
 			continue
 		}
 		deltaApplied := false
-		if data.position < area.off {
+		if data.off < area.off {
 			// dataArea partially left of cleared area, trim it
-			trimmedLen := area.off - data.position
+			trimmedLen := area.off - data.off
 			trimmed := data.data[:trimmedLen]
-			newAreas = append(newAreas, dataArea{position: data.position, data: trimmed.copy()})
+			newAreas = append(newAreas, dataArea{off: data.off, data: trimmed.copy()})
 			memoryDelta -= len(data.data) - trimmedLen
 			deltaApplied = true
 		}
@@ -103,7 +103,7 @@ func (memory *memory) remove(area area) (memoryDelta int) { // TODO align signat
 			// dataArea partially right of cleared area, trim it
 			trimmedLen := data.end() - area.end()
 			trimmed := data.data[len(data.data)-trimmedLen:]
-			newAreas = append(newAreas, dataArea{position: area.end(), data: trimmed.copy()})
+			newAreas = append(newAreas, dataArea{off: area.end(), data: trimmed.copy()})
 			if !deltaApplied {
 				memoryDelta -= len(data.data) - trimmedLen
 			}
@@ -128,7 +128,7 @@ func (memory *memory) truncate(newSize int) (memoryDelta int) {
 			break
 		}
 		area := &memory.areas[index]
-		if area.position >= newSize {
+		if area.off >= newSize {
 			// Area starts beyond new size, will be removed entirely
 			memoryDelta -= len(area.data)
 			continue
@@ -147,11 +147,11 @@ func (memory *memory) truncate(newSize int) (memoryDelta int) {
 	return memoryDelta
 }
 
-// write caches a copy of the data in the memory at the specified position, overwriting and merging
+// write caches a copy of the data in the memory at the specified offset, overwriting and merging
 // where needed. It merges areas unless they exceed mergeSizeHint.
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.
-func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memoryDelta int) {
+func (memory *memory) write(off int, data bytes, mergeSizeHint int) (memoryDelta int) {
 	dataLen := len(data)
 	if dataLen == 0 {
 		return 0 // Nothing to write, no memory change
@@ -161,7 +161,7 @@ func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memory
 		validateDataAreasInvariants(memory.areas)
 	}()
 
-	before, mergeLeft, mergeRight, after, memoryDelta := splitAreasForProcessing(memory.areas, position, dataLen)
+	before, mergeLeft, mergeRight, after, memoryDelta := splitAreasForProcessing(memory.areas, off, dataLen)
 	leftLen := mergeLeft.len()
 	rightLen := mergeRight.len()
 
@@ -174,9 +174,9 @@ func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memory
 		merged = append(merged, data...)
 		merged = append(merged, mergeRight.data...)
 		if leftLen > 0 {
-			memory.areas = append(memory.areas, dataArea{position: mergeLeft.position, data: merged})
+			memory.areas = append(memory.areas, dataArea{off: mergeLeft.off, data: merged})
 		} else {
-			memory.areas = append(memory.areas, dataArea{position: position, data: merged})
+			memory.areas = append(memory.areas, dataArea{off: off, data: merged})
 		}
 
 	} else if dataLen+leftLen <= mergeSizeHint {
@@ -185,9 +185,9 @@ func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memory
 		merged = append(merged, mergeLeft.data...)
 		merged = append(merged, data...)
 		if leftLen > 0 {
-			memory.areas = append(memory.areas, dataArea{position: mergeLeft.position, data: merged})
+			memory.areas = append(memory.areas, dataArea{off: mergeLeft.off, data: merged})
 		} else {
-			memory.areas = append(memory.areas, dataArea{position: position, data: merged})
+			memory.areas = append(memory.areas, dataArea{off: off, data: merged})
 		}
 		if rightLen > 0 { // not necessary here, just for clarity
 			memory.areas = append(memory.areas, mergeRight.copy())
@@ -201,14 +201,14 @@ func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memory
 		merged := make(bytes, 0, dataLen+rightLen)
 		merged = append(merged, data...)
 		merged = append(merged, mergeRight.data...)
-		memory.areas = append(memory.areas, dataArea{position: position, data: merged})
+		memory.areas = append(memory.areas, dataArea{off: off, data: merged})
 
 	} else {
 		// No merges possible, keep all separate
 		if leftLen > 0 {
 			memory.areas = append(memory.areas, mergeLeft.copy())
 		}
-		memory.areas = append(memory.areas, (&dataArea{position: position, data: data}).copy())
+		memory.areas = append(memory.areas, (&dataArea{off: off, data: data}).copy())
 		if rightLen > 0 {
 			memory.areas = append(memory.areas, mergeRight.copy())
 		}
@@ -218,9 +218,9 @@ func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memory
 	return
 }
 
-// splitAreasForProcessing determines how a new data region (defined by position and length)
+// splitAreasForProcessing determines how a new data region (defined by offset and length)
 // would interact with the existing areas and calculates the net change in memory usage if the new
-// region is written. The function assumes that areas are non-overlapping and sorted by position.
+// region is written. The function assumes that areas are non-overlapping and sorted by offset.
 //
 // Returns:
 //
@@ -229,45 +229,45 @@ func (memory *memory) write(position int, data bytes, mergeSizeHint int) (memory
 //	mergeRight: the right part of an area that partially overlaps (if any)
 //	after: areas completely after the new region (not adjacent, no overlap)
 //	memoryDelta: net change in memory usage (bytes)
-func splitAreasForProcessing(areas dataAreas, position int, length int) (
+func splitAreasForProcessing(areas dataAreas, off int, length int) (
 	before dataAreas, mergeLeft, mergeRight dataArea, after dataAreas, memoryDelta int) {
 
 	mergeLeft = dataArea{}
 	mergeRight = dataArea{}
 	memoryDelta = length
 
-	end := position + length
+	end := off + length
 	// for very large numbers of areas, a binary search could be more efficient here
 	for index, area := range areas {
 		areaEnd := area.end()
-		if position > areaEnd {
+		if off > areaEnd {
 			// Current starts after end of area with space in between, keep area
 			before = append(before, area)
 			continue
 		}
-		if end < area.position {
+		if end < area.off {
 			// Current ends before start of area with space in between, keep all remaining areas
 			after = areas[index:]
 			break
 		}
-		if position <= area.position && end >= areaEnd {
+		if off <= area.off && end >= areaEnd {
 			// Current fully overwrites area, update memory delta and discard area
 			memoryDelta -= len(area.data)
 			continue
 		}
 		deltaApplied := false
-		if position > area.position {
+		if off > area.off {
 			// Area is partially left of current, mark for merge left and update memory delta
-			memoryDelta -= min(end, areaEnd) - position
+			memoryDelta -= min(end, areaEnd) - off
 			deltaApplied = true
-			mergeLeft = dataArea{position: area.position, data: area.data[:position-area.position]}
+			mergeLeft = dataArea{off: area.off, data: area.data[:off-area.off]}
 		}
 		if end < areaEnd {
 			// Area is partially right of current, mark for merge right and update memory delta
 			if !deltaApplied {
-				memoryDelta -= end - max(position, area.position)
+				memoryDelta -= end - max(off, area.off)
 			}
-			mergeRight = dataArea{position: end, data: area.data[end-area.position:]}
+			mergeRight = dataArea{off: end, data: area.data[end-area.off:]}
 		}
 	}
 	return

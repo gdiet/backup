@@ -15,7 +15,7 @@ func TestValidateAreasInvariants(t *testing.T) {
 		})
 	})
 
-	t.Run("areas not ordered by position should cause panic", func(t *testing.T) {
+	t.Run("areas not ordered by offset should cause panic", func(t *testing.T) {
 		require.Panics(t, func() {
 			validateAreasInvariants(areas{
 				area{off: 18, len: 4},

@@ -7,30 +7,30 @@ type sparse struct {
 
 // read reads data from the sparse entry, filling sparse data areas with zeros.
 // Returns the Areas that were not read.
-func (sparse *sparse) read(position int, data bytes) (unreadAreas areas) {
-	end := position + len(data)
-	if position == end {
+func (sparse *sparse) read(off int, data bytes) (unreadAreas areas) {
+	end := off + len(data)
+	if off == end {
 		return areas{} // Nothing to read
 	}
 
-	lastUnread := area{off: position, len: len(data)}
+	lastUnread := area{off: off, len: len(data)}
 
 	// For each sparse area, try to satisfy part of the read request
 	for _, sparseArea := range sparse.sparseAreas {
 		if sparseArea.off >= end {
 			break // No further areas can satisfy the read
 		}
-		if sparseArea.end() <= position {
+		if sparseArea.end() <= off {
 			continue // This area is before the requested read
 		}
 
 		// Determine overlapping range
-		readStart := max(position, sparseArea.off)
+		readStart := max(off, sparseArea.off)
 		readEnd := min(end, sparseArea.end())
 
 		// Fill sparse data area with zeros
 		for i := readStart; i < readEnd; i++ {
-			data[i-position] = 0
+			data[i-off] = 0
 		}
 
 		// Adjust unread areas
@@ -71,7 +71,7 @@ func (sparse *sparse) truncate(newSize int) {
 	}
 }
 
-// add adds a new sparse area. Assumes the area's position is beyond the current sparse areas.
+// add adds a new sparse area. Assumes the area's offset is beyond the current sparse areas.
 func (sparse *sparse) add(area area) {
 	defer func() {
 		validateAreasInvariants(sparse.sparseAreas)
@@ -81,7 +81,7 @@ func (sparse *sparse) add(area area) {
 }
 
 // remove removes sparse areas overlapping with the specified area.
-func (sparse *sparse) remove(position int, len int) {
+func (sparse *sparse) remove(off int, len int) {
 	if len == 0 {
 		return // Nothing to do
 	}
@@ -89,10 +89,10 @@ func (sparse *sparse) remove(position int, len int) {
 		validateAreasInvariants(sparse.sparseAreas)
 	}()
 
-	end := position + len
+	end := off + len
 	newAreas := areas{}
 	for index, currentArea := range sparse.sparseAreas {
-		if currentArea.end() <= position {
+		if currentArea.end() <= off {
 			// Area is completely before the removed area
 			newAreas = append(newAreas, currentArea)
 		} else if currentArea.off >= end {
@@ -101,9 +101,9 @@ func (sparse *sparse) remove(position int, len int) {
 			break
 		} else {
 			// Area overlaps with the removed area
-			if currentArea.off < position {
+			if currentArea.off < off {
 				// There is a part left of the removed area
-				newAreas = append(newAreas, area{off: currentArea.off, len: position - currentArea.off})
+				newAreas = append(newAreas, area{off: currentArea.off, len: off - currentArea.off})
 			}
 			if currentArea.end() > end {
 				// There is a part right of the removed area

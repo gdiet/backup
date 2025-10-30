@@ -23,25 +23,25 @@ func NewCache(cacheFilePath string, baseFile baseFile) Cache {
 
 // Read reads data from the cache entry.
 // Returns the total number of bytes read, which may be less than len(data) if EOF is reached.
-func (cache Cache) Read(position int, data bytes) (bytesRead int, err error) {
-	if cache.size < position+len(data) {
+func (cache Cache) Read(off int, data bytes) (bytesRead int, err error) {
+	if cache.size < off+len(data) {
 		return 0, io.EOF // Nothing to read due to EOF
 	}
 	if len(data) <= 0 {
 		return 0, nil // Nothing to read
 	}
 	// Calculate total read size to prevent reading past EOF
-	bytesRead = min(len(data), cache.size-position)
+	bytesRead = min(len(data), cache.size-off)
 
 	// Adjust data to available size
 	data = data[:bytesRead]
 
 	// Step 1: Read from sparse layer
-	nonSparseAreas := cache.sparse.read(position, data)
+	nonSparseAreas := cache.sparse.read(off, data)
 
 	// Step 2: Read from memory layer all non-sparse areas
 	for _, nonSparseArea := range nonSparseAreas {
-		nonSparseDataStart := nonSparseArea.off - position
+		nonSparseDataStart := nonSparseArea.off - off
 		nonSparseAreaData := data[nonSparseDataStart : nonSparseDataStart+nonSparseArea.len]
 		remainingAreas := cache.memory.read(nonSparseArea.off, nonSparseAreaData)
 
@@ -94,25 +94,25 @@ func (cache *Cache) Truncate(newSize int) (memoryDelta int, err error) {
 	return memoryDelta, err
 }
 
-// Write writes data to the cache entry at the specified position.
+// Write writes data to the cache entry at the specified offset.
 // Returns the memory usage change (negative if memory was freed, positive if more memory was used).
-func (cache *Cache) Write(position int, data bytes, storeInMemory bool, maxMergeSize int) (memoryDelta int, err error) {
+func (cache *Cache) Write(off int, data bytes, storeInMemory bool, maxMergeSize int) (memoryDelta int, err error) {
 	if len(data) == 0 {
 		return 0, nil // Nothing to write, no memory change
 	}
 
 	// Update sparse layer (removes sparse areas)
-	cache.sparse.remove(position, len(data))
+	cache.sparse.remove(off, len(data))
 
 	if storeInMemory {
 		// Either write to memory cache ...
-		memoryDelta = cache.memory.write(position, data, maxMergeSize)
-		cache.disk.remove(position, len(data))
+		memoryDelta = cache.memory.write(off, data, maxMergeSize)
+		cache.disk.remove(off, len(data))
 		return memoryDelta, nil
 	} else {
 		// ... or write to disk, clearing any overlapping memory areas
-		memoryDelta = cache.memory.remove(area{off: position, len: len(data)})
-		err := cache.disk.write(position, data)
+		memoryDelta = cache.memory.remove(area{off: off, len: len(data)})
+		err := cache.disk.write(off, data)
 		return memoryDelta, err
 	}
 }

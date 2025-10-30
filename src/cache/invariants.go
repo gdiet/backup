@@ -5,7 +5,7 @@ package cache
 import "fmt"
 
 // validateAreasInvariants checks invariants:
-// The areas are non-empty, sorted by position, non-overlapping, and not adjacent to each other.
+// The areas are non-empty, sorted by offset, non-overlapping, and not adjacent to each other.
 func validateAreasInvariants(areas areas) {
 	for i := 0; i < len(areas); i++ {
 		curr := areas[i]
@@ -18,7 +18,7 @@ func validateAreasInvariants(areas areas) {
 			continue
 		}
 		prev := areas[i-1]
-		// Check sorted by position
+		// Check sorted by offset
 		if prev.off > curr.off {
 			panic(fmt.Sprintf("areas invariant violated: area %d not sorted by offset", i))
 		}
@@ -30,7 +30,7 @@ func validateAreasInvariants(areas areas) {
 }
 
 // validateDataAreasInvariants checks Invariants:
-// The areas are non-empty, sorted by position, non-overlapping.
+// The areas are non-empty, sorted by offset, non-overlapping.
 func validateDataAreasInvariants(areas dataAreas) {
 	for i := 0; i < len(areas); i++ {
 		curr := areas[i]
@@ -47,12 +47,12 @@ func validateDataAreasInvariants(areas dataAreas) {
 			continue
 		}
 		prev := areas[i-1]
-		// Check sorted by position
-		if prev.position > curr.position {
-			panic(fmt.Sprintf("dataAreas invariant violated: area %d not sorted by position", i))
+		// Check sorted by offset
+		if prev.off > curr.off {
+			panic(fmt.Sprintf("dataAreas invariant violated: area %d not sorted by offset", i))
 		}
 		// Check non-overlapping
-		if prev.position+len(prev.data) > curr.position {
+		if prev.off+len(prev.data) > curr.off {
 			panic(fmt.Sprintf("dataAreas invariant violated: area %d overlaps with area %d", i-1, i))
 		}
 	}

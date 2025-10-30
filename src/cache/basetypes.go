@@ -2,12 +2,12 @@ package cache
 
 type baseFile interface {
 	// read reads data from the base file. Unless an error occurs, always fills the entire data slice.
-	read(position int, data bytes) (err error)
+	read(off int, data bytes) (err error)
 	length() int
 }
 
 type area struct {
-	off int // TODO or rename to position for consistency, and length?
+	off int
 	len int
 }
 
@@ -28,13 +28,13 @@ func (data *bytes) copy() bytes {
 
 // dataArea is a located contiguous area of bytes, e.g. in a file.
 type dataArea struct {
-	position int // TODO rename to off for consistency?
-	data     bytes
+	off  int
+	data bytes
 }
 
 // copy creates a compact deep copy of the data area.
 func (area *dataArea) copy() dataArea {
-	return dataArea{position: area.position, data: area.data.copy()}
+	return dataArea{off: area.off, data: area.data.copy()}
 }
 
 func (area *dataArea) len() int {
@@ -42,7 +42,7 @@ func (area *dataArea) len() int {
 }
 
 func (area *dataArea) end() int {
-	return area.position + len(area.data)
+	return area.off + len(area.data)
 }
 
 type dataAreas []dataArea

@@ -34,29 +34,29 @@ func (disk *disk) close() (err error) {
 // read reads data from the cache file.
 // The file must already be open (i.e., write was called before).
 // Returns the areas that were not read.
-func (disk *disk) read(position int, data bytes) (unreadAreas areas, err error) {
-	end := position + len(data)
-	if position == end {
+func (disk *disk) read(off int, data bytes) (unreadAreas areas, err error) {
+	end := off + len(data)
+	if off == end {
 		return nil, nil // Nothing to read
 	}
 
-	lastUnread := area{off: position, len: len(data)}
+	lastUnread := area{off: off, len: len(data)}
 
 	// For each disk area, try to satisfy parts of the read request
 	for _, diskArea := range disk.areas {
 		if diskArea.off >= end {
 			break // No further areas can satisfy the read
 		}
-		if diskArea.end() <= position {
+		if diskArea.end() <= off {
 			continue // This area is before the requested read
 		}
 
 		// Determine overlapping range
-		readStart := max(position, diskArea.off)
+		readStart := max(off, diskArea.off)
 		readEnd := min(end, diskArea.end())
 
 		// Read data from disk to output buffer
-		bytesRead, err := disk.file.ReadAt(data[readStart-position:readEnd-position], int64(readStart))
+		bytesRead, err := disk.file.ReadAt(data[readStart-off:readEnd-off], int64(readStart))
 
 		// EOF is expected when reading beyond file end - not an error for us
 		if err != nil && err != io.EOF {
@@ -66,7 +66,7 @@ func (disk *disk) read(position int, data bytes) (unreadAreas areas, err error) 
 		// Fill remaining bytes with zeros if we read less than requested, but...
 		if bytesRead < readEnd-readStart {
 			for i := bytesRead; i < readEnd-readStart; i++ {
-				data[readStart-position+i] = 0
+				data[readStart-off+i] = 0
 			}
 			// ... but the system should not request areas that are not fully present on disk
 			assert(false, "partial read from disk cache file")
@@ -118,9 +118,9 @@ func (disk *disk) truncate(newSize int) (err error) {
 	return nil
 }
 
-// write writes data to the cache file at the specified position.
+// write writes data to the cache file at the specified offset.
 // Opens the file automatically for reading and writing if it's not already open.
-func (disk *disk) write(position int, data bytes) (err error) { // TODO align signature with os.File?
+func (disk *disk) write(off int, data bytes) (err error) { // TODO align signature with os.File?
 	dataLen := len(data)
 	if dataLen == 0 {
 		return nil // Nothing to write, no memory change
@@ -140,7 +140,7 @@ func (disk *disk) write(position int, data bytes) (err error) { // TODO align si
 	// On network file systems and FUSE file systems the system call might write less
 	// than requested without error. The go method loops the underlying system write call
 	// until all bytes are written.
-	_, err = disk.file.WriteAt(data, int64(position))
+	_, err = disk.file.WriteAt(data, int64(off))
 	if err != nil {
 		return err
 	}
@@ -150,7 +150,7 @@ func (disk *disk) write(position int, data bytes) (err error) { // TODO align si
 	}()
 
 	// Update areas
-	disk.areas = insert(disk.areas, position, dataLen)
+	disk.areas = insert(disk.areas, off, dataLen)
 	return nil
 }
 
@@ -178,7 +178,7 @@ func insert(previous areas, insertAt int, insertLen int) (result areas) {
 }
 
 // remove removes disk areas overlapping with the specified area.
-func (disk *disk) remove(position int, len int) {
+func (disk *disk) remove(off int, len int) {
 	if len == 0 {
 		return // Nothing to do
 	}
@@ -186,10 +186,10 @@ func (disk *disk) remove(position int, len int) {
 		validateAreasInvariants(disk.areas)
 	}()
 
-	end := position + len
+	end := off + len
 	newAreas := areas{}
 	for index, currentArea := range disk.areas {
-		if currentArea.end() <= position {
+		if currentArea.end() <= off {
 			// Area is completely before the removed area
 			newAreas = append(newAreas, currentArea)
 		} else if currentArea.off >= end {
@@ -198,9 +198,9 @@ func (disk *disk) remove(position int, len int) {
 			break
 		} else {
 			// Area overlaps with the removed area
-			if currentArea.off < position {
+			if currentArea.off < off {
 				// There is a part left of the removed area
-				newAreas = append(newAreas, area{off: currentArea.off, len: position - currentArea.off})
+				newAreas = append(newAreas, area{off: currentArea.off, len: off - currentArea.off})
 			}
 			if currentArea.end() > end {
 				// There is a part right of the removed area
