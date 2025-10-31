@@ -50,7 +50,7 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 	// 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
 	// m  m  m  s  s  d  d  d  m  m  d  d  m  s  s  s
 	// 1  2  3  0  0  5  4  3  4  5  2  1  6  0  0  0
-	cache := NewCache("", emptyMockBaseFile{})
+	cache := NewCache(path, emptyMockBaseFile{})
 	memoryDelta, err := cache.Truncate(15)
 	if memoryDelta != 0 || err != nil {
 		t.Fatalf("expected truncate to return 0, nil; got %d, %v", memoryDelta, err)
@@ -60,5 +60,21 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 	cache.Write(5, []byte{5, 4, 3}, false, 1000)      // disk
 	cache.Write(10, []byte{2, 1, 9}, false, 1000)     // disk, 12 will be overwritten by memory
 	cache.Write(12, []byte{6}, true, 1000)            // memory
+
+	data := []byte{9, 9, 9, 9}
+	bytesRead, err := cache.Read(2, data)
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if bytesRead != 4 {
+		t.Fatalf("expected 4 bytes read, got %d", bytesRead)
+	}
+	expectedData := []byte{3, 0, 0, 5}
+	if !reflect.DeepEqual(data, expectedData) {
+		t.Fatalf("expected data %v, got %v", expectedData, data)
+	}
+
 	// FIXME continue...
+	cache.Close()
+	_ = os.Remove(path)
 }

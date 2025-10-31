@@ -48,7 +48,7 @@ func (c *Cache) Read(off int, data bytes) (bytesRead int, err error) {
 		// Step 3: Read from disk layer any remaining unread areas
 		for _, remainingArea := range remainingAreas {
 			remainingDataStart := remainingArea.off - off
-			remainingAreaData := nonSparseAreaData[remainingDataStart : remainingDataStart+remainingArea.len]
+			remainingAreaData := data[remainingDataStart : remainingDataStart+remainingArea.len]
 			// Invariant: disk.file is always open here
 			toBeReadFromBase, err := c.disk.read(remainingArea.off, remainingAreaData)
 			if err != nil {
