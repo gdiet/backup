@@ -63,13 +63,25 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 
 	data := []byte{9, 9, 9, 9}
 	bytesRead, err := cache.Read(2, data)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if bytesRead != 4 {
-		t.Fatalf("expected 4 bytes read, got %d", bytesRead)
+	if err != nil || bytesRead != 4 {
+		t.Fatalf("expected no error and 4 bytes read, got %v, %d", err, bytesRead)
 	}
 	expectedData := []byte{3, 0, 0, 5}
+	if !reflect.DeepEqual(data, expectedData) {
+		t.Fatalf("expected data %v, got %v", expectedData, data)
+	}
+
+	memoryDelta, err = cache.Truncate(9)
+	if memoryDelta != -2 || err != nil {
+		t.Fatalf("expected truncate to return -2, nil; got %d, %v", memoryDelta, err)
+	}
+
+	data = []byte{9, 9, 9, 9}
+	bytesRead, err = cache.Read(7, data)
+	if err != io.EOF || bytesRead != 2 {
+		t.Fatalf("expected EOF and 2 bytes read, got %v, %d", err, bytesRead)
+	}
+	expectedData = []byte{3, 4, 9, 9}
 	if !reflect.DeepEqual(data, expectedData) {
 		t.Fatalf("expected data %v, got %v", expectedData, data)
 	}

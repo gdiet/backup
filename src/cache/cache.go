@@ -24,11 +24,11 @@ func NewCache(cacheFilePath string, baseFile baseFile) Cache {
 // Read reads data from the cache entry.
 // Returns the total number of bytes read, which may be less than len(data) if EOF is reached.
 func (c *Cache) Read(off int, data bytes) (bytesRead int, err error) {
-	if c.size < off+len(data) {
-		return 0, io.EOF // Nothing to read due to EOF
-	}
 	if len(data) <= 0 {
 		return 0, nil // Nothing to read
+	}
+	if c.size <= off {
+		return 0, io.EOF // Nothing to read due to EOF
 	}
 	// Calculate total read size to prevent reading internally past EOF
 	bytesRead = min(len(data), c.size-off)
@@ -57,8 +57,8 @@ func (c *Cache) Read(off int, data bytes) (bytesRead int, err error) {
 
 			// Step 4: Read from base layer any remaining areas not present in disk cache
 			for _, baseArea := range toBeReadFromBase {
-				baseDataStart := baseArea.off - remainingArea.off
-				baseAreaData := remainingAreaData[baseDataStart : baseDataStart+baseArea.len]
+				baseDataStart := baseArea.off - off
+				baseAreaData := data[baseDataStart : baseDataStart+baseArea.len]
 				err := c.base.read(baseArea.off, baseAreaData)
 				assert(err != io.EOF, "base read returned EOF unexpectedly")
 				if err != nil && err != io.EOF {
