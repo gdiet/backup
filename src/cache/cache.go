@@ -24,14 +24,15 @@ func NewCache(cacheFilePath string, baseFile baseFile) Cache {
 // Read reads data from the cache entry.
 // Returns the total number of bytes read, which may be less than len(data) if EOF is reached.
 func (c *Cache) Read(off int, data bytes) (bytesRead int, err error) {
-	if len(data) <= 0 {
+	len := len(data)
+	if len <= 0 {
 		return 0, nil // Nothing to read
 	}
 	if c.size <= off {
 		return 0, io.EOF // Nothing to read due to EOF
 	}
 	// Calculate total read size to prevent reading internally past EOF
-	bytesRead = min(len(data), c.size-off)
+	bytesRead = min(len, c.size-off)
 
 	// Adjust target slice to available size
 	data = data[:bytesRead]
@@ -68,7 +69,7 @@ func (c *Cache) Read(off int, data bytes) (bytesRead int, err error) {
 		}
 	}
 
-	if bytesRead < len(data) {
+	if bytesRead < len {
 		return bytesRead, io.EOF
 	}
 	return bytesRead, nil
