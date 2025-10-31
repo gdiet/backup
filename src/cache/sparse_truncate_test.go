@@ -15,7 +15,7 @@ func TestSparseTruncate(t *testing.T) {
 		}
 
 		// Act
-		s.truncate(15)
+		s.shrink(15)
 
 		// Assert
 		if len(s.areas) != 1 {
@@ -36,7 +36,7 @@ func TestSparseTruncate(t *testing.T) {
 		}
 
 		// Act
-		s.truncate(5)
+		s.shrink(5)
 
 		// Assert
 		if len(s.areas) != 1 {
@@ -57,7 +57,7 @@ func TestSparseTruncate(t *testing.T) {
 		}
 
 		// Act
-		s.truncate(0)
+		s.shrink(0)
 
 		// Assert
 		if len(s.areas) != 0 {

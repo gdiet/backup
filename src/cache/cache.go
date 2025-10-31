@@ -88,9 +88,9 @@ func (cache *Cache) Truncate(newSize int) (memoryDelta int, err error) {
 	}
 	// Shrink the cache
 	cache.size = newSize
-	cache.sparse.truncate(newSize)
-	memoryDelta = cache.memory.truncate(newSize)
-	err = cache.disk.truncate(newSize)
+	cache.sparse.shrink(newSize)
+	memoryDelta = cache.memory.shrink(newSize)
+	err = cache.disk.shrink(newSize)
 	return memoryDelta, err
 }
 

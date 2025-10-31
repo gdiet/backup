@@ -7,6 +7,7 @@ type memory struct {
 }
 
 // read reads data from the memory entry into the provided buffer.
+//
 // Returns the areas that were not read.
 func (m *memory) read(off int, data bytes) (unreadAreas areas) {
 	end := off + len(data)
@@ -46,6 +47,42 @@ func (m *memory) read(off int, data bytes) (unreadAreas areas) {
 	}
 
 	return unreadAreas
+}
+
+// shrink cuts off cached data beyond the new size.
+//
+// Returns the change in memory usage (bytes allocated) caused by this operation.
+func (m *memory) shrink(newSize int) (memoryDelta int) {
+	defer func() {
+		validateDataAreasInvariants(m.areas)
+	}()
+
+	// Remove or truncate areas beyond new size.
+	// Reverse iteration facilitates memoryDelta calculation.
+	for i := len(m.areas) - 1; i >= -1; i-- {
+		if i == -1 {
+			// All areas are beyond new size, remove all
+			m.areas = nil
+			break
+		}
+		area := &m.areas[i]
+		if area.off >= newSize {
+			// Area starts beyond new size, will be removed entirely
+			memoryDelta -= len(area.data)
+			continue
+		}
+		truncate := area.end() - newSize
+		if truncate > 0 {
+			// Area extends beyond new size, truncate it
+			memoryDelta -= truncate
+			truncatedData := area.data[:area.len()-truncate]
+			area.data = truncatedData.copy()
+		}
+		// Area has been truncated or is fully within new size, remove later areas
+		m.areas = m.areas[:i+1]
+		break
+	}
+	return memoryDelta
 }
 
 // remove removes memory areas overlapping with the specified area.
@@ -94,40 +131,6 @@ func (m *memory) remove(area area) (memoryDelta int) { // TODO align signature w
 	}
 	m.areas = newAreas
 	return
-}
-
-// truncate changes the size of the memory entry, adjusting cached areas as needed.
-//
-// Returns the change in memory usage (bytes allocated) caused by this operation.
-func (m *memory) truncate(newSize int) (memoryDelta int) {
-	defer func() {
-		validateDataAreasInvariants(m.areas)
-	}()
-
-	for index := len(m.areas) - 1; index >= -1; index-- {
-		if index == -1 {
-			// All areas processed
-			m.areas = m.areas[:0]
-			break
-		}
-		area := &m.areas[index]
-		if area.off >= newSize {
-			// Area starts beyond new size, will be removed entirely
-			memoryDelta -= len(area.data)
-			continue
-		}
-		truncate := area.end() - newSize
-		if truncate > 0 {
-			// Area extends beyond new size, truncate it
-			memoryDelta -= truncate
-			truncated := area.data[:area.len()-truncate]
-			area.data = truncated.copy()
-		}
-		// Area is fully within new size, finish processing
-		m.areas = m.areas[:index+1]
-		break
-	}
-	return memoryDelta
 }
 
 // write caches a copy of the data in the memory at the specified offset, overwriting and merging

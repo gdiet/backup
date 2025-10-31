@@ -59,7 +59,7 @@ func TestMemoryRemove(t *testing.T) {
 
 	t.Run("remove after truncate", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{{0, bytes{1, 2, 3, 4, 5}}}}
-		mem.truncate(3)
+		mem.shrink(3)
 		da := mem.areas[0]
 		delta := mem.remove(area{off: da.off, len: len(da.data)})
 		if len(mem.areas) != 0 {

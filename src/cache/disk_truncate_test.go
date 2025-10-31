@@ -13,7 +13,7 @@ func TestDiskTruncate(t *testing.T) {
 		d := &disk{filePath: path}
 		_ = d.write(0, bytes([]byte{1, 2, 3, 4, 5}))
 		_ = d.write(10, bytes([]byte{6, 7, 8, 9, 10}))
-		err := d.truncate(8)
+		err := d.shrink(8)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -37,7 +37,7 @@ func TestDiskTruncate(t *testing.T) {
 		d := &disk{filePath: path}
 		_ = d.write(0, bytes([]byte{1, 2, 3, 4, 5}))
 		_ = d.write(6, bytes([]byte{6, 7, 8, 9, 10}))
-		err := d.truncate(8)
+		err := d.shrink(8)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -61,7 +61,7 @@ func TestDiskTruncate(t *testing.T) {
 		d := &disk{filePath: path}
 		_ = d.write(0, bytes([]byte{1, 2, 3, 4, 5}))
 		_ = d.write(10, bytes([]byte{6, 7, 8, 9, 10}))
-		err := d.truncate(16)
+		err := d.shrink(16)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -85,7 +85,7 @@ func TestDiskTruncate(t *testing.T) {
 		d := &disk{filePath: path}
 		_ = d.write(0, bytes([]byte{1, 2, 3, 4, 5}))
 		_ = d.write(10, bytes([]byte{6, 7, 8, 9, 10}))
-		err := d.truncate(0)
+		err := d.shrink(0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -101,7 +101,7 @@ func TestDiskTruncate(t *testing.T) {
 		_ = os.Remove(path)
 		file, _ := os.OpenFile(path, os.O_CREATE|os.O_RDONLY, 0644)
 		d := &disk{filePath: path, file: file}
-		err := d.truncate(5)
+		err := d.shrink(5)
 		_ = os.Remove(path)
 		if err == nil {
 			t.Fatalf("expected error, but got none")

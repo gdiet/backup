@@ -18,6 +18,7 @@ type disk struct {
 
 // read reads data from the cache file into the provided buffer.
 // The file must already be open (i.e., write was called before).
+//
 // Returns the areas that were not read.
 func (d *disk) read(off int, data bytes) (unreadAreas areas, err error) {
 	end := off + len(data)
@@ -72,9 +73,10 @@ func (d *disk) read(off int, data bytes) (unreadAreas areas, err error) {
 	return unreadAreas, nil
 }
 
-// truncate changes the size of the cache file, adjusting cached areas as needed.
+// shrink cuts off cached data beyond the new size, truncating the cache file.
 // The file must already be open (i.e., write was called before).
-func (d *disk) truncate(newSize int) (err error) {
+// If called when the size has increased (don't do that), the cache file is extended.
+func (d *disk) shrink(newSize int) (err error) {
 	err = d.file.Truncate(int64(newSize))
 	if err != nil {
 		return err
@@ -84,18 +86,17 @@ func (d *disk) truncate(newSize int) (err error) {
 		validateAreasInvariants(d.areas)
 	}()
 
-	// Adjust areas
-	for index, current := range d.areas {
-		maxLen := newSize - current.off
-		if maxLen <= 0 {
-			// This area is beyond new size, remove it and all following areas
-			d.areas = d.areas[:index]
+	// Remove or truncate areas beyond new size
+	for i, a := range d.areas {
+		if a.off >= newSize {
+			// Area starts beyond new size, skip it and remaining areas
+			d.areas = d.areas[:i]
 			break
 		}
-		if current.len > maxLen {
-			// This area extends beyond new size, trim it and remove all following areas
-			d.areas[index].len = maxLen
-			d.areas = d.areas[:index+1]
+		if a.end() > newSize {
+			// Area extends beyond new size, truncate it and skip remaining areas
+			d.areas[i].len = newSize - a.off
+			d.areas = d.areas[:i+1]
 			break
 		}
 		// Otherwise, area is fully within new size, keep it

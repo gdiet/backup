@@ -56,7 +56,7 @@ func TestMemoryClose(t *testing.T) {
 
 	t.Run("close after truncate", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{{0, bytes{1, 2, 3, 4, 5}}}}
-		mem.truncate(3)
+		mem.shrink(3)
 		memoryDelta := mem.close()
 		if len(mem.areas) != 0 {
 			t.Errorf("expected no areas after close, got %d", len(mem.areas))
