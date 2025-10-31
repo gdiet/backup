@@ -6,6 +6,7 @@ type baseFile interface {
 	length() int
 }
 
+// area represents a located contiguous range of bytes in a file.
 type area struct {
 	off int
 	len int
@@ -15,8 +16,12 @@ func (area *area) end() int {
 	return area.off + area.len
 }
 
+// areas is a collection of area objects.
+// Invariants: area objects have len > 0, are sorted by offset, non-overlapping and fully merged.
+// See validateAreasInvariants.
 type areas []area
 
+// bytes are a contiguous range of bytes in a file.
 type bytes []byte
 
 // copy creates a compact deep copy of the bytes slice.
@@ -26,7 +31,7 @@ func (data *bytes) copy() bytes {
 	return result
 }
 
-// dataArea is a located contiguous area of bytes, e.g. in a file.
+// dataArea is a located contiguous area of bytes in a file.
 type dataArea struct {
 	off  int
 	data bytes
@@ -45,4 +50,10 @@ func (area *dataArea) end() int {
 	return area.off + len(area.data)
 }
 
+// dataAreas is a collection of dataArea objects.
+// Invariants: dataArea objects have len > 0, are sorted by offset and non-overlapping.
+// See validateDataAreasInvariants.
+// Additionally:
+//   - dataArea objects are mostly merged to reduce fragmentation (unless they become too large).
+//   - dataArea objects are compact, i.e. are backed by arrays with no unused capacity.
 type dataAreas []dataArea

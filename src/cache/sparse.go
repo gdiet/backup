@@ -1,34 +1,35 @@
 package cache
 
-// sparse is a file cache layer that manages the sparse parts of a cached file and the actual file size.
+// sparse is a file cache layer that stores sparse parts of a cached file.
 type sparse struct {
-	sparseAreas areas
+	// areas holds sparse (zero filled) areas in the file.
+	areas areas
 }
 
-// read reads data from the sparse entry, filling sparse data areas with zeros.
-// Returns the Areas that were not read.
-func (sparse *sparse) read(off int, data bytes) (unreadAreas areas) {
+// read reads sparse (zero filled) data from the sparse entry into the provided buffer.
+// Returns the areas that were not read.
+func (s *sparse) read(off int, data bytes) (unreadAreas areas) {
 	end := off + len(data)
 	if off == end {
-		return areas{} // Nothing to read
+		return nil // Nothing to read
 	}
 
 	lastUnread := area{off: off, len: len(data)}
 
 	// For each sparse area, try to satisfy part of the read request
-	for _, sparseArea := range sparse.sparseAreas {
-		if sparseArea.off >= end {
+	for _, a := range s.areas {
+		if a.off >= end {
 			break // No further areas can satisfy the read
 		}
-		if sparseArea.end() <= off {
+		if a.end() <= off {
 			continue // This area is before the requested read
 		}
 
 		// Determine overlapping range
-		readStart := max(off, sparseArea.off)
-		readEnd := min(end, sparseArea.end())
+		readStart := max(off, a.off)
+		readEnd := min(end, a.end())
 
-		// Fill sparse data area with zeros
+		// Write zeros to output buffer
 		for i := readStart; i < readEnd; i++ {
 			data[i-off] = 0
 		}
@@ -50,54 +51,54 @@ func (sparse *sparse) read(off int, data bytes) (unreadAreas areas) {
 }
 
 // truncate adjusts sparse areas as needed.
-func (sparse *sparse) truncate(newSize int) {
+func (s *sparse) truncate(newSize int) {
 	defer func() {
-		validateAreasInvariants(sparse.sparseAreas)
+		validateAreasInvariants(s.areas)
 	}()
 
 	// Remove or truncate sparse areas beyond new size
-	for index, area := range sparse.sparseAreas {
+	for index, area := range s.areas {
 		if area.off >= newSize {
 			// Area is beyond new size, skip remaining areas
-			sparse.sparseAreas = sparse.sparseAreas[:index]
+			s.areas = s.areas[:index]
 			break
 		}
 		if area.off+area.len > newSize {
 			// Area extends beyond new size, truncate it and skip remaining areas
-			sparse.sparseAreas[index].len = newSize - area.off
-			sparse.sparseAreas = sparse.sparseAreas[:index+1]
+			s.areas[index].len = newSize - area.off
+			s.areas = s.areas[:index+1]
 			break
 		}
 	}
 }
 
 // add adds a new sparse area. Assumes the area's offset is beyond the current sparse areas.
-func (sparse *sparse) add(area area) {
+func (s *sparse) add(area area) {
 	defer func() {
-		validateAreasInvariants(sparse.sparseAreas)
+		validateAreasInvariants(s.areas)
 	}()
 
-	sparse.sparseAreas = append(sparse.sparseAreas, area)
+	s.areas = append(s.areas, area)
 }
 
 // remove removes sparse areas overlapping with the specified area.
-func (sparse *sparse) remove(off int, len int) {
+func (s *sparse) remove(off int, len int) {
 	if len == 0 {
 		return // Nothing to do
 	}
 	defer func() {
-		validateAreasInvariants(sparse.sparseAreas)
+		validateAreasInvariants(s.areas)
 	}()
 
 	end := off + len
 	newAreas := areas{}
-	for index, currentArea := range sparse.sparseAreas {
+	for index, currentArea := range s.areas {
 		if currentArea.end() <= off {
 			// Area is completely before the removed area
 			newAreas = append(newAreas, currentArea)
 		} else if currentArea.off >= end {
 			// Area is completely after the removed area
-			newAreas = append(newAreas, sparse.sparseAreas[index:]...)
+			newAreas = append(newAreas, s.areas[index:]...)
 			break
 		} else {
 			// Area overlaps with the removed area
@@ -111,10 +112,10 @@ func (sparse *sparse) remove(off int, len int) {
 			}
 		}
 	}
-	sparse.sparseAreas = newAreas
+	s.areas = newAreas
 }
 
 // close clears the sparse entry.
-func (sparse *sparse) close() {
-	sparse.sparseAreas = nil
+func (s *sparse) close() {
+	s.areas = nil
 }

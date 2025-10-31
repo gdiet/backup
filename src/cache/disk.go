@@ -16,25 +16,10 @@ type disk struct {
 	areas areas
 }
 
-// close closes and deletes the cache file and clears the areas.
-// The file must already be open (i.e., write was called before).
-func (disk *disk) close() (err error) {
-	defer func() {
-		validateAreasInvariants(disk.areas)
-	}()
-
-	err = disk.file.Close()
-	assert(err == nil, fmt.Sprintf("failed to close disk cache file %q: %v", disk.filePath, err))
-	err = os.Remove(disk.filePath)
-	disk.file = nil
-	disk.areas = nil
-	return err
-}
-
-// read reads data from the cache file.
+// read reads data from the cache file into the provided buffer.
 // The file must already be open (i.e., write was called before).
 // Returns the areas that were not read.
-func (disk *disk) read(off int, data bytes) (unreadAreas areas, err error) {
+func (d *disk) read(off int, data bytes) (unreadAreas areas, err error) {
 	end := off + len(data)
 	if off == end {
 		return nil, nil // Nothing to read
@@ -42,21 +27,21 @@ func (disk *disk) read(off int, data bytes) (unreadAreas areas, err error) {
 
 	lastUnread := area{off: off, len: len(data)}
 
-	// For each disk area, try to satisfy parts of the read request
-	for _, diskArea := range disk.areas {
-		if diskArea.off >= end {
+	// For each disk area, try to satisfy part of the read request
+	for _, a := range d.areas {
+		if a.off >= end {
 			break // No further areas can satisfy the read
 		}
-		if diskArea.end() <= off {
+		if a.end() <= off {
 			continue // This area is before the requested read
 		}
 
 		// Determine overlapping range
-		readStart := max(off, diskArea.off)
-		readEnd := min(end, diskArea.end())
+		readStart := max(off, a.off)
+		readEnd := min(end, a.end())
 
 		// Read data from disk to output buffer
-		bytesRead, err := disk.file.ReadAt(data[readStart-off:readEnd-off], int64(readStart))
+		bytesRead, err := d.file.ReadAt(data[readStart-off:readEnd-off], int64(readStart))
 
 		// EOF is expected when reading beyond file end - not an error for us
 		if err != nil && err != io.EOF {
@@ -89,28 +74,28 @@ func (disk *disk) read(off int, data bytes) (unreadAreas areas, err error) {
 
 // truncate changes the size of the cache file, adjusting cached areas as needed.
 // The file must already be open (i.e., write was called before).
-func (disk *disk) truncate(newSize int) (err error) {
-	err = disk.file.Truncate(int64(newSize))
+func (d *disk) truncate(newSize int) (err error) {
+	err = d.file.Truncate(int64(newSize))
 	if err != nil {
 		return err
 	}
 
 	defer func() {
-		validateAreasInvariants(disk.areas)
+		validateAreasInvariants(d.areas)
 	}()
 
 	// Adjust areas
-	for index, current := range disk.areas {
+	for index, current := range d.areas {
 		maxLen := newSize - current.off
 		if maxLen <= 0 {
 			// This area is beyond new size, remove it and all following areas
-			disk.areas = disk.areas[:index]
+			d.areas = d.areas[:index]
 			break
 		}
 		if current.len > maxLen {
 			// This area extends beyond new size, trim it and remove all following areas
-			disk.areas[index].len = maxLen
-			disk.areas = disk.areas[:index+1]
+			d.areas[index].len = maxLen
+			d.areas = d.areas[:index+1]
 			break
 		}
 		// Otherwise, area is fully within new size, keep it
@@ -120,19 +105,19 @@ func (disk *disk) truncate(newSize int) (err error) {
 
 // write writes data to the cache file at the specified offset.
 // Opens the file automatically for reading and writing if it's not already open.
-func (disk *disk) write(off int, data bytes) (err error) { // TODO align signature with os.File?
+func (d *disk) write(off int, data bytes) (err error) { // TODO align signature with os.File?
 	dataLen := len(data)
 	if dataLen == 0 {
 		return nil // Nothing to write, no memory change
 	}
 
 	// Open file if not already open
-	if disk.file == nil {
-		file, err := os.OpenFile(disk.filePath, os.O_CREATE|os.O_RDWR, 0644)
+	if d.file == nil {
+		file, err := os.OpenFile(d.filePath, os.O_CREATE|os.O_RDWR, 0644)
 		if err != nil {
 			return err
 		}
-		disk.file = file
+		d.file = file
 	}
 
 	// Write data to file
@@ -140,17 +125,17 @@ func (disk *disk) write(off int, data bytes) (err error) { // TODO align signatu
 	// On network file systems and FUSE file systems the system call might write less
 	// than requested without error. The go method loops the underlying system write call
 	// until all bytes are written.
-	_, err = disk.file.WriteAt(data, int64(off))
+	_, err = d.file.WriteAt(data, int64(off))
 	if err != nil {
 		return err
 	}
 
 	defer func() {
-		validateAreasInvariants(disk.areas)
+		validateAreasInvariants(d.areas)
 	}()
 
 	// Update areas
-	disk.areas = insert(disk.areas, off, dataLen)
+	d.areas = insert(d.areas, off, dataLen)
 	return nil
 }
 
@@ -178,23 +163,23 @@ func insert(previous areas, insertAt int, insertLen int) (result areas) {
 }
 
 // remove removes disk areas overlapping with the specified area.
-func (disk *disk) remove(off int, len int) {
+func (d *disk) remove(off int, len int) {
 	if len == 0 {
 		return // Nothing to do
 	}
 	defer func() {
-		validateAreasInvariants(disk.areas)
+		validateAreasInvariants(d.areas)
 	}()
 
 	end := off + len
 	newAreas := areas{}
-	for index, currentArea := range disk.areas {
+	for index, currentArea := range d.areas {
 		if currentArea.end() <= off {
 			// Area is completely before the removed area
 			newAreas = append(newAreas, currentArea)
 		} else if currentArea.off >= end {
 			// Area is completely after the removed area
-			newAreas = append(newAreas, disk.areas[index:]...)
+			newAreas = append(newAreas, d.areas[index:]...)
 			break
 		} else {
 			// Area overlaps with the removed area
@@ -208,5 +193,20 @@ func (disk *disk) remove(off int, len int) {
 			}
 		}
 	}
-	disk.areas = newAreas
+	d.areas = newAreas
+}
+
+// close closes and deletes the cache file and clears the areas.
+// The file must already be open (i.e., write was called before).
+func (d *disk) close() (err error) {
+	defer func() {
+		validateAreasInvariants(d.areas)
+	}()
+
+	err = d.file.Close()
+	assert(err == nil, fmt.Sprintf("failed to close disk cache file %q: %v", d.filePath, err))
+	err = os.Remove(d.filePath)
+	d.file = nil
+	d.areas = nil
+	return err
 }
