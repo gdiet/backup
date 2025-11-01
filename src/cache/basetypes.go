@@ -2,17 +2,17 @@ package cache
 
 type baseFile interface {
 	// read reads data from the base file. Unless an error occurs, always fills the entire data slice.
-	read(off int, data bytes) (err error)
-	length() int
+	read(off int64, data bytes) (err error)
+	length() int64
 }
 
 // area represents a located contiguous range of bytes in a file.
 type area struct {
-	off int
-	len int
+	off int64
+	len int64
 }
 
-func (area *area) end() int {
+func (area *area) end() int64 {
 	return area.off + area.len
 }
 
@@ -33,7 +33,7 @@ func (data *bytes) copy() bytes {
 
 // dataArea is a located contiguous area of bytes in a file.
 type dataArea struct {
-	off  int
+	off  int64
 	data bytes
 }
 
@@ -42,12 +42,12 @@ func (area *dataArea) copy() dataArea {
 	return dataArea{off: area.off, data: area.data.copy()}
 }
 
-func (area *dataArea) len() int {
-	return len(area.data)
+func (area *dataArea) len() int64 {
+	return int64(len(area.data))
 }
 
-func (area *dataArea) end() int {
-	return area.off + len(area.data)
+func (area *dataArea) end() int64 {
+	return area.off + area.len()
 }
 
 // dataAreas is a collection of dataArea objects.

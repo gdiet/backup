@@ -18,7 +18,7 @@ func TestMemoryRemove(t *testing.T) {
 	})
 
 	t.Run("remove single area", func(t *testing.T) {
-		mem := &memory{areas: dataAreas{{5, bytes{1, 2, 3}}}}
+		mem := &memory{areas: dataAreas{{off: 5, data: bytes{1, 2, 3}}}}
 		delta := mem.remove(area{off: 4, len: 5})
 		if len(mem.areas) != 0 {
 			t.Errorf("expected no areas, got %d", len(mem.areas))
@@ -30,11 +30,11 @@ func TestMemoryRemove(t *testing.T) {
 
 	t.Run("remove multiple areas, two of them partially", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{0, bytes{1, 2}},
-			{2, bytes{3, 4, 5}},
-			{5, bytes{9, 9}},
-			{7, bytes{4, 5}},
-			{9, bytes{6, 7}},
+			{off: 0, data: bytes{1, 2}},
+			{off: 2, data: bytes{3, 4, 5}},
+			{off: 5, data: bytes{9, 9}},
+			{off: 7, data: bytes{4, 5}},
+			{off: 9, data: bytes{6, 7}},
 		}}
 		delta := mem.remove(area{off: 4, len: 4})
 		if len(mem.areas) != 4 {
@@ -58,10 +58,10 @@ func TestMemoryRemove(t *testing.T) {
 	})
 
 	t.Run("remove after truncate", func(t *testing.T) {
-		mem := &memory{areas: dataAreas{{0, bytes{1, 2, 3, 4, 5}}}}
+		mem := &memory{areas: dataAreas{{off: 0, data: bytes{1, 2, 3, 4, 5}}}}
 		mem.shrink(3)
 		da := mem.areas[0]
-		delta := mem.remove(area{off: da.off, len: len(da.data)})
+		delta := mem.remove(area{off: da.off, len: int64(len(da.data))})
 		if len(mem.areas) != 0 {
 			t.Errorf("expected no areas, got %d", len(mem.areas))
 		}
@@ -74,7 +74,7 @@ func TestMemoryRemove(t *testing.T) {
 		mem := &memory{}
 		mem.write(0, bytes{1, 2, 3, 4}, 1024)
 		da := mem.areas[0]
-		delta := mem.remove(area{off: da.off, len: len(da.data)})
+		delta := mem.remove(area{off: da.off, len: int64(len(da.data))})
 		if len(mem.areas) != 0 {
 			t.Errorf("expected no areas, got %d", len(mem.areas))
 		}
@@ -90,7 +90,7 @@ func TestMemoryRemove(t *testing.T) {
 		mem.write(5, bytes{6}, 1024)
 		delta := 0
 		for _, da := range mem.areas {
-			delta += mem.remove(area{off: da.off, len: len(da.data)})
+			delta += mem.remove(area{off: da.off, len: int64(len(da.data))})
 		}
 		if len(mem.areas) != 0 {
 			t.Errorf("expected no areas, got %d", len(mem.areas))

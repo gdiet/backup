@@ -9,13 +9,13 @@ type memory struct {
 // read reads data from the memory entry into the provided buffer.
 //
 // Returns the areas that were not read.
-func (m *memory) read(off int, data bytes) (unreadAreas areas) {
-	end := off + len(data)
+func (m *memory) read(off int64, data bytes) (unreadAreas areas) {
+	end := off + int64(len(data))
 	if off == end {
 		return nil // Nothing to read
 	}
 
-	lastUnread := area{off: off, len: len(data)}
+	lastUnread := area{off: off, len: int64(len(data))}
 
 	// For each memory area, try to satisfy part of the read request
 	for _, a := range m.areas {
@@ -52,7 +52,7 @@ func (m *memory) read(off int, data bytes) (unreadAreas areas) {
 // shrink cuts off cached data beyond the new size.
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.
-func (m *memory) shrink(newSize int) (memoryDelta int) {
+func (m *memory) shrink(newSize int64) (memoryDelta int) {
 	defer func() {
 		validateDataAreasInvariants(m.areas)
 	}()
@@ -74,7 +74,7 @@ func (m *memory) shrink(newSize int) (memoryDelta int) {
 		truncate := area.end() - newSize
 		if truncate > 0 {
 			// Area extends beyond new size, truncate it
-			memoryDelta -= truncate
+			memoryDelta -= int(truncate)
 			truncatedData := area.data[:area.len()-truncate]
 			area.data = truncatedData.copy()
 		}
@@ -116,16 +116,16 @@ func (m *memory) remove(area area) (memoryDelta int) { // TODO align signature w
 			trimmedLen := area.off - data.off
 			trimmed := data.data[:trimmedLen]
 			newAreas = append(newAreas, dataArea{off: data.off, data: trimmed.copy()})
-			memoryDelta -= len(data.data) - trimmedLen
+			memoryDelta -= len(data.data) - int(trimmedLen)
 			deltaApplied = true
 		}
 		if data.end() > area.end() {
 			// dataArea partially right of cleared area, trim it
 			trimmedLen := data.end() - area.end()
-			trimmed := data.data[len(data.data)-trimmedLen:]
+			trimmed := data.data[len(data.data)-int(trimmedLen):]
 			newAreas = append(newAreas, dataArea{off: area.end(), data: trimmed.copy()})
 			if !deltaApplied {
-				memoryDelta -= len(data.data) - trimmedLen
+				memoryDelta -= len(data.data) - int(trimmedLen)
 			}
 		}
 	}
@@ -137,7 +137,7 @@ func (m *memory) remove(area area) (memoryDelta int) { // TODO align signature w
 // where needed. It merges areas unless they exceed mergeSizeHint.
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.
-func (m *memory) write(off int, data bytes, mergeSizeHint int) (memoryDelta int) {
+func (m *memory) write(off int64, data bytes, mergeSizeHint int) (memoryDelta int) {
 	dataLen := len(data)
 	if dataLen == 0 {
 		return 0 // Nothing to write, no memory change
@@ -147,15 +147,15 @@ func (m *memory) write(off int, data bytes, mergeSizeHint int) (memoryDelta int)
 		validateDataAreasInvariants(m.areas)
 	}()
 
-	before, mergeLeft, mergeRight, after, memoryDelta := splitAreasForProcessing(m.areas, off, dataLen)
+	before, mergeLeft, mergeRight, after, memoryDelta := splitAreasForProcessing(m.areas, off, int64(dataLen))
 	leftLen := mergeLeft.len()
 	rightLen := mergeRight.len()
 
 	m.areas = before
 
-	if dataLen+leftLen+rightLen <= mergeSizeHint {
+	if int64(dataLen)+leftLen+rightLen <= int64(mergeSizeHint) {
 		// Merge all three areas
-		merged := make(bytes, 0, leftLen+dataLen+rightLen)
+		merged := make(bytes, 0, int(leftLen)+dataLen+int(rightLen))
 		merged = append(merged, mergeLeft.data...)
 		merged = append(merged, data...)
 		merged = append(merged, mergeRight.data...)
@@ -165,9 +165,9 @@ func (m *memory) write(off int, data bytes, mergeSizeHint int) (memoryDelta int)
 			m.areas = append(m.areas, dataArea{off: off, data: merged})
 		}
 
-	} else if dataLen+leftLen <= mergeSizeHint {
+	} else if int64(dataLen)+leftLen <= int64(mergeSizeHint) {
 		// Merge left and current, keep right separate
-		merged := make(bytes, 0, leftLen+dataLen)
+		merged := make(bytes, 0, int(leftLen)+dataLen)
 		merged = append(merged, mergeLeft.data...)
 		merged = append(merged, data...)
 		if leftLen > 0 {
@@ -179,12 +179,12 @@ func (m *memory) write(off int, data bytes, mergeSizeHint int) (memoryDelta int)
 			m.areas = append(m.areas, mergeRight.copy())
 		}
 
-	} else if dataLen+rightLen <= mergeSizeHint {
+	} else if int64(dataLen)+rightLen <= int64(mergeSizeHint) {
 		// Keep left separate, merge current and right
 		if leftLen > 0 { // not necessary here, just for clarity
 			m.areas = append(m.areas, mergeLeft.copy())
 		}
-		merged := make(bytes, 0, dataLen+rightLen)
+		merged := make(bytes, 0, dataLen+int(rightLen))
 		merged = append(merged, data...)
 		merged = append(merged, mergeRight.data...)
 		m.areas = append(m.areas, dataArea{off: off, data: merged})
@@ -215,12 +215,12 @@ func (m *memory) write(off int, data bytes, mergeSizeHint int) (memoryDelta int)
 //	mergeRight: the right part of an area that partially overlaps (if any)
 //	after: areas completely after the new region (not adjacent, no overlap)
 //	memoryDelta: net change in memory usage (bytes)
-func splitAreasForProcessing(areas dataAreas, off int, length int) (
+func splitAreasForProcessing(areas dataAreas, off int64, length int64) (
 	before dataAreas, mergeLeft, mergeRight dataArea, after dataAreas, memoryDelta int) {
 
 	mergeLeft = dataArea{}
 	mergeRight = dataArea{}
-	memoryDelta = length
+	memoryDelta = int(length)
 
 	end := off + length
 	// for very large numbers of areas, a binary search could be more efficient here
@@ -244,14 +244,14 @@ func splitAreasForProcessing(areas dataAreas, off int, length int) (
 		deltaApplied := false
 		if off > area.off {
 			// Area is partially left of current, mark for merge left and update memory delta
-			memoryDelta -= min(end, areaEnd) - off
+			memoryDelta -= int(min(end, areaEnd) - off)
 			deltaApplied = true
 			mergeLeft = dataArea{off: area.off, data: area.data[:off-area.off]}
 		}
 		if end < areaEnd {
 			// Area is partially right of current, mark for merge right and update memory delta
 			if !deltaApplied {
-				memoryDelta -= end - max(off, area.off)
+				memoryDelta -= int(end - max(off, area.off))
 			}
 			mergeRight = dataArea{off: end, data: area.data[end-area.off:]}
 		}
@@ -263,7 +263,7 @@ func splitAreasForProcessing(areas dataAreas, off int, length int) (
 // Returns the change in memory usage (bytes allocated) caused by this operation (always negative or zero).
 func (m *memory) close() (memoryDelta int) {
 	for _, area := range m.areas {
-		memoryDelta -= area.len()
+		memoryDelta -= int(area.len())
 	}
 	m.areas = nil
 	return

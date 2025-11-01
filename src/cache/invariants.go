@@ -52,7 +52,7 @@ func validateDataAreasInvariants(areas dataAreas) {
 			panic(fmt.Sprintf("dataAreas invariant violated: area %d not sorted by offset", i))
 		}
 		// Check non-overlapping
-		if prev.off+len(prev.data) > curr.off {
+		if prev.off+int64(len(prev.data)) > curr.off {
 			panic(fmt.Sprintf("dataAreas invariant violated: area %d overlaps with area %d", i-1, i))
 		}
 	}

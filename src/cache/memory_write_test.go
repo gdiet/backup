@@ -9,17 +9,17 @@ func TestMemoryWrite(t *testing.T) {
 	t.Run("no merge possible", func(t *testing.T) {
 		mem := &memory{}
 		// Prepare left and right areas
-		left := dataArea{0, bytes{1, 2, 3}}
-		right := dataArea{10, bytes{7, 8, 9}}
+		left := dataArea{off: 0, data: bytes{1, 2, 3}}
+		right := dataArea{off: 10, data: bytes{7, 8, 9}}
 		mem.areas = dataAreas{left, right}
 
 		// Write new data in the gap, mergeSizeHint too small for any merge
-		pos := 5
+		pos := int64(5)
 		data := bytes{4, 5, 6}
 		mergeSizeHint := 2 // deliberately too small
 		mem.write(pos, data, mergeSizeHint)
 
-		want := dataAreas{left, {pos, data}, right}
+		want := dataAreas{left, {off: pos, data: data}, right}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after no-merge write: got %+v, want %+v", mem.areas, want)
 		}
@@ -41,14 +41,14 @@ func TestMemoryWrite(t *testing.T) {
 		if mem.areas[0].off != areaCopy.off || !reflect.DeepEqual(mem.areas[0].data, areaCopy.data) {
 			t.Errorf("unexpected area: got %+v", mem.areas[0])
 		}
-		if memoryDelta != areaCopy.len() {
+		if memoryDelta != int(areaCopy.len()) {
 			t.Errorf("unexpected memoryDelta: got %d, want %d", memoryDelta, areaCopy.len())
 		}
 	})
 
 	t.Run("write zero length data", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{{0, bytesOf(1, 2, 3, 4, 5)}}}
-		pos := 1
+		pos := int64(1)
 		data := bytesOf()
 		memoryDelta := mem.write(pos, data, 1024)
 
@@ -66,7 +66,7 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("overwrite existing area", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{{0, bytesOf(1, 2, 3, 4, 5)}}}
-		pos := 1
+		pos := int64(1)
 		data := bytesOf(9, 9, 9)
 		memoryDelta := mem.write(pos, data, 1024)
 

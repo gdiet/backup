@@ -9,13 +9,13 @@ type sparse struct {
 // read reads sparse (zero filled) data from the sparse entry into the provided buffer.
 //
 // Returns the areas that were not read.
-func (s *sparse) read(off int, data bytes) (unreadAreas areas) {
-	end := off + len(data)
+func (s *sparse) read(off int64, data bytes) (unreadAreas areas) {
+	end := off + int64(len(data))
 	if off == end {
 		return nil // Nothing to read
 	}
 
-	lastUnread := area{off: off, len: len(data)}
+	lastUnread := area{off: off, len: int64(len(data))}
 
 	// For each sparse area, try to satisfy part of the read request
 	for _, a := range s.areas {
@@ -52,7 +52,7 @@ func (s *sparse) read(off int, data bytes) (unreadAreas areas) {
 }
 
 // shrink cuts off sparse areas beyond the new size.
-func (s *sparse) shrink(newSize int) {
+func (s *sparse) shrink(newSize int64) {
 	defer func() {
 		validateAreasInvariants(s.areas)
 	}()
@@ -84,7 +84,7 @@ func (s *sparse) add(area area) {
 }
 
 // remove removes sparse areas overlapping with the specified area.
-func (s *sparse) remove(off int, len int) {
+func (s *sparse) remove(off int64, len int64) {
 	if len == 0 {
 		return // Nothing to do
 	}

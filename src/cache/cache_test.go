@@ -9,10 +9,10 @@ import (
 
 type emptyMockBaseFile struct{}
 
-func (b emptyMockBaseFile) read(off int, data bytes) error {
+func (b emptyMockBaseFile) read(off int64, data bytes) error {
 	return nil // Always returns no data
 }
-func (b emptyMockBaseFile) length() int {
+func (b emptyMockBaseFile) length() int64 {
 	return 0
 }
 

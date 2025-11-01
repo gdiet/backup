@@ -120,7 +120,7 @@ func TestSplitAreasForProcessing(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			before, mergeL, mergeR, after, delta := splitAreasForProcessing(tc.areas, tc.off, tc.length)
+			before, mergeL, mergeR, after, delta := splitAreasForProcessing(tc.areas, int64(tc.off), int64(tc.length))
 			if !reflect.DeepEqual(before, tc.expBefore) {
 				t.Errorf("before: got %v, want %v", before, tc.expBefore)
 			}

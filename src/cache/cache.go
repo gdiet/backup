@@ -4,7 +4,7 @@ import "io"
 
 // Cache is a file contents cache that combines the memory and disk cache layers.
 type Cache struct {
-	size   int
+	size   int64
 	sparse sparse
 	memory memory
 	disk   disk
@@ -23,7 +23,7 @@ func NewCache(cacheFilePath string, baseFile baseFile) Cache {
 
 // Read reads data from the cache entry.
 // Returns the total number of bytes read, which may be less than len(data) if EOF is reached.
-func (c *Cache) Read(off int, data bytes) (bytesRead int, err error) {
+func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
 	len := len(data)
 	if len <= 0 {
 		return 0, nil // Nothing to read
@@ -32,7 +32,7 @@ func (c *Cache) Read(off int, data bytes) (bytesRead int, err error) {
 		return 0, io.EOF // Nothing to read due to EOF
 	}
 	// Calculate total read size to prevent reading internally past EOF
-	bytesRead = min(len, c.size-off)
+	bytesRead = int(min(int64(len), c.size-off))
 
 	// Adjust target slice to available size
 	data = data[:bytesRead]
@@ -77,7 +77,7 @@ func (c *Cache) Read(off int, data bytes) (bytesRead int, err error) {
 
 // Truncate changes the size of cache entry, adjusting all layers as needed.
 // Returns the memory usage change (negative if memory was freed, positive if more memory was used).
-func (c *Cache) Truncate(newSize int) (memoryDelta int, err error) {
+func (c *Cache) Truncate(newSize int64) (memoryDelta int, err error) {
 	if newSize == c.size {
 		return 0, nil // No size change
 	}
@@ -97,22 +97,22 @@ func (c *Cache) Truncate(newSize int) (memoryDelta int, err error) {
 
 // Write writes data to the cache entry at the specified offset.
 // Returns the memory usage change (negative if memory was freed, positive if more memory was used).
-func (c *Cache) Write(off int, data bytes, storeInMemory bool, maxMergeSize int) (memoryDelta int, err error) {
+func (c *Cache) Write(off int64, data bytes, storeInMemory bool, maxMergeSize int) (memoryDelta int, err error) {
 	if len(data) == 0 {
 		return 0, nil // Nothing to write, no memory change
 	}
 
 	// Update sparse layer (removes sparse areas)
-	c.sparse.remove(off, len(data))
+	c.sparse.remove(off, int64(len(data)))
 
 	if storeInMemory {
 		// Either write to memory cache ...
 		memoryDelta = c.memory.write(off, data, maxMergeSize)
-		c.disk.remove(off, len(data))
+		c.disk.remove(off, int64(len(data)))
 		return memoryDelta, nil
 	} else {
 		// ... or write to disk, clearing any overlapping memory areas
-		memoryDelta = c.memory.remove(area{off: off, len: len(data)})
+		memoryDelta = c.memory.remove(area{off: off, len: int64(len(data))})
 		err := c.disk.write(off, data)
 		return memoryDelta, err
 	}

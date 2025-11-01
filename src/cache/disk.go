@@ -20,13 +20,13 @@ type disk struct {
 // The file must already be open (i.e., write was called before).
 //
 // Returns the areas that were not read.
-func (d *disk) read(off int, data bytes) (unreadAreas areas, err error) {
-	end := off + len(data)
+func (d *disk) read(off int64, data bytes) (unreadAreas areas, err error) {
+	end := off + int64(len(data))
 	if off == end {
 		return nil, nil // Nothing to read
 	}
 
-	lastUnread := area{off: off, len: len(data)}
+	lastUnread := area{off: off, len: int64(len(data))}
 
 	// For each disk area, try to satisfy part of the read request
 	for _, a := range d.areas {
@@ -42,7 +42,7 @@ func (d *disk) read(off int, data bytes) (unreadAreas areas, err error) {
 		readEnd := min(end, a.end())
 
 		// Read data from disk to output buffer
-		bytesRead, err := d.file.ReadAt(data[readStart-off:readEnd-off], int64(readStart))
+		bytesRead, err := d.file.ReadAt(data[readStart-off:readEnd-off], readStart)
 
 		// EOF is expected when reading beyond file end - not an error for us
 		if err != nil && err != io.EOF {
@@ -50,8 +50,9 @@ func (d *disk) read(off int, data bytes) (unreadAreas areas, err error) {
 		}
 
 		// Fill remaining bytes with zeros if we read less than requested, but...
-		if bytesRead < readEnd-readStart {
-			for i := bytesRead; i < readEnd-readStart; i++ {
+		readLength := readEnd - readStart
+		if int64(bytesRead) < readLength {
+			for i := int64(bytesRead); i < readLength; i++ {
 				data[readStart-off+i] = 0
 			}
 			// ... but the system should not request areas that are not fully present on disk
@@ -76,7 +77,7 @@ func (d *disk) read(off int, data bytes) (unreadAreas areas, err error) {
 // shrink cuts off cached data beyond the new size, truncating the cache file.
 // The file must already be open (i.e., write was called before).
 // If called when the size has increased (don't do that), the cache file is extended.
-func (d *disk) shrink(newSize int) (err error) {
+func (d *disk) shrink(newSize int64) (err error) {
 	err = d.file.Truncate(int64(newSize))
 	if err != nil {
 		return err
@@ -106,7 +107,7 @@ func (d *disk) shrink(newSize int) (err error) {
 
 // write writes data to the cache file at the specified offset.
 // Opens the file automatically for reading and writing if it's not already open.
-func (d *disk) write(off int, data bytes) (err error) { // TODO align signature with os.File?
+func (d *disk) write(off int64, data bytes) (err error) { // TODO align signature with os.File?
 	dataLen := len(data)
 	if dataLen == 0 {
 		return nil // Nothing to write, no memory change
@@ -136,11 +137,11 @@ func (d *disk) write(off int, data bytes) (err error) { // TODO align signature 
 	}()
 
 	// Update areas
-	d.areas = insert(d.areas, off, dataLen)
+	d.areas = insert(d.areas, off, int64(dataLen))
 	return nil
 }
 
-func insert(previous areas, insertAt int, insertLen int) (result areas) {
+func insert(previous areas, insertAt int64, insertLen int64) (result areas) {
 	insertEnd := insertAt + insertLen
 
 	for index, current := range previous {
@@ -164,7 +165,7 @@ func insert(previous areas, insertAt int, insertLen int) (result areas) {
 }
 
 // remove removes disk areas overlapping with the specified area.
-func (d *disk) remove(off int, len int) {
+func (d *disk) remove(off int64, len int64) {
 	if len == 0 {
 		return // Nothing to do
 	}

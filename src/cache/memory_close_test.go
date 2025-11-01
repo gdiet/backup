@@ -17,7 +17,7 @@ func TestMemoryClose(t *testing.T) {
 	})
 
 	t.Run("close with single area", func(t *testing.T) {
-		mem := &memory{areas: dataAreas{{0, bytes{1, 2, 3}}}}
+		mem := &memory{areas: dataAreas{{off: 0, data: bytes{1, 2, 3}}}}
 		memoryDelta := mem.close()
 		if len(mem.areas) != 0 {
 			t.Errorf("expected no areas after close, got %d", len(mem.areas))
@@ -29,9 +29,9 @@ func TestMemoryClose(t *testing.T) {
 
 	t.Run("close with multiple areas", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{0, bytes{1, 2}},
-			{2, bytes{3, 4, 5}},
-			{5, bytes{6}},
+			{off: 0, data: bytes{1, 2}},
+			{off: 2, data: bytes{3, 4, 5}},
+			{off: 5, data: bytes{6}},
 		}}
 		memoryDelta := mem.close()
 		if len(mem.areas) != 0 {
@@ -55,7 +55,7 @@ func TestMemoryClose(t *testing.T) {
 	})
 
 	t.Run("close after truncate", func(t *testing.T) {
-		mem := &memory{areas: dataAreas{{0, bytes{1, 2, 3, 4, 5}}}}
+		mem := &memory{areas: dataAreas{{off: 0, data: bytes{1, 2, 3, 4, 5}}}}
 		mem.shrink(3)
 		memoryDelta := mem.close()
 		if len(mem.areas) != 0 {
