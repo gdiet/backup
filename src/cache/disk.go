@@ -105,6 +105,40 @@ func (d *disk) shrink(newSize int64) (err error) {
 	return nil
 }
 
+// remove removes disk areas overlapping with the specified area.
+func (d *disk) remove(off int64, length int64) {
+	if length == 0 {
+		return // Nothing to do
+	}
+	defer func() {
+		validateAreasInvariants(d.areas)
+	}()
+
+	end := off + length
+	newAreas := areas{}
+	for index, currentArea := range d.areas {
+		if currentArea.end() <= off {
+			// Area is completely before the removed area, keep it
+			newAreas = append(newAreas, currentArea)
+		} else if currentArea.off >= end {
+			// Area is completely after the removed area, keep it and remaining areas
+			newAreas = append(newAreas, d.areas[index:]...)
+			break
+		} else {
+			// Area overlaps with the removed area
+			if currentArea.off < off {
+				// There is a part left of the removed area
+				newAreas = append(newAreas, area{off: currentArea.off, len: off - currentArea.off})
+			}
+			if currentArea.end() > end {
+				// There is a part right of the removed area
+				newAreas = append(newAreas, area{off: end, len: currentArea.end() - end})
+			}
+		}
+	}
+	d.areas = newAreas
+}
+
 // write writes data to the cache file at the specified offset.
 // Opens the file automatically for reading and writing if it's not already open.
 func (d *disk) write(off int64, data bytes) (err error) { // TODO align signature with os.File?
@@ -162,40 +196,6 @@ func insert(previous areas, insertAt int64, insertLen int64) (result areas) {
 	}
 	result = append(result, area{off: insertAt, len: insertEnd - insertAt})
 	return result
-}
-
-// remove removes disk areas overlapping with the specified area.
-func (d *disk) remove(off int64, length int64) {
-	if length == 0 {
-		return // Nothing to do
-	}
-	defer func() {
-		validateAreasInvariants(d.areas)
-	}()
-
-	end := off + length
-	newAreas := areas{}
-	for index, currentArea := range d.areas {
-		if currentArea.end() <= off {
-			// Area is completely before the removed area, keep it
-			newAreas = append(newAreas, currentArea)
-		} else if currentArea.off >= end {
-			// Area is completely after the removed area, keep it and remaining areas
-			newAreas = append(newAreas, d.areas[index:]...)
-			break
-		} else {
-			// Area overlaps with the removed area
-			if currentArea.off < off {
-				// There is a part left of the removed area
-				newAreas = append(newAreas, area{off: currentArea.off, len: off - currentArea.off})
-			}
-			if currentArea.end() > end {
-				// There is a part right of the removed area
-				newAreas = append(newAreas, area{off: end, len: currentArea.end() - end})
-			}
-		}
-	}
-	d.areas = newAreas
 }
 
 // close closes and deletes the cache file and clears the areas.

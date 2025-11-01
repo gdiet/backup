@@ -83,7 +83,7 @@ func (c *Cache) Truncate(newSize int64) (memoryDelta int, err error) {
 	}
 	if newSize > c.size {
 		// New sparse area from old size to new size
-		c.sparse.add(area{off: c.size, len: newSize - c.size})
+		c.sparse.write(c.size, newSize-c.size)
 		c.size = newSize
 		return 0, nil // No memory change when growing
 	}

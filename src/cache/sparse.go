@@ -74,15 +74,6 @@ func (s *sparse) shrink(newSize int64) {
 	}
 }
 
-// add adds a new sparse area. Assumes the area's offset is beyond the current sparse areas.
-func (s *sparse) add(area area) {
-	defer func() {
-		validateAreasInvariants(s.areas)
-	}()
-
-	s.areas = append(s.areas, area)
-}
-
 // remove removes sparse areas overlapping with the specified area.
 func (s *sparse) remove(off int64, length int64) {
 	if length == 0 {
@@ -115,6 +106,18 @@ func (s *sparse) remove(off int64, length int64) {
 		}
 	}
 	s.areas = newAreas
+}
+
+// write adds a new sparse area. Assumes the area's offset is beyond the current sparse areas.
+func (s *sparse) write(off int64, length int64) {
+	if length == 0 {
+		return // Nothing to write
+	}
+	defer func() {
+		validateAreasInvariants(s.areas)
+	}()
+
+	s.areas = append(s.areas, area{off: off, len: length})
 }
 
 // close clears the sparse entry.
