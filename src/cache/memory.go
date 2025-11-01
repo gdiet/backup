@@ -98,43 +98,34 @@ func (m *memory) remove(off int64, length int64) (memoryDelta int) {
 
 	end := off + length
 	newAreas := dataAreas{}
-	for index, data := range m.areas {
-		if data.end() <= off {
-			// dataArea ends before the cleared area starts, keep dataArea
-			newAreas = append(newAreas, data)
-			continue
-		}
-		if data.off >= end {
-			// dataArea starts after the cleared area ends, keep remaining dataAreas
+	for index, currentArea := range m.areas {
+		if currentArea.end() <= off {
+			// Area is completely before the removed area, keep it
+			newAreas = append(newAreas, currentArea)
+		} else if currentArea.off >= end {
+			// Area is completely after the removed area, keep it and remaining areas
 			newAreas = append(newAreas, m.areas[index:]...)
 			break
-		}
-		if data.off >= off && data.end() <= end {
-			// dataArea fully within cleared area, remove it
-			memoryDelta -= len(data.data)
-			continue
-		}
-		deltaApplied := false
-		if data.off < off {
-			// dataArea partially left of cleared area, trim it
-			trimmedLen := off - data.off
-			trimmed := data.data[:trimmedLen]
-			newAreas = append(newAreas, dataArea{off: data.off, data: trimmed.copy()})
-			memoryDelta -= len(data.data) - int(trimmedLen)
-			deltaApplied = true
-		}
-		if data.end() > end {
-			// dataArea partially right of cleared area, trim it
-			trimmedLen := data.end() - end
-			trimmed := data.data[len(data.data)-int(trimmedLen):]
-			newAreas = append(newAreas, dataArea{off: end, data: trimmed.copy()})
-			if !deltaApplied {
-				memoryDelta -= len(data.data) - int(trimmedLen)
+		} else {
+			// Area overlaps with the removed area
+			memoryDelta -= len(currentArea.data)
+			if currentArea.off < off {
+				// There is a part left of the removed area
+				trimmed := currentArea.data[:off-currentArea.off]
+				newAreas = append(newAreas, dataArea{off: currentArea.off, data: trimmed.copy()})
+				memoryDelta += int(len(trimmed))
+			}
+			if currentArea.end() > end {
+				// There is a part right of the removed area
+				excessLen := currentArea.end() - end
+				trimmed := currentArea.data[len(currentArea.data)-int(excessLen):]
+				newAreas = append(newAreas, dataArea{off: end, data: trimmed.copy()})
+				memoryDelta += int(excessLen)
 			}
 		}
 	}
 	m.areas = newAreas
-	return
+	return memoryDelta
 }
 
 // write caches a copy of the data in the memory at the specified offset, overwriting and merging

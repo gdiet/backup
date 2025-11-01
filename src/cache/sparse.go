@@ -96,10 +96,10 @@ func (s *sparse) remove(off int64, length int64) {
 	newAreas := areas{}
 	for index, currentArea := range s.areas {
 		if currentArea.end() <= off {
-			// Area is completely before the removed area
+			// Area is completely before the removed area, keep it
 			newAreas = append(newAreas, currentArea)
 		} else if currentArea.off >= end {
-			// Area is completely after the removed area
+			// Area is completely after the removed area, keep it and remaining areas
 			newAreas = append(newAreas, s.areas[index:]...)
 			break
 		} else {
