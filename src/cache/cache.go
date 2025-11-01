@@ -26,7 +26,7 @@ func NewCache(cacheFilePath string, baseFile baseFile) Cache {
 func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
 	len := len(data)
 	if len <= 0 {
-		return 0, nil // Nothing to read
+		return 0, nil // Nothing to read or invalid length
 	}
 	if c.size <= off {
 		return 0, io.EOF // Nothing to read due to EOF
@@ -78,8 +78,8 @@ func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
 // Truncate changes the size of cache entry, adjusting all layers as needed.
 // Returns the memory usage change (negative if memory was freed, positive if more memory was used).
 func (c *Cache) Truncate(newSize int64) (memoryDelta int, err error) {
-	if newSize == c.size {
-		return 0, nil // No size change
+	if newSize < 0 || newSize == c.size {
+		return 0, nil // No size change or invalid length
 	}
 	if newSize > c.size {
 		// New sparse area from old size to new size

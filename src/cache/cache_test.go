@@ -43,6 +43,20 @@ func TestReadNoData(t *testing.T) {
 	}
 }
 
+func TestTruncateNegativeSize(t *testing.T) {
+	cache := NewCache("", emptyMockBaseFile{})
+	memoryDelta, err := cache.Truncate(-1)
+	if err != nil {
+		t.Fatalf("expected no error for negative truncate, got %v", err)
+	}
+	if memoryDelta != 0 {
+		t.Fatalf("expected 0 memory delta for negative truncate, got %d", memoryDelta)
+	}
+	if cache.size != 0 {
+		t.Fatalf("expected cache size to remain 0 after negative truncate, got %d", cache.size)
+	}
+}
+
 func TestReadSparseMemoryAndDisk(t *testing.T) {
 	path := "test_cache_with_disk.tmp"
 	_ = os.Remove(path)
