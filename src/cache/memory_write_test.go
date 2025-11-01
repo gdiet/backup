@@ -16,7 +16,7 @@ func TestMemoryWrite(t *testing.T) {
 		// Write new data in the gap, mergeSizeHint too small for any merge
 		pos := int64(5)
 		data := bytes{4, 5, 6}
-		mergeSizeHint := 2 // deliberately too small
+		mergeSizeHint := int64(2) // deliberately too small
 		mem.write(pos, data, mergeSizeHint)
 
 		want := dataAreas{left, {off: pos, data: data}, right}

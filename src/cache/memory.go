@@ -132,7 +132,7 @@ func (m *memory) remove(off int64, length int64) (memoryDelta int) {
 // where needed. It merges areas unless they exceed mergeSizeHint.
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.
-func (m *memory) write(off int64, data bytes, mergeSizeHint int) (memoryDelta int) {
+func (m *memory) write(off int64, data bytes, mergeSizeHint int64) (memoryDelta int) {
 	dataLen := len(data)
 	if dataLen == 0 {
 		return 0 // Nothing to write, no memory change
@@ -143,58 +143,11 @@ func (m *memory) write(off int64, data bytes, mergeSizeHint int) (memoryDelta in
 	}()
 
 	before, mergeLeft, mergeRight, after, memoryDelta := splitAreasForProcessing(m.areas, off, int64(dataLen))
-	leftLen := mergeLeft.len()
-	rightLen := mergeRight.len()
-
 	m.areas = before
 
-	if int64(dataLen)+leftLen+rightLen <= int64(mergeSizeHint) {
-		// Merge all three areas
-		merged := make(bytes, 0, int(leftLen)+dataLen+int(rightLen))
-		merged = append(merged, mergeLeft.data...)
-		merged = append(merged, data...)
-		merged = append(merged, mergeRight.data...)
-		if leftLen > 0 {
-			m.areas = append(m.areas, dataArea{off: mergeLeft.off, data: merged})
-		} else {
-			m.areas = append(m.areas, dataArea{off: off, data: merged})
-		}
-
-	} else if int64(dataLen)+leftLen <= int64(mergeSizeHint) {
-		// Merge left and current, keep right separate
-		merged := make(bytes, 0, int(leftLen)+dataLen)
-		merged = append(merged, mergeLeft.data...)
-		merged = append(merged, data...)
-		if leftLen > 0 {
-			m.areas = append(m.areas, dataArea{off: mergeLeft.off, data: merged})
-		} else {
-			m.areas = append(m.areas, dataArea{off: off, data: merged})
-		}
-		if rightLen > 0 { // not necessary here, just for clarity
-			m.areas = append(m.areas, mergeRight.copy())
-		}
-
-	} else if int64(dataLen)+rightLen <= int64(mergeSizeHint) {
-		// Keep left separate, merge current and right
-		if leftLen > 0 { // not necessary here, just for clarity
-			m.areas = append(m.areas, mergeLeft.copy())
-		}
-		merged := make(bytes, 0, dataLen+int(rightLen))
-		merged = append(merged, data...)
-		merged = append(merged, mergeRight.data...)
-		m.areas = append(m.areas, dataArea{off: off, data: merged})
-
-	} else {
-		// No merges possible, keep all separate
-		if leftLen > 0 {
-			m.areas = append(m.areas, mergeLeft.copy())
-		}
-		m.areas = append(m.areas, (&dataArea{off: off, data: data}).copy())
-		if rightLen > 0 {
-			m.areas = append(m.areas, mergeRight.copy())
-		}
-	}
-
+	// Apply merging strategy and add resulting areas
+	mergedAreas := determineMergeStrategy(off, data, mergeLeft, mergeRight, mergeSizeHint)
+	m.areas = append(m.areas, mergedAreas...)
 	m.areas = append(m.areas, after...)
 	return
 }
@@ -252,6 +205,89 @@ func splitAreasForProcessing(areas dataAreas, off int64, length int64) (
 		}
 	}
 	return
+}
+
+// determineMergeStrategy determines which areas to merge based on size constraints
+func determineMergeStrategy(off int64, data bytes, mergeLeft, mergeRight dataArea, mergeSizeHint int64) dataAreas {
+	dataLen := int64(len(data))
+	leftLen := mergeLeft.len()
+	rightLen := mergeRight.len()
+
+	if dataLen+leftLen+rightLen <= mergeSizeHint {
+		return mergeAllThreeAreas(off, data, mergeLeft, mergeRight)
+	}
+
+	if dataLen+leftLen <= mergeSizeHint {
+		return mergeLeftAndCurrent(off, data, mergeLeft, mergeRight)
+	}
+
+	if dataLen+rightLen <= mergeSizeHint {
+		return mergeCurrentAndRight(off, data, mergeLeft, mergeRight)
+	}
+
+	return keepAllSeparate(off, data, mergeLeft, mergeRight)
+}
+
+// mergeAllThreeAreas merges left, current, and right areas into one
+func mergeAllThreeAreas(off int64, data bytes, mergeLeft, mergeRight dataArea) dataAreas {
+	leftLen := mergeLeft.len()
+	merged := make(bytes, 0, int(leftLen)+len(data)+int(mergeRight.len()))
+	merged = append(merged, mergeLeft.data...)
+	merged = append(merged, data...)
+	merged = append(merged, mergeRight.data...)
+
+	areaOff := off
+	if leftLen > 0 {
+		areaOff = mergeLeft.off
+	}
+	return dataAreas{{off: areaOff, data: merged}}
+}
+
+// mergeLeftAndCurrent merges left and current areas, keeps right separate
+func mergeLeftAndCurrent(off int64, data bytes, mergeLeft, mergeRight dataArea) dataAreas {
+	leftLen := mergeLeft.len()
+	merged := make(bytes, 0, int(leftLen)+len(data))
+	merged = append(merged, mergeLeft.data...)
+	merged = append(merged, data...)
+
+	result := make(dataAreas, 0, 2)
+	areaOff := off
+	if leftLen > 0 {
+		areaOff = mergeLeft.off
+	}
+	result = append(result, dataArea{off: areaOff, data: merged})
+
+	if mergeRight.len() > 0 {
+		result = append(result, mergeRight.copy())
+	}
+	return result
+}
+
+// mergeCurrentAndRight keeps left separate, merges current and right areas
+func mergeCurrentAndRight(off int64, data bytes, mergeLeft, mergeRight dataArea) dataAreas {
+	merged := make(bytes, 0, len(data)+int(mergeRight.len()))
+	merged = append(merged, data...)
+	merged = append(merged, mergeRight.data...)
+
+	result := make(dataAreas, 0, 2)
+	if mergeLeft.len() > 0 {
+		result = append(result, mergeLeft.copy())
+	}
+	result = append(result, dataArea{off: off, data: merged})
+	return result
+}
+
+// keepAllSeparate keeps left, current, and right areas separate
+func keepAllSeparate(off int64, data bytes, mergeLeft, mergeRight dataArea) dataAreas {
+	result := make(dataAreas, 0, 3)
+	if mergeLeft.len() > 0 {
+		result = append(result, mergeLeft.copy())
+	}
+	result = append(result, (&dataArea{off: off, data: data}).copy())
+	if mergeRight.len() > 0 {
+		result = append(result, mergeRight.copy())
+	}
+	return result
 }
 
 // close clears the memory entry.
