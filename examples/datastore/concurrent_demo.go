@@ -1,8 +1,8 @@
 package main
 
 import (
+	"backup/src/storage"
 	"fmt"
-	"github.com/gdiet/backup/src/storage"
 	"log"
 	"sync"
 	"time"
@@ -29,7 +29,7 @@ func main() {
 
 	// Test concurrent reads (should be fast with RWLock)
 	fmt.Println("\n=== Testing Concurrent Reads (should be very fast with RWLock) ===")
-	
+
 	numReaders := 10
 	var wg sync.WaitGroup
 	start := time.Now()
@@ -38,7 +38,7 @@ func main() {
 		wg.Add(1)
 		go func(readerID int) {
 			defer wg.Done()
-			
+
 			// Each reader does multiple reads
 			for j := 0; j < 100; j++ {
 				data, warnings := store.Read(0, int64(len(testData)))
@@ -54,13 +54,13 @@ func main() {
 
 	wg.Wait()
 	duration := time.Since(start)
-	
+
 	fmt.Printf("✅ %d concurrent readers completed 1000 total reads in %v\n", numReaders, duration)
 	fmt.Printf("   Average: %.2f reads/ms\n", float64(1000)/float64(duration.Nanoseconds())*1000000)
 
 	// Test mixed concurrent reads and writes
 	fmt.Println("\n=== Testing Mixed Concurrent Reads and Writes ===")
-	
+
 	numOperations := 5
 	start = time.Now()
 
@@ -90,7 +90,7 @@ func main() {
 
 	wg.Wait()
 	mixedDuration := time.Since(start)
-	
+
 	fmt.Printf("✅ Mixed concurrent operations completed in %v\n", mixedDuration)
 	fmt.Printf("   RWLock allows multiple readers to run simultaneously!\n")
 	fmt.Printf("   Only writers block other operations on the same file.\n")

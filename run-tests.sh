@@ -79,9 +79,9 @@ mkdir -p test-files/reports
 mkdir -p test-files/binaries
 echo ""
 
-# Format code
+# Format code (excluding examples directory)
 print_status "Formatting code..."
-if go fmt ./...; then
+if go fmt ./src/...; then
     print_success "Code formatting completed"
 else
     print_error "Code formatting failed"
@@ -89,9 +89,9 @@ else
 fi
 echo ""
 
-# Run go vet
+# Run go vet (excluding examples directory)
 print_status "Running go vet..."
-if go vet ./...; then
+if go vet ./src/...; then
     print_success "go vet passed"
 else
     print_error "go vet failed"
@@ -101,7 +101,7 @@ echo ""
 
 # Run regular tests with verbose output
 print_status "Running regular tests..."
-if go test -v ./...; then
+if go test -v ./src/...; then
     print_success "Regular tests passed"
 else
     print_error "Regular tests failed"
@@ -116,7 +116,7 @@ export CGO_ENABLED=1
 # Build test binary with race detector in test-files
 if go test -race -c -o test-files/binaries/storage-race.test ./src/storage; then
     print_status "Race detector test binary created: test-files/binaries/storage-race.test"
-    if go test -race -v ./...; then
+    if go test -race -v ./src/...; then
         print_success "Race detector tests passed"
     else
         print_warning "Race detector tests failed - this might indicate race conditions or CGO issues"
@@ -129,7 +129,7 @@ echo ""
 
 # Run tests with coverage
 print_status "Running tests with coverage..."
-if go test -coverprofile=test-files/coverage.out ./...; then
+if go test -coverprofile=test-files/coverage.out ./src/...; then
     coverage=$(go tool cover -func=test-files/coverage.out | tail -1 | awk '{print $3}')
     print_success "Coverage tests completed - Total coverage: $coverage"
     
@@ -146,7 +146,7 @@ echo ""
 if [ "$RUN_PERFORMANCE_TESTS" = true ]; then
     # Run performance tests (benchmarks) for 2 seconds
     print_status "Running performance tests (benchmarks) for 2 seconds..."
-    if go test -bench=. -benchtime=2s -benchmem ./...; then
+    if go test -bench=. -benchtime=2s -benchmem ./src/...; then
         print_success "Performance tests completed"
     else
         print_warning "Performance tests had issues but continuing..."

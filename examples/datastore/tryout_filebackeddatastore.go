@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gdiet/backup/src/storage"
+	"backup/src/storage"
 )
 
 func main() {

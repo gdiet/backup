@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/gdiet/backup/src/storage"
+	"backup/src/storage"
 )
 
 func main() {
