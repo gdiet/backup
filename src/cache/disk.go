@@ -107,8 +107,8 @@ func (d *disk) shrink(newSize int64) (err error) {
 
 // remove removes disk areas overlapping with the specified area.
 func (d *disk) remove(off int64, length int64) {
-	if length == 0 {
-		return // Nothing to do
+	if length <= 0 {
+		return // Nothing to write or invalid length
 	}
 	defer func() {
 		validateAreasInvariants(d.areas)

@@ -75,3 +75,51 @@ func TestSparseRemoveOutsideSparseAreas(t *testing.T) {
 		t.Errorf("Expected second area to be {off: 20, len: 10}, got %+v", s.areas[1])
 	}
 }
+
+func TestSparseRemoveZeroLength(t *testing.T) {
+	// Setup
+	s := &sparse{
+		areas: areas{
+			{off: 0, len: 10},
+			{off: 20, len: 10},
+		},
+	}
+
+	// Act - zero length should not change anything
+	s.remove(5, 0)
+
+	// Assert - areas should remain unchanged
+	if len(s.areas) != 2 {
+		t.Errorf("Expected 2 sparse areas, got %d", len(s.areas))
+	}
+	if s.areas[0] != (area{off: 0, len: 10}) {
+		t.Errorf("Expected first area to be {off: 0, len: 10}, got %+v", s.areas[0])
+	}
+	if s.areas[1] != (area{off: 20, len: 10}) {
+		t.Errorf("Expected second area to be {off: 20, len: 10}, got %+v", s.areas[1])
+	}
+}
+
+func TestSparseRemoveNegativeLength(t *testing.T) {
+	// Setup
+	s := &sparse{
+		areas: areas{
+			{off: 0, len: 10},
+			{off: 20, len: 10},
+		},
+	}
+
+	// Act - negative length should not change anything
+	s.remove(5, -5)
+
+	// Assert - areas should remain unchanged
+	if len(s.areas) != 2 {
+		t.Errorf("Expected 2 sparse areas, got %d", len(s.areas))
+	}
+	if s.areas[0] != (area{off: 0, len: 10}) {
+		t.Errorf("Expected first area to be {off: 0, len: 10}, got %+v", s.areas[0])
+	}
+	if s.areas[1] != (area{off: 20, len: 10}) {
+		t.Errorf("Expected second area to be {off: 20, len: 10}, got %+v", s.areas[1])
+	}
+}

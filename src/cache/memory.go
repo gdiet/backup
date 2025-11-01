@@ -89,8 +89,8 @@ func (m *memory) shrink(newSize int64) (memoryDelta int) {
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.
 func (m *memory) remove(off int64, length int64) (memoryDelta int) {
-	if length == 0 {
-		return 0 // Nothing to do
+	if length <= 0 {
+		return // Nothing to write or invalid length
 	}
 	defer func() {
 		validateDataAreasInvariants(m.areas)

@@ -99,4 +99,32 @@ func TestMemoryRemove(t *testing.T) {
 			t.Errorf("expected memoryDelta -6, got %d", delta)
 		}
 	})
+
+	t.Run("remove with zero length does nothing", func(t *testing.T) {
+		mem := &memory{areas: dataAreas{{off: 5, data: bytes{1, 2, 3}}}}
+		delta := mem.remove(5, 0)
+		if len(mem.areas) != 1 {
+			t.Errorf("expected 1 area, got %d", len(mem.areas))
+		}
+		if !reflect.DeepEqual(mem.areas[0].data, bytes{1, 2, 3}) {
+			t.Errorf("expected unchanged data, got %+v", mem.areas[0].data)
+		}
+		if delta != 0 {
+			t.Errorf("expected memoryDelta 0, got %d", delta)
+		}
+	})
+
+	t.Run("remove with negative length does nothing", func(t *testing.T) {
+		mem := &memory{areas: dataAreas{{off: 5, data: bytes{1, 2, 3}}}}
+		delta := mem.remove(5, -10)
+		if len(mem.areas) != 1 {
+			t.Errorf("expected 1 area, got %d", len(mem.areas))
+		}
+		if !reflect.DeepEqual(mem.areas[0].data, bytes{1, 2, 3}) {
+			t.Errorf("expected unchanged data, got %+v", mem.areas[0].data)
+		}
+		if delta != 0 {
+			t.Errorf("expected memoryDelta 0, got %d", delta)
+		}
+	})
 }
