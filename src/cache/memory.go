@@ -88,42 +88,46 @@ func (m *memory) shrink(newSize int64) (memoryDelta int) {
 // remove removes memory areas overlapping with the specified area.
 //
 // Returns the change in memory usage (bytes allocated) caused by this operation.
-func (m *memory) remove(area area) (memoryDelta int) { // TODO align signature with sparse.remove
+func (m *memory) remove(off int64, length int64) (memoryDelta int) {
+	if length == 0 {
+		return 0 // Nothing to do
+	}
 	defer func() {
 		validateDataAreasInvariants(m.areas)
 	}()
 
+	end := off + length
 	newAreas := dataAreas{}
 	for index, data := range m.areas {
-		if data.end() <= area.off {
+		if data.end() <= off {
 			// dataArea ends before the cleared area starts, keep dataArea
 			newAreas = append(newAreas, data)
 			continue
 		}
-		if data.off >= area.end() {
+		if data.off >= end {
 			// dataArea starts after the cleared area ends, keep remaining dataAreas
 			newAreas = append(newAreas, m.areas[index:]...)
 			break
 		}
-		if data.off >= area.off && data.end() <= area.end() {
+		if data.off >= off && data.end() <= end {
 			// dataArea fully within cleared area, remove it
 			memoryDelta -= len(data.data)
 			continue
 		}
 		deltaApplied := false
-		if data.off < area.off {
+		if data.off < off {
 			// dataArea partially left of cleared area, trim it
-			trimmedLen := area.off - data.off
+			trimmedLen := off - data.off
 			trimmed := data.data[:trimmedLen]
 			newAreas = append(newAreas, dataArea{off: data.off, data: trimmed.copy()})
 			memoryDelta -= len(data.data) - int(trimmedLen)
 			deltaApplied = true
 		}
-		if data.end() > area.end() {
+		if data.end() > end {
 			// dataArea partially right of cleared area, trim it
-			trimmedLen := data.end() - area.end()
+			trimmedLen := data.end() - end
 			trimmed := data.data[len(data.data)-int(trimmedLen):]
-			newAreas = append(newAreas, dataArea{off: area.end(), data: trimmed.copy()})
+			newAreas = append(newAreas, dataArea{off: end, data: trimmed.copy()})
 			if !deltaApplied {
 				memoryDelta -= len(data.data) - int(trimmedLen)
 			}

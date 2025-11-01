@@ -165,15 +165,15 @@ func insert(previous areas, insertAt int64, insertLen int64) (result areas) {
 }
 
 // remove removes disk areas overlapping with the specified area.
-func (d *disk) remove(off int64, len int64) {
-	if len == 0 {
+func (d *disk) remove(off int64, length int64) {
+	if length == 0 {
 		return // Nothing to do
 	}
 	defer func() {
 		validateAreasInvariants(d.areas)
 	}()
 
-	end := off + len
+	end := off + length
 	newAreas := areas{}
 	for index, currentArea := range d.areas {
 		if currentArea.end() <= off {

@@ -112,7 +112,7 @@ func (c *Cache) Write(off int64, data bytes, storeInMemory bool, maxMergeSize in
 		return memoryDelta, nil
 	} else {
 		// ... or write to disk, clearing any overlapping memory areas
-		memoryDelta = c.memory.remove(area{off: off, len: int64(len(data))})
+		memoryDelta = c.memory.remove(off, int64(len(data)))
 		err := c.disk.write(off, data)
 		return memoryDelta, err
 	}

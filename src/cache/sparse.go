@@ -84,15 +84,15 @@ func (s *sparse) add(area area) {
 }
 
 // remove removes sparse areas overlapping with the specified area.
-func (s *sparse) remove(off int64, len int64) {
-	if len == 0 {
+func (s *sparse) remove(off int64, length int64) {
+	if length == 0 {
 		return // Nothing to do
 	}
 	defer func() {
 		validateAreasInvariants(s.areas)
 	}()
 
-	end := off + len
+	end := off + length
 	newAreas := areas{}
 	for index, currentArea := range s.areas {
 		if currentArea.end() <= off {
