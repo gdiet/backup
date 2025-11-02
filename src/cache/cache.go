@@ -96,8 +96,10 @@ func (c *Cache) Truncate(newSize int64) (memoryDelta int, err error) {
 }
 
 // Write writes data to the cache entry at the specified offset.
+// maxMergeSize is only used when storeInMemory is true.
 // Returns the memory usage change (negative if memory was freed, positive if more memory was used).
 func (c *Cache) Write(off int64, data bytes, storeInMemory bool, maxMergeSize int64) (memoryDelta int, err error) {
+	// FIXME update size if writing past EOF, what to do with zero byte writes?
 	if len(data) == 0 {
 		return 0, nil // Nothing to write, no memory change
 	}
