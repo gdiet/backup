@@ -1,9 +1,21 @@
 package cache
 
-type baseFile interface {
-	// read reads data from the base file. Unless an error occurs, always fills the entire data slice.
-	read(off int64, data bytes) (err error)
-	length() int64
+import "io"
+
+type BaseFile interface {
+	// Read reads data from the base file. Unless an error occurs, always fills the entire data slice.
+	Read(off int64, data bytes) (err error)
+	Length() int64
+}
+
+type EmptyBaseFile struct{}
+
+func (b *EmptyBaseFile) Read(off int64, data bytes) error {
+	assert(false, "unexpected read from empty base file")
+	return io.EOF
+}
+func (b *EmptyBaseFile) Length() int64 {
+	return 0
 }
 
 // area represents a located contiguous range of bytes in a file.

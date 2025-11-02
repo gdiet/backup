@@ -7,17 +7,21 @@ import (
 	"testing"
 )
 
-type emptyMockBaseFile struct{}
+// Test utility: Implementation of BaseFile for a byte slice
 
-func (b emptyMockBaseFile) read(off int64, data bytes) error {
-	return nil // Always returns no data
+func (b *bytes) Read(off int64, data bytes) error {
+	if off < 0 || off >= int64(len(*b)) {
+		return io.EOF
+	}
+	copy(data, (*b)[off:])
+	return nil
 }
-func (b emptyMockBaseFile) length() int64 {
-	return 0
+func (b *bytes) Length() int64 {
+	return int64(len(*b))
 }
 
 func TestReadEmptyCache(t *testing.T) {
-	cache := NewCache("", emptyMockBaseFile{})
+	cache := NewCache("", &EmptyBaseFile{})
 	data := []byte{1, 2, 3, 4, 5}
 	bytesRead, err := cache.Read(0, data)
 	if err != io.EOF {
@@ -31,8 +35,24 @@ func TestReadEmptyCache(t *testing.T) {
 	}
 }
 
+func TestReadFromBaseFile(t *testing.T) {
+	baseData := bytesOf(10, 20, 30, 40, 50)
+	cache := NewCache("", &baseData)
+	cache.Write(3, []byte{1}, true, 1000)
+	cache.Truncate(6)
+	data := make([]byte, 5)
+	bytesRead, err := cache.Read(1, data)
+	if err != nil || bytesRead != 5 {
+		t.Fatalf("expected no error and 5 bytes read, got %v, %d", err, bytesRead)
+	}
+	expectedData := []byte{20, 30, 1, 50, 0}
+	if !reflect.DeepEqual(data, expectedData) {
+		t.Fatalf("expected data %v, got %v", expectedData, data)
+	}
+}
+
 func TestReadNoData(t *testing.T) {
-	cache := NewCache("", emptyMockBaseFile{})
+	cache := NewCache("", &EmptyBaseFile{})
 	data := []byte{}
 	bytesRead, err := cache.Read(0, data)
 	if err != nil {
@@ -44,7 +64,7 @@ func TestReadNoData(t *testing.T) {
 }
 
 func TestTruncateNegativeSize(t *testing.T) {
-	cache := NewCache("", emptyMockBaseFile{})
+	cache := NewCache("", &EmptyBaseFile{})
 	memoryDelta, err := cache.Truncate(-1)
 	if err != nil {
 		t.Fatalf("expected no error for negative truncate, got %v", err)
@@ -61,10 +81,11 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 	path := "test_cache_with_disk.tmp"
 	_ = os.Remove(path)
 
+	// Initialize cache as follows:
 	// 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
 	// m  m  m  s  s  d  d  d  m  m  d  d  m  s  s  s
 	// 1  2  3  0  0  5  4  3  4  5  2  1  6  0  0  0
-	cache := NewCache(path, emptyMockBaseFile{})
+	cache := NewCache(path, &EmptyBaseFile{})
 	memoryDelta, err := cache.Truncate(15)
 	if memoryDelta != 0 || err != nil {
 		t.Fatalf("expected truncate to return 0, nil; got %d, %v", memoryDelta, err)
@@ -75,6 +96,7 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 	cache.Write(10, []byte{2, 1, 9}, false, 1000)     // disk, 12 will be overwritten by memory
 	cache.Write(12, []byte{6}, true, 1000)            // memory
 
+	// Read from mixed cache
 	data := []byte{9, 9, 9, 9}
 	bytesRead, err := cache.Read(2, data)
 	if err != nil || bytesRead != 4 {
@@ -85,11 +107,13 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 		t.Fatalf("expected data %v, got %v", expectedData, data)
 	}
 
+	// Truncate shrink mixed cache
 	memoryDelta, err = cache.Truncate(9)
 	if memoryDelta != -2 || err != nil {
 		t.Fatalf("expected truncate to return -2, nil; got %d, %v", memoryDelta, err)
 	}
 
+	// Read past EOF after truncate
 	data = []byte{9, 9, 9, 9}
 	bytesRead, err = cache.Read(7, data)
 	if err != io.EOF || bytesRead != 2 {
@@ -98,6 +122,12 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 	expectedData = []byte{3, 4, 9, 9}
 	if !reflect.DeepEqual(data, expectedData) {
 		t.Fatalf("expected data %v, got %v", expectedData, data)
+	}
+
+	// Write zero bytes
+	memoryDelta, err = cache.Write(1, []byte{}, true, 1000)
+	if memoryDelta != 0 || err != nil {
+		t.Fatalf("expected write of zero bytes to return 0, nil; got %d, %v", memoryDelta, err)
 	}
 
 	// FIXME continue...

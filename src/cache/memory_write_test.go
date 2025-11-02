@@ -210,6 +210,6 @@ func TestMemoryWrite(t *testing.T) {
 	})
 }
 
-func bytesOf(b ...byte) bytes {
+func bytesOf(b ...byte) bytes { // TODO use it consequently or remove it
 	return bytes(b)
 }

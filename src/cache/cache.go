@@ -8,12 +8,12 @@ type Cache struct {
 	sparse sparse
 	memory memory
 	disk   disk
-	base   baseFile
+	base   BaseFile
 }
 
-func NewCache(cacheFilePath string, baseFile baseFile) Cache {
+func NewCache(cacheFilePath string, baseFile BaseFile) Cache {
 	return Cache{
-		size:   baseFile.length(),
+		size:   baseFile.Length(),
 		sparse: sparse{},
 		memory: memory{},
 		disk:   disk{filePath: cacheFilePath},
@@ -24,15 +24,15 @@ func NewCache(cacheFilePath string, baseFile baseFile) Cache {
 // Read reads data from the cache entry.
 // Returns the total number of bytes read, which may be less than len(data) if EOF is reached.
 func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
-	len := len(data)
-	if len <= 0 {
+	length := len(data)
+	if length <= 0 {
 		return 0, nil // Nothing to read or invalid length
 	}
 	if c.size <= off {
 		return 0, io.EOF // Nothing to read due to EOF
 	}
 	// Calculate total read size to prevent reading internally past EOF
-	bytesRead = int(min(int64(len), c.size-off))
+	bytesRead = int(min(int64(length), c.size-off))
 
 	// Adjust target slice to available size
 	data = data[:bytesRead]
@@ -60,7 +60,7 @@ func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
 			for _, baseArea := range toBeReadFromBase {
 				baseDataStart := baseArea.off - off
 				baseAreaData := data[baseDataStart : baseDataStart+baseArea.len]
-				err := c.base.read(baseArea.off, baseAreaData)
+				err := c.base.Read(baseArea.off, baseAreaData)
 				assert(err != io.EOF, "base read returned EOF unexpectedly")
 				if err != nil && err != io.EOF {
 					return bytesRead, err
@@ -69,7 +69,7 @@ func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
 		}
 	}
 
-	if bytesRead < len {
+	if bytesRead < length {
 		return bytesRead, io.EOF
 	}
 	return bytesRead, nil
