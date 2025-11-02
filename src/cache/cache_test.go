@@ -11,7 +11,7 @@ const expectedDataMsg = "expected data %v, got %v"
 
 func TestReadEmptyCache(t *testing.T) {
 	cache := newEmptyCache()
-	data := []byte{1, 2, 3, 4, 5}
+	data := bytes{1, 2, 3, 4, 5}
 	bytesRead, err := cache.Read(0, data)
 	if err != io.EOF {
 		t.Fatalf("expected EOF, got %v", err)
@@ -19,14 +19,14 @@ func TestReadEmptyCache(t *testing.T) {
 	if bytesRead != 0 {
 		t.Fatalf("expected 0 bytes read, got %d", bytesRead)
 	}
-	if !reflect.DeepEqual(data, []byte{1, 2, 3, 4, 5}) {
+	if !reflect.DeepEqual(data, bytes{1, 2, 3, 4, 5}) {
 		t.Fatalf("expected data to be unchanged, got %v", data)
 	}
 }
 
 func TestReadFromBaseFile(t *testing.T) {
-	cache := newCacheWithBaseData([]byte{10, 20, 30, 40, 50})
-	cache.Write(3, []byte{1}, true, 1000)
+	cache := newCacheWithBaseData(bytes{10, 20, 30, 40, 50})
+	cache.Write(3, bytes{1}, true, 1000)
 	cache.Truncate(6)
 	data := make([]byte, 5)
 	bytesRead, err := cache.Read(1, data)
@@ -78,11 +78,11 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 	if memoryDelta != 0 || err != nil {
 		t.Fatalf("expected truncate to return 0, nil; got %d, %v", memoryDelta, err)
 	}
-	cache.Write(0, []byte{1, 2, 3}, true, 1000)       // memory
-	cache.Write(5, []byte{9, 8, 7, 4, 5}, true, 1000) // memory, 5..7 will be overwritten by disk
-	cache.Write(5, []byte{5, 4, 3}, false, 1000)      // disk
-	cache.Write(10, []byte{2, 1, 9}, false, 1000)     // disk, 12 will be overwritten by memory
-	cache.Write(12, []byte{6}, true, 1000)            // memory
+	cache.Write(0, bytes{1, 2, 3}, true, 1000)       // memory
+	cache.Write(5, bytes{9, 8, 7, 4, 5}, true, 1000) // memory, 5..7 will be overwritten by disk
+	cache.Write(5, bytes{5, 4, 3}, false, 1000)      // disk
+	cache.Write(10, bytes{2, 1, 9}, false, 1000)     // disk, 12 will be overwritten by memory
+	cache.Write(12, bytes{6}, true, 1000)            // memory
 
 	// Read from mixed cache
 	data := []byte{9, 9, 9, 9}
@@ -113,7 +113,7 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 	}
 
 	// Write zero bytes
-	memoryDelta, err = cache.Write(1, []byte{}, true, 1000)
+	memoryDelta, err = cache.Write(1, bytes{}, true, 1000)
 	if memoryDelta != 0 || err != nil {
 		t.Fatalf("expected write of zero bytes to return 0, nil; got %d, %v", memoryDelta, err)
 	}
