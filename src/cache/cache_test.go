@@ -7,21 +7,10 @@ import (
 	"testing"
 )
 
-// Test utility: Implementation of BaseFile for a byte slice
-
-func (b *bytes) Read(off int64, data bytes) error {
-	if off < 0 || off >= int64(len(*b)) {
-		return io.EOF
-	}
-	copy(data, (*b)[off:])
-	return nil
-}
-func (b *bytes) Length() int64 {
-	return int64(len(*b))
-}
+const expectedDataMsg = "expected data %v, got %v"
 
 func TestReadEmptyCache(t *testing.T) {
-	cache := NewCache("", &EmptyBaseFile{})
+	cache := newEmptyCache()
 	data := []byte{1, 2, 3, 4, 5}
 	bytesRead, err := cache.Read(0, data)
 	if err != io.EOF {
@@ -36,8 +25,7 @@ func TestReadEmptyCache(t *testing.T) {
 }
 
 func TestReadFromBaseFile(t *testing.T) {
-	baseData := bytesOf(10, 20, 30, 40, 50)
-	cache := NewCache("", &baseData)
+	cache := newCacheWithBaseData([]byte{10, 20, 30, 40, 50})
 	cache.Write(3, []byte{1}, true, 1000)
 	cache.Truncate(6)
 	data := make([]byte, 5)
@@ -47,12 +35,12 @@ func TestReadFromBaseFile(t *testing.T) {
 	}
 	expectedData := []byte{20, 30, 1, 50, 0}
 	if !reflect.DeepEqual(data, expectedData) {
-		t.Fatalf("expected data %v, got %v", expectedData, data)
+		t.Fatalf(expectedDataMsg, expectedData, data)
 	}
 }
 
 func TestReadNoData(t *testing.T) {
-	cache := NewCache("", &EmptyBaseFile{})
+	cache := newEmptyCache()
 	data := []byte{}
 	bytesRead, err := cache.Read(0, data)
 	if err != nil {
@@ -64,7 +52,7 @@ func TestReadNoData(t *testing.T) {
 }
 
 func TestTruncateNegativeSize(t *testing.T) {
-	cache := NewCache("", &EmptyBaseFile{})
+	cache := newEmptyCache()
 	memoryDelta, err := cache.Truncate(-1)
 	if err != nil {
 		t.Fatalf("expected no error for negative truncate, got %v", err)
@@ -104,7 +92,7 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 	}
 	expectedData := []byte{3, 0, 0, 5}
 	if !reflect.DeepEqual(data, expectedData) {
-		t.Fatalf("expected data %v, got %v", expectedData, data)
+		t.Fatalf(expectedDataMsg, expectedData, data)
 	}
 
 	// Truncate shrink mixed cache
@@ -121,7 +109,7 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 	}
 	expectedData = []byte{3, 4, 9, 9}
 	if !reflect.DeepEqual(data, expectedData) {
-		t.Fatalf("expected data %v, got %v", expectedData, data)
+		t.Fatalf(expectedDataMsg, expectedData, data)
 	}
 
 	// Write zero bytes
