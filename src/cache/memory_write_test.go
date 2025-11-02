@@ -27,7 +27,7 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("write to empty memory", func(t *testing.T) {
 		mem := &memory{}
-		area := dataArea{0, bytesOf(1, 2, 3)}
+		area := dataArea{0, bytes{1, 2, 3}}
 		memoryDelta := mem.write(area.off, area.data, 1024)
 
 		// create a deep copy of area for comparison
@@ -47,14 +47,14 @@ func TestMemoryWrite(t *testing.T) {
 	})
 
 	t.Run("write zero length data", func(t *testing.T) {
-		mem := &memory{areas: dataAreas{{0, bytesOf(1, 2, 3, 4, 5)}}}
+		mem := &memory{areas: dataAreas{{0, bytes{1, 2, 3, 4, 5}}}}
 		pos := int64(1)
-		data := bytesOf()
+		data := bytes{}
 		memoryDelta := mem.write(pos, data, 1024)
 
 		// Expect: [1 2 3 4 5] - merged into one area
 		want := dataAreas{
-			{0, bytesOf(1, 2, 3, 4, 5)},
+			{0, bytes{1, 2, 3, 4, 5}},
 		}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after overwrite: got %+v, want %+v", mem.areas, want)
@@ -65,9 +65,9 @@ func TestMemoryWrite(t *testing.T) {
 	})
 
 	t.Run("overwrite existing area", func(t *testing.T) {
-		mem := &memory{areas: dataAreas{{0, bytesOf(1, 2, 3, 4, 5)}}}
+		mem := &memory{areas: dataAreas{{0, bytes{1, 2, 3, 4, 5}}}}
 		pos := int64(1)
-		data := bytesOf(9, 9, 9)
+		data := bytes{9, 9, 9}
 		memoryDelta := mem.write(pos, data, 1024)
 
 		// overwrite data in place to prove write has used a deep copy
@@ -75,7 +75,7 @@ func TestMemoryWrite(t *testing.T) {
 
 		// Expect: [1 9 9 9 5] - merged into one area
 		want := dataAreas{
-			{0, bytesOf(1, 9, 9, 9, 5)},
+			{0, bytes{1, 9, 9, 9, 5}},
 		}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after overwrite: got %+v, want %+v", mem.areas, want)
@@ -87,17 +87,17 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("merge adjacent areas", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{0, bytesOf(1, 2)},
-			{2, bytesOf(3, 4)},
+			{0, bytes{1, 2}},
+			{2, bytes{3, 4}},
 		}}
-		data := bytesOf(5, 6)
+		data := bytes{5, 6}
 		memoryDelta := mem.write(4, data, 1024)
 
 		// overwrite data in place to prove write has used a deep copy
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [1 2] [3 4 5 6]
-		want := dataAreas{{0, bytesOf(1, 2)}, {2, bytesOf(3, 4, 5, 6)}}
+		want := dataAreas{{0, bytes{1, 2}}, {2, bytes{3, 4, 5, 6}}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
@@ -108,16 +108,16 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("no merge left because there is nothing, no merge right due to size limit", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{2, bytesOf(3, 4)},
+			{2, bytes{3, 4}},
 		}}
-		data := bytesOf(5, 6)
+		data := bytes{5, 6}
 		memoryDelta := mem.write(0, data, 3)
 
 		// overwrite data in place to prove write has used a deep copy
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [5 6] [3 4]
-		want := dataAreas{{0, bytesOf(5, 6)}, {2, bytesOf(3, 4)}}
+		want := dataAreas{{0, bytes{5, 6}}, {2, bytes{3, 4}}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
@@ -128,17 +128,17 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("merge from the middle", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{0, bytesOf(1, 2)},
-			{4, bytesOf(3, 4)},
+			{0, bytes{1, 2}},
+			{4, bytes{3, 4}},
 		}}
-		data := bytesOf(5, 6)
+		data := bytes{5, 6}
 		memoryDelta := mem.write(2, data, 1024)
 
 		// overwrite data in place to prove write has used a deep copy
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [1 2 5 6 3 4]
-		want := dataAreas{{0, bytesOf(1, 2, 5, 6, 3, 4)}}
+		want := dataAreas{{0, bytes{1, 2, 5, 6, 3, 4}}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
@@ -149,17 +149,17 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("merge from the middle, no merge right due to size limit", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{0, bytesOf(1, 2)},
-			{4, bytesOf(3, 4)},
+			{0, bytes{1, 2}},
+			{4, bytes{3, 4}},
 		}}
-		data := bytesOf(5, 6)
+		data := bytes{5, 6}
 		memoryDelta := mem.write(2, data, 5)
 
 		// overwrite data in place to prove write has used a deep copy
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [1 2 5 6] [3 4]
-		want := dataAreas{{0, bytesOf(1, 2, 5, 6)}, {4, bytesOf(3, 4)}}
+		want := dataAreas{{0, bytes{1, 2, 5, 6}}, {4, bytes{3, 4}}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
@@ -170,16 +170,16 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("merge from the middle, no merge left due to size limit", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{0, bytesOf(1, 2, 3, 4, 5, 6, 7, 8, 9)},
+			{0, bytes{1, 2, 3, 4, 5, 6, 7, 8, 9}},
 		}}
-		data := bytesOf(5, 6)
+		data := bytes{5, 6}
 		memoryDelta := mem.write(5, data, 4)
 
 		// overwrite data in place to prove write has used a deep copy
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [1 2 3 4 5] [5 6 8 9]
-		want := dataAreas{{0, bytesOf(1, 2, 3, 4, 5)}, {5, bytesOf(5, 6, 8, 9)}}
+		want := dataAreas{{0, bytes{1, 2, 3, 4, 5}}, {5, bytes{5, 6, 8, 9}}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
@@ -190,17 +190,17 @@ func TestMemoryWrite(t *testing.T) {
 
 	t.Run("put into the middle, no merge due to size limit", func(t *testing.T) {
 		mem := &memory{areas: dataAreas{
-			{0, bytesOf(1, 2)},
-			{4, bytesOf(3, 4)},
+			{0, bytes{1, 2}},
+			{4, bytes{3, 4}},
 		}}
-		data := bytesOf(5, 6, 7)
+		data := bytes{5, 6, 7}
 		memoryDelta := mem.write(1, data, 3)
 
 		// overwrite data in place to prove write has used a deep copy
 		copy(data, make(bytes, len(data)))
 
 		// Expect: [1] [5 6 7] [3 4]
-		want := dataAreas{{0, bytesOf(1)}, {1, bytesOf(5, 6, 7)}, {4, bytesOf(3, 4)}}
+		want := dataAreas{{0, bytes{1}}, {1, bytes{5, 6, 7}}, {4, bytes{3, 4}}}
 		if !reflect.DeepEqual(mem.areas, want) {
 			t.Errorf("areas after merge: got %+v, want %+v", mem.areas, want)
 		}
@@ -209,5 +209,3 @@ func TestMemoryWrite(t *testing.T) {
 		}
 	})
 }
-
-// bytesOf helper moved to testing_utils_test.go

@@ -3,9 +3,6 @@ package cache
 import "io"
 
 // Test utility functions
-func bytesOf(b ...byte) bytes {
-	return bytes(b)
-}
 
 func newEmptyCache() Cache {
 	return NewCache("", &EmptyBaseFile{})
