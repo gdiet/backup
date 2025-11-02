@@ -1,0 +1,49 @@
+package cache
+
+import (
+	"errors"
+	"testing"
+)
+
+// MockErrorBaseFile simulates a BaseFile that returns a non-EOF error during Read
+type MockErrorBaseFile struct {
+	data          bytes
+	errorToReturn error
+}
+
+func (m *MockErrorBaseFile) Read(off int64, data bytes) error {
+	// Return the configured error instead of reading
+	return m.errorToReturn
+}
+
+func (m *MockErrorBaseFile) Length() int64 {
+	return int64(len(m.data))
+}
+
+func TestCacheReadBaseFileError(t *testing.T) {
+	// Create a mock BaseFile that returns a non-EOF error
+	expectedError := errors.New("simulated disk read error")
+	mockBase := &MockErrorBaseFile{
+		data:          bytes{1, 2, 3, 4, 5},
+		errorToReturn: expectedError,
+	}
+
+	// Create cache with the error-producing base
+	cache := NewCache("", mockBase)
+
+	// Try to read from an area that would trigger base.Read()
+	// Since there's no data in memory/disk cache, it will fall back to base
+	data := bytes{0, 0, 0}
+	bytesRead, err := cache.Read(0, data)
+
+	// Should return the error from base.Read()
+	if err != expectedError {
+		t.Errorf("expected error %v, got %v", expectedError, err)
+	}
+
+	// Should return the calculated bytesRead even when error occurs
+	// (bytesRead is calculated based on available size, not actual read success)
+	if bytesRead != 3 {
+		t.Errorf("expected 3 bytes read calculation, got %d", bytesRead)
+	}
+}
