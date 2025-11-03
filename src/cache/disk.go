@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"backup/src/util"
 	"fmt"
 	"io"
 	"os"
@@ -57,7 +58,7 @@ func (d *disk) read(off int64, data bytes) (unreadAreas areas, err error) {
 			}
 		}
 		// ... but the system should not request areas that are not fully present on disk
-		assert(err != io.EOF, "unexpected EOF when reading from disk cache file")
+		util.Assert(err != io.EOF, "unexpected EOF when reading from disk cache file")
 
 		// Adjust unread areas
 		if readStart > lastUnread.off {
@@ -206,7 +207,7 @@ func (d *disk) close() (err error) {
 	}()
 
 	err = d.file.Close()
-	assert(err == nil, fmt.Sprintf("failed to close disk cache file %q: %v", d.filePath, err))
+	util.Assert(err == nil, fmt.Sprintf("failed to close disk cache file %q: %v", d.filePath, err))
 	err = os.Remove(d.filePath)
 	d.file = nil
 	d.areas = nil

@@ -600,3 +600,47 @@ func TestEvictingHandlePath(t *testing.T) {
 
 	t.Log("Successfully tested evicting handle code path with high concurrency")
 }
+
+// TestReleaseFileHandleAssertion tests the assertion in releaseFileHandle
+// by trying to release a non-leased handle (covers line 196-200)
+func TestReleaseFileHandleAssertion(t *testing.T) {
+	tempDir := t.TempDir()
+	store, err := FileBackedDataStore(tempDir, 1024, 5)
+	if err != nil {
+		t.Fatal("Failed to create store:", err)
+	}
+	defer store.Close()
+
+	// Access the dataStore directly to test the assertion
+	ds := store.(*dataStore)
+
+	// In debug builds, this should trigger the assertion (panic)
+	// In production builds, this should log a warning and return gracefully
+
+	defer func() {
+		if r := recover(); r != nil {
+			// Expected behavior in debug builds - assertion panic
+			if panicMsg, ok := r.(string); ok &&
+				len(panicMsg) > 0 && panicMsg[:16] == "assertion failed" {
+				t.Log("Successfully caught expected assertion panic:", panicMsg)
+			} else {
+				t.Errorf("Unexpected panic type or message: %v", r)
+			}
+		} else {
+			// If no panic occurred, we're probably in production build
+			t.Log("No panic occurred - likely in production build mode")
+		}
+	}()
+
+	originalLen := len(ds.leased)
+
+	// This should trigger the assertion path for non-leased fileID
+	ds.releaseFileHandle(99999) // fileID that was never leased
+
+	// After the call, the leased map should be unchanged
+	if len(ds.leased) != originalLen {
+		t.Error("releaseFileHandle should not modify leased map for non-existent fileID")
+	}
+
+	t.Log("releaseFileHandle completed without panic (production mode)")
+}

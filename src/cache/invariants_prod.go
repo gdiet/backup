@@ -1,6 +1,6 @@
 //go:build prod
 
-package aaa
+package cache
 
 func validateAreasInvariants(areas areas) {
 	// In prod builds, we skip the actual validation for performance reasons.

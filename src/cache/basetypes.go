@@ -1,6 +1,9 @@
 package cache
 
-import "io"
+import (
+	"backup/src/util"
+	"io"
+)
 
 type BaseFile interface {
 	// Read reads data from the base file. Unless an error occurs, always fills the entire data slice.
@@ -11,7 +14,7 @@ type BaseFile interface {
 type EmptyBaseFile struct{}
 
 func (b *EmptyBaseFile) Read(off int64, data bytes) error {
-	assert(false, "unexpected read from empty base file")
+	util.AssertionFailed("unexpected read from empty base file")
 	return io.EOF
 }
 func (b *EmptyBaseFile) Length() int64 {

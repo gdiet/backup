@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"backup/src/util"
 	"io"
 	"syscall"
 )
@@ -64,7 +65,7 @@ func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
 				baseDataStart := baseArea.off - off
 				baseAreaData := data[baseDataStart : baseDataStart+baseArea.len]
 				err := c.base.Read(baseArea.off, baseAreaData)
-				assert(err != io.EOF, "base read returned EOF unexpectedly")
+				util.Assert(err != io.EOF, "base read returned EOF unexpectedly")
 				if err != nil && err != io.EOF {
 					return bytesRead, err
 				}

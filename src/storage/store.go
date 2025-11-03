@@ -1,9 +1,9 @@
 package storage
 
 import (
+	"backup/src/util"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -194,9 +194,8 @@ func (ds *dataStore) releaseFileHandle(fileID int) {
 
 	handle, exists := ds.leased[fileID]
 	if !exists {
-		// This is kind of an assertion, it should never happen, but let's handle it gracefully.
-		log.Printf("WARNING: release called for non-leased fileID %d", fileID)
-		return
+		util.AssertionFailed(fmt.Sprintf("release called for non-leased fileID %d", fileID))
+		return // Graceful fallback in production when assertion only logs
 	}
 
 	handle.queued--
