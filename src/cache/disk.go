@@ -142,7 +142,7 @@ func (d *disk) remove(off int64, length int64) {
 
 // write writes data to the cache file at the specified offset.
 // Opens the file automatically for reading and writing if it's not already open.
-func (d *disk) write(off int64, data bytes) (err error) { // TODO align signature with os.File?
+func (d *disk) write(off int64, data bytes) (err error) {
 	dataLen := len(data)
 	if dataLen == 0 {
 		return nil // Nothing to write, no memory change

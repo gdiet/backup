@@ -145,7 +145,6 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 		t.Fatalf("expected write of zero bytes to return 0, nil; got %d, %v", memoryDelta, err)
 	}
 
-	// FIXME continue...
 	cache.Close()
 	_ = os.Remove(path)
 }
