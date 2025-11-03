@@ -455,3 +455,85 @@ func ExampleFileBackedDataStore() {
 	fmt.Printf("Success: %s\n", string(readData))
 	// Output: Success: File-backed storage with withFile() pattern!
 }
+
+// TestConcurrentSameFile tests concurrent access to the same file to cover
+// the "handle already leased" code path in leaseFileHandle (lines 148-150)
+func TestConcurrentSameFile(t *testing.T) {
+	tempDir := t.TempDir()
+	store, err := FileBackedDataStore(tempDir, 1024, 2) // Low limit to force handle reuse
+	if err != nil {
+		t.Fatal("Failed to create store:", err)
+	}
+	defer store.Close()
+
+	// First, create the file by writing some data
+	initialData := []byte("initial data to create file")
+	err = store.Write(0, initialData)
+	if err != nil {
+		t.Fatal("Failed to write initial data:", err)
+	}
+
+	const numGoroutines = 10
+	var wg sync.WaitGroup
+	errors := make(chan error, numGoroutines*3)
+
+	// Use a channel to coordinate timing and increase chance of concurrent access
+	startSignal := make(chan struct{})
+
+	// Launch multiple goroutines that will simultaneously access the same file (fileID = 0)
+	for i := 0; i < numGoroutines; i++ {
+		wg.Add(3) // Multiple operations per goroutine to increase concurrency
+
+		// Writer goroutine
+		go func(id int) {
+			defer wg.Done()
+			<-startSignal // Wait for start signal to increase concurrency
+
+			offset := int64(id * 20) // Different offsets within same file
+			data := []byte(fmt.Sprintf("write-%02d", id))
+
+			err := store.Write(offset, data)
+			if err != nil {
+				errors <- fmt.Errorf("write error in goroutine %d: %v", id, err)
+			}
+		}(i)
+
+		// Reader goroutine 1
+		go func(id int) {
+			defer wg.Done()
+			<-startSignal // Wait for start signal to increase concurrency
+
+			offset := int64(id * 20)
+			_, warnings := store.Read(offset, 10)
+			if len(warnings) > 0 {
+				t.Logf("Read warnings for goroutine %d: %v", id, warnings)
+			}
+		}(i)
+
+		// Reader goroutine 2
+		go func(id int) {
+			defer wg.Done()
+			<-startSignal // Wait for start signal to increase concurrency
+
+			// Read from start of file - this should definitely hit existing handle
+			_, warnings := store.Read(0, 10)
+			if len(warnings) > 0 {
+				t.Logf("Read warnings for goroutine %d (read at 0): %v", id, warnings)
+			}
+		}(i)
+	}
+
+	// Signal all goroutines to start at once - this maximizes concurrency
+	close(startSignal)
+
+	// Wait for all goroutines to complete
+	wg.Wait()
+	close(errors)
+
+	// Check for any errors
+	for err := range errors {
+		t.Error(err)
+	}
+
+	t.Logf("Successfully completed %d concurrent operations on same file", numGoroutines*3)
+}
