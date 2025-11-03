@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"reflect"
+	"syscall"
 	"testing"
 )
 
@@ -54,8 +55,8 @@ func TestReadNoData(t *testing.T) {
 func TestTruncateNegativeSize(t *testing.T) {
 	cache := newEmptyCache()
 	memoryDelta, err := cache.Truncate(-1)
-	if err != nil {
-		t.Fatalf("expected no error for negative truncate, got %v", err)
+	if err != syscall.EINVAL {
+		t.Fatalf("expected EINVAL for negative truncate, got %v", err)
 	}
 	if memoryDelta != 0 {
 		t.Fatalf("expected 0 memory delta for negative truncate, got %d", memoryDelta)

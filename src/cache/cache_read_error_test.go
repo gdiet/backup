@@ -67,5 +67,5 @@ func TestCacheReadDiskError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error due to disk read issue, got nil")
 	}
-	// FIXME should cover a specific error handling in cache.Read, currently doesn't because of FIXME in cache.Write
+	// FIXME should cover a specific error handling in cache.Read (line 56), currently doesn't because of FIXME in cache.Write
 }

@@ -1,6 +1,9 @@
 package cache
 
-import "io"
+import (
+	"io"
+	"syscall"
+)
 
 // Cache is a file contents cache that combines the memory and disk cache layers.
 type Cache struct {
@@ -78,8 +81,11 @@ func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
 // Truncate changes the size of cache entry, adjusting all layers as needed.
 // Returns the memory usage change (negative if memory was freed, positive if more memory was used).
 func (c *Cache) Truncate(newSize int64) (memoryDelta int, err error) {
-	if newSize < 0 || newSize == c.size {
-		return 0, nil // No size change or invalid length
+	if newSize < 0 {
+		return 0, syscall.EINVAL // Invalid length
+	}
+	if newSize == c.size {
+		return 0, nil // No size change
 	}
 	if newSize > c.size {
 		// New sparse area from old size to new size
