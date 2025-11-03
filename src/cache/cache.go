@@ -105,13 +105,22 @@ func (c *Cache) Truncate(newSize int64) (memoryDelta int, err error) {
 // maxMergeSize is only used when storeInMemory is true.
 // Returns the memory usage change (negative if memory was freed, positive if more memory was used).
 func (c *Cache) Write(off int64, data bytes, storeInMemory bool, maxMergeSize int64) (memoryDelta int, err error) {
-	// FIXME update size if writing past EOF, what to do with zero byte writes?
 	if len(data) == 0 {
-		return 0, nil // Nothing to write, no memory change
+		return 0, nil // Nothing to write, no memory change. Zero-length writes are no-ops.
 	}
 
-	// Update sparse layer (removes sparse areas)
-	c.sparse.remove(off, int64(len(data)))
+	if off < c.size {
+		// Remove overlapping sparse areas
+		c.sparse.remove(off, int64(len(data)))
+	}
+	if off > c.size {
+		// Fill gap with sparse area
+		c.sparse.write(c.size, off-c.size)
+	}
+	if off+int64(len(data)) > c.size {
+		// Update size if writing past EOF
+		c.size = off + int64(len(data))
+	}
 
 	if storeInMemory {
 		// Either write to memory cache ...
