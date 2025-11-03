@@ -738,3 +738,72 @@ func TestWriteFileLeaseError(t *testing.T) {
 
 	t.Log("Successfully tested write failure due to file/directory conflict:", err)
 }
+
+// TestReadClosedFile tests reading from a file that has been closed
+// This covers the "else if err != nil" path in Read() at line 290
+func TestReadClosedFile(t *testing.T) {
+	tempDir := t.TempDir()
+	store, err := FileBackedDataStore(tempDir, 1024, 5)
+	if err != nil {
+		t.Fatal("Failed to create store:", err)
+	}
+	defer store.Close()
+
+	// Step 1: Write some data to create a file
+	data := []byte("test data for closed file read")
+	err = store.Write(0, data)
+	if err != nil {
+		t.Fatal("Failed to write test data:", err)
+	}
+
+	// Step 2: Access the internal dataStore to manipulate the file handle
+	ds := store.(*dataStore)
+
+	// Step 3: Get access to the file handle and close it manually
+	// We need to lease the file first, then close the underlying file
+	file, release, err := ds.leaseFile(0, false) // fileID=0, read mode
+	if err != nil {
+		t.Fatal("Failed to lease file for manipulation:", err)
+	}
+
+	// Close the underlying file while keeping the handle structure intact
+	// This will cause ReadAt to fail with an error other than EOF
+	err = file.Close()
+	if err != nil {
+		t.Fatal("Failed to close underlying file:", err)
+	}
+
+	// Release the handle so it can be leased again
+	release()
+
+	// Step 4: Now try to read from the "closed" file
+	// This should trigger the "else if err != nil" path since ReadAt will fail
+	readData, warnings := store.Read(0, int64(len(data)))
+
+	// We expect warnings about read errors (not EOF)
+	if len(warnings) == 0 {
+		t.Error("Expected warnings when reading from closed file, but got none")
+	}
+
+	// Check that we got a non-EOF error warning
+	hasReadError := false
+	for _, warning := range warnings {
+		if strings.Contains(warning, "Read error for data file 0") && !strings.Contains(warning, "EOF") {
+			hasReadError = true
+			t.Log("Successfully caught expected read error:", warning)
+			break
+		}
+	}
+
+	if !hasReadError {
+		t.Errorf("Expected non-EOF read error warning, got warnings: %v", warnings)
+	}
+
+	// The read should still succeed by returning zeros
+	expectedZeros := make([]byte, len(data))
+	if !bytes.Equal(expectedZeros, readData) {
+		t.Error("Reading from closed file should return zeros")
+	}
+
+	t.Log("Successfully tested read from closed file")
+}
