@@ -1,5 +1,5 @@
 {
-  "go.coverageOptions": "showCoveredCodeOnly",
+  "go.coverageOptions": "showUncoveredCodeOnly",
   "go.coverMode": "count",
   "go.coverOnSave": true,
   "go.coverageDecorator": {
