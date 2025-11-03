@@ -211,10 +211,12 @@ func (ds *dataStore) gc() {
 
 	ds.gcQueued = false
 
+	filesToClose := ds.openFiles - ds.openFilesSoftLimit
 	for id := range ds.free {
-		if ds.openFiles <= ds.openFilesSoftLimit {
+		if filesToClose <= 0 {
 			break
 		}
+		filesToClose--
 		handle := ds.free[id]
 		delete(ds.free, id)
 		ds.evicting[id] = handle
