@@ -537,3 +537,66 @@ func TestConcurrentSameFile(t *testing.T) {
 
 	t.Logf("Successfully completed %d concurrent operations on same file", numGoroutines*3)
 }
+
+// TestEvictingHandlePath tests the code path where a handle is being evicted
+// and another goroutine tries to lease it (covers lines 154-160 in leaseFileHandle)
+func TestEvictingHandlePath(t *testing.T) {
+	tempDir := t.TempDir()
+	// Use very low openFilesSoftLimit to trigger GC quickly
+	store, err := FileBackedDataStore(tempDir, 1024, 1)
+	if err != nil {
+		t.Fatal("Failed to create store:", err)
+	}
+	defer store.Close()
+
+	// Step 1: Create multiple files to fill up the handle cache
+	for i := 0; i < 3; i++ {
+		data := []byte(fmt.Sprintf("data for file %d", i))
+		offset := int64(i * 2048) // Different fileIDs: 0, 2, 4
+		err = store.Write(offset, data)
+		if err != nil {
+			t.Fatalf("Failed to write to file %d: %v", i, err)
+		}
+	}
+
+	// Step 2: Force concurrent access while GC is happening
+	// This creates a race condition where we try to access a file that's being evicted
+	var wg sync.WaitGroup
+	errors := make(chan error, 20)
+
+	// Launch many goroutines to create contention
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(goroutineID int) {
+			defer wg.Done()
+
+			// Repeatedly access different files to trigger eviction and concurrent access
+			for j := 0; j < 10; j++ {
+				fileOffset := int64((goroutineID % 3) * 2048) // Access files 0, 2, 4
+
+				// Try to read - this might hit an evicting handle
+				_, warnings := store.Read(fileOffset, 10)
+				if len(warnings) > 0 {
+					t.Logf("Goroutine %d iteration %d warnings: %v", goroutineID, j, warnings)
+				}
+
+				// Also try to write - this also might hit evicting handles
+				writeData := []byte(fmt.Sprintf("g%d-i%d", goroutineID, j))
+				err := store.Write(fileOffset+100, writeData)
+				if err != nil {
+					errors <- fmt.Errorf("goroutine %d iteration %d write error: %v", goroutineID, j, err)
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errors)
+
+	// Check for errors
+	for err := range errors {
+		t.Error(err)
+	}
+
+	t.Log("Successfully tested evicting handle code path with high concurrency")
+}
