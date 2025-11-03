@@ -149,3 +149,61 @@ func TestReadSparseMemoryAndDisk(t *testing.T) {
 	cache.Close()
 	_ = os.Remove(path)
 }
+
+func TestWriteBeyondEOF(t *testing.T) {
+	// Test writing beyond EOF to create sparse areas (cache.go line 118: c.sparse.write(c.size, off-c.size))
+	cache := newCacheWithBaseData(bytes{1, 2, 3}) // Cache size = 3
+
+	// Verify initial size
+	if cache.size != 3 {
+		t.Fatalf("expected initial cache size 3, got %d", cache.size)
+	}
+
+	// Write at offset 5 (beyond EOF at 3), creating a gap from 3-5
+	memoryDelta, err := cache.Write(5, bytes{10, 11}, true, 1000)
+
+	// Should succeed without error
+	if err != nil {
+		t.Fatalf("expected no error for write beyond EOF, got %v", err)
+	}
+
+	// Should return positive memory delta (new data was added)
+	if memoryDelta <= 0 {
+		t.Fatalf("expected positive memory delta for write beyond EOF, got %d", memoryDelta)
+	}
+
+	// Cache size should be updated to new EOF (5 + 2 = 7)
+	if cache.size != 7 {
+		t.Fatalf("expected cache size 7 after write beyond EOF, got %d", cache.size)
+	}
+
+	// Verify the sparse gap was created by reading the gap area (offset 3-4)
+	gapData := bytes{99, 99} // Initialize with non-zero values
+	bytesRead, err := cache.Read(3, gapData)
+
+	if err != nil {
+		t.Fatalf("expected no error reading sparse gap, got %v", err)
+	}
+	if bytesRead != 2 {
+		t.Fatalf("expected to read 2 bytes from sparse gap, got %d", bytesRead)
+	}
+	// Sparse areas should read as zeros
+	if gapData[0] != 0 || gapData[1] != 0 {
+		t.Fatalf("expected sparse gap to read as zeros, got %v", gapData)
+	}
+
+	// Verify the actual written data at offset 5-6
+	writtenData := bytes{99, 99} // Initialize with non-zero values
+	bytesRead, err = cache.Read(5, writtenData)
+
+	if err != nil {
+		t.Fatalf("expected no error reading written data, got %v", err)
+	}
+	if bytesRead != 2 {
+		t.Fatalf("expected to read 2 bytes of written data, got %d", bytesRead)
+	}
+	// Should read the actual written values
+	if writtenData[0] != 10 || writtenData[1] != 11 {
+		t.Fatalf("expected written data [10 11], got %v", writtenData)
+	}
+}
