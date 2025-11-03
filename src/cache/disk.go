@@ -55,9 +55,9 @@ func (d *disk) read(off int64, data bytes) (unreadAreas areas, err error) {
 			for i := int64(bytesRead); i < readLength; i++ {
 				data[readStart-off+i] = 0
 			}
-			// ... but the system should not request areas that are not fully present on disk
-			assert(false, "partial read from disk cache file")
 		}
+		// ... but the system should not request areas that are not fully present on disk
+		assert(err != io.EOF, "unexpected EOF when reading from disk cache file")
 
 		// Adjust unread areas
 		if readStart > lastUnread.off {
