@@ -648,18 +648,19 @@ func TestReleaseFileHandleAssertion(t *testing.T) {
 	t.Log("releaseFileHandle completed without panic (production mode)")
 }
 
-// TestGCEarlyBreak tests that GC stops early when openFiles drops below limit
-// This covers the break statement in gc() at line 216
+// TestGCEarlyBreak tests that GC stops early when filesToClose reaches 0
+// This covers the break statement in gc() at line 217
 func TestGCEarlyBreak(t *testing.T) {
 	tempDir := t.TempDir()
-	// Use very low limit to make GC trigger easily
-	store, err := FileBackedDataStore(tempDir, 1024, 2)
+	// Use very low limit to force GC trigger
+	store, err := FileBackedDataStore(tempDir, 1024, 1)
 	if err != nil {
 		t.Fatal("Failed to create store:", err)
 	}
 	defer store.Close()
 
-	// Create multiple files to exceed the soft limit and get some into ds.free
+	// Create multiple files to exceed the openFilesSoftLimit
+	// We need to create enough files to ensure some end up in ds.free
 	for i := 0; i < 5; i++ {
 		data := []byte(fmt.Sprintf("data for file %d", i))
 		offset := int64(i * 2048) // fileIDs: 0, 2, 4, 6, 8
@@ -667,26 +668,30 @@ func TestGCEarlyBreak(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to write to file %d: %v", i, err)
 		}
+
+		// Add some delay and operations to ensure proper handle cycling
+		if i < 4 {
+			_, warnings := store.Read(offset, 10)
+			if len(warnings) > 0 {
+				t.Logf("Read warnings for file %d: %v", i, warnings)
+			}
+		}
 	}
 
-	// Now access files in a pattern that will:
-	// 1. Put some files in ds.free
-	// 2. Trigger GC (due to exceeding openFilesSoftLimit of 2)
-	// 3. During GC, make openFiles drop to <= openFilesSoftLimit
-
-	// Access first file again - this might trigger the GC break condition
-	_, warnings := store.Read(0, 10)
-	if len(warnings) > 0 {
-		t.Logf("Read warnings: %v", warnings)
-	}
-
-	// Multiple small operations to increase chance of hitting the break
+	// Force more operations to trigger handle cycling and GC
+	// With openFilesSoftLimit=1, this should definitely trigger GC multiple times
 	for i := 0; i < 3; i++ {
-		offset := int64(i * 2048)
-		store.Write(offset+500, []byte(fmt.Sprintf("extra-%d", i)))
+		// Access different files to force handle management
+		offset1 := int64(0)    // fileID 0
+		offset2 := int64(2048) // fileID 2
+		offset3 := int64(4096) // fileID 4
+
+		store.Write(offset1+100+int64(i), []byte(fmt.Sprintf("extra-0-%d", i)))
+		store.Write(offset2+100+int64(i), []byte(fmt.Sprintf("extra-2-%d", i)))
+		store.Write(offset3+100+int64(i), []byte(fmt.Sprintf("extra-4-%d", i)))
 	}
 
-	t.Log("Successfully tested GC scenarios - break condition may have been hit")
+	t.Log("Successfully tested GC scenarios with openFilesSoftLimit=1")
 }
 
 // TestWriteFileLeaseError tests the error path when leaseFile fails
