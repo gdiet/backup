@@ -3,6 +3,9 @@ package storage
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -684,4 +687,49 @@ func TestGCEarlyBreak(t *testing.T) {
 	}
 
 	t.Log("Successfully tested GC scenarios - break condition may have been hit")
+}
+
+// TestWriteFileLeaseError tests the error path when leaseFile fails
+// This covers the error return in Write() at line 247
+func TestWriteFileLeaseError(t *testing.T) {
+	tempDir := t.TempDir()
+	store, err := FileBackedDataStore(tempDir, 1024, 5)
+	if err != nil {
+		t.Fatal("Failed to create store:", err)
+	}
+	defer store.Close()
+
+	// Calculate the path where the data file would be created
+	// For fileID=0: fileName="0000000000", dirNames="000000"
+	// dirPath = baseDir/00/00/, filePath = baseDir/00/00/0000000000
+
+	// Create the directory structure manually
+	conflictDirPath := filepath.Join(tempDir, "00", "00")
+	err = os.MkdirAll(conflictDirPath, 0755)
+	if err != nil {
+		t.Fatal("Failed to create conflict directory path:", err)
+	}
+
+	// Create a directory with the same name as the expected file
+	conflictFilePath := filepath.Join(conflictDirPath, "0000000000")
+	err = os.Mkdir(conflictFilePath, 0755) // Create DIRECTORY, not file
+	if err != nil {
+		t.Fatal("Failed to create conflicting directory:", err)
+	}
+
+	// Now try to write - this should fail when trying to lease the file
+	// because os.OpenFile will try to open "0000000000" as a file, but it's a directory
+	data := []byte("This write should fail")
+	err = store.Write(0, data) // offset=0 → fileID=0 → conflicts with our directory
+
+	if err == nil {
+		t.Fatal("Expected write to fail due to directory conflict, but it succeeded")
+	}
+
+	// Check that the error message contains the expected text
+	if !strings.Contains(err.Error(), "Unable to lease data file") {
+		t.Errorf("Expected error about unable to lease file, got: %v", err)
+	}
+
+	t.Log("Successfully tested write failure due to file/directory conflict:", err)
 }
