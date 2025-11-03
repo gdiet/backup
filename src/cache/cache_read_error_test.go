@@ -57,8 +57,8 @@ func TestCacheReadDiskError(t *testing.T) {
 	cache := NewCache(path, &EmptyBaseFile{})
 	cache.Write(0, bytes{1, 2, 3}, false, 1000)
 
-	// Truncate the disk file to trigger a read error later
-	cache.disk.file.Truncate(2)
+	// Close the disk file to trigger a read error later
+	cache.disk.file.Close()
 
 	data := bytes{0, 0, 0}
 	_, err := cache.Read(0, data)
@@ -67,5 +67,4 @@ func TestCacheReadDiskError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error due to disk read issue, got nil")
 	}
-	// FIXME should cover a specific error handling in cache.Read (line 56), currently doesn't because of FIXME in cache.Write
 }

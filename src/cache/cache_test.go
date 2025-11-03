@@ -66,6 +66,32 @@ func TestTruncateNegativeSize(t *testing.T) {
 	}
 }
 
+func TestTruncateSameSize(t *testing.T) {
+	// Test truncating to the same size (cache.go line 88: return 0, nil // No size change)
+	cache := newCacheWithBaseData(bytes{1, 2, 3, 4, 5})
+
+	// Cache should have size 5 from the base data
+	if cache.size != 5 {
+		t.Fatalf("expected initial cache size 5, got %d", cache.size)
+	}
+
+	// Truncate to the same size (5)
+	memoryDelta, err := cache.Truncate(5)
+
+	// Should return no error and no memory delta
+	if err != nil {
+		t.Fatalf("expected no error for same-size truncate, got %v", err)
+	}
+	if memoryDelta != 0 {
+		t.Fatalf("expected 0 memory delta for same-size truncate, got %d", memoryDelta)
+	}
+
+	// Cache size should remain unchanged
+	if cache.size != 5 {
+		t.Fatalf("expected cache size to remain 5 after same-size truncate, got %d", cache.size)
+	}
+}
+
 func TestReadSparseMemoryAndDisk(t *testing.T) {
 	path := "test_cache_with_disk.tmp"
 	_ = os.Remove(path)
