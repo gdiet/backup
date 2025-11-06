@@ -17,13 +17,3 @@ func Assert(condition bool, message string) {
 		AssertionFailed(message)
 	}
 }
-
-// AssertEqual panics in debug builds if the values are not equal.
-func AssertEqual[T comparable](actual, expected T, message string) {
-	Assert(actual == expected, message)
-}
-
-// AssertNotNil panics in debug builds if the value is nil.
-func AssertNotNil[T any](value *T, message string) {
-	Assert(value != nil, message)
-}
