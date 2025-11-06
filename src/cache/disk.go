@@ -2,7 +2,6 @@ package cache
 
 import (
 	"backup/src/util"
-	"fmt"
 	"io"
 	"os"
 )
@@ -207,7 +206,7 @@ func (d *disk) close() (err error) {
 	}()
 
 	err = d.file.Close()
-	util.Assert(err == nil, fmt.Sprintf("failed to close disk cache file %q: %v", d.filePath, err))
+	util.Assertf(err == nil, "failed to close disk cache file %q: %v", d.filePath, err)
 	err = os.Remove(d.filePath)
 	d.file = nil
 	d.areas = nil
