@@ -7,7 +7,7 @@ import "fmt"
 // validateAreasInvariants checks invariants:
 // The areas are non-empty, sorted by offset, non-overlapping, and not adjacent to each other.
 func validateAreasInvariants(areas areas) {
-	for i := 0; i < len(areas); i++ {
+	for i := range areas {
 		curr := areas[i]
 		// Check non-empty
 		if curr.len == 0 {
@@ -32,7 +32,7 @@ func validateAreasInvariants(areas areas) {
 // validateDataAreasInvariants checks Invariants:
 // The areas are non-empty, sorted by offset, non-overlapping.
 func validateDataAreasInvariants(areas dataAreas) {
-	for i := 0; i < len(areas); i++ {
+	for i := range areas {
 		curr := areas[i]
 		// Check non-empty
 		if len(curr.data) == 0 {
