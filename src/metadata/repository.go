@@ -11,9 +11,10 @@ import (
 // planned bbolt buckets for the file system metadata:
 // - tree entries (id -> dirEntry, fileEntry)
 // - children (parentID|childID -> {})
-// - data entries (id -> dataEntry)
+// - data entries (len|hash -> dataEntry)
 // - free areas (start -> length)
 // - context (string -> string, e.g. version information)
+// hash: blake3 256-bit hash, represented as 32 bytes
 
 var (
 	bucketTreeEntries = []byte("tree_entries")
