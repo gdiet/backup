@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"encoding/binary"
+	"reflect"
 	"testing"
 )
 
@@ -228,7 +229,7 @@ func TestDirEntryToBytes(t *testing.T) {
 func TestFileEntryToBytes(t *testing.T) {
 	entry := fileEntry{
 		time: 1699123456789, // Example Unix milliseconds
-		dref: [40]byte{},
+		dref: [40]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10},
 		name: "test.txt",
 	}
 
@@ -251,12 +252,11 @@ func TestFileEntryToBytes(t *testing.T) {
 		t.Errorf("Expected time 1699123456789, got %d", time)
 	}
 
-	// Verify dataID
-	// FIXME
-	// dataID := int64(binary.LittleEndian.Uint64(data[9:]))
-	// if dataID != 987654321 {
-	// 	t.Errorf("Expected dataID 987654321, got %d", dataID)
-	// }
+	// Verify dref
+	dref := data[9:49]
+	if !reflect.DeepEqual(dref, entry.dref[:]) {
+		t.Errorf("Unexpected data reference, got %d", dref)
+	}
 
 	// Verify name
 	name := string(data[49:])
@@ -293,8 +293,8 @@ func TestTreeEntryFromBytesFile(t *testing.T) {
 	// Set time = 1699123456789
 	binary.LittleEndian.PutUint64(data[1:], 1699123456789)
 
-	// Set dataID = 42
-	binary.LittleEndian.PutUint64(data[9:], 42)
+	// Set dref = 42, 0, 0, ...
+	data[9] = 42
 
 	// Set name
 	copy(data[49:], []byte("readme.md"))
@@ -313,10 +313,11 @@ func TestTreeEntryFromBytesFile(t *testing.T) {
 		t.Errorf("Expected time 1699123456789, got %d", fileEntry.time)
 	}
 
-	// FIXME
-	// if fileEntry.dref[] != 42 {
-	// 	t.Errorf("Expected dataID 42, got %d", fileEntry.dataID)
-	// }
+	// Verify dref
+	dref := data[9:49]
+	if !reflect.DeepEqual(dref, fileEntry.dref[:]) {
+		t.Errorf("Unexpected data reference, got %d", dref)
+	}
 
 	if fileEntry.name != "readme.md" {
 		t.Errorf("Expected name 'readme.md', got '%s'", fileEntry.name)
@@ -409,10 +410,9 @@ func TestTreeEntryRoundTrip(t *testing.T) {
 			t.Errorf("Time mismatch: expected %d, got %d", original.time, restored.time)
 		}
 
-		// FIXME
-		// if restored.dataID != original.dataID {
-		// 	t.Errorf("DataID mismatch: expected %d, got %d", original.dataID, restored.dataID)
-		// }
+		if !reflect.DeepEqual(restored.dref, original.dref) {
+			t.Errorf("DataID mismatch: expected %d, got %d", original.dref, restored.dref)
+		}
 
 		if restored.name != original.name {
 			t.Errorf("Name mismatch: expected '%s', got '%s'", original.name, restored.name)
