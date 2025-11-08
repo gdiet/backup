@@ -83,3 +83,21 @@ func (d *dataEntry) toBytes() []byte {
 	}
 	return buf
 }
+
+func dataEntryFromBytes(data []byte) (d dataEntry, err error) {
+	// 8 bytes reference count + 16 bytes per area
+	dataLen := len(data)
+	if dataLen < 8 || dataLen%16 != 8 {
+		return dataEntry{}, errors.New("dataEntry length invalid")
+	}
+	d.refs = binary.LittleEndian.Uint64(data)
+	d.areas = make([]area, (dataLen-40)/16)
+	pos := 40
+	for i := range d.areas {
+		off := int64(binary.LittleEndian.Uint64(data[pos : pos+8]))
+		len := int64(binary.LittleEndian.Uint64(data[pos+8 : pos+16]))
+		d.areas[i] = area{off: off, len: len}
+		pos += 16
+	}
+	return d, nil
+}
