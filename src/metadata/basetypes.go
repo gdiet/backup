@@ -11,8 +11,16 @@ type area struct {
 	len int64
 }
 
+type treeEntry interface {
+	getName() string
+}
+
 type dirEntry struct {
 	name string // at least 1 byte
+}
+
+func (d dirEntry) getName() string {
+	return d.name
 }
 
 func (d *dirEntry) toBytes() []byte {
@@ -29,6 +37,10 @@ type fileEntry struct {
 	name string   // at least 1 byte
 }
 
+func (f fileEntry) getName() string {
+	return f.name
+}
+
 func (f *fileEntry) toBytes() []byte {
 	// 1 byte type + 8 bytes time + 40 bytes data reference + name
 	buf := make([]byte, 49+len(f.name))
@@ -39,7 +51,7 @@ func (f *fileEntry) toBytes() []byte {
 	return buf
 }
 
-func treeEntryFromBytes(data []byte) (interface{}, error) {
+func treeEntryFromBytes(data []byte) (treeEntry, error) {
 	if len(data) < 2 {
 		return nil, errors.New("treeEntry too short")
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"os"
 
 	"go.etcd.io/bbolt"
 )
@@ -14,6 +15,7 @@ import (
 // - data entries (len|hash -> dataEntry)
 // - free areas (start -> length)
 // - context (string -> string, e.g. version information)
+// entry id: uint64 (easier to handle than int64 in bbolt keys)
 // hash: blake3 256-bit hash, represented as 32 bytes
 
 var (
@@ -28,14 +30,30 @@ type repository struct {
 	db *bbolt.DB
 }
 
-func (r *repository) mkdir(parent int64) {
-	r.db.Update(func(tx *bbolt.Tx) error {
-		childBucket := tx.Bucket(bucketChildren)
-		childCursor := childBucket.Cursor()
-		childCursor.Seek(int64bytes(parent))
+func (r *repository) mkdir(parent uint64, name string) error {
+	err := r.db.Update(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket(bucketTreeEntries)
+		children := tx.Bucket(bucketChildren)
+
+		// check if child with name exists
+		cursor := children.Cursor()
+		for k, _ := cursor.Seek(u64b(parent)); k != nil && b64u(k) != parent; k, _ = cursor.Next() {
+			bytes := tree.Get(k[8:])
+			if bytes == nil {
+				continue
+			}
+			entry, err := treeEntryFromBytes(bytes)
+			if err != nil {
+				return err
+			}
+			if entry.getName() == name {
+				return os.ErrExist
+			}
+		}
 		// FIXME implement mkdir logic
 		return nil
 	})
+	return err
 }
 
 // NewRepository creates or opens a repository at the specified file path.
@@ -68,7 +86,7 @@ func NewRepository(filePath string) (*repository, error) {
 		freeAreasBucket := tx.Bucket(bucketFreeAreas)
 		if freeAreasBucket.Stats().KeyN == 0 {
 			// Add initial free area: 0 -> MaxInt64
-			err := freeAreasBucket.Put(int64bytes(0), int64bytes(math.MaxInt64))
+			err := freeAreasBucket.Put(i64b(0), i64b(math.MaxInt64))
 			if err != nil {
 				return fmt.Errorf("failed to initialize free areas: %w", err)
 			}
@@ -90,9 +108,20 @@ func (r *repository) Close() error {
 	return r.db.Close()
 }
 
-// int64bytes converts an int64 to a byte slice key for bbolt.
-func int64bytes(id int64) []byte {
+// i64b converts an int64 to a byte slice key for bbolt.
+func i64b(id int64) []byte {
 	key := make([]byte, 8)
 	binary.BigEndian.PutUint64(key, uint64(id))
 	return key
+}
+
+// u64b converts an uint64 to a byte slice key for bbolt.
+func u64b(u uint64) []byte {
+	key := make([]byte, 8)
+	binary.BigEndian.PutUint64(key, u)
+	return key
+}
+
+func b64u(b []byte) uint64 {
+	return binary.BigEndian.Uint64(b)
 }
