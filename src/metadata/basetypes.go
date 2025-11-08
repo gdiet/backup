@@ -58,7 +58,7 @@ func treeEntryFromBytes(data []byte) (interface{}, error) {
 		f := fileEntry{
 			time: int64(binary.LittleEndian.Uint64(data[1:])),
 			dref: dref,
-			name: string(data[17:]),
+			name: string(data[49:]),
 		}
 		return f, nil
 	default:
@@ -72,7 +72,7 @@ type dataEntry struct {
 }
 
 func (d *dataEntry) toBytes() []byte {
-	// 8 bytes refs + 16 bytes per area
+	// 8 bytes reference count + 16 bytes per area
 	buf := make([]byte, 8+16*len(d.areas))
 	binary.LittleEndian.PutUint64(buf, d.refs)
 	pos := 8
@@ -91,8 +91,8 @@ func dataEntryFromBytes(data []byte) (d dataEntry, err error) {
 		return dataEntry{}, errors.New("dataEntry length invalid")
 	}
 	d.refs = binary.LittleEndian.Uint64(data)
-	d.areas = make([]area, (dataLen-40)/16)
-	pos := 40
+	d.areas = make([]area, (dataLen-8)/16)
+	pos := 8
 	for i := range d.areas {
 		off := int64(binary.LittleEndian.Uint64(data[pos : pos+8]))
 		len := int64(binary.LittleEndian.Uint64(data[pos+8 : pos+16]))
