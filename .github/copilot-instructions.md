@@ -131,7 +131,7 @@ The codebase uses build constraints for debug vs production behavior:
 - **File I/O**: Follows `os.File` patterns (ReadAt/WriteAt with offsets)
 - **Error Handling**: Graceful degradation in production, strict validation in debug
 - **Testing**: Extensive use of `stretchr/testify` for assertions
-- **Serialization**: Custom binary format with little-endian encoding
+- **Serialization**: Bbolt - custom binary format with big-endian encoding
 
 ### Testing Strategy
 

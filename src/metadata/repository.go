@@ -28,6 +28,16 @@ type repository struct {
 	db *bbolt.DB
 }
 
+func (r *repository) mkdir(parent int64) {
+	r.db.Update(func(tx *bbolt.Tx) error {
+		childBucket := tx.Bucket(bucketChildren)
+		childCursor := childBucket.Cursor()
+		childCursor.Seek(int64bytes(parent))
+		// FIXME implement mkdir logic
+		return nil
+	})
+}
+
 // NewRepository creates or opens a repository at the specified file path.
 // If the free areas bucket doesn't exist, it initializes it with a single area covering 0...MaxInt64.
 func NewRepository(filePath string) (*repository, error) {
@@ -83,6 +93,6 @@ func (r *repository) Close() error {
 // int64bytes converts an int64 to a byte slice key for bbolt.
 func int64bytes(id int64) []byte {
 	key := make([]byte, 8)
-	binary.LittleEndian.PutUint64(key, uint64(id))
+	binary.BigEndian.PutUint64(key, uint64(id))
 	return key
 }

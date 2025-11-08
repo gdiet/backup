@@ -33,7 +33,7 @@ func (f *fileEntry) toBytes() []byte {
 	// 1 byte type + 8 bytes time + 40 bytes data reference + name
 	buf := make([]byte, 49+len(f.name))
 	buf[0] = 1 // fileEntry type = 1
-	binary.LittleEndian.PutUint64(buf[1:], uint64(f.time))
+	binary.BigEndian.PutUint64(buf[1:], uint64(f.time))
 	copy(buf[9:], f.dref[:])
 	copy(buf[49:], []byte(f.name))
 	return buf
@@ -56,7 +56,7 @@ func treeEntryFromBytes(data []byte) (interface{}, error) {
 		dref := [40]byte{}
 		copy(dref[:], data[9:49])
 		f := fileEntry{
-			time: int64(binary.LittleEndian.Uint64(data[1:])),
+			time: int64(binary.BigEndian.Uint64(data[1:])),
 			dref: dref,
 			name: string(data[49:]),
 		}
@@ -74,11 +74,11 @@ type dataEntry struct {
 func (d *dataEntry) toBytes() []byte {
 	// 8 bytes reference count + 16 bytes per area
 	buf := make([]byte, 8+16*len(d.areas))
-	binary.LittleEndian.PutUint64(buf, d.refs)
+	binary.BigEndian.PutUint64(buf, d.refs)
 	pos := 8
 	for _, area := range d.areas {
-		binary.LittleEndian.PutUint64(buf[pos:], uint64(area.off))
-		binary.LittleEndian.PutUint64(buf[pos+8:], uint64(area.len))
+		binary.BigEndian.PutUint64(buf[pos:], uint64(area.off))
+		binary.BigEndian.PutUint64(buf[pos+8:], uint64(area.len))
 		pos += 16
 	}
 	return buf
@@ -90,12 +90,12 @@ func dataEntryFromBytes(data []byte) (d dataEntry, err error) {
 	if dataLen < 8 || dataLen%16 != 8 {
 		return dataEntry{}, errors.New("dataEntry length invalid")
 	}
-	d.refs = binary.LittleEndian.Uint64(data)
+	d.refs = binary.BigEndian.Uint64(data)
 	d.areas = make([]area, (dataLen-8)/16)
 	pos := 8
 	for i := range d.areas {
-		off := int64(binary.LittleEndian.Uint64(data[pos : pos+8]))
-		len := int64(binary.LittleEndian.Uint64(data[pos+8 : pos+16]))
+		off := int64(binary.BigEndian.Uint64(data[pos : pos+8]))
+		len := int64(binary.BigEndian.Uint64(data[pos+8 : pos+16]))
 		d.areas[i] = area{off: off, len: len}
 		pos += 16
 	}

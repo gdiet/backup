@@ -11,7 +11,7 @@ func TestDataEntryFromBytesValid(t *testing.T) {
 	data := make([]byte, 8)
 
 	// Set refs = 42
-	data[0] = 42
+	data[7] = 42
 
 	entry, err := dataEntryFromBytes(data)
 	if err != nil {
@@ -32,21 +32,21 @@ func TestDataEntryFromBytesWithAreas(t *testing.T) {
 	data := make([]byte, 40)
 
 	// Set refs = 123
-	data[0] = 123
+	data[7] = 123
 
 	// First area: off=1000, len=500
 	pos := 8
-	data[pos] = 232   // 1000 in little endian (low byte)
-	data[pos+1] = 3   // 1000 >> 8
-	data[pos+8] = 244 // 500 in little endian (low byte)
-	data[pos+9] = 1   // 500 >> 8
+	data[pos+7] = 232  // 1000 in big endian (low byte)
+	data[pos+6] = 3    // 1000 >> 8
+	data[pos+15] = 244 // 500 in big endian (low byte)
+	data[pos+14] = 1   // 500 >> 8
 
 	// Second area: off=2000, len=750
 	pos = 24
-	data[pos] = 208   // 2000 in little endian (low byte)
-	data[pos+1] = 7   // 2000 >> 8
-	data[pos+8] = 238 // 750 in little endian (low byte)
-	data[pos+9] = 2   // 750 >> 8
+	data[pos+7] = 208  // 2000 in big endian (low byte)
+	data[pos+6] = 7    // 2000 >> 8
+	data[pos+15] = 238 // 750 in big endian (low byte)
+	data[pos+14] = 2   // 750 >> 8
 
 	entry, err := dataEntryFromBytes(data)
 	if err != nil {
@@ -119,7 +119,7 @@ func TestDataEntryToBytes(t *testing.T) {
 	}
 
 	// Verify refs
-	refs := uint64(data[0]) | (uint64(data[1]) << 8) // Little endian
+	refs := uint64(data[7]) | (uint64(data[6]) << 8) // big endian
 	if refs != 456 {
 		t.Errorf("Expected refs=456, got %d", refs)
 	}
@@ -247,7 +247,7 @@ func TestFileEntryToBytes(t *testing.T) {
 	}
 
 	// Verify time
-	time := int64(binary.LittleEndian.Uint64(data[1:]))
+	time := int64(binary.BigEndian.Uint64(data[1:]))
 	if time != 1699123456789 {
 		t.Errorf("Expected time 1699123456789, got %d", time)
 	}
@@ -291,7 +291,7 @@ func TestTreeEntryFromBytesFile(t *testing.T) {
 	data[0] = 1 // type byte 1
 
 	// Set time = 1699123456789
-	binary.LittleEndian.PutUint64(data[1:], 1699123456789)
+	binary.BigEndian.PutUint64(data[1:], 1699123456789)
 
 	// Set dref = 42, 0, 0, ...
 	data[9] = 42
