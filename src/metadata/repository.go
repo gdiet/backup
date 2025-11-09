@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"backup/src/util"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -17,6 +18,15 @@ import (
 // - context (string -> string, e.g. version information)
 // entry id: uint64 (easier to handle than int64 in bbolt keys)
 // hash: blake3 256-bit hash, represented as 32 bytes
+
+// estimated average size of a file in the bbolt repository is 160 bytes
+// tree entries:
+// 8 key -> 1 type 8 time 40 dref 23 name = 72
+// children:
+// 16 key -> {} = 16
+// data entries:
+// 40 key -> 8 refs 16 area = 24
+// bbolt management: 3*16 = 48
 
 var (
 	bucketTreeEntries = []byte("tree_entries")
@@ -38,6 +48,7 @@ func (r *repository) mkdir(parent uint64, name string) error {
 		// check if child with name exists
 		cursor := children.Cursor()
 		for k, _ := cursor.Seek(u64b(parent)); k != nil && b64u(k) != parent; k, _ = cursor.Next() {
+			util.Assert(len(k) == 16, "invalid child key length")
 			bytes := tree.Get(k[8:])
 			if bytes == nil {
 				continue
@@ -50,8 +61,15 @@ func (r *repository) mkdir(parent uint64, name string) error {
 				return os.ErrExist
 			}
 		}
-		// FIXME implement mkdir logic
-		return nil
+
+		// get next available tree entries ID
+		var nextID uint64
+		if bytes, _ := tree.Cursor().Last(); bytes != nil {
+			nextID = b64u(bytes) + 1
+		}
+
+		// write new dir entry
+		return tree.Put(u64b(nextID), (&dirEntry{name: name}).toBytes())
 	})
 	return err
 }

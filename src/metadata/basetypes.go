@@ -19,7 +19,7 @@ type dirEntry struct {
 	name string // at least 1 byte
 }
 
-func (d dirEntry) getName() string {
+func (d *dirEntry) getName() string {
 	return d.name
 }
 
@@ -37,7 +37,7 @@ type fileEntry struct {
 	name string   // at least 1 byte
 }
 
-func (f fileEntry) getName() string {
+func (f *fileEntry) getName() string {
 	return f.name
 }
 
@@ -59,7 +59,7 @@ func treeEntryFromBytes(data []byte) (treeEntry, error) {
 	switch data[0] {
 	case 0:
 		// dirEntry: 1 byte type + name
-		return dirEntry{name: string(data[1:])}, nil
+		return &dirEntry{name: string(data[1:])}, nil
 	case 1:
 		// fileEntry: 1 byte type + 8 bytes time + 40 bytes data reference + name
 		if len(data) < 50 {
@@ -67,7 +67,7 @@ func treeEntryFromBytes(data []byte) (treeEntry, error) {
 		}
 		dref := [40]byte{}
 		copy(dref[:], data[9:49])
-		f := fileEntry{
+		f := &fileEntry{
 			time: int64(binary.BigEndian.Uint64(data[1:])),
 			dref: dref,
 			name: string(data[49:]),

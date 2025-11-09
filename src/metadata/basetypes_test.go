@@ -275,9 +275,9 @@ func TestTreeEntryFromBytesDirectory(t *testing.T) {
 		t.Fatal("Expected no error for valid directory data:", err)
 	}
 
-	dirEntry, ok := result.(dirEntry)
+	dirEntry, ok := result.(*dirEntry)
 	if !ok {
-		t.Fatal("Expected dirEntry, got different type")
+		t.Fatal("Expected *dirEntry, got different type")
 	}
 
 	if dirEntry.name != "documents" {
@@ -304,7 +304,7 @@ func TestTreeEntryFromBytesFile(t *testing.T) {
 		t.Fatal("Expected no error for valid file data:", err)
 	}
 
-	fileEntry, ok := result.(fileEntry)
+	fileEntry, ok := result.(*fileEntry)
 	if !ok {
 		t.Fatal("Expected fileEntry, got different type")
 	}
@@ -377,7 +377,7 @@ func TestTreeEntryRoundTrip(t *testing.T) {
 			t.Fatal("Directory round-trip failed:", err)
 		}
 
-		restored, ok := result.(dirEntry)
+		restored, ok := result.(*dirEntry)
 		if !ok {
 			t.Fatal("Expected dirEntry after round-trip")
 		}
@@ -401,7 +401,7 @@ func TestTreeEntryRoundTrip(t *testing.T) {
 			t.Fatal("File round-trip failed:", err)
 		}
 
-		restored, ok := result.(fileEntry)
+		restored, ok := result.(*fileEntry)
 		if !ok {
 			t.Fatal("Expected fileEntry after round-trip")
 		}
@@ -418,4 +418,93 @@ func TestTreeEntryRoundTrip(t *testing.T) {
 			t.Errorf("Name mismatch: expected '%s', got '%s'", original.name, restored.name)
 		}
 	})
+}
+
+func TestDirEntryGetName(t *testing.T) {
+	tests := []struct {
+		name    string
+		dirName string
+	}{
+		{"simple name", "documents"},
+		{"empty name", ""},
+		{"unicode name", "文档"},
+		{"name with spaces", "my documents"},
+		{"long name", "very_long_directory_name_with_underscores_and_numbers_123"},
+		{"special chars", "dir-name.with.dots"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := &dirEntry{name: tt.dirName}
+
+			// Test getName method
+			result := dir.getName()
+			if result != tt.dirName {
+				t.Errorf("getName() = %q, want %q", result, tt.dirName)
+			}
+
+			// Test interface implementation
+			var entry treeEntry = dir
+			interfaceResult := entry.getName()
+			if interfaceResult != tt.dirName {
+				t.Errorf("Interface getName() = %q, want %q", interfaceResult, tt.dirName)
+			}
+		})
+	}
+}
+
+func TestFileEntryGetName(t *testing.T) {
+	tests := []struct {
+		name     string
+		fileName string
+		time     int64
+		dref     [40]byte
+	}{
+		{"simple file", "readme.txt", 1699123456789, [40]byte{1, 2, 3}},
+		{"empty name", "", 0, [40]byte{}},
+		{"unicode file", "文档.pdf", 1699123456789, [40]byte{42}},
+		{"file with spaces", "my file.doc", 1699123456789, [40]byte{1, 2, 3, 4, 5}},
+		{"long filename", "very_long_filename_with_extension.tar.gz", 1699123456789, [40]byte{255, 254, 253}},
+		{"special chars", "file-name.with.dots_and-dashes.txt", 1699123456789, [40]byte{128, 129, 130}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			file := &fileEntry{
+				name: tt.fileName,
+				time: tt.time,
+				dref: tt.dref,
+			}
+
+			// Test getName method
+			result := file.getName()
+			if result != tt.fileName {
+				t.Errorf("getName() = %q, want %q", result, tt.fileName)
+			}
+
+			// Test interface implementation
+			var entry treeEntry = file
+			interfaceResult := entry.getName()
+			if interfaceResult != tt.fileName {
+				t.Errorf("Interface getName() = %q, want %q", interfaceResult, tt.fileName)
+			}
+		})
+	}
+}
+
+func TestTreeEntryInterface(t *testing.T) {
+	// Test that both types properly implement treeEntry interface
+	entries := []treeEntry{
+		&dirEntry{name: "test_dir"},
+		&fileEntry{name: "test_file.txt", time: 1699123456789, dref: [40]byte{1}},
+	}
+
+	expectedNames := []string{"test_dir", "test_file.txt"}
+
+	for i, entry := range entries {
+		name := entry.getName()
+		if name != expectedNames[i] {
+			t.Errorf("Entry %d: getName() = %q, want %q", i, name, expectedNames[i])
+		}
+	}
 }
