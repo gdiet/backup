@@ -2,7 +2,6 @@ package metadata
 
 import (
 	"backup/src/util"
-	"encoding/binary"
 	"fmt"
 	"math"
 	"os"
@@ -104,7 +103,7 @@ func NewRepository(filePath string) (*repository, error) {
 		freeAreasBucket := tx.Bucket(bucketFreeAreas)
 		if freeAreasBucket.Stats().KeyN == 0 {
 			// Add initial free area: 0 -> MaxInt64
-			err := freeAreasBucket.Put(i64b(0), i64b(math.MaxInt64))
+			err := freeAreasBucket.Put(u64b(0), u64b(math.MaxInt64))
 			if err != nil {
 				return fmt.Errorf("failed to initialize free areas: %w", err)
 			}
@@ -124,22 +123,4 @@ func NewRepository(filePath string) (*repository, error) {
 // Close closes the repository database.
 func (r *repository) Close() error {
 	return r.db.Close()
-}
-
-// i64b converts an int64 to a byte slice key for bbolt.
-func i64b(id int64) []byte {
-	key := make([]byte, 8)
-	binary.BigEndian.PutUint64(key, uint64(id))
-	return key
-}
-
-// u64b converts an uint64 to a byte slice key for bbolt.
-func u64b(u uint64) []byte {
-	key := make([]byte, 8)
-	binary.BigEndian.PutUint64(key, u)
-	return key
-}
-
-func b64u(b []byte) uint64 {
-	return binary.BigEndian.Uint64(b)
 }

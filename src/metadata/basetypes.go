@@ -6,9 +6,10 @@ import (
 )
 
 // area represents a located contiguous range of bytes.
+// Other than in the system file API, uint64 is used here because it is easier to serialize.
 type area struct {
-	off int64
-	len int64
+	off uint64
+	len uint64
 }
 
 type treeEntry interface {
@@ -45,8 +46,8 @@ func (f *fileEntry) toBytes() []byte {
 	// 1 byte type + 8 bytes time + 40 bytes data reference + name
 	buf := make([]byte, 49+len(f.name))
 	buf[0] = 1 // fileEntry type = 1
-	binary.BigEndian.PutUint64(buf[1:], uint64(f.time))
-	copy(buf[9:], f.dref[:])
+	i64w(buf[1:], f.time)
+	copy(buf[9:49], f.dref[:])
 	copy(buf[49:], []byte(f.name))
 	return buf
 }
@@ -68,7 +69,7 @@ func treeEntryFromBytes(data []byte) (treeEntry, error) {
 		dref := [40]byte{}
 		copy(dref[:], data[9:49])
 		f := &fileEntry{
-			time: int64(binary.BigEndian.Uint64(data[1:])),
+			time: b64i(data[1:9]),
 			dref: dref,
 			name: string(data[49:]),
 		}
@@ -86,11 +87,11 @@ type dataEntry struct {
 func (d *dataEntry) toBytes() []byte {
 	// 8 bytes reference count + 16 bytes per area
 	buf := make([]byte, 8+16*len(d.areas))
-	binary.BigEndian.PutUint64(buf, d.refs)
+	u64w(buf, d.refs)
 	pos := 8
 	for _, area := range d.areas {
-		binary.BigEndian.PutUint64(buf[pos:], uint64(area.off))
-		binary.BigEndian.PutUint64(buf[pos+8:], uint64(area.len))
+		u64w(buf[pos:], area.off)
+		u64w(buf[pos+8:], area.len)
 		pos += 16
 	}
 	return buf
@@ -102,14 +103,43 @@ func dataEntryFromBytes(data []byte) (d dataEntry, err error) {
 	if dataLen < 8 || dataLen%16 != 8 {
 		return dataEntry{}, errors.New("dataEntry length invalid")
 	}
-	d.refs = binary.BigEndian.Uint64(data)
+	d.refs = b64u(data)
 	d.areas = make([]area, (dataLen-8)/16)
 	pos := 8
 	for i := range d.areas {
-		off := int64(binary.BigEndian.Uint64(data[pos : pos+8]))
-		len := int64(binary.BigEndian.Uint64(data[pos+8 : pos+16]))
+		off := b64u(data[pos : pos+8])
+		len := b64u(data[pos+8 : pos+16])
 		d.areas[i] = area{off: off, len: len}
 		pos += 16
 	}
 	return d, nil
+}
+
+// u64b converts an uint64 to a byte slice key for bbolt.
+func u64b(u uint64) []byte {
+	key := make([]byte, 8)
+	binary.BigEndian.PutUint64(key, u)
+	return key
+}
+
+// u64w writes an uint64 to an existing byte slice.
+func u64w(buf []byte, u uint64) {
+	binary.BigEndian.PutUint64(buf, u)
+}
+
+// i64w writes an int64 to an existing byte slice.
+func i64w(buf []byte, i int64) {
+	binary.BigEndian.PutUint64(buf, uint64(i))
+}
+
+// b64u converts a byte slice to an uint64.
+// This function is added for readability and symmetry to u64b.
+func b64u(b []byte) uint64 {
+	return binary.BigEndian.Uint64(b)
+}
+
+// b64i converts a byte slice to an int64.
+// This function is added for readability and symmetry to i64w.
+func b64i(b []byte) int64 {
+	return int64(binary.BigEndian.Uint64(b))
 }
