@@ -3,6 +3,7 @@ package metadata
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.etcd.io/bbolt"
@@ -130,4 +131,87 @@ func TestUint64ToKey(t *testing.T) {
 			t.Errorf("Round-trip failed for %d: got %d", test, restored)
 		}
 	}
+}
+
+func TestNewRepositoryFailures(t *testing.T) {
+	t.Run("file path points to directory", func(t *testing.T) {
+		// Create a directory instead of a file
+		tempDir := t.TempDir()
+		dirPath := filepath.Join(tempDir, "should_be_file")
+		err := os.Mkdir(dirPath, 0755)
+		if err != nil {
+			t.Fatalf("Failed to create directory for test: %v", err)
+		}
+
+		// Attempt to open repository with directory path - should fail
+		repo, err := NewRepository(dirPath)
+		if err == nil {
+			repo.Close()
+			t.Fatal("Expected error when opening repository with directory path, but got nil")
+		}
+
+		// Verify error message contains relevant information
+		if !strings.Contains(err.Error(), "failed to open bbolt database") {
+			t.Errorf("Expected error about bbolt database, got: %v", err)
+		}
+	})
+
+	t.Run("invalid file path", func(t *testing.T) {
+		// Try to open repository in non-existent directory with invalid permissions
+		invalidPath := "/root/non_existent/test.db" // Likely no permission to create
+
+		repo, err := NewRepository(invalidPath)
+		if err == nil {
+			repo.Close()
+			t.Fatal("Expected error when opening repository with invalid path, but got nil")
+		}
+
+		// Verify error message contains relevant information
+		if !strings.Contains(err.Error(), "failed to open bbolt database") {
+			t.Errorf("Expected error about bbolt database, got: %v", err)
+		}
+	})
+
+	t.Run("read-only file system", func(t *testing.T) {
+		// This test creates a scenario where the file can't be opened for writing
+		tempDir := t.TempDir()
+		dbPath := filepath.Join(tempDir, "readonly.db")
+
+		// Create the file first
+		file, err := os.Create(dbPath)
+		if err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+		file.Close()
+
+		// Make the file read-only
+		err = os.Chmod(dbPath, 0444) // Read-only
+		if err != nil {
+			t.Fatalf("Failed to make file read-only: %v", err)
+		}
+
+		// Make the directory read-only too (this prevents bbolt from creating lock files)
+		err = os.Chmod(tempDir, 0555) // Read and execute only
+		if err != nil {
+			t.Fatalf("Failed to make directory read-only: %v", err)
+		}
+
+		// Restore permissions after test
+		defer func() {
+			os.Chmod(tempDir, 0755)
+			os.Chmod(dbPath, 0644)
+		}()
+
+		// Attempt to open repository - should fail due to read-only constraints
+		repo, err := NewRepository(dbPath)
+		if err == nil {
+			repo.Close()
+			t.Fatal("Expected error when opening repository on read-only file system, but got nil")
+		}
+
+		// Verify error message contains relevant information
+		if !strings.Contains(err.Error(), "failed to open bbolt database") {
+			t.Errorf("Expected error about bbolt database, got: %v", err)
+		}
+	})
 }
