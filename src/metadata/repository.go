@@ -73,6 +73,17 @@ func (r *Repository) Mkdir(parent uint64, name string) error {
 	return err
 }
 
+// Readdir lists the entries under the specified parent directory. It does not check whether the parent exists.
+func (r *Repository) Readdir(parent uint64) (entries []internal.TreeEntry, err error) {
+	err = r.db.View(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket([]byte(bucketTree))
+		children := tx.Bucket([]byte(bucketChildren))
+		entries, err = internal.Readdir(tree, children, parent)
+		return err
+	})
+	return entries, err
+}
+
 // Close closes the repository database.
 func (r *Repository) Close() error {
 	return r.db.Close()

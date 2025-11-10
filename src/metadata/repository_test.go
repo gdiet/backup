@@ -346,3 +346,166 @@ func TestRepositoryMkdir(t *testing.T) {
 		}
 	})
 }
+
+func TestRepositoryReaddir(t *testing.T) {
+	// Create temporary database file
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "readdir_test.db")
+
+	// Create repository
+	repo, err := NewRepository(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create repository: %v", err)
+	}
+	defer repo.Close()
+
+	t.Run("empty directory", func(t *testing.T) {
+		// Test reading empty directory (parent 0 initially has no children)
+		entries, err := repo.Readdir(0)
+		if err != nil {
+			t.Fatalf("Failed to read empty directory: %v", err)
+		}
+
+		if len(entries) != 0 {
+			t.Errorf("Expected 0 entries in empty directory, got %d", len(entries))
+		}
+	})
+
+	t.Run("directory with children", func(t *testing.T) {
+		// Create some directories
+		err = repo.Mkdir(0, "dir1")
+		if err != nil {
+			t.Fatalf("Failed to create dir1: %v", err)
+		}
+
+		err = repo.Mkdir(0, "dir2")
+		if err != nil {
+			t.Fatalf("Failed to create dir2: %v", err)
+		}
+
+		err = repo.Mkdir(0, "dir3")
+		if err != nil {
+			t.Fatalf("Failed to create dir3: %v", err)
+		}
+
+		// Read directory contents
+		entries, err := repo.Readdir(0)
+		if err != nil {
+			t.Fatalf("Failed to read directory with children: %v", err)
+		}
+
+		if len(entries) != 3 {
+			t.Fatalf("Expected 3 entries, got %d", len(entries))
+		}
+
+		// Collect names for verification (order may vary)
+		names := make(map[string]bool)
+		for _, entry := range entries {
+			names[entry.GetName()] = true
+
+			// Verify all entries are DirEntry
+			_, ok := entry.(*internal.DirEntry)
+			if !ok {
+				t.Errorf("Expected DirEntry, got %T for entry '%s'", entry, entry.GetName())
+			}
+		}
+
+		// Verify expected names are present
+		expectedNames := []string{"dir1", "dir2", "dir3"}
+		for _, expectedName := range expectedNames {
+			if !names[expectedName] {
+				t.Errorf("Expected to find directory '%s' but it was missing", expectedName)
+			}
+		}
+
+		// Verify no unexpected names
+		if len(names) != len(expectedNames) {
+			t.Errorf("Found unexpected entries: got %v, expected %v", names, expectedNames)
+		}
+	})
+
+	t.Run("mixed directory and file entries", func(t *testing.T) {
+		// Create a mixed parent with both directories and files
+		parentID := uint64(100)
+
+		// Create a directory under parent 100
+		err = repo.Mkdir(parentID, "subdir")
+		if err != nil {
+			t.Fatalf("Failed to create subdir: %v", err)
+		}
+
+		// Manually create a file entry under the same parent for testing
+		err = repo.db.Update(func(tx *bbolt.Tx) error {
+			tree := tx.Bucket([]byte(bucketTree))
+			children := tx.Bucket([]byte(bucketChildren))
+
+			// Create a file entry
+			fileID := uint64(200)
+			fileEntry := &internal.FileEntry{
+				Time: 1640995200000,
+				Dref: [40]byte{1, 2, 3},
+				Name: "testfile.txt",
+			}
+			err := tree.Put(internal.U64b(fileID), fileEntry.ToBytes())
+			if err != nil {
+				return err
+			}
+
+			// Create parent-child relationship for this file
+			childKey := make([]byte, 16)
+			copy(childKey[0:8], internal.U64b(parentID)) // parent 100
+			copy(childKey[8:16], internal.U64b(fileID))  // file child 200
+			return children.Put(childKey, []byte{})
+		})
+		if err != nil {
+			t.Fatalf("Failed to setup file entry: %v", err)
+		}
+
+		// Read mixed directory contents
+		entries, err := repo.Readdir(parentID)
+		if err != nil {
+			t.Fatalf("Failed to read mixed directory: %v", err)
+		}
+
+		if len(entries) != 2 {
+			t.Fatalf("Expected 2 entries (1 dir + 1 file), got %d", len(entries))
+		}
+
+		// Verify we have both types
+		foundDir := false
+		foundFile := false
+		for _, entry := range entries {
+			switch e := entry.(type) {
+			case *internal.DirEntry:
+				if e.GetName() == "subdir" {
+					foundDir = true
+				}
+			case *internal.FileEntry:
+				if e.GetName() == "testfile.txt" {
+					foundFile = true
+				}
+			default:
+				t.Errorf("Unexpected entry type: %T", entry)
+			}
+		}
+
+		if !foundDir {
+			t.Error("Expected to find directory 'subdir'")
+		}
+		if !foundFile {
+			t.Error("Expected to find file 'testfile.txt'")
+		}
+	})
+
+	t.Run("non-existent parent", func(t *testing.T) {
+		// Read from non-existent parent - should return empty list, not error
+		entries, err := repo.Readdir(999)
+		if err != nil {
+			t.Fatalf("Unexpected error reading non-existent parent: %v", err)
+		}
+
+		if len(entries) != 0 {
+			t.Errorf("Expected 0 entries for non-existent parent, got %d", len(entries))
+		}
+	})
+}

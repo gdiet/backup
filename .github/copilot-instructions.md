@@ -164,6 +164,7 @@ go run api_benchmark.go               # Performance benchmarking
 8. **Use RWMutex patterns** for any new concurrent code
 9. **Follow `os.File` API consistency** for I/O operations
 10. **Trust these instructions** - search/explore only if information is incomplete or incorrect
+11. **When creating a go file, make sure there is only one package declaration at the top.**
 
 ## Code Style, Patterns & Idioms
 

@@ -14,7 +14,7 @@ func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) error {
 	// check if child with name exists
 	cursor := children.Cursor()
 	parentPrefix := U64b(parent)
-	for k, _ := cursor.Seek(parentPrefix); len(k) >= 8; k, _ = cursor.Next() {
+	for k, _ := cursor.Seek(parentPrefix); len(k) > 0; k, _ = cursor.Next() {
 		// Check if this key still belongs to our parent
 		if !bytes.HasPrefix(k, parentPrefix) {
 			break // No more children for this parent
@@ -23,7 +23,7 @@ func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) error {
 		util.Assert(len(k) == 16, "invalid child key length")
 		childID := k[8:16] // Extract child ID from key
 		bytes := tree.Get(childID)
-		if bytes == nil {
+		if bytes == nil { // FIXME assertion?
 			continue
 		}
 		entry, err := TreeEntryFromBytes(bytes)
@@ -49,9 +49,8 @@ func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) error {
 	}
 
 	// create parent-child relationship
-	// Key format: parentID(8 bytes) + childID(8 bytes) -> empty value
 	childKey := make([]byte, 16)
-	copy(childKey[0:8], U64b(parent))
-	copy(childKey[8:16], U64b(nextID))
+	copy(childKey[0:8], U64b(parent))  // FIXME use U64w
+	copy(childKey[8:16], U64b(nextID)) // FIXME use U64w
 	return children.Put(childKey, []byte{})
 }
