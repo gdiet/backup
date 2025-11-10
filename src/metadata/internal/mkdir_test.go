@@ -36,7 +36,7 @@ func TestMkdir(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
 			children := tx.Bucket([]byte("children"))
-			return Mkdir(tx, tree, children, 0, "testdir")
+			return Mkdir(tree, children, 0, "testdir")
 		})
 		if err != nil {
 			t.Fatalf("Failed to create directory: %v", err)
@@ -85,7 +85,7 @@ func TestMkdir(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
 			children := tx.Bucket([]byte("children"))
-			return Mkdir(tx, tree, children, 0, "testdir")
+			return Mkdir(tree, children, 0, "testdir")
 		})
 
 		if err != os.ErrExist {
@@ -97,7 +97,7 @@ func TestMkdir(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
 			children := tx.Bucket([]byte("children"))
-			return Mkdir(tx, tree, children, 0, "another")
+			return Mkdir(tree, children, 0, "another")
 		})
 		if err != nil {
 			t.Fatalf("Failed to create second directory: %v", err)

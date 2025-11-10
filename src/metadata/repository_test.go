@@ -216,27 +216,3 @@ func TestNewRepositoryFailures(t *testing.T) {
 		}
 	})
 }
-
-func TestNewRepositoryBucketCreationError(t *testing.T) {
-	// This test triggers the error path in CreateBucketIfNotExists failure
-	// by using an empty bucket name which causes "bucket name is blank" error
-
-	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "test_bucket_error.db") // Use the new constructor with empty bucket name to trigger error
-	// This avoids modifying global constants and eliminates race conditions
-	repo, err := NewRepositoryWithBuckets(dbPath,
-		"", // Empty tree entries bucket name - triggers error
-		bucketChildren,
-		bucketData,
-		bucketFreeAreas,
-		bucketContext)
-	if err == nil {
-		repo.Close()
-		t.Fatal("Expected error when creating bucket with empty name, but got nil")
-	}
-
-	// Verify error message contains bucket creation failure
-	if !strings.Contains(err.Error(), "failed to create bucket") {
-		t.Errorf("Expected error about bucket creation, got: %v", err)
-	}
-}

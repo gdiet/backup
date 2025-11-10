@@ -3,7 +3,6 @@ package metadata
 import (
 	"backup/src/metadata/internal"
 	"fmt"
-	"math"
 
 	"go.etcd.io/bbolt"
 )
@@ -34,81 +33,46 @@ const (
 	bucketContext   = "context"
 )
 
-type repository struct {
+type Repository struct {
 	db *bbolt.DB
 }
 
-func (r *repository) mkdir(parent uint64, name string) error {
-	err := r.db.Update(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket([]byte(bucketTree))
-		children := tx.Bucket([]byte(bucketChildren))
-
-		return internal.Mkdir(tx, tree, children, parent, name)
-	})
-	return err
-}
-
-// NewRepository creates or opens a repository at the specified file path.
-// Uses the standard bucket names defined in const block.
-// If the free areas bucket doesn't exist, it initializes it with a single area covering 0...MaxInt64.
-func NewRepository(filePath string) (*repository, error) {
-	return NewRepositoryWithBuckets(filePath,
-		bucketTree,
-		bucketChildren,
-		bucketData,
-		bucketFreeAreas,
-		bucketContext)
-}
-
-// NewRepositoryWithBuckets creates or opens a repository with custom bucket names.
-// This function is useful for testing error conditions or using alternative bucket names.
-// If the free areas bucket doesn't exist, it initializes it with a single area covering 0...MaxInt64.
-func NewRepositoryWithBuckets(filePath, tree, children, data, freeAreas, context string) (*repository, error) {
+// NewRepository creates or opens a repository at the specified file path, initializing buckets as needed.
+func NewRepository(filePath string) (*Repository, error) {
 	db, err := bbolt.Open(filePath, 0600, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open bbolt database: %w", err)
 	}
-
-	repo := &repository{db: db}
-
-	// Initialize buckets and free areas if needed
 	err = db.Update(func(tx *bbolt.Tx) error {
-		// Create all buckets if they don't exist
-		for _, bucketName := range []string{
-			tree,
-			children,
-			data,
-			freeAreas,
-			context,
-		} {
+		// Create buckets if needed
+		for _, bucketName := range []string{bucketTree, bucketChildren, bucketData, bucketFreeAreas, bucketContext} {
 			_, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 			if err != nil {
 				return fmt.Errorf("failed to create bucket %s: %w", bucketName, err)
 			}
 		}
-
-		// Initialize free areas if empty
-		freeAreasBucketHandle := tx.Bucket([]byte(freeAreas))
-		if freeAreasBucketHandle.Stats().KeyN == 0 {
-			// Add initial free area: 0 -> MaxInt64
-			err := freeAreasBucketHandle.Put(internal.U64b(0), internal.U64b(math.MaxInt64))
-			if err != nil {
-				return fmt.Errorf("failed to initialize free areas: %w", err)
-			}
-		}
-
+		// Initialize buckets
+		internal.InitializeFreeAreas(tx.Bucket([]byte(bucketFreeAreas)))
 		return nil
 	})
-
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
+	return &Repository{db: db}, nil
+}
 
-	return repo, nil
+// Mkdir creates a new directory entry under the specified parent with the given name.
+func (r *Repository) Mkdir(parent uint64, name string) error {
+	err := r.db.Update(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket([]byte(bucketTree))
+		children := tx.Bucket([]byte(bucketChildren))
+		return internal.Mkdir(tree, children, parent, name)
+	})
+	return err
 }
 
 // Close closes the repository database.
-func (r *repository) Close() error {
+func (r *Repository) Close() error {
 	return r.db.Close()
 }
