@@ -164,3 +164,111 @@ func TestDataEntryMaxValues(t *testing.T) {
 		t.Error("Max area values not preserved")
 	}
 }
+
+// Test error cases for DataEntryFromBytes
+func TestDataEntryFromBytesErrors(t *testing.T) {
+	t.Run("TooShort", func(t *testing.T) {
+		// Less than 8 bytes
+		data := []byte{1, 2, 3}
+		_, err := DataEntryFromBytes(data)
+		if err == nil {
+			t.Error("Expected error for data too short")
+		}
+		expectedMsg := "dataEntry length invalid"
+		if err.Error() != expectedMsg {
+			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
+		}
+	})
+
+	t.Run("InvalidLength", func(t *testing.T) {
+		// Length not matching 8 + 16*n format (e.g., 15 bytes = 8 + 7, not divisible by 16)
+		data := make([]byte, 15)
+		_, err := DataEntryFromBytes(data)
+		if err == nil {
+			t.Error("Expected error for invalid length")
+		}
+		expectedMsg := "dataEntry length invalid"
+		if err.Error() != expectedMsg {
+			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
+		}
+	})
+}
+
+// Test error cases for TreeEntryFromBytes
+func TestTreeEntryFromBytesErrors(t *testing.T) {
+	t.Run("EmptyData", func(t *testing.T) {
+		data := []byte{}
+		_, err := TreeEntryFromBytes(data)
+		if err == nil {
+			t.Error("Expected error for empty data")
+		}
+		expectedMsg := "treeEntry too short"
+		if err.Error() != expectedMsg {
+			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
+		}
+	})
+
+	t.Run("TooShort", func(t *testing.T) {
+		data := []byte{1} // Only 1 byte
+		_, err := TreeEntryFromBytes(data)
+		if err == nil {
+			t.Error("Expected error for data too short")
+		}
+		expectedMsg := "treeEntry too short"
+		if err.Error() != expectedMsg {
+			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
+		}
+	})
+
+	t.Run("FileEntryTooShort", func(t *testing.T) {
+		// Type 1 (file) but less than 50 bytes required
+		data := make([]byte, 49) // One byte short
+		data[0] = 1
+		_, err := TreeEntryFromBytes(data)
+		if err == nil {
+			t.Error("Expected error for file entry too short")
+		}
+		expectedMsg := "fileEntry too short"
+		if err.Error() != expectedMsg {
+			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
+		}
+	})
+
+	t.Run("InvalidEntryType", func(t *testing.T) {
+		data := []byte{2, 't', 'e', 's', 't'} // Type 2 is invalid
+		_, err := TreeEntryFromBytes(data)
+		if err == nil {
+			t.Error("Expected error for invalid entry type")
+		}
+		expectedMsg := "invalid treeEntry type"
+		if err.Error() != expectedMsg {
+			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
+		}
+	})
+}
+
+// Test empty areas in DataEntry
+func TestDataEntryEmpty(t *testing.T) {
+	entry := DataEntry{
+		Refs:  0,
+		Areas: []Area{}, // Empty areas
+	}
+
+	data := entry.ToBytes()
+	if len(data) != 8 { // Should be just the 8 bytes for Refs
+		t.Errorf("Expected 8 bytes for empty areas, got %d", len(data))
+	}
+
+	restored, err := DataEntryFromBytes(data)
+	if err != nil {
+		t.Fatalf("Failed to parse empty data entry: %v", err)
+	}
+
+	if restored.Refs != 0 {
+		t.Errorf("Expected Refs 0, got %d", restored.Refs)
+	}
+
+	if len(restored.Areas) != 0 {
+		t.Errorf("Expected 0 areas, got %d", len(restored.Areas))
+	}
+}

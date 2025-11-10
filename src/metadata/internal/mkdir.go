@@ -15,7 +15,7 @@ func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) error {
 	// check if child with name exists
 	cursor := children.Cursor()
 	parentPrefix := U64b(parent)
-	for k, _ := cursor.Seek(parentPrefix); k != nil && len(k) >= 8; k, _ = cursor.Next() {
+	for k, _ := cursor.Seek(parentPrefix); len(k) >= 8; k, _ = cursor.Next() {
 		// Check if this key still belongs to our parent
 		if !bytes.HasPrefix(k, parentPrefix) {
 			break // No more children for this parent
