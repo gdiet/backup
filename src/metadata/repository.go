@@ -1,10 +1,9 @@
 package metadata
 
 import (
-	"backup/src/util"
+	"backup/src/metadata/internal"
 	"fmt"
 	"math"
-	"os"
 
 	"go.etcd.io/bbolt"
 )
@@ -28,11 +27,11 @@ import (
 // bbolt management: 3*16 = 48
 
 const (
-	bucketTreeEntries = "tree_entries"
-	bucketChildren    = "children"
-	bucketDataEntries = "data_entries"
-	bucketFreeAreas   = "free_areas"
-	bucketContext     = "context"
+	bucketTree      = "tree"
+	bucketChildren  = "children"
+	bucketData      = "data"
+	bucketFreeAreas = "free"
+	bucketContext   = "context"
 )
 
 type repository struct {
@@ -41,34 +40,10 @@ type repository struct {
 
 func (r *repository) mkdir(parent uint64, name string) error {
 	err := r.db.Update(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket([]byte(bucketTreeEntries))
+		tree := tx.Bucket([]byte(bucketTree))
 		children := tx.Bucket([]byte(bucketChildren))
 
-		// check if child with name exists
-		cursor := children.Cursor()
-		for k, _ := cursor.Seek(u64b(parent)); k != nil && b64u(k) != parent; k, _ = cursor.Next() {
-			util.Assert(len(k) == 16, "invalid child key length")
-			bytes := tree.Get(k[8:])
-			if bytes == nil {
-				continue
-			}
-			entry, err := treeEntryFromBytes(bytes)
-			if err != nil {
-				return err
-			}
-			if entry.getName() == name {
-				return os.ErrExist
-			}
-		}
-
-		// get next available tree entries ID
-		var nextID uint64
-		if bytes, _ := tree.Cursor().Last(); bytes != nil {
-			nextID = b64u(bytes) + 1
-		}
-
-		// write new dir entry
-		return tree.Put(u64b(nextID), (&dirEntry{name: name}).toBytes())
+		return internal.Mkdir(tx, tree, children, parent, name)
 	})
 	return err
 }
@@ -78,9 +53,9 @@ func (r *repository) mkdir(parent uint64, name string) error {
 // If the free areas bucket doesn't exist, it initializes it with a single area covering 0...MaxInt64.
 func NewRepository(filePath string) (*repository, error) {
 	return NewRepositoryWithBuckets(filePath,
-		bucketTreeEntries,
+		bucketTree,
 		bucketChildren,
-		bucketDataEntries,
+		bucketData,
 		bucketFreeAreas,
 		bucketContext)
 }
@@ -88,7 +63,7 @@ func NewRepository(filePath string) (*repository, error) {
 // NewRepositoryWithBuckets creates or opens a repository with custom bucket names.
 // This function is useful for testing error conditions or using alternative bucket names.
 // If the free areas bucket doesn't exist, it initializes it with a single area covering 0...MaxInt64.
-func NewRepositoryWithBuckets(filePath string, treeEntriesBucket, childrenBucket, dataEntriesBucket, freeAreasBucket, contextBucket string) (*repository, error) {
+func NewRepositoryWithBuckets(filePath, tree, children, data, freeAreas, context string) (*repository, error) {
 	db, err := bbolt.Open(filePath, 0600, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open bbolt database: %w", err)
@@ -100,11 +75,11 @@ func NewRepositoryWithBuckets(filePath string, treeEntriesBucket, childrenBucket
 	err = db.Update(func(tx *bbolt.Tx) error {
 		// Create all buckets if they don't exist
 		for _, bucketName := range []string{
-			treeEntriesBucket,
-			childrenBucket,
-			dataEntriesBucket,
-			freeAreasBucket,
-			contextBucket,
+			tree,
+			children,
+			data,
+			freeAreas,
+			context,
 		} {
 			_, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 			if err != nil {
@@ -113,10 +88,10 @@ func NewRepositoryWithBuckets(filePath string, treeEntriesBucket, childrenBucket
 		}
 
 		// Initialize free areas if empty
-		freeAreasBucketHandle := tx.Bucket([]byte(freeAreasBucket))
+		freeAreasBucketHandle := tx.Bucket([]byte(freeAreas))
 		if freeAreasBucketHandle.Stats().KeyN == 0 {
 			// Add initial free area: 0 -> MaxInt64
-			err := freeAreasBucketHandle.Put(u64b(0), u64b(math.MaxInt64))
+			err := freeAreasBucketHandle.Put(internal.U64b(0), internal.U64b(math.MaxInt64))
 			if err != nil {
 				return fmt.Errorf("failed to initialize free areas: %w", err)
 			}

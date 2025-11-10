@@ -1,0 +1,166 @@
+package internal
+
+import (
+	"math"
+	"testing"
+)
+
+func TestDirEntryToBytes(t *testing.T) {
+	entry := NewDirEntry("testdir")
+	data := entry.ToBytes()
+
+	// Verify structure: 1 byte type + name
+	expectedLen := 1 + len("testdir")
+	if len(data) != expectedLen {
+		t.Fatalf("Expected %d bytes, got %d", expectedLen, len(data))
+	}
+
+	// Verify type byte
+	if data[0] != 0 {
+		t.Errorf("Expected type byte 0, got %d", data[0])
+	}
+
+	// Verify name
+	if string(data[1:]) != "testdir" {
+		t.Errorf("Expected name 'testdir', got '%s'", string(data[1:]))
+	}
+}
+
+func TestFileEntryToBytes(t *testing.T) {
+	entry := &FileEntry{
+		Time: 1640995200000,     // 2022-01-01 00:00:00 UTC in milliseconds
+		Dref: [40]byte{1, 2, 3}, // Sample data reference
+		Name: "test.txt",
+	}
+
+	data := entry.ToBytes()
+
+	// Verify structure: 1 byte type + 8 bytes time + 40 bytes dref + name
+	expectedLen := 1 + 8 + 40 + len("test.txt")
+	if len(data) != expectedLen {
+		t.Fatalf("Expected %d bytes, got %d", expectedLen, len(data))
+	}
+
+	// Verify type byte
+	if data[0] != 1 {
+		t.Errorf("Expected type byte 1, got %d", data[0])
+	}
+
+	// Verify time (bytes 1-8)
+	restoredTime := B64i(data[1:9])
+	if restoredTime != 1640995200000 {
+		t.Errorf("Expected time 1640995200000, got %d", restoredTime)
+	}
+
+	// Verify name at the end
+	if string(data[49:]) != "test.txt" {
+		t.Errorf("Expected name 'test.txt', got '%s'", string(data[49:]))
+	}
+}
+
+func TestTreeEntryFromBytesDirectory(t *testing.T) {
+	// Create a directory entry by directly building the binary format
+	data := []byte{0, 'd', 'o', 'c', 'u', 'm', 'e', 'n', 't', 's'}
+
+	result, err := TreeEntryFromBytes(data)
+	if err != nil {
+		t.Fatalf("Failed to parse directory entry: %v", err)
+	}
+
+	dirEntry, ok := result.(*DirEntry)
+	if !ok {
+		t.Fatal("Expected *DirEntry, got different type")
+	}
+
+	if dirEntry.GetName() != "documents" {
+		t.Errorf("Expected name 'documents', got '%s'", dirEntry.GetName())
+	}
+}
+
+func TestTreeEntryFromBytesFile(t *testing.T) {
+	// Create test data for file: type(1) + time(8) + dref(40) + name
+	data := make([]byte, 1+8+40+len("readme.md"))
+	data[0] = 1 // type byte 1
+
+	// Set time to 1640995200000 (2022-01-01 00:00:00 UTC in milliseconds)
+	I64w(data[1:9], 1640995200000)
+
+	// Set some data reference bytes
+	copy(data[9:49], make([]byte, 40)) // zeros for simplicity
+
+	// Set filename
+	copy(data[49:], []byte("readme.md"))
+
+	result, err := TreeEntryFromBytes(data)
+	if err != nil {
+		t.Fatalf("Failed to parse file entry: %v", err)
+	}
+
+	fileEntry, ok := result.(*FileEntry)
+	if !ok {
+		t.Fatal("Expected *FileEntry, got different type")
+	}
+
+	if fileEntry.GetName() != "readme.md" {
+		t.Errorf("Expected name 'readme.md', got '%s'", fileEntry.GetName())
+	}
+
+	if fileEntry.Time != 1640995200000 {
+		t.Errorf("Expected time 1640995200000, got %d", fileEntry.Time)
+	}
+}
+
+func TestDataEntryRoundtrip(t *testing.T) {
+	original := DataEntry{
+		Refs: 5,
+		Areas: []Area{
+			{Off: 0, Len: 1024},
+			{Off: 2048, Len: 512},
+		},
+	}
+
+	data := original.ToBytes()
+
+	restored, err := DataEntryFromBytes(data)
+	if err != nil {
+		t.Fatalf("Failed to parse data entry: %v", err)
+	}
+
+	if restored.Refs != original.Refs {
+		t.Errorf("Refs mismatch: expected %d, got %d", original.Refs, restored.Refs)
+	}
+
+	if len(restored.Areas) != len(original.Areas) {
+		t.Errorf("Areas length mismatch: expected %d, got %d", len(original.Areas), len(restored.Areas))
+	}
+
+	for i, area := range original.Areas {
+		if restored.Areas[i].Off != area.Off || restored.Areas[i].Len != area.Len {
+			t.Errorf("Area %d mismatch: expected {%d, %d}, got {%d, %d}",
+				i, area.Off, area.Len, restored.Areas[i].Off, restored.Areas[i].Len)
+		}
+	}
+}
+
+func TestDataEntryMaxValues(t *testing.T) {
+	entry := DataEntry{
+		Refs: math.MaxUint64,
+		Areas: []Area{
+			{Off: math.MaxUint64, Len: math.MaxUint64},
+		},
+	}
+
+	data := entry.ToBytes()
+	restored, err := DataEntryFromBytes(data)
+	if err != nil {
+		t.Fatalf("Failed to handle max values: %v", err)
+	}
+
+	if restored.Refs != math.MaxUint64 {
+		t.Error("Max refs value not preserved")
+	}
+
+	if restored.Areas[0].Off != math.MaxUint64 || restored.Areas[0].Len != math.MaxUint64 {
+		t.Error("Max area values not preserved")
+	}
+}

@@ -1,6 +1,7 @@
 package metadata
 
 import (
+	"backup/src/metadata/internal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,9 +31,9 @@ func TestNewRepository(t *testing.T) {
 	err = repo.db.View(func(tx *bbolt.Tx) error {
 		// Check all buckets exist
 		buckets := [][]byte{
-			[]byte(bucketTreeEntries),
+			[]byte(bucketTree),
 			[]byte(bucketChildren),
-			[]byte(bucketDataEntries),
+			[]byte(bucketData),
 			[]byte(bucketFreeAreas),
 			[]byte(bucketContext),
 		}
@@ -57,14 +58,14 @@ func TestNewRepository(t *testing.T) {
 		}
 
 		// Check the actual entry
-		startKey := u64b(0)
+		startKey := internal.U64b(0)
 		lengthValue := freeAreasBucket.Get(startKey)
 		if lengthValue == nil {
 			t.Fatal("Initial free area not found")
 		}
 
 		// Verify the length value (should be MaxInt64)
-		expectedLength := u64b(9223372036854775807) // math.MaxInt64
+		expectedLength := internal.U64b(9223372036854775807) // math.MaxInt64
 		if len(lengthValue) != len(expectedLength) {
 			t.Errorf("Wrong length value size: expected %d, got %d", len(expectedLength), len(lengthValue))
 		}
@@ -115,18 +116,18 @@ func TestUint64ToKey(t *testing.T) {
 	tests := []uint64{0, 1, 42, 9223372036854775807, 18446744073709551615}
 
 	for _, test := range tests {
-		key := u64b(test)
+		key := internal.U64b(test)
 		if len(key) != 8 {
 			t.Errorf("Key for %d has wrong length: expected 8, got %d", test, len(key))
 		}
 		// Test that it's reproducible
-		key2 := u64b(test)
+		key2 := internal.U64b(test)
 		if string(key) != string(key2) {
 			t.Errorf("Key for %d is not reproducible", test)
 		}
 
 		// Test round-trip conversion
-		restored := b64u(key)
+		restored := internal.B64u(key)
 		if restored != test {
 			t.Errorf("Round-trip failed for %d: got %d", test, restored)
 		}
@@ -226,7 +227,7 @@ func TestNewRepositoryBucketCreationError(t *testing.T) {
 	repo, err := NewRepositoryWithBuckets(dbPath,
 		"", // Empty tree entries bucket name - triggers error
 		bucketChildren,
-		bucketDataEntries,
+		bucketData,
 		bucketFreeAreas,
 		bucketContext)
 	if err == nil {
