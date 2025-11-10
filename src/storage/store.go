@@ -27,7 +27,7 @@ type DataStore interface {
 //
 // The recommended production fileSize is 100.000.000 bytes. That way, data files can be copied fast
 // (not too many files which slows down copy) while having a manageable in size for all kinds of file systems.
-// Storage size is limited to fileSize * 10.000.000 bytes, i.e. 1.000 TB for fileSize = 100 MB.
+// The recommended production storage size limit is fileSize * 10.000.000 bytes, i.e. 1.000 TB for fileSize = 100 MB.
 //
 // openFilesSoftLimit is an important performance factor for parallel access. Set it at least to the expected
 // number of concurrent accesses and to not less than 5.
@@ -69,9 +69,9 @@ func FileBackedDataStore(baseDir string, fileSize int64, openFilesSoftLimit int)
 		fileSize:           fileSize,
 		openFilesSoftLimit: openFilesSoftLimit,
 		lock:               sync.Mutex{},
-		free:               make(map[int]*fileHandle),
-		leased:             make(map[int]*fileHandle),
-		evicting:           make(map[int]*fileHandle),
+		free:               make(map[int64]*fileHandle),
+		leased:             make(map[int64]*fileHandle),
+		evicting:           make(map[int64]*fileHandle),
 		openFiles:          0,
 		gcQueued:           false,
 	}
@@ -84,9 +84,9 @@ type dataStore struct {
 	fileSize           int64
 	openFilesSoftLimit int
 	lock               sync.Mutex
-	free               map[int]*fileHandle
-	leased             map[int]*fileHandle
-	evicting           map[int]*fileHandle
+	free               map[int64]*fileHandle
+	leased             map[int64]*fileHandle
+	evicting           map[int64]*fileHandle
 	openFiles          int
 	gcQueued           bool
 }
@@ -102,7 +102,7 @@ type fileHandle struct {
 // leaseFile returns a file handle (os.File) with appropriate lock already acquired.
 // The returned release function MUST be called to release both lock and handle.
 // forWriting=true acquires exclusive lock, forWriting=false acquires shared lock.
-func (ds *dataStore) leaseFile(fileID int, forWriting bool) (*os.File, func(), error) {
+func (ds *dataStore) leaseFile(fileID int64, forWriting bool) (*os.File, func(), error) {
 	handle, err := ds.leaseFileHandle(fileID, forWriting)
 	if err != nil {
 		return nil, nil, err
@@ -124,7 +124,7 @@ func (ds *dataStore) leaseFile(fileID int, forWriting bool) (*os.File, func(), e
 // Parameters:
 //   - fileID: The ID of the file to lease (determines file path and name)
 //   - forWriting: If true, creates directories and file if they don't exist
-func (ds *dataStore) leaseFileHandle(fileID int, forWriting bool) (*fileHandle, error) {
+func (ds *dataStore) leaseFileHandle(fileID int64, forWriting bool) (*fileHandle, error) {
 	ds.lock.Lock()
 	// Can't defer unlock because in one case we need to unlock earlier.
 
@@ -161,7 +161,7 @@ func (ds *dataStore) leaseFileHandle(fileID int, forWriting bool) (*fileHandle, 
 	}
 
 	// Create the handle and lease it.
-	fileName := fmt.Sprintf("%010d", fileID*int(ds.fileSize))
+	fileName := fmt.Sprintf("%010d", fileID*ds.fileSize)
 	dirNames := fmt.Sprintf("%06d", fileID)
 	dirPath := filepath.Join(ds.baseDir, dirNames[:len(dirNames)-4], dirNames[len(dirNames)-4:len(dirNames)-2])
 	filePath := filepath.Join(dirPath, fileName)
@@ -188,7 +188,7 @@ func (ds *dataStore) leaseFileHandle(fileID int, forWriting bool) (*fileHandle, 
 	return handle, nil
 }
 
-func (ds *dataStore) releaseFileHandle(fileID int) {
+func (ds *dataStore) releaseFileHandle(fileID int64) {
 	ds.lock.Lock()
 	defer ds.lock.Unlock()
 
@@ -238,7 +238,7 @@ func (ds *dataStore) gc() {
 func (ds *dataStore) Write(offset int64, data []byte) error {
 
 	for len(data) > 0 {
-		fileID := int(offset / ds.fileSize)
+		fileID := offset / ds.fileSize
 		offsetInFile := offset % ds.fileSize
 		bytesToWrite := min(int64(len(data)), ds.fileSize-offsetInFile)
 
@@ -266,7 +266,7 @@ func (ds *dataStore) Read(offset int64, length int64) ([]byte, []string) {
 	warnings := []string{}
 
 	for length > 0 {
-		fileID := int(offset / ds.fileSize)
+		fileID := offset / ds.fileSize
 		offsetInFile := offset % ds.fileSize
 		bytesToRead := min(length, ds.fileSize-offsetInFile)
 
@@ -306,7 +306,7 @@ func (ds *dataStore) Close() {
 				handle.file.Sync()
 				handle.file.Close()
 			}
-			ds.free = make(map[int]*fileHandle)
+			ds.free = make(map[int64]*fileHandle)
 			ds.openFiles = 0
 			ds.lock.Unlock()
 			break

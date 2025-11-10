@@ -807,3 +807,187 @@ func TestReadClosedFile(t *testing.T) {
 
 	t.Log("Successfully tested read from closed file")
 }
+
+// TestExtremelyLargeOffsets tests writing and reading with offsets near MaxInt64
+// This verifies that the storage can handle extremely large offsets without overflow
+// and that data spans correctly across multiple data files near the boundary
+func TestExtremelyLargeOffsets(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Use larger fileSize to make the test more realistic
+	fileSize := int64(100 * 1024 * 1024) // 100MB files like production
+	store, err := FileBackedDataStore(tempDir, fileSize, 5)
+	if err != nil {
+		t.Fatal("Failed to create store:", err)
+	}
+	defer store.Close()
+
+	// Calculate an offset that's close to MaxInt64 but leaves room for our test data
+	// We want to write across a file boundary, so we pick an offset that will span two files
+
+	// Let's use an offset that puts us near the end of a very high-numbered file
+	// but not so close to MaxInt64 that we overflow
+	maxSafeFileID := int64(9999999) // Close to the 10M limit mentioned in comments
+
+	// Calculate offset to be near the end of this file, so we span to the next file
+	testDataSize := int64(1024)               // 1KB test data
+	offsetInFile := fileSize - testDataSize/2 // This will cause span to next file
+	baseOffset := maxSafeFileID*fileSize + offsetInFile
+
+	// Ensure we don't exceed MaxInt64
+	if baseOffset > 9223372036854775807-testDataSize { // math.MaxInt64 - testDataSize
+		t.Skip("Cannot test extremely large offsets on this system - would overflow")
+	}
+
+	t.Logf("Testing with baseOffset=%d (file %d), fileSize=%d",
+		baseOffset, baseOffset/fileSize, fileSize)
+
+	// Create test data that will span across two files
+	testData := make([]byte, testDataSize)
+	for i := range testData {
+		testData[i] = byte('A' + (i % 26)) // Repeating alphabet pattern
+	}
+
+	// Test 1: Write data spanning file boundary
+	err = store.Write(baseOffset, testData)
+	if err != nil {
+		t.Fatalf("Failed to write at extreme offset %d: %v", baseOffset, err)
+	}
+
+	t.Logf("Successfully wrote %d bytes at offset %d", len(testData), baseOffset)
+
+	// Test 2: Read back the data
+	readData, warnings := store.Read(baseOffset, testDataSize)
+	if len(warnings) > 0 {
+		t.Logf("Warnings during read at extreme offset: %v", warnings)
+	}
+
+	if !bytes.Equal(testData, readData) {
+		t.Fatalf("Data mismatch at extreme offset %d", baseOffset)
+	}
+
+	t.Logf("Successfully read and verified %d bytes at offset %d", len(readData), baseOffset)
+
+	// Test 3: Verify the data actually spans two different files
+	firstFileID := baseOffset / fileSize
+	lastByteOffset := baseOffset + testDataSize - 1
+	lastFileID := lastByteOffset / fileSize
+
+	if firstFileID == lastFileID {
+		t.Errorf("Expected data to span multiple files, but both first (%d) and last (%d) bytes are in file %d",
+			baseOffset, lastByteOffset, firstFileID)
+	} else {
+		t.Logf("Confirmed data spans from file %d to file %d", firstFileID, lastFileID)
+	}
+
+	// Test 4: Write and read individual parts to verify both files work independently
+
+	// Part A: Test beginning of the span (in first file)
+	partAOffset := baseOffset
+	partASize := fileSize - (baseOffset % fileSize) // Bytes remaining in first file
+	if partASize > testDataSize {
+		partASize = testDataSize
+	}
+
+	partAData, warnings := store.Read(partAOffset, partASize)
+	if len(warnings) > 0 {
+		t.Logf("Warnings reading part A: %v", warnings)
+	}
+
+	expectedPartA := testData[:partASize]
+	if !bytes.Equal(expectedPartA, partAData) {
+		t.Errorf("Part A data mismatch in file %d", firstFileID)
+	} else {
+		t.Logf("Part A verified: %d bytes in file %d", partASize, firstFileID)
+	}
+
+	// Part B: Test continuation in second file (if data actually spans)
+	if firstFileID != lastFileID && partASize < testDataSize {
+		partBOffset := (firstFileID + 1) * fileSize // Start of next file
+		partBSize := testDataSize - partASize
+
+		partBData, warnings := store.Read(partBOffset, partBSize)
+		if len(warnings) > 0 {
+			t.Logf("Warnings reading part B: %v", warnings)
+		}
+
+		expectedPartB := testData[partASize:]
+		if !bytes.Equal(expectedPartB, partBData) {
+			t.Errorf("Part B data mismatch in file %d", lastFileID)
+		} else {
+			t.Logf("Part B verified: %d bytes in file %d", partBSize, lastFileID)
+		}
+	}
+
+	// Test 5: Test edge case - write exactly at file boundary
+	exactBoundaryOffset := (maxSafeFileID + 1) * fileSize
+	boundaryData := []byte("BOUNDARY_TEST_DATA")
+
+	err = store.Write(exactBoundaryOffset, boundaryData)
+	if err != nil {
+		t.Fatalf("Failed to write at exact file boundary %d: %v", exactBoundaryOffset, err)
+	}
+
+	readBoundaryData, warnings := store.Read(exactBoundaryOffset, int64(len(boundaryData)))
+	if len(warnings) > 0 {
+		t.Logf("Warnings reading at boundary: %v", warnings)
+	}
+
+	if !bytes.Equal(boundaryData, readBoundaryData) {
+		t.Fatalf("Boundary data mismatch at offset %d", exactBoundaryOffset)
+	}
+
+	t.Logf("Successfully verified write/read at exact file boundary: offset %d (file %d)",
+		exactBoundaryOffset, exactBoundaryOffset/fileSize)
+}
+
+// TestMaxInt64Offset tests writing at the absolute maximum possible offset
+// This ensures the storage can handle the edge case near MaxInt64
+func TestMaxInt64Offset(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Use small fileSize for this test to avoid creating huge files
+	fileSize := int64(1024) // 1KB files
+	store, err := FileBackedDataStore(tempDir, fileSize, 5)
+	if err != nil {
+		t.Fatal("Failed to create store:", err)
+	}
+	defer store.Close()
+
+	// Calculate the highest safe offset that won't cause integer overflow
+	// MaxInt64 = 9223372036854775807
+	maxSafeOffset := int64(9223372036854775807 - 100) // Leave 100 bytes buffer
+
+	// Ensure this offset is aligned to avoid partial writes that could overflow
+	maxSafeOffset = (maxSafeOffset / fileSize) * fileSize
+
+	t.Logf("Testing at maximum safe offset: %d (file %d)", maxSafeOffset, maxSafeOffset/fileSize)
+
+	// Small test data to avoid overflow
+	testData := []byte("MAX_OFFSET_TEST")
+
+	// Test write at maximum offset
+	err = store.Write(maxSafeOffset, testData)
+	if err != nil {
+		t.Fatalf("Failed to write at max offset %d: %v", maxSafeOffset, err)
+	}
+
+	// Test read at maximum offset
+	readData, warnings := store.Read(maxSafeOffset, int64(len(testData)))
+	if len(warnings) > 0 {
+		t.Logf("Warnings at max offset: %v", warnings)
+	}
+
+	if !bytes.Equal(testData, readData) {
+		t.Fatalf("Data mismatch at max offset %d", maxSafeOffset)
+	}
+
+	calculatedFileID := maxSafeOffset / fileSize
+	t.Logf("Successfully verified write/read at maximum safe offset %d in file %d",
+		maxSafeOffset, calculatedFileID)
+
+	// Also test that fileID calculation doesn't overflow
+	if calculatedFileID < 0 {
+		t.Errorf("FileID calculation overflowed: %d", calculatedFileID)
+	}
+}
