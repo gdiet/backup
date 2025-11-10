@@ -372,7 +372,7 @@ func TestMkdir(t *testing.T) {
 			parentPrefix := U64b(0)
 			found := false
 
-			for k, _ := cursor.Seek(parentPrefix); k != nil && len(k) >= 8; k, _ = cursor.Next() {
+			for k, _ := cursor.Seek(parentPrefix); len(k) >= 8; k, _ = cursor.Next() {
 				if !bytes.HasPrefix(k, parentPrefix) {
 					break
 				}

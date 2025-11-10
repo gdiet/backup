@@ -50,7 +50,7 @@ func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) error {
 
 	// create parent-child relationship
 	childKey := make([]byte, 16)
-	copy(childKey[0:8], U64b(parent))  // FIXME use U64w
-	copy(childKey[8:16], U64b(nextID)) // FIXME use U64w
+	U64w(childKey, parent)
+	U64w(childKey[8:], nextID)
 	return children.Put(childKey, []byte{})
 }

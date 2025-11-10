@@ -15,7 +15,7 @@ func Readdir(tree, children *bbolt.Bucket, parent uint64) (entries []TreeEntry, 
 	// Iterate through children
 	for k, _ := cursor.Seek(parentPrefix); len(k) > 0; k, _ = cursor.Next() {
 		// Check if this key still belongs to our parent
-		if !bytes.HasPrefix(k, parentPrefix) { // FIXME here and in mkdir - HasPrefix or int64 comparison?
+		if !bytes.HasPrefix(k, parentPrefix) {
 			break // No more children for this parent
 		}
 
