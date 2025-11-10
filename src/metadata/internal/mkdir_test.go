@@ -2,8 +2,10 @@ package internal
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.etcd.io/bbolt"
@@ -121,6 +123,18 @@ func TestMkdir(t *testing.T) {
 	})
 
 	t.Run("handle corrupted tree entry", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				// Expected panic due to assertion failure
+				panicMsg := fmt.Sprintf("%v", r)
+				if !strings.Contains(panicMsg, "assertion failed: invalid tree entry for child ID") {
+					t.Errorf("Expected assertion panic about invalid tree entry, got: %v", r)
+				}
+			} else {
+				t.Error("Expected panic due to corrupted tree entry assertion, but no panic occurred")
+			}
+		}()
+
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
 			children := tx.Bucket([]byte("children"))
@@ -146,9 +160,9 @@ func TestMkdir(t *testing.T) {
 			return Mkdir(tree, children, 0, "newdir")
 		})
 
-		// Should get an error due to corrupted tree entry
-		if err == nil {
-			t.Error("Expected error due to corrupted tree entry, got nil")
+		// If we reach here without panic, that's unexpected
+		if err != nil {
+			t.Logf("Got error instead of expected panic: %v", err)
 		}
 	})
 
@@ -266,6 +280,18 @@ func TestMkdir(t *testing.T) {
 	})
 
 	t.Run("mkdir with missing child entry in tree", func(t *testing.T) {
+		defer func() {
+			if r := recover(); r != nil {
+				// Expected panic due to assertion failure for missing tree entry
+				panicMsg := fmt.Sprintf("%v", r)
+				if !strings.Contains(panicMsg, "assertion failed: invalid tree entry for child ID") {
+					t.Errorf("Expected assertion panic about invalid tree entry, got: %v", r)
+				}
+			} else {
+				t.Error("Expected panic due to missing tree entry assertion, but no panic occurred")
+			}
+		}()
+
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
 			children := tx.Bucket([]byte("children"))
@@ -280,12 +306,13 @@ func TestMkdir(t *testing.T) {
 				return err
 			}
 
-			// Now try to create directory - should skip the missing entry and succeed
+			// Now try to create directory - should encounter assertion for missing tree entry
 			return Mkdir(tree, children, 0, "afterorphan")
 		})
 
+		// If we reach here without panic, that's unexpected
 		if err != nil {
-			t.Errorf("Failed to create directory after orphaned child entry: %v", err)
+			t.Logf("Got error instead of expected panic: %v", err)
 		}
 	})
 

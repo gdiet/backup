@@ -18,22 +18,12 @@ func Readdir(tree, children *bbolt.Bucket, parent uint64) (entries []TreeEntry, 
 		if !bytes.HasPrefix(k, parentPrefix) {
 			break // No more children for this parent
 		}
-
 		util.Assert(len(k) == 16, "invalid child key length")
-		childID := k[8:16] // Extract child ID from key
-
-		// Get the tree entry for this child
-		entryBytes := tree.Get(childID)
-		if entryBytes == nil { // FIXME assertion?
+		entry, err := treeEntry(tree, k[8:16])
+		if err != nil {
+			util.AssertionFailedf("invalid tree entry for child ID %x", k[8:16])
 			continue // Orphaned child reference, skip
 		}
-
-		// Parse the tree entry
-		entry, err := TreeEntryFromBytes(entryBytes)
-		if err != nil {
-			return nil, err
-		}
-
 		entries = append(entries, entry)
 	}
 

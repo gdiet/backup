@@ -21,13 +21,9 @@ func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) error {
 		}
 
 		util.Assert(len(k) == 16, "invalid child key length")
-		childID := k[8:16] // Extract child ID from key
-		bytes := tree.Get(childID)
-		if bytes == nil { // FIXME assertion?
-			continue
-		}
-		entry, err := TreeEntryFromBytes(bytes)
+		entry, err := treeEntry(tree, k[8:16])
 		if err != nil {
+			util.AssertionFailedf("invalid tree entry for child ID %x", k[8:16])
 			return err
 		}
 		if entry.GetName() == name {

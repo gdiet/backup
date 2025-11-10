@@ -4,11 +4,18 @@ package util
 
 import "fmt"
 
-// AssertionFailed in debug builds panics with the given message.
+// AssertionFailed panics in debug builds with the given message.
 // This helps catch programming errors during development.
 // In production builds, assertions are disabled for better performance.
 func AssertionFailed(message string) {
 	panic("assertion failed: " + message)
+}
+
+// AssertionFailedf panics in debug builds with the given message, with formatted message.
+// This helps catch programming errors during development.
+// In production builds, assertions are disabled for better performance.
+func AssertionFailedf(format string, args ...interface{}) {
+	panic("assertion failed: " + fmt.Sprintf(format, args...))
 }
 
 // Assert panics in debug builds if the condition is false.
@@ -25,6 +32,6 @@ func Assert(condition bool, message string) {
 // In production builds, assertions are disabled for better performance.
 func Assertf(condition bool, format string, args ...interface{}) {
 	if !condition {
-		AssertionFailed(fmt.Sprintf(format, args...))
+		AssertionFailedf(format, args...)
 	}
 }

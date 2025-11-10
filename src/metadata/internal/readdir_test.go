@@ -1,7 +1,9 @@
 package internal
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"go.etcd.io/bbolt"
@@ -161,6 +163,18 @@ func TestReaddirOrphanedChildren(t *testing.T) {
 	}
 	defer db.Close()
 
+	defer func() {
+		if r := recover(); r != nil {
+			// Expected panic due to assertion failure for orphaned tree entry
+			panicMsg := fmt.Sprintf("%v", r)
+			if !strings.Contains(panicMsg, "assertion failed: invalid tree entry for child ID") {
+				t.Errorf("Expected assertion panic about invalid tree entry, got: %v", r)
+			}
+		} else {
+			t.Error("Expected panic due to orphaned tree entry assertion, but no panic occurred")
+		}
+	}()
+
 	err = db.Update(func(tx *bbolt.Tx) error {
 		tree, err := tx.CreateBucket([]byte("tree_entries"))
 		if err != nil {
@@ -189,7 +203,7 @@ func TestReaddirOrphanedChildren(t *testing.T) {
 			return err
 		}
 
-		// Create orphaned child reference (no tree entry)
+		// Create orphaned child reference (no tree entry) - this should trigger assertion
 		orphanChildID := uint64(999)
 		orphanChildKey := make([]byte, 16)
 		copy(orphanChildKey[0:8], U64b(parent))
@@ -199,26 +213,18 @@ func TestReaddirOrphanedChildren(t *testing.T) {
 			return err
 		}
 
-		// Test readdir - should skip orphaned reference
+		// Test readdir - should encounter assertion for orphaned reference
 		entries, err := Readdir(tree, children, parent)
 		if err != nil {
-			t.Errorf("Readdir failed: %v", err)
 			return err
 		}
 
-		if len(entries) != 1 {
-			t.Errorf("Expected 1 entry (orphaned should be skipped), got %d", len(entries))
-			return nil
-		}
-
-		if entries[0].GetName() != "valid_child" {
-			t.Errorf("Expected 'valid_child', got '%s'", entries[0].GetName())
-		}
-
+		// We shouldn't reach here due to expected panic
+		t.Logf("Unexpected success: got %d entries", len(entries))
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("Transaction failed: %v", err)
+		t.Logf("Got error instead of expected panic: %v", err)
 	}
 }
 
@@ -235,6 +241,18 @@ func TestReaddirCorruptedEntry(t *testing.T) {
 		t.Fatalf("Failed to open database: %v", err)
 	}
 	defer db.Close()
+
+	defer func() {
+		if r := recover(); r != nil {
+			// Expected panic due to assertion failure for corrupted tree entry
+			panicMsg := fmt.Sprintf("%v", r)
+			if !strings.Contains(panicMsg, "assertion failed: invalid tree entry for child ID") {
+				t.Errorf("Expected assertion panic about invalid tree entry, got: %v", r)
+			}
+		} else {
+			t.Error("Expected panic due to corrupted tree entry assertion, but no panic occurred")
+		}
+	}()
 
 	err = db.Update(func(tx *bbolt.Tx) error {
 		tree, err := tx.CreateBucket([]byte("tree_entries"))
@@ -264,16 +282,18 @@ func TestReaddirCorruptedEntry(t *testing.T) {
 			return err
 		}
 
-		// Should return error due to corrupted entry
+		// Should encounter assertion for corrupted entry
 		_, err = Readdir(tree, children, parent)
-		if err == nil {
-			t.Error("Expected error due to corrupted tree entry, got nil")
+		if err != nil {
+			return err
 		}
 
+		// We shouldn't reach here due to expected panic
+		t.Log("Unexpected success with corrupted entry")
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("Transaction failed: %v", err)
+		t.Logf("Got error instead of expected panic: %v", err)
 	}
 }
 

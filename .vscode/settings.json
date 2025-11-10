@@ -6,5 +6,5 @@
     "coveredHighlightColor": "rgba(64,128,128,0.1)",
     "coveredBorderColor": "rgba(64,128,128,0.1)"
   },
-  "cSpell.words": ["bbolt"]
+  "cSpell.words": ["bbolt", "AssertionFailedf"]
 }
