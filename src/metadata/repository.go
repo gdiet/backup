@@ -27,12 +27,12 @@ import (
 // 40 key -> 8 refs 16 area = 24
 // bbolt management: 3*16 = 48
 
-var (
-	bucketTreeEntries = []byte("tree_entries")
-	bucketChildren    = []byte("children")
-	bucketDataEntries = []byte("data_entries")
-	bucketFreeAreas   = []byte("free_areas")
-	bucketContext     = []byte("context")
+const (
+	bucketTreeEntries = "tree_entries"
+	bucketChildren    = "children"
+	bucketDataEntries = "data_entries"
+	bucketFreeAreas   = "free_areas"
+	bucketContext     = "context"
 )
 
 type repository struct {
@@ -41,8 +41,8 @@ type repository struct {
 
 func (r *repository) mkdir(parent uint64, name string) error {
 	err := r.db.Update(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket(bucketTreeEntries)
-		children := tx.Bucket(bucketChildren)
+		tree := tx.Bucket([]byte(bucketTreeEntries))
+		children := tx.Bucket([]byte(bucketChildren))
 
 		// check if child with name exists
 		cursor := children.Cursor()
@@ -74,8 +74,21 @@ func (r *repository) mkdir(parent uint64, name string) error {
 }
 
 // NewRepository creates or opens a repository at the specified file path.
+// Uses the standard bucket names defined in const block.
 // If the free areas bucket doesn't exist, it initializes it with a single area covering 0...MaxInt64.
 func NewRepository(filePath string) (*repository, error) {
+	return NewRepositoryWithBuckets(filePath,
+		bucketTreeEntries,
+		bucketChildren,
+		bucketDataEntries,
+		bucketFreeAreas,
+		bucketContext)
+}
+
+// NewRepositoryWithBuckets creates or opens a repository with custom bucket names.
+// This function is useful for testing error conditions or using alternative bucket names.
+// If the free areas bucket doesn't exist, it initializes it with a single area covering 0...MaxInt64.
+func NewRepositoryWithBuckets(filePath string, treeEntriesBucket, childrenBucket, dataEntriesBucket, freeAreasBucket, contextBucket string) (*repository, error) {
 	db, err := bbolt.Open(filePath, 0600, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open bbolt database: %w", err)
@@ -86,24 +99,24 @@ func NewRepository(filePath string) (*repository, error) {
 	// Initialize buckets and free areas if needed
 	err = db.Update(func(tx *bbolt.Tx) error {
 		// Create all buckets if they don't exist
-		for _, bucketName := range [][]byte{
-			bucketTreeEntries,
-			bucketChildren,
-			bucketDataEntries,
-			bucketFreeAreas,
-			bucketContext,
+		for _, bucketName := range []string{
+			treeEntriesBucket,
+			childrenBucket,
+			dataEntriesBucket,
+			freeAreasBucket,
+			contextBucket,
 		} {
-			_, err := tx.CreateBucketIfNotExists(bucketName)
+			_, err := tx.CreateBucketIfNotExists([]byte(bucketName))
 			if err != nil {
 				return fmt.Errorf("failed to create bucket %s: %w", bucketName, err)
 			}
 		}
 
 		// Initialize free areas if empty
-		freeAreasBucket := tx.Bucket(bucketFreeAreas)
-		if freeAreasBucket.Stats().KeyN == 0 {
+		freeAreasBucketHandle := tx.Bucket([]byte(freeAreasBucket))
+		if freeAreasBucketHandle.Stats().KeyN == 0 {
 			// Add initial free area: 0 -> MaxInt64
-			err := freeAreasBucket.Put(u64b(0), u64b(math.MaxInt64))
+			err := freeAreasBucketHandle.Put(u64b(0), u64b(math.MaxInt64))
 			if err != nil {
 				return fmt.Errorf("failed to initialize free areas: %w", err)
 			}
