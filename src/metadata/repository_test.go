@@ -216,3 +216,133 @@ func TestNewRepositoryFailures(t *testing.T) {
 		}
 	})
 }
+
+func TestRepositoryMkdir(t *testing.T) {
+	// Create temporary database file
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "mkdir_test.db")
+
+	// Create repository
+	repo, err := NewRepository(dbPath)
+	if err != nil {
+		t.Fatalf("Failed to create repository: %v", err)
+	}
+	defer repo.Close()
+
+	// Test creating a directory
+	err = repo.Mkdir(0, "testdir")
+	if err != nil {
+		t.Fatalf("Failed to create directory: %v", err)
+	}
+
+	// Verify directory was created by checking the internal state
+	err = repo.db.View(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket([]byte(bucketTree))
+		children := tx.Bucket([]byte(bucketChildren))
+
+		// Should have exactly one tree entry now
+		stats := tree.Stats()
+		if stats.KeyN != 1 {
+			t.Errorf("Expected 1 tree entry, got %d", stats.KeyN)
+		}
+
+		// Should have exactly one parent-child relationship
+		childrenStats := children.Stats()
+		if childrenStats.KeyN != 1 {
+			t.Errorf("Expected 1 parent-child relationship, got %d", childrenStats.KeyN)
+		}
+
+		// Get the entry and verify it's correct
+		cursor := tree.Cursor()
+		key, value := cursor.First()
+		if key == nil {
+			t.Fatal("No tree entry found")
+		}
+
+		entry, err := internal.TreeEntryFromBytes(value)
+		if err != nil {
+			return err
+		}
+
+		if entry.GetName() != "testdir" {
+			t.Errorf("Expected directory name 'testdir', got '%s'", entry.GetName())
+		}
+
+		// Verify it's a DirEntry
+		_, ok := entry.(*internal.DirEntry)
+		if !ok {
+			t.Error("Expected DirEntry, got different type")
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("Failed to verify directory creation: %v", err)
+	}
+
+	// Test creating a duplicate directory (should fail)
+	err = repo.Mkdir(0, "testdir")
+	if err != os.ErrExist {
+		t.Errorf("Expected os.ErrExist for duplicate directory, got: %v", err)
+	}
+
+	// Test creating another directory with different name (should succeed)
+	err = repo.Mkdir(0, "another")
+	if err != nil {
+		t.Fatalf("Failed to create second directory: %v", err)
+	}
+
+	// Verify both directories exist
+	err = repo.db.View(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket([]byte(bucketTree))
+
+		// Should have exactly two tree entries now
+		stats := tree.Stats()
+		if stats.KeyN != 2 {
+			t.Errorf("Expected 2 tree entries, got %d", stats.KeyN)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		t.Fatalf("Failed to verify second directory creation: %v", err)
+	}
+
+	// Test name conflict with a file (not just directory)
+	t.Run("name conflict with file", func(t *testing.T) {
+		// Create a file entry manually to test conflict
+		err := repo.db.Update(func(tx *bbolt.Tx) error {
+			tree := tx.Bucket([]byte(bucketTree))
+			children := tx.Bucket([]byte(bucketChildren))
+
+			// Create a file entry
+			fileID := uint64(100)
+			fileEntry := &internal.FileEntry{
+				Time: 1640995200000,
+				Dref: [40]byte{1, 2, 3}, // Sample data reference
+				Name: "conflictfile",
+			}
+			err := tree.Put(internal.U64b(fileID), fileEntry.ToBytes())
+			if err != nil {
+				return err
+			}
+
+			// Create parent-child relationship for this file
+			childKey := make([]byte, 16)
+			copy(childKey[0:8], internal.U64b(0))       // parent 0
+			copy(childKey[8:16], internal.U64b(fileID)) // file child
+			return children.Put(childKey, []byte{})
+		})
+		if err != nil {
+			t.Fatalf("Failed to setup file for conflict test: %v", err)
+		}
+
+		// Now try to create directory with same name - should fail with os.ErrExist
+		err = repo.Mkdir(0, "conflictfile")
+		if err != os.ErrExist {
+			t.Errorf("Expected os.ErrExist for directory-file name conflict, got: %v", err)
+		}
+	})
+}

@@ -8,9 +8,8 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-// Mkdir creates a new directory entry using the provided transaction and buckets.
-// This function contains the core business logic and can be unit tested with 100% coverage.
-// It checks for existing children with the same name and creates a new directory entry if none exists.
+// Mkdir creates a new directory. It does not check whether the parent exists.
+// Returns os.ErrExist if a child with the same name already exists under the specified parent.
 func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) error {
 	// check if child with name exists
 	cursor := children.Cursor()

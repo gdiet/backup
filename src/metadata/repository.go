@@ -62,7 +62,8 @@ func NewRepository(filePath string) (*Repository, error) {
 	return &Repository{db: db}, nil
 }
 
-// Mkdir creates a new directory entry under the specified parent with the given name.
+// Mkdir creates a new directory. It does not check whether the parent exists.
+// Returns os.ErrExist if a child with the same name already exists under the specified parent.
 func (r *Repository) Mkdir(parent uint64, name string) error {
 	err := r.db.Update(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket([]byte(bucketTree))
