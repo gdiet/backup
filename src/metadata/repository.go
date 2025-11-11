@@ -62,6 +62,50 @@ func NewRepository(filePath string) (*Repository, error) {
 	return &Repository{db: db}, nil
 }
 
+// Rename renames a directory or file, moving it between directories if required.
+// Returns ENOENT if id does not exist.
+// Returns ENOENT if parent of newpath does not exist.
+// Returns ENOTDIR if parent of newpath is a file.
+// Returns EISDIR if id is a file and newpath is a dir.
+// Returns ENOTEMPTY if newpath is a nonempty directory.
+/*
+   If newpath already exists, it will be atomically replaced, so that
+   there is no point at which another process attempting to access
+   newpath will find it missing.  However, there will probably be a
+   window in which both oldpath and newpath refer to the file being
+   renamed.
+
+   If oldpath and newpath are existing hard links referring to the
+   same file, then rename() does nothing, and returns a success
+   status.
+
+   If newpath exists but the operation fails for some reason,
+   rename() guarantees to leave an instance of newpath in place.
+
+   oldpath can specify a directory.  In this case, newpath must
+   either not exist, or it must specify an empty directory.
+
+   If oldpath refers to a symbolic link, the link is renamed; if
+   newpath refers to a symbolic link, the link will be overwritten.
+*/
+func (r *Repository) Rename(id uint64, newPath []string) error {
+	panic("not implemented")
+}
+
+// Unlink deletes a file or directory from the filesystem.
+// Returns os.ErrNotExist if the entry does not exist.
+// Returns syscall.ENOTEMPTY if trying to delete a non-empty directory.
+func (r *Repository) Unlink(id uint64) error {
+	err := r.db.Update(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket([]byte(bucketTree))
+		children := tx.Bucket([]byte(bucketChildren))
+		data := tx.Bucket([]byte(bucketData))
+		freeAreas := tx.Bucket([]byte(bucketFreeAreas))
+		return internal.Unlink(tree, children, data, freeAreas, id)
+	})
+	return err
+}
+
 // Mkdir creates a new directory. It does not check whether the parent exists.
 // Returns os.ErrExist if a child with the same name already exists under the specified parent.
 func (r *Repository) Mkdir(parent uint64, name string) error {
@@ -73,12 +117,12 @@ func (r *Repository) Mkdir(parent uint64, name string) error {
 	return err
 }
 
-// Readdir lists the entries under the specified parent directory. It does not check whether the parent exists.
-func (r *Repository) Readdir(parent uint64) (entries []internal.TreeEntry, err error) {
+// Readdir lists the entries under the specified directory. It does not check whether the directory exists.
+func (r *Repository) Readdir(id uint64) (entries []internal.TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket([]byte(bucketTree))
 		children := tx.Bucket([]byte(bucketChildren))
-		entries, err = internal.Readdir(tree, children, parent)
+		entries, err = internal.Readdir(tree, children, id)
 		return err
 	})
 	return entries, err
