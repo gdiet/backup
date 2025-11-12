@@ -59,7 +59,23 @@ func NewRepository(filePath string) (*Repository, error) {
 		db.Close()
 		return nil, err
 	}
-	return &Repository{db: db}, nil
+	r := &Repository{db: db}
+	// FIXME temporary setup for testing, move to dev/prod switched initialization
+	// TODO: Only initialize test directories when needed, not for every repository
+	/*
+		id, err := r.Mkdir(0, "testing")
+		if err == nil {
+			_, err = r.Mkdir(id, "hello")
+		}
+		if err == nil {
+			_, err = r.Mkdir(id, "world")
+		}
+		if err != nil {
+			db.Close()
+			return nil, err
+		}
+	*/
+	return r, nil
 }
 
 // Rename renames a directory or file, moving it between directories if required.
@@ -107,14 +123,18 @@ func (r *Repository) Unlink(id uint64) error {
 }
 
 // Mkdir creates a new directory. It does not check whether the parent exists.
+// Returns the ID of the newly created directory.
 // Returns os.ErrExist if a child with the same name already exists under the specified parent.
-func (r *Repository) Mkdir(parent uint64, name string) error {
-	err := r.db.Update(func(tx *bbolt.Tx) error {
+func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
+	var id uint64
+	var err error
+	err = r.db.Update(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket([]byte(bucketTree))
 		children := tx.Bucket([]byte(bucketChildren))
-		return internal.Mkdir(tree, children, parent, name)
+		id, err = internal.Mkdir(tree, children, parent, name)
+		return err
 	})
-	return err
+	return id, err
 }
 
 // Readdir lists the entries under the specified directory. It does not check whether the directory exists.

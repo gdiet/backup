@@ -9,8 +9,9 @@ import (
 )
 
 // Mkdir creates a new directory. It does not check whether the parent exists.
+// Returns the ID of the newly created directory.
 // Returns os.ErrExist if a child with the same name already exists under the specified parent.
-func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) error {
+func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) (uint64, error) {
 	// check if child with name exists
 	cursor := children.Cursor()
 	parentPrefix := U64b(parent)
@@ -24,10 +25,10 @@ func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) error {
 		entry, err := treeEntry(tree, k[8:16])
 		if err != nil {
 			util.AssertionFailedf("invalid tree entry for child ID %x", k[8:16])
-			return err
+			return 0, err
 		}
 		if entry.GetName() == name {
-			return os.ErrExist
+			return 0, os.ErrExist
 		}
 	}
 
@@ -41,12 +42,16 @@ func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) error {
 	dirEntry := NewDirEntry(name)
 	err := tree.Put(U64b(nextID), dirEntry.ToBytes())
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	// create parent-child relationship
 	childKey := make([]byte, 16)
 	U64w(childKey, parent)
 	U64w(childKey[8:], nextID)
-	return children.Put(childKey, []byte{})
+	err = children.Put(childKey, []byte{})
+	if err != nil {
+		return 0, err
+	}
+	return nextID, nil
 }

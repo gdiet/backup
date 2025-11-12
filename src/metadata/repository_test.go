@@ -230,7 +230,7 @@ func TestRepositoryMkdir(t *testing.T) {
 	defer repo.Close()
 
 	// Test creating a directory
-	err = repo.Mkdir(0, "testdir")
+	_, err = repo.Mkdir(0, "testdir")
 	if err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}
@@ -282,13 +282,13 @@ func TestRepositoryMkdir(t *testing.T) {
 	}
 
 	// Test creating a duplicate directory (should fail)
-	err = repo.Mkdir(0, "testdir")
+	_, err = repo.Mkdir(0, "testdir")
 	if err != os.ErrExist {
 		t.Errorf("Expected os.ErrExist for duplicate directory, got: %v", err)
 	}
 
 	// Test creating another directory with different name (should succeed)
-	err = repo.Mkdir(0, "another")
+	_, err = repo.Mkdir(0, "another")
 	if err != nil {
 		t.Fatalf("Failed to create second directory: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestRepositoryMkdir(t *testing.T) {
 		}
 
 		// Now try to create directory with same name - should fail with os.ErrExist
-		err = repo.Mkdir(0, "conflictfile")
+		_, err = repo.Mkdir(0, "conflictfile")
 		if err != os.ErrExist {
 			t.Errorf("Expected os.ErrExist for directory-file name conflict, got: %v", err)
 		}
@@ -373,17 +373,17 @@ func TestRepositoryReaddir(t *testing.T) {
 
 	t.Run("directory with children", func(t *testing.T) {
 		// Create some directories
-		err = repo.Mkdir(0, "dir1")
+		_, err = repo.Mkdir(0, "dir1")
 		if err != nil {
 			t.Fatalf("Failed to create dir1: %v", err)
 		}
 
-		err = repo.Mkdir(0, "dir2")
+		_, err = repo.Mkdir(0, "dir2")
 		if err != nil {
 			t.Fatalf("Failed to create dir2: %v", err)
 		}
 
-		err = repo.Mkdir(0, "dir3")
+		_, err = repo.Mkdir(0, "dir3")
 		if err != nil {
 			t.Fatalf("Failed to create dir3: %v", err)
 		}
@@ -429,7 +429,7 @@ func TestRepositoryReaddir(t *testing.T) {
 		parentID := uint64(100)
 
 		// Create a directory under parent 100
-		err = repo.Mkdir(parentID, "subdir")
+		_, err = repo.Mkdir(parentID, "subdir")
 		if err != nil {
 			t.Fatalf("Failed to create subdir: %v", err)
 		}
