@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"os"
 
 	"github.com/winfsp/cgofuse/fuse"
@@ -16,20 +17,22 @@ func NewFs() *Fs {
 }
 
 func (f *Fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
-	fill(".", nil, 0)
-	fill("..", nil, 0)
+	log.Printf("Readdir called for path: %s", path)
+
+	stat := &fuse.Stat_t{}
+	stat.Mode = fuse.S_IFDIR | 0755
+	stat.Nlink = 2
+
+	fill(".", stat, 0)
+	fill("..", stat, 0)
 
 	switch path {
 	case "/":
 		// Root directory contains "testing"
-		stat := &fuse.Stat_t{}
-		stat.Mode = fuse.S_IFDIR | 0755
 		fill("testing", stat, 0)
 
 	case "/testing":
 		// Testing directory contains "hello" and "world"
-		stat := &fuse.Stat_t{}
-		stat.Mode = fuse.S_IFDIR | 0755
 		fill("hello", stat, 0)
 		fill("world", stat, 0)
 	}
@@ -38,6 +41,8 @@ func (f *Fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 }
 
 func (f *Fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
+	log.Printf("Getattr called for path: %s", path)
+
 	switch path {
 	case "/", "/testing", "/testing/hello", "/testing/world":
 		stat.Mode = fuse.S_IFDIR | 0755
@@ -51,7 +56,7 @@ func (f *Fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 func main() {
 	fs := NewFs()
 	host := fuse.NewFileSystemHost(fs)
-	host.SetCapReaddirPlus(true)
-	host.SetUseIno(true) // FUSE3 only
+	// Using host.SetCapReaddirPlus(true) could save some Getattr calls, but it's not easy to get it right.
+	// On FUSE3, we could set host.SetUseIno(true), but I don't see a real benefit yet.
 	host.Mount("", os.Args[1:])
 }
