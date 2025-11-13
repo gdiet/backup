@@ -1,8 +1,6 @@
 package internal
 
 import (
-	"backup/src/util"
-	"bytes"
 	"os"
 
 	"go.etcd.io/bbolt"
@@ -12,24 +10,13 @@ import (
 // Returns the ID of the newly created directory as bytes.
 // Returns os.ErrExist if a child with the same name already exists under the specified parent.
 func Mkdir(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, error) {
-	// check if child with name exists
-	cursor := children.Cursor()
-	parentPrefix := parentID
-	for k, _ := cursor.Seek(parentPrefix); len(k) > 0; k, _ = cursor.Next() {
-		// Check if this key still belongs to our parent
-		if !bytes.HasPrefix(k, parentPrefix) {
-			break // No more children for this parent
-		}
-
-		util.Assert(len(k) == 16, "invalid child key length")
-		entry, err := treeEntry(tree, k[8:16])
-		if err != nil {
-			util.AssertionFailedf("invalid tree entry for child ID %x", k[8:16])
-			return nil, err
-		}
-		if entry.GetName() == name {
-			return nil, os.ErrExist
-		}
+	// Check if child with name already exists
+	_, _, err := getChild(tree, children, parentID, name)
+	if err == nil {
+		return nil, os.ErrExist // Child already exists
+	}
+	if err != os.ErrNotExist {
+		return nil, err // Other error occurred
 	}
 
 	// Get next available tree entries ID. Start from 1, since 0 is reserved for root.
@@ -41,7 +28,7 @@ func Mkdir(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, 
 
 	// write new dir entry
 	dirEntry := NewDirEntry(name)
-	err := tree.Put(nextIDBytes, dirEntry.ToBytes())
+	err = tree.Put(nextIDBytes, dirEntry.ToBytes())
 	if err != nil {
 		return nil, err
 	}
