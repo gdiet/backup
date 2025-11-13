@@ -1,9 +1,6 @@
 package internal
 
 import (
-	"bytes"
-	"os"
-
 	"go.etcd.io/bbolt"
 )
 
@@ -29,30 +26,4 @@ func Lookup(tree, children *bbolt.Bucket, path []string) ([]byte, TreeEntry, err
 	}
 
 	return id, finalEntry, nil
-}
-
-// getChild searches for a child with the given name under the specified parent.
-// Returns the child ID as bytes and the tree entry, or os.ErrNotExist if not found.
-func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
-	cursor := children.Cursor()
-	for k, _ := cursor.Seek(parentID); len(k) > 0; k, _ = cursor.Next() {
-		if !bytes.HasPrefix(k, parentID) {
-			break // No more children for this parent
-		}
-
-		if len(k) != 16 {
-			return nil, nil, &DeserializationError{Msg: "invalid child key length"}
-		}
-
-		childID := k[8:16]
-		entry, err := treeEntryFromBytes(tree.Get(childID))
-		if err != nil {
-			return nil, nil, err
-		}
-
-		if entry.GetName() == name {
-			return childID, entry, nil
-		}
-	}
-	return nil, nil, os.ErrNotExist
 }

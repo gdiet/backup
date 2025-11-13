@@ -165,6 +165,7 @@ go run api_benchmark.go               # Performance benchmarking
 9. **Follow `os.File` API consistency** for I/O operations
 10. **Trust these instructions** - search/explore only if information is incomplete or incorrect
 11. **When creating a go file, make sure there is only one package declaration at the top.**
+12. **Insert a newline at the end of each source file.**
 
 ## Code Style, Patterns & Idioms
 

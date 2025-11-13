@@ -19,27 +19,19 @@ func Mkdir(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, 
 		return nil, err // Other error occurred
 	}
 
-	// Get next available tree entries ID. Start from 1, since 0 is reserved for root.
-	var nextID uint64 = 1
-	if bytes, _ := tree.Cursor().Last(); bytes != nil {
-		nextID = B64u(bytes) + 1
-	}
-	nextIDBytes := U64b(nextID)
-
-	// write new dir entry
+	nextID := getNextTreeID(tree)
 	dirEntry := NewDirEntry(name)
-	err = tree.Put(nextIDBytes, dirEntry.ToBytes())
-	if err != nil {
+	if err = tree.Put(nextID, dirEntry.ToBytes()); err != nil {
 		return nil, err
 	}
 
 	// create parent-child relationship
 	childKey := make([]byte, 16)
 	copy(childKey[0:8], parentID)
-	copy(childKey[8:16], nextIDBytes)
+	copy(childKey[8:16], nextID)
 	err = children.Put(childKey, []byte{})
 	if err != nil {
 		return nil, err
 	}
-	return nextIDBytes, nil
+	return nextID, nil
 }
