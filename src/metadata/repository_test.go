@@ -252,24 +252,23 @@ func TestRepositoryMkdir(t *testing.T) {
 			t.Errorf("Expected 1 parent-child relationship, got %d", childrenStats.KeyN)
 		}
 
-		// Get the entry and verify it's correct
-		cursor := tree.Cursor()
-		key, value := cursor.First()
-		if key == nil {
-			t.Fatal("No tree entry found")
-		}
-
-		entry, err := internal.TreeEntryFromBytes(value)
+		// Verify the directory exists and has correct name using Repository API
+		entries, err := repo.ReaddirForID(0)
 		if err != nil {
 			return err
 		}
 
-		if entry.GetName() != "testdir" {
-			t.Errorf("Expected directory name 'testdir', got '%s'", entry.GetName())
+		if len(entries) != 1 {
+			t.Errorf("Expected 1 directory entry, got %d", len(entries))
+			return nil
+		}
+
+		if entries[0].GetName() != "testdir" {
+			t.Errorf("Expected directory name 'testdir', got '%s'", entries[0].GetName())
 		}
 
 		// Verify it's a DirEntry
-		_, ok := entry.(*internal.DirEntry)
+		_, ok := entries[0].(*internal.DirEntry)
 		if !ok {
 			t.Error("Expected DirEntry, got different type")
 		}

@@ -2,7 +2,16 @@ package internal
 
 import (
 	"errors"
+	"fmt"
 )
+
+type DeserializationError struct {
+	Msg string
+}
+
+func (e *DeserializationError) Error() string {
+	return fmt.Sprintf("DeserializationError: %s", e.Msg)
+}
 
 // TreeEntry interface for directory and file entries
 type TreeEntry interface {
@@ -97,10 +106,10 @@ func DataEntryFromBytes(data []byte) (DataEntry, error) {
 	return d, nil
 }
 
-// TreeEntryFromBytes parses a tree entry from bytes
-func TreeEntryFromBytes(data []byte) (TreeEntry, error) {
+// treeEntryFromBytes parses a tree entry from bytes
+func treeEntryFromBytes(data []byte) (TreeEntry, error) {
 	if len(data) < 2 {
-		return nil, errors.New("treeEntry too short")
+		return nil, &DeserializationError{Msg: "treeEntry too short"}
 	}
 	// Determine entry type by first byte
 	switch data[0] {
@@ -110,17 +119,16 @@ func TreeEntryFromBytes(data []byte) (TreeEntry, error) {
 	case 1:
 		// fileEntry: 1 byte type + 8 bytes time + 40 bytes data reference + name
 		if len(data) < 50 {
-			return nil, errors.New("fileEntry too short")
+			return nil, &DeserializationError{Msg: "fileEntry too short"}
 		}
 		dref := [40]byte{}
 		copy(dref[:], data[9:49])
-		f := &FileEntry{
+		return &FileEntry{
 			Time: B64i(data[1:9]),
 			Dref: dref,
 			Name: string(data[49:]),
-		}
-		return f, nil
+		}, nil
 	default:
-		return nil, errors.New("invalid treeEntry type")
+		return nil, &DeserializationError{Msg: "invalid treeEntry type"}
 	}
 }

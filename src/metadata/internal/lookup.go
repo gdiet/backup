@@ -31,7 +31,7 @@ func Lookup(tree, children *bbolt.Bucket, path []string) (uint64, error) {
 			return 0, os.ErrNotExist
 		}
 
-		entry, err := TreeEntryFromBytes(entryBytes)
+		entry, err := treeEntryFromBytes(entryBytes)
 		if err != nil {
 			util.AssertionFailedf("invalid tree entry for ID %x", U64b(childID))
 			return 0, err
@@ -72,7 +72,7 @@ func findChild(tree, children *bbolt.Bucket, parentID uint64, name string) (uint
 		}
 
 		// Parse the tree entry
-		entry, err := TreeEntryFromBytes(entryBytes)
+		entry, err := treeEntryFromBytes(entryBytes)
 		if err != nil {
 			util.AssertionFailedf("invalid tree entry for child ID %x", childID)
 			return 0, err

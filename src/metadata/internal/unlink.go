@@ -22,7 +22,7 @@ func Unlink(tree, children, data, freeAreas *bbolt.Bucket, id uint64) error {
 	}
 
 	// Parse the entry to determine type
-	entry, err := TreeEntryFromBytes(entryBytes)
+	entry, err := treeEntryFromBytes(entryBytes)
 	if err != nil {
 		util.AssertionFailedf("invalid tree entry for ID %d", id)
 		return err

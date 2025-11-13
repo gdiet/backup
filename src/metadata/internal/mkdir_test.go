@@ -64,7 +64,7 @@ func TestMkdir(t *testing.T) {
 				t.Fatal("No tree entry found")
 			}
 
-			entry, err := TreeEntryFromBytes(value)
+			entry, err := treeEntryFromBytes(value)
 			if err != nil {
 				return err
 			}
@@ -218,7 +218,7 @@ func TestMkdir(t *testing.T) {
 				return nil
 			}
 
-			entry, err := TreeEntryFromBytes(value)
+			entry, err := treeEntryFromBytes(value)
 			if err != nil {
 				return err
 			}
@@ -421,7 +421,7 @@ func TestMkdir(t *testing.T) {
 					continue
 				}
 
-				entry, err := TreeEntryFromBytes(entry_bytes)
+				entry, err := treeEntryFromBytes(entry_bytes)
 				if err != nil {
 					return err
 				}

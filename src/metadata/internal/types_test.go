@@ -62,7 +62,7 @@ func TestTreeEntryFromBytesDirectory(t *testing.T) {
 	// Create a directory entry by directly building the binary format
 	data := []byte{0, 'd', 'o', 'c', 'u', 'm', 'e', 'n', 't', 's'}
 
-	result, err := TreeEntryFromBytes(data)
+	result, err := treeEntryFromBytes(data)
 	if err != nil {
 		t.Fatalf("Failed to parse directory entry: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestTreeEntryFromBytesFile(t *testing.T) {
 	// Set filename
 	copy(data[49:], []byte("readme.md"))
 
-	result, err := TreeEntryFromBytes(data)
+	result, err := treeEntryFromBytes(data)
 	if err != nil {
 		t.Fatalf("Failed to parse file entry: %v", err)
 	}
@@ -194,15 +194,15 @@ func TestDataEntryFromBytesErrors(t *testing.T) {
 	})
 }
 
-// Test error cases for TreeEntryFromBytes
+// Test error cases for treeEntryFromBytes
 func TestTreeEntryFromBytesErrors(t *testing.T) {
 	t.Run("EmptyData", func(t *testing.T) {
 		data := []byte{}
-		_, err := TreeEntryFromBytes(data)
+		_, err := treeEntryFromBytes(data)
 		if err == nil {
 			t.Error("Expected error for empty data")
 		}
-		expectedMsg := "treeEntry too short"
+		expectedMsg := "DeserializationError: treeEntry too short"
 		if err.Error() != expectedMsg {
 			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
 		}
@@ -210,11 +210,11 @@ func TestTreeEntryFromBytesErrors(t *testing.T) {
 
 	t.Run("TooShort", func(t *testing.T) {
 		data := []byte{1} // Only 1 byte
-		_, err := TreeEntryFromBytes(data)
+		_, err := treeEntryFromBytes(data)
 		if err == nil {
 			t.Error("Expected error for data too short")
 		}
-		expectedMsg := "treeEntry too short"
+		expectedMsg := "DeserializationError: treeEntry too short"
 		if err.Error() != expectedMsg {
 			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
 		}
@@ -224,11 +224,11 @@ func TestTreeEntryFromBytesErrors(t *testing.T) {
 		// Type 1 (file) but less than 50 bytes required
 		data := make([]byte, 49) // One byte short
 		data[0] = 1
-		_, err := TreeEntryFromBytes(data)
+		_, err := treeEntryFromBytes(data)
 		if err == nil {
 			t.Error("Expected error for file entry too short")
 		}
-		expectedMsg := "fileEntry too short"
+		expectedMsg := "DeserializationError: fileEntry too short"
 		if err.Error() != expectedMsg {
 			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
 		}
@@ -236,11 +236,11 @@ func TestTreeEntryFromBytesErrors(t *testing.T) {
 
 	t.Run("InvalidEntryType", func(t *testing.T) {
 		data := []byte{2, 't', 'e', 's', 't'} // Type 2 is invalid
-		_, err := TreeEntryFromBytes(data)
+		_, err := treeEntryFromBytes(data)
 		if err == nil {
 			t.Error("Expected error for invalid entry type")
 		}
-		expectedMsg := "invalid treeEntry type"
+		expectedMsg := "DeserializationError: invalid treeEntry type"
 		if err.Error() != expectedMsg {
 			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
 		}

@@ -13,7 +13,7 @@ func treeEntry(tree *bbolt.Bucket, id []byte) (TreeEntry, error) {
 	if bytes == nil { // TODO check - ENOTFOUND?
 		return nil, fmt.Errorf("orphaned tree entry for ID %x", id)
 	}
-	return TreeEntryFromBytes(bytes)
+	return treeEntryFromBytes(bytes)
 }
 
 // hasChildren checks if a directory has any children
