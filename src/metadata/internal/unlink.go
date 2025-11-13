@@ -12,8 +12,7 @@ import (
 // Unlink deletes a file or directory from the filesystem.
 // Returns os.ErrNotExist if the entry does not exist.
 // Returns syscall.ENOTEMPTY if trying to delete a non-empty directory.
-func Unlink(tree, children, data, freeAreas *bbolt.Bucket, id uint64) error {
-	idBytes := U64b(id)
+func Unlink(tree, children, data, freeAreas *bbolt.Bucket, idBytes []byte) error {
 
 	// Check if entry exists
 	entryBytes := tree.Get(idBytes)
@@ -24,7 +23,7 @@ func Unlink(tree, children, data, freeAreas *bbolt.Bucket, id uint64) error {
 	// Parse the entry to determine type
 	entry, err := treeEntryFromBytes(entryBytes)
 	if err != nil {
-		util.AssertionFailedf("invalid tree entry for ID %d", id)
+		util.AssertionFailedf("invalid tree entry for ID %x", idBytes)
 		return err
 	}
 
@@ -45,7 +44,7 @@ func Unlink(tree, children, data, freeAreas *bbolt.Bucket, id uint64) error {
 	}
 
 	// Remove all parent-child relationships where this entry is the child
-	err = removeChildRelationships(children, id)
+	err = removeChildRelationships(children, idBytes)
 	if err != nil {
 		return err
 	}
@@ -55,8 +54,7 @@ func Unlink(tree, children, data, freeAreas *bbolt.Bucket, id uint64) error {
 }
 
 // removeChildRelationships removes all parent-child relationships where the given ID is the child
-func removeChildRelationships(children *bbolt.Bucket, childID uint64) error {
-	childBytes := U64b(childID)
+func removeChildRelationships(children *bbolt.Bucket, childBytes []byte) error {
 	cursor := children.Cursor()
 
 	// Collect all keys to delete (can't modify during iteration)

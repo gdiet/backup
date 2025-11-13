@@ -118,7 +118,7 @@ func (r *Repository) Unlink(id uint64) error {
 		children := tx.Bucket([]byte(bucketChildren))
 		data := tx.Bucket([]byte(bucketData))
 		freeAreas := tx.Bucket([]byte(bucketFreeAreas))
-		return internal.Unlink(tree, children, data, freeAreas, id)
+		return internal.Unlink(tree, children, data, freeAreas, internal.U64b(id))
 	})
 	return err
 }
@@ -127,15 +127,18 @@ func (r *Repository) Unlink(id uint64) error {
 // Returns the ID of the newly created directory.
 // Returns os.ErrExist if a child with the same name already exists under the specified parent.
 func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
-	var id uint64
+	var idBytes []byte
 	var err error
 	err = r.db.Update(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket([]byte(bucketTree))
 		children := tx.Bucket([]byte(bucketChildren))
-		id, err = internal.Mkdir(tree, children, parent, name)
+		idBytes, err = internal.Mkdir(tree, children, internal.U64b(parent), name)
 		return err
 	})
-	return id, err
+	if err != nil {
+		return 0, err
+	}
+	return internal.B64u(idBytes), nil
 }
 
 // Readdir lists the entries under the specified directory.
@@ -146,7 +149,7 @@ func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err e
 		children := tx.Bucket([]byte(bucketChildren))
 
 		// Lookup the directory ID for the given path
-		id, entry, err := internal.Lookup(tree, children, path)
+		idBytes, entry, err := internal.Lookup(tree, children, path)
 		if err != nil {
 			return err
 		}
@@ -157,7 +160,7 @@ func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err e
 		}
 
 		// Read the directory contents
-		entries, err = internal.ReaddirForID(tree, children, id)
+		entries, err = internal.ReaddirForID(tree, children, idBytes)
 		return err
 	})
 	return entries, err
@@ -169,7 +172,7 @@ func (r *Repository) ReaddirForID(id uint64) (entries []internal.TreeEntry, err 
 	err = r.db.View(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket([]byte(bucketTree))
 		children := tx.Bucket([]byte(bucketChildren))
-		entries, err = internal.ReaddirForID(tree, children, id)
+		entries, err = internal.ReaddirForID(tree, children, internal.U64b(id))
 		return err
 	})
 	return entries, err

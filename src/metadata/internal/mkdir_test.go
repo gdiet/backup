@@ -39,8 +39,7 @@ func TestMkdir(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
 			children := tx.Bucket([]byte("children"))
-			_, err = Mkdir(tree, children, 0, "testdir")
-			return err
+			_, err = Mkdir(tree, children, U64b(0), "testdir")
 			return err
 		})
 		if err != nil {
@@ -90,7 +89,7 @@ func TestMkdir(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
 			children := tx.Bucket([]byte("children"))
-			_, err = Mkdir(tree, children, 0, "testdir")
+			_, err = Mkdir(tree, children, U64b(0), "testdir")
 			return err
 		})
 
@@ -103,7 +102,7 @@ func TestMkdir(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
 			children := tx.Bucket([]byte("children"))
-			_, err = Mkdir(tree, children, 0, "another")
+			_, err = Mkdir(tree, children, U64b(0), "another")
 			return err
 		})
 		if err != nil {
@@ -161,7 +160,7 @@ func TestMkdir(t *testing.T) {
 			}
 
 			// Now try to create a directory - should encounter the corrupted entry
-			_, err = Mkdir(tree, children, 0, "newdir")
+			_, err = Mkdir(tree, children, U64b(0), "newdir")
 			return err
 		})
 
@@ -193,7 +192,7 @@ func TestMkdir(t *testing.T) {
 			}
 
 			// Create directory in completely empty tree (nextID should start at 0)
-			_, err = Mkdir(tree, children, 0, "first")
+			_, err = Mkdir(tree, children, U64b(0), "first")
 			return err
 		})
 
@@ -242,7 +241,7 @@ func TestMkdir(t *testing.T) {
 			children := tx.Bucket([]byte("children"))
 
 			// This should fail because we're in a read-only transaction
-			_, err = Mkdir(tree, children, 0, "readonly_test")
+			_, err = Mkdir(tree, children, U64b(0), "readonly_test")
 			return err
 		})
 
@@ -274,7 +273,7 @@ func TestMkdir(t *testing.T) {
 			}
 
 			// Now try to create directory with same name - should fail
-			_, err = Mkdir(tree, children, 0, "conflictname")
+			_, err = Mkdir(tree, children, U64b(0), "conflictname")
 			return err
 		})
 
@@ -311,7 +310,7 @@ func TestMkdir(t *testing.T) {
 			}
 
 			// Now try to create directory - should encounter assertion for missing tree entry
-			_, err = Mkdir(tree, children, 0, "afterorphan")
+			_, err = Mkdir(tree, children, U64b(0), "afterorphan")
 			return err
 		})
 
@@ -351,7 +350,7 @@ func TestMkdir(t *testing.T) {
 			children := tx.Bucket([]byte("children"))
 
 			// This should fail when trying to write to children bucket
-			_, err = Mkdir(tree, children, 0, "children_error_test")
+			_, err = Mkdir(tree, children, U64b(0), "children_error_test")
 			return err
 		})
 
@@ -388,7 +387,7 @@ func TestMkdir(t *testing.T) {
 			// Now create directory under parent 0 with different name
 			// This should iterate through parent 1's children but find no conflict
 			// and hit the break condition when it moves past parent 0's prefix
-			_, err = Mkdir(tree, children, 0, "new_dir_under_parent0")
+			_, err = Mkdir(tree, children, U64b(0), "new_dir_under_parent0")
 			return err
 		})
 
@@ -412,12 +411,12 @@ func TestMkdir(t *testing.T) {
 				}
 
 				childID := k[8:16]
-				entry_bytes := tree.Get(childID)
-				if entry_bytes == nil {
+				entryBytes := tree.Get(childID)
+				if entryBytes == nil {
 					continue
 				}
 
-				entry, err := treeEntryFromBytes(entry_bytes)
+				entry, err := treeEntryFromBytes(entryBytes)
 				if err != nil {
 					return err
 				}

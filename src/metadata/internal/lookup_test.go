@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"os"
 	"testing"
 
@@ -549,8 +550,8 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected no error, got: %v", err)
 			}
 
-			if id != 0 {
-				t.Errorf("Expected root ID 0, got %d", id)
+			if !bytes.Equal(id, U64b(0)) {
+				t.Errorf("Expected root ID 0, got %v", id)
 			}
 
 			if entry == nil {
@@ -583,8 +584,8 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected no error, got: %v", err)
 			}
 
-			if id != 1 {
-				t.Errorf("Expected ID 1, got %d", id)
+			if !bytes.Equal(id, U64b(1)) {
+				t.Errorf("Expected ID 1, got %v", id)
 			}
 
 			if entry.GetName() != "docs" {
@@ -612,8 +613,8 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected no error, got: %v", err)
 			}
 
-			if id != 3 {
-				t.Errorf("Expected ID 3, got %d", id)
+			if !bytes.Equal(id, U64b(3)) {
+				t.Errorf("Expected ID 3, got %v", id)
 			}
 
 			if entry.GetName() != "manual" {
@@ -641,8 +642,8 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected no error, got: %v", err)
 			}
 
-			if id != 2 {
-				t.Errorf("Expected ID 2, got %d", id)
+			if !bytes.Equal(id, U64b(2)) {
+				t.Errorf("Expected ID 2, got %v", id)
 			}
 
 			if entry.GetName() != "readme.txt" {
@@ -674,8 +675,8 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected no error, got: %v", err)
 			}
 
-			if id != 4 {
-				t.Errorf("Expected ID 4, got %d", id)
+			if !bytes.Equal(id, U64b(4)) {
+				t.Errorf("Expected ID 4, got %v", id)
 			}
 
 			if entry.GetName() != "guide.pdf" {
@@ -707,8 +708,8 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected os.ErrNotExist, got: %v", err)
 			}
 
-			if id != 0 {
-				t.Errorf("Expected ID 0, got %d", id)
+			if len(id) != 0 {
+				t.Errorf("Expected empty ID for non-existent, got %v", id)
 			}
 
 			if entry != nil {
@@ -732,8 +733,8 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected os.ErrNotExist, got: %v", err)
 			}
 
-			if id != 0 {
-				t.Errorf("Expected ID 0, got %d", id)
+			if len(id) != 0 {
+				t.Errorf("Expected empty ID for non-existent, got %v", id)
 			}
 
 			if entry != nil {
@@ -758,8 +759,8 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected os.ErrNotExist when traversing through file, got: %v", err)
 			}
 
-			if id != 0 {
-				t.Errorf("Expected ID 0, got %d", id)
+			if len(id) != 0 {
+				t.Errorf("Expected empty ID, got %v", id)
 			}
 
 			if entry != nil {
