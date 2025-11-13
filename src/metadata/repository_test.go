@@ -361,7 +361,7 @@ func TestRepositoryReaddir(t *testing.T) {
 
 	t.Run("empty directory", func(t *testing.T) {
 		// Test reading empty directory (parent 0 initially has no children)
-		entries, err := repo.Readdir(0)
+		entries, err := repo.ReaddirForID(0)
 		if err != nil {
 			t.Fatalf("Failed to read empty directory: %v", err)
 		}
@@ -389,7 +389,7 @@ func TestRepositoryReaddir(t *testing.T) {
 		}
 
 		// Read directory contents
-		entries, err := repo.Readdir(0)
+		entries, err := repo.ReaddirForID(0)
 		if err != nil {
 			t.Fatalf("Failed to read directory with children: %v", err)
 		}
@@ -462,7 +462,7 @@ func TestRepositoryReaddir(t *testing.T) {
 		}
 
 		// Read mixed directory contents
-		entries, err := repo.Readdir(parentID)
+		entries, err := repo.ReaddirForID(parentID)
 		if err != nil {
 			t.Fatalf("Failed to read mixed directory: %v", err)
 		}
@@ -499,7 +499,7 @@ func TestRepositoryReaddir(t *testing.T) {
 
 	t.Run("non-existent parent", func(t *testing.T) {
 		// Read from non-existent parent - should return empty list, not error
-		entries, err := repo.Readdir(999)
+		entries, err := repo.ReaddirForID(999)
 		if err != nil {
 			t.Fatalf("Unexpected error reading non-existent parent: %v", err)
 		}

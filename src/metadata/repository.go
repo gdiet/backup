@@ -137,12 +137,33 @@ func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
 	return id, err
 }
 
-// Readdir lists the entries under the specified directory. It does not check whether the directory exists.
-func (r *Repository) Readdir(id uint64) (entries []internal.TreeEntry, err error) {
+// Readdir lists the entries under the specified directory.
+// Returns os.ErrNotExist if the directory does not exist.
+func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket([]byte(bucketTree))
 		children := tx.Bucket([]byte(bucketChildren))
-		entries, err = internal.Readdir(tree, children, id)
+
+		// Lookup the directory ID for the given path
+		id, err := internal.Lookup(tree, children, path)
+		if err != nil {
+			return err
+		}
+
+		// Read the directory contents
+		entries, err = internal.ReaddirForID(tree, children, id)
+		return err
+	})
+	return entries, err
+}
+
+// ReaddirForID lists the entries under the specified directory. It does not check whether the directory exists.
+// TODO check whether we need both Readdir and ReaddirForID
+func (r *Repository) ReaddirForID(id uint64) (entries []internal.TreeEntry, err error) {
+	err = r.db.View(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket([]byte(bucketTree))
+		children := tx.Bucket([]byte(bucketChildren))
+		entries, err = internal.ReaddirForID(tree, children, id)
 		return err
 	})
 	return entries, err

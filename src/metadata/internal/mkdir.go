@@ -32,8 +32,8 @@ func Mkdir(tree, children *bbolt.Bucket, parent uint64, name string) (uint64, er
 		}
 	}
 
-	// get next available tree entries ID
-	var nextID uint64
+	// Get next available tree entries ID. Start from 1, since 0 is reserved for root.
+	var nextID uint64 = 1
 	if bytes, _ := tree.Cursor().Last(); bytes != nil {
 		nextID = B64u(bytes) + 1
 	}

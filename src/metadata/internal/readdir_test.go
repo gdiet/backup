@@ -33,7 +33,7 @@ func TestReaddirEmptyDirectory(t *testing.T) {
 			return err
 		}
 
-		entries, err := Readdir(tree, children, 0)
+		entries, err := ReaddirForID(tree, children, 0)
 		if err != nil {
 			t.Errorf("Readdir failed on empty directory: %v", err)
 			return err
@@ -113,7 +113,7 @@ func TestReaddirWithChildren(t *testing.T) {
 		}
 
 		// Test readdir
-		entries, err := Readdir(tree, children, parent)
+		entries, err := ReaddirForID(tree, children, parent)
 		if err != nil {
 			t.Errorf("Readdir failed: %v", err)
 			return err
@@ -214,7 +214,7 @@ func TestReaddirOrphanedChildren(t *testing.T) {
 		}
 
 		// Test readdir - should encounter assertion for orphaned reference
-		entries, err := Readdir(tree, children, parent)
+		entries, err := ReaddirForID(tree, children, parent)
 		if err != nil {
 			return err
 		}
@@ -283,7 +283,7 @@ func TestReaddirCorruptedEntry(t *testing.T) {
 		}
 
 		// Should encounter assertion for corrupted entry
-		_, err = Readdir(tree, children, parent)
+		_, err = ReaddirForID(tree, children, parent)
 		if err != nil {
 			return err
 		}
@@ -354,7 +354,7 @@ func TestReaddirMultipleParents(t *testing.T) {
 		}
 
 		// Test each parent separately
-		entries0, err := Readdir(tree, children, parent0)
+		entries0, err := ReaddirForID(tree, children, parent0)
 		if err != nil {
 			t.Errorf("Readdir failed for parent 0: %v", err)
 			return err
@@ -363,7 +363,7 @@ func TestReaddirMultipleParents(t *testing.T) {
 			t.Errorf("Parent 0: expected 1 entry 'parent0_child', got %d entries", len(entries0))
 		}
 
-		entries1, err := Readdir(tree, children, parent1)
+		entries1, err := ReaddirForID(tree, children, parent1)
 		if err != nil {
 			t.Errorf("Readdir failed for parent 1: %v", err)
 			return err
@@ -404,7 +404,7 @@ func TestReaddirNonExistentParent(t *testing.T) {
 		}
 
 		// Read from non-existent parent
-		entries, err := Readdir(tree, children, 999999)
+		entries, err := ReaddirForID(tree, children, 999999)
 		if err != nil {
 			t.Errorf("Readdir failed for non-existent parent: %v", err)
 			return err

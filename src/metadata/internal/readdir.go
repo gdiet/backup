@@ -7,8 +7,8 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-// Readdir lists the entries under the specified parent directory. It does not check whether the parent exists.
-func Readdir(tree, children *bbolt.Bucket, parent uint64) (entries []TreeEntry, err error) {
+// ReaddirForID lists the entries under the specified parent directory. It does not check whether the parent exists.
+func ReaddirForID(tree, children *bbolt.Bucket, parent uint64) (entries []TreeEntry, err error) {
 	cursor := children.Cursor()
 	parentPrefix := U64b(parent)
 

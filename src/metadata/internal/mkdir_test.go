@@ -211,10 +211,10 @@ func TestMkdir(t *testing.T) {
 				t.Errorf("Expected 1 tree entry, got %d", stats.KeyN)
 			}
 
-			// Verify it got ID 0
-			value := tree.Get(U64b(0))
+			// Verify it got ID 1 (first ID, since 0 is reserved for root)
+			value := tree.Get(U64b(1))
 			if value == nil {
-				t.Error("Expected entry with ID 0 to exist")
+				t.Error("Expected entry with ID 1 to exist")
 				return nil
 			}
 
