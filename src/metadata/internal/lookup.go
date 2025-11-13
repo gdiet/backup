@@ -61,20 +61,14 @@ func findChild(tree, children *bbolt.Bucket, parentID uint64, name string) (uint
 			break // No more children for this parent
 		}
 
-		util.Assert(len(k) == 16, "invalid child key length")
+		if len(k) != 16 {
+			return 0, &DeserializationError{Msg: "invalid child key length"}
+		}
 		childID := k[8:16] // Extract child ID from key
 
 		// Get the tree entry for this child
-		entryBytes := tree.Get(childID)
-		if entryBytes == nil {
-			// Orphaned child reference, skip
-			continue
-		}
-
-		// Parse the tree entry
-		entry, err := treeEntryFromBytes(entryBytes)
+		entry, err := treeEntryFromBytes(tree.Get(childID))
 		if err != nil {
-			util.AssertionFailedf("invalid tree entry for child ID %x", childID)
 			return 0, err
 		}
 

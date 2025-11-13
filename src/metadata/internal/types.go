@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -91,7 +90,7 @@ func DataEntryFromBytes(data []byte) (DataEntry, error) {
 	// 8 bytes reference count + 16 bytes per area
 	dataLen := len(data)
 	if dataLen < 8 || dataLen%16 != 8 {
-		return DataEntry{}, errors.New("dataEntry length invalid")
+		return DataEntry{}, &DeserializationError{Msg: "dataEntry length invalid"}
 	}
 	d := DataEntry{}
 	d.Refs = B64u(data)

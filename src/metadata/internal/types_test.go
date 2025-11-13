@@ -174,7 +174,7 @@ func TestDataEntryFromBytesErrors(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error for data too short")
 		}
-		expectedMsg := "dataEntry length invalid"
+		expectedMsg := "DeserializationError: dataEntry length invalid"
 		if err.Error() != expectedMsg {
 			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
 		}
@@ -187,7 +187,7 @@ func TestDataEntryFromBytesErrors(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error for invalid length")
 		}
-		expectedMsg := "dataEntry length invalid"
+		expectedMsg := "DeserializationError: dataEntry length invalid"
 		if err.Error() != expectedMsg {
 			t.Errorf("Expected error message '%s', got '%s'", expectedMsg, err.Error())
 		}

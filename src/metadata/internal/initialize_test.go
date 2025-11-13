@@ -196,10 +196,10 @@ func TestInitializeFreeAreas(t *testing.T) {
 				return nil
 			}
 
-			// Verify it's a proper error about failed initialization
-			expectedPrefix := "failed to initialize free areas:"
-			if len(err.Error()) < len(expectedPrefix) || err.Error()[:len(expectedPrefix)] != expectedPrefix {
-				t.Errorf("Expected error to start with '%s', got '%s'", expectedPrefix, err.Error())
+			// Verify it's the BBolt error about read-only transaction
+			expected := "tx not writable"
+			if err.Error() != expected {
+				t.Errorf("Expected error '%s', got '%s'", expected, err.Error())
 			}
 
 			return nil

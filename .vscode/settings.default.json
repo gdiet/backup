@@ -6,5 +6,13 @@
     "coveredHighlightColor": "rgba(64,128,128,0.1)",
     "coveredBorderColor": "rgba(64,128,128,0.1)"
   },
-  "cSpell.words": ["AssertionFailedf", "bbolt", "cgofuse", "Getattr", "winfsp"]
+  "cSpell.words": [
+    "AssertionFailedf",
+    "bbolt",
+    "buf",
+    "cgofuse",
+    "Dref",
+    "Getattr",
+    "winfsp"
+  ]
 }
