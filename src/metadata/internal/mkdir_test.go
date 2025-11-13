@@ -258,11 +258,7 @@ func TestMkdir(t *testing.T) {
 
 			// Create a file entry first
 			fileID := uint64(500)
-			fileEntry := &FileEntry{
-				Time: 1640995200000,
-				Dref: [40]byte{1, 2, 3},
-				Name: "conflictname",
-			}
+			fileEntry := NewFileEntry("conflictname", 1640995200000, [40]byte{1, 2, 3})
 			err := tree.Put(U64b(fileID), fileEntry.ToBytes())
 			if err != nil {
 				return err

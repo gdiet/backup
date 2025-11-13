@@ -27,11 +27,7 @@ func TestDirEntryToBytes(t *testing.T) {
 }
 
 func TestFileEntryToBytes(t *testing.T) {
-	entry := &FileEntry{
-		Time: 1640995200000,     // 2022-01-01 00:00:00 UTC in milliseconds
-		Dref: [40]byte{1, 2, 3}, // Sample data reference
-		Name: "test.txt",
-	}
+	entry := NewFileEntry("test.txt", 1640995200000, [40]byte{1, 2, 3})
 
 	data := entry.ToBytes()
 

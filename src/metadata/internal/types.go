@@ -57,6 +57,15 @@ func (f *FileEntry) GetName() string {
 	return f.Name
 }
 
+// NewFileEntry creates a new file entry
+func NewFileEntry(name string, time int64, dref [40]byte) *FileEntry {
+	return &FileEntry{
+		Name: name,
+		Time: time,
+		Dref: dref,
+	}
+}
+
 func (f *FileEntry) ToBytes() []byte {
 	// 1 byte type + 8 bytes time + 40 bytes data reference + name
 	buf := make([]byte, 49+len(f.Name))
@@ -122,11 +131,7 @@ func treeEntryFromBytes(data []byte) (TreeEntry, error) {
 		}
 		dref := [40]byte{}
 		copy(dref[:], data[9:49])
-		return &FileEntry{
-			Time: B64i(data[1:9]),
-			Dref: dref,
-			Name: string(data[49:]),
-		}, nil
+		return NewFileEntry(string(data[49:]), B64i(data[1:9]), dref), nil
 	default:
 		return nil, &DeserializationError{Msg: "invalid treeEntry type"}
 	}

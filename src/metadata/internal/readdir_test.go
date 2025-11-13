@@ -94,11 +94,7 @@ func TestReaddirWithChildren(t *testing.T) {
 
 		// Create file child
 		childID2 := uint64(20)
-		fileEntry := &FileEntry{
-			Time: 1640995200000,
-			Dref: [40]byte{1, 2, 3},
-			Name: "file.txt",
-		}
+		fileEntry := NewFileEntry("file.txt", 1640995200000, [40]byte{1, 2, 3})
 		err = tree.Put(U64b(childID2), fileEntry.ToBytes())
 		if err != nil {
 			return err

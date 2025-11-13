@@ -3,6 +3,7 @@ package metadata
 import (
 	"backup/src/metadata/internal"
 	"fmt"
+	"os"
 
 	"go.etcd.io/bbolt"
 )
@@ -145,9 +146,14 @@ func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err e
 		children := tx.Bucket([]byte(bucketChildren))
 
 		// Lookup the directory ID for the given path
-		id, err := internal.Lookup(tree, children, path)
+		id, entry, err := internal.Lookup(tree, children, path)
 		if err != nil {
 			return err
+		}
+
+		// Ensure the target is a directory
+		if _, isDir := entry.(*internal.DirEntry); !isDir {
+			return os.ErrNotExist
 		}
 
 		// Read the directory contents

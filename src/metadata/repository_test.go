@@ -318,11 +318,7 @@ func TestRepositoryMkdir(t *testing.T) {
 
 			// Create a file entry
 			fileID := uint64(100)
-			fileEntry := &internal.FileEntry{
-				Time: 1640995200000,
-				Dref: [40]byte{1, 2, 3}, // Sample data reference
-				Name: "conflictfile",
-			}
+			fileEntry := internal.NewFileEntry("conflictfile", 1640995200000, [40]byte{1, 2, 3})
 			err := tree.Put(internal.U64b(fileID), fileEntry.ToBytes())
 			if err != nil {
 				return err
@@ -440,11 +436,7 @@ func TestRepositoryReaddir(t *testing.T) {
 
 			// Create a file entry
 			fileID := uint64(200)
-			fileEntry := &internal.FileEntry{
-				Time: 1640995200000,
-				Dref: [40]byte{1, 2, 3},
-				Name: "testfile.txt",
-			}
+			fileEntry := internal.NewFileEntry("testfile.txt", 1640995200000, [40]byte{1, 2, 3})
 			err := tree.Put(internal.U64b(fileID), fileEntry.ToBytes())
 			if err != nil {
 				return err
