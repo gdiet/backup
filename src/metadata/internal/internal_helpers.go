@@ -2,6 +2,7 @@ package internal
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 
 	"go.etcd.io/bbolt"
@@ -15,6 +16,15 @@ func getNextTreeID(tree *bbolt.Bucket) []byte {
 		nextID = B64u(bytes) + 1
 	}
 	return U64b(nextID)
+}
+
+// treeEntry retrieves a TreeEntry by its ID bytes
+func treeEntry(tree *bbolt.Bucket, id []byte) (TreeEntry, error) {
+	bytes := tree.Get(id)
+	if bytes == nil { // TODO check - ENOTFOUND?
+		return nil, fmt.Errorf("orphaned tree entry for ID %x", id)
+	}
+	return treeEntryFromBytes(bytes)
 }
 
 // getChild searches for a child with the given name under the specified parent.
@@ -41,4 +51,11 @@ func getChild(tree *bbolt.Bucket, children Bucket, parentID []byte, name string)
 		}
 	}
 	return nil, nil, os.ErrNotExist
+}
+
+// hasChildren checks if a directory has any children
+func hasChildren(children *bbolt.Bucket, id []byte) bool {
+	cursor := children.Cursor()
+	k, _ := cursor.Seek(id)
+	return len(k) > 0 && bytes.HasPrefix(k, id)
 }
