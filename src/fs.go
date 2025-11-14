@@ -2,7 +2,6 @@ package main
 
 import (
 	"backup/src/metadata"
-	internal "backup/src/metadata/notinternal"
 	"log"
 	"os"
 	"strings"
@@ -27,7 +26,7 @@ func (f *Fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	log.Printf("Readdir parts: %v - length %d", parts, len(parts))
-	var entries []internal.TreeEntry
+	var entries []metadata.TreeEntry
 	var err error
 	if len(parts) == 1 && parts[0] == "" {
 		entries, err = f.r.Readdir([]string{})
@@ -42,10 +41,10 @@ func (f *Fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 	for _, entry := range entries {
 		entryStat := &fuse.Stat_t{}
 		switch entry.(type) {
-		case *internal.DirEntry:
+		case *metadata.DirEntry:
 			entryStat.Mode = fuse.S_IFDIR | 0755
 			entryStat.Nlink = 2
-		case *internal.FileEntry:
+		case *metadata.FileEntry:
 			entryStat.Mode = fuse.S_IFREG | 0644
 			// TODO set size from metadata
 			entryStat.Size = 0
@@ -53,7 +52,7 @@ func (f *Fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 			// TODO better error handling or logging
 			continue
 		}
-		fill(entry.GetName(), entryStat, 0)
+		fill(entry.Name(), entryStat, 0)
 	}
 
 	return 0
@@ -77,11 +76,11 @@ func (f *Fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	}
 
 	switch entry.(type) {
-	case *internal.DirEntry:
+	case *metadata.DirEntry:
 		stat.Mode = fuse.S_IFDIR | 0755
 		stat.Nlink = 2
 		return 0
-	case *internal.FileEntry:
+	case *metadata.FileEntry:
 		stat.Mode = fuse.S_IFREG | 0644
 		// TODO set size from metadata
 		stat.Size = 0

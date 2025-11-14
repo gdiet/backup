@@ -68,8 +68,8 @@ func TestTreeEntryFromBytesDirectory(t *testing.T) {
 		t.Fatal("Expected *DirEntry, got different type")
 	}
 
-	if dirEntry.GetName() != "documents" {
-		t.Errorf("Expected name 'documents', got '%s'", dirEntry.GetName())
+	if dirEntry.Name() != "documents" {
+		t.Errorf("Expected name 'documents', got '%s'", dirEntry.Name())
 	}
 }
 
@@ -97,12 +97,12 @@ func TestTreeEntryFromBytesFile(t *testing.T) {
 		t.Fatal("Expected *FileEntry, got different type")
 	}
 
-	if fileEntry.GetName() != "readme.md" {
-		t.Errorf("Expected name 'readme.md', got '%s'", fileEntry.GetName())
+	if fileEntry.Name() != "readme.md" {
+		t.Errorf("Expected name 'readme.md', got '%s'", fileEntry.Name())
 	}
 
-	if fileEntry.Time != 1640995200000 {
-		t.Errorf("Expected time 1640995200000, got %d", fileEntry.Time)
+	if fileEntry.time != 1640995200000 {
+		t.Errorf("Expected time 1640995200000, got %d", fileEntry.time)
 	}
 }
 

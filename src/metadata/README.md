@@ -2,7 +2,8 @@
 
 #### General Format
 
-- Numbers (id, start, length) are 8-byte big endian uint64 values.
+- Numbers (id, start, length) are mostly 8-byte big endian uint64 values.
+- Time is stored as an 8-byte big endian int64 unix time in milliseconds.
 - hash is the 32-byte Blake3 hash.
 - File system settings are persisted as key-value pairs.
 

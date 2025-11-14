@@ -101,8 +101,8 @@ func TestGetChild(t *testing.T) {
 				t.Error("Expected entry to be non-nil")
 			}
 
-			if entry.GetName() != "testdir" {
-				t.Errorf("Expected entry name 'testdir', got '%s'", entry.GetName())
+			if entry.Name() != "testdir" {
+				t.Errorf("Expected entry name 'testdir', got '%s'", entry.Name())
 			}
 
 			// Check that it's a directory
@@ -142,14 +142,14 @@ func TestGetChild(t *testing.T) {
 				t.Error("Expected entry to be non-nil")
 			}
 
-			if entry.GetName() != "testfile.txt" {
-				t.Errorf("Expected entry name 'testfile.txt', got '%s'", entry.GetName())
+			if entry.Name() != "testfile.txt" {
+				t.Errorf("Expected entry name 'testfile.txt', got '%s'", entry.Name())
 			}
 
 			// Check that it's a file
 			if fileEntry, ok := entry.(*FileEntry); ok {
-				if fileEntry.Time != 1640995200000 {
-					t.Errorf("Expected file time 1640995200000, got %d", fileEntry.Time)
+				if fileEntry.time != 1640995200000 {
+					t.Errorf("Expected file time 1640995200000, got %d", fileEntry.time)
 				}
 			} else {
 				t.Error("Expected entry to be a FileEntry")

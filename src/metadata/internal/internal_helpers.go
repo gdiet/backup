@@ -46,7 +46,7 @@ func getChild(tree *bbolt.Bucket, children Bucket, parentID []byte, name string)
 			return nil, nil, err
 		}
 
-		if entry.GetName() == name {
+		if entry.Name() == name {
 			return childID, entry, nil
 		}
 	}

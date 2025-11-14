@@ -127,9 +127,9 @@ func TestReaddirWithChildren(t *testing.T) {
 		for _, entry := range entries {
 			switch e := entry.(type) {
 			case *DirEntry:
-				names[e.GetName()] = "dir"
+				names[e.Name()] = "dir"
 			case *FileEntry:
-				names[e.GetName()] = "file"
+				names[e.Name()] = "file"
 			}
 		}
 
@@ -360,7 +360,7 @@ func TestReaddirMultipleParents(t *testing.T) {
 			t.Errorf("Readdir failed for parent 0: %v", err)
 			return err
 		}
-		if len(entries0) != 1 || entries0[0].GetName() != "parent0_child" {
+		if len(entries0) != 1 || entries0[0].Name() != "parent0_child" {
 			t.Errorf("Parent 0: expected 1 entry 'parent0_child', got %d entries", len(entries0))
 		}
 
@@ -369,7 +369,7 @@ func TestReaddirMultipleParents(t *testing.T) {
 			t.Errorf("Readdir failed for parent 1: %v", err)
 			return err
 		}
-		if len(entries1) != 1 || entries1[0].GetName() != "parent1_child" {
+		if len(entries1) != 1 || entries1[0].Name() != "parent1_child" {
 			t.Errorf("Parent 1: expected 1 entry 'parent1_child', got %d entries", len(entries1))
 		}
 

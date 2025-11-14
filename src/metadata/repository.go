@@ -1,7 +1,7 @@
 package metadata
 
 import (
-	internal "backup/src/metadata/notinternal"
+	"backup/src/metadata/internal"
 	"fmt"
 	"log"
 	"os"
@@ -136,7 +136,7 @@ func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err e
 
 // ReaddirForID lists the entries under the specified directory. It does not check whether the directory exists.
 // TODO check whether we need both Readdir and ReaddirForID
-func (r *Repository) ReaddirForID(id uint64) (entries []internal.TreeEntry, err error) {
+func (r *Repository) ReaddirForID(id uint64) (entries []TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket(treeKey)
 		children := internal.WrapBucket(tx.Bucket(childrenKey))
@@ -148,7 +148,7 @@ func (r *Repository) ReaddirForID(id uint64) (entries []internal.TreeEntry, err 
 
 // Lookup looks up a path and returns the ID and tree entry.
 // Returns os.ErrNotExist if the path does not exist.
-func (r *Repository) Lookup(path []string) (id uint64, entry internal.TreeEntry, err error) {
+func (r *Repository) Lookup(path []string) (id uint64, entry TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket(treeKey)
 		children := internal.WrapBucket(tx.Bucket(childrenKey))

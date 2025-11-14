@@ -14,29 +14,39 @@ func (e *DeserializationError) Error() string {
 
 // TreeEntry interface for directory and file entries
 type TreeEntry interface {
-	GetName() string
+	Name() string
+	IsDir() bool
+	Time() int64
 }
 
 // DirEntry represents a directory entry
 type DirEntry struct {
-	Name string
+	name string
 }
 
-func (d *DirEntry) GetName() string {
-	return d.Name
+func (d *DirEntry) Name() string {
+	return d.name
+}
+
+func (d *DirEntry) IsDir() bool {
+	return true
+}
+
+func (d *DirEntry) Time() int64 {
+	return 0
 }
 
 func (d *DirEntry) ToBytes() []byte {
 	// 1 byte type + name
-	buf := make([]byte, 1+len(d.Name))
+	buf := make([]byte, 1+len(d.name))
 	// buf[0] is 0, dirEntry type = 0
-	copy(buf[1:], []byte(d.Name))
+	copy(buf[1:], []byte(d.name))
 	return buf
 }
 
 // NewDirEntry creates a new directory entry
 func NewDirEntry(name string) *DirEntry {
-	return &DirEntry{Name: name}
+	return &DirEntry{name: name}
 }
 
 // area represents a located contiguous range of bytes.
@@ -48,31 +58,39 @@ type Area struct {
 
 // FileEntry represents a file entry
 type FileEntry struct {
-	Time int64    // UnixMilli
-	Dref [40]byte // len|hash of dataEntry
-	Name string   // at least 1 byte
+	time int64    // UnixMilli
+	dref [40]byte // len|hash of dataEntry
+	name string   // at least 1 byte
 }
 
-func (f *FileEntry) GetName() string {
-	return f.Name
+func (f *FileEntry) Name() string {
+	return f.name
+}
+
+func (f *FileEntry) IsDir() bool {
+	return false
+}
+
+func (f *FileEntry) Time() int64 {
+	return f.time
 }
 
 // NewFileEntry creates a new file entry
 func NewFileEntry(name string, time int64, dref [40]byte) *FileEntry {
 	return &FileEntry{
-		Name: name,
-		Time: time,
-		Dref: dref,
+		name: name,
+		time: time,
+		dref: dref,
 	}
 }
 
 func (f *FileEntry) ToBytes() []byte {
 	// 1 byte type + 8 bytes time + 40 bytes data reference + name
-	buf := make([]byte, 49+len(f.Name))
+	buf := make([]byte, 49+len(f.name))
 	buf[0] = 1 // fileEntry type = 1
-	I64w(buf[1:], f.Time)
-	copy(buf[9:49], f.Dref[:])
-	copy(buf[49:], []byte(f.Name))
+	I64w(buf[1:], f.time)
+	copy(buf[9:49], f.dref[:])
+	copy(buf[49:], []byte(f.name))
 	return buf
 }
 
@@ -123,7 +141,7 @@ func treeEntryFromBytes(data []byte) (TreeEntry, error) {
 	switch data[0] {
 	case 0:
 		// dirEntry: 1 byte type + name
-		return &DirEntry{Name: string(data[1:])}, nil
+		return &DirEntry{name: string(data[1:])}, nil
 	case 1:
 		// fileEntry: 1 byte type + 8 bytes time + 40 bytes data reference + name
 		if len(data) < 50 {

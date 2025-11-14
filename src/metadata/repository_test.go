@@ -1,7 +1,7 @@
 package metadata
 
 import (
-	internal "backup/src/metadata/notinternal"
+	"backup/src/metadata/internal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -262,8 +262,8 @@ func TestRepositoryMkdir(t *testing.T) {
 			return nil
 		}
 
-		if entries[0].GetName() != "testdir" {
-			t.Errorf("Expected directory name 'testdir', got '%s'", entries[0].GetName())
+		if entries[0].Name() != "testdir" {
+			t.Errorf("Expected directory name 'testdir', got '%s'", entries[0].Name())
 		}
 
 		// Verify it's a DirEntry
@@ -395,12 +395,12 @@ func TestRepositoryReaddir(t *testing.T) {
 		// Collect names for verification (order may vary)
 		names := make(map[string]bool)
 		for _, entry := range entries {
-			names[entry.GetName()] = true
+			names[entry.Name()] = true
 
 			// Verify all entries are DirEntry
 			_, ok := entry.(*internal.DirEntry)
 			if !ok {
-				t.Errorf("Expected DirEntry, got %T for entry '%s'", entry, entry.GetName())
+				t.Errorf("Expected DirEntry, got %T for entry '%s'", entry, entry.Name())
 			}
 		}
 
@@ -467,11 +467,11 @@ func TestRepositoryReaddir(t *testing.T) {
 		for _, entry := range entries {
 			switch e := entry.(type) {
 			case *internal.DirEntry:
-				if e.GetName() == "subdir" {
+				if e.Name() == "subdir" {
 					foundDir = true
 				}
 			case *internal.FileEntry:
-				if e.GetName() == "testfile.txt" {
+				if e.Name() == "testfile.txt" {
 					foundFile = true
 				}
 			default:

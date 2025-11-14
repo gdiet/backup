@@ -84,8 +84,8 @@ func TestMkdir(t *testing.T) {
 				return err
 			}
 
-			if entry.GetName() != "testdir" {
-				t.Errorf("Expected name 'testdir', got '%s'", entry.GetName())
+			if entry.Name() != "testdir" {
+				t.Errorf("Expected name 'testdir', got '%s'", entry.Name())
 			}
 
 			// Verify it's a DirEntry
@@ -232,8 +232,8 @@ func TestMkdir(t *testing.T) {
 				return err
 			}
 
-			if entry.GetName() != "first" {
-				t.Errorf("Expected name 'first', got '%s'", entry.GetName())
+			if entry.Name() != "first" {
+				t.Errorf("Expected name 'first', got '%s'", entry.Name())
 			}
 
 			return nil
@@ -424,7 +424,7 @@ func TestMkdir(t *testing.T) {
 					return err
 				}
 
-				if entry.GetName() == "new_dir_under_parent0" {
+				if entry.Name() == "new_dir_under_parent0" {
 					found = true
 					break
 				}

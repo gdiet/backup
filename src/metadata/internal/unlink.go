@@ -37,7 +37,7 @@ func Unlink(tree, children, data, freeAreas *bbolt.Bucket, idBytes []byte) error
 	case *FileEntry:
 		// For files, decrement reference count and possibly free data
 		fileEntry := entry.(*FileEntry)
-		err := decrementDataReference(data, freeAreas, fileEntry.Dref)
+		err := decrementDataReference(data, freeAreas, fileEntry.dref)
 		if err != nil {
 			return err
 		}

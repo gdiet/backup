@@ -168,8 +168,8 @@ func TestLookup(t *testing.T) {
 				t.Error("Expected non-nil entry")
 			}
 
-			if entry.GetName() != "" {
-				t.Errorf("Expected empty root name, got '%s'", entry.GetName())
+			if entry.Name() != "" {
+				t.Errorf("Expected empty root name, got '%s'", entry.Name())
 			}
 
 			// Check that it's a directory
@@ -198,8 +198,8 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected ID 1, got %v", id)
 			}
 
-			if entry.GetName() != "docs" {
-				t.Errorf("Expected name 'docs', got '%s'", entry.GetName())
+			if entry.Name() != "docs" {
+				t.Errorf("Expected name 'docs', got '%s'", entry.Name())
 			}
 
 			if _, ok := entry.(*DirEntry); !ok {
@@ -227,8 +227,8 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected ID 3, got %v", id)
 			}
 
-			if entry.GetName() != "manual" {
-				t.Errorf("Expected name 'manual', got '%s'", entry.GetName())
+			if entry.Name() != "manual" {
+				t.Errorf("Expected name 'manual', got '%s'", entry.Name())
 			}
 
 			if _, ok := entry.(*DirEntry); !ok {
@@ -256,13 +256,13 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected ID 2, got %v", id)
 			}
 
-			if entry.GetName() != "readme.txt" {
-				t.Errorf("Expected name 'readme.txt', got '%s'", entry.GetName())
+			if entry.Name() != "readme.txt" {
+				t.Errorf("Expected name 'readme.txt', got '%s'", entry.Name())
 			}
 
 			if fileEntry, ok := entry.(*FileEntry); ok {
-				if fileEntry.Time != 1640995200000 {
-					t.Errorf("Expected time 1640995200000, got %d", fileEntry.Time)
+				if fileEntry.time != 1640995200000 {
+					t.Errorf("Expected time 1640995200000, got %d", fileEntry.time)
 				}
 			} else {
 				t.Error("Expected FileEntry")
@@ -289,13 +289,13 @@ func TestLookup(t *testing.T) {
 				t.Errorf("Expected ID 4, got %v", id)
 			}
 
-			if entry.GetName() != "guide.pdf" {
-				t.Errorf("Expected name 'guide.pdf', got '%s'", entry.GetName())
+			if entry.Name() != "guide.pdf" {
+				t.Errorf("Expected name 'guide.pdf', got '%s'", entry.Name())
 			}
 
 			if fileEntry, ok := entry.(*FileEntry); ok {
-				if fileEntry.Time != 1640995300000 {
-					t.Errorf("Expected time 1640995300000, got %d", fileEntry.Time)
+				if fileEntry.time != 1640995300000 {
+					t.Errorf("Expected time 1640995300000, got %d", fileEntry.time)
 				}
 			} else {
 				t.Error("Expected FileEntry")
