@@ -2,8 +2,10 @@ package main
 
 import (
 	"backup/src/metadata"
+	internal "backup/src/metadata/notinternal"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/winfsp/cgofuse/fuse"
 )
@@ -20,22 +22,38 @@ func NewFs(r *metadata.Repository) *Fs {
 func (f *Fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
 	log.Printf("Readdir called for path: %s", path)
 
-	stat := &fuse.Stat_t{}
-	stat.Mode = fuse.S_IFDIR | 0755
-	stat.Nlink = 2
+	fill(".", &fuse.Stat_t{Mode: fuse.S_IFDIR | 0755, Nlink: 2}, 0)
+	fill("..", &fuse.Stat_t{Mode: fuse.S_IFDIR | 0755, Nlink: 2}, 0)
 
-	fill(".", stat, 0)
-	fill("..", stat, 0)
-
-	switch path {
-	case "/":
-		// Root directory contains "testing"
-		fill("testing", stat, 0)
-
-	case "/testing":
-		// Testing directory contains "hello" and "world"
-		fill("hello", stat, 0)
-		fill("world", stat, 0)
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	log.Printf("Readdir parts: %v - length %d", parts, len(parts))
+	var entries []internal.TreeEntry
+	var err error
+	if len(parts) == 1 && parts[0] == "" {
+		entries, err = f.r.Readdir([]string{})
+	} else {
+		entries, err = f.r.Readdir(parts)
+	}
+	log.Printf("Readdir entries: %v, err: %v", entries, err)
+	if err != nil {
+		// TODO distinguish errors, e.g., os.ErrNotExist
+		return -fuse.ENOENT
+	}
+	for _, entry := range entries {
+		entryStat := &fuse.Stat_t{}
+		switch entry.(type) {
+		case *internal.DirEntry:
+			entryStat.Mode = fuse.S_IFDIR | 0755
+			entryStat.Nlink = 2
+		case *internal.FileEntry:
+			entryStat.Mode = fuse.S_IFREG | 0644
+			// TODO set size from metadata
+			entryStat.Size = 0
+		default:
+			// TODO better error handling or logging
+			continue
+		}
+		fill(entry.GetName(), entryStat, 0)
 	}
 
 	return 0
@@ -44,12 +62,32 @@ func (f *Fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 func (f *Fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	log.Printf("Getattr called for path: %s", path)
 
-	switch path {
-	case "/", "/testing", "/testing/hello", "/testing/world":
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 1 && parts[0] == "" {
+		// Root directory
 		stat.Mode = fuse.S_IFDIR | 0755
 		stat.Nlink = 2
 		return 0
+	}
+
+	_, entry, err := f.r.Lookup(parts)
+	if err != nil {
+		// FIXME distinguish errors, e.g., os.ErrNotExist
+		return -fuse.ENOENT
+	}
+
+	switch entry.(type) {
+	case *internal.DirEntry:
+		stat.Mode = fuse.S_IFDIR | 0755
+		stat.Nlink = 2
+		return 0
+	case *internal.FileEntry:
+		stat.Mode = fuse.S_IFREG | 0644
+		// TODO set size from metadata
+		stat.Size = 0
+		return 0
 	default:
+		// TODO better error handling or logging
 		return -fuse.ENOENT
 	}
 }

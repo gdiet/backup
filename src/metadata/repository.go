@@ -1,8 +1,9 @@
 package metadata
 
 import (
-	"backup/src/metadata/internal"
+	internal "backup/src/metadata/notinternal"
 	"fmt"
+	"log"
 	"os"
 
 	"go.etcd.io/bbolt"
@@ -26,7 +27,7 @@ import (
 // 40 key -> 8 refs 16 area = 24
 // bbolt management: 3*16 = 48
 
-const (
+const ( // FIXME store directly as []byte constants
 	bucketTree      = "tree"
 	bucketChildren  = "children"
 	bucketData      = "data"
@@ -150,6 +151,7 @@ func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err e
 
 		// Lookup the directory ID for the given path
 		idBytes, entry, err := internal.Lookup(tree, children, path)
+		log.Printf("Lookup result for path %v: idBytes=%v, entry=%v, err=%v", path, idBytes, entry, err)
 		if err != nil {
 			return err
 		}
@@ -176,6 +178,22 @@ func (r *Repository) ReaddirForID(id uint64) (entries []internal.TreeEntry, err 
 		return err
 	})
 	return entries, err
+}
+
+// Lookup looks up a path and returns the ID and tree entry.
+// Returns os.ErrNotExist if the path does not exist.
+func (r *Repository) Lookup(path []string) (id uint64, entry internal.TreeEntry, err error) {
+	err = r.db.View(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket([]byte(bucketTree))
+		children := internal.WrapBucket(tx.Bucket([]byte(bucketChildren)))
+		var idBytes []byte
+		if idBytes, entry, err = internal.Lookup(tree, children, path); err != nil {
+			return err
+		}
+		id = internal.B64u(idBytes)
+		return nil
+	})
+	return id, entry, err
 }
 
 // Close closes the repository database.
