@@ -21,7 +21,6 @@ func (e *DeserializationError) Error() string {
 // TreeEntry interface for directory and file entries
 type TreeEntry interface {
 	Name() string
-	IsDir() bool
 	Time() int64
 }
 
@@ -32,10 +31,6 @@ type DirEntry struct {
 
 func (d *DirEntry) Name() string {
 	return d.name
-}
-
-func (d *DirEntry) IsDir() bool {
-	return true
 }
 
 func (d *DirEntry) Time() int64 {
@@ -73,12 +68,12 @@ func (f *FileEntry) Name() string {
 	return f.name
 }
 
-func (f *FileEntry) IsDir() bool {
-	return false
-}
-
 func (f *FileEntry) Time() int64 {
 	return f.time
+}
+
+func (f *FileEntry) Size() int64 {
+	return B64i(f.dref[:8])
 }
 
 // NewFileEntry creates a new file entry

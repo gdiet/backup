@@ -2,6 +2,7 @@ package main
 
 import (
 	"backup/src/metadata"
+	"backup/src/util"
 	"log"
 	"os"
 	"strings"
@@ -41,17 +42,14 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 	}
 
 	for _, entry := range entries {
-		entryStat := &fuse.Stat_t{}
-		switch entry.(type) {
+		var entryStat *fuse.Stat_t
+		switch entry := entry.(type) {
 		case *metadata.DirEntry:
-			entryStat.Mode = fuse.S_IFDIR | 0755
-			entryStat.Nlink = 2
+			entryStat = dirStat()
 		case *metadata.FileEntry:
-			entryStat.Mode = fuse.S_IFREG | 0644
-			// TODO set size from metadata
-			entryStat.Size = 0
+			entryStat = fileStat(entry.Size())
 		default:
-			// TODO better error handling or logging
+			util.Assertf(false, "unknown entry type %T in Readdir", entry)
 			continue
 		}
 		fill(entry.Name(), entryStat, 0)
