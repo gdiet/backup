@@ -28,10 +28,11 @@ func TestReaddirEmptyDirectory(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		children, err := tx.CreateBucket([]byte("children"))
+		bboltChildren, err := tx.CreateBucket([]byte("children"))
 		if err != nil {
 			return err
 		}
+		children := WrapBucket(bboltChildren)
 
 		entries, err := ReaddirForID(tree, children, U64b(0))
 		if err != nil {
@@ -69,10 +70,11 @@ func TestReaddirWithChildren(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		children, err := tx.CreateBucket([]byte("children"))
+		bboltChildren, err := tx.CreateBucket([]byte("children"))
 		if err != nil {
 			return err
 		}
+		children := WrapBucket(bboltChildren)
 
 		parent := uint64(0)
 
@@ -176,10 +178,11 @@ func TestReaddirOrphanedChildren(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		children, err := tx.CreateBucket([]byte("children"))
+		bboltChildren, err := tx.CreateBucket([]byte("children"))
 		if err != nil {
 			return err
 		}
+		children := WrapBucket(bboltChildren)
 
 		parent := uint64(100)
 
@@ -255,10 +258,11 @@ func TestReaddirCorruptedEntry(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		children, err := tx.CreateBucket([]byte("children"))
+		bboltChildren, err := tx.CreateBucket([]byte("children"))
 		if err != nil {
 			return err
 		}
+		children := WrapBucket(bboltChildren)
 
 		parent := uint64(200)
 
@@ -312,10 +316,11 @@ func TestReaddirMultipleParents(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		children, err := tx.CreateBucket([]byte("children"))
+		bboltChildren, err := tx.CreateBucket([]byte("children"))
 		if err != nil {
 			return err
 		}
+		children := WrapBucket(bboltChildren)
 
 		// Create child for parent 0
 		parent0 := uint64(0)
@@ -394,10 +399,11 @@ func TestReaddirNonExistentParent(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		children, err := tx.CreateBucket([]byte("children"))
+		bboltChildren, err := tx.CreateBucket([]byte("children"))
 		if err != nil {
 			return err
 		}
+		children := WrapBucket(bboltChildren)
 
 		// Read from non-existent parent
 		entries, err := ReaddirForID(tree, children, U64b(999999))

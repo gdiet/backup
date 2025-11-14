@@ -79,7 +79,7 @@ func TestGetChild(t *testing.T) {
 	t.Run("FindExistingDirectory", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := make([]byte, 8) // Root ID (0)
 
 			childID, entry, err := getChild(tree, children, parentID, "testdir")
@@ -120,7 +120,7 @@ func TestGetChild(t *testing.T) {
 	t.Run("FindExistingFile", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := make([]byte, 8) // Root ID (0)
 
 			childID, entry, err := getChild(tree, children, parentID, "testfile.txt")
@@ -165,7 +165,7 @@ func TestGetChild(t *testing.T) {
 	t.Run("ChildNotFound", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := make([]byte, 8) // Root ID (0)
 
 			childID, entry, err := getChild(tree, children, parentID, "nonexistent")
@@ -191,7 +191,7 @@ func TestGetChild(t *testing.T) {
 	t.Run("ParentHasNoChildren", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := U64b(999) // Non-existent parent
 
 			childID, entry, err := getChild(tree, children, parentID, "anything")
@@ -218,7 +218,7 @@ func TestGetChild(t *testing.T) {
 		// Setup: Create a child that belongs to parent ID 1, then search under parent ID 2
 		err = db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			// Create a child entry under parent ID 1
 			parentID1 := uint64(1)
@@ -250,7 +250,7 @@ func TestGetChild(t *testing.T) {
 		// Test: Search under parent ID 2 (different parent)
 		err = db.View(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID2 := U64b(2) // Different parent
 
 			childID, entry, err := getChild(tree, children, parentID2, "isolated_child")
@@ -292,10 +292,11 @@ func TestGetChildErrorCases(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			children, err := tx.CreateBucket([]byte("children"))
+			bboltChildren, err := tx.CreateBucket([]byte("children"))
 			if err != nil {
 				return err
 			}
+			children := WrapBucket(bboltChildren)
 
 			// Create invalid child key (wrong length)
 			parentID := make([]byte, 8)
@@ -343,10 +344,11 @@ func TestGetChildErrorCases(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			children, err := tx.CreateBucketIfNotExists([]byte("children_corrupt"))
+			bboltChildren, err := tx.CreateBucketIfNotExists([]byte("children_corrupt"))
 			if err != nil {
 				return err
 			}
+			children := WrapBucket(bboltChildren)
 
 			// Create valid child key
 			parentID := make([]byte, 8)

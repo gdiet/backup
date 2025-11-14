@@ -2,6 +2,8 @@ package internal
 
 import (
 	"encoding/binary"
+
+	"go.etcd.io/bbolt"
 )
 
 // U64b converts an uint64 to a byte slice key for bbolt.
@@ -29,4 +31,31 @@ func I64w(buf []byte, i int64) {
 // B64i converts a byte slice to an int64.
 func B64i(b []byte) int64 {
 	return int64(binary.BigEndian.Uint64(b))
+}
+
+// Bucket is a minimal interface for bbolt.Bucket to allow mocking in tests.
+type Bucket interface {
+	Get(key []byte) []byte
+	Put(key, value []byte) error
+	B() *bbolt.Bucket
+}
+
+type bucket struct {
+	b *bbolt.Bucket
+}
+
+func (b *bucket) Get(k []byte) []byte {
+	return b.b.Get(k)
+}
+
+func (b *bucket) Put(k, v []byte) error {
+	return b.b.Put(k, v)
+}
+
+func (b *bucket) B() *bbolt.Bucket {
+	return b.b
+}
+
+func WrapBucket(b *bbolt.Bucket) Bucket {
+	return &bucket{b}
 }

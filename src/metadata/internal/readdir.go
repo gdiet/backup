@@ -8,8 +8,8 @@ import (
 )
 
 // ReaddirForID lists the entries under the specified parent directory. It does not check whether the parent exists.
-func ReaddirForID(tree, children *bbolt.Bucket, parentID []byte) (entries []TreeEntry, err error) {
-	cursor := children.Cursor()
+func ReaddirForID(tree *bbolt.Bucket, children Bucket, parentID []byte) (entries []TreeEntry, err error) {
+	cursor := children.B().Cursor()
 	parentPrefix := parentID
 
 	// Iterate through children

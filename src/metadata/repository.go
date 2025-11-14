@@ -131,7 +131,7 @@ func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
 	var err error
 	err = r.db.Update(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket([]byte(bucketTree))
-		children := tx.Bucket([]byte(bucketChildren))
+		children := internal.WrapBucket(tx.Bucket([]byte(bucketChildren)))
 		idBytes, err = internal.Mkdir(tree, children, internal.U64b(parent), name)
 		return err
 	})
@@ -146,7 +146,7 @@ func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
 func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket([]byte(bucketTree))
-		children := tx.Bucket([]byte(bucketChildren))
+		children := internal.WrapBucket(tx.Bucket([]byte(bucketChildren)))
 
 		// Lookup the directory ID for the given path
 		idBytes, entry, err := internal.Lookup(tree, children, path)
@@ -171,7 +171,7 @@ func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err e
 func (r *Repository) ReaddirForID(id uint64) (entries []internal.TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket([]byte(bucketTree))
-		children := tx.Bucket([]byte(bucketChildren))
+		children := internal.WrapBucket(tx.Bucket([]byte(bucketChildren)))
 		entries, err = internal.ReaddirForID(tree, children, internal.U64b(id))
 		return err
 	})

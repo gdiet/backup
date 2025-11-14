@@ -8,7 +8,24 @@ import (
 	"testing"
 
 	"go.etcd.io/bbolt"
+	"go.etcd.io/bbolt/errors"
 )
+
+type bucketFailsPut struct {
+	bucket *bbolt.Bucket
+}
+
+func (b *bucketFailsPut) Put(key, value []byte) error {
+	return os.ErrInvalid
+}
+
+func (b *bucketFailsPut) Get(key []byte) []byte {
+	return b.bucket.Get(key)
+}
+
+func (b *bucketFailsPut) B() *bbolt.Bucket {
+	return b.bucket
+}
 
 func TestMkdir(t *testing.T) {
 	// Create temporary database file
@@ -37,7 +54,7 @@ func TestMkdir(t *testing.T) {
 	t.Run("create directory successfully", func(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 			_, err = Mkdir(tree, children, U64b(0), "testdir")
 			return err
 		})
@@ -87,7 +104,7 @@ func TestMkdir(t *testing.T) {
 	t.Run("reject duplicate directory name", func(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 			_, err = Mkdir(tree, children, U64b(0), "testdir")
 			return err
 		})
@@ -100,7 +117,7 @@ func TestMkdir(t *testing.T) {
 	t.Run("create different directory name", func(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 			_, err = Mkdir(tree, children, U64b(0), "another")
 			return err
 		})
@@ -127,7 +144,7 @@ func TestMkdir(t *testing.T) {
 	t.Run("handle corrupted tree entry", func(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			// Manually insert corrupted tree entry
 			corruptedID := uint64(999)
@@ -178,10 +195,11 @@ func TestMkdir(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			children, err := tx.CreateBucket([]byte("children"))
+			bboltChildren, err := tx.CreateBucket([]byte("children"))
 			if err != nil {
 				return err
 			}
+			children := WrapBucket(bboltChildren)
 
 			// Create directory in completely empty tree (nextID should start at 0)
 			_, err = Mkdir(tree, children, U64b(0), "first")
@@ -230,7 +248,7 @@ func TestMkdir(t *testing.T) {
 		// Test error handling by trying to use mkdir in a read-only transaction
 		err := db.View(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			// This should fail because we're in a read-only transaction
 			_, err = Mkdir(tree, children, U64b(0), "readonly_test")
@@ -245,7 +263,7 @@ func TestMkdir(t *testing.T) {
 	t.Run("mkdir with file name conflict", func(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			// Create a file entry first
 			fileID := uint64(500)
@@ -277,7 +295,7 @@ func TestMkdir(t *testing.T) {
 	t.Run("mkdir with missing child entry in tree", func(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			// Create orphaned child relationship (child ID doesn't exist in tree)
 			orphanID := uint64(777)
@@ -332,7 +350,7 @@ func TestMkdir(t *testing.T) {
 		// Now test error by using read-only transaction for children bucket
 		err = childrenDB.View(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			// This should fail when trying to write to children bucket
 			_, err = Mkdir(tree, children, U64b(0), "children_error_test")
@@ -347,7 +365,7 @@ func TestMkdir(t *testing.T) {
 	t.Run("parent has children but no name conflict", func(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
 			tree := tx.Bucket([]byte("tree_entries"))
-			children := tx.Bucket([]byte("children"))
+			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			// Create a directory under parent 1 first
 			parent1 := uint64(1)
@@ -421,6 +439,31 @@ func TestMkdir(t *testing.T) {
 
 		if err != nil {
 			t.Errorf("Verification failed: %v", err)
+		}
+	})
+
+	t.Run("create directory fails at put children", func(t *testing.T) {
+		err := db.Update(func(tx *bbolt.Tx) error {
+			if err := tx.DeleteBucket([]byte("tree_entries")); err != nil && err != errors.ErrBucketNotFound {
+				return err
+			}
+			if err = tx.DeleteBucket([]byte("children")); err != nil && err != errors.ErrBucketNotFound {
+				return err
+			}
+			if _, err := tx.CreateBucket([]byte("tree_entries")); err != nil {
+				return err
+			}
+			if _, err = tx.CreateBucket([]byte("children")); err != nil {
+				return err
+			}
+
+			tree := tx.Bucket([]byte("tree_entries"))
+			children := &bucketFailsPut{bucket: tx.Bucket([]byte("children"))}
+			_, err = Mkdir(tree, children, U64b(0), "testdir")
+			return err
+		})
+		if err == nil {
+			t.Error("Expected error when trying to create directory with failing children bucket")
 		}
 	})
 

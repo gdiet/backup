@@ -19,8 +19,8 @@ func getNextTreeID(tree *bbolt.Bucket) []byte {
 
 // getChild searches for a child with the given name under the specified parent.
 // Returns the child ID as bytes and the tree entry, or os.ErrNotExist if not found.
-func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
-	cursor := children.Cursor()
+func getChild(tree *bbolt.Bucket, children Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
+	cursor := children.B().Cursor()
 	for k, _ := cursor.Seek(parentID); len(k) > 0; k, _ = cursor.Next() {
 		if !bytes.HasPrefix(k, parentID) {
 			break // No more children for this parent
