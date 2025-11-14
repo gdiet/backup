@@ -9,35 +9,37 @@ import (
 	"github.com/winfsp/cgofuse/fuse"
 )
 
-type Fs struct {
+type fs struct {
 	fuse.FileSystemBase
-	r *metadata.Repository
+	repo *metadata.Repository
 }
 
-func NewFs(r *metadata.Repository) *Fs {
-	return &Fs{r: r}
+func NewFs(repo *metadata.Repository) *fs {
+	return &fs{repo: repo}
 }
 
-func (f *Fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
+// Readdir reads the contents of a directory.
+// Returns -fuse.ENOENT if the path does not exist.
+// Returns -fuse.ENOTDIR if the path is not a directory.
+// Returns -fuse.EIO on other errors.
+func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
 	log.Printf("Readdir called for path: %s", path)
 
-	fill(".", &fuse.Stat_t{Mode: fuse.S_IFDIR | 0755, Nlink: 2}, 0)
-	fill("..", &fuse.Stat_t{Mode: fuse.S_IFDIR | 0755, Nlink: 2}, 0)
+	fill(".", dirStat(), 0)
+	fill("..", dirStat(), 0)
 
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	log.Printf("Readdir parts: %v - length %d", parts, len(parts))
-	var entries []metadata.TreeEntry
-	var err error
-	if len(parts) == 1 && parts[0] == "" {
-		entries, err = f.r.Readdir([]string{})
-	} else {
-		entries, err = f.r.Readdir(parts)
-	}
-	log.Printf("Readdir entries: %v, err: %v", entries, err)
-	if err != nil {
-		// TODO distinguish errors, e.g., os.ErrNotExist
+	entries, err := f.repo.Readdir(partsFrom(path))
+	switch err {
+	case nil:
+		// continue
+	case metadata.ErrNotFound:
 		return -fuse.ENOENT
+	case metadata.ErrNotDir:
+		return -fuse.ENOTDIR
+	default:
+		return -fuse.EIO
 	}
+
 	for _, entry := range entries {
 		entryStat := &fuse.Stat_t{}
 		switch entry.(type) {
@@ -58,7 +60,7 @@ func (f *Fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 	return 0
 }
 
-func (f *Fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
+func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	log.Printf("Getattr called for path: %s", path)
 
 	parts := strings.Split(strings.Trim(path, "/"), "/")
@@ -69,7 +71,7 @@ func (f *Fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 		return 0
 	}
 
-	_, entry, err := f.r.Lookup(parts)
+	_, entry, err := f.repo.Lookup(parts)
 	if err != nil {
 		// FIXME distinguish errors, e.g., os.ErrNotExist
 		return -fuse.ENOENT

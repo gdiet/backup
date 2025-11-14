@@ -1,7 +1,13 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
+)
+
+var (
+	ErrNotFound = errors.New("not found")
+	ErrNotDir   = errors.New("not a directory")
 )
 
 type DeserializationError struct {

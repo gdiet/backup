@@ -3,7 +3,6 @@ package metadata
 import (
 	"backup/src/metadata/internal"
 	"fmt"
-	"log"
 	"os"
 
 	"go.etcd.io/bbolt"
@@ -109,15 +108,15 @@ func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
 }
 
 // Readdir lists the entries under the specified directory.
-// Returns os.ErrNotExist if the directory does not exist.
-func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err error) {
+// Returns ErrNotFound if the directory does not exist.
+// Returns ErrNotDir if the path is not a directory.
+// Can return other errors.
+func (r *Repository) Readdir(path []string) (entries []TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket(treeKey)
 		children := internal.WrapBucket(tx.Bucket(childrenKey))
 
-		// Lookup the directory ID for the given path
-		idBytes, entry, err := internal.Lookup(tree, children, path)
-		log.Printf("Lookup result for path %v: idBytes=%v, entry=%v, err=%v", path, idBytes, entry, err)
+		id, entry, err := internal.Lookup(tree, children, path)
 		if err != nil {
 			return err
 		}
@@ -128,7 +127,7 @@ func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err e
 		}
 
 		// Read the directory contents
-		entries, err = internal.ReaddirForID(tree, children, idBytes)
+		entries, err = internal.ReaddirForID(tree, children, id)
 		return err
 	})
 	return entries, err

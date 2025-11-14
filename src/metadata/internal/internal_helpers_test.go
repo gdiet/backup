@@ -169,8 +169,8 @@ func TestGetChild(t *testing.T) {
 			parentID := make([]byte, 8) // Root ID (0)
 
 			childID, entry, err := getChild(tree, children, parentID, "nonexistent")
-			if err != os.ErrNotExist {
-				t.Errorf("Expected os.ErrNotExist, got: %v", err)
+			if err != ErrNotFound {
+				t.Errorf("Expected ErrNotFound, got: %v", err)
 			}
 
 			if childID != nil {
@@ -195,8 +195,8 @@ func TestGetChild(t *testing.T) {
 			parentID := U64b(999) // Non-existent parent
 
 			childID, entry, err := getChild(tree, children, parentID, "anything")
-			if err != os.ErrNotExist {
-				t.Errorf("Expected os.ErrNotExist, got: %v", err)
+			if err != ErrNotFound {
+				t.Errorf("Expected ErrNotFound, got: %v", err)
 			}
 
 			if childID != nil {
@@ -254,8 +254,8 @@ func TestGetChild(t *testing.T) {
 			parentID2 := U64b(2) // Different parent
 
 			childID, entry, err := getChild(tree, children, parentID2, "isolated_child")
-			if err != os.ErrNotExist {
-				t.Errorf("Expected os.ErrNotExist, got: %v", err)
+			if err != ErrNotFound {
+				t.Errorf("Expected ErrNotFound, got: %v", err)
 			}
 
 			if childID != nil {

@@ -15,7 +15,7 @@ func Mkdir(tree *bbolt.Bucket, children Bucket, parentID []byte, name string) ([
 	if err == nil {
 		return nil, os.ErrExist // Child already exists
 	}
-	if err != os.ErrNotExist {
+	if err != ErrNotFound {
 		return nil, err // Other error occurred
 	}
 

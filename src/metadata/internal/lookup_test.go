@@ -314,8 +314,8 @@ func TestLookup(t *testing.T) {
 			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			id, entry, err := Lookup(tree, children, []string{"nonexistent"})
-			if err != os.ErrNotExist {
-				t.Errorf("Expected os.ErrNotExist, got: %v", err)
+			if err != ErrNotFound {
+				t.Errorf("Expected ErrNotFound, got: %v", err)
 			}
 
 			if len(id) != 0 {
@@ -339,8 +339,8 @@ func TestLookup(t *testing.T) {
 			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			id, entry, err := Lookup(tree, children, []string{"docs", "nonexistent"})
-			if err != os.ErrNotExist {
-				t.Errorf("Expected os.ErrNotExist, got: %v", err)
+			if err != ErrNotFound {
+				t.Errorf("Expected ErrNotFound, got: %v", err)
 			}
 
 			if len(id) != 0 {
@@ -365,8 +365,8 @@ func TestLookup(t *testing.T) {
 			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			id, entry, err := Lookup(tree, children, []string{"docs", "readme.txt", "something"})
-			if err != os.ErrNotExist {
-				t.Errorf("Expected os.ErrNotExist when traversing through file, got: %v", err)
+			if err != ErrNotFound {
+				t.Errorf("Expected ErrNotFound when traversing through file, got: %v", err)
 			}
 
 			if len(id) != 0 {
