@@ -9,37 +9,18 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-// planned bbolt buckets for the file system metadata:
-// - tree entries (id -> dirEntry, fileEntry)
-// - children (parentID|childID -> {})
-// - data entries (len|hash -> dataEntry)
-// - free areas (start -> length)
-// - context (string -> string, e.g. version information)
-// entry id: uint64 (easier to handle than int64 in bbolt keys)
-// hash: blake3 256-bit hash, represented as 32 bytes
-
-// estimated average size of a file in the bbolt repository is 160 bytes
-// tree entries:
-// 8 key -> 1 type 8 time 40 dref 23 name = 72
-// children:
-// 16 key -> {} = 16
-// data entries:
-// 40 key -> 8 refs 16 area = 24
-// bbolt management: 3*16 = 48
-
-const ( // FIXME store directly as []byte constants
-	bucketTree      = "tree"
-	bucketChildren  = "children"
-	bucketData      = "data"
-	bucketFreeAreas = "free"
-	bucketContext   = "context"
+var ( // var for technical reasons, DO NOT MUTATE
+	treeKey      = []byte("tree")
+	childrenKey  = []byte("children")
+	dataKey      = []byte("data")
+	freeAreasKey = []byte("free")
 )
 
 type Repository struct {
 	db *bbolt.DB
 }
 
-// NewRepository creates or opens a repository at the specified file path, initializing buckets as needed.
+// NewRepository creates or opens a repository at the specified file path.
 func NewRepository(filePath string) (*Repository, error) {
 	db, err := bbolt.Open(filePath, 0600, nil)
 	if err != nil {
@@ -47,14 +28,14 @@ func NewRepository(filePath string) (*Repository, error) {
 	}
 	err = db.Update(func(tx *bbolt.Tx) error {
 		// Create buckets if needed
-		for _, bucketName := range []string{bucketTree, bucketChildren, bucketData, bucketFreeAreas, bucketContext} {
-			_, err := tx.CreateBucketIfNotExists([]byte(bucketName))
+		for _, bucketKey := range [][]byte{treeKey, childrenKey, dataKey, freeAreasKey} {
+			_, err := tx.CreateBucketIfNotExists(bucketKey)
 			if err != nil {
-				return fmt.Errorf("failed to create bucket %s: %w", bucketName, err)
+				return fmt.Errorf("failed to create bucket %s: %w", bucketKey, err)
 			}
 		}
 		// Initialize buckets
-		internal.InitializeFreeAreas(tx.Bucket([]byte(bucketFreeAreas)))
+		internal.InitializeFreeAreas(tx.Bucket(freeAreasKey))
 		return nil
 	})
 	if err != nil {
@@ -62,21 +43,6 @@ func NewRepository(filePath string) (*Repository, error) {
 		return nil, err
 	}
 	r := &Repository{db: db}
-	// FIXME temporary setup for testing, move to dev/prod switched initialization
-	// TODO: Only initialize test directories when needed, not for every repository
-	/*
-		id, err := r.Mkdir(0, "testing")
-		if err == nil {
-			_, err = r.Mkdir(id, "hello")
-		}
-		if err == nil {
-			_, err = r.Mkdir(id, "world")
-		}
-		if err != nil {
-			db.Close()
-			return nil, err
-		}
-	*/
 	return r, nil
 }
 
@@ -115,10 +81,10 @@ func (r *Repository) Rename(id uint64, newPath []string) error {
 // Returns syscall.ENOTEMPTY if trying to delete a non-empty directory.
 func (r *Repository) Unlink(id uint64) error {
 	err := r.db.Update(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket([]byte(bucketTree))
-		children := tx.Bucket([]byte(bucketChildren))
-		data := tx.Bucket([]byte(bucketData))
-		freeAreas := tx.Bucket([]byte(bucketFreeAreas))
+		tree := tx.Bucket(treeKey)
+		children := tx.Bucket(childrenKey)
+		data := tx.Bucket(dataKey)
+		freeAreas := tx.Bucket(freeAreasKey)
 		return internal.Unlink(tree, children, data, freeAreas, internal.U64b(id))
 	})
 	return err
@@ -131,8 +97,8 @@ func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
 	var idBytes []byte
 	var err error
 	err = r.db.Update(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket([]byte(bucketTree))
-		children := internal.WrapBucket(tx.Bucket([]byte(bucketChildren)))
+		tree := tx.Bucket(treeKey)
+		children := internal.WrapBucket(tx.Bucket(childrenKey))
 		idBytes, err = internal.Mkdir(tree, children, internal.U64b(parent), name)
 		return err
 	})
@@ -146,8 +112,8 @@ func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
 // Returns os.ErrNotExist if the directory does not exist.
 func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket([]byte(bucketTree))
-		children := internal.WrapBucket(tx.Bucket([]byte(bucketChildren)))
+		tree := tx.Bucket(treeKey)
+		children := internal.WrapBucket(tx.Bucket(childrenKey))
 
 		// Lookup the directory ID for the given path
 		idBytes, entry, err := internal.Lookup(tree, children, path)
@@ -172,8 +138,8 @@ func (r *Repository) Readdir(path []string) (entries []internal.TreeEntry, err e
 // TODO check whether we need both Readdir and ReaddirForID
 func (r *Repository) ReaddirForID(id uint64) (entries []internal.TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket([]byte(bucketTree))
-		children := internal.WrapBucket(tx.Bucket([]byte(bucketChildren)))
+		tree := tx.Bucket(treeKey)
+		children := internal.WrapBucket(tx.Bucket(childrenKey))
 		entries, err = internal.ReaddirForID(tree, children, internal.U64b(id))
 		return err
 	})
@@ -184,8 +150,8 @@ func (r *Repository) ReaddirForID(id uint64) (entries []internal.TreeEntry, err 
 // Returns os.ErrNotExist if the path does not exist.
 func (r *Repository) Lookup(path []string) (id uint64, entry internal.TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket([]byte(bucketTree))
-		children := internal.WrapBucket(tx.Bucket([]byte(bucketChildren)))
+		tree := tx.Bucket(treeKey)
+		children := internal.WrapBucket(tx.Bucket(childrenKey))
 		var idBytes []byte
 		if idBytes, entry, err = internal.Lookup(tree, children, path); err != nil {
 			return err

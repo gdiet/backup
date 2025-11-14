@@ -1,7 +1,7 @@
 package metadata
 
 import (
-	"backup/src/metadata/internal"
+	internal "backup/src/metadata/notinternal"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,11 +31,10 @@ func TestNewRepository(t *testing.T) {
 	err = repo.db.View(func(tx *bbolt.Tx) error {
 		// Check all buckets exist
 		buckets := [][]byte{
-			[]byte(bucketTree),
-			[]byte(bucketChildren),
-			[]byte(bucketData),
-			[]byte(bucketFreeAreas),
-			[]byte(bucketContext),
+			[]byte(treeKey),
+			[]byte(childrenKey),
+			[]byte(dataKey),
+			[]byte(freeAreasKey),
 		}
 
 		for _, bucketName := range buckets {
@@ -46,7 +45,7 @@ func TestNewRepository(t *testing.T) {
 		}
 
 		// Check free areas was initialized
-		freeAreasBucket := tx.Bucket([]byte(bucketFreeAreas))
+		freeAreasBucket := tx.Bucket([]byte(freeAreasKey))
 		if freeAreasBucket == nil {
 			t.Fatal("Free areas bucket not found")
 		}
@@ -99,7 +98,7 @@ func TestNewRepositoryReopening(t *testing.T) {
 
 	// Verify free areas still has only one entry (not re-initialized)
 	err = repo2.db.View(func(tx *bbolt.Tx) error {
-		freeAreasBucket := tx.Bucket([]byte(bucketFreeAreas))
+		freeAreasBucket := tx.Bucket([]byte(freeAreasKey))
 		stats := freeAreasBucket.Stats()
 		if stats.KeyN != 1 {
 			t.Errorf("Expected 1 free area entry after reopening, got %d", stats.KeyN)
@@ -237,8 +236,8 @@ func TestRepositoryMkdir(t *testing.T) {
 
 	// Verify directory was created by checking the internal state
 	err = repo.db.View(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket([]byte(bucketTree))
-		children := tx.Bucket([]byte(bucketChildren))
+		tree := tx.Bucket([]byte(treeKey))
+		children := tx.Bucket([]byte(childrenKey))
 
 		// Should have exactly one tree entry now
 		stats := tree.Stats()
@@ -294,7 +293,7 @@ func TestRepositoryMkdir(t *testing.T) {
 
 	// Verify both directories exist
 	err = repo.db.View(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket([]byte(bucketTree))
+		tree := tx.Bucket([]byte(treeKey))
 
 		// Should have exactly two tree entries now
 		stats := tree.Stats()
@@ -313,8 +312,8 @@ func TestRepositoryMkdir(t *testing.T) {
 	t.Run("name conflict with file", func(t *testing.T) {
 		// Create a file entry manually to test conflict
 		err := repo.db.Update(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte(bucketTree))
-			children := tx.Bucket([]byte(bucketChildren))
+			tree := tx.Bucket([]byte(treeKey))
+			children := tx.Bucket([]byte(childrenKey))
 
 			// Create a file entry
 			fileID := uint64(100)
@@ -431,8 +430,8 @@ func TestRepositoryReaddir(t *testing.T) {
 
 		// Manually create a file entry under the same parent for testing
 		err = repo.db.Update(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte(bucketTree))
-			children := tx.Bucket([]byte(bucketChildren))
+			tree := tx.Bucket([]byte(treeKey))
+			children := tx.Bucket([]byte(childrenKey))
 
 			// Create a file entry
 			fileID := uint64(200)
