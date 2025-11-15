@@ -13,6 +13,7 @@ func Mkdir(tree *bbolt.Bucket, children Bucket, parentID []byte, name string) ([
 	// Check if child with name already exists
 	_, _, err := getChild(tree, children, parentID, name)
 	if err == nil {
+		// FIXME use package error
 		return nil, os.ErrExist // Child already exists
 	}
 	if err != ErrNotFound {

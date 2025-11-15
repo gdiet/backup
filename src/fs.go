@@ -38,6 +38,7 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 	case metadata.ErrNotDir:
 		return -fuse.ENOTDIR
 	default:
+		util.AssertionFailedf("unexpected error %v in Readdir", err)
 		return -fuse.EIO
 	}
 
@@ -49,7 +50,7 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 		case *metadata.FileEntry:
 			entryStat = fileStat(entry.Size())
 		default:
-			util.Assertf(false, "unknown entry type %T in Readdir", entry)
+			util.AssertionFailedf("unexpected entry type %T in Readdir", entry)
 			continue
 		}
 		fill(entry.Name(), entryStat, 0)
@@ -58,6 +59,9 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 	return 0
 }
 
+// Getattr gets the attributes of a file or directory.
+// Returns -fuse.ENOENT if the path does not exist.
+// Returns -fuse.EIO on other errors.
 func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	log.Printf("Getattr called for path: %s", path)
 
@@ -70,23 +74,27 @@ func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	}
 
 	_, entry, err := f.repo.Lookup(parts)
-	if err != nil {
-		// FIXME distinguish errors, e.g., os.ErrNotExist
+	switch err {
+	case nil:
+		// continue
+	case metadata.ErrNotFound:
 		return -fuse.ENOENT
+	default:
+		util.AssertionFailedf("unexpected error %v in Getattr", err)
+		return -fuse.EIO
 	}
 
-	switch entry.(type) {
+	switch entry := entry.(type) {
 	case *metadata.DirEntry:
 		stat.Mode = fuse.S_IFDIR | 0755
 		stat.Nlink = 2
 		return 0
 	case *metadata.FileEntry:
 		stat.Mode = fuse.S_IFREG | 0644
-		// TODO set size from metadata
-		stat.Size = 0
+		stat.Size = entry.Size()
 		return 0
 	default:
-		// TODO better error handling or logging
+		util.AssertionFailedf("unexpected entry type %T in Getattr", entry)
 		return -fuse.ENOENT
 	}
 }
