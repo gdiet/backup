@@ -13,6 +13,7 @@
     "buf",
     "cgofuse",
     "Dref",
+    "dref",
     "Getattr",
     "winfsp"
   ]

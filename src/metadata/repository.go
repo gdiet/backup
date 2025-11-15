@@ -75,19 +75,19 @@ func (r *Repository) Rename(id uint64, newPath []string) error {
 	panic("not implemented")
 }
 
-// Unlink deletes a file or directory from the filesystem.
-// Returns os.ErrNotExist if the entry does not exist.
-// Returns syscall.ENOTEMPTY if trying to delete a non-empty directory.
-func (r *Repository) Unlink(id uint64) error {
-	err := r.db.Update(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket(treeKey)
-		children := tx.Bucket(childrenKey)
-		data := tx.Bucket(dataKey)
-		freeAreas := tx.Bucket(freeAreasKey)
-		return internal.Unlink(tree, children, data, freeAreas, internal.U64b(id))
-	})
-	return err
-}
+// // Unlink deletes a file or directory from the filesystem.
+// // Returns os.ErrNotExist if the entry does not exist.
+// // Returns syscall.ENOTEMPTY if trying to delete a non-empty directory.
+// func (r *Repository) Unlink(id uint64) error {
+// 	err := r.db.Update(func(tx *bbolt.Tx) error {
+// 		tree := tx.Bucket(treeKey)
+// 		children := tx.Bucket(childrenKey)
+// 		data := tx.Bucket(dataKey)
+// 		freeAreas := tx.Bucket(freeAreasKey)
+// 		return internal.Unlink(tree, children, data, freeAreas, internal.U64b(id))
+// 	})
+// 	return err
+// }
 
 // Mkdir creates a new directory. It does not check whether the parent exists.
 // Returns the ID of the newly created directory.

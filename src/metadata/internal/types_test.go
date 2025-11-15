@@ -55,41 +55,41 @@ func TestFileEntryToBytes(t *testing.T) {
 }
 
 func TestTreeEntryFromBytesDirectory(t *testing.T) {
-	// Create a directory entry by directly building the binary format
-	data := []byte{0, 'd', 'o', 'c', 'u', 'm', 'e', 'n', 't', 's'}
+	data := append([]byte{0}, []byte("documents")...) // type 0 + name
 
 	result, err := treeEntryFromBytes(data)
 	if err != nil {
 		t.Fatalf("Failed to parse directory entry: %v", err)
 	}
 
-	dirEntry, ok := result.(*DirEntry)
+	if result.Name() != "documents" {
+		t.Errorf("Expected name 'documents', got '%s'", result.Name())
+	}
+
+	_, ok := result.(*DirEntry)
 	if !ok {
 		t.Fatal("Expected *DirEntry, got different type")
 	}
 
-	if dirEntry.Name() != "documents" {
-		t.Errorf("Expected name 'documents', got '%s'", dirEntry.Name())
-	}
 }
 
 func TestTreeEntryFromBytesFile(t *testing.T) {
 	// Create test data for file: type(1) + time(8) + dref(40) + name
-	data := make([]byte, 1+8+40+len("readme.md"))
-	data[0] = 1 // type byte 1
-
-	// Set time to 1640995200000 (2022-01-01 00:00:00 UTC in milliseconds)
-	I64w(data[1:9], 1640995200000)
-
-	// Set some data reference bytes
-	copy(data[9:49], make([]byte, 40)) // zeros for simplicity
-
-	// Set filename
-	copy(data[49:], []byte("readme.md"))
+	fileName := "readme.md"
+	data := make([]byte, 1+8+40+len(fileName))
+	data[0] = 1                    // type 1
+	I64w(data[1:9], 1640995200000) // time
+	U64w(data[9:17], 7631)         // size in dref
+	// hash bytes can be zero for this test
+	copy(data[49:], []byte(fileName)) // file name
 
 	result, err := treeEntryFromBytes(data)
 	if err != nil {
 		t.Fatalf("Failed to parse file entry: %v", err)
+	}
+
+	if result.Name() != fileName {
+		t.Errorf("Expected name '%s', got '%s'", fileName, result.Name())
 	}
 
 	fileEntry, ok := result.(*FileEntry)
@@ -97,13 +97,14 @@ func TestTreeEntryFromBytesFile(t *testing.T) {
 		t.Fatal("Expected *FileEntry, got different type")
 	}
 
-	if fileEntry.Name() != "readme.md" {
-		t.Errorf("Expected name 'readme.md', got '%s'", fileEntry.Name())
+	if fileEntry.Time() != 1640995200000 {
+		t.Errorf("Expected time 1640995200000, got %d", fileEntry.Time())
 	}
 
-	if fileEntry.time != 1640995200000 {
-		t.Errorf("Expected time 1640995200000, got %d", fileEntry.time)
+	if fileEntry.Size() != 7631 {
+		t.Errorf("Expected size 7631, got %d", fileEntry.Size())
 	}
+
 }
 
 func TestDataEntryRoundtrip(t *testing.T) {
@@ -117,7 +118,7 @@ func TestDataEntryRoundtrip(t *testing.T) {
 
 	data := original.ToBytes()
 
-	restored, err := DataEntryFromBytes(data)
+	restored, err := dataEntryFromBytes(data)
 	if err != nil {
 		t.Fatalf("Failed to parse data entry: %v", err)
 	}
@@ -147,7 +148,7 @@ func TestDataEntryMaxValues(t *testing.T) {
 	}
 
 	data := entry.ToBytes()
-	restored, err := DataEntryFromBytes(data)
+	restored, err := dataEntryFromBytes(data)
 	if err != nil {
 		t.Fatalf("Failed to handle max values: %v", err)
 	}
@@ -166,7 +167,7 @@ func TestDataEntryFromBytesErrors(t *testing.T) {
 	t.Run("TooShort", func(t *testing.T) {
 		// Less than 8 bytes
 		data := []byte{1, 2, 3}
-		_, err := DataEntryFromBytes(data)
+		_, err := dataEntryFromBytes(data)
 		if err == nil {
 			t.Error("Expected error for data too short")
 		}
@@ -179,7 +180,7 @@ func TestDataEntryFromBytesErrors(t *testing.T) {
 	t.Run("InvalidLength", func(t *testing.T) {
 		// Length not matching 8 + 16*n format (e.g., 15 bytes = 8 + 7, not divisible by 16)
 		data := make([]byte, 15)
-		_, err := DataEntryFromBytes(data)
+		_, err := dataEntryFromBytes(data)
 		if err == nil {
 			t.Error("Expected error for invalid length")
 		}
@@ -255,7 +256,7 @@ func TestDataEntryEmpty(t *testing.T) {
 		t.Errorf("Expected 8 bytes for empty areas, got %d", len(data))
 	}
 
-	restored, err := DataEntryFromBytes(data)
+	restored, err := dataEntryFromBytes(data)
 	if err != nil {
 		t.Fatalf("Failed to parse empty data entry: %v", err)
 	}

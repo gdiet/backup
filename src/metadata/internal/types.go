@@ -8,6 +8,7 @@ import (
 var (
 	ErrNotFound = errors.New("not found")
 	ErrNotDir   = errors.New("not a directory")
+	ErrNotEmpty = errors.New("directory not empty")
 )
 
 type DeserializationError struct {
@@ -21,7 +22,6 @@ func (e *DeserializationError) Error() string {
 // TreeEntry interface for directory and file entries
 type TreeEntry interface {
 	Name() string
-	Time() int64
 }
 
 // DirEntry represents a directory entry
@@ -31,10 +31,6 @@ type DirEntry struct {
 
 func (d *DirEntry) Name() string {
 	return d.name
-}
-
-func (d *DirEntry) Time() int64 {
-	return 0
 }
 
 func (d *DirEntry) ToBytes() []byte {
@@ -114,7 +110,7 @@ func (d *DataEntry) ToBytes() []byte {
 	return buf
 }
 
-func DataEntryFromBytes(data []byte) (DataEntry, error) {
+func dataEntryFromBytes(data []byte) (DataEntry, error) {
 	// 8 bytes reference count + 16 bytes per area
 	dataLen := len(data)
 	if dataLen < 8 || dataLen%16 != 8 {

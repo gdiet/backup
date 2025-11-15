@@ -2,7 +2,6 @@ package internal
 
 import (
 	"bytes"
-	"fmt"
 
 	"go.etcd.io/bbolt"
 )
@@ -18,10 +17,11 @@ func getNextTreeID(tree *bbolt.Bucket) []byte {
 }
 
 // treeEntry retrieves a TreeEntry by its ID bytes
+// Returns ErrNotFound if the entry does not exist.
 func treeEntry(tree *bbolt.Bucket, id []byte) (TreeEntry, error) {
 	bytes := tree.Get(id)
-	if bytes == nil { // TODO check - ENOTFOUND?
-		return nil, fmt.Errorf("orphaned tree entry for ID %x", id)
+	if bytes == nil {
+		return nil, ErrNotFound
 	}
 	return treeEntryFromBytes(bytes)
 }

@@ -6,6 +6,8 @@ import (
 	"go.etcd.io/bbolt"
 )
 
+// InitializeFreeAreas initializes the free areas bucket if it is empty.
+// It adds a single free area covering the entire addressable space.
 func InitializeFreeAreas(freeAreas *bbolt.Bucket) error {
 	if freeAreas.Stats().KeyN == 0 {
 		// Add initial free area: 0 -> MaxInt64

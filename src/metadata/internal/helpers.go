@@ -35,17 +35,12 @@ func B64i(b []byte) int64 {
 
 // Bucket is a minimal interface for bbolt.Bucket to allow mocking in tests.
 type Bucket interface {
-	Get(key []byte) []byte
 	Put(key, value []byte) error
 	B() *bbolt.Bucket
 }
 
 type bucket struct {
 	b *bbolt.Bucket
-}
-
-func (b *bucket) Get(k []byte) []byte {
-	return b.b.Get(k)
 }
 
 func (b *bucket) Put(k, v []byte) error {
