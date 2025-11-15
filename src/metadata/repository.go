@@ -3,7 +3,6 @@ package metadata
 import (
 	"backup/src/metadata/internal"
 	"fmt"
-	"os"
 
 	"go.etcd.io/bbolt"
 )
@@ -45,35 +44,35 @@ func NewRepository(filePath string) (*Repository, error) {
 	return r, nil
 }
 
-// Rename renames a directory or file, moving it between directories if required.
-// Returns ENOENT if id does not exist.
-// Returns ENOENT if parent of newpath does not exist.
-// Returns ENOTDIR if parent of newpath is a file.
-// Returns EISDIR if id is a file and newpath is a dir.
-// Returns ENOTEMPTY if newpath is a nonempty directory.
-/*
-   If newpath already exists, it will be atomically replaced, so that
-   there is no point at which another process attempting to access
-   newpath will find it missing.  However, there will probably be a
-   window in which both oldpath and newpath refer to the file being
-   renamed.
+// // Rename renames a directory or file, moving it between directories if required.
+// // Returns ENOENT if id does not exist.
+// // Returns ENOENT if parent of newpath does not exist.
+// // Returns ENOTDIR if parent of newpath is a file.
+// // Returns EISDIR if id is a file and newpath is a dir.
+// // Returns ENOTEMPTY if newpath is a nonempty directory.
+// /*
+//    If newpath already exists, it will be atomically replaced, so that
+//    there is no point at which another process attempting to access
+//    newpath will find it missing.  However, there will probably be a
+//    window in which both oldpath and newpath refer to the file being
+//    renamed.
 
-   If oldpath and newpath are existing hard links referring to the
-   same file, then rename() does nothing, and returns a success
-   status.
+//    If oldpath and newpath are existing hard links referring to the
+//    same file, then rename() does nothing, and returns a success
+//    status.
 
-   If newpath exists but the operation fails for some reason,
-   rename() guarantees to leave an instance of newpath in place.
+//    If newpath exists but the operation fails for some reason,
+//    rename() guarantees to leave an instance of newpath in place.
 
-   oldpath can specify a directory.  In this case, newpath must
-   either not exist, or it must specify an empty directory.
+//    oldpath can specify a directory.  In this case, newpath must
+//    either not exist, or it must specify an empty directory.
 
-   If oldpath refers to a symbolic link, the link is renamed; if
-   newpath refers to a symbolic link, the link will be overwritten.
-*/
-func (r *Repository) Rename(id uint64, newPath []string) error {
-	panic("not implemented")
-}
+//    If oldpath refers to a symbolic link, the link is renamed; if
+//    newpath refers to a symbolic link, the link will be overwritten.
+// */
+// func (r *Repository) Rename(id uint64, newPath []string) error {
+// 	panic("not implemented")
+// }
 
 // // Unlink deletes a file or directory from the filesystem.
 // // Returns os.ErrNotExist if the entry does not exist.
@@ -122,24 +121,12 @@ func (r *Repository) Readdir(path []string) (entries []TreeEntry, err error) {
 		}
 
 		// Ensure the target is a directory
-		if _, isDir := entry.(*internal.DirEntry); !isDir {
-			return os.ErrNotExist
+		if _, isDir := entry.(*DirEntry); !isDir {
+			return ErrNotDir
 		}
 
 		// Read the directory contents
 		entries, err = internal.ReaddirForID(tree, children, id)
-		return err
-	})
-	return entries, err
-}
-
-// ReaddirForID lists the entries under the specified directory. It does not check whether the directory exists.
-// TODO check whether we need both Readdir and ReaddirForID
-func (r *Repository) ReaddirForID(id uint64) (entries []TreeEntry, err error) {
-	err = r.db.View(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket(treeKey)
-		children := internal.WrapBucket(tx.Bucket(childrenKey))
-		entries, err = internal.ReaddirForID(tree, children, internal.U64b(id))
 		return err
 	})
 	return entries, err
