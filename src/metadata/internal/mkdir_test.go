@@ -11,6 +11,7 @@ import (
 	"go.etcd.io/bbolt/errors"
 )
 
+// TODO move to internal/testutils package
 type bucketFailsPut struct {
 	bucket *bbolt.Bucket
 }
@@ -109,8 +110,8 @@ func TestMkdir(t *testing.T) {
 			return err
 		})
 
-		if err != os.ErrExist {
-			t.Errorf("Expected os.ErrExist for duplicate name, got: %v", err)
+		if err != ErrExists {
+			t.Errorf("Expected ErrExists for duplicate name, got: %v", err)
 		}
 	})
 
@@ -287,8 +288,8 @@ func TestMkdir(t *testing.T) {
 			return err
 		})
 
-		if err != os.ErrExist {
-			t.Errorf("Expected os.ErrExist for file name conflict, got: %v", err)
+		if err != ErrExists {
+			t.Errorf("Expected ErrExists for file name conflict, got: %v", err)
 		}
 	})
 

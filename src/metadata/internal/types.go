@@ -6,9 +6,10 @@ import (
 )
 
 var (
-	ErrNotFound = errors.New("not found")
+	ErrExists   = errors.New("entry already exists")
 	ErrNotDir   = errors.New("not a directory")
 	ErrNotEmpty = errors.New("directory not empty")
+	ErrNotFound = errors.New("not found")
 )
 
 type DeserializationError struct {

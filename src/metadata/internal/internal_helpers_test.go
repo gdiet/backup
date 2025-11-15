@@ -417,7 +417,10 @@ func TestGetNextTreeID(t *testing.T) {
 				return err
 			}
 
-			nextID := getNextTreeID(tree)
+			nextID, err := getNextTreeID(tree)
+			if err != nil {
+				return err
+			}
 
 			if len(nextID) != 8 {
 				t.Errorf("Expected ID length 8, got %d", len(nextID))
@@ -444,23 +447,39 @@ func TestGetNextTreeID(t *testing.T) {
 			}
 
 			// Add some existing entries
-			err = tree.Put(U64b(5), []byte("dummy1"))
+			var id []byte
+			id, err = getNextTreeID(tree)
 			if err != nil {
 				return err
 			}
-			err = tree.Put(U64b(2), []byte("dummy2"))
+			err = tree.Put(id, []byte("dummy1"))
 			if err != nil {
 				return err
 			}
-			err = tree.Put(U64b(10), []byte("dummy3"))
+			id, err = getNextTreeID(tree)
+			if err != nil {
+				return err
+			}
+			err = tree.Put(id, []byte("dummy2"))
+			if err != nil {
+				return err
+			}
+			id, err = getNextTreeID(tree)
+			if err != nil {
+				return err
+			}
+			err = tree.Put(id, []byte("dummy3"))
 			if err != nil {
 				return err
 			}
 
 			// Should return 11 (highest + 1)
-			nextID := getNextTreeID(tree)
+			nextID, err := getNextTreeID(tree)
+			if err != nil {
+				return err
+			}
 			actualID := B64u(nextID)
-			expectedID := uint64(11)
+			expectedID := uint64(4)
 
 			if actualID != expectedID {
 				t.Errorf("Expected next ID %d, got %d", expectedID, actualID)

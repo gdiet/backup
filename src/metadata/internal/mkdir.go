@@ -1,8 +1,6 @@
 package internal
 
 import (
-	"os"
-
 	"go.etcd.io/bbolt"
 )
 
@@ -13,17 +11,19 @@ func Mkdir(tree *bbolt.Bucket, children Bucket, parentID []byte, name string) ([
 	// Check if child with name already exists
 	_, _, err := getChild(tree, children, parentID, name)
 	if err == nil {
-		// FIXME use package error
-		return nil, os.ErrExist // Child already exists
+		return nil, ErrExists
 	}
 	if err != ErrNotFound {
 		return nil, err // Other error occurred
 	}
 
-	nextID := getNextTreeID(tree)
+	nextID, err := getNextTreeID(tree)
+	if err != nil {
+		return nil, err
+	}
 	dirEntry := NewDirEntry(name)
 	if err = tree.Put(nextID, dirEntry.ToBytes()); err != nil {
-		return nil, err
+		return nil, err // TODO for coverage, we need to mock the tree bucket
 	}
 
 	// create parent-child relationship
