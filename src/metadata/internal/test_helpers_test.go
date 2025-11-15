@@ -2,7 +2,7 @@ package internal
 
 import (
 	"bytes"
-	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 
@@ -15,26 +15,19 @@ func nextId() uint64 {
 	return counter.Add(1)
 }
 
-// testDB sets up a temporary bbolt DB for testing.
-// Returns the database instance and a cleanup function to close and remove the database file.
-func testDB(t *testing.T) (*bbolt.DB, func()) {
+// TempFile provides a temporary file for testing.
+// The containing directory is automatically removed when the test and all its subtests complete.
+func TempFile(t *testing.T) string {
 	t.Helper()
-	tempFile, err := os.CreateTemp("", "test-*.db")
-	if err != nil {
-		t.Fatalf("Failed to create temp file: %v", err)
-	}
-	if err := tempFile.Close(); err != nil {
-		t.Fatalf("Failed to close temp file: %v", err)
-	}
-	db, err := bbolt.Open(tempFile.Name(), 0600, nil)
-	if err != nil {
-		os.Remove(tempFile.Name())
-		t.Fatalf("Failed to open database: %v", err)
-	}
-	return db, func() {
-		db.Close()
-		os.Remove(tempFile.Name())
-	}
+	return filepath.Join(t.TempDir(), "testfile")
+}
+
+// testDB sets up a temporary bbolt DB for testing.
+// The containing directory is automatically removed when the test and all its subtests complete.
+func testDB(t *testing.T) *bbolt.DB {
+	t.Helper()
+	db, _ := bbolt.Open(TempFile(t), 0600, nil)
+	return db
 }
 
 // testBucket creates a new bucket for testing purposes.

@@ -8,7 +8,6 @@ import (
 
 // InitializeFreeAreas initializes the free areas bucket if it is empty.
 // It adds a single free area covering the entire addressable space.
-// FIXME log.Printf vs. fmt.Printf
 func InitializeFreeAreas(freeAreas *bbolt.Bucket) error {
 	firstKey, _ := freeAreas.Cursor().First()
 	if len(firstKey) == 0 {
