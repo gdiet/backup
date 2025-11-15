@@ -7,7 +7,7 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-var ( // var for technical reasons, DO NOT MUTATE
+var ( // var for technical reasons. DO NOT MUTATE.
 	treeKey      = []byte("tree")
 	childrenKey  = []byte("children")
 	dataKey      = []byte("data")
@@ -20,6 +20,11 @@ type Repository struct {
 
 // NewRepository creates or opens a repository at the specified file path.
 func NewRepository(filePath string) (*Repository, error) {
+	return newRepository(filePath, treeKey, childrenKey, dataKey, freeAreasKey)
+}
+
+// newRepository can be used for testing with custom bucket keys.
+func newRepository(filePath string, treeKey, childrenKey, dataKey, freeAreasKey []byte) (*Repository, error) {
 	db, err := bbolt.Open(filePath, 0600, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open bbolt database: %w", err)
@@ -106,7 +111,7 @@ func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
 	return internal.B64u(idBytes), nil
 }
 
-// Readdir lists the entries under the specified directory.
+// Readdir lists the entries under the specified directory (nil or empty for root).
 // Returns ErrNotFound if the directory does not exist.
 // Returns ErrNotDir if the path is not a directory.
 // Can return other errors.

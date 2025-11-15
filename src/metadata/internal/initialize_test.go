@@ -9,6 +9,7 @@ import (
 
 func TestInitializeFreeAreas(t *testing.T) {
 	db := testDB(t)
+	defer db.Close()
 
 	t.Run("An empty bucket is initialized with the right entry", func(t *testing.T) {
 		freeAreas, cleanupBucket := testBucket(t, db)

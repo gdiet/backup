@@ -1,32 +1,18 @@
 package internal
 
 import (
+	u "backup/src/util_test"
 	"bytes"
-	"path/filepath"
-	"sync/atomic"
 	"testing"
 
 	"go.etcd.io/bbolt"
 )
 
-var counter atomic.Uint64
-
-func nextId() uint64 {
-	return counter.Add(1)
-}
-
-// TempFile provides a temporary file for testing.
-// The containing directory is automatically removed when the test and all its subtests complete.
-func TempFile(t *testing.T) string {
-	t.Helper()
-	return filepath.Join(t.TempDir(), "testfile")
-}
-
 // testDB sets up a temporary bbolt DB for testing.
 // The containing directory is automatically removed when the test and all its subtests complete.
 func testDB(t *testing.T) *bbolt.DB {
 	t.Helper()
-	db, _ := bbolt.Open(TempFile(t), 0600, nil)
+	db, _ := bbolt.Open(u.TempFile(t), 0600, nil)
 	return db
 }
 
@@ -34,7 +20,7 @@ func testDB(t *testing.T) *bbolt.DB {
 // Returns the bucket and a cleanup function to delete it.
 func testBucket(t *testing.T, db *bbolt.DB) ([]byte, func()) {
 	t.Helper()
-	id := U64b(nextId())
+	id := U64b(u.NextId())
 	err := db.Update(func(tx *bbolt.Tx) error {
 		var err error
 		_, err = tx.CreateBucket(id)
