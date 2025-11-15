@@ -8,6 +8,7 @@ import (
 
 // getNextTreeID returns the next available tree entry ID as bytes.
 // Start from 1, since 0 is reserved for root.
+// TODO check https://github.com/etcd-io/bbolt?tab=readme-ov-file#autoincrementing-integer-for-the-bucket
 func getNextTreeID(tree *bbolt.Bucket) []byte {
 	var nextID uint64 = 1
 	if bytes, _ := tree.Cursor().Last(); bytes != nil {
