@@ -6,7 +6,8 @@ import (
 )
 
 var (
-	ErrExists   = errors.New("entry already exists")
+	ErrExists   = errors.New("already exists")
+	ErrIsRoot   = errors.New("is root directory")
 	ErrNotDir   = errors.New("not a directory")
 	ErrNotEmpty = errors.New("directory not empty")
 	ErrNotFound = errors.New("not found")

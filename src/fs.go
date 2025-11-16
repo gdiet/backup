@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/winfsp/cgofuse/fuse"
 )
@@ -39,6 +40,31 @@ func (f *fs) Mkdir(path string, mode uint32) int {
 		return -fuse.EEXIST
 	default:
 		util.AssertionFailedf("unexpected error %v in Mkdir", err)
+		return -fuse.EIO
+	}
+}
+
+// Rmdir removes a directory.
+// Returns -fuse.ENOENT if the path does not exist.
+// Returns -fuse.ENOTDIR if the path is not a directory.
+// Returns -fuse.ENOTEMPTY if the directory is not empty.
+// Returns -fuse.EBUSY if the directory is the root.
+func (f *fs) Rmdir(path string) int {
+	log.Printf("Rmdir %s", path)
+	err := f.repo.Rmdir(partsFrom(path))
+	switch err {
+	case nil:
+		return 0
+	case metadata.ErrNotFound:
+		return -fuse.ENOENT
+	case metadata.ErrNotDir:
+		return -fuse.ENOTDIR
+	case metadata.ErrNotEmpty:
+		return -fuse.ENOTEMPTY
+	case metadata.ErrIsRoot:
+		return -fuse.EBUSY
+	default:
+		util.AssertionFailedf("unexpected error %v in Rmdir", err)
 		return -fuse.EIO
 	}
 }
@@ -89,11 +115,13 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	log.Printf("Getattr %s", path)
 
+	// set stat for directory, will be overwritten if it's a file
+	stat.Mode = fuse.S_IFDIR | 0755
+	stat.Nlink = 2
+	stat.Mtim = fuse.NewTimespec(time.Now())
+
 	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) == 1 && parts[0] == "" {
-		// Root directory
-		stat.Mode = fuse.S_IFDIR | 0755
-		stat.Nlink = 2
+	if len(parts) == 1 && parts[0] == "" { // Root directory
 		return 0
 	}
 
@@ -110,8 +138,6 @@ func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 
 	switch entry := entry.(type) {
 	case *metadata.DirEntry:
-		stat.Mode = fuse.S_IFDIR | 0755
-		stat.Nlink = 2
 		return 0
 	case *metadata.FileEntry:
 		stat.Mode = fuse.S_IFREG | 0644

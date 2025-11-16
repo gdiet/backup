@@ -82,7 +82,7 @@ func TestGetChild(t *testing.T) {
 			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := make([]byte, 8) // Root ID (0)
 
-			childID, entry, err := getChild(tree, children, parentID, "testdir")
+			childID, entry, err := GetChild(tree, children, parentID, "testdir")
 			if err != nil {
 				t.Errorf("Expected no error, got: %v", err)
 			}
@@ -123,7 +123,7 @@ func TestGetChild(t *testing.T) {
 			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := make([]byte, 8) // Root ID (0)
 
-			childID, entry, err := getChild(tree, children, parentID, "testfile.txt")
+			childID, entry, err := GetChild(tree, children, parentID, "testfile.txt")
 			if err != nil {
 				t.Errorf("Expected no error, got: %v", err)
 			}
@@ -168,7 +168,7 @@ func TestGetChild(t *testing.T) {
 			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := make([]byte, 8) // Root ID (0)
 
-			childID, entry, err := getChild(tree, children, parentID, "nonexistent")
+			childID, entry, err := GetChild(tree, children, parentID, "nonexistent")
 			if err != ErrNotFound {
 				t.Errorf("Expected ErrNotFound, got: %v", err)
 			}
@@ -194,7 +194,7 @@ func TestGetChild(t *testing.T) {
 			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := U64b(999) // Non-existent parent
 
-			childID, entry, err := getChild(tree, children, parentID, "anything")
+			childID, entry, err := GetChild(tree, children, parentID, "anything")
 			if err != ErrNotFound {
 				t.Errorf("Expected ErrNotFound, got: %v", err)
 			}
@@ -253,7 +253,7 @@ func TestGetChild(t *testing.T) {
 			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID2 := U64b(2) // Different parent
 
-			childID, entry, err := getChild(tree, children, parentID2, "isolated_child")
+			childID, entry, err := GetChild(tree, children, parentID2, "isolated_child")
 			if err != ErrNotFound {
 				t.Errorf("Expected ErrNotFound, got: %v", err)
 			}
@@ -308,7 +308,7 @@ func TestGetChildErrorCases(t *testing.T) {
 			}
 
 			// Try to find child
-			childID, entry, err := getChild(WrapBucket(tree), children, parentID, "anything")
+			childID, entry, err := GetChild(WrapBucket(tree), children, parentID, "anything")
 			if err == nil {
 				t.Error("Expected error for invalid key length, got nil")
 			}
@@ -369,7 +369,7 @@ func TestGetChildErrorCases(t *testing.T) {
 			}
 
 			// Try to find child
-			resultID, entry, err := getChild(WrapBucket(tree), children, parentID, "anything")
+			resultID, entry, err := GetChild(WrapBucket(tree), children, parentID, "anything")
 			if err == nil {
 				t.Error("Expected error for corrupted tree entry, got nil")
 			}

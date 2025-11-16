@@ -23,10 +23,11 @@ func treeEntry(tree Bucket, id []byte) (TreeEntry, error) {
 	return treeEntryFromBytes(bytes)
 }
 
-// getChild searches for a child with the given name under the specified parent.
+// GetChild searches for a child with the given name under the specified parent.
 // Returns the child ID as bytes and the tree entry.
 // Returns ErrNotFound if the child does not exist.
-func getChild(tree Bucket, children Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
+// TODO move to separate file, including tests
+func GetChild(tree Bucket, children Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
 	cursor := children.B().Cursor()
 	for k, _ := cursor.Seek(parentID); len(k) > 0; k, _ = cursor.Next() {
 		if !bytes.HasPrefix(k, parentID) {

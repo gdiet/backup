@@ -5,7 +5,7 @@ package internal
 // Returns os.ErrExist if a child with the same name already exists under the specified parent.
 func Mkdir(tree Bucket, children Bucket, parentID []byte, name string) ([]byte, error) {
 	// Check if child with name already exists
-	_, _, err := getChild(tree, children, parentID, name)
+	_, _, err := GetChild(tree, children, parentID, name)
 	if err == nil {
 		return nil, ErrExists
 	}

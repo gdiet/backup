@@ -9,7 +9,7 @@ func Lookup(tree Bucket, children Bucket, path []string) (id []byte, entry TreeE
 		return id, NewDirEntry(""), nil
 	}
 	for _, component := range path {
-		id, entry, err = getChild(tree, children, id, component)
+		id, entry, err = GetChild(tree, children, id, component)
 		if err != nil {
 			return nil, nil, err
 		}
