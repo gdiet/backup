@@ -126,7 +126,7 @@ func (r *Repository) Readdir(path []string) (entries []TreeEntry, err error) {
 
 		id, entry, err := internal.Lookup(tree, children, path)
 		if err != nil {
-			return err
+			return err // ErrNotFound and others
 		}
 
 		// Ensure the target is a directory

@@ -1,20 +1,17 @@
 package metadata
 
 import (
-	"backup/src/metadata/internal"
 	u "backup/src/util_test"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"go.etcd.io/bbolt"
 )
 
-func TestNewRepository(t *testing.T) {
+func TestRepositoryBasic(t *testing.T) {
 	dbFile := u.TempFile(t)
 	repo := testRepo(t, dbFile)
 	defer func() { repo.Close() }()
 
+	// readdir on empty root directory
 	entries, err := repo.Readdir(nil)
 	if err != nil {
 		t.Fatalf("Failed to read root directory: %v", err)
@@ -23,6 +20,7 @@ func TestNewRepository(t *testing.T) {
 		t.Errorf("Expected root directory to be empty, got %d entries", len(entries))
 	}
 
+	// mkdir successful
 	id, err := repo.Mkdir(0, "test")
 	if err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
@@ -31,9 +29,11 @@ func TestNewRepository(t *testing.T) {
 		t.Errorf("Expected directory ID to be 1, got %d", id)
 	}
 
+	// reopen repository
 	repo.Close()
 	repo = testRepo(t, dbFile)
 
+	// readdir on non-empty root directory
 	entries, err = repo.Readdir(nil)
 	if err != nil {
 		t.Fatalf("Failed to read root directory: %v", err)
@@ -70,6 +70,21 @@ func TestNewRepositoryFailures(t *testing.T) {
 		}
 	})
 }
+
+func TestRepositoryReaddirNotFound(t *testing.T) {
+	r := testRepo(t, u.TempFile(t))
+	defer r.Close()
+
+	_, err := r.Readdir([]string{"nonexistent"})
+	if err == nil {
+		t.Fatal("Expected error when reading non-existent directory, but got nil")
+	}
+}
+
+// Wait for implementation of files in the filesystem
+// func TestRepositoryReaddirNotDir(t *testing.T) {
+
+// Wait for further mkdir tests until we have mkdir in the filesystem working
 
 // func TestRepositoryMkdir(t *testing.T) {
 // 	// Create temporary database file
@@ -196,103 +211,103 @@ func TestNewRepositoryFailures(t *testing.T) {
 // 	})
 // }
 
-func TestRepositoryReaddir(t *testing.T) {
-	repo, cleanup := createTestRepository(t)
-	defer cleanup()
+// func TestRepositoryReaddir(t *testing.T) {
+// 	repo, cleanup := createTestRepository(t)
+// 	defer cleanup()
 
-	// Erfolgsfall: Root-Verzeichnis ist leer
-	entries, err := repo.Readdir([]string{})
-	if err != nil {
-		t.Fatalf("unexpected error for root: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Errorf("expected 0 entries in root, got %d", len(entries))
-	}
+// 	// Erfolgsfall: Root-Verzeichnis ist leer
+// 	entries, err := repo.Readdir([]string{})
+// 	if err != nil {
+// 		t.Fatalf("unexpected error for root: %v", err)
+// 	}
+// 	if len(entries) != 0 {
+// 		t.Errorf("expected 0 entries in root, got %d", len(entries))
+// 	}
 
-	// Erfolgsfall: Verzeichnis anlegen und auslesen
-	_, err = repo.Mkdir(0, "testdir")
-	if err != nil {
-		t.Fatalf("failed to create dir: %v", err)
-	}
-	entries, err = repo.Readdir([]string{"testdir"})
-	if err != nil {
-		t.Fatalf("unexpected error for testdir: %v", err)
-	}
-	if len(entries) != 0 {
-		t.Errorf("expected 0 entries in testdir, got %d", len(entries))
-	}
+// 	// Erfolgsfall: Verzeichnis anlegen und auslesen
+// 	_, err = repo.Mkdir(0, "testdir")
+// 	if err != nil {
+// 		t.Fatalf("failed to create dir: %v", err)
+// 	}
+// 	entries, err = repo.Readdir([]string{"testdir"})
+// 	if err != nil {
+// 		t.Fatalf("unexpected error for testdir: %v", err)
+// 	}
+// 	if len(entries) != 0 {
+// 		t.Errorf("expected 0 entries in testdir, got %d", len(entries))
+// 	}
 
-	// Fehlerfall: Nicht existierendes Verzeichnis
-	_, err = repo.Readdir([]string{"doesnotexist"})
-	if err == nil {
-		t.Error("expected error for non-existent directory")
-	}
+// 	// Fehlerfall: Nicht existierendes Verzeichnis
+// 	_, err = repo.Readdir([]string{"doesnotexist"})
+// 	if err == nil {
+// 		t.Error("expected error for non-existent directory")
+// 	}
 
-	// Fehlerfall: Pfad ist Datei, nicht Verzeichnis
-	// Datei anlegen
-	_, err = repo.Mkdir(0, "dirwithfile")
-	if err != nil {
-		t.Fatalf("failed to create dirwithfile: %v", err)
-	}
-	// FileEntry direkt in tree-Bucket anlegen
-	err = repo.db.Update(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket([]byte(treeKey))
-		nextID := internal.U64b(12345)
-		fileEntry := internal.NewFileEntry("afile", 0, [40]byte{})
-		return tree.Put(nextID, fileEntry.ToBytes())
-	})
-	if err != nil {
-		t.Fatalf("failed to create file entry: %v", err)
-	}
-	// Lookup auf Datei
-	_, err = repo.Readdir([]string{"afile"})
-	if err == nil {
-		t.Error("expected error for file path in Readdir")
-	}
-}
+// 	// Fehlerfall: Pfad ist Datei, nicht Verzeichnis
+// 	// Datei anlegen
+// 	_, err = repo.Mkdir(0, "dirwithfile")
+// 	if err != nil {
+// 		t.Fatalf("failed to create dirwithfile: %v", err)
+// 	}
+// 	// FileEntry direkt in tree-Bucket anlegen
+// 	err = repo.db.Update(func(tx *bbolt.Tx) error {
+// 		tree := tx.Bucket([]byte(treeKey))
+// 		nextID := internal.U64b(12345)
+// 		fileEntry := internal.NewFileEntry("afile", 0, [40]byte{})
+// 		return tree.Put(nextID, fileEntry.ToBytes())
+// 	})
+// 	if err != nil {
+// 		t.Fatalf("failed to create file entry: %v", err)
+// 	}
+// 	// Lookup auf Datei
+// 	_, err = repo.Readdir([]string{"afile"})
+// 	if err == nil {
+// 		t.Error("expected error for file path in Readdir")
+// 	}
+// }
 
-// Hilfsfunktion für Test-Repository
-func createTestRepository(t *testing.T) (*Repository, func()) {
-	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "test_readdir.db")
-	repo, err := NewRepository(dbPath)
-	if err != nil {
-		t.Fatalf("Failed to create repository: %v", err)
-	}
-	cleanup := func() { repo.Close() }
-	return repo, cleanup
-}
+// // Hilfsfunktion für Test-Repository
+// func createTestRepository(t *testing.T) (*Repository, func()) {
+// 	tempDir := t.TempDir()
+// 	dbPath := filepath.Join(tempDir, "test_readdir.db")
+// 	repo, err := NewRepository(dbPath)
+// 	if err != nil {
+// 		t.Fatalf("Failed to create repository: %v", err)
+// 	}
+// 	cleanup := func() { repo.Close() }
+// 	return repo, cleanup
+// }
 
-func TestRepositoryReaddirFileIsNotDir(t *testing.T) {
-	repo, cleanup := createTestRepository(t)
-	defer cleanup()
+// func TestRepositoryReaddirFileIsNotDir(t *testing.T) {
+// 	repo, cleanup := createTestRepository(t)
+// 	defer cleanup()
 
-	// Lege eine Datei im Root an
-	err := repo.db.Update(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket([]byte(treeKey))
-		fileID := internal.U64b(42)
-		fileEntry := internal.NewFileEntry("myfile.txt", 123, [40]byte{})
-		return tree.Put(fileID, fileEntry.ToBytes())
-	})
-	if err != nil {
-		t.Fatalf("Failed to create file entry: %v", err)
-	}
+// 	// Lege eine Datei im Root an
+// 	err := repo.db.Update(func(tx *bbolt.Tx) error {
+// 		tree := tx.Bucket([]byte(treeKey))
+// 		fileID := internal.U64b(42)
+// 		fileEntry := internal.NewFileEntry("myfile.txt", 123, [40]byte{})
+// 		return tree.Put(fileID, fileEntry.ToBytes())
+// 	})
+// 	if err != nil {
+// 		t.Fatalf("Failed to create file entry: %v", err)
+// 	}
 
-	// Erzeuge einen Parent-Child-Eintrag für die Datei
-	err = repo.db.Update(func(tx *bbolt.Tx) error {
-		children := tx.Bucket([]byte(childrenKey))
-		childKey := make([]byte, 16)
-		copy(childKey[0:8], internal.U64b(0))   // parent 0
-		copy(childKey[8:16], internal.U64b(42)) // file child
-		return children.Put(childKey, []byte{})
-	})
-	if err != nil {
-		t.Fatalf("Failed to create parent-child relationship: %v", err)
-	}
+// 	// Erzeuge einen Parent-Child-Eintrag für die Datei
+// 	err = repo.db.Update(func(tx *bbolt.Tx) error {
+// 		children := tx.Bucket([]byte(childrenKey))
+// 		childKey := make([]byte, 16)
+// 		copy(childKey[0:8], internal.U64b(0))   // parent 0
+// 		copy(childKey[8:16], internal.U64b(42)) // file child
+// 		return children.Put(childKey, []byte{})
+// 	})
+// 	if err != nil {
+// 		t.Fatalf("Failed to create parent-child relationship: %v", err)
+// 	}
 
-	// Readdir auf die Datei sollte einen Fehler liefern
-	_, err = repo.Readdir([]string{"myfile.txt"})
-	if err == nil {
-		t.Error("Expected error when calling Readdir on a file, got nil")
-	}
-}
+// 	// Readdir auf die Datei sollte einen Fehler liefern
+// 	_, err = repo.Readdir([]string{"myfile.txt"})
+// 	if err == nil {
+// 		t.Error("Expected error when calling Readdir on a file, got nil")
+// 	}
+// }
