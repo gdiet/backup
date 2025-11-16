@@ -3,10 +3,27 @@ package internal
 import (
 	u "backup/src/util_test"
 	"bytes"
+	"os"
 	"testing"
 
 	"go.etcd.io/bbolt"
 )
+
+type bucketFailsPut struct {
+	bucket *bbolt.Bucket
+}
+
+func (b *bucketFailsPut) Put(key, value []byte) error {
+	return os.ErrInvalid
+}
+
+func (b *bucketFailsPut) Get(key []byte) []byte {
+	return b.bucket.Get(key)
+}
+
+func (b *bucketFailsPut) B() *bbolt.Bucket {
+	return b.bucket
+}
 
 // testDB sets up a temporary bbolt DB for testing.
 // The containing directory is automatically removed when the test and all its subtests complete.

@@ -2,7 +2,6 @@ package internal
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,23 +9,6 @@ import (
 	"go.etcd.io/bbolt"
 	"go.etcd.io/bbolt/errors"
 )
-
-// TODO move to internal/testutils package
-type bucketFailsPut struct {
-	bucket *bbolt.Bucket
-}
-
-func (b *bucketFailsPut) Put(key, value []byte) error {
-	return os.ErrInvalid
-}
-
-func (b *bucketFailsPut) Get(key []byte) []byte {
-	return b.bucket.Get(key)
-}
-
-func (b *bucketFailsPut) B() *bbolt.Bucket {
-	return b.bucket
-}
 
 func TestMkdir(t *testing.T) {
 	// Create temporary database file
