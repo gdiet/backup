@@ -21,7 +21,7 @@ func TestRepositoryBasic(t *testing.T) {
 	}
 
 	// mkdir successful
-	id, err := repo.Mkdir(0, "test")
+	id, err := repo.Mkdir([]string{"test"})
 	if err != nil {
 		t.Fatalf("Failed to create directory: %v", err)
 	}

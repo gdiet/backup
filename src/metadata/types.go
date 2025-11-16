@@ -9,6 +9,7 @@ type DirEntry = internal.DirEntry
 type FileEntry = internal.FileEntry
 
 var (
-	ErrNotFound = internal.ErrNotFound
+	ErrExists   = internal.ErrExists
 	ErrNotDir   = internal.ErrNotDir
+	ErrNotFound = internal.ErrNotFound
 )

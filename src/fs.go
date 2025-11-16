@@ -16,7 +16,31 @@ type fs struct {
 }
 
 func NewFs(repo *metadata.Repository) *fs {
+	log.Printf("Repository created")
 	return &fs{repo: repo}
+}
+
+// Mkdir creates a new directory.
+// Returns -fuse.ENOENT if the parent path does not exist.
+// Returns -fuse.ENOTDIR if the parent path is not a directory.
+// Returns -fuse.EEXIST if a child with the same name already exists.
+// Returns -fuse.EIO on errors.
+func (f *fs) Mkdir(path string, mode uint32) int {
+	log.Printf("Mkdir %s", path)
+	_, err := f.repo.Mkdir(partsFrom(path))
+	switch err {
+	case nil:
+		return 0
+	case metadata.ErrNotFound:
+		return -fuse.ENOENT
+	case metadata.ErrNotDir:
+		return -fuse.ENOTDIR
+	case metadata.ErrExists:
+		return -fuse.EEXIST
+	default:
+		util.AssertionFailedf("unexpected error %v in Mkdir", err)
+		return -fuse.EIO
+	}
 }
 
 // Readdir reads the contents of a directory.
@@ -24,7 +48,7 @@ func NewFs(repo *metadata.Repository) *fs {
 // Returns -fuse.ENOTDIR if the path is not a directory.
 // Returns -fuse.EIO on other errors.
 func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
-	log.Printf("Readdir called for path: %s", path)
+	log.Printf("Readdir %s", path)
 
 	fill(".", dirStat(), 0)
 	fill("..", dirStat(), 0)
@@ -63,7 +87,7 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 // Returns -fuse.ENOENT if the path does not exist.
 // Returns -fuse.EIO on other errors.
 func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
-	log.Printf("Getattr called for path: %s", path)
+	log.Printf("Getattr %s", path)
 
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 1 && parts[0] == "" {
@@ -129,15 +153,15 @@ func main() {
 		log.Printf("Failed to create repository: %v", err)
 		return
 	}
-	if id, err := r.Mkdir(0, "testing"); err != nil {
+	if _, err := r.Mkdir([]string{"testing"}); err != nil {
 		log.Printf("Failed to create directory 'testing': %v", err)
 		return
 	} else {
-		if _, err := r.Mkdir(id, "hello"); err != nil {
+		if _, err := r.Mkdir([]string{"testing", "hello"}); err != nil {
 			log.Printf("Failed to create directory 'hello': %v", err)
 			return
 		}
-		if _, err := r.Mkdir(id, "world"); err != nil {
+		if _, err := r.Mkdir([]string{"testing", "world"}); err != nil {
 			log.Printf("Failed to create directory 'world': %v", err)
 			return
 		}

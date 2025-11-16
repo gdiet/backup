@@ -99,14 +99,28 @@ func newRepository(filePath string, treeKey, childrenKey, dataKey, freeAreasKey 
 
 // Mkdir creates a new directory. It does not check whether the parent exists.
 // Returns the ID of the newly created directory.
-// Returns os.ErrExist if a child with the same name already exists under the specified parent.
-func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
+// Returns ErrExists if a child with the same name already exists under the specified parent.
+func (r *Repository) Mkdir(path []string) (uint64, error) {
+	if len(path) == 0 {
+		return 0, ErrExists // Can't create root directory
+	}
+
 	var idBytes []byte
-	var err error
-	err = r.db.Update(func(tx *bbolt.Tx) error {
+	err := r.db.Update(func(tx *bbolt.Tx) error {
 		tree := internal.WrapBucket(tx.Bucket(r.treeKey))
 		children := internal.WrapBucket(tx.Bucket(r.childrenKey))
-		idBytes, err = internal.Mkdir(tree, children, internal.U64b(parent), name)
+
+		id, entry, err := internal.Lookup(tree, children, path[:len(path)-1])
+		if err != nil {
+			return err // ErrNotFound and others
+		}
+
+		// Ensure the target is a directory
+		if _, isDir := entry.(*DirEntry); !isDir {
+			return ErrNotDir
+		}
+
+		idBytes, err = internal.Mkdir(tree, children, id, path[len(path)-1])
 		return err
 	})
 	if err != nil {
