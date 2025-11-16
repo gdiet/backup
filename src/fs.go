@@ -109,6 +109,35 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 	return 0
 }
 
+// Rename renames a file or directory, moving it to a new location if required.
+// If oldPath is a directory and newPath is an empty directory, newPath is replaced.
+// If oldPath is a file and newPath is an existing file, newPath is replaced.
+// If oldPath and newPath exist and are the same, no operation is performed (success).
+// Returns -fuse.ENOENT if the source path or a parent of the destination path does not exist.
+// Returns -fuse.ENOTDIR if a parent of the destination is not a directory or if trying to rename a directory to a file.
+// Returns -fuse.ENOTEMPTY if trying to rename a directory to an existing non-empty directory.
+// Returns -fuse.EISDIR if trying to rename a file to a directory.
+// Returns -fuse.EINVAL if trying to rename a directory to a subdirectory of itself.
+// Returns -fuse.EBUSY if trying to rename the root directory itself.
+// Returns -fuse.EIO on other errors.
+func (f *fs) Rename(oldPath string, newPath string) int {
+	log.Printf("Rename %s to %s", oldPath, newPath)
+	err := f.repo.Rename(partsFrom(oldPath), partsFrom(newPath))
+	switch err {
+	case nil:
+		return 0
+	case metadata.ErrNotFound:
+		return -fuse.ENOENT
+	case metadata.ErrNotDir:
+		return -fuse.ENOTDIR
+	case metadata.ErrExists:
+		return -fuse.EEXIST
+	default:
+		util.AssertionFailedf("unexpected error %v in Rename", err)
+		return -fuse.EIO
+	}
+}
+
 // Getattr gets the attributes of a file or directory.
 // Returns -fuse.ENOENT if the path does not exist.
 // Returns -fuse.EIO on other errors.
