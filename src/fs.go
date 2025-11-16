@@ -151,6 +151,15 @@ func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	}
 }
 
+// Destroy unmounts the file system.
+func (f *fs) Destroy() {
+	log.Printf("Unmounting file system...")
+	err := f.repo.Close()
+	if err != nil {
+		log.Printf("Error closing repository: %v", err)
+	}
+}
+
 func main() {
 	var err error
 	var tempFile *os.File
