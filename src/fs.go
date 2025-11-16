@@ -115,10 +115,12 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	log.Printf("Getattr %s", path)
 
-	// set stat for directory, will be overwritten if it's a file
+	// set basic stat, will be overwritten if it's a file
 	stat.Mode = fuse.S_IFDIR | 0755
-	stat.Nlink = 2
 	stat.Mtim = fuse.NewTimespec(time.Now())
+	stat.Nlink = 2
+	stat.Uid = uint32(os.Getuid())
+	stat.Gid = uint32(os.Getgid())
 
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) == 1 && parts[0] == "" { // Root directory
