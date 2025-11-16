@@ -78,7 +78,7 @@ func TestGetChild(t *testing.T) {
 
 	t.Run("FindExistingDirectory", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := make([]byte, 8) // Root ID (0)
 
@@ -119,7 +119,7 @@ func TestGetChild(t *testing.T) {
 
 	t.Run("FindExistingFile", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := make([]byte, 8) // Root ID (0)
 
@@ -164,7 +164,7 @@ func TestGetChild(t *testing.T) {
 
 	t.Run("ChildNotFound", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := make([]byte, 8) // Root ID (0)
 
@@ -190,7 +190,7 @@ func TestGetChild(t *testing.T) {
 
 	t.Run("ParentHasNoChildren", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID := U64b(999) // Non-existent parent
 
@@ -249,7 +249,7 @@ func TestGetChild(t *testing.T) {
 
 		// Test: Search under parent ID 2 (different parent)
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 			parentID2 := U64b(2) // Different parent
 
@@ -308,7 +308,7 @@ func TestGetChildErrorCases(t *testing.T) {
 			}
 
 			// Try to find child
-			childID, entry, err := getChild(tree, children, parentID, "anything")
+			childID, entry, err := getChild(WrapBucket(tree), children, parentID, "anything")
 			if err == nil {
 				t.Error("Expected error for invalid key length, got nil")
 			}
@@ -369,7 +369,7 @@ func TestGetChildErrorCases(t *testing.T) {
 			}
 
 			// Try to find child
-			resultID, entry, err := getChild(tree, children, parentID, "anything")
+			resultID, entry, err := getChild(WrapBucket(tree), children, parentID, "anything")
 			if err == nil {
 				t.Error("Expected error for corrupted tree entry, got nil")
 			}
@@ -417,7 +417,7 @@ func TestGetNextTreeID(t *testing.T) {
 				return err
 			}
 
-			nextID, err := getNextTreeID(tree)
+			nextID, err := getNextTreeID(WrapBucket(tree))
 			if err != nil {
 				return err
 			}
@@ -448,7 +448,7 @@ func TestGetNextTreeID(t *testing.T) {
 
 			// Add some existing entries
 			var id []byte
-			id, err = getNextTreeID(tree)
+			id, err = getNextTreeID(WrapBucket(tree))
 			if err != nil {
 				return err
 			}
@@ -456,7 +456,7 @@ func TestGetNextTreeID(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			id, err = getNextTreeID(tree)
+			id, err = getNextTreeID(WrapBucket(tree))
 			if err != nil {
 				return err
 			}
@@ -464,7 +464,7 @@ func TestGetNextTreeID(t *testing.T) {
 			if err != nil {
 				return err
 			}
-			id, err = getNextTreeID(tree)
+			id, err = getNextTreeID(WrapBucket(tree))
 			if err != nil {
 				return err
 			}
@@ -474,7 +474,7 @@ func TestGetNextTreeID(t *testing.T) {
 			}
 
 			// Should return 11 (highest + 1)
-			nextID, err := getNextTreeID(tree)
+			nextID, err := getNextTreeID(WrapBucket(tree))
 			if err != nil {
 				return err
 			}

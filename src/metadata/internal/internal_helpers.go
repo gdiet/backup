@@ -8,8 +8,8 @@ import (
 
 // getNextTreeID returns the next available tree entry ID as bytes.
 // Start from 1, since 0 is reserved for root.
-func getNextTreeID(tree *bbolt.Bucket) ([]byte, error) {
-	id, err := tree.NextSequence()
+func getNextTreeID(tree Bucket) ([]byte, error) {
+	id, err := tree.B().NextSequence()
 	return U64b(id), err
 }
 
@@ -26,7 +26,7 @@ func treeEntry(tree *bbolt.Bucket, id []byte) (TreeEntry, error) {
 // getChild searches for a child with the given name under the specified parent.
 // Returns the child ID as bytes and the tree entry.
 // Returns ErrNotFound if the child does not exist.
-func getChild(tree *bbolt.Bucket, children Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
+func getChild(tree Bucket, children Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
 	cursor := children.B().Cursor()
 	for k, _ := cursor.Seek(parentID); len(k) > 0; k, _ = cursor.Next() {
 		if !bytes.HasPrefix(k, parentID) {
@@ -38,7 +38,7 @@ func getChild(tree *bbolt.Bucket, children Bucket, parentID []byte, name string)
 		}
 
 		childID := k[8:16]
-		entry, err := treeEntryFromBytes(tree.Get(childID))
+		entry, err := treeEntryFromBytes(tree.B().Get(childID))
 		if err != nil {
 			return nil, nil, err
 		}

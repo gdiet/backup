@@ -152,7 +152,7 @@ func TestLookup(t *testing.T) {
 
 	t.Run("EmptyPath_ReturnsRoot", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			id, entry, err := Lookup(tree, children, []string{})
@@ -186,7 +186,7 @@ func TestLookup(t *testing.T) {
 
 	t.Run("SingleLevel_Directory", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			id, entry, err := Lookup(tree, children, []string{"docs"})
@@ -215,7 +215,7 @@ func TestLookup(t *testing.T) {
 
 	t.Run("MultiLevel_Directory", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			id, entry, err := Lookup(tree, children, []string{"docs", "manual"})
@@ -244,7 +244,7 @@ func TestLookup(t *testing.T) {
 
 	t.Run("SingleLevel_File", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			id, entry, err := Lookup(tree, children, []string{"docs", "readme.txt"})
@@ -277,7 +277,7 @@ func TestLookup(t *testing.T) {
 
 	t.Run("DeepPath_File", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			id, entry, err := Lookup(tree, children, []string{"docs", "manual", "guide.pdf"})
@@ -310,7 +310,7 @@ func TestLookup(t *testing.T) {
 
 	t.Run("PathNotFound_FirstLevel", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			id, entry, err := Lookup(tree, children, []string{"nonexistent"})
@@ -335,7 +335,7 @@ func TestLookup(t *testing.T) {
 
 	t.Run("PathNotFound_SecondLevel", func(t *testing.T) {
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			id, entry, err := Lookup(tree, children, []string{"docs", "nonexistent"})
@@ -361,7 +361,7 @@ func TestLookup(t *testing.T) {
 	t.Run("PathThroughFile_ShouldFail", func(t *testing.T) {
 		// Try to traverse through a file (readme.txt) as if it were a directory
 		err = db.View(func(tx *bbolt.Tx) error {
-			tree := tx.Bucket([]byte("tree_entries"))
+			tree := WrapBucket(tx.Bucket([]byte("tree_entries")))
 			children := WrapBucket(tx.Bucket([]byte("children")))
 
 			id, entry, err := Lookup(tree, children, []string{"docs", "readme.txt", "something"})

@@ -1,13 +1,9 @@
 package internal
 
-import (
-	"go.etcd.io/bbolt"
-)
-
 // Mkdir creates a new directory. It does not check whether the parent exists.
 // Returns the ID of the newly created directory as bytes.
 // Returns os.ErrExist if a child with the same name already exists under the specified parent.
-func Mkdir(tree *bbolt.Bucket, children Bucket, parentID []byte, name string) ([]byte, error) {
+func Mkdir(tree Bucket, children Bucket, parentID []byte, name string) ([]byte, error) {
 	// Check if child with name already exists
 	_, _, err := getChild(tree, children, parentID, name)
 	if err == nil {
@@ -23,7 +19,7 @@ func Mkdir(tree *bbolt.Bucket, children Bucket, parentID []byte, name string) ([
 	}
 	dirEntry := NewDirEntry(name)
 	if err = tree.Put(nextID, dirEntry.ToBytes()); err != nil {
-		return nil, err // TODO for coverage, we need to mock the tree bucket
+		return nil, err
 	}
 
 	// create parent-child relationship

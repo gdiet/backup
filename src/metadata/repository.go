@@ -100,7 +100,7 @@ func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
 	var idBytes []byte
 	var err error
 	err = r.db.Update(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket(treeKey)
+		tree := internal.WrapBucket(tx.Bucket(treeKey))
 		children := internal.WrapBucket(tx.Bucket(childrenKey))
 		idBytes, err = internal.Mkdir(tree, children, internal.U64b(parent), name)
 		return err
