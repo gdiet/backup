@@ -22,11 +22,11 @@ func (r *Repository) Rmdir(path []string) error {
 
 		parentID, _, err := internal.Lookup(tree, children, path[:len(path)-1])
 		if err != nil {
-			return err // ErrNotFound and others
+			return err // ErrNotFound
 		}
 		id, entry, err := internal.GetChild(tree, children, parentID, path[len(path)-1])
 		if err != nil {
-			return err // ErrNotFound and others
+			return err // ErrNotFound
 		}
 		if _, isDir := entry.(*DirEntry); !isDir {
 			return ErrNotDir

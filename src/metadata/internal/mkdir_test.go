@@ -11,18 +11,11 @@ import (
 )
 
 func TestMkdir(t *testing.T) {
-	// Create temporary database file
-	tempDir := t.TempDir()
-	dbPath := filepath.Join(tempDir, "test.db")
-
-	db, err := bbolt.Open(dbPath, 0600, nil)
-	if err != nil {
-		t.Fatalf("Failed to open test database: %v", err)
-	}
+	db := testDB(t)
 	defer db.Close()
 
 	// Initialize buckets
-	err = db.Update(func(tx *bbolt.Tx) error {
+	err := db.Update(func(tx *bbolt.Tx) error {
 		_, err := tx.CreateBucket([]byte("tree_entries"))
 		if err != nil {
 			return err
