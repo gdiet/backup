@@ -15,8 +15,8 @@ func getNextTreeID(tree Bucket) ([]byte, error) {
 
 // treeEntry retrieves a TreeEntry by its ID bytes
 // Returns ErrNotFound if the entry does not exist.
-func treeEntry(tree *bbolt.Bucket, id []byte) (TreeEntry, error) {
-	bytes := tree.Get(id)
+func treeEntry(tree Bucket, id []byte) (TreeEntry, error) {
+	bytes := tree.B().Get(id)
 	if bytes == nil {
 		return nil, ErrNotFound
 	}

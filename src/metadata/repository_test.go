@@ -64,7 +64,7 @@ func TestNewRepositoryFailures(t *testing.T) {
 
 	t.Run("bucket creation failure", func(t *testing.T) {
 		dbFile := u.TempFile(t)
-		_, err := newRepository(dbFile, treeKey, childrenKey, dataKey, nil)
+		_, err := newRepository(dbFile, []byte(treeKey), []byte(childrenKey), []byte(dataKey), nil)
 		if err == nil {
 			t.Fatal("Expected error when creating repository with nil bucket keys, but got nil")
 		}

@@ -3,12 +3,10 @@ package internal
 import (
 	"backup/src/util"
 	"bytes"
-
-	"go.etcd.io/bbolt"
 )
 
 // ReaddirForID lists the entries under the specified parent directory. It does not check whether the parent exists.
-func ReaddirForID(tree *bbolt.Bucket, children Bucket, parentID []byte) (entries []TreeEntry, err error) {
+func ReaddirForID(tree Bucket, children Bucket, parentID []byte) (entries []TreeEntry, err error) {
 	cursor := children.B().Cursor()
 	parentPrefix := parentID
 

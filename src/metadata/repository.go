@@ -7,20 +7,24 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-var ( // var for technical reasons. DO NOT MUTATE.
-	treeKey      = []byte("tree")
-	childrenKey  = []byte("children")
-	dataKey      = []byte("data")
-	freeAreasKey = []byte("free")
+const (
+	treeKey      = "tree"
+	childrenKey  = "children"
+	dataKey      = "data"
+	freeAreasKey = "free"
 )
 
 type Repository struct {
-	db *bbolt.DB
+	db           *bbolt.DB
+	treeKey      []byte
+	childrenKey  []byte
+	dataKey      []byte
+	freeAreasKey []byte
 }
 
 // NewRepository creates or opens a repository at the specified file path.
 func NewRepository(filePath string) (*Repository, error) {
-	return newRepository(filePath, treeKey, childrenKey, dataKey, freeAreasKey)
+	return newRepository(filePath, []byte(treeKey), []byte(childrenKey), []byte(dataKey), []byte(freeAreasKey))
 }
 
 // newRepository can be used for testing with custom bucket keys.
@@ -45,7 +49,7 @@ func newRepository(filePath string, treeKey, childrenKey, dataKey, freeAreasKey 
 		db.Close()
 		return nil, err
 	}
-	r := &Repository{db: db}
+	r := &Repository{db: db, treeKey: treeKey, childrenKey: childrenKey, dataKey: dataKey, freeAreasKey: freeAreasKey}
 	return r, nil
 }
 
@@ -100,8 +104,8 @@ func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
 	var idBytes []byte
 	var err error
 	err = r.db.Update(func(tx *bbolt.Tx) error {
-		tree := internal.WrapBucket(tx.Bucket(treeKey))
-		children := internal.WrapBucket(tx.Bucket(childrenKey))
+		tree := internal.WrapBucket(tx.Bucket(r.treeKey))
+		children := internal.WrapBucket(tx.Bucket(r.childrenKey))
 		idBytes, err = internal.Mkdir(tree, children, internal.U64b(parent), name)
 		return err
 	})
@@ -117,8 +121,8 @@ func (r *Repository) Mkdir(parent uint64, name string) (uint64, error) {
 // Can return other errors.
 func (r *Repository) Readdir(path []string) (entries []TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket(treeKey)
-		children := internal.WrapBucket(tx.Bucket(childrenKey))
+		tree := internal.WrapBucket(tx.Bucket(r.treeKey))
+		children := internal.WrapBucket(tx.Bucket(r.childrenKey))
 
 		id, entry, err := internal.Lookup(tree, children, path)
 		if err != nil {
@@ -141,8 +145,8 @@ func (r *Repository) Readdir(path []string) (entries []TreeEntry, err error) {
 // Returns ErrNotFound if the path does not exist.
 func (r *Repository) Lookup(path []string) (id uint64, entry TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket(treeKey)
-		children := internal.WrapBucket(tx.Bucket(childrenKey))
+		tree := internal.WrapBucket(tx.Bucket(r.treeKey))
+		children := internal.WrapBucket(tx.Bucket(r.childrenKey))
 		var idBytes []byte
 		if idBytes, entry, err = internal.Lookup(tree, children, path); err != nil {
 			return err
