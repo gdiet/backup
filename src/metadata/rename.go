@@ -53,7 +53,7 @@ func (r *Repository) Rename(oldPath []string, newPath []string) error {
 		if err != nil {
 			return err // Returns ErrNotFound if the source path or a parent of the destination path does not exist.
 		}
-		// Ensure the new parent is a directory
+		// Ensure the new parent is a directory FIXME switch case + assertion
 		if _, isDir := newParent.(*DirEntry); !isDir {
 			return ErrNotDir // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		}

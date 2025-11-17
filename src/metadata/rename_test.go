@@ -4,6 +4,83 @@ import (
 	"testing"
 )
 
+func TestRenameBasics(t *testing.T) {
+	repo := testRepo(t)
+	defer repo.Close()
+
+	// Create directories to work with
+	_, err := repo.Mkdir([]string{"directory"})
+	if err != nil {
+		t.Fatalf("Mkdir directory failed: %v", err)
+	}
+
+	_, err = repo.Mkdir([]string{"directory", "child"})
+	if err != nil {
+		t.Fatalf("Mkdir directory/child failed: %v", err)
+	}
+
+	// The following tests should not modify the repository state
+
+	t.Run("Rename root to root should succeed", func(t *testing.T) {
+		err = repo.Rename(nil, nil)
+		if err != nil {
+			t.Fatalf("Expected renaming root to root to succeed, but got: %v", err)
+		}
+	})
+
+	t.Run("source = target rename should succeed", func(t *testing.T) {
+		err = repo.Rename([]string{"directory"}, []string{"directory"})
+		if err != nil {
+			t.Fatalf("Expected renaming root to root to succeed, but got: %v", err)
+		}
+	})
+
+	t.Run("Rename root to non-root should fail: ErrIsRoot", func(t *testing.T) {
+		err = repo.Rename([]string{}, []string{"directory"})
+		if err != ErrIsRoot {
+			t.Fatalf("Expected ErrIsRoot when renaming root to non-root, but got: %v", err)
+		}
+	})
+
+	t.Run("Fail if source does not exist: ErrNotFound", func(t *testing.T) {
+		err = repo.Rename([]string{"nonexistent"}, []string{"new name 1"})
+		if err != ErrNotFound {
+			t.Fatalf("Expected ErrNotFound when renaming nonexistent source, but got: %v", err)
+		}
+	})
+
+	t.Run("Fail if parent of source does not exist: ErrNotFound", func(t *testing.T) {
+		err = repo.Rename([]string{"nonexistent", "child"}, []string{"new name 2"})
+		if err != ErrNotFound {
+			t.Fatalf("Expected ErrNotFound when renaming source with nonexistent parent, but got: %v", err)
+		}
+	})
+
+	t.Run("Fail if parent of target does not exist: ErrNotFound", func(t *testing.T) {
+		err = repo.Rename([]string{"directory", "child"}, []string{"new name 3", "subdir"})
+		if err != ErrNotFound {
+			t.Fatalf("Expected ErrNotFound when renaming nonexistent source, but got: %v", err)
+		}
+	})
+
+	t.Run("Fail for loop renames: ErrInvalid", func(t *testing.T) {
+		err = repo.Rename([]string{"directory"}, []string{"directory", "child"})
+		if err != ErrInvalid {
+			t.Fatalf("Expected ErrInvalid when renaming directory to its own subdirectory, but got: %v", err)
+		}
+	})
+
+	// A single modifying test can be added here
+
+	t.Run("a standard rename should succeed", func(t *testing.T) {
+		err = repo.Rename([]string{"directory", "child"}, []string{"child"})
+		if err != nil {
+			t.Fatalf("Expected renaming root to root to succeed, but got: %v", err)
+		}
+	})
+
+}
+
 func TestRenameDirectory_SimpleRename(t *testing.T) {
 	repo := testRepo(t)
 	defer repo.Close()
