@@ -63,18 +63,13 @@ func (r *Repository) Rename(oldPath []string, newPath []string) error {
 			return ErrInvalid // Returns ErrInvalid if trying to rename a directory to a subdirectory of itself.
 		}
 
-		// Lookup destination entry, if any
-		newEntryID, newEntry, getNewEntryErr := internal.GetChild(tree, children, newParentID, newPath[len(newPath)-1])
-
 		switch oldEntry.(type) {
 		case *FileEntry:
-			// Renaming a file
 			// Returns ErrIsDir if trying to rename a file to a directory.
 			return errors.New("not implemented: renaming files") // TODO implement
 
 		case *DirEntry:
-			// Renaming a directory
-			return renameDirectory(tree, children, oldParentID, oldEntryID, oldEntry, newParentID, newEntryID, newEntry, getNewEntryErr)
+			return renameDirectory(tree, children, oldParentID, oldEntryID, oldEntry, newParentID, newPath[len(newPath)-1])
 
 		default:
 			util.AssertionFailedf("unexpected source entry type %T in Rename", oldEntry)
@@ -89,7 +84,10 @@ func (r *Repository) Rename(oldPath []string, newPath []string) error {
 func renameDirectory(
 	tree internal.Bucket, children internal.Bucket,
 	oldParentID, oldEntryID []byte, oldEntry TreeEntry,
-	newParentID, newEntryID []byte, newEntry TreeEntry, getNewEntryError error) error {
+	newParentID []byte, newEntryName string) error {
+
+	// Lookup destination entry, if any
+	newEntryID, newEntry, getNewEntryError := internal.GetChild(tree, children, newParentID, newEntryName)
 
 	if getNewEntryError == nil {
 		// Destination exists
