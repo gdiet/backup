@@ -1,12 +1,11 @@
 package metadata
 
 import (
-	u "backup/src/util_test"
 	"testing"
 )
 
 func TestRepositoryReaddirNotFound(t *testing.T) {
-	r := testRepo(t, u.TempFile(t))
+	r := testRepo(t)
 	defer r.Close()
 
 	_, err := r.Readdir([]string{"nonexistent"})

@@ -5,11 +5,8 @@ import (
 	"testing"
 )
 
-// TODO check whether we need both testRepo and setupTestRepo
-
-// testRepo sets up a temporary repository for testing.
-// The containing directory is automatically removed when the test and all its subtests complete.
-func testRepo(t *testing.T, path string) *Repository {
+// testRepoForPath sets up a repository for testing.
+func testRepoForPath(t *testing.T, path string) *Repository {
 	t.Helper()
 	repo, err := NewRepository(path)
 	if err != nil {
@@ -18,10 +15,13 @@ func testRepo(t *testing.T, path string) *Repository {
 	return repo
 }
 
-// setupTestRepo sets up a temporary repository for testing and returns it.
-func setupTestRepo(t *testing.T) *Repository {
+// testRepo sets up a temporary repository for testing and returns it.
+// The containing directory is automatically removed when the test and all its subtests complete.
+func testRepo(t *testing.T) *Repository {
 	t.Helper()
-	dbFile := u.TempFile(t)
-	repo := testRepo(t, dbFile)
+	repo, err := NewRepository(u.TempFile(t))
+	if err != nil {
+		t.Fatalf("Failed to create repository: %v", err)
+	}
 	return repo
 }

@@ -5,7 +5,7 @@ import (
 )
 
 func TestRenameDirectory_SimpleRename(t *testing.T) {
-	repo := setupTestRepo(t)
+	repo := testRepo(t)
 	defer repo.Close()
 
 	// Verzeichnis anlegen
@@ -31,7 +31,7 @@ func TestRenameDirectory_SimpleRename(t *testing.T) {
 }
 
 func TestRenameDirectory_ReplaceEmptyTarget(t *testing.T) {
-	repo := setupTestRepo(t)
+	repo := testRepo(t)
 	defer repo.Close()
 
 	// Zwei Verzeichnisse anlegen
@@ -65,7 +65,7 @@ func TestRenameDirectory_ReplaceEmptyTarget(t *testing.T) {
 }
 
 func TestRenameDirectory_TargetNotEmpty(t *testing.T) {
-	repo := setupTestRepo(t)
+	repo := testRepo(t)
 	defer repo.Close()
 
 	// Zielverzeichnis mit Inhalt anlegen

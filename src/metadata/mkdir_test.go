@@ -1,12 +1,11 @@
 package metadata
 
 import (
-	u "backup/src/util_test"
 	"testing"
 )
 
 func TestRepositoryMkdirFailsForRoot(t *testing.T) {
-	r := testRepo(t, u.TempFile(t))
+	r := testRepo(t)
 	defer r.Close()
 
 	_, err := r.Mkdir(nil)
@@ -16,7 +15,7 @@ func TestRepositoryMkdirFailsForRoot(t *testing.T) {
 }
 
 func TestRepositoryMkdirFailsNotFound(t *testing.T) {
-	r := testRepo(t, u.TempFile(t))
+	r := testRepo(t)
 	defer r.Close()
 
 	_, err := r.Mkdir([]string{"nonexistent", "subdir"})

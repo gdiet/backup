@@ -1,12 +1,11 @@
 package metadata
 
 import (
-	u "backup/src/util_test"
 	"testing"
 )
 
 func TestRepositoryRmdirSuccessful(t *testing.T) {
-	r := testRepo(t, u.TempFile(t))
+	r := testRepo(t)
 	defer r.Close()
 
 	// Create directory to remove
@@ -32,7 +31,7 @@ func TestRepositoryRmdirSuccessful(t *testing.T) {
 }
 
 func TestRepositoryRmdirFailsForRoot(t *testing.T) {
-	r := testRepo(t, u.TempFile(t))
+	r := testRepo(t)
 	defer r.Close()
 
 	err := r.Rmdir(nil)
@@ -42,7 +41,7 @@ func TestRepositoryRmdirFailsForRoot(t *testing.T) {
 }
 
 func TestRepositoryRmdirFailsNotFound(t *testing.T) {
-	r := testRepo(t, u.TempFile(t))
+	r := testRepo(t)
 	defer r.Close()
 
 	err := r.Rmdir([]string{"nonexistent", "subdir"})

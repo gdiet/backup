@@ -8,7 +8,7 @@ import (
 
 func TestRepositoryBasic(t *testing.T) {
 	dbFile := u.TempFile(t)
-	repo := testRepo(t, dbFile)
+	repo := testRepoForPath(t, dbFile)
 	defer func() { repo.Close() }()
 
 	// readdir on empty root directory
@@ -31,7 +31,7 @@ func TestRepositoryBasic(t *testing.T) {
 
 	// reopen repository
 	repo.Close()
-	repo = testRepo(t, dbFile)
+	repo = testRepoForPath(t, dbFile)
 
 	// readdir on non-empty root directory
 	entries, err = repo.Readdir(nil)

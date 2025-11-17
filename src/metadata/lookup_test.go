@@ -1,12 +1,11 @@
 package metadata
 
 import (
-	u "backup/src/util_test"
 	testing "testing"
 )
 
 func TestLookupSuccess(t *testing.T) {
-	repo := setupTestRepo(t)
+	repo := testRepo(t)
 	defer repo.Close()
 
 	// Root-Pfad (nil)
@@ -39,7 +38,7 @@ func TestLookupSuccess(t *testing.T) {
 }
 
 func TestLookupNotFound(t *testing.T) {
-	repo := testRepo(t, u.TempFile(t))
+	repo := testRepo(t)
 	defer repo.Close()
 
 	_, _, err := repo.Lookup([]string{"does not exist"})
