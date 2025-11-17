@@ -26,6 +26,8 @@ func (e *DeserializationError) Error() string {
 // TreeEntry interface for directory and file entries
 type TreeEntry interface {
 	Name() string
+	SetName(name string)
+	ToBytes() []byte
 }
 
 // DirEntry represents a directory entry
@@ -35,6 +37,10 @@ type DirEntry struct {
 
 func (d *DirEntry) Name() string {
 	return d.name
+}
+
+func (d *DirEntry) SetName(name string) {
+	d.name = name
 }
 
 func (d *DirEntry) ToBytes() []byte {
@@ -66,6 +72,10 @@ type FileEntry struct {
 
 func (f *FileEntry) Name() string {
 	return f.name
+}
+
+func (f *FileEntry) SetName(name string) {
+	f.name = name
 }
 
 func (f *FileEntry) Time() int64 {

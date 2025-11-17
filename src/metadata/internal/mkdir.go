@@ -22,11 +22,7 @@ func Mkdir(tree Bucket, children Bucket, parentID []byte, name string) ([]byte, 
 		return nil, err
 	}
 
-	// create parent-child relationship
-	childKey := make([]byte, 16)
-	copy(childKey[0:8], parentID)
-	copy(childKey[8:16], nextID)
-	err = children.Put(childKey, []byte{})
+	err = AddChild(children, parentID, nextID)
 	if err != nil {
 		return nil, err
 	}

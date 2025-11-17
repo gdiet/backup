@@ -14,9 +14,5 @@ func Rmdir(tree Bucket, children Bucket, parentID []byte, id []byte) error {
 		return err
 	}
 
-	// Remove the parent-child relationship
-	key := make([]byte, 16)
-	copy(key[0:8], parentID)
-	copy(key[8:16], id)
-	return children.B().Delete(key)
+	return RemoveChild(children, parentID, id)
 }

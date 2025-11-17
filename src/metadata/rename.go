@@ -86,125 +86,36 @@ func renameDirectory(
 	oldParentID, oldEntryID []byte, oldEntry TreeEntry,
 	newParentID []byte, newEntryName string) error {
 
-	// Lookup destination entry, if any
-	newEntryID, newEntry, getNewEntryError := internal.GetChild(tree, children, newParentID, newEntryName)
+	// Lookup destination entry to replace, if any
+	replaceEntryID, replaceEntry, getReplaceEntryError := internal.GetChild(tree, children, newParentID, newEntryName)
 
-	if getNewEntryError == nil {
+	if getReplaceEntryError == nil {
 		// Destination exists
-		switch newEntry.(type) {
+		switch replaceEntry.(type) {
 		case *FileEntry:
 			return internal.ErrNotDir // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		case *DirEntry:
 			// Remove destination entry unless it's not empty
-			err := internal.Rmdir(tree, children, newParentID, newEntryID)
+			err := internal.Rmdir(tree, children, newParentID, replaceEntryID)
 			if err != nil {
 				return err // Returns ErrNotEmpty if trying to rename a directory to an existing non-empty directory.
 			}
 		default:
-			util.AssertionFailedf("unexpected destination entry type %T in Rename", newEntry)
+			util.AssertionFailedf("unexpected destination entry type %T in Rename", replaceEntry)
 			return errors.New("invalid entry type") // Should not happen
 		}
 	}
 
 	// Move entry to new location
-	// FIXME implement
-	// Rename to the new name
-	// FIXME implement
+	internal.RemoveChild(children, oldParentID, oldEntryID)
+	internal.AddChild(children, newParentID, oldEntryID)
+
+	// Rename to the new name if necessary
+	if oldEntry.Name() != newEntryName {
+		oldEntry.SetName(newEntryName)
+		if err := tree.Put(oldEntryID, oldEntry.ToBytes()); err != nil {
+			return err
+		}
+	}
 	return nil
 }
-
-// // Check for invalid rename (directory to its own subdirectory)
-// isSubdir, err := internal.IsSubdirectory(tree, children, oldEntryID, newParentID)
-// if err != nil {
-// 	return err
-// }
-// if isSubdir {
-// 	return ErrInvalid // Returns ErrInvalid if trying to rename a directory to a subdirectory of itself.
-// }
-
-// if _, isFile := oldEntry.(*FileEntry); isFile {
-// }
-
-// if dirEntry, isDir := oldEntry.(*DirEntry); isDir {
-// 	if getNewEntryErr == nil {
-// 		// Destination exists
-// 		switch newEntry.(type) {
-// 		case *internal.FileEntry:
-// 			return ErrNotDir // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
-// 		case *internal.DirEntry:
-// 			// Renaming a directory
-// 			// Ensure destination directory is empty
-// 			isEmpty, err := internal.IsDirectoryEmpty(tree, children, newEntryID)
-// 			if err != nil {
-// 				return err
-// 			}
-// 			if !isEmpty {
-// 				return ErrNotEmpty // Returns ErrNotEmpty if trying to rename a directory to an existing non-empty directory.
-// 			}
-// 		default:
-// 			util.AssertionFailedf("unexpected destination entry type %T in Rename", newEntry)
-// 			return errors.New("invalid entry type") // Should not happen
-// 		}
-// 	}
-// }
-// panic("not fully implemented: renaming directories")
-
-// // Returns ErrNotEmpty if trying to rename a directory to an existing non-empty directory.
-// // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
-// // Returns ErrInvalid if trying to rename a directory to a subdirectory of itself.
-
-// // // Check for invalid rename (directory to its own subdirectory)
-// // if dirEntry, isDir := oldEntry.(*internal.DirEntry); isDir {
-// // 	isSubdir, err := internal.IsSubdirectory(tree, children, dirEntry.IDBytes(), newParentID)
-// // 	if err != nil {
-// // 		return err
-// // 	}
-// // 	if isSubdir {
-// // 		return ErrInvalid
-// // 	}
-// // }
-
-// // // Check if destination entry exists
-// // newEntryID, newEntry, err := internal.LookupChild(tree, children, newParentID, newPath[len(newPath)-1])
-// // if err != nil && err != ErrNotFound {
-// // 	return err
-// // }
-
-// // if newEntry != nil {
-// // 	// Destination exists
-// // 	switch oldEntry.(type) {
-// // 	case *internal.DirEntry:
-// // 		// Renaming a directory
-// // 		if _, isDir := newEntry.(*internal.DirEntry); !isDir {
-// // 			return ErrNotDir // Can't rename directory to file
-// // 		}
-// // 		// Ensure destination directory is empty
-// // 		isEmpty, err := internal.IsDirectoryEmpty(tree, children, newEntryID)
-// // 		if err != nil {
-// // 			return err
-// // 		}
-// // 		if !isEmpty {
-// // 			return ErrNotEmpty
-// // 		}
-// // 	case *internal.FileEntry:
-// // 		// Renaming a file
-// // 		if _, isDir := newEntry.(*internal.DirEntry); isDir {
-// // 			return ErrIsDir // Can't rename file to directory
-// // 		}
-// // 	}
-// // 	// Remove existing destination entry
-// // 	err = internal.RemoveChild(tree, children, newParentID, newPath[len(newPath)-1])
-// // 	if err != nil {
-// // 		return err
-// // 	}
-// // }
-
-// // // Add entry to new location
-// // err = internal.AddChild(tree, children, newParentID, newPath[len(newPath)-1], oldEntryID)
-// // if err != nil {
-// // 	return err
-// // }
-
-// // // Remove entry from old location
-// // err = internal.RemoveChild(tree, children, oldParentID, oldPath[len(oldPath)-1])
-// // return err
