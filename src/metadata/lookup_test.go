@@ -5,12 +5,6 @@ import (
 	testing "testing"
 )
 
-func setupTestRepo(t *testing.T) *Repository {
-	dbFile := u.TempFile(t)
-	repo := testRepo(t, dbFile)
-	return repo
-}
-
 func TestLookupSuccess(t *testing.T) {
 	repo := setupTestRepo(t)
 	defer repo.Close()
@@ -45,7 +39,7 @@ func TestLookupSuccess(t *testing.T) {
 }
 
 func TestLookupNotFound(t *testing.T) {
-	repo := setupTestRepo(t)
+	repo := testRepo(t, u.TempFile(t))
 	defer repo.Close()
 
 	_, _, err := repo.Lookup([]string{"does not exist"})
