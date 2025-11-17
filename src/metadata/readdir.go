@@ -22,7 +22,7 @@ func (r *Repository) Readdir(path []string) (entries []TreeEntry, err error) {
 
 		// Ensure the target is a directory
 		if _, isDir := entry.(*DirEntry); !isDir {
-			return ErrNotDir
+			return ErrNotDir // Test coverage: needs file implementation
 		}
 
 		// Read the directory contents

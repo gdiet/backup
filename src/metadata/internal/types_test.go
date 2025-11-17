@@ -5,6 +5,22 @@ import (
 	"testing"
 )
 
+func TestTreeEntrySetName(t *testing.T) {
+	var entry TreeEntry
+
+	entry = NewDirEntry("old long name")
+	entry.SetName("new name")
+	if entry.Name() != "new name" {
+		t.Errorf("Expected directory name 'new name', got '%s'", entry.Name())
+	}
+
+	entry = NewFileEntry("old file.txt", 0, [40]byte{})
+	entry.SetName("new longer file.txt")
+	if entry.Name() != "new longer file.txt" {
+		t.Errorf("Expected file name 'new longer file.txt', got '%s'", entry.Name())
+	}
+}
+
 func TestDirEntryToBytes(t *testing.T) {
 	entry := NewDirEntry("testdir")
 	data := entry.ToBytes()

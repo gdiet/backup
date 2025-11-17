@@ -29,7 +29,7 @@ func (r *Repository) Rmdir(path []string) error {
 			return err // ErrNotFound
 		}
 		if _, isDir := entry.(*DirEntry); !isDir {
-			return ErrNotDir
+			return ErrNotDir // Test coverage: needs file implementation
 		}
 
 		return internal.Rmdir(tree, children, parentID, id) //ErrNotEmpty

@@ -27,7 +27,7 @@ func (r *Repository) Mkdir(path []string) (uint64, error) {
 		}
 		// Ensure the parent is a directory
 		if _, isDir := parent.(*DirEntry); !isDir {
-			return ErrNotDir
+			return ErrNotDir // Test coverage: needs file implementation
 		}
 
 		idBytes, err = internal.Mkdir(tree, children, parentID, path[len(path)-1])
