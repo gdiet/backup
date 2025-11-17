@@ -22,6 +22,7 @@ func NewFs(repo *metadata.Repository) *fs {
 }
 
 // Mkdir creates a new directory.
+// https://man7.org/linux/man-pages/man2/mkdir.2.html
 // Returns -fuse.ENOENT if the parent path does not exist.
 // Returns -fuse.ENOTDIR if the parent path is not a directory.
 // Returns -fuse.EEXIST if a child with the same name already exists.
@@ -45,6 +46,7 @@ func (f *fs) Mkdir(path string, mode uint32) int {
 }
 
 // Rmdir removes a directory.
+// https://man7.org/linux/man-pages/man2/rmdir.2.html
 // Returns -fuse.ENOENT if the path does not exist.
 // Returns -fuse.ENOTDIR if the path is not a directory.
 // Returns -fuse.ENOTEMPTY if the directory is not empty.
@@ -70,6 +72,7 @@ func (f *fs) Rmdir(path string) int {
 }
 
 // Readdir reads the contents of a directory.
+// https://man7.org/linux/man-pages/man2/readdir.2.html
 // Returns -fuse.ENOENT if the path does not exist.
 // Returns -fuse.ENOTDIR if the path is not a directory.
 // Returns -fuse.EIO on other errors.
@@ -110,6 +113,7 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 }
 
 // Rename renames a file or directory, moving it to a new location if required.
+// https://man7.org/linux/man-pages/man2/rename.2.html
 // If oldPath is a directory and newPath is an empty directory, newPath is replaced.
 // If oldPath is a file and newPath is an existing file, newPath is replaced.
 // If oldPath and newPath exist and are the same, no operation is performed (success).
@@ -139,6 +143,7 @@ func (f *fs) Rename(oldPath string, newPath string) int {
 }
 
 // Getattr gets the attributes of a file or directory.
+// https://man7.org/linux/man-pages/man2/stat.2.html
 // Returns -fuse.ENOENT if the path does not exist.
 // Returns -fuse.EIO on other errors.
 func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {

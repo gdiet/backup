@@ -29,9 +29,6 @@ func (r *Repository) Rename(oldPath []string, newPath []string) error {
 		return ErrIsRoot // Returns ErrIsRoot if trying to rename the root directory itself.
 	}
 
-	// TODO implement:
-	// Returns ErrInvalid if trying to rename a directory to a subdirectory of itself.
-
 	return r.db.Update(func(tx *bbolt.Tx) error {
 		tree := internal.WrapBucket(tx.Bucket(r.treeKey))
 		children := internal.WrapBucket(tx.Bucket(r.childrenKey))
@@ -60,6 +57,13 @@ func (r *Repository) Rename(oldPath []string, newPath []string) error {
 		if _, isDir := newParent.(*DirEntry); !isDir {
 			return ErrNotDir // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		}
+
+		// Detect loop renames (directory to its own subdirectory)
+		if len(oldPath) < len(newPath) && Equals(oldPath, newPath[:len(oldPath)]) {
+			return ErrInvalid // Returns ErrInvalid if trying to rename a directory to a subdirectory of itself.
+		}
+
+		// Lookup destination entry, if any
 		newEntryID, newEntry, getNewEntryErr := internal.GetChild(tree, children, newParentID, newPath[len(newPath)-1])
 
 		switch oldEntry.(type) {
