@@ -10,6 +10,7 @@
     "Assertf",
     "AssertionFailedf",
     "bbolt",
+    "blake3",
     "buf",
     "cgofuse",
     "Dref",

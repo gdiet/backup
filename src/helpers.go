@@ -2,10 +2,22 @@ package main
 
 import (
 	"backup/src/util"
+	"io"
 	"strings"
 
 	"github.com/winfsp/cgofuse/fuse"
+	"github.com/zeebo/blake3"
 )
+
+func hash(data []byte) [32]byte {
+	return blake3.Sum256(data)
+}
+
+func hashAll(data *io.Reader) ([]byte, error) {
+	h := blake3.New() // 32 bytes output is default
+	_, err := io.Copy(h, *data)
+	return h.Sum(nil), err
+}
 
 func dirStat() *fuse.Stat_t {
 	return &fuse.Stat_t{Mode: fuse.S_IFDIR | 0755, Nlink: 2}
