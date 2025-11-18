@@ -22,11 +22,8 @@ import (
 // Returns ErrIsRoot if trying to rename the root directory itself.
 func (r *Repository) Rename(oldPath []string, newPath []string) error {
 	// handle root directory rename
-	if len(oldPath) == 0 {
-		if len(newPath) == 0 {
-			return nil // If oldPath and newPath exist and are the same, no operation is performed (success).
-		}
-		return ErrIsRoot // Returns ErrIsRoot if trying to rename the root directory itself.
+	if stopHere, err := checkForRootDirectoryRename(oldPath, newPath); stopHere {
+		return err
 	}
 
 	return r.db.Update(func(tx *bbolt.Tx) error {
@@ -53,7 +50,17 @@ func (r *Repository) Rename(oldPath []string, newPath []string) error {
 		if err != nil {
 			return err // Returns ErrNotFound if the source path or a parent of the destination path does not exist.
 		}
-		// Ensure the new parent is a directory FIXME switch case + assertion
+		// Ensure the new parent is a directory
+		switch newParent.(type) {
+		case *FileEntry:
+			return ErrNotDir // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+		case *DirEntry:
+			// continue
+		default:
+			util.AssertionFailedf("unexpected destination parent entry type %T in Rename", newParent)
+			return ErrNotDir // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+		}
+
 		if _, isDir := newParent.(*DirEntry); !isDir {
 			return ErrNotDir // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		}
@@ -67,15 +74,27 @@ func (r *Repository) Rename(oldPath []string, newPath []string) error {
 		case *FileEntry:
 			// Returns ErrIsDir if trying to rename a file to a directory.
 			return errors.New("not implemented: renaming files") // TODO implement
-
 		case *DirEntry:
-			return renameDirectory(tree, children, oldParentID, oldEntryID, oldEntry, newParentID, newPath[len(newPath)-1])
-
+			// continue
 		default:
 			util.AssertionFailedf("unexpected source entry type %T in Rename", oldEntry)
 			return errors.New("invalid entry type") // Should not happen
 		}
+
+		return renameDirectory(tree, children, oldParentID, oldEntryID, oldEntry, newParentID, newPath[len(newPath)-1])
 	})
+}
+
+// checkForRootDirectoryRename checks if the rename operation involves the root directory.
+// If oldPath is the root directory, it returns ErrIsRoot unless newPath is also the root directory (no-op in that case).
+func checkForRootDirectoryRename(oldPath []string, newPath []string) (bool, error) {
+	if len(oldPath) == 0 {
+		if len(newPath) == 0 {
+			return true, nil // If oldPath and newPath exist and are the same, no operation is performed (success).
+		}
+		return true, ErrIsRoot // Returns ErrIsRoot if trying to rename the root directory itself.
+	}
+	return false, nil
 }
 
 // renameDirectory handles renaming of directories, including moving to a new parent.
