@@ -73,7 +73,7 @@ func (r *Repository) Rename(oldPath []string, newPath []string) error {
 		switch oldEntry.(type) {
 		case *FileEntry:
 			// Returns ErrIsDir if trying to rename a file to a directory.
-			return errors.New("not implemented: renaming files") // TODO implement
+			return errors.New("not implemented: renaming files") // TODO wait for implementation of files in the filesystem
 		case *DirEntry:
 			// continue
 		default:
