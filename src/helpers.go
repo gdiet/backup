@@ -32,7 +32,7 @@ func fileStat(size int64) *fuse.Stat_t {
 func partsFrom(path string) []string {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if parts[0] == "" {
-		util.Assert(len(parts) == 1, "invalid path parts")
+		util.Assertf(len(parts) == 1, "invalid path parts for path %s", path)
 		return []string{}
 	}
 	return parts

@@ -1,7 +1,11 @@
 package main
 
 import (
+	"backup/src/repository"
+	"backup/src/util"
 	"log"
+
+	"github.com/winfsp/cgofuse/fuse"
 )
 
 // Create creates and opens a file.
@@ -12,7 +16,21 @@ import (
 // Flags and mode are ignored until we find a use case where we need them.
 func (f *fs) Create(path string, flags int, mode uint32) (int, uint64) {
 	log.Printf("Create flags %d mode %d - %s", flags, mode, path)
-	return 0, 47
+
+	id, err := f.repo.Mkfile(partsFrom(path))
+	switch err {
+	case nil:
+		return 0, id
+	case repository.ErrNotFound:
+		return -fuse.ENOENT, 0
+	case repository.ErrNotDir:
+		return -fuse.ENOTDIR, 0
+	case repository.ErrExists:
+		return -fuse.EEXIST, 0
+	default:
+		util.AssertionFailedf("unexpected error %v in Create", err)
+		return -fuse.EIO, 0
+	}
 }
 
 // Open opens a file.
@@ -23,5 +41,22 @@ func (f *fs) Create(path string, flags int, mode uint32) (int, uint64) {
 func (f *fs) Open(path string, flags int) (int, uint64) {
 	log.Printf("Open flags %d - %s", flags, path)
 
-	return 0, 47
+	id, entry, err := f.repo.Lookup(partsFrom(path))
+	if err == repository.ErrNotFound {
+		return -fuse.ENOENT, 0
+	}
+	if err != nil {
+		util.AssertionFailedf("unexpected error %v in Open", err)
+		return -fuse.EIO, 0
+	}
+	switch e := entry.(type) {
+	case *repository.DirEntry:
+		return -fuse.EISDIR, 0
+	case *repository.FileEntry:
+		log.Printf("Opened file %d - %s", id, path)
+		return 0, id // this is the OK case :)
+	default:
+		util.AssertionFailedf("unexpected entry type %T in Open", e)
+		return -fuse.ENOENT, 0
+	}
 }

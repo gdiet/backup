@@ -5,7 +5,6 @@ import (
 	"backup/src/util"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/winfsp/cgofuse/fuse"
@@ -25,7 +24,7 @@ func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	stat.Uid = uint32(os.Getuid())
 	stat.Gid = uint32(os.Getgid())
 
-	parts := strings.Split(strings.Trim(path, "/"), "/")
+	parts := partsFrom(path)
 	if len(parts) == 1 && parts[0] == "" { // Root directory
 		return 0
 	}
