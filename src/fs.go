@@ -2,11 +2,8 @@ package main
 
 import (
 	"backup/src/metadata"
-	"backup/src/util"
 	"log"
 	"os"
-	"strings"
-	"time"
 
 	"github.com/winfsp/cgofuse/fuse"
 )
