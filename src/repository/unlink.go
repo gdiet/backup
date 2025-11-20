@@ -1,4 +1,4 @@
-package metadata
+package repository
 
 // // Unlink deletes a file or directory from the filesystem.
 // // Returns os.ErrNotExist if the entry does not exist.

@@ -1,7 +1,7 @@
-package metadata
+package repository
 
 import (
-	"backup/src/metadata/internal"
+	"backup/src/repository/internal"
 	"fmt"
 
 	"go.etcd.io/bbolt"

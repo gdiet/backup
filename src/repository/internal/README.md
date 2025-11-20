@@ -1,4 +1,4 @@
-Package rules for metadata/internal:
+Package rules for repository/internal:
 
 - IDs are []byte -8 bytes for uint64
 - no assertions, telling typed errors instead

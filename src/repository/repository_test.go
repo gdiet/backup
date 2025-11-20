@@ -1,4 +1,4 @@
-package metadata
+package repository
 
 import (
 	u "backup/src/util_test"

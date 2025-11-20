@@ -1,7 +1,7 @@
 package main
 
 import (
-	"backup/src/metadata"
+	"backup/src/repository"
 	"backup/src/util"
 	"log"
 
@@ -20,11 +20,11 @@ func (f *fs) Mkdir(path string, mode uint32) int {
 	switch err {
 	case nil:
 		return 0
-	case metadata.ErrNotFound:
+	case repository.ErrNotFound:
 		return -fuse.ENOENT
-	case metadata.ErrNotDir:
+	case repository.ErrNotDir:
 		return -fuse.ENOTDIR
-	case metadata.ErrExists:
+	case repository.ErrExists:
 		return -fuse.EEXIST
 	default:
 		util.AssertionFailedf("unexpected error %v in Mkdir", err)
@@ -44,13 +44,13 @@ func (f *fs) Rmdir(path string) int {
 	switch err {
 	case nil:
 		return 0
-	case metadata.ErrNotFound:
+	case repository.ErrNotFound:
 		return -fuse.ENOENT
-	case metadata.ErrNotDir:
+	case repository.ErrNotDir:
 		return -fuse.ENOTDIR
-	case metadata.ErrNotEmpty:
+	case repository.ErrNotEmpty:
 		return -fuse.ENOTEMPTY
-	case metadata.ErrIsRoot:
+	case repository.ErrIsRoot:
 		return -fuse.EBUSY
 	default:
 		util.AssertionFailedf("unexpected error %v in Rmdir", err)
@@ -73,9 +73,9 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 	switch err {
 	case nil:
 		// continue
-	case metadata.ErrNotFound:
+	case repository.ErrNotFound:
 		return -fuse.ENOENT
-	case metadata.ErrNotDir:
+	case repository.ErrNotDir:
 		return -fuse.ENOTDIR
 	default:
 		util.AssertionFailedf("unexpected error %v in Readdir", err)
@@ -85,9 +85,9 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 	for _, entry := range entries {
 		var entryStat *fuse.Stat_t
 		switch entry := entry.(type) {
-		case *metadata.DirEntry:
+		case *repository.DirEntry:
 			entryStat = dirStat()
-		case *metadata.FileEntry:
+		case *repository.FileEntry:
 			entryStat = fileStat(entry.Size())
 		default:
 			util.AssertionFailedf("unexpected entry type %T in Readdir", entry)
@@ -117,11 +117,11 @@ func (f *fs) Rename(oldPath string, newPath string) int {
 	switch err {
 	case nil:
 		return 0
-	case metadata.ErrNotFound:
+	case repository.ErrNotFound:
 		return -fuse.ENOENT
-	case metadata.ErrNotDir:
+	case repository.ErrNotDir:
 		return -fuse.ENOTDIR
-	case metadata.ErrExists:
+	case repository.ErrExists:
 		return -fuse.EEXIST
 	default:
 		util.AssertionFailedf("unexpected error %v in Rename", err)

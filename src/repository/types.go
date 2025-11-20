@@ -1,7 +1,7 @@
-package metadata
+package repository
 
 import (
-	"backup/src/metadata/internal"
+	"backup/src/repository/internal"
 )
 
 type TreeEntry = internal.TreeEntry

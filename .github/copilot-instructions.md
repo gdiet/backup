@@ -6,7 +6,7 @@ Here a high-performance deduplication filesystem written in Go is developed that
 
 - Thread-safe byte store with random reads/writes at arbitrary offsets
 - Handles multi-terabyte storage via 100MB file sharding (up to 1,000TB total)
-- Modular design with cache, storage, metadata, and utility layers
+- Modular design with cache, storage, repository, and utility layers
 
 It contains a comprehensive test suite with 99%+ coverage, race detection and benchmarks.
 
@@ -96,9 +96,9 @@ src/
 ├── storage/        # Core file-backed data store
 │   ├── store.go    # Main DataStore interface implementation
 │   └── store_test.go # Comprehensive concurrency tests
-├── metadata/       # Data serialization and tree structures
-│   ├── basetypes.go # Binary serialization for dataEntry/treeEntry
-│   └── basetypes_test.go # 100% coverage serialization tests
+├── repository/     # description
+│   ├── todo        # description
+│   └── todo        # description
 └── util/           # Assertion utilities with build constraints
     ├── assert*.go  # Debug/production assertion implementations
     └── assert_test.go # Assertion behavior tests
