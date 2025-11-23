@@ -13,7 +13,7 @@ type fs struct {
 	repo *repository.Repository
 }
 
-func NewFs(repo *repository.Repository) *fs {
+func NewFS(repo *repository.Repository) *fs {
 	log.Printf("Repository created")
 	return &fs{repo: repo}
 }
@@ -71,7 +71,7 @@ func main() {
 		}
 	}
 
-	fs := NewFs(r)
+	fs := NewFS(r)
 	host := fuse.NewFileSystemHost(fs)
 	// Using host.SetCapReaddirPlus(true) could save some Getattr calls, but it's not easy to get it right.
 	// On FUSE3, we could set host.SetUseIno(true), but I don't see a real benefit yet.
