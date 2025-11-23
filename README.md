@@ -15,33 +15,33 @@
 graph TD
   main --> repo
   repo --> metadata
-  repo --> handles
-  handles --> cache
-  handles --> store
+  repo --> filedata
+  filedata --> cache
+  filedata --> store
   main[
     ------ main --------
     FUSE bindings
-    no sync
+    no synchronization
   ]
   repo[
     ---- repository ----
     technical entrypoint
-    no sync
+    no synchronization
   ]
   metadata[
     ----- metadata -----
     metadata management
     bbolt transactions
   ]
-  handles[
-    ----- handles ------
+  filedata[
+    ----- filedata -----
     file data access
     synchronized
   ]
   cache[
     ------ cache -------
     temp. data storage
-    no sync
+    no synchronization
   ]
   store[
     ------ store -------
@@ -51,9 +51,9 @@ graph TD
   classDef default font-family:monospace,text-align:left;
 ```
 
-#### repository
+#### main
 
-The `repository` implements FUSE operations. It delegates tasks to internal packages and translates results and errors. No synchronization at this level. Implemented methods:
+The `main` package implements FUSE operations. It delegates tasks to the `repository` package and translates results and errors. No synchronization at this level. Implemented FUSE operations:
 
 **Tree operations:**
 
@@ -82,3 +82,7 @@ The `repository` implements FUSE operations. It delegates tasks to internal pack
 - NewFS
 - ??? Statfs
 - Destroy
+
+#### repository
+
+The `repository` package is the technical entry point to the filesystem logic. It coordinates between `filedata` (file content) and `metadata` (tree and metadata) packages. No synchronization at this level.
