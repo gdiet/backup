@@ -52,3 +52,9 @@ func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 		return -fuse.ENOENT
 	}
 }
+
+// Utimens changes the access and modification times of a file.
+// FIXME not implemented yet.
+func (f *fs) Utimens(path string, tmsp []fuse.Timespec) int {
+	return -fuse.ENOSYS
+}

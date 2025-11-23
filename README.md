@@ -65,7 +65,7 @@ The `repository` implements FUSE operations. It delegates tasks to internal pack
 **Attribute operations:**
 
 - Getattr
-- ??? Utimens
+- Utimens
 
 **File operations:**
 
