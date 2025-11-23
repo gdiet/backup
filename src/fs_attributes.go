@@ -1,7 +1,7 @@
 package main
 
 import (
-	"backup/src/repository"
+	"backup/src/metadata"
 	"backup/src/util"
 	"log"
 	"os"
@@ -33,7 +33,7 @@ func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	switch err {
 	case nil:
 		// continue
-	case repository.ErrNotFound:
+	case metadata.ErrNotFound:
 		return -fuse.ENOENT
 	default:
 		util.AssertionFailedf("unexpected error %v in Getattr", err)
@@ -41,9 +41,9 @@ func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	}
 
 	switch entry := entry.(type) {
-	case *repository.DirEntry:
+	case *metadata.DirEntry:
 		return 0
-	case *repository.FileEntry:
+	case *metadata.FileEntry:
 		stat.Mode = fuse.S_IFREG | 0644
 		stat.Size = entry.Size()
 		return 0

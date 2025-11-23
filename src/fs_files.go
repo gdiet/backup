@@ -1,7 +1,7 @@
 package main
 
 import (
-	"backup/src/repository"
+	"backup/src/metadata"
 	"backup/src/util"
 	"log"
 
@@ -21,11 +21,11 @@ func (f *fs) Create(path string, flags int, mode uint32) (int, uint64) {
 	switch err {
 	case nil:
 		return 0, id
-	case repository.ErrNotFound:
+	case metadata.ErrNotFound:
 		return -fuse.ENOENT, 0
-	case repository.ErrNotDir:
+	case metadata.ErrNotDir:
 		return -fuse.ENOTDIR, 0
-	case repository.ErrExists:
+	case metadata.ErrExists:
 		return -fuse.EEXIST, 0
 	default:
 		util.AssertionFailedf("unexpected error %v in Create", err)
@@ -42,7 +42,7 @@ func (f *fs) Open(path string, flags int) (int, uint64) {
 	log.Printf("Open flags %d - %s", flags, path)
 
 	id, entry, err := f.repo.Lookup(partsFrom(path))
-	if err == repository.ErrNotFound {
+	if err == metadata.ErrNotFound {
 		return -fuse.ENOENT, 0
 	}
 	if err != nil {
@@ -50,9 +50,9 @@ func (f *fs) Open(path string, flags int) (int, uint64) {
 		return -fuse.EIO, 0
 	}
 	switch e := entry.(type) {
-	case *repository.DirEntry:
+	case *metadata.DirEntry:
 		return -fuse.EISDIR, 0
-	case *repository.FileEntry:
+	case *metadata.FileEntry:
 		log.Printf("Opened file %d - %s", id, path)
 		return 0, id // this is the OK case :)
 	default:

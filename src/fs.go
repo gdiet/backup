@@ -1,7 +1,7 @@
 package main
 
 import (
-	"backup/src/repository"
+	"backup/src/metadata"
 	"log"
 	"os"
 
@@ -10,10 +10,10 @@ import (
 
 type fs struct {
 	fuse.FileSystemBase
-	repo *repository.Repository
+	repo *metadata.Repository
 }
 
-func NewFS(repo *repository.Repository) *fs {
+func NewFS(repo *metadata.Repository) *fs {
 	log.Printf("Repository created")
 	return &fs{repo: repo}
 }
@@ -30,7 +30,7 @@ func (f *fs) Destroy() {
 func main() {
 	var err error
 	var tempFile *os.File
-	var r *repository.Repository
+	var r *metadata.Repository
 
 	if tempFile, err = os.CreateTemp("", "fs-*.db"); err != nil {
 		log.Printf("Failed to create temp file: %v", err)
@@ -53,7 +53,7 @@ func main() {
 	}
 	log.Printf("Using temp database file: %s", tempFile.Name())
 
-	if r, err = repository.NewRepository(tempFile.Name()); err != nil {
+	if r, err = metadata.NewRepository(tempFile.Name()); err != nil {
 		log.Printf("Failed to create repository: %v", err)
 		return
 	}
