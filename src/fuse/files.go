@@ -1,4 +1,4 @@
-package main
+package fuse
 
 import (
 	"backup/src/meta"
@@ -14,7 +14,7 @@ import (
 //   - Returns -fuse.EEXIST if the file already exists.
 //
 // Flags and mode are ignored until we find a use case where we need them.
-func (f *fs) Create(path string, flags int, mode uint32) (int, uint64) {
+func (f *FuseFS) Create(path string, flags int, mode uint32) (int, uint64) {
 	log.Printf("Create flags %d mode %d - %s", flags, mode, path)
 
 	id, err := f.repo.Mkfile(partsFrom(path))
@@ -38,7 +38,7 @@ func (f *fs) Create(path string, flags int, mode uint32) (int, uint64) {
 //   - Returns -fuse.EISDIR if the path is a directory.
 //
 // Flags and mode are ignored until we find a use case where we need them.
-func (f *fs) Open(path string, flags int) (int, uint64) {
+func (f *FuseFS) Open(path string, flags int) (int, uint64) {
 	log.Printf("Open flags %d - %s", flags, path)
 
 	id, entry, err := f.repo.Lookup(partsFrom(path))

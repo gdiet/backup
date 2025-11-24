@@ -1,38 +1,20 @@
 package main
 
 import (
+	"backup/src/fuse"
 	"backup/src/meta"
 	"log"
 	"os"
 
-	"github.com/winfsp/cgofuse/fuse"
+	cgofuse "github.com/winfsp/cgofuse/fuse"
 )
-
-type fs struct {
-	fuse.FileSystemBase
-	repo *meta.Metadata
-}
-
-func NewFS(repo *meta.Metadata) *fs {
-	log.Printf("Repository created")
-	return &fs{repo: repo}
-}
-
-// Destroy unmounts the file system.
-func (f *fs) Destroy() {
-	log.Printf("Unmounting file system...")
-	err := f.repo.Close()
-	if err != nil {
-		log.Printf("Error closing repository: %v", err)
-	}
-}
 
 func main() {
 	var err error
 	var tempFile *os.File
 	var r *meta.Metadata
 
-	if tempFile, err = os.CreateTemp("", "fs-*.db"); err != nil {
+	if tempFile, err = os.CreateTemp("", "FuseFS-*.db"); err != nil {
 		log.Printf("Failed to create temp file: %v", err)
 		os.Exit(1)
 	}
@@ -71,8 +53,8 @@ func main() {
 		}
 	}
 
-	fs := NewFS(r)
-	host := fuse.NewFileSystemHost(fs)
+	fs := fuse.NewFS(r)
+	host := cgofuse.NewFileSystemHost(fs)
 	// Using host.SetCapReaddirPlus(true) could save some Getattr calls, but it's not easy to get it right.
 	// On FUSE3, we could set host.SetUseIno(true), but I don't see a real benefit yet.
 	log.Printf("Mounting file system...")

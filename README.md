@@ -13,28 +13,28 @@
 
 ```mermaid
 graph TD
-  main --> repo
-  repo --> metadata
-  repo --> filedata
-  filedata --> cache
-  filedata --> store
-  main[
-    ------ main --------
+  fuse --> repo
+  repo --> meta
+  repo --> data
+  data --> cache
+  data --> store
+  fuse[
+    ------ fuse --------
     FUSE bindings
     no synchronization
   ]
   repo[
-    ---- repository ----
+    ------ repo --------
     technical entrypoint
     no synchronization
   ]
-  metadata[
-    ----- metadata -----
+  meta[
+    ------ meta --------
     metadata management
     bbolt transactions
   ]
-  filedata[
-    ----- filedata -----
+  data[
+    ------ data --------
     file data access
     synchronized
   ]
@@ -50,39 +50,3 @@ graph TD
   ]
   classDef default font-family:monospace,text-align:left;
 ```
-
-#### main
-
-The `main` package implements FUSE operations. It delegates tasks to the `repository` package and translates results and errors. No synchronization at this level. Implemented FUSE operations:
-
-**Tree operations:**
-
-- Mkdir
-- Readdir
-- Rmdir
-- Rename
-
-**Attribute operations:**
-
-- Getattr
-- Utimens
-
-**File operations:**
-
-- Create
-- Open
-- ??? Read
-- ??? Write
-- ??? Truncate
-- ??? Release
-- ??? Unlink
-
-**Other operations:**
-
-- NewFS
-- ??? Statfs
-- Destroy
-
-#### repository
-
-The `repository` package is the technical entry point to the filesystem logic. It coordinates between `filedata` (file content) and `metadata` (tree and metadata) packages. No synchronization at this level.

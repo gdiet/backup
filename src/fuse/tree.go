@@ -1,4 +1,4 @@
-package main
+package fuse
 
 import (
 	"backup/src/meta"
@@ -14,7 +14,7 @@ import (
 // Returns -fuse.ENOTDIR if the parent path is not a directory.
 // Returns -fuse.EEXIST if a child with the same name already exists.
 // Returns -fuse.EIO on errors.
-func (f *fs) Mkdir(path string, mode uint32) int {
+func (f *FuseFS) Mkdir(path string, mode uint32) int {
 	log.Printf("Mkdir %s", path)
 	_, err := f.repo.Mkdir(partsFrom(path))
 	switch err {
@@ -38,7 +38,7 @@ func (f *fs) Mkdir(path string, mode uint32) int {
 // Returns -fuse.ENOTDIR if the path is not a directory.
 // Returns -fuse.ENOTEMPTY if the directory is not empty.
 // Returns -fuse.EBUSY if the directory is the root.
-func (f *fs) Rmdir(path string) int {
+func (f *FuseFS) Rmdir(path string) int {
 	log.Printf("Rmdir %s", path)
 	err := f.repo.Rmdir(partsFrom(path))
 	switch err {
@@ -63,7 +63,7 @@ func (f *fs) Rmdir(path string) int {
 // Returns -fuse.ENOENT if the path does not exist.
 // Returns -fuse.ENOTDIR if the path is not a directory.
 // Returns -fuse.EIO on other errors.
-func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
+func (f *FuseFS) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
 	log.Printf("Readdir %s", path)
 
 	fill(".", dirStat(), 0)
@@ -111,7 +111,7 @@ func (f *fs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 // Returns -fuse.EINVAL if trying to rename a directory to a subdirectory of itself.
 // Returns -fuse.EBUSY if trying to rename the root directory itself.
 // Returns -fuse.EIO on other errors.
-func (f *fs) Rename(oldPath string, newPath string) int {
+func (f *FuseFS) Rename(oldPath string, newPath string) int {
 	log.Printf("Rename %s to %s", oldPath, newPath)
 	err := f.repo.Rename(partsFrom(oldPath), partsFrom(newPath))
 	switch err {

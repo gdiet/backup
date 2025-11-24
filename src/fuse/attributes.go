@@ -1,4 +1,4 @@
-package main
+package fuse
 
 import (
 	"backup/src/meta"
@@ -14,7 +14,7 @@ import (
 // https://man7.org/linux/man-pages/man2/stat.2.html
 // Returns -fuse.ENOENT if the path does not exist.
 // Returns -fuse.EIO on other errors.
-func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
+func (f *FuseFS) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	log.Printf("Getattr %s", path)
 
 	// set basic stat, will be overwritten if it's a file
@@ -55,6 +55,6 @@ func (f *fs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 
 // Utimens changes the access and modification times of a file.
 // FIXME not implemented yet.
-func (f *fs) Utimens(path string, tmsp []fuse.Timespec) int {
+func (f *FuseFS) Utimens(path string, tmsp []fuse.Timespec) int {
 	return -fuse.ENOSYS
 }
