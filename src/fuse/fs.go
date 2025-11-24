@@ -1,7 +1,7 @@
 package fuse
 
 import (
-	"backup/src/meta"
+	"backup/src/repo"
 	"log"
 
 	"github.com/winfsp/cgofuse/fuse"
@@ -9,12 +9,12 @@ import (
 
 type FuseFS struct {
 	fuse.FileSystemBase
-	repo *meta.Metadata
+	repo *repo.Repository
 }
 
-func NewFS(repo *meta.Metadata) *FuseFS {
+func NewFS(repository *repo.Repository) *FuseFS {
 	log.Printf("Repository created")
-	return &FuseFS{repo: repo}
+	return &FuseFS{repo: repository}
 }
 
 // Destroy unmounts the file system.

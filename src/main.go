@@ -3,6 +3,7 @@ package main
 import (
 	"backup/src/fuse"
 	"backup/src/meta"
+	"backup/src/repo"
 	"log"
 	"os"
 
@@ -39,21 +40,23 @@ func main() {
 		log.Printf("Failed to create repository: %v", err)
 		return
 	}
-	if _, err := r.Mkdir([]string{"testing"}); err != nil {
+
+	repository := repo.NewRepository(r)
+	if _, err := repository.Mkdir([]string{"testing"}); err != nil {
 		log.Printf("Failed to create directory 'testing': %v", err)
 		return
 	} else {
-		if _, err := r.Mkdir([]string{"testing", "hello"}); err != nil {
+		if _, err := repository.Mkdir([]string{"testing", "hello"}); err != nil {
 			log.Printf("Failed to create directory 'hello': %v", err)
 			return
 		}
-		if _, err := r.Mkdir([]string{"testing", "world"}); err != nil {
+		if _, err := repository.Mkdir([]string{"testing", "world"}); err != nil {
 			log.Printf("Failed to create directory 'world': %v", err)
 			return
 		}
 	}
 
-	fs := fuse.NewFS(r)
+	fs := fuse.NewFS(repository)
 	host := cgofuse.NewFileSystemHost(fs)
 	// Using host.SetCapReaddirPlus(true) could save some Getattr calls, but it's not easy to get it right.
 	// On FUSE3, we could set host.SetUseIno(true), but I don't see a real benefit yet.
