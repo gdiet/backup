@@ -1,5 +1,7 @@
 package internal
 
+import "backup/src/fserr"
+
 // getNextTreeID returns the next available tree entry ID as bytes.
 // Start from 1, since 0 is reserved for root.
 func getNextTreeID(tree Bucket) ([]byte, error) {
@@ -12,7 +14,7 @@ func getNextTreeID(tree Bucket) ([]byte, error) {
 func treeEntry(tree Bucket, id []byte) (TreeEntry, error) {
 	bytes := tree.B().Get(id)
 	if bytes == nil {
-		return nil, ErrNotFound
+		return nil, fserr.ErrNotFound
 	}
 	return treeEntryFromBytes(bytes)
 }

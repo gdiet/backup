@@ -1,6 +1,7 @@
 package meta
 
 import (
+	"backup/src/fserr"
 	"backup/src/meta/internal"
 
 	"go.etcd.io/bbolt"
@@ -13,7 +14,7 @@ import (
 // Returns ErrIsRoot if the directory is the root.
 func (r *Metadata) Rmdir(path []string) error {
 	if len(path) == 0 {
-		return ErrIsRoot // Can't remove root directory
+		return fserr.ErrIsRoot // Can't remove root directory
 	}
 
 	return r.db.Update(func(tx *bbolt.Tx) error {
@@ -29,7 +30,7 @@ func (r *Metadata) Rmdir(path []string) error {
 			return err // ErrNotFound
 		}
 		if _, isDir := entry.(*DirEntry); !isDir {
-			return ErrNotDir // Test coverage: needs file implementation
+			return fserr.ErrNotDir // Test coverage: needs file implementation
 		}
 
 		return internal.Rmdir(tree, children, parentID, id) //ErrNotEmpty

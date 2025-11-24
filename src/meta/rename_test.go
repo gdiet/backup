@@ -1,6 +1,7 @@
 package meta
 
 import (
+	"backup/src/fserr"
 	"testing"
 )
 
@@ -37,35 +38,35 @@ func TestRenameBasics(t *testing.T) {
 
 	t.Run("Rename root to non-root should fail: ErrIsRoot", func(t *testing.T) {
 		err = repo.Rename([]string{}, []string{"directory"})
-		if err != ErrIsRoot {
+		if err != fserr.ErrIsRoot {
 			t.Fatalf("Expected ErrIsRoot when renaming root to non-root, but got: %v", err)
 		}
 	})
 
 	t.Run("Fail if source does not exist: ErrNotFound", func(t *testing.T) {
 		err = repo.Rename([]string{"nonexistent"}, []string{"new name 1"})
-		if err != ErrNotFound {
+		if err != fserr.ErrNotFound {
 			t.Fatalf("Expected ErrNotFound when renaming nonexistent source, but got: %v", err)
 		}
 	})
 
 	t.Run("Fail if parent of source does not exist: ErrNotFound", func(t *testing.T) {
 		err = repo.Rename([]string{"nonexistent", "child"}, []string{"new name 2"})
-		if err != ErrNotFound {
+		if err != fserr.ErrNotFound {
 			t.Fatalf("Expected ErrNotFound when renaming source with nonexistent parent, but got: %v", err)
 		}
 	})
 
 	t.Run("Fail if parent of target does not exist: ErrNotFound", func(t *testing.T) {
 		err = repo.Rename([]string{"directory", "child"}, []string{"new name 3", "subdir"})
-		if err != ErrNotFound {
+		if err != fserr.ErrNotFound {
 			t.Fatalf("Expected ErrNotFound when renaming nonexistent source, but got: %v", err)
 		}
 	})
 
 	t.Run("Fail for loop renames: ErrInvalid", func(t *testing.T) {
 		err = repo.Rename([]string{"directory"}, []string{"directory", "child"})
-		if err != ErrInvalid {
+		if err != fserr.ErrInvalid {
 			t.Fatalf("Expected ErrInvalid when renaming directory to its own subdirectory, but got: %v", err)
 		}
 	})

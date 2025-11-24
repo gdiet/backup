@@ -1,6 +1,7 @@
 package fuse
 
 import (
+	"backup/src/fserr"
 	"backup/src/meta"
 	"backup/src/util"
 	"log"
@@ -33,7 +34,7 @@ func (f *FuseFS) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	switch err {
 	case nil:
 		// continue
-	case meta.ErrNotFound:
+	case fserr.ErrNotFound:
 		return -fuse.ENOENT
 	default:
 		util.AssertionFailedf("unexpected error %v in Getattr", err)

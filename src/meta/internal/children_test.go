@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"backup/src/fserr"
 	"os"
 	"testing"
 
@@ -169,7 +170,7 @@ func TestGetChild(t *testing.T) {
 			parentID := make([]byte, 8) // Root ID (0)
 
 			childID, entry, err := GetChild(tree, children, parentID, "nonexistent")
-			if err != ErrNotFound {
+			if err != fserr.ErrNotFound {
 				t.Errorf("Expected ErrNotFound, got: %v", err)
 			}
 
@@ -195,7 +196,7 @@ func TestGetChild(t *testing.T) {
 			parentID := U64b(999) // Non-existent parent
 
 			childID, entry, err := GetChild(tree, children, parentID, "anything")
-			if err != ErrNotFound {
+			if err != fserr.ErrNotFound {
 				t.Errorf("Expected ErrNotFound, got: %v", err)
 			}
 
@@ -254,7 +255,7 @@ func TestGetChild(t *testing.T) {
 			parentID2 := U64b(2) // Different parent
 
 			childID, entry, err := GetChild(tree, children, parentID2, "isolated_child")
-			if err != ErrNotFound {
+			if err != fserr.ErrNotFound {
 				t.Errorf("Expected ErrNotFound, got: %v", err)
 			}
 
@@ -322,7 +323,7 @@ func TestGetChildErrorCases(t *testing.T) {
 			}
 
 			// Check error type
-			if deserErr, ok := err.(*DeserializationError); ok {
+			if deserErr, ok := err.(*fserr.DeserializationError); ok {
 				if deserErr.Msg != "invalid child key length" {
 					t.Errorf("Expected 'invalid child key length', got '%s'", deserErr.Msg)
 				}
@@ -383,7 +384,7 @@ func TestGetChildErrorCases(t *testing.T) {
 			}
 
 			// Check error type
-			if deserErr, ok := err.(*DeserializationError); ok {
+			if deserErr, ok := err.(*fserr.DeserializationError); ok {
 				if deserErr.Msg != "invalid treeEntry type" {
 					t.Errorf("Expected 'invalid treeEntry type', got '%s'", deserErr.Msg)
 				}

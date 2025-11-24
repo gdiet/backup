@@ -1,27 +1,6 @@
 package internal
 
-import (
-	"errors"
-	"fmt"
-)
-
-var (
-	ErrExists   = errors.New("already exists")
-	ErrInvalid  = errors.New("invalid operation")
-	ErrIsDir    = errors.New("is a directory")
-	ErrIsRoot   = errors.New("is root directory")
-	ErrNotDir   = errors.New("not a directory")
-	ErrNotEmpty = errors.New("directory not empty")
-	ErrNotFound = errors.New("not found")
-)
-
-type DeserializationError struct {
-	Msg string
-}
-
-func (e *DeserializationError) Error() string {
-	return fmt.Sprintf("DeserializationError: %s", e.Msg)
-}
+import "backup/src/fserr"
 
 // TreeEntry interface for directory and file entries
 type TreeEntry interface {
@@ -128,7 +107,7 @@ func dataEntryFromBytes(data []byte) (DataEntry, error) {
 	// 8 bytes reference count + 16 bytes per area
 	dataLen := len(data)
 	if dataLen < 8 || dataLen%16 != 8 {
-		return DataEntry{}, &DeserializationError{Msg: "dataEntry length invalid"}
+		return DataEntry{}, &fserr.DeserializationError{Msg: "dataEntry length invalid"}
 	}
 	d := DataEntry{}
 	d.Refs = B64u(data)
@@ -146,7 +125,7 @@ func dataEntryFromBytes(data []byte) (DataEntry, error) {
 // treeEntryFromBytes parses a tree entry from bytes
 func treeEntryFromBytes(data []byte) (TreeEntry, error) {
 	if len(data) < 2 {
-		return nil, &DeserializationError{Msg: "treeEntry too short"}
+		return nil, &fserr.DeserializationError{Msg: "treeEntry too short"}
 	}
 	// Determine entry type by first byte
 	switch data[0] {
@@ -156,12 +135,12 @@ func treeEntryFromBytes(data []byte) (TreeEntry, error) {
 	case 1:
 		// fileEntry: 1 byte type + 8 bytes time + 40 bytes data reference + name
 		if len(data) < 50 {
-			return nil, &DeserializationError{Msg: "fileEntry too short"}
+			return nil, &fserr.DeserializationError{Msg: "fileEntry too short"}
 		}
 		dref := [40]byte{}
 		copy(dref[:], data[9:49])
 		return NewFileEntry(string(data[49:]), B64i(data[1:9]), dref), nil
 	default:
-		return nil, &DeserializationError{Msg: "invalid treeEntry type"}
+		return nil, &fserr.DeserializationError{Msg: "invalid treeEntry type"}
 	}
 }

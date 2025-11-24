@@ -1,6 +1,7 @@
 package meta
 
 import (
+	"backup/src/fserr"
 	"backup/src/meta/internal"
 
 	"go.etcd.io/bbolt"
@@ -22,7 +23,7 @@ func (r *Metadata) Readdir(path []string) (entries []TreeEntry, err error) {
 
 		// Ensure the target is a directory
 		if _, isDir := entry.(*DirEntry); !isDir {
-			return ErrNotDir // Test coverage: needs file implementation
+			return fserr.ErrNotDir // Test coverage: needs file implementation
 		}
 
 		// Read the directory contents

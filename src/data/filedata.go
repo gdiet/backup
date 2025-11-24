@@ -2,15 +2,10 @@ package data
 
 import (
 	"backup/src/cache"
-	"errors"
+	"backup/src/fserr"
 	"path/filepath"
 	"strconv"
 	"sync"
-)
-
-var (
-	ErrExists   = errors.New("already exists")
-	ErrNotFound = errors.New("not found")
 )
 
 // FileData manages file contents.
@@ -32,7 +27,7 @@ func Add(h *FileData, id uint64) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 	if _, exists := h.open[id]; exists {
-		return ErrExists
+		return fserr.ErrExists
 	}
 	path := filepath.Join(h.cachePath, strconv.FormatUint(id, 10))
 	h.open[id] = cache.NewCache(path, nil)
@@ -45,7 +40,7 @@ func Close(h *FileData, id uint64) error {
 	defer h.lock.Unlock()
 	handle, exists := h.open[id]
 	if !exists {
-		return ErrNotFound
+		return fserr.ErrNotFound
 	}
 	delete(h.open, id)
 	h.closing[id] = append(h.closing[id], handle)

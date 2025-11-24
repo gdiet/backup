@@ -1,6 +1,7 @@
 package fuse
 
 import (
+	"backup/src/fserr"
 	"backup/src/meta"
 	"backup/src/util"
 	"log"
@@ -20,11 +21,11 @@ func (f *FuseFS) Mkdir(path string, mode uint32) int {
 	switch err {
 	case nil:
 		return 0
-	case meta.ErrNotFound:
+	case fserr.ErrNotFound:
 		return -fuse.ENOENT
-	case meta.ErrNotDir:
+	case fserr.ErrNotDir:
 		return -fuse.ENOTDIR
-	case meta.ErrExists:
+	case fserr.ErrExists:
 		return -fuse.EEXIST
 	default:
 		util.AssertionFailedf("unexpected error %v in Mkdir", err)
@@ -44,13 +45,13 @@ func (f *FuseFS) Rmdir(path string) int {
 	switch err {
 	case nil:
 		return 0
-	case meta.ErrNotFound:
+	case fserr.ErrNotFound:
 		return -fuse.ENOENT
-	case meta.ErrNotDir:
+	case fserr.ErrNotDir:
 		return -fuse.ENOTDIR
-	case meta.ErrNotEmpty:
+	case fserr.ErrNotEmpty:
 		return -fuse.ENOTEMPTY
-	case meta.ErrIsRoot:
+	case fserr.ErrIsRoot:
 		return -fuse.EBUSY
 	default:
 		util.AssertionFailedf("unexpected error %v in Rmdir", err)
@@ -73,9 +74,9 @@ func (f *FuseFS) Readdir(path string, fill func(name string, stat *fuse.Stat_t, 
 	switch err {
 	case nil:
 		// continue
-	case meta.ErrNotFound:
+	case fserr.ErrNotFound:
 		return -fuse.ENOENT
-	case meta.ErrNotDir:
+	case fserr.ErrNotDir:
 		return -fuse.ENOTDIR
 	default:
 		util.AssertionFailedf("unexpected error %v in Readdir", err)
@@ -117,11 +118,11 @@ func (f *FuseFS) Rename(oldPath string, newPath string) int {
 	switch err {
 	case nil:
 		return 0
-	case meta.ErrNotFound:
+	case fserr.ErrNotFound:
 		return -fuse.ENOENT
-	case meta.ErrNotDir:
+	case fserr.ErrNotDir:
 		return -fuse.ENOTDIR
-	case meta.ErrExists:
+	case fserr.ErrExists:
 		return -fuse.EEXIST
 	default:
 		util.AssertionFailedf("unexpected error %v in Rename", err)

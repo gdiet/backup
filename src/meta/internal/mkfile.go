@@ -1,6 +1,9 @@
 package internal
 
-import "time"
+import (
+	"backup/src/fserr"
+	"time"
+)
 
 // Mkfile creates a new file. It does not check whether the parent exists.
 // Returns the ID of the newly created file.
@@ -9,9 +12,9 @@ func Mkfile(tree Bucket, children Bucket, parentID []byte, name string) ([]byte,
 	// Check if child with name already exists
 	_, _, err := GetChild(tree, children, parentID, name)
 	if err == nil {
-		return nil, ErrExists
+		return nil, fserr.ErrExists
 	}
-	if err != ErrNotFound {
+	if err != fserr.ErrNotFound {
 		return nil, err // Other error occurred
 	}
 

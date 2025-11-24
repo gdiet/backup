@@ -1,6 +1,7 @@
 package fuse
 
 import (
+	"backup/src/fserr"
 	"backup/src/meta"
 	"backup/src/util"
 	"log"
@@ -21,11 +22,11 @@ func (f *FuseFS) Create(path string, flags int, mode uint32) (int, uint64) {
 	switch err {
 	case nil:
 		return 0, id
-	case meta.ErrNotFound:
+	case fserr.ErrNotFound:
 		return -fuse.ENOENT, 0
-	case meta.ErrNotDir:
+	case fserr.ErrNotDir:
 		return -fuse.ENOTDIR, 0
-	case meta.ErrExists:
+	case fserr.ErrExists:
 		return -fuse.EEXIST, 0
 	default:
 		util.AssertionFailedf("unexpected error %v in Create", err)
@@ -42,7 +43,7 @@ func (f *FuseFS) Open(path string, flags int) (int, uint64) {
 	log.Printf("Open flags %d - %s", flags, path)
 
 	id, entry, err := f.repo.Lookup(partsFrom(path))
-	if err == meta.ErrNotFound {
+	if err == fserr.ErrNotFound {
 		return -fuse.ENOENT, 0
 	}
 	if err != nil {

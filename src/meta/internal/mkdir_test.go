@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"backup/src/fserr"
 	"bytes"
 	"path/filepath"
 	"strings"
@@ -85,7 +86,7 @@ func TestMkdir(t *testing.T) {
 			return err
 		})
 
-		if err != ErrExists {
+		if err != fserr.ErrExists {
 			t.Errorf("Expected ErrExists for duplicate name, got: %v", err)
 		}
 	})
@@ -263,7 +264,7 @@ func TestMkdir(t *testing.T) {
 			return err
 		})
 
-		if err != ErrExists {
+		if err != fserr.ErrExists {
 			t.Errorf("Expected ErrExists for file name conflict, got: %v", err)
 		}
 	})

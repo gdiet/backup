@@ -1,6 +1,7 @@
 package meta
 
 import (
+	"backup/src/fserr"
 	testing "testing"
 )
 
@@ -42,7 +43,7 @@ func TestLookupNotFound(t *testing.T) {
 	defer repo.Close()
 
 	_, _, err := repo.Lookup([]string{"does not exist"})
-	if err != ErrNotFound {
+	if err != fserr.ErrNotFound {
 		t.Error("Expected ErrNotFound for non-existent path, got nil")
 	}
 }

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"backup/src/fserr"
 	"bytes"
 
 	"go.etcd.io/bbolt"
@@ -43,7 +44,7 @@ func GetChild(tree Bucket, children Bucket, parentID []byte, name string) ([]byt
 		}
 
 		if len(k) != 16 {
-			return nil, nil, &DeserializationError{Msg: "invalid child key length"}
+			return nil, nil, &fserr.DeserializationError{Msg: "invalid child key length"}
 		}
 
 		childID := k[8:16]
@@ -56,5 +57,5 @@ func GetChild(tree Bucket, children Bucket, parentID []byte, name string) ([]byt
 			return childID, entry, nil
 		}
 	}
-	return nil, nil, ErrNotFound
+	return nil, nil, fserr.ErrNotFound
 }

@@ -1,6 +1,7 @@
 package meta
 
 import (
+	"backup/src/fserr"
 	"backup/src/meta/internal"
 
 	"go.etcd.io/bbolt"
@@ -12,7 +13,7 @@ import (
 //   - Returns ErrNotDir if the parent is not a directory.
 func (r *Metadata) Mkfile(path []string) (uint64, error) {
 	if len(path) == 0 {
-		return 0, ErrExists // Can't create root directory
+		return 0, fserr.ErrExists // Can't create root directory
 	}
 
 	var idBytes []byte
@@ -26,7 +27,7 @@ func (r *Metadata) Mkfile(path []string) (uint64, error) {
 		}
 		// Ensure the parent is a directory
 		if _, isDir := parent.(*DirEntry); !isDir {
-			return ErrNotDir // Test coverage: needs file implementation
+			return fserr.ErrNotDir // Test coverage: needs file implementation
 		}
 
 		idBytes, err = internal.Mkfile(tree, children, parentID, path[len(path)-1])

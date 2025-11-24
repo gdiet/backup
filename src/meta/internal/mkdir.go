@@ -1,5 +1,7 @@
 package internal
 
+import "backup/src/fserr"
+
 // Mkdir creates a new directory. It does not check whether the parent exists.
 // Returns the ID of the newly created directory as bytes.
 // Returns os.ErrExist if a child with the same name already exists under the specified parent.
@@ -7,9 +9,9 @@ func Mkdir(tree Bucket, children Bucket, parentID []byte, name string) ([]byte, 
 	// Check if child with name already exists
 	_, _, err := GetChild(tree, children, parentID, name)
 	if err == nil {
-		return nil, ErrExists
+		return nil, fserr.ErrExists
 	}
-	if err != ErrNotFound {
+	if err != fserr.ErrNotFound {
 		return nil, err // Other error occurred
 	}
 
