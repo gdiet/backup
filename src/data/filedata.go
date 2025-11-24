@@ -1,4 +1,4 @@
-package filedata
+package data
 
 import (
 	"backup/src/cache"
@@ -13,22 +13,22 @@ var (
 	ErrNotFound = errors.New("not found")
 )
 
-// Handles manage temporary file contents.
+// FileData manages file contents.
 // Methods assume the maps are already initialized.
-type Handles struct {
+type FileData struct {
 	cachePath string
 	open      map[uint64]cache.Cache
 	closing   map[uint64][]cache.Cache
 	lock      sync.RWMutex
 }
 
-type Handle struct {
+type FileHandle struct {
 	ID    uint64
 	Cache cache.Cache
 }
 
 // Add adds a new handle. FIXME needs base file which can be a closing handle.
-func Add(h *Handles, id uint64) error {
+func Add(h *FileData, id uint64) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 	if _, exists := h.open[id]; exists {
@@ -40,7 +40,7 @@ func Add(h *Handles, id uint64) error {
 }
 
 // Close queues a handle for removal.
-func Close(h *Handles, id uint64) error {
+func Close(h *FileData, id uint64) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 	handle, exists := h.open[id]
