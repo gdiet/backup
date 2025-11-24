@@ -10,7 +10,7 @@ import (
 // Returns ErrNotFound if the directory does not exist.
 // Returns ErrNotDir if the path is not a directory.
 // Can return other errors.
-func (r *Repository) Readdir(path []string) (entries []TreeEntry, err error) {
+func (r *Metadata) Readdir(path []string) (entries []TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
 		tree := internal.WrapBucket(tx.Bucket(r.treeKey))
 		children := internal.WrapBucket(tx.Bucket(r.childrenKey))

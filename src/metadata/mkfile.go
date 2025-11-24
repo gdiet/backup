@@ -10,7 +10,7 @@ import (
 //   - Returns ErrExists if a child with the same name already exists under the specified parent.
 //   - Returns ErrNotFound if the parent directory does not exist.
 //   - Returns ErrNotDir if the parent is not a directory.
-func (r *Repository) Mkfile(path []string) (uint64, error) {
+func (r *Metadata) Mkfile(path []string) (uint64, error) {
 	if len(path) == 0 {
 		return 0, ErrExists // Can't create root directory
 	}

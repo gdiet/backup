@@ -50,7 +50,7 @@ func TestNewRepositoryFailures(t *testing.T) {
 	t.Run("file path points to directory", func(t *testing.T) {
 		// Create a directory instead of a file
 		tempDir := t.TempDir()
-		repo, err := NewRepository(tempDir)
+		repo, err := NewMetadata(tempDir)
 		if err == nil {
 			repo.Close()
 			t.Fatal("Expected error when opening repository with directory path, but got nil")
@@ -64,7 +64,7 @@ func TestNewRepositoryFailures(t *testing.T) {
 
 	t.Run("bucket creation failure", func(t *testing.T) {
 		dbFile := u.TempFile(t)
-		_, err := newRepository(dbFile, []byte(treeKey), []byte(childrenKey), []byte(dataKey), nil)
+		_, err := newMetadata(dbFile, []byte(treeKey), []byte(childrenKey), []byte(dataKey), nil)
 		if err == nil {
 			t.Fatal("Expected error when creating repository with nil bucket keys, but got nil")
 		}

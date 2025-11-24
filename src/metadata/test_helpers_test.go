@@ -6,9 +6,9 @@ import (
 )
 
 // testRepoForPath sets up a repository for testing.
-func testRepoForPath(t *testing.T, path string) *Repository {
+func testRepoForPath(t *testing.T, path string) *Metadata {
 	t.Helper()
-	repo, err := NewRepository(path)
+	repo, err := NewMetadata(path)
 	if err != nil {
 		t.Fatalf("Failed to create repository: %v", err)
 	}
@@ -17,9 +17,9 @@ func testRepoForPath(t *testing.T, path string) *Repository {
 
 // testRepo sets up a temporary repository for testing and returns it.
 // The containing directory is automatically removed when the test and all its subtests complete.
-func testRepo(t *testing.T) *Repository {
+func testRepo(t *testing.T) *Metadata {
 	t.Helper()
-	repo, err := NewRepository(u.TempFile(t))
+	repo, err := NewMetadata(u.TempFile(t))
 	if err != nil {
 		t.Fatalf("Failed to create repository: %v", err)
 	}

@@ -20,7 +20,7 @@ import (
 // Returns ErrIsDir if trying to rename a file to a directory.
 // Returns ErrInvalid if trying to rename a directory to a subdirectory of itself.
 // Returns ErrIsRoot if trying to rename the root directory itself.
-func (r *Repository) Rename(oldPath []string, newPath []string) error {
+func (r *Metadata) Rename(oldPath []string, newPath []string) error {
 	// handle root directory rename
 	if stopHere, err := checkForRootDirectoryRename(oldPath, newPath); stopHere {
 		return err

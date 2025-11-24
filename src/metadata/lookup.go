@@ -8,7 +8,7 @@ import (
 
 // Lookup looks up a path and returns the ID and tree entry.
 // Returns ErrNotFound if the path does not exist.
-func (r *Repository) Lookup(path []string) (id uint64, entry TreeEntry, err error) {
+func (r *Metadata) Lookup(path []string) (id uint64, entry TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
 		tree := internal.WrapBucket(tx.Bucket(r.treeKey))
 		children := internal.WrapBucket(tx.Bucket(r.childrenKey))

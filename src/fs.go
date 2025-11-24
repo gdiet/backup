@@ -10,10 +10,10 @@ import (
 
 type fs struct {
 	fuse.FileSystemBase
-	repo *metadata.Repository
+	repo *metadata.Metadata
 }
 
-func NewFS(repo *metadata.Repository) *fs {
+func NewFS(repo *metadata.Metadata) *fs {
 	log.Printf("Repository created")
 	return &fs{repo: repo}
 }
@@ -30,7 +30,7 @@ func (f *fs) Destroy() {
 func main() {
 	var err error
 	var tempFile *os.File
-	var r *metadata.Repository
+	var r *metadata.Metadata
 
 	if tempFile, err = os.CreateTemp("", "fs-*.db"); err != nil {
 		log.Printf("Failed to create temp file: %v", err)
@@ -53,7 +53,7 @@ func main() {
 	}
 	log.Printf("Using temp database file: %s", tempFile.Name())
 
-	if r, err = metadata.NewRepository(tempFile.Name()); err != nil {
+	if r, err = metadata.NewMetadata(tempFile.Name()); err != nil {
 		log.Printf("Failed to create repository: %v", err)
 		return
 	}

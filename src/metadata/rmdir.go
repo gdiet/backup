@@ -11,7 +11,7 @@ import (
 // Returns ErrNotDir if the path is not a directory.
 // Returns ErrNotEmpty if the directory is not empty.
 // Returns ErrIsRoot if the directory is the root.
-func (r *Repository) Rmdir(path []string) error {
+func (r *Metadata) Rmdir(path []string) error {
 	if len(path) == 0 {
 		return ErrIsRoot // Can't remove root directory
 	}
