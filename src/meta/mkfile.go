@@ -1,17 +1,16 @@
-package metadata
+package meta
 
 import (
-	"backup/src/metadata/internal"
+	"backup/src/meta/internal"
 
 	"go.etcd.io/bbolt"
 )
 
-// Mkdir creates a new directory.
-// Returns the ID of the newly created directory.
-// Returns ErrExists if a child with the same name already exists under the specified parent.
-// Returns ErrNotFound if the parent directory does not exist.
-// Returns ErrNotDir if the parent is not a directory.
-func (r *Metadata) Mkdir(path []string) (uint64, error) {
+// Mkfile creates a new empty file, returning the file ID.
+//   - Returns ErrExists if a child with the same name already exists under the specified parent.
+//   - Returns ErrNotFound if the parent directory does not exist.
+//   - Returns ErrNotDir if the parent is not a directory.
+func (r *Metadata) Mkfile(path []string) (uint64, error) {
 	if len(path) == 0 {
 		return 0, ErrExists // Can't create root directory
 	}
@@ -30,7 +29,7 @@ func (r *Metadata) Mkdir(path []string) (uint64, error) {
 			return ErrNotDir // Test coverage: needs file implementation
 		}
 
-		idBytes, err = internal.Mkdir(tree, children, parentID, path[len(path)-1])
+		idBytes, err = internal.Mkfile(tree, children, parentID, path[len(path)-1])
 		return err
 	})
 	if err != nil {

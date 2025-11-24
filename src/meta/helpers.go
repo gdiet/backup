@@ -1,4 +1,4 @@
-package metadata
+package meta
 
 // Equals checks if two slices of comparable elements are equal.
 func Equals[T comparable](a, b []T) bool {
