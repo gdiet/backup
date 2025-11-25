@@ -9,18 +9,18 @@ import (
 // Cache is a file contents cache that combines the memory and disk cache layers.
 type Cache struct {
 	size   int64
-	sparse sparse
-	memory memory
-	disk   disk
+	sparse *sparse
+	memory *memory
+	disk   *disk
 	base   BaseFile
 }
 
 func NewCache(cacheFilePath string, baseFile BaseFile) Cache {
 	return Cache{
 		size:   baseFile.Length(),
-		sparse: sparse{},
-		memory: memory{},
-		disk:   disk{filePath: cacheFilePath},
+		sparse: &sparse{},
+		memory: &memory{},
+		disk:   &disk{filePath: cacheFilePath},
 		base:   baseFile,
 	}
 }
