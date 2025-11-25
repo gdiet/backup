@@ -86,8 +86,8 @@ func TestMkdir(t *testing.T) {
 			return err
 		})
 
-		if err != fserr.ErrExists {
-			t.Errorf("Expected ErrExists for duplicate name, got: %v", err)
+		if err != fserr.Exists {
+			t.Errorf("Expected Exists for duplicate name, got: %v", err)
 		}
 	})
 
@@ -264,8 +264,8 @@ func TestMkdir(t *testing.T) {
 			return err
 		})
 
-		if err != fserr.ErrExists {
-			t.Errorf("Expected ErrExists for file name conflict, got: %v", err)
+		if err != fserr.Exists {
+			t.Errorf("Expected Exists for file name conflict, got: %v", err)
 		}
 	})
 

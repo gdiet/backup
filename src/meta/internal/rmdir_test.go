@@ -64,8 +64,8 @@ func TestRmdir(t *testing.T) {
 			}
 			return Rmdir(tree, children, root, id)
 		})
-		if err != fserr.ErrNotEmpty {
-			t.Fatalf("Expected ErrNotEmpty, got: %v", err)
+		if err != fserr.NotEmpty {
+			t.Fatalf("Expected NotEmpty, got: %v", err)
 		}
 	})
 

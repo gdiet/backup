@@ -15,12 +15,12 @@ import (
 // If oldPath is a directory and newPath is an empty directory, newPath is replaced.
 // If oldPath is a file and newPath is an existing file, newPath is replaced.
 // If oldPath and newPath exist and are the same, no operation is performed (success).
-// Returns ErrNotFound if the source path or a parent of the destination path does not exist.
-// Returns ErrNotEmpty if trying to rename a directory to an existing non-empty directory.
-// Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
-// Returns ErrIsDir if trying to rename a file to a directory.
-// Returns ErrInvalid if trying to rename a directory to a subdirectory of itself.
-// Returns ErrIsRoot if trying to rename the root directory itself.
+// Returns NotFound if the source path or a parent of the destination path does not exist.
+// Returns NotEmpty if trying to rename a directory to an existing non-empty directory.
+// Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+// Returns IsDir if trying to rename a file to a directory.
+// Returns Invalid if trying to rename a directory to a subdirectory of itself.
+// Returns IsRoot if trying to rename the root directory itself.
 func (r *Metadata) Rename(oldPath []string, newPath []string) error {
 	// handle root directory rename
 	if stopHere, err := checkForRootDirectoryRename(oldPath, newPath); stopHere {
@@ -34,11 +34,11 @@ func (r *Metadata) Rename(oldPath []string, newPath []string) error {
 		// Lookup source: parent and entry
 		oldParentID, _, err := internal.Lookup(tree, children, oldPath[:len(oldPath)-1])
 		if err != nil {
-			return err // Returns ErrNotFound if the source path or a parent of the destination path does not exist.
+			return err // Returns NotFound if the source path or a parent of the destination path does not exist.
 		}
 		oldEntryID, oldEntry, err := internal.GetChild(tree, children, oldParentID, oldPath[len(oldPath)-1])
 		if err != nil {
-			return err // Returns ErrNotFound if the source path or a parent of the destination path does not exist.
+			return err // Returns NotFound if the source path or a parent of the destination path does not exist.
 		}
 
 		// Check for no-op rename (source = target) for existing paths
@@ -49,31 +49,31 @@ func (r *Metadata) Rename(oldPath []string, newPath []string) error {
 		// Lookup destination: parent and, if any, entry
 		newParentID, newParent, err := internal.Lookup(tree, children, newPath[:len(newPath)-1])
 		if err != nil {
-			return err // Returns ErrNotFound if the source path or a parent of the destination path does not exist.
+			return err // Returns NotFound if the source path or a parent of the destination path does not exist.
 		}
 		// Ensure the new parent is a directory
 		switch newParent.(type) {
 		case *FileEntry:
-			return fserr.ErrNotDir // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		case *DirEntry:
 			// continue
 		default:
 			util.AssertionFailedf("unexpected destination parent entry type %T in Rename", newParent)
-			return fserr.ErrNotDir // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		}
 
 		if _, isDir := newParent.(*DirEntry); !isDir {
-			return fserr.ErrNotDir // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		}
 
 		// Detect loop renames (directory to its own subdirectory)
 		if len(oldPath) < len(newPath) && Equals(oldPath, newPath[:len(oldPath)]) {
-			return fserr.ErrInvalid // Returns ErrInvalid if trying to rename a directory to a subdirectory of itself.
+			return fserr.Invalid // Returns Invalid if trying to rename a directory to a subdirectory of itself.
 		}
 
 		switch oldEntry.(type) {
 		case *FileEntry:
-			// Returns ErrIsDir if trying to rename a file to a directory.
+			// Returns IsDir if trying to rename a file to a directory.
 			return errors.New("not implemented: renaming files") // TODO wait for implementation of files in the filesystem
 		case *DirEntry:
 			// continue
@@ -87,20 +87,20 @@ func (r *Metadata) Rename(oldPath []string, newPath []string) error {
 }
 
 // checkForRootDirectoryRename checks if the rename operation involves the root directory.
-// If oldPath is the root directory, it returns ErrIsRoot unless newPath is also the root directory (no-op in that case).
+// If oldPath is the root directory, it returns IsRoot unless newPath is also the root directory (no-op in that case).
 func checkForRootDirectoryRename(oldPath []string, newPath []string) (bool, error) {
 	if len(oldPath) == 0 {
 		if len(newPath) == 0 {
 			return true, nil // If oldPath and newPath exist and are the same, no operation is performed (success).
 		}
-		return true, fserr.ErrIsRoot // Returns ErrIsRoot if trying to rename the root directory itself.
+		return true, fserr.IsRoot // Returns IsRoot if trying to rename the root directory itself.
 	}
 	return false, nil
 }
 
 // renameDirectory handles renaming of directories, including moving to a new parent.
-// Returns ErrNotEmpty if trying to rename a directory to an existing non-empty directory.
-// Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+// Returns NotEmpty if trying to rename a directory to an existing non-empty directory.
+// Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 func renameDirectory(
 	tree internal.Bucket, children internal.Bucket,
 	oldParentID, oldEntryID []byte, oldEntry TreeEntry,
@@ -113,12 +113,12 @@ func renameDirectory(
 		// Destination exists
 		switch replaceEntry.(type) {
 		case *FileEntry:
-			return fserr.ErrNotDir // Returns ErrNotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		case *DirEntry:
 			// Remove destination entry unless it's not empty
 			err := internal.Rmdir(tree, children, newParentID, replaceEntryID)
 			if err != nil {
-				return err // Returns ErrNotEmpty if trying to rename a directory to an existing non-empty directory.
+				return err // Returns NotEmpty if trying to rename a directory to an existing non-empty directory.
 			}
 		default:
 			util.AssertionFailedf("unexpected destination entry type %T in Rename", replaceEntry)

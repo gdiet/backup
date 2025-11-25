@@ -34,7 +34,7 @@ func hasChildren(children *bbolt.Bucket, id []byte) bool {
 
 // GetChild searches for a child with the given name under the specified parent.
 // Returns the child ID as bytes and the tree entry.
-// Returns ErrNotFound if the child does not exist.
+// Returns NotFound if the child does not exist.
 // TODO move to separate file, including tests
 func GetChild(tree Bucket, children Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
 	cursor := children.B().Cursor()
@@ -57,5 +57,5 @@ func GetChild(tree Bucket, children Bucket, parentID []byte, name string) ([]byt
 			return childID, entry, nil
 		}
 	}
-	return nil, nil, fserr.ErrNotFound
+	return nil, nil, fserr.NotFound
 }

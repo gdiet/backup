@@ -21,11 +21,11 @@ func (f *FuseFS) Mkdir(path string, mode uint32) int {
 	switch err {
 	case nil:
 		return 0
-	case fserr.ErrNotFound:
+	case fserr.NotFound:
 		return -fuse.ENOENT
-	case fserr.ErrNotDir:
+	case fserr.NotDir:
 		return -fuse.ENOTDIR
-	case fserr.ErrExists:
+	case fserr.Exists:
 		return -fuse.EEXIST
 	default:
 		util.AssertionFailedf("unexpected error %v in Mkdir", err)
@@ -45,13 +45,13 @@ func (f *FuseFS) Rmdir(path string) int {
 	switch err {
 	case nil:
 		return 0
-	case fserr.ErrNotFound:
+	case fserr.NotFound:
 		return -fuse.ENOENT
-	case fserr.ErrNotDir:
+	case fserr.NotDir:
 		return -fuse.ENOTDIR
-	case fserr.ErrNotEmpty:
+	case fserr.NotEmpty:
 		return -fuse.ENOTEMPTY
-	case fserr.ErrIsRoot:
+	case fserr.IsRoot:
 		return -fuse.EBUSY
 	default:
 		util.AssertionFailedf("unexpected error %v in Rmdir", err)
@@ -74,9 +74,9 @@ func (f *FuseFS) Readdir(path string, fill func(name string, stat *fuse.Stat_t, 
 	switch err {
 	case nil:
 		// continue
-	case fserr.ErrNotFound:
+	case fserr.NotFound:
 		return -fuse.ENOENT
-	case fserr.ErrNotDir:
+	case fserr.NotDir:
 		return -fuse.ENOTDIR
 	default:
 		util.AssertionFailedf("unexpected error %v in Readdir", err)
@@ -118,11 +118,11 @@ func (f *FuseFS) Rename(oldPath string, newPath string) int {
 	switch err {
 	case nil:
 		return 0
-	case fserr.ErrNotFound:
+	case fserr.NotFound:
 		return -fuse.ENOENT
-	case fserr.ErrNotDir:
+	case fserr.NotDir:
 		return -fuse.ENOTDIR
-	case fserr.ErrExists:
+	case fserr.Exists:
 		return -fuse.EEXIST
 	default:
 		util.AssertionFailedf("unexpected error %v in Rename", err)

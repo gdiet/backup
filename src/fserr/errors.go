@@ -6,13 +6,13 @@ import (
 )
 
 var (
-	ErrExists   = errors.New("already exists")
-	ErrInvalid  = errors.New("invalid operation")
-	ErrIsDir    = errors.New("is a directory")
-	ErrIsRoot   = errors.New("is root directory")
-	ErrNotDir   = errors.New("not a directory")
-	ErrNotEmpty = errors.New("directory not empty")
-	ErrNotFound = errors.New("not found")
+	Exists   = errors.New("already exists")
+	Invalid  = errors.New("invalid operation")
+	IsDir    = errors.New("is a directory")
+	IsRoot   = errors.New("is root directory")
+	NotDir   = errors.New("not a directory")
+	NotEmpty = errors.New("directory not empty")
+	NotFound = errors.New("not found")
 )
 
 type DeserializationError struct {

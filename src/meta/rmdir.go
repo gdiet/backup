@@ -8,13 +8,13 @@ import (
 )
 
 // Rmdir removes a directory.
-// Returns ErrNotFound if the path does not exist.
-// Returns ErrNotDir if the path is not a directory.
-// Returns ErrNotEmpty if the directory is not empty.
-// Returns ErrIsRoot if the directory is the root.
+// Returns NotFound if the path does not exist.
+// Returns NotDir if the path is not a directory.
+// Returns NotEmpty if the directory is not empty.
+// Returns IsRoot if the directory is the root.
 func (r *Metadata) Rmdir(path []string) error {
 	if len(path) == 0 {
-		return fserr.ErrIsRoot // Can't remove root directory
+		return fserr.IsRoot // Can't remove root directory
 	}
 
 	return r.db.Update(func(tx *bbolt.Tx) error {
@@ -23,16 +23,16 @@ func (r *Metadata) Rmdir(path []string) error {
 
 		parentID, _, err := internal.Lookup(tree, children, path[:len(path)-1])
 		if err != nil {
-			return err // ErrNotFound
+			return err // NotFound
 		}
 		id, entry, err := internal.GetChild(tree, children, parentID, path[len(path)-1])
 		if err != nil {
-			return err // ErrNotFound
+			return err // NotFound
 		}
 		if _, isDir := entry.(*DirEntry); !isDir {
-			return fserr.ErrNotDir // Test coverage: needs file implementation
+			return fserr.NotDir // Test coverage: needs file implementation
 		}
 
-		return internal.Rmdir(tree, children, parentID, id) //ErrNotEmpty
+		return internal.Rmdir(tree, children, parentID, id) //NotEmpty
 	})
 }

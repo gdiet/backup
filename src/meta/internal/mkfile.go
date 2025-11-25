@@ -12,9 +12,9 @@ func Mkfile(tree Bucket, children Bucket, parentID []byte, name string) ([]byte,
 	// Check if child with name already exists
 	_, _, err := GetChild(tree, children, parentID, name)
 	if err == nil {
-		return nil, fserr.ErrExists
+		return nil, fserr.Exists
 	}
-	if err != fserr.ErrNotFound {
+	if err != fserr.NotFound {
 		return nil, err // Other error occurred
 	}
 

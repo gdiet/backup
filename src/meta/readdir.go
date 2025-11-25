@@ -8,8 +8,8 @@ import (
 )
 
 // Readdir lists the entries under the specified directory (nil or empty for root).
-// Returns ErrNotFound if the directory does not exist.
-// Returns ErrNotDir if the path is not a directory.
+// Returns NotFound if the directory does not exist.
+// Returns NotDir if the path is not a directory.
 // Can return other errors.
 func (r *Metadata) Readdir(path []string) (entries []TreeEntry, err error) {
 	err = r.db.View(func(tx *bbolt.Tx) error {
@@ -18,12 +18,12 @@ func (r *Metadata) Readdir(path []string) (entries []TreeEntry, err error) {
 
 		id, entry, err := internal.Lookup(tree, children, path)
 		if err != nil {
-			return err // ErrNotFound and others
+			return err // NotFound and others
 		}
 
 		// Ensure the target is a directory
 		if _, isDir := entry.(*DirEntry); !isDir {
-			return fserr.ErrNotDir // Test coverage: needs file implementation
+			return fserr.NotDir // Test coverage: needs file implementation
 		}
 
 		// Read the directory contents

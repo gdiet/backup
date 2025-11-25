@@ -8,12 +8,12 @@ import (
 )
 
 // Mkfile creates a new empty file, returning the file ID.
-//   - Returns ErrExists if a child with the same name already exists under the specified parent.
-//   - Returns ErrNotFound if the parent directory does not exist.
-//   - Returns ErrNotDir if the parent is not a directory.
+//   - Returns Exists if a child with the same name already exists under the specified parent.
+//   - Returns NotFound if the parent directory does not exist.
+//   - Returns NotDir if the parent is not a directory.
 func (r *Metadata) Mkfile(path []string) (uint64, error) {
 	if len(path) == 0 {
-		return 0, fserr.ErrExists // Can't create root directory
+		return 0, fserr.Exists // Can't create root directory
 	}
 
 	var idBytes []byte
@@ -23,11 +23,11 @@ func (r *Metadata) Mkfile(path []string) (uint64, error) {
 
 		parentID, parent, err := internal.Lookup(tree, children, path[:len(path)-1])
 		if err != nil {
-			return err // ErrNotFound
+			return err // NotFound
 		}
 		// Ensure the parent is a directory
 		if _, isDir := parent.(*DirEntry); !isDir {
-			return fserr.ErrNotDir // Test coverage: needs file implementation
+			return fserr.NotDir // Test coverage: needs file implementation
 		}
 
 		idBytes, err = internal.Mkfile(tree, children, parentID, path[len(path)-1])

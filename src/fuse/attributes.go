@@ -34,7 +34,7 @@ func (f *FuseFS) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	switch err {
 	case nil:
 		// continue
-	case fserr.ErrNotFound:
+	case fserr.NotFound:
 		return -fuse.ENOENT
 	default:
 		util.AssertionFailedf("unexpected error %v in Getattr", err)

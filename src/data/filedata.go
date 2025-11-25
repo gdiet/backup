@@ -27,7 +27,7 @@ func Add(h *FileData, id uint64) error {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 	if _, exists := h.open[id]; exists {
-		return fserr.ErrExists
+		return fserr.Exists
 	}
 	path := filepath.Join(h.cachePath, strconv.FormatUint(id, 10))
 	h.open[id] = cache.NewCache(path, nil)
@@ -40,7 +40,7 @@ func Close(h *FileData, id uint64) error {
 	defer h.lock.Unlock()
 	handle, exists := h.open[id]
 	if !exists {
-		return fserr.ErrNotFound
+		return fserr.NotFound
 	}
 	delete(h.open, id)
 	h.closing[id] = append(h.closing[id], handle)
