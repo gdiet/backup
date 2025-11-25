@@ -12,9 +12,9 @@ import (
 
 // Create creates and opens a file.
 //
-//   Returns -fuse.ENOENT if the parent path does not exist.
-//   Returns -fuse.ENOTDIR if the parent path is not a directory.
-//   Returns -fuse.EEXIST if the file already exists.
+//	Returns -fuse.ENOENT if the parent path does not exist.
+//	Returns -fuse.ENOTDIR if the parent path is not a directory.
+//	Returns -fuse.EEXIST if the file already exists.
 //
 // 'flags' and 'mode' are ignored until we find a use case where we need them.
 func (f *FS) Create(path string, flags int, mode uint32) (int, uint64) {
@@ -41,8 +41,8 @@ func (f *FS) Create(path string, flags int, mode uint32) (int, uint64) {
 
 // Open opens a file.
 //
-//   Returns -fuse.ENOENT if the path does not exist.
-//   Returns -fuse.EISDIR if the path is a directory.
+//	Returns -fuse.ENOENT if the path does not exist.
+//	Returns -fuse.EISDIR if the path is a directory.
 //
 // 'flags' is ignored until we find a use case where we need it.
 func (f *FS) Open(path string, flags int) (int, uint64) {

@@ -13,10 +13,10 @@ import (
 // Mkdir creates a new directory:
 // https://man7.org/linux/man-pages/man2/mkdir.2.html
 //
-//   Returns -fuse.ENOENT if the parent path does not exist.
-//   Returns -fuse.ENOTDIR if the parent path is not a directory.
-//   Returns -fuse.EEXIST if a child with the same name already exists.
-//   Returns -fuse.EIO on errors.
+//	Returns -fuse.ENOENT if the parent path does not exist.
+//	Returns -fuse.ENOTDIR if the parent path is not a directory.
+//	Returns -fuse.EEXIST if a child with the same name already exists.
+//	Returns -fuse.EIO on errors.
 //
 // 'mode' is ignored until we find a use case where we need it.
 func (f *FS) Mkdir(path string, mode uint32) int {
@@ -43,10 +43,10 @@ func (f *FS) Mkdir(path string, mode uint32) int {
 // Rmdir removes a directory:
 // https://man7.org/linux/man-pages/man2/rmdir.2.html
 //
-//   Returns -fuse.ENOENT if the path does not exist.
-//   Returns -fuse.ENOTDIR if the path is not a directory.
-//   Returns -fuse.ENOTEMPTY if the directory is not empty.
-//   Returns -fuse.EBUSY if the directory is the root.
+//	Returns -fuse.ENOENT if the path does not exist.
+//	Returns -fuse.ENOTDIR if the path is not a directory.
+//	Returns -fuse.ENOTEMPTY if the directory is not empty.
+//	Returns -fuse.EBUSY if the directory is the root.
 func (f *FS) Rmdir(path string) int {
 	log.Printf("Rmdir - %s", path)
 
@@ -73,9 +73,9 @@ func (f *FS) Rmdir(path string) int {
 // Readdir reads the contents of a directory:
 // https://man7.org/linux/man-pages/man2/readdir.2.html
 //
-//   Returns -fuse.ENOENT if the path does not exist.
-//   Returns -fuse.ENOTDIR if the path is not a directory.
-//   Returns -fuse.EIO on other errors.
+//	Returns -fuse.ENOENT if the path does not exist.
+//	Returns -fuse.ENOTDIR if the path is not a directory.
+//	Returns -fuse.EIO on other errors.
 //
 // 'ofst' and 'fh' are ignored until we find a use case where we need them.
 func (f *FS) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
@@ -121,14 +121,14 @@ func (f *FS) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 // If oldPath is a file and newPath is an existing file, newPath is replaced.
 // If oldPath and newPath exist and are the same, no operation is performed (success).
 //
-//   Returns -fuse.ENOENT if oldPath or a parent of newPath does not exist.
-//   Returns -fuse.ENOTDIR if a parent of newPath is not a directory.
-//   Returns -fuse.ENOTDIR if renaming a directory to a file.
-//   Returns -fuse.ENOTEMPTY if renaming a directory to an existing non-empty directory.
-//   Returns -fuse.EISDIR if renaming a file to a directory.
-//   Returns -fuse.EINVAL if renaming a directory to a subdirectory of itself.
-//   Returns -fuse.EBUSY if renaming the root directory itself.
-//   Returns -fuse.EIO on other errors.
+//	Returns -fuse.ENOENT if oldPath or a parent of newPath does not exist.
+//	Returns -fuse.ENOTDIR if a parent of newPath is not a directory.
+//	Returns -fuse.ENOTDIR if renaming a directory to a file.
+//	Returns -fuse.ENOTEMPTY if renaming a directory to an existing non-empty directory.
+//	Returns -fuse.EISDIR if renaming a file to a directory.
+//	Returns -fuse.EINVAL if renaming a directory to a subdirectory of itself.
+//	Returns -fuse.EBUSY if renaming the root directory itself.
+//	Returns -fuse.EIO on other errors.
 func (f *FS) Rename(oldPath string, newPath string) int {
 	log.Printf("Rename - %s --> %s", oldPath, newPath)
 

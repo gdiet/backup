@@ -15,8 +15,8 @@ import (
 // Getattr gets the attributes of a file or directory:
 // https://man7.org/linux/man-pages/man2/stat.2.html
 //
-//   Returns -fuse.ENOENT if the path does not exist.
-//   Returns -fuse.EIO on other errors.
+//	Returns -fuse.ENOENT if the path does not exist.
+//	Returns -fuse.EIO on other errors.
 //
 // 'fh' is ignored until we find a use case where we need it.
 func (f *FS) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
