@@ -21,7 +21,7 @@ func TestEmptyBaseFileRead(t *testing.T) {
 		}()
 
 		// Dies sollte eine Panic auslösen wegen assert(false, ...)
-		err := emptyBase.Read(0, data)
+		_, err := emptyBase.Read(0, data)
 
 		// Diese Zeile sollte nie erreicht werden
 		t.Fatalf("Expected panic, but got error: %v", err)

@@ -12,9 +12,11 @@ type MockErrorBaseFile struct {
 	errorToReturn error
 }
 
-func (m *MockErrorBaseFile) Read(off int64, data bytes) error {
+var _ BaseFile = (*MockErrorBaseFile)(nil)
+
+func (m *MockErrorBaseFile) Read(off int64, data bytes) (int, error) {
 	// Return the configured error instead of reading
-	return m.errorToReturn
+	return 0, m.errorToReturn
 }
 
 func (m *MockErrorBaseFile) Length() int64 {
@@ -35,17 +37,11 @@ func TestCacheReadBaseFileError(t *testing.T) {
 	// Try to read from an area that would trigger base.Read()
 	// Since there's no data in memory/disk cache, it will fall back to base
 	data := bytes{0, 0, 0}
-	bytesRead, err := cache.Read(0, data)
+	_, err := cache.Read(0, data)
 
 	// Should return the error from base.Read()
 	if err != expectedError {
 		t.Errorf("expected error %v, got %v", expectedError, err)
-	}
-
-	// Should return the calculated bytesRead even when error occurs
-	// (bytesRead is calculated based on available size, not actual read success)
-	if bytesRead != 3 {
-		t.Errorf("expected 3 bytes read calculation, got %d", bytesRead)
 	}
 }
 

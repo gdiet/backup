@@ -6,17 +6,24 @@ import (
 )
 
 type BaseFile interface {
-	// Read reads data from the base file. Unless an error occurs, always fills the entire data slice.
-	Read(off int64, data bytes) (err error)
+	// Read reads data from the base file.
+	// Returns the total number of bytes read, which may be less than len(data) only if EOF is reached.
+	Read(off int64, data bytes) (bytesRead int, err error)
 	Length() int64
 }
 
 type EmptyBaseFile struct{}
 
-func (b *EmptyBaseFile) Read(off int64, data bytes) error {
+var _ BaseFile = (*EmptyBaseFile)(nil)
+
+func (b *EmptyBaseFile) Read(off int64, data bytes) (int, error) {
+	if len(data) == 0 {
+		return 0, nil
+	}
 	util.AssertionFailed("unexpected read from empty base file")
-	return io.EOF
+	return 0, io.EOF
 }
+
 func (b *EmptyBaseFile) Length() int64 {
 	return 0
 }

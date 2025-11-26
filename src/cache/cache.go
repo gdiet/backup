@@ -15,6 +15,8 @@ type Cache struct {
 	base   BaseFile
 }
 
+var _ BaseFile = (*Cache)(nil)
+
 func NewCache(cacheFilePath string, baseFile BaseFile) Cache {
 	return Cache{
 		size:   baseFile.Length(),
@@ -25,8 +27,13 @@ func NewCache(cacheFilePath string, baseFile BaseFile) Cache {
 	}
 }
 
+// Length returns the current size of the cache entry.
+func (c *Cache) Length() int64 {
+	return c.size
+}
+
 // Read reads data from the cache entry.
-// Returns the total number of bytes read, which may be less than len(data) if EOF is reached.
+// Returns the total number of bytes read, which may be less than len(data) only if EOF is reached.
 func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
 	length := len(data)
 	if length <= 0 {
@@ -54,7 +61,6 @@ func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
 		for _, remainingArea := range remainingAreas {
 			remainingDataStart := remainingArea.off - off
 			remainingAreaData := data[remainingDataStart : remainingDataStart+remainingArea.len]
-			// Invariant: disk.file is always open here
 			toBeReadFromBase, err := c.disk.read(remainingArea.off, remainingAreaData)
 			if err != nil {
 				return bytesRead, err
@@ -64,10 +70,12 @@ func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
 			for _, baseArea := range toBeReadFromBase {
 				baseDataStart := baseArea.off - off
 				baseAreaData := data[baseDataStart : baseDataStart+baseArea.len]
-				err := c.base.Read(baseArea.off, baseAreaData)
-				util.Assert(err != io.EOF, "base read returned EOF unexpectedly")
-				if err != nil && err != io.EOF {
-					return bytesRead, err
+				bytesRead, err := c.base.Read(baseArea.off, baseAreaData)
+				if err != nil {
+					if err != io.EOF {
+						return bytesRead, err
+					}
+					util.AssertionFailedf("base read returned EOF unexpectedly, bytes read %d, expected %d", bytesRead, len(baseAreaData))
 				}
 			}
 		}

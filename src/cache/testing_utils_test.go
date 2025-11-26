@@ -12,14 +12,16 @@ func newCacheWithBaseData(data bytes) Cache {
 	return NewCache("", &data)
 }
 
+var _ BaseFile = (*bytes)(nil)
+
 // Read method of BaseFile implementation using bytes slice.
 // This allows testing with predefined data.
-func (b *bytes) Read(off int64, data bytes) error {
-	if off < 0 || off >= int64(len(*b)) {
-		return io.EOF
-	}
+func (b *bytes) Read(off int64, data bytes) (int, error) {
 	copy(data, (*b)[off:])
-	return nil
+	if len(data) > len((*b)[off:]) {
+		return len((*b)[off:]), io.EOF
+	}
+	return len(data), nil
 }
 
 // Length method of BaseFile implementation using bytes slice.
