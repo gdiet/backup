@@ -113,7 +113,7 @@ func (m *memory) remove(off int64, length int64) (memoryDelta int) {
 				// There is a part left of the removed area
 				trimmed := currentArea.data[:off-currentArea.off]
 				newAreas = append(newAreas, dataArea{off: currentArea.off, data: trimmed.copy()})
-				memoryDelta += int(len(trimmed))
+				memoryDelta += len(trimmed)
 			}
 			if currentArea.end() > end {
 				// There is a part right of the removed area

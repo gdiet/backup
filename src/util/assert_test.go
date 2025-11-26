@@ -26,5 +26,5 @@ func TestAssertf(t *testing.T) {
 	}()
 
 	// This should trigger the assertion with formatted message
-	Assertf(-5 > 0, "test value %d should be positive", 42)
+	Assertf(false, "test value %d should be positive", 42)
 }

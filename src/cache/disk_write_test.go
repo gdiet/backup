@@ -79,11 +79,11 @@ func TestDiskWrite(t *testing.T) {
 		path := "test_disk_write_overwrite.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		err := d.write(0, bytes([]byte{1, 2, 3, 4}))
+		err := d.write(0, []byte{1, 2, 3, 4})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		err = d.write(2, bytes([]byte{9, 8}))
+		err = d.write(2, []byte{9, 8})
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}

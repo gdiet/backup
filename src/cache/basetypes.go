@@ -47,9 +47,9 @@ type areas []area
 type bytes []byte
 
 // copy creates a compact deep copy of the bytes slice.
-func (data *bytes) copy() bytes {
-	result := make(bytes, len(*data))
-	copy(result, *data)
+func (b *bytes) copy() bytes {
+	result := make(bytes, len(*b))
+	copy(result, *b)
 	return result
 }
 

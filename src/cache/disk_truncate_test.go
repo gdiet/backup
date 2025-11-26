@@ -11,8 +11,8 @@ func TestDiskTruncate(t *testing.T) {
 		path := "test_disk_truncate_smaller.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(0, bytes([]byte{1, 2, 3, 4, 5}))
-		_ = d.write(10, bytes([]byte{6, 7, 8, 9, 10}))
+		_ = d.write(0, []byte{1, 2, 3, 4, 5})
+		_ = d.write(10, []byte{6, 7, 8, 9, 10})
 		err := d.shrink(8)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -35,8 +35,8 @@ func TestDiskTruncate(t *testing.T) {
 		path := "test_disk_truncate_middle.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(0, bytes([]byte{1, 2, 3, 4, 5}))
-		_ = d.write(6, bytes([]byte{6, 7, 8, 9, 10}))
+		_ = d.write(0, []byte{1, 2, 3, 4, 5})
+		_ = d.write(6, []byte{6, 7, 8, 9, 10})
 		err := d.shrink(8)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -59,8 +59,8 @@ func TestDiskTruncate(t *testing.T) {
 		path := "test_disk_truncate_larger.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(0, bytes([]byte{1, 2, 3, 4, 5}))
-		_ = d.write(10, bytes([]byte{6, 7, 8, 9, 10}))
+		_ = d.write(0, []byte{1, 2, 3, 4, 5})
+		_ = d.write(10, []byte{6, 7, 8, 9, 10})
 		err := d.shrink(16)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -83,8 +83,8 @@ func TestDiskTruncate(t *testing.T) {
 		path := "test_disk_truncate_zero.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(0, bytes([]byte{1, 2, 3, 4, 5}))
-		_ = d.write(10, bytes([]byte{6, 7, 8, 9, 10}))
+		_ = d.write(0, []byte{1, 2, 3, 4, 5})
+		_ = d.write(10, []byte{6, 7, 8, 9, 10})
 		err := d.shrink(0)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)

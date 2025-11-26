@@ -42,7 +42,7 @@ func TestReadFromBaseFile(t *testing.T) {
 
 func TestReadNoData(t *testing.T) {
 	cache := newEmptyCache()
-	data := []byte{}
+	var data []byte
 	bytesRead, err := cache.Read(0, data)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)

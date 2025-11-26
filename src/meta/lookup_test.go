@@ -2,7 +2,7 @@ package meta
 
 import (
 	"backup/src/fserr"
-	testing "testing"
+	"testing"
 )
 
 func TestLookupSuccess(t *testing.T) {

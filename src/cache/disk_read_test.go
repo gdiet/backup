@@ -13,9 +13,9 @@ func TestDiskRead(t *testing.T) {
 		path := "test_disk_read_empty.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(0, bytes([]byte{})) // ensure file exists
+		_ = d.write(0, []byte{}) // ensure file exists
 		buf := make([]byte, 5)
-		unread, err := d.read(0, bytes(buf))
+		unread, err := d.read(0, buf)
 		_ = os.Remove(path)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -33,9 +33,9 @@ func TestDiskRead(t *testing.T) {
 		path := "test_disk_read_zero_length.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(0, bytes([]byte{1, 2, 3, 4, 5}))
+		_ = d.write(0, []byte{1, 2, 3, 4, 5})
 		buf := make([]byte, 0)
-		unread, err := d.read(0, bytes(buf))
+		unread, err := d.read(0, buf)
 		_ = os.Remove(path)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -52,9 +52,9 @@ func TestDiskRead(t *testing.T) {
 		path := "test_disk_read_full.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(0, bytes([]byte{1, 2, 3, 4, 5}))
+		_ = d.write(0, []byte{1, 2, 3, 4, 5})
 		buf := make([]byte, 5)
-		unread, err := d.read(0, bytes(buf))
+		unread, err := d.read(0, buf)
 		_ = os.Remove(path)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -71,9 +71,9 @@ func TestDiskRead(t *testing.T) {
 		path := "test_disk_read_partial_start.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(2, bytes([]byte{3, 4, 5}))
+		_ = d.write(2, []byte{3, 4, 5})
 		buf := make([]byte, 5)
-		unread, err := d.read(0, bytes(buf))
+		unread, err := d.read(0, buf)
 		_ = os.Remove(path)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -91,9 +91,9 @@ func TestDiskRead(t *testing.T) {
 		path := "test_disk_read_partial_end.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(0, bytes([]byte{1, 2, 3}))
+		_ = d.write(0, []byte{1, 2, 3})
 		buf := make([]byte, 5)
-		unread, err := d.read(0, bytes(buf))
+		unread, err := d.read(0, buf)
 		_ = os.Remove(path)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -111,10 +111,10 @@ func TestDiskRead(t *testing.T) {
 		path := "test_disk_read_gap.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(0, bytes([]byte{1, 2}))
-		_ = d.write(4, bytes([]byte{5, 6}))
+		_ = d.write(0, []byte{1, 2})
+		_ = d.write(4, []byte{5, 6})
 		buf := make([]byte, 6)
-		unread, err := d.read(0, bytes(buf))
+		unread, err := d.read(0, buf)
 		_ = os.Remove(path)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -132,13 +132,13 @@ func TestDiskRead(t *testing.T) {
 		path := "test_disk_read_gap_end.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(0, bytes([]byte{1, 2}))
-		_ = d.write(4, bytes([]byte{3, 4}))
-		_ = d.write(8, bytes([]byte{5, 6}))
-		_ = d.write(12, bytes([]byte{8, 9}))
-		_ = d.write(16, bytes([]byte{1, 2}))
+		_ = d.write(0, []byte{1, 2})
+		_ = d.write(4, []byte{3, 4})
+		_ = d.write(8, []byte{5, 6})
+		_ = d.write(12, []byte{8, 9})
+		_ = d.write(16, []byte{1, 2})
 		buf := make([]byte, 8)
-		unread, err := d.read(5, bytes(buf))
+		unread, err := d.read(5, buf)
 		_ = os.Remove(path)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -157,12 +157,12 @@ func TestDiskRead(t *testing.T) {
 		path := "test_disk_read_EOF.tmp"
 		_ = os.Remove(path)
 		d := &disk{filePath: path}
-		_ = d.write(0, bytes([]byte{1, 2}))
+		_ = d.write(0, []byte{1, 2})
 		// manipulate areas to cause read beyond EOF
 		d.areas = append(d.areas, area{off: 5, len: 5})
 		buf := []byte{9, 9, 9, 9, 9}
 		require.Panics(t, func() {
-			d.read(1, bytes(buf))
+			d.read(1, buf)
 		})
 		_ = os.Remove(path)
 		if !reflect.DeepEqual(buf, []byte{2, 9, 9, 9, 0}) {
@@ -178,7 +178,7 @@ func TestDiskRead(t *testing.T) {
 		// use write-only file to cause read failure
 		d := &disk{filePath: path, file: file, areas: areas{{off: 2, len: 4}}}
 		buf := make([]byte, 5)
-		_, err := d.read(0, bytes(buf))
+		_, err := d.read(0, buf)
 		_ = os.Remove(path)
 		if err == nil {
 			t.Fatalf("expected error, but got none")

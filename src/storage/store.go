@@ -263,7 +263,7 @@ func (ds *dataStore) Write(offset int64, data []byte) error {
 func (ds *dataStore) Read(offset int64, length int64) ([]byte, []string) {
 	result := make([]byte, length)
 	position := int64(0)
-	warnings := []string{}
+	var warnings []string
 
 	for length > 0 {
 		fileID := offset / ds.fileSize

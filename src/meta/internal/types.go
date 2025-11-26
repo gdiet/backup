@@ -26,7 +26,7 @@ func (d *DirEntry) ToBytes() []byte {
 	// 1 byte type + name
 	buf := make([]byte, 1+len(d.name))
 	// buf[0] is 0, dirEntry type = 0
-	copy(buf[1:], []byte(d.name))
+	copy(buf[1:], d.name)
 	return buf
 }
 
@@ -35,7 +35,7 @@ func NewDirEntry(name string) *DirEntry {
 	return &DirEntry{name: name}
 }
 
-// area represents a located contiguous range of bytes.
+// Area represents a located contiguous range of bytes.
 // Other than in the system file API, uint64 is used here because it is easier to serialize.
 type Area struct {
 	Off uint64
@@ -80,7 +80,7 @@ func (f *FileEntry) ToBytes() []byte {
 	buf[0] = 1 // fileEntry type = 1
 	I64w(buf[1:], f.time)
 	copy(buf[9:49], f.dref[:])
-	copy(buf[49:], []byte(f.name))
+	copy(buf[49:], f.name)
 	return buf
 }
 

@@ -78,7 +78,7 @@ func (d *disk) read(off int64, data bytes) (unreadAreas areas, err error) {
 // The file must already be open (i.e., write was called before).
 // If called when the size has increased (don't do that), the cache file is extended.
 func (d *disk) shrink(newSize int64) (err error) {
-	err = d.file.Truncate(int64(newSize))
+	err = d.file.Truncate(newSize)
 	if err != nil {
 		return err
 	}
@@ -161,7 +161,7 @@ func (d *disk) write(off int64, data bytes) (err error) {
 	// On network file systems and FUSE file systems the system call might write less
 	// than requested without error. The go method loops the underlying system write call
 	// until all bytes are written.
-	_, err = d.file.WriteAt(data, int64(off))
+	_, err = d.file.WriteAt(data, off)
 	if err != nil {
 		return err
 	}

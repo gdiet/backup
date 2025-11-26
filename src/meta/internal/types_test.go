@@ -97,7 +97,7 @@ func TestTreeEntryFromBytesFile(t *testing.T) {
 	I64w(data[1:9], 1640995200000) // time
 	U64w(data[9:17], 7631)         // size in dref
 	// hash bytes can be zero for this test
-	copy(data[49:], []byte(fileName)) // file name
+	copy(data[49:], fileName) // file name
 
 	result, err := treeEntryFromBytes(data)
 	if err != nil {
@@ -210,7 +210,7 @@ func TestDataEntryFromBytesErrors(t *testing.T) {
 // Test error cases for treeEntryFromBytes
 func TestTreeEntryFromBytesErrors(t *testing.T) {
 	t.Run("EmptyData", func(t *testing.T) {
-		data := []byte{}
+		var data []byte
 		_, err := treeEntryFromBytes(data)
 		if err == nil {
 			t.Error("Expected error for empty data")
