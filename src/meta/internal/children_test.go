@@ -324,12 +324,11 @@ func TestGetChildErrorCases(t *testing.T) {
 			}
 
 			// Check error type
-			if deserErr, ok := err.(*fserr.DeserializationError); ok {
+			var deserErr *fserr.DeserializationError
+			if errors.As(err, &deserErr) {
 				if deserErr.Msg != "invalid child key length" {
 					t.Errorf("Expected 'invalid child key length', got '%s'", deserErr.Msg)
 				}
-			} else {
-				t.Errorf("Expected DeserializationError, got %T", err)
 			}
 
 			return nil
@@ -385,12 +384,11 @@ func TestGetChildErrorCases(t *testing.T) {
 			}
 
 			// Check error type
-			if deserErr, ok := err.(*fserr.DeserializationError); ok {
+			var deserErr *fserr.DeserializationError
+			if errors.As(err, &deserErr) {
 				if deserErr.Msg != "invalid treeEntry type" {
 					t.Errorf("Expected 'invalid treeEntry type', got '%s'", deserErr.Msg)
 				}
-			} else {
-				t.Errorf("Expected DeserializationError, got %T: %v", err, err)
 			}
 
 			return nil

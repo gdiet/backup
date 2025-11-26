@@ -168,7 +168,7 @@ func (ds *dataStore) leaseFileHandle(fileID int64, forWriting bool) (*fileHandle
 	// Open for read/write even if only for reading, because the file handle might be reused for writing later.
 	fileOpenFlags := os.O_RDWR
 	if forWriting {
-		os.MkdirAll(dirPath, 0755)
+		os.MkdirAll(dirPath, 0755) // FIXME unhandled error
 		fileOpenFlags = os.O_RDWR | os.O_CREATE
 	}
 	file, err := os.OpenFile(filePath, fileOpenFlags, 0644)
@@ -223,8 +223,8 @@ func (ds *dataStore) gc() {
 
 		handle.lock.Lock()
 		go func() {
-			handle.file.Sync()
-			handle.file.Close()
+			handle.file.Sync()  // FIXME unhandled error
+			handle.file.Close() // FIXME unhandled error
 			handle.lock.Unlock()
 
 			ds.lock.Lock()
@@ -303,8 +303,8 @@ func (ds *dataStore) Close() {
 		ds.lock.Lock()
 		if len(ds.leased) == 0 && len(ds.evicting) == 0 {
 			for _, handle := range ds.free {
-				handle.file.Sync()
-				handle.file.Close()
+				handle.file.Sync()  // FIXME unhandled error
+				handle.file.Close() // FIXME unhandled error
 			}
 			ds.free = make(map[int64]*fileHandle)
 			ds.openFiles = 0

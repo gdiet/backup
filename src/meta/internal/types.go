@@ -115,8 +115,8 @@ func dataEntryFromBytes(data []byte) (DataEntry, error) {
 	pos := 8
 	for i := range d.Areas {
 		off := B64u(data[pos : pos+8])
-		len := B64u(data[pos+8 : pos+16])
-		d.Areas[i] = Area{Off: off, Len: len}
+		size := B64u(data[pos+8 : pos+16])
+		d.Areas[i] = Area{Off: off, Len: size}
 		pos += 16
 	}
 	return d, nil

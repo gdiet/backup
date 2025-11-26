@@ -41,12 +41,12 @@ func newMetadata(filePath string, treeKey, childrenKey, dataKey, freeAreasKey []
 				return fmt.Errorf("failed to create bucket %s: %w", bucketKey, err)
 			}
 		}
-		// Initialize buckets
+		// Initialize buckets FIXME unhandled error
 		internal.InitializeFreeAreas(tx.Bucket(freeAreasKey))
 		return nil
 	})
 	if err != nil {
-		db.Close()
+		db.Close() // FIXME unhandled error
 		return nil, err
 	}
 	r := &Metadata{db: db, treeKey: treeKey, childrenKey: childrenKey, dataKey: dataKey, freeAreasKey: freeAreasKey}

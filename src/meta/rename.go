@@ -126,7 +126,7 @@ func renameDirectory(
 		}
 	}
 
-	// Move entry to new location
+	// Move entry to new location FIXME unhandled errors
 	internal.RemoveChild(children, oldParentID, oldEntryID)
 	internal.AddChild(children, newParentID, oldEntryID)
 
