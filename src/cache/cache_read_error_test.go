@@ -14,7 +14,7 @@ type MockErrorBaseFile struct {
 
 var _ BaseFile = (*MockErrorBaseFile)(nil)
 
-func (m *MockErrorBaseFile) Read(off int64, data bytes) (int, error) {
+func (m *MockErrorBaseFile) Read(int64, bytes) (int, error) {
 	// Return the configured error instead of reading
 	return 0, m.errorToReturn
 }
@@ -40,7 +40,7 @@ func TestCacheReadBaseFileError(t *testing.T) {
 	_, err := cache.Read(0, data)
 
 	// Should return the error from base.Read()
-	if err != expectedError {
+	if !errors.Is(err, expectedError) {
 		t.Errorf("expected error %v, got %v", expectedError, err)
 	}
 }

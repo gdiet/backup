@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"errors"
 	"io"
 	"os"
 	"reflect"
@@ -55,7 +56,7 @@ func TestReadNoData(t *testing.T) {
 func TestTruncateNegativeSize(t *testing.T) {
 	cache := newEmptyCache()
 	memoryDelta, err := cache.Truncate(-1)
-	if err != syscall.EINVAL {
+	if !errors.Is(err, syscall.EINVAL) {
 		t.Fatalf("expected EINVAL for negative truncate, got %v", err)
 	}
 	if memoryDelta != 0 {

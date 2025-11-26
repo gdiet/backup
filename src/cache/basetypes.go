@@ -16,7 +16,7 @@ type EmptyBaseFile struct{}
 
 var _ BaseFile = (*EmptyBaseFile)(nil)
 
-func (b *EmptyBaseFile) Read(off int64, data bytes) (int, error) {
+func (b *EmptyBaseFile) Read(_ int64, data bytes) (int, error) {
 	if len(data) == 0 {
 		return 0, nil
 	}

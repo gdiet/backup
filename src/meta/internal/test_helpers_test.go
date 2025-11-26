@@ -13,7 +13,7 @@ type bucketFailsPut struct {
 	bucket *bbolt.Bucket
 }
 
-func (b *bucketFailsPut) Put(key, value []byte) error {
+func (b *bucketFailsPut) Put([]byte, []byte) error {
 	return os.ErrInvalid
 }
 

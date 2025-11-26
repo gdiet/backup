@@ -1,6 +1,9 @@
 package internal
 
-import "backup/src/fserr"
+import (
+	"backup/src/fserr"
+	"errors"
+)
 
 // Mkdir creates a new directory. It does not check whether the parent exists.
 // Returns the ID of the newly created directory as bytes.
@@ -11,7 +14,7 @@ func Mkdir(tree Bucket, children Bucket, parentID []byte, name string) ([]byte, 
 	if err == nil {
 		return nil, fserr.Exists
 	}
-	if err != fserr.NotFound {
+	if !errors.Is(err, fserr.NotFound) {
 		return nil, err // Other error occurred
 	}
 

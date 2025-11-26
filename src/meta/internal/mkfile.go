@@ -2,6 +2,7 @@ package internal
 
 import (
 	"backup/src/fserr"
+	"errors"
 	"time"
 )
 
@@ -14,7 +15,7 @@ func Mkfile(tree Bucket, children Bucket, parentID []byte, name string) ([]byte,
 	if err == nil {
 		return nil, fserr.Exists
 	}
-	if err != fserr.NotFound {
+	if !errors.Is(err, fserr.NotFound) {
 		return nil, err // Other error occurred
 	}
 

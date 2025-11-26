@@ -3,6 +3,7 @@ package internal
 import (
 	"backup/src/fserr"
 	"bytes"
+	errr "errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -86,7 +87,7 @@ func TestMkdir(t *testing.T) {
 			return err
 		})
 
-		if err != fserr.Exists {
+		if !errr.Is(err, fserr.Exists) {
 			t.Errorf("Expected Exists for duplicate name, got: %v", err)
 		}
 	})
@@ -264,7 +265,7 @@ func TestMkdir(t *testing.T) {
 			return err
 		})
 
-		if err != fserr.Exists {
+		if !errr.Is(err, fserr.Exists) {
 			t.Errorf("Expected Exists for file name conflict, got: %v", err)
 		}
 	})
@@ -421,10 +422,10 @@ func TestMkdir(t *testing.T) {
 
 	t.Run("create directory fails at put children", func(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
-			if err := tx.DeleteBucket([]byte("tree_entries")); err != nil && err != errors.ErrBucketNotFound {
+			if err := tx.DeleteBucket([]byte("tree_entries")); err != nil && !errr.Is(err, errors.ErrBucketNotFound) {
 				return err
 			}
-			if err = tx.DeleteBucket([]byte("children")); err != nil && err != errors.ErrBucketNotFound {
+			if err = tx.DeleteBucket([]byte("children")); err != nil && !errr.Is(err, errors.ErrBucketNotFound) {
 				return err
 			}
 			if _, err := tx.CreateBucket([]byte("tree_entries")); err != nil {
@@ -446,10 +447,10 @@ func TestMkdir(t *testing.T) {
 
 	t.Run("create directory fails at put tree entry", func(t *testing.T) {
 		err := db.Update(func(tx *bbolt.Tx) error {
-			if err := tx.DeleteBucket([]byte("tree_entries")); err != nil && err != errors.ErrBucketNotFound {
+			if err := tx.DeleteBucket([]byte("tree_entries")); err != nil && !errr.Is(err, errors.ErrBucketNotFound) {
 				return err
 			}
-			if err = tx.DeleteBucket([]byte("children")); err != nil && err != errors.ErrBucketNotFound {
+			if err = tx.DeleteBucket([]byte("children")); err != nil && !errr.Is(err, errors.ErrBucketNotFound) {
 				return err
 			}
 			if _, err := tx.CreateBucket([]byte("tree_entries")); err != nil {

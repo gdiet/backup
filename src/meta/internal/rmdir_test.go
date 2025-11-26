@@ -2,6 +2,7 @@ package internal
 
 import (
 	"backup/src/fserr"
+	"errors"
 	"testing"
 
 	"go.etcd.io/bbolt"
@@ -64,7 +65,7 @@ func TestRmdir(t *testing.T) {
 			}
 			return Rmdir(tree, children, root, id)
 		})
-		if err != fserr.NotEmpty {
+		if !errors.Is(err, fserr.NotEmpty) {
 			t.Fatalf("Expected NotEmpty, got: %v", err)
 		}
 	})

@@ -2,6 +2,7 @@ package internal
 
 import (
 	"backup/src/fserr"
+	"errors"
 	"os"
 	"testing"
 
@@ -170,7 +171,7 @@ func TestGetChild(t *testing.T) {
 			parentID := make([]byte, 8) // Root ID (0)
 
 			childID, entry, err := GetChild(tree, children, parentID, "nonexistent")
-			if err != fserr.NotFound {
+			if !errors.Is(err, fserr.NotFound) {
 				t.Errorf("Expected NotFound, got: %v", err)
 			}
 
@@ -196,7 +197,7 @@ func TestGetChild(t *testing.T) {
 			parentID := U64b(999) // Non-existent parent
 
 			childID, entry, err := GetChild(tree, children, parentID, "anything")
-			if err != fserr.NotFound {
+			if !errors.Is(err, fserr.NotFound) {
 				t.Errorf("Expected NotFound, got: %v", err)
 			}
 
@@ -255,7 +256,7 @@ func TestGetChild(t *testing.T) {
 			parentID2 := U64b(2) // Different parent
 
 			childID, entry, err := GetChild(tree, children, parentID2, "isolated_child")
-			if err != fserr.NotFound {
+			if !errors.Is(err, fserr.NotFound) {
 				t.Errorf("Expected NotFound, got: %v", err)
 			}
 
