@@ -2,22 +2,23 @@ package cache
 
 import (
 	"backup/src/util"
+	"errors"
 	"io"
 	"os"
 )
 
 // Disk is a file cache layer that stores parts of a cached file on disk.
 type disk struct {
-	// file is the underlying file being cached, or nil if not open.
+	// file is the cache file or nil if not open.
 	file *os.File
-	// filePath is the path to the underlying file.
+	// filePath is the path to the cache file.
 	filePath string
-	// areas holds the areas that have been written to the file.
+	// areas holds the areas that have been written to the cache file.
 	areas areas
 }
 
 // read reads data from the cache file into the provided buffer.
-// The file must already be open (i.e., write was called before).
+// It is assumed that the file is open if there are areas that have been written.
 //
 // Returns the areas that were not read.
 func (d *disk) read(off int64, data bytes) (unreadAreas areas, err error) {
@@ -44,20 +45,19 @@ func (d *disk) read(off int64, data bytes) (unreadAreas areas, err error) {
 		// Read data from disk to output buffer
 		bytesRead, err := d.file.ReadAt(data[readStart-off:readEnd-off], readStart)
 
-		// EOF is expected when reading beyond file end - not an error for us
-		if err != nil && err != io.EOF {
-			return unreadAreas, err
-		}
-
-		// Fill remaining bytes with zeros if we read less than requested, but...
-		readLength := readEnd - readStart
-		if int64(bytesRead) < readLength {
-			for i := int64(bytesRead); i < readLength; i++ {
+		switch {
+		case err == nil:
+			// continue
+		case errors.Is(err, io.EOF):
+			// Fill the remaining requested bytes with zeros
+			for i := int64(bytesRead); i < readEnd-readStart; i++ {
 				data[readStart-off+i] = 0
 			}
+			util.AssertionFailedf("unexpected EOF when reading from disk cache file %s", d.filePath)
+			// continue
+		default:
+			return unreadAreas, err
 		}
-		// ... but the system should not request areas that are not fully present on disk
-		util.Assert(err != io.EOF, "unexpected EOF when reading from disk cache file")
 
 		// Adjust unread areas
 		if readStart > lastUnread.off {
