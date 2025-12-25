@@ -1,7 +1,8 @@
 package fs
 
 import (
-	"backup/src/fserr"
+	"backup/src/meta"
+	"backup/src/repo"
 	"backup/src/util"
 	"errors"
 	"log"
@@ -13,6 +14,7 @@ import (
 
 type FS struct {
 	fuse.FileSystemBase
+	repo *repo.Repository
 }
 
 // Getattr gets the attributes of a file or directory:
@@ -41,7 +43,7 @@ func (f *FS) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	switch {
 	case err == nil:
 		// continue
-	case errors.Is(err, fserr.NotFound):
+	case errors.Is(err, repo.ENotFound):
 		return -fuse.ENOENT
 	default:
 		util.AssertionFailedf("unexpected error %v in Getattr", err)
@@ -79,9 +81,9 @@ func (f *FS) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst
 	switch {
 	case err == nil:
 		// continue
-	case errors.Is(err, fserr.NotFound):
+	case errors.Is(err, repo.ENotFound):
 		return -fuse.ENOENT
-	case errors.Is(err, fserr.NotDir):
+	case errors.Is(err, repo.ENotDir):
 		return -fuse.ENOTDIR
 	default:
 		util.AssertionFailedf("unexpected error %v in Readdir", err)
@@ -121,13 +123,13 @@ func (f *FS) Mkdir(path string, mode uint32) int {
 	switch {
 	case err == nil:
 		// continue
-	case errors.Is(err, fserr.NotFound):
+	case errors.Is(err, repo.ENotFound):
 		return -fuse.ENOENT
-	case errors.Is(err, fserr.NotDir):
+	case errors.Is(err, repo.ENotDir):
 		return -fuse.ENOTDIR
-	case errors.Is(err, fserr.Exists):
+	case errors.Is(err, repo.EExists):
 		return -fuse.EEXIST
-	case errors.Is(err, fserr.IO):
+	case errors.Is(err, repo.EIO):
 		return -fuse.EIO
 	default:
 		util.AssertionFailedf("unexpected error %v in Mkdir", err)
