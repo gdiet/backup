@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func Test_DedupFileSystem(t *testing.T) {
+func TestDedupFileSystem(t *testing.T) {
 	dir := t.TempDir()
 	mountpoint := filepath.Join(dir, "mountpoint")
 	if runtime.GOOS != "windows" {
