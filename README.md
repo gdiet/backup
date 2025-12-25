@@ -1,3 +1,9 @@
+### Prerequisites
+
+- Linux build: `sudo apt install fuse libfuse-dev gcc` (and CGO_ENABLED=1 ???)
+- Linux runtime: `sudo apt install fuse` ???
+- Windows: Install WinFSP
+
 ### Starting The Filesystem
 
 - Linux: The mount point must be an existing empty directory.
