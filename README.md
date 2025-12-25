@@ -8,3 +8,9 @@ Relative paths are supported for the mount point.
 ```
 go run ./src/. <mount-point>
 ```
+
+### Running All Tests
+
+```
+go test -v ./src/...
+```
