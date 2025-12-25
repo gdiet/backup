@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func TestExample(t *testing.T) {
+func Test_DedupFileSystem(t *testing.T) {
 	dir := t.TempDir()
 	mountpoint := filepath.Join(dir, "mountpoint")
 	if runtime.GOOS != "windows" {
@@ -24,16 +24,16 @@ func TestExample(t *testing.T) {
 	defer host.Unmount()
 	// wait for mount to be ready. 80 ms was enough on all environments I checked so far.
 	time.Sleep(100 * time.Millisecond)
-	// list files in mounted file system
-	entries, err := os.ReadDir(mountpoint)
-	t.Logf("Files in mountpoint: %v", entries)
-	// read file from mounted file system
-	data, err := os.ReadFile(filepath.Join(mountpoint, "hello.txt"))
-	if err != nil {
-		t.Fatalf("Failed to read file from mounted file system: %v", err)
-	}
-	expected := "Hello, World!\n"
-	if string(data) != expected {
-		t.Fatalf("Unexpected file contents: got %q, want %q", string(data), expected)
+
+	t.Run("mkdir", mkdir(mountpoint))
+}
+
+func mkdir(mountpoint string) func(t *testing.T) {
+	dir := filepath.Join(mountpoint, "mkdir")
+	defer os.RemoveAll(dir)
+	return func(t *testing.T) {
+		if err := os.Mkdir(filepath.Join(mountpoint, "mkdir"), 0755); err != nil {
+			t.Fatalf("Failed to create directory in mounted file system: %v", err)
+		}
 	}
 }
