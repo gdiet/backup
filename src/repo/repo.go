@@ -1,6 +1,8 @@
 package repo
 
-import "backup/src/meta"
+import (
+	"backup/src/meta"
+)
 
 type Repository struct {
 	metadata *meta.Metadata
@@ -22,7 +24,10 @@ func (r *Repository) Mkfile(path []string) (uint64, error) {
 }
 
 func (r *Repository) Lookup(path []string) (id uint64, entry meta.TreeEntry, err error) {
-	return 0, nil, EIO
+	if len(path) == 0 {
+		return 0, meta.NewDirEntry(""), nil
+	}
+	return 0, nil, ENotFound
 	// return r.metadata.Lookup(path)
 }
 
