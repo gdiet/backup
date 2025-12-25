@@ -1,7 +1,12 @@
 package fs
 
 import (
+	"backup/src/fserr"
+	"backup/src/util"
+	"errors"
 	"log"
+	"os"
+	"time"
 
 	"github.com/winfsp/cgofuse/fuse"
 )
@@ -10,68 +15,124 @@ type FS struct {
 	fuse.FileSystemBase
 }
 
-const contents = "Hello, World!\n"
+// Getattr gets the attributes of a file or directory:
+// https://man7.org/linux/man-pages/man2/stat.2.html
+//
+//	Returns -fuse.ENOENT if the path does not exist.
+//	Returns -fuse.EIO on other errors.
+//
+// 'fh' is ignored until we find a use case where we need it.
+func (f *FS) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
+	log.Printf("Getattr fh %d - %s", fh, path)
 
-func (fs *FS) Open(path string, flags int) (errc int, fh uint64) {
-	switch path {
-	case "/hello.txt":
-		return 0, 0
-	default:
-		return -fuse.ENOENT, ^uint64(0)
+	// set basic stat, will be overwritten if it's a file
+	stat.Mode = fuse.S_IFDIR | 0755
+	stat.Mtim = fuse.NewTimespec(time.Now())
+	stat.Nlink = 2
+	stat.Uid = uint32(os.Getuid())
+	stat.Gid = uint32(os.Getgid())
+
+	parts := partsFrom(path)
+	if len(parts) == 1 && parts[0] == "" { // Root directory
+		return 0
 	}
-}
 
-func (fs *FS) Getattr(path string, stat *fuse.Stat_t, fh uint64) (errc int) {
-	switch path {
-	case "/":
-		stat.Mode = fuse.S_IFDIR | 0555
-		return 0
-	case "/hello.txt":
-		stat.Mode = fuse.S_IFREG | 0444
-		stat.Size = int64(len(contents))
-		return 0
+	_, entry, err := f.repo.Lookup(parts)
+	switch {
+	case err == nil:
+		// continue
+	case errors.Is(err, fserr.NotFound):
+		return -fuse.ENOENT
 	default:
+		util.AssertionFailedf("unexpected error %v in Getattr", err)
+		return -fuse.EIO
+	}
+	switch entry := entry.(type) {
+	case *meta.DirEntry:
+		// continue
+	case *meta.FileEntry:
+		stat.Mode = fuse.S_IFREG | 0644
+		stat.Size = entry.Size()
+	default:
+		util.AssertionFailedf("unexpected entry type %T in Getattr", entry)
 		return -fuse.ENOENT
 	}
-}
 
-func (fs *FS) Read(path string, buff []byte, ofst int64, fh uint64) (n int) {
-	endofst := ofst + int64(len(buff))
-	if endofst > int64(len(contents)) {
-		endofst = int64(len(contents))
-	}
-	if endofst < ofst {
-		return 0
-	}
-	n = copy(buff, contents[ofst:endofst])
-	return
-}
-
-func (fs *FS) Readdir(path string,
-	fill func(name string, stat *fuse.Stat_t, ofst int64) bool,
-	ofst int64,
-	fh uint64) (errc int) {
-	fill(".", nil, 0)
-	fill("..", nil, 0)
-	fill("hello.txt", nil, 0)
 	return 0
 }
 
-func Mount(mountPoint string) {
-	host := Setup()
-	log.Printf("Mounting file system...")
-	DoMount(host, mountPoint)
-	log.Printf("Finished main execution")
+// Readdir reads the contents of a directory:
+// https://man7.org/linux/man-pages/man2/readdir.2.html
+//
+//	Returns -fuse.ENOENT if the path does not exist.
+//	Returns -fuse.ENOTDIR if the path is not a directory.
+//	Returns -fuse.EIO on other errors.
+//
+// 'ofst' and 'fh' are ignored until we find a use case where we need them.
+func (f *FS) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
+	log.Printf("Readdir ofst %d fh %d - %s", ofst, fh, path)
+
+	fill(".", dirStat(), 0)
+	fill("..", dirStat(), 0)
+
+	entries, err := f.repo.Readdir(partsFrom(path))
+	switch {
+	case err == nil:
+		// continue
+	case errors.Is(err, fserr.NotFound):
+		return -fuse.ENOENT
+	case errors.Is(err, fserr.NotDir):
+		return -fuse.ENOTDIR
+	default:
+		util.AssertionFailedf("unexpected error %v in Readdir", err)
+		return -fuse.EIO
+	}
+
+	for _, entry := range entries {
+		var entryStat *fuse.Stat_t
+		switch entry := entry.(type) {
+		case *meta.DirEntry:
+			entryStat = dirStat()
+		case *meta.FileEntry:
+			entryStat = fileStat(entry.Size())
+		default:
+			util.AssertionFailedf("unexpected entry type %T in Readdir", entry)
+			continue
+		}
+		fill(entry.Name(), entryStat, 0)
+	}
+
+	return 0
 }
 
-func Setup() *fuse.FileSystemHost {
-	fs := &FS{}
-	host := fuse.NewFileSystemHost(fs)
-	// Using host.SetCapReaddirPlus(true) could save some Getattr calls, but it's not worth the effort.
-	// On FUSE3, we could set host.SetUseIno(true), but what would be the benefit?
-	return host
-}
+// Mkdir creates a new directory:
+// https://man7.org/linux/man-pages/man2/mkdir.2.html
+//
+//	Returns -fuse.ENOENT if the parent path does not exist.
+//	Returns -fuse.ENOTDIR if the parent path is not a directory.
+//	Returns -fuse.EEXIST if a child with the same name already exists.
+//	Returns -fuse.EIO on errors.
+//
+// 'mode' is ignored until we find a use case where we need it.
+func (f *FS) Mkdir(path string, mode uint32) int {
+	log.Printf("Mkdir mode %d - %s", mode, path)
 
-func DoMount(host *fuse.FileSystemHost, mountPoint string) {
-	host.Mount(mountPoint, nil)
+	_, err := f.repo.Mkdir(partsFrom(path))
+	switch {
+	case err == nil:
+		// continue
+	case errors.Is(err, fserr.NotFound):
+		return -fuse.ENOENT
+	case errors.Is(err, fserr.NotDir):
+		return -fuse.ENOTDIR
+	case errors.Is(err, fserr.Exists):
+		return -fuse.EEXIST
+	case errors.Is(err, fserr.IO):
+		return -fuse.EIO
+	default:
+		util.AssertionFailedf("unexpected error %v in Mkdir", err)
+		return -fuse.EIO
+	}
+
+	return 0
 }
