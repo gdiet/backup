@@ -1,6 +1,7 @@
 package repo
 
 import (
+	"backup/src/fserr"
 	"backup/src/meta"
 )
 
@@ -14,12 +15,12 @@ func NewRepository(metadata *meta.Metadata) *Repository {
 }
 
 func (r *Repository) Close() error {
-	return EIO
+	return fserr.IO
 	// return r.metadata.Close()
 }
 
 func (r *Repository) Mkfile(path []string) (uint64, error) {
-	return 0, EIO
+	return 0, fserr.IO
 	// return r.metadata.Mkfile(path)
 }
 
@@ -27,26 +28,26 @@ func (r *Repository) Lookup(path []string) (id uint64, entry meta.TreeEntry, err
 	if len(path) == 0 {
 		return 0, meta.NewDirEntry(""), nil
 	}
-	return 0, nil, ENotFound
+	return 0, nil, fserr.NotFound
 	// return r.metadata.Lookup(path)
 }
 
 func (r *Repository) Mkdir(path []string) (uint64, error) {
-	return 0, EIO
+	return 0, fserr.IO
 	// return r.metadata.Mkdir(path)
 }
 
 func (r *Repository) Rmdir(path []string) error {
-	return EIO
+	return fserr.IO
 	// return r.metadata.Rmdir(path)
 }
 
 func (r *Repository) Readdir(path []string) (entries []meta.TreeEntry, err error) {
-	return nil, EIO
+	return nil, fserr.IO
 	// return r.metadata.Readdir(path)
 }
 
 func (r *Repository) Rename(oldPath []string, newPath []string) error {
-	return EIO
+	return fserr.IO
 	// return r.metadata.Rename(oldPath, newPath)
 }

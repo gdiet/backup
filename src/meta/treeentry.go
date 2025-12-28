@@ -1,5 +1,7 @@
 package meta
 
+import "backup/src/fserr"
+
 // TreeEntry interface for directory and file entries
 type TreeEntry interface {
 	Name() string
@@ -73,4 +75,27 @@ func (f *FileEntry) ToBytes() []byte {
 	copy(buf[9:49], f.dref[:])
 	copy(buf[49:], f.name)
 	return buf
+}
+
+// treeEntryFromBytes parses a tree entry from bytes
+func treeEntryFromBytes(data []byte) (TreeEntry, error) {
+	if len(data) < 2 {
+		return nil, fserr.IO
+	}
+	// Determine entry type by first byte
+	switch data[0] {
+	case 0:
+		// dirEntry: 1 byte type + name
+		return &DirEntry{name: string(data[1:])}, nil
+	case 1:
+		// fileEntry: 1 byte type + 8 bytes time + 40 bytes data reference + name
+		if len(data) < 50 {
+			return nil, fserr.IO
+		}
+		dref := [40]byte{}
+		copy(dref[:], data[9:49])
+		return NewFileEntry(string(data[49:]), B64i(data[1:9]), dref), nil
+	default:
+		return nil, fserr.IO
+	}
 }
