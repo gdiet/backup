@@ -6,14 +6,15 @@ import (
 	"github.com/winfsp/cgofuse/fuse"
 )
 
-func Mount(mountPoint string) {
-	host := Setup()
+func Mount(repository, mountPoint string) {
+	host := setup(repository)
 	log.Printf("Mounting file system...")
-	DoMount(host, mountPoint)
+	mount(host, mountPoint)
 	log.Printf("Finished main execution")
 }
 
-func Setup() *fuse.FileSystemHost {
+func setup(repository string) *fuse.FileSystemHost {
+	// TODO initialize FS with repository
 	fs := &FS{}
 	host := fuse.NewFileSystemHost(fs)
 	// Using host.SetCapReaddirPlus(true) could save some Getattr calls, but it's not worth the effort.
@@ -21,6 +22,6 @@ func Setup() *fuse.FileSystemHost {
 	return host
 }
 
-func DoMount(host *fuse.FileSystemHost, mountPoint string) {
+func mount(host *fuse.FileSystemHost, mountPoint string) {
 	host.Mount(mountPoint, nil)
 }

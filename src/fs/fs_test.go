@@ -1,7 +1,6 @@
-package fstest
+package fs
 
 import (
-	"backup/src/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -11,15 +10,17 @@ import (
 
 func TestDedupFileSystem(t *testing.T) {
 	dir := t.TempDir()
-	mountpoint := filepath.Join(dir, "mountpoint")
-	if runtime.GOOS != "windows" {
-		if os.Mkdir(mountpoint, 0755) != nil {
-			t.Fatal("Failed to create mountpoint directory")
-		}
+	repository := filepath.Join(dir, "repository")
+	if os.Mkdir(repository, 0755) != nil {
+		t.Fatal("Failed to create repository directory")
 	}
-	host := fs.Setup()
+	mountpoint := filepath.Join(dir, "mountpoint")
+	if runtime.GOOS != "windows" && os.Mkdir(mountpoint, 0755) != nil {
+		t.Fatal("Failed to create mountpoint directory")
+	}
+	host := setup(repository)
 	go func() { // Run in goroutine to avoid blocking test
-		fs.DoMount(host, mountpoint)
+		mount(host, mountpoint)
 	}()
 	defer host.Unmount()
 	// wait for mount to be ready. 80 ms was enough on all environments I checked so far.
