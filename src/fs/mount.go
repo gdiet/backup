@@ -15,7 +15,7 @@ func Mount(repository, mountPoint string) {
 
 func setup(repository string) *fuse.FileSystemHost {
 	// TODO initialize FS with repository
-	fs := &FS{}
+	fs := &dfs{}
 	host := fuse.NewFileSystemHost(fs)
 	// Using host.SetCapReaddirPlus(true) could save some Getattr calls, but it's not worth the effort.
 	// On FUSE3, we could set host.SetUseIno(true), but what would be the benefit?

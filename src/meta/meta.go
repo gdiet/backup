@@ -10,6 +10,20 @@ type Metadata struct {
 	freeAreasKey []byte
 }
 
+func NewMetadata(repository string) (*Metadata, error) {
+	db, err := bbolt.Open(repository+"/meta.db", 0600, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &Metadata{
+		db:           db,
+		treeKey:      []byte("tree"),
+		childrenKey:  []byte("children"),
+		dataKey:      []byte("data"),
+		freeAreasKey: []byte("free_areas"),
+	}, nil
+}
+
 // Lookup looks up a path and returns the ID and tree entry.
 // Returns ErrNotFound if the path does not exist.
 func (r *Metadata) Lookup(path []string) (id uint64, entry TreeEntry, err error) {

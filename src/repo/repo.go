@@ -10,8 +10,12 @@ type Repository struct {
 }
 
 // NewRepository creates a new Repository instance wrapping the given metadata.
-func NewRepository(metadata *meta.Metadata) *Repository {
-	return &Repository{metadata: metadata}
+func NewRepository(repository string) (*Repository, error) {
+	metadata, err := meta.NewMetadata(repository)
+	if err != nil {
+		return nil, err
+	}
+	return &Repository{metadata: metadata}, nil
 }
 
 func (r *Repository) Close() error {
