@@ -20,7 +20,7 @@ import (
 func (f *FS) Create(path string, flags int, mode uint32) (int, uint64) {
 	log.Printf("Create flags %d mode %d - %s", flags, mode, path)
 
-	id, err := f.repo.Mkfile(partsFrom(path))
+	id, err := f.repo.Create(partsFrom(path))
 	switch {
 	case err == nil:
 		// continue
@@ -55,7 +55,7 @@ func (f *FS) Open(path string, flags int) (int, uint64) {
 	case errors.Is(err, fserr.NotFound):
 		return -fuse.ENOENT, 0
 	default:
-		util.AssertionFailedf("unexpected error %v in Open", err)
+		util.AssertionFailedf("unexpected error %v in Open: repo.Lookup", err)
 		return -fuse.EIO, 0
 	}
 	switch e := entry.(type) {
@@ -69,5 +69,10 @@ func (f *FS) Open(path string, flags int) (int, uint64) {
 	}
 
 	log.Printf("Open file id %d - %s", id, path)
+	_, err = f.repo.Open(id)
+	if err != nil {
+		util.AssertionFailedf("unexpected error %v in Open: repo.Open", err)
+		return -fuse.EIO, 0
+	}
 	return 0, id
 }
