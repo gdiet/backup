@@ -1,6 +1,11 @@
 package meta
 
-import "go.etcd.io/bbolt"
+import (
+	"backup/src/fserr"
+	"math"
+
+	"go.etcd.io/bbolt"
+)
 
 type Metadata struct {
 	db           *bbolt.DB
@@ -11,8 +16,36 @@ type Metadata struct {
 }
 
 func NewMetadata(repository string) (*Metadata, error) {
-	db, err := bbolt.Open(repository+"/meta.db", 0600, nil)
+	db, err := bbolt.Open(repository+"/dedupfs.db", 0600, nil)
 	if err != nil {
+		return nil, err
+	}
+	m := &Metadata{db: db,
+		treeKey:      []byte("tree"),
+		childrenKey:  []byte("children"),
+		dataKey:      []byte("data"),
+		freeAreasKey: []byte("free_areas")}
+	err = db.Update(func(tx *bbolt.Tx) error {
+		// Create buckets if needed
+		for _, bucketKey := range [][]byte{m.treeKey, m.childrenKey, m.dataKey, m.freeAreasKey} {
+			_, err := tx.CreateBucketIfNotExists(bucketKey)
+			if err != nil {
+				return fserr.IO
+			}
+		}
+		// Initialize free areas if needed
+		freeAreas := tx.Bucket(m.freeAreasKey)
+		firstKey, _ := freeAreas.Cursor().First()
+		if len(firstKey) == 0 {
+			// Add initial free area: 0 -> MaxInt64
+			if err := freeAreas.Put(U64b(0), U64b(math.MaxInt64)); err != nil {
+				return fserr.IO
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		db.Close()
 		return nil, err
 	}
 	return &Metadata{

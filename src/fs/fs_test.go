@@ -18,7 +18,7 @@ func TestDedupFileSystem(t *testing.T) {
 	if runtime.GOOS != "windows" && os.Mkdir(mountpoint, 0755) != nil {
 		t.Fatal("Failed to create mountpoint directory")
 	}
-	host := setup(repository)
+	host, _ := setup(repository)
 	go func() { // Run in goroutine to avoid blocking test
 		mount(host, mountpoint)
 	}()

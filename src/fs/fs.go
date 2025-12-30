@@ -13,17 +13,18 @@ import (
 	"github.com/winfsp/cgofuse/fuse"
 )
 
-type dfs struct {
+type fileSystem struct {
 	fuse.FileSystemBase
 	repo *repo.Repository
 }
 
-func newDFS(repository string) *dfs {
+func newFileSystem(repository string) (*fileSystem, error) {
 	r, err := repo.NewRepository(repository)
 	if err != nil {
-		util.AssertionFailedf("failed to open repository %s: %v", repository, err)
+		log.Printf("failed to open repository %s: %v", repository, err)
+		return nil, fserr.IO
 	}
-	return &dfs{repo: r}
+	return &fileSystem{repo: r}, nil
 }
 
 // Getattr gets the attributes of a file or directory:
@@ -33,7 +34,7 @@ func newDFS(repository string) *dfs {
 //	Returns -fuse.EIO on other errors.
 //
 // 'fh' is ignored until we find a use case where we need it.
-func (f *dfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
+func (f *fileSystem) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	log.Printf("Getattr fh %d - %s", fh, path)
 
 	// set basic stat, will be overwritten if it's a file
@@ -80,7 +81,7 @@ func (f *dfs) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 //	Returns -fuse.EIO on other errors.
 //
 // 'ofst' and 'fh' are ignored until we find a use case where we need them.
-func (f *dfs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
+func (f *fileSystem) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofst int64) bool, ofst int64, fh uint64) int {
 	log.Printf("Readdir ofst %d fh %d - %s", ofst, fh, path)
 
 	fill(".", dirStat(), 0)
@@ -125,7 +126,7 @@ func (f *dfs) Readdir(path string, fill func(name string, stat *fuse.Stat_t, ofs
 //	Returns -fuse.EIO on errors.
 //
 // 'mode' is ignored until we find a use case where we need it.
-func (f *dfs) Mkdir(path string, mode uint32) int {
+func (f *fileSystem) Mkdir(path string, mode uint32) int {
 	log.Printf("Mkdir mode %d - %s", mode, path)
 
 	_, err := f.repo.Mkdir(partsFrom(path))

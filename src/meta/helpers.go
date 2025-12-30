@@ -12,6 +12,13 @@ func B64i(b []byte) int64 {
 	return int64(binary.BigEndian.Uint64(b))
 }
 
+// U64b converts an uint64 to a byte slice key for bbolt.
+func U64b(u uint64) []byte {
+	key := make([]byte, 8)
+	binary.BigEndian.PutUint64(key, u)
+	return key
+}
+
 // B64u converts a byte slice to a uint64.
 func B64u(b []byte) uint64 {
 	return binary.BigEndian.Uint64(b)

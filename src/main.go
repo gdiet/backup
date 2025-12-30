@@ -14,5 +14,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	fs.Mount(os.Args[1], os.Args[2])
+	err := fs.Mount(os.Args[1], os.Args[2])
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to mount filesystem: %v\n", err)
+		os.Exit(1)
+	}
 }
