@@ -26,15 +26,79 @@ func TestDedupFileSystem(t *testing.T) {
 	// wait for mount to be ready. 80 ms was enough on all environments I checked so far.
 	time.Sleep(100 * time.Millisecond)
 
-	t.Run("mkdir", mkdir(mountpoint))
+	result := true
+	if result {
+		result = t.Run("mkdir", mkdir(mountpoint))
+	}
+	if result {
+		result = t.Run("rmdir", rmdir(mountpoint))
+	}
+	if result {
+		result = t.Run("readdir", readdir(mountpoint))
+	}
+}
+
+func testWithDir(mountpoint, dirname string, testFn func(*testing.T, string)) func(*testing.T) {
+	dir := filepath.Join(mountpoint, dirname)
+	defer os.RemoveAll(dir)
+	return func(t *testing.T) {
+		if err := os.Mkdir(dir, 0755); err != nil {
+			t.Fatalf("Failed to create directory in mounted file system: %v", err)
+		}
+		testFn(t, dir)
+	}
 }
 
 func mkdir(mountpoint string) func(t *testing.T) {
-	dir := filepath.Join(mountpoint, "mkdir")
-	defer os.RemoveAll(dir)
-	return func(t *testing.T) {
-		if err := os.Mkdir(filepath.Join(mountpoint, "mkdir"), 0755); err != nil {
-			t.Fatalf("Failed to create directory in mounted file system: %v", err)
+	return testWithDir(mountpoint, "mkdir", func(t *testing.T, dir string) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("Failed to read directory in mounted file system: %v", err)
 		}
-	}
+		if len(entries) != 0 {
+			t.Fatalf("Unexpected directory entries: %v", entries)
+		}
+	})
+}
+
+func rmdir(mountpoint string) func(t *testing.T) {
+	return testWithDir(mountpoint, "rmdir", func(t *testing.T, dir string) {
+		inner := filepath.Join(dir, "inner")
+		if err := os.Mkdir(inner, 0755); err != nil {
+			t.Fatalf("Failed to create inner directory in mounted file system: %v", err)
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			t.Fatalf("Failed to remove inner directory in mounted file system: %v", err)
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("Failed to read directory in mounted file system: %v", err)
+		}
+		if len(entries) != 0 {
+			t.Fatalf("Unexpected directory entries: %v", entries)
+		}
+	})
+}
+
+func readdir(mountpoint string) func(t *testing.T) {
+	return testWithDir(mountpoint, "readdir", func(t *testing.T, dir string) {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("Failed to read directory in mounted file system: %v", err)
+		}
+		if len(entries) != 0 {
+			t.Fatalf("Unexpected directory entries: %v", entries)
+		}
+		inner := filepath.Join(dir, "inner")
+		if err := os.Mkdir(inner, 0755); err != nil {
+			t.Fatalf("Failed to create inner directory in mounted file system: %v", err)
+		}
+		entries, err = os.ReadDir(dir)
+		if err != nil {
+			t.Fatalf("Failed to read directory in mounted file system: %v", err)
+		}
+		if len(entries) != 1 || entries[0].Name() != "readdir" {
+			t.Fatalf("Unexpected directory entries after creating inner dir: %v", entries)
+		}
+	})
 }

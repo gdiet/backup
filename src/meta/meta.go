@@ -105,3 +105,29 @@ func (r *Metadata) Mkdir(path []string) (uint64, error) {
 	}
 	return B64u(idBytes), nil
 }
+
+// Readdir lists the entries under the specified directory (nil or empty for root).
+// Returns NotFound if the directory does not exist.
+// Returns NotDir if the path is not a directory.
+// Can return other errors.
+func (r *Metadata) Readdir(path []string) (entries []TreeEntry, err error) {
+	err = r.db.View(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket(r.treeKey)
+		children := tx.Bucket(r.childrenKey)
+
+		id, entry, err := lookup(tree, children, path)
+		if err != nil {
+			return err // NotFound and others
+		}
+
+		// Ensure the target is a directory
+		if _, isDir := entry.(*DirEntry); !isDir {
+			return fserr.NotDir // Test coverage: needs file implementation
+		}
+
+		// Read the directory contents
+		entries, err = readdir(tree, children, id)
+		return err
+	})
+	return entries, err
+}

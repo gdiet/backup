@@ -45,8 +45,7 @@ func (r *Repository) Rmdir(path []string) error {
 }
 
 func (r *Repository) Readdir(path []string) (entries []meta.TreeEntry, err error) {
-	return nil, fserr.IO
-	// return r.metadata.Readdir(path)
+	return r.metadata.Readdir(path)
 }
 
 func (r *Repository) Rename(oldPath []string, newPath []string) error {

@@ -2,6 +2,7 @@ package meta
 
 import (
 	"backup/src/fserr"
+	"backup/src/util"
 	"bytes"
 	"errors"
 
@@ -94,4 +95,38 @@ func addChild(children *bbolt.Bucket, parentID []byte, id []byte) error {
 	copy(key[0:8], parentID)
 	copy(key[8:16], id)
 	return children.Put(key, []byte{})
+}
+
+// readdir lists the entries under the specified parent directory. It does not check whether the parent exists.
+func readdir(tree *bbolt.Bucket, children *bbolt.Bucket, parentID []byte) (entries []TreeEntry, err error) {
+	cursor := children.Cursor()
+	parentPrefix := parentID
+
+	// Iterate through children
+	for k, _ := cursor.Seek(parentPrefix); len(k) > 0; k, _ = cursor.Next() {
+		// Check if this key still belongs to our parent
+		if !bytes.HasPrefix(k, parentPrefix) {
+			break // No more children for this parent
+		}
+		util.Assert(len(k) == 16, "invalid child key length")
+		entry, err := treeEntry(tree, k[8:16])
+		if err != nil {
+			util.AssertionFailedf("invalid tree entry for child ID %x", k[8:16])
+			// TODO consider whether we should repair this immediately (needs write transaction)
+			continue // Orphaned child reference, skip
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
+}
+
+// treeEntry retrieves a TreeEntry by its ID bytes
+// Returns NotFound if the entry does not exist.
+func treeEntry(tree *bbolt.Bucket, id []byte) (TreeEntry, error) {
+	bytes := tree.Get(id)
+	if bytes == nil {
+		return nil, fserr.NotFound
+	}
+	return treeEntryFromBytes(bytes)
 }
