@@ -32,13 +32,11 @@ func (r *Repository) Lookup(path []string) (id uint64, entry meta.TreeEntry, err
 	if len(path) == 0 {
 		return 0, meta.NewDirEntry(""), nil
 	}
-	return 0, nil, fserr.NotFound
-	// return r.metadata.Lookup(path)
+	return r.metadata.Lookup(path)
 }
 
 func (r *Repository) Mkdir(path []string) (uint64, error) {
-	return 0, fserr.IO
-	// return r.metadata.Mkdir(path)
+	return r.metadata.Mkdir(path)
 }
 
 func (r *Repository) Rmdir(path []string) error {

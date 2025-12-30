@@ -72,3 +72,36 @@ func (r *Metadata) Lookup(path []string) (id uint64, entry TreeEntry, err error)
 	})
 	return id, entry, err
 }
+
+// Mkdir creates a new directory.
+// Returns the ID of the newly created directory.
+// Returns Exists if a child with the same name already exists under the specified parent.
+// Returns NotFound if the parent directory does not exist.
+// Returns NotDir if the parent is not a directory.
+func (r *Metadata) Mkdir(path []string) (uint64, error) {
+	if len(path) == 0 {
+		return 0, fserr.Exists // Can't create root directory
+	}
+
+	var idBytes []byte
+	err := r.db.Update(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket(r.treeKey)
+		children := tx.Bucket(r.childrenKey)
+
+		parentID, parent, err := lookup(tree, children, path[:len(path)-1])
+		if err != nil {
+			return err // NotFound
+		}
+		// Ensure the parent is a directory
+		if _, isDir := parent.(*DirEntry); !isDir {
+			return fserr.NotDir // Test coverage: needs file implementation
+		}
+
+		idBytes, err = mkdir(tree, children, parentID, path[len(path)-1])
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	return B64u(idBytes), nil
+}
