@@ -59,10 +59,10 @@ func NewMetadata(repository string) (*Metadata, error) {
 
 // Lookup looks up a path and returns the ID and tree entry.
 // Returns ErrNotFound if the path does not exist.
-func (r *Metadata) Lookup(path []string) (id uint64, entry TreeEntry, err error) {
-	err = r.db.View(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket(r.treeKey)
-		children := tx.Bucket(r.childrenKey)
+func (m *Metadata) Lookup(path []string) (id uint64, entry TreeEntry, err error) {
+	err = m.db.View(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket(m.treeKey)
+		children := tx.Bucket(m.childrenKey)
 		var idBytes []byte
 		if idBytes, entry, err = lookup(tree, children, path); err != nil {
 			return err
@@ -78,15 +78,15 @@ func (r *Metadata) Lookup(path []string) (id uint64, entry TreeEntry, err error)
 // Returns Exists if a child with the same name already exists under the specified parent.
 // Returns NotFound if the parent directory does not exist.
 // Returns NotDir if the parent is not a directory.
-func (r *Metadata) Mkdir(path []string) (uint64, error) {
+func (m *Metadata) Mkdir(path []string) (uint64, error) {
 	if len(path) == 0 {
 		return 0, fserr.Exists // Can't create root directory
 	}
 
 	var idBytes []byte
-	err := r.db.Update(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket(r.treeKey)
-		children := tx.Bucket(r.childrenKey)
+	err := m.db.Update(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket(m.treeKey)
+		children := tx.Bucket(m.childrenKey)
 
 		parentID, parent, err := lookup(tree, children, path[:len(path)-1])
 		if err != nil {
@@ -110,10 +110,10 @@ func (r *Metadata) Mkdir(path []string) (uint64, error) {
 // Returns NotFound if the directory does not exist.
 // Returns NotDir if the path is not a directory.
 // Can return other errors.
-func (r *Metadata) Readdir(path []string) (entries []TreeEntry, err error) {
-	err = r.db.View(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket(r.treeKey)
-		children := tx.Bucket(r.childrenKey)
+func (m *Metadata) Readdir(path []string) (entries []TreeEntry, err error) {
+	err = m.db.View(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket(m.treeKey)
+		children := tx.Bucket(m.childrenKey)
 
 		id, entry, err := lookup(tree, children, path)
 		if err != nil {
@@ -137,14 +137,14 @@ func (r *Metadata) Readdir(path []string) (entries []TreeEntry, err error) {
 // Returns NotDir if the path is not a directory.
 // Returns NotEmpty if the directory is not empty.
 // Returns IsRoot if the directory is the root.
-func (r *Metadata) Rmdir(path []string) error {
+func (m *Metadata) Rmdir(path []string) error {
 	if len(path) == 0 {
 		return fserr.IsRoot // Can't remove root directory
 	}
 
-	return r.db.Update(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket(r.treeKey)
-		children := tx.Bucket(r.childrenKey)
+	return m.db.Update(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket(m.treeKey)
+		children := tx.Bucket(m.childrenKey)
 
 		parentID, _, err := lookup(tree, children, path[:len(path)-1])
 		if err != nil {
