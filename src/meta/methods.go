@@ -12,7 +12,7 @@ import (
 // lookup resolves a path (array of tree entry names) to both ID and TreeEntry.
 // Returns ErrNotFound if any component of the path does not exist.
 // An empty path returns the root directory (ID 0 with synthetic root entry).
-func lookup(tree *bbolt.Bucket, children *bbolt.Bucket, path []string) (id []byte, entry TreeEntry, err error) {
+func lookup(tree, children *bbolt.Bucket, path []string) (id []byte, entry TreeEntry, err error) {
 	id = make([]byte, 8) // root ID is 0 (as 8 bytes)
 	if len(path) == 0 {
 		return id, NewDirEntry(""), nil
@@ -29,7 +29,7 @@ func lookup(tree *bbolt.Bucket, children *bbolt.Bucket, path []string) (id []byt
 // getChild searches for a child with the given name under the specified parent.
 // Returns the child ID as bytes and the tree entry.
 // Returns NotFound if the child does not exist.
-func getChild(tree *bbolt.Bucket, children *bbolt.Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
+func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
 	cursor := children.Cursor()
 	for k, _ := cursor.Seek(parentID); len(k) > 0; k, _ = cursor.Next() {
 		if !bytes.HasPrefix(k, parentID) {
@@ -56,7 +56,7 @@ func getChild(tree *bbolt.Bucket, children *bbolt.Bucket, parentID []byte, name 
 // Mkdir creates a new directory. It does not check whether the parent exists.
 // Returns the ID of the newly created directory as bytes.
 // Returns os.ErrExist if a child with the same name already exists under the specified parent.
-func mkdir(tree *bbolt.Bucket, children *bbolt.Bucket, parentID []byte, name string) ([]byte, error) {
+func mkdir(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, error) {
 	// Check if child with name already exists
 	_, _, err := getChild(tree, children, parentID, name)
 	if err == nil {
@@ -98,7 +98,7 @@ func addChild(children *bbolt.Bucket, parentID []byte, id []byte) error {
 }
 
 // readdir lists the entries under the specified parent directory. It does not check whether the parent exists.
-func readdir(tree *bbolt.Bucket, children *bbolt.Bucket, parentID []byte) (entries []TreeEntry, err error) {
+func readdir(tree, children *bbolt.Bucket, parentID []byte) (entries []TreeEntry, err error) {
 	cursor := children.Cursor()
 	parentPrefix := parentID
 
@@ -129,4 +129,36 @@ func treeEntry(tree *bbolt.Bucket, id []byte) (TreeEntry, error) {
 		return nil, fserr.NotFound
 	}
 	return treeEntryFromBytes(bytes)
+}
+
+// Rmdir removes a directory specified by its ID under the given parent ID.
+// It does not check whether id is actually a directory.
+// Returns NotEmpty if the directory has children.
+func rmdir(tree, children *bbolt.Bucket, parentID []byte, id []byte) error {
+	// Check if directory has children
+	if hasChildren(children, id) {
+		return fserr.NotEmpty
+	}
+
+	// Remove the directory entry from the tree
+	if err := tree.Delete(id); err != nil {
+		return err
+	}
+
+	return removeChild(children, parentID, id)
+}
+
+// hasChildren checks if a directory has any children
+func hasChildren(children *bbolt.Bucket, id []byte) bool {
+	cursor := children.Cursor()
+	k, _ := cursor.Seek(id)
+	return len(k) > 0 && bytes.HasPrefix(k, id)
+}
+
+// removeChild removes the child relationship between parentID and id.
+func removeChild(children *bbolt.Bucket, parentID []byte, id []byte) error {
+	key := make([]byte, 16)
+	copy(key[0:8], parentID)
+	copy(key[8:16], id)
+	return children.Delete(key)
 }

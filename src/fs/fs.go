@@ -148,3 +148,33 @@ func (f *fileSystem) Mkdir(path string, mode uint32) int {
 
 	return 0
 }
+
+// Rmdir removes a directory:
+// https://man7.org/linux/man-pages/man2/rmdir.2.html
+//
+//	Returns -fuse.ENOENT if the path does not exist.
+//	Returns -fuse.ENOTDIR if the path is not a directory.
+//	Returns -fuse.ENOTEMPTY if the directory is not empty.
+//	Returns -fuse.EBUSY if the directory is the root.
+func (f *fileSystem) Rmdir(path string) int {
+	log.Printf("Rmdir - %s", path)
+
+	err := f.repo.Rmdir(partsFrom(path))
+	switch {
+	case err == nil:
+		// continue
+	case errors.Is(err, fserr.NotFound):
+		return -fuse.ENOENT
+	case errors.Is(err, fserr.NotDir):
+		return -fuse.ENOTDIR
+	case errors.Is(err, fserr.NotEmpty):
+		return -fuse.ENOTEMPTY
+	case errors.Is(err, fserr.IsRoot):
+		return -fuse.EBUSY
+	default:
+		util.AssertionFailedf("unexpected error %v in Rmdir", err)
+		return -fuse.EIO
+	}
+
+	return 0
+}

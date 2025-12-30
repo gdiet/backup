@@ -40,8 +40,7 @@ func (r *Repository) Mkdir(path []string) (uint64, error) {
 }
 
 func (r *Repository) Rmdir(path []string) error {
-	return fserr.IO
-	// return r.metadata.Rmdir(path)
+	return r.metadata.Rmdir(path)
 }
 
 func (r *Repository) Readdir(path []string) (entries []meta.TreeEntry, err error) {

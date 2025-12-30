@@ -67,7 +67,10 @@ func rmdir(mountpoint string) func(t *testing.T) {
 		if err := os.Mkdir(inner, 0755); err != nil {
 			t.Fatalf("Failed to create inner directory in mounted file system: %v", err)
 		}
-		if err := os.RemoveAll(dir); err != nil {
+		if err := os.Remove(dir); err == nil {
+			t.Fatalf("Could remove non-empty directory")
+		}
+		if err := os.RemoveAll(inner); err != nil {
 			t.Fatalf("Failed to remove inner directory in mounted file system: %v", err)
 		}
 		entries, err := os.ReadDir(dir)
@@ -97,7 +100,7 @@ func readdir(mountpoint string) func(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to read directory in mounted file system: %v", err)
 		}
-		if len(entries) != 1 || entries[0].Name() != "readdir" {
+		if len(entries) != 1 || entries[0].Name() != "inner" {
 			t.Fatalf("Unexpected directory entries after creating inner dir: %v", entries)
 		}
 	})
