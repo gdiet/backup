@@ -19,8 +19,7 @@ func NewRepository(repository string) (*Repository, error) {
 }
 
 func (r *Repository) Close() error {
-	return fserr.IO
-	// return r.metadata.Close()
+	return r.metadata.Close()
 }
 
 func (r *Repository) Mkfile(path []string) (uint64, error) {

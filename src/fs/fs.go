@@ -27,6 +27,15 @@ func newFileSystem(repository string) (*fileSystem, error) {
 	return &fileSystem{repo: r}, nil
 }
 
+// Destroy is called when the file system is unmounted, releasing any held resources.
+func (f *fileSystem) Destroy() {
+	log.Printf("Unmounting file system...")
+	err := f.repo.Close()
+	if err != nil {
+		log.Printf("Error closing repository: %v", err)
+	}
+}
+
 // Getattr gets the attributes of a file or directory:
 // https://man7.org/linux/man-pages/man2/stat.2.html
 //

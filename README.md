@@ -28,5 +28,5 @@ go test -v ./src/...
 - Activate the watch mode of the extension.
 
 ```
-go test -v -coverprofile=coverage.out -covermode=atomic -coverpkg=./... ./... && go run github.com/richardlt/gocover-cobertura < coverage.out > coverage.xml
+go test -coverprofile=coverage.out -covermode=atomic -coverpkg=./... ./... && go run github.com/richardlt/gocover-cobertura < coverage.out > coverage.xml
 ```

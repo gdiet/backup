@@ -57,6 +57,11 @@ func NewMetadata(repository string) (*Metadata, error) {
 	}, nil
 }
 
+// Close closes the metadata repository.
+func (m *Metadata) Close() error {
+	return m.db.Close()
+}
+
 // Lookup looks up a path and returns the ID and tree entry.
 // Returns ErrNotFound if the path does not exist.
 func (m *Metadata) Lookup(path []string) (id uint64, entry TreeEntry, err error) {
