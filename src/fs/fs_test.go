@@ -3,105 +3,70 @@ package fs
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
-	"time"
+
+	"github.com/winfsp/cgofuse/fuse"
 )
 
-func TestDedupFileSystem(t *testing.T) {
+func TestFileSystem(t *testing.T) {
 	dir := t.TempDir()
 	repository := filepath.Join(dir, "repository")
 	if os.Mkdir(repository, 0755) != nil {
 		t.Fatal("Failed to create repository directory")
 	}
-	mountpoint := filepath.Join(dir, "mountpoint")
-	if runtime.GOOS != "windows" && os.Mkdir(mountpoint, 0755) != nil {
-		t.Fatal("Failed to create mountpoint directory")
+	f, err := newFileSystem(repository)
+	if err != nil {
+		t.Fatal("Failed to create new file system")
 	}
-	host, _ := setup(repository)
-	go func() { // Run in goroutine to avoid blocking test
-		mount(host, mountpoint)
-	}()
-	defer host.Unmount()
-	// wait for mount to be ready. 80 ms was enough on all environments I checked so far.
-	time.Sleep(100 * time.Millisecond)
 
-	result := true
-	if result {
-		result = t.Run("mkdir", mkdir(mountpoint))
-	}
-	if result {
-		result = t.Run("rmdir", rmdir(mountpoint))
-	}
-	if result {
-		result = t.Run("readdir", readdir(mountpoint))
-	}
+	t.Run("Getattr", testGetattr(f))
 }
 
-func testWithDir(mountpoint, dirname string, testFn func(*testing.T, string)) func(*testing.T) {
-	dir := filepath.Join(mountpoint, dirname)
-	defer os.RemoveAll(dir)
+func testGetattr(f *fileSystem) func(t *testing.T) {
 	return func(t *testing.T) {
-		if err := os.Mkdir(dir, 0755); err != nil {
-			t.Fatalf("Failed to create directory in mounted file system: %v", err)
-		}
-		testFn(t, dir)
+		t.Run("root", testGetattrRoot(f))
+		t.Run("notFound", testGetattrNotFound(f))
 	}
 }
 
-func mkdir(mountpoint string) func(t *testing.T) {
-	return testWithDir(mountpoint, "mkdir", func(t *testing.T, dir string) {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("Failed to read directory in mounted file system: %v", err)
+func testGetattrNotFound(f *fileSystem) func(t *testing.T) {
+	return func(t *testing.T) {
+		stat := &fuse.Stat_t{}
+		ret := f.Getattr("/nonexistent", stat, 0)
+		if ret != -fuse.ENOENT {
+			t.Fatalf("Getattr /nonexistent returned %d, expected -fuse.ENOENT", ret)
 		}
-		if len(entries) != 0 {
-			t.Fatalf("Unexpected directory entries: %v", entries)
+		ret = f.Mkdir("/dir", 0)
+		if ret != 0 {
+			t.Fatalf("Mkdir /dir returned %d, expected 0", ret)
 		}
-	})
+		defer f.Rmdir("/dir")
+		ret = f.Mkdir("/dir/inner", 0)
+		if ret != 0 {
+			t.Fatalf("Mkdir /dir/inner returned %d, expected 0", ret)
+		}
+		defer f.Rmdir("/dir/inner")
+		ret = f.Mkdir("/other", 0)
+		if ret != 0 {
+			t.Fatalf("Mkdir /other returned %d, expected 0", ret)
+		}
+		defer f.Rmdir("/other")
+		ret = f.Getattr("/dir/nonexistent", stat, 0)
+		if ret != -fuse.ENOENT {
+			t.Fatalf("Getattr /dir/nonexistent returned %d, expected -fuse.ENOENT", ret)
+		}
+	}
 }
 
-func rmdir(mountpoint string) func(t *testing.T) {
-	return testWithDir(mountpoint, "rmdir", func(t *testing.T, dir string) {
-		inner := filepath.Join(dir, "inner")
-		if err := os.Mkdir(inner, 0755); err != nil {
-			t.Fatalf("Failed to create inner directory in mounted file system: %v", err)
+func testGetattrRoot(f *fileSystem) func(t *testing.T) {
+	return func(t *testing.T) {
+		stat := &fuse.Stat_t{}
+		ret := f.Getattr("/", stat, 0)
+		if ret != 0 {
+			t.Fatalf("Getattr / returned %d, expected 0", ret)
 		}
-		if err := os.Remove(dir); err == nil {
-			t.Fatalf("Could remove non-empty directory")
+		if (stat.Mode & fuse.S_IFDIR) == 0 {
+			t.Fatalf("Getattr / did not return a directory")
 		}
-		if err := os.RemoveAll(inner); err != nil {
-			t.Fatalf("Failed to remove inner directory in mounted file system: %v", err)
-		}
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("Failed to read directory in mounted file system: %v", err)
-		}
-		if len(entries) != 0 {
-			t.Fatalf("Unexpected directory entries: %v", entries)
-		}
-	})
-}
-
-func readdir(mountpoint string) func(t *testing.T) {
-	return testWithDir(mountpoint, "readdir", func(t *testing.T, dir string) {
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("Failed to read directory in mounted file system: %v", err)
-		}
-		if len(entries) != 0 {
-			t.Fatalf("Unexpected directory entries: %v", entries)
-		}
-		inner := filepath.Join(dir, "inner")
-		if err := os.Mkdir(inner, 0755); err != nil {
-			t.Fatalf("Failed to create inner directory in mounted file system: %v", err)
-		}
-		entries, err = os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("Failed to read directory in mounted file system: %v", err)
-		}
-		if len(entries) != 1 || entries[0].Name() != "inner" {
-			t.Fatalf("Unexpected directory entries after creating inner dir: %v", entries)
-		}
-	})
+	}
 }

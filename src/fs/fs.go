@@ -44,12 +44,7 @@ func (f *fileSystem) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	stat.Uid = uint32(os.Getuid())
 	stat.Gid = uint32(os.Getgid())
 
-	parts := partsFrom(path)
-	if len(parts) == 1 && parts[0] == "" { // Root directory
-		return 0
-	}
-
-	_, entry, err := f.repo.Lookup(parts)
+	_, entry, err := f.repo.Lookup(partsFrom(path))
 	switch {
 	case err == nil:
 		// continue
