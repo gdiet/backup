@@ -47,6 +47,5 @@ func (r *Repository) Readdir(path []string) (entries []meta.TreeEntry, err error
 }
 
 func (r *Repository) Rename(oldPath []string, newPath []string) error {
-	return fserr.IO
-	// return r.metadata.Rename(oldPath, newPath)
+	return r.metadata.Rename(oldPath, newPath)
 }

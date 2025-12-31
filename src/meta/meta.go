@@ -2,7 +2,10 @@ package meta
 
 import (
 	"backup/src/fserr"
+	"backup/src/util"
+	"errors"
 	"math"
+	"path/filepath"
 
 	"go.etcd.io/bbolt"
 )
@@ -16,7 +19,8 @@ type Metadata struct {
 }
 
 func NewMetadata(repository string) (*Metadata, error) {
-	db, err := bbolt.Open(repository+"/dedupfs.db", 0600, nil)
+	dbPath := filepath.Join(repository, "dedupfs.db")
+	db, err := bbolt.Open(dbPath, 0600, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -164,5 +168,80 @@ func (m *Metadata) Rmdir(path []string) error {
 		}
 
 		return rmdir(tree, children, parentID, id) // nil or NotEmpty
+	})
+}
+
+// Rename renames a file or directory, moving it to a new location if required.
+// If oldPath is a directory and newPath is an empty directory, newPath is replaced.
+// If oldPath is a file and newPath is an existing file, newPath is replaced.
+// If oldPath and newPath exist and are the same, no operation is performed (success).
+// Returns NotFound if the source path or a parent of the destination path does not exist.
+// Returns NotEmpty if trying to rename a directory to an existing non-empty directory.
+// Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+// Returns IsDir if trying to rename a file to a directory.
+// Returns Invalid if trying to rename a directory to a subdirectory of itself.
+// Returns IsRoot if trying to rename the root directory itself.
+func (m *Metadata) Rename(oldPath []string, newPath []string) error {
+	// handle root directory rename
+	if stopHere, err := checkForRootDirectoryRename(oldPath, newPath); stopHere {
+		return err
+	}
+
+	return m.db.Update(func(tx *bbolt.Tx) error {
+		tree := tx.Bucket(m.treeKey)
+		children := tx.Bucket(m.childrenKey)
+
+		// Lookup source: parent and entry
+		oldParentID, _, err := lookup(tree, children, oldPath[:len(oldPath)-1])
+		if err != nil {
+			return err // Returns NotFound if the source path or a parent of the destination path does not exist.
+		}
+		oldEntryID, oldEntry, err := getChild(tree, children, oldParentID, oldPath[len(oldPath)-1])
+		if err != nil {
+			return err // Returns NotFound if the source path or a parent of the destination path does not exist.
+		}
+
+		// Check for no-op rename (source = target) for existing paths
+		if Equals(oldPath, newPath) {
+			return nil // If oldPath and newPath exist and are the same, no operation is performed (success).
+		}
+
+		// Lookup destination: parent and, if any, entry
+		newParentID, newParent, err := lookup(tree, children, newPath[:len(newPath)-1])
+		if err != nil {
+			return err // Returns NotFound if the source path or a parent of the destination path does not exist.
+		}
+		// Ensure the new parent is a directory
+		switch newParent.(type) {
+		case *FileEntry:
+			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+		case *DirEntry:
+			// continue
+		default:
+			util.AssertionFailedf("unexpected destination parent entry type %T in Rename", newParent)
+			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+		}
+
+		if _, isDir := newParent.(*DirEntry); !isDir {
+			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+		}
+
+		// Detect loop renames (directory to its own subdirectory)
+		if len(oldPath) < len(newPath) && Equals(oldPath, newPath[:len(oldPath)]) {
+			return fserr.Invalid // Returns Invalid if trying to rename a directory to a subdirectory of itself.
+		}
+
+		switch oldEntry.(type) {
+		case *FileEntry:
+			// Returns IsDir if trying to rename a file to a directory.
+			return errors.New("not implemented: renaming files") // TODO wait for implementation of files in the filesystem
+		case *DirEntry:
+			// continue
+		default:
+			util.AssertionFailedf("unexpected source entry type %T in Rename", oldEntry)
+			return errors.New("invalid entry type") // Should not happen
+		}
+
+		return renameDirectory(tree, children, oldParentID, oldEntryID, oldEntry, newParentID, newPath[len(newPath)-1])
 	})
 }

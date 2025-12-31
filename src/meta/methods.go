@@ -162,3 +162,57 @@ func removeChild(children *bbolt.Bucket, parentID []byte, id []byte) error {
 	copy(key[8:16], id)
 	return children.Delete(key)
 }
+
+// checkForRootDirectoryRename checks if the rename operation involves the root directory.
+// If oldPath is the root directory, it returns IsRoot unless newPath is also the root directory (no-op in that case).
+func checkForRootDirectoryRename(oldPath []string, newPath []string) (bool, error) {
+	if len(oldPath) == 0 {
+		if len(newPath) == 0 {
+			return true, nil // If oldPath and newPath exist and are the same, no operation is performed (success).
+		}
+		return true, fserr.IsRoot // Returns IsRoot if trying to rename the root directory itself.
+	}
+	return false, nil
+}
+
+// renameDirectory handles renaming of directories, including moving to a new parent.
+// Returns NotEmpty if trying to rename a directory to an existing non-empty directory.
+// Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+func renameDirectory(
+	tree *bbolt.Bucket, children *bbolt.Bucket,
+	oldParentID, oldEntryID []byte, oldEntry TreeEntry,
+	newParentID []byte, newEntryName string) error {
+
+	// Lookup destination entry to replace, if any
+	replaceEntryID, replaceEntry, getReplaceEntryError := getChild(tree, children, newParentID, newEntryName)
+
+	if getReplaceEntryError == nil {
+		// Destination exists
+		switch replaceEntry.(type) {
+		case *FileEntry:
+			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+		case *DirEntry:
+			// Remove destination entry unless it's not empty
+			err := rmdir(tree, children, newParentID, replaceEntryID)
+			if err != nil {
+				return err // Returns NotEmpty if trying to rename a directory to an existing non-empty directory.
+			}
+		default:
+			util.AssertionFailedf("unexpected destination entry type %T in Rename", replaceEntry)
+			return errors.New("invalid entry type") // Should not happen
+		}
+	}
+
+	// Move entry to new location FIXME unhandled errors
+	removeChild(children, oldParentID, oldEntryID)
+	addChild(children, newParentID, oldEntryID)
+
+	// Rename to the new name if necessary
+	if oldEntry.Name() != newEntryName {
+		oldEntry.SetName(newEntryName)
+		if err := tree.Put(oldEntryID, oldEntry.ToBytes()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
