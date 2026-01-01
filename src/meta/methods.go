@@ -35,8 +35,8 @@ func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byt
 		if !bytes.HasPrefix(k, parentID) {
 			break // No more children for this parent
 		}
-
 		if len(k) != 16 {
+			util.AssertionFailed("invalid child key length")
 			return nil, nil, fserr.IO
 		}
 
@@ -100,15 +100,14 @@ func addChild(children *bbolt.Bucket, parentID []byte, id []byte) error {
 // readdir lists the entries under the specified parent directory. It does not check whether the parent exists.
 func readdir(tree, children *bbolt.Bucket, parentID []byte) (entries []TreeEntry, err error) {
 	cursor := children.Cursor()
-	parentPrefix := parentID
-
-	// Iterate through children
-	for k, _ := cursor.Seek(parentPrefix); len(k) > 0; k, _ = cursor.Next() {
-		// Check if this key still belongs to our parent
-		if !bytes.HasPrefix(k, parentPrefix) {
+	for k, _ := cursor.Seek(parentID); len(k) > 0; k, _ = cursor.Next() {
+		if !bytes.HasPrefix(k, parentID) {
 			break // No more children for this parent
 		}
-		util.Assert(len(k) == 16, "invalid child key length")
+		if len(k) != 16 {
+			util.AssertionFailed("invalid child key length")
+			return nil, fserr.IO
+		}
 		entry, err := treeEntry(tree, k[8:16])
 		if err != nil {
 			util.AssertionFailedf("invalid tree entry for child ID %x", k[8:16])

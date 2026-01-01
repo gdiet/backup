@@ -3,6 +3,7 @@ package fs
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/winfsp/cgofuse/fuse"
@@ -20,6 +21,7 @@ func TestFileSystem(t *testing.T) {
 	}
 
 	t.Run("Getattr", testGetattr(f))
+	t.Run("Readdir", testReaddir(f))
 }
 
 func testGetattr(f *fileSystem) func(t *testing.T) {
@@ -31,6 +33,7 @@ func testGetattr(f *fileSystem) func(t *testing.T) {
 
 func testGetattrNotFound(f *fileSystem) func(t *testing.T) {
 	return func(t *testing.T) {
+		// prepare
 		stat := &fuse.Stat_t{}
 		ret := f.Getattr("/nonexistent", stat, 0)
 		if ret != -fuse.ENOENT {
@@ -51,6 +54,8 @@ func testGetattrNotFound(f *fileSystem) func(t *testing.T) {
 			t.Fatalf("Mkdir /other returned %d, expected 0", ret)
 		}
 		defer f.Rmdir("/other")
+
+		// test
 		ret = f.Getattr("/dir/nonexistent", stat, 0)
 		if ret != -fuse.ENOENT {
 			t.Fatalf("Getattr /dir/nonexistent returned %d, expected -fuse.ENOENT", ret)
@@ -67,6 +72,49 @@ func testGetattrRoot(f *fileSystem) func(t *testing.T) {
 		}
 		if (stat.Mode & fuse.S_IFDIR) == 0 {
 			t.Fatalf("Getattr / did not return a directory")
+		}
+	}
+}
+
+func testReaddir(f *fileSystem) func(t *testing.T) {
+	return func(t *testing.T) {
+		// prepare
+		ret := f.Mkdir("/dir", 0)
+		if ret != 0 {
+			t.Fatalf("Mkdir /dir returned %d, expected 0", ret)
+		}
+		defer f.Rmdir("/dir")
+		ret = f.Mkdir("/dir/inner", 0)
+		if ret != 0 {
+			t.Fatalf("Mkdir /dir/inner returned %d, expected 0", ret)
+		}
+		defer f.Rmdir("/dir/inner")
+		ret = f.Mkdir("/other", 0)
+		if ret != 0 {
+			t.Fatalf("Mkdir /other returned %d, expected 0", ret)
+		}
+		defer f.Rmdir("/other")
+		entries := []string{}
+		fill := func(name string, stat *fuse.Stat_t, ofst int64) bool {
+			entries = append(entries, name)
+			return true
+		}
+
+		// test 1
+		ret = f.Readdir("/nonexistent", fill, 0, 0)
+		if ret != -fuse.ENOENT {
+			t.Fatalf("Readdir /nonexistent returned %d, expected -fuse.ENOENT", ret)
+		}
+
+		// test 2
+		entries = nil
+		ret = f.Readdir("/dir", fill, 0, 0)
+		if ret != 0 {
+			t.Fatalf("Readdir /dir returned %d, expected 0", ret)
+		}
+		expectedEntries := []string{".", "..", "inner"}
+		if !reflect.DeepEqual(entries, expectedEntries) {
+			t.Fatalf("Readdir /dir returned entries %v, expected %v", entries, expectedEntries)
 		}
 	}
 }
