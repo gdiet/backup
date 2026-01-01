@@ -34,33 +34,31 @@ func testGetattr(f *fileSystem) func(t *testing.T) {
 func testGetattrNotFound(f *fileSystem) func(t *testing.T) {
 	return func(t *testing.T) {
 		// prepare
+		defer f.Rmdir(mkdirOK(t, f, "/dir"))
+		defer f.Rmdir(mkdirOK(t, f, "/dir/inner"))
+		defer f.Rmdir(mkdirOK(t, f, "/other"))
+
+		// test 1
 		stat := &fuse.Stat_t{}
 		ret := f.Getattr("/nonexistent", stat, 0)
 		if ret != -fuse.ENOENT {
 			t.Fatalf("Getattr /nonexistent returned %d, expected -fuse.ENOENT", ret)
 		}
-		ret = f.Mkdir("/dir", 0)
-		if ret != 0 {
-			t.Fatalf("Mkdir /dir returned %d, expected 0", ret)
-		}
-		defer f.Rmdir("/dir")
-		ret = f.Mkdir("/dir/inner", 0)
-		if ret != 0 {
-			t.Fatalf("Mkdir /dir/inner returned %d, expected 0", ret)
-		}
-		defer f.Rmdir("/dir/inner")
-		ret = f.Mkdir("/other", 0)
-		if ret != 0 {
-			t.Fatalf("Mkdir /other returned %d, expected 0", ret)
-		}
-		defer f.Rmdir("/other")
 
-		// test
+		// test 2
 		ret = f.Getattr("/dir/nonexistent", stat, 0)
 		if ret != -fuse.ENOENT {
 			t.Fatalf("Getattr /dir/nonexistent returned %d, expected -fuse.ENOENT", ret)
 		}
 	}
+}
+
+func mkdirOK(t *testing.T, f *fileSystem, path string) string {
+	ret := f.Mkdir(path, 0)
+	if ret != 0 {
+		t.Fatalf("Mkdir %s returned %d, expected 0", path, ret)
+	}
+	return path
 }
 
 func testGetattrRoot(f *fileSystem) func(t *testing.T) {
@@ -79,21 +77,9 @@ func testGetattrRoot(f *fileSystem) func(t *testing.T) {
 func testReaddir(f *fileSystem) func(t *testing.T) {
 	return func(t *testing.T) {
 		// prepare
-		ret := f.Mkdir("/dir", 0)
-		if ret != 0 {
-			t.Fatalf("Mkdir /dir returned %d, expected 0", ret)
-		}
-		defer f.Rmdir("/dir")
-		ret = f.Mkdir("/dir/inner", 0)
-		if ret != 0 {
-			t.Fatalf("Mkdir /dir/inner returned %d, expected 0", ret)
-		}
-		defer f.Rmdir("/dir/inner")
-		ret = f.Mkdir("/other", 0)
-		if ret != 0 {
-			t.Fatalf("Mkdir /other returned %d, expected 0", ret)
-		}
-		defer f.Rmdir("/other")
+		defer f.Rmdir(mkdirOK(t, f, "/dir"))
+		defer f.Rmdir(mkdirOK(t, f, "/dir/inner"))
+		defer f.Rmdir(mkdirOK(t, f, "/other"))
 		entries := []string{}
 		fill := func(name string, stat *fuse.Stat_t, ofst int64) bool {
 			entries = append(entries, name)
@@ -101,7 +87,7 @@ func testReaddir(f *fileSystem) func(t *testing.T) {
 		}
 
 		// test 1
-		ret = f.Readdir("/nonexistent", fill, 0, 0)
+		ret := f.Readdir("/nonexistent", fill, 0, 0)
 		if ret != -fuse.ENOENT {
 			t.Fatalf("Readdir /nonexistent returned %d, expected -fuse.ENOENT", ret)
 		}
