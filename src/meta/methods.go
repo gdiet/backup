@@ -37,7 +37,7 @@ func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byt
 		}
 		if len(k) != 16 {
 			util.AssertionFailed("invalid child key length")
-			return nil, nil, fserr.IO
+			return nil, nil, fserr.IO()
 		}
 
 		childID := k[8:16]
@@ -108,7 +108,7 @@ func readdir(tree, children *bbolt.Bucket, parentID []byte) (entries []TreeEntry
 		}
 		if len(k) != 16 {
 			util.AssertionFailed("invalid child key length")
-			return nil, fserr.IO
+			return nil, fserr.IO()
 		}
 		entry, err := treeEntry(tree, k[8:16])
 		if err != nil {

@@ -22,7 +22,7 @@ func newFileSystem(repository string) (*fileSystem, error) {
 	r, err := repo.NewRepository(repository)
 	if err != nil {
 		log.Printf("failed to open repository %s: %v", repository, err)
-		return nil, fserr.IO
+		return nil, fserr.IO_RAW
 	}
 	return &fileSystem{repo: r}, nil
 }
@@ -143,7 +143,7 @@ func (f *fileSystem) Mkdir(path string, mode uint32) int {
 		return -fuse.ENOTDIR
 	case errors.Is(err, fserr.Exists):
 		return -fuse.EEXIST
-	case errors.Is(err, fserr.IO):
+	case errors.Is(err, fserr.IO_RAW):
 		return -fuse.EIO
 	default:
 		util.AssertionFailedf("unexpected error %v in Mkdir", err)

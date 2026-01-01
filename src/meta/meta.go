@@ -34,7 +34,7 @@ func NewMetadata(repository string) (*Metadata, error) {
 		for _, bucketKey := range [][]byte{m.treeKey, m.childrenKey, m.dataKey, m.freeAreasKey} {
 			_, err := tx.CreateBucketIfNotExists(bucketKey)
 			if err != nil {
-				return fserr.IO
+				return fserr.IO()
 			}
 		}
 		// Initialize free areas if needed
@@ -43,7 +43,7 @@ func NewMetadata(repository string) (*Metadata, error) {
 		if len(firstKey) == 0 {
 			// Add initial free area: 0 -> MaxInt64
 			if err := freeAreas.Put(U64b(0), U64b(math.MaxInt64)); err != nil {
-				return fserr.IO
+				return fserr.IO()
 			}
 		}
 		return nil

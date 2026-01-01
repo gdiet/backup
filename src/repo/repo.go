@@ -23,7 +23,7 @@ func (r *Repository) Close() error {
 }
 
 func (r *Repository) Mkfile(path []string) (uint64, error) {
-	return 0, fserr.IO
+	return 0, fserr.IO()
 	// return r.metadata.Mkfile(path)
 }
 
