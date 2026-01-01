@@ -209,9 +209,14 @@ func (f *fileSystem) Rename(oldPath string, newPath string) int {
 		return -fuse.ENOENT
 	case errors.Is(err, fserr.NotDir):
 		return -fuse.ENOTDIR
-	case errors.Is(err, fserr.Exists):
-		return -fuse.EEXIST
-	// FIXME what about other error cases?
+	case errors.Is(err, fserr.NotEmpty):
+		return -fuse.ENOTEMPTY
+	case errors.Is(err, fserr.IsDir):
+		return -fuse.EISDIR
+	case errors.Is(err, fserr.Invalid):
+		return -fuse.EINVAL
+	case errors.Is(err, fserr.IsRoot):
+		return -fuse.EBUSY
 	default:
 		util.AssertionFailedf("unexpected error %v in Rename", err)
 		return -fuse.EIO
