@@ -112,9 +112,8 @@ func readdir(tree, children *bbolt.Bucket, parentID []byte) (entries []TreeEntry
 		}
 		entry, err := treeEntry(tree, k[8:16])
 		if err != nil {
-			util.AssertionFailedf("invalid tree entry for child ID %x", k[8:16])
-			// TODO consider whether we should repair this immediately (needs write transaction)
-			continue // Orphaned child reference, skip
+			util.AssertionFailedf("orphaned child reference: parent ID %x / child ID %x", parentID, k[8:16])
+			continue // Skip orphaned child reference
 		}
 		entries = append(entries, entry)
 	}
