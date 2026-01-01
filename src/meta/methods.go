@@ -94,7 +94,9 @@ func addChild(children *bbolt.Bucket, parentID []byte, id []byte) error {
 	key := make([]byte, 16)
 	copy(key[0:8], parentID)
 	copy(key[8:16], id)
-	return children.Put(key, []byte{})
+	err := children.Put(key, []byte{})
+	util.Assertf(err == nil, "bbolt put failed: %v", err)
+	return err
 }
 
 // readdir lists the entries under the specified parent directory. It does not check whether the parent exists.
@@ -159,7 +161,9 @@ func removeChild(children *bbolt.Bucket, parentID []byte, id []byte) error {
 	key := make([]byte, 16)
 	copy(key[0:8], parentID)
 	copy(key[8:16], id)
-	return children.Delete(key)
+	err := children.Delete(key)
+	util.Assertf(err == nil, "bbolt delete failed: %v", err)
+	return err
 }
 
 // checkForRootDirectoryRename checks if the rename operation involves the root directory.
@@ -202,16 +206,20 @@ func renameDirectory(
 		}
 	}
 
-	// Move entry to new location FIXME unhandled errors
-	removeChild(children, oldParentID, oldEntryID)
-	addChild(children, newParentID, oldEntryID)
+	// Move entry to new location
+	if err := removeChild(children, oldParentID, oldEntryID); err != nil {
+		return err
+	}
+	if err := addChild(children, newParentID, oldEntryID); err != nil {
+		return err
+	}
 
 	// Rename to the new name if necessary
 	if oldEntry.Name() != newEntryName {
 		oldEntry.SetName(newEntryName)
-		if err := tree.Put(oldEntryID, oldEntry.ToBytes()); err != nil {
-			return err
-		}
+		err := tree.Put(oldEntryID, oldEntry.ToBytes())
+		util.Assertf(err == nil, "bbolt put failed: %v", err)
+		return err
 	}
 	return nil
 }
