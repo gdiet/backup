@@ -1,0 +1,164 @@
+package cache
+
+import (
+	"backup/src/util"
+	"io"
+	"syscall"
+)
+
+// Cache is an optimized file contents cache consisting of multiple layers.
+type Cache struct {
+	size   int64
+	sparse *sparse
+	memory *memory
+	disk   *disk
+	base   BaseFile
+}
+
+var _ BaseFile = (*Cache)(nil)
+
+func NewCache(cacheFilePath string, baseFile BaseFile) Cache {
+	return Cache{
+		size:   baseFile.Length(),
+		sparse: &sparse{},
+		memory: &memory{},
+		disk:   &disk{filePath: cacheFilePath},
+		base:   baseFile,
+	}
+}
+
+// Length returns the current size of the cache entry.
+func (c *Cache) Length() int64 {
+	return c.size
+}
+
+// Read reads data from the cache entry.
+// Returns the total number of bytes read, which may be less than len(data) only if EOF is reached.
+func (c *Cache) Read(off int64, data bytes) (bytesRead int, err error) {
+	length := len(data)
+	if length <= 0 {
+		return 0, nil // Nothing to read or invalid length
+	}
+	if c.size <= off {
+		return 0, io.EOF // Nothing to read due to EOF
+	}
+	// Calculate total read size to prevent reading internally past EOF
+	bytesRead = int(min(int64(length), c.size-off))
+
+	// Adjust target slice to available size
+	data = data[:bytesRead]
+
+	// Step 1: Read from sparse layer
+	nonSparseAreas := c.sparse.read(off, data)
+
+	// Step 2: Read from memory layer all non-sparse areas
+	for _, nonSparseArea := range nonSparseAreas {
+		nonSparseDataStart := nonSparseArea.off - off
+		nonSparseAreaData := data[nonSparseDataStart : nonSparseDataStart+nonSparseArea.len]
+		remainingAreas := c.memory.read(nonSparseArea.off, nonSparseAreaData)
+
+		// Step 3: Read from disk layer any remaining unread areas
+		for _, remainingArea := range remainingAreas {
+			remainingDataStart := remainingArea.off - off
+			remainingAreaData := data[remainingDataStart : remainingDataStart+remainingArea.len]
+			toBeReadFromBase, err := c.disk.read(remainingArea.off, remainingAreaData)
+			if err != nil {
+				return bytesRead, err
+			}
+
+			// Step 4: Read from base layer any remaining areas not present in disk cache
+			err = c.readFromBase(off, data, toBeReadFromBase)
+			if err != nil {
+				return bytesRead, err
+			}
+		}
+	}
+
+	if bytesRead < length {
+		return bytesRead, io.EOF
+	}
+	return bytesRead, nil
+}
+
+func (c *Cache) readFromBase(off int64, data bytes, areas []area) error {
+	for _, baseArea := range areas {
+		baseDataStart := baseArea.off - off
+		baseAreaData := data[baseDataStart : baseDataStart+baseArea.len]
+		bytesRead, err := c.base.Read(baseArea.off, baseAreaData)
+		if err != nil {
+			if err != io.EOF {
+				return err
+			}
+			util.AssertionFailedf("base read returned EOF unexpectedly, bytes read %d, expected %d", bytesRead, len(baseAreaData))
+			for i := bytesRead; i < len(baseAreaData); i++ {
+				baseAreaData[i] = 0
+			}
+		}
+	}
+	return nil
+}
+
+// Truncate changes the size of cache entry, adjusting all layers as needed.
+// Returns the memory usage change (negative if memory was freed, positive if more memory was used).
+func (c *Cache) Truncate(newSize int64) (memoryDelta int, err error) {
+	if newSize < 0 {
+		return 0, syscall.EINVAL // Invalid length
+	}
+	if newSize == c.size {
+		return 0, nil // No size change
+	}
+	if newSize > c.size {
+		// New sparse area from old size to new size
+		c.sparse.write(c.size, newSize-c.size)
+		c.size = newSize
+		return 0, nil // No memory change when growing
+	}
+	// Shrink the cache
+	c.size = newSize
+	c.sparse.shrink(newSize)
+	memoryDelta = c.memory.shrink(newSize)
+	err = c.disk.shrink(newSize)
+	return memoryDelta, err
+}
+
+// Write writes data to the cache entry at the specified offset.
+// maxMergeSize is only used when storeInMemory is true.
+// Returns the memory usage change (negative if memory was freed, positive if more memory was used).
+func (c *Cache) Write(off int64, data bytes, storeInMemory bool, maxMergeSize int64) (memoryDelta int, err error) {
+	if len(data) == 0 {
+		return 0, nil // Nothing to write, no memory change. Zero-length writes are no-ops.
+	}
+
+	if off < c.size {
+		// Remove overlapping sparse areas
+		c.sparse.remove(off, int64(len(data)))
+	}
+	if off > c.size {
+		// Fill gap with sparse area
+		c.sparse.write(c.size, off-c.size)
+	}
+	if off+int64(len(data)) > c.size {
+		// Update size if writing past EOF
+		c.size = off + int64(len(data))
+	}
+
+	if storeInMemory {
+		// Either write to memory cache ...
+		memoryDelta = c.memory.write(off, data, maxMergeSize)
+		c.disk.remove(off, int64(len(data)))
+		return memoryDelta, nil
+	} else {
+		// ... or write to disk, clearing any overlapping memory areas
+		memoryDelta = c.memory.remove(off, int64(len(data)))
+		err := c.disk.write(off, data)
+		return memoryDelta, err
+	}
+}
+
+// Close clears all cached data from memory and closes and deletes the cache file.
+// Returns the amount of memory freed (always negative or zero).
+func (c *Cache) Close() (memoryDelta int, err error) {
+	memoryDelta = c.memory.close()
+	err = c.disk.close()
+	return memoryDelta, err
+}
