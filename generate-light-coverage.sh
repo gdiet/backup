@@ -1,12 +1,15 @@
 #!/bin/bash
 
-# Generiere Coverage Report
+# create coverage report
 go test -coverprofile=coverage.out -covermode=atomic -coverpkg=./... ./...
 
-# Generiere HTML Report
+# convert to Cobertura format for Coverage Gutters extension
+go run github.com/richardlt/gocover-cobertura < coverage.out > coverage.xml
+
+# generate HTML report
 go tool cover -html=coverage.out -o coverage.html
 
-# Konvertiere zu Light Theme
+# convert to Light Theme
 sed -i 's/background: black/background: white/g' coverage.html
 sed -i 's/border-bottom: 1px solid rgb(80, 80, 80)/border-bottom: 1px solid #ddd/g' coverage.html
 sed -i '/#topbar {/,/}/ s/background: black/background: #f8f8f8/' coverage.html
