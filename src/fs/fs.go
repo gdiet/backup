@@ -5,7 +5,6 @@ import (
 	"backup/src/meta"
 	"backup/src/repo"
 	"backup/src/util"
-	"errors"
 	"log"
 	"os"
 	"time"
@@ -54,14 +53,8 @@ func (f *fileSystem) Getattr(path string, stat *fuse.Stat_t, fh uint64) int {
 	stat.Gid = uint32(os.Getgid())
 
 	_, entry, err := f.repo.Lookup(partsFrom(path))
-	switch {
-	case err == nil:
-		// continue
-	case errors.Is(err, fserr.NotFound):
-		return -fuse.ENOENT
-	default:
-		util.AssertionFailedf("unexpected error %v in Getattr", err)
-		return -fuse.EIO
+	if fuseErr := mapError(err, fserr.NotFound); fuseErr != 0 {
+		return fuseErr
 	}
 	switch entry := entry.(type) {
 	case *meta.DirEntry:
@@ -92,16 +85,8 @@ func (f *fileSystem) Readdir(path string, fill func(name string, stat *fuse.Stat
 	fill("..", dirStat(), 0)
 
 	entries, err := f.repo.Readdir(partsFrom(path))
-	switch {
-	case err == nil:
-		// continue
-	case errors.Is(err, fserr.NotFound):
-		return -fuse.ENOENT
-	case errors.Is(err, fserr.NotDir):
-		return -fuse.ENOTDIR
-	default:
-		util.AssertionFailedf("unexpected error %v in Readdir", err)
-		return -fuse.EIO
+	if fuseErr := mapError(err, fserr.NotFound, fserr.NotDir); fuseErr != 0 {
+		return fuseErr
 	}
 
 	for _, entry := range entries {
@@ -134,23 +119,7 @@ func (f *fileSystem) Mkdir(path string, mode uint32) int {
 	log.Printf("Mkdir mode %d - %s", mode, path)
 
 	_, err := f.repo.Mkdir(partsFrom(path))
-	switch {
-	case err == nil:
-		// continue
-	case errors.Is(err, fserr.NotFound):
-		return -fuse.ENOENT
-	case errors.Is(err, fserr.NotDir):
-		return -fuse.ENOTDIR
-	case errors.Is(err, fserr.Exists):
-		return -fuse.EEXIST
-	case errors.Is(err, fserr.IO_RAW):
-		return -fuse.EIO
-	default:
-		util.AssertionFailedf("unexpected error %v in Mkdir", err)
-		return -fuse.EIO
-	}
-
-	return 0
+	return mapError(err, fserr.NotFound, fserr.NotDir, fserr.Exists, fserr.IO_RAW)
 }
 
 // Rmdir removes a directory:
@@ -164,23 +133,7 @@ func (f *fileSystem) Rmdir(path string) int {
 	log.Printf("Rmdir - %s", path)
 
 	err := f.repo.Rmdir(partsFrom(path))
-	switch {
-	case err == nil:
-		// continue
-	case errors.Is(err, fserr.NotFound):
-		return -fuse.ENOENT
-	case errors.Is(err, fserr.NotDir):
-		return -fuse.ENOTDIR
-	case errors.Is(err, fserr.NotEmpty):
-		return -fuse.ENOTEMPTY
-	case errors.Is(err, fserr.IsRoot):
-		return -fuse.EBUSY
-	default:
-		util.AssertionFailedf("unexpected error %v in Rmdir", err)
-		return -fuse.EIO
-	}
-
-	return 0
+	return mapError(err, fserr.NotFound, fserr.NotDir, fserr.NotEmpty, fserr.IsRoot)
 }
 
 // Rename renames a file or directory, moving it to a new location if required:
@@ -202,25 +155,5 @@ func (f *fileSystem) Rename(oldPath string, newPath string) int {
 	log.Printf("Rename - %s --> %s", oldPath, newPath)
 
 	err := f.repo.Rename(partsFrom(oldPath), partsFrom(newPath))
-	switch {
-	case err == nil:
-		// continue
-	case errors.Is(err, fserr.NotFound):
-		return -fuse.ENOENT
-	case errors.Is(err, fserr.NotDir):
-		return -fuse.ENOTDIR
-	case errors.Is(err, fserr.NotEmpty):
-		return -fuse.ENOTEMPTY
-	case errors.Is(err, fserr.IsDir):
-		return -fuse.EISDIR
-	case errors.Is(err, fserr.Invalid):
-		return -fuse.EINVAL
-	case errors.Is(err, fserr.IsRoot):
-		return -fuse.EBUSY
-	default:
-		util.AssertionFailedf("unexpected error %v in Rename", err)
-		return -fuse.EIO
-	}
-
-	return 0
+	return mapError(err, fserr.NotFound, fserr.NotDir, fserr.NotEmpty, fserr.IsDir, fserr.Invalid, fserr.IsRoot)
 }
