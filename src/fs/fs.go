@@ -157,3 +157,18 @@ func (f *fileSystem) Rename(oldPath string, newPath string) int {
 	err := f.repo.Rename(partsFrom(oldPath), partsFrom(newPath))
 	return mapError(err, fserr.NotFound, fserr.NotDir, fserr.NotEmpty, fserr.IsDir, fserr.Invalid, fserr.IsRoot)
 }
+
+// Create creates and opens a file:
+// https://man7.org/linux/man-pages/man2/open.2.html
+//
+//	Returns -fuse.ENOENT if the parent path does not exist.
+//	Returns -fuse.ENOTDIR if the parent path is not a directory.
+//	Returns -fuse.EEXIST if the file already exists.
+//
+// 'flags' and 'mode' are ignored until we find a use case where we need them.
+func (f *fileSystem) Create(path string, flags int, mode uint32) (int, uint64) {
+	log.Printf("Create flags %d mode %d - %s", flags, mode, path)
+
+	id, err := f.repo.Mkfile(partsFrom(path))
+	return mapError(err, fserr.NotFound, fserr.NotDir, fserr.Exists), id
+}
