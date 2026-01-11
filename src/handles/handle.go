@@ -125,3 +125,33 @@ func (h *Handles) Open(path []string) (uint64, error) {
 	// Return handle
 	return handle, nil
 }
+
+func (h *Handles) Rename(path, target []string) (uint64, error) {
+	// not implemented
+	util.AssertionFailedf("not implemented: Handles.Rename from %v to %v", path, target)
+	return 0, fserr.Invalid
+}
+
+func (h *Handles) Read(path []string) (uint64, error) {
+	// not implemented
+	util.AssertionFailedf("not implemented: Handles.Read for %v", path)
+	return 0, fserr.Invalid
+}
+
+func (h *Handles) Write(path []string) (uint64, error) {
+	// not implemented
+	util.AssertionFailedf("not implemented: Handles.Write for %v", path)
+	return 0, fserr.Invalid
+}
+
+func (h *Handles) Truncate(path []string) (uint64, error) {
+	// not implemented
+	util.AssertionFailedf("not implemented: Handles.Truncate for %v", path)
+	return 0, fserr.Invalid
+}
+
+func (h *Handles) Release(path []string) (uint64, error) {
+	// not implemented
+	util.AssertionFailedf("not implemented: Handles.Release for %v", path)
+	return 0, fserr.Invalid
+}
