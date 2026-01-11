@@ -67,7 +67,7 @@ func (m *Metadata) Close() error {
 }
 
 // Lookup looks up a path and returns the ID and tree entry.
-// Returns ErrNotFound if the path does not exist.
+// Returns NotFound if the path does not exist.
 func (m *Metadata) Lookup(path []string) (id uint64, entry TreeEntry, err error) {
 	err = m.db.View(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket(m.treeKey)
