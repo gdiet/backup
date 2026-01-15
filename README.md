@@ -63,7 +63,7 @@ Don't use DedupFS for security critical things. One reason for that: DedupFS use
 
 ### General
 
-DedupFS needs a Java 21 runtime. The application comes bundled with a suitable Java runtime for Windows x64 and Linux x64.
+DedupFS needs a 25 runtime. The application comes bundled with a suitable Java runtime for Windows x64 and Linux x64.
 
 DedupFS needs disk space for its repository. If you back up lots of data, it will need lots of space. Keep an eye on available disk space when using.
 
@@ -184,7 +184,7 @@ In each `source` parameter's last path element the wildcards "`?`" and "`*`" are
 
 The `target` parameter specifies the DedupFS directory to copy the source files and directories to. Only the forward slash "`/`" is interpreted as path separator. The backslash "`\`" is used as escape character.
 
-In the `target` parameter's path elements, everything enclosed by square brackets `[...]` is interpreted as [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/text/SimpleDateFormat.html) for formatting the current date/time, unless the opening square bracket is escaped with a backslash "`\`".
+In the `target` parameter's path elements, everything enclosed by square brackets `[...]` is interpreted as [java.text.SimpleDateFormat](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/text/SimpleDateFormat.html) for formatting the current date/time, unless the opening square bracket is escaped with a backslash "`\`".
 
 If a `target` path element starts with the question mark "`?`", the question mark is removed and the corresponding target directory and its children are created if missing.
 
@@ -431,6 +431,10 @@ To upgrade a DedupFS installation to a newer version:
 * Reclaim tool does not behave nicely (no harm done) when encountering too old database.
 * Reclaim tool prints misleading 'Starting database migration...'.
 * `fsc find` escapes `%` and `_` in the SQL search string.
+
+#### Java 25 Update
+
+... needs either Scala 3.7.5 (so https://github.com/scala/scala3-lts/pull/637 is there) or better Scala 3.8.0 (so https://github.com/scala/scala3/issues/9013 is there). Wait for that, otherwise we'll get the ugly 'sun.misc.Unsafe::objectFieldOffset has been called by scala.runtime.LazyVals$' 
 
 #### 6.2.0 (2025.??.??)
 

@@ -71,13 +71,13 @@ fi
 
 # Fetch JDKs if missing. Find newer releases here:
 # https://adoptium.net/releases.html
-# https://github.com/adoptium/temurin21-binaries
+# https://github.com/adoptium/temurin25-binaries
 # https://github.com/orgs/adoptium/repositories
 # Set version both in jdkBase and in jdkVersion.
-jdkVersion="21.0.7_6"
-jdkBase="https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.7%2B6"
-jdkWindows="OpenJDK21U-jdk_x64_windows_hotspot_$jdkVersion.zip"
-jdkLinux="OpenJDK21U-jdk_x64_linux_hotspot_$jdkVersion.tar.gz"
+jdkVersion="25.0.1_8"
+jdkBase="https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.1%2B8"
+jdkWindows="OpenJDK25U-jdk_x64_windows_hotspot_$jdkVersion.zip"
+jdkLinux="OpenJDK25U-jdk_x64_linux_hotspot_$jdkVersion.tar.gz"
 if [ ! -f ".download/$jdkWindows" ]; then
   echo Load the Windows JDK
   wget -P .download -q --show-progress "$jdkBase/$jdkWindows"
