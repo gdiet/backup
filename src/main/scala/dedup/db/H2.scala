@@ -68,5 +68,10 @@ object H2 extends ClassLogging:
     DriverManager.getConnection(jdbcUrl(dbDir, readOnly), "sa", "").tap(_.setAutoCommit(true))
 
   def shutdownCompact(connection: Connection): Unit =
-    if tcpPortProp.isDefined then connection.close() // Another application might still be connected to the database.
-    else { log.info("Compacting DedupFS database..."); connection.createStatement().execute("SHUTDOWN COMPACT") }
+    if tcpPortProp.isDefined then
+      log.info("Closing connection to H2 database (TCP mode).")
+      connection.close() // Another application might still be connected to the database.
+    else
+      log.info("Compacting DedupFS database...")
+      connection.createStatement().execute("SHUTDOWN COMPACT")
+      log.info("Database compaction completed.")
