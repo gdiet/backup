@@ -295,8 +295,10 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   def removeStorageAllocation(dataId: DataId): Unit =
     connection.transaction {
       withStatement { statement =>
-        statement.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId AND seq > 1")
-        statement.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = $dataId")
+        val deletedChunks = statement.executeUpdate(s"DELETE FROM DataEntries WHERE id = $dataId AND seq > 1")
+        log.debug(s"Deleted $deletedChunks storage chunks for dataId $dataId.")
+        val updatedChunks = statement.executeUpdate(s"UPDATE DataEntries SET start = 0, stop = 0 WHERE id = $dataId")
+        ensure("db.remove.storage", updatedChunks == 1, s"Expected to update 1 chunk, but updated $updatedChunks for dataId $dataId.")
       }
     }
 
