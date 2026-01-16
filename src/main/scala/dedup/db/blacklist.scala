@@ -38,8 +38,10 @@ object blacklist extends util.ClassLogging:
           case None => problem("blacklist.create.dir", s"Can't create internal blacklist directory for $file")
           case Some(childDirId) => externalFilesToInternalBlacklist(db, file, childDirId, deleteFiles)
         if deleteFiles then
-          if Option(file.listFiles).exists(_.isEmpty) then file.delete else
-            log.warn(s"Blacklist directory not empty after processing it: $file")
+          if Option(file.listFiles).exists(_.isEmpty) then
+            if file.delete then log.info(s"Deleted empty blacklist directory: $file")
+            else log.warn(s"Failed to delete empty blacklist directory: $file")
+          else log.warn(s"Blacklist directory not empty after processing: $file")
       else
         val (size, hash) = resource(FileInputStream(file)) { stream =>
           val buffer = new Array[Byte](memChunk)
@@ -53,10 +55,10 @@ object blacklist extends util.ClassLogging:
         )
         ensure("blacklist.create.file", db.mkFile(dirId, file.getName, Time(file.lastModified), dataId).isDefined,
           s"Can't create internal blacklist file for $file")
-        if deleteFiles && file.delete then
-          log.info(s"Moved to DedupFS blacklist: $file")
-        else
-          log.info(s"Copied to DedupFS blacklist: $file")
+        if deleteFiles then
+          if file.delete then log.info(s"Moved to DedupFS blacklist: $file")
+          else log.warn(s"Failed to delete file after blacklisting: $file")
+        else log.info(s"Copied to DedupFS blacklist: $file")
     }
 
   def processInternalBlacklist(db: Database, dfsBlacklist: String, parentPath: String, parentId: Long, deleteCopies: Boolean): Unit =
