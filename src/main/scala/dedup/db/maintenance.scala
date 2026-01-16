@@ -221,30 +221,27 @@ object maintenance extends util.ClassLogging:
     // First un-root, then delete. Deleting directly can violate the foreign key constraint.
     log.info(s"Part 1: Mark the tree entries to delete...")
     while
-      log.info(s"Number of entries marked: ${db.unrootDeletedEntries(now.asLong - keepDeletedDays*24*60*60*1000)}")
-      // The following takes care of a special case that is supposed never to happen.
+      val markedEntries = db.unrootDeletedEntries(now.asLong - keepDeletedDays * 24 * 60 * 60 * 1000)
+      log.info(s"Number of entries marked: $markedEntries")
       val fixedEntries = db.childrenOfDeletedUnrootedElements().tapEach(db.unrootAndMarkDeleted).size
       if fixedEntries > 0 then log.info(s"Fixed $fixedEntries incompletely deleted entries.")
       fixedEntries > 0
     do ()
 
     log.info(s"Part 2: Deleting marked tree entries...")
-    log.info(s"Number of tree entries deleted: ${db.deleteUnrootedEntries()}")
+    val deletedEntries = db.deleteUnrootedEntries()
+    log.info(s"Number of tree entries deleted: $deletedEntries")
 
-    // Note: Most operations implemented in Scala below could also be run in SQL, but that is much slower...
-
-    { // Run in separate block so the possibly large collections can be garbage collected soon
-      log.info(s"Deleting orphan data entries...")
-      val dataIdsInTree = db.dataIdsInTree()
-      log.info(s"Number of data entries found in tree database: ${dataIdsInTree.size}")
-      val dataIdsInStorage = db.dataIdsInStorage()
-      log.info(s"Number of data entries in storage database: ${dataIdsInStorage.size}")
-      val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree
-      dataIdsToDelete.foreach(db.deleteDataEntry)
-      log.info(s"Number of orphan data entries deleted: ${dataIdsToDelete.size}")
-      val orphanDataIdsInTree = (dataIdsInTree -- dataIdsInStorage).size
-      if orphanDataIdsInTree > 0 then log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
-    }
+    log.info(s"Deleting orphan data entries...")
+    val dataIdsInTree = db.dataIdsInTree()
+    log.info(s"Number of data entries found in tree database: ${dataIdsInTree.size}")
+    val dataIdsInStorage = db.dataIdsInStorage()
+    log.info(s"Number of data entries in storage database: ${dataIdsInStorage.size}")
+    val orphanDataIdsInTree = (dataIdsInTree -- dataIdsInStorage).size
+    if orphanDataIdsInTree > 0 then log.warn(s"Number of orphan data entries found in tree database: $orphanDataIdsInTree")
+    val dataIdsToDelete = dataIdsInStorage -- dataIdsInTree
+    dataIdsToDelete.foreach(db.deleteDataEntry)
+    log.info(s"Number of orphan data entries deleted from storage database: ${dataIdsToDelete.size}")
 
     log.info("Checking compaction potential of the data storage:")
     db.freeAreas() // Run for its log output
