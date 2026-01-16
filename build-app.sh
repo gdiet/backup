@@ -29,8 +29,8 @@ if ! curl --version > /dev/null 2>&1; then
 fi
 
 # Read version from git.
-version=$(git log -1 2>/dev/null | sed -n 's/commit //p' | sed 1q | cut -b 1-8 )
-if LANG=EN git status | grep -q 'working tree clean'; then clean=''; else clean='+'; fi
+version=$(git rev-parse --short=8 HEAD)
+if git status --porcelain | grep .; then clean=''; else clean='+'; fi
 versionString="$(date +%Y.%m.%d)-$version$clean"
 
 # If $1 is set, use it as name of the release version.
