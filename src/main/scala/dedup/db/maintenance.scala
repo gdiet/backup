@@ -74,7 +74,7 @@ object maintenance extends util.ClassLogging:
   private def sqlDbBackup(dbDir: File, source: DBRef, target: DBRef): Future[Unit] =
     Future {
       try
-        cache.MemCache.availableMem.addAndGet(-64000000) // Reserve some RAM for the backup process
+        cache.MemCache.availableMem.addAndGet(-64_000_000) // Reserve some RAM for the backup process
         val zipBackup = target.dbZipFile(dbDir)
         log.info(s"Creating zipped SQL script database backup: ${source.dbFile(dbDir).getName} -> ${zipBackup.getName}")
         log.info(s"To restore the database, run 'db-restore ${zipBackup.getName}'.")
@@ -83,7 +83,7 @@ object maintenance extends util.ClassLogging:
           "-url", H2.jdbcUrl(dbDir, readOnly = true, dbRef = source), "-script", s"$zipBackup", "-user", "sa", "-options", "compression", "zip"
         )
         log.info(s"Zipped SQL script database backup created.")
-      finally cache.MemCache.availableMem.addAndGet(64000000)
+      finally cache.MemCache.availableMem.addAndGet(64_000_000)
     }(ExecutionContext.global)
 
   def restorePlainDbBackup(dbDir: File): Unit =

@@ -7,7 +7,7 @@ import java.util.concurrent.atomic.AtomicLong
 def dataDir(repo: File) = File(repo, "data")
 
 /** 100.000.000 bytes. Must be Int (not Long). Don't change without migration script. */
-private val fileSize = 100000000
+private val fileSize = 100_000_000
 
 /** @param position The position in the store to access, must be >= 0.
   *                 Attempts to access position 9e18 or beyond yield an [[IllegalArgumentException]].
@@ -15,7 +15,7 @@ private val fileSize = 100000000
   * @return The relative data file path, the offset in the data file,
   *         and the part of the requested size located on the data file. */
 private def pathOffsetSize(position: Long, size: Long): (String, Long, Int) =
-  ensure("lts.cap", 9000000000000000000L - position - size > 0, s"Exceeded storage cap: $position + $size")
+  ensure("lts.cap", 9_000_000_000_000_000_000L - position - size > 0, s"Exceeded storage cap: $position + $size")
   ensure("lts.position.negative", position >= 0, s"No sensible behavior implemented for negative position $position.")
   ensure("lts.size.negative", size >= 0, s"No sensible behavior implemented for negative size $size.")
   val positionInFile = (position % fileSize).toInt     // 100 MB per file
@@ -31,7 +31,7 @@ private def pathOffsetSize(position: Long, size: Long): (String, Long, Int) =
 class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dataDir):
 
   /** Unix time in millis when last a missing file was logged on WARN level. */
-  private val missingFileLoggedLast = AtomicLong(now.asLong - 3600000) // Initialized as "one hour ago".
+  private val missingFileLoggedLast = AtomicLong(now.asLong - 60*60*1000) // Initialized as "one hour ago".
 
   /** @param position The position in the store to start writing at, must be >= 0.
     *                 Attempts to write at/beyond position 9e18 yield an [[IllegalArgumentException]].
@@ -61,7 +61,7 @@ class LongTermStore(dataDir: File, readOnly: Boolean) extends ParallelAccess(dat
       file.seek(offset)
       file.readFully(bytes, 0, bytesToRead)
     } catch { case _: FileNotFoundException =>
-      if missingFileLoggedLast.get() + 300000 < now.asLong then // full log every five minutes
+      if missingFileLoggedLast.get() + 5*60*1000 < now.asLong then // full log every five minutes
         missingFileLoggedLast.set(now.asLong)
         log.warn(s"Missing data file $path while reading at $position, substituting with '0' values.")
       else

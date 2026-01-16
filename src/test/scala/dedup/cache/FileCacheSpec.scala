@@ -11,25 +11,25 @@ class FileCacheSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
     val cache = FileCache(testFile.toPath)
 
     "Scenario 1 for basic functionality" in {
-      def chunk1 = new Array[Byte](10000).tap(Random(1).nextBytes)
+      def chunk1 = new Array[Byte](10_000).tap(Random(1).nextBytes)
       def chunk2 = new Array[Byte](memChunk).tap(Random(2).nextBytes)
-      def chunk3 = new Array[Byte](10000).tap(Random(3).nextBytes)
+      def chunk3 = new Array[Byte](10_000).tap(Random(3).nextBytes)
       cache.write(MaxInt - 1000, chunk1)
       cache.write(MaxInt + 9000, chunk2)
       cache.write(MaxInt + 8000 + memChunk, chunk3)
-      val i = cache.readData(0, MaxInt + 20000 + memChunk)
+      val i = cache.readData(0, MaxInt + 20_000 + memChunk)
       assert(i.next == 0 -> Left(MaxInt - 1000))
       val pos1 -> Right(dat1) = i.next : @unchecked // If it's a Left, the test will fail
       assert(pos1 == MaxInt - 1000)
       assert(dat1.length == memChunk)
-      assert(dat1.take(10000).toSeq == chunk1.toSeq)
-      assert(dat1.drop(10000).toSeq == chunk2.dropRight(10000).toSeq)
+      assert(dat1.take(10_000).toSeq == chunk1.toSeq)
+      assert(dat1.drop(10_000).toSeq == chunk2.dropRight(10_000).toSeq)
       val pos2 -> Right(dat2) = i.next : @unchecked // If it's a Left, the test will fail
       assert(pos2 == MaxInt - 1000 + memChunk)
-      assert(dat2.length == 19000)
-      assert(dat2.take(9000).toSeq == chunk2.takeRight(10000).take(9000).toSeq)
+      assert(dat2.length == 19_000)
+      assert(dat2.take(9000).toSeq == chunk2.takeRight(10_000).take(9000).toSeq)
       assert(dat2.drop(9000).toSeq == chunk3.toSeq)
-      assert(i.next == MaxInt + 18000 + memChunk -> Left(2000))
+      assert(i.next == MaxInt + 18_000 + memChunk -> Left(2000))
       assert(i.hasNext == false)
     }
 
@@ -37,7 +37,7 @@ class FileCacheSpec extends org.scalatest.freespec.AnyFreeSpec with TestFile:
 
     "Scenario 2a for memory handling: Write more data than fits in memory" in {
       // clear cache
-      cache.clear(MaxInt - 2000, memChunk + 20000)
+      cache.clear(MaxInt - 2000, memChunk + 20_000)
       assert(cache.readData(0L, Long.MaxValue).toSeq == Seq(0 -> Left(Long.MaxValue)))
       // write more data than fits in memory
       for (position <- 0L to Runtime.getRuntime.maxMemory by memChunk) cache.write(position, chunk)

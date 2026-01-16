@@ -9,13 +9,13 @@ class AllocationSpec extends org.scalatest.freespec.AnyFreeSpec:
   s"${°[Allocation]} uses ${°[CacheBase[_]]}, see also there..." - {
     val cache = Allocation()
     "example 1 reading more than memChunk bytes" in {
-      cache.allocate(100000, 10)
-      cache.allocate(100010, memChunk)
-      assert(cache.readData(99000, 20000 + memChunk)._seq == Seq(
-        99000 -> Left(1000),
-        100000 -> Right(Seq.fill[Byte](memChunk)(0)),
-        100000 + memChunk -> Right(Seq.fill[Byte](10)(0)),
-        100010 + memChunk -> Left(20000 - 1000 - 10)
+      cache.allocate(100_000, 10)
+      cache.allocate(100_010, memChunk)
+      assert(cache.readData(99_000, 20_000 + memChunk)._seq == Seq(
+        99_000 -> Left(1000),
+        100_000 -> Right(Seq.fill[Byte](memChunk)(0)),
+        100_000 + memChunk -> Right(Seq.fill[Byte](10)(0)),
+        100_010 + memChunk -> Left(20_000 - 1000 - 10)
       ))
     }
     "example 2 checking allocations larger than MaxInt" in {

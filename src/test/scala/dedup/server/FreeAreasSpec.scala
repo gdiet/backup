@@ -16,8 +16,8 @@ class FreeAreasSpec extends org.scalatest.freespec.AnyFreeSpec:
 
   "A FreeAreas object containing a single chunk" - {
     val free = _FreeAreas(Seq(DataArea(10, Long.MaxValue)))
-    "should return a single chunk for a get" in assert(free.reserve(1000000000) == Seq(DataArea(10, 1000000010)))
-    "should have the free size reduced afterwards" in assert(free._free == Seq(DataArea(1000000010, Long.MaxValue)))
+    "should return a single chunk for a get" in assert(free.reserve(1_000_000_000) == Seq(DataArea(10, 1_000_000_010)))
+    "should have the free size reduced afterwards" in assert(free._free == Seq(DataArea(1_000_000_010, Long.MaxValue)))
   }
 
   "When using a FreeAreas object containing three chunks" - {

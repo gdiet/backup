@@ -16,8 +16,8 @@ class PositionToPathSpec extends org.scalatest.freespec.AnyFreeSpec:
     assert(pathOffsetSize(fileSize * 99L,0).path == "00/00/9900000000")
   "Path of position <fileSize * 100 + 1> is directory 1 file <fileSize * 100>" in
     assert(pathOffsetSize(fileSize * 100L + 1,0).path == "00/01/10000000000")
-  "Path of position <fileSize * 10000> is directory 01/00 file <fileSize * 10000>" in
-    assert(pathOffsetSize(fileSize * 10000L,0).path == "01/00/1000000000000")
+  "Path of position <fileSize * 10_000> is directory 01/00 file <fileSize * 10_000>" in
+    assert(pathOffsetSize(fileSize * 10_000L,0).path == "01/00/1000000000000")
   "Path of very large position (MaxLong/2) is represented correctly" in
     // MaxLong/2 = 4611686018427387903
     // Expected:   4611686018400000000 as file name, rounded down
@@ -25,4 +25,4 @@ class PositionToPathSpec extends org.scalatest.freespec.AnyFreeSpec:
     // Expected:   4611686             as leading directory name
     assert(pathOffsetSize(Long.MaxValue / 2,0).path == "4611686/01/4611686018400000000")
   "Position near MaxLong, i.e. 9e18 and beyond, yields an exception" in
-    intercept[IllegalArgumentException](pathOffsetSize(9000000000000000000L,0))
+    intercept[IllegalArgumentException](pathOffsetSize(9_000_000_000_000_000_000L,0))

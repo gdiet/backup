@@ -3,7 +3,7 @@ package server
 
 object Backend:
   /** Milliseconds to delay write operations in order to keep cache size manageable. */
-  private def cacheLoadDelay: Long = bytesInPersistQueue.get() * persistQueueSize.get() / 1000000000
+  private def cacheLoadDelay: Long = bytesInPersistQueue.get() * persistQueueSize.get() / 1_000_000_000
   private val persistQueueSize = java.util.concurrent.atomic.AtomicLong()
   private val bytesInPersistQueue = java.util.concurrent.atomic.AtomicLong()
 

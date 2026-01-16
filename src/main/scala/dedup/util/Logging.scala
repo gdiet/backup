@@ -16,10 +16,10 @@ trait ClassLogging:
     val start = System.nanoTime()
     def time =
       val t = System.nanoTime() - start
-      if      t         < 5000 then s"${t}ns"
-      else if t/1000    < 5000 then s"${t/1000}µs"
-      else if t/1000000 < 5000 then s"${t/1000000}ms"
-      else                          s"${t/1000000000}s"
+      if      t           < 5000 then s"${t}ns"
+      else if t/1_000     < 5000 then s"${t/1_000}µs"
+      else if t/1_000_000 < 5000 then s"${t/1_000_000}ms"
+      else                          s"${t/1_000_000_000}s"
     try f.tap(t => logger(s"<< $time $msg -> $t"))
     catch { case t: Throwable => log.error(s"<< $time $msg -> ERROR", t); throw t }
 

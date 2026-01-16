@@ -8,7 +8,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 object MemCache extends ClassLogging:
   // Give room for database and memory management peculiarities, see startupCheck.
-  private val cacheLimit: Long = math.max(0, (rt.maxMemory - 64000000) * 7 / 10)
+  private val cacheLimit: Long = math.max(0, (rt.maxMemory - 64_000_000) * 7 / 10)
   log.info(s"Memory cache size: ${readableBytes(cacheLimit)}")
   val availableMem: AtomicLong = AtomicLong(cacheLimit)
 
