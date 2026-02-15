@@ -18,6 +18,8 @@ Suggest an English semantic commit message following the Conventional Commits fo
 
 Only commit changes when explicitly asked to do so by the user. Even if you've made changes and suggested a commit message, wait for explicit permission before running `git commit`.
 
+If the user has not explicitly approved the commit message, use git diff and similar to check what will actually be committed and suggest a commit message for approval, but don't commit.
+
 ## Dependencies
 
 Suggest required or helpful dependencies to the user, but do not add them to the project without explicit permission. When adding new dependencies:
