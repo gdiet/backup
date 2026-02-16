@@ -1,6 +1,10 @@
-package util
+package util_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/gdiet/backup/util"
+)
 
 func TestAssertPanic(t *testing.T) {
 	defer func() {
@@ -10,7 +14,7 @@ func TestAssertPanic(t *testing.T) {
 	}()
 
 	// This should panic in debug builds
-	Assert(false, "this should fail")
+	util.Assert(false, "this should fail")
 }
 
 func TestAssertf(t *testing.T) {
@@ -26,5 +30,5 @@ func TestAssertf(t *testing.T) {
 	}()
 
 	// This should trigger the assertion with formatted message
-	Assertf(false, "test value %d should be positive", 42)
+	util.Assertf(false, "test value %d should be positive", 42)
 }

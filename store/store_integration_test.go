@@ -1,4 +1,4 @@
-package store
+package store_test
 
 import (
 	"bytes"
@@ -8,11 +8,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	dataStore "github.com/gdiet/backup/store"
 )
 
 // createDataStore wraps FileBackedDataStore and fails the test if creation fails.
-func createDataStore(t *testing.T, dir string, fileSize int64, openFilesSoftLimit int) DataStore {
-	store, err := FileBackedDataStore(dir, fileSize, openFilesSoftLimit)
+func createDataStore(t *testing.T, dir string, fileSize int64, openFilesSoftLimit int) dataStore.DataStore {
+	store, err := dataStore.FileBackedDataStore(dir, fileSize, openFilesSoftLimit)
 	if err != nil {
 		t.Fatal("Failed to create store:", err)
 	}
@@ -47,19 +49,19 @@ func TestBasicOperations(t *testing.T) {
 func TestErrorHandling(t *testing.T) {
 	// Test invalid file size
 	tempDir := t.TempDir()
-	_, err := FileBackedDataStore(tempDir, 0, 5)
+	_, err := dataStore.FileBackedDataStore(tempDir, 0, 5)
 	if err == nil {
 		t.Error("Expected error for zero file size")
 	}
 
-	_, err = FileBackedDataStore(tempDir, -1, 5)
+	_, err = dataStore.FileBackedDataStore(tempDir, -1, 5)
 	if err == nil {
 		t.Error("Expected error for negative file size")
 	}
 
 	// Test invalid directory
 	invalidDir := "/root/non-existent-directory-that-cannot-be-created"
-	_, err = FileBackedDataStore(invalidDir, 1024, 5)
+	_, err = dataStore.FileBackedDataStore(invalidDir, 1024, 5)
 	if err == nil {
 		t.Error("Expected error for invalid directory")
 	}
