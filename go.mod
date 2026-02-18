@@ -2,9 +2,15 @@ module github.com/gdiet/backup
 
 go 1.25
 
-require go.etcd.io/bbolt v1.4.3
+require (
+	github.com/stretchr/testify v1.11.1
+	go.etcd.io/bbolt v1.4.3
+)
 
 require (
+	github.com/davecgh/go-spew v1.1.1 // indirect
+	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/richardlt/gocover-cobertura v0.0.0-20200509235048-69c92de4a30b // indirect
 	golang.org/x/sys v0.29.0 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -4,54 +4,39 @@ import (
 	"testing"
 
 	"github.com/gdiet/backup/meta"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBasics(t *testing.T) {
 	testWithMetadata(t, func(m *meta.Metadata) {
 		// Mkdir
 		dir, err := m.Mkdir(path("dir"))
-		noerr(t, err, "Mkdir failed")
-		assert(t, dir == 1, "id1 != 1")
+		require.NoError(t, err, "Mkdir failed")
+		require.Equal(t, uint64(1), dir)
 
 		// Readdir
 		read, err := m.Readdir(nil)
-		noerr(t, err, "Readdir failed")
-		assert(t, len(read) == 1, "expected 1 entry")
-		assert(t, read[0].Name() == "dir", "expected entry name 'dir'")
-		if _, ok := read[0].(*meta.DirEntry); !ok {
-			t.Fatalf("expected entry to be a directory")
-		}
+		require.NoError(t, err, "Readdir failed")
+		require.Len(t, read, 1)
+		require.Equal(t, "dir", read[0].Name())
+		require.IsType(t, &meta.DirEntry{}, read[0])
 
 		// Rename
 		err = m.Rename(path("dir"), path("newdir"))
-		noerr(t, err, "Rename failed")
+		require.NoError(t, err, "Rename failed")
 		read, err = m.Readdir(nil)
-		noerr(t, err, "Readdir failed after rename")
-		assert(t, len(read) == 1, "expected 1 entry after rename")
-		assert(t, read[0].Name() == "newdir", "expected entry name 'newdir' after rename")
-		if _, ok := read[0].(*meta.DirEntry); !ok {
-			t.Fatalf("expected entry to be a directory")
-		}
+		require.NoError(t, err, "Readdir failed after rename")
+		require.Len(t, read, 1)
+		require.Equal(t, "newdir", read[0].Name())
+		require.IsType(t, &meta.DirEntry{}, read[0])
 
 		// Rmdir
 		err = m.Rmdir(path("newdir"))
-		noerr(t, err, "Rmdir failed")
+		require.NoError(t, err, "Rmdir failed")
 		read, err = m.Readdir(nil)
-		noerr(t, err, "Readdir failed after rmdir")
-		assert(t, len(read) == 0, "expected 0 entries after rmdir")
+		require.NoError(t, err, "Readdir failed after rmdir")
+		require.Empty(t, read)
 	})
-}
-
-func noerr(t *testing.T, err error, msg string) {
-	if err != nil {
-		t.Fatalf("%s: %v", msg, err)
-	}
-}
-
-func assert(t *testing.T, condition bool, msg string) {
-	if !condition {
-		t.Fatal(msg)
-	}
 }
 
 func path(elems ...string) []string {
@@ -61,13 +46,9 @@ func path(elems ...string) []string {
 func testWithMetadata(t *testing.T, testFunc func(m *meta.Metadata)) {
 	dir := t.TempDir()
 	m, err := meta.NewMetadata(dir)
-	if err != nil {
-		t.Fatalf("Failed to create Metadata: %v", err)
-	}
+	require.NoError(t, err, "Failed to create Metadata")
 	defer func() {
-		if err := m.Close(); err != nil {
-			t.Fatalf("Failed to close Metadata: %v", err)
-		}
+		require.NoError(t, m.Close(), "Failed to close Metadata")
 	}()
 	testFunc(m)
 }

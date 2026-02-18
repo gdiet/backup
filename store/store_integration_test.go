@@ -1,13 +1,14 @@
 package store_test
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	dataStore "github.com/gdiet/backup/store"
 )
@@ -15,9 +16,7 @@ import (
 // createDataStore wraps FileBackedDataStore and fails the test if creation fails.
 func createDataStore(t *testing.T, dir string, fileSize int64, openFilesSoftLimit int) dataStore.DataStore {
 	store, err := dataStore.FileBackedDataStore(dir, fileSize, openFilesSoftLimit)
-	if err != nil {
-		t.Fatal("Failed to create store:", err)
-	}
+	require.NoError(t, err, "Failed to create store")
 	return store
 }
 
@@ -29,42 +28,29 @@ func TestBasicOperations(t *testing.T) {
 
 	// Test write
 	data := []byte("Hello, Storage5!")
-	err := store.Write(0, data)
-	if err != nil {
-		t.Fatal("Write failed:", err)
-	}
+	require.NoError(t, store.Write(0, data), "Write failed")
 
 	// Test read
 	readData, warnings := store.Read(0, int64(len(data)))
-	if len(warnings) > 0 {
-		t.Errorf("Unexpected warnings during read: %v", warnings)
-	}
-
-	if !bytes.Equal(data, readData) {
-		t.Fatalf("Data mismatch: expected %s, got %s", string(data), string(readData))
-	}
+	assert.Empty(t, warnings, "Unexpected warnings during read")
+	assert.Equal(t, data, readData)
 }
 
 // TestErrorHandling tests various error conditions
 func TestErrorHandling(t *testing.T) {
 	// Test invalid file size
 	tempDir := t.TempDir()
+
 	_, err := dataStore.FileBackedDataStore(tempDir, 0, 5)
-	if err == nil {
-		t.Error("Expected error for zero file size")
-	}
+	assert.Error(t, err, "Expected error for zero file size")
 
 	_, err = dataStore.FileBackedDataStore(tempDir, -1, 5)
-	if err == nil {
-		t.Error("Expected error for negative file size")
-	}
+	assert.Error(t, err, "Expected error for negative file size")
 
 	// Test invalid directory
 	invalidDir := "/root/non-existent-directory-that-cannot-be-created"
 	_, err = dataStore.FileBackedDataStore(invalidDir, 1024, 5)
-	if err == nil {
-		t.Error("Expected error for invalid directory")
-	}
+	assert.Error(t, err, "Expected error for invalid directory")
 
 	// Test write with invalid parameters
 	store := createDataStore(t, tempDir, 1024, 5)
@@ -72,9 +58,7 @@ func TestErrorHandling(t *testing.T) {
 
 	// Test write with negative offset
 	err = store.Write(-1, []byte("test"))
-	if err == nil {
-		t.Error("Expected error for negative offset")
-	}
+	assert.Error(t, err, "Expected error for negative offset")
 }
 
 // TestCrossFileBoundary tests writing and reading across file boundaries
@@ -91,20 +75,12 @@ func TestCrossFileBoundary(t *testing.T) {
 
 	// Write data starting near the end of first file
 	offset := int64(80)
-	err := store.Write(offset, data)
-	if err != nil {
-		t.Fatal("Cross-boundary write failed:", err)
-	}
+	require.NoError(t, store.Write(offset, data), "Cross-boundary write failed")
 
 	// Read it back
 	readData, warnings := store.Read(offset, int64(len(data)))
-	if len(warnings) > 0 {
-		t.Errorf("Unexpected warnings during cross-boundary read: %v", warnings)
-	}
-
-	if !bytes.Equal(data, readData) {
-		t.Fatal("Cross-boundary data mismatch")
-	}
+	assert.Empty(t, warnings, "Unexpected warnings during cross-boundary read")
+	assert.Equal(t, data, readData, "Cross-boundary data mismatch")
 }
 
 // TestLargeData tests writing and reading large amounts of data
@@ -126,11 +102,7 @@ func TestLargeData(t *testing.T) {
 		if end > int64(len(data)) {
 			end = int64(len(data))
 		}
-
-		err := store.Write(offset, data[offset:end])
-		if err != nil {
-			t.Fatalf("Write failed at offset %d: %v", offset, err)
-		}
+		require.NoErrorf(t, store.Write(offset, data[offset:end]), "Write failed at offset %d", offset)
 	}
 
 	// Read it back in chunks and verify
@@ -141,14 +113,8 @@ func TestLargeData(t *testing.T) {
 		}
 
 		readData, warnings := store.Read(offset, readSize)
-		if len(warnings) > 0 {
-			t.Errorf("Unexpected warnings during large data read at offset %d: %v", offset, warnings)
-		}
-		expected := data[offset : offset+readSize]
-
-		if !bytes.Equal(expected, readData) {
-			t.Fatalf("Large data mismatch at offset %d", offset)
-		}
+		assert.Emptyf(t, warnings, "Unexpected warnings during large data read at offset %d", offset)
+		assert.Equalf(t, data[offset:offset+readSize], readData, "Large data mismatch at offset %d", offset)
 	}
 }
 
@@ -178,8 +144,7 @@ func TestConcurrentAccess(t *testing.T) {
 
 			offset := int64(id * dataSize * 2) // Space out writes to avoid overlap
 
-			err := store.Write(offset, data)
-			if err != nil {
+			if err := store.Write(offset, data); err != nil {
 				errors <- fmt.Errorf("goroutine %d write error: %v", id, err)
 				return
 			}
@@ -191,9 +156,8 @@ func TestConcurrentAccess(t *testing.T) {
 				return
 			}
 
-			if !bytes.Equal(data, readData) {
+			if string(data) != string(readData) {
 				errors <- fmt.Errorf("goroutine %d data mismatch", id)
-				return
 			}
 		}(i)
 	}
@@ -224,23 +188,15 @@ func TestFileHandleLimits(t *testing.T) {
 	// Write to many different files (force LRU eviction)
 	for i := 0; i < numFiles; i++ {
 		offset := int64(i) * 2048 // Each file is 1024 bytes, so this hits different files
-		err := store.Write(offset, data)
-		if err != nil {
-			t.Fatalf("Write to file %d failed: %v", i, err)
-		}
+		require.NoErrorf(t, store.Write(offset, data), "Write to file %d failed", i)
 	}
 
 	// Read back from all files to ensure LRU worked correctly
 	for i := 0; i < numFiles; i++ {
 		offset := int64(i) * 2048
 		readData, warnings := store.Read(offset, int64(len(data)))
-		if len(warnings) > 0 {
-			t.Errorf("Unexpected warnings during LRU test file %d: %v", i, warnings)
-		}
-
-		if !bytes.Equal(data, readData) {
-			t.Fatalf("LRU test failed: data mismatch in file %d", i)
-		}
+		assert.Emptyf(t, warnings, "Unexpected warnings during LRU test file %d", i)
+		assert.Equalf(t, data, readData, "LRU test failed: data mismatch in file %d", i)
 	}
 }
 
@@ -252,15 +208,9 @@ func TestReadNonExistentData(t *testing.T) {
 
 	// Read from unwritten area - should return zeros (and warnings are expected!)
 	readData, warnings := store.Read(1000, 100)
-	if len(warnings) == 0 {
-		t.Error("Expected warnings when reading non-existent data, but got none")
-	}
-
+	assert.NotEmpty(t, warnings, "Expected warnings when reading non-existent data")
 	// Check that it's all zeros
-	expectedZeros := make([]byte, 100)
-	if !bytes.Equal(expectedZeros, readData) {
-		t.Error("Reading unwritten data should return zeros")
-	}
+	assert.Equal(t, make([]byte, 100), readData, "Reading unwritten data should return zeros")
 }
 
 // TestWriteEmptyData tests writing empty data
@@ -270,19 +220,12 @@ func TestWriteEmptyData(t *testing.T) {
 	defer store.Close()
 
 	// Write empty data - should not error
-	err := store.Write(0, []byte{})
-	if err != nil {
-		t.Error("Writing empty data should not error:", err)
-	}
+	require.NoError(t, store.Write(0, []byte{}), "Writing empty data should not error")
 
 	// Read zero bytes - should not error
 	readData, warnings := store.Read(0, 0)
-	if len(warnings) > 0 {
-		t.Errorf("Unexpected warnings when reading zero bytes: %v", warnings)
-	}
-	if len(readData) != 0 {
-		t.Error("Reading zero bytes should return empty slice")
-	}
+	assert.Empty(t, warnings, "Unexpected warnings when reading zero bytes")
+	assert.Empty(t, readData, "Reading zero bytes should return empty slice")
 }
 
 // TestCloseAndReopen tests that data persists after closing and reopening
@@ -292,10 +235,7 @@ func TestCloseAndReopen(t *testing.T) {
 	// First session: write data
 	store1 := createDataStore(t, tempDir, 1024, 5)
 	data := []byte("Persistent data test")
-	err := store1.Write(100, data)
-	if err != nil {
-		t.Fatal("Write failed:", err)
-	}
+	require.NoError(t, store1.Write(100, data), "Write failed")
 	store1.Close()
 
 	// Second session: read data
@@ -303,12 +243,8 @@ func TestCloseAndReopen(t *testing.T) {
 	defer store2.Close()
 
 	readData, warnings := store2.Read(100, int64(len(data)))
-	if len(warnings) > 0 {
-		t.Errorf("Unexpected warnings after reopen: %v", warnings)
-	}
-	if !bytes.Equal(data, readData) {
-		t.Errorf("Data mismatch after reopen. Expected %s, got %s", data, readData)
-	}
+	assert.Empty(t, warnings, "Unexpected warnings after reopen")
+	assert.Equal(t, data, readData, "Data mismatch after reopen")
 }
 
 // TestConcurrentSameFile tests concurrent access to the same file to cover
@@ -320,10 +256,7 @@ func TestConcurrentSameFile(t *testing.T) {
 
 	// First, create the file by writing some data
 	initialData := []byte("initial data to create file")
-	err := store.Write(0, initialData)
-	if err != nil {
-		t.Fatal("Failed to write initial data:", err)
-	}
+	require.NoError(t, store.Write(0, initialData), "Failed to write initial data")
 
 	const numGoroutines = 10
 	var wg sync.WaitGroup
@@ -400,12 +333,9 @@ func TestEvictingHandlePath(t *testing.T) {
 
 	// Step 1: Create multiple files to fill up the handle cache
 	for i := 0; i < 3; i++ {
-		data := []byte(fmt.Sprintf("data for file %d", i))
 		offset := int64(i * 2048) // Different fileIDs: 0, 2, 4
-		err := store.Write(offset, data)
-		if err != nil {
-			t.Fatalf("Failed to write to file %d: %v", i, err)
-		}
+		require.NoErrorf(t, store.Write(offset, []byte(fmt.Sprintf("data for file %d", i))),
+			"Failed to write to file %d", i)
 	}
 
 	// Step 2: Force concurrent access while GC is happening
@@ -430,9 +360,7 @@ func TestEvictingHandlePath(t *testing.T) {
 				}
 
 				// Also try to write - this also might hit evicting handles
-				writeData := []byte(fmt.Sprintf("g%d-i%d", goroutineID, j))
-				err := store.Write(fileOffset+100, writeData)
-				if err != nil {
+				if err := store.Write(fileOffset+100, []byte(fmt.Sprintf("g%d-i%d", goroutineID, j))); err != nil {
 					errors <- fmt.Errorf("goroutine %d iteration %d write error: %v", goroutineID, j, err)
 				}
 			}
@@ -463,31 +391,18 @@ func TestWriteFileLeaseError(t *testing.T) {
 
 	// Create the directory structure manually
 	conflictDirPath := filepath.Join(tempDir, "00", "00")
-	err := os.MkdirAll(conflictDirPath, 0755)
-	if err != nil {
-		t.Fatal("Failed to create conflict directory path:", err)
-	}
+	require.NoError(t, os.MkdirAll(conflictDirPath, 0755))
 
 	// Create a directory with the same name as the expected file
 	conflictFilePath := filepath.Join(conflictDirPath, "0000000000")
-	err = os.Mkdir(conflictFilePath, 0755) // Create DIRECTORY, not file
-	if err != nil {
-		t.Fatal("Failed to create conflicting directory:", err)
-	}
+	require.NoError(t, os.Mkdir(conflictFilePath, 0755), "Failed to create conflicting directory") // Create DIRECTORY, not file
 
 	// Now try to write - this should fail when trying to lease the file
 	// because os.OpenFile will try to open "0000000000" as a file, but it's a directory
-	data := []byte("This write should fail")
-	err = store.Write(0, data) // offset=0 → fileID=0 → conflicts with our directory
-
-	if err == nil {
-		t.Fatal("Expected write to fail due to directory conflict, but it succeeded")
-	}
-
+	err := store.Write(0, []byte("This write should fail")) // offset=0 → fileID=0 → conflicts with our directory
+	require.Error(t, err, "Expected write to fail due to directory conflict")
 	// Check that the error message contains the expected text
-	if !strings.Contains(err.Error(), "Unable to lease data file") {
-		t.Errorf("Expected error about unable to lease file, got: %v", err)
-	}
+	assert.Contains(t, err.Error(), "Unable to lease data file")
 
 	// It is also possible that directory creation fails
 	// Calculate the path where the data file would be created
@@ -495,31 +410,19 @@ func TestWriteFileLeaseError(t *testing.T) {
 
 	// Create the directory structure manually
 	conflictDirPath = filepath.Join(tempDir, "01")
-	err = os.MkdirAll(conflictDirPath, 0755)
-	if err != nil {
-		t.Fatal("Failed to create conflict directory path:", err)
-	}
+	require.NoError(t, os.MkdirAll(conflictDirPath, 0755))
 
 	// Create a file with the same name as the expected directory
-	conflictFilePath = filepath.Join(conflictDirPath, "00")
-	err = os.WriteFile(conflictFilePath, []byte("conflicting file"), 0644) // Create FILE, not directory
-	if err != nil {
-		t.Fatal("Failed to create conflicting file:", err)
-	}
+	require.NoError(t,
+		os.WriteFile(filepath.Join(conflictDirPath, "00"), []byte("conflicting file"), 0644), // Create FILE, not directory
+		"Failed to create conflicting file")
 
 	// Now try to write - this should fail when trying to lease the file
 	// because the directory can not be created.
-	data = []byte("This write should fail")
-	err = store.Write(1000000, data) // offset=1000000 → fileID=10000 → conflicts with our directory
-
-	if err == nil {
-		t.Fatal("Expected write to fail due to directory conflict, but it succeeded")
-	}
-
+	err = store.Write(1000000, []byte("This write should fail")) // offset=1000000 → fileID=10000 → conflicts with our directory
+	require.Error(t, err, "Expected write to fail due to directory conflict")
 	// Check that the error message contains the expected text
-	if !strings.Contains(err.Error(), "Unable to lease data file") {
-		t.Errorf("Expected error about unable to lease file, got: %v", err)
-	}
+	assert.Contains(t, err.Error(), "Unable to lease data file")
 
 	t.Log("Successfully tested write failure due to file/directory conflict:", err)
 }
@@ -552,8 +455,7 @@ func TestExtremelyLargeOffsets(t *testing.T) {
 		t.Skip("Cannot test extremely large offsets on this system - would overflow")
 	}
 
-	t.Logf("Testing with baseOffset=%d (file %d), fileSize=%d",
-		baseOffset, baseOffset/fileSize, fileSize)
+	t.Logf("Testing with baseOffset=%d (file %d), fileSize=%d", baseOffset, baseOffset/fileSize, fileSize)
 
 	// Create test data that will span across two files
 	testData := make([]byte, testDataSize)
@@ -562,11 +464,7 @@ func TestExtremelyLargeOffsets(t *testing.T) {
 	}
 
 	// Test 1: Write data spanning file boundary
-	err := store.Write(baseOffset, testData)
-	if err != nil {
-		t.Fatalf("Failed to write at extreme offset %d: %v", baseOffset, err)
-	}
-
+	require.NoErrorf(t, store.Write(baseOffset, testData), "Failed to write at extreme offset %d", baseOffset)
 	t.Logf("Successfully wrote %d bytes at offset %d", len(testData), baseOffset)
 
 	// Test 2: Read back the data
@@ -574,24 +472,15 @@ func TestExtremelyLargeOffsets(t *testing.T) {
 	if len(warnings) > 0 {
 		t.Logf("Warnings during read at extreme offset: %v", warnings)
 	}
-
-	if !bytes.Equal(testData, readData) {
-		t.Fatalf("Data mismatch at extreme offset %d", baseOffset)
-	}
-
+	assert.Equalf(t, testData, readData, "Data mismatch at extreme offset %d", baseOffset)
 	t.Logf("Successfully read and verified %d bytes at offset %d", len(readData), baseOffset)
 
 	// Test 3: Verify the data actually spans two different files
 	firstFileID := baseOffset / fileSize
-	lastByteOffset := baseOffset + testDataSize - 1
-	lastFileID := lastByteOffset / fileSize
-
-	if firstFileID == lastFileID {
-		t.Errorf("Expected data to span multiple files, but both first (%d) and last (%d) bytes are in file %d",
-			baseOffset, lastByteOffset, firstFileID)
-	} else {
-		t.Logf("Confirmed data spans from file %d to file %d", firstFileID, lastFileID)
-	}
+	lastFileID := (baseOffset + testDataSize - 1) / fileSize
+	require.NotEqualf(t, firstFileID, lastFileID,
+		"Expected data to span multiple files, but both first and last bytes are in file %d", firstFileID)
+	t.Logf("Confirmed data spans from file %d to file %d", firstFileID, lastFileID)
 
 	// Test 4: Write and read individual parts to verify both files work independently
 
@@ -606,13 +495,8 @@ func TestExtremelyLargeOffsets(t *testing.T) {
 	if len(warnings) > 0 {
 		t.Logf("Warnings reading part A: %v", warnings)
 	}
-
-	expectedPartA := testData[:partASize]
-	if !bytes.Equal(expectedPartA, partAData) {
-		t.Errorf("Part A data mismatch in file %d", firstFileID)
-	} else {
-		t.Logf("Part A verified: %d bytes in file %d", partASize, firstFileID)
-	}
+	assert.Equalf(t, testData[:partASize], partAData, "Part A data mismatch in file %d", firstFileID)
+	t.Logf("Part A verified: %d bytes in file %d", partASize, firstFileID)
 
 	// Part B: Test continuation in second file (if data actually spans)
 	if firstFileID != lastFileID && partASize < testDataSize {
@@ -623,33 +507,21 @@ func TestExtremelyLargeOffsets(t *testing.T) {
 		if len(warnings) > 0 {
 			t.Logf("Warnings reading part B: %v", warnings)
 		}
-
-		expectedPartB := testData[partASize:]
-		if !bytes.Equal(expectedPartB, partBData) {
-			t.Errorf("Part B data mismatch in file %d", lastFileID)
-		} else {
-			t.Logf("Part B verified: %d bytes in file %d", partBSize, lastFileID)
-		}
+		assert.Equalf(t, testData[partASize:], partBData, "Part B data mismatch in file %d", lastFileID)
+		t.Logf("Part B verified: %d bytes in file %d", partBSize, lastFileID)
 	}
 
 	// Test 5: Test edge case - write exactly at file boundary
 	exactBoundaryOffset := (maxSafeFileID + 1) * fileSize
 	boundaryData := []byte("BOUNDARY_TEST_DATA")
-
-	err = store.Write(exactBoundaryOffset, boundaryData)
-	if err != nil {
-		t.Fatalf("Failed to write at exact file boundary %d: %v", exactBoundaryOffset, err)
-	}
+	require.NoErrorf(t, store.Write(exactBoundaryOffset, boundaryData),
+		"Failed to write at exact file boundary %d", exactBoundaryOffset)
 
 	readBoundaryData, warnings := store.Read(exactBoundaryOffset, int64(len(boundaryData)))
 	if len(warnings) > 0 {
 		t.Logf("Warnings reading at boundary: %v", warnings)
 	}
-
-	if !bytes.Equal(boundaryData, readBoundaryData) {
-		t.Fatalf("Boundary data mismatch at offset %d", exactBoundaryOffset)
-	}
-
+	assert.Equalf(t, boundaryData, readBoundaryData, "Boundary data mismatch at offset %d", exactBoundaryOffset)
 	t.Logf("Successfully verified write/read at exact file boundary: offset %d (file %d)",
 		exactBoundaryOffset, exactBoundaryOffset/fileSize)
 }
@@ -677,27 +549,20 @@ func TestMaxInt64Offset(t *testing.T) {
 	testData := []byte("MAX_OFFSET_TEST")
 
 	// Test write at maximum offset
-	err := store.Write(maxSafeOffset, testData)
-	if err != nil {
-		t.Fatalf("Failed to write at max offset %d: %v", maxSafeOffset, err)
-	}
+	require.NoErrorf(t, store.Write(maxSafeOffset, testData), "Failed to write at max offset %d", maxSafeOffset)
 
 	// Test read at maximum offset
 	readData, warnings := store.Read(maxSafeOffset, int64(len(testData)))
 	if len(warnings) > 0 {
 		t.Logf("Warnings at max offset: %v", warnings)
 	}
-
-	if !bytes.Equal(testData, readData) {
-		t.Fatalf("Data mismatch at max offset %d", maxSafeOffset)
-	}
+	assert.Equalf(t, testData, readData, "Data mismatch at max offset %d", maxSafeOffset)
 
 	calculatedFileID := maxSafeOffset / fileSize
-	t.Logf("Successfully verified write/read at maximum safe offset %d in file %d",
-		maxSafeOffset, calculatedFileID)
 
 	// Also test that fileID calculation doesn't overflow
-	if calculatedFileID < 0 {
-		t.Errorf("FileID calculation overflowed: %d", calculatedFileID)
-	}
+	assert.GreaterOrEqual(t, calculatedFileID, int64(0), "FileID calculation overflowed")
+
+	t.Logf("Successfully verified write/read at maximum safe offset %d in file %d",
+		maxSafeOffset, calculatedFileID)
 }
