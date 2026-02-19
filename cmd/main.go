@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -28,7 +30,7 @@ func main() {
 
 	switch cmd {
 	case "init":
-		mockInit(repo)
+		initialize(repo)
 	case "stats":
 		mockStats(repo)
 	case "backup":
@@ -48,8 +50,20 @@ func printUsage() {
 	fmt.Println("  restore <source> <target> [repo=<target-dir>]")
 }
 
-func mockInit(repo string) {
-	fmt.Printf("[MOCK] Initializing repository at '%s'\n", repo)
+func initialize(repo string) {
+	if _, err := os.Stat(repo); err == nil {
+		slog.Error("Repository directory already exists", "repo", repo)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "meta"), 0o755); err != nil {
+		slog.Error("Failed to create meta directory", "repo", repo, "error", err)
+		os.Exit(1)
+	}
+	if err := os.MkdirAll(filepath.Join(repo, "data"), 0o755); err != nil {
+		slog.Error("Failed to create data directory", "repo", repo, "error", err)
+		os.Exit(1)
+	}
+	slog.Info("Repository initialized", "repo", repo)
 }
 
 func mockStats(repo string) {

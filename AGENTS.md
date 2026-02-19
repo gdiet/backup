@@ -29,6 +29,7 @@ Suggest required or helpful dependencies to the user, but do not add them to the
 
 ## Code Quality
 
+- Use English for code, comments, and commit messages
 - Follow Go idioms and conventions
 - Keep functions focused and testable
 - Write self-documenting code with clear variable names
