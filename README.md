@@ -1,3 +1,9 @@
+# backup - Go Implementation
+
+This backup utility uses content defined chunking together with data deduplication to efficiently backup files.
+
+## Notes For Developers
+
 ### Line Coverage in Visual Studio Code
 
 - Uses gocover-cobertura (`go get github.com/richardlt/gocover-cobertura`)

@@ -30,6 +30,12 @@ func TestBasics(t *testing.T) {
 		require.Equal(t, "newdir", read[0].Name())
 		require.IsType(t, &meta.DirEntry{}, read[0])
 
+		// Lookup
+		id, entry, err := m.Lookup(path("newdir"))
+		require.NoError(t, err, "Lookup failed after rename")
+		require.Equal(t, uint64(1), id)
+		require.IsType(t, &meta.DirEntry{}, entry)
+
 		// Rmdir
 		err = m.Rmdir(path("newdir"))
 		require.NoError(t, err, "Rmdir failed")
