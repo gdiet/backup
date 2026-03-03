@@ -4,6 +4,10 @@
 
 The goal of this project is a deduplicating backup application, implemented in Go.
 
+## Interaction With The Developer
+
+Use the same language as the developer for chat interactions with the developer, but use English as project language (see below 'Code Quality').
+
 ## Verification Of Changes
 
 When making changes to the codebase, always verify your changes before finishing and suggesting commits:

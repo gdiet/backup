@@ -34,7 +34,7 @@ func main() {
 	case "stats":
 		mockStats(repo)
 	case "backup":
-		mockBackup(repo, args)
+		backup(repo, args)
 	case "restore":
 		mockRestore(repo, args)
 	default:
@@ -70,14 +70,27 @@ func mockStats(repo string) {
 	fmt.Printf("[MOCK] Showing repository stats for '%s'\n", repo)
 }
 
-func mockBackup(repo string, args []string) {
+func backup(repo string, args []string) {
 	if len(args) < 2 {
-		fmt.Println("[MOCK] backup requires at least one source and one target")
-		return
+		slog.Error("backup requires at least one source and one target")
+		os.Exit(1)
 	}
 	sources := args[:len(args)-1]
-	target := args[len(args)-1]
-	fmt.Printf("[MOCK] Backing up sources %v to target '%s' in repo '%s'\n", sources, target, repo)
+	// target := args[len(args)-1] // Not used in this step
+
+	// Later, we may also allow files as sources.
+	for _, src := range sources {
+		info, err := os.Stat(src)
+		if err != nil {
+			slog.Error("Source does not exist or is not accessible", "source", src, "error", err)
+			os.Exit(1)
+		}
+		if !info.IsDir() {
+			slog.Error("Source is not a directory", "source", src)
+			os.Exit(1)
+		}
+	}
+	fmt.Println("All sources are valid directories.")
 }
 
 func mockRestore(repo string, args []string) {
