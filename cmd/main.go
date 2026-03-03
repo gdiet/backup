@@ -44,10 +44,10 @@ func main() {
 
 func printUsage() {
 	fmt.Println("Usage:")
-	fmt.Println("  init [repo=<target-dir>]")
-	fmt.Println("  stats [repo=<target-dir>]")
-	fmt.Println("  backup <source> [<source2> ...] <target> [repo=<target-dir>]")
-	fmt.Println("  restore <source> <target> [repo=<target-dir>]")
+	fmt.Println("  init [-repo=<target-dir>]")
+	fmt.Println("  stats [-repo=<target-dir>]")
+	fmt.Println("  backup <source> [<source2> ...] <target> [-repo=<target-dir>]")
+	fmt.Println("  restore <source> <target> [-repo=<target-dir>]")
 }
 
 func initialize(repo string) {
