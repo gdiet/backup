@@ -1,12 +1,14 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/gdiet/backup/internal/fserr"
 	"github.com/gdiet/backup/internal/meta"
 )
 
@@ -43,8 +45,53 @@ func Backup(repo string, sources []string, target string, tf BackupFlags) {
 	} else {
 		ensureParentIsDirAndTargetDoesNotExist(m, targetPath)
 	}
+	slog.Info("Validation completed. Starting backup.", "sources", sources, "target", target)
 
-	fmt.Println("Target path is valid for backup.")
+	err = backup(m, sources, targetPath)
+	if err != nil {
+		slog.Error("Backup failed.", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("Backup completed.")
+}
+
+func backup(m *meta.Metadata, sources []string, targetPath []string) error {
+	for _, src := range sources {
+		err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			switch {
+			case info.IsDir():
+				rel, err := filepath.Rel(src, path)
+				slog.Info("Processing", "rel", rel)
+				if err != nil {
+					return err
+				}
+				// Skip root
+				if rel == "." || rel == "" {
+					return nil
+				}
+				// Build target directory path in metadata
+				tgtDirPath := append(targetPath, strings.Split(rel, string(os.PathSeparator))...)
+				// Create directory in metadata
+				_, err = m.Mkdir(tgtDirPath)
+				if err != nil && !errors.Is(err, fserr.Exists) {
+					return err
+				}
+				slog.Info("Created directory", "source", path, "target", "/"+strings.Join(tgtDirPath, "/"))
+			case info.Mode().IsRegular():
+				// Handle regular files
+			default:
+				slog.Warn("Unsupported type - skipping", "path", path, "file mode", info.Mode())
+			}
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("source %s: %w", src, err)
+		}
+	}
+	return nil
 }
 
 func validateSources(sources []string) {
@@ -88,36 +135,27 @@ func createMissingTargetDirs(m *meta.Metadata, targetPath []string) {
 	}
 }
 
-func ensureParentIsDirAndTargetDoesNotExist(m *meta.Metadata, targetPath []string) {
-	if _, _, err := m.Lookup(targetPath); err == nil {
-		slog.Error("Target already exists", "target", "/"+strings.Join(targetPath, "/"))
-		os.Exit(1)
-	}
-	parentPath := targetPath[:len(targetPath)-1]
-	_, parentEntry, err := m.Lookup(parentPath)
-	if err != nil {
-		slog.Error("Parent directory of target does not exist", "parent", "/"+strings.Join(parentPath, "/"), "error", err)
-		os.Exit(1)
-	}
-	if _, isDir := parentEntry.(*meta.DirEntry); !isDir {
-		slog.Error("Parent of target is not a directory", "parent", "/"+strings.Join(parentPath, "/"))
-		os.Exit(1)
-	}
-}
-
 // createDirWithParents creates a directory and all its parents if needed (idempotent)
-func createDirWithParents(m *meta.Metadata, path []string) error {
-	if len(path) == 0 {
+func createDirWithParents(m *meta.Metadata, targetPath []string) error {
+	if len(targetPath) == 0 {
 		return nil // root always exists
 	}
-	parent := path[:len(path)-1]
+	parent := targetPath[:len(targetPath)-1]
 	if err := createDirWithParents(m, parent); err != nil {
 		return err
 	}
-	_, _, err := m.Lookup(path)
+	_, _, err := m.Lookup(targetPath)
 	if err == nil {
 		return nil // already exists
 	}
-	_, err = m.Mkdir(path)
+	_, err = m.Mkdir(targetPath)
 	return err
+}
+
+func ensureParentIsDirAndTargetDoesNotExist(m *meta.Metadata, targetPath []string) {
+	_, err := m.Mkdir(targetPath)
+	if err != nil {
+		slog.Error("Can't create target directory", "parent", "/"+strings.Join(targetPath, "/"), "error", err)
+		os.Exit(1)
+	}
 }
