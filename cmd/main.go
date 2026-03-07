@@ -24,10 +24,6 @@ func main() {
 	args = args[1:]
 
 	switch cmd {
-	case "init":
-		core.Initialize(*repo)
-	case "stats":
-		core.Stats(*repo)
 	case "backup":
 		if tf, rest := core.ParseBackupFlags(args); len(rest) >= 2 {
 			core.Backup(*repo, rest[:len(rest)-1], rest[len(rest)-1], tf)
@@ -35,8 +31,12 @@ func main() {
 			slog.Error("backup requires at least one source and one target")
 			os.Exit(2)
 		}
+	case "init":
+		core.Initialize(*repo)
 	case "restore":
 		core.Restore(*repo, args[:len(args)-1], args[len(args)-1])
+	case "stats":
+		core.Stats(*repo)
 	default:
 		printUsage()
 	}
