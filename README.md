@@ -4,6 +4,12 @@ This backup utility uses content defined chunking together with data deduplicati
 
 ## Notes For Developers
 
+### Start The Application
+
+Example:
+
+`go run ./cmd backup source target`
+
 ### Line Coverage in Visual Studio Code
 
 - Uses gocover-cobertura (`go get github.com/richardlt/gocover-cobertura`)
