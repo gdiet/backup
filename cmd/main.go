@@ -31,7 +31,12 @@ func main() {
 	case "stats":
 		mockStats(*repo)
 	case "backup":
-		backup(*repo, args)
+		if tf, rest := ParseBackupFlags(args); len(rest) >= 2 {
+			backup(*repo, rest[:len(rest)-1], rest[len(rest)-1], tf)
+		} else {
+			slog.Error("backup requires at least one source and one target")
+			os.Exit(2)
+		}
 	case "restore":
 		mockRestore(*repo, args)
 	default:
@@ -43,7 +48,7 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  [-repo=<target-dir>] init")
 	fmt.Println("  [-repo=<target-dir>] stats")
-	fmt.Println("  [-repo=<target-dir>] backup <source> [<source2> ...] <target>")
+	fmt.Println("  [-repo=<target-dir>] backup [flags] <source> [<source2> ...] <target>")
 	fmt.Println("  [-repo=<target-dir>] restore <source> <target>")
 }
 
@@ -67,15 +72,7 @@ func mockStats(repo string) {
 	fmt.Printf("[MOCK] Showing repository stats for '%s'\n", repo)
 }
 
-func backup(repo string, args []string) {
-	tf, rest := ParseTargetFlags(args)
-	if len(rest) < 2 {
-		slog.Error("backup requires at least one source and one target")
-		os.Exit(1)
-	}
-	sources := rest[:len(rest)-1]
-	target := rest[len(rest)-1]
-
+func backup(repo string, sources []string, target string, tf BackupFlags) {
 	// Validate sources. Later, we may also allow files as sources.
 	for _, src := range sources {
 		info, err := os.Stat(src)
