@@ -3,7 +3,7 @@ package fserr_test
 import (
 	"testing"
 
-	"github.com/gdiet/backup/fserr"
+	"github.com/gdiet/backup/internal/fserr"
 	"github.com/stretchr/testify/assert"
 )
 

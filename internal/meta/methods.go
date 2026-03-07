@@ -4,9 +4,8 @@ import (
 	"bytes"
 	"errors"
 
-	"github.com/gdiet/backup/fserr"
-	"github.com/gdiet/backup/util"
-
+	"github.com/gdiet/backup/internal/fserr"
+	"github.com/gdiet/backup/internal/util"
 	"go.etcd.io/bbolt"
 )
 

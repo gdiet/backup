@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/gdiet/backup/meta"
+	"github.com/gdiet/backup/internal/meta"
 )
 
 func main() {

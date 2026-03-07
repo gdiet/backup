@@ -1,6 +1,6 @@
 package meta
 
-import "github.com/gdiet/backup/fserr"
+import "github.com/gdiet/backup/internal/fserr"
 
 // TreeEntry interface for directory and file entries
 type TreeEntry interface {

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gdiet/backup/util"
+	"github.com/gdiet/backup/internal/util"
 )
 
 // DataStore is a byte store supporting random reads and writes at arbitrary offsets.

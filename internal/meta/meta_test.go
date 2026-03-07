@@ -3,7 +3,7 @@ package meta_test
 import (
 	"testing"
 
-	"github.com/gdiet/backup/meta"
+	"github.com/gdiet/backup/internal/meta"
 	"github.com/stretchr/testify/require"
 )
 

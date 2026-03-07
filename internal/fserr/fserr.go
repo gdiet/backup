@@ -3,7 +3,7 @@ package fserr
 import (
 	"errors"
 
-	"github.com/gdiet/backup/util"
+	"github.com/gdiet/backup/internal/util"
 )
 
 var (

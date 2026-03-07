@@ -3,7 +3,7 @@ package util_test
 import (
 	"testing"
 
-	"github.com/gdiet/backup/util"
+	"github.com/gdiet/backup/internal/util"
 )
 
 func TestAssertPanic(t *testing.T) {

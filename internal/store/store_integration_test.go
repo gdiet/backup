@@ -7,10 +7,9 @@ import (
 	"sync"
 	"testing"
 
+	dataStore "github.com/gdiet/backup/internal/store"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	dataStore "github.com/gdiet/backup/store"
 )
 
 // createDataStore wraps FileBackedDataStore and fails the test if creation fails.
