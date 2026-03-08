@@ -12,7 +12,7 @@ func TestBasics(t *testing.T) {
 		// Mkdir
 		dir, err := m.Mkdir(path("dir"))
 		require.NoError(t, err, "Mkdir failed")
-		require.Equal(t, uint64(1), dir)
+		require.Equal(t, uint64(1), meta.B64u(dir))
 
 		// Readdir
 		read, err := m.Readdir(nil)
@@ -33,7 +33,7 @@ func TestBasics(t *testing.T) {
 		// Lookup
 		id, entry, err := m.Lookup(path("newdir"))
 		require.NoError(t, err, "Lookup failed after rename")
-		require.Equal(t, uint64(1), id)
+		require.Equal(t, uint64(1), meta.B64u(id))
 		require.IsType(t, &meta.DirEntry{}, entry)
 
 		// Rmdir

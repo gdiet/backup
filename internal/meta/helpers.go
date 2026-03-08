@@ -19,8 +19,8 @@ func u64b(u uint64) []byte {
 	return key
 }
 
-// b64u converts a byte slice to a uint64.
-func b64u(b []byte) uint64 {
+// B64u converts a byte slice to a uint64.
+func B64u(b []byte) uint64 {
 	return binary.BigEndian.Uint64(b)
 }
 

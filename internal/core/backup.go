@@ -136,9 +136,9 @@ func ensureTargetExistsAndIsDir(m *meta.Metadata, targetPath []string) {
 }
 
 func createMissingTargetDirs(m *meta.Metadata, targetPath []string) {
-	//parentId := meta.RootID
+	//parentId := meta.RootID64
 	//for _, filename := range targetPath {
-	//	id, _, err := m.LookupChild(parentId, filename)
+	//	id, _, err := m.GetChild(parentId, filename)
 	//	switch err {
 	//	case nil:
 	//		parentId = id

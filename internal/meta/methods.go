@@ -16,11 +16,18 @@ func (m *Metadata) viewTreeChildren(fn func(tree, children *bbolt.Bucket) error)
 	})
 }
 
+// updateTreeChildren runs a write transaction providing the tree and children buckets.
+func (m *Metadata) updateTreeChildren(fn func(tree, children *bbolt.Bucket) error) error {
+	return m.db.Update(func(tx *bbolt.Tx) error {
+		return fn(tx.Bucket(m.treeKey), tx.Bucket(m.childrenKey))
+	})
+}
+
 // lookup resolves a path (array of tree entry names) to both ID and TreeEntry.
 // Returns NotFound if any component of the path does not exist.
 // An empty path returns the root directory (ID 0 with synthetic root entry).
 func lookup(tree, children *bbolt.Bucket, path []string) (id []byte, entry TreeEntry, err error) {
-	id = rootId
+	id = RootId
 	if len(path) == 0 {
 		return id, NewDirEntry(""), nil
 	}
@@ -34,8 +41,8 @@ func lookup(tree, children *bbolt.Bucket, path []string) (id []byte, entry TreeE
 }
 
 // getChild searches for a child with the given name under the specified parent.
-// Returns the child ID as bytes and the tree entry.
-// Returns NotFound if the child does not exist.
+// Returns the child ID and the tree entry.
+// Returns NotFound if the parent or the child does not exist.
 func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
 	cursor := children.Cursor()
 	for k, _ := cursor.Seek(parentID); len(k) > 0; k, _ = cursor.Next() {
@@ -60,8 +67,8 @@ func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byt
 	return nil, nil, fserr.NotFound
 }
 
-// Mkdir creates a new directory. It does not check whether the parent exists.
-// Returns the ID of the newly created directory as bytes.
+// mkdir creates a new directory. It does not check whether the parent exists or is a directory.
+// Returns the ID of the newly created directory.
 // Returns os.ErrExist if a child with the same name already exists under the specified parent.
 func mkdir(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, error) {
 	// Check if child with name already exists
@@ -89,8 +96,8 @@ func mkdir(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, 
 	return nextID, nil
 }
 
-// nextTreeID returns the next available tree entry ID as bytes.
-// Starts from 1. Tree ID 0 is for root, see RootID constant.
+// nextTreeID returns the next available tree entry ID.
+// Starts from 1. Tree ID 0 is for root, see RootID64 constant.
 func nextTreeID(tree *bbolt.Bucket) ([]byte, error) {
 	id, err := tree.NextSequence()
 	return u64b(id), err
