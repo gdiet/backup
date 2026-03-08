@@ -10,6 +10,10 @@ import (
 	"go.etcd.io/bbolt"
 )
 
+const RootID uint64 = 0
+
+var rootId = u64b(RootID) // 8-byte representation of the root ID
+
 type Metadata struct {
 	db           *bbolt.DB
 	treeKey      []byte
@@ -64,11 +68,22 @@ func (m *Metadata) Close() error {
 // Lookup looks up a path and returns the ID and tree entry.
 // Returns NotFound if the path does not exist.
 func (m *Metadata) Lookup(path []string) (id uint64, entry TreeEntry, err error) {
-	err = m.db.View(func(tx *bbolt.Tx) error {
-		tree := tx.Bucket(m.treeKey)
-		children := tx.Bucket(m.childrenKey)
+	err = m.viewTreeChildren(func(tree, children *bbolt.Bucket) error {
 		var idBytes []byte
 		if idBytes, entry, err = lookup(tree, children, path); err != nil {
+			return err
+		}
+		id = b64u(idBytes)
+		return nil
+	})
+	return id, entry, err
+}
+
+func (m *Metadata) LookupChild(parentID uint64, name string) (id uint64, entry TreeEntry, err error) {
+	err = m.viewTreeChildren(func(tree, children *bbolt.Bucket) error {
+		var idBytes []byte
+		idBytes, entry, err = getChild(tree, children, u64b(parentID), name)
+		if err != nil {
 			return err
 		}
 		id = b64u(idBytes)

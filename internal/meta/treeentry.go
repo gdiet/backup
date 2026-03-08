@@ -5,6 +5,7 @@ import "github.com/gdiet/backup/internal/fserr"
 // TreeEntry interface for directory and file entries
 type TreeEntry interface {
 	Name() string
+	// SetName updates the entry locally. It does not update the database.
 	SetName(name string)
 	ToBytes() []byte
 }

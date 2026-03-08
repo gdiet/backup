@@ -43,9 +43,9 @@ func Backup(repo string, sources []string, target string, tf BackupFlags) {
 	} else if tf.CreateDirs {
 		createMissingTargetDirs(m, targetPath)
 	} else {
-		ensureParentIsDirAndTargetDoesNotExist(m, targetPath)
+		createTargetDirOnly(m, targetPath)
 	}
-	slog.Info("Validation completed. Starting backup.", "sources", sources, "target", target)
+	slog.Info("Validation OK, starting backup.", "sources", sources, "target", target)
 
 	err = backup(m, sources, targetPath)
 	if err != nil {
@@ -57,39 +57,53 @@ func Backup(repo string, sources []string, target string, tf BackupFlags) {
 
 func backup(m *meta.Metadata, sources []string, targetPath []string) error {
 	for _, src := range sources {
-		err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			switch {
-			case info.IsDir():
-				rel, err := filepath.Rel(src, path)
-				slog.Info("Processing", "rel", rel)
-				if err != nil {
-					return err
-				}
-				// Skip root
-				if rel == "." || rel == "" {
-					return nil
-				}
-				// Build target directory path in metadata
-				tgtDirPath := append(targetPath, strings.Split(rel, string(os.PathSeparator))...)
-				// Create directory in metadata
-				_, err = m.Mkdir(tgtDirPath)
-				if err != nil && !errors.Is(err, fserr.Exists) {
-					return err
-				}
-				slog.Info("Created directory", "source", path, "target", "/"+strings.Join(tgtDirPath, "/"))
-			case info.Mode().IsRegular():
-				// Handle regular files
-			default:
-				slog.Warn("Unsupported type - skipping", "path", path, "file mode", info.Mode())
-			}
-			return nil
-		})
+		info, err := os.Stat(src)
 		if err != nil {
 			return fmt.Errorf("source %s: %w", src, err)
 		}
+		// Start recursion at root of source
+		relPath := []string{}
+		err = backupRecursive(m, src, info, targetPath, relPath)
+		if err != nil {
+			return fmt.Errorf("source %s: %w", src, err)
+		}
+	}
+	return nil
+}
+
+// backupRecursive recursively backs up a directory tree, passing the current relative path
+func backupRecursive(m *meta.Metadata, src string, info os.FileInfo, targetPath []string, relPath []string) error {
+	// Build target directory path in metadata
+	tgtDirPath := append(targetPath, relPath...)
+	if info.IsDir() {
+		// Create directory in metadata (idempotent)
+		_, err := m.Mkdir(tgtDirPath)
+		if err != nil && !errors.Is(err, fserr.Exists) {
+			return err
+		}
+		slog.Info("Created directory", "source", src, "target", "/"+strings.Join(tgtDirPath, "/"))
+		// Read directory contents
+		entries, err := os.ReadDir(filepath.Join(src, filepath.Join(relPath...)))
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			entryInfo, err := entry.Info()
+			if err != nil {
+				slog.Warn("Failed to stat entry", "path", entry.Name(), "error", err)
+				continue
+			}
+			nextRelPath := append(relPath, entry.Name())
+			err = backupRecursive(m, src, entryInfo, targetPath, nextRelPath)
+			if err != nil {
+				return err
+			}
+		}
+	} else if info.Mode().IsRegular() {
+		// TODO: Handle regular files (add file to metadata, deduplication, etc.)
+		slog.Info("Would backup file", "source", filepath.Join(src, filepath.Join(relPath...)), "target", "/"+strings.Join(tgtDirPath, "/"))
+	} else {
+		slog.Warn("Unsupported type - skipping", "path", filepath.Join(src, filepath.Join(relPath...)), "file mode", info.Mode())
 	}
 	return nil
 }
@@ -122,6 +136,26 @@ func ensureTargetExistsAndIsDir(m *meta.Metadata, targetPath []string) {
 }
 
 func createMissingTargetDirs(m *meta.Metadata, targetPath []string) {
+	//parentId := meta.RootID
+	//for _, filename := range targetPath {
+	//	id, _, err := m.LookupChild(parentId, filename)
+	//	switch err {
+	//	case nil:
+	//		parentId = id
+	//	case fserr.NotFound:
+	//		id, err = m.Mkdir(append([]string{parentId}, filename))
+	//		if err != nil {
+	//			slog.Error("Failed to create target directory", "path", "/"+strings.Join(targetPath, "/"), "error", err)
+	//			os.Exit(1)
+	//		}
+	//		parentId = id
+	//	default:
+	//		// other error
+	//		slog.Error("Failed to lookup target directory", "path", "/"+strings.Join(targetPath, "/"), "error", err)
+	//		os.Exit(1)
+	//	}
+	//}
+	// FIXME check implementation, then remove below
 	for i := 1; i <= len(targetPath); i++ {
 		sub := targetPath[:i]
 		_, _, err := m.Lookup(sub)
@@ -152,7 +186,7 @@ func createDirWithParents(m *meta.Metadata, targetPath []string) error {
 	return err
 }
 
-func ensureParentIsDirAndTargetDoesNotExist(m *meta.Metadata, targetPath []string) {
+func createTargetDirOnly(m *meta.Metadata, targetPath []string) {
 	_, err := m.Mkdir(targetPath)
 	if err != nil {
 		slog.Error("Can't create target directory", "parent", "/"+strings.Join(targetPath, "/"), "error", err)

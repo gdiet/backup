@@ -9,11 +9,18 @@ import (
 	"go.etcd.io/bbolt"
 )
 
+// viewTreeChildren runs a read-only transaction providing the tree and children buckets.
+func (m *Metadata) viewTreeChildren(fn func(tree, children *bbolt.Bucket) error) error {
+	return m.db.View(func(tx *bbolt.Tx) error {
+		return fn(tx.Bucket(m.treeKey), tx.Bucket(m.childrenKey))
+	})
+}
+
 // lookup resolves a path (array of tree entry names) to both ID and TreeEntry.
 // Returns NotFound if any component of the path does not exist.
 // An empty path returns the root directory (ID 0 with synthetic root entry).
 func lookup(tree, children *bbolt.Bucket, path []string) (id []byte, entry TreeEntry, err error) {
-	id = make([]byte, 8) // root ID is 0 (as 8 bytes)
+	id = rootId
 	if len(path) == 0 {
 		return id, NewDirEntry(""), nil
 	}
@@ -83,7 +90,7 @@ func mkdir(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, 
 }
 
 // nextTreeID returns the next available tree entry ID as bytes.
-// Starts from 1. Tree ID 0 is for root.
+// Starts from 1. Tree ID 0 is for root, see RootID constant.
 func nextTreeID(tree *bbolt.Bucket) ([]byte, error) {
 	id, err := tree.NextSequence()
 	return u64b(id), err
