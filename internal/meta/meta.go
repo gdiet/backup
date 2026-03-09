@@ -52,7 +52,10 @@ func NewMetadata(repository string) (*Metadata, error) {
 		}
 		return nil
 	})
-	return m, errors.Join(err, db.Close())
+	if err != nil {
+		return nil, errors.Join(err, db.Close())
+	}
+	return m, nil
 }
 
 // Close closes the metadata repository.
@@ -62,7 +65,7 @@ func (m *Metadata) Close() error {
 
 // Lookup looks up a path and returns the ID and tree entry.
 // Returns NotFound if the path does not exist.
-func (m *Metadata) Lookup(path []string) (id []byte, entry TreeEntry, err error) {
+func (m *Metadata) Lookup(path []string) (id []byte, entry TreeProp, err error) {
 	err = m.viewTreeChildren(func(tree, children *bbolt.Bucket) error {
 		id, entry, err = lookup(tree, children, path)
 		return err
@@ -72,7 +75,7 @@ func (m *Metadata) Lookup(path []string) (id []byte, entry TreeEntry, err error)
 
 // GetChild looks up a child by name under the specified parent ID.
 // Returns NotFound if the parent or the child does not exist.
-func (m *Metadata) GetChild(parentID []byte, name string) (id []byte, entry TreeEntry, err error) {
+func (m *Metadata) GetChild(parentID []byte, name string) (id []byte, entry TreeProp, err error) {
 	err = m.viewTreeChildren(func(tree, children *bbolt.Bucket) error {
 		id, entry, err = getChild(tree, children, parentID, name)
 		return err
@@ -95,26 +98,26 @@ func (m *Metadata) Mkdir(path []string) (id []byte, err error) {
 		switch {
 		case err != nil:
 			return err
-		case parent.(*DirEntry) == nil:
+		case parent.(*DirProp) == nil:
 			return fserr.NotDir
 		}
 		id, err = mkdir(tree, children, parentID, path[len(path)-1])
 		return err
 	})
-	return id, nil
+	return id, err
 }
 
 // Readdir lists the entries under the specified directory (nil or empty for root).
 // Returns NotFound if the directory does not exist.
 // Returns NotDir if the path is not a directory.
 // Can return other errors.
-func (m *Metadata) Readdir(path []string) (entries []TreeEntry, err error) {
+func (m *Metadata) Readdir(path []string) (entries []TreeProp, err error) {
 	err = m.viewTreeChildren(func(tree, children *bbolt.Bucket) error {
 		id, entry, err := lookup(tree, children, path)
 		switch {
 		case err != nil:
 			return err
-		case entry.(*DirEntry) == nil:
+		case entry.(*DirProp) == nil:
 			return fserr.NotDir
 		}
 		entries, err = readdir(tree, children, id)
@@ -146,7 +149,7 @@ func (m *Metadata) Rmdir(path []string) error {
 		if err != nil {
 			return err // NotFound
 		}
-		if _, isDir := entry.(*DirEntry); !isDir {
+		if _, isDir := entry.(*DirProp); !isDir {
 			return fserr.NotDir // Test coverage: needs file implementation
 		}
 
@@ -196,16 +199,16 @@ func (m *Metadata) Rename(oldPath []string, newPath []string) error {
 		}
 		// Ensure the new parent is a directory
 		switch newParent.(type) {
-		case *FileEntry:
+		case *FileProp:
 			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
-		case *DirEntry:
+		case *DirProp:
 			// continue
 		default:
 			util.AssertionFailedf("unexpected destination parent entry type %T in Rename", newParent)
 			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		}
 
-		if _, isDir := newParent.(*DirEntry); !isDir {
+		if _, isDir := newParent.(*DirProp); !isDir {
 			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		}
 
@@ -215,10 +218,10 @@ func (m *Metadata) Rename(oldPath []string, newPath []string) error {
 		}
 
 		switch oldEntry.(type) {
-		case *FileEntry:
+		case *FileProp:
 			// Returns IsDir if trying to rename a file to a directory.
 			return errors.New("not implemented: renaming files") // TODO wait for implementation of files in the filesystem
-		case *DirEntry:
+		case *DirProp:
 			// continue
 		default:
 			util.AssertionFailedf("unexpected source entry type %T in Rename", oldEntry)

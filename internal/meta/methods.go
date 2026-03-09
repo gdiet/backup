@@ -23,13 +23,13 @@ func (m *Metadata) updateTreeChildren(fn func(tree, children *bbolt.Bucket) erro
 	})
 }
 
-// lookup resolves a path (array of tree entry names) to both ID and TreeEntry.
+// lookup resolves a path (array of tree entry names) to both ID and TreeProp.
 // Returns NotFound if any component of the path does not exist.
 // An empty path returns the root directory (ID 0 with synthetic root entry).
-func lookup(tree, children *bbolt.Bucket, path []string) (id []byte, entry TreeEntry, err error) {
+func lookup(tree, children *bbolt.Bucket, path []string) (id []byte, entry TreeProp, err error) {
 	id = RootId
 	if len(path) == 0 {
-		return id, NewDirEntry(""), nil
+		return id, newDirProp(""), nil
 	}
 	for _, component := range path {
 		id, entry, err = getChild(tree, children, id, component)
@@ -43,7 +43,7 @@ func lookup(tree, children *bbolt.Bucket, path []string) (id []byte, entry TreeE
 // getChild searches for a child with the given name under the specified parent.
 // Returns the child ID and the tree entry.
 // Returns NotFound if the parent or the child does not exist.
-func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, TreeEntry, error) {
+func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, TreeProp, error) {
 	cursor := children.Cursor()
 	for k, _ := cursor.Seek(parentID); len(k) > 0; k, _ = cursor.Next() {
 		if !bytes.HasPrefix(k, parentID) {
@@ -84,7 +84,7 @@ func mkdir(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	dirEntry := NewDirEntry(name)
+	dirEntry := newDirProp(name)
 	if err = tree.Put(nextID, dirEntry.ToBytes()); err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func addChild(children *bbolt.Bucket, parentID []byte, id []byte) error {
 }
 
 // readdir lists the entries under the specified parent directory. It does not check whether the parent exists.
-func readdir(tree, children *bbolt.Bucket, parentID []byte) (entries []TreeEntry, err error) {
+func readdir(tree, children *bbolt.Bucket, parentID []byte) (entries []TreeProp, err error) {
 	cursor := children.Cursor()
 	for k, _ := cursor.Seek(parentID); len(k) > 0; k, _ = cursor.Next() {
 		if !bytes.HasPrefix(k, parentID) {
@@ -135,9 +135,9 @@ func readdir(tree, children *bbolt.Bucket, parentID []byte) (entries []TreeEntry
 	return entries, nil
 }
 
-// treeEntry retrieves a TreeEntry by its ID bytes
+// treeEntry retrieves a TreeProp by its ID bytes
 // Returns NotFound if the entry does not exist.
-func treeEntry(tree *bbolt.Bucket, id []byte) (TreeEntry, error) {
+func treeEntry(tree *bbolt.Bucket, id []byte) (TreeProp, error) {
 	bytes := tree.Get(id)
 	if bytes == nil {
 		return nil, fserr.NotFound
@@ -196,7 +196,7 @@ func checkForRootDirectoryRename(oldPath []string, newPath []string) (bool, erro
 // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 func renameDirectory(
 	tree *bbolt.Bucket, children *bbolt.Bucket,
-	oldParentID, oldEntryID []byte, oldEntry TreeEntry,
+	oldParentID, oldEntryID []byte, oldEntry TreeProp,
 	newParentID []byte, newEntryName string) error {
 
 	// Lookup destination entry to replace, if any
@@ -205,9 +205,9 @@ func renameDirectory(
 	if getReplaceEntryError == nil {
 		// Destination exists
 		switch replaceEntry.(type) {
-		case *FileEntry:
+		case *FileProp:
 			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
-		case *DirEntry:
+		case *DirProp:
 			// Remove destination entry unless it's not empty
 			err := rmdir(tree, children, newParentID, replaceEntryID)
 			if err != nil {
@@ -229,8 +229,8 @@ func renameDirectory(
 
 	// Rename to the new name if necessary
 	if oldEntry.Name() != newEntryName {
-		oldEntry.SetName(newEntryName)
-		err := tree.Put(oldEntryID, oldEntry.ToBytes())
+		newEntry := newDirProp(newEntryName)
+		err := tree.Put(oldEntryID, newEntry.ToBytes())
 		util.Assertf(err == nil, "bbolt put failed: %v", err)
 		return err
 	}

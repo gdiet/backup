@@ -129,7 +129,7 @@ func ensureTargetExistsAndIsDir(m *meta.Metadata, targetPath []string) {
 		slog.Error("Target does not exist", "target", "/"+strings.Join(targetPath, "/"), "error", err)
 		os.Exit(1)
 	}
-	if _, isDir := entry.(*meta.DirEntry); !isDir {
+	if _, isDir := entry.(*meta.DirProp); !isDir {
 		slog.Error("Target exists but is not a directory", "target", "/"+strings.Join(targetPath, "/"))
 		os.Exit(1)
 	}

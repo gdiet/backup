@@ -19,7 +19,7 @@ func TestBasics(t *testing.T) {
 		require.NoError(t, err, "Readdir failed")
 		require.Len(t, read, 1)
 		require.Equal(t, "dir", read[0].Name())
-		require.IsType(t, &meta.DirEntry{}, read[0])
+		require.IsType(t, &meta.DirProp{}, read[0])
 
 		// Rename
 		err = m.Rename(path("dir"), path("newdir"))
@@ -28,13 +28,13 @@ func TestBasics(t *testing.T) {
 		require.NoError(t, err, "Readdir failed after rename")
 		require.Len(t, read, 1)
 		require.Equal(t, "newdir", read[0].Name())
-		require.IsType(t, &meta.DirEntry{}, read[0])
+		require.IsType(t, &meta.DirProp{}, read[0])
 
 		// Lookup
 		id, entry, err := m.Lookup(path("newdir"))
 		require.NoError(t, err, "Lookup failed after rename")
 		require.Equal(t, uint64(1), meta.B64u(id))
-		require.IsType(t, &meta.DirEntry{}, entry)
+		require.IsType(t, &meta.DirProp{}, entry)
 
 		// Rmdir
 		err = m.Rmdir(path("newdir"))

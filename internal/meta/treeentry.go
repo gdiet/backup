@@ -2,28 +2,38 @@ package meta
 
 import "github.com/gdiet/backup/internal/fserr"
 
-// TreeEntry interface for directory and file entries
+// TreeEntry represents a directory or file entry in the tree
 type TreeEntry interface {
+	ID() []byte
+	TreeProp
+}
+
+// TreeProp represents properties of directory and file entries
+type TreeProp interface {
 	Name() string
-	// SetName updates the entry locally. It does not update the database.
-	SetName(name string)
 	ToBytes() []byte
 }
 
-// DirEntry represents a directory entry
-type DirEntry struct {
-	name string
+// DirProp represents properties of a directory entry
+type DirProp struct {
+	name string // root name is empty, otherwise at least 1 character
 }
 
-func (d *DirEntry) Name() string {
+// DirEntry implements DirProp and TreeEntry
+type DirEntry struct {
+	DirProp
+	id []byte
+}
+
+func (d *DirEntry) ID() []byte {
+	return d.id
+}
+
+func (d *DirProp) Name() string {
 	return d.name
 }
 
-func (d *DirEntry) SetName(name string) {
-	d.name = name
-}
-
-func (d *DirEntry) ToBytes() []byte {
+func (d *DirProp) ToBytes() []byte {
 	// 1 byte type + name
 	buf := make([]byte, 1+len(d.name))
 	// buf[0] is 0, dirEntry type = 0
@@ -31,44 +41,40 @@ func (d *DirEntry) ToBytes() []byte {
 	return buf
 }
 
-// NewDirEntry creates a new directory entry
-func NewDirEntry(name string) *DirEntry {
-	return &DirEntry{name: name}
+// newDirProp creates a new directory entry
+func newDirProp(name string) *DirProp {
+	return &DirProp{name: name}
 }
 
-// FileEntry represents a file entry
-type FileEntry struct {
+// FileProp represents properties of a file entry
+type FileProp struct {
 	time int64    // UnixMilli
 	dref [40]byte // len|hash of dataEntry
-	name string   // at least 1 byte
+	name string   // at least 1 character
 }
 
-func (f *FileEntry) Name() string {
+func (f *FileProp) Name() string {
 	return f.name
 }
 
-func (f *FileEntry) SetName(name string) {
-	f.name = name
-}
-
-func (f *FileEntry) Time() int64 {
+func (f *FileProp) Time() int64 {
 	return f.time
 }
 
-func (f *FileEntry) Size() int64 {
+func (f *FileProp) Size() int64 {
 	return b64i(f.dref[:8])
 }
 
-// NewFileEntry creates a new file entry
-func NewFileEntry(name string, time int64, dref [40]byte) *FileEntry {
-	return &FileEntry{
+// newFileProp creates a new file entry
+func newFileProp(name string, time int64, dref [40]byte) *FileProp {
+	return &FileProp{
 		name: name,
 		time: time,
 		dref: dref,
 	}
 }
 
-func (f *FileEntry) ToBytes() []byte {
+func (f *FileProp) ToBytes() []byte {
 	// 1 byte type + 8 bytes time + 40 bytes data reference + name
 	buf := make([]byte, 49+len(f.name))
 	buf[0] = 1 // fileEntry type = 1
@@ -79,7 +85,7 @@ func (f *FileEntry) ToBytes() []byte {
 }
 
 // treeEntryFromBytes parses a tree entry from bytes
-func treeEntryFromBytes(data []byte) (TreeEntry, error) {
+func treeEntryFromBytes(data []byte) (TreeProp, error) {
 	if len(data) < 2 {
 		return nil, fserr.IO()
 	}
@@ -87,7 +93,7 @@ func treeEntryFromBytes(data []byte) (TreeEntry, error) {
 	switch data[0] {
 	case 0:
 		// dirEntry: 1 byte type + name
-		return &DirEntry{name: string(data[1:])}, nil
+		return newDirProp(string(data[1:])), nil
 	case 1:
 		// fileEntry: 1 byte type + 8 bytes time + 40 bytes data reference + name
 		if len(data) < 50 {
@@ -95,7 +101,7 @@ func treeEntryFromBytes(data []byte) (TreeEntry, error) {
 		}
 		dref := [40]byte{}
 		copy(dref[:], data[9:49])
-		return NewFileEntry(string(data[49:]), b64i(data[1:9]), dref), nil
+		return newFileProp(string(data[49:]), b64i(data[1:9]), dref), nil
 	default:
 		return nil, fserr.IO()
 	}
