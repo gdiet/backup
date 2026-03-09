@@ -8,7 +8,13 @@ This backup utility uses content defined chunking together with data deduplicati
 
 Example:
 
-`go run ./cmd backup source target`
+    go run ./cmd backup source target
+
+### Git Hooks
+
+To install the recommended git hooks, run
+
+    ./build/install-git-hooks.sh
 
 ### Line Coverage in Visual Studio Code
 
