@@ -124,12 +124,12 @@ func validateSources(sources []string) {
 }
 
 func ensureTargetExistsAndIsDir(m *meta.Metadata, targetPath []string) {
-	_, entry, err := m.Lookup(targetPath)
+	entry, err := m.Lookup(targetPath)
 	if err != nil {
 		slog.Error("Target does not exist", "target", "/"+strings.Join(targetPath, "/"), "error", err)
 		os.Exit(1)
 	}
-	if _, isDir := entry.(*meta.DirProp); !isDir {
+	if _, isDir := entry.(*meta.DirEntry); !isDir {
 		slog.Error("Target exists but is not a directory", "target", "/"+strings.Join(targetPath, "/"))
 		os.Exit(1)
 	}
@@ -158,8 +158,7 @@ func createMissingTargetDirs(m *meta.Metadata, targetPath []string) {
 	// FIXME check implementation, then remove below
 	for i := 1; i <= len(targetPath); i++ {
 		sub := targetPath[:i]
-		_, _, err := m.Lookup(sub)
-		if err != nil {
+		if _, err := m.Lookup(sub); err != nil {
 			// Only create if not found
 			if err := createDirWithParents(m, sub); err != nil {
 				slog.Error("Failed to create target directory", "path", "/"+strings.Join(sub, "/"), "error", err)
@@ -178,11 +177,10 @@ func createDirWithParents(m *meta.Metadata, targetPath []string) error {
 	if err := createDirWithParents(m, parent); err != nil {
 		return err
 	}
-	_, _, err := m.Lookup(targetPath)
-	if err == nil {
+	if _, err := m.Lookup(targetPath); err == nil {
 		return nil // already exists
 	}
-	_, err = m.Mkdir(targetPath)
+	_, err := m.Mkdir(targetPath)
 	return err
 }
 

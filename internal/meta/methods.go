@@ -26,24 +26,24 @@ func (m *Metadata) updateTreeChildren(fn func(tree, children *bbolt.Bucket) erro
 // lookup resolves a path (array of tree entry names) to both ID and TreeProp.
 // Returns NotFound if any component of the path does not exist.
 // An empty path returns the root directory (ID 0 with synthetic root entry).
-func lookup(tree, children *bbolt.Bucket, path []string) (id []byte, entry TreeProp, err error) {
-	id = RootId
+func lookup(tree, children *bbolt.Bucket, path []string) (entry TreeEntryIface, err error) {
 	if len(path) == 0 {
-		return id, newDirProp(""), nil
+		return rootEntry, nil
 	}
+	entry = rootEntry
 	for _, component := range path {
-		id, entry, err = getChild(tree, children, id, component)
+		entry, err = getChild(tree, children, entry.ID(), component)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 	}
-	return id, entry, nil
+	return entry, nil
 }
 
 // getChild searches for a child with the given name under the specified parent.
 // Returns the child ID and the tree entry.
 // Returns NotFound if the parent or the child does not exist.
-func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, TreeProp, error) {
+func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) (entry TreeEntryIface, err error) {
 	cursor := children.Cursor()
 	for k, _ := cursor.Seek(parentID); len(k) > 0; k, _ = cursor.Next() {
 		if !bytes.HasPrefix(k, parentID) {
@@ -51,20 +51,19 @@ func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byt
 		}
 		if len(k) != 16 {
 			util.AssertionFailed("invalid child key length")
-			return nil, nil, fserr.IO()
+			return nil, fserr.IO()
 		}
 
 		childID := k[8:16]
-		entry, err := treeEntryFromBytes(tree.Get(childID))
-		if err != nil {
-			return nil, nil, err
+		if entry, err = treeEntryFromBytes(childID, tree.Get(childID)); err != nil {
+			return nil, err
 		}
 
 		if entry.Name() == name {
-			return childID, entry, nil
+			return entry, nil
 		}
 	}
-	return nil, nil, fserr.NotFound
+	return nil, fserr.NotFound
 }
 
 // mkdir creates a new directory. It does not check whether the parent exists or is a directory.
@@ -72,7 +71,7 @@ func getChild(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byt
 // Returns os.ErrExist if a child with the same name already exists under the specified parent.
 func mkdir(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, error) {
 	// Check if child with name already exists
-	_, _, err := getChild(tree, children, parentID, name)
+	_, err := getChild(tree, children, parentID, name)
 	if err == nil {
 		return nil, fserr.Exists
 	}
@@ -84,7 +83,7 @@ func mkdir(tree, children *bbolt.Bucket, parentID []byte, name string) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	dirEntry := newDirProp(name)
+	dirEntry := &DirEntry{TreeEntry{name: name}}
 	if err = tree.Put(nextID, dirEntry.ToBytes()); err != nil {
 		return nil, err
 	}
@@ -114,7 +113,7 @@ func addChild(children *bbolt.Bucket, parentID []byte, id []byte) error {
 }
 
 // readdir lists the entries under the specified parent directory. It does not check whether the parent exists.
-func readdir(tree, children *bbolt.Bucket, parentID []byte) (entries []TreeProp, err error) {
+func readdir(tree, children *bbolt.Bucket, parentID []byte) (entries []TreeEntryIface, err error) {
 	cursor := children.Cursor()
 	for k, _ := cursor.Seek(parentID); len(k) > 0; k, _ = cursor.Next() {
 		if !bytes.HasPrefix(k, parentID) {
@@ -137,12 +136,12 @@ func readdir(tree, children *bbolt.Bucket, parentID []byte) (entries []TreeProp,
 
 // treeEntry retrieves a TreeProp by its ID bytes
 // Returns NotFound if the entry does not exist.
-func treeEntry(tree *bbolt.Bucket, id []byte) (TreeProp, error) {
-	bytes := tree.Get(id)
-	if bytes == nil {
+func treeEntry(tree *bbolt.Bucket, id []byte) (TreeEntryIface, error) {
+	if entryBytes := tree.Get(id); entryBytes == nil {
 		return nil, fserr.NotFound
+	} else {
+		return treeEntryFromBytes(id, entryBytes)
 	}
-	return treeEntryFromBytes(bytes)
 }
 
 // Rmdir removes a directory specified by its ID under the given parent ID.
@@ -170,7 +169,7 @@ func hasChildren(children *bbolt.Bucket, id []byte) bool {
 }
 
 // removeChild removes the child relationship between parentID and id.
-func removeChild(children *bbolt.Bucket, parentID []byte, id []byte) error {
+func removeChild(children *bbolt.Bucket, parentID, id []byte) error {
 	key := make([]byte, 16)
 	copy(key[0:8], parentID)
 	copy(key[8:16], id)
@@ -196,20 +195,20 @@ func checkForRootDirectoryRename(oldPath []string, newPath []string) (bool, erro
 // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 func renameDirectory(
 	tree *bbolt.Bucket, children *bbolt.Bucket,
-	oldParentID, oldEntryID []byte, oldEntry TreeProp,
+	oldParentID []byte, oldEntry *DirEntry,
 	newParentID []byte, newEntryName string) error {
 
 	// Lookup destination entry to replace, if any
-	replaceEntryID, replaceEntry, getReplaceEntryError := getChild(tree, children, newParentID, newEntryName)
+	replaceEntry, getReplaceEntryError := getChild(tree, children, newParentID, newEntryName)
 
 	if getReplaceEntryError == nil {
 		// Destination exists
 		switch replaceEntry.(type) {
-		case *FileProp:
+		case *FileEntry:
 			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
-		case *DirProp:
+		case *DirEntry:
 			// Remove destination entry unless it's not empty
-			err := rmdir(tree, children, newParentID, replaceEntryID)
+			err := rmdir(tree, children, newParentID, replaceEntry.ID())
 			if err != nil {
 				return err // Returns NotEmpty if trying to rename a directory to an existing non-empty directory.
 			}
@@ -220,17 +219,17 @@ func renameDirectory(
 	}
 
 	// Move entry to new location
-	if err := removeChild(children, oldParentID, oldEntryID); err != nil {
+	if err := removeChild(children, oldParentID, oldEntry.id); err != nil {
 		return err
 	}
-	if err := addChild(children, newParentID, oldEntryID); err != nil {
+	if err := addChild(children, newParentID, oldEntry.ID()); err != nil {
 		return err
 	}
 
 	// Rename to the new name if necessary
 	if oldEntry.Name() != newEntryName {
-		newEntry := newDirProp(newEntryName)
-		err := tree.Put(oldEntryID, newEntry.ToBytes())
+		newEntry := &DirEntry{TreeEntry{name: newEntryName}}
+		err := tree.Put(oldEntry.ID(), newEntry.ToBytes())
 		util.Assertf(err == nil, "bbolt put failed: %v", err)
 		return err
 	}

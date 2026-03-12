@@ -12,7 +12,9 @@ import (
 
 const RootID64 uint64 = 0
 
-var RootId = u64b(RootID64)
+// FIXME check usage
+var rootId = u64b(RootID64)
+var rootEntry = &DirEntry{TreeEntry{rootId, ""}}
 
 type Metadata struct {
 	db           *bbolt.DB
@@ -65,22 +67,22 @@ func (m *Metadata) Close() error {
 
 // Lookup looks up a path and returns the ID and tree entry.
 // Returns NotFound if the path does not exist.
-func (m *Metadata) Lookup(path []string) (id []byte, entry TreeProp, err error) {
+func (m *Metadata) Lookup(path []string) (entry TreeEntryIface, err error) {
 	err = m.viewTreeChildren(func(tree, children *bbolt.Bucket) error {
-		id, entry, err = lookup(tree, children, path)
+		entry, err = lookup(tree, children, path)
 		return err
 	})
-	return id, entry, err
+	return entry, err
 }
 
 // GetChild looks up a child by name under the specified parent ID.
 // Returns NotFound if the parent or the child does not exist.
-func (m *Metadata) GetChild(parentID []byte, name string) (id []byte, entry TreeProp, err error) {
+func (m *Metadata) GetChild(parentID []byte, name string) (entry TreeEntryIface, err error) {
 	err = m.viewTreeChildren(func(tree, children *bbolt.Bucket) error {
-		id, entry, err = getChild(tree, children, parentID, name)
+		entry, err = getChild(tree, children, parentID, name)
 		return err
 	})
-	return id, entry, err
+	return entry, err
 }
 
 // Mkdir creates a new directory.
@@ -94,14 +96,14 @@ func (m *Metadata) Mkdir(path []string) (id []byte, err error) {
 	}
 
 	err = m.updateTreeChildren(func(tree, children *bbolt.Bucket) error {
-		parentID, parent, err := lookup(tree, children, path[:len(path)-1])
+		parent, err := lookup(tree, children, path[:len(path)-1])
 		switch {
 		case err != nil:
 			return err
-		case parent.(*DirProp) == nil:
+		case parent.(*DirEntry) == nil:
 			return fserr.NotDir
 		}
-		id, err = mkdir(tree, children, parentID, path[len(path)-1])
+		id, err = mkdir(tree, children, parent.ID(), path[len(path)-1])
 		return err
 	})
 	return id, err
@@ -111,16 +113,16 @@ func (m *Metadata) Mkdir(path []string) (id []byte, err error) {
 // Returns NotFound if the directory does not exist.
 // Returns NotDir if the path is not a directory.
 // Can return other errors.
-func (m *Metadata) Readdir(path []string) (entries []TreeProp, err error) {
+func (m *Metadata) Readdir(path []string) (entries []TreeEntryIface, err error) {
 	err = m.viewTreeChildren(func(tree, children *bbolt.Bucket) error {
-		id, entry, err := lookup(tree, children, path)
+		entry, err := lookup(tree, children, path)
 		switch {
 		case err != nil:
 			return err
-		case entry.(*DirProp) == nil:
+		case entry.(*DirEntry) == nil:
 			return fserr.NotDir
 		}
-		entries, err = readdir(tree, children, id)
+		entries, err = readdir(tree, children, entry.ID())
 		return err
 	})
 	return entries, err
@@ -136,24 +138,23 @@ func (m *Metadata) Rmdir(path []string) error {
 		return fserr.IsRoot // Can't remove root directory
 	}
 
-	// TODO continue refactoring: use updateTreeChildren, and have a struct TreeEntryWithID
 	return m.db.Update(func(tx *bbolt.Tx) error {
 		tree := tx.Bucket(m.treeKey)
 		children := tx.Bucket(m.childrenKey)
 
-		parentID, _, err := lookup(tree, children, path[:len(path)-1])
+		parent, err := lookup(tree, children, path[:len(path)-1])
 		if err != nil {
 			return err // NotFound
 		}
-		id, entry, err := getChild(tree, children, parentID, path[len(path)-1])
+		entry, err := getChild(tree, children, parent.ID(), path[len(path)-1])
 		if err != nil {
 			return err // NotFound
 		}
-		if _, isDir := entry.(*DirProp); !isDir {
+		if _, isDir := entry.(*DirEntry); !isDir {
 			return fserr.NotDir // Test coverage: needs file implementation
 		}
 
-		return rmdir(tree, children, parentID, id) // nil or NotEmpty
+		return rmdir(tree, children, parent.ID(), entry.ID()) // nil or NotEmpty
 	})
 }
 
@@ -178,11 +179,11 @@ func (m *Metadata) Rename(oldPath []string, newPath []string) error {
 		children := tx.Bucket(m.childrenKey)
 
 		// Lookup source: parent and entry
-		oldParentID, _, err := lookup(tree, children, oldPath[:len(oldPath)-1])
+		oldParent, err := lookup(tree, children, oldPath[:len(oldPath)-1])
 		if err != nil {
 			return err // Returns NotFound if the source path or a parent of the destination path does not exist.
 		}
-		oldEntryID, oldEntry, err := getChild(tree, children, oldParentID, oldPath[len(oldPath)-1])
+		oldEntry, err := getChild(tree, children, oldParent.ID(), oldPath[len(oldPath)-1])
 		if err != nil {
 			return err // Returns NotFound if the source path or a parent of the destination path does not exist.
 		}
@@ -193,22 +194,23 @@ func (m *Metadata) Rename(oldPath []string, newPath []string) error {
 		}
 
 		// Lookup destination: parent and, if any, entry
-		newParentID, newParent, err := lookup(tree, children, newPath[:len(newPath)-1])
+		newParent, err := lookup(tree, children, newPath[:len(newPath)-1])
 		if err != nil {
 			return err // Returns NotFound if the source path or a parent of the destination path does not exist.
 		}
 		// Ensure the new parent is a directory
 		switch newParent.(type) {
-		case *FileProp:
+		case *FileEntry:
 			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
-		case *DirProp:
+		case *DirEntry:
 			// continue
 		default:
 			util.AssertionFailedf("unexpected destination parent entry type %T in Rename", newParent)
 			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		}
 
-		if _, isDir := newParent.(*DirProp); !isDir {
+		// FIXME superfluous check
+		if _, isDir := newParent.(*DirEntry); !isDir {
 			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
 		}
 
@@ -218,16 +220,22 @@ func (m *Metadata) Rename(oldPath []string, newPath []string) error {
 		}
 
 		switch oldEntry.(type) {
-		case *FileProp:
+		case *FileEntry:
 			// Returns IsDir if trying to rename a file to a directory.
 			return errors.New("not implemented: renaming files") // TODO wait for implementation of files in the filesystem
-		case *DirProp:
+		case *DirEntry:
 			// continue
 		default:
 			util.AssertionFailedf("unexpected source entry type %T in Rename", oldEntry)
 			return errors.New("invalid entry type") // Should not happen
 		}
 
-		return renameDirectory(tree, children, oldParentID, oldEntryID, oldEntry, newParentID, newPath[len(newPath)-1])
+		// FIXME superfluous check
+		oldDir, isDir := oldEntry.(*DirEntry)
+		if !isDir {
+			return fserr.NotDir // Returns NotDir if a parent of the destination is not a directory or if trying to rename a directory to a file.
+		}
+
+		return renameDirectory(tree, children, oldParent.ID(), oldDir, newParent.ID(), newPath[len(newPath)-1])
 	})
 }
