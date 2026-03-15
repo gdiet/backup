@@ -10,184 +10,138 @@ import (
 
 	"github.com/gdiet/backup/internal/fserr"
 	"github.com/gdiet/backup/internal/meta"
+	"github.com/gdiet/backup/internal/util"
 )
 
-func Backup(repo string, sources []string, target string, tf BackupFlags) {
-	// If target does not start with "/", it's invalid
-	if !strings.HasPrefix(target, "/") {
-		slog.Error("Target path must be absolute (start with '/')", "target", target)
-		os.Exit(1)
+func Backup(repo string, args []string) error {
+	tf, rest := ParseBackupFlags(args)
+	if len(rest) < 2 {
+		return util.Invalid("backup requires one or more sources and one target")
 	}
+	sources, target := rest[:len(rest)-1], rest[len(rest)-1]
 
-	validateSources(sources)
+	if !strings.HasPrefix(target, "/") {
+		return util.Invalidf("target %s must start with '/'", target)
+	}
+	normalizedTarget := strings.TrimSuffix(target, "/")
+	targetPath := strings.Split(normalizedTarget, "/")[1:]
+
+	err := validateSources(sources)
+	if err != nil {
+		return err
+	}
 
 	// Open metadata
 	metaRepo := filepath.Join(repo, "meta")
 	m, err := meta.NewMetadata(metaRepo)
 	if err != nil {
-		slog.Error("Failed to open metadata", "repo", metaRepo, "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to open database from %s: %w", metaRepo, err)
 	}
 	defer func() {
-		if err := m.Close(); err != nil {
-			slog.Error("Failed to close metadata", "error", err)
+		err = m.Close()
+		if err != nil {
+			slog.Error(fmt.Sprintf("failed to close database: %s", err))
 		}
 	}()
 
-	// Split target path
-	targetPath := strings.Split(strings.TrimPrefix(strings.TrimSuffix(target, "/"), "/"), "/")
-
 	// Target validation logic
-	if tf.TargetExists {
-		ensureTargetExistsAndIsDir(m, targetPath)
-	} else if tf.CreateDirs {
-		createMissingTargetDirs(m, targetPath)
-	} else {
-		createTargetDirOnly(m, targetPath)
-	}
-	slog.Info("Validation OK, starting backup.", "sources", sources, "target", target)
-
-	err = backup(m, sources, targetPath)
+	var parentID []byte
+	err = m.Write(func(c *meta.Context) error {
+		if tf.TargetExists {
+			parentID, err = ensureTargetExistsAndIsDir(c, targetPath)
+		} else if tf.CreateDirs {
+			parentID, err = c.Mkdirs(targetPath)
+		} else {
+			parentID, err = c.Mkdir(targetPath)
+		}
+		return err
+	})
 	if err != nil {
-		slog.Error("Backup failed.", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to validate backup target %s: %w", normalizedTarget, err)
 	}
-	slog.Info("Backup completed.")
-}
+	slog.Info("validation OK, starting backup", "sources", sources, "target", normalizedTarget)
 
-func backup(m *meta.Metadata, sources []string, targetPath []string) error {
-	for _, src := range sources {
-		info, err := os.Stat(src)
-		if err != nil {
-			return fmt.Errorf("source %s: %w", src, err)
-		}
-		// Start recursion at root of source
-		relPath := []string{}
-		err = backupRecursive(m, src, info, targetPath, relPath)
-		if err != nil {
-			return fmt.Errorf("source %s: %w", src, err)
-		}
-	}
+	backup(m, sources, parentID, normalizedTarget)
 	return nil
 }
 
-// backupRecursive recursively backs up a directory tree, passing the current relative path
-func backupRecursive(m *meta.Metadata, src string, info os.FileInfo, targetPath []string, relPath []string) error {
-	// Build target directory path in metadata
-	tgtDirPath := append(targetPath, relPath...)
-	if info.IsDir() {
-		// Create directory in metadata (idempotent)
-		_, err := m.Mkdir(tgtDirPath)
-		if err != nil && !errors.Is(err, fserr.Exists) {
-			return err
-		}
-		slog.Info("Created directory", "source", src, "target", "/"+strings.Join(tgtDirPath, "/"))
-		// Read directory contents
-		entries, err := os.ReadDir(filepath.Join(src, filepath.Join(relPath...)))
+func backup(m *meta.Metadata, sources []string, parentID []byte, normalizedTarget string) {
+	warnings := 0
+	for _, src := range sources {
+		info, err := os.Stat(src)
 		if err != nil {
-			return err
+			slog.Warn(fmt.Sprintf("failed to access source %s: %s", src, err))
+			warnings++
+			continue
 		}
-		for _, entry := range entries {
-			entryInfo, err := entry.Info()
-			if err != nil {
-				slog.Warn("Failed to stat entry", "path", entry.Name(), "error", err)
-				continue
-			}
-			nextRelPath := append(relPath, entry.Name())
-			err = backupRecursive(m, src, entryInfo, targetPath, nextRelPath)
-			if err != nil {
-				return err
-			}
-		}
+		warnings += backupEntry(m, src, info, parentID, normalizedTarget+"/"+info.Name())
+	}
+	if warnings == 0 {
+		slog.Info("backup completed successfully")
+	} else {
+		slog.Info(fmt.Sprintf("backup completed with %d warnings", warnings))
+	}
+}
+
+func backupEntry(m *meta.Metadata, src string, info os.FileInfo, parentID []byte, normalizedTarget string) int {
+	if info.IsDir() {
+		return backupDirectory(m, src, info, parentID, normalizedTarget)
 	} else if info.Mode().IsRegular() {
 		// TODO: Handle regular files (add file to metadata, deduplication, etc.)
-		slog.Info("Would backup file", "source", filepath.Join(src, filepath.Join(relPath...)), "target", "/"+strings.Join(tgtDirPath, "/"))
+		slog.Debug(fmt.Sprintf("would backup file %s", src))
+		return 0
 	} else {
-		slog.Warn("Unsupported type - skipping", "path", filepath.Join(src, filepath.Join(relPath...)), "file mode", info.Mode())
+		slog.Warn(fmt.Sprintf("unsupported type - skipping %s (file type: %s)", src, info.Mode().Type()))
+		return 1
+	}
+}
+
+func backupDirectory(m *meta.Metadata, src string, info os.FileInfo, parentID []byte, normalizedTarget string) int {
+	var err error
+	var id []byte
+	err = m.Write(func(c *meta.Context) error { id, err = c.MkdirUnchecked(parentID, info.Name()); return err })
+	if err != nil && !errors.Is(err, fserr.Exists) {
+		slog.Warn(fmt.Sprintf("failed to create target directory %s: %s", normalizedTarget, err))
+		return 1
+	}
+	slog.Debug(fmt.Sprintf("created target directory %s", normalizedTarget))
+	// Read source directory
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		slog.Warn(fmt.Sprintf("failed to read directory %s: %s", src, err))
+		return 1
+	}
+	warnings := 0
+	for _, entry := range entries {
+		info, err = entry.Info()
+		if err != nil {
+			slog.Warn(fmt.Sprintf("failed to access directory entry %s: %s", entry.Name(), err))
+			warnings++
+			continue
+		}
+		child := filepath.Join(src, entry.Name())
+		warnings += backupEntry(m, child, info, id, normalizedTarget+"/"+info.Name())
+	}
+	return warnings
+}
+
+func validateSources(sources []string) error {
+	for _, src := range sources {
+		_, err := os.Stat(src)
+		if err != nil {
+			return fmt.Errorf("failed to access source %s: %w", src, err)
+		}
 	}
 	return nil
 }
 
-func validateSources(sources []string) {
-	// Sources must exist and be directories. Later, we may allow file sources as well.
-	for _, src := range sources {
-		info, err := os.Stat(src)
-		if err != nil {
-			slog.Error("Source does not exist or is not accessible", "source", src, "error", err)
-			os.Exit(1)
-		}
-		if !info.IsDir() {
-			slog.Error("Source is not a directory", "source", src)
-			os.Exit(1)
-		}
-	}
-}
-
-func ensureTargetExistsAndIsDir(m *meta.Metadata, targetPath []string) {
-	entry, err := m.Lookup(targetPath)
+func ensureTargetExistsAndIsDir(c *meta.Context, targetPath []string) ([]byte, error) {
+	entry, err := c.Lookup(targetPath)
 	if err != nil {
-		slog.Error("Target does not exist", "target", "/"+strings.Join(targetPath, "/"), "error", err)
-		os.Exit(1)
+		return nil, err
 	}
 	if _, isDir := entry.(*meta.DirEntry); !isDir {
-		slog.Error("Target exists but is not a directory", "target", "/"+strings.Join(targetPath, "/"))
-		os.Exit(1)
+		return nil, fmt.Errorf("target is not a directory")
 	}
-}
-
-func createMissingTargetDirs(m *meta.Metadata, targetPath []string) {
-	//parentId := meta.RootID64
-	//for _, filename := range targetPath {
-	//	id, _, err := m.GetChild(parentId, filename)
-	//	switch err {
-	//	case nil:
-	//		parentId = id
-	//	case fserr.NotFound:
-	//		id, err = m.Mkdir(append([]string{parentId}, filename))
-	//		if err != nil {
-	//			slog.Error("Failed to create target directory", "path", "/"+strings.Join(targetPath, "/"), "error", err)
-	//			os.Exit(1)
-	//		}
-	//		parentId = id
-	//	default:
-	//		// other error
-	//		slog.Error("Failed to lookup target directory", "path", "/"+strings.Join(targetPath, "/"), "error", err)
-	//		os.Exit(1)
-	//	}
-	//}
-	// FIXME check implementation, then remove below
-	for i := 1; i <= len(targetPath); i++ {
-		sub := targetPath[:i]
-		if _, err := m.Lookup(sub); err != nil {
-			// Only create if not found
-			if err := createDirWithParents(m, sub); err != nil {
-				slog.Error("Failed to create target directory", "path", "/"+strings.Join(sub, "/"), "error", err)
-				os.Exit(1)
-			}
-		}
-	}
-}
-
-// createDirWithParents creates a directory and all its parents if needed (idempotent)
-func createDirWithParents(m *meta.Metadata, targetPath []string) error {
-	if len(targetPath) == 0 {
-		return nil // root always exists
-	}
-	parent := targetPath[:len(targetPath)-1]
-	if err := createDirWithParents(m, parent); err != nil {
-		return err
-	}
-	if _, err := m.Lookup(targetPath); err == nil {
-		return nil // already exists
-	}
-	_, err := m.Mkdir(targetPath)
-	return err
-}
-
-func createTargetDirOnly(m *meta.Metadata, targetPath []string) {
-	_, err := m.Mkdir(targetPath)
-	if err != nil {
-		slog.Error("Can't create target directory", "parent", "/"+strings.Join(targetPath, "/"), "error", err)
-		os.Exit(1)
-	}
+	return entry.ID(), nil
 }

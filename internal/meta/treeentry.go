@@ -2,21 +2,18 @@ package meta
 
 import "github.com/gdiet/backup/internal/fserr"
 
-// FIXME do we need this at all?
-// TreeEntry represents a directory or file entry in the tree
-type TreeEntry struct {
-	id   []byte
-	name string
-}
-
-type TreeEntryIface interface {
+type TreeEntry interface {
 	ID() []byte
 	Name() string
 }
 
+var _ TreeEntry = (*DirEntry)(nil)
+var _ TreeEntry = (*FileEntry)(nil)
+
 // DirEntry represents a directory entry in the tree
 type DirEntry struct {
-	TreeEntry
+	id   []byte
+	name string
 }
 
 func (d *DirEntry) ID() []byte   { return d.id }
@@ -33,7 +30,8 @@ func (d *DirEntry) ToBytes() []byte {
 
 // FileEntry represents a file entry in the tree
 type FileEntry struct {
-	TreeEntry
+	id   []byte
+	name string
 	time int64    // UnixMilli
 	dref [40]byte // len|hash of dataEntry
 }
@@ -59,9 +57,8 @@ func dref(src []byte) [40]byte {
 	return dref
 }
 
-// FIXME rename to treeEntryFrom
-// treeEntryFromBytes parses a tree entry from bytes
-func treeEntryFromBytes(id, data []byte) (TreeEntryIface, error) {
+// treeEntryFrom parses a tree entry from bytes
+func treeEntryFrom(id, data []byte) (TreeEntry, error) {
 	if len(data) < 2 {
 		return nil, fserr.IO()
 	}
@@ -69,13 +66,13 @@ func treeEntryFromBytes(id, data []byte) (TreeEntryIface, error) {
 	switch data[0] {
 	case 0:
 		// dirEntry: 1 byte type + name
-		return &DirEntry{TreeEntry{id, string(data[1:])}}, nil
+		return &DirEntry{id, string(data[1:])}, nil
 	case 1:
 		// fileEntry: 1 byte type + 8 bytes time + 40 bytes data reference + name
 		if len(data) < 50 {
 			return nil, fserr.IO()
 		}
-		return &FileEntry{TreeEntry{id, string(data[49:])}, b64i(data[1:9]), dref(data[9:49])}, nil
+		return &FileEntry{id, string(data[49:]), b64i(data[1:9]), dref(data[9:49])}, nil
 	}
 	return nil, fserr.IO()
 }

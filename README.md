@@ -10,6 +10,12 @@ Example:
 
     go run ./cmd backup source target
 
+### Code Conventions
+
+- Use `os.Exit` only in the single exit point of `func main()`.
+- Exit code `1` indicates processing failures, exit code `2` indicates incorrect usage of the application (e.g. missing arguments, invalid flags, etc.).
+- Don't use `panic` outside of the non-production `assert` implementation.
+
 ### Git Hooks
 
 To install the recommended git hooks, run

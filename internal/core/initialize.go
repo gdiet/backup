@@ -1,23 +1,25 @@
 package core
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 )
 
-func Initialize(repo string) {
-	if _, err := os.Stat(repo); err == nil {
-		slog.Error("Repository directory already exists", "repo", repo)
-		os.Exit(1)
+func Initialize(repo string) error {
+	_, err := os.Stat(repo)
+	if err == nil {
+		return fmt.Errorf("repository directory %s already exists", repo)
 	}
-	if err := os.MkdirAll(filepath.Join(repo, "meta"), 0o755); err != nil {
-		slog.Error("Failed to create meta directory", "repo", repo, "error", err)
-		os.Exit(1)
+	err = os.MkdirAll(filepath.Join(repo, "meta"), 0o755)
+	if err != nil {
+		return fmt.Errorf("failed to create meta directory in %s: %w", repo, err)
 	}
-	if err := os.MkdirAll(filepath.Join(repo, "data"), 0o755); err != nil {
-		slog.Error("Failed to create data directory", "repo", repo, "error", err)
-		os.Exit(1)
+	err = os.MkdirAll(filepath.Join(repo, "data"), 0o755)
+	if err != nil {
+		return fmt.Errorf("failed to create data directory in %s: %w", repo, err)
 	}
-	slog.Info("Repository initialized", "repo", repo)
+	slog.Info("repository initialized", "repo", repo)
+	return nil
 }

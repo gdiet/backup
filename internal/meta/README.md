@@ -1,19 +1,24 @@
 This package provides tree, file and data reference metadata for the deduplicating file system, implemented as bbolt buckets.
 
+### Conventions
+
+- Paths are string slices, with nil or empty for the root directory.
+
 ### bbolt Buckets For The File System Metadata
 
 #### General Format
 
-- id and start are 8-byte big endian uint64 values.
-- length is an 8-byte big endian int64 value.
-- time is stored as an 8-byte big endian int64 unix time in milliseconds.
+- Numbers are signed 64 bit big endian.
+- time is unix time in milliseconds.
 - hash is the 32-byte Blake3 hash.
 - File system settings are persisted as key-value string pairs.
+
+For simplicity, a fixed-size numbers are used. Variable length numbers would save ~15% of database size, that's not worth it.
 
 #### Buckets:
 
 | Bucket             | Key                    | Value                   |
-| ------------------ | ---------------------- | ----------------------- |
+|--------------------|------------------------|-------------------------|
 | tree entries       | id                     | dir entry or file entry |
 | children           | parent id and child id | ---                     |
 | data entries       | length and hash        | list of start and end   |
@@ -23,7 +28,7 @@ This package provides tree, file and data reference metadata for the deduplicati
 #### Dir Entry:
 
 | Field     | Size (bytes) | Description          |
-| --------- | ------------ | -------------------- |
+|-----------|--------------|----------------------|
 | type      | 1            | entry type (value 0) |
 | name      | average 23   | file name (UTF-8)    |
 | **total** | 24           |                      |
@@ -44,7 +49,7 @@ A file entry can have multiple data references to allow for content defined chun
 #### Estimated Metadata Size of a Single Small File:
 
 | Field            | Size (bytes) |
-| ---------------- | ------------ |
+|------------------|--------------|
 | tree entry id    | 8            |
 | file entry       | 72           |
 | children         | 16           |
