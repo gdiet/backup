@@ -7,6 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/gdiet/backup/internal/fserr"
 	"github.com/gdiet/backup/internal/meta"
@@ -65,64 +68,96 @@ func Backup(repo string, args []string) error {
 	return nil
 }
 
-func backup(m *meta.Metadata, sources []string, parentID []byte, normalizedTarget string) {
-	warnings := 0
+func backup(m *meta.Metadata, sources []string, parentID []byte, target string) {
+	warnings := &atomic.Uint64{}
+	// worker pool for running func backupFile
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4) // TODO: eventually, make concurrency level configurable
 	for _, src := range sources {
 		info, err := os.Stat(src)
 		if err != nil {
 			slog.Warn(fmt.Sprintf("failed to access source %s: %s", src, err))
-			warnings++
+			warnings.Add(1)
 			continue
 		}
-		warnings += backupEntry(m, src, info, parentID, normalizedTarget+"/"+info.Name())
+		backupEntry(m, src, info, parentID, target+"/"+info.Name(), &techParams{warnings, &wg, sem})
 	}
-	if warnings == 0 {
+	wg.Wait()
+	if warnings.Load() == 0 {
 		slog.Info("backup completed successfully")
 	} else {
-		slog.Info(fmt.Sprintf("backup completed with %d warnings", warnings))
+		slog.Info(fmt.Sprintf("backup completed with %d warnings", warnings.Load()))
 	}
 }
 
-func backupEntry(m *meta.Metadata, src string, info os.FileInfo, parentID []byte, normalizedTarget string) int {
+type techParams struct {
+	warnings *atomic.Uint64
+	wg       *sync.WaitGroup
+	sem      chan struct{}
+}
+
+func backupEntry(
+	m *meta.Metadata, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
+) {
 	if info.IsDir() {
-		return backupDirectory(m, src, info, parentID, normalizedTarget)
-	} else if info.Mode().IsRegular() {
-		// TODO: Handle regular files (add file to metadata, deduplication, etc.)
-		slog.Debug(fmt.Sprintf("would backup file %s", src))
-		return 0
-	} else {
-		slog.Warn(fmt.Sprintf("unsupported type - skipping %s (file type: %s)", src, info.Mode().Type()))
-		return 1
+		backupDirectory(m, src, info, parentID, target, tp)
+		return
 	}
+	if info.Mode().IsRegular() {
+		backupFile(m, src, info, parentID, target, tp)
+		return
+	}
+	slog.Warn(fmt.Sprintf("unsupported type - skipping %s (file type: %s)", src, info.Mode().Type()))
+	tp.warnings.Add(1)
 }
 
-func backupDirectory(m *meta.Metadata, src string, info os.FileInfo, parentID []byte, normalizedTarget string) int {
+func backupFile(
+	m *meta.Metadata, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
+) {
+	tp.sem <- struct{}{} // block if worker pool is full
+	tp.wg.Add(1)
+	go func() {
+		defer tp.wg.Done()
+		defer func() { <-tp.sem }()
+		// jpg, jpeg, ...: FF D8 FF, and fourth byte C0–FE => custom chunking
+		// avif, avis, ...: bytes[4..7] == 'avif' or bytes[4..7] == 'avis' => custom chunking
+		// file <= 2*1024*1024 => single chunk
+		// otherwise => cdc
+		time.Sleep(1 * time.Second)
+		slog.Debug(fmt.Sprintf("backing up %s to %s", src, target))
+		tp.warnings.Add(1) // TODO: implement file backup
+	}()
+}
+
+func backupDirectory(
+	m *meta.Metadata, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
+) {
 	var err error
 	var id []byte
 	err = m.Write(func(c *meta.Context) error { id, err = c.MkdirUnchecked(parentID, info.Name()); return err })
 	if err != nil && !errors.Is(err, fserr.Exists) {
-		slog.Warn(fmt.Sprintf("failed to create target directory %s: %s", normalizedTarget, err))
-		return 1
+		slog.Warn(fmt.Sprintf("failed to create target directory %s: %s", target, err))
+		tp.warnings.Add(1)
+		return
 	}
-	slog.Debug(fmt.Sprintf("created target directory %s", normalizedTarget))
+	slog.Debug(fmt.Sprintf("created target directory %s", target))
 	// Read source directory
 	entries, err := os.ReadDir(src)
 	if err != nil {
 		slog.Warn(fmt.Sprintf("failed to read directory %s: %s", src, err))
-		return 1
+		tp.warnings.Add(1)
+		return
 	}
-	warnings := 0
 	for _, entry := range entries {
 		info, err = entry.Info()
 		if err != nil {
 			slog.Warn(fmt.Sprintf("failed to access directory entry %s: %s", entry.Name(), err))
-			warnings++
+			tp.warnings.Add(1)
 			continue
 		}
 		child := filepath.Join(src, entry.Name())
-		warnings += backupEntry(m, child, info, id, normalizedTarget+"/"+info.Name())
+		backupEntry(m, child, info, id, target+"/"+info.Name(), tp)
 	}
-	return warnings
 }
 
 func validateSources(sources []string) error {
