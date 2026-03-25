@@ -133,3 +133,11 @@ func requireSumIs(t *testing.T, numbers []int, expected int) {
 	}
 	require.Equal(t, expected, sum)
 }
+
+func BenchmarkCdc(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		chunker := cdc.NewChunker(20)
+		chunker.Next(data)
+	}
+}
