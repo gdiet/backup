@@ -35,7 +35,7 @@ func (c *Chunker) Flush() []int {
 	return result
 }
 
-func (c *Chunker) Next(data []byte) []int {
+func (c *Chunker) Next(data []byte) []int { // NOSONAR: complexity justified - alternative implementations perform worse in benchmarks
 	var chunkPositions []int
 outer:
 	for i := 0; i < len(data); {
