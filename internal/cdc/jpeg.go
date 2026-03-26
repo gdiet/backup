@@ -12,26 +12,32 @@ type JpegChunker struct {
 
 var _ Chunker = (*JpegChunker)(nil)
 
-func (f JpegChunker) Next(data []byte) []int {
+func (f *JpegChunker) Next(data []byte) []int {
 	if f.chunker != nil {
 		return f.chunker.Next(data)
 	}
 	if len(data) == 0 {
 		return nil
 	}
-	// Check for DA after FF
-	if f.endsWithFF && data[0] == 0xDA {
-		return append([]int{len(f.buf) + 1}, f.cdc().Next(data[1:])...)
+	// Find FF DA (SOS marker) in data
+	if f.endsWithFF {
+		// Check for DA after FF
+		if data[0] == 0xDA {
+			// SOS found: buf already contains FF, +1 accounts for DA
+			return append([]int{len(f.buf) + 1}, f.cdc().Next(data[1:])...)
+		}
+		f.endsWithFF = false
 	}
-	// Find FF in data
+	// Check for FF
 	for i, b := range data {
 		if i+len(f.buf) >= 256*1024 {
 			break
 		}
-		if b == 0xff {
-			f.buf = append(f.buf, data[:i]...)
+		if b == 0xFF {
+			f.buf = append(f.buf, data[:i+1]...)
 			f.endsWithFF = true
-			return f.Next(data[i:])
+			// Recurse to check for DA
+			return f.Next(data[i+1:])
 		}
 	}
 	f.buf = append(f.buf, data...)
@@ -41,14 +47,14 @@ func (f JpegChunker) Next(data []byte) []int {
 	return nil
 }
 
-func (f JpegChunker) Flush() []int {
+func (f *JpegChunker) Flush() []int {
 	if f.chunker != nil {
 		return f.chunker.Flush()
 	}
 	return f.cdc().Flush()
 }
 
-func (f JpegChunker) cdc() Chunker {
+func (f *JpegChunker) cdc() Chunker {
 	f.chunker = NewCDC(f.normSizeBits)
 	return f.chunker
 }
