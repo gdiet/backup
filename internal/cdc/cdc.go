@@ -13,8 +13,8 @@ type Chunker struct {
 
 func NewChunker(normSizeBits int) *Chunker {
 	normSize := 1 << normSizeBits
-	minSize := normSize / 4 // Factor 4 is the fastcdc-go default
-	maxSize := normSize * 4 // Factor 4 is the fastcdc-go default
+	minSize := normSize / 4 // Factor / 4 is the fastcdc-go default
+	maxSize := normSize * 4 // Factor * 4 is the fastcdc-go default
 	return &Chunker{
 		normSize:  normSize,            // e.g. 0x 100000
 		minSize:   minSize,             // e.g. 0x  40000

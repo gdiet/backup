@@ -121,7 +121,7 @@ func backupFile(
 		defer func() { <-tp.sem }()
 		// jpg, jpeg, ...: FF D8 FF, and fourth byte C0–FE => custom chunking
 		// avif, avis, ...: bytes[4..7] == 'avif' or bytes[4..7] == 'avis' => custom chunking
-		// file <= 2*1024*1024 => single chunk
+		// file <= 512*1024 => single chunk
 		// otherwise => cdc
 		time.Sleep(1 * time.Second)
 		slog.Debug(fmt.Sprintf("backing up %s to %s", src, target))

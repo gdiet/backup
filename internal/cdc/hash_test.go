@@ -1,0 +1,84 @@
+package cdc_test
+
+import (
+	"testing"
+
+	"github.com/gdiet/backup/internal/cdc"
+	"github.com/stretchr/testify/require"
+)
+
+var expectedChunks = []cdc.LengthHash{
+	{1155789, []uint8{0xe5, 0xd1, 0xda, 0x22, 0xb1, 0x32, 0xff, 0x78, 0xd3, 0x12, 0x49, 0x51, 0x1d, 0x7d, 0xa4, 0x2d, 0xa9, 0x10, 0x0b, 0x93}},
+	{1045751, []uint8{0xc0, 0xa7, 0xcf, 0x6a, 0x80, 0x0b, 0x32, 0xf2, 0xc7, 0xf7, 0x8f, 0x92, 0xef, 0x28, 0x2c, 0x9d, 0x8d, 0x97, 0x1b, 0x35}},
+	{1216779, []uint8{0x3d, 0xe9, 0x20, 0x17, 0xe1, 0x12, 0x4d, 0xd8, 0x4d, 0x7f, 0x1e, 0x11, 0x59, 0x5d, 0x6d, 0x7a, 0x9b, 0x1d, 0x80, 0xc6}},
+	{1139656, []uint8{0x0e, 0x19, 0x42, 0xd6, 0x24, 0x37, 0xae, 0xe6, 0x0a, 0xc7, 0xbc, 0x3e, 0xe0, 0x3f, 0x39, 0xf2, 0x46, 0x5e, 0x3a, 0x3a}},
+	{1056756, []uint8{0x8f, 0xa4, 0xbe, 0x3d, 0xb8, 0x2b, 0xb2, 0x59, 0x1a, 0x4f, 0xf5, 0x15, 0x71, 0x1e, 0x3b, 0xde, 0x4e, 0xfc, 0x68, 0xd6}},
+	{1192330, []uint8{0x2e, 0x58, 0x4b, 0x99, 0x7f, 0x6f, 0x6e, 0xc5, 0x9e, 0x28, 0xe4, 0x5f, 0x64, 0xb0, 0xdb, 0x8b, 0xcf, 0xf0, 0xe9, 0x43}},
+	{532971, []uint8{0xc1, 0x69, 0x12, 0x89, 0xa9, 0xc2, 0x16, 0xf8, 0x26, 0x38, 0xcd, 0x68, 0xdd, 0xe2, 0x19, 0x8f, 0xec, 0x1b, 0x07, 0x65}},
+}
+
+func TestExpectedValues(t *testing.T) {
+	for i, _ := range expectedChunks {
+		require.Equal(t, expectedChunkSizes[i], expectedChunks[i].Length)
+	}
+}
+
+func TestHash_basic(t *testing.T) {
+	// Verify chunking in the most basic case.
+	chunker := cdc.NewHashingChunker(20)
+	chunks := append(chunker.Next(data), chunker.Flush()...)
+	require.Equal(t, expectedChunks, chunks)
+}
+
+func TestHash_multipartInput(t *testing.T) {
+	// Verify chunking if the input data is provided in multiple parts, e.g. as it is read from a file.
+	testCases := []struct {
+		name  string
+		input []int
+	}{
+		{
+			name:  "in one piece",
+			input: []int{},
+		},
+		{
+			name:  "split before minSize",
+			input: []int{1155789 + 1000},
+		},
+		{
+			name:  "split at minSize border",
+			input: []int{1155789 + 1<<18 - 1, 1, 1},
+		},
+		{
+			name:  "split at normSize border",
+			input: []int{1155789 + 1<<20 - 1, 1, 1},
+		},
+		{
+			name:  "split at chunk border",
+			input: []int{1155789 + 1045751 - 1, 1, 1},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			chunker := cdc.NewHashingChunker(20)
+			remaining := data
+			var chunks []cdc.LengthHash
+			for _, split := range tc.input {
+				chunks = append(chunks, chunker.Next(remaining[:split])...)
+				remaining = remaining[split:]
+			}
+			chunks = append(chunks, chunker.Next(remaining)...)
+			chunks = append(chunks, chunker.Flush()...)
+			require.Equal(t, expectedChunks, chunks)
+		})
+	}
+}
+
+func BenchmarkHash(b *testing.B) {
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		chunker := cdc.NewHashingChunker(20)
+		chunker.Next(data)
+		chunker.Flush()
+	}
+}

@@ -139,5 +139,6 @@ func BenchmarkCdc(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		chunker := cdc.NewChunker(20)
 		chunker.Next(data)
+		chunker.Flush()
 	}
 }
