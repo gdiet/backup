@@ -23,7 +23,7 @@ func (l *LogHandler) Enabled(_ context.Context, level slog.Level) bool {
 }
 
 func (l *LogHandler) Handle(_ context.Context, record slog.Record) error {
-	// FIXME log attributes (and groups?)
+	// For now, we do not log attributes and groups.
 	_, _ = fmt.Fprintf(os.Stderr, "%s %s %s\n", record.Time.Format(time.DateTime), record.Level.String(), record.Message)
 	return nil
 }
