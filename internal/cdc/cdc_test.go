@@ -34,7 +34,7 @@ func TestFastcdc_reference(t *testing.T) {
 
 func TestCdc_basic(t *testing.T) {
 	// Verify chunking in the most basic case.
-	chunker := cdc.NewChunker(20)
+	chunker := cdc.NewCDC(20)
 	chunkSizes := append(chunker.Next(data), chunker.Flush()...)
 	requireSumIs(t, chunkSizes, 7*1024*1024)
 	require.Equal(t, expectedChunkSizes, chunkSizes)
@@ -42,7 +42,7 @@ func TestCdc_basic(t *testing.T) {
 
 func TestCdc_text(t *testing.T) {
 	// Verify chunking of text-like data.
-	chunker := cdc.NewChunker(20)
+	chunker := cdc.NewCDC(20)
 	data := testutil.PseudoRandomText(42, 7*1024*1024)
 	chunkSizes := append(chunker.Next([]byte(data)), chunker.Flush()...)
 	requireSumIs(t, chunkSizes, 7*1024*1024)
@@ -51,7 +51,7 @@ func TestCdc_text(t *testing.T) {
 
 func TestCdc_small(t *testing.T) {
 	// Verify chunking with very small average chunk sizes.
-	chunker := cdc.NewChunker(4)
+	chunker := cdc.NewCDC(4)
 	chunkSizes := append(chunker.Next(data[:64]), chunker.Flush()...)
 	requireSumIs(t, chunkSizes, 64)
 	require.Equal(t, []int{14, 29, 21}, chunkSizes)
@@ -63,7 +63,7 @@ func TestCdc_maxsizeChunk(t *testing.T) {
 	for i := 2 * 1024 * 1024; i < len(modifiedData); i++ {
 		modifiedData[i] = byte(i % 256)
 	}
-	chunker := cdc.NewChunker(20)
+	chunker := cdc.NewCDC(20)
 	chunkSizes := append(chunker.Next(modifiedData), chunker.Flush()...)
 	requireSumIs(t, chunkSizes, 7*1024*1024)
 	require.Equal(t, []int{1155789, 1 << 22, 1989939}, chunkSizes)
@@ -75,7 +75,7 @@ func TestCdc_maxsizeChunkAtEnd(t *testing.T) {
 	for i := 2 * 1024 * 1024; i < len(modifiedData); i++ {
 		modifiedData[i] = byte(i % 256)
 	}
-	chunker := cdc.NewChunker(20)
+	chunker := cdc.NewCDC(20)
 	chunkSizes := append(chunker.Next(modifiedData), chunker.Flush()...)
 	requireSumIs(t, chunkSizes, 1155789+1<<22)
 	require.Equal(t, []int{1155789, 1 << 22}, chunkSizes)
@@ -111,7 +111,7 @@ func TestCdc_multipartInput(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			chunker := cdc.NewChunker(20)
+			chunker := cdc.NewCDC(20)
 			remaining := data
 			var chunkSizes []int
 			for _, split := range tc.input {
@@ -137,7 +137,7 @@ func requireSumIs(t *testing.T, numbers []int, expected int) {
 func BenchmarkCdc(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		chunker := cdc.NewChunker(20)
+		chunker := cdc.NewCDC(20)
 		chunker.Next(data)
 		chunker.Flush()
 	}

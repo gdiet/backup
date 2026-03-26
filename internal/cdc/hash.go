@@ -5,7 +5,7 @@ import (
 )
 
 type HashingChunker struct {
-	chunker     *Chunker
+	chunker     *CdcChunker
 	hasher      *blake3.Hasher
 	chunkLength int
 }
@@ -17,7 +17,7 @@ type LengthHash struct {
 
 func NewHashingChunker(normSizeBits int) *HashingChunker {
 	return &HashingChunker{
-		chunker: NewChunker(normSizeBits),
+		chunker: NewCDC(normSizeBits),
 		hasher:  blake3.New(20, nil),
 	}
 }

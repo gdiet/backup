@@ -1,7 +1,12 @@
 package cdc
 
-// Chunker is a fastcdc chunker cutting at the same positions as https://github.com/SaveTheRbtz/fastcdc-go v0.3.0.
-type Chunker struct {
+type Chunker interface {
+	Next(data []byte) []int
+	Flush() []int
+}
+
+// CdcChunker is a fastcdc chunker cutting at the same positions as https://github.com/SaveTheRbtz/fastcdc-go v0.3.0.
+type CdcChunker struct {
 	minSize     int
 	maxSize     int
 	normSize    int
@@ -11,11 +16,13 @@ type Chunker struct {
 	fingerprint uint64
 }
 
-func NewChunker(normSizeBits int) *Chunker {
+var _ Chunker = (*CdcChunker)(nil)
+
+func NewCDC(normSizeBits int) *CdcChunker {
 	normSize := 1 << normSizeBits
 	minSize := normSize / 4 // Factor / 4 is the fastcdc-go default
 	maxSize := normSize * 4 // Factor * 4 is the fastcdc-go default
-	return &Chunker{
+	return &CdcChunker{
 		normSize:  normSize,            // e.g. 0x 100000
 		minSize:   minSize,             // e.g. 0x  40000
 		maxSize:   maxSize,             // e.g. 0x 400000
@@ -25,7 +32,7 @@ func NewChunker(normSizeBits int) *Chunker {
 }
 
 // Flush resets the chunker, returning the last chunk if any
-func (c *Chunker) Flush() []int {
+func (c *CdcChunker) Flush() []int {
 	c.fingerprint = 0
 	result := []int{}
 	if c.chunkLength > 0 {
@@ -35,7 +42,7 @@ func (c *Chunker) Flush() []int {
 	return result
 }
 
-func (c *Chunker) Next(data []byte) []int { // NOSONAR: complexity justified - alternative implementations perform worse in benchmarks
+func (c *CdcChunker) Next(data []byte) []int { // NOSONAR: complexity justified - alternative implementations perform worse in benchmarks
 	var chunkPositions []int
 outer:
 	for i := 0; i < len(data); {
