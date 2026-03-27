@@ -29,10 +29,8 @@ func (f *jpegChunker) Next(data []byte) []int {
 		f.endsWithFF = false
 	}
 	// Check for FF
-	for i, b := range data {
-		if i+len(f.buf) >= 256*1024 {
-			break
-		}
+	end := min(len(data), 256*1024-len(f.buf))
+	for i, b := range data[:end] {
 		if b == 0xFF {
 			if i == len(data)-1 {
 				f.buf = append(f.buf, data...)
