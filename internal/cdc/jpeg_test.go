@@ -15,7 +15,7 @@ func TestJpegChunker_SOSFound(t *testing.T) {
 	data := append(make([]byte, preambleLen), 0xFF, 0xDA)
 	data = append(data, suffix...)
 
-	chunker := &JpegChunker{normSizeBits: 4}
+	chunker := &jpegChunker{normSizeBits: 4}
 	chunks := append(chunker.Next(data), chunker.Flush()...)
 
 	require.Equal(t, preambleLen+2, chunks[0])
@@ -46,7 +46,7 @@ func TestJpegChunker_SOSWithVariousSplits(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &JpegChunker{normSizeBits: 4}
+			c := &jpegChunker{normSizeBits: 4}
 			chunks := append(c.Next(data[:tc.split]), c.Next(data[tc.split:])...)
 			chunks = append(chunks, c.Flush()...)
 			require.Equal(t, expectedChunks, chunks)
@@ -60,7 +60,7 @@ func TestJpegChunker_FFNotDA(t *testing.T) {
 	suffix := testutil.PseudoRandomData(3, 200)
 	data := append(append(preamble, 0xFF, 0xDA), suffix...)
 
-	chunker := &JpegChunker{normSizeBits: 4}
+	chunker := &jpegChunker{normSizeBits: 4}
 	chunks := append(chunker.Next(data), chunker.Flush()...)
 
 	require.Equal(t, len(preamble)+2, chunks[0]) // preamble + FF + DA
@@ -77,7 +77,7 @@ func TestJpegChunker_FallbackToCDC_WhenSOSBeyondLimit(t *testing.T) {
 		}
 	}
 
-	chunker := &JpegChunker{normSizeBits: 4}
+	chunker := &jpegChunker{normSizeBits: 4}
 	got := append(chunker.Next(data), chunker.Flush()...)
 
 	ref := NewCDC(4)
