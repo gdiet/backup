@@ -50,6 +50,11 @@ func (f *jpegChunker) Next(data []byte) []int {
 }
 
 func (f *jpegChunker) Flush() []int {
+	defer func() {
+		f.chunker = nil
+		f.buf = nil
+		f.endsWithFF = false
+	}()
 	if f.chunker != nil {
 		return f.chunker.Flush()
 	}

@@ -16,7 +16,10 @@ func TestJpegChunker_SOSFound(t *testing.T) {
 	data = append(data, suffix...)
 
 	chunker := &jpegChunker{normSizeBits: 4}
-	chunks := append(chunker.Next(data), chunker.Flush()...)
+	require.Equal(t, 0, len(chunker.Next(nil)))
+	chunks := chunker.Next(data)
+	require.Equal(t, 0, len(chunker.Next(nil)))
+	chunks = append(chunks, chunker.Flush()...)
 
 	require.Equal(t, preambleLen+2, chunks[0])
 	ref := NewCDC(4)
@@ -62,7 +65,11 @@ func TestJpegChunker_FFNotDA(t *testing.T) {
 
 	chunker := &jpegChunker{normSizeBits: 4}
 	chunks := append(chunker.Next(data), chunker.Flush()...)
+	require.Equal(t, len(preamble)+2, chunks[0]) // preamble + FF + DA
 
+	// Split data just after 0xFF
+	chunks = append(chunker.Next(data[:6]), chunker.Next(data[6:])...)
+	chunks = append(chunks, chunker.Flush()...)
 	require.Equal(t, len(preamble)+2, chunks[0]) // preamble + FF + DA
 }
 
