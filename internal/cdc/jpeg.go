@@ -1,5 +1,7 @@
 package cdc
 
+import "github.com/gdiet/backup/internal/util"
+
 // jpegChunker chunks after the Start of Scan (SOS) marker of a JPEG file, then using regular CDC.
 // Use only if JPEG is detected in the first 4 bytes of the file: FF D8 FF, then C0..CF or E0..EF or FE.
 // If the SOS marker is not found in the first 256 kB, the chunker falls back to regular CDC chunking.
@@ -14,6 +16,7 @@ var _ Chunker = (*jpegChunker)(nil)
 
 func (f *jpegChunker) Next(data []byte) []int {
 	if f.chunker != nil {
+		util.Assert(len(f.buf) == 0, "buffer not empty") // FIXME investigate, there are probably subtle bugs here
 		return f.chunker.Next(data)
 	}
 	if len(data) == 0 {
@@ -55,6 +58,7 @@ func (f *jpegChunker) Flush() []int {
 		f.buf = nil
 		f.endsWithFF = false
 	}()
+	//util.Assert(len(f.buf) == 0, "buffer not empty") // FIXME investigate, there are probably subtle bugs here
 	if f.chunker != nil {
 		return f.chunker.Flush()
 	}
