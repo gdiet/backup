@@ -1,5 +1,7 @@
 package cdc
 
+import "encoding/binary"
+
 type fileSpecificChunker struct {
 	normSizeBits int
 	buf          []byte
@@ -49,12 +51,14 @@ func (f *fileSpecificChunker) collectHeader() []int {
 }
 
 func (f *fileSpecificChunker) detectFileType() []int {
-	// Detect JPEG: FF D8 FF, then C0..CF or E0..EF or FE
 	if f.buf[0] == 0xFF && f.buf[1] == 0xD8 && f.buf[2] == 0xFF &&
 		((f.buf[3] >= 0xC0 && f.buf[3] <= 0xCF) || (f.buf[3] >= 0xE0 && f.buf[3] <= 0xEF) || f.buf[3] == 0xFE) {
+		// JPEG detected: FF D8 FF, then C0..CF or E0..EF or FE
 		f.switchToJpeg()
+	} else if string(f.buf[4:8]) == "ftyp" {
+		// ISO-BMFF (avif, heic and similar detected): magic string in bytes 4..7
+		f.switchToISO()
 	} else {
-		// TODO detect avif, avis
 		// No specific file type detected - fall back to regular CDC
 		f.switchToCDC()
 	}
@@ -89,6 +93,27 @@ func (f *fileSpecificChunker) switchToJpeg() {
 			}
 		}
 		lookForSosAt = len(f.buf) - 1
+		return nil
+	}
+}
+
+func (f *fileSpecificChunker) switchToISO() {
+	// For simplicity, ignore extended size boxes and assume the box size fits into int
+	nextBox := int(binary.BigEndian.Uint32(f.buf[0:4]))
+	f.next = func() []int {
+		for len(f.buf) >= nextBox+8 {
+			if nextBox >= 256*1024 {
+				f.switchToCDC()
+				return f.next()
+			}
+			if string(f.buf[nextBox+4:nextBox+8]) == "mdat" {
+				// First media data box found
+				f.buf = f.buf[nextBox+8:]
+				f.switchToCDC()
+				return append([]int{nextBox + 8}, f.next()...)
+			}
+			nextBox = nextBox + int(binary.BigEndian.Uint32(f.buf[nextBox:nextBox+4]))
+		}
 		return nil
 	}
 }
