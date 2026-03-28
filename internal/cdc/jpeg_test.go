@@ -7,15 +7,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var jpegHeader = []byte{0xFF, 0xD8, 0xFF, 0xC0}
+
 func TestJpegChunker_SOSFound(t *testing.T) {
 	// SOS marker found in a single Next() call.
 	// First returned chunk must span exactly preamble + SOS bytes; the rest equals CDC on the suffix.
 	preambleLen := 100
 	suffix := testutil.PseudoRandomData(1, 500)
 	data := append(make([]byte, preambleLen), 0xFF, 0xDA)
+	copy(data, jpegHeader)
 	data = append(data, suffix...)
 
-	chunker := &jpegChunker{normSizeBits: 4}
+	chunker := NewFileSpecificChunker(4)
 	require.Equal(t, 0, len(chunker.Next(nil)))
 	chunks := chunker.Next(data)
 	require.Equal(t, 0, len(chunker.Next(nil)))
@@ -31,6 +34,7 @@ func TestJpegChunker_SOSWithVariousSplits(t *testing.T) {
 	preambleLen := 50
 	suffix := testutil.PseudoRandomData(2, 500)
 	data := make([]byte, preambleLen+2+len(suffix))
+	copy(data, jpegHeader)
 	data[preambleLen] = 0xFF
 	data[preambleLen+1] = 0xDA
 	copy(data[preambleLen+2:], suffix)
@@ -47,9 +51,10 @@ func TestJpegChunker_SOSWithVariousSplits(t *testing.T) {
 		{"between FF and DA", preambleLen + 1},
 		{"just after DA", preambleLen + 2},
 	}
+
+	c := NewFileSpecificChunker(4)
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &jpegChunker{normSizeBits: 4}
 			chunks := append(c.Next(data[:tc.split]), c.Next(data[tc.split:])...)
 			chunks = append(chunks, c.Flush()...)
 			require.Equal(t, expectedChunks, chunks)
@@ -62,8 +67,9 @@ func TestJpegChunker_FFNotDA(t *testing.T) {
 	preamble := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0x01, 0x00} // 0xFF not followed by 0xDA
 	suffix := testutil.PseudoRandomData(3, 200)
 	data := append(append(preamble, 0xFF, 0xDA), suffix...)
+	copy(data, jpegHeader)
 
-	chunker := &jpegChunker{normSizeBits: 4}
+	chunker := NewFileSpecificChunker(4)
 	chunks := append(chunker.Next(data), chunker.Flush()...)
 	require.Equal(t, len(preamble)+2, chunks[0]) // preamble + FF + DA
 
@@ -83,8 +89,9 @@ func TestJpegChunker_FallbackToCDC_WhenSOSBeyondLimit(t *testing.T) {
 			data[i] = b
 		}
 	}
+	copy(data, jpegHeader)
 
-	chunker := &jpegChunker{normSizeBits: 4}
+	chunker := NewFileSpecificChunker(4)
 	got := append(chunker.Next(data), chunker.Flush()...)
 
 	ref := NewCDC(4)
