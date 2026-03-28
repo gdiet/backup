@@ -1,7 +1,9 @@
 package cdc
 
 type Chunker interface {
+	// Next returns the lengths of all complete chunks in the data. Chunks may span multiple calls.
 	Next(data []byte) []int
+	// Flush returns the length of the last incomplete chunk if any and resets the chunker.
 	Flush() []int
 }
 
@@ -72,7 +74,8 @@ outer:
 		}
 
 		// Fingerprint up to maxSize
-		end = min(startOfChunk+c.maxSize, len(data))
+		endAtMaxSize := startOfChunk + c.maxSize
+		end = min(endAtMaxSize, len(data))
 		for ; i < end; i++ {
 			c.fingerprint = (c.fingerprint << 1) + table[data[i]]
 			if (c.fingerprint & c.maskLarge) == 0 {
@@ -84,18 +87,16 @@ outer:
 			}
 		}
 
-		// End of data: Don't return remainder as chunk, because Next() may be called again
-		// with more data. Even if maxSize is reached we don't need to return the remainder - it is
-		// either collected when Next() or Flush() is called next.
-		if i == len(data) {
-			c.chunkLength = i - startOfChunk
-			return chunkPositions
+		// Finish chunk if maxSize is reached
+		if i == endAtMaxSize {
+			chunkPositions = append(chunkPositions, i-startOfChunk)
+			c.chunkLength = 0
+			c.fingerprint = 0
+			continue outer
 		}
-		// MaxSize reached
-		chunkPositions = append(chunkPositions, i-startOfChunk)
-		c.chunkLength = 0
-		c.fingerprint = 0
-		// Here, 'i' is smaller than len(data), and we'll continue looping.
+
+		// Here is i == len(data), so the outer loop will terminate: Adjust the chunkLength
+		c.chunkLength = i - startOfChunk
 	}
 	// Only reached if a fingerprint is found at the end of the input data.
 	return chunkPositions

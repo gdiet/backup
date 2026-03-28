@@ -5,7 +5,7 @@ import (
 )
 
 type HashingChunker struct {
-	chunker     *CdcChunker
+	chunker     Chunker
 	hasher      *blake3.Hasher
 	chunkLength int
 }
@@ -15,9 +15,9 @@ type LengthHash struct {
 	Hash   []byte
 }
 
-func NewHashingChunker(normSizeBits int) *HashingChunker {
+func NewHashingChunker(chunker Chunker) *HashingChunker {
 	return &HashingChunker{
-		chunker: NewCDC(normSizeBits),
+		chunker: chunker,
 		hasher:  blake3.New(20, nil),
 	}
 }
@@ -35,6 +35,7 @@ func (c *HashingChunker) Flush() []LengthHash {
 }
 
 func (c *HashingChunker) Next(data []byte) []LengthHash {
+	newChunkLength := c.chunkLength + len(data)
 	var result []LengthHash
 	for _, length := range c.chunker.Next(data) {
 		_, _ = c.hasher.Write(data[:length-c.chunkLength])
@@ -43,8 +44,9 @@ func (c *HashingChunker) Next(data []byte) []LengthHash {
 		c.hasher.Reset()
 		c.chunkLength = 0
 		result = append(result, LengthHash{length, hash})
+		newChunkLength -= length
 	}
 	_, _ = c.hasher.Write(data)
-	c.chunkLength = c.chunker.chunkLength
+	c.chunkLength = newChunkLength
 	return result
 }

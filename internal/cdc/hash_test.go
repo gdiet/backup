@@ -25,7 +25,7 @@ func TestExpectedValues(t *testing.T) {
 
 func TestHash_basic(t *testing.T) {
 	// Verify chunking in the most basic case.
-	chunker := cdc.NewHashingChunker(20)
+	chunker := cdc.NewHashingChunker(cdc.NewCDC(20))
 	chunks := append(chunker.Next(data), chunker.Flush()...)
 	require.Equal(t, expectedChunks, chunks)
 }
@@ -60,7 +60,7 @@ func TestHash_multipartInput(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			chunker := cdc.NewHashingChunker(20)
+			chunker := cdc.NewHashingChunker(cdc.NewCDC(20))
 			remaining := data
 			var chunks []cdc.LengthHash
 			for _, split := range tc.input {
@@ -77,7 +77,7 @@ func TestHash_multipartInput(t *testing.T) {
 func BenchmarkHash(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		chunker := cdc.NewHashingChunker(20)
+		chunker := cdc.NewHashingChunker(cdc.NewCDC(20))
 		chunker.Next(data)
 		chunker.Flush()
 	}

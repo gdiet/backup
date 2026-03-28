@@ -18,7 +18,7 @@ func (f *fileSpecificChunker) Flush() []int {
 	return f.flush()
 }
 
-func NewFileSpecificChunker(normSizeBits int) *fileSpecificChunker {
+func NewFileSpecificChunker(normSizeBits int) Chunker {
 	chunker := &fileSpecificChunker{normSizeBits: normSizeBits}
 	chunker.reset()
 	return chunker
