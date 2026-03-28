@@ -3,14 +3,15 @@ package core
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"time"
 
+	"github.com/gdiet/backup/internal/cdc"
 	"github.com/gdiet/backup/internal/fserr"
 	"github.com/gdiet/backup/internal/meta"
 	"github.com/gdiet/backup/internal/util"
@@ -119,13 +120,48 @@ func backupFile(
 	go func() {
 		defer tp.wg.Done()
 		defer func() { <-tp.sem }()
-		// jpg, jpeg, ...: FF D8 FF, and fourth byte C0–FE => custom chunking
-		// avif, avis, ...: bytes[4..7] == 'avif' or bytes[4..7] == 'avis' => custom chunking
-		// file <= 512*1024 => single chunk
-		// otherwise => cdc
-		time.Sleep(1 * time.Second)
+		f, err := os.Open(src)
+		if err != nil {
+			slog.Warn(fmt.Sprintf("failed to open file %s: %s", src, err))
+			tp.warnings.Add(1)
+			return
+		}
+		defer func() {
+			err := f.Close()
+			if err != nil {
+				slog.Warn(fmt.Sprintf("failed to close file %s: %s", src, err))
+				tp.warnings.Add(1)
+			}
+		}()
+		var chunker cdc.Chunker
+		if info.Size() <= 256*1024 { // FIXME define the magic numbers as constants somewhere
+			chunker = cdc.NewSingleChunk()
+		} else {
+			chunker = cdc.NewFileSpecificChunker(20)
+		}
+		hasher := cdc.NewHashingChunker(chunker)
+		buf := make([]byte, 64*1024)
+		var result []cdc.LengthHash
+		for {
+			n, err := f.Read(buf)
+			result = append(result, hasher.Next(buf[:n])...)
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				slog.Warn(fmt.Sprintf("failed to read from file %s: %s", src, err))
+				tp.warnings.Add(1)
+				return
+			}
+		}
+		result = append(result, hasher.Flush()...)
+		var resultStrs []string
+		for _, lh := range result {
+			resultStrs = append(resultStrs, lh.String())
+		}
+		// TODO instead of logging, deduplicate and store
+		slog.Info(fmt.Sprintf("data of %s: [%s]", src, strings.Join(resultStrs, ", ")))
 		slog.Debug(fmt.Sprintf("backing up %s to %s", src, target))
-		tp.warnings.Add(1) // TODO: implement file backup
 	}()
 }
 

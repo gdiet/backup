@@ -1,6 +1,9 @@
 package cdc
 
 import (
+	"encoding/hex"
+	"fmt"
+
 	"lukechampine.com/blake3"
 )
 
@@ -13,6 +16,10 @@ type HashingChunker struct {
 type LengthHash struct {
 	Length int
 	Hash   []byte
+}
+
+func (lh *LengthHash) String() string {
+	return fmt.Sprintf("%d:%s", lh.Length, hex.EncodeToString(lh.Hash[:4]))
 }
 
 func NewHashingChunker(chunker Chunker) *HashingChunker {
