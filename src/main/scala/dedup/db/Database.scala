@@ -182,6 +182,10 @@ final class Database(connection: Connection, checkVersion: Boolean = true) exten
   /** @return The matching [[DataId]] if any. */
   def dataEntry(hash: Array[Byte], size: Long): Option[DataId] = qDataEntry(_.set(hash, size).query(maybe(r => DataId(r.getLong(1)))))
 
+  private lazy val qDataIds = prepare("SELECT id FROM DataEntries WHERE seq = 1 AND id > ? ORDER BY id ASC LIMIT ?")
+  def dataIds(startAfter: DataId, size: Int): Seq[DataId] =
+    qDataIds(_.set(startAfter, size).query(seq(r => DataId(r.getLong(1)))))
+
   private val qHash = prepare("SELECT hash FROM DataEntries WHERE id = ? AND seq = 1")
   /** @return The hash for the data entry if any. */
   def hash(dataId: DataId): Option[Array[Byte]] = qHash(_.set(dataId).query(maybe(r => r.getBytes(1))))
