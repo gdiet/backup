@@ -10,12 +10,12 @@ func NewSingleChunk() Chunker {
 	return &singleChunk{}
 }
 
-func (s singleChunk) Next(data []byte) []int {
+func (s *singleChunk) Next(data []byte) []int {
 	s.chunkLength += len(data)
 	return nil
 }
 
-func (s singleChunk) Flush() []int {
+func (s *singleChunk) Flush() []int {
 	defer func() { s.chunkLength = 0 }()
 	return []int{s.chunkLength}
 }
