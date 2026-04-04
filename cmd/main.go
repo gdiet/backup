@@ -47,6 +47,8 @@ func runMain() error {
 		return core.Restore(*repo, args[:len(args)-1], args[len(args)-1])
 	case "stats":
 		return core.Stats(*repo)
+	case "import":
+		return core.Import(*repo)
 	}
 	printUsage()
 	return util.Invalidf("command %s not recognized", cmd)
@@ -63,4 +65,5 @@ func printUsage() {
 	fmt.Println("  backup [flags] <source> [<source2> ...] <target>")
 	fmt.Println("  restore [flags] <source> [<source2> ...] <target>")
 	fmt.Println("  stats")
+	fmt.Println("  import (experimental)")
 }
