@@ -10,6 +10,11 @@ Example:
 
     go run ./cmd backup source target
 
+### Build The Application
+
+    go build -o backup ./cmd/...
+    GOOS=windows GOARCH=amd64 go build -o backup.exe ./cmd/...
+
 ### Code Conventions
 
 - Use `os.Exit` only in the single exit point of `func main()`.
