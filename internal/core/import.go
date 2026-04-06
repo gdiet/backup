@@ -77,6 +77,9 @@ func getData(id int64, length int, buf []byte) (int, error) {
 		return 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return 0, nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("GET /data/%d - unexpected status: %s", id, resp.Status)
 	}
