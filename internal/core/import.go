@@ -5,13 +5,28 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/gdiet/backup/internal/cdc"
 )
 
+/*
+CREATE TABLE data (
+  alg  VARCHAR(1),
+  id   BIGINT,
+  part INT,
+  len  BIGINT,
+  hash VARCHAR(16)
+);
+
+INSERT INTO data (alg, id, part, len, hash) VALUES ('s', 470, 1, 1770848, '893af516119bb335');
+*/
+
 // Import gets the repository path as parameter
 func Import(_ string) error {
 	startAfter := int64(-1)
+	size := 0
+	count := 0
 	for {
 		ids, err := getIDs(startAfter)
 		if err != nil {
@@ -24,9 +39,14 @@ func Import(_ string) error {
 		buf := make([]byte, 64*1024)
 		var length int
 		for _, id := range ids {
-			err = getData(id, length, buf)
+			add, err := getData(id, length, buf)
 			if err != nil {
 				return err
+			}
+			size += add
+			count++
+			if count%20 == 0 {
+				_, _ = fmt.Fprintf(os.Stderr, "%d - %d\r", count, size)
 			}
 		}
 		startAfter = ids[len(ids)-1]
@@ -35,7 +55,7 @@ func Import(_ string) error {
 }
 
 func getIDs(startAfter int64) ([]int64, error) {
-	resp, err := http.Get(fmt.Sprintf("http://localhost:8080/data/ids?startAfter=%d&size=20", startAfter))
+	resp, err := http.Get(fmt.Sprintf("http://localhost:8080/data/ids?startAfter=%d&size=100", startAfter))
 	if err != nil {
 		return nil, err
 	}
@@ -51,14 +71,14 @@ func getIDs(startAfter int64) ([]int64, error) {
 	return ids, nil
 }
 
-func getData(id int64, length int, buf []byte) error {
+func getData(id int64, length int, buf []byte) (int, error) {
 	resp, err := http.Get(fmt.Sprintf("http://localhost:8080/data/%d", id))
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GET /data/%d - unexpected status: %s", id, resp.Status)
+		return 0, fmt.Errorf("GET /data/%d - unexpected status: %s", id, resp.Status)
 	}
 	sChunker := cdc.NewHashingChunker(cdc.NewSingleChunk())
 	cChunker := cdc.NewHashingChunker(cdc.NewCDC(20))
@@ -71,23 +91,23 @@ func getData(id int64, length int, buf []byte) error {
 		fChunks = append(fChunks, fChunker.Next(buf[:length])...)
 	}
 	if err != io.EOF {
-		return fmt.Errorf("GET /data/%d - expected EOF: %s", id, resp.Status)
+		return 0, fmt.Errorf("GET /data/%d - expected EOF: %s", id, resp.Status)
 	}
 	err = resp.Body.Close()
 	if err != nil {
-		return err
+		return 0, err
 	}
 	sChunks = append(sChunks, sChunker.Flush()...)
 	cChunks = append(cChunks, cChunker.Flush()...)
 	fChunks = append(fChunks, fChunker.Flush()...)
 	for i, chunk := range sChunks {
-		fmt.Printf("s:%d:%d:%v\n", id, i+1, &chunk)
+		fmt.Printf("s,%d,%d,%v\n", id, i+1, &chunk)
 	}
 	for i, chunk := range cChunks {
-		fmt.Printf("c:%d:%d:%v\n", id, i+1, &chunk)
+		fmt.Printf("c,%d,%d,%v\n", id, i+1, &chunk)
 	}
 	for i, chunk := range fChunks {
-		fmt.Printf("f:%d:%d:%v\n", id, i+1, &chunk)
+		fmt.Printf("f,%d,%d,%v\n", id, i+1, &chunk)
 	}
-	return nil
+	return sChunks[0].Length, nil
 }

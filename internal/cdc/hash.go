@@ -19,7 +19,7 @@ type LengthHash struct {
 }
 
 func (lh *LengthHash) String() string {
-	return fmt.Sprintf("%d:%s", lh.Length, hex.EncodeToString(lh.Hash[:8]))
+	return fmt.Sprintf("%d,%s", lh.Length, hex.EncodeToString(lh.Hash[:8]))
 }
 
 func NewHashingChunker(chunker Chunker) *HashingChunker {
