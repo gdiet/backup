@@ -54,11 +54,18 @@ private def data(db: Database, lts: LongTermStore, exchange: HttpExchange, dataI
   if parts.size == 0 then
     exchange.sendResponseHeaders(404, -1) // Not Found
   else
-    val size = parts.map(_._2).sum
-    exchange.getResponseHeaders.set("Content-Type", "application/octet-stream")
-    exchange.sendResponseHeaders(200, size)
-    Using(exchange.getResponseBody) { out =>
-      parts.foreach { case (start, length) =>
-        lts.read(start, length, 0).foreach { case (_, data) =>  out.write(data) }
+    // FIXME hack to focus on jpeg
+    val start = parts(0)._1
+    val header = lts.read(start, 3, 0).head._2
+    if !header.sameElements(Array[Byte](0xff.toByte, 0xd8.toByte, 0xff.toByte)) then
+      exchange.sendResponseHeaders(404, -1) // Not Found
+    else
+      // FIXME end of hack
+      val size = parts.map(_._2).sum
+      exchange.getResponseHeaders.set("Content-Type", "application/octet-stream")
+      exchange.sendResponseHeaders(200, size)
+      Using(exchange.getResponseBody) { out =>
+        parts.foreach { case (start, length) =>
+          lts.read(start, length, 0).foreach { case (_, data) =>  out.write(data) }
+        }
       }
-    }
