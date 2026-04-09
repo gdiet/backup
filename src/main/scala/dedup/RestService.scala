@@ -12,7 +12,7 @@ import scala.util.Using
   val dbDir = opts.dbDir.tap(main.checkDbDir(_, true))
   val dataDir = store.dataDir(opts.repo)
   val port = opts.getOrElse("port", "8080").toInt
-  val server = HttpServer.create(new InetSocketAddress(port), 0)
+  val server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0)
   val dataRoute = """/data/(\d+)""".r
   Using(LongTermStore(dataDir, true)) { lts =>
     withDb(dbDir, readOnly = true) { (db: Database) =>
@@ -36,9 +36,11 @@ import scala.util.Using
 
 private def dataidsPage(db: Database, exchange: HttpExchange) =
   // curl -v "http://localhost:8080/data/ids?startAfter=-1&size=100"
-  val params = exchange.getRequestURI.getQuery.split("&").map { param =>
-    val Array(key, value) = param.split("=")
-    key -> value
+  val params = Option(exchange.getRequestURI.getQuery).getOrElse("").split("&").flatMap { param =>
+    if param.contains("=") then
+      val Array(key, value) = param.split("=", 2)
+      Some(key -> value)
+    else None
   }.toMap
   val startAfter = DataId(params.getOrElse("startAfter", "-1").toLong)
   val size = params.getOrElse("size", "100").toInt
