@@ -37,9 +37,9 @@ func (c *cdc2Chunker) Flush() []int {
 }
 
 func (c *cdc2Chunker) Next(data []byte) []int { // NOSONAR: complexity is justified
-	mask := c.currentMask
+	//mask := c.currentMask
 	startsAt := -c.currentSize
-	fingerprint := c.fingerprint
+	//fingerprint := c.fingerprint
 	i := 0
 	var chunkPositions []int
 
@@ -55,7 +55,7 @@ outer:
 		if startsAt+c.baseSize > i {
 			end := min(len(data), startsAt+c.baseSize)
 			for ; i < end; i++ {
-				fingerprint = (fingerprint >> 1) ^ table2[data[i]]
+				c.fingerprint = (c.fingerprint >> 1) ^ table2[data[i]]
 			}
 		}
 
@@ -66,22 +66,22 @@ outer:
 		// find end of chunk
 		for ; i < len(data); i++ {
 			if i == reduceAt {
-				mask >>= 1
+				c.currentMask >>= 1
 				reduceAt += c.baseSize
 			}
-			fingerprint = (fingerprint >> 1) + table2[data[i]]
-			if (fingerprint & mask) == 0 {
+			c.fingerprint = (c.fingerprint >> 1) + table2[data[i]]
+			if (c.fingerprint & c.currentMask) == 0 {
 				i++
 				chunkPositions = append(chunkPositions, i-startsAt)
-				mask = c.baseMask
+				c.currentMask = c.baseMask
 				startsAt = i
-				fingerprint = 0
+				c.fingerprint = 0
 				continue outer
 			}
 		}
 	}
 	c.currentSize = i - startsAt
-	c.currentMask = mask
+	//c.currentMask = mask
 	return chunkPositions
 }
 
