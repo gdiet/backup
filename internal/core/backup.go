@@ -137,7 +137,8 @@ func backupFile(
 		if info.Size() <= 256*1024 { // FIXME define the magic numbers as constants somewhere
 			chunker = cdc.NewSingleChunk()
 		} else {
-			chunker = cdc.NewFileSpecificChunker(20)
+			// TODO handle error
+			chunker, _ = cdc.NewFileSpecificChunker(20)
 		}
 		hasher := cdc.NewHashingChunker(chunker)
 		buf := make([]byte, 64*1024)

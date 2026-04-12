@@ -1,6 +1,11 @@
 package cdc
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"errors"
+
+	"github.com/gdiet/backup/internal/util"
+)
 
 type fileSpecificChunker struct {
 	normSizeBits int
@@ -20,10 +25,14 @@ func (f *fileSpecificChunker) Flush() []int {
 	return f.flush()
 }
 
-func NewFileSpecificChunker(normSizeBits int) Chunker {
-	chunker := &fileSpecificChunker{normSizeBits: normSizeBits}
+func NewFileSpecificChunker(targetSizeBits int) (Chunker, error) {
+	// Validation must be the same as for func NewCDC.
+	if targetSizeBits < 6 || targetSizeBits > 30 {
+		return nil, errors.New("targetSizeBits must be between 6 and 30 (inclusive)")
+	}
+	chunker := &fileSpecificChunker{normSizeBits: targetSizeBits}
 	chunker.reset()
-	return chunker
+	return chunker, nil
 }
 
 func (f *fileSpecificChunker) reset() {
@@ -66,7 +75,8 @@ func (f *fileSpecificChunker) detectFileType() []int {
 }
 
 func (f *fileSpecificChunker) switchToCDC() {
-	cdc := NewCDC(f.normSizeBits)
+	cdc, err := NewCDC(f.normSizeBits)
+	util.Assertf(err == nil, "NewCDC: %s", err)
 	f.next = func() []int {
 		defer func() { f.buf = nil }()
 		return cdc.Next(f.buf)

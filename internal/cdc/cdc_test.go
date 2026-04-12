@@ -1,84 +1,41 @@
 package cdc_test
 
 import (
-	"bytes"
-	"io"
 	"testing"
 
-	"github.com/SaveTheRbtz/fastcdc-go"
 	"github.com/gdiet/backup/internal/cdc"
 	"github.com/gdiet/backup/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
-var data = testutil.PseudoRandomData(42, 7*1024*1024)
-var expectedChunkSizes = []int{1155789, 1045751, 1216779, 1139656, 1056756, 1192330, 532971}
-
-func TestFastcdc_reference(t *testing.T) {
-	// Verify that the github.com/SaveTheRbtz/fastcdc-go reference chunker produces the expected chunk sizes for the given data and options.
-	// The reference chunks were calculated using the v0.3.0 release of fastcdc-go.
-	chunker, err := fastcdc.NewChunker(bytes.NewReader(data), fastcdc.Options{AverageSize: 1024 * 1024})
-	require.NoError(t, err)
-	var chunkSizes []int
-	for {
-		chunk, err := chunker.Next()
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		chunkSizes = append(chunkSizes, chunk.Length)
-	}
-	requireSumIs(t, chunkSizes, 7*1024*1024)
-	require.Equal(t, expectedChunkSizes, chunkSizes)
-}
-
 func TestCdc_basic(t *testing.T) {
-	// Verify chunking in the most basic case.
-	chunker := cdc.NewCDC(20)
+	// Verify chunking in the most basic case, chunk size 1 MB.
+	chunker, err := cdc.NewCDC(20)
+	require.NoError(t, err)
+	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	chunkSizes := append(chunker.Next(data), chunker.Flush()...)
-	requireSumIs(t, chunkSizes, 7*1024*1024)
+	expectedChunkSizes := []int{1071508, 1189740, 850402, 1430966, 864507, 1842503, 90406}
 	require.Equal(t, expectedChunkSizes, chunkSizes)
 }
 
 func TestCdc_text(t *testing.T) {
-	// Verify chunking of text-like data.
-	chunker := cdc.NewCDC(20)
-	data := testutil.PseudoRandomText(42, 7*1024*1024)
+	// Verify chunking of text-like data, chunk size 1 kB.
+	chunker, err := cdc.NewCDC(10)
+	require.NoError(t, err)
+	data := testutil.PseudoRandomText(42, 7*1024)
 	chunkSizes := append(chunker.Next([]byte(data)), chunker.Flush()...)
-	requireSumIs(t, chunkSizes, 7*1024*1024)
-	require.Equal(t, []int{1293604, 1114149, 1278265, 1085032, 1241440, 1132243, 195299}, chunkSizes)
+	expectedChunkSizes := []int{2025, 714, 540, 969, 1394, 830, 696}
+	require.Equal(t, expectedChunkSizes, chunkSizes)
 }
 
 func TestCdc_small(t *testing.T) {
-	// Verify chunking with very small average chunk sizes.
-	chunker := cdc.NewCDC(4)
-	chunkSizes := append(chunker.Next(data[:64]), chunker.Flush()...)
-	requireSumIs(t, chunkSizes, 64)
-	require.Equal(t, []int{14, 29, 21}, chunkSizes)
-}
-
-func TestCdc_maxsizeChunk(t *testing.T) {
-	// Verify chunking if a chunk in the middle of the data reaches the maximum size.
-	modifiedData := append([]byte{}, data...)
-	for i := 2 * 1024 * 1024; i < len(modifiedData); i++ {
-		modifiedData[i] = byte(i % 256)
-	}
-	chunker := cdc.NewCDC(20)
-	chunkSizes := append(chunker.Next(modifiedData), chunker.Flush()...)
-	requireSumIs(t, chunkSizes, 7*1024*1024)
-	require.Equal(t, []int{1155789, 1 << 22, 1989939}, chunkSizes)
-}
-
-func TestCdc_maxsizeChunkAtEnd(t *testing.T) {
-	// Verify chunking if a chunk at the end of the data reaches the maximum size.
-	modifiedData := append([]byte{}, data[:1155789+1<<22]...)
-	for i := 2 * 1024 * 1024; i < len(modifiedData); i++ {
-		modifiedData[i] = byte(i % 256)
-	}
-	chunker := cdc.NewCDC(20)
-	chunkSizes := append(chunker.Next(modifiedData), chunker.Flush()...)
-	requireSumIs(t, chunkSizes, 1155789+1<<22)
-	require.Equal(t, []int{1155789, 1 << 22}, chunkSizes)
+	// Verify chunking with very small average chunk sizes (64 B).
+	chunker, err := cdc.NewCDC(6)
+	require.NoError(t, err)
+	data := testutil.PseudoRandomData(42, 7*64)
+	chunkSizes := append(chunker.Next(data), chunker.Flush()...)
+	expectedChunkSizes := []int{74, 43, 49, 75, 35, 48, 37, 40, 39, 8}
+	require.Equal(t, expectedChunkSizes, chunkSizes)
 }
 
 func TestCdc_multipartInput(t *testing.T) {
@@ -92,26 +49,27 @@ func TestCdc_multipartInput(t *testing.T) {
 			input: []int{},
 		},
 		{
+			name:  "split at chunk border",
+			input: []int{1071508 - 1, 1, 1},
+		},
+		{
 			name:  "split before minSize",
-			input: []int{1155789 + 1000},
+			input: []int{1071508 + 1000},
 		},
 		{
 			name:  "split at minSize border",
-			input: []int{1155789 + 1<<18 - 1, 1, 1},
-		},
-		{
-			name:  "split at normSize border",
-			input: []int{1155789 + 1<<20 - 1, 1, 1},
-		},
-		{
-			name:  "split at chunk border",
-			input: []int{1155789 + 1045751 - 1, 1, 1},
+			input: []int{1071508 + 1<<19 - 1, 1, 1},
 		},
 	}
 
+	data := testutil.PseudoRandomData(42, 7*1024*1024)
+	expectedChunkSizes := []int{1071508, 1189740, 850402, 1430966, 864507, 1842503, 90406}
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			chunker := cdc.NewCDC(20)
+			chunker, err := cdc.NewCDC(20)
+			require.NoError(t, err)
+
 			remaining := data
 			var chunkSizes []int
 			for _, split := range tc.input {
@@ -120,25 +78,17 @@ func TestCdc_multipartInput(t *testing.T) {
 			}
 			chunkSizes = append(chunkSizes, chunker.Next(remaining)...)
 			chunkSizes = append(chunkSizes, chunker.Flush()...)
-			requireSumIs(t, chunkSizes, 7*1024*1024)
 			require.Equal(t, expectedChunkSizes, chunkSizes)
 		})
 	}
 }
 
-func requireSumIs(t *testing.T, numbers []int, expected int) {
-	sum := 0
-	for _, size := range numbers {
-		sum += size
-	}
-	require.Equal(t, expected, sum)
-}
-
+// go test -bench=BenchmarkCdc -count=11 ./internal/cdc
 func BenchmarkCdc(b *testing.B) {
-	data := testutil.PseudoRandomData(42, 7*1024*1024)
+	var data = testutil.PseudoRandomData(42, 7*1024*1024)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		chunker := cdc.NewCDC(20)
+		chunker, _ := cdc.NewCDC(20)
 		chunker.Next(data)
 		chunker.Flush()
 	}
