@@ -135,7 +135,7 @@ func requireSumIs(t *testing.T, numbers []int, expected int) {
 }
 
 func BenchmarkCdc(b *testing.B) {
-	data := testutil.PseudoRandomData(42, 70*1024*1024)
+	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		chunker := cdc.NewCDC(20)
