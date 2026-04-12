@@ -18,7 +18,7 @@ func NewCDC2(targetSizeBits int) (Chunker, error) {
 	}
 	chunker := &cdc2Chunker{
 		baseSize: 1 << (targetSizeBits - 1), // Produces an average chunk size of
-		baseMask: 1<<targetSizeBits - 1,     // approximately 1 << targetSizeBits.
+		baseMask: (1 << targetSizeBits) - 1, // approximately 1 << targetSizeBits.
 	}
 	chunker.Flush()
 	return chunker, nil
@@ -33,7 +33,7 @@ func (c *cdc2Chunker) Flush() []int {
 	if c.chunkStart == 0 {
 		return nil
 	}
-	return []int{c.chunkStart}
+	return []int{-c.chunkStart}
 }
 
 func (c *cdc2Chunker) Next(data []byte) []int { // NOSONAR: complexity is justified
@@ -79,7 +79,7 @@ outer:
 			}
 		}
 	}
-	c.chunkStart = i - c.chunkStart
+	c.chunkStart = c.chunkStart - i
 	return chunkPositions
 }
 
