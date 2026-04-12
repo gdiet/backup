@@ -17,8 +17,8 @@ func NewCDC2(targetSizeBits int) (Chunker, error) {
 		return nil, errors.New("targetSizeBits must be between 6 and 30 (inclusive)")
 	}
 	chunker := &cdc2Chunker{
-		baseSize: 1 << (targetSizeBits - 1), // For high entropy data this produces an average
-		baseMask: 1<<targetSizeBits - 1,     // chunk size of approximately 1 << targetSizeBits.
+		baseSize: 1 << (targetSizeBits - 1), // Produces an average chunk size of
+		baseMask: 1<<targetSizeBits - 1,     // approximately 1 << targetSizeBits.
 	}
 	chunker.Flush()
 	return chunker, nil
