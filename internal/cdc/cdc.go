@@ -9,6 +9,17 @@ type Chunker interface {
 	Flush() []int
 }
 
+type CdcConfig struct {
+	targetSizeBits int
+}
+
+func NewCdcConfig(targetSizeBits int) (*CdcConfig, error) {
+	if targetSizeBits < 6 || targetSizeBits > 30 {
+		return nil, errors.New("targetSizeBits must be between 6 and 30 (inclusive)")
+	}
+	return &CdcConfig{targetSizeBits}, nil
+}
+
 type cdcChunker struct {
 	baseSize    int
 	baseMask    int
@@ -19,17 +30,13 @@ type cdcChunker struct {
 
 var _ Chunker = (*cdcChunker)(nil)
 
-func NewCDC(targetSizeBits int) (Chunker, error) {
-	// Validation must be the same as for func NewFileSpecificChunker.
-	if targetSizeBits < 6 || targetSizeBits > 30 {
-		return nil, errors.New("targetSizeBits must be between 6 and 30 (inclusive)")
-	}
+func (c *CdcConfig) NewCDC() Chunker {
 	chunker := &cdcChunker{
-		baseSize: 1 << (targetSizeBits - 1), // Produces an average chunk size of
-		baseMask: (1 << targetSizeBits) - 1, // approximately 1 << targetSizeBits.
+		baseSize: 1 << (c.targetSizeBits - 1), // Produces an average chunk size of
+		baseMask: (1 << c.targetSizeBits) - 1, // approximately 1 << targetSizeBits.
 	}
 	chunker.Flush()
-	return chunker, nil
+	return chunker
 }
 
 func (c *cdcChunker) Flush() []int {

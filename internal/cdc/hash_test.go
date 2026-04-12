@@ -27,8 +27,9 @@ func TestExpectedValues(t *testing.T) {
 
 func TestHash_basic(t *testing.T) {
 	// Verify chunking in the most basic case.
-	cdcChunker, err := cdc.NewCDC(20)
+	config, err := cdc.NewCdcConfig(20)
 	require.NoError(t, err)
+	cdcChunker := config.NewFileSpecificChunker()
 	chunker := cdc.NewHashingChunker(cdcChunker)
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	chunks := append(chunker.Next(data), chunker.Flush()...)
@@ -64,11 +65,12 @@ func TestHash_multipartInput(t *testing.T) {
 	}
 
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
+	config, err := cdc.NewCdcConfig(20)
+	require.NoError(t, err)
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cdcChunker, err := cdc.NewCDC(20)
-			require.NoError(t, err)
+			cdcChunker := config.NewFileSpecificChunker()
 			chunker := cdc.NewHashingChunker(cdcChunker)
 			remaining := data
 			var chunks []cdc.LengthHash
@@ -84,8 +86,9 @@ func TestHash_multipartInput(t *testing.T) {
 }
 
 func BenchmarkHash(b *testing.B) {
-	cdcChunker, err := cdc.NewCDC(20)
+	config, err := cdc.NewCdcConfig(20)
 	require.NoError(b, err)
+	cdcChunker := config.NewFileSpecificChunker()
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

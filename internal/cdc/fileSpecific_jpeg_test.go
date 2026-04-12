@@ -18,16 +18,16 @@ func TestJpegChunker_SOSFound(t *testing.T) {
 	copy(data, jpegHeader)
 	data = append(data, suffix...)
 
-	chunker, err := NewFileSpecificChunker(6)
+	config, err := NewCdcConfig(6)
 	require.NoError(t, err)
+	chunker := config.NewFileSpecificChunker()
 	require.Equal(t, 0, len(chunker.Next(nil)))
 	chunks := chunker.Next(data)
 	require.Equal(t, 0, len(chunker.Next(nil)))
 	chunks = append(chunks, chunker.Flush()...)
 
 	require.Equal(t, preambleLen+2, chunks[0])
-	ref, err := NewCDC(6)
-	require.NoError(t, err)
+	ref := config.NewCDC()
 	require.Equal(t, append(ref.Next(suffix), ref.Flush()...), chunks[1:])
 }
 
@@ -41,8 +41,9 @@ func TestJpegChunker_SOSWithVariousSplits(t *testing.T) {
 	data[preambleLen+1] = 0xDA
 	copy(data[preambleLen+2:], suffix)
 
-	ref, err := NewCDC(6)
+	config, err := NewCdcConfig(6)
 	require.NoError(t, err)
+	ref := config.NewCDC()
 	expectedChunks := append([]int{preambleLen + 2}, append(ref.Next(suffix), ref.Flush()...)...)
 
 	testCases := []struct {
@@ -55,8 +56,7 @@ func TestJpegChunker_SOSWithVariousSplits(t *testing.T) {
 		{"just after DA", preambleLen + 2},
 	}
 
-	c, err := NewFileSpecificChunker(6)
-	require.NoError(t, err)
+	c := config.NewFileSpecificChunker()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			chunks := append(c.Next(data[:tc.split]), c.Next(data[tc.split:])...)
@@ -73,8 +73,9 @@ func TestJpegChunker_FFNotDA(t *testing.T) {
 	data := append(append(preamble, 0xFF, 0xDA), suffix...)
 	copy(data, jpegHeader)
 
-	chunker, err := NewFileSpecificChunker(6)
+	config, err := NewCdcConfig(6)
 	require.NoError(t, err)
+	chunker := config.NewFileSpecificChunker()
 	chunks := append(chunker.Next(data), chunker.Flush()...)
 	require.Equal(t, len(preamble)+2, chunks[0]) // preamble + FF + DA
 
@@ -96,12 +97,12 @@ func TestJpegChunker_FallbackToCDC_WhenSOSBeyondLimit(t *testing.T) {
 	}
 	copy(data, jpegHeader)
 
-	chunker, err := NewFileSpecificChunker(6)
+	config, err := NewCdcConfig(6)
 	require.NoError(t, err)
+	chunker := config.NewFileSpecificChunker()
 	got := append(chunker.Next(data), chunker.Flush()...)
 
-	ref, err := NewCDC(6)
-	require.NoError(t, err)
+	ref := config.NewCDC()
 	expected := append(ref.Next(data), ref.Flush()...)
 
 	require.Equal(t, expected, got)

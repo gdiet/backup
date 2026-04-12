@@ -10,8 +10,9 @@ import (
 
 func TestCdc_basic(t *testing.T) {
 	// Verify chunking in the most basic case, chunk size 1 MB.
-	chunker, err := cdc.NewCDC(20)
+	config, err := cdc.NewCdcConfig(20)
 	require.NoError(t, err)
+	chunker := config.NewCDC()
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	chunkSizes := append(chunker.Next(data), chunker.Flush()...)
 	expectedChunkSizes := []int{1071508, 1189740, 850402, 1430966, 864507, 1842503, 90406}
@@ -20,8 +21,9 @@ func TestCdc_basic(t *testing.T) {
 
 func TestCdc_text(t *testing.T) {
 	// Verify chunking of text-like data, chunk size 1 kB.
-	chunker, err := cdc.NewCDC(10)
+	config, err := cdc.NewCdcConfig(10)
 	require.NoError(t, err)
+	chunker := config.NewCDC()
 	data := testutil.PseudoRandomText(42, 7*1024)
 	chunkSizes := append(chunker.Next([]byte(data)), chunker.Flush()...)
 	expectedChunkSizes := []int{2025, 714, 540, 969, 1394, 830, 696}
@@ -30,8 +32,9 @@ func TestCdc_text(t *testing.T) {
 
 func TestCdc_small(t *testing.T) {
 	// Verify chunking with very small average chunk sizes (64 B).
-	chunker, err := cdc.NewCDC(6)
+	config, err := cdc.NewCdcConfig(6)
 	require.NoError(t, err)
+	chunker := config.NewFileSpecificChunker()
 	data := testutil.PseudoRandomData(42, 7*64)
 	chunkSizes := append(chunker.Next(data), chunker.Flush()...)
 	expectedChunkSizes := []int{74, 43, 49, 75, 35, 48, 37, 40, 39, 8}
@@ -65,10 +68,12 @@ func TestCdc_multipartInput(t *testing.T) {
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	expectedChunkSizes := []int{1071508, 1189740, 850402, 1430966, 864507, 1842503, 90406}
 
+	config, err := cdc.NewCdcConfig(20)
+	require.NoError(t, err)
+
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			chunker, err := cdc.NewCDC(20)
-			require.NoError(t, err)
+			chunker := config.NewCDC()
 
 			remaining := data
 			var chunkSizes []int
@@ -85,10 +90,12 @@ func TestCdc_multipartInput(t *testing.T) {
 
 // go test -bench=BenchmarkCdc -count=11 ./internal/cdc
 func BenchmarkCdc(b *testing.B) {
+	config, err := cdc.NewCdcConfig(20)
+	require.NoError(b, err)
+	chunker := config.NewCDC()
 	var data = testutil.PseudoRandomData(42, 7*1024*1024)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		chunker, _ := cdc.NewCDC(20)
 		chunker.Next(data)
 		chunker.Flush()
 	}

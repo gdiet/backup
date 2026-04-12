@@ -83,8 +83,9 @@ func getData(id int64, length int, buf []byte) (int, error) {
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("GET /data/%d - unexpected status: %s", id, resp.Status)
 	}
-	cdcChunker, _ := cdc.NewCDC(20)
-	fsChunker, _ := cdc.NewFileSpecificChunker(20)
+	cdcConfig, _ := cdc.NewCdcConfig(20)
+	cdcChunker := cdcConfig.NewCDC()
+	fsChunker := cdcConfig.NewFileSpecificChunker()
 	sChunker := cdc.NewHashingChunker(cdc.NewSingleChunk())
 	cChunker := cdc.NewHashingChunker(cdcChunker)
 	fChunker := cdc.NewHashingChunker(fsChunker)

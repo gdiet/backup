@@ -138,7 +138,8 @@ func backupFile(
 			chunker = cdc.NewSingleChunk()
 		} else {
 			// TODO handle error
-			chunker, _ = cdc.NewFileSpecificChunker(20)
+			config, _ := cdc.NewCdcConfig(20)
+			chunker = config.NewFileSpecificChunker()
 		}
 		hasher := cdc.NewHashingChunker(chunker)
 		buf := make([]byte, 64*1024)
