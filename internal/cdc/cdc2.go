@@ -5,7 +5,7 @@ import "errors"
 type cdc2Chunker struct {
 	baseSize    int
 	baseMask    int
-	currentSize int
+	chunkStart  int
 	currentMask int
 	fingerprint int
 }
@@ -27,18 +27,19 @@ func NewCDC2(targetSizeBits int) (Chunker, error) {
 func (c *cdc2Chunker) Flush() []int {
 	defer func() {
 		c.currentMask = c.baseMask
-		c.currentSize = 0
+		c.chunkStart = 0
 		c.fingerprint = 0
 	}()
-	if c.currentSize == 0 {
+	if c.chunkStart == 0 {
 		return nil
 	}
-	return []int{c.currentSize}
+	return []int{c.chunkStart}
 }
 
 func (c *cdc2Chunker) Next(data []byte) []int { // NOSONAR: complexity is justified
+	// Copying the struct fields to local vars does not help.
+	// It reduced performance by 5-10 % (Go 1.25.5, Intel i7-1355U).
 	i := 0
-	chunkStartsAt := -c.currentSize // The local var gives a small performance gain on i7-1355U.
 	var chunkPositions []int
 
 outer:
@@ -47,18 +48,18 @@ outer:
 		// and the previous 30 bytes influence the fingerprint. At the chunk start,
 		// skip baseSize-30 bytes and use 30 bytes to warm up the fingerprint.
 		// BaseSize can not be less than 32, and targetSizeBits must be at least 6.
-		if chunkStartsAt+c.baseSize-30 > i {
-			i = min(len(data), chunkStartsAt+c.baseSize-30)
+		if c.chunkStart+c.baseSize-30 > i {
+			i = min(len(data), c.chunkStart+c.baseSize-30)
 		}
-		if chunkStartsAt+c.baseSize > i {
-			end := min(len(data), chunkStartsAt+c.baseSize)
+		if c.chunkStart+c.baseSize > i {
+			end := min(len(data), c.chunkStart+c.baseSize)
 			for ; i < end; i++ {
 				c.fingerprint = (c.fingerprint >> 1) ^ table2[data[i]]
 			}
 		}
 
 		// calculate next mask reduction position
-		size := i - chunkStartsAt
+		size := i - c.chunkStart
 		reduceAt := i + c.baseSize - size%c.baseSize
 
 		// find end of chunk
@@ -67,18 +68,18 @@ outer:
 				c.currentMask >>= 1 //  but on i7-1355U this does not speed up things.
 				reduceAt += c.baseSize
 			}
-			c.fingerprint = (c.fingerprint >> 1) + table2[data[i]] // Using local vars for baseSize
-			if (c.fingerprint & c.currentMask) == 0 {              //              and fingerprint reduced per-
-				i++ //                                                formance on i7-1355U.
-				chunkPositions = append(chunkPositions, i-chunkStartsAt)
+			c.fingerprint = (c.fingerprint >> 1) + table2[data[i]]
+			if (c.fingerprint & c.currentMask) == 0 {
+				i++
+				chunkPositions = append(chunkPositions, i-c.chunkStart)
 				c.currentMask = c.baseMask
-				chunkStartsAt = i
+				c.chunkStart = i
 				c.fingerprint = 0
 				continue outer
 			}
 		}
 	}
-	c.currentSize = i - chunkStartsAt
+	c.chunkStart = i - c.chunkStart
 	return chunkPositions
 }
 
