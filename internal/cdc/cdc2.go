@@ -37,10 +37,8 @@ func (c *cdc2Chunker) Flush() []int {
 }
 
 func (c *cdc2Chunker) Next(data []byte) []int { // NOSONAR: complexity is justified
-	//mask := c.currentMask
-	startsAt := -c.currentSize
-	//fingerprint := c.fingerprint
 	i := 0
+	chunkStartsAt := -c.currentSize // The local var gives a small performance gain on i7-1355U.
 	var chunkPositions []int
 
 outer:
@@ -49,39 +47,38 @@ outer:
 		// and the previous 30 bytes influence the fingerprint. At the chunk start,
 		// skip baseSize-30 bytes and use 30 bytes to warm up the fingerprint.
 		// BaseSize can not be less than 32, and targetSizeBits must be at least 6.
-		if startsAt+c.baseSize-30 > i {
-			i = min(len(data), startsAt+c.baseSize-30)
+		if chunkStartsAt+c.baseSize-30 > i {
+			i = min(len(data), chunkStartsAt+c.baseSize-30)
 		}
-		if startsAt+c.baseSize > i {
-			end := min(len(data), startsAt+c.baseSize)
+		if chunkStartsAt+c.baseSize > i {
+			end := min(len(data), chunkStartsAt+c.baseSize)
 			for ; i < end; i++ {
 				c.fingerprint = (c.fingerprint >> 1) ^ table2[data[i]]
 			}
 		}
 
 		// calculate next mask reduction position
-		size := i - startsAt
+		size := i - chunkStartsAt
 		reduceAt := i + c.baseSize - size%c.baseSize
 
 		// find end of chunk
 		for ; i < len(data); i++ {
-			if i == reduceAt {
-				c.currentMask >>= 1
+			if i == reduceAt { //       We could take this check out of the hot loop,
+				c.currentMask >>= 1 //  but on i7-1355U this does not speed up things.
 				reduceAt += c.baseSize
 			}
-			c.fingerprint = (c.fingerprint >> 1) + table2[data[i]]
-			if (c.fingerprint & c.currentMask) == 0 {
-				i++
-				chunkPositions = append(chunkPositions, i-startsAt)
+			c.fingerprint = (c.fingerprint >> 1) + table2[data[i]] // Using local vars for baseSize
+			if (c.fingerprint & c.currentMask) == 0 {              //              and fingerprint reduced per-
+				i++ //                                                formance on i7-1355U.
+				chunkPositions = append(chunkPositions, i-chunkStartsAt)
 				c.currentMask = c.baseMask
-				startsAt = i
+				chunkStartsAt = i
 				c.fingerprint = 0
 				continue outer
 			}
 		}
 	}
-	c.currentSize = i - startsAt
-	//c.currentMask = mask
+	c.currentSize = i - chunkStartsAt
 	return chunkPositions
 }
 

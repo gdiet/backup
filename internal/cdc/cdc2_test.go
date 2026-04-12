@@ -20,10 +20,7 @@ func TestCdc2_basic(t *testing.T) {
 	require.Equal(t, expectedChunkSizes2, chunkSizes)
 }
 
-// go test -bench=BenchmarkCdc2 -benchtime=5s ./internal/cdc
-// reference (own fastcdc implementation): ~245
-// iteration 1: ~215
-// iteration 2: ~295 - use fields instead of local vars
+// go test -bench=BenchmarkCdc2 -benchtime=5s -count=5 ./internal/cdc
 func BenchmarkCdc2(b *testing.B) {
 	data := testutil.PseudoRandomData(42, 70*1024*1024)
 	b.ResetTimer()
