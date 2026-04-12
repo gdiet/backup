@@ -12,7 +12,7 @@ type fileSpecificChunker struct {
 var _ Chunker = (*fileSpecificChunker)(nil)
 
 func (f *fileSpecificChunker) Next(data []byte) []int {
-	f.buf = append(f.buf, data...)
+	f.buf = append(f.buf, data...) // FIXME copy not needed if buf is empty
 	return f.next()
 }
 
