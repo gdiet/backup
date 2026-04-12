@@ -9,7 +9,7 @@ import (
 )
 
 var data2 = testutil.PseudoRandomData(42, 7*1024*1024)
-var expectedChunkSizes2 = []int{833866, 1200640, 1427241, 600947, 2156354, 1120984}
+var expectedChunkSizes2 = []int{1071508, 1189740, 850402, 1430966, 864507, 1842503, 90406}
 
 func TestCdc2_basic(t *testing.T) {
 	// Verify chunking in the most basic case.
