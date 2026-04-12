@@ -62,7 +62,7 @@ outer:
 		if c.chunkStart+c.baseSize > i {
 			end := min(len(data), c.chunkStart+c.baseSize)
 			for ; i < end; i++ {
-				c.fingerprint = (c.fingerprint >> 1) ^ table2[data[i]]
+				c.fingerprint = (c.fingerprint >> 1) ^ table[data[i]]
 			}
 		}
 
@@ -76,7 +76,7 @@ outer:
 				c.currentMask >>= 1 //  but on i7-1355U this does not speed up things.
 				reduceAt += c.baseSize
 			}
-			c.fingerprint = (c.fingerprint >> 1) + table2[data[i]]
+			c.fingerprint = (c.fingerprint >> 1) + table[data[i]]
 			if (c.fingerprint & c.currentMask) == 0 {
 				i++
 				chunkPositions = append(chunkPositions, i-c.chunkStart)
@@ -94,7 +94,7 @@ outer:
 // table contains the 31-bit integer data used for the rolling fingerprint function.
 // The table values have each bit set in exactly 128 entries, ensuring a good
 // distribution of bits for the fingerprint calculation.
-var table2 = [256]int{
+var table = [256]int{
 	0x22612e91, 0x1170f0e6, 0x3303b39b, 0x66bd6edd,
 	0x01d2f2af, 0x231317fa, 0x2a289c7e, 0x36bd43c9,
 	0x1bb014c6, 0x39b82bbf, 0x32ad8dfe, 0x54338a27,
