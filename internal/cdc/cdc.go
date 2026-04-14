@@ -32,8 +32,8 @@ var _ Chunker = (*cdcChunker)(nil)
 
 func (c *CdcConfig) NewCDC() Chunker {
 	chunker := &cdcChunker{
-		baseSize: 1 << (c.targetSizeBits - 1), // Produces an average chunk size of
-		baseMask: (1 << c.targetSizeBits) - 1, // approximately 1 << targetSizeBits.
+		baseSize: 1 << (c.targetSizeBits - 1), // Produces an average chunk size of a
+		baseMask: (1 << c.targetSizeBits) - 1, // little more than 1 << targetSizeBits.
 	}
 	chunker.Flush()
 	return chunker
@@ -83,7 +83,7 @@ outer:
 				c.currentMask >>= 1 //  but on i7-1355U this does not speed up things.
 				reduceAt += c.baseSize
 			}
-			c.fingerprint = (c.fingerprint >> 1) + table[data[i]]
+			c.fingerprint = (c.fingerprint >> 1) ^ table[data[i]]
 			if (c.fingerprint & c.currentMask) == 0 {
 				i++
 				chunkPositions = append(chunkPositions, i-c.chunkStart)

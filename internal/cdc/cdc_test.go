@@ -15,7 +15,7 @@ func TestCdc_basic(t *testing.T) {
 	chunker := config.NewCDC()
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	chunkSizes := append(chunker.Next(data), chunker.Flush()...)
-	expectedChunkSizes := []int{1071508, 1189740, 850402, 1430966, 864507, 1842503, 90406}
+	expectedChunkSizes := []int{1606795, 697894, 638611, 642966, 857992, 829401, 524432, 730375, 811566}
 	require.Equal(t, expectedChunkSizes, chunkSizes)
 }
 
@@ -26,7 +26,7 @@ func TestCdc_text(t *testing.T) {
 	chunker := config.NewCDC()
 	data := testutil.PseudoRandomText(42, 7*1024)
 	chunkSizes := append(chunker.Next([]byte(data)), chunker.Flush()...)
-	expectedChunkSizes := []int{2025, 714, 540, 969, 1394, 830, 696}
+	expectedChunkSizes := []int{1633, 1205, 1184, 1535, 1168, 443}
 	require.Equal(t, expectedChunkSizes, chunkSizes)
 }
 
@@ -37,7 +37,7 @@ func TestCdc_small(t *testing.T) {
 	chunker := config.NewFileSpecificChunker()
 	data := testutil.PseudoRandomData(42, 7*64)
 	chunkSizes := append(chunker.Next(data), chunker.Flush()...)
-	expectedChunkSizes := []int{74, 43, 49, 75, 35, 48, 37, 40, 39, 8}
+	expectedChunkSizes := []int{80, 56, 38, 39, 40, 102, 93}
 	require.Equal(t, expectedChunkSizes, chunkSizes)
 }
 
@@ -66,7 +66,7 @@ func TestCdc_multipartInput(t *testing.T) {
 	}
 
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
-	expectedChunkSizes := []int{1071508, 1189740, 850402, 1430966, 864507, 1842503, 90406}
+	expectedChunkSizes := []int{1606795, 697894, 638611, 642966, 857992, 829401, 524432, 730375, 811566}
 
 	config, err := cdc.NewCdcConfig(20)
 	require.NoError(t, err)

@@ -15,7 +15,7 @@ func TestStandardCdcChunking(t *testing.T) {
 	chunker := config.NewFileSpecificChunker()
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	chunkSizes := append(chunker.Next(data), chunker.Flush()...)
-	expectedChunkSizes := []int{1071508, 1189740, 850402, 1430966, 864507, 1842503, 90406}
+	expectedChunkSizes := []int{1606795, 697894, 638611, 642966, 857992, 829401, 524432, 730375, 811566}
 	require.Equal(t, expectedChunkSizes, chunkSizes)
 }
 
