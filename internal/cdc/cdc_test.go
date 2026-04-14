@@ -88,6 +88,66 @@ func TestCdc_multipartInput(t *testing.T) {
 	}
 }
 
+func TestCdc_chunkEndDetection(t *testing.T) {
+	// Use a known chunk end pattern to verify that chunks end at the expected positions.
+	testCases := []struct {
+		name               string
+		patternEndsAt      []int
+		expectedChunkSizes []int
+	}{
+		{
+			name:               "no chunk end added",
+			patternEndsAt:      []int{},
+			expectedChunkSizes: []int{1658, 1588, 1536, 1338, 1048},
+		},
+		{
+			// TODO it would be nicer if the minimum chunk size was 512, not 513
+			name:               "chunk end added right before the start of the first data partition",
+			patternEndsAt:      []int{512},
+			expectedChunkSizes: []int{1658, 1588, 1536, 1338, 1048},
+		},
+		{
+			name:               "chunk end added at the start of the first data partition",
+			patternEndsAt:      []int{513},
+			expectedChunkSizes: []int{513, 1186, 1547, 1536, 1338, 1048},
+		},
+		{
+			name:               "chunk end added at the start of the mask switch",
+			patternEndsAt:      []int{1024},
+			expectedChunkSizes: []int{1024, 928, 1294, 1536, 1338, 1048},
+		},
+		{
+			name:               "chunk end added immediately after the mask switch",
+			patternEndsAt:      []int{1025},
+			expectedChunkSizes: []int{1025, 927, 1294, 1536, 1338, 1048},
+		},
+	}
+
+	data := testutil.PseudoRandomData(42, 7*1024)
+
+	config, err := cdc.NewCdcConfig(10)
+	require.NoError(t, err)
+
+	a := []byte("1234567890")
+	b := []byte("xxx")
+	copy(a[5-len(b):], b)
+	t.Logf("a: %v", string(a))
+
+	pattern := "kR9MVTnItt1y6KUcekTf,wO-ymFECPi"
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			chunker := config.NewCDC()
+			testdata := make([]byte, len(data))
+			copy(testdata, data)
+			for _, endAt := range tc.patternEndsAt {
+				copy(testdata[endAt-len(pattern):], pattern)
+			}
+			chunkSizes := append(chunker.Next(testdata), chunker.Flush()...)
+			require.Equal(t, tc.expectedChunkSizes, chunkSizes)
+		})
+	}
+}
+
 // go test -bench=BenchmarkCdc -count=11 ./internal/cdc
 func BenchmarkCdc(b *testing.B) {
 	config, err := cdc.NewCdcConfig(20)
