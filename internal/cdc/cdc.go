@@ -100,7 +100,22 @@ outer:
 
 // table contains the 31-bit integer data used for the rolling fingerprint function.
 // The table values have each bit set in exactly 128 entries, ensuring a good
-// distribution of bits for the fingerprint calculation.
+// distribution of bits for the fingerprint calculation. With the algorithm above,
+// for example the following 31 byte patterns always trigger a chunk end when
+// present after minSize:
+//
+//	0x7e, 0xa9, 0xeb, 0x02, 0xa0, 0x6e, 0x68, 0x63,
+//	0xa0, 0xd9, 0xcd, 0xc8, 0xc4, 0xf0, 0x7b, 0xf9,
+//	0x67, 0x17, 0x76, 0x75, 0x76, 0x99, 0xfa, 0x04,
+//	0xe4, 0x37, 0x78, 0x3e, 0x31, 0x75, 0x89,
+//
+// (with fingerprint: 0x 60 00 00 00)
+//
+// or
+//
+// "kR9MVTnItt1y6KUcekTf,wO-ymFECPi"
+//
+// (with fingerprint: 0x 60 00 00 00)
 var table = [256]int{
 	0x22612e91, 0x1170f0e6, 0x3303b39b, 0x66bd6edd,
 	0x01d2f2af, 0x231317fa, 0x2a289c7e, 0x36bd43c9,
