@@ -100,12 +100,6 @@ func TestCdc_chunkEndDetection(t *testing.T) {
 			patternEndsAt:      []int{},
 			expectedChunkSizes: []int{1658, 1588, 1536, 1338, 1048},
 		},
-		//{
-		//	// TODO it would be nicer if the minimum chunk size was 512, not 513
-		//	name:               "chunk end added right before the start of the first data partition",
-		//	patternEndsAt:      []int{512},
-		//	expectedChunkSizes: []int{512, 1187, 1547, 1536, 1338, 1048},
-		//},
 		{
 			name:               "chunk end added at the start of the first data partition",
 			patternEndsAt:      []int{513},

@@ -51,7 +51,7 @@ func (c *cdcChunker) Flush() []int {
 	return []int{-c.chunkStart}
 }
 
-func (c *cdcChunker) Next(data []byte) []int { // NOSONAR: complexity is justified
+func (c *cdcChunker) Next(data []byte) []int {
 	// Copying the struct fields to local vars does not help.
 	// It reduced performance by 5-10 % (Go 1.25.5, Intel i7-1355U).
 	i := 0
@@ -61,12 +61,11 @@ outer:
 	for i < len(data) {
 		// The table values have 31 bits. Due to the right shift, the current byte
 		// and the previous 30 bytes influence the fingerprint. At the chunk start,
-		// skip baseSize-30 bytes and use 30 bytes to warm up the fingerprint.
-		// BaseSize can not be less than 32, and targetSizeBits must be at least 6.
-		if c.chunkStart+c.baseSize-30 > i {
-			i = min(len(data), c.chunkStart+c.baseSize-30)
-		}
+		// skip baseSize-30 bytes and then warm up the fingerprint. That way, the
+		// minimum chunk size is baseSize+1. BaseSize can not be less than 30, so
+		// targetSizeBits must be at least 6.
 		if c.chunkStart+c.baseSize > i {
+			i = min(len(data), c.chunkStart+c.baseSize-30)
 			end := min(len(data), c.chunkStart+c.baseSize)
 			for ; i < end; i++ {
 				c.fingerprint = (c.fingerprint >> 1) ^ table[data[i]]
