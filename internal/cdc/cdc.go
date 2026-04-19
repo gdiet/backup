@@ -70,7 +70,7 @@ outer:
 			i = min(len(data), c.chunkStart+c.baseSize-31)
 			until := min(len(data), c.baseSize+c.chunkStart-1)
 			for ; i < until; i++ {
-				c.fingerprint = (c.fingerprint >> 1) ^ table[data[i]]
+				c.fingerprint = c.fingerprint>>1 ^ table[data[i]]
 			}
 		}
 
@@ -80,8 +80,8 @@ outer:
 				c.currentMask >>= 1 //  but on an i7-1355U, this does not speed up things.
 				c.shiftMaskAt += c.baseSize
 			}
-			c.fingerprint = (c.fingerprint >> 1) ^ table[data[i]]
-			if (c.fingerprint & c.currentMask) == 0 {
+			c.fingerprint = c.fingerprint>>1 ^ table[data[i]]
+			if c.fingerprint&c.currentMask == 0 {
 				i++
 				chunkPositions = append(chunkPositions, i-c.chunkStart)
 				c.chunkStart = i
