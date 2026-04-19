@@ -21,28 +21,30 @@ func NewCdcConfig(targetSizeBits int) (*CdcConfig, error) {
 }
 
 type cdcChunker struct {
-	baseSize    int
-	baseMask    int
+	baseSize    int // Effectively read-only after construction.
 	chunkStart  int
 	currentMask int
+	shiftMaskAt int
 	fingerprint int
 }
 
 var _ Chunker = (*cdcChunker)(nil)
 
+// NewCDC provides a CDC chunker that produces an average chunk size of a little more than targetSize, where targetSize
+// is 2 ^ targetSizeBits. The minimum chunk size is baseSize = targetSize / 2. Chunk limits are detected by checking
+// whether the last N bits of the current fingerprint are all 0. Each baseSize bytes, one bit less is required by the
+// chunk limit detection.
 func (c *CdcConfig) NewCDC() Chunker {
-	chunker := &cdcChunker{
-		baseSize: 1 << (c.targetSizeBits - 1), // Produces an average chunk size of a
-		baseMask: (1 << c.targetSizeBits) - 1, // little more than 1 << targetSizeBits.
-	}
+	chunker := &cdcChunker{baseSize: 1 << (c.targetSizeBits - 1)}
 	chunker.Flush()
 	return chunker
 }
 
 func (c *cdcChunker) Flush() []int {
 	defer func() {
-		c.currentMask = c.baseMask
 		c.chunkStart = 0
+		c.currentMask = 2*c.baseSize - 1
+		c.shiftMaskAt = 2*c.baseSize + 0
 		c.fingerprint = 0
 	}()
 	if c.chunkStart == 0 {
@@ -52,8 +54,8 @@ func (c *cdcChunker) Flush() []int {
 }
 
 func (c *cdcChunker) Next(data []byte) []int {
-	// Copying the struct fields to local vars does not help.
-	// It reduced performance by 5-10 % (Go 1.25.5, Intel i7-1355U).
+	// Copying the struct fields to local vars does not help. With
+	// Go 1.25.5 on Intel i7-1355U, performance dropped by 5 % to 10 %.
 	i := 0
 	var chunkPositions []int
 
@@ -61,39 +63,37 @@ outer:
 	for i < len(data) {
 		// The table values have 31 bits. Due to the right shift, the current byte
 		// and the previous 30 bytes influence the fingerprint. At the chunk start,
-		// skip baseSize-30 bytes and then warm up the fingerprint. That way, the
-		// minimum chunk size is baseSize+1. BaseSize can not be less than 30, so
+		// skip baseSize-31 bytes and then warm up the fingerprint. That way, the
+		// minimum chunk size is baseSize. BaseSize can not be less than 31, so
 		// targetSizeBits must be at least 6.
-		if c.chunkStart+c.baseSize > i {
-			i = min(len(data), c.chunkStart+c.baseSize-30)
-			end := min(len(data), c.chunkStart+c.baseSize)
-			for ; i < end; i++ {
+		if i < c.baseSize+c.chunkStart-1 {
+			i = min(len(data), c.chunkStart+c.baseSize-31)
+			until := min(len(data), c.baseSize+c.chunkStart-1)
+			for ; i < until; i++ {
 				c.fingerprint = (c.fingerprint >> 1) ^ table[data[i]]
 			}
 		}
 
-		// calculate next mask reduction position
-		size := i - c.chunkStart
-		reduceAt := i + c.baseSize - size%c.baseSize
-
 		// find end of chunk
 		for ; i < len(data); i++ {
-			if i == reduceAt { //       We could take this check out of the hot loop,
-				c.currentMask >>= 1 //  but on i7-1355U this does not speed up things.
-				reduceAt += c.baseSize
+			if i == c.shiftMaskAt { //  We could take this check out of an inner hot loop,
+				c.currentMask >>= 1 //  but on an i7-1355U, this does not speed up things.
+				c.shiftMaskAt += c.baseSize
 			}
 			c.fingerprint = (c.fingerprint >> 1) ^ table[data[i]]
 			if (c.fingerprint & c.currentMask) == 0 {
 				i++
 				chunkPositions = append(chunkPositions, i-c.chunkStart)
-				c.currentMask = c.baseMask
 				c.chunkStart = i
+				c.currentMask = 2*c.baseSize - 1
+				c.shiftMaskAt = 2*c.baseSize + i
 				c.fingerprint = 0
 				continue outer
 			}
 		}
 	}
-	c.chunkStart = c.chunkStart - i
+	c.chunkStart -= i
+	c.shiftMaskAt -= i
 	return chunkPositions
 }
 

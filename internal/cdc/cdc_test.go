@@ -1,16 +1,15 @@
-package cdc_test
+package cdc
 
 import (
 	"testing"
 
-	"github.com/gdiet/backup/internal/cdc"
 	"github.com/gdiet/backup/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCdc_basic(t *testing.T) {
 	// Verify chunking in the most basic case, chunk size 1 MB.
-	config, err := cdc.NewCdcConfig(20)
+	config, err := NewCdcConfig(20)
 	require.NoError(t, err)
 	chunker := config.NewCDC()
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
@@ -21,7 +20,7 @@ func TestCdc_basic(t *testing.T) {
 
 func TestCdc_text(t *testing.T) {
 	// Verify chunking of text-like data, chunk size 1 kB.
-	config, err := cdc.NewCdcConfig(10)
+	config, err := NewCdcConfig(10)
 	require.NoError(t, err)
 	chunker := config.NewCDC()
 	data := testutil.PseudoRandomText(42, 7*1024)
@@ -32,9 +31,9 @@ func TestCdc_text(t *testing.T) {
 
 func TestCdc_small(t *testing.T) {
 	// Verify chunking with very small average chunk sizes (64 B).
-	config, err := cdc.NewCdcConfig(6)
+	config, err := NewCdcConfig(6)
 	require.NoError(t, err)
-	chunker := config.NewFileSpecificChunker()
+	chunker := config.NewCDC()
 	data := testutil.PseudoRandomData(42, 7*64)
 	chunkSizes := append(chunker.Next(data), chunker.Flush()...)
 	expectedChunkSizes := []int{80, 56, 38, 39, 40, 102, 93}
@@ -52,23 +51,31 @@ func TestCdc_multipartInput(t *testing.T) {
 			input: []int{},
 		},
 		{
-			name:  "split at chunk border",
-			input: []int{1071508 - 1, 1, 1},
+			name:  "split in the middle of the first chunk",
+			input: []int{1000000 - 1, 1, 1},
 		},
 		{
-			name:  "split before minSize",
-			input: []int{1071508 + 1000},
+			name:  "split at chunk border to second chunk",
+			input: []int{1606795 - 1, 1, 1},
 		},
 		{
-			name:  "split at minSize border",
-			input: []int{1071508 + 1<<19 - 1, 1, 1},
+			name:  "split before minSize of second chunk",
+			input: []int{1606795 + 1000 - 1, 1, 1},
+		},
+		{
+			name:  "split at minSize border of second chunk",
+			input: []int{1606795 + 1<<19 - 1, 1, 1},
+		},
+		{
+			name:  "split in the middle of second chunk",
+			input: []int{1606795 + 1000000 - 1, 1, 1},
 		},
 	}
 
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	expectedChunkSizes := []int{1606795, 697894, 638611, 642966, 857992, 829401, 524432, 730375, 811566}
 
-	config, err := cdc.NewCdcConfig(20)
+	config, err := NewCdcConfig(20)
 	require.NoError(t, err)
 
 	for _, tc := range testCases {
@@ -119,7 +126,7 @@ func TestCdc_chunkEndDetection(t *testing.T) {
 
 	data := testutil.PseudoRandomData(42, 7*1024)
 
-	config, err := cdc.NewCdcConfig(10)
+	config, err := NewCdcConfig(10)
 	require.NoError(t, err)
 
 	a := []byte("1234567890")
@@ -144,7 +151,7 @@ func TestCdc_chunkEndDetection(t *testing.T) {
 
 // go test -bench=BenchmarkCdc -count=11 ./internal/cdc
 func BenchmarkCdc(b *testing.B) {
-	config, err := cdc.NewCdcConfig(20)
+	config, err := NewCdcConfig(20)
 	require.NoError(b, err)
 	chunker := config.NewCDC()
 	var data = testutil.PseudoRandomData(42, 7*1024*1024)
