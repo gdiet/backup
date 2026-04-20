@@ -138,7 +138,7 @@ func backupFile(
 			chunker = cdc.NewSingleChunk()
 		} else {
 			// TODO handle error
-			config, _ := cdc.NewCdcConfig(20)
+			config, _ := cdc.NewConfig(20)
 			chunker = config.NewFileSpecificChunker()
 		}
 		hasher := cdc.NewHashingChunker(chunker)

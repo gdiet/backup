@@ -29,7 +29,7 @@ func TestExpectedValues(t *testing.T) {
 
 func TestHash_basic(t *testing.T) {
 	// Verify chunking in the most basic case.
-	config, err := cdc.NewCdcConfig(20)
+	config, err := cdc.NewConfig(20)
 	require.NoError(t, err)
 	cdcChunker := config.NewFileSpecificChunker()
 	chunker := cdc.NewHashingChunker(cdcChunker)
@@ -67,7 +67,7 @@ func TestHash_multipartInput(t *testing.T) {
 	}
 
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
-	config, err := cdc.NewCdcConfig(20)
+	config, err := cdc.NewConfig(20)
 	require.NoError(t, err)
 
 	for _, tc := range testCases {
@@ -88,7 +88,7 @@ func TestHash_multipartInput(t *testing.T) {
 }
 
 func BenchmarkHash(b *testing.B) {
-	config, err := cdc.NewCdcConfig(20)
+	config, err := cdc.NewConfig(20)
 	require.NoError(b, err)
 	cdcChunker := config.NewFileSpecificChunker()
 	data := testutil.PseudoRandomData(42, 7*1024*1024)

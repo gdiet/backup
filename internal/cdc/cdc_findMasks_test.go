@@ -66,7 +66,7 @@ func TestCdc_findMasks(t *testing.T) {
 
 func TestCdc_verifyMask10a(t *testing.T) { // pattern for 8 bit mask
 	pattern, _ := hex.DecodeString("840ec3c0fd581243cea3e828a15c70ce9a7f3b59f9a2aae3eb28cb670f0e97")
-	cfg, _ := NewCdcConfig(10)
+	cfg, _ := NewConfig(10)
 	cdc := cfg.NewCDC()
 	data := make([]byte, 1031)
 	copy(data[1000:], pattern)
@@ -75,7 +75,7 @@ func TestCdc_verifyMask10a(t *testing.T) { // pattern for 8 bit mask
 
 func TestCdc_verifyMask10b(t *testing.T) { // pattern for 9 bit mask
 	pattern, _ := hex.DecodeString("80e29f79c7ead1f14912f238a56d59736908f3fe1ad87a97e8c2cd89d8a479")
-	cfg, _ := NewCdcConfig(10)
+	cfg, _ := NewConfig(10)
 	cdc := cfg.NewCDC()
 	data := make([]byte, 1031)
 	copy(data[1000:], pattern)

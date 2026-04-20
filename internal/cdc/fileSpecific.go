@@ -5,7 +5,7 @@ import (
 )
 
 type fileSpecificChunker struct {
-	cdcConfig *CdcConfig
+	cdcConfig *Config
 	buf       []byte
 	next      func() []int
 	flush     func() []int
@@ -22,7 +22,7 @@ func (f *fileSpecificChunker) Flush() []int {
 	return f.flush()
 }
 
-func (c *CdcConfig) NewFileSpecificChunker() Chunker {
+func (c *Config) NewFileSpecificChunker() Chunker {
 	chunker := &fileSpecificChunker{cdcConfig: c}
 	chunker.reset()
 	return chunker

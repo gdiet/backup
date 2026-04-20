@@ -9,19 +9,19 @@ import (
 )
 
 func TestCdc_illegalConfig(t *testing.T) {
-	_, err := NewCdcConfig(5)
+	_, err := NewConfig(5)
 	require.Error(t, err)
-	_, err = NewCdcConfig(6)
+	_, err = NewConfig(6)
 	require.NoError(t, err)
-	_, err = NewCdcConfig(30)
+	_, err = NewConfig(30)
 	require.NoError(t, err)
-	_, err = NewCdcConfig(31)
+	_, err = NewConfig(31)
 	require.Error(t, err)
 }
 
 func TestCdc_basic(t *testing.T) {
 	// Verify chunking in the most basic case, chunk size 1 MB.
-	config, err := NewCdcConfig(20)
+	config, err := NewConfig(20)
 	require.NoError(t, err)
 	chunker := config.NewCDC()
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
@@ -32,7 +32,7 @@ func TestCdc_basic(t *testing.T) {
 
 func TestCdc_text(t *testing.T) {
 	// Verify chunking of text-like data, chunk size 1 kB.
-	config, err := NewCdcConfig(10)
+	config, err := NewConfig(10)
 	require.NoError(t, err)
 	chunker := config.NewCDC()
 	data := testutil.PseudoRandomText(42, 7*1024)
@@ -43,7 +43,7 @@ func TestCdc_text(t *testing.T) {
 
 func TestCdc_repeatedValue(t *testing.T) {
 	// Verify chunking of data consisting of repeated values, chunk size 1 kB.
-	config, err := NewCdcConfig(10)
+	config, err := NewConfig(10)
 	maxChunkSize := 1 << 10 / 2 * (10 + 1) // See description of NewCDC.
 	require.NoError(t, err)
 	chunker := config.NewCDC()
@@ -59,7 +59,7 @@ func TestCdc_repeatedValue(t *testing.T) {
 
 func TestCdc_small(t *testing.T) {
 	// Verify chunking with very small average chunk sizes (64 B).
-	config, err := NewCdcConfig(6)
+	config, err := NewConfig(6)
 	require.NoError(t, err)
 	chunker := config.NewCDC()
 	data := testutil.PseudoRandomData(42, 7*64)
@@ -72,7 +72,7 @@ func TestCdc_averageChunkSize(t *testing.T) {
 	// For this, testutil.PseudoRandomData maybe is not random enough.
 
 	rnd := rand.NewChaCha8([32]byte{})
-	config, err := NewCdcConfig(6)
+	config, err := NewConfig(6)
 	require.NoError(t, err)
 	chunker := config.NewCDC()
 	data := make([]byte, (1<<6)*1000)
@@ -81,7 +81,7 @@ func TestCdc_averageChunkSize(t *testing.T) {
 	avgSize6 := len(data) / len(chunkSizes)
 
 	rnd = rand.NewChaCha8([32]byte{})
-	config, err = NewCdcConfig(16)
+	config, err = NewConfig(16)
 	require.NoError(t, err)
 	chunker = config.NewCDC()
 	data = make([]byte, (1<<16)*1000)
@@ -147,7 +147,7 @@ func TestCdc_multipartInput(t *testing.T) {
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	expectedChunkSizes := []int{1606795, 697894, 638611, 642966, 857992, 829401, 524432, 730375, 811566}
 
-	config, err := NewCdcConfig(20)
+	config, err := NewConfig(20)
 	require.NoError(t, err)
 
 	for _, tc := range testCases {
@@ -208,7 +208,7 @@ func TestCdc_chunkEndDetection(t *testing.T) {
 
 	data := testutil.PseudoRandomData(42, 7*1024)
 
-	config, err := NewCdcConfig(10)
+	config, err := NewConfig(10)
 	require.NoError(t, err)
 
 	a := []byte("1234567890")
@@ -233,7 +233,7 @@ func TestCdc_chunkEndDetection(t *testing.T) {
 
 // go test -bench=BenchmarkCdc -count=11 ./internal/cdc
 func BenchmarkCdc(b *testing.B) {
-	config, err := NewCdcConfig(20)
+	config, err := NewConfig(20)
 	require.NoError(b, err)
 	chunker := config.NewCDC()
 	var data = testutil.PseudoRandomData(42, 7*1024*1024)

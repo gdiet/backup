@@ -9,20 +9,20 @@ type Chunker interface {
 	Flush() []int
 }
 
-type CdcConfig struct {
+type Config struct {
 	targetSizeBits int
 }
 
-// NewCdcConfig provides a validated CDC chunker config. For the standard CDC chunker, average chunk sizes will be
+// NewConfig provides a validated CDC chunker config. For the standard CDC chunker, average chunk sizes will be
 // a little more than targetSize, where targetSize is 2 ^ targetSizeBits.
-func NewCdcConfig(targetSizeBits int) (*CdcConfig, error) {
+func NewConfig(targetSizeBits int) (*Config, error) {
 	if targetSizeBits < 6 || targetSizeBits > 30 {
 		return nil, errors.New("targetSizeBits must be between 6 and 30 (inclusive)")
 	}
-	return &CdcConfig{targetSizeBits}, nil
+	return &Config{targetSizeBits}, nil
 }
 
-type cdcChunker struct {
+type chunker struct {
 	baseSize    int // Effectively read-only after construction.
 	chunkStart  int
 	currentMask int
@@ -30,19 +30,19 @@ type cdcChunker struct {
 	fingerprint int
 }
 
-var _ Chunker = (*cdcChunker)(nil)
+var _ Chunker = (*chunker)(nil)
 
 // NewCDC provides a CDC chunker that produces an average chunk size of a little more than targetSize, where targetSize
 // is 2 ^ targetSizeBits. The minimum chunk size is baseSize = targetSize / 2, the maximum chunk size is
 // targetSize / 2 * (targetSizeBits + 1). Chunk limits are detected by checking whether the last N bits of the current
 // fingerprint are all 0. Each baseSize bytes, one bit less is required by the chunk limit detection.
-func (c *CdcConfig) NewCDC() Chunker {
-	chunker := &cdcChunker{baseSize: 1 << (c.targetSizeBits - 1)}
+func (c *Config) NewCDC() Chunker {
+	chunker := &chunker{baseSize: 1 << (c.targetSizeBits - 1)}
 	chunker.Flush()
 	return chunker
 }
 
-func (c *cdcChunker) Flush() []int {
+func (c *chunker) Flush() []int {
 	defer func() {
 		c.chunkStart = 0
 		c.currentMask = 2*c.baseSize - 1
@@ -55,7 +55,7 @@ func (c *cdcChunker) Flush() []int {
 	return []int{-c.chunkStart}
 }
 
-func (c *cdcChunker) Next(data []byte) []int {
+func (c *chunker) Next(data []byte) []int {
 	// Copying the struct fields to local vars does not help. With
 	// Go 1.25.5 on Intel i7-1355U, performance dropped by 5 % to 10 %.
 	i := 0

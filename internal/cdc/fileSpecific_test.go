@@ -10,7 +10,7 @@ import (
 
 func TestStandardCdcChunking(t *testing.T) {
 	// Verify chunking in the most basic case.
-	config, err := cdc.NewCdcConfig(20)
+	config, err := cdc.NewConfig(20)
 	require.NoError(t, err)
 	chunker := config.NewFileSpecificChunker()
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
@@ -20,7 +20,7 @@ func TestStandardCdcChunking(t *testing.T) {
 }
 
 func TestSixByteData(t *testing.T) {
-	config, err := cdc.NewCdcConfig(20)
+	config, err := cdc.NewConfig(20)
 	require.NoError(t, err)
 	chunker := config.NewFileSpecificChunker()
 	data := testutil.PseudoRandomData(42, 6)
