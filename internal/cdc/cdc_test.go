@@ -7,6 +7,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCdc_illegalConfig(t *testing.T) {
+	_, err := NewCdcConfig(5)
+	require.Error(t, err)
+	_, err = NewCdcConfig(6)
+	require.NoError(t, err)
+	_, err = NewCdcConfig(30)
+	require.NoError(t, err)
+	_, err = NewCdcConfig(31)
+	require.Error(t, err)
+}
+
 func TestCdc_basic(t *testing.T) {
 	// Verify chunking in the most basic case, chunk size 1 MB.
 	config, err := NewCdcConfig(20)
@@ -30,7 +41,7 @@ func TestCdc_text(t *testing.T) {
 }
 
 func TestCdc_repeatedValue(t *testing.T) {
-	// Verify chunking of zero filled data, chunk size 1 kB.
+	// Verify chunking of data consisting of repeated values, chunk size 1 kB.
 	config, err := NewCdcConfig(10)
 	maxChunkSize := 1 << 10 / 2 * (10 + 1) // See description of NewCDC.
 	require.NoError(t, err)
@@ -124,9 +135,19 @@ func TestCdc_chunkEndDetection(t *testing.T) {
 			expectedChunkSizes: []int{1658, 1588, 1536, 1338, 1048},
 		},
 		{
+			name:               "chunk end added before the start of the first data partition",
+			patternEndsAt:      []int{511}, // Expect the chunk end to be ignored.
+			expectedChunkSizes: []int{1658, 1588, 1536, 1338, 1048},
+		},
+		{
 			name:               "chunk end added at the start of the first data partition",
-			patternEndsAt:      []int{513},
-			expectedChunkSizes: []int{513, 1186, 1547, 1536, 1338, 1048},
+			patternEndsAt:      []int{512},
+			expectedChunkSizes: []int{512, 1187, 1547, 1536, 1338, 1048},
+		},
+		{
+			name:               "chunk end added before the mask switch",
+			patternEndsAt:      []int{1023},
+			expectedChunkSizes: []int{1023, 929, 1294, 1536, 1338, 1048},
 		},
 		{
 			name:               "chunk end added at the start of the mask switch",
