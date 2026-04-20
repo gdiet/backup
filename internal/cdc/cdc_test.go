@@ -231,6 +231,20 @@ func TestCdc_chunkEndDetection(t *testing.T) {
 	}
 }
 
+func TestCdc_tableProperties(t *testing.T) {
+	// Verify that the table values have each bit set in exactly 128 entries.
+	tab := [256]int{}
+	copy(tab[:], table[:])
+	for b := 1; b <= 31; b++ {
+		n := 0
+		for i := range tab {
+			n += tab[i] & 1
+			tab[i] >>= 1
+		}
+		require.Equal(t, n, 128, "bit count mismatch at bit %v", b)
+	}
+}
+
 // go test -bench=BenchmarkCdc -count=11 ./internal/cdc
 func BenchmarkCdc(b *testing.B) {
 	config, err := NewConfig(20)
