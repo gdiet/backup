@@ -31,9 +31,9 @@ type cdcChunker struct {
 var _ Chunker = (*cdcChunker)(nil)
 
 // NewCDC provides a CDC chunker that produces an average chunk size of a little more than targetSize, where targetSize
-// is 2 ^ targetSizeBits. The minimum chunk size is baseSize = targetSize / 2. Chunk limits are detected by checking
-// whether the last N bits of the current fingerprint are all 0. Each baseSize bytes, one bit less is required by the
-// chunk limit detection.
+// is 2 ^ targetSizeBits. The minimum chunk size is baseSize = targetSize / 2, the maximum chunk size is
+// targetSize / 2 * (targetSizeBits + 1). Chunk limits are detected by checking whether the last N bits of the current
+// fingerprint are all 0. Each baseSize bytes, one bit less is required by the chunk limit detection.
 func (c *CdcConfig) NewCDC() Chunker {
 	chunker := &cdcChunker{baseSize: 1 << (c.targetSizeBits - 1)}
 	chunker.Flush()
@@ -44,7 +44,7 @@ func (c *cdcChunker) Flush() []int {
 	defer func() {
 		c.chunkStart = 0
 		c.currentMask = 2*c.baseSize - 1
-		c.shiftMaskAt = 2*c.baseSize + 0
+		c.shiftMaskAt = 2*c.baseSize - 1
 		c.fingerprint = 0
 	}()
 	if c.chunkStart == 0 {
@@ -86,7 +86,7 @@ outer:
 				chunkPositions = append(chunkPositions, i-c.chunkStart)
 				c.chunkStart = i
 				c.currentMask = 2*c.baseSize - 1
-				c.shiftMaskAt = 2*c.baseSize + i
+				c.shiftMaskAt = 2*c.baseSize - 1 + i
 				c.fingerprint = 0
 				continue outer
 			}

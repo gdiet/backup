@@ -29,6 +29,22 @@ func TestCdc_text(t *testing.T) {
 	require.Equal(t, expectedChunkSizes, chunkSizes)
 }
 
+func TestCdc_repeatedValue(t *testing.T) {
+	// Verify chunking of zero filled data, chunk size 1 kB.
+	config, err := NewCdcConfig(10)
+	maxChunkSize := 1 << 10 / 2 * (10 + 1) // See description of NewCDC.
+	require.NoError(t, err)
+	chunker := config.NewCDC()
+	data := make([]byte, 11*1024)
+	for i := 0; i < len(data); i++ {
+		// Change if you want to play with other values.
+		// Not all values result in maxium chunk size.
+		data[i] = 3
+	}
+	expectedChunkSizes := []int{maxChunkSize, maxChunkSize}
+	require.Equal(t, expectedChunkSizes, chunker.Next(data))
+}
+
 func TestCdc_small(t *testing.T) {
 	// Verify chunking with very small average chunk sizes (64 B).
 	config, err := NewCdcConfig(6)
