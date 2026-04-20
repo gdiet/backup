@@ -72,7 +72,7 @@ func TestHash_multipartInput(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cdcChunker := config.NewFileSpecificChunker()
+			cdcChunker := config.NewCDC()
 			chunker := cdc.NewHashingChunker(cdcChunker)
 			remaining := data
 			var chunks []cdc.LengthHash
