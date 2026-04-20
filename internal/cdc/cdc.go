@@ -13,6 +13,8 @@ type CdcConfig struct {
 	targetSizeBits int
 }
 
+// NewCdcConfig provides a validated CDC chunker config. For the standard CDC chunker, average chunk sizes will be
+// a little more than targetSize, where targetSize is 2 ^ targetSizeBits.
 func NewCdcConfig(targetSizeBits int) (*CdcConfig, error) {
 	if targetSizeBits < 6 || targetSizeBits > 30 {
 		return nil, errors.New("targetSizeBits must be between 6 and 30 (inclusive)")
@@ -67,7 +69,7 @@ outer:
 		// minimum chunk size is baseSize. BaseSize can not be less than 31, so
 		// targetSizeBits must be at least 6.
 		if i < c.baseSize+c.chunkStart-1 {
-			i = min(len(data), c.chunkStart+c.baseSize-31)
+			i = max(0, min(len(data), c.baseSize+c.chunkStart-31))
 			until := min(len(data), c.baseSize+c.chunkStart-1)
 			for ; i < until; i++ {
 				c.fingerprint = c.fingerprint>>1 ^ table[data[i]]

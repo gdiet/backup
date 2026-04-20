@@ -1,6 +1,7 @@
 package cdc
 
 import (
+	"math/rand/v2"
 	"testing"
 
 	"github.com/gdiet/backup/internal/testutil"
@@ -65,6 +66,46 @@ func TestCdc_small(t *testing.T) {
 	chunkSizes := append(chunker.Next(data), chunker.Flush()...)
 	expectedChunkSizes := []int{80, 56, 38, 39, 40, 102, 93}
 	require.Equal(t, expectedChunkSizes, chunkSizes)
+}
+
+func TestCdc_averageChunkSize(t *testing.T) {
+	// For this, testutil.PseudoRandomData maybe is not random enough.
+
+	rnd := rand.NewChaCha8([32]byte{})
+	config, err := NewCdcConfig(6)
+	require.NoError(t, err)
+	chunker := config.NewCDC()
+	data := make([]byte, (1<<6)*1000)
+	_, _ = rnd.Read(data)
+	chunkSizes := chunker.Next(data)
+	avgSize6 := len(data) / len(chunkSizes)
+
+	rnd = rand.NewChaCha8([32]byte{})
+	config, err = NewCdcConfig(16)
+	require.NoError(t, err)
+	chunker = config.NewCDC()
+	data = make([]byte, (1<<16)*1000)
+	_, _ = rnd.Read(data)
+	chunkSizes = chunker.Next(data)
+	avgSize16 := len(data) / len(chunkSizes)
+
+	// Long running (e.g. 30 s)
+	//rnd = rand.NewChaCha8([32]byte{})
+	//config, err = NewCdcConfig(26)
+	//require.NoError(t, err)
+	//chunker = config.NewCDC()
+	//chunkSizes = []int{}
+	//data = make([]byte, (1 << 26))
+	//_, _ = rnd.Read(data)
+	//for i := 0; i < 1000; i++ {
+	//	_, _ = rnd.Read(data)
+	//	chunkSizes = append(chunkSizes, chunker.Next(data)...)
+	//}
+	//avgSize26 := len(data) * 1000 / len(chunkSizes)
+
+	require.Equal(t, 72, avgSize6)     //       64 ~ 72        + 13 %
+	require.Equal(t, 75069, avgSize16) //    65536 ~ 75069     + 15 %
+	//require.Equal(t, 76433785, avgSize26) // 67108864 ~ 76433785  + 14 %
 }
 
 func TestCdc_multipartInput(t *testing.T) {
