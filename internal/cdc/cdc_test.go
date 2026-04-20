@@ -119,6 +119,10 @@ func TestCdc_multipartInput(t *testing.T) {
 			input: []int{},
 		},
 		{
+			name:  "split in the fingerprint warm-up section of the first chunk",
+			input: []int{1024*1024/2 - 15, 5, 15},
+		},
+		{
 			name:  "split in the middle of the first chunk",
 			input: []int{1000000 - 1, 1, 1},
 		},
