@@ -13,8 +13,7 @@ type Config struct {
 	targetSizeBits int
 }
 
-// NewConfig provides a validated CDC chunker config. For the standard CDC chunker, average chunk sizes will be
-// a little more than targetSize, where targetSize is 2 ^ targetSizeBits.
+// NewConfig provides a validated CDC chunker config.
 func NewConfig(targetSizeBits int) (*Config, error) {
 	if targetSizeBits < 6 || targetSizeBits > 30 {
 		return nil, errors.New("targetSizeBits must be between 6 and 30 (inclusive)")
@@ -36,6 +35,13 @@ var _ Chunker = (*chunker)(nil)
 // is 2 ^ targetSizeBits. The minimum chunk size is baseSize = targetSize / 2, the maximum chunk size is
 // targetSize / 2 * (targetSizeBits + 1). Chunk limits are detected by checking whether the last N bits of the current
 // fingerprint are all 0. Each baseSize bytes, one bit less is required by the chunk limit detection.
+// Chunk size distribution is approximately:
+// 1*targetSize/2 to 2*targetSize/2 - 40 %;
+// 2*targetSize/2 to 3*targetSize/2 - 38 %;
+// 3*targetSize/2 to 4*targetSize/2 - 19 %;
+// 4*targetSize/2 to 5*targetSize/2 -  3 %.
+// 5*targetSize/2 to 6*targetSize/2 -  0,05 %.
+// Larger chunk sizes are rare for data with at least some entropy.
 func (c *Config) NewCDC() Chunker {
 	chunker := &chunker{baseSize: 1 << (c.targetSizeBits - 1)}
 	chunker.Flush()
