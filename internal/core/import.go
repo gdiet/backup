@@ -83,17 +83,21 @@ func getData(id int64, length int, buf []byte) (int, error) {
 	if resp.StatusCode != http.StatusOK {
 		return 0, fmt.Errorf("GET /data/%d - unexpected status: %s", id, resp.Status)
 	}
-	cdcConfig, _ := cdc.NewConfig(20)
-	cdcChunker := cdcConfig.NewCDC()
-	fsChunker := cdcConfig.NewFileSpecificChunker()
+	cdcConfig20, _ := cdc.NewConfig(20)
+	cdcConfig19, _ := cdc.NewConfig(19)
+	cdcChunker20 := cdcConfig20.NewCDC()
+	cdcChunker19 := cdcConfig19.NewCDC()
+	fsChunker := cdcConfig20.NewFileSpecificChunker()
 	sChunker := cdc.NewHashingChunker(cdc.NewSingleChunk())
-	cChunker := cdc.NewHashingChunker(cdcChunker)
+	c20Chunker := cdc.NewHashingChunker(cdcChunker20)
+	c19Chunker := cdc.NewHashingChunker(cdcChunker19)
 	fChunker := cdc.NewHashingChunker(fsChunker)
-	var sChunks, cChunks, fChunks []cdc.LengthHash
+	var sChunks, cChunks20, cChunks19, fChunks []cdc.LengthHash
 	for err == nil {
 		length, err = resp.Body.Read(buf)
 		sChunks = append(sChunks, sChunker.Next(buf[:length])...)
-		cChunks = append(cChunks, cChunker.Next(buf[:length])...)
+		cChunks20 = append(cChunks20, c20Chunker.Next(buf[:length])...)
+		cChunks19 = append(cChunks19, c19Chunker.Next(buf[:length])...)
 		fChunks = append(fChunks, fChunker.Next(buf[:length])...)
 	}
 	if err != io.EOF {
@@ -104,13 +108,17 @@ func getData(id int64, length int, buf []byte) (int, error) {
 		return 0, err
 	}
 	sChunks = append(sChunks, sChunker.Flush()...)
-	cChunks = append(cChunks, cChunker.Flush()...)
+	cChunks20 = append(cChunks20, c20Chunker.Flush()...)
+	cChunks19 = append(cChunks19, c19Chunker.Flush()...)
 	fChunks = append(fChunks, fChunker.Flush()...)
 	for i, chunk := range sChunks {
 		fmt.Printf("s,%d,%d,%v\n", id, i+1, &chunk)
 	}
-	for i, chunk := range cChunks {
+	for i, chunk := range cChunks20 {
 		fmt.Printf("c,%d,%d,%v\n", id, i+1, &chunk)
+	}
+	for i, chunk := range cChunks19 {
+		fmt.Printf("x,%d,%d,%v\n", id, i+1, &chunk)
 	}
 	for i, chunk := range fChunks {
 		fmt.Printf("f,%d,%d,%v\n", id, i+1, &chunk)
