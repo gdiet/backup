@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/gdiet/backup/internal/cdc"
+	"lukechampine.com/blake3"
 )
 
 /*
@@ -88,10 +89,10 @@ func getData(id int64, length int, buf []byte) (int, error) {
 	cdcChunker20 := cdcConfig20.NewCDC()
 	cdcChunker19 := cdcConfig19.NewCDC()
 	fsChunker := cdcConfig20.NewFileSpecificChunker()
-	sChunker := cdc.NewHashingChunker(cdc.NewSingleChunk())
-	c20Chunker := cdc.NewHashingChunker(cdcChunker20)
-	c19Chunker := cdc.NewHashingChunker(cdcChunker19)
-	fChunker := cdc.NewHashingChunker(fsChunker)
+	sChunker := cdc.NewHashingChunker(blake3.New(20, nil), cdc.NewSingleChunk())
+	c20Chunker := cdc.NewHashingChunker(blake3.New(20, nil), cdcChunker20)
+	c19Chunker := cdc.NewHashingChunker(blake3.New(20, nil), cdcChunker19)
+	fChunker := cdc.NewHashingChunker(blake3.New(20, nil), fsChunker)
 	var sChunks, cChunks20, cChunks19, fChunks []cdc.LengthHash
 	for err == nil {
 		length, err = resp.Body.Read(buf)

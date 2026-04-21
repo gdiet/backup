@@ -6,6 +6,7 @@ import (
 	"github.com/gdiet/backup/internal/cdc"
 	"github.com/gdiet/backup/internal/testutil"
 	"github.com/stretchr/testify/require"
+	"lukechampine.com/blake3"
 )
 
 var expectedChunks = []cdc.LengthHash{
@@ -32,7 +33,7 @@ func TestHash_basic(t *testing.T) {
 	config, err := cdc.NewConfig(20)
 	require.NoError(t, err)
 	cdcChunker := config.NewFileSpecificChunker()
-	chunker := cdc.NewHashingChunker(cdcChunker)
+	chunker := cdc.NewHashingChunker(blake3.New(20, nil), cdcChunker)
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	chunks := append(chunker.Next(data), chunker.Flush()...)
 	require.Equal(t, expectedChunks, chunks)
@@ -73,7 +74,7 @@ func TestHash_multipartInput(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			cdcChunker := config.NewCDC()
-			chunker := cdc.NewHashingChunker(cdcChunker)
+			chunker := cdc.NewHashingChunker(blake3.New(20, nil), cdcChunker)
 			remaining := data
 			var chunks []cdc.LengthHash
 			for _, split := range tc.input {
@@ -94,7 +95,7 @@ func BenchmarkHash(b *testing.B) {
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		chunker := cdc.NewHashingChunker(cdcChunker)
+		chunker := cdc.NewHashingChunker(blake3.New(20, nil), cdcChunker)
 		chunker.Next(data)
 		chunker.Flush()
 	}

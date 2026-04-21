@@ -15,6 +15,7 @@ import (
 	"github.com/gdiet/backup/internal/fserr"
 	"github.com/gdiet/backup/internal/meta"
 	"github.com/gdiet/backup/internal/util"
+	"lukechampine.com/blake3"
 )
 
 func Backup(repo string, args []string) error {
@@ -141,7 +142,7 @@ func backupFile(
 			config, _ := cdc.NewConfig(20)
 			chunker = config.NewFileSpecificChunker()
 		}
-		hasher := cdc.NewHashingChunker(chunker)
+		hasher := cdc.NewHashingChunker(blake3.New(20, nil), chunker)
 		buf := make([]byte, 64*1024)
 		var result []cdc.LengthHash
 		for {
