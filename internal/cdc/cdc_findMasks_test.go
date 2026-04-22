@@ -11,6 +11,35 @@ import (
 )
 
 /*
+Example end-of-chunk patterns (see http://prize.hutter1.net/ for enwik9, the text file used to find the patterns):
+
+bits= 6, fingerprint=1194386752, '/ http://www.mediawiki.org/xml/'
+bits= 7, fingerprint= 145040512, 'ent>adding cur_id=5: {{R from C'
+bits= 8, fingerprint= 497677056, 'History of International Police'
+bits= 9, fingerprint=1155593728, 'ty as they wish, such as exploi'
+bits=10, fingerprint= 404610048, 'ears amidst much internal confl'
+bits=11, fingerprint= 242284544, ' a positive label by self-defin'
+bits=12, fingerprint= 419475456, 'rofessing respect for Kropotkin'
+bits=13, fingerprint=  88170496, 'st anarchist periodical ever pu'
+bits=14, fingerprint= 174276608, 'hat it is against, anarchists a'
+bits=15, fingerprint= 599228416, 'eviously captured and sold into'
+bits=16, fingerprint= 748486656, 'hould be known officially as Au'
+bits=17, fingerprint= 805175296, '//www.careeruae.net/ Career UAE'
+bits=18, fingerprint=1232863232, 'les and a record 17 ATP Masters'
+bits=19, fingerprint=2135425024, 'as the public face of a company'
+bits=20, fingerprint= 376438784, 'ependent khanates. Following th'
+bits=21, fingerprint=1000341504, 'ive merits are subject to debat'
+bits=22, fingerprint= 935329792, 'e consists in decorous desire f'
+bits=23, fingerprint= 125829120, 's to humans, especially in area'
+bits=24, fingerprint= 385875968, 'hand, facing and recognizing th'
+bits=25, fingerprint= 503316480, 'ame concept as in foam-core ext'
+bits=26, fingerprint= 738197504, 'ed drastically in number and qu'
+bits=27, fingerprint=1476395008, 'es of the early 1990s caused by'
+bits=28, fingerprint=1342177280, 'd his mind and returned home. D'
+bits=29, fingerprint= 536870912, 'ric power|power]] consumption o'
+bits=30, fingerprint=          ,                ???
+bits=31, fingerprint=          ,                ???
+
 bits= 6, fingerprint= 885530688, hex=c76b1bfb1fa37c41a11ea46add6a48d894744d2e566f8ddd78f34cf4929ef5
 bits= 7, fingerprint= 458567552, hex=e32c840ec3c0fd581243cea3e828a15c70ce9a7f3b59f9a2aae3eb28cb670f
 bits= 8, fingerprint= 222203136, hex=840ec3c0fd581243cea3e828a15c70ce9a7f3b59f9a2aae3eb28cb670f0e97
