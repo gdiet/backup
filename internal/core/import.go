@@ -113,16 +113,16 @@ func getData(id int64, length int, buf []byte) (int, error) {
 	cChunks19 = append(cChunks19, c19Chunker.Flush()...)
 	fChunks = append(fChunks, fChunker.Flush()...)
 	for i, chunk := range sChunks {
-		fmt.Printf("s,%d,%d,%v\n", id, i+1, &chunk)
+		fmt.Printf("s00,%d,%d,%v\n", id, i+1, &chunk)
 	}
 	for i, chunk := range cChunks20 {
-		fmt.Printf("c,%d,%d,%v\n", id, i+1, &chunk)
+		fmt.Printf("c20,%d,%d,%v\n", id, i+1, &chunk)
 	}
 	for i, chunk := range cChunks19 {
-		fmt.Printf("x,%d,%d,%v\n", id, i+1, &chunk)
+		fmt.Printf("c19,%d,%d,%v\n", id, i+1, &chunk)
 	}
 	for i, chunk := range fChunks {
-		fmt.Printf("f,%d,%d,%v\n", id, i+1, &chunk)
+		fmt.Printf("f20,%d,%d,%v\n", id, i+1, &chunk)
 	}
 	return sChunks[0].Length, nil
 }
