@@ -1,9 +1,5 @@
 package cdc
 
-import (
-	"encoding/binary"
-)
-
 type fileSpecificChunker struct {
 	cdcConfig *Config
 	buf       []byte
@@ -22,6 +18,12 @@ func (f *fileSpecificChunker) Flush() []int {
 	return f.flush()
 }
 
+// NewFileSpecificChunker provides a chunker that detects certain file types based on the first few
+// bytes and then applies specific chunking strategies, e.g. chunking after the JPEG "SOS" marker,
+// to improve deduplication of JPEG files differing only in metadata. It uses the regular CDC for
+// unknown types.
+//
+// This chunker is EXPERIMENTAL. It might not work as expected, and the API is subject to change.
 func (c *Config) NewFileSpecificChunker() Chunker {
 	chunker := &fileSpecificChunker{cdcConfig: c}
 	chunker.reset()
@@ -57,9 +59,10 @@ func (f *fileSpecificChunker) detectFileType() []int {
 		((f.buf[3] >= 0xC0 && f.buf[3] <= 0xCF) || (f.buf[3] >= 0xE0 && f.buf[3] <= 0xEF) || f.buf[3] == 0xFE) {
 		// JPEG detected: FF D8 FF, then C0..CF or E0..EF or FE
 		f.switchToJpeg()
-	} else if string(f.buf[4:8]) == "ftyp" {
-		// ISO-BMFF (avif, heic and similar detected): magic string in bytes 4..7
-		f.switchToISO()
+		// The ISO-BMFF detection and chunking is currently disabled, see also below.
+		// } else if string(f.buf[4:8]) == "ftyp" {
+		// 	// ISO-BMFF (avif, heic and similar detected): magic string in bytes 4..7
+		// 	f.switchToISO()
 	} else {
 		// No specific file type detected - fall back to regular CDC
 		f.switchToCDC()
@@ -99,23 +102,27 @@ func (f *fileSpecificChunker) switchToJpeg() {
 	}
 }
 
-func (f *fileSpecificChunker) switchToISO() {
-	// For simplicity, ignore extended size boxes and assume the box size fits into int
-	nextBox := int(binary.BigEndian.Uint32(f.buf[0:4]))
-	f.next = func() []int {
-		for len(f.buf) >= nextBox+8 {
-			if nextBox >= 256*1024 { // This is crap. We need to switch to cdc earlier if the nextBox is large.
-				f.switchToCDC()
-				return f.next()
-			}
-			if string(f.buf[nextBox+4:nextBox+8]) == "mdat" {
-				// First media data box found
-				f.buf = f.buf[nextBox+8:]
-				f.switchToCDC()
-				return append([]int{nextBox + 8}, f.next()...)
-			}
-			nextBox = nextBox + int(binary.BigEndian.Uint32(f.buf[nextBox:nextBox+4]))
-		}
-		return nil
-	}
-}
+// The ISO-BMFF detection and chunking is currently disabled because it it contains a proven bug,
+// and with current media file tools it provides only limited benefit. And anyway, if we have
+// multiple file format handlers, we should probably implement them individually pluggable.
+//
+// func (f *fileSpecificChunker) switchToISO() {
+// 	// For simplicity, ignore extended size boxes and assume the box size fits into int
+// 	nextBox := int(binary.BigEndian.Uint32(f.buf[0:4]))
+// 	f.next = func() []int {
+// 		for len(f.buf) >= nextBox+8 {
+// 			if nextBox >= 256*1024 { // This is crap. We need to switch to cdc earlier if the nextBox is large.
+// 				f.switchToCDC()
+// 				return f.next()
+// 			}
+// 			if string(f.buf[nextBox+4:nextBox+8]) == "mdat" {
+// 				// First media data box found
+// 				f.buf = f.buf[nextBox+8:]
+// 				f.switchToCDC()
+// 				return append([]int{nextBox + 8}, f.next()...)
+// 			}
+// 			nextBox = nextBox + int(binary.BigEndian.Uint32(f.buf[nextBox:nextBox+4]))
+// 		}
+// 		return nil
+// 	}
+// }

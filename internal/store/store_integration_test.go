@@ -46,8 +46,10 @@ func TestErrorHandling(t *testing.T) {
 	_, err = dataStore.FileBackedDataStore(tempDir, -1, 5)
 	assert.Error(t, err, "Expected error for negative file size")
 
-	// Test invalid directory
-	invalidDir := "/root/non-existent-directory-that-cannot-be-created"
+	// Test invalid directory. Windows: "*" is not allowed in file names.
+	// Linux: The root directory "/" is not writable for normal users.
+	// Don't run this test with root permissions :).
+	invalidDir := "/non-existent-directory-that-*-cannot-be-created"
 	_, err = dataStore.FileBackedDataStore(invalidDir, 1024, 5)
 	assert.Error(t, err, "Expected error for invalid directory")
 
