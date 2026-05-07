@@ -2,7 +2,7 @@ module github.com/gdiet/backup
 
 go 1.25
 
-toolchain go1.25.5
+toolchain go1.25.10
 
 require (
 	github.com/SaveTheRbtz/fastcdc-go v0.3.0
