@@ -104,7 +104,7 @@ func (f *fileSpecificChunker) switchToISO() {
 	nextBox := int(binary.BigEndian.Uint32(f.buf[0:4]))
 	f.next = func() []int {
 		for len(f.buf) >= nextBox+8 {
-			if nextBox >= 256*1024 {
+			if nextBox >= 256*1024 { // This is crap. We need to switch to cdc earlier if the nextBox is large.
 				f.switchToCDC()
 				return f.next()
 			}
