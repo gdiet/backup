@@ -9,7 +9,7 @@ import (
 
 func NewMetadata(repo string) (*meta.Metadata, error) {
 	metaRepo := filepath.Join(repo, "meta")
-	m, err := meta.NewMetadata(metaRepo)
+	m, err := meta.NewMetadata(metaRepo, map[string]string{}) // FIXME fetch settings from args
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database from %s: %w", metaRepo, err)
 	}

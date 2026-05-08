@@ -14,15 +14,16 @@ import (
 var RootEntry = &DirEntry{i64b(0), ""}
 
 type Metadata struct {
-	db                                          *bbolt.DB
-	treeKey, childrenKey, dataKey, freeAreasKey []byte
+	db                                                       *bbolt.DB
+	settingsKey, treeKey, childrenKey, dataKey, freeAreasKey []byte
+	settings                                                 map[string]string
 }
 
 type Context struct {
 	tree, children, data, freeAreas *bbolt.Bucket
 }
 
-func NewMetadata(repository string) (*Metadata, error) {
+func NewMetadata(repository string, settings map[string]string) (*Metadata, error) {
 	dbPath := filepath.Join(repository, "dedupfs.db")
 	db, err := bbolt.Open(dbPath, 0600, nil)
 	if err != nil {
@@ -30,6 +31,7 @@ func NewMetadata(repository string) (*Metadata, error) {
 	}
 	m := &Metadata{
 		db:           db,
+		settingsKey:  []byte("settings"),
 		treeKey:      []byte("tree"),
 		childrenKey:  []byte("children"),
 		dataKey:      []byte("data"),
@@ -37,8 +39,8 @@ func NewMetadata(repository string) (*Metadata, error) {
 	}
 	err = db.Update(func(tx *bbolt.Tx) error {
 		// Create Context if needed
-		for _, bucketKey := range [][]byte{m.treeKey, m.childrenKey, m.dataKey, m.freeAreasKey} {
-			if _, err := tx.CreateBucketIfNotExists(bucketKey); err != nil {
+		for _, bucketKey := range [][]byte{m.settingsKey, m.treeKey, m.childrenKey, m.dataKey, m.freeAreasKey} {
+			if _, err = tx.CreateBucketIfNotExists(bucketKey); err != nil {
 				return fserr.IO()
 			}
 		}
@@ -46,10 +48,31 @@ func NewMetadata(repository string) (*Metadata, error) {
 		freeAreas := tx.Bucket(m.freeAreasKey)
 		firstKey, _ := freeAreas.Cursor().First()
 		if len(firstKey) == 0 {
-			if err := freeAreas.Put(i64b(0), i64b(math.MaxInt64)); err != nil {
+			if err = freeAreas.Put(i64b(0), i64b(math.MaxInt64)); err != nil {
 				return fserr.IO()
 			}
 		}
+		// Initialize settings if empty, or read settings if present
+		settingsBucket := tx.Bucket(m.settingsKey)
+		firstKey, _ = settingsBucket.Cursor().First()
+		if len(firstKey) == 0 {
+			for key, value := range settings {
+				err = settingsBucket.Put([]byte(key), []byte(value))
+				if err != nil {
+					return err
+				}
+			}
+		} else {
+			settings = map[string]string{}
+			err = settingsBucket.ForEach(func(k, v []byte) error {
+				settings[string(k)] = string(v)
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		}
+		m.settings = settings
 		return nil
 	})
 	if err != nil {

@@ -1,4 +1,4 @@
-This package provides tree, file and data reference metadata for the deduplicating file system, implemented as bbolt buckets.
+This package provides tree, file, data reference metadata and settings persistence for the deduplicating file system, implemented as bbolt buckets.
 
 ### Conventions
 
@@ -17,13 +17,18 @@ For simplicity, a fixed-size numbers are used. Variable length numbers would sav
 
 #### Buckets:
 
-| Bucket             | Key                    | Value                   |
-|--------------------|------------------------|-------------------------|
-| tree entries       | id                     | dir entry or file entry |
-| children           | parent id and child id | ---                     |
-| data entries       | length and hash        | list of start and end   |
-| free areas         | start                  | length                  |
-| settings (planned) | string                 | string                  |
+| Bucket       | Key                    | Value                   |
+|--------------|------------------------|-------------------------|
+| tree entries | id                     | dir entry or file entry |
+| children     | parent id and child id | ---                     |
+| data entries | length and hash        | list of start and end   |
+| free areas   | start                  | length                  |
+| settings     | string                 | string                  |
+
+#### Settings:
+
+- cdcTargetSizeBits: Default 20, valid [10..30]
+- chunking: Default "cdc", valid ["file", "cdc", "jpeg+cdc"]
 
 #### Dir Entry:
 

@@ -63,7 +63,7 @@ func noError(testFunc func(c *meta.Context)) func(c *meta.Context) error {
 
 func testWithMetadata(t *testing.T, testFunc func(c *meta.Context)) {
 	dir := t.TempDir()
-	m, err := meta.NewMetadata(dir)
+	m, err := meta.NewMetadata(dir, map[string]string{})
 	require.NoError(t, err, "Failed to create Metadata")
 	defer func() {
 		require.NoError(t, m.Close(), "Failed to close Metadata")

@@ -72,9 +72,9 @@ func FileBackedDataStore(baseDir string, fileSize int64, openFilesSoftLimit int)
 		fileSize:           fileSize,
 		openFilesSoftLimit: openFilesSoftLimit,
 		lock:               sync.Mutex{},
-		free:               make(map[int64]*fileHandle),
-		leased:             make(map[int64]*fileHandle),
-		evicting:           make(map[int64]*fileHandle),
+		free:               map[int64]*fileHandle{},
+		leased:             map[int64]*fileHandle{},
+		evicting:           map[int64]*fileHandle{},
 		openFiles:          0,
 		gcQueued:           false,
 	}
@@ -333,7 +333,7 @@ func (ds *dataStore) Close() {
 					slog.Error("failed to close", "file", handle.file, "error", err)
 				}
 			}
-			ds.free = make(map[int64]*fileHandle)
+			ds.free = map[int64]*fileHandle{}
 			ds.openFiles = 0
 			ds.lock.Unlock()
 			break

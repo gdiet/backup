@@ -98,7 +98,11 @@ func backupEntry(
 		return
 	}
 	if info.Mode().IsRegular() {
-		backupFile(m, src, info, parentID, target, tp)
+		tp.sem <- struct{}{} // block if worker pool is full
+		tp.wg.Go(func() {
+			defer func() { <-tp.sem }()
+			backupFile(m, src, info, parentID, target, tp)
+		})
 		return
 	}
 	slog.Warn(fmt.Sprintf("unsupported type - skipping %s (file type: %s)", src, info.Mode().Type()))
@@ -108,56 +112,50 @@ func backupEntry(
 func backupFile(
 	m *meta.Metadata, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
 ) {
-	tp.sem <- struct{}{} // block if worker pool is full
-	tp.wg.Add(1)
-	go func() {
-		defer tp.wg.Done()
-		defer func() { <-tp.sem }()
-		f, err := os.Open(src)
+	f, err := os.Open(src)
+	if err != nil {
+		slog.Warn(fmt.Sprintf("failed to open file %s: %s", src, err))
+		tp.warnings.Add(1)
+		return
+	}
+	defer func() {
+		err := f.Close()
 		if err != nil {
-			slog.Warn(fmt.Sprintf("failed to open file %s: %s", src, err))
+			slog.Warn(fmt.Sprintf("failed to close file %s: %s", src, err))
+			tp.warnings.Add(1)
+		}
+	}()
+	var chunker cdc.Chunker
+	if info.Size() <= 256*1024 { // FIXME define the magic numbers as constants somewhere
+		chunker = cdc.NewSingleChunk()
+	} else {
+		// TODO handle error
+		config, _ := cdc.NewConfig(20)            // FIXME get from settings
+		chunker = config.NewFileSpecificChunker() // FIXME get from settings
+	}
+	hasher := cdc.NewHashingChunker(blake3.New(20, nil), chunker)
+	buf := make([]byte, 64*1024)
+	var result []cdc.LengthHash
+	for {
+		n, err := f.Read(buf)
+		result = append(result, hasher.Next(buf[:n])...)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			slog.Warn(fmt.Sprintf("failed to read from file %s: %s", src, err))
 			tp.warnings.Add(1)
 			return
 		}
-		defer func() {
-			err := f.Close()
-			if err != nil {
-				slog.Warn(fmt.Sprintf("failed to close file %s: %s", src, err))
-				tp.warnings.Add(1)
-			}
-		}()
-		var chunker cdc.Chunker
-		if info.Size() <= 256*1024 { // FIXME define the magic numbers as constants somewhere
-			chunker = cdc.NewSingleChunk()
-		} else {
-			// TODO handle error
-			config, _ := cdc.NewConfig(20)
-			chunker = config.NewFileSpecificChunker()
-		}
-		hasher := cdc.NewHashingChunker(blake3.New(20, nil), chunker)
-		buf := make([]byte, 64*1024)
-		var result []cdc.LengthHash
-		for {
-			n, err := f.Read(buf)
-			result = append(result, hasher.Next(buf[:n])...)
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				slog.Warn(fmt.Sprintf("failed to read from file %s: %s", src, err))
-				tp.warnings.Add(1)
-				return
-			}
-		}
-		result = append(result, hasher.Flush()...)
-		var resultStrs []string
-		for _, lh := range result {
-			resultStrs = append(resultStrs, lh.String())
-		}
-		// TODO instead of logging, deduplicate and store
-		slog.Info(fmt.Sprintf("data of %s: [%s]", src, strings.Join(resultStrs, ", ")))
-		slog.Debug(fmt.Sprintf("backing up %s to %s", src, target))
-	}()
+	}
+	result = append(result, hasher.Flush()...)
+	var resultStrs []string
+	for _, lh := range result {
+		resultStrs = append(resultStrs, lh.String())
+	}
+	// TODO instead of logging, deduplicate and store
+	slog.Info(fmt.Sprintf("data of %s: [%s]", src, strings.Join(resultStrs, ", ")))
+	slog.Debug(fmt.Sprintf("backing up %s to %s", src, target))
 }
 
 func backupDirectory(
