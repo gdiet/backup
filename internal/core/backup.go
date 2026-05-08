@@ -19,11 +19,16 @@ import (
 )
 
 func Backup(repo string, args []string) error {
-	tf, rest := ParseBackupFlags(args)
+	flags, rest := ParseBackupFlags(args)
 	if len(rest) < 2 {
 		return util.Invalid("backup requires one or more sources and one target")
 	}
 	sources, target := rest[:len(rest)-1], rest[len(rest)-1]
+
+	if flags.Concurrency < 1 || flags.Concurrency > 32 {
+		// The upper limit is just to prevent bad things from happening, it could be some other number as well.
+		return util.Invalid("concurrency must be between 1 and 32")
+	}
 
 	if !strings.HasPrefix(target, "/") {
 		return util.Invalidf("target %s must start with '/'", target)
@@ -36,11 +41,9 @@ func Backup(repo string, args []string) error {
 		return err
 	}
 
-	// Open metadata
-	metaRepo := filepath.Join(repo, "meta")
-	m, err := meta.NewMetadata(metaRepo)
+	m, err := NewMetadata(repo)
 	if err != nil {
-		return fmt.Errorf("failed to open database from %s: %w", metaRepo, err)
+		return err
 	}
 	defer func() {
 		err = m.Close()
@@ -49,32 +52,21 @@ func Backup(repo string, args []string) error {
 		}
 	}()
 
-	// Target validation logic
-	var parentID []byte
-	err = m.Write(func(c *meta.Context) error {
-		if tf.TargetExists {
-			parentID, err = ensureTargetExistsAndIsDir(c, targetPath)
-		} else if tf.CreateDirs {
-			parentID, err = c.Mkdirs(targetPath)
-		} else {
-			parentID, err = c.Mkdir(targetPath)
-		}
-		return err
-	})
+	parentID, err := validateTarget(m, flags, targetPath, normalizedTarget)
 	if err != nil {
-		return fmt.Errorf("failed to validate backup target %s: %w", normalizedTarget, err)
+		return err
 	}
-	slog.Info("validation OK, starting backup", "sources", sources, "target", normalizedTarget)
 
-	backup(m, sources, parentID, normalizedTarget)
+	slog.Info("validation OK, starting backup", "sources", sources, "target", normalizedTarget)
+	backup(flags, m, sources, parentID, normalizedTarget)
 	return nil
 }
 
-func backup(m *meta.Metadata, sources []string, parentID []byte, target string) {
+func backup(flags BackupFlags, m *meta.Metadata, sources []string, parentID []byte, target string) {
 	warnings := &atomic.Uint64{}
 	// worker pool for running func backupFile
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 4) // TODO: eventually, make concurrency level configurable
+	sem := make(chan struct{}, flags.Concurrency)
 	for _, src := range sources {
 		info, err := os.Stat(src)
 		if err != nil {
@@ -218,4 +210,24 @@ func ensureTargetExistsAndIsDir(c *meta.Context, targetPath []string) ([]byte, e
 		return nil, fmt.Errorf("target is not a directory")
 	}
 	return entry.ID(), nil
+}
+
+func validateTarget(m *meta.Metadata, flags BackupFlags, targetPath []string, normalizedTarget string) ([]byte, error) {
+	var parentID []byte
+	err := m.Write(func(c *meta.Context) error {
+		var err error
+		switch {
+		case flags.TargetExists:
+			parentID, err = ensureTargetExistsAndIsDir(c, targetPath)
+		case flags.CreateDirs:
+			parentID, err = c.Mkdirs(targetPath)
+		default:
+			parentID, err = c.Mkdir(targetPath)
+		}
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to validate backup target %s: %w", normalizedTarget, err)
+	}
+	return parentID, nil
 }
