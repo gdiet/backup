@@ -41,7 +41,7 @@ func NewMetadata(repository string, settings map[string]string) (*Metadata, erro
 		// Create Context if needed
 		for _, bucketKey := range [][]byte{m.settingsKey, m.treeKey, m.childrenKey, m.dataKey, m.freeAreasKey} {
 			if _, err = tx.CreateBucketIfNotExists(bucketKey); err != nil {
-				return fserr.IO()
+				return fserr.IO(err)
 			}
 		}
 		// Initialize free areas with 0 -> MaxInt64 if needed
@@ -49,7 +49,7 @@ func NewMetadata(repository string, settings map[string]string) (*Metadata, erro
 		firstKey, _ := freeAreas.Cursor().First()
 		if len(firstKey) == 0 {
 			if err = freeAreas.Put(i64b(0), i64b(math.MaxInt64)); err != nil {
-				return fserr.IO()
+				return fserr.IO(err)
 			}
 		}
 		// Initialize settings if empty, or read settings if present
@@ -123,7 +123,7 @@ func (c *Context) GetChild(parentID []byte, name string) (TreeEntry, error) {
 			break // No more children for this parent
 		}
 		if len(k) != 16 {
-			return nil, fserr.IO() // Other error
+			return nil, fserr.IO(errors.New("corrupt children key length")) // Other error
 		}
 		childID := k[8:16]
 		entry, err := treeEntryFrom(childID, c.tree.Get(childID))
@@ -216,7 +216,7 @@ func (c *Context) Readdir(path []string) ([]TreeEntry, error) {
 			break // No more children for this parent
 		}
 		if len(k) != 16 {
-			return nil, fserr.IO() // Other error
+			return nil, fserr.IO(errors.New("corrupt children key length")) // Other error
 		}
 		child, err := c.treeEntry(k[8:16])
 		if err != nil {

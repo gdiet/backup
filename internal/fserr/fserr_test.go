@@ -1,6 +1,7 @@
 package fserr_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/gdiet/backup/internal/fserr"
@@ -8,5 +9,6 @@ import (
 )
 
 func TestIO(t *testing.T) {
-	assert.PanicsWithValue(t, "assertion failed: input/output error", func() { _ = fserr.IO() })
+	cause := errors.New("disk read failed")
+	assert.PanicsWithValue(t, "assertion failed: input/output error", func() { _ = fserr.IO(cause) })
 }

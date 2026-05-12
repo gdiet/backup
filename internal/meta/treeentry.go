@@ -1,6 +1,10 @@
 package meta
 
-import "github.com/gdiet/backup/internal/fserr"
+import (
+	"errors"
+
+	"github.com/gdiet/backup/internal/fserr"
+)
 
 type TreeEntry interface {
 	ID() []byte
@@ -60,7 +64,7 @@ func dref(src []byte) [40]byte {
 // treeEntryFrom parses a tree entry from bytes
 func treeEntryFrom(id, data []byte) (TreeEntry, error) {
 	if len(data) < 2 {
-		return nil, fserr.IO()
+		return nil, fserr.IO(errors.New("corrupt tree entry"))
 	}
 	// Determine entry type by first byte
 	switch data[0] {
@@ -70,9 +74,9 @@ func treeEntryFrom(id, data []byte) (TreeEntry, error) {
 	case 1:
 		// fileEntry: 1 byte type + 8 bytes time + 40 bytes data reference + name
 		if len(data) < 50 {
-			return nil, fserr.IO()
+			return nil, fserr.IO(errors.New("corrupt file entry"))
 		}
 		return &FileEntry{id, string(data[49:]), b64i(data[1:9]), dref(data[9:49])}, nil
 	}
-	return nil, fserr.IO()
+	return nil, fserr.IO(errors.New("unknown entry type"))
 }

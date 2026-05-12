@@ -17,7 +17,12 @@ var (
 	NotFound = errors.New("not found")
 )
 
-func IO() error {
+type ioError struct{ cause error }
+
+func (e *ioError) Error() string   { return IoRaw.Error() + ": " + e.cause.Error() }
+func (e *ioError) Unwrap() []error { return []error{IoRaw, e.cause} }
+
+func IO(cause error) error {
 	util.AssertionFailed(IoRaw.Error())
-	return IoRaw
+	return &ioError{cause: cause}
 }
