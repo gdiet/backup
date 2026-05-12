@@ -3,6 +3,7 @@ package meta
 import (
 	"bytes"
 	"errors"
+	"maps"
 	"math"
 	"path/filepath"
 
@@ -45,40 +46,54 @@ func NewMetadata(repository string, settings map[string]string) (*Metadata, erro
 			}
 		}
 		// Initialize free areas with 0 -> MaxInt64 if needed
-		freeAreas := tx.Bucket(m.freeAreasKey)
-		firstKey, _ := freeAreas.Cursor().First()
-		if len(firstKey) == 0 {
-			if err = freeAreas.Put(i64b(0), i64b(math.MaxInt64)); err != nil {
-				return fserr.IO(err)
-			}
+		err = initializeFreeAreasIfEmpty(tx.Bucket(m.freeAreasKey))
+		if err != nil {
+			return err
 		}
-		// Initialize settings if empty, or read settings if present
-		settingsBucket := tx.Bucket(m.settingsKey)
-		firstKey, _ = settingsBucket.Cursor().First()
-		if len(firstKey) == 0 {
-			for key, value := range settings {
-				err = settingsBucket.Put([]byte(key), []byte(value))
-				if err != nil {
-					return err
-				}
-			}
-		} else {
-			settings = map[string]string{}
-			err = settingsBucket.ForEach(func(k, v []byte) error {
-				settings[string(k)] = string(v)
-				return nil
-			})
-			if err != nil {
-				return err
-			}
+		// Initialize settings if empty, read them if non-empty
+		m.settings, err = initializeOrReadSettings(tx.Bucket(m.settingsKey), settings)
+		if err != nil {
+			return err
 		}
-		m.settings = settings
 		return nil
 	})
 	if err != nil {
 		return nil, errors.Join(err, db.Close())
 	}
 	return m, nil
+}
+
+func initializeFreeAreasIfEmpty(freeAreas *bbolt.Bucket) error {
+	firstKey, _ := freeAreas.Cursor().First()
+	if len(firstKey) == 0 {
+		err := freeAreas.Put(i64b(0), i64b(math.MaxInt64))
+		if err != nil {
+			return fserr.IO(err)
+		}
+	}
+	return nil
+}
+
+func initializeOrReadSettings(settingsBucket *bbolt.Bucket, settings map[string]string) (map[string]string, error) {
+	firstKey, _ := settingsBucket.Cursor().First()
+	if len(firstKey) == 0 {
+		for key, value := range settings {
+			if err := settingsBucket.Put([]byte(key), []byte(value)); err != nil {
+				return nil, fserr.IO(err)
+			}
+		}
+		return maps.Clone(settings), nil // defensive copy preferred here
+	}
+	// Read settings from bucket
+	result := make(map[string]string)
+	err := settingsBucket.ForEach(func(k, v []byte) error {
+		result[string(k)] = string(v)
+		return nil
+	})
+	if err != nil {
+		return nil, fserr.IO(err)
+	}
+	return result, nil
 }
 
 // Close closes the metadata repository.
