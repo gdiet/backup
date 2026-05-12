@@ -57,7 +57,7 @@ func (f *fileSpecificChunker) collectHeader() []int {
 func (f *fileSpecificChunker) detectFileType() []int {
 	if f.buf[0] == 0xFF && f.buf[1] == 0xD8 && f.buf[2] == 0xFF &&
 		((f.buf[3] >= 0xC0 && f.buf[3] <= 0xCF) || (f.buf[3] >= 0xE0 && f.buf[3] <= 0xEF) || f.buf[3] == 0xFE) {
-		// JPEG detected: FF D8 FF, then C0..CF or E0..EF or FE
+		// JPEG detected: FF D8 FF, then C0...CF or E0...EF or FE
 		f.switchToJpeg()
 		// The ISO-BMFF detection and chunking is currently disabled, see also below.
 		// } else if string(f.buf[4:8]) == "ftyp" {
@@ -102,7 +102,7 @@ func (f *fileSpecificChunker) switchToJpeg() {
 	}
 }
 
-// The ISO-BMFF detection and chunking is currently disabled because it it contains a proven bug,
+// The ISO-BMFF detection and chunking is currently disabled because it contains a proven bug,
 // and with current media file tools it provides only limited benefit. And anyway, if we have
 // multiple file format handlers, we should probably implement them individually pluggable.
 //

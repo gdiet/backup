@@ -9,7 +9,7 @@ import (
 var (
 	Exists   = errors.New("already exists")
 	Invalid  = errors.New("invalid operation")
-	IO_RAW   = errors.New("input/output error")
+	IoRaw    = errors.New("input/output error")
 	IsDir    = errors.New("is a directory")
 	IsRoot   = errors.New("is root directory")
 	NotDir   = errors.New("not a directory")
@@ -18,6 +18,6 @@ var (
 )
 
 func IO() error {
-	util.AssertionFailed(IO_RAW.Error())
-	return IO_RAW
+	util.AssertionFailed(IoRaw.Error())
+	return IoRaw
 }

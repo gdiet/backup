@@ -1,4 +1,4 @@
-// cdc contains a content defined chunker inspired by fastcdc.
+// Package cdc contains a content defined chunker inspired by fastcdc.
 //
 // Eventually, it might become a separate project with zero production dependencies.
 package cdc

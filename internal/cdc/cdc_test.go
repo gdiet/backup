@@ -89,7 +89,7 @@ func TestCdc_averageChunkSize(t *testing.T) {
 	chunkSizes = chunker.Next(data)
 	avgSize16 := len(data) / len(chunkSizes)
 
-	// Long running (e.g. 30 s)
+	// Long-running (e.g. 30 s)
 	//rnd = rand.NewChaCha8([32]byte{})
 	//config, err = NewCdcConfig(26)
 	//require.NoError(t, err)

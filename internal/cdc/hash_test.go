@@ -23,7 +23,7 @@ var expectedChunks = []cdc.LengthHash{
 
 func TestExpectedValues(t *testing.T) {
 	expectedChunkSizes := []int{1606795, 697894, 638611, 642966, 857992, 829401, 524432, 730375, 811566}
-	for i, _ := range expectedChunks {
+	for i := range expectedChunks {
 		require.Equal(t, expectedChunkSizes[i], expectedChunks[i].Length)
 	}
 }
