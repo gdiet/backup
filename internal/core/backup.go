@@ -18,12 +18,10 @@ import (
 	"lukechampine.com/blake3"
 )
 
-func Backup(repo string, args []string) error {
-	flags, rest := ParseBackupFlags(args)
-	if len(rest) < 2 {
+func Backup(repo string, sources []string, target string, flags BackupFlags) error {
+	if len(sources) < 1 {
 		return util.Invalid("backup requires one or more sources and one target")
 	}
-	sources, target := rest[:len(rest)-1], rest[len(rest)-1]
 
 	if flags.Concurrency < 1 || flags.Concurrency > 32 {
 		// The upper limit is just to prevent bad things from happening, it could be some other number as well.
