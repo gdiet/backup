@@ -9,9 +9,9 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-func (m *Metadata) newContext(tx *bbolt.Tx) *Context {
+func (m *DB) newContext(tx *bbolt.Tx) *Context {
 	return &Context{
-		tx.Bucket(m.treeKey), tx.Bucket(m.childrenKey), tx.Bucket(m.childrenKey), tx.Bucket(m.childrenKey),
+		tx.Bucket(treeKey), tx.Bucket(childrenKey), tx.Bucket(dataKey), tx.Bucket(freeAreasKey),
 	}
 }
 

@@ -60,7 +60,7 @@ func Backup(repo string, sources []string, target string, flags BackupFlags) err
 	return nil
 }
 
-func backup(flags BackupFlags, m *meta.Metadata, sources []string, parentID []byte, target string) {
+func backup(flags BackupFlags, m *meta.DB, sources []string, parentID []byte, target string) {
 	warnings := &atomic.Uint64{}
 	// worker pool for running func backupFile
 	var wg sync.WaitGroup
@@ -89,7 +89,7 @@ type techParams struct {
 }
 
 func backupEntry(
-	m *meta.Metadata, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
+	m *meta.DB, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
 ) {
 	if info.IsDir() {
 		backupDirectory(m, src, info, parentID, target, tp)
@@ -108,7 +108,7 @@ func backupEntry(
 }
 
 func backupFile(
-	m *meta.Metadata, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
+	m *meta.DB, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
 ) {
 	f, err := os.Open(src)
 	if err != nil {
@@ -157,7 +157,7 @@ func backupFile(
 }
 
 func backupDirectory(
-	m *meta.Metadata, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
+	m *meta.DB, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
 ) {
 	var err error
 	var id []byte
@@ -208,7 +208,7 @@ func ensureTargetExistsAndIsDir(c *meta.Context, targetPath []string) ([]byte, e
 	return entry.ID(), nil
 }
 
-func validateTarget(m *meta.Metadata, flags BackupFlags, targetPath []string, normalizedTarget string) ([]byte, error) {
+func validateTarget(m *meta.DB, flags BackupFlags, targetPath []string, normalizedTarget string) ([]byte, error) {
 	var parentID []byte
 	err := m.Write(func(c *meta.Context) error {
 		var err error

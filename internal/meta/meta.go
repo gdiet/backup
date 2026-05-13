@@ -12,46 +12,85 @@ import (
 	"go.etcd.io/bbolt"
 )
 
-var RootEntry = &DirEntry{i64b(0), ""}
+var (
+	RootEntry    = &DirEntry{i64b(0), ""}
+	settingsKey  = []byte("settings")
+	treeKey      = []byte("tree")
+	childrenKey  = []byte("children")
+	dataKey      = []byte("data")
+	freeAreasKey = []byte("free_areas")
+	bucketKeys   = [][]byte{settingsKey, treeKey, childrenKey, dataKey, freeAreasKey}
+)
 
-type Metadata struct {
-	db                                                       *bbolt.DB
-	settingsKey, treeKey, childrenKey, dataKey, freeAreasKey []byte
-	settings                                                 map[string]string
+type DB struct {
+	db *bbolt.DB
 }
 
 type Context struct {
 	tree, children, data, freeAreas *bbolt.Bucket
 }
 
-func NewMetadata(repository string, settings map[string]string) (*Metadata, error) {
+func InitDB(dbDir string, settings map[string]string) (*DB, error) {
+	db, err := bbolt.Open(filepath.Join(dbDir, "dedupfs.db"), 0600, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.Update(func(tx *bbolt.Tx) error {
+		// Create buckets
+		for _, bucketKey := range bucketKeys {
+			_, err = tx.CreateBucket(bucketKey)
+			if err != nil {
+				return fserr.IO(err)
+			}
+		}
+
+		// Initialize free areas with 0 -> MaxInt64
+		err = tx.Bucket(freeAreasKey).Put(i64b(0), i64b(math.MaxInt64))
+		if err != nil {
+			return fserr.IO(err)
+		}
+
+		// Initialize settings
+		for key, value := range settings {
+			err = tx.Bucket(settingsKey).Put([]byte(key), []byte(value))
+			if err != nil {
+				return fserr.IO(err)
+			}
+		}
+		return err
+	})
+
+	if err != nil {
+		return nil, errors.Join(err, db.Close())
+	}
+	return &DB{db}, nil
+}
+
+// FIXME no settings parameter
+// FIXME instead of "if needed" assert existence
+// FIXME return settings separately
+func OpenDB(repository string, settings map[string]string) (*DB, error) {
 	dbPath := filepath.Join(repository, "dedupfs.db")
 	db, err := bbolt.Open(dbPath, 0600, nil)
 	if err != nil {
 		return nil, err
 	}
-	m := &Metadata{
-		db:           db,
-		settingsKey:  []byte("settings"),
-		treeKey:      []byte("tree"),
-		childrenKey:  []byte("children"),
-		dataKey:      []byte("data"),
-		freeAreasKey: []byte("free_areas"),
-	}
+	m := &DB{db}
 	err = db.Update(func(tx *bbolt.Tx) error {
 		// Create Context if needed
-		for _, bucketKey := range [][]byte{m.settingsKey, m.treeKey, m.childrenKey, m.dataKey, m.freeAreasKey} {
+		for _, bucketKey := range bucketKeys {
 			if _, err = tx.CreateBucketIfNotExists(bucketKey); err != nil {
 				return fserr.IO(err)
 			}
 		}
 		// Initialize free areas with 0 -> MaxInt64 if needed
-		err = initializeFreeAreasIfEmpty(tx.Bucket(m.freeAreasKey))
+		err = initializeFreeAreasIfEmpty(tx.Bucket(freeAreasKey))
 		if err != nil {
 			return err
 		}
 		// Initialize settings if empty, read them if non-empty
-		m.settings, err = initializeOrReadSettings(tx.Bucket(m.settingsKey), settings)
+		settings, err = initializeOrReadSettings(tx.Bucket(settingsKey), settings)
 		if err != nil {
 			return err
 		}
@@ -97,19 +136,19 @@ func initializeOrReadSettings(settingsBucket *bbolt.Bucket, settings map[string]
 }
 
 // Close closes the metadata repository.
-func (m *Metadata) Close() error {
+func (m *DB) Close() error {
 	return m.db.Close()
 }
 
 // Read sets up a read transaction.
-func (m *Metadata) Read(fn func(context *Context) error) error {
+func (m *DB) Read(fn func(context *Context) error) error {
 	return m.db.View(func(tx *bbolt.Tx) error {
 		return fn(m.newContext(tx))
 	})
 }
 
 // Write sets up a write transaction.
-func (m *Metadata) Write(fn func(context *Context) error) error {
+func (m *DB) Write(fn func(context *Context) error) error {
 	return m.db.Update(func(tx *bbolt.Tx) error {
 		return fn(m.newContext(tx))
 	})

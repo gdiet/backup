@@ -26,7 +26,7 @@ func Initialize(repo string, settings RepositorySettings) error {
 		return fmt.Errorf("failed to create meta directory in %s: %w", repo, err)
 	}
 
-	m, err := meta.NewMetadata(dbDir, settings.SettingsMap())
+	m, err := meta.InitDB(dbDir, settings.SettingsMap())
 	if err != nil {
 		return fmt.Errorf("failed to initialize metadata database in %s: %w", dbDir, err)
 	}
