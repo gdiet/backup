@@ -24,10 +24,20 @@ func (c *CLI) AfterApply() error {
 }
 
 // InitCmd initializes the repository.
-type InitCmd struct{}
+type InitCmd struct {
+	CdcTargetSizeBits uint   `short:"s" name:"cdc-target-size-bits" default:"20" help:"CDC target size in bits (10-30)."`
+	Chunking          string `short:"c" name:"chunking" default:"cdc" enum:"none,cdc,jpeg+cdc" help:"Chunking method."`
+}
+
+func (c *InitCmd) Validate() error {
+	if c.CdcTargetSizeBits < 10 || c.CdcTargetSizeBits > 30 {
+		return fmt.Errorf("cdc-target-size-bits must be between 10 and 30")
+	}
+	return nil
+}
 
 func (c *InitCmd) Run(cli *CLI) error {
-	return core.Initialize(cli.Repo)
+	return core.Initialize(cli.Repo, core.NewRepositorySettings(c.CdcTargetSizeBits, c.Chunking))
 }
 
 // BackupCmd backs up sources to a target path in the repository.

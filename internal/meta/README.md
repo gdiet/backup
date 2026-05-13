@@ -28,7 +28,7 @@ For simplicity, a fixed-size numbers are used. Variable length numbers would sav
 #### Settings:
 
 - cdcTargetSizeBits: Default 20, valid [10..30]
-- chunking: Default "cdc", valid ["file", "cdc", "jpeg+cdc"]
+- chunking: Default "cdc", valid ["none", "cdc", "jpeg+cdc"]
 
 #### Dir Entry:
 
