@@ -5,12 +5,11 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/alecthomas/kong"
 	"github.com/gdiet/backup/internal/util"
 )
 
 func main() {
-	err := runMain()
+	err := runCli()
 	if err != nil {
 		slog.Error(err.Error())
 		if errors.Is(err, util.InvalidError) {
@@ -18,14 +17,4 @@ func main() {
 		}
 		os.Exit(1)
 	}
-}
-
-func runMain() error {
-	var cli CLI
-	ctx := kong.Parse(&cli,
-		kong.Name("backup"),
-		kong.Description("Deduplicating backup application."),
-		kong.UsageOnError(),
-	)
-	return ctx.Run(&cli)
 }

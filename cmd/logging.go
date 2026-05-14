@@ -8,10 +8,10 @@ import (
 	"time"
 )
 
-func configureLogging(logLevel *string) {
+func configureLogging(logLevel string) error {
 	handler := &LogHandler{}
-	_ = handler.level.UnmarshalText([]byte(*logLevel))
 	slog.SetDefault(slog.New(handler))
+	return handler.level.UnmarshalText([]byte(logLevel))
 }
 
 type LogHandler struct {

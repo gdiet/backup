@@ -3,52 +3,61 @@ package main
 import (
 	"fmt"
 
+	"github.com/alecthomas/kong"
 	"github.com/gdiet/backup/internal/core"
 )
 
-type CLI struct {
+func runCli() error {
+	var cli cli
+	ctx := kong.Parse(&cli,
+		kong.Name("backup"),
+		kong.Description("Deduplicating backup application."),
+		kong.UsageOnError(),
+	)
+	return ctx.Run(&cli)
+}
+
+type cli struct {
 	Repo     string `short:"r" default:"../backup-repository" help:"Repository directory."`
 	LogLevel string `short:"l" default:"info" enum:"debug,info,warn,error" help:"Log level."`
 
-	Init    InitCmd    `cmd:"" help:"Initialize a new repository."`
-	Backup  BackupCmd  `cmd:"" help:"Back up one or more sources to a target path in the repository."`
-	Restore RestoreCmd `cmd:"" help:"Restore one or more sources from the repository to a target directory."`
-	Stats   StatsCmd   `cmd:"" help:"Show repository statistics."`
-	Import  ImportCmd  `cmd:"" help:"Import data from a local HTTP server (experimental)."`
+	Init    initCmd    `cmd:"" help:"Initialize a new repository."`
+	Backup  backupCmd  `cmd:"" help:"Back up one or more sources to a target path in the repository."`
+	Restore restoreCmd `cmd:"" help:"Restore one or more sources from the repository to a target directory."`
+	Stats   statsCmd   `cmd:"" help:"Show repository statistics."`
+	Import  importCmd  `cmd:"" help:"Import data from a local HTTP server (experimental)."`
 }
 
-// AfterApply is a hook used by https://github.com/alecthomas/kong.
-func (c *CLI) AfterApply() error {
-	configureLogging(&c.LogLevel)
-	return nil
+func (c *cli) AfterApply() error { // kong hook
+	return configureLogging(c.LogLevel)
 }
 
-// InitCmd initializes the repository.
-type InitCmd struct {
+// initCmd initializes a new repository.
+type initCmd struct {
 	CdcTargetSizeBits int    `short:"s" name:"cdc-target-size-bits" default:"20" help:"CDC target size in bits (10-30)."`
 	Chunking          string `short:"c" name:"chunking" default:"cdc" enum:"none,cdc,jpeg+cdc" help:"Chunking method."`
 }
 
-func (c *InitCmd) Validate() error {
+func (c *initCmd) Validate() error { // kong hook
 	if c.CdcTargetSizeBits < 10 || c.CdcTargetSizeBits > 30 {
 		return fmt.Errorf("cdc-target-size-bits must be between 10 and 30")
 	}
 	return nil
 }
 
-func (c *InitCmd) Run(cli *CLI) error {
+func (c *initCmd) Run(cli *cli) error { // kong hook
 	return core.Initialize(cli.Repo, core.NewRepositorySettings(c.CdcTargetSizeBits, c.Chunking))
 }
 
-// BackupCmd backs up sources to a target path in the repository.
-type BackupCmd struct {
+// backupCmd backs up sources to a target path in the repository.
+type backupCmd struct {
 	CreateDirs   bool     `short:"p" name:"create-dirs" help:"Create missing target directories."`
 	TargetExists bool     `short:"t" name:"target-exists" help:"Require target to be an existing directory."`
 	Concurrency  uint     `short:"c" default:"4" help:"Number of concurrent backup processes (1-32)."`
 	Paths        []string `arg:"" name:"path" help:"One or more source paths followed by the target path in the repository."`
 }
 
-func (c *BackupCmd) Run(cli *CLI) error {
+func (c *backupCmd) Run(cli *cli) error { // kong hook
 	if len(c.Paths) < 2 {
 		return fmt.Errorf("backup requires one or more sources and one target")
 	}
@@ -61,12 +70,12 @@ func (c *BackupCmd) Run(cli *CLI) error {
 	return core.Backup(cli.Repo, sources, target, flags)
 }
 
-// RestoreCmd restores sources from the repository.
-type RestoreCmd struct {
+// restoreCmd restores sources from the repository.
+type restoreCmd struct {
 	Paths []string `arg:"" name:"path" help:"One or more source paths in the repository followed by the target directory."`
 }
 
-func (c *RestoreCmd) Run(cli *CLI) error {
+func (c *restoreCmd) Run(cli *cli) error { // kong hook
 	if len(c.Paths) < 2 {
 		return fmt.Errorf("restore requires one or more sources and one target")
 	}
@@ -74,16 +83,16 @@ func (c *RestoreCmd) Run(cli *CLI) error {
 	return core.Restore(cli.Repo, sources, target)
 }
 
-// StatsCmd shows repository statistics.
-type StatsCmd struct{}
+// statsCmd shows repository statistics.
+type statsCmd struct{}
 
-func (c *StatsCmd) Run(cli *CLI) error {
+func (c *statsCmd) Run(cli *cli) error { // kong hook
 	return core.Stats(cli.Repo)
 }
 
-// ImportCmd imports data from a local HTTP server.
-type ImportCmd struct{}
+// importCmd imports data from a local HTTP server.
+type importCmd struct{}
 
-func (c *ImportCmd) Run(cli *CLI) error {
+func (c *importCmd) Run(cli *cli) error { // kong hook
 	return core.Import(cli.Repo)
 }

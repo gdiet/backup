@@ -34,3 +34,14 @@ To install the recommended git hooks, run
 - Activate the watch mode of the extension.
 
 `go test -coverprofile=coverage.out -covermode=atomic -coverpkg=./... ./... && go run github.com/richardlt/gocover-cobertura < coverage.out > coverage.xml`
+
+### Go Cheat Sheet
+
+#### Value Or Pointer?
+
+- Start using by value.
+- Switch to pointer if 
+  - you need mutation
+  - the struct is large
+  - `nil` is required
+  - object identity is an issue (e.g. `connection`)
