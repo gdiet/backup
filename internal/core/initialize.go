@@ -7,8 +7,7 @@ import (
 	"path/filepath"
 )
 
-// FIXME decide whether settings pointer or settings value would be the right thing
-func Initialize(repository string, settings *RepositorySettings) error {
+func Initialize(repository string, settings RepositorySettings) error {
 	_, err := os.Stat(repository)
 	if err == nil {
 		return fmt.Errorf("repository directory %s already exists", repository)

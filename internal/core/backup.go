@@ -20,7 +20,7 @@ import (
 
 type backupParams struct {
 	db       *meta.DB
-	settings *RepositorySettings
+	settings RepositorySettings
 	flags    BackupFlags
 }
 
