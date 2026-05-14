@@ -3,7 +3,7 @@ package meta
 import (
 	"bytes"
 	"errors"
-	"maps"
+	"fmt"
 	"math"
 	"path/filepath"
 
@@ -41,21 +41,21 @@ func InitDB(dbDir string, settings map[string]string) (*DB, error) {
 		for _, bucketKey := range bucketKeys {
 			_, err = tx.CreateBucket(bucketKey)
 			if err != nil {
-				return fserr.IO(err)
+				return err
 			}
 		}
 
 		// Initialize free areas with 0 -> MaxInt64
 		err = tx.Bucket(freeAreasKey).Put(i64b(0), i64b(math.MaxInt64))
 		if err != nil {
-			return fserr.IO(err)
+			return err
 		}
 
 		// Initialize settings
 		for key, value := range settings {
 			err = tx.Bucket(settingsKey).Put([]byte(key), []byte(value))
 			if err != nil {
-				return fserr.IO(err)
+				return err
 			}
 		}
 		return err
@@ -67,72 +67,41 @@ func InitDB(dbDir string, settings map[string]string) (*DB, error) {
 	return &DB{db}, nil
 }
 
-// FIXME no settings parameter
-// FIXME instead of "if needed" assert existence
-// FIXME return settings separately
-func OpenDB(repository string, settings map[string]string) (*DB, error) {
-	dbPath := filepath.Join(repository, "dedupfs.db")
-	db, err := bbolt.Open(dbPath, 0600, nil)
+func OpenDB(repository string) (*DB, map[string]string, error) {
+	db, err := bbolt.Open(filepath.Join(repository, "dedupfs.db"), 0600, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	m := &DB{db}
+
+	settings := make(map[string]string)
 	err = db.Update(func(tx *bbolt.Tx) error {
-		// Create Context if needed
+		// Ensure buckets exist
 		for _, bucketKey := range bucketKeys {
-			if _, err = tx.CreateBucketIfNotExists(bucketKey); err != nil {
-				return fserr.IO(err)
+			if tx.Bucket(bucketKey) == nil {
+				return fmt.Errorf("DB bucket %s does not exist", string(bucketKey))
 			}
 		}
-		// Initialize free areas with 0 -> MaxInt64 if needed
-		err = initializeFreeAreasIfEmpty(tx.Bucket(freeAreasKey))
-		if err != nil {
-			return err
+
+		// Ensure free areas is not empty
+		firstKey, _ := tx.Bucket(freeAreasKey).Cursor().First()
+		if len(firstKey) == 0 {
+			return fmt.Errorf("DB bucket %q has no entries", string(freeAreasKey))
 		}
-		// Initialize settings if empty, read them if non-empty
-		settings, err = initializeOrReadSettings(tx.Bucket(settingsKey), settings)
+
+		// Read repository settings
+		err = tx.Bucket(settingsKey).ForEach(func(k, v []byte) error {
+			settings[string(k)] = string(v)
+			return nil
+		})
 		if err != nil {
 			return err
 		}
 		return nil
 	})
 	if err != nil {
-		return nil, errors.Join(err, db.Close())
+		return nil, nil, errors.Join(err, db.Close())
 	}
-	return m, nil
-}
-
-func initializeFreeAreasIfEmpty(freeAreas *bbolt.Bucket) error {
-	firstKey, _ := freeAreas.Cursor().First()
-	if len(firstKey) == 0 {
-		err := freeAreas.Put(i64b(0), i64b(math.MaxInt64))
-		if err != nil {
-			return fserr.IO(err)
-		}
-	}
-	return nil
-}
-
-func initializeOrReadSettings(settingsBucket *bbolt.Bucket, settings map[string]string) (map[string]string, error) {
-	firstKey, _ := settingsBucket.Cursor().First()
-	if len(firstKey) == 0 {
-		for key, value := range settings {
-			if err := settingsBucket.Put([]byte(key), []byte(value)); err != nil {
-				return nil, fserr.IO(err)
-			}
-		}
-		return maps.Clone(settings), nil // defensive copy preferred here
-	}
-	// Read settings from bucket
-	result := make(map[string]string)
-	err := settingsBucket.ForEach(func(k, v []byte) error {
-		result[string(k)] = string(v)
-		return nil
-	})
-	if err != nil {
-		return nil, fserr.IO(err)
-	}
-	return result, nil
+	return &DB{db}, settings, nil
 }
 
 // Close closes the metadata repository.

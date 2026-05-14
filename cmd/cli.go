@@ -25,7 +25,7 @@ func (c *CLI) AfterApply() error {
 
 // InitCmd initializes the repository.
 type InitCmd struct {
-	CdcTargetSizeBits uint   `short:"s" name:"cdc-target-size-bits" default:"20" help:"CDC target size in bits (10-30)."`
+	CdcTargetSizeBits int    `short:"s" name:"cdc-target-size-bits" default:"20" help:"CDC target size in bits (10-30)."`
 	Chunking          string `short:"c" name:"chunking" default:"cdc" enum:"none,cdc,jpeg+cdc" help:"Chunking method."`
 }
 

@@ -2,16 +2,35 @@ package core
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/gdiet/backup/internal/meta"
 )
 
-func NewMetadata(repo string) (*meta.DB, error) {
-	metaRepo := filepath.Join(repo, "meta")
-	m, err := meta.OpenDB(metaRepo, map[string]string{}) // FIXME fetch settings from args
+func DBDir(repository string) string {
+	return filepath.Join(repository, "meta")
+}
+
+func InitDB(repository string, settings *RepositorySettings) (*meta.DB, error) {
+	dbDir := DBDir(repository)
+	err := os.MkdirAll(dbDir, 0o755)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database from %s: %w", metaRepo, err)
+		return nil, fmt.Errorf("failed to create database directory %s: %w", dbDir, err)
 	}
-	return m, nil
+
+	db, err := meta.InitDB(dbDir, settings.SettingsMap())
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database from %s: %w", dbDir, err)
+	}
+	return db, nil
+}
+
+func OpenDB(repository string) (*meta.DB, *RepositorySettings, error) {
+	dbDir := DBDir(repository)
+	db, settings, err := meta.OpenDB(dbDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	return db, NewRepositorySettingsFrom(settings), nil
 }

@@ -18,6 +18,12 @@ import (
 	"lukechampine.com/blake3"
 )
 
+type backupParams struct {
+	db       *meta.DB
+	settings *RepositorySettings
+	flags    BackupFlags
+}
+
 func Backup(repo string, sources []string, target string, flags BackupFlags) error {
 	if len(sources) < 1 {
 		return util.Invalid("backup requires one or more sources and one target")
@@ -39,32 +45,35 @@ func Backup(repo string, sources []string, target string, flags BackupFlags) err
 		return err
 	}
 
-	m, err := NewMetadata(repo)
+	db, settings, err := OpenDB(repo)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		err = m.Close()
+		err = db.Close()
 		if err != nil {
 			slog.Error(fmt.Sprintf("failed to close database: %s", err))
 		}
 	}()
 
-	parentID, err := validateTarget(m, flags, targetPath, normalizedTarget)
+	b := &backupParams{db, settings, flags}
+
+	parentID, err := validateTarget(b, targetPath, normalizedTarget)
 	if err != nil {
 		return err
 	}
 
 	slog.Info("validation OK, starting backup", "sources", sources, "target", normalizedTarget)
-	backup(flags, m, sources, parentID, normalizedTarget)
+	backup(b, sources, parentID, normalizedTarget)
 	return nil
 }
 
-func backup(flags BackupFlags, m *meta.DB, sources []string, parentID []byte, target string) {
+// FIXME same here - should backupParams be a pointer or a value?
+func backup(b *backupParams, sources []string, parentID []byte, target string) {
 	warnings := &atomic.Uint64{}
 	// worker pool for running func backupFile
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, flags.Concurrency)
+	sem := make(chan struct{}, b.flags.Concurrency)
 	for _, src := range sources {
 		info, err := os.Stat(src)
 		if err != nil {
@@ -72,7 +81,7 @@ func backup(flags BackupFlags, m *meta.DB, sources []string, parentID []byte, ta
 			warnings.Add(1)
 			continue
 		}
-		backupEntry(m, src, info, parentID, target+"/"+info.Name(), &techParams{warnings, &wg, sem})
+		backupEntry(b, src, info, parentID, target+"/"+info.Name(), &techParams{warnings, &wg, sem})
 	}
 	wg.Wait()
 	if warnings.Load() == 0 {
@@ -89,17 +98,17 @@ type techParams struct {
 }
 
 func backupEntry(
-	m *meta.DB, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
+	b *backupParams, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
 ) {
 	if info.IsDir() {
-		backupDirectory(m, src, info, parentID, target, tp)
+		backupDirectory(b, src, info, parentID, target, tp)
 		return
 	}
 	if info.Mode().IsRegular() {
 		tp.sem <- struct{}{} // block if worker pool is full
 		tp.wg.Go(func() {
 			defer func() { <-tp.sem }()
-			backupFile(m, src, info, parentID, target, tp)
+			backupFile(b, src, info, parentID, target, tp)
 		})
 		return
 	}
@@ -108,7 +117,7 @@ func backupEntry(
 }
 
 func backupFile(
-	m *meta.DB, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
+	b *backupParams, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
 ) {
 	f, err := os.Open(src)
 	if err != nil {
@@ -128,7 +137,7 @@ func backupFile(
 		chunker = cdc.NewSingleChunk()
 	} else {
 		// TODO handle error
-		config, _ := cdc.NewConfig(20)            // FIXME get from settings
+		config, _ := cdc.NewConfig(b.settings.cdcTargetSizeBits)
 		chunker = config.NewFileSpecificChunker() // FIXME get from settings
 	}
 	hasher := cdc.NewHashingChunker(blake3.New(20, nil), chunker)
@@ -157,11 +166,11 @@ func backupFile(
 }
 
 func backupDirectory(
-	m *meta.DB, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
+	b *backupParams, src string, info os.FileInfo, parentID []byte, target string, tp *techParams,
 ) {
 	var err error
 	var id []byte
-	err = m.Write(func(c *meta.Context) error { id, err = c.MkdirUnchecked(parentID, info.Name()); return err })
+	err = b.db.Write(func(c *meta.Context) error { id, err = c.MkdirUnchecked(parentID, info.Name()); return err })
 	if err != nil && !errors.Is(err, fserr.Exists) {
 		slog.Warn(fmt.Sprintf("failed to create target directory %s: %s", target, err))
 		tp.warnings.Add(1)
@@ -183,7 +192,7 @@ func backupDirectory(
 			continue
 		}
 		child := filepath.Join(src, entry.Name())
-		backupEntry(m, child, info, id, target+"/"+info.Name(), tp)
+		backupEntry(b, child, info, id, target+"/"+info.Name(), tp)
 	}
 }
 
@@ -208,14 +217,14 @@ func ensureTargetExistsAndIsDir(c *meta.Context, targetPath []string) ([]byte, e
 	return entry.ID(), nil
 }
 
-func validateTarget(m *meta.DB, flags BackupFlags, targetPath []string, normalizedTarget string) ([]byte, error) {
+func validateTarget(b *backupParams, targetPath []string, normalizedTarget string) ([]byte, error) {
 	var parentID []byte
-	err := m.Write(func(c *meta.Context) error {
+	err := b.db.Write(func(c *meta.Context) error {
 		var err error
 		switch {
-		case flags.TargetExists:
+		case b.flags.TargetExists:
 			parentID, err = ensureTargetExistsAndIsDir(c, targetPath)
-		case flags.CreateDirs:
+		case b.flags.CreateDirs:
 			parentID, err = c.Mkdirs(targetPath)
 		default:
 			parentID, err = c.Mkdir(targetPath)

@@ -5,37 +5,35 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-
-	"github.com/gdiet/backup/internal/meta"
 )
 
-func Initialize(repo string, settings RepositorySettings) error {
-	_, err := os.Stat(repo)
+// FIXME decide whether settings pointer or settings value would be the right thing
+func Initialize(repository string, settings *RepositorySettings) error {
+	_, err := os.Stat(repository)
 	if err == nil {
-		return fmt.Errorf("repository directory %s already exists", repo)
+		return fmt.Errorf("repository directory %s already exists", repository)
 	}
 
-	err = os.MkdirAll(filepath.Join(repo, "data"), 0o755)
+	err = os.Mkdir(repository, 0o755)
 	if err != nil {
-		return fmt.Errorf("failed to create data directory in %s: %w", repo, err)
+		return fmt.Errorf("could not create repository directory %s: %w", repository, err)
 	}
 
-	dbDir := filepath.Join(repo, "meta")
-	err = os.MkdirAll(dbDir, 0o755)
+	err = os.Mkdir(filepath.Join(repository, "data"), 0o755)
 	if err != nil {
-		return fmt.Errorf("failed to create meta directory in %s: %w", repo, err)
+		return fmt.Errorf("could not create data directory in %s: %w", repository, err)
 	}
 
-	m, err := meta.InitDB(dbDir, settings.SettingsMap())
+	db, err := InitDB(repository, settings)
 	if err != nil {
-		return fmt.Errorf("failed to initialize metadata database in %s: %w", dbDir, err)
+		return err
 	}
 
-	err = m.Close()
+	err = db.Close()
 	if err != nil {
-		return fmt.Errorf("failed to close metadata database in %s: %w", dbDir, err)
+		return fmt.Errorf("failed to close database: %w", err)
 	}
 
-	slog.Info("repository initialized", "repo", repo)
+	slog.Info("repository initialized", "repo", repository)
 	return nil
 }
