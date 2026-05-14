@@ -45,3 +45,4 @@ To install the recommended git hooks, run
   - the struct is large
   - `nil` is required
   - object identity is an issue (e.g. `connection`)
+  - the struct contains a stateful or resource (pointer) object

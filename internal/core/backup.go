@@ -78,7 +78,6 @@ func Backup(repo string, sources []string, target string, flags BackupFlags) err
 	return nil
 }
 
-// FIXME same here - should backupParams be a pointer or a value?
 func backup(b *backupParams, sources []string, parentID []byte, target string) {
 	warnings := &atomic.Uint64{}
 	// worker pool for running func backupFile
@@ -143,15 +142,22 @@ func backupFile(
 		}
 	}()
 	var chunker cdc.Chunker
-	if info.Size() <= 256*1024 { // FIXME define the magic numbers as constants somewhere
+	switch {
+	case info.Size() <= 256*1024 || b.chunking == "none": // FIXME define the magic numbers as constants somewhere
 		chunker = cdc.NewSingleChunk()
-	} else {
+	case b.chunking == "cdc":
 		// TODO handle error
 		config, _ := cdc.NewConfig(b.cdcTargetSizeBits)
-		chunker = config.NewFileSpecificChunker() // FIXME get from settings
+		chunker = config.NewCDC()
+	case b.chunking == "jpeg+cdc":
+		// TODO handle error
+		config, _ := cdc.NewConfig(b.cdcTargetSizeBits)
+		chunker = config.NewFileSpecificChunker()
+	default:
+		// TODO handle error
 	}
-	hasher := cdc.NewHashingChunker(blake3.New(20, nil), chunker)
-	buf := make([]byte, 64*1024)
+	hasher := cdc.NewHashingChunker(blake3.New(20, nil), chunker) // FIXME define the magic numbers as constants somewhere
+	buf := make([]byte, 64*1024)                                  // FIXME define the magic numbers as constants somewhere
 	var result []cdc.LengthHash
 	for {
 		n, err := f.Read(buf)
