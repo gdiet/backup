@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-func Initialize(repository string, settings RepositorySettings) error {
+func Initialize(repository string, settings repositorySettings) error {
 	_, err := os.Stat(repository)
 	if err == nil {
 		return fmt.Errorf("repository directory %s already exists", repository)

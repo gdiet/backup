@@ -18,10 +18,20 @@ import (
 	"lukechampine.com/blake3"
 )
 
+type BackupFlags struct {
+	createDirs   bool // -p, --create-dirs     default false
+	targetExists bool // -t, --target-exists   default false
+	concurrency  uint // -c, --concurrency     default 4
+}
+
+func NewBackupFlags(createDirs bool, targetExists bool, concurrency uint) BackupFlags {
+	return BackupFlags{createDirs, targetExists, concurrency}
+}
+
 type backupParams struct {
-	db       *meta.DB
-	settings RepositorySettings
-	flags    BackupFlags
+	BackupFlags
+	repositorySettings
+	db *meta.DB
 }
 
 func Backup(repo string, sources []string, target string, flags BackupFlags) error {
@@ -29,7 +39,7 @@ func Backup(repo string, sources []string, target string, flags BackupFlags) err
 		return util.Invalid("backup requires one or more sources and one target")
 	}
 
-	if flags.Concurrency < 1 || flags.Concurrency > 32 {
+	if flags.concurrency < 1 || flags.concurrency > 32 {
 		// The upper limit is just to prevent bad things from happening, it could be some other number as well.
 		return util.Invalid("concurrency must be between 1 and 32")
 	}
@@ -56,7 +66,7 @@ func Backup(repo string, sources []string, target string, flags BackupFlags) err
 		}
 	}()
 
-	b := &backupParams{db, settings, flags}
+	b := &backupParams{flags, settings, db}
 
 	parentID, err := validateTarget(b, targetPath, normalizedTarget)
 	if err != nil {
@@ -73,7 +83,7 @@ func backup(b *backupParams, sources []string, parentID []byte, target string) {
 	warnings := &atomic.Uint64{}
 	// worker pool for running func backupFile
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, b.flags.Concurrency)
+	sem := make(chan struct{}, b.concurrency)
 	for _, src := range sources {
 		info, err := os.Stat(src)
 		if err != nil {
@@ -137,7 +147,7 @@ func backupFile(
 		chunker = cdc.NewSingleChunk()
 	} else {
 		// TODO handle error
-		config, _ := cdc.NewConfig(b.settings.cdcTargetSizeBits)
+		config, _ := cdc.NewConfig(b.cdcTargetSizeBits)
 		chunker = config.NewFileSpecificChunker() // FIXME get from settings
 	}
 	hasher := cdc.NewHashingChunker(blake3.New(20, nil), chunker)
@@ -222,9 +232,9 @@ func validateTarget(b *backupParams, targetPath []string, normalizedTarget strin
 	err := b.db.Write(func(c *meta.Context) error {
 		var err error
 		switch {
-		case b.flags.TargetExists:
+		case b.targetExists:
 			parentID, err = ensureTargetExistsAndIsDir(c, targetPath)
-		case b.flags.CreateDirs:
+		case b.createDirs:
 			parentID, err = c.Mkdirs(targetPath)
 		default:
 			parentID, err = c.Mkdir(targetPath)

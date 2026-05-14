@@ -12,7 +12,7 @@ func DBDir(repository string) string {
 	return filepath.Join(repository, "meta")
 }
 
-func InitDB(repository string, settings RepositorySettings) (*meta.DB, error) {
+func InitDB(repository string, settings repositorySettings) (*meta.DB, error) {
 	dbDir := DBDir(repository)
 	err := os.MkdirAll(dbDir, 0o755)
 	if err != nil {
@@ -26,11 +26,11 @@ func InitDB(repository string, settings RepositorySettings) (*meta.DB, error) {
 	return db, nil
 }
 
-func OpenDB(repository string) (*meta.DB, RepositorySettings, error) {
+func OpenDB(repository string) (*meta.DB, repositorySettings, error) {
 	dbDir := DBDir(repository)
 	db, settings, err := meta.OpenDB(dbDir)
 	if err != nil {
-		return nil, RepositorySettings{}, err
+		return nil, repositorySettings{}, err
 	}
 	return db, NewRepositorySettingsFrom(settings), nil
 }

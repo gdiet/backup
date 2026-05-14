@@ -62,11 +62,7 @@ func (c *backupCmd) Run(cli *cli) error { // kong hook
 		return fmt.Errorf("backup requires one or more sources and one target")
 	}
 	sources, target := c.Paths[:len(c.Paths)-1], c.Paths[len(c.Paths)-1]
-	flags := core.BackupFlags{
-		CreateDirs:   c.CreateDirs,
-		TargetExists: c.TargetExists,
-		Concurrency:  c.Concurrency,
-	}
+	flags := core.NewBackupFlags(c.CreateDirs, c.TargetExists, c.Concurrency)
 	return core.Backup(cli.Repo, sources, target, flags)
 }
 
