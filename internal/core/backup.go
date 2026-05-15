@@ -143,13 +143,13 @@ func backupFile(
 	}()
 	var chunker cdc.Chunker
 	switch {
-	case info.Size() <= 256*1024 || b.chunking == "none": // FIXME define the magic numbers as constants somewhere
+	case info.Size() <= 256*1024 || b.chunking == chunkingNone: // FIXME define the magic numbers as constants somewhere
 		chunker = cdc.NewSingleChunk()
-	case b.chunking == "cdc":
+	case b.chunking == chunkingCdc:
 		// TODO handle error
 		config, _ := cdc.NewConfig(b.cdcTargetSizeBits)
 		chunker = config.NewCDC()
-	case b.chunking == "jpeg+cdc":
+	case b.chunking == chunkingJpeg:
 		// TODO handle error
 		config, _ := cdc.NewConfig(b.cdcTargetSizeBits)
 		chunker = config.NewFileSpecificChunker()

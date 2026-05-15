@@ -2,23 +2,35 @@ package core
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/gdiet/backup/internal/util"
 )
 
+type chunkingType string
+
+const (
+	chunkingNone chunkingType = "none"
+	chunkingCdc  chunkingType = "cdc"
+	chunkingJpeg chunkingType = "jpeg+cdc"
+)
+
+var chunkingTypes = []chunkingType{chunkingNone, chunkingCdc, chunkingJpeg}
+
 // repositorySettings define user defined per-repository constants. They are stored in the meta database.
 //
 // The repository settings are set when a repository is created. A migration would be needed to update them later.
 type repositorySettings struct {
-	cdcTargetSizeBits int    // Default 20, valid [10..30]
-	chunking          string // Default "cdc", valid ["file", "cdc", "jpeg+cdc"]
+	cdcTargetSizeBits int          // Default 20, valid [10..30]
+	chunking          chunkingType // Default "cdc", valid ["none", "cdc", "jpeg+cdc"]
 }
 
 func NewRepositorySettings(cdcTargetSizeBits int, chunking string) repositorySettings {
 	util.Assertf(cdcTargetSizeBits >= 10 && cdcTargetSizeBits <= 30, "cdc target size %d not in range 10-30", cdcTargetSizeBits)
-	util.Assertf(chunking == "file" || chunking == "cdc" || chunking == "jpeg+cdc", "invalid chunking method: %s", chunking)
-	return repositorySettings{cdcTargetSizeBits, chunking}
+	c := chunkingType(chunking)
+	util.Assertf(slices.Contains(chunkingTypes, c), "invalid chunking method: %s", chunking)
+	return repositorySettings{cdcTargetSizeBits, c}
 }
 
 func NewRepositorySettingsFrom(settings map[string]string) repositorySettings {
@@ -30,6 +42,6 @@ func NewRepositorySettingsFrom(settings map[string]string) repositorySettings {
 func (settings repositorySettings) SettingsMap() map[string]string {
 	return map[string]string{
 		"cdcTargetSizeBits": fmt.Sprintf("%d", settings.cdcTargetSizeBits),
-		"chunking":          settings.chunking,
+		"chunking":          string(settings.chunking),
 	}
 }
