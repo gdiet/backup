@@ -33,21 +33,9 @@ type backupParams struct {
 	db *meta.DB
 }
 
+// Backup stores the sources in the repository target folder. Leading and trailing "/" in target are ignored.
 func Backup(repo string, sources []string, target string, flags BackupFlags) error {
-	if len(sources) < 1 {
-		return errors.New("backup requires one or more sources and one target")
-	}
-
-	if flags.concurrency < 1 || flags.concurrency > 32 {
-		// The upper limit is just to prevent bad things from happening, it could be some other number as well.
-		return errors.New("concurrency must be between 1 and 32")
-	}
-
-	if !strings.HasPrefix(target, "/") {
-		return errors.New("target " + target + " must start with '/'")
-	}
-	normalizedTarget := strings.TrimSuffix(target, "/")
-	targetPath := strings.Split(normalizedTarget, "/")[1:]
+	targetPath := strings.Split(strings.Trim(target, "/"), "/")
 
 	err := validateSources(sources)
 	if err != nil {
@@ -67,13 +55,13 @@ func Backup(repo string, sources []string, target string, flags BackupFlags) err
 
 	b := &backupParams{flags, settings, db}
 
-	parentID, err := validateTarget(b, targetPath, normalizedTarget)
+	parentID, err := validateTarget(b, targetPath, target)
 	if err != nil {
 		return err
 	}
 
-	slog.Info("validation OK, starting backup", "sources", sources, "target", normalizedTarget)
-	backup(b, sources, parentID, normalizedTarget)
+	slog.Info("validation OK, starting backup", "sources", sources, "target", target)
+	backup(b, sources, parentID, target)
 	return nil
 }
 

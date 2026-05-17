@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -62,10 +63,18 @@ type backupCmd struct {
 	Paths        []string `arg:"" name:"path" help:"One or more source paths followed by the target path in the repository."`
 }
 
-func (c *backupCmd) Run(cli *cli) error { // kong hook
+func (c *backupCmd) Validate() (err error) {
 	if len(c.Paths) < 2 {
 		return fmt.Errorf("backup requires one or more sources and one target")
 	}
+	if c.Concurrency < 1 || c.Concurrency > 32 {
+		// The upper limit is just to prevent bad things from happening, it could be some other number as well.
+		return errors.New("concurrency must be between 1 and 32")
+	}
+	return nil
+}
+
+func (c *backupCmd) Run(cli *cli) error { // kong hook
 	sources, target := c.Paths[:len(c.Paths)-1], c.Paths[len(c.Paths)-1]
 	flags := core.NewBackupFlags(c.CreateDirs, c.TargetExists, c.Concurrency)
 	return core.Backup(cli.Repo, sources, target, flags)
