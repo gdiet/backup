@@ -14,6 +14,7 @@ import (
 	"github.com/gdiet/backup/internal/cdc"
 	"github.com/gdiet/backup/internal/fserr"
 	"github.com/gdiet/backup/internal/meta"
+	"github.com/gdiet/backup/internal/util"
 	"lukechampine.com/blake3"
 )
 
@@ -30,7 +31,8 @@ func NewBackupFlags(createDirs bool, targetExists bool, concurrency uint) Backup
 type backupParams struct {
 	BackupFlags
 	RepositorySettings
-	db *meta.DB
+	db        *meta.DB
+	cdcConfig *cdc.Config
 }
 
 // Backup stores the sources in the repository target folder. Leading and trailing "/" in target are ignored.
@@ -53,7 +55,12 @@ func Backup(repo string, sources []string, target string, flags BackupFlags) err
 		}
 	}()
 
-	b := &backupParams{flags, settings, db}
+	cdcConfig, err := cdc.NewConfig(settings.cdcTargetSizeBits)
+	if err != nil {
+		return err
+	}
+
+	b := &backupParams{flags, settings, db, cdcConfig}
 
 	parentID, err := validateTarget(b, targetPath, target)
 	if err != nil {
@@ -130,18 +137,16 @@ func backupFile(
 	}()
 	var chunker cdc.Chunker
 	switch {
-	case info.Size() <= 256*1024 || b.chunking == chunkingNone: // FIXME define the magic numbers as constants somewhere
+	case b.chunking == chunkingNone || info.Size() <= 256*1024: // FIXME define the magic numbers as constants somewhere
 		chunker = cdc.NewSingleChunk()
 	case b.chunking == chunkingCdc:
-		// TODO handle error
-		config, _ := cdc.NewConfig(b.cdcTargetSizeBits)
-		chunker = config.NewCDC()
+		chunker = b.cdcConfig.NewCDC()
 	case b.chunking == chunkingJpeg:
-		// TODO handle error
-		config, _ := cdc.NewConfig(b.cdcTargetSizeBits)
-		chunker = config.NewFileSpecificChunker()
+		chunker = b.cdcConfig.NewFileSpecificChunker()
 	default:
-		// TODO handle error
+		// TODO maybe better to instantiate the chunker during setup (instead of the cdcConfig)?
+		util.AssertionFailedf("unsupported chunking method, default is CDC: %s", b.chunking)
+		chunker = b.cdcConfig.NewCDC()
 	}
 	hasher := cdc.NewHashingChunker(blake3.New(20, nil), chunker) // FIXME define the magic numbers as constants somewhere
 	buf := make([]byte, 64*1024)                                  // FIXME define the magic numbers as constants somewhere
