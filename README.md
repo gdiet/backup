@@ -8,7 +8,11 @@ This backup utility uses content defined chunking together with data deduplicati
 
 Example:
 
-    go run ./cmd backup source target
+    # start from scratch
+    rm -rf ../backup-repository && go run ./cmd init
+
+    # run a backup
+    go run ./cmd backup cmd internal /backup-sources
 
 ### Build The Application
 

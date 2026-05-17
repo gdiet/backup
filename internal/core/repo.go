@@ -1,6 +1,7 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,5 +33,9 @@ func OpenDB(repository string) (*meta.DB, RepositorySettings, error) {
 	if err != nil {
 		return nil, RepositorySettings{}, err
 	}
-	return db, NewRepositorySettingsFrom(settings), nil
+	repositorySettings, err := NewRepositorySettingsFrom(settings)
+	if err != nil {
+		err = errors.Join(err, db.Close())
+	}
+	return db, repositorySettings, err
 }

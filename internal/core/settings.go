@@ -4,46 +4,42 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
-
-	"github.com/gdiet/backup/internal/util"
 )
-
-type chunkingType string
 
 const (
-	chunkingNone chunkingType = "none"
-	chunkingCdc  chunkingType = "cdc"
-	chunkingJpeg chunkingType = "jpeg+cdc"
+	chunkingNone string = "none"
+	chunkingCdc  string = "cdc"
+	chunkingJpeg string = "jpeg+cdc"
 )
 
-var chunkingTypes = []chunkingType{chunkingNone, chunkingCdc, chunkingJpeg}
+var chunkingMethods = []string{chunkingNone, chunkingCdc, chunkingJpeg}
 
-// RepositorySettings define user defined per-repository constants. They are stored in the meta database.
+// RepositorySettings are user defined per-repository constants. They are stored in the meta database.
 //
 // The repository settings are set when a repository is created. A migration would be needed to update them later.
 type RepositorySettings struct {
 	// cdcTargetSizeBits is limited to the 10..30 range. Values beyond that, while technically supported, are not sensible.
-	cdcTargetSizeBits int          // Default 20, valid [10..30]
-	chunking          chunkingType // Default "cdc", valid ["none", "cdc", "jpeg+cdc"]
+	cdcTargetSizeBits int    // Default 20, valid [10..30]
+	chunking          string // Default "cdc", valid ["none", "cdc", "jpeg+cdc"]
 }
 
-func NewRepositorySettings(cdcTargetSizeBits int, chunking string) (RepositorySettings, error) {
+func NewRepositorySettings(cdcTargetSizeBits int, chunkingMethod string) (RepositorySettings, error) {
 	if cdcTargetSizeBits < 10 || cdcTargetSizeBits > 30 {
 		return RepositorySettings{}, fmt.Errorf("CDC target size (bits) '%d' is not in range 10-30", cdcTargetSizeBits)
 	}
-	c := chunkingType(chunking)
-	util.Assertf(slices.Contains(chunkingTypes, c), "invalid chunking method: %s", chunking)
-	return RepositorySettings{cdcTargetSizeBits, c}, nil
+	if !slices.Contains(chunkingMethods, chunkingMethod) {
+		return RepositorySettings{}, fmt.Errorf("invalid chunking method: %s", chunkingMethod)
+	}
+	return RepositorySettings{cdcTargetSizeBits, chunkingMethod}, nil
 }
 
-func NewRepositorySettingsFrom(settings map[string]string) RepositorySettings {
+func NewRepositorySettingsFrom(settings map[string]string) (RepositorySettings, error) {
 	cdcTargetSizeBits, err := strconv.Atoi(settings["cdcTargetSizeBits"])
-	util.Assertf(err != nil, "CDC target size (bits) '%s' is not an integer", settings["cdcTargetSizeBits"])
-	result, err := NewRepositorySettings(cdcTargetSizeBits, settings["chunking"])
 	if err != nil {
-		util.AssertionFailed(err.Error())
+		return RepositorySettings{}, fmt.Errorf("CDC target size (bits) '%s' is not an integer", settings["cdcTargetSizeBits"])
 	}
-	return result
+	result, err := NewRepositorySettings(cdcTargetSizeBits, settings["chunking"])
+	return result, err
 }
 
 func (settings RepositorySettings) SettingsMap() map[string]string {
