@@ -5,12 +5,14 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+
+	"github.com/gdiet/backup/internal/util"
 )
 
-func Initialize(repository string, settings repositorySettings) error {
+func Initialize(repository string, settings RepositorySettings) error {
 	_, err := os.Stat(repository)
 	if err == nil {
-		return fmt.Errorf("repository directory %s already exists", repository)
+		return util.NewInvalidError("repository already exists: " + repository)
 	}
 
 	err = os.Mkdir(repository, 0o755)
