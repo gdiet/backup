@@ -14,7 +14,6 @@ import (
 	"github.com/gdiet/backup/internal/cdc"
 	"github.com/gdiet/backup/internal/fserr"
 	"github.com/gdiet/backup/internal/meta"
-	"github.com/gdiet/backup/internal/util"
 	"lukechampine.com/blake3"
 )
 
@@ -31,8 +30,8 @@ func NewBackupFlags(createDirs bool, targetExists bool, concurrency uint) Backup
 type backupParams struct {
 	BackupFlags
 	RepositorySettings
-	db        *meta.DB
-	cdcConfig *cdc.Config
+	db      *meta.DB
+	chunker cdc.Chunker
 }
 
 // Backup stores the sources in the repository target folder. Leading and trailing "/" in target are ignored.
@@ -60,7 +59,19 @@ func Backup(repo string, sources []string, target string, flags BackupFlags) err
 		return err
 	}
 
-	b := &backupParams{flags, settings, db, cdcConfig}
+	var chunker cdc.Chunker
+	switch {
+	case settings.chunking == chunkingNone:
+		chunker = cdc.NewSingleChunk()
+	case settings.chunking == chunkingCdc:
+		chunker = cdcConfig.NewCDC()
+	case settings.chunking == chunkingJpeg:
+		chunker = cdcConfig.NewFileSpecificChunker()
+	default:
+		return fmt.Errorf("unsupported chunking method: %s", settings.chunking)
+	}
+
+	b := &backupParams{flags, settings, db, chunker}
 
 	parentID, err := validateTarget(b, targetPath, target)
 	if err != nil {
@@ -135,18 +146,10 @@ func backupFile(
 			tp.warnings.Add(1)
 		}
 	}()
-	var chunker cdc.Chunker
-	switch {
-	case b.chunking == chunkingNone || info.Size() <= 256*1024: // FIXME define the magic numbers as constants somewhere
+	chunker := b.chunker
+	// FIXME calculate this from the chunker size settings instead
+	if info.Size() <= 256*1024 { // FIXME define the magic numbers as constants somewhere
 		chunker = cdc.NewSingleChunk()
-	case b.chunking == chunkingCdc:
-		chunker = b.cdcConfig.NewCDC()
-	case b.chunking == chunkingJpeg:
-		chunker = b.cdcConfig.NewFileSpecificChunker()
-	default:
-		// TODO maybe better to instantiate the chunker during setup (instead of the cdcConfig)?
-		util.AssertionFailedf("unsupported chunking method, default is CDC: %s", b.chunking)
-		chunker = b.cdcConfig.NewCDC()
 	}
 	hasher := cdc.NewHashingChunker(blake3.New(20, nil), chunker) // FIXME define the magic numbers as constants somewhere
 	buf := make([]byte, 64*1024)                                  // FIXME define the magic numbers as constants somewhere
