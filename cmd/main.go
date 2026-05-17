@@ -7,7 +7,6 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/gdiet/backup/internal/core"
-	"github.com/gdiet/backup/internal/util"
 )
 
 func main() {
@@ -20,11 +19,6 @@ func main() {
 	err := ctx.Run(&cli)
 	if err != nil {
 		slog.Error(err.Error())
-		if util.IsInvalid(err) {
-			println("invalid")
-			os.Exit(2)
-		}
-		println("failed")
 		os.Exit(1)
 	}
 }
@@ -51,16 +45,9 @@ type initCmd struct {
 	repositorySettings core.RepositorySettings
 }
 
-func (c *initCmd) Validate() error { // kong hook
-	var err error
+func (c *initCmd) Validate() (err error) { // kong hook
 	c.repositorySettings, err = core.NewRepositorySettings(c.CdcTargetSizeBits, c.Chunking)
-	if err != nil {
-		return err
-	}
-	if c.CdcTargetSizeBits < 10 || c.CdcTargetSizeBits > 30 {
-		return fmt.Errorf("cdc-target-size-bits must be between 10 and 30")
-	}
-	return nil
+	return err
 }
 
 func (c *initCmd) Run(cli *cli) error { // kong hook

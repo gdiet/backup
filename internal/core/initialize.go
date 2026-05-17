@@ -1,18 +1,17 @@
 package core
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
-
-	"github.com/gdiet/backup/internal/util"
 )
 
 func Initialize(repository string, settings RepositorySettings) error {
 	_, err := os.Stat(repository)
 	if err == nil {
-		return util.NewInvalidError("repository already exists: " + repository)
+		return errors.New("repository already exists: " + repository)
 	}
 
 	err = os.Mkdir(repository, 0o755)

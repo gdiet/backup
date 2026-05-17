@@ -14,7 +14,6 @@ import (
 	"github.com/gdiet/backup/internal/cdc"
 	"github.com/gdiet/backup/internal/fserr"
 	"github.com/gdiet/backup/internal/meta"
-	"github.com/gdiet/backup/internal/util"
 	"lukechampine.com/blake3"
 )
 
@@ -36,16 +35,16 @@ type backupParams struct {
 
 func Backup(repo string, sources []string, target string, flags BackupFlags) error {
 	if len(sources) < 1 {
-		return util.NewInvalidError("backup requires one or more sources and one target")
+		return errors.New("backup requires one or more sources and one target")
 	}
 
 	if flags.concurrency < 1 || flags.concurrency > 32 {
 		// The upper limit is just to prevent bad things from happening, it could be some other number as well.
-		return util.NewInvalidError("concurrency must be between 1 and 32")
+		return errors.New("concurrency must be between 1 and 32")
 	}
 
 	if !strings.HasPrefix(target, "/") {
-		return util.NewInvalidError("target " + target + " must start with '/'")
+		return errors.New("target " + target + " must start with '/'")
 	}
 	normalizedTarget := strings.TrimSuffix(target, "/")
 	targetPath := strings.Split(normalizedTarget, "/")[1:]
