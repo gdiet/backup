@@ -23,7 +23,8 @@ func (l *LogHandler) Enabled(_ context.Context, level slog.Level) bool {
 }
 
 func (l *LogHandler) Handle(_ context.Context, record slog.Record) error {
-	// For now, we do not log attributes and groups.
+	// For now, we do not log attributes and groups. Attributes are the final varargs in the log methods, and are
+	// typically used to log key/value pairs, e.g. "name": "Tom", "age": 5. So... don't used the varargs when logging.
 	_, _ = fmt.Fprintf(os.Stderr, "%s %s %s\n", record.Time.Format(time.DateTime), record.Level.String(), record.Message)
 	return nil
 }
