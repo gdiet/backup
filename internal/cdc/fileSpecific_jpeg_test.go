@@ -20,7 +20,7 @@ func TestJpegChunker_SOSFound(t *testing.T) {
 
 	config, err := NewConfig(6)
 	require.NoError(t, err)
-	chunker := config.NewFileSpecificChunker()
+	chunker := config.NewJpegChunker()
 	require.Equal(t, 0, len(chunker.Next(nil)))
 	chunks := chunker.Next(data)
 	require.Equal(t, 0, len(chunker.Next(nil)))
@@ -56,7 +56,7 @@ func TestJpegChunker_SOSWithVariousSplits(t *testing.T) {
 		{"just after DA", preambleLen + 2},
 	}
 
-	c := config.NewFileSpecificChunker()
+	c := config.NewJpegChunker()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			chunks := append(c.Next(data[:tc.split]), c.Next(data[tc.split:])...)
@@ -75,7 +75,7 @@ func TestJpegChunker_FFNotDA(t *testing.T) {
 
 	config, err := NewConfig(6)
 	require.NoError(t, err)
-	chunker := config.NewFileSpecificChunker()
+	chunker := config.NewJpegChunker()
 	chunks := append(chunker.Next(data), chunker.Flush()...)
 	require.Equal(t, len(preamble)+2, chunks[0]) // preamble + FF + DA
 
@@ -99,7 +99,7 @@ func TestJpegChunker_FallbackToCDC_WhenSOSBeyondLimit(t *testing.T) {
 
 	config, err := NewConfig(6)
 	require.NoError(t, err)
-	chunker := config.NewFileSpecificChunker()
+	chunker := config.NewJpegChunker()
 	got := append(chunker.Next(data), chunker.Flush()...)
 
 	ref := config.NewCDC()

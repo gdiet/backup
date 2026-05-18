@@ -32,7 +32,7 @@ func TestHash_basic(t *testing.T) {
 	// Verify chunking in the most basic case.
 	config, err := cdc.NewConfig(20)
 	require.NoError(t, err)
-	cdcChunker := config.NewFileSpecificChunker()
+	cdcChunker := config.NewJpegChunker()
 	chunker := cdc.NewHashingChunker(blake3.New(20, nil), cdcChunker)
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	chunks := append(chunker.Next(data), chunker.Flush()...)
@@ -91,7 +91,7 @@ func TestHash_multipartInput(t *testing.T) {
 func BenchmarkHash(b *testing.B) {
 	config, err := cdc.NewConfig(20)
 	require.NoError(b, err)
-	cdcChunker := config.NewFileSpecificChunker()
+	cdcChunker := config.NewJpegChunker()
 	data := testutil.PseudoRandomData(42, 7*1024*1024)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

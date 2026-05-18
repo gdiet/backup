@@ -32,7 +32,7 @@ type backupParams struct {
 	RepositorySettings
 	db                  *meta.DB
 	noChunkingBelowSize int64
-	chunker             cdc.Chunker
+	chunkerFactory      func() cdc.Chunker
 }
 
 // Backup stores the sources in the repository target folder. Leading and trailing "/" in target are ignored.
@@ -55,8 +55,8 @@ func Backup(repo string, sources []string, target string, flags BackupFlags) err
 		}
 	}()
 
-	// Don't try chunking below the CDC base size. Without this, e.g. jpeg chunking
-	// would also chunk small images, bloating the database.
+	// Don't try chunking below the CDC base size. Otherwise,
+	// jpeg chunking would chunk small images, bloating the database.
 	noChunkingBelowSize := int64(1 << (settings.cdcTargetSizeBits - 1))
 
 	cdcConfig, err := cdc.NewConfig(settings.cdcTargetSizeBits)
@@ -64,14 +64,14 @@ func Backup(repo string, sources []string, target string, flags BackupFlags) err
 		return err
 	}
 
-	var chunker cdc.Chunker
+	var chunker func() cdc.Chunker
 	switch {
 	case settings.chunking == chunkingNone:
-		chunker = cdc.NewSingleChunk()
+		chunker = cdc.NewSingleChunkChunker
 	case settings.chunking == chunkingCdc:
-		chunker = cdcConfig.NewCDC()
+		chunker = cdcConfig.NewCDC
 	case settings.chunking == chunkingJpeg:
-		chunker = cdcConfig.NewFileSpecificChunker()
+		chunker = cdcConfig.NewJpegChunker
 	default:
 		return fmt.Errorf("unsupported chunking method: %s", settings.chunking)
 	}
@@ -151,9 +151,11 @@ func backupFile(
 			tp.warnings.Add(1)
 		}
 	}()
-	chunker := b.chunker
+	var chunker cdc.Chunker
 	if info.Size() < b.noChunkingBelowSize {
-		chunker = cdc.NewSingleChunk()
+		chunker = cdc.NewSingleChunkChunker()
+	} else {
+		chunker = b.chunkerFactory()
 	}
 	hasher := cdc.NewHashingChunker(blake3.New(20, nil), chunker) // FIXME define the magic numbers as constants somewhere
 	buf := make([]byte, 64*1024)                                  // FIXME define the magic numbers as constants somewhere
