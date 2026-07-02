@@ -107,3 +107,19 @@ func (c *Context) renameDirectory(
 	}
 	return nil
 }
+
+// dataEntry retrieves a data entry.
+// Returns NotFound if the entry does not exist.
+func (c *Context) dataEntry(length int, hash []byte) ([]DataArea, error) {
+	entry := c.data.Get(NewDataKey(int64(length), hash).toBytes())
+	if len(entry) == 0 {
+		return nil, fserr.NotFound
+	}
+	util.Assertf(len(entry)%16 == 0, "data entry length for %x:%x not divisible by 16: %x", length, hash, len(entry))
+
+	var result []DataArea
+	for i := 0; i < len(entry); i += 16 {
+		result = append(result, dataAreaFrom(entry[i:i+16]))
+	}
+	return result, nil
+}

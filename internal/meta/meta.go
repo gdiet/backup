@@ -318,3 +318,9 @@ func (c *Context) Rename(oldPath []string, newPath []string) error {
 	// Returns IsDir if trying to rename a file to a directory.
 	return errors.New("not implemented: renaming files")
 }
+
+// DataEntry retrieves a data entry.
+// Returns NotFound if the entry does not exist.
+func (c *Context) DataEntry(length int, hash []byte) ([]DataArea, error) {
+	return c.dataEntry(length, hash)
+}

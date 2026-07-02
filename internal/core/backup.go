@@ -159,10 +159,10 @@ func backupFile(
 	}
 	hasher := cdc.NewHashingChunker(blake3.New(20, nil), chunker) // FIXME define the magic numbers as constants somewhere
 	buf := make([]byte, 64*1024)                                  // FIXME define the magic numbers as constants somewhere
-	var result []cdc.LengthHash
+	var lengthHashes []cdc.LengthHash
 	for {
 		n, err := f.Read(buf)
-		result = append(result, hasher.Next(buf[:n])...)
+		lengthHashes = append(lengthHashes, hasher.Next(buf[:n])...)
 		if err == io.EOF {
 			break
 		}
@@ -172,12 +172,28 @@ func backupFile(
 			return
 		}
 	}
-	result = append(result, hasher.Flush()...)
+	lengthHashes = append(lengthHashes, hasher.Flush()...)
+
+	err = b.db.Write(func(c *meta.Context) error {
+		for _, entry := range lengthHashes {
+			dataAreas, err := c.DataEntry(entry.Length, entry.Hash)
+			if err != nil {
+				// FIXME
+				continue
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		slog.Warn(fmt.Sprintf("failed to write file %s: %s", src, err))
+		tp.warnings.Add(1)
+	}
+
+	// TODO instead of logging, deduplicate and store
 	var resultStrs []string
-	for _, lh := range result {
+	for _, lh := range lengthHashes {
 		resultStrs = append(resultStrs, lh.String())
 	}
-	// TODO instead of logging, deduplicate and store
 	slog.Info(fmt.Sprintf("data of %s: [%s]", src, strings.Join(resultStrs, ", ")))
 	slog.Debug(fmt.Sprintf("backing up %s to %s", src, target))
 }
