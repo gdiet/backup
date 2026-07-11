@@ -1,4 +1,4 @@
-// Package cdc contains a content-defined chunker inspired by fastcdc.
+//! Content-defined chunker inspired by fastcdc.
 
 /// A content-defined chunker that produces chunk lengths from a stream of bytes.
 pub trait Chunker {
@@ -96,7 +96,7 @@ impl Chunker for CdcChunker {
                 i = skip_to;
                 let until = (self.base_size + self.chunk_start - 1).max(0).min(n as i64) as usize;
                 while i < until {
-                    self.fingerprint = (self.fingerprint >> 1) ^ TABLE[data[i] as usize];
+                    self.fingerprint = (self.fingerprint >> 1) ^ TABLE[data[i] as usize] as i64;
                     i += 1;
                 }
             }
@@ -107,7 +107,7 @@ impl Chunker for CdcChunker {
                     self.current_mask >>= 1;
                     self.shift_mask_at += self.base_size;
                 }
-                self.fingerprint = (self.fingerprint >> 1) ^ TABLE[data[i] as usize];
+                self.fingerprint = (self.fingerprint >> 1) ^ TABLE[data[i] as usize] as i64;
                 i += 1;
                 if self.fingerprint & self.current_mask == 0 {
                     chunk_positions.push((i as i64 - self.chunk_start) as usize);
@@ -127,7 +127,7 @@ impl Chunker for CdcChunker {
 
 // TABLE contains 31-bit integers for the rolling fingerprint function.
 // Each bit is set in exactly 128 entries, ensuring a good distribution of bits.
-static TABLE: [i64; 256] = [
+static TABLE: [u32; 256] = [
     0x22612e91, 0x1170f0e6, 0x3303b39b, 0x66bd6edd, 0x01d2f2af, 0x231317fa, 0x2a289c7e, 0x36bd43c9,
     0x1bb014c6, 0x39b82bbf, 0x32ad8dfe, 0x54338a27, 0x5dfd4610, 0x641b1ed2, 0x464b3e2d, 0x30642c32,
     0x08a2c072, 0x471b5497, 0x3d7a654e, 0x58c1a3e4, 0x23a484f4, 0x49843509, 0x218c2950, 0x52572f6e,
@@ -397,7 +397,7 @@ mod tests {
         // Verify that the table values have each bit set in exactly 128 entries.
         let mut tab = TABLE;
         for b in 1..=31 {
-            let count: i64 = tab
+            let count: u32 = tab
                 .iter_mut()
                 .map(|v| {
                     let bit = *v & 1;
