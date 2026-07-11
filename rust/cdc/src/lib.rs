@@ -36,16 +36,14 @@ impl Config {
     /// - 3×base_size to 4×base_size: 19%
     /// - 4×base_size to 5×base_size:  3%
     pub fn new_cdc(&self) -> CdcChunker {
-        let base_size = 1i64 << (self.target_size_bits - 1);
-        let mut c = CdcChunker {
+        let base_size = 1 << (self.target_size_bits - 1);
+        CdcChunker {
             base_size,
             chunk_start: 0,
-            current_mask: 0,
-            shift_mask_at: 0,
+            current_mask: 2 * base_size - 1,
+            shift_mask_at: 2 * base_size - 1,
             fingerprint: 0,
-        };
-        c.reset();
-        c
+        }
     }
 }
 
@@ -87,13 +85,13 @@ impl Chunker for CdcChunker {
             // The table values have 31 bits. Due to the right shift, the current byte
             // and the previous 30 bytes influence the fingerprint. At the chunk start,
             // skip base_size-31 bytes then warm up the fingerprint. That way the
-            // minimum chunk size is base_size. base_size cannot be less than 31, so
-            // target_size_bits must be at least 6.
+            // minimum chunk size is base_size. target_size_bits must be at least 6 to
+            // prevent base_size being less than 31.
             if (i as i64) < self.base_size + self.chunk_start - 1 {
-                let skip_to = (self.base_size + self.chunk_start - 31)
+                // Skip bytes that don't influence the fingerprint.
+                i = (self.base_size + self.chunk_start - 31)
                     .max(0)
                     .min(n as i64) as usize;
-                i = skip_to;
                 let until = (self.base_size + self.chunk_start - 1).max(0).min(n as i64) as usize;
                 while i < until {
                     self.fingerprint = (self.fingerprint >> 1) ^ TABLE[data[i] as usize] as i64;
