@@ -6,7 +6,7 @@ pub trait Chunker {
     fn next(&mut self, data: &[u8]) -> Vec<usize>;
 
     /// Returns the length of the last incomplete chunk if any, then resets the chunker.
-    fn flush(&mut self) -> Vec<usize>;
+    fn flush(&mut self) -> Option<usize>;
 }
 
 /// Validated configuration for a CDC chunker.
@@ -68,13 +68,13 @@ impl CdcChunker {
 }
 
 impl Chunker for CdcChunker {
-    fn flush(&mut self) -> Vec<usize> {
+    fn flush(&mut self) -> Option<usize> {
         let chunk_start = self.chunk_start;
         self.reset();
         if chunk_start == 0 {
-            vec![]
+            None
         } else {
-            vec![(-chunk_start) as usize]
+            Some((-chunk_start) as usize)
         }
     }
 
