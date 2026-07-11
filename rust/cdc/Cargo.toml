@@ -1,0 +1,11 @@
+[package]
+name = "cdc"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "cdc"
+path = "src/lib.rs"
+
+[dev-dependencies]
+rand = "0.10.2"
