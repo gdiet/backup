@@ -18,10 +18,22 @@ pub struct Config {
 impl Config {
     /// Creates a validated CDC chunker config.
     ///
-    /// `target_size_bits` must be between 6 and 30 (inclusive).
+    /// `target_size_bits` must be between 6 and 30 (inclusive), and small enough that
+    /// the maximum chunk size `2^(target_size_bits-1) * (target_size_bits+1)` fits in `usize`.
     pub fn new(target_size_bits: u32) -> Result<Config, String> {
         if !(6..=30).contains(&target_size_bits) {
             return Err("target_size_bits must be between 6 and 30 (inclusive)".to_string());
+        }
+        // Verify that the maximum chunk size fits in usize (platform-dependent).
+        let max_chunk_fits = 1usize
+            .checked_shl(target_size_bits - 1)
+            .and_then(|base| base.checked_mul(target_size_bits as usize + 1))
+            .is_some();
+        if !max_chunk_fits {
+            return Err(format!(
+                "target_size_bits {target_size_bits} is too large for this platform: \
+                 maximum chunk size would overflow usize"
+            ));
         }
         Ok(Config { target_size_bits })
     }
@@ -36,12 +48,12 @@ impl Config {
     /// - 3×base_size to 4×base_size: 19%
     /// - 4×base_size to 5×base_size:  3%
     pub fn new_cdc(&self) -> CdcChunker {
-        let base_size = 1 << (self.target_size_bits - 1);
+        let base_size: usize = 1 << (self.target_size_bits - 1);
         CdcChunker {
             base_size,
-            chunk_start: 0,
-            current_mask: 2 * base_size - 1,
-            shift_mask_at: 2 * base_size - 1,
+            bytes_into_chunk: 0,
+            current_mask: (2 * base_size - 1) as u32,
+            next_mask_shift: 2 * base_size - 1,
             fingerprint: 0,
         }
     }
@@ -49,82 +61,90 @@ impl Config {
 
 /// CDC chunker created by [`Config::new_cdc`].
 pub struct CdcChunker {
-    base_size: i64,
-    chunk_start: i64,
-    current_mask: i64,
-    shift_mask_at: i64,
-    fingerprint: i64,
+    base_size: usize,
+    bytes_into_chunk: usize,
+    current_mask: u32,
+    next_mask_shift: usize,
+    fingerprint: u32,
 }
 
 impl CdcChunker {
     fn reset(&mut self) {
-        self.chunk_start = 0;
-        self.current_mask = 2 * self.base_size - 1;
-        self.shift_mask_at = 2 * self.base_size - 1;
+        self.bytes_into_chunk = 0;
+        self.current_mask = (2 * self.base_size - 1) as u32;
+        self.next_mask_shift = 2 * self.base_size - 1;
         self.fingerprint = 0;
     }
 }
 
 impl Chunker for CdcChunker {
     fn flush(&mut self) -> Option<usize> {
-        let chunk_start = self.chunk_start;
+        let bic = self.bytes_into_chunk;
         self.reset();
-        if chunk_start == 0 {
-            None
-        } else {
-            Some((-chunk_start) as usize)
-        }
+        if bic == 0 { None } else { Some(bic) }
     }
 
     fn next(&mut self, data: &[u8]) -> Vec<usize> {
-        let mut i: usize = 0;
-        let mut chunk_positions: Vec<usize> = Vec::new();
         let n = data.len();
+        let mut chunk_positions: Vec<usize> = Vec::new();
+        let mut i: usize = 0;
+        let mut chunk_start_in_data: usize = 0;
 
-        'outer: while i < n {
+        'outer: loop {
+            if i >= n {
+                break;
+            }
+            let bic = self.bytes_into_chunk;
+
             // The table values have 31 bits. Due to the right shift, the current byte
             // and the previous 30 bytes influence the fingerprint. At the chunk start,
             // skip base_size-31 bytes then warm up the fingerprint. That way the
             // minimum chunk size is base_size. target_size_bits must be at least 6 to
             // prevent base_size being less than 31.
-            if (i as i64) < self.base_size + self.chunk_start - 1 {
+            if bic < self.base_size - 1 {
                 // Skip bytes that don't influence the fingerprint.
-                i = (self.base_size + self.chunk_start - 31)
-                    .max(0)
-                    .min(n as i64) as usize;
-                let until = (self.base_size + self.chunk_start - 1).max(0).min(n as i64) as usize;
+                i += (self.base_size - 31).saturating_sub(bic).min(n - i);
+                let until = chunk_start_in_data
+                    .saturating_add(self.base_size - 1 - bic)
+                    .min(n);
                 while i < until {
-                    self.fingerprint = (self.fingerprint >> 1) ^ TABLE[data[i] as usize] as i64;
+                    self.fingerprint = (self.fingerprint >> 1) ^ TABLE[data[i] as usize];
                     i += 1;
                 }
             }
 
             // Find end of chunk.
+            let mut chunk_rel_i = bic + (i - chunk_start_in_data);
             while i < n {
-                if (i as i64) == self.shift_mask_at {
+                if chunk_rel_i == self.next_mask_shift {
                     self.current_mask >>= 1;
-                    self.shift_mask_at += self.base_size;
+                    self.next_mask_shift += self.base_size;
                 }
-                self.fingerprint = (self.fingerprint >> 1) ^ TABLE[data[i] as usize] as i64;
+                self.fingerprint = (self.fingerprint >> 1) ^ TABLE[data[i] as usize];
                 i += 1;
+                chunk_rel_i += 1;
                 if self.fingerprint & self.current_mask == 0 {
-                    chunk_positions.push((i as i64 - self.chunk_start) as usize);
-                    self.chunk_start = i as i64;
-                    self.current_mask = 2 * self.base_size - 1;
-                    self.shift_mask_at = 2 * self.base_size - 1 + i as i64;
+                    chunk_positions.push(chunk_rel_i);
+                    chunk_start_in_data = i;
+                    self.bytes_into_chunk = 0;
+                    self.current_mask = (2 * self.base_size - 1) as u32;
+                    self.next_mask_shift = 2 * self.base_size - 1;
                     self.fingerprint = 0;
                     continue 'outer;
                 }
             }
+
+            break;
         }
-        self.chunk_start -= i as i64;
-        self.shift_mask_at -= i as i64;
+
+        self.bytes_into_chunk += n - chunk_start_in_data;
         chunk_positions
     }
 }
 
 // TABLE contains 31-bit integers for the rolling fingerprint function.
 // Each bit is set in exactly 128 entries, ensuring a good distribution of bits.
+// 31-bit integers facilitate porting to environments with 32-bit signed integers.
 static TABLE: [u32; 256] = [
     0x22612e91, 0x1170f0e6, 0x3303b39b, 0x66bd6edd, 0x01d2f2af, 0x231317fa, 0x2a289c7e, 0x36bd43c9,
     0x1bb014c6, 0x39b82bbf, 0x32ad8dfe, 0x54338a27, 0x5dfd4610, 0x641b1ed2, 0x464b3e2d, 0x30642c32,
