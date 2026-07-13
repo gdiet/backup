@@ -11,16 +11,16 @@ pub trait Chunker {
 
 /// Validated configuration for a CDC chunker.
 #[derive(Debug, Clone)]
-pub struct Config {
+pub struct CdcConfig {
     target_size_bits: u32,
 }
 
-impl Config {
+impl CdcConfig {
     /// Creates a validated CDC chunker config.
     ///
     /// `target_size_bits` must be between 6 and 30 (inclusive), and small enough that
     /// the maximum chunk size `2^(target_size_bits-1) * (target_size_bits+1)` fits in `usize`.
-    pub fn new(target_size_bits: u32) -> Result<Config, String> {
+    pub fn new(target_size_bits: u32) -> Result<CdcConfig, String> {
         if !(6..=30).contains(&target_size_bits) {
             return Err("target_size_bits must be between 6 and 30 (inclusive)".to_string());
         }
@@ -35,7 +35,7 @@ impl Config {
                  maximum chunk size would overflow usize"
             ));
         }
-        Ok(Config { target_size_bits })
+        Ok(CdcConfig { target_size_bits })
     }
 
     /// Creates a CDC chunker that produces an average chunk size slightly above
@@ -47,7 +47,7 @@ impl Config {
     /// - 2×base_size to 3×base_size: 38%
     /// - 3×base_size to 4×base_size: 19%
     /// - 4×base_size to 5×base_size:  3%
-    pub fn new_cdc(&self) -> CdcChunker {
+    pub fn chunker(&self) -> CdcChunker {
         let base_size: usize = 1 << (self.target_size_bits - 1);
         CdcChunker {
             base_size,
@@ -59,7 +59,7 @@ impl Config {
     }
 }
 
-/// CDC chunker created by [`Config::new_cdc`].
+/// CDC chunker created by [`CdcConfig::chunker`].
 pub struct CdcChunker {
     base_size: usize,
     bytes_into_chunk: usize,
@@ -241,8 +241,8 @@ mod tests {
     #[test]
     fn test_text() {
         // Verify chunking of text-like data, chunk size 1 kB.
-        let config = Config::new(10).unwrap();
-        let mut chunker = config.new_cdc();
+        let config = CdcConfig::new(10).unwrap();
+        let mut chunker = config.chunker();
         let data = pseudo_random_text(42, 7 * 1024);
         let mut chunk_sizes = chunker.next(&data);
         chunk_sizes.extend(chunker.flush());
@@ -252,10 +252,10 @@ mod tests {
     #[test]
     fn test_repeated_value() {
         // Verify chunking of data consisting of repeated values, chunk size 1 kB.
-        let config = Config::new(10).unwrap();
+        let config = CdcConfig::new(10).unwrap();
         // max_chunk_size = base_size * (target_size_bits + 1) = (1<<10)/2 * (10+1)
         let max_chunk_size = (1usize << 10) / 2 * (10 + 1);
-        let mut chunker = config.new_cdc();
+        let mut chunker = config.chunker();
         let data = vec![3u8; 11 * 1024];
         // Not all repeated byte values result in maximum chunk size.
         // Value 3 does produce maximum-sized chunks.
@@ -265,8 +265,8 @@ mod tests {
     #[test]
     fn test_small() {
         // Verify chunking with very small average chunk sizes (64 B).
-        let config = Config::new(6).unwrap();
-        let mut chunker = config.new_cdc();
+        let config = CdcConfig::new(6).unwrap();
+        let mut chunker = config.chunker();
         let data = pseudo_random_data(42, 7 * 64);
         let mut chunk_sizes = chunker.next(&data);
         chunk_sizes.extend(chunker.flush());
@@ -281,8 +281,8 @@ mod tests {
         use rand::{Rng, SeedableRng, rngs::StdRng};
 
         let mut rng = StdRng::from_seed([0u8; 32]);
-        let config = Config::new(6).unwrap();
-        let mut chunker = config.new_cdc();
+        let config = CdcConfig::new(6).unwrap();
+        let mut chunker = config.chunker();
         let mut data = vec![0u8; (1 << 6) * 1000];
         rng.fill_bytes(&mut data);
         let chunks = chunker.next(&data);
@@ -290,8 +290,8 @@ mod tests {
         let avg_6 = data.len() / chunks.len();
 
         let mut rng = StdRng::from_seed([0u8; 32]);
-        let config = Config::new(16).unwrap();
-        let mut chunker = config.new_cdc();
+        let config = CdcConfig::new(16).unwrap();
+        let mut chunker = config.chunker();
         let mut data = vec![0u8; (1 << 16) * 1000];
         rng.fill_bytes(&mut data);
         let chunks = chunker.next(&data);
@@ -320,7 +320,7 @@ mod tests {
             730375,
             811566,
         ];
-        let config = Config::new(20).unwrap();
+        let config = CdcConfig::new(20).unwrap();
 
         let test_cases: &[(&str, &[usize])] = &[
             ("in one piece", &[]),
@@ -348,7 +348,7 @@ mod tests {
         ];
 
         for (name, splits) in test_cases {
-            let mut chunker = config.new_cdc();
+            let mut chunker = config.chunker();
             let mut remaining = data.as_slice();
             let mut chunk_sizes: Vec<usize> = Vec::new();
             for &split in *splits {
@@ -365,7 +365,7 @@ mod tests {
     fn test_chunk_end_detection() {
         // Use a known chunk end pattern to verify that chunks end at the expected positions.
         let data = pseudo_random_data(42, 7 * 1024);
-        let config = Config::new(10).unwrap();
+        let config = CdcConfig::new(10).unwrap();
         let pattern = b"kR9MVTnItt1y6KUcekTf,wO-ymFECPi";
 
         let test_cases: &[(&str, &[usize], &[usize])] = &[
@@ -398,7 +398,7 @@ mod tests {
         ];
 
         for (name, pattern_ends_at, expected) in test_cases {
-            let mut chunker = config.new_cdc();
+            let mut chunker = config.chunker();
             let mut testdata = data.clone();
             for &end_at in *pattern_ends_at {
                 let start = end_at - pattern.len();
