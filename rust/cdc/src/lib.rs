@@ -1,6 +1,9 @@
 //! Content-defined chunker inspired by fastcdc.
 
-/// A content-defined chunker that produces chunk lengths from a stream of bytes.
+/// A chunker that produces chunk lengths from a stream of bytes.
+///
+/// Implementors must emit a chunk boundary at least every `usize::MAX` bytes,
+/// so that every chunk length fits in `usize` without overflow.
 pub trait Chunker {
     /// Returns the lengths of all complete chunks found in `data`. Chunks may span multiple calls.
     fn next(&mut self, data: &[u8]) -> Vec<usize>;
@@ -142,6 +145,35 @@ impl Chunker for CdcChunker {
     }
 }
 
+/// A chunker that never splits: the entire input becomes one chunk.
+///
+/// Emits a forced chunk boundary every `usize::MAX` bytes to satisfy the
+/// [`Chunker`] contract.
+#[derive(Default)]
+pub struct SingleChunkChunker {
+    bytes_into_chunk: usize,
+}
+
+impl Chunker for SingleChunkChunker {
+    fn next(&mut self, data: &[u8]) -> Vec<usize> {
+        let capacity = usize::MAX - self.bytes_into_chunk;
+        let chunk = if data.len() <= capacity {
+            self.bytes_into_chunk += data.len();
+            None
+        } else {
+            self.bytes_into_chunk = data.len() - capacity;
+            Some(usize::MAX)
+        };
+        chunk.into_iter().collect()
+    }
+
+    fn flush(&mut self) -> Option<usize> {
+        let n = self.bytes_into_chunk;
+        self.bytes_into_chunk = 0;
+        if n > 0 { Some(n) } else { None }
+    }
+}
+
 // TABLE contains 31-bit integers for the rolling fingerprint function.
 // Each bit is set in exactly 128 entries, ensuring a good distribution of bits.
 // 31-bit integers facilitate porting to environments with 32-bit signed integers.
@@ -215,18 +247,44 @@ mod tests {
     }
 
     #[test]
+    fn test_single_chunk_basic() {
+        let mut chunker = SingleChunkChunker::default();
+        assert_eq!(chunker.next(b"hello"), vec![]);
+        assert_eq!(chunker.flush(), Some(5));
+        assert_eq!(chunker.flush(), None); // resets after flush
+    }
+
+    #[test]
+    fn test_single_chunk_accumulates() {
+        let mut chunker = SingleChunkChunker::default();
+        assert_eq!(chunker.next(&[0u8; 100]), vec![]);
+        assert_eq!(chunker.next(&[0u8; 200]), vec![]);
+        assert_eq!(chunker.flush(), Some(300));
+    }
+
+    #[test]
+    fn test_single_chunk_empty() {
+        let mut chunker = SingleChunkChunker::default();
+        assert_eq!(chunker.next(&[]), vec![]);
+        assert_eq!(chunker.flush(), None);
+    }
+
+    // The forced split at usize::MAX cannot be tested without allocating ~18 EB of data
+    // or exposing the internal bytes_into_chunk field.
+
+    #[test]
     fn test_illegal_config() {
-        assert!(Config::new(5).is_err());
-        assert!(Config::new(6).is_ok());
-        assert!(Config::new(30).is_ok());
-        assert!(Config::new(31).is_err());
+        assert!(CdcConfig::new(5).is_err());
+        assert!(CdcConfig::new(6).is_ok());
+        assert!(CdcConfig::new(30).is_ok());
+        assert!(CdcConfig::new(31).is_err());
     }
 
     #[test]
     fn test_basic() {
         // Verify chunking in the most basic case, chunk size 1 MB.
-        let config = Config::new(20).unwrap();
-        let mut chunker = config.new_cdc();
+        let config = CdcConfig::new(20).unwrap();
+        let mut chunker = config.chunker();
         let data = pseudo_random_data(42, 7 * 1024 * 1024);
         let mut chunk_sizes = chunker.next(&data);
         chunk_sizes.extend(chunker.flush());
