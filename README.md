@@ -1,52 +1,72 @@
-# backup - Go Implementation
+# Rust Components
 
-This backup utility uses content defined chunking together with data deduplication to efficiently backup files.
+This workspace contains Rust crates used by the backup application.
 
-## Notes For Developers
+## Crates
 
-### Start The Application
+| Crate | Description |
+|-------|-------------|
+| `cdc` | Content-defined chunking library (rolling-fingerprint based) |
 
-Example:
+## Development
 
-    # start from scratch
-    rm -rf ../backup-repository && go run ./cmd init
+### Build
 
-    # run a backup
-    go run ./cmd backup cmd internal /backup-sources
+```bash
+# from rust/
+cargo build
+```
 
-### Build The Application
+### Tests
 
-    go build -o backup ./cmd/...
-    GOOS=windows GOARCH=amd64 go build -o backup.exe ./cmd/...
+```bash
+cargo test
+```
 
-### Code Conventions
+### Linter (Clippy)
 
-- Use `os.Exit` only in the single exit point of `func main()`.
-- Exit code `1` indicates processing failures, exit code `2` indicates incorrect usage of the application (e.g. missing arguments, invalid flags, etc.).
-- Don't use `panic` outside of the non-production `assert` implementation.
+```bash
+cargo clippy
+```
 
-### Git Hooks
+For stricter checks (recommended before committing):
 
-To install the recommended git hooks, run
+```bash
+cargo clippy -- -D warnings
+```
 
-    ./build/install-git-hooks.sh
+### Formatting
 
-### Line Coverage in Visual Studio Code
+```bash
+cargo fmt         # apply formatting
+cargo fmt --check # check without modifying (e.g. in CI)
+```
 
-- Uses gocover-cobertura (`go get github.com/richardlt/gocover-cobertura`)
-- In VSCode, install the "Coverage Gutters" extension.
-- Activate the watch mode of the extension.
+### All checks at once
 
-`go test -coverprofile=coverage.out -covermode=atomic -coverpkg=./... ./... && go run github.com/richardlt/gocover-cobertura < coverage.out > coverage.xml`
+```bash
+cargo fmt --check && cargo clippy -- -D warnings && cargo test
+```
 
-### Go Cheat Sheet
+## Performance
 
-#### Value Or Pointer?
+A simple single-threaded throughput benchmark runs the chunker on 7 MB of
+pseudo-random data (seed 42) for 10 seconds, calling `next()` and `flush()`
+per iteration — matching the Go benchmark exactly.
 
-- Start using by value.
-- Switch to pointer if 
-  - you need mutation
-  - the struct is large
-  - `nil` is required
-  - object identity is an issue (e.g. `connection`)
-  - the struct contains a stateful or resource (pointer) object
+```bash
+cargo run --release --example bench
+```
+
+Measured on this machine (single thread, `target_size_bits=20`, ~1 MB average chunk size):
+
+| Implementation | Throughput |
+|----------------|------------|
+| Rust           | 2.78 GB/s  |
+| Go             | 2.61 GB/s  |
+
+Go benchmark for comparison:
+
+```bash
+go test -bench=BenchmarkCdc -benchtime=10s -count=1 ./internal/cdc
+```

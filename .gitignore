@@ -1,4 +1,2 @@
 /.idea/
-/coverage.html
-/coverage.out
-/coverage.xml
+/target/
