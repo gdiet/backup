@@ -12,6 +12,33 @@ pub trait Chunker {
     fn flush(&mut self) -> Option<usize>;
 }
 
+/// Error returned by [`CdcConfig::new`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CdcConfigError {
+    /// `target_size_bits` is less than 6.
+    TargetSizeBitsTooSmall(u32),
+    /// `target_size_bits` is greater than 30.
+    TargetSizeBitsTooBig(u32),
+    /// `target_size_bits` is in range but the resulting maximum chunk size overflows `usize` on this platform.
+    TargetSizeBitsOverflowsUsize(u32),
+}
+
+impl std::fmt::Display for CdcConfigError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TargetSizeBitsTooSmall(v) =>
+                write!(f, "target_size_bits {v} is too small (minimum: 6)"),
+            Self::TargetSizeBitsTooBig(v) =>
+                write!(f, "target_size_bits {v} is too large (maximum: 30)"),
+            Self::TargetSizeBitsOverflowsUsize(v) =>
+                write!(f, "target_size_bits {v} is too large for this platform: \
+                           maximum chunk size would overflow usize"),
+        }
+    }
+}
+
+impl std::error::Error for CdcConfigError {}
+
 /// Validated configuration for a CDC chunker.
 #[derive(Debug, Clone)]
 pub struct CdcConfig {
@@ -23,9 +50,12 @@ impl CdcConfig {
     ///
     /// `target_size_bits` must be between 6 and 30 (inclusive), and small enough that
     /// the maximum chunk size `2^(target_size_bits-1) * (target_size_bits+1)` fits in `usize`.
-    pub fn new(target_size_bits: u32) -> Result<CdcConfig, String> {
-        if !(6..=30).contains(&target_size_bits) {
-            return Err("target_size_bits must be between 6 and 30 (inclusive)".to_string());
+    pub fn new(target_size_bits: u32) -> Result<CdcConfig, CdcConfigError> {
+        if target_size_bits < 6 {
+            return Err(CdcConfigError::TargetSizeBitsTooSmall(target_size_bits));
+        }
+        if target_size_bits > 30 {
+            return Err(CdcConfigError::TargetSizeBitsTooBig(target_size_bits));
         }
         // Verify that the maximum chunk size fits in usize (platform-dependent).
         let max_chunk_fits = 1usize
@@ -33,10 +63,7 @@ impl CdcConfig {
             .and_then(|base| base.checked_mul(target_size_bits as usize + 1))
             .is_some();
         if !max_chunk_fits {
-            return Err(format!(
-                "target_size_bits {target_size_bits} is too large for this platform: \
-                 maximum chunk size would overflow usize"
-            ));
+            return Err(CdcConfigError::TargetSizeBitsOverflowsUsize(target_size_bits));
         }
         Ok(CdcConfig { target_size_bits })
     }
