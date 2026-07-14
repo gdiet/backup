@@ -1,9 +1,14 @@
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 /// Size of each backing data file in bytes. Must not be changed without a migration.
 const FILE_SIZE: u64 = 100_000_000;
+
+/// Maximum number of file handles kept open simultaneously.
+const MAX_CACHED_HANDLES: usize = 128;
 
 /// Returns the relative file path, the offset within that file, and the number of bytes
 /// in `[position, position + size)` that reside within that file.
@@ -39,8 +44,9 @@ pub enum ReadIntegrity {
 ///
 /// # Thread safety
 ///
-/// Each call opens its own private file handle, so concurrent calls on any region
-/// are safe without external locking.
+/// File handles are cached (up to 128 at a time). Concurrent calls on different files
+/// proceed in parallel. Concurrent calls on the same file are serialized by a per-file
+/// lock protecting the seek + IO pair.
 ///
 /// # Atomicity
 ///
@@ -51,6 +57,12 @@ pub enum ReadIntegrity {
 pub struct LongTermStore {
     data_dir: PathBuf,
     read_only: bool,
+    handles: Mutex<HashMap<String, Arc<Handle>>>,
+}
+
+struct Handle {
+    file: Mutex<File>,
+    writable: bool,
 }
 
 impl LongTermStore {
@@ -62,6 +74,67 @@ impl LongTermStore {
         Self {
             data_dir: data_dir.as_ref().to_owned(),
             read_only,
+            handles: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Returns a cached writable handle for `path`, opening (and creating) it if needed.
+    /// The cache lock is held briefly during lookup and insert; file opening happens under
+    /// the lock, which is acceptable because it is fast (a few µs on SSD).
+    fn cached_write_handle(&self, path: &str, full_path: &Path) -> io::Result<Arc<Handle>> {
+        let mut handles = self.handles.lock().unwrap();
+
+        if let Some(h) = handles.get(path) {
+            if h.writable {
+                return Ok(h.clone());
+            }
+            // Replace read-only handle with a writable one.
+            handles.remove(path);
+        }
+
+        Self::evict_if_needed(&mut handles);
+
+        if let Some(parent) = full_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(full_path)?;
+        let h = Arc::new(Handle { file: Mutex::new(file), writable: true });
+        handles.insert(path.to_owned(), h.clone());
+        Ok(h)
+    }
+
+    /// Returns a cached handle for `path` suitable for reading, or `None` if the file is
+    /// missing. A writable handle already in the cache is reused for reads.
+    fn cached_read_handle(&self, path: &str, full_path: &Path) -> io::Result<Option<Arc<Handle>>> {
+        let mut handles = self.handles.lock().unwrap();
+
+        if let Some(h) = handles.get(path) {
+            return Ok(Some(h.clone()));
+        }
+
+        match File::open(full_path) {
+            Ok(file) => {
+                Self::evict_if_needed(&mut handles);
+                let h = Arc::new(Handle { file: Mutex::new(file), writable: false });
+                handles.insert(path.to_owned(), h.clone());
+                Ok(Some(h))
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn evict_if_needed(handles: &mut HashMap<String, Arc<Handle>>) {
+        if handles.len() >= MAX_CACHED_HANDLES {
+            // Evict an arbitrary entry. With sequential access patterns this is rarely
+            // needed, and LRU ordering is not worth the added complexity here.
+            if let Some(key) = handles.keys().next().cloned() {
+                handles.remove(&key);
+            }
         }
     }
 
@@ -83,15 +156,10 @@ impl LongTermStore {
         while !remaining.is_empty() {
             let (path, file_offset, chunk_size) = path_offset_size(pos, remaining.len());
             let chunk = &remaining[..chunk_size];
-
             let full_path = self.data_dir.join(&path);
-            if let Some(parent) = full_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .open(&full_path)?;
+
+            let handle = self.cached_write_handle(&path, &full_path)?;
+            let mut file = handle.file.lock().unwrap();
             file.seek(SeekFrom::Start(file_offset))?;
             file.write_all(chunk)?;
 
@@ -115,10 +183,11 @@ impl LongTermStore {
         while !remaining.is_empty() {
             let (path, file_offset, chunk_size) = path_offset_size(pos, remaining.len());
             let (chunk, rest) = remaining.split_at_mut(chunk_size);
-
             let full_path = self.data_dir.join(&path);
-            match File::open(&full_path) {
-                Ok(mut file) => {
+
+            match self.cached_read_handle(&path, &full_path)? {
+                Some(handle) => {
+                    let mut file = handle.file.lock().unwrap();
                     file.seek(SeekFrom::Start(file_offset))?;
                     let mut bytes_read = 0;
                     while bytes_read < chunk.len() {
@@ -133,11 +202,10 @@ impl LongTermStore {
                         incomplete.push(path);
                     }
                 }
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                None => {
                     chunk.fill(0);
                     incomplete.push(path);
                 }
-                Err(e) => return Err(e),
             }
 
             remaining = rest;
