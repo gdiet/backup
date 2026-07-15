@@ -201,6 +201,71 @@ impl Chunker for SingleChunkChunker {
     }
 }
 
+/// A resettable cryptographic hasher for use with [`HashingChunker`].
+///
+/// Implement this trait to plug any hash algorithm into [`HashingChunker`] without
+/// adding a dependency on a specific hash crate to `cdc`. For example, implement it
+/// for `blake3::Hasher` in a higher-level crate or in tests.
+pub trait ChunkHasher {
+    /// Feed `data` into the hasher.
+    fn update(&mut self, data: &[u8]);
+
+    /// Return the current hash and reset the hasher to its initial state.
+    fn finalize_reset(&mut self) -> Vec<u8>;
+}
+
+/// The length and hash of a single chunk produced by [`HashingChunker`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LengthHash {
+    pub length: usize,
+    pub hash: Vec<u8>,
+}
+
+/// A [`Chunker`]-adapter that hashes each chunk as it is identified.
+///
+/// Wraps any [`Chunker`] and a [`ChunkHasher`], feeding each completed chunk
+/// through the hasher and emitting [`LengthHash`] values.
+pub struct HashingChunker<H, C> {
+    inner: C,
+    hasher: H,
+    bytes_into_chunk: usize,
+}
+
+impl<H: ChunkHasher, C: Chunker> HashingChunker<H, C> {
+    pub fn new(hasher: H, chunker: C) -> Self {
+        Self { inner: chunker, hasher, bytes_into_chunk: 0 }
+    }
+
+    /// Feed `data` to the chunker. Returns all chunks completed by this call.
+    pub fn next(&mut self, data: &[u8]) -> Vec<LengthHash> {
+        let chunk_lengths = self.inner.next(data);
+        let mut result = Vec::new();
+        let mut data = data;
+        let mut bytes_into_chunk = self.bytes_into_chunk;
+
+        for length in chunk_lengths {
+            let end_in_data = length - bytes_into_chunk;
+            self.hasher.update(&data[..end_in_data]);
+            data = &data[end_in_data..];
+            result.push(LengthHash { length, hash: self.hasher.finalize_reset() });
+            bytes_into_chunk = 0;
+        }
+
+        self.hasher.update(data);
+        self.bytes_into_chunk = bytes_into_chunk + data.len();
+        result
+    }
+
+    /// Flush the last incomplete chunk, if any. Resets the chunker.
+    pub fn flush(&mut self) -> Option<LengthHash> {
+        self.inner.flush().map(|length| {
+            let hash = self.hasher.finalize_reset();
+            self.bytes_into_chunk = 0;
+            LengthHash { length, hash }
+        })
+    }
+}
+
 // TABLE contains 31-bit integers for the rolling fingerprint function.
 // Each bit is set in exactly 128 entries, ensuring a good distribution of bits.
 // 31-bit integers facilitate porting to environments with 32-bit signed integers.
@@ -492,6 +557,121 @@ mod tests {
             let mut chunk_sizes = chunker.next(&testdata);
             chunk_sizes.extend(chunker.flush());
             assert_eq!(&chunk_sizes, expected, "test case: {name}");
+        }
+    }
+
+    // --- HashingChunker tests ---
+
+    struct XorHasher(u8);
+
+    impl ChunkHasher for XorHasher {
+        fn update(&mut self, data: &[u8]) {
+            for &b in data { self.0 ^= b; }
+        }
+        fn finalize_reset(&mut self) -> Vec<u8> {
+            let result = vec![self.0];
+            self.0 = 0;
+            result
+        }
+    }
+
+    #[test]
+    fn test_hashing_chunker_basic() {
+        // HashingChunker emits correct LengthHash values for a simple single-chunk input.
+        let mut chunker = HashingChunker::new(XorHasher(0), SingleChunkChunker::default());
+        assert_eq!(chunker.next(b"hello"), vec![]);
+        assert_eq!(
+            chunker.flush(),
+            Some(LengthHash { length: 5, hash: vec![b'h' ^ b'e' ^ b'l' ^ b'l' ^ b'o'] })
+        );
+        assert_eq!(chunker.flush(), None);
+    }
+
+    #[test]
+    fn test_hashing_chunker_multipart() {
+        // Feeding data in pieces must produce the same result as in one piece.
+        let data: Vec<u8> = (0u8..=255).collect();
+        let expected_xor: u8 = data.iter().fold(0u8, |acc, &b| acc ^ b);
+
+        let mut chunker_one = HashingChunker::new(XorHasher(0), SingleChunkChunker::default());
+        chunker_one.next(&data);
+        let result_one = chunker_one.flush().unwrap();
+
+        let mut chunker_parts = HashingChunker::new(XorHasher(0), SingleChunkChunker::default());
+        chunker_parts.next(&data[..100]);
+        chunker_parts.next(&data[100..200]);
+        chunker_parts.next(&data[200..]);
+        let result_parts = chunker_parts.flush().unwrap();
+
+        assert_eq!(result_one.hash, vec![expected_xor]);
+        assert_eq!(result_one, result_parts);
+    }
+
+    #[test]
+    fn test_hashing_chunker_multiple_chunks() {
+        // Verify that the hasher is reset between chunks: each chunk's hash is independent.
+        let config = CdcConfig::new(20).unwrap();
+        let data = pseudo_random_data(42, 7 * 1024 * 1024);
+        let mut chunker = HashingChunker::new(XorHasher(0), config.chunker());
+        let mut results = chunker.next(&data);
+        results.extend(chunker.flush());
+
+        assert_eq!(results.len(), 9);
+        // The first chunk covers bytes 0..1606795; verify its length.
+        assert_eq!(results[0].length, 1606795);
+        assert_eq!(results[0].hash.len(), 1);
+        // Each chunk's XOR hash must equal the XOR of its own bytes.
+        let chunk_sizes: Vec<usize> = results.iter().map(|lh| lh.length).collect();
+        let mut offset = 0;
+        for (lh, &len) in results.iter().zip(chunk_sizes.iter()) {
+            let expected_xor = data[offset..offset + len].iter().fold(0u8, |a, &b| a ^ b);
+            assert_eq!(lh.hash, vec![expected_xor], "chunk at offset {offset}");
+            offset += len;
+        }
+    }
+
+    mod blake3_tests {
+        use super::*;
+
+        impl ChunkHasher for blake3::Hasher {
+            fn update(&mut self, data: &[u8]) {
+                blake3::Hasher::update(self, data);
+            }
+            fn finalize_reset(&mut self) -> Vec<u8> {
+                let mut bytes = [0u8; 20];
+                self.finalize_xof().fill(&mut bytes);
+                self.reset();
+                bytes.to_vec()
+            }
+        }
+
+        #[test]
+        fn test_hashing_chunker_blake3_expected_values() {
+            // Expected values verified against the Go implementation (seed=42, 7 MB,
+            // CdcConfig target_size_bits=20, blake3 with 20-byte output).
+            let expected: &[(usize, &[u8])] = &[
+                (1606795, &[0x82, 0x06, 0x1a, 0x7f, 0x0c, 0x42, 0xc2, 0x3f, 0x94, 0x0f, 0x09, 0xbe, 0x6c, 0xd8, 0xb1, 0x0b, 0xd4, 0x0c, 0x7e, 0x19]),
+                (697894,  &[0xae, 0x5c, 0x6e, 0x29, 0xc3, 0x30, 0x10, 0x67, 0x18, 0xc0, 0x1c, 0x1a, 0xb2, 0x70, 0x1a, 0xab, 0x61, 0xdb, 0x81, 0x6f]),
+                (638611,  &[0xfb, 0x8a, 0xc7, 0x9c, 0x4c, 0x86, 0xd1, 0x9c, 0x44, 0xa8, 0x4c, 0x92, 0x83, 0x1a, 0xff, 0x7c, 0xa5, 0x9e, 0x55, 0x03]),
+                (642966,  &[0x73, 0xdb, 0xc1, 0x8a, 0x7b, 0x22, 0x99, 0x85, 0xe6, 0x07, 0x4f, 0xae, 0xd9, 0xd7, 0x77, 0x3b, 0xc0, 0xe0, 0x01, 0x3c]),
+                (857992,  &[0x20, 0x71, 0xc8, 0xfe, 0x31, 0xae, 0xca, 0x66, 0x72, 0xe1, 0x02, 0xf9, 0xe1, 0xfc, 0xbd, 0x57, 0x84, 0x79, 0x58, 0x4b]),
+                (829401,  &[0xdd, 0x55, 0x0b, 0x3e, 0xf6, 0xa1, 0xd3, 0x5f, 0xd9, 0x36, 0x8b, 0xdd, 0x10, 0xdd, 0x67, 0x8d, 0xac, 0xdc, 0x3f, 0x54]),
+                (524432,  &[0xd9, 0x89, 0xbb, 0x02, 0x13, 0x9c, 0x9c, 0x43, 0xe9, 0xd2, 0x04, 0x47, 0x4c, 0x0f, 0xb1, 0x6f, 0xac, 0x6a, 0xc0, 0x3d]),
+                (730375,  &[0x12, 0x54, 0x68, 0xc3, 0x7a, 0x5d, 0x00, 0x55, 0x3c, 0xbd, 0x79, 0x15, 0x33, 0x9c, 0x29, 0x04, 0x64, 0xf8, 0xaa, 0x43]),
+                (811566,  &[0x47, 0x25, 0xf5, 0x47, 0x87, 0x19, 0x3c, 0x1d, 0x2a, 0xeb, 0x07, 0x7c, 0x6b, 0x12, 0xd6, 0xaf, 0xa6, 0x89, 0xa3, 0x70]),
+            ];
+
+            let data = pseudo_random_data(42, 7 * 1024 * 1024);
+            let config = CdcConfig::new(20).unwrap();
+            let mut chunker = HashingChunker::new(blake3::Hasher::new(), config.chunker());
+            let mut results = chunker.next(&data);
+            results.extend(chunker.flush());
+
+            assert_eq!(results.len(), expected.len());
+            for (i, (result, &(exp_len, exp_hash))) in results.iter().zip(expected.iter()).enumerate() {
+                assert_eq!(result.length, exp_len, "chunk {i} length");
+                assert_eq!(result.hash.as_slice(), exp_hash, "chunk {i} hash");
+            }
         }
     }
 
