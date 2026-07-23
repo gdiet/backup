@@ -226,19 +226,19 @@ pub struct LengthHash {
 /// Wraps any [`Chunker`] and a [`ChunkHasher`], feeding each completed chunk
 /// through the hasher and emitting [`LengthHash`] values.
 pub struct HashingChunker<H, C> {
-    inner: C,
+    chunker: C,
     hasher: H,
     bytes_into_chunk: usize,
 }
 
 impl<H: ChunkHasher, C: Chunker> HashingChunker<H, C> {
     pub fn new(hasher: H, chunker: C) -> Self {
-        Self { inner: chunker, hasher, bytes_into_chunk: 0 }
+        Self { chunker, hasher, bytes_into_chunk: 0 }
     }
 
     /// Feed `data` to the chunker. Returns all chunks completed by this call.
     pub fn next(&mut self, data: &[u8]) -> Vec<LengthHash> {
-        let chunk_lengths = self.inner.next(data);
+        let chunk_lengths = self.chunker.next(data);
         let mut result = Vec::new();
         let mut data = data;
         let mut bytes_into_chunk = self.bytes_into_chunk;
@@ -258,7 +258,7 @@ impl<H: ChunkHasher, C: Chunker> HashingChunker<H, C> {
 
     /// Flush the last incomplete chunk, if any. Resets the chunker.
     pub fn flush(&mut self) -> Option<LengthHash> {
-        self.inner.flush().map(|length| {
+        self.chunker.flush().map(|length| {
             let hash = self.hasher.finalize_reset();
             self.bytes_into_chunk = 0;
             LengthHash { length, hash }
