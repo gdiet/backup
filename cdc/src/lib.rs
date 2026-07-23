@@ -10,6 +10,10 @@ pub trait Chunker {
 
     /// Returns the length of the last incomplete chunk if any, then resets the chunker.
     fn flush(&mut self) -> Option<usize>;
+
+    /// Returns the number of bytes accumulated so far in the current incomplete chunk,
+    /// i.e. since the last chunk boundary (or since construction/reset if none yet).
+    fn bytes_into_chunk(&self) -> usize;
 }
 
 /// Error returned by [`CdcConfig::new`].
@@ -170,6 +174,10 @@ impl Chunker for CdcChunker {
         self.bytes_into_chunk += n - chunk_start_in_data;
         chunk_positions
     }
+
+    fn bytes_into_chunk(&self) -> usize {
+        self.bytes_into_chunk
+    }
 }
 
 /// A chunker that never splits: the entire input becomes one chunk.
@@ -198,6 +206,10 @@ impl Chunker for SingleChunkChunker {
         let n = self.bytes_into_chunk;
         self.bytes_into_chunk = 0;
         if n > 0 { Some(n) } else { None }
+    }
+
+    fn bytes_into_chunk(&self) -> usize {
+        self.bytes_into_chunk
     }
 }
 
@@ -228,20 +240,19 @@ pub struct LengthHash {
 pub struct HashingChunker<H, C> {
     chunker: C,
     hasher: H,
-    bytes_into_chunk: usize,
 }
 
 impl<H: ChunkHasher, C: Chunker> HashingChunker<H, C> {
     pub fn new(hasher: H, chunker: C) -> Self {
-        Self { chunker, hasher, bytes_into_chunk: 0 }
+        Self { chunker, hasher }
     }
 
     /// Feed `data` to the chunker. Returns all chunks completed by this call.
     pub fn next(&mut self, data: &[u8]) -> Vec<LengthHash> {
+        let mut bytes_into_chunk = self.chunker.bytes_into_chunk();
         let chunk_lengths = self.chunker.next(data);
         let mut result = Vec::new();
         let mut data = data;
-        let mut bytes_into_chunk = self.bytes_into_chunk;
 
         for length in chunk_lengths {
             let end_in_data = length - bytes_into_chunk;
@@ -252,7 +263,6 @@ impl<H: ChunkHasher, C: Chunker> HashingChunker<H, C> {
         }
 
         self.hasher.update(data);
-        self.bytes_into_chunk = bytes_into_chunk + data.len();
         result
     }
 
@@ -260,7 +270,6 @@ impl<H: ChunkHasher, C: Chunker> HashingChunker<H, C> {
     pub fn flush(&mut self) -> Option<LengthHash> {
         self.chunker.flush().map(|length| {
             let hash = self.hasher.finalize_reset();
-            self.bytes_into_chunk = 0;
             LengthHash { length, hash }
         })
     }
