@@ -59,11 +59,25 @@ impl CdcConfig {
     /// `2^target_size_bits`. The minimum chunk size is `base_size = 2^(target_size_bits - 1)`,
     /// the maximum is `base_size * (target_size_bits + 1)`.
     ///
+    /// Chunk boundaries are detected by checking whether the last N bits of the current
+    /// fingerprint are all 0. Every `base_size` bytes, N is reduced by one, until a boundary
+    /// is forced once N reaches 0.
+    ///
     /// Chunk size distribution is approximately:
     /// - 1×base_size to 2×base_size: 40%
     /// - 2×base_size to 3×base_size: 38%
     /// - 3×base_size to 4×base_size: 19%
     /// - 4×base_size to 5×base_size:  3%
+    /// - 5×base_size to 6×base_size:  0.05%
+    ///
+    /// Larger chunk sizes are rare for data with at least some entropy.
+    ///
+    /// Example end-of-chunk sequences (found by searching enwik9, see
+    /// <http://prize.hutter1.net/>):
+    /// - `'ears amidst much internal confl'` - 10 bit mask
+    /// - `'ependent khanates. Following th'` - 20 bit mask
+    /// - `'ric power|power]] consumption o'` - 29 bit mask
+    /// - `hex(c1e4c85714eff62c19d6399112736f3d82bc1f15494286dab830c581b78a5e)` - 31 bit mask
     pub fn chunker(&self) -> CdcChunker {
         let base_size: usize = 1 << (self.target_size_bits - 1);
         CdcChunker {
