@@ -1,19 +1,16 @@
 //! Content-defined chunker inspired by fastcdc.
 
 /// A chunker that produces chunk lengths from a stream of bytes.
-///
-/// Implementors must emit a chunk boundary at least every `usize::MAX` bytes,
-/// so that every chunk length fits in `usize` without overflow.
 pub trait Chunker {
     /// Returns the lengths of all complete chunks found in `data`. Chunks may span multiple calls.
-    fn next(&mut self, data: &[u8]) -> Vec<usize>;
+    fn next(&mut self, data: &[u8]) -> Vec<u64>;
 
     /// Returns the length of the last incomplete chunk if any, then resets the chunker.
-    fn flush(&mut self) -> Option<usize>;
+    fn flush(&mut self) -> Option<u64>;
 
     /// Returns the number of bytes accumulated so far in the current incomplete chunk,
     /// i.e. since the last chunk boundary (or since construction/reset if none yet).
-    fn bytes_into_chunk(&self) -> usize;
+    fn bytes_into_chunk(&self) -> u64;
 }
 
 /// Error returned by [`CdcConfig::new`].
@@ -23,8 +20,6 @@ pub enum CdcConfigError {
     TargetSizeBitsTooSmall(u32),
     /// `target_size_bits` is greater than 30.
     TargetSizeBitsTooBig(u32),
-    /// `target_size_bits` is in range but the resulting maximum chunk size overflows `usize` on this platform.
-    TargetSizeBitsOverflowsUsize(u32),
 }
 
 impl std::fmt::Display for CdcConfigError {
@@ -34,9 +29,6 @@ impl std::fmt::Display for CdcConfigError {
                 write!(f, "target_size_bits {v} is too small (minimum: 6)"),
             Self::TargetSizeBitsTooBig(v) =>
                 write!(f, "target_size_bits {v} is too large (maximum: 30)"),
-            Self::TargetSizeBitsOverflowsUsize(v) =>
-                write!(f, "target_size_bits {v} is too large for this platform: \
-                           maximum chunk size would overflow usize"),
         }
     }
 }
@@ -52,22 +44,13 @@ pub struct CdcConfig {
 impl CdcConfig {
     /// Creates a validated CDC chunker config.
     ///
-    /// `target_size_bits` must be between 6 and 30 (inclusive), and small enough that
-    /// the maximum chunk size `2^(target_size_bits-1) * (target_size_bits+1)` fits in `usize`.
+    /// `target_size_bits` must be between 6 and 30 (inclusive).
     pub fn new(target_size_bits: u32) -> Result<CdcConfig, CdcConfigError> {
         if target_size_bits < 6 {
             return Err(CdcConfigError::TargetSizeBitsTooSmall(target_size_bits));
         }
         if target_size_bits > 30 {
             return Err(CdcConfigError::TargetSizeBitsTooBig(target_size_bits));
-        }
-        // Verify that the maximum chunk size fits in usize (platform-dependent).
-        let max_chunk_fits = 1usize
-            .checked_shl(target_size_bits - 1)
-            .and_then(|base| base.checked_mul(target_size_bits as usize + 1))
-            .is_some();
-        if !max_chunk_fits {
-            return Err(CdcConfigError::TargetSizeBitsOverflowsUsize(target_size_bits));
         }
         Ok(CdcConfig { target_size_bits })
     }
@@ -87,7 +70,7 @@ impl CdcConfig {
             base_size,
             bytes_into_chunk: 0,
             current_mask: (2 * base_size - 1) as u32,
-            next_mask_shift: 2 * base_size - 1,
+            next_mask_shift: (2 * base_size - 1) as u64,
             fingerprint: 0,
         }
     }
@@ -96,9 +79,9 @@ impl CdcConfig {
 /// CDC chunker created by [`CdcConfig::chunker`].
 pub struct CdcChunker {
     base_size: usize,
-    bytes_into_chunk: usize,
+    bytes_into_chunk: u64,
     current_mask: u32,
-    next_mask_shift: usize,
+    next_mask_shift: u64,
     fingerprint: u32,
 }
 
@@ -106,21 +89,21 @@ impl CdcChunker {
     fn reset(&mut self) {
         self.bytes_into_chunk = 0;
         self.current_mask = (2 * self.base_size - 1) as u32;
-        self.next_mask_shift = 2 * self.base_size - 1;
+        self.next_mask_shift = (2 * self.base_size - 1) as u64;
         self.fingerprint = 0;
     }
 }
 
 impl Chunker for CdcChunker {
-    fn flush(&mut self) -> Option<usize> {
+    fn flush(&mut self) -> Option<u64> {
         let bic = self.bytes_into_chunk;
         self.reset();
         if bic == 0 { None } else { Some(bic) }
     }
 
-    fn next(&mut self, data: &[u8]) -> Vec<usize> {
+    fn next(&mut self, data: &[u8]) -> Vec<u64> {
         let n = data.len();
-        let mut chunk_positions: Vec<usize> = Vec::new();
+        let mut chunk_positions: Vec<u64> = Vec::new();
         let mut i: usize = 0;
         let mut chunk_start_in_data: usize = 0;
 
@@ -135,11 +118,14 @@ impl Chunker for CdcChunker {
             // skip base_size-31 bytes then warm up the fingerprint. That way the
             // minimum chunk size is base_size. target_size_bits must be at least 6 to
             // prevent base_size being less than 31.
-            if bic < self.base_size - 1 {
+            if bic < (self.base_size - 1) as u64 {
                 // Skip bytes that don't influence the fingerprint.
-                i += (self.base_size - 31).saturating_sub(bic).min(n - i);
+                let skip = ((self.base_size - 31) as u64)
+                    .saturating_sub(bic)
+                    .min((n - i) as u64) as usize;
+                i += skip;
                 let until = chunk_start_in_data
-                    .saturating_add(self.base_size - 1 - bic)
+                    .saturating_add(((self.base_size - 1) as u64 - bic) as usize)
                     .min(n);
                 while i < until {
                     self.fingerprint = (self.fingerprint >> 1) ^ TABLE[data[i] as usize];
@@ -148,11 +134,11 @@ impl Chunker for CdcChunker {
             }
 
             // Find end of chunk.
-            let mut chunk_rel_i = bic + (i - chunk_start_in_data);
+            let mut chunk_rel_i = bic + (i - chunk_start_in_data) as u64;
             while i < n {
                 if chunk_rel_i == self.next_mask_shift {
                     self.current_mask >>= 1;
-                    self.next_mask_shift += self.base_size;
+                    self.next_mask_shift += self.base_size as u64;
                 }
                 self.fingerprint = (self.fingerprint >> 1) ^ TABLE[data[i] as usize];
                 i += 1;
@@ -162,7 +148,7 @@ impl Chunker for CdcChunker {
                     chunk_start_in_data = i;
                     self.bytes_into_chunk = 0;
                     self.current_mask = (2 * self.base_size - 1) as u32;
-                    self.next_mask_shift = 2 * self.base_size - 1;
+                    self.next_mask_shift = (2 * self.base_size - 1) as u64;
                     self.fingerprint = 0;
                     continue 'outer;
                 }
@@ -171,44 +157,34 @@ impl Chunker for CdcChunker {
             break;
         }
 
-        self.bytes_into_chunk += n - chunk_start_in_data;
+        self.bytes_into_chunk += (n - chunk_start_in_data) as u64;
         chunk_positions
     }
 
-    fn bytes_into_chunk(&self) -> usize {
+    fn bytes_into_chunk(&self) -> u64 {
         self.bytes_into_chunk
     }
 }
 
 /// A chunker that never splits: the entire input becomes one chunk.
-///
-/// Emits a forced chunk boundary every `usize::MAX` bytes to satisfy the
-/// [`Chunker`] contract.
 #[derive(Default)]
 pub struct SingleChunkChunker {
-    bytes_into_chunk: usize,
+    bytes_into_chunk: u64,
 }
 
 impl Chunker for SingleChunkChunker {
-    fn next(&mut self, data: &[u8]) -> Vec<usize> {
-        let capacity = usize::MAX - self.bytes_into_chunk;
-        let chunk = if data.len() <= capacity {
-            self.bytes_into_chunk += data.len();
-            None
-        } else {
-            self.bytes_into_chunk = data.len() - capacity;
-            Some(usize::MAX)
-        };
-        chunk.into_iter().collect()
+    fn next(&mut self, data: &[u8]) -> Vec<u64> {
+        self.bytes_into_chunk += data.len() as u64;
+        Vec::new()
     }
 
-    fn flush(&mut self) -> Option<usize> {
+    fn flush(&mut self) -> Option<u64> {
         let n = self.bytes_into_chunk;
         self.bytes_into_chunk = 0;
         if n > 0 { Some(n) } else { None }
     }
 
-    fn bytes_into_chunk(&self) -> usize {
+    fn bytes_into_chunk(&self) -> u64 {
         self.bytes_into_chunk
     }
 }
@@ -229,7 +205,7 @@ pub trait ChunkHasher {
 /// The length and hash of a single chunk produced by [`HashingChunker`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LengthHash {
-    pub length: usize,
+    pub length: u64,
     pub hash: Vec<u8>,
 }
 
@@ -255,7 +231,9 @@ impl<H: ChunkHasher, C: Chunker> HashingChunker<H, C> {
         let mut data = data;
 
         for length in chunk_lengths {
-            let end_in_data = length - bytes_into_chunk;
+            // A chunk boundary reported for this call always falls within the current
+            // `data` slice, so the byte offset within it fits in `usize`.
+            let end_in_data = (length - bytes_into_chunk) as usize;
             self.hasher.update(&data[..end_in_data]);
             data = &data[end_in_data..];
             result.push(LengthHash { length, hash: self.hasher.finalize_reset() });
@@ -370,9 +348,6 @@ mod tests {
         assert_eq!(chunker.flush(), None);
     }
 
-    // The forced split at usize::MAX cannot be tested without allocating ~18 EB of data
-    // or exposing the internal bytes_into_chunk field.
-
     #[test]
     fn test_illegal_config() {
         assert!(CdcConfig::new(5).is_err());
@@ -413,7 +388,7 @@ mod tests {
         // Verify chunking of data consisting of repeated values, chunk size 1 kB.
         let config = CdcConfig::new(10).unwrap();
         // max_chunk_size = base_size * (target_size_bits + 1) = (1<<10)/2 * (10+1)
-        let max_chunk_size = (1usize << 10) / 2 * (10 + 1);
+        let max_chunk_size = (1u64 << 10) / 2 * (10 + 1);
         let mut chunker = config.chunker();
         let data = vec![3u8; 11 * 1024];
         // Not all repeated byte values result in maximum chunk size.
@@ -469,7 +444,7 @@ mod tests {
         // Verify chunking if the input is provided in multiple parts (e.g. read from a file).
         let data = pseudo_random_data(42, 7 * 1024 * 1024);
         let expected = vec![
-            1606795usize,
+            1606795u64,
             697894,
             638611,
             642966,
@@ -509,7 +484,7 @@ mod tests {
         for (name, splits) in test_cases {
             let mut chunker = config.chunker();
             let mut remaining = data.as_slice();
-            let mut chunk_sizes: Vec<usize> = Vec::new();
+            let mut chunk_sizes: Vec<u64> = Vec::new();
             for &split in *splits {
                 chunk_sizes.extend(chunker.next(&remaining[..split]));
                 remaining = &remaining[split..];
@@ -527,7 +502,7 @@ mod tests {
         let config = CdcConfig::new(10).unwrap();
         let pattern = b"kR9MVTnItt1y6KUcekTf,wO-ymFECPi";
 
-        let test_cases: &[(&str, &[usize], &[usize])] = &[
+        let test_cases: &[(&str, &[usize], &[u64])] = &[
             ("no chunk end added", &[], &[1658, 1588, 1536, 1338, 1048]),
             (
                 "chunk end added before the start of the first data partition",
@@ -630,9 +605,10 @@ mod tests {
         assert_eq!(results[0].length, 1606795);
         assert_eq!(results[0].hash.len(), 1);
         // Each chunk's XOR hash must equal the XOR of its own bytes.
-        let chunk_sizes: Vec<usize> = results.iter().map(|lh| lh.length).collect();
-        let mut offset = 0;
+        let chunk_sizes: Vec<u64> = results.iter().map(|lh| lh.length).collect();
+        let mut offset: usize = 0;
         for (lh, &len) in results.iter().zip(chunk_sizes.iter()) {
+            let len = len as usize;
             let expected_xor = data[offset..offset + len].iter().fold(0u8, |a, &b| a ^ b);
             assert_eq!(lh.hash, vec![expected_xor], "chunk at offset {offset}");
             offset += len;
@@ -658,7 +634,7 @@ mod tests {
         fn test_hashing_chunker_blake3_expected_values() {
             // Expected values verified against the Go implementation (seed=42, 7 MB,
             // CdcConfig target_size_bits=20, blake3 with 20-byte output).
-            let expected: &[(usize, &[u8])] = &[
+            let expected: &[(u64, &[u8])] = &[
                 (1606795, &[0x82, 0x06, 0x1a, 0x7f, 0x0c, 0x42, 0xc2, 0x3f, 0x94, 0x0f, 0x09, 0xbe, 0x6c, 0xd8, 0xb1, 0x0b, 0xd4, 0x0c, 0x7e, 0x19]),
                 (697894,  &[0xae, 0x5c, 0x6e, 0x29, 0xc3, 0x30, 0x10, 0x67, 0x18, 0xc0, 0x1c, 0x1a, 0xb2, 0x70, 0x1a, 0xab, 0x61, 0xdb, 0x81, 0x6f]),
                 (638611,  &[0xfb, 0x8a, 0xc7, 0x9c, 0x4c, 0x86, 0xd1, 0x9c, 0x44, 0xa8, 0x4c, 0x92, 0x83, 0x1a, 0xff, 0x7c, 0xa5, 0x9e, 0x55, 0x03]),
