@@ -309,9 +309,8 @@ static TABLE: [u32; 256] = [
 mod tests {
     use super::*;
 
-    // LCG-based pseudo-random data generator matching Go's testutil package.
-    // Do not change parameters or implementation: the output must be reproducible
-    // and match the Go implementation exactly.
+    // LCG-based pseudo-random data generator with fixed parameters, so that output is
+    // reproducible across runs and platforms.
     struct Lcg {
         seed: u32,
     }
@@ -337,6 +336,19 @@ mod tests {
         (0..length)
             .map(|_| charset[(lcg.next() >> 16) as usize % charset.len()])
             .collect()
+    }
+
+    /// Builds a `CdcChunker` for `target_size_bits` positioned exactly at the point where
+    /// the minimum chunk size has just been reached: the warm-up phase is done and
+    /// mask-checking starts with the full-width mask (`target_size_bits` bits). Because the
+    /// rolling fingerprint's state is fully replaced after 31 bytes regardless of prior
+    /// history, feeding exactly 31 fresh bytes from here on reproduces the same fingerprint
+    /// as feeding those same 31 bytes at any other position.
+    fn chunker_ready_to_scan(target_size_bits: u32) -> CdcChunker {
+        let config = CdcConfig::new(target_size_bits).unwrap();
+        let mut chunker = config.chunker();
+        chunker.bytes_into_chunk = chunker.base_size as u64 - 1;
+        chunker
     }
 
     #[test]
@@ -425,7 +437,6 @@ mod tests {
     fn test_average_chunk_size() {
         // Verify that the average chunk size is within a reasonable range of the target.
         // Uses StdRng (ChaCha12) with a fixed seed for high-entropy, reproducible data.
-        // The Go equivalent uses ChaCha8; exact values differ but statistical properties match.
         use rand::{Rng, SeedableRng, rngs::StdRng};
 
         let mut rng = StdRng::from_seed([0u8; 32]);
@@ -446,8 +457,6 @@ mod tests {
         assert!(!chunks.is_empty(), "no chunks produced for bits=16");
         let avg_16 = data.len() / chunks.len();
 
-        // Go's ChaCha8 (zero seed) produces avg_6=72, avg_16=75069.
-        // Rust's StdRng/ChaCha12 (zero seed) produces avg_6=72, avg_16=75415 (<0.5% difference).
         // Both are ~14% above the respective target (64 and 65536), confirming correct distribution.
         assert_eq!(avg_6, 72);
         assert_eq!(avg_16, 75415);
@@ -558,6 +567,94 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_verify_mask_8bit_pattern_does_not_match_9bit_mask() {
+        // Pattern found (offline, by scanning real-world text) to match exactly an 8-bit
+        // mask: fingerprint bits 0..=7 are 0, bit 8 is 1. At the tested position (end of a
+        // 1031-byte buffer), target_size_bits=10 has already shifted down to a 9-bit mask
+        // (bits 0..=8 must be 0), so this pattern must NOT trigger a chunk boundary there.
+        let pattern: [u8; 31] = [
+            0x84, 0x0e, 0xc3, 0xc0, 0xfd, 0x58, 0x12, 0x43, 0xce, 0xa3, 0xe8, 0x28, 0xa1, 0x5c,
+            0x70, 0xce, 0x9a, 0x7f, 0x3b, 0x59, 0xf9, 0xa2, 0xaa, 0xe3, 0xeb, 0x28, 0xcb, 0x67,
+            0x0f, 0x0e, 0x97,
+        ];
+        let config = CdcConfig::new(10).unwrap();
+        let mut chunker = config.chunker();
+        let mut data = vec![0u8; 1031];
+        let start = data.len() - pattern.len();
+        data[start..].copy_from_slice(&pattern);
+        assert_eq!(chunker.next(&data), Vec::<u64>::new());
+    }
+
+    #[test]
+    fn test_verify_mask_9bit_pattern_matches_9bit_mask() {
+        // Pattern found (offline, by scanning real-world text) to match exactly a 9-bit
+        // mask: fingerprint bits 0..=8 are 0, bit 9 is 1. At the tested position (end of a
+        // 1031-byte buffer), target_size_bits=10 uses exactly a 9-bit mask there, so this
+        // pattern must trigger a chunk boundary right at its end, verifying the mask-shift
+        // timing precisely.
+        let pattern: [u8; 31] = [
+            0x80, 0xe2, 0x9f, 0x79, 0xc7, 0xea, 0xd1, 0xf1, 0x49, 0x12, 0xf2, 0x38, 0xa5, 0x6d,
+            0x59, 0x73, 0x69, 0x08, 0xf3, 0xfe, 0x1a, 0xd8, 0x7a, 0x97, 0xe8, 0xc2, 0xcd, 0x89,
+            0xd8, 0xa4, 0x79,
+        ];
+        let config = CdcConfig::new(10).unwrap();
+        let mut chunker = config.chunker();
+        let mut data = vec![0u8; 1031];
+        let start = data.len() - pattern.len();
+        data[start..].copy_from_slice(&pattern);
+        assert_eq!(chunker.next(&data), vec![1031]);
+    }
+
+    #[test]
+    fn test_example_pattern_10bit_mask() {
+        // Real-text pattern documented on `CdcConfig::chunker` as an example end-of-chunk
+        // sequence for a 10 bit mask: right after the minimum chunk size is reached for
+        // target_size_bits=10, this pattern ends a chunk exactly at its last byte. The
+        // reported chunk length is `base_size - 1` (bytes already "in" the simulated chunk)
+        // plus the pattern's own length.
+        let pattern = b"ears amidst much internal confl";
+        let base_size = 1u64 << (10 - 1);
+        let mut chunker = chunker_ready_to_scan(10);
+        assert_eq!(chunker.next(pattern), vec![base_size - 1 + pattern.len() as u64]);
+    }
+
+    #[test]
+    fn test_example_pattern_20bit_mask() {
+        // Real-text pattern documented on `CdcConfig::chunker` as an example end-of-chunk
+        // sequence for a 20 bit mask.
+        let pattern = b"ependent khanates. Following th";
+        let base_size = 1u64 << (20 - 1);
+        let mut chunker = chunker_ready_to_scan(20);
+        assert_eq!(chunker.next(pattern), vec![base_size - 1 + pattern.len() as u64]);
+    }
+
+    #[test]
+    fn test_example_pattern_29bit_mask() {
+        // Real-text pattern documented on `CdcConfig::chunker` as an example end-of-chunk
+        // sequence for a 29 bit mask.
+        let pattern = b"ric power|power]] consumption o";
+        let base_size = 1u64 << (29 - 1);
+        let mut chunker = chunker_ready_to_scan(29);
+        assert_eq!(chunker.next(pattern), vec![base_size - 1 + pattern.len() as u64]);
+    }
+
+    #[test]
+    fn test_example_pattern_31bit_mask() {
+        // Pattern documented on `CdcConfig::chunker` as an example end-of-chunk sequence for
+        // a 31 bit mask, i.e. a fully-zero fingerprint. `target_size_bits` only goes up to 30
+        // (the widest mask this crate can produce), but a fully-zero fingerprint satisfies
+        // any mask width, so it still ends a chunk right at the pattern's last byte there.
+        let pattern: [u8; 31] = [
+            0xc1, 0xe4, 0xc8, 0x57, 0x14, 0xef, 0xf6, 0x2c, 0x19, 0xd6, 0x39, 0x91, 0x12, 0x73,
+            0x6f, 0x3d, 0x82, 0xbc, 0x1f, 0x15, 0x49, 0x42, 0x86, 0xda, 0xb8, 0x30, 0xc5, 0x81,
+            0xb7, 0x8a, 0x5e,
+        ];
+        let base_size = 1u64 << (30 - 1);
+        let mut chunker = chunker_ready_to_scan(30);
+        assert_eq!(chunker.next(&pattern), vec![base_size - 1 + pattern.len() as u64]);
+    }
+
     // --- HashingChunker tests ---
 
     struct XorHasher(u8);
@@ -646,8 +743,8 @@ mod tests {
 
         #[test]
         fn test_hashing_chunker_blake3_expected_values() {
-            // Expected values verified against the Go implementation (seed=42, 7 MB,
-            // CdcConfig target_size_bits=20, blake3 with 20-byte output).
+            // Expected values for seed=42, 7 MB, CdcConfig target_size_bits=20,
+            // blake3 with 20-byte output.
             let expected: &[(u64, &[u8])] = &[
                 (1606795, &[0x82, 0x06, 0x1a, 0x7f, 0x0c, 0x42, 0xc2, 0x3f, 0x94, 0x0f, 0x09, 0xbe, 0x6c, 0xd8, 0xb1, 0x0b, 0xd4, 0x0c, 0x7e, 0x19]),
                 (697894,  &[0xae, 0x5c, 0x6e, 0x29, 0xc3, 0x30, 0x10, 0x67, 0x18, 0xc0, 0x1c, 0x1a, 0xb2, 0x70, 0x1a, 0xab, 0x61, 0xdb, 0x81, 0x6f]),
