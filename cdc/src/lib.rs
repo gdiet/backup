@@ -25,10 +25,12 @@ pub enum CdcConfigError {
 impl std::fmt::Display for CdcConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::TargetSizeBitsTooSmall(v) =>
-                write!(f, "target_size_bits {v} is too small (minimum: 6)"),
-            Self::TargetSizeBitsTooBig(v) =>
-                write!(f, "target_size_bits {v} is too large (maximum: 30)"),
+            Self::TargetSizeBitsTooSmall(v) => {
+                write!(f, "target_size_bits {v} is too small (minimum: 6)")
+            }
+            Self::TargetSizeBitsTooBig(v) => {
+                write!(f, "target_size_bits {v} is too large (maximum: 30)")
+            }
         }
     }
 }
@@ -250,7 +252,10 @@ impl<H: ChunkHasher, C: Chunker> HashingChunker<H, C> {
             let end_in_data = (length - bytes_into_chunk) as usize;
             self.hasher.update(&data[..end_in_data]);
             data = &data[end_in_data..];
-            result.push(LengthHash { length, hash: self.hasher.finalize_reset() });
+            result.push(LengthHash {
+                length,
+                hash: self.hasher.finalize_reset(),
+            });
             bytes_into_chunk = 0;
         }
 
@@ -467,15 +472,7 @@ mod tests {
         // Verify chunking if the input is provided in multiple parts (e.g. read from a file).
         let data = pseudo_random_data(42, 7 * 1024 * 1024);
         let expected = vec![
-            1606795u64,
-            697894,
-            638611,
-            642966,
-            857992,
-            829401,
-            524432,
-            730375,
-            811566,
+            1606795u64, 697894, 638611, 642966, 857992, 829401, 524432, 730375, 811566,
         ];
         let config = CdcConfig::new(20).unwrap();
 
@@ -616,7 +613,10 @@ mod tests {
         let pattern = b"ears amidst much internal confl";
         let base_size = 1u64 << (10 - 1);
         let mut chunker = chunker_ready_to_scan(10);
-        assert_eq!(chunker.next(pattern), vec![base_size - 1 + pattern.len() as u64]);
+        assert_eq!(
+            chunker.next(pattern),
+            vec![base_size - 1 + pattern.len() as u64]
+        );
     }
 
     #[test]
@@ -626,7 +626,10 @@ mod tests {
         let pattern = b"ependent khanates. Following th";
         let base_size = 1u64 << (20 - 1);
         let mut chunker = chunker_ready_to_scan(20);
-        assert_eq!(chunker.next(pattern), vec![base_size - 1 + pattern.len() as u64]);
+        assert_eq!(
+            chunker.next(pattern),
+            vec![base_size - 1 + pattern.len() as u64]
+        );
     }
 
     #[test]
@@ -636,7 +639,10 @@ mod tests {
         let pattern = b"ric power|power]] consumption o";
         let base_size = 1u64 << (29 - 1);
         let mut chunker = chunker_ready_to_scan(29);
-        assert_eq!(chunker.next(pattern), vec![base_size - 1 + pattern.len() as u64]);
+        assert_eq!(
+            chunker.next(pattern),
+            vec![base_size - 1 + pattern.len() as u64]
+        );
     }
 
     #[test]
@@ -652,7 +658,10 @@ mod tests {
         ];
         let base_size = 1u64 << (30 - 1);
         let mut chunker = chunker_ready_to_scan(30);
-        assert_eq!(chunker.next(&pattern), vec![base_size - 1 + pattern.len() as u64]);
+        assert_eq!(
+            chunker.next(&pattern),
+            vec![base_size - 1 + pattern.len() as u64]
+        );
     }
 
     // --- HashingChunker tests ---
@@ -661,7 +670,9 @@ mod tests {
 
     impl ChunkHasher for XorHasher {
         fn update(&mut self, data: &[u8]) {
-            for &b in data { self.0 ^= b; }
+            for &b in data {
+                self.0 ^= b;
+            }
         }
         fn finalize_reset(&mut self) -> Vec<u8> {
             let result = vec![self.0];
@@ -677,7 +688,10 @@ mod tests {
         assert_eq!(chunker.next(b"hello"), vec![]);
         assert_eq!(
             chunker.flush(),
-            Some(LengthHash { length: 5, hash: vec![b'h' ^ b'e' ^ b'l' ^ b'l' ^ b'o'] })
+            Some(LengthHash {
+                length: 5,
+                hash: vec![b'h' ^ b'e' ^ b'l' ^ b'l' ^ b'o']
+            })
         );
         assert_eq!(chunker.flush(), None);
     }
@@ -746,15 +760,69 @@ mod tests {
             // Expected values for seed=42, 7 MB, CdcConfig target_size_bits=20,
             // blake3 with 20-byte output.
             let expected: &[(u64, &[u8])] = &[
-                (1606795, &[0x82, 0x06, 0x1a, 0x7f, 0x0c, 0x42, 0xc2, 0x3f, 0x94, 0x0f, 0x09, 0xbe, 0x6c, 0xd8, 0xb1, 0x0b, 0xd4, 0x0c, 0x7e, 0x19]),
-                (697894,  &[0xae, 0x5c, 0x6e, 0x29, 0xc3, 0x30, 0x10, 0x67, 0x18, 0xc0, 0x1c, 0x1a, 0xb2, 0x70, 0x1a, 0xab, 0x61, 0xdb, 0x81, 0x6f]),
-                (638611,  &[0xfb, 0x8a, 0xc7, 0x9c, 0x4c, 0x86, 0xd1, 0x9c, 0x44, 0xa8, 0x4c, 0x92, 0x83, 0x1a, 0xff, 0x7c, 0xa5, 0x9e, 0x55, 0x03]),
-                (642966,  &[0x73, 0xdb, 0xc1, 0x8a, 0x7b, 0x22, 0x99, 0x85, 0xe6, 0x07, 0x4f, 0xae, 0xd9, 0xd7, 0x77, 0x3b, 0xc0, 0xe0, 0x01, 0x3c]),
-                (857992,  &[0x20, 0x71, 0xc8, 0xfe, 0x31, 0xae, 0xca, 0x66, 0x72, 0xe1, 0x02, 0xf9, 0xe1, 0xfc, 0xbd, 0x57, 0x84, 0x79, 0x58, 0x4b]),
-                (829401,  &[0xdd, 0x55, 0x0b, 0x3e, 0xf6, 0xa1, 0xd3, 0x5f, 0xd9, 0x36, 0x8b, 0xdd, 0x10, 0xdd, 0x67, 0x8d, 0xac, 0xdc, 0x3f, 0x54]),
-                (524432,  &[0xd9, 0x89, 0xbb, 0x02, 0x13, 0x9c, 0x9c, 0x43, 0xe9, 0xd2, 0x04, 0x47, 0x4c, 0x0f, 0xb1, 0x6f, 0xac, 0x6a, 0xc0, 0x3d]),
-                (730375,  &[0x12, 0x54, 0x68, 0xc3, 0x7a, 0x5d, 0x00, 0x55, 0x3c, 0xbd, 0x79, 0x15, 0x33, 0x9c, 0x29, 0x04, 0x64, 0xf8, 0xaa, 0x43]),
-                (811566,  &[0x47, 0x25, 0xf5, 0x47, 0x87, 0x19, 0x3c, 0x1d, 0x2a, 0xeb, 0x07, 0x7c, 0x6b, 0x12, 0xd6, 0xaf, 0xa6, 0x89, 0xa3, 0x70]),
+                (
+                    1606795,
+                    &[
+                        0x82, 0x06, 0x1a, 0x7f, 0x0c, 0x42, 0xc2, 0x3f, 0x94, 0x0f, 0x09, 0xbe,
+                        0x6c, 0xd8, 0xb1, 0x0b, 0xd4, 0x0c, 0x7e, 0x19,
+                    ],
+                ),
+                (
+                    697894,
+                    &[
+                        0xae, 0x5c, 0x6e, 0x29, 0xc3, 0x30, 0x10, 0x67, 0x18, 0xc0, 0x1c, 0x1a,
+                        0xb2, 0x70, 0x1a, 0xab, 0x61, 0xdb, 0x81, 0x6f,
+                    ],
+                ),
+                (
+                    638611,
+                    &[
+                        0xfb, 0x8a, 0xc7, 0x9c, 0x4c, 0x86, 0xd1, 0x9c, 0x44, 0xa8, 0x4c, 0x92,
+                        0x83, 0x1a, 0xff, 0x7c, 0xa5, 0x9e, 0x55, 0x03,
+                    ],
+                ),
+                (
+                    642966,
+                    &[
+                        0x73, 0xdb, 0xc1, 0x8a, 0x7b, 0x22, 0x99, 0x85, 0xe6, 0x07, 0x4f, 0xae,
+                        0xd9, 0xd7, 0x77, 0x3b, 0xc0, 0xe0, 0x01, 0x3c,
+                    ],
+                ),
+                (
+                    857992,
+                    &[
+                        0x20, 0x71, 0xc8, 0xfe, 0x31, 0xae, 0xca, 0x66, 0x72, 0xe1, 0x02, 0xf9,
+                        0xe1, 0xfc, 0xbd, 0x57, 0x84, 0x79, 0x58, 0x4b,
+                    ],
+                ),
+                (
+                    829401,
+                    &[
+                        0xdd, 0x55, 0x0b, 0x3e, 0xf6, 0xa1, 0xd3, 0x5f, 0xd9, 0x36, 0x8b, 0xdd,
+                        0x10, 0xdd, 0x67, 0x8d, 0xac, 0xdc, 0x3f, 0x54,
+                    ],
+                ),
+                (
+                    524432,
+                    &[
+                        0xd9, 0x89, 0xbb, 0x02, 0x13, 0x9c, 0x9c, 0x43, 0xe9, 0xd2, 0x04, 0x47,
+                        0x4c, 0x0f, 0xb1, 0x6f, 0xac, 0x6a, 0xc0, 0x3d,
+                    ],
+                ),
+                (
+                    730375,
+                    &[
+                        0x12, 0x54, 0x68, 0xc3, 0x7a, 0x5d, 0x00, 0x55, 0x3c, 0xbd, 0x79, 0x15,
+                        0x33, 0x9c, 0x29, 0x04, 0x64, 0xf8, 0xaa, 0x43,
+                    ],
+                ),
+                (
+                    811566,
+                    &[
+                        0x47, 0x25, 0xf5, 0x47, 0x87, 0x19, 0x3c, 0x1d, 0x2a, 0xeb, 0x07, 0x7c,
+                        0x6b, 0x12, 0xd6, 0xaf, 0xa6, 0x89, 0xa3, 0x70,
+                    ],
+                ),
             ];
 
             let data = pseudo_random_data(42, 7 * 1024 * 1024);
@@ -764,7 +832,9 @@ mod tests {
             results.extend(chunker.flush());
 
             assert_eq!(results.len(), expected.len());
-            for (i, (result, &(exp_len, exp_hash))) in results.iter().zip(expected.iter()).enumerate() {
+            for (i, (result, &(exp_len, exp_hash))) in
+                results.iter().zip(expected.iter()).enumerate()
+            {
                 assert_eq!(result.length, exp_len, "chunk {i} length");
                 assert_eq!(result.hash.as_slice(), exp_hash, "chunk {i} hash");
             }
