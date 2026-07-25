@@ -93,13 +93,25 @@ impl LongTermStore {
             let full_path = self.data_dir.join(&path);
 
             // Try to open directly; create parent directories only when they are missing.
-            let mut file = match OpenOptions::new().write(true).create(true).open(&full_path) {
+            // truncate(false) is the default; it is set explicitly to make clippy happy.
+            // We must not truncate because this file may already contain data written by
+            // a previous call at a different position, which must not be discarded.
+            let mut file = match OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .open(&full_path)
+            {
                 Ok(f) => Ok(f),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {
                     if let Some(parent) = full_path.parent() {
                         fs::create_dir_all(parent)?;
                     }
-                    OpenOptions::new().write(true).create(true).open(&full_path)
+                    OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(false)
+                        .open(&full_path)
                 }
                 Err(e) => Err(e),
             }?;
