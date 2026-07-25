@@ -4,17 +4,38 @@ This workspace contains Rust crates used by the backup application.
 
 ## Crates
 
-| Crate | Description |
-|-------|-------------|
-| `cdc` | Content-defined chunking library (rolling-fingerprint based) |
+| Crate   | Description                                                                          |
+|---------|---------------------------------------------------------------------------------------|
+| `cdc`   | Content-defined chunking library (rolling-fingerprint based)                         |
+| `store` | Sequential on-disk byte store, file format compatible with the Scala `LongTermStore` |
+| `cli`   | Deduplicating backup application; builds the `backup` binary                        |
 
 ## Development
 
-### Build
+### Build (debug)
 
 ```bash
 # from rust/
 cargo build
+```
+
+### Build (release / prod)
+
+```bash
+cargo build --release
+```
+
+### Run directly via cargo
+
+```bash
+# debug build, runs the cli crate's `backup` binary
+cargo run -p cli -- <args>
+
+# release build
+cargo run --release -p cli -- <args>
+
+# example
+cargo run -p cli -- store --create-dirs source1 source2 target
 ```
 
 ### Tests
@@ -58,7 +79,7 @@ per iteration — matching the Go benchmark exactly.
 cargo run --release --example bench
 ```
 
-Measured on this machine (single thread, `target_size_bits=20`, ~1 MB average chunk size):
+Measured on Intel Core i7-1355U, 12 logical cores, 15 GB RAM, Ubuntu 24.04.4 LTS in WSL2 on Windows (single thread, `target_size_bits=20`, ~1 MB average chunk size):
 
 | Implementation | Throughput |
 |----------------|------------|
