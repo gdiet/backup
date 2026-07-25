@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 const FILE_SIZE: u64 = 100_000_000;
 
 /// Returns the relative file path, the offset within that file, and the number of bytes
-/// in `[position, position + size)` that reside within that file.
+/// in `position..position + size` that reside within that file.
 ///
 /// Path format `{dir1:02}/{dir2:02}/{file_start:010}` is compatible with the Scala
 /// `LongTermStore`:
