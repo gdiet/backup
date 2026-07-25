@@ -109,12 +109,6 @@ impl CdcChunker {
 }
 
 impl Chunker for CdcChunker {
-    fn flush(&mut self) -> Option<u64> {
-        let bic = self.bytes_into_chunk;
-        self.reset();
-        if bic == 0 { None } else { Some(bic) }
-    }
-
     fn next(&mut self, data: &[u8]) -> Vec<u64> {
         let n = data.len();
         let mut chunk_positions: Vec<u64> = Vec::new();
@@ -173,6 +167,12 @@ impl Chunker for CdcChunker {
 
         self.bytes_into_chunk += (n - chunk_start_in_data) as u64;
         chunk_positions
+    }
+
+    fn flush(&mut self) -> Option<u64> {
+        let bic = self.bytes_into_chunk;
+        self.reset();
+        if bic == 0 { None } else { Some(bic) }
     }
 
     fn bytes_into_chunk(&self) -> u64 {
@@ -556,12 +556,12 @@ mod tests {
 
         for (name, pattern_ends_at, expected) in test_cases {
             let mut chunker = config.chunker();
-            let mut testdata = data.clone();
+            let mut test_data = data.clone();
             for &end_at in *pattern_ends_at {
                 let start = end_at - pattern.len();
-                testdata[start..end_at].copy_from_slice(pattern);
+                test_data[start..end_at].copy_from_slice(pattern);
             }
-            let mut chunk_sizes = chunker.next(&testdata);
+            let mut chunk_sizes = chunker.next(&test_data);
             chunk_sizes.extend(chunker.flush());
             assert_eq!(&chunk_sizes, expected, "test case: {name}");
         }
