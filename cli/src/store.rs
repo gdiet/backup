@@ -63,7 +63,18 @@ pub fn run_store(repo: &Path, args: BackupArgs) {
     println!("repo: {repo:?}");
     println!("target: {target:?}");
 
-    let files = find_files(sources);
+    // Validate the CDC config once, up front, instead of on every call to chunk_and_print.
+    let cdc_config =
+        CdcConfig::new(CDC_TARGET_SIZE_BITS).expect("CDC_TARGET_SIZE_BITS is a valid constant");
+
+    // Traversal (single-threaded, via the underlying iterator) and chunking (parallel,
+    // via rayon) run concurrently: chunking of already-found files overlaps with
+    // discovering the rest of the tree, instead of waiting for the full walk to finish.
+    let run = || {
+        walk_files(sources)
+            .par_bridge()
+            .for_each(|path| chunk_and_print(&path, &cdc_config))
+    };
 
     match args.concurrency {
         Some(concurrency) => {
@@ -71,36 +82,32 @@ pub fn run_store(repo: &Path, args: BackupArgs) {
                 .num_threads(concurrency as usize)
                 .build()
                 .expect("failed to build thread pool");
-            pool.install(|| chunk_all(&files));
+            pool.install(run);
         }
-        None => chunk_all(&files),
+        None => run(),
     }
 }
 
-/// Sequentially traverses `sources` and returns the paths of all regular files found.
-/// Errors accessing individual entries are logged to stderr and skipped.
-fn find_files(sources: &[PathBuf]) -> Vec<PathBuf> {
-    let mut files = Vec::new();
-    for source in sources {
-        for entry in walkdir::WalkDir::new(source) {
-            match entry {
-                Ok(entry) if entry.file_type().is_file() => files.push(entry.into_path()),
-                Ok(_) => {} // skip directories, symlinks, etc.
-                Err(err) => eprintln!("warning: failed to access entry: {err}"),
-            }
-        }
-    }
-    files
-}
-
-/// Chunks and hashes all `files` in parallel, printing the result of each file to stdout.
-fn chunk_all(files: &[PathBuf]) {
-    files.par_iter().for_each(|path| chunk_and_print(path));
+/// Sequentially traverses all `sources`, one after another, yielding the path of each
+/// regular file found. Errors accessing individual entries are logged to stderr and skipped.
+fn walk_files(sources: &[PathBuf]) -> impl Iterator<Item = PathBuf> + '_ {
+    sources.iter().flat_map(|source| {
+        walkdir::WalkDir::new(source)
+            .into_iter()
+            .filter_map(|entry| match entry {
+                Ok(entry) if entry.file_type().is_file() => Some(entry.into_path()),
+                Ok(_) => None, // skip directories, symlinks, etc.
+                Err(err) => {
+                    eprintln!("warning: failed to access entry: {err}");
+                    None
+                }
+            })
+    })
 }
 
 /// Reads, chunks and hashes the file at `path`, then prints its chunks (length and hash)
 /// to stdout. Errors reading the file are logged to stderr and the file is skipped.
-fn chunk_and_print(path: &Path) {
+fn chunk_and_print(path: &Path, cdc_config: &CdcConfig) {
     let mut file = match File::open(path) {
         Ok(file) => file,
         Err(err) => {
@@ -109,10 +116,7 @@ fn chunk_and_print(path: &Path) {
         }
     };
 
-    let chunker = CdcConfig::new(CDC_TARGET_SIZE_BITS)
-        .expect("CDC_TARGET_SIZE_BITS is a valid constant")
-        .chunker();
-    let mut hasher = HashingChunker::new(Blake3Hasher(blake3::Hasher::new()), chunker);
+    let mut hasher = HashingChunker::new(Blake3Hasher(blake3::Hasher::new()), cdc_config.chunker());
     let mut chunks = Vec::new();
     let mut buf = [0u8; READ_BUFFER_SIZE];
 
