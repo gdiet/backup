@@ -11,6 +11,15 @@ for the crate layout).
 Use the same language as the developer for chat interactions with the developer, but
 use English as project language (see below 'Code Quality').
 
+## Shell Commands
+
+Avoid unscoped, recursive filesystem searches such as `find /` or `find / -maxdepth N`
+— these traverse the entire filesystem and can take a very long time. Scope `find` (and
+similar tools) to a specific, known directory instead (e.g. the workspace, or
+`~/.cargo/registry/src/...` for crate sources). Prefer more targeted alternatives when
+available, e.g. `cargo metadata` or `cargo tree` to locate crate sources/dependencies
+instead of searching the filesystem blindly.
+
 ## Verification Of Changes
 
 When making changes to the codebase, always verify your changes before finishing and

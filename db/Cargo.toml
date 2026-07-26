@@ -1,0 +1,11 @@
+[package]
+name = "db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rusqlite = { version = "0.40.1", features = ["bundled"] }
+rusqlite_migration = "2.6.0"
+
+[dev-dependencies]
+tempfile = "3.27.0"

@@ -1,6 +1,7 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 mod store;
 
@@ -32,7 +33,34 @@ enum Command {
 }
 
 #[derive(Args)]
-struct InitArgs {}
+struct InitArgs {
+    /// Average CDC chunk size target, as `2^N` bytes.
+    #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(
+        *db::CDC_TARGET_SIZE_BITS_RANGE.start() as i64..=*db::CDC_TARGET_SIZE_BITS_RANGE.end() as i64
+    ))]
+    cdc_target_size_bits: u32,
+
+    /// Chunking method used when splitting file content for deduplication.
+    #[arg(long, value_enum, default_value_t = ChunkingArg::Cdc)]
+    chunking: ChunkingArg,
+}
+
+/// CLI-facing mirror of [`db::Chunking`] (`clap::ValueEnum` can't be derived for a
+/// type defined in another crate).
+#[derive(Clone, Copy, ValueEnum)]
+enum ChunkingArg {
+    Cdc,
+    None,
+}
+
+impl From<ChunkingArg> for db::Chunking {
+    fn from(value: ChunkingArg) -> Self {
+        match value {
+            ChunkingArg::Cdc => db::Chunking::Cdc,
+            ChunkingArg::None => db::Chunking::None,
+        }
+    }
+}
 
 #[derive(Args)]
 struct RestoreArgs {
@@ -41,23 +69,36 @@ struct RestoreArgs {
     paths: Vec<PathBuf>,
 }
 
-fn main() {
+fn main() -> ExitCode {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Init(args) => run_init(&cli.repo, args),
-        Command::Store(args) => store::run_store(&cli.repo, args),
-        Command::Restore(args) => run_restore(&cli.repo, args),
+        Command::Init(args) => match run_init(&cli.repo, args) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(err) => {
+                eprintln!("error: {err}");
+                ExitCode::FAILURE
+            }
+        },
+        Command::Store(args) => {
+            store::run_store(&cli.repo, args);
+            ExitCode::SUCCESS
+        }
+        Command::Restore(args) => {
+            run_restore(&cli.repo, args);
+            ExitCode::SUCCESS
+        }
     }
 }
 
-fn run_init(repo: &PathBuf, _args: InitArgs) {
-    // TODO: implement repository initialization.
-    println!("repo: {repo:?}");
-    println!("init: not yet implemented");
+fn run_init(repo: &Path, args: InitArgs) -> Result<(), db::Error> {
+    let settings = db::RepositorySettings::new(args.cdc_target_size_bits, args.chunking.into())?;
+    db::init_repository(repo, &settings)?;
+    println!("repository initialized: {}", repo.display());
+    Ok(())
 }
 
-fn run_restore(repo: &PathBuf, args: RestoreArgs) {
+fn run_restore(repo: &Path, args: RestoreArgs) {
     let (sources, target) = args.paths.split_at(args.paths.len() - 1);
     let target = &target[0];
 

@@ -33,7 +33,7 @@ pub struct BackupArgs {
     paths: Vec<PathBuf>,
 }
 
-/// A [`cdc::ChunkHasher`] backed by [`blake3::Hasher`].
+/// A [`ChunkHasher`] backed by [`blake3::Hasher`].
 ///
 /// A local newtype is required because Rust's orphan rule forbids implementing a
 /// foreign trait (`cdc::ChunkHasher`) for a foreign type (`blake3::Hasher`) directly.

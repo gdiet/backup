@@ -5,10 +5,10 @@ This workspace contains Rust crates used by the backup application.
 ## Crates
 
 | Crate   | Description                                                                          |
-|---------|---------------------------------------------------------------------------------------|
+|---------|--------------------------------------------------------------------------------------|
 | `cdc`   | Content-defined chunking library (rolling-fingerprint based)                         |
 | `store` | Sequential on-disk byte store, file format compatible with the Scala `LongTermStore` |
-| `cli`   | Deduplicating backup application; builds the `backup` binary                        |
+| `cli`   | Deduplicating backup application; builds the `backup` binary                         |
 
 ## Development
 

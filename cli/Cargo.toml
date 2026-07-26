@@ -12,5 +12,6 @@ path = "src/main.rs"
 blake3 = "1.8.5"
 cdc = { version = "0.1.0", path = "../cdc" }
 clap = { version = "4", features = ["derive"] }
+db = { version = "0.1.0", path = "../db" }
 rayon = "1.12.0"
 walkdir = "2.5.0"
