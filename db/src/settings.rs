@@ -24,32 +24,6 @@ impl fmt::Display for Chunking {
     }
 }
 
-/// Hash algorithm used to identify chunk content for deduplication.
-///
-/// Currently only `Blake3` is supported. This is modeled as an enum (rather than a
-/// hard-coded constant) so a repository's chosen algorithm is recorded even though
-/// there is only one valid value today, and so this can be extended without changing
-/// the database schema.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HashAlgorithm {
-    /// BLAKE3, truncated to 16 bytes (128 bits).
-    Blake3,
-}
-
-impl HashAlgorithm {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            HashAlgorithm::Blake3 => "blake3",
-        }
-    }
-}
-
-impl fmt::Display for HashAlgorithm {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
 /// Valid range for [`RepositorySettings::cdc_target_size_bits`].
 ///
 /// Average CDC chunk size is `2^cdc_target_size_bits` bytes; values outside this
@@ -82,17 +56,16 @@ impl std::error::Error for SettingsError {}
 /// User-defined per-repository settings, set once when a repository is created.
 ///
 /// Changing these later would require a migration, since they affect how existing
-/// data is interpreted (chunk boundaries, content hashes).
+/// data is interpreted (chunk boundaries, content hashes). The hash algorithm
+/// (blake3) is not part of this: it's currently fixed in code, not user-configurable.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RepositorySettings {
     cdc_target_size_bits: u32,
     chunking: Chunking,
-    hash_algorithm: HashAlgorithm,
 }
 
 impl RepositorySettings {
-    /// Creates validated repository settings with the [`HashAlgorithm::Blake3`] hash
-    /// algorithm.
+    /// Creates validated repository settings.
     ///
     /// Returns [`SettingsError::CdcTargetSizeBitsOutOfRange`] if `cdc_target_size_bits`
     /// is outside [`CDC_TARGET_SIZE_BITS_RANGE`].
@@ -105,7 +78,6 @@ impl RepositorySettings {
         Ok(Self {
             cdc_target_size_bits,
             chunking,
-            hash_algorithm: HashAlgorithm::Blake3,
         })
     }
 
@@ -115,10 +87,6 @@ impl RepositorySettings {
 
     pub fn chunking(&self) -> Chunking {
         self.chunking
-    }
-
-    pub fn hash_algorithm(&self) -> HashAlgorithm {
-        self.hash_algorithm
     }
 }
 
