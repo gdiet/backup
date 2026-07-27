@@ -60,6 +60,12 @@ pub fn run_store(repo: &Path, args: BackupArgs) {
     let target = &target[0];
 
     // TODO: use target/create_dirs/target_exists once the repository metadata store exists.
+    // Planned design for wiring the metadata store into this parallel loop: each
+    // worker gets its own read connection for the per-chunk dedup lookup (WAL
+    // allows any number of concurrent readers without blocking), but inserts go
+    // through a single dedicated writer (e.g. fed via a channel from the workers)
+    // that batches them into few, larger transactions - see the module-level doc
+    // comment in the db crate for why parallel writer connections would not help.
     println!("repo: {repo:?}");
     println!("target: {target:?}");
 

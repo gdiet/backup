@@ -3,6 +3,17 @@
 //! This crate currently only implements repository initialization
 //! ([`init_repository`]): creating the on-disk directory layout and the metadata
 //! database with its schema and initial rows.
+//!
+//! Planned access pattern once backup ingestion writes to this database: many
+//! short-lived read connections (e.g. one per parallel chunking worker, for the
+//! per-chunk dedup lookup) plus a single dedicated write connection that batches
+//! inserts into few, larger transactions. WAL mode lets readers and the writer run
+//! without blocking each other, but only ever admits one writer transaction at a
+//! time - so multiple concurrent write connections would just contend for that
+//! single writer slot instead of adding real throughput, and would defeat
+//! transaction batching (the actual lever for insert performance). `busy_timeout`
+//! below exists for the transient contention this single writer can still hit
+//! (e.g. a WAL checkpoint in progress), not as a substitute for this design.
 
 mod error;
 mod migrations;
@@ -27,9 +38,26 @@ const DATA_DIR: &str = "data";
 /// required for correct and durable operation.
 fn open_connection(path: &Path) -> Result<Connection, Error> {
     let conn = Connection::open(path)?;
+    // foreign_keys and synchronous are not stored in the database file: they're
+    // purely per-connection settings that default to off/FULL, so they must be
+    // set here every time, on every connection.
     conn.pragma_update(None, "foreign_keys", "ON")?;
+    // NORMAL trades a small amount of durability (the last few committed
+    // transactions may be lost on power loss or an OS crash) for substantially
+    // fewer fsync calls per write. This is safe (the database file itself cannot
+    // be corrupted this way) specifically because it's paired with WAL mode below
+    // - see https://www.sqlite.org/pragma.html#pragma_synchronous.
+    conn.pragma_update(None, "synchronous", "NORMAL")?;
+    // Wait rather than immediately failing with SQLITE_BUSY when the single
+    // writer lock (see the module-level doc comment) is momentarily held by
+    // another connection, e.g. during a WAL checkpoint.
+    conn.pragma_update(None, "busy_timeout", 5000)?;
     // journal_mode returns the resulting mode as a row, so pragma_update_and_check
-    // (rather than pragma_update) is required here.
+    // (rather than pragma_update) is required here. Unlike the two pragmas above,
+    // WAL mode is persisted in the database file itself once set, so on later
+    // opens of an already-WAL file this is just a cheap no-op check, not a real
+    // mode switch. Setting it here regardless keeps this function correct on its
+    // own even if it's ever called on a pre-WAL database file.
     conn.pragma_update_and_check(None, "journal_mode", "WAL", |_row| Ok(()))?;
     Ok(conn)
 }
