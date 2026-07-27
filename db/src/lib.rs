@@ -152,4 +152,105 @@ mod tests {
 
         assert!(result.is_err());
     }
+
+    fn content_ref_count(conn: &Connection, content_id: i64) -> i64 {
+        conn.query_row(
+            "SELECT ref_count FROM contents WHERE id = ?1",
+            [content_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    fn chunk_ref_count(conn: &Connection, chunk_id: i64) -> i64 {
+        conn.query_row(
+            "SELECT ref_count FROM chunks WHERE id = ?1",
+            [chunk_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    /// `contents.ref_count` must track live `tree_entries` references: it rises
+    /// when an entry starts pointing at a content and falls again once that entry
+    /// row is actually deleted, so unreferenced content can be found via
+    /// `ref_count = 0` without scanning `tree_entries`.
+    #[test]
+    fn tree_entries_maintain_content_ref_count() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
+
+        conn.execute("INSERT INTO contents (id, length) VALUES (1, 0)", ())
+            .unwrap();
+        assert_eq!(content_ref_count(&conn, 1), 0);
+
+        conn.execute(
+            "INSERT INTO tree_entries (id, parent_id, name, time, content_id) VALUES (1, 0, 'a', 0, 1)",
+            (),
+        )
+        .unwrap();
+        assert_eq!(content_ref_count(&conn, 1), 1);
+
+        conn.execute(
+            "INSERT INTO tree_entries (id, parent_id, name, time, content_id) VALUES (2, 0, 'b', 0, 1)",
+            (),
+        )
+        .unwrap();
+        assert_eq!(content_ref_count(&conn, 1), 2);
+
+        // Soft-deleting an entry must not release its content: it's still needed
+        // to keep the entry recoverable.
+        conn.execute("UPDATE tree_entries SET deleted_at = 1 WHERE id = 1", ())
+            .unwrap();
+        assert_eq!(content_ref_count(&conn, 1), 2);
+
+        conn.execute("DELETE FROM tree_entries WHERE id = 1", ())
+            .unwrap();
+        assert_eq!(content_ref_count(&conn, 1), 1);
+
+        conn.execute("DELETE FROM tree_entries WHERE id = 2", ())
+            .unwrap();
+        assert_eq!(content_ref_count(&conn, 1), 0);
+    }
+
+    /// `chunks.ref_count` must track live `content_chunks` references, and
+    /// purging an unreferenced content (`DELETE ... WHERE ref_count = 0`) must
+    /// cascade into deleting its `content_chunks` rows, which in turn releases
+    /// the chunks that only that content used.
+    #[test]
+    fn content_chunks_maintain_chunk_ref_count_and_cascade_on_content_deletion() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
+
+        conn.execute(
+            "INSERT INTO chunks (id, length, hash, start, stop) VALUES (1, 3, x'AA', 0, 3)",
+            (),
+        )
+        .unwrap();
+        conn.execute("INSERT INTO contents (id, length) VALUES (1, 3)", ())
+            .unwrap();
+        assert_eq!(chunk_ref_count(&conn, 1), 0);
+
+        conn.execute(
+            "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (1, 0, 1)",
+            (),
+        )
+        .unwrap();
+        assert_eq!(chunk_ref_count(&conn, 1), 1);
+
+        // ref_count = 0, so this content is eligible for purging.
+        assert_eq!(content_ref_count(&conn, 1), 0);
+        conn.execute("DELETE FROM contents WHERE id = 1 AND ref_count = 0", ())
+            .unwrap();
+
+        let remaining_content_chunks: i64 = conn
+            .query_row("SELECT COUNT(*) FROM content_chunks", (), |row| row.get(0))
+            .unwrap();
+        assert_eq!(remaining_content_chunks, 0);
+        assert_eq!(chunk_ref_count(&conn, 1), 0);
+    }
 }
