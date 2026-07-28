@@ -7,6 +7,7 @@ mod check;
 mod find;
 mod format;
 mod list;
+mod restore;
 mod stats;
 mod store;
 
@@ -34,7 +35,7 @@ enum Command {
     /// Back up one or more sources to a target path in the repository.
     Store(store::BackupArgs),
     /// Restore one or more sources from the repository to a target directory.
-    Restore(RestoreArgs),
+    Restore(restore::RestoreArgs),
     /// Show repository statistics, or statistics for a specific path.
     Stats(stats::StatsArgs),
     /// List a directory's contents, or show info for a single file.
@@ -75,13 +76,6 @@ impl From<ChunkingArg> for db::Chunking {
     }
 }
 
-#[derive(Args)]
-struct RestoreArgs {
-    /// One or more source paths in the repository followed by the target directory.
-    #[arg(required = true, num_args = 2.., value_name = "PATH")]
-    paths: Vec<PathBuf>,
-}
-
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
@@ -94,10 +88,7 @@ fn main() -> ExitCode {
             }
         },
         Command::Store(args) => store::run_store(&cli.repo, args),
-        Command::Restore(args) => {
-            run_restore(&cli.repo, args);
-            ExitCode::SUCCESS
-        }
+        Command::Restore(args) => restore::run_restore(&cli.repo, args),
         Command::Stats(args) => stats::run_stats(&cli.repo, args),
         Command::List(args) => list::run_list(&cli.repo, args),
         Command::Find(args) => find::run_find(&cli.repo, args),
@@ -110,14 +101,4 @@ fn run_init(repo: &Path, args: InitArgs) -> Result<(), db::Error> {
     db::init_repository(repo, &settings)?;
     println!("repository initialized: {}", repo.display());
     Ok(())
-}
-
-fn run_restore(repo: &Path, args: RestoreArgs) {
-    let (sources, target) = args.paths.split_at(args.paths.len() - 1);
-    let target = &target[0];
-
-    // TODO: replace with actual restore implementation.
-    println!("repo: {repo:?}");
-    println!("sources: {sources:?}");
-    println!("target: {target:?}");
 }

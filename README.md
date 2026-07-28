@@ -83,6 +83,26 @@ checked out, non-zero if any problem was found - so this can be used in a
 script/CI job, unlike the Scala tool's `check`, which always exits `0`
 regardless of what it finds.
 
+### Restore Files
+
+```bash
+backup restore <source...> <target>
+```
+
+Restores one or more repository paths to a real directory on disk. Each
+source keeps its own name as a child of `target` (backing up `a/b` into
+target `t` produces `t/b`; restoring `t/b` back to a target `out` produces
+`out/b`), the same convention `store` uses for how sources land under a
+target. A directory source restores recursively; last modified times are
+restored from what was recorded at backup time (permissions and ownership
+are not - matching what `store` itself doesn't capture either).
+
+By default, an existing file at a restore destination is left untouched and
+reported as a warning rather than overwritten; pass `--overwrite` to replace
+it. A per-file or per-directory problem (a permission error, an existing
+file without `--overwrite`) is logged and only that entry is skipped - the
+rest of the restore still runs to completion.
+
 ## Development
 
 ### Build (debug)
