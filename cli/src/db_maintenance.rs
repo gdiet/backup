@@ -45,7 +45,7 @@ pub fn run_db(repo: &Path, args: DbArgs) -> ExitCode {
 /// database that might still be open for writing elsewhere. Always
 /// timestamped, so repeated backups accumulate instead of silently
 /// overwriting a previous one.
-fn run_backup(repo: &Path) -> ExitCode {
+pub(crate) fn run_backup(repo: &Path) -> ExitCode {
     let repository = match db::open_repository(repo) {
         Ok(r) => r,
         Err(err) => {

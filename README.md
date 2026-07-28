@@ -150,6 +150,24 @@ compared to a full `VACUUM`: repositories are created with
 happen, so this doesn't need ~2x disk space or a long exclusive lock the way
 a full rewrite would.
 
+### Reclaim Space
+
+```bash
+backup reclaim-space [--keep-days N] [--no-backup]
+```
+
+Hard-deletes entries soft-deleted more than `N` days ago (default `0` -
+everything currently soft-deleted), then removes any `contents`/`chunks`
+rows that are now unreferenced. This is the one genuinely irreversible
+operation in this tool (`del` alone never is - a soft-deleted entry stays
+recoverable until this runs), so it backs up the database first by default;
+pass `--no-backup` to skip that.
+
+Does not reclaim physical space in the on-disk chunk store, only database
+rows - the same limitation the Scala tool this replaces has; the store has
+no delete/truncate operation, so orphaned chunk bytes stay on disk until a
+possible future compaction feature is built for it.
+
 ## Development
 
 ### Build (debug)

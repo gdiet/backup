@@ -25,7 +25,7 @@ mod tree;
 
 pub use backup::{ChunkRef, FileBackupRecord, apply_backup_batch, find_chunk};
 pub use error::Error;
-pub use maintenance::soft_delete;
+pub use maintenance::{ReclaimStats, reclaim_space, soft_delete};
 pub use query::{
     ChunkRange, PathEntry, SubtreeStats, all_chunks, file_size, list_children,
     ordered_content_chunks, resolve_path, subtree_entries_with_paths, subtree_stats,

@@ -9,6 +9,7 @@ mod del;
 mod find;
 mod format;
 mod list;
+mod reclaim_space;
 mod restore;
 mod stats;
 mod store;
@@ -50,6 +51,8 @@ enum Command {
     Del(del::DelArgs),
     /// Database maintenance: backup, restore, compact.
     Db(db_maintenance::DbArgs),
+    /// Hard-delete old soft-deleted entries and orphaned chunks/contents.
+    ReclaimSpace(reclaim_space::ReclaimSpaceArgs),
 }
 
 #[derive(Args)]
@@ -101,6 +104,7 @@ fn main() -> ExitCode {
         Command::Check(args) => check::run_check(&cli.repo, args),
         Command::Del(args) => del::run_del(&cli.repo, args),
         Command::Db(args) => db_maintenance::run_db(&cli.repo, args),
+        Command::ReclaimSpace(args) => reclaim_space::run_reclaim_space(&cli.repo, args),
     }
 }
 

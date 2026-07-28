@@ -1,6 +1,5 @@
-//! Mutating maintenance operations: soft-deletion (`del`) and, eventually,
-//! hard-deletion of old soft-deleted entries plus orphan cleanup
-//! (`reclaim-space`).
+//! Mutating maintenance operations: soft-deletion (`del`) and hard-deletion of
+//! old soft-deleted entries plus orphan cleanup (`reclaim-space`).
 
 use rusqlite::{Connection, params};
 
@@ -38,6 +37,56 @@ pub fn soft_delete(conn: &Connection, id: i64, deleted_at: i64) -> Result<usize,
         params![deleted_at, id],
     )?;
     Ok(count)
+}
+
+/// Counts of rows actually removed by [`reclaim_space`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ReclaimStats {
+    pub tree_entries_purged: usize,
+    pub contents_purged: usize,
+    pub chunks_purged: usize,
+}
+
+/// Hard-deletes soft-deleted `tree_entries` rows with `deleted_at <=
+/// cutoff_millis`, then sweeps `contents`/`chunks` rows that are now (or
+/// already were) unreferenced. All in one transaction, so this is all-or-
+/// nothing - either the whole reclaim succeeds or the database is left
+/// exactly as it was.
+///
+/// The first statement is a single, plain multi-row `DELETE` - not a
+/// leaf-first loop, and no Scala-style iterative "unrooting" repair pass for
+/// partially-deleted subtrees. That's safe for two reasons specific to this
+/// schema: [`soft_delete`] always marks an entire subtree with one shared
+/// timestamp (so any directory selected by the cutoff has every one of its
+/// descendants selected too, never a mix), and SQLite checks non-deferred
+/// foreign keys once at the end of the whole statement rather than per
+/// intermediate row - so a `DELETE` removing a parent and its children
+/// together in the same statement never trips the `parent_id` foreign key
+/// against a row also being removed by that statement.
+///
+/// The second and third statements are exactly the two-line cleanup already
+/// described in `migrations.rs`'s doc comment, now finally exercised: a
+/// content or chunk only reaches `ref_count = 0` once nothing live (or
+/// soft-deleted-but-within-the-grace-period) references it any more, which
+/// this first statement is what actually brings about for anything that was
+/// only kept alive by an old soft-deleted entry.
+///
+/// Does not reclaim physical byte-store space (`store::LongTermStore` has no
+/// delete/truncate operation) - only database rows.
+pub fn reclaim_space(conn: &mut Connection, cutoff_millis: i64) -> Result<ReclaimStats, Error> {
+    let tx = conn.transaction()?;
+    let tree_entries_purged = tx.execute(
+        "DELETE FROM tree_entries WHERE deleted_at IS NOT NULL AND deleted_at <= ?1",
+        [cutoff_millis],
+    )?;
+    let contents_purged = tx.execute("DELETE FROM contents WHERE ref_count = 0", ())?;
+    let chunks_purged = tx.execute("DELETE FROM chunks WHERE ref_count = 0", ())?;
+    tx.commit()?;
+    Ok(ReclaimStats {
+        tree_entries_purged,
+        contents_purged,
+        chunks_purged,
+    })
 }
 
 #[cfg(test)]
@@ -143,5 +192,97 @@ mod tests {
             })
             .unwrap();
         assert_eq!(ref_count, 1);
+    }
+
+    #[test]
+    fn reclaim_space_purges_old_soft_deleted_entries_and_the_orphaned_content_and_chunk() {
+        let (_temp_dir, mut conn) = test_connection();
+        conn.execute(
+            "INSERT INTO chunks (id, length, hash, start, stop) VALUES (1, 5, x'AA', 0, 5)",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO contents (id, length, hash) VALUES (1, 5, x'BB')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (1, 0, 1)",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind, content_id, deleted_at)
+             VALUES (1, 0, 'a.txt', 0, 'file', 1, 1000)",
+            (),
+        )
+        .unwrap();
+
+        let stats = reclaim_space(&mut conn, 1000).unwrap();
+
+        assert_eq!(
+            stats,
+            ReclaimStats {
+                tree_entries_purged: 1,
+                contents_purged: 1,
+                chunks_purged: 1,
+            }
+        );
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tree_entries", (), |row| row.get(0))
+            .unwrap();
+        assert_eq!(remaining, 1, "only the root remains");
+    }
+
+    #[test]
+    fn reclaim_space_preserves_entries_within_the_keep_window() {
+        let (_temp_dir, mut conn) = test_connection();
+        conn.execute(
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind, deleted_at)
+             VALUES (1, 0, 'a.txt', 0, 'file', 5000)",
+            (),
+        )
+        .unwrap();
+
+        let stats = reclaim_space(&mut conn, 1000).unwrap();
+
+        assert_eq!(
+            stats.tree_entries_purged, 0,
+            "deleted_at is after the cutoff"
+        );
+        assert!(is_deleted(&conn, 1));
+    }
+
+    #[test]
+    fn reclaim_space_removes_a_whole_soft_deleted_subtree_in_one_statement() {
+        let (_temp_dir, mut conn) = test_connection();
+        let sub_id = crate::insert_directory(&conn, 0, "sub", 0).unwrap();
+        let nested_id = crate::insert_directory(&conn, sub_id, "nested", 0).unwrap();
+        conn.execute(
+            "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (?1, 'a.txt', 0, 'file')",
+            [nested_id],
+        )
+        .unwrap();
+        let file_id = conn.last_insert_rowid();
+        // soft_delete marks the whole subtree with one shared timestamp - the
+        // exact invariant that makes the single multi-row DELETE below safe
+        // against the parent_id foreign key (see reclaim_space's doc comment).
+        soft_delete(&conn, sub_id, 1000).unwrap();
+
+        let stats = reclaim_space(&mut conn, 1000).unwrap();
+
+        assert_eq!(stats.tree_entries_purged, 3, "sub, nested, and a.txt");
+        for id in [sub_id, nested_id, file_id] {
+            assert_eq!(
+                conn.query_row(
+                    "SELECT COUNT(*) FROM tree_entries WHERE id = ?1",
+                    [id],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+                0
+            );
+        }
     }
 }
