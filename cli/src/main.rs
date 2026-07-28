@@ -80,10 +80,7 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         },
-        Command::Store(args) => {
-            store::run_store(&cli.repo, args);
-            ExitCode::SUCCESS
-        }
+        Command::Store(args) => store::run_store(&cli.repo, args),
         Command::Restore(args) => {
             run_restore(&cli.repo, args);
             ExitCode::SUCCESS

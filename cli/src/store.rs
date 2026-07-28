@@ -1,22 +1,43 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::fs::File;
-use std::io::Read;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
-use cdc::{CdcConfig, ChunkHasher, HashingChunker, LengthHash};
+use cdc::{
+    BufferingHashingChunker, CdcChunker, CdcConfig, ChunkHasher, ChunkWithBytes, Chunker,
+    SingleChunkChunker,
+};
 use clap::Args;
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
-
-/// Average chunk size target for content-defined chunking, as `2^CDC_TARGET_SIZE_BITS` bytes.
-const CDC_TARGET_SIZE_BITS: u32 = 20;
+use rusqlite::Connection;
+use walkdir::WalkDir;
 
 /// Number of bytes read from a file at a time.
 const READ_BUFFER_SIZE: usize = 64 * 1024;
 
+/// Number of hash bytes taken from blake3's extendable output, for both chunk
+/// hashes and the content hash.
+const HASH_LENGTH: usize = 20;
+
+/// Records queued by workers are flushed to the database once this many have
+/// accumulated, or after `WRITE_BATCH_IDLE_TIMEOUT` since the last flush,
+/// whichever comes first - so small backup runs don't stall waiting for a full
+/// batch.
+const WRITE_BATCH_SIZE: usize = 200;
+const WRITE_BATCH_IDLE_TIMEOUT: Duration = Duration::from_millis(200);
+
 #[derive(Args)]
 pub struct BackupArgs {
     /// Create missing target directories.
-    #[arg(short = 'p', long = "create-dirs")]
+    #[arg(short = 'p', long = "create-dirs", conflicts_with = "target_exists")]
     create_dirs: bool,
 
     /// Require target to be an existing directory.
@@ -39,9 +60,6 @@ pub struct BackupArgs {
 /// foreign trait (`cdc::ChunkHasher`) for a foreign type (`blake3::Hasher`) directly.
 struct Blake3Hasher(blake3::Hasher);
 
-/// Number of hash bytes taken from blake3's extendable output.
-const HASH_LENGTH: usize = 20;
-
 impl ChunkHasher for Blake3Hasher {
     fn update(&mut self, data: &[u8]) {
         self.0.update(data);
@@ -55,33 +73,178 @@ impl ChunkHasher for Blake3Hasher {
     }
 }
 
-pub fn run_store(repo: &Path, args: BackupArgs) {
+/// The chunker selected at runtime from the repository's `chunking` setting.
+///
+/// A small delegating enum instead of `Box<dyn Chunker>`, since there are only
+/// ever these two concrete chunker types and the choice is made once per run.
+enum RepoChunker {
+    Cdc(CdcChunker),
+    Single(SingleChunkChunker),
+}
+
+impl Chunker for RepoChunker {
+    fn next(&mut self, data: &[u8]) -> Vec<u64> {
+        match self {
+            RepoChunker::Cdc(c) => c.next(data),
+            RepoChunker::Single(c) => c.next(data),
+        }
+    }
+
+    fn flush(&mut self) -> Option<u64> {
+        match self {
+            RepoChunker::Cdc(c) => c.flush(),
+            RepoChunker::Single(c) => c.flush(),
+        }
+    }
+
+    fn bytes_into_chunk(&self) -> u64 {
+        match self {
+            RepoChunker::Cdc(c) => c.bytes_into_chunk(),
+            RepoChunker::Single(c) => c.bytes_into_chunk(),
+        }
+    }
+}
+
+fn make_chunker(cdc_config: &Option<CdcConfig>) -> RepoChunker {
+    match cdc_config {
+        Some(config) => RepoChunker::Cdc(config.chunker()),
+        None => RepoChunker::Single(SingleChunkChunker::default()),
+    }
+}
+
+/// Shared state for one `store` run, read by every worker thread and the writer
+/// thread. `abort`/`warnings` are also cloned out separately by [`run_store`] so
+/// their final values can be read after this whole context (and the [`Mutex`]
+/// around the channel [`mpsc::Sender`] it owns) has been dropped, which is what
+/// lets the writer thread's `Receiver` see the channel disconnect and exit.
+struct RunContext {
+    repository: db::Repository,
+    cdc_config: Option<CdcConfig>,
+    data_store: store::LongTermStore,
+    /// Next free byte offset in the store; new chunks reserve space with
+    /// `fetch_add`. Lock-free, so multiple workers can allocate concurrently
+    /// without contending with each other or with the writer thread.
+    position_cursor: AtomicU64,
+    abort: Arc<AtomicBool>,
+    warnings: Arc<AtomicU64>,
+    sender: Mutex<mpsc::Sender<db::FileBackupRecord>>,
+}
+
+thread_local! {
+    // One read connection per worker OS thread, opened lazily on first use and
+    // reused for every file that thread processes - see the db crate's
+    // module-level doc comment on why this is one-per-thread, not one-per-file
+    // or a single connection shared across threads.
+    static READ_CONNECTION: RefCell<Option<Connection>> = const { RefCell::new(None) };
+}
+
+fn with_read_connection<R>(
+    ctx: &RunContext,
+    f: impl FnOnce(&Connection) -> R,
+) -> Result<R, db::Error> {
+    READ_CONNECTION.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        if slot.is_none() {
+            *slot = Some(ctx.repository.open_read_connection()?);
+        }
+        Ok(f(slot.as_ref().expect("just set above")))
+    })
+}
+
+pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
     let (sources, target) = args.paths.split_at(args.paths.len() - 1);
     let target = &target[0];
 
-    // TODO: use target/create_dirs/target_exists once the repository metadata store exists.
-    // Planned design for wiring the metadata store into this parallel loop: each
-    // worker gets its own read connection for the per-chunk dedup lookup (WAL
-    // allows any number of concurrent readers without blocking), but inserts go
-    // through a single dedicated writer (e.g. fed via a channel from the workers)
-    // that batches them into few, larger transactions - see the module-level doc
-    // comment in the db crate for why parallel writer connections would not help.
-    println!("repo: {repo:?}");
-    println!("target: {target:?}");
-
-    // Validate the CDC config once, up front, instead of on every call to chunk_and_print.
-    let cdc_config =
-        CdcConfig::new(CDC_TARGET_SIZE_BITS).expect("CDC_TARGET_SIZE_BITS is a valid constant");
-
-    // Traversal (single-threaded, via the underlying iterator) and chunking (parallel,
-    // via rayon) run concurrently: chunking of already-found files overlaps with
-    // discovering the rest of the tree, instead of waiting for the full walk to finish.
-    let run = || {
-        walk_files(sources)
-            .par_bridge()
-            .for_each(|path| chunk_and_print(&path, &cdc_config))
+    let repository = match db::open_repository(repo) {
+        Ok(r) => r,
+        Err(err) => {
+            eprintln!(
+                "error: failed to open repository at {}: {err}",
+                repo.display()
+            );
+            return ExitCode::FAILURE;
+        }
+    };
+    let cdc_config = match repository.settings().chunking() {
+        db::Chunking::Cdc => Some(
+            CdcConfig::new(repository.settings().cdc_target_size_bits())
+                .expect("validated by RepositorySettings"),
+        ),
+        db::Chunking::None => None,
     };
 
+    // A single connection drives the up-front target resolution and directory
+    // pass below (all on the main thread, before any parallel work starts), then
+    // is handed to the writer thread by value - see RunContext's doc comment.
+    let main_conn = match repository.open_write_connection() {
+        Ok(conn) => conn,
+        Err(err) => {
+            eprintln!("error: failed to open the metadata database: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let target_id = match resolve_target(&main_conn, target, args.create_dirs, args.target_exists) {
+        Ok(id) => id,
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    let mut files: Vec<(PathBuf, i64)> = Vec::new();
+    let mut warning_count = 0u64;
+    for source in sources {
+        if let Err(msg) = walk_and_create_dirs(
+            &main_conn,
+            source,
+            target_id,
+            &mut files,
+            &mut warning_count,
+        ) {
+            eprintln!("error: {msg}");
+            return ExitCode::FAILURE;
+        }
+    }
+
+    let start_position: i64 =
+        match main_conn.query_row("SELECT COALESCE(MAX(stop), 0) FROM chunks", (), |row| {
+            row.get(0)
+        }) {
+            Ok(v) => v,
+            Err(err) => {
+                eprintln!("error: failed to determine the current store offset: {err}");
+                return ExitCode::FAILURE;
+            }
+        };
+
+    let data_store = store::LongTermStore::new(repository.data_dir(), false);
+    let (tx, rx) = mpsc::channel::<db::FileBackupRecord>();
+    let abort = Arc::new(AtomicBool::new(false));
+    let warnings = Arc::new(AtomicU64::new(warning_count));
+
+    let ctx = Arc::new(RunContext {
+        repository,
+        cdc_config,
+        data_store,
+        position_cursor: AtomicU64::new(start_position as u64),
+        abort: Arc::clone(&abort),
+        warnings: Arc::clone(&warnings),
+        sender: Mutex::new(tx),
+    });
+
+    let writer_abort = Arc::clone(&abort);
+    let writer_handle = thread::spawn(move || run_writer(main_conn, rx, writer_abort));
+
+    // `ctx` is moved into this closure and dropped when it returns (after all
+    // files are processed), which drops its Sender and lets the writer thread's
+    // Receiver see the channel disconnect and finish - see RunContext's doc
+    // comment. `abort`/`warnings` are separate Arc clones, unaffected by that.
+    let run = move || {
+        files
+            .into_par_iter()
+            .for_each(|(path, parent_id)| process_file(&ctx, &path, parent_id));
+    };
     match args.concurrency {
         Some(concurrency) => {
             let pool = ThreadPoolBuilder::new()
@@ -92,64 +255,506 @@ pub fn run_store(repo: &Path, args: BackupArgs) {
         }
         None => run(),
     }
+
+    writer_handle.join().expect("writer thread panicked");
+
+    if abort.load(Ordering::Relaxed) {
+        eprintln!("error: backup aborted after a fatal error");
+        return ExitCode::FAILURE;
+    }
+    let warning_count = warnings.load(Ordering::Relaxed);
+    if warning_count > 0 {
+        println!("backup completed with {warning_count} warning(s)");
+    } else {
+        println!("backup completed successfully");
+    }
+    ExitCode::SUCCESS
 }
 
-/// Sequentially traverses all `sources`, one after another, yielding the path of each
-/// regular file found. Errors accessing individual entries are logged to stderr and skipped.
-fn walk_files(sources: &[PathBuf]) -> impl Iterator<Item = PathBuf> + '_ {
-    sources.iter().flat_map(|source| {
-        walkdir::WalkDir::new(source)
-            .into_iter()
-            .filter_map(|entry| match entry {
-                Ok(entry) if entry.file_type().is_file() => Some(entry.into_path()),
-                Ok(_) => None, // skip directories, symlinks, etc.
-                Err(err) => {
-                    eprintln!("warning: failed to access entry: {err}");
-                    None
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+fn path_mtime_millis(path: &Path) -> i64 {
+    std::fs::metadata(path)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Resolves `target`'s id in the repository tree, creating path components per
+/// the flag semantics:
+/// - `target_exists`: every component must already exist; missing ones are a
+///   hard error (fail before any source is touched).
+/// - `create_dirs`: every missing component is created, however many there are.
+/// - neither flag: only the *last* component may be missing (`mkdir`, not
+///   `mkdir -p`); a missing intermediate component is a hard error.
+fn resolve_target(
+    conn: &Connection,
+    target: &Path,
+    create_dirs: bool,
+    target_exists: bool,
+) -> Result<i64, String> {
+    let components: Vec<String> = target
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => Some(s.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect();
+    if components.is_empty() {
+        return Err(format!(
+            "target path '{}' has no path components",
+            target.display()
+        ));
+    }
+
+    let mut parent_id = 0i64; // repository root
+    let last = components.len() - 1;
+    for (i, name) in components.iter().enumerate() {
+        match db::find_tree_entry(conn, parent_id, name).map_err(|e| e.to_string())? {
+            Some(entry) if entry.kind == db::EntryKind::Dir => parent_id = entry.id,
+            Some(_) => {
+                return Err(format!(
+                    "'{name}' in target path '{}' already exists as a file, not a directory",
+                    target.display()
+                ));
+            }
+            None if target_exists => {
+                return Err(format!(
+                    "target '{}' does not exist (--target-exists given)",
+                    target.display()
+                ));
+            }
+            None if create_dirs || i == last => {
+                parent_id = db::insert_directory(conn, parent_id, name, now_millis())
+                    .map_err(|e| e.to_string())?;
+            }
+            None => {
+                return Err(format!(
+                    "target directory component '{name}' does not exist; pass --create-dirs to create missing parent directories"
+                ));
+            }
+        }
+    }
+    Ok(parent_id)
+}
+
+/// Walks `source` (a file or a directory) in a single pass, creating the
+/// `tree_entries` row for each directory as it's encountered (so children always
+/// have an already-resolved parent, since `WalkDir` yields parents before their
+/// children) and collecting `(path, parent_id)` for each regular file found.
+/// `source` itself keeps its own name as a child of `target_id` - e.g. backing up
+/// `a/b` into target `t` produces `t/b`, mirroring the source's own basename
+/// rather than merging its contents directly into `t`.
+///
+/// Errors accessing individual entries, and name conflicts (a file already
+/// exists where a directory is needed), are logged and skipped - the affected
+/// subtree is silently omitted, but the run continues. This deliberately avoids
+/// the failure mode found in the tool this replaces, where an unreadable
+/// subdirectory crashes the entire backup.
+fn walk_and_create_dirs(
+    conn: &Connection,
+    source: &Path,
+    target_id: i64,
+    files: &mut Vec<(PathBuf, i64)>,
+    warnings: &mut u64,
+) -> Result<(), String> {
+    let mut dir_ids: HashMap<PathBuf, i64> = HashMap::new();
+
+    for entry in WalkDir::new(source) {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(err) => {
+                eprintln!("warning: failed to access entry: {err}");
+                *warnings += 1;
+                continue;
+            }
+        };
+
+        let parent_id = if entry.depth() == 0 {
+            Some(target_id)
+        } else {
+            entry.path().parent().and_then(|p| dir_ids.get(p).copied())
+        };
+        // `None` means the parent directory itself was skipped above (name
+        // conflict or access error); silently skip this entry too, without
+        // repeating a warning for every descendant of an already-reported issue.
+        let Some(parent_id) = parent_id else {
+            continue;
+        };
+
+        if entry.file_type().is_dir() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            match db::insert_directory(conn, parent_id, &name, path_mtime_millis(entry.path())) {
+                Ok(id) => {
+                    dir_ids.insert(entry.path().to_path_buf(), id);
                 }
-            })
-    })
+                Err(db::Error::NotADirectory { .. }) => {
+                    eprintln!(
+                        "warning: '{}' already exists as a file, skipping directory",
+                        entry.path().display()
+                    );
+                    *warnings += 1;
+                }
+                Err(err) => {
+                    return Err(format!(
+                        "failed to create directory '{}': {err}",
+                        entry.path().display()
+                    ));
+                }
+            }
+        } else if entry.file_type().is_file() {
+            files.push((entry.path().to_path_buf(), parent_id));
+        }
+        // Symlinks and other special files are silently skipped, matching the
+        // pre-existing behavior of the walk this replaces.
+    }
+
+    Ok(())
 }
 
-/// Reads, chunks and hashes the file at `path`, then prints its chunks (length and hash)
-/// to stdout. Errors reading the file are logged to stderr and the file is skipped.
-fn chunk_and_print(path: &Path, cdc_config: &CdcConfig) {
-    let mut file = match File::open(path) {
-        Ok(file) => file,
+/// Distinguishes the two failure classes a worker can hit: a source-read problem
+/// is isolated to this one file (log, skip, continue), while a store or database
+/// problem is systemic (abort the whole run) - see the module-level rationale in
+/// the plan this implements.
+enum WorkerError {
+    SourceRead(io::Error),
+    Fatal(String),
+}
+
+fn process_file(ctx: &RunContext, path: &Path, parent_id: i64) {
+    if ctx.abort.load(Ordering::Relaxed) {
+        return;
+    }
+
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(err) => return warn(ctx, &format!("failed to open {}: {err}", path.display())),
+    };
+    let time_millis = match file.metadata().and_then(|m| m.modified()) {
+        Ok(t) => t
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0),
         Err(err) => {
-            eprintln!("warning: failed to open {}: {err}", path.display());
-            return;
+            return warn(
+                ctx,
+                &format!("failed to read mtime of {}: {err}", path.display()),
+            );
         }
     };
+    let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else {
+        return warn(ctx, &format!("path has no file name: {}", path.display()));
+    };
 
-    let mut hasher = HashingChunker::new(Blake3Hasher(blake3::Hasher::new()), cdc_config.chunker());
-    let mut chunks = Vec::new();
+    match read_and_chunk(ctx, file) {
+        Ok((chunks, content_hash)) => {
+            let record = db::FileBackupRecord {
+                parent_id,
+                name,
+                time_millis,
+                chunks,
+                content_hash: content_hash.to_vec(),
+            };
+            let send_result = ctx
+                .sender
+                .lock()
+                .expect("sender mutex poisoned")
+                .send(record);
+            if send_result.is_err() {
+                // The writer thread already exited (its own fatal error already
+                // set `abort` and logged); nothing more to report here.
+                ctx.abort.store(true, Ordering::Relaxed);
+            }
+        }
+        Err(WorkerError::SourceRead(err)) => {
+            warn(ctx, &format!("failed to read {}: {err}", path.display()));
+        }
+        Err(WorkerError::Fatal(msg)) => {
+            eprintln!("error: {msg}");
+            ctx.abort.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+fn warn(ctx: &RunContext, msg: &str) {
+    eprintln!("warning: {msg}");
+    ctx.warnings.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Reads and chunks `file`, resolving each chunk against the dedup index and
+/// writing new chunks' bytes to the store as they're found, and returns the
+/// resolved chunk list together with the hash over the ordered chunk sequence
+/// (see `contents.hash` in `db/src/migrations.rs`).
+fn read_and_chunk(
+    ctx: &RunContext,
+    mut file: File,
+) -> Result<(Vec<db::ChunkRef>, [u8; HASH_LENGTH]), WorkerError> {
+    let mut chunker = BufferingHashingChunker::new(
+        Blake3Hasher(blake3::Hasher::new()),
+        make_chunker(&ctx.cdc_config),
+    );
+    let mut content_hasher = blake3::Hasher::new();
+    let mut chunk_refs = Vec::new();
     let mut buf = [0u8; READ_BUFFER_SIZE];
 
     loop {
-        let n = match file.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(err) => {
-                eprintln!("warning: failed to read {}: {err}", path.display());
-                return;
-            }
-        };
-        chunks.extend(hasher.next(&buf[..n]));
+        let n = file.read(&mut buf).map_err(WorkerError::SourceRead)?;
+        if n == 0 {
+            break;
+        }
+        for chunk in chunker.next(&buf[..n]) {
+            resolve_chunk(ctx, chunk, &mut chunk_refs, &mut content_hasher)?;
+        }
     }
-    chunks.extend(hasher.flush());
+    if let Some(chunk) = chunker.flush() {
+        resolve_chunk(ctx, chunk, &mut chunk_refs, &mut content_hasher)?;
+    }
 
-    println!("{}: {}", path.display(), format_chunks(&chunks));
+    let mut content_hash = [0u8; HASH_LENGTH];
+    content_hasher.finalize_xof().fill(&mut content_hash);
+    Ok((chunk_refs, content_hash))
 }
 
-fn format_chunks(chunks: &[LengthHash]) -> String {
-    chunks
-        .iter()
-        .map(|chunk| format!("{}:{}", hex(&chunk.hash), chunk.length))
-        .collect::<Vec<_>>()
-        .join(", ")
+/// Resolves one completed chunk against the dedup index: reuses an existing
+/// chunk id on a hit, or reserves store space and writes the chunk's bytes on a
+/// miss. Also feeds the chunk's length and hash into `content_hasher`.
+fn resolve_chunk(
+    ctx: &RunContext,
+    chunk: ChunkWithBytes,
+    chunk_refs: &mut Vec<db::ChunkRef>,
+    content_hasher: &mut blake3::Hasher,
+) -> Result<(), WorkerError> {
+    let length_hash = chunk.length_hash;
+    content_hasher.update(&length_hash.length.to_le_bytes());
+    content_hasher.update(&length_hash.hash);
+
+    let existing = with_read_connection(ctx, |conn| {
+        db::find_chunk(conn, length_hash.length, &length_hash.hash)
+    })
+    .map_err(|err| WorkerError::Fatal(format!("dedup lookup failed: {err}")))?
+    .map_err(|err| WorkerError::Fatal(format!("dedup lookup failed: {err}")))?;
+
+    let chunk_ref = match existing {
+        Some(id) => db::ChunkRef::Existing {
+            id,
+            length: length_hash.length,
+        },
+        None => {
+            let position = ctx
+                .position_cursor
+                .fetch_add(length_hash.length, Ordering::SeqCst);
+            ctx.data_store
+                .write(position, &chunk.bytes)
+                .map_err(|err| {
+                    WorkerError::Fatal(format!("store write failed at position {position}: {err}"))
+                })?;
+            db::ChunkRef::New {
+                length: length_hash.length,
+                hash: length_hash.hash,
+                position,
+            }
+        }
+    };
+    chunk_refs.push(chunk_ref);
+    Ok(())
 }
 
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
+fn run_writer(
+    mut conn: Connection,
+    rx: mpsc::Receiver<db::FileBackupRecord>,
+    abort: Arc<AtomicBool>,
+) {
+    let mut batch = Vec::with_capacity(WRITE_BATCH_SIZE);
+    loop {
+        match rx.recv_timeout(WRITE_BATCH_IDLE_TIMEOUT) {
+            Ok(record) => {
+                batch.push(record);
+                if batch.len() >= WRITE_BATCH_SIZE && !flush(&mut conn, &mut batch, &abort) {
+                    return;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                if !batch.is_empty() && !flush(&mut conn, &mut batch, &abort) {
+                    return;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    if !batch.is_empty() {
+        flush(&mut conn, &mut batch, &abort);
+    }
+}
+
+/// Applies `batch` and clears it. Returns `false` (having already logged the
+/// error and set `abort`) if the batch failed to apply, so the caller can stop
+/// the writer thread.
+fn flush(conn: &mut Connection, batch: &mut Vec<db::FileBackupRecord>, abort: &AtomicBool) -> bool {
+    match db::apply_backup_batch(conn, batch) {
+        Ok(()) => {
+            batch.clear();
+            true
+        }
+        Err(err) => {
+            eprintln!("error: failed to write backup batch: {err}");
+            abort.store(true, Ordering::Relaxed);
+            false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn init_repo() -> (tempfile::TempDir, PathBuf) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        db::init_repository(
+            &repo_root,
+            &db::RepositorySettings::new(12, db::Chunking::Cdc).unwrap(),
+        )
+        .unwrap();
+        (temp_dir, repo_root)
+    }
+
+    fn backup_args(mut paths: Vec<PathBuf>) -> BackupArgs {
+        BackupArgs {
+            create_dirs: true,
+            target_exists: false,
+            concurrency: Some(2),
+            paths: std::mem::take(&mut paths),
+        }
+    }
+
+    fn conn(repo_root: &Path) -> Connection {
+        Connection::open(repo_root.join("meta").join("repository.db")).unwrap()
+    }
+
+    fn count(c: &Connection, table: &str) -> i64 {
+        c.query_row(&format!("SELECT COUNT(*) FROM {table}"), (), |row| {
+            row.get(0)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn backs_up_files_creates_tree_and_dedupes_identical_content() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("a.txt"), b"hello world").unwrap();
+        std::fs::write(source_dir.path().join("b.txt"), b"hello world").unwrap();
+        std::fs::create_dir(source_dir.path().join("sub")).unwrap();
+        std::fs::write(source_dir.path().join("sub").join("c.txt"), b"different").unwrap();
+
+        let exit = run_store(
+            &repo_root,
+            backup_args(vec![
+                source_dir.path().to_path_buf(),
+                PathBuf::from("target"),
+            ]),
+        );
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let c = conn(&repo_root);
+        // root -> target -> <source basename> -> {a.txt, b.txt, sub/c.txt}
+        let source_name = source_dir.path().file_name().unwrap().to_str().unwrap();
+        let target_id: i64 = c
+            .query_row(
+                "SELECT id FROM tree_entries WHERE parent_id = 0 AND name = 'target'",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        let source_id: i64 = c
+            .query_row(
+                "SELECT id FROM tree_entries WHERE parent_id = ?1 AND name = ?2",
+                rusqlite::params![target_id, source_name],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let (a_content, b_content): (i64, i64) = (
+            c.query_row(
+                "SELECT content_id FROM tree_entries WHERE parent_id = ?1 AND name = 'a.txt'",
+                [source_id],
+                |row| row.get(0),
+            )
+            .unwrap(),
+            c.query_row(
+                "SELECT content_id FROM tree_entries WHERE parent_id = ?1 AND name = 'b.txt'",
+                [source_id],
+                |row| row.get(0),
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            a_content, b_content,
+            "identical content must share one contents row"
+        );
+        assert_eq!(
+            count(&c, "contents"),
+            2,
+            "two distinct contents: 'hello world' and 'different'"
+        );
+        assert_eq!(
+            count(&c, "chunks"),
+            2,
+            "small files below the chunk size: one chunk each"
+        );
+
+        // The stored bytes must be readable back.
+        let data_store = store::LongTermStore::new(repo_root.join("data"), true);
+        let (start, stop): (i64, i64) = c
+            .query_row(
+                "SELECT start, stop FROM chunks JOIN content_chunks ON chunks.id = content_chunks.chunk_id
+                 WHERE content_chunks.content_id = ?1",
+                [a_content],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let mut buf = vec![0u8; (stop - start) as usize];
+        let integrity = data_store.read(start as u64, &mut buf).unwrap();
+        assert_eq!(integrity, store::ReadIntegrity::Complete);
+        assert_eq!(buf, b"hello world");
+    }
+
+    #[test]
+    fn rerunning_the_same_backup_creates_no_new_chunks_or_contents() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("a.txt"), b"hello world").unwrap();
+
+        let paths = || vec![source_dir.path().to_path_buf(), PathBuf::from("target")];
+        assert_eq!(
+            run_store(&repo_root, backup_args(paths())),
+            ExitCode::SUCCESS
+        );
+        let c = conn(&repo_root);
+        let (chunks_before, contents_before, entries_before) = (
+            count(&c, "chunks"),
+            count(&c, "contents"),
+            count(&c, "tree_entries"),
+        );
+        drop(c);
+
+        assert_eq!(
+            run_store(&repo_root, backup_args(paths())),
+            ExitCode::SUCCESS
+        );
+        let c = conn(&repo_root);
+        assert_eq!(count(&c, "chunks"), chunks_before);
+        assert_eq!(count(&c, "contents"), contents_before);
+        assert_eq!(
+            count(&c, "tree_entries"),
+            entries_before,
+            "unchanged content must refresh the existing entry, not add a new one"
+        );
+    }
 }
