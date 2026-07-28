@@ -131,7 +131,7 @@ fn path_stats(conn: &Connection, path: &str) -> ExitCode {
     match entry.kind {
         db::EntryKind::File => match db::file_size(conn, &entry) {
             Ok(size) => {
-                print_file_info(path, &entry.name, size as u64);
+                print_file_info(path, &entry.name, size as u64, entry.time_millis);
                 ExitCode::SUCCESS
             }
             Err(err) => {

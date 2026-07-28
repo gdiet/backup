@@ -25,9 +25,13 @@ pub fn readable_bytes(bytes: u64) -> String {
 /// Prints the standard two-line "file information" block (`stats <path>` and
 /// `list <path>` show identical output for a file - one shared function
 /// instead of duplicating the format in both places).
-pub fn print_file_info(path_label: &str, name: &str, size: u64) {
+pub fn print_file_info(path_label: &str, name: &str, size: u64, time_millis: i64) {
     println!("File information for '{path_label}':");
-    println!("{name} .. {}", readable_bytes(size));
+    println!(
+        "{name} .. {}  {}",
+        readable_bytes(size),
+        format_timestamp_millis(time_millis)
+    );
 }
 
 /// Formats a Unix timestamp in milliseconds as `YYYY-MM-DD HH:MM:SS` (UTC).
