@@ -10,6 +10,32 @@ This workspace contains Rust crates used by the backup application.
 | `store` | Sequential on-disk byte store, file format compatible with the Scala `LongTermStore` |
 | `cli`   | Deduplicating backup application; builds the `backup` binary                         |
 
+## Usage
+
+All commands take `-r <repo>`/`--repo <repo>` for the repository directory
+(default `../backup-repository`). Paths given to the commands below are
+repository-relative (`/`-separated), not filesystem paths, unless noted
+otherwise.
+
+### Show Repository Statistics
+
+```bash
+backup stats
+```
+
+Shows repository-wide counts (live/deleted files and directories, distinct
+chunks and contents), physical storage size, logical size (the total size as
+if nothing were deduplicated), and the resulting dedup ratio.
+
+To see statistics for a specific file or directory instead:
+
+```bash
+backup stats <path>
+```
+
+For a directory, this recursively sums files, subdirectories, and total
+logical size under it. For a file, it shows the file's size.
+
 ## Development
 
 ### Build (debug)

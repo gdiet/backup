@@ -113,6 +113,24 @@ pub fn subtree_entries_with_paths(
     Ok(rows)
 }
 
+/// The logical size of a file entry: `0` for an empty file (`content_id` is
+/// `None`), otherwise the referenced content's length. Only meaningful for a
+/// `File` entry - a directory also has `content_id == None`, so this silently
+/// returns `0` for one rather than distinguishing it; callers should check
+/// `entry.kind` first.
+pub fn file_size(conn: &Connection, entry: &TreeEntryRow) -> Result<i64, Error> {
+    match entry.content_id {
+        None => Ok(0),
+        Some(content_id) => conn
+            .query_row(
+                "SELECT length FROM contents WHERE id = ?1",
+                [content_id],
+                |row| row.get(0),
+            )
+            .map_err(Error::from),
+    }
+}
+
 /// A chunk making up part of a content's byte sequence, as stored - not to be
 /// confused with `db::ChunkRef`, which describes a chunk a backup worker has
 /// just resolved (possibly not yet persisted).
@@ -186,6 +204,19 @@ mod tests {
         )
         .unwrap();
         conn.last_insert_rowid()
+    }
+
+    #[test]
+    fn file_size_is_zero_for_empty_files_and_the_content_length_otherwise() {
+        let (_temp_dir, conn) = test_connection();
+        let content_id = insert_content(&conn, 42, b"h");
+        insert_file(&conn, 0, "empty.txt", None);
+        insert_file(&conn, 0, "a.txt", Some(content_id));
+
+        let empty = resolve_path(&conn, "empty.txt").unwrap().unwrap();
+        let a = resolve_path(&conn, "a.txt").unwrap().unwrap();
+        assert_eq!(file_size(&conn, &empty).unwrap(), 0);
+        assert_eq!(file_size(&conn, &a).unwrap(), 42);
     }
 
     #[test]

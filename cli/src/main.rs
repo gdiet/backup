@@ -3,6 +3,8 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+mod format;
+mod stats;
 mod store;
 
 /// Deduplicating backup application.
@@ -30,6 +32,8 @@ enum Command {
     Store(store::BackupArgs),
     /// Restore one or more sources from the repository to a target directory.
     Restore(RestoreArgs),
+    /// Show repository statistics, or statistics for a specific path.
+    Stats(stats::StatsArgs),
 }
 
 #[derive(Args)]
@@ -85,6 +89,7 @@ fn main() -> ExitCode {
             run_restore(&cli.repo, args);
             ExitCode::SUCCESS
         }
+        Command::Stats(args) => stats::run_stats(&cli.repo, args),
     }
 }
 
