@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 mod check;
+mod chunk_store;
 mod db_maintenance;
 mod del;
 mod find;

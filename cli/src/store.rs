@@ -20,6 +20,8 @@ use rayon::prelude::*;
 use rusqlite::Connection;
 use walkdir::WalkDir;
 
+use crate::chunk_store::{self, SpaceAllocator};
+
 /// Number of bytes read from a file at a time.
 const READ_BUFFER_SIZE: usize = 64 * 1024;
 
@@ -121,10 +123,12 @@ struct RunContext {
     repository: db::Repository,
     cdc_config: Option<CdcConfig>,
     data_store: store::LongTermStore,
-    /// Next free byte offset in the store; new chunks reserve space with
-    /// `fetch_add`. Lock-free, so multiple workers can allocate concurrently
-    /// without contending with each other or with the writer thread.
-    position_cursor: AtomicU64,
+    /// Reserves store space for new chunks' bytes, reusing gaps left by past
+    /// `reclaim-space` runs before falling back to appending - see
+    /// `chunk_store::SpaceAllocator`. Seeded once from every extent
+    /// currently in the repository; multiple workers reserve from it
+    /// concurrently under its own internal lock.
+    allocator: SpaceAllocator,
     abort: Arc<AtomicBool>,
     warnings: Arc<AtomicU64>,
     sender: Mutex<mpsc::Sender<db::FileBackupRecord>>,
@@ -207,16 +211,14 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
         }
     }
 
-    let start_position: i64 =
-        match main_conn.query_row("SELECT COALESCE(MAX(stop), 0) FROM chunks", (), |row| {
-            row.get(0)
-        }) {
-            Ok(v) => v,
-            Err(err) => {
-                eprintln!("error: failed to determine the current store offset: {err}");
-                return ExitCode::FAILURE;
-            }
-        };
+    let extents = match db::chunk_extents_sorted(&main_conn) {
+        Ok(extents) => extents,
+        Err(err) => {
+            eprintln!("error: failed to determine free store space: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+    let allocator = SpaceAllocator::from_sorted_extents(&extents);
 
     let data_store = store::LongTermStore::new(repository.data_dir(), false);
     let (tx, rx) = mpsc::channel::<db::FileBackupRecord>();
@@ -227,7 +229,7 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
         repository,
         cdc_config,
         data_store,
-        position_cursor: AtomicU64::new(start_position as u64),
+        allocator,
         abort: Arc::clone(&abort),
         warnings: Arc::clone(&warnings),
         sender: Mutex::new(tx),
@@ -547,18 +549,13 @@ fn resolve_chunk(
             length: length_hash.length,
         },
         None => {
-            let position = ctx
-                .position_cursor
-                .fetch_add(length_hash.length, Ordering::SeqCst);
-            ctx.data_store
-                .write(position, &chunk.bytes)
-                .map_err(|err| {
-                    WorkerError::Fatal(format!("store write failed at position {position}: {err}"))
-                })?;
+            let extents =
+                chunk_store::write_chunk_bytes(&ctx.data_store, &ctx.allocator, &chunk.bytes)
+                    .map_err(|err| WorkerError::Fatal(format!("store write failed: {err}")))?;
             db::ChunkRef::New {
                 length: length_hash.length,
                 hash: length_hash.hash,
-                position,
+                extents,
             }
         }
     };
@@ -713,8 +710,9 @@ mod tests {
         let data_store = store::LongTermStore::new(repo_root.join("data"), true);
         let (start, stop): (i64, i64) = c
             .query_row(
-                "SELECT start, stop FROM chunks JOIN content_chunks ON chunks.id = content_chunks.chunk_id
-                 WHERE content_chunks.content_id = ?1",
+                "SELECT ce.start, ce.stop FROM chunk_extents ce
+                 JOIN content_chunks cc ON cc.chunk_id = ce.chunk_id
+                 WHERE cc.content_id = ?1",
                 [a_content],
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
@@ -755,6 +753,84 @@ mod tests {
             count(&c, "tree_entries"),
             entries_before,
             "unchanged content must refresh the existing entry, not add a new one"
+        );
+    }
+
+    /// Acceptance test for `docs/plans/chunk-extents.md`: space freed by
+    /// deleting and reclaiming a chunk must be reused by a later `store` run,
+    /// instead of the data store only ever growing.
+    #[test]
+    fn a_deleted_and_reclaimed_chunks_space_is_reused_by_a_later_store_run() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("a.txt"), b"first content").unwrap();
+        std::fs::write(source_dir.path().join("b.txt"), b"second content!!").unwrap();
+        let source_name = source_dir.path().file_name().unwrap().to_str().unwrap();
+        let paths = || vec![source_dir.path().to_path_buf(), PathBuf::from("target")];
+
+        assert_eq!(
+            run_store(&repo_root, backup_args(paths())),
+            ExitCode::SUCCESS
+        );
+
+        let repository = db::open_repository(&repo_root).unwrap();
+        let (a_id, a_start, a_stop): (i64, i64, i64) = {
+            let read_conn = repository.open_read_connection().unwrap();
+            let a_entry = db::resolve_path(&read_conn, &format!("target/{source_name}/a.txt"))
+                .unwrap()
+                .unwrap();
+            let (start, stop) = read_conn
+                .query_row(
+                    "SELECT ce.start, ce.stop FROM chunk_extents ce
+                     JOIN content_chunks cc ON cc.chunk_id = ce.chunk_id
+                     WHERE cc.content_id = ?1",
+                    [a_entry.content_id.unwrap()],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            (a_entry.id, start, stop)
+        };
+
+        let mut write_conn = repository.open_write_connection().unwrap();
+        db::soft_delete(&write_conn, a_id, 1_000_000).unwrap();
+        db::reclaim_space(&mut write_conn, 1_000_000).unwrap();
+        drop(write_conn);
+        // Remove the source file too - otherwise the second `run_store` below
+        // would just back it up again (its old chunk row is gone, so it'd be
+        // treated as new content), which would itself claim the freed gap and
+        // defeat this test's isolation of "does a later, unrelated new chunk
+        // reuse the gap".
+        std::fs::remove_file(source_dir.path().join("a.txt")).unwrap();
+
+        // Content sized to exactly fill the gap left by a.txt, with bytes
+        // distinct from anything already stored so it's treated as new.
+        let gap_len = (a_stop - a_start) as usize;
+        let filler: Vec<u8> = (0..gap_len).map(|i| (i % 200 + 1) as u8).collect();
+        std::fs::write(source_dir.path().join("c.txt"), &filler).unwrap();
+
+        assert_eq!(
+            run_store(&repo_root, backup_args(paths())),
+            ExitCode::SUCCESS
+        );
+
+        let read_conn = repository.open_read_connection().unwrap();
+        let c_entry = db::resolve_path(&read_conn, &format!("target/{source_name}/c.txt"))
+            .unwrap()
+            .unwrap();
+        let (c_start, c_stop): (i64, i64) = read_conn
+            .query_row(
+                "SELECT ce.start, ce.stop FROM chunk_extents ce
+                 JOIN content_chunks cc ON cc.chunk_id = ce.chunk_id
+                 WHERE cc.content_id = ?1",
+                [c_entry.content_id.unwrap()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(
+            (c_start, c_stop),
+            (a_start, a_stop),
+            "c.txt must reuse exactly the space freed by deleting+reclaiming a.txt"
         );
     }
 }

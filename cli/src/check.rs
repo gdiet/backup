@@ -6,7 +6,9 @@ use clap::Args;
 use rusqlite::Connection;
 use store::{LongTermStore, ReadIntegrity};
 
-use db::ChunkRange;
+use db::ChunkInfo;
+
+use crate::chunk_store::read_chunk_bytes;
 
 #[derive(Args)]
 pub struct CheckArgs {
@@ -70,7 +72,7 @@ pub fn run_check(repo: &Path, args: CheckArgs) -> ExitCode {
     let mut problems = 0u64;
     println!("Checking {} chunk(s)...", chunks.len());
     for chunk in &chunks {
-        problems += check_chunk(&data_store, chunk);
+        problems += check_chunk(&conn, &data_store, chunk);
     }
 
     println!("Checking ref_count consistency...");
@@ -96,7 +98,7 @@ pub fn run_check(repo: &Path, args: CheckArgs) -> ExitCode {
 /// file, or every active descendant file's chunks (deduplicated - a chunk or
 /// a whole content may be shared by more than one file) if it names a
 /// directory.
-fn scoped_chunks(conn: &Connection, path: &str) -> Result<Option<Vec<ChunkRange>>, db::Error> {
+fn scoped_chunks(conn: &Connection, path: &str) -> Result<Option<Vec<ChunkInfo>>, db::Error> {
     let Some(entry) = db::resolve_path(conn, path)? else {
         return Ok(None);
     };
@@ -127,27 +129,37 @@ fn scoped_chunks(conn: &Connection, path: &str) -> Result<Option<Vec<ChunkRange>
 
 /// Checks one chunk's physical data against its recorded length and hash.
 /// Returns `1` and prints a description if anything is wrong, `0` if it's fine.
-fn check_chunk(data_store: &LongTermStore, chunk: &ChunkRange) -> u64 {
-    let range_len = chunk.stop - chunk.start;
-    if range_len != chunk.length {
-        println!(
-            "BAD chunk {}: stored length {} does not match its start/stop range ({})",
-            chunk.chunk_id, chunk.length, range_len
-        );
-        return 1;
-    }
-
-    let mut buf = vec![0u8; chunk.length as usize];
-    let integrity = match data_store.read(chunk.start as u64, &mut buf) {
-        Ok(integrity) => integrity,
+fn check_chunk(conn: &Connection, data_store: &LongTermStore, chunk: &ChunkInfo) -> u64 {
+    let extents = match db::chunk_extents(conn, chunk.chunk_id) {
+        Ok(extents) => extents,
         Err(err) => {
             println!(
-                "ERROR chunk {}: failed to read store data: {err}",
+                "ERROR chunk {}: failed to look up its extents: {err}",
                 chunk.chunk_id
             );
             return 1;
         }
     };
+    let extents_len: i64 = extents.iter().map(|(start, stop)| stop - start).sum();
+    if extents_len != chunk.length {
+        println!(
+            "BAD chunk {}: stored length {} does not match the sum of its extents ({})",
+            chunk.chunk_id, chunk.length, extents_len
+        );
+        return 1;
+    }
+
+    let (buf, integrity) =
+        match read_chunk_bytes(conn, data_store, chunk.chunk_id, chunk.length as u64) {
+            Ok(result) => result,
+            Err(err) => {
+                println!(
+                    "ERROR chunk {}: failed to read store data: {err}",
+                    chunk.chunk_id
+                );
+                return 1;
+            }
+        };
     if let ReadIntegrity::Incomplete { missing_or_short } = integrity {
         println!(
             "MISSING chunk {}: data file(s) missing or shorter than expected: {}",
@@ -250,7 +262,7 @@ mod tests {
                 chunks: vec![db::ChunkRef::New {
                     length: bytes.len() as u64,
                     hash: hash.to_vec(),
-                    position: 0,
+                    extents: vec![(0, bytes.len() as u64)],
                 }],
                 content_hash: b"content-hash".to_vec(),
             }],
@@ -337,7 +349,7 @@ mod tests {
                 chunks: vec![db::ChunkRef::New {
                     length: 5,
                     hash: b"h".to_vec(),
-                    position: 0,
+                    extents: vec![(0, 5)],
                 }],
                 content_hash: b"c".to_vec(),
             }],
@@ -353,7 +365,7 @@ mod tests {
         let repository = db::open_repository(&repo_root).unwrap();
         let conn = repository.open_write_connection().unwrap();
         conn.execute(
-            "INSERT INTO chunks (id, length, hash, start, stop, ref_count) VALUES (1, 5, x'AA', 0, 5, 3)",
+            "INSERT INTO chunks (id, length, hash, ref_count) VALUES (1, 5, x'AA', 3)",
             (),
         )
         .unwrap();

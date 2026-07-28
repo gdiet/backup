@@ -8,6 +8,8 @@ use clap::Args;
 use rusqlite::Connection;
 use store::{LongTermStore, ReadIntegrity};
 
+use crate::chunk_store::read_chunk_bytes;
+
 #[derive(Args)]
 pub struct RestoreArgs {
     /// Allow overwriting existing files at the target. Without this, an
@@ -195,10 +197,9 @@ fn restore_file(
     };
 
     for chunk in chunks {
-        let mut buf = vec![0u8; chunk.length as usize];
-        match data_store.read(chunk.start as u64, &mut buf) {
-            Ok(ReadIntegrity::Complete) => {}
-            Ok(ReadIntegrity::Incomplete { missing_or_short }) => {
+        let buf = match read_chunk_bytes(conn, data_store, chunk.chunk_id, chunk.length as u64) {
+            Ok((buf, ReadIntegrity::Complete)) => buf,
+            Ok((_, ReadIntegrity::Incomplete { missing_or_short })) => {
                 eprintln!(
                     "warning: incomplete store data for '{}': {}",
                     file_target.display(),
@@ -219,7 +220,7 @@ fn restore_file(
                 let _ = fs::remove_file(&file_target);
                 return;
             }
-        }
+        };
         if let Err(err) = file.write_all(&buf) {
             eprintln!(
                 "warning: failed to write '{}': {err}",
@@ -267,9 +268,11 @@ mod tests {
         let start: i64 = {
             let repository = db::open_repository(repo_root).unwrap();
             let conn = repository.open_read_connection().unwrap();
-            conn.query_row("SELECT COALESCE(MAX(stop), 0) FROM chunks", (), |row| {
-                row.get(0)
-            })
+            conn.query_row(
+                "SELECT COALESCE(MAX(stop), 0) FROM chunk_extents",
+                (),
+                |row| row.get(0),
+            )
             .unwrap()
         };
         data_store.write(start as u64, bytes).unwrap();
@@ -294,7 +297,7 @@ mod tests {
                     vec![db::ChunkRef::New {
                         length: bytes.len() as u64,
                         hash: hash.to_vec(),
-                        position: start as u64,
+                        extents: vec![(start as u64, start as u64 + bytes.len() as u64)],
                     }]
                 },
                 content_hash: hash.to_vec(),

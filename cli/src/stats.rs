@@ -36,6 +36,12 @@ pub fn run_stats(repo: &Path, args: StatsArgs) -> ExitCode {
         None => match repo_wide_stats(&conn) {
             Ok(stats) => {
                 print_repo_stats(&stats);
+                match db::free_space_summary(&conn) {
+                    Ok((gap_count, total_free_bytes)) => {
+                        print_free_space(gap_count, total_free_bytes)
+                    }
+                    Err(err) => eprintln!("warning: failed to compute free space summary: {err}"),
+                }
                 ExitCode::SUCCESS
             }
             Err(err) => {
@@ -70,7 +76,7 @@ fn repo_wide_stats(conn: &Connection) -> rusqlite::Result<RepoStats> {
             (SELECT COUNT(*) FROM tree_entries WHERE kind = 'dir' AND deleted_at IS NOT NULL),
             (SELECT COUNT(*) FROM chunks),
             (SELECT COUNT(*) FROM contents),
-            (SELECT COALESCE(MAX(stop), 0) FROM chunks),
+            (SELECT COALESCE(MAX(stop), 0) FROM chunk_extents),
             (SELECT COALESCE(SUM(c.length), 0) FROM tree_entries t
                 JOIN contents c ON c.id = t.content_id WHERE t.deleted_at IS NULL)",
         (),
@@ -112,6 +118,21 @@ fn print_repo_stats(stats: &RepoStats) {
     if stats.physical_bytes > 0 {
         let ratio = stats.logical_bytes as f64 / stats.physical_bytes as f64;
         println!("Dedup ratio: {ratio:.2}x");
+    }
+}
+
+/// Reports gaps left in the data store by past `reclaim-space` runs that
+/// `store` hasn't (yet, or ever, if none since fit a new chunk) reused - see
+/// `docs/plans/chunk-extents.md` for why this is surfaced rather than left a
+/// silent, growing blind spot.
+fn print_free_space(gap_count: i64, total_free_bytes: i64) {
+    if gap_count == 0 {
+        println!("Free space in store: none");
+    } else {
+        println!(
+            "Free space in store: {} across {gap_count} gap(s)",
+            readable_bytes(total_free_bytes as u64)
+        );
     }
 }
 
@@ -242,7 +263,7 @@ mod tests {
             chunks: vec![db::ChunkRef::New {
                 length: 10,
                 hash: b"h".to_vec(),
-                position: 0,
+                extents: vec![(0, 10)],
             }],
             content_hash: b"c".to_vec(),
         };
