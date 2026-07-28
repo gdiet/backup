@@ -11,6 +11,10 @@ for the crate layout).
 Use the same language as the developer for chat interactions with the developer, but
 use English as project language (see below 'Code Quality').
 
+The developer is an experience programmer, but this is his first real rust project.
+Expect him to make both obvious and subtle mistakes, and point them out to him,
+especially the latter.
+
 ## Shell Commands
 
 Avoid unscoped, recursive filesystem searches such as `find /` or `find / -maxdepth N`
