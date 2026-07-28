@@ -61,6 +61,28 @@ path segments, and `backup find "*.log"` matches any path ending in `.log`.
 Prints one matching path per line. Exit code follows the `grep` convention:
 `0` if anything matched, `1` if the search ran fine but found nothing.
 
+### Check Integrity
+
+```bash
+backup check [path]
+```
+
+Verifies stored chunk data against the metadata database: for every chunk in
+scope, reads its bytes back from the data store and checks its length and
+content hash still match what's recorded, distinguishing missing/short data,
+length mismatches, and hash mismatches. Also verifies (always for the whole
+repository, regardless of `path`) that `ref_count` on chunks and contents
+matches a live count of what actually references them - this should never
+find anything, since it's already kept in sync by database triggers, so it's
+a sanity check rather than an expected source of problems.
+
+`path` is optional; omitted, it checks every chunk in the repository. Given a
+file, checks just that file's chunks; given a directory, recurses through
+everything under it. Exit code reflects the result: `0` if everything
+checked out, non-zero if any problem was found - so this can be used in a
+script/CI job, unlike the Scala tool's `check`, which always exits `0`
+regardless of what it finds.
+
 ## Development
 
 ### Build (debug)

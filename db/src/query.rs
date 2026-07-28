@@ -134,12 +134,23 @@ pub fn file_size(conn: &Connection, entry: &TreeEntryRow) -> Result<i64, Error> 
 /// A chunk making up part of a content's byte sequence, as stored - not to be
 /// confused with `db::ChunkRef`, which describes a chunk a backup worker has
 /// just resolved (possibly not yet persisted).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChunkRange {
     pub chunk_id: i64,
     pub length: i64,
+    pub hash: Vec<u8>,
     pub start: i64,
     pub stop: i64,
+}
+
+fn row_to_chunk_range(row: &rusqlite::Row) -> rusqlite::Result<ChunkRange> {
+    Ok(ChunkRange {
+        chunk_id: row.get(0)?,
+        length: row.get(1)?,
+        hash: row.get(2)?,
+        start: row.get(3)?,
+        stop: row.get(4)?,
+    })
 }
 
 /// The chunks making up `content_id`'s byte sequence, in order.
@@ -148,20 +159,25 @@ pub fn ordered_content_chunks(
     content_id: i64,
 ) -> Result<Vec<ChunkRange>, Error> {
     let mut stmt = conn.prepare(
-        "SELECT ch.id, ch.length, ch.start, ch.stop
+        "SELECT ch.id, ch.length, ch.hash, ch.start, ch.stop
          FROM content_chunks cc JOIN chunks ch ON ch.id = cc.chunk_id
          WHERE cc.content_id = ?1
          ORDER BY cc.seq",
     )?;
     let rows = stmt
-        .query_map([content_id], |row| {
-            Ok(ChunkRange {
-                chunk_id: row.get(0)?,
-                length: row.get(1)?,
-                start: row.get(2)?,
-                stop: row.get(3)?,
-            })
-        })?
+        .query_map([content_id], row_to_chunk_range)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Every chunk in the repository, in no particular order - including chunks
+/// with `ref_count = 0` (unreferenced, pending cleanup by `reclaim-space`),
+/// unlike [`ordered_content_chunks`] which only ever returns chunks actually
+/// reachable from a content.
+pub fn all_chunks(conn: &Connection) -> Result<Vec<ChunkRange>, Error> {
+    let mut stmt = conn.prepare("SELECT id, length, hash, start, stop FROM chunks")?;
+    let rows = stmt
+        .query_map([], row_to_chunk_range)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
 }
@@ -325,16 +341,32 @@ mod tests {
                 ChunkRange {
                     chunk_id: 1,
                     length: 5,
+                    hash: vec![0xAA],
                     start: 10,
                     stop: 15
                 },
                 ChunkRange {
                     chunk_id: 2,
                     length: 3,
+                    hash: vec![0xBB],
                     start: 15,
                     stop: 18
                 },
             ]
         );
+    }
+
+    #[test]
+    fn all_chunks_returns_every_chunk_including_unreferenced_ones() {
+        let (_temp_dir, conn) = test_connection();
+        conn.execute(
+            "INSERT INTO chunks (id, length, hash, start, stop) VALUES (1, 5, x'AA', 0, 5)",
+            (),
+        )
+        .unwrap();
+
+        let chunks = all_chunks(&conn).unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].chunk_id, 1);
     }
 }
