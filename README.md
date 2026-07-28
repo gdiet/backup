@@ -103,6 +103,20 @@ it. A per-file or per-directory problem (a permission error, an existing
 file without `--overwrite`) is logged and only that entry is skipped - the
 rest of the restore still runs to completion.
 
+### Delete A File Or A Directory
+
+```bash
+backup del <path>
+backup del --recursive <path>
+```
+
+Soft-deletes a file, or (with `--recursive`, required - refused otherwise,
+even for an empty directory) a directory and everything under it, all with
+the same timestamp in one atomic step. Soft-deleted entries stay recoverable
+and keep referencing their content until a future `reclaim-space` run
+actually purges entries older than its retention window - unlike the Scala
+tool this replaces, which has no such grace period.
+
 ## Development
 
 ### Build (debug)

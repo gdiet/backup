@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 mod check;
+mod del;
 mod find;
 mod format;
 mod list;
@@ -44,6 +45,8 @@ enum Command {
     Find(find::FindArgs),
     /// Verify stored chunk data against the metadata database.
     Check(check::CheckArgs),
+    /// Soft-delete a file, or a directory and everything under it.
+    Del(del::DelArgs),
 }
 
 #[derive(Args)]
@@ -93,6 +96,7 @@ fn main() -> ExitCode {
         Command::List(args) => list::run_list(&cli.repo, args),
         Command::Find(args) => find::run_find(&cli.repo, args),
         Command::Check(args) => check::run_check(&cli.repo, args),
+        Command::Del(args) => del::run_del(&cli.repo, args),
     }
 }
 
