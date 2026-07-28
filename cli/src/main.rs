@@ -10,6 +10,7 @@ mod del;
 mod find;
 mod format;
 mod list;
+mod mount;
 mod reclaim_space;
 mod restore;
 mod stats;
@@ -54,6 +55,8 @@ enum Command {
     Db(db_maintenance::DbArgs),
     /// Hard-delete old soft-deleted entries and orphaned chunks/contents.
     ReclaimSpace(reclaim_space::ReclaimSpaceArgs),
+    /// Mount the repository's file tree read-only via FUSE.
+    Mount(mount::MountArgs),
 }
 
 #[derive(Args)]
@@ -106,6 +109,7 @@ fn main() -> ExitCode {
         Command::Del(args) => del::run_del(&cli.repo, args),
         Command::Db(args) => db_maintenance::run_db(&cli.repo, args),
         Command::ReclaimSpace(args) => reclaim_space::run_reclaim_space(&cli.repo, args),
+        Command::Mount(args) => mount::run_mount(&cli.repo, args),
     }
 }
 

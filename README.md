@@ -25,7 +25,9 @@ backup stats
 
 Shows repository-wide counts (live/deleted files and directories, distinct
 chunks and contents), physical storage size, logical size (the total size as
-if nothing were deduplicated), and the resulting dedup ratio.
+if nothing were deduplicated), the resulting dedup ratio, and how much of
+the physical storage is currently unused gaps left by `reclaim-space` that
+a later `store` run hasn't reused yet.
 
 To see statistics for a specific file or directory instead:
 
@@ -163,10 +165,28 @@ operation in this tool (`del` alone never is - a soft-deleted entry stays
 recoverable until this runs), so it backs up the database first by default;
 pass `--no-backup` to skip that.
 
-Does not reclaim physical space in the on-disk chunk store, only database
-rows - the same limitation the Scala tool this replaces has; the store has
-no delete/truncate operation, so orphaned chunk bytes stay on disk until a
-possible future compaction feature is built for it.
+Does not shrink the on-disk chunk store file itself (it has no
+delete/truncate operation), but the byte ranges freed by a purged chunk
+*are* tracked and reused: the next `store` run's space allocator reuses
+those gaps for new chunks' bytes before appending past the end, so
+repeated delete/reclaim/store cycles don't make the store grow without
+bound. `stats` reports any gaps not yet reused as free space.
+
+### Mount
+
+```bash
+backup mount <mountpoint>
+```
+
+Mounts the repository's file tree read-only via FUSE at `<mountpoint>`
+(Linux only), so it can be browsed and read with ordinary tools (`ls`,
+`cat`, `cp`, etc.) instead of `list`/`restore`. `<mountpoint>` must already
+exist and be empty. Blocks until the filesystem is unmounted from another
+terminal (`fusermount -u <mountpoint>` or `umount <mountpoint>`).
+
+Read-write support (writes held in-process, only committed to the
+repository once the write handle closes) is designed but not yet
+implemented - see `docs/plans/fuse-mount.md`.
 
 ## Development
 
