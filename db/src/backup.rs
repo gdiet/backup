@@ -70,6 +70,19 @@ pub struct FileBackupRecord {
 /// set to this record's `time_millis` - a run timestamp isn't threaded through
 /// separately) and a new entry is inserted, never mutating `content_id` in place.
 /// A name that already exists as a directory is a hard error.
+///
+/// Uses a plain (`DEFERRED`) transaction. That's fine only because the caller is
+/// expected to be the *sole* writer connection for the repository (see the
+/// db crate's module-level doc comment): with a single writer, there is no other
+/// connection to race with for the write lock, so `DEFERRED` vs. `IMMEDIATE`
+/// makes no practical difference here. If a second writer-capable command (e.g.
+/// a future GC/maintenance command) is ever run concurrently against the same
+/// repository, that assumption breaks: two `DEFERRED` transactions that both
+/// read before writing can each acquire a read lock and then contend over the
+/// upgrade to a write lock, wasting retries under `busy_timeout` instead of one
+/// of them cleanly waiting up front. At that point, switching this transaction
+/// to `IMMEDIATE` (`conn.transaction_with_behavior(TransactionBehavior::Immediate)`)
+/// would be the fix.
 pub fn apply_backup_batch(conn: &mut Connection, batch: &[FileBackupRecord]) -> Result<(), Error> {
     let tx = conn.transaction()?;
 
