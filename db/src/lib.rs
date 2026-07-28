@@ -61,12 +61,29 @@ fn open_connection(path: &Path) -> Result<Connection, Error> {
     // writer lock (see the module-level doc comment) is momentarily held by
     // another connection, e.g. during a WAL checkpoint.
     conn.pragma_update(None, "busy_timeout", 5000)?;
+    // Like journal_mode below, auto_vacuum is persisted in the database file
+    // itself, and can only be established for free (no VACUUM required) on a
+    // brand new, empty database with no committed pages yet - which is exactly
+    // what this is the first time it runs, since open_connection always runs
+    // before any migration creates a table. This must come before the
+    // journal_mode switch below: switching to WAL itself already forces a
+    // write/commit of the file header, and that alone is enough to make
+    // SQLite treat the "brand new, empty database" fast path as no longer
+    // available. INCREMENTAL tracks freed pages for later on-demand reclaiming
+    // via `PRAGMA incremental_vacuum` (see the `db compact` command) without
+    // eagerly truncating the file on every commit that frees a page the way
+    // `FULL` would - this workload deletes rows only rarely
+    // (`del`/`reclaim-space`), so paying that cost on every write would be
+    // wasted most of the time.
+    conn.pragma_update(None, "auto_vacuum", "INCREMENTAL")?;
     // journal_mode returns the resulting mode as a row, so pragma_update_and_check
-    // (rather than pragma_update) is required here. Unlike the two pragmas above,
-    // WAL mode is persisted in the database file itself once set, so on later
-    // opens of an already-WAL file this is just a cheap no-op check, not a real
-    // mode switch. Setting it here regardless keeps this function correct on its
-    // own even if it's ever called on a pre-WAL database file.
+    // (rather than pragma_update) is required here. Unlike auto_vacuum above,
+    // WAL mode doesn't need to go first - switching to it is unaffected by
+    // auto_vacuum mode. WAL mode is persisted in the database file itself once
+    // set, so on later opens of an already-WAL file this is just a cheap no-op
+    // check, not a real mode switch. Setting it here regardless keeps this
+    // function correct on its own even if it's ever called on a pre-WAL
+    // database file.
     conn.pragma_update_and_check(None, "journal_mode", "WAL", |_row| Ok(()))?;
     Ok(conn)
 }
@@ -178,6 +195,19 @@ mod tests {
 
         assert!(repo_root.join(META_DIR).join(META_DB_FILE).is_file());
         assert!(repo_root.join(DATA_DIR).is_dir());
+    }
+
+    #[test]
+    fn init_repository_enables_incremental_auto_vacuum() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+
+        let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
+        let auto_vacuum: i64 = conn
+            .pragma_query_value(None, "auto_vacuum", |row| row.get(0))
+            .unwrap();
+        assert_eq!(auto_vacuum, 2, "2 = INCREMENTAL");
     }
 
     #[test]
