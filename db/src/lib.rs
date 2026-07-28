@@ -18,13 +18,18 @@
 mod backup;
 mod error;
 mod migrations;
+mod query;
 mod settings;
 mod tree;
 
 pub use backup::{ChunkRef, FileBackupRecord, apply_backup_batch, find_chunk};
 pub use error::Error;
+pub use query::{
+    ChunkRange, PathEntry, SubtreeStats, list_children, ordered_content_chunks, resolve_path,
+    subtree_entries_with_paths, subtree_stats,
+};
 pub use settings::{CDC_TARGET_SIZE_BITS_RANGE, Chunking, RepositorySettings, SettingsError};
-pub use tree::{EntryKind, TreeEntryRow, find_tree_entry, insert_directory};
+pub use tree::{EntryKind, TreeEntryRow, find_tree_entry, get_tree_entry, insert_directory};
 
 use std::fs;
 use std::path::Path;

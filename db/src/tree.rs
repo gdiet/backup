@@ -21,12 +21,51 @@ impl EntryKind {
     }
 }
 
-/// A row from `tree_entries`, as returned by [`find_tree_entry`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// A row from `tree_entries`, as returned by [`find_tree_entry`]/[`get_tree_entry`].
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TreeEntryRow {
     pub id: i64,
+    pub name: String,
+    pub time_millis: i64,
     pub kind: EntryKind,
     pub content_id: Option<i64>,
+}
+
+/// Reads a `TreeEntryRow` from a query result whose `(id, name, time, kind,
+/// content_id)` columns start at `offset` - `0` for a plain
+/// `SELECT id, name, time, kind, content_id FROM tree_entries ...`, or a higher
+/// offset when those columns follow others selected earlier (as `query.rs`'s
+/// subtree walk does, with a `path` column first).
+pub(crate) fn row_to_tree_entry_at(
+    row: &rusqlite::Row,
+    offset: usize,
+) -> rusqlite::Result<TreeEntryRow> {
+    let kind: String = row.get(offset + 3)?;
+    Ok(TreeEntryRow {
+        id: row.get(offset)?,
+        name: row.get(offset + 1)?,
+        time_millis: row.get(offset + 2)?,
+        kind: EntryKind::from_db_str(&kind),
+        content_id: row.get(offset + 4)?,
+    })
+}
+
+pub(crate) fn row_to_tree_entry(row: &rusqlite::Row) -> rusqlite::Result<TreeEntryRow> {
+    row_to_tree_entry_at(row, 0)
+}
+
+const SELECT_TREE_ENTRY: &str = "SELECT id, name, time, kind, content_id FROM tree_entries";
+
+/// Looks up a tree entry by id, regardless of whether it's soft-deleted -
+/// unlike [`find_tree_entry`], which only ever finds active entries by name.
+pub fn get_tree_entry(conn: &Connection, id: i64) -> Result<Option<TreeEntryRow>, Error> {
+    conn.query_row(
+        &format!("{SELECT_TREE_ENTRY} WHERE id = ?1"),
+        [id],
+        row_to_tree_entry,
+    )
+    .optional()
+    .map_err(Error::from)
 }
 
 /// Looks up the active (non-soft-deleted) child of `parent_id` named `name`.
@@ -36,17 +75,9 @@ pub fn find_tree_entry(
     name: &str,
 ) -> Result<Option<TreeEntryRow>, Error> {
     conn.query_row(
-        "SELECT id, kind, content_id FROM tree_entries
-         WHERE parent_id = ?1 AND name = ?2 AND deleted_at IS NULL",
+        &format!("{SELECT_TREE_ENTRY} WHERE parent_id = ?1 AND name = ?2 AND deleted_at IS NULL"),
         params![parent_id, name],
-        |row| {
-            let kind: String = row.get(1)?;
-            Ok(TreeEntryRow {
-                id: row.get(0)?,
-                kind: EntryKind::from_db_str(&kind),
-                content_id: row.get(2)?,
-            })
-        },
+        row_to_tree_entry,
     )
     .optional()
     .map_err(Error::from)
