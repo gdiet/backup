@@ -45,6 +45,22 @@ const META_DB_FILE: &str = "repository.db";
 /// Directory (relative to the repository root) holding the chunk data store.
 const DATA_DIR: &str = "data";
 
+/// The metadata database file path for a repository at `repo_root`, without
+/// opening or validating it - unlike [`open_repository`]. Useful for
+/// maintenance operations (like restoring a backup over the live database)
+/// that need to work even when the current database is unreadable or
+/// corrupt, which `open_repository` would fail on.
+pub fn db_file_path(repo_root: &Path) -> std::path::PathBuf {
+    repo_root.join(META_DIR).join(META_DB_FILE)
+}
+
+/// The directory holding the metadata database (and, by convention, its
+/// backups) for a repository at `repo_root`. Like [`db_file_path`], doesn't
+/// require opening or validating the repository.
+pub fn meta_dir(repo_root: &Path) -> std::path::PathBuf {
+    repo_root.join(META_DIR)
+}
+
 /// Opens (creating if missing) the SQLite database at `path` with the pragmas
 /// required for correct and durable operation.
 fn open_connection(path: &Path) -> Result<Connection, Error> {
@@ -186,6 +202,18 @@ mod tests {
 
     fn test_settings() -> RepositorySettings {
         RepositorySettings::new(20, Chunking::Cdc).unwrap()
+    }
+
+    #[test]
+    fn db_file_path_and_meta_dir_work_without_the_repository_existing() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+
+        assert_eq!(
+            db_file_path(&repo_root),
+            repo_root.join("meta").join("repository.db")
+        );
+        assert_eq!(meta_dir(&repo_root), repo_root.join("meta"));
     }
 
     #[test]

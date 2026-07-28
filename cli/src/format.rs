@@ -38,6 +38,19 @@ pub fn print_file_info(path_label: &str, name: &str, size: u64) {
 /// (<http://howardhinnant.github.io/date_algorithms.html>), good for every
 /// year representable in an `i64` count of days, proleptic Gregorian.
 pub fn format_timestamp_millis(millis: i64) -> String {
+    let (year, month, day, hour, minute, second) = decompose(millis);
+    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}")
+}
+
+/// Formats a Unix timestamp in milliseconds as `YYYYMMDD_HHMMSS` (UTC) - a
+/// filename-safe variant of [`format_timestamp_millis`] (no `:`/` `), used
+/// for naming database backup files.
+pub fn timestamp_for_filename(millis: i64) -> String {
+    let (year, month, day, hour, minute, second) = decompose(millis);
+    format!("{year:04}{month:02}{day:02}_{hour:02}{minute:02}{second:02}")
+}
+
+fn decompose(millis: i64) -> (i64, u32, u32, i64, i64, i64) {
     let total_seconds = millis.div_euclid(1000);
     let days = total_seconds.div_euclid(86400);
     let seconds_of_day = total_seconds.rem_euclid(86400);
@@ -45,7 +58,7 @@ pub fn format_timestamp_millis(millis: i64) -> String {
     let hour = seconds_of_day / 3600;
     let minute = (seconds_of_day % 3600) / 60;
     let second = seconds_of_day % 60;
-    format!("{year:04}-{month:02}-{day:02} {hour:02}:{minute:02}:{second:02}")
+    (year, month, day, hour, minute, second)
 }
 
 fn civil_from_days(days_since_epoch: i64) -> (i64, u32, u32) {
@@ -94,5 +107,11 @@ mod tests {
         );
         // Sub-second millis must not affect the formatted seconds.
         assert_eq!(format_timestamp_millis(999), "1970-01-01 00:00:00");
+    }
+
+    #[test]
+    fn formats_filename_safe_timestamps() {
+        assert_eq!(timestamp_for_filename(0), "19700101_000000");
+        assert_eq!(timestamp_for_filename(951_827_696_000), "20000229_123456");
     }
 }

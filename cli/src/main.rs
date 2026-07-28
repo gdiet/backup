@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 mod check;
+mod db_maintenance;
 mod del;
 mod find;
 mod format;
@@ -47,6 +48,8 @@ enum Command {
     Check(check::CheckArgs),
     /// Soft-delete a file, or a directory and everything under it.
     Del(del::DelArgs),
+    /// Database maintenance: backup, restore, compact.
+    Db(db_maintenance::DbArgs),
 }
 
 #[derive(Args)]
@@ -97,6 +100,7 @@ fn main() -> ExitCode {
         Command::Find(args) => find::run_find(&cli.repo, args),
         Command::Check(args) => check::run_check(&cli.repo, args),
         Command::Del(args) => del::run_del(&cli.repo, args),
+        Command::Db(args) => db_maintenance::run_db(&cli.repo, args),
     }
 }
 
