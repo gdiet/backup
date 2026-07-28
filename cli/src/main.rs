@@ -4,6 +4,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 mod format;
+mod list;
 mod stats;
 mod store;
 
@@ -34,6 +35,8 @@ enum Command {
     Restore(RestoreArgs),
     /// Show repository statistics, or statistics for a specific path.
     Stats(stats::StatsArgs),
+    /// List a directory's contents, or show info for a single file.
+    List(list::ListArgs),
 }
 
 #[derive(Args)]
@@ -90,6 +93,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Command::Stats(args) => stats::run_stats(&cli.repo, args),
+        Command::List(args) => list::run_list(&cli.repo, args),
     }
 }
 

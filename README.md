@@ -36,6 +36,17 @@ backup stats <path>
 For a directory, this recursively sums files, subdirectories, and total
 logical size under it. For a file, it shows the file's size.
 
+### List Files
+
+```bash
+backup list <path>
+```
+
+Lists a directory's direct children (not recursive), directories first, then
+files, each alphabetically. Files are shown with their size and last
+modified time (UTC); directories are shown with a `>` marker. If `path` names
+a file instead, shows the same file-information block as `stats <path>`.
+
 ## Development
 
 ### Build (debug)
