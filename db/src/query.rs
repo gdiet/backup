@@ -134,38 +134,38 @@ pub fn file_size(conn: &Connection, entry: &TreeEntryRow) -> Result<i64, Error> 
 /// A chunk making up part of a content's byte sequence, as stored - not to be
 /// confused with `db::ChunkRef`, which describes a chunk a backup worker has
 /// just resolved (possibly not yet persisted).
+///
+/// Deliberately doesn't carry byte-range information: a chunk's bytes may
+/// span 1..N non-contiguous extents (see `chunk_extents` in
+/// `migrations.rs`), so callers that need the actual bytes go through
+/// [`chunk_extents`] rather than this struct - keeping "a chunk can be
+/// multi-part" out of every consumer that only cares about a chunk's
+/// identity (`check`'s ref-count pass, dedup lookups, etc).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChunkRange {
+pub struct ChunkInfo {
     pub chunk_id: i64,
     pub length: i64,
     pub hash: Vec<u8>,
-    pub start: i64,
-    pub stop: i64,
 }
 
-fn row_to_chunk_range(row: &rusqlite::Row) -> rusqlite::Result<ChunkRange> {
-    Ok(ChunkRange {
+fn row_to_chunk_info(row: &rusqlite::Row) -> rusqlite::Result<ChunkInfo> {
+    Ok(ChunkInfo {
         chunk_id: row.get(0)?,
         length: row.get(1)?,
         hash: row.get(2)?,
-        start: row.get(3)?,
-        stop: row.get(4)?,
     })
 }
 
 /// The chunks making up `content_id`'s byte sequence, in order.
-pub fn ordered_content_chunks(
-    conn: &Connection,
-    content_id: i64,
-) -> Result<Vec<ChunkRange>, Error> {
+pub fn ordered_content_chunks(conn: &Connection, content_id: i64) -> Result<Vec<ChunkInfo>, Error> {
     let mut stmt = conn.prepare(
-        "SELECT ch.id, ch.length, ch.hash, ch.start, ch.stop
+        "SELECT ch.id, ch.length, ch.hash
          FROM content_chunks cc JOIN chunks ch ON ch.id = cc.chunk_id
          WHERE cc.content_id = ?1
          ORDER BY cc.seq",
     )?;
     let rows = stmt
-        .query_map([content_id], row_to_chunk_range)?
+        .query_map([content_id], row_to_chunk_info)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
 }
@@ -174,12 +174,56 @@ pub fn ordered_content_chunks(
 /// with `ref_count = 0` (unreferenced, pending cleanup by `reclaim-space`),
 /// unlike [`ordered_content_chunks`] which only ever returns chunks actually
 /// reachable from a content.
-pub fn all_chunks(conn: &Connection) -> Result<Vec<ChunkRange>, Error> {
-    let mut stmt = conn.prepare("SELECT id, length, hash, start, stop FROM chunks")?;
+pub fn all_chunks(conn: &Connection) -> Result<Vec<ChunkInfo>, Error> {
+    let mut stmt = conn.prepare("SELECT id, length, hash FROM chunks")?;
     let rows = stmt
-        .query_map([], row_to_chunk_range)?
+        .query_map([], row_to_chunk_info)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// `chunk_id`'s physical byte extents, in the order they must be concatenated
+/// to reconstruct the chunk's bytes (see `chunk_extents` in
+/// `migrations.rs`). Almost always a single `(start, stop)` pair; more than
+/// one only after `store` has reused gaps left by a prior `reclaim-space`
+/// run that couldn't satisfy a chunk's size from a single gap.
+pub fn chunk_extents(conn: &Connection, chunk_id: i64) -> Result<Vec<(i64, i64)>, Error> {
+    let mut stmt =
+        conn.prepare("SELECT start, stop FROM chunk_extents WHERE chunk_id = ?1 ORDER BY seq")?;
+    let rows = stmt
+        .query_map([chunk_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Every extent in the repository, sorted by `start` - the raw material for
+/// computing gaps left behind by `reclaim-space` (both for seeding `store`'s
+/// space allocator and for [`free_space_summary`]'s fragmentation report).
+pub fn chunk_extents_sorted(conn: &Connection) -> Result<Vec<(i64, i64)>, Error> {
+    let mut stmt = conn.prepare("SELECT start, stop FROM chunk_extents ORDER BY start")?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Fragmentation visibility for `stats`: the number of gaps between existing
+/// extents, and their total size in bytes. Does not count the open-ended
+/// region past the last extent - that's simply not-yet-used store space, not
+/// waste. See `docs/plans/chunk-extents.md` for why this is worth surfacing
+/// rather than leaving as a silent, growing blind spot.
+pub fn free_space_summary(conn: &Connection) -> Result<(i64, i64), Error> {
+    let extents = chunk_extents_sorted(conn)?;
+    let mut gap_count = 0i64;
+    let mut total_free_bytes = 0i64;
+    for pair in extents.windows(2) {
+        let gap = pair[1].0 - pair[0].1;
+        if gap > 0 {
+            gap_count += 1;
+            total_free_bytes += gap;
+        }
+    }
+    Ok((gap_count, total_free_bytes))
 }
 
 #[cfg(test)]
@@ -321,8 +365,7 @@ mod tests {
     fn ordered_content_chunks_returns_chunks_in_sequence_order() {
         let (_temp_dir, conn) = test_connection();
         conn.execute(
-            "INSERT INTO chunks (id, length, hash, start, stop) VALUES
-             (1, 5, x'AA', 10, 15), (2, 3, x'BB', 15, 18)",
+            "INSERT INTO chunks (id, length, hash) VALUES (1, 5, x'AA'), (2, 3, x'BB')",
             (),
         )
         .unwrap();
@@ -338,19 +381,15 @@ mod tests {
         assert_eq!(
             chunks,
             vec![
-                ChunkRange {
+                ChunkInfo {
                     chunk_id: 1,
                     length: 5,
                     hash: vec![0xAA],
-                    start: 10,
-                    stop: 15
                 },
-                ChunkRange {
+                ChunkInfo {
                     chunk_id: 2,
                     length: 3,
                     hash: vec![0xBB],
-                    start: 15,
-                    stop: 18
                 },
             ]
         );
@@ -360,7 +399,7 @@ mod tests {
     fn all_chunks_returns_every_chunk_including_unreferenced_ones() {
         let (_temp_dir, conn) = test_connection();
         conn.execute(
-            "INSERT INTO chunks (id, length, hash, start, stop) VALUES (1, 5, x'AA', 0, 5)",
+            "INSERT INTO chunks (id, length, hash) VALUES (1, 5, x'AA')",
             (),
         )
         .unwrap();
@@ -368,5 +407,67 @@ mod tests {
         let chunks = all_chunks(&conn).unwrap();
         assert_eq!(chunks.len(), 1);
         assert_eq!(chunks[0].chunk_id, 1);
+    }
+
+    fn insert_extent(conn: &Connection, chunk_id: i64, seq: i64, start: i64, stop: i64) {
+        conn.execute(
+            "INSERT INTO chunk_extents (chunk_id, seq, start, stop) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![chunk_id, seq, start, stop],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn chunk_extents_returns_a_chunks_extents_in_seq_order() {
+        let (_temp_dir, conn) = test_connection();
+        conn.execute(
+            "INSERT INTO chunks (id, length, hash) VALUES (1, 8, x'AA')",
+            (),
+        )
+        .unwrap();
+        insert_extent(&conn, 1, 1, 100, 103);
+        insert_extent(&conn, 1, 0, 10, 15);
+
+        assert_eq!(chunk_extents(&conn, 1).unwrap(), vec![(10, 15), (100, 103)]);
+    }
+
+    #[test]
+    fn chunk_extents_sorted_orders_across_chunks_by_start() {
+        let (_temp_dir, conn) = test_connection();
+        conn.execute(
+            "INSERT INTO chunks (id, length, hash) VALUES (1, 5, x'AA'), (2, 5, x'BB')",
+            (),
+        )
+        .unwrap();
+        insert_extent(&conn, 2, 0, 100, 105);
+        insert_extent(&conn, 1, 0, 0, 5);
+
+        assert_eq!(
+            chunk_extents_sorted(&conn).unwrap(),
+            vec![(0, 5), (100, 105)]
+        );
+    }
+
+    #[test]
+    fn free_space_summary_reports_gaps_between_extents_but_not_past_the_last_one() {
+        let (_temp_dir, conn) = test_connection();
+        conn.execute(
+            "INSERT INTO chunks (id, length, hash) VALUES (1, 5, x'AA'), (2, 5, x'BB'), (3, 5, x'CC')",
+            (),
+        )
+        .unwrap();
+        insert_extent(&conn, 1, 0, 0, 1000);
+        insert_extent(&conn, 2, 0, 2000, 3000);
+        insert_extent(&conn, 3, 0, 3000, 4000);
+
+        let (gap_count, total_free_bytes) = free_space_summary(&conn).unwrap();
+        assert_eq!(gap_count, 1, "one gap between the first two extents");
+        assert_eq!(total_free_bytes, 1000);
+    }
+
+    #[test]
+    fn free_space_summary_is_zero_with_fewer_than_two_extents() {
+        let (_temp_dir, conn) = test_connection();
+        assert_eq!(free_space_summary(&conn).unwrap(), (0, 0));
     }
 }

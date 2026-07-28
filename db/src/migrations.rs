@@ -6,11 +6,23 @@ use rusqlite_migration::{M, Migrations};
 ///   at `init` time. The hash algorithm (blake3) is not a setting: it's fixed in
 ///   code, so it has no column here.
 /// - `chunks` is the content-addressable chunk store: the deduplication key is
-///   `(length, hash)`, one row per unique chunk. `stop` is exclusive, i.e. each
-///   chunk occupies the half-open byte range `[start, stop)` in the data store.
-///   `ref_count` is the number of `content_chunks` rows referencing this chunk,
-///   maintained by triggers; a chunk with `ref_count = 0` is unreferenced and can
-///   be purged.
+///   `(length, hash)`, one row per unique chunk. `ref_count` is the number of
+///   `content_chunks` rows referencing this chunk, maintained by triggers; a
+///   chunk with `ref_count = 0` is unreferenced and can be purged. A chunk's
+///   physical bytes are not necessarily one contiguous range - see
+///   `chunk_extents` below.
+/// - `chunk_extents` records where a chunk's bytes actually live in the data
+///   store: 1..N half-open byte ranges `[start, stop)` per chunk, `seq`-ordered
+///   (concatenating the extents in `seq` order reconstructs the chunk's bytes).
+///   Kept separate from `chunks` rather than as denormalized `start`/`stop`
+///   columns there so a chunk can be reassembled from several non-contiguous
+///   ranges: once `reclaim-space` deletes an unreferenced chunk (cascading into
+///   its extents, freeing those byte ranges), a later `store` run can reuse the
+///   resulting gaps for a new chunk's bytes - satisfying one allocation by
+///   spanning several old gaps if needed - instead of the data store only ever
+///   growing. `ON DELETE CASCADE` on `chunk_id` keeps this free of orphans
+///   whenever a `chunks` row is purged, the same pattern `content_chunks` uses
+///   for `contents`.
 /// - `contents` is one row per distinct file content (an ordered sequence of
 ///   chunks); `length` is the total logical file size. `hash` is a hash over the
 ///   ordered sequence of chunk lengths and hashes (not over the raw file bytes
@@ -69,12 +81,19 @@ CREATE TABLE chunks (
   id        INTEGER PRIMARY KEY,
   length    INTEGER NOT NULL,
   hash      BLOB    NOT NULL,
-  start     INTEGER NOT NULL,
-  stop      INTEGER NOT NULL,
   ref_count INTEGER NOT NULL DEFAULT 0,
   UNIQUE (length, hash),
   CONSTRAINT chk_chunks_ref_count CHECK (ref_count >= 0)
 );
+
+CREATE TABLE chunk_extents (
+  chunk_id INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+  seq      INTEGER NOT NULL,
+  start    INTEGER NOT NULL,
+  stop     INTEGER NOT NULL,
+  PRIMARY KEY (chunk_id, seq)
+);
+CREATE INDEX chunk_extents_start_idx ON chunk_extents(start);
 
 CREATE TABLE contents (
   id        INTEGER PRIMARY KEY,

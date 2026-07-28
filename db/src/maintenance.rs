@@ -198,7 +198,7 @@ mod tests {
     fn reclaim_space_purges_old_soft_deleted_entries_and_the_orphaned_content_and_chunk() {
         let (_temp_dir, mut conn) = test_connection();
         conn.execute(
-            "INSERT INTO chunks (id, length, hash, start, stop) VALUES (1, 5, x'AA', 0, 5)",
+            "INSERT INTO chunks (id, length, hash) VALUES (1, 5, x'AA')",
             (),
         )
         .unwrap();

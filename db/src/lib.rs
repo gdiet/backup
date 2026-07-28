@@ -27,8 +27,9 @@ pub use backup::{ChunkRef, FileBackupRecord, apply_backup_batch, find_chunk};
 pub use error::Error;
 pub use maintenance::{ReclaimStats, reclaim_space, soft_delete};
 pub use query::{
-    ChunkRange, PathEntry, SubtreeStats, all_chunks, file_size, list_children,
-    ordered_content_chunks, resolve_path, subtree_entries_with_paths, subtree_stats,
+    ChunkInfo, PathEntry, SubtreeStats, all_chunks, chunk_extents, chunk_extents_sorted, file_size,
+    free_space_summary, list_children, ordered_content_chunks, resolve_path,
+    subtree_entries_with_paths, subtree_stats,
 };
 pub use settings::{CDC_TARGET_SIZE_BITS_RANGE, Chunking, RepositorySettings, SettingsError};
 pub use tree::{EntryKind, TreeEntryRow, find_tree_entry, get_tree_entry, insert_directory};
@@ -402,7 +403,7 @@ mod tests {
         let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
 
         conn.execute(
-            "INSERT INTO chunks (id, length, hash, start, stop) VALUES (1, 3, x'AA', 0, 3)",
+            "INSERT INTO chunks (id, length, hash) VALUES (1, 3, x'AA')",
             (),
         )
         .unwrap();

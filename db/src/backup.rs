@@ -21,12 +21,14 @@ pub enum ChunkRef {
     /// An already-existing chunk (a dedup hit against [`find_chunk`]).
     Existing { id: i64, length: u64 },
     /// A chunk not found by [`find_chunk`], whose bytes the caller has already
-    /// written to the byte store at `position` - `apply_backup_batch` only ever
-    /// touches metadata, never chunk bytes.
+    /// written to the byte store at `extents` (one or more half-open byte
+    /// ranges, in the order they must be concatenated to reconstruct the
+    /// chunk - see `chunk_extents` in `migrations.rs`) -
+    /// `apply_backup_batch` only ever touches metadata, never chunk bytes.
     New {
         length: u64,
         hash: Vec<u8>,
-        position: u64,
+        extents: Vec<(u64, u64)>,
     },
 }
 
@@ -94,18 +96,31 @@ pub fn apply_backup_batch(conn: &mut Connection, batch: &[FileBackupRecord]) -> 
                 ChunkRef::New {
                     length,
                     hash,
-                    position,
+                    extents,
                 } => {
                     tx.execute(
-                        "INSERT INTO chunks (length, hash, start, stop) VALUES (?1, ?2, ?3, ?3 + ?1)
+                        "INSERT INTO chunks (length, hash) VALUES (?1, ?2)
                          ON CONFLICT (length, hash) DO NOTHING",
-                        params![*length as i64, hash, *position as i64],
+                        params![*length as i64, hash],
                     )?;
-                    tx.query_row(
+                    let chunk_id: i64 = tx.query_row(
                         "SELECT id FROM chunks WHERE length = ?1 AND hash = ?2",
                         params![*length as i64, hash],
                         |row| row.get(0),
-                    )?
+                    )?;
+                    // INSERT OR IGNORE, not a bare INSERT: on the losing side of
+                    // the chunks race just resolved above, this chunk_id already
+                    // has extents from whichever batch's insert won - this
+                    // worker's own (redundant, harmless) copy of the same bytes
+                    // elsewhere in the store is simply never referenced.
+                    for (seq, (start, stop)) in extents.iter().enumerate() {
+                        tx.execute(
+                            "INSERT OR IGNORE INTO chunk_extents (chunk_id, seq, start, stop)
+                             VALUES (?1, ?2, ?3, ?4)",
+                            params![chunk_id, seq as i64, *start as i64, *stop as i64],
+                        )?;
+                    }
+                    chunk_id
                 }
             };
             chunk_ids.push(chunk_id);
@@ -212,7 +227,7 @@ mod tests {
             chunks: vec![ChunkRef::New {
                 length: 5,
                 hash: b"hash1".to_vec(),
-                position,
+                extents: vec![(position, position + 5)],
             }],
             content_hash: b"content-hash-1".to_vec(),
         }
@@ -236,6 +251,42 @@ mod tests {
             .unwrap();
         assert_eq!(length, 5);
         assert_eq!(ref_count, 1);
+    }
+
+    #[test]
+    fn a_new_chunk_records_all_of_its_extents() {
+        let (_temp_dir, mut conn) = test_connection();
+        let record = FileBackupRecord {
+            parent_id: 0,
+            name: "a.txt".to_string(),
+            time_millis: 1000,
+            chunks: vec![ChunkRef::New {
+                length: 8,
+                hash: b"hash1".to_vec(),
+                extents: vec![(10, 15), (100, 103)],
+            }],
+            content_hash: b"content-hash-1".to_vec(),
+        };
+
+        apply_backup_batch(&mut conn, &[record]).unwrap();
+
+        let chunk_id: i64 = conn
+            .query_row(
+                "SELECT id FROM chunks WHERE hash = x'6861736831'",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        let extents: Vec<(i64, i64, i64)> = conn
+            .prepare("SELECT seq, start, stop FROM chunk_extents WHERE chunk_id = ?1 ORDER BY seq")
+            .unwrap()
+            .query_map([chunk_id], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(extents, vec![(0, 10, 15), (1, 100, 103)]);
     }
 
     #[test]
@@ -298,7 +349,7 @@ mod tests {
         b.chunks.push(ChunkRef::New {
             length: 9,
             hash: b"hash2".to_vec(),
-            position: 105,
+            extents: vec![(105, 114)],
         });
         b.content_hash = b"content-hash-2".to_vec();
         apply_backup_batch(&mut conn, &[b]).unwrap();
@@ -327,6 +378,25 @@ mod tests {
         assert_eq!(
             hash1_ref_count, 2,
             "hash1 is referenced by both distinct contents"
+        );
+        let hash1_chunk_id: i64 = conn
+            .query_row(
+                "SELECT id FROM chunks WHERE hash = ?1",
+                [b"hash1".as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let hash1_extents: Vec<(i64, i64)> = conn
+            .prepare("SELECT start, stop FROM chunk_extents WHERE chunk_id = ?1")
+            .unwrap()
+            .query_map([hash1_chunk_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            hash1_extents,
+            vec![(0, 5)],
+            "the losing worker's own (100, 105) extent must be ignored, not appended"
         );
     }
 
@@ -366,7 +436,7 @@ mod tests {
             chunks: vec![ChunkRef::New {
                 length: 9,
                 hash: b"hash2".to_vec(),
-                position: 100,
+                extents: vec![(100, 109)],
             }],
             content_hash: b"content-hash-2".to_vec(),
         };
