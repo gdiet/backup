@@ -3,6 +3,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+mod find;
 mod format;
 mod list;
 mod stats;
@@ -37,6 +38,8 @@ enum Command {
     Stats(stats::StatsArgs),
     /// List a directory's contents, or show info for a single file.
     List(list::ListArgs),
+    /// Search the whole repository for entries matching a name pattern.
+    Find(find::FindArgs),
 }
 
 #[derive(Args)]
@@ -94,6 +97,7 @@ fn main() -> ExitCode {
         }
         Command::Stats(args) => stats::run_stats(&cli.repo, args),
         Command::List(args) => list::run_list(&cli.repo, args),
+        Command::Find(args) => find::run_find(&cli.repo, args),
     }
 }
 

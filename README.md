@@ -47,6 +47,20 @@ files, each alphabetically. Files are shown with their size and last
 modified time (UTC); directories are shown with a `>` marker. If `path` names
 a file instead, shows the same file-information block as `stats <path>`.
 
+### Find Files By Name Pattern
+
+```bash
+backup find <pattern>
+```
+
+Searches the whole repository (not scoped to a subdirectory) for entries
+whose full path contains `pattern`, case-insensitively. `*` matches any run
+of characters (including none), `?` matches exactly one character - e.g.
+`backup find "jre/bin/java"` matches any path containing that sequence of
+path segments, and `backup find "*.log"` matches any path ending in `.log`.
+Prints one matching path per line. Exit code follows the `grep` convention:
+`0` if anything matched, `1` if the search ran fine but found nothing.
+
 ## Development
 
 ### Build (debug)
