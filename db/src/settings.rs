@@ -16,6 +16,19 @@ impl Chunking {
             Chunking::None => "none",
         }
     }
+
+    /// Parses a `chunking` value read back from `repository_settings`. Any value
+    /// other than `"cdc"`/`"none"` would violate that column's `CHECK` constraint,
+    /// so it can only occur if the database itself is corrupt.
+    pub(crate) fn from_db_str(s: &str) -> Self {
+        match s {
+            "cdc" => Chunking::Cdc,
+            "none" => Chunking::None,
+            other => {
+                unreachable!("repository_settings.chunking CHECK constraint violated: {other:?}")
+            }
+        }
+    }
 }
 
 impl fmt::Display for Chunking {

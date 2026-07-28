@@ -1,0 +1,397 @@
+use rusqlite::{Connection, OptionalExtension, params};
+
+use crate::Error;
+use crate::tree::{EntryKind, find_tree_entry};
+
+/// Looks up an existing chunk by its dedup key `(length, hash)`.
+pub fn find_chunk(conn: &Connection, length: u64, hash: &[u8]) -> Result<Option<i64>, Error> {
+    conn.query_row(
+        "SELECT id FROM chunks WHERE length = ?1 AND hash = ?2",
+        params![length as i64, hash],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
+/// A chunk making up a file's content, as resolved by the caller (typically a
+/// backup worker) before handing the file off to [`apply_backup_batch`].
+#[derive(Debug, Clone)]
+pub enum ChunkRef {
+    /// An already-existing chunk (a dedup hit against [`find_chunk`]).
+    Existing { id: i64, length: u64 },
+    /// A chunk not found by [`find_chunk`], whose bytes the caller has already
+    /// written to the byte store at `position` - `apply_backup_batch` only ever
+    /// touches metadata, never chunk bytes.
+    New {
+        length: u64,
+        hash: Vec<u8>,
+        position: u64,
+    },
+}
+
+impl ChunkRef {
+    fn length(&self) -> u64 {
+        match self {
+            ChunkRef::Existing { length, .. } | ChunkRef::New { length, .. } => *length,
+        }
+    }
+}
+
+/// A file ready to be recorded, produced by a worker after chunking, hashing,
+/// deduplicating and (for new chunks) writing bytes to the store.
+#[derive(Debug, Clone)]
+pub struct FileBackupRecord {
+    pub parent_id: i64,
+    pub name: String,
+    pub time_millis: i64,
+    /// The file's chunks in order. Empty for a zero-length file.
+    pub chunks: Vec<ChunkRef>,
+    /// Hash over the ordered sequence of chunk lengths and hashes (see the
+    /// `contents.hash` doc comment in `migrations.rs`). Ignored for an empty file
+    /// (no `contents` row is created for those - see the `kind` doc comment).
+    pub content_hash: Vec<u8>,
+}
+
+/// Applies a batch of [`FileBackupRecord`]s in a single transaction: resolves or
+/// inserts each new chunk, resolves or inserts the file's `contents` row
+/// (deduplicated by `content_hash`), and inserts or updates each file's
+/// `tree_entries` row.
+///
+/// Insert-or-get for both `chunks` and `contents` is race-safe: if another
+/// worker's earlier batch already created a row for the same
+/// `(length, hash)`/`content_hash`, `ON CONFLICT ... DO NOTHING` makes the insert
+/// a no-op and the subsequent `SELECT` picks up the existing row.
+///
+/// Re-running a backup for a file at a path that already has an active entry is
+/// handled per the immutable-`content_id` invariant the `ref_count` triggers rely
+/// on (see `migrations.rs`): if the resolved content is unchanged, only `time` is
+/// refreshed in place; if it changed, the old entry is soft-deleted (`deleted_at`
+/// set to this record's `time_millis` - a run timestamp isn't threaded through
+/// separately) and a new entry is inserted, never mutating `content_id` in place.
+/// A name that already exists as a directory is a hard error.
+pub fn apply_backup_batch(conn: &mut Connection, batch: &[FileBackupRecord]) -> Result<(), Error> {
+    let tx = conn.transaction()?;
+
+    for record in batch {
+        let mut chunk_ids = Vec::with_capacity(record.chunks.len());
+        for chunk_ref in &record.chunks {
+            let chunk_id = match chunk_ref {
+                ChunkRef::Existing { id, .. } => *id,
+                ChunkRef::New {
+                    length,
+                    hash,
+                    position,
+                } => {
+                    tx.execute(
+                        "INSERT INTO chunks (length, hash, start, stop) VALUES (?1, ?2, ?3, ?3 + ?1)
+                         ON CONFLICT (length, hash) DO NOTHING",
+                        params![*length as i64, hash, *position as i64],
+                    )?;
+                    tx.query_row(
+                        "SELECT id FROM chunks WHERE length = ?1 AND hash = ?2",
+                        params![*length as i64, hash],
+                        |row| row.get(0),
+                    )?
+                }
+            };
+            chunk_ids.push(chunk_id);
+        }
+
+        let content_id = if chunk_ids.is_empty() {
+            None
+        } else {
+            let total_length: i64 = record.chunks.iter().map(|c| c.length() as i64).sum();
+            tx.execute(
+                "INSERT INTO contents (length, hash) VALUES (?1, ?2)
+                 ON CONFLICT (hash) DO NOTHING",
+                params![total_length, record.content_hash],
+            )?;
+            let content_id: i64 = tx.query_row(
+                "SELECT id FROM contents WHERE hash = ?1",
+                params![record.content_hash],
+                |row| row.get(0),
+            )?;
+            for (seq, chunk_id) in chunk_ids.iter().enumerate() {
+                tx.execute(
+                    "INSERT OR IGNORE INTO content_chunks (content_id, seq, chunk_id) VALUES (?1, ?2, ?3)",
+                    params![content_id, seq as i64, chunk_id],
+                )?;
+            }
+            Some(content_id)
+        };
+
+        match find_tree_entry(&tx, record.parent_id, &record.name)? {
+            None => {
+                tx.execute(
+                    "INSERT INTO tree_entries (parent_id, name, time, kind, content_id)
+                     VALUES (?1, ?2, ?3, 'file', ?4)",
+                    params![
+                        record.parent_id,
+                        record.name,
+                        record.time_millis,
+                        content_id
+                    ],
+                )?;
+            }
+            Some(existing) if existing.kind != EntryKind::File => {
+                return Err(Error::NotAFile {
+                    parent_id: record.parent_id,
+                    name: record.name.clone(),
+                });
+            }
+            Some(existing) if existing.content_id == content_id => {
+                tx.execute(
+                    "UPDATE tree_entries SET time = ?1 WHERE id = ?2",
+                    params![record.time_millis, existing.id],
+                )?;
+            }
+            Some(existing) => {
+                tx.execute(
+                    "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+                    params![record.time_millis, existing.id],
+                )?;
+                tx.execute(
+                    "INSERT INTO tree_entries (parent_id, name, time, kind, content_id)
+                     VALUES (?1, ?2, ?3, 'file', ?4)",
+                    params![
+                        record.parent_id,
+                        record.name,
+                        record.time_millis,
+                        content_id
+                    ],
+                )?;
+            }
+        }
+    }
+
+    tx.commit()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Chunking, RepositorySettings};
+
+    // See tree::tests::test_connection for why the TempDir must outlive the
+    // connection (WAL sidecar files need the directory to still exist).
+    fn test_connection() -> (tempfile::TempDir, Connection) {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        crate::init_repository(
+            &repo_root,
+            &RepositorySettings::new(20, Chunking::Cdc).unwrap(),
+        )
+        .unwrap();
+        let conn = crate::open_repository(&repo_root)
+            .unwrap()
+            .open_write_connection()
+            .unwrap();
+        (temp_dir, conn)
+    }
+
+    fn one_chunk_record(name: &str, position: u64) -> FileBackupRecord {
+        FileBackupRecord {
+            parent_id: 0,
+            name: name.to_string(),
+            time_millis: 1000,
+            chunks: vec![ChunkRef::New {
+                length: 5,
+                hash: b"hash1".to_vec(),
+                position,
+            }],
+            content_hash: b"content-hash-1".to_vec(),
+        }
+    }
+
+    #[test]
+    fn applies_a_new_file_with_a_new_chunk() {
+        let (_temp_dir, mut conn) = test_connection();
+
+        apply_backup_batch(&mut conn, &[one_chunk_record("a.txt", 0)]).unwrap();
+
+        let entry = find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+        assert_eq!(entry.kind, EntryKind::File);
+        let content_id = entry.content_id.unwrap();
+        let (length, ref_count): (i64, i64) = conn
+            .query_row(
+                "SELECT length, ref_count FROM contents WHERE id = ?1",
+                [content_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(length, 5);
+        assert_eq!(ref_count, 1);
+    }
+
+    #[test]
+    fn empty_file_gets_no_content_row() {
+        let (_temp_dir, mut conn) = test_connection();
+        let record = FileBackupRecord {
+            parent_id: 0,
+            name: "empty.txt".to_string(),
+            time_millis: 1000,
+            chunks: vec![],
+            content_hash: vec![],
+        };
+
+        apply_backup_batch(&mut conn, &[record]).unwrap();
+
+        let entry = find_tree_entry(&conn, 0, "empty.txt").unwrap().unwrap();
+        assert_eq!(entry.kind, EntryKind::File);
+        assert_eq!(entry.content_id, None);
+    }
+
+    #[test]
+    fn two_files_with_the_same_content_hash_share_one_contents_row() {
+        let (_temp_dir, mut conn) = test_connection();
+
+        apply_backup_batch(
+            &mut conn,
+            &[one_chunk_record("a.txt", 0), one_chunk_record("b.txt", 5)],
+        )
+        .unwrap();
+
+        let a = find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+        let b = find_tree_entry(&conn, 0, "b.txt").unwrap().unwrap();
+        assert_eq!(a.content_id, b.content_id);
+        let ref_count: i64 = conn
+            .query_row(
+                "SELECT ref_count FROM contents WHERE id = ?1",
+                [a.content_id.unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(ref_count, 2);
+    }
+
+    /// Simulates two workers racing on the same new chunk: both batches try to
+    /// insert `(length, hash)` as new. The second must resolve to the first's
+    /// row rather than erroring or creating a duplicate. The two files are given
+    /// different content (a second, distinct chunk appended to one of them) so
+    /// this test isolates chunk-level race resolution from content-level dedup
+    /// (covered separately by `two_files_with_the_same_content_hash_...`).
+    #[test]
+    fn racing_batches_inserting_the_same_new_chunk_resolve_to_one_chunk_row() {
+        let (_temp_dir, mut conn) = test_connection();
+
+        apply_backup_batch(&mut conn, &[one_chunk_record("a.txt", 0)]).unwrap();
+        // A second, independent worker hashed the same first chunk as part of a
+        // different file, also decided it was new (its dedup lookup ran before
+        // the first batch committed), and wrote its own (wasted, but harmless)
+        // copy of the bytes elsewhere.
+        let mut b = one_chunk_record("b.txt", 100);
+        b.chunks.push(ChunkRef::New {
+            length: 9,
+            hash: b"hash2".to_vec(),
+            position: 105,
+        });
+        b.content_hash = b"content-hash-2".to_vec();
+        apply_backup_batch(&mut conn, &[b]).unwrap();
+
+        let chunk_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM chunks", (), |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            chunk_count, 2,
+            "hash1 shared, hash2 new: two distinct chunks"
+        );
+        let content_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM contents", (), |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            content_count, 2,
+            "different content_hash: two distinct contents"
+        );
+        let hash1_ref_count: i64 = conn
+            .query_row(
+                "SELECT ref_count FROM chunks WHERE hash = ?1",
+                [b"hash1".as_slice()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            hash1_ref_count, 2,
+            "hash1 is referenced by both distinct contents"
+        );
+    }
+
+    #[test]
+    fn rerunning_with_unchanged_content_only_refreshes_time() {
+        let (_temp_dir, mut conn) = test_connection();
+        apply_backup_batch(&mut conn, &[one_chunk_record("a.txt", 0)]).unwrap();
+        let first = find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+
+        let mut second = one_chunk_record("a.txt", 0);
+        second.time_millis = 2000;
+        apply_backup_batch(&mut conn, &[second]).unwrap();
+
+        let after = find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+        assert_eq!(after.id, first.id, "same row must be reused, not replaced");
+        assert_eq!(after.content_id, first.content_id);
+        let time: i64 = conn
+            .query_row(
+                "SELECT time FROM tree_entries WHERE id = ?1",
+                [after.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(time, 2000);
+    }
+
+    #[test]
+    fn rerunning_with_changed_content_soft_deletes_the_old_entry_and_inserts_a_new_one() {
+        let (_temp_dir, mut conn) = test_connection();
+        apply_backup_batch(&mut conn, &[one_chunk_record("a.txt", 0)]).unwrap();
+        let first = find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+
+        let mut second = FileBackupRecord {
+            parent_id: 0,
+            name: "a.txt".to_string(),
+            time_millis: 2000,
+            chunks: vec![ChunkRef::New {
+                length: 9,
+                hash: b"hash2".to_vec(),
+                position: 100,
+            }],
+            content_hash: b"content-hash-2".to_vec(),
+        };
+        apply_backup_batch(&mut conn, std::slice::from_mut(&mut second)).unwrap();
+
+        let after = find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+        assert_ne!(
+            after.id, first.id,
+            "content changed: a new row must be created"
+        );
+        assert_ne!(after.content_id, first.content_id);
+
+        let deleted_at: Option<i64> = conn
+            .query_row(
+                "SELECT deleted_at FROM tree_entries WHERE id = ?1",
+                [first.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(deleted_at, Some(2000));
+        // The old content is still referenced by the soft-deleted entry.
+        let old_ref_count: i64 = conn
+            .query_row(
+                "SELECT ref_count FROM contents WHERE id = ?1",
+                [first.content_id.unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(old_ref_count, 1);
+    }
+
+    #[test]
+    fn inserting_a_file_where_a_directory_exists_errors() {
+        let (_temp_dir, mut conn) = test_connection();
+        crate::insert_directory(&conn, 0, "a.txt", 0).unwrap();
+
+        let result = apply_backup_batch(&mut conn, &[one_chunk_record("a.txt", 0)]);
+
+        assert!(matches!(result, Err(Error::NotAFile { parent_id: 0, name }) if name == "a.txt"));
+    }
+}

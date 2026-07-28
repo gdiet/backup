@@ -12,19 +12,31 @@ use rusqlite_migration::{M, Migrations};
 ///   maintained by triggers; a chunk with `ref_count = 0` is unreferenced and can
 ///   be purged.
 /// - `contents` is one row per distinct file content (an ordered sequence of
-///   chunks); `length` is the total logical file size. Multiple `tree_entries` can
-///   reference the same content. `ref_count` is the number of `tree_entries` rows
-///   referencing this content, maintained by triggers; a content with
-///   `ref_count = 0` is unreferenced and can be purged.
+///   chunks); `length` is the total logical file size. `hash` is a hash over the
+///   ordered sequence of chunk lengths and hashes (not over the raw file bytes
+///   directly - it's derived from data already computed while chunking, so it
+///   costs nothing extra to obtain), used to deduplicate `contents` rows the same
+///   way `chunks.hash` deduplicates chunks: files with byte-identical content
+///   share one `contents` row instead of each getting their own. An empty file
+///   hashes the empty chunk sequence, so all empty files share one `contents` row
+///   with zero `content_chunks`. Multiple `tree_entries` can reference the same
+///   content. `ref_count` is the number of `tree_entries` rows referencing this
+///   content, maintained by triggers; a content with `ref_count = 0` is
+///   unreferenced and can be purged.
 /// - `content_chunks` records, for each content, the ordered sequence of chunks
 ///   that make it up (chunks themselves may be shared across contents). It needs
 ///   no `ref_count` of its own: it has no dependents other than `contents`, so
 ///   `ON DELETE CASCADE` on `content_id` is sufficient to keep it free of orphans
 ///   whenever an unreferenced content is purged.
-/// - `tree_entries` is the file system tree. The root entry (id 0) is its own
-///   parent (`parent_id = 0`); this is the only way to give it a well-defined,
-///   fixed anchor while keeping `parent_id` non-null everywhere - which matters
-///   because SQL treats every `NULL` as distinct from every other `NULL` for
+/// - `tree_entries` is the file system tree. `kind` distinguishes a directory from
+///   a file; this is needed because `content_id IS NULL` alone is ambiguous
+///   between "directory" (never has content) and "empty file" (has content
+///   conceptually, but zero chunks) - `kind` is the sole authority for that
+///   distinction, `content_id` is simply `NULL` for both directories and empty
+///   files. The root entry (id 0) is its own parent (`parent_id = 0`); this is the
+///   only way to give it a well-defined, fixed anchor while keeping `parent_id`
+///   non-null everywhere - which matters because SQL treats every `NULL` as
+///   distinct from every other `NULL` for
 ///   uniqueness purposes, so a nullable `parent_id` would silently defeat the
 ///   partial unique index below for all top-level entries. Soft-deleted entries
 ///   have a non-null `deleted_at`; the partial unique index below allows any
@@ -67,7 +79,9 @@ CREATE TABLE chunks (
 CREATE TABLE contents (
   id        INTEGER PRIMARY KEY,
   length    INTEGER NOT NULL,
+  hash      BLOB    NOT NULL,
   ref_count INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (hash),
   CONSTRAINT chk_contents_ref_count CHECK (ref_count >= 0)
 );
 
@@ -85,7 +99,9 @@ CREATE TABLE tree_entries (
   name       TEXT    NOT NULL,
   time       INTEGER NOT NULL,
   deleted_at INTEGER,
-  content_id INTEGER REFERENCES contents(id)
+  content_id INTEGER REFERENCES contents(id),
+  kind       TEXT    NOT NULL,
+  CONSTRAINT chk_tree_entries_kind CHECK (kind IN ('dir', 'file'))
 );
 CREATE UNIQUE INDEX tree_entries_active_name_idx ON tree_entries(parent_id, name) WHERE deleted_at IS NULL;
 CREATE INDEX tree_entries_content_id_idx ON tree_entries(content_id);
@@ -108,8 +124,8 @@ BEGIN
   UPDATE contents SET ref_count = ref_count - 1 WHERE id = OLD.content_id;
 END;
 
-INSERT INTO tree_entries (id, parent_id, name, time)
-  VALUES (0, 0, '', CAST(strftime('%s', 'now') AS INTEGER) * 1000);
+INSERT INTO tree_entries (id, parent_id, name, time, kind)
+  VALUES (0, 0, '', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 'dir');
 ";
 
 /// All database migrations, in order. Applying them is tracked via SQLite's built-in

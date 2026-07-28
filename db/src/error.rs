@@ -10,6 +10,12 @@ pub enum Error {
     RepositoryAlreadyExists(PathBuf),
     /// The provided [`crate::RepositorySettings`] failed validation.
     InvalidSettings(SettingsError),
+    /// [`crate::insert_directory`] was called for a name that already exists as a
+    /// file (not a directory) under `parent_id`.
+    NotADirectory { parent_id: i64, name: String },
+    /// [`crate::apply_backup_batch`] was asked to record a file at a name that
+    /// already exists as a directory (not a file) under `parent_id`.
+    NotAFile { parent_id: i64, name: String },
     /// Creating the repository directory layout failed.
     Io(std::io::Error),
     /// A SQLite operation failed.
@@ -25,6 +31,18 @@ impl fmt::Display for Error {
                 write!(f, "repository already exists: {}", path.display())
             }
             Self::InvalidSettings(err) => write!(f, "invalid repository settings: {err}"),
+            Self::NotADirectory { parent_id, name } => {
+                write!(
+                    f,
+                    "'{name}' under tree entry {parent_id} is a file, not a directory"
+                )
+            }
+            Self::NotAFile { parent_id, name } => {
+                write!(
+                    f,
+                    "'{name}' under tree entry {parent_id} is a directory, not a file"
+                )
+            }
             Self::Io(err) => write!(f, "I/O error: {err}"),
             Self::Sqlite(err) => write!(f, "SQLite error: {err}"),
             Self::Migration(err) => write!(f, "database migration error: {err}"),
@@ -37,6 +55,8 @@ impl std::error::Error for Error {
         match self {
             Self::RepositoryAlreadyExists(_) => None,
             Self::InvalidSettings(err) => Some(err),
+            Self::NotADirectory { .. } => None,
+            Self::NotAFile { .. } => None,
             Self::Io(err) => Some(err),
             Self::Sqlite(err) => Some(err),
             Self::Migration(err) => Some(err),

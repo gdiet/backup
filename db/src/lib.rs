@@ -15,12 +15,16 @@
 //! below exists for the transient contention this single writer can still hit
 //! (e.g. a WAL checkpoint in progress), not as a substitute for this design.
 
+mod backup;
 mod error;
 mod migrations;
 mod settings;
+mod tree;
 
+pub use backup::{ChunkRef, FileBackupRecord, apply_backup_batch, find_chunk};
 pub use error::Error;
 pub use settings::{CDC_TARGET_SIZE_BITS_RANGE, Chunking, RepositorySettings, SettingsError};
+pub use tree::{EntryKind, TreeEntryRow, find_tree_entry, insert_directory};
 
 use std::fs;
 use std::path::Path;
@@ -94,6 +98,64 @@ pub fn init_repository(repo_root: &Path, settings: &RepositorySettings) -> Resul
     Ok(())
 }
 
+/// A handle to an existing repository, opened via [`open_repository`].
+pub struct Repository {
+    repo_root: std::path::PathBuf,
+    settings: RepositorySettings,
+}
+
+impl Repository {
+    /// The settings this repository was created with.
+    pub fn settings(&self) -> RepositorySettings {
+        self.settings
+    }
+
+    /// The directory holding the chunk data store.
+    pub fn data_dir(&self) -> std::path::PathBuf {
+        self.repo_root.join(DATA_DIR)
+    }
+
+    fn meta_db_path(&self) -> std::path::PathBuf {
+        self.repo_root.join(META_DIR).join(META_DB_FILE)
+    }
+
+    /// Opens a new connection to this repository's metadata database.
+    ///
+    /// There is no distinction between a "read" and a "write" connection at the
+    /// SQLite level - both are opened the same way (see [`open_connection`]) - but
+    /// callers should still open one dedicated connection for writing and any
+    /// number of separate connections for reading, per the module-level doc
+    /// comment: WAL only ever admits one writer transaction at a time, so treating
+    /// every connection as a potential writer would only add lock contention
+    /// without adding throughput.
+    pub fn open_read_connection(&self) -> Result<Connection, Error> {
+        open_connection(&self.meta_db_path())
+    }
+
+    /// See [`Repository::open_read_connection`]; use exactly one of these per
+    /// repository at a time.
+    pub fn open_write_connection(&self) -> Result<Connection, Error> {
+        open_connection(&self.meta_db_path())
+    }
+}
+
+/// Opens an existing repository at `repo_root`, reading back its settings.
+pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
+    let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE))?;
+
+    let (cdc_target_size_bits, chunking): (u32, String) = conn.query_row(
+        "SELECT cdc_target_size_bits, chunking FROM repository_settings WHERE id = 1",
+        (),
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let settings = RepositorySettings::new(cdc_target_size_bits, Chunking::from_db_str(&chunking))?;
+
+    Ok(Repository {
+        repo_root: repo_root.to_path_buf(),
+        settings,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,6 +173,23 @@ mod tests {
 
         assert!(repo_root.join(META_DIR).join(META_DB_FILE).is_file());
         assert!(repo_root.join(DATA_DIR).is_dir());
+    }
+
+    #[test]
+    fn open_repository_reads_back_the_settings_it_was_created_with() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(
+            &repo_root,
+            &RepositorySettings::new(18, Chunking::None).unwrap(),
+        )
+        .unwrap();
+
+        let repo = open_repository(&repo_root).unwrap();
+
+        assert_eq!(repo.settings().cdc_target_size_bits(), 18);
+        assert_eq!(repo.settings().chunking(), Chunking::None);
+        assert_eq!(repo.data_dir(), repo_root.join(DATA_DIR));
     }
 
     #[test]
@@ -168,13 +247,13 @@ mod tests {
         let mut conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
         let tx = conn.transaction().unwrap();
         tx.execute(
-            "INSERT INTO tree_entries (id, parent_id, name, time) VALUES (1, 0, 'a', 0)",
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind) VALUES (1, 0, 'a', 0, 'dir')",
             (),
         )
         .unwrap();
 
         let result = tx.execute(
-            "INSERT INTO tree_entries (id, parent_id, name, time) VALUES (2, 0, 'a', 0)",
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind) VALUES (2, 0, 'a', 0, 'dir')",
             (),
         );
 
@@ -210,19 +289,22 @@ mod tests {
         init_repository(&repo_root, &test_settings()).unwrap();
         let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
 
-        conn.execute("INSERT INTO contents (id, length) VALUES (1, 0)", ())
-            .unwrap();
+        conn.execute(
+            "INSERT INTO contents (id, length, hash) VALUES (1, 0, x'AA')",
+            (),
+        )
+        .unwrap();
         assert_eq!(content_ref_count(&conn, 1), 0);
 
         conn.execute(
-            "INSERT INTO tree_entries (id, parent_id, name, time, content_id) VALUES (1, 0, 'a', 0, 1)",
+            "INSERT INTO tree_entries (id, parent_id, name, time, content_id, kind) VALUES (1, 0, 'a', 0, 1, 'file')",
             (),
         )
         .unwrap();
         assert_eq!(content_ref_count(&conn, 1), 1);
 
         conn.execute(
-            "INSERT INTO tree_entries (id, parent_id, name, time, content_id) VALUES (2, 0, 'b', 0, 1)",
+            "INSERT INTO tree_entries (id, parent_id, name, time, content_id, kind) VALUES (2, 0, 'b', 0, 1, 'file')",
             (),
         )
         .unwrap();
@@ -259,8 +341,11 @@ mod tests {
             (),
         )
         .unwrap();
-        conn.execute("INSERT INTO contents (id, length) VALUES (1, 3)", ())
-            .unwrap();
+        conn.execute(
+            "INSERT INTO contents (id, length, hash) VALUES (1, 3, x'BB')",
+            (),
+        )
+        .unwrap();
         assert_eq!(chunk_ref_count(&conn, 1), 0);
 
         conn.execute(
