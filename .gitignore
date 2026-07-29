@@ -1,2 +1,9 @@
 /.idea/
 /target/
+
+# Leftover sbt/BSP artifacts from the sibling `scala` checkout in this
+# multi-checkout working copy - recur here whenever an IDE with Metals/BSP
+# support is pointed at the parent directory.
+/.bsp/
+/log/
+/project/
