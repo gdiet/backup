@@ -178,17 +178,28 @@ bound. `stats` reports any gaps not yet reused as free space.
 backup mount <mountpoint>
 ```
 
-Mounts the repository's file tree read-only via FUSE at `<mountpoint>`
-(Linux only for now - see `docs/plans/cross-platform-mount-crate.md` for a
-planned Windows/WinFSP backend), so it can be browsed and read with
-ordinary tools (`ls`, `cat`, `cp`, etc.) instead of `list`/`restore`.
-`<mountpoint>` must already exist and be empty. Blocks until the
-filesystem is unmounted from another terminal (`fusermount3 -u
-<mountpoint>` or `umount <mountpoint>`).
+Mounts the repository's file tree read-only at `<mountpoint>`, so it can be
+browsed and read with ordinary tools (`ls`, `cat`, `cp`, etc.) instead of
+`list`/`restore`. Works on both Linux (via real system libfuse3) and
+Windows (via [WinFSP]) through the platform-abstracted `mountfs` crate -
+see `docs/plans/cross-platform-mount-crate.md` for how.
 
-Requires `libfuse3-dev`/`fuse3-devel` at build time and `libfuse3` at
-runtime (Debian/Ubuntu: `apt install libfuse3-dev`; Fedora: `dnf install
-fuse3-devel`).
+**Linux**: `<mountpoint>` must already exist and be empty. Blocks until
+the filesystem is unmounted from another terminal (`fusermount3 -u
+<mountpoint>` or `umount <mountpoint>`). Requires `libfuse3-dev`/
+`fuse3-devel` at build time and `libfuse3` at runtime (Debian/Ubuntu: `apt
+install libfuse3-dev`; Fedora: `dnf install fuse3-devel`).
+
+**Windows**: requires [WinFSP] to be installed (the runtime is enough - no
+SDK/import library needed to build this project). `<mountpoint>` must
+*not* already exist - WinFSP creates it itself as part of mounting.
+Blocks until the process is stopped (Ctrl+C, closing the console, or
+killing it - there's currently no separate unmount command, see the plan
+doc's "Windows checkpoint" for why).
+
+[WinFSP]: https://github.com/winfsp/winfsp - WinFsp - Windows File System
+Proxy, Copyright (C) Bill Zissimopoulos, used here under its FLOSS
+exception to the GPLv3 (see the plan doc for the full exception text).
 
 Read-write support (writes held in-process, only committed to the
 repository once the write handle closes) is designed but not yet

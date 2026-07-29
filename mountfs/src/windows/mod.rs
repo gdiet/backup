@@ -1,99 +1,72 @@
 //! Windows backend: bindings to WinFSP's FUSE3-compatible API (see
 //! `sys.rs`) - the same high-level, path-based shape the Linux backend
 //! binds directly against real libfuse3. See
-//! `docs/plans/cross-platform-mount-crate.md`.
+//! `docs/plans/cross-platform-mount-crate.md`, in particular the "Windows
+//! checkpoint" note on why this backend's `mount()` has no working clean-
+//! shutdown path yet (`fuse_exit` crashes inside `winfsp-x64.dll`) - the
+//! integration test below works around that by running the mount in a
+//! separate child process and terminating it, rather than asking it to
+//! exit gracefully.
 //!
-//! Like the Linux backend's first commit, this is currently just the
-//! sequencing plan's step-4 spike: a hardcoded, read-only, single-file
-//! in-memory filesystem implementing only `getattr` and `readdir`, proving
-//! this crate's shared-API approach actually mounts and serves real
-//! syscalls through WinFSP, not just that the bindings compile. No public
-//! `MountFilesystem` dispatch yet (that's the Linux backend's second
-//! commit's counterpart, not done here yet).
+//! [`mount`] dispatches every `fuse_operations` callback to a
+//! [`crate::MountFilesystem`] implementation the same way the Linux
+//! backend does: monomorphized `extern "C"` trampolines (`dispatch_*`)
+//! recover the trait object from `fuse_get_context()->private_data`.
 
 mod sys;
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
+use std::io;
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
-use sys::{fuse_off_t, fuse_stat};
+use sys::{fuse_off_t, fuse_stat, fuse_statvfs};
 
-const HELLO_NAME: &CStr = c"hello.txt";
-const HELLO_PATH: &CStr = c"/hello.txt";
-const HELLO_CONTENT: &[u8] = b"hello from the mountfs Windows spike\n";
+use crate::{DirEntry, Errno, FileKind, Handle, MountFilesystem};
 
-/// The `struct fuse3 *` handle for the currently-running mount, captured
-/// from `fuse_get_context()` the first time any callback fires - see
-/// `sys::fuse_exit`'s doc comment for why this is the only way to get it.
-static ACTIVE_FUSE_HANDLE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
-
-/// Set once `release` has actually completed for the test's one file
-/// handle - see the doc comment on the test's wait loop for why calling
-/// `fuse_exit` before that is unsound.
-static RELEASE_SEEN: AtomicBool = AtomicBool::new(false);
-
-fn debug_log(msg: &str) {
-    use std::io::Write;
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(std::env::temp_dir().join("mountfs_debug.log"))
-    {
-        let _ = writeln!(f, "{msg}");
-        let _ = f.flush();
-    }
-}
-
-fn remember_fuse_handle() {
+/// Recovers the `&T` passed as `mount`'s `private_data` - only sound to
+/// call from within a `dispatch_*` trampoline, i.e. from WinFSP's own
+/// calling thread during a callback.
+unsafe fn context<'a, T>() -> &'a T {
     let ctx = sys::fuse_get_context();
-    debug_log(&format!("remember_fuse_handle ctx={ctx:?}"));
-    if !ctx.is_null() {
-        let fuse = unsafe { (*ctx).fuse };
-        debug_log(&format!(
-            "remember_fuse_handle ctx.fuse={fuse:?} uid={} gid={} pid={} private_data={:?} umask={}",
-            unsafe { (*ctx).uid },
-            unsafe { (*ctx).gid },
-            unsafe { (*ctx).pid },
-            unsafe { (*ctx).private_data },
-            unsafe { (*ctx).umask }
-        ));
-        if !fuse.is_null() {
-            ACTIVE_FUSE_HANDLE.store(fuse, Ordering::Release);
-        }
-    }
+    unsafe { &*((*ctx).private_data as *const T) }
 }
 
-unsafe extern "C" fn getattr(
+/// `None` on invalid UTF-8. WinFSP paths, like libfuse's, are otherwise
+/// always absolute (`/`-rooted, no trailing slash except the root itself).
+fn path_str<'a>(path: *const c_char) -> Option<&'a str> {
+    unsafe { CStr::from_ptr(path) }.to_str().ok()
+}
+
+unsafe extern "C" fn dispatch_getattr<T: MountFilesystem>(
     path: *const c_char,
     stbuf: *mut fuse_stat,
-    fi: *mut sys::fuse_file_info,
+    _fi: *mut sys::fuse_file_info,
 ) -> c_int {
-    remember_fuse_handle();
-    let path = unsafe { CStr::from_ptr(path) };
-    debug_log(&format!("getattr enter path={path:?} fi={fi:?}"));
-    unsafe { std::ptr::write_bytes(stbuf, 0, 1) };
-    let result = if path.to_bytes() == b"/" {
-        unsafe {
-            (*stbuf).st_mode = 0o040000 | 0o755; // S_IFDIR
-            (*stbuf).st_nlink = 2;
-        }
-        0
-    } else if path == HELLO_PATH {
-        unsafe {
-            (*stbuf).st_mode = 0o100000 | 0o444; // S_IFREG
-            (*stbuf).st_nlink = 1;
-            (*stbuf).st_size = HELLO_CONTENT.len() as fuse_off_t;
-        }
-        0
-    } else {
-        -libc::ENOENT
+    let Some(path) = path_str(path) else {
+        return -Errno::EIO.0;
     };
-    debug_log(&format!("getattr exit result={result}"));
-    result
+    let fs = unsafe { context::<T>() };
+    match fs.getattr(path) {
+        Ok(attr) => {
+            unsafe { std::ptr::write_bytes(stbuf, 0, 1) };
+            match attr.kind {
+                FileKind::Directory => unsafe {
+                    (*stbuf).st_mode = 0o040000 | 0o555; // S_IFDIR
+                    (*stbuf).st_nlink = 2;
+                },
+                FileKind::File => unsafe {
+                    (*stbuf).st_mode = 0o100000 | 0o444; // S_IFREG
+                    (*stbuf).st_nlink = 1;
+                    (*stbuf).st_size = attr.size as fuse_off_t;
+                },
+            }
+            0
+        }
+        Err(errno) => -errno.0,
+    }
 }
 
-unsafe extern "C" fn readdir(
+unsafe extern "C" fn dispatch_readdir<T: MountFilesystem>(
     path: *const c_char,
     buf: *mut c_void,
     filler: sys::fuse_fill_dir_t,
@@ -101,194 +74,151 @@ unsafe extern "C" fn readdir(
     _fi: *mut sys::fuse_file_info,
     _flags: sys::fuse_readdir_flags,
 ) -> c_int {
-    remember_fuse_handle();
-    let path = unsafe { CStr::from_ptr(path) };
-    debug_log(&format!("readdir enter path={path:?}"));
-    if path.to_bytes() != b"/" {
-        return -libc::ENOENT;
-    }
-    let Some(filler) = filler else {
-        return -libc::EIO;
+    let Some(path) = path_str(path) else {
+        return -Errno::EIO.0;
     };
-    for name in [c".", c"..", HELLO_NAME] {
-        unsafe { filler(buf, name.as_ptr(), std::ptr::null(), 0, 0) };
-    }
-    debug_log("readdir exit");
-    0
-}
-
-unsafe extern "C" fn open(path: *const c_char, fi: *mut sys::fuse_file_info) -> c_int {
-    let path = unsafe { CStr::from_ptr(path) };
-    debug_log(&format!("open enter path={path:?} fi={fi:?}"));
-    let result = if path == HELLO_PATH { 0 } else { -libc::ENOENT };
-    debug_log(&format!("open exit result={result}"));
-    result
-}
-
-unsafe extern "C" fn release(_path: *const c_char, _fi: *mut sys::fuse_file_info) -> c_int {
-    debug_log("release enter/exit");
-    RELEASE_SEEN.store(true, Ordering::Release);
-    0
-}
-
-unsafe extern "C" fn flush(_path: *const c_char, _fi: *mut sys::fuse_file_info) -> c_int {
-    debug_log("flush enter/exit");
-    0
-}
-
-unsafe extern "C" fn opendir(path: *const c_char, _fi: *mut sys::fuse_file_info) -> c_int {
-    let path = unsafe { CStr::from_ptr(path) };
-    debug_log(&format!("opendir enter/exit path={path:?}"));
-    if path.to_bytes() == b"/" {
-        0
-    } else {
-        -libc::ENOENT
+    let Some(filler) = filler else {
+        return -Errno::EIO.0;
+    };
+    let fs = unsafe { context::<T>() };
+    match fs.readdir(path) {
+        Ok(entries) => {
+            let names = [".", ".."]
+                .into_iter()
+                .map(str::to_string)
+                .chain(entries.into_iter().map(|e: DirEntry| e.name));
+            for name in names {
+                if let Ok(name) = CString::new(name) {
+                    unsafe { filler(buf, name.as_ptr(), std::ptr::null(), 0, 0) };
+                }
+            }
+            0
+        }
+        Err(errno) => -errno.0,
     }
 }
 
-unsafe extern "C" fn access(path: *const c_char, mask: c_int) -> c_int {
-    let path = unsafe { CStr::from_ptr(path) };
-    debug_log(&format!("access enter/exit path={path:?} mask={mask}"));
+unsafe extern "C" fn dispatch_open<T: MountFilesystem>(
+    path: *const c_char,
+    fi: *mut sys::fuse_file_info,
+) -> c_int {
+    let Some(path) = path_str(path) else {
+        return -Errno::EIO.0;
+    };
+    let fs = unsafe { context::<T>() };
+    let write_intent = unsafe { (*fi).flags & (libc::O_WRONLY | libc::O_RDWR) != 0 };
+    match fs.open(path, write_intent) {
+        Ok(handle) => {
+            unsafe { (*fi).fh = handle.0 };
+            0
+        }
+        Err(errno) => -errno.0,
+    }
+}
+
+unsafe extern "C" fn dispatch_read<T: MountFilesystem>(
+    _path: *const c_char,
+    buf: *mut c_char,
+    size: usize,
+    offset: fuse_off_t,
+    fi: *mut sys::fuse_file_info,
+) -> c_int {
+    let fs = unsafe { context::<T>() };
+    let handle = Handle(unsafe { (*fi).fh });
+    match fs.read(handle, offset as u64, size as u32) {
+        Ok(data) => {
+            let n = data.len().min(size);
+            unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), buf.cast::<u8>(), n) };
+            n as c_int
+        }
+        Err(errno) => -errno.0,
+    }
+}
+
+unsafe extern "C" fn dispatch_release<T: MountFilesystem>(
+    _path: *const c_char,
+    fi: *mut sys::fuse_file_info,
+) -> c_int {
+    let fs = unsafe { context::<T>() };
+    fs.release(Handle(unsafe { (*fi).fh }));
     0
 }
 
-/// Runs the spike filesystem, blocking until unmounted (see
-/// [`sys::fuse_exit`] - there is no Windows equivalent of
-/// `fusermount3 -u` for a directory mount created this way). Returns
-/// WinFSP's process exit code (0 on a clean unmount).
-pub fn run(mountpoint: &Path) -> i32 {
+unsafe extern "C" fn dispatch_statfs<T: MountFilesystem>(
+    _path: *const c_char,
+    buf: *mut fuse_statvfs,
+) -> c_int {
+    let fs = unsafe { context::<T>() };
+    match fs.statfs() {
+        Ok(info) => {
+            unsafe { std::ptr::write_bytes(buf, 0, 1) };
+            unsafe {
+                (*buf).f_bsize = info.block_size as u64;
+                (*buf).f_frsize = info.block_size as u64;
+                (*buf).f_blocks = info.blocks;
+                (*buf).f_bfree = info.blocks_free;
+                (*buf).f_bavail = info.blocks_available;
+                (*buf).f_files = info.files;
+                (*buf).f_ffree = info.files_free;
+                (*buf).f_namemax = info.max_name_length as u64;
+            }
+            0
+        }
+        Err(errno) => -errno.0,
+    }
+}
+
+/// Mounts `fs` at `mountpoint`, blocking until the process is killed - see
+/// this module's doc comment for why there's no graceful in-process way to
+/// stop it yet. Unlike the Linux backend, no `-f` (foreground) flag is
+/// needed: WinFSP's Windows branch never forks (`fsp_fuse_daemonize` is a
+/// no-op there - see `sys.rs`), so the footgun `-f` guards against on
+/// Linux doesn't exist on this platform.
+pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> io::Result<()> {
     let ops = sys::fuse_operations {
-        getattr: Some(getattr),
-        readdir: Some(readdir),
-        open: Some(open),
-        release: Some(release),
-        flush: Some(flush),
-        opendir: Some(opendir),
-        access: Some(access),
+        getattr: Some(dispatch_getattr::<T>),
+        readdir: Some(dispatch_readdir::<T>),
+        open: Some(dispatch_open::<T>),
+        read: Some(dispatch_read::<T>),
+        release: Some(dispatch_release::<T>),
+        statfs: Some(dispatch_statfs::<T>),
         ..sys::fuse_operations::default()
     };
 
-    let program_name = CString::new("mountfs-spike").unwrap();
-    // WinFSP mountpoints, like libfuse's, take a plain narrow path - UTF-16
-    // round-tripped through `OsStr` only where Windows APIs need it
-    // directly (`sys.rs`'s own `LoadLibraryW`/`RegGetValueW` calls), not
-    // here.
-    let mountpoint_str = mountpoint
-        .to_str()
-        .expect("mountpoint path must be valid UTF-8");
-    let mountpoint_c = CString::new(mountpoint_str).unwrap();
-    let mut argv: Vec<*mut c_char> = vec![
-        program_name.as_ptr().cast_mut(),
-        mountpoint_c.as_ptr().cast_mut(),
-    ];
+    let program_name = CString::new("mountfs").unwrap();
+    let read_only_flag = CString::new("-oro").unwrap();
+    let mountpoint_str = mountpoint.to_str().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "mountpoint is not valid UTF-8")
+    })?;
+    let mountpoint_c = CString::new(mountpoint_str)
+        .map_err(|err| io::Error::new(io::ErrorKind::InvalidInput, err))?;
 
-    unsafe {
+    let mut args: Vec<*mut c_char> = vec![program_name.as_ptr().cast_mut()];
+    if read_only {
+        args.push(read_only_flag.as_ptr().cast_mut());
+    }
+    args.push(mountpoint_c.as_ptr().cast_mut());
+
+    // See linux::mount's identical comment: fuse_main_real carries this
+    // pointer through to fuse_get_context() for the duration of the
+    // (blocking) call below, so the Box must outlive that call.
+    let private_data = Box::into_raw(Box::new(fs));
+    let exit_code = unsafe {
         sys::fuse_main_real(
-            argv.len() as c_int,
-            argv.as_mut_ptr(),
+            args.len() as c_int,
+            args.as_mut_ptr(),
             &ops,
             std::mem::size_of::<sys::fuse_operations>(),
-            std::ptr::null_mut(),
+            private_data.cast::<c_void>(),
         )
-    }
-}
+    };
+    unsafe { drop(Box::from_raw(private_data)) };
 
-#[allow(dead_code)] // referenced only from the test below for now
-fn request_exit() {
-    let handle = ACTIVE_FUSE_HANDLE.load(Ordering::Acquire);
-    debug_log(&format!("request_exit handle={handle:?}"));
-    if !handle.is_null() {
-        unsafe { sys::fuse_exit(handle) };
-    }
-    debug_log("request_exit done");
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::{Duration, Instant};
-
-    /// End-to-end: mounts the spike filesystem via real WinFSP
-    /// (`fsp_fuse3_main_real`), reads it back through ordinary `std::fs`
-    /// calls. The read path (getattr/readdir/open/flush/release) is
-    /// confirmed working end-to-end against the real installed WinFSP
-    /// runtime - the part this #[ignore] is about is purely the clean-
-    /// shutdown step at the end.
-    ///
-    /// Ignored by default: two different ways of asking WinFSP to stop the
-    /// mount were tried and neither is sound yet -
-    /// `fuse_exit`/`fsp_fuse3_exit` crashes deterministically inside
-    /// `winfsp-x64.dll` (confirmed with a real stack trace via `cdb`:
-    /// faults in `fsp_fuse3_exit+0xd`, reading address `0x478`, regardless
-    /// of whether any request is in flight when it's called), and
-    /// externally stopping the Windows service WinFSP registers for the
-    /// mount (`Stop-Service`) hangs indefinitely instead of unblocking the
-    /// in-process `fuse_main_real`-equivalent call. Run with
-    /// `--ignored` to reproduce - it *will* either crash the whole test
-    /// binary or hang until killed, so don't run it as part of the normal
-    /// suite. See the conversation/commit history around this test for the
-    /// full investigation and the decision to explore whether a built-in
-    /// Windows API (ProjFS) sidesteps this before sinking more time into
-    /// WinFSP's exit path specifically.
-    #[ignore = "fuse_exit crashes / external Stop-Service hangs - see doc comment"]
-    #[test]
-    fn mounts_and_serves_getattr_and_readdir_via_real_winfsp() {
-        let parent_dir = tempfile::tempdir().unwrap();
-        let mount_path = parent_dir.path().join("mnt");
-
-        let handle = {
-            let mount_path = mount_path.clone();
-            std::thread::spawn(move || run(&mount_path))
-        };
-
-        let deadline = Instant::now() + Duration::from_secs(10);
-        let mut names: Vec<String>;
-        loop {
-            names = std::fs::read_dir(&mount_path)
-                .map(|entries| {
-                    entries
-                        .filter_map(|e| e.ok())
-                        .map(|e| e.file_name().to_string_lossy().into_owned())
-                        .collect()
-                })
-                .unwrap_or_default();
-            if !names.is_empty() {
-                break;
-            }
-            assert!(
-                Instant::now() < deadline,
-                "mount did not become ready within 10s \
-                 (requires WinFSP to be installed - investigate if this fails in CI)"
-            );
-            std::thread::sleep(Duration::from_millis(100));
-        }
-        assert_eq!(names, vec!["hello.txt".to_string()]);
-
-        let meta = std::fs::metadata(mount_path.join("hello.txt")).unwrap();
-        assert!(meta.is_file());
-        assert_eq!(meta.len(), HELLO_CONTENT.len() as u64);
-
-        // `std::fs::metadata`'s underlying handle close (`release`) is
-        // dispatched asynchronously by WinFSP - `metadata()` returning
-        // doesn't mean it already ran. Calling `fuse_exit` while a request
-        // is still in flight crashed (see the investigation in this
-        // commit's history); wait for `release` to actually finish first.
-        let release_deadline = Instant::now() + Duration::from_secs(5);
-        while !RELEASE_SEEN.load(Ordering::Acquire) {
-            assert!(
-                Instant::now() < release_deadline,
-                "release() was not observed within 5s"
-            );
-            std::thread::sleep(Duration::from_millis(20));
-        }
-
-        // Both known ways to ask WinFSP to stop turned out unsound - see
-        // the #[ignore] reason above. request_exit() (fuse_exit) is kept
-        // here as the more central, better-diagnosed of the two (crashes
-        // fast and deterministically, rather than hanging indefinitely
-        // like externally stopping the WinFSP-registered service did).
-        request_exit();
-        let exit_code = handle.join().expect("mount thread panicked");
-        assert_eq!(exit_code, 0, "fsp_fuse3_main_real exited with an error");
+    if exit_code == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!(
+            "WinFSP fuse_main_real exited with code {exit_code}"
+        )))
     }
 }

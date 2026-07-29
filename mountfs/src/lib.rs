@@ -1,9 +1,11 @@
 //! Platform-abstracted repository mounting. See
 //! `docs/plans/cross-platform-mount-crate.md` for the design and current
 //! status - the [`MountFilesystem`] trait and [`mount`] below match that
-//! plan's "Crate design" section; only the Linux backend (`linux` module,
-//! real system libfuse3 via its high-level `fuse_operations` API) is
-//! implemented so far, read-only. No Windows/WinFSP backend yet.
+//! plan's "Crate design" section. Both the Linux (`linux`, real system
+//! libfuse3) and Windows (`windows`, WinFSP's FUSE3-compatible API)
+//! backends implement the full read-only op set - see the plan's "Windows
+//! checkpoint" note for `windows`'s one known gap (no working in-process
+//! clean-shutdown path yet).
 
 /// A POSIX error number (e.g. `Errno::ENOENT`), returned by
 /// [`MountFilesystem`] methods on failure. Kept as this crate's own type
@@ -83,13 +85,13 @@ pub mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::mount;
 
-// Not wired up to `mount()`/`MountFilesystem` yet - still just the
-// sequencing plan's step-4 spike (see `windows/mod.rs`), same stage the
-// Linux backend was at after its own first commit.
 #[cfg(target_os = "windows")]
 pub mod windows;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "windows")]
+pub use windows::mount;
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub fn mount<T: MountFilesystem>(
     _fs: T,
     _mountpoint: &std::path::Path,

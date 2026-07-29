@@ -16,9 +16,9 @@
 //! (`inc/winfsp/winfsp.h`) rather than vendoring that much larger header
 //! just for one function.
 //!
-//! Only `getattr` and `readdir` are given real signatures for now (the
-//! Windows spike's scope, matching the Linux backend's first commit) -
-//! every other `fuse3_operations` slot is typed as a same-size, unused
+//! `getattr`/`readdir`/`open`/`read`/`release`/`statfs` (the full read-only
+//! set, matching the Linux backend) are given real signatures - every
+//! other `fuse3_operations` slot is typed as a same-size, unused
 //! function-pointer placeholder.
 
 #![allow(non_camel_case_types)]
@@ -67,8 +67,6 @@ pub struct fuse_stat {
 }
 
 /// Mirrors `struct fuse_statvfs` (Win64 variant - all fields are `u64`).
-/// Unused until `statfs` is implemented (not part of this spike's scope).
-#[allow(dead_code)]
 #[repr(C)]
 pub struct fuse_statvfs {
     pub f_bsize: u64,
@@ -84,13 +82,31 @@ pub struct fuse_statvfs {
     pub f_namemax: u64,
 }
 
-/// Mirrors `struct fuse3_file_info` (`fuse3/fuse_common.h`) - the
-/// individual bitfields are collapsed into a single `bits` field, same
-/// rationale as the Linux backend's equivalent type.
+/// Mirrors `struct fuse3_file_info` (`fuse3/fuse_common.h`):
+/// ```c
+/// int flags;
+/// unsigned int writepage:1, direct_io:1, keep_cache:1, flush:1,
+///              nonseekable:1, flock_release:1, padding:27;
+/// uint64_t fh;
+/// uint64_t lock_owner;
+/// uint32_t poll_events;
+/// ```
+/// The six named 1-bit fields plus `padding:27` add up to 33 bits, which
+/// overflows a single 32-bit `unsigned int` storage unit - MSVC (like
+/// GCC) starts a *second* 4-byte unit for the field that doesn't fit
+/// (`padding:27`), rather than splitting a field across two units. That
+/// second unit is collapsed into plain `bits2` here (nothing reads the
+/// individual bits yet, same rationale as the Linux backend's equivalent
+/// type) - getting this wrong shifts `fh` from offset 16 to offset 8,
+/// which silently corrupted the file handle threaded through `open`/
+/// `read`/`release` (confirmed by a wrong-file-content bug once `read`
+/// started actually using `fh`, not just an untested theoretical
+/// mismatch).
 #[repr(C)]
 pub struct fuse_file_info {
     pub flags: c_int,
-    pub bits: u32,
+    pub bits1: u32,
+    pub bits2: u32,
     pub fh: u64,
     pub lock_owner: u64,
     pub poll_events: u32,
@@ -135,9 +151,17 @@ pub struct fuse_operations {
     pub chown: Unimplemented,
     pub truncate: Unimplemented,
     pub open: Option<unsafe extern "C" fn(*const c_char, *mut fuse_file_info) -> c_int>,
-    pub read: Unimplemented,
+    pub read: Option<
+        unsafe extern "C" fn(
+            *const c_char,
+            *mut c_char,
+            usize,
+            fuse_off_t,
+            *mut fuse_file_info,
+        ) -> c_int,
+    >,
     pub write: Unimplemented,
-    pub statfs: Unimplemented,
+    pub statfs: Option<unsafe extern "C" fn(*const c_char, *mut fuse_statvfs) -> c_int>,
     pub flush: Option<unsafe extern "C" fn(*const c_char, *mut fuse_file_info) -> c_int>,
     pub release: Option<unsafe extern "C" fn(*const c_char, *mut fuse_file_info) -> c_int>,
     pub fsync: Unimplemented,
@@ -266,8 +290,6 @@ type FuseMainReal = unsafe extern "C" fn(
 
 type FuseGetContext = unsafe extern "C" fn(env: *const fuse_env) -> *mut fuse_context;
 
-type FuseExit = unsafe extern "C" fn(env: *const fuse_env, fuse: *mut c_void);
-
 #[link(name = "kernel32")]
 unsafe extern "system" {
     fn LoadLibraryW(lp_lib_file_name: *const u16) -> *mut c_void;
@@ -347,7 +369,6 @@ unsafe fn resolve<T: Copy>(module: *mut c_void, name: &CStr) -> Option<T> {
 struct Exports {
     main_real: FuseMainReal,
     get_context: FuseGetContext,
-    exit: FuseExit,
 }
 
 // SAFETY: these are plain code pointers into a DLL that stays loaded and
@@ -365,12 +386,9 @@ fn exports() -> &'static Exports {
             .expect("winfsp-x64.dll is missing fsp_fuse3_main_real");
         let get_context = unsafe { resolve(module, c"fsp_fuse3_get_context") }
             .expect("winfsp-x64.dll is missing fsp_fuse3_get_context");
-        let exit = unsafe { resolve(module, c"fsp_fuse3_exit") }
-            .expect("winfsp-x64.dll is missing fsp_fuse3_exit");
         Exports {
             main_real,
             get_context,
-            exit,
         }
     })
 }
@@ -392,14 +410,4 @@ pub unsafe fn fuse_main_real(
 pub fn fuse_get_context() -> *mut fuse_context {
     let get_context = exports().get_context;
     unsafe { get_context(fuse_env()) }
-}
-
-/// Equivalent to real libfuse3's `fuse_exit` - `fuse` is the `struct
-/// fuse3 *` obtained from `(*fuse_get_context()).fuse` during a callback
-/// (there's no other way to get it: unlike real libfuse's `fuse_main`,
-/// WinFSP's `fuse_main`-equivalent doesn't hand the handle back to the
-/// caller, only to callbacks via the context, while it runs).
-pub unsafe fn fuse_exit(fuse: *mut c_void) {
-    let exit = exports().exit;
-    unsafe { exit(fuse_env(), fuse) };
 }

@@ -28,36 +28,75 @@ use crate::chunk_store::read_chunk_bytes;
 
 #[derive(Args)]
 pub struct MountArgs {
-    /// Directory to mount the repository's file tree at. Must already exist
-    /// and be empty.
+    /// Directory to mount the repository's file tree at.
+    ///
+    /// On Linux, must already exist and be empty (FUSE mounts onto an
+    /// existing mountpoint). On Windows, must *not* already exist (WinFSP
+    /// creates it itself as part of mounting).
     mountpoint: PathBuf,
 }
 
-pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
-    if !args.mountpoint.is_dir() {
-        eprintln!(
-            "error: mountpoint '{}' is not an existing directory",
-            args.mountpoint.display()
-        );
-        return ExitCode::FAILURE;
+/// FUSE (Linux) mounts onto an existing, empty directory; WinFSP
+/// (Windows) creates the mountpoint itself and errors if it's already
+/// there ("mount point in use") - opposite preconditions, so this can't be
+/// one platform-independent check.
+#[cfg(target_os = "windows")]
+fn validate_mountpoint(mountpoint: &Path) -> Result<(), String> {
+    if mountpoint.exists() {
+        return Err(format!(
+            "mountpoint '{}' already exists - WinFSP creates it itself, remove it first",
+            mountpoint.display()
+        ));
     }
-    match std::fs::read_dir(&args.mountpoint) {
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn validate_mountpoint(mountpoint: &Path) -> Result<(), String> {
+    if !mountpoint.is_dir() {
+        return Err(format!(
+            "mountpoint '{}' is not an existing directory",
+            mountpoint.display()
+        ));
+    }
+    match std::fs::read_dir(mountpoint) {
         Ok(mut entries) => {
             if entries.next().is_some() {
-                eprintln!(
-                    "error: mountpoint '{}' is not empty",
-                    args.mountpoint.display()
-                );
-                return ExitCode::FAILURE;
+                return Err(format!(
+                    "mountpoint '{}' is not empty",
+                    mountpoint.display()
+                ));
             }
         }
         Err(err) => {
-            eprintln!(
-                "error: failed to read mountpoint '{}': {err}",
-                args.mountpoint.display()
-            );
-            return ExitCode::FAILURE;
+            return Err(format!(
+                "failed to read mountpoint '{}': {err}",
+                mountpoint.display()
+            ));
         }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn unmount_hint(mountpoint: &Path) -> String {
+    let _ = mountpoint;
+    "unmount by closing this process (Ctrl+C) or killing it".to_string()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn unmount_hint(mountpoint: &Path) -> String {
+    format!(
+        "unmount with `fusermount3 -u {}` or `umount {}`",
+        mountpoint.display(),
+        mountpoint.display()
+    )
+}
+
+pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
+    if let Err(msg) = validate_mountpoint(&args.mountpoint) {
+        eprintln!("error: {msg}");
+        return ExitCode::FAILURE;
     }
 
     let fs = match build_filesystem(repo) {
@@ -69,10 +108,9 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
     };
 
     println!(
-        "mounted read-only at {} (unmount with `fusermount3 -u {}` or `umount {}`)",
+        "mounted read-only at {} ({})",
         args.mountpoint.display(),
-        args.mountpoint.display(),
-        args.mountpoint.display()
+        unmount_hint(&args.mountpoint)
     );
     match mountfs::mount(fs, &args.mountpoint, true) {
         Ok(()) => ExitCode::SUCCESS,
@@ -213,7 +251,15 @@ impl MountFilesystem for DedupFs {
     }
 }
 
-#[cfg(test)]
+// This test's design (in-process mount thread, `fusermount3 -u` to
+// unmount, a pre-existing empty directory as the mountpoint) is Linux/FUSE-
+// specific throughout - see `validate_mountpoint`'s doc comment for why
+// Windows needs the opposite mountpoint precondition, and
+// `mountfs::windows`'s doc comment for why an in-process `fuse_exit`-style
+// unmount doesn't work there yet. `cli/tests/windows_mount.rs` covers the
+// equivalent ground on Windows instead, via a child process (the real
+// `backup` binary) killed from the outside.
+#[cfg(all(test, not(target_os = "windows")))]
 mod tests {
     use super::*;
     use std::path::PathBuf;
