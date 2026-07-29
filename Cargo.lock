@@ -445,6 +445,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mountfs"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "pkg-config",
+ "tempfile",
+]
+
+[[package]]
 name = "nix"
 version = "0.31.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
