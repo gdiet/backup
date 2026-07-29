@@ -1,6 +1,6 @@
 # A platform-abstracted mount crate (Linux + Windows/WinFSP)
 
-**Status**: design only, not implemented. Intended to be built on a separate branch (not `rust`), since it's a real architectural change (new crate, dropping or reworking the `fuser` dependency) rather than an incremental addition.
+**Status**: implementation starting on branch `mountfs` (branched off `rust`), since it's a real architectural change (new crate, dropping or reworking the `fuser` dependency) rather than an incremental addition.
 
 ## Context
 
