@@ -83,6 +83,12 @@ pub mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::mount;
 
+// Not wired up to `mount()`/`MountFilesystem` yet - still just the
+// sequencing plan's step-4 spike (see `windows/mod.rs`), same stage the
+// Linux backend was at after its own first commit.
+#[cfg(target_os = "windows")]
+pub mod windows;
+
 #[cfg(not(target_os = "linux"))]
 pub fn mount<T: MountFilesystem>(
     _fs: T,
