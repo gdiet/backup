@@ -14,7 +14,7 @@
 
 #![allow(non_camel_case_types)]
 
-use libc::{c_char, c_int, c_void, off_t, size_t, stat};
+use libc::{c_char, c_int, c_void, gid_t, mode_t, off_t, pid_t, size_t, stat, statvfs, uid_t};
 
 /// A `fuse_operations` slot this crate doesn't implement yet. Same size
 /// (one pointer) and alignment as every other slot regardless of its real
@@ -77,12 +77,20 @@ pub struct fuse_operations {
     pub chmod: Unimplemented,
     pub chown: Unimplemented,
     pub truncate: Unimplemented,
-    pub open: Unimplemented,
-    pub read: Unimplemented,
+    pub open: Option<unsafe extern "C" fn(*const c_char, *mut fuse_file_info) -> c_int>,
+    pub read: Option<
+        unsafe extern "C" fn(
+            *const c_char,
+            *mut c_char,
+            size_t,
+            off_t,
+            *mut fuse_file_info,
+        ) -> c_int,
+    >,
     pub write: Unimplemented,
-    pub statfs: Unimplemented,
+    pub statfs: Option<unsafe extern "C" fn(*const c_char, *mut statvfs) -> c_int>,
     pub flush: Unimplemented,
-    pub release: Unimplemented,
+    pub release: Option<unsafe extern "C" fn(*const c_char, *mut fuse_file_info) -> c_int>,
     pub fsync: Unimplemented,
     pub setxattr: Unimplemented,
     pub getxattr: Unimplemented,
@@ -126,6 +134,20 @@ impl Default for fuse_operations {
     }
 }
 
+/// Mirrors libfuse3's `struct fuse_context` (`fuse.h`) - only
+/// `private_data` is used by this crate so far (to recover the
+/// `&dyn MountFilesystem` passed as `fuse_main_real`'s `private_data`
+/// argument from inside a callback).
+#[repr(C)]
+pub struct fuse_context {
+    pub fuse: *mut c_void,
+    pub uid: uid_t,
+    pub gid: gid_t,
+    pub pid: pid_t,
+    pub private_data: *mut c_void,
+    pub umask: mode_t,
+}
+
 unsafe extern "C" {
     /// `fuse_main_real` - the non-macro function `fuse_main(argc, argv, op,
     /// private_data)` expands to (`fuse_main` adds `sizeof(*op)` as
@@ -138,4 +160,7 @@ unsafe extern "C" {
         op_size: size_t,
         private_data: *mut c_void,
     ) -> c_int;
+
+    /// Valid only during a callback made by libfuse on the calling thread.
+    pub fn fuse_get_context() -> *mut fuse_context;
 }
