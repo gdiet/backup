@@ -159,6 +159,17 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
     let (sources, target) = args.paths.split_at(args.paths.len() - 1);
     let target = &target[0];
 
+    let source_errors: Vec<String> = sources
+        .iter()
+        .filter_map(|source| check_source_readable(source).err())
+        .collect();
+    if !source_errors.is_empty() {
+        for msg in &source_errors {
+            eprintln!("error: {msg}");
+        }
+        return ExitCode::FAILURE;
+    }
+
     let repository = match db::open_repository(repo) {
         Ok(r) => r,
         Err(err) => {
@@ -345,6 +356,33 @@ fn resolve_target(
         }
     }
     Ok(parent_id)
+}
+
+/// Checks that `source` itself (just this one node, not anything beneath it)
+/// exists and is actually readable, before any repository/target work
+/// starts. `walk_and_create_dirs` below already logs-and-skips access errors
+/// it hits *during* the tree walk (an unreadable subdirectory shouldn't abort
+/// the whole backup), but that per-entry recovery means a source that's
+/// completely inaccessible from the start (typo'd path, missing permission)
+/// would otherwise only ever surface as a buried warning while the command
+/// still exits successfully - this catches that case up front instead, the
+/// same way [`resolve_target`] validates the target before any work starts.
+fn check_source_readable(source: &Path) -> Result<(), String> {
+    let metadata = std::fs::metadata(source)
+        .map_err(|err| format!("cannot access source '{}': {err}", source.display()))?;
+    if metadata.is_dir() {
+        std::fs::read_dir(source)
+            .map_err(|err| format!("cannot read source directory '{}': {err}", source.display()))?;
+    } else if metadata.is_file() {
+        File::open(source)
+            .map_err(|err| format!("cannot read source file '{}': {err}", source.display()))?;
+    } else {
+        return Err(format!(
+            "source '{}' is neither a regular file nor a directory",
+            source.display()
+        ));
+    }
+    Ok(())
 }
 
 /// Walks `source` (a file or a directory) in a single pass, creating the
@@ -610,6 +648,7 @@ fn flush(conn: &mut Connection, batch: &mut Vec<db::FileBackupRecord>, abort: &A
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::PermissionsExt;
 
     fn init_repo() -> (tempfile::TempDir, PathBuf) {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -640,6 +679,45 @@ mod tests {
             row.get(0)
         })
         .unwrap()
+    }
+
+    #[test]
+    fn run_store_fails_fast_for_a_missing_source_without_touching_the_target() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        let missing_source = source_dir.path().join("does-not-exist");
+
+        let exit = run_store(
+            &repo_root,
+            backup_args(vec![missing_source, PathBuf::from("target")]),
+        );
+
+        assert_eq!(exit, ExitCode::FAILURE);
+        let c = conn(&repo_root);
+        assert_eq!(
+            count(&c, "tree_entries"),
+            1,
+            "only the root entry - the target must never have been created"
+        );
+    }
+
+    #[test]
+    fn run_store_fails_fast_for_an_unreadable_source_directory() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        let unreadable = source_dir.path().join("locked");
+        std::fs::create_dir(&unreadable).unwrap();
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let exit = run_store(
+            &repo_root,
+            backup_args(vec![unreadable.clone(), PathBuf::from("target")]),
+        );
+
+        std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(exit, ExitCode::FAILURE);
+        let c = conn(&repo_root);
+        assert_eq!(count(&c, "tree_entries"), 1, "only the root entry");
     }
 
     #[test]
