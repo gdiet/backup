@@ -17,6 +17,7 @@ pub struct Errno(pub i32);
 impl Errno {
     pub const ENOENT: Errno = Errno(2);
     pub const EIO: Errno = Errno(5);
+    pub const EISDIR: Errno = Errno(21);
     pub const EROFS: Errno = Errno(30);
 }
 

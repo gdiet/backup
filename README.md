@@ -179,10 +179,16 @@ backup mount <mountpoint>
 ```
 
 Mounts the repository's file tree read-only via FUSE at `<mountpoint>`
-(Linux only), so it can be browsed and read with ordinary tools (`ls`,
-`cat`, `cp`, etc.) instead of `list`/`restore`. `<mountpoint>` must already
-exist and be empty. Blocks until the filesystem is unmounted from another
-terminal (`fusermount -u <mountpoint>` or `umount <mountpoint>`).
+(Linux only for now - see `docs/plans/cross-platform-mount-crate.md` for a
+planned Windows/WinFSP backend), so it can be browsed and read with
+ordinary tools (`ls`, `cat`, `cp`, etc.) instead of `list`/`restore`.
+`<mountpoint>` must already exist and be empty. Blocks until the
+filesystem is unmounted from another terminal (`fusermount3 -u
+<mountpoint>` or `umount <mountpoint>`).
+
+Requires `libfuse3-dev`/`fuse3-devel` at build time and `libfuse3` at
+runtime (Debian/Ubuntu: `apt install libfuse3-dev`; Fedora: `dnf install
+fuse3-devel`).
 
 Read-write support (writes held in-process, only committed to the
 repository once the write handle closes) is designed but not yet
