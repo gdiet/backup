@@ -1,4 +1,6 @@
-use std::fs::{self, File, OpenOptions};
+#[cfg(not(windows))]
+use std::fs::File;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -231,20 +233,44 @@ fn restore_file(
         }
     }
 
+    // Set mtime on the handle that's already open for writing, rather than
+    // reopening the path: a fresh read-only open (`File::open`) doesn't carry
+    // FILE_WRITE_ATTRIBUTES on Windows, which makes `set_times` a silent
+    // no-op there.
+    let _ = file.set_times(std::fs::FileTimes::new().set_modified(mtime_from_millis(entry.time_millis)));
     drop(file);
-    set_mtime(&file_target, entry.time_millis);
 }
 
-/// Restores `path`'s modified time from a stored epoch-millis timestamp.
-/// Works for both files and directories (opened read-only, sufficient on
-/// Unix to change timestamps if permission allows). Best-effort: a failure
-/// here isn't worth treating as a restore warning on its own.
+fn mtime_from_millis(time_millis: i64) -> std::time::SystemTime {
+    UNIX_EPOCH + Duration::from_millis(time_millis.max(0) as u64)
+}
+
+/// Restores a directory's modified time from a stored epoch-millis
+/// timestamp. Best-effort: a failure here isn't worth treating as a restore
+/// warning on its own.
 fn set_mtime(path: &Path, time_millis: i64) {
-    let Ok(file) = File::open(path) else {
+    let times = std::fs::FileTimes::new().set_modified(mtime_from_millis(time_millis));
+
+    // Plain read access is enough to change timestamps on Unix, but on
+    // Windows a read-only handle doesn't carry FILE_WRITE_ATTRIBUTES, so
+    // `set_times` would silently fail. Opening a directory for write on
+    // Windows additionally requires FILE_FLAG_BACKUP_SEMANTICS, since
+    // `CreateFile` otherwise refuses directory handles outright.
+    #[cfg(windows)]
+    let opened = {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+        OpenOptions::new()
+            .write(true)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)
+    };
+    #[cfg(not(windows))]
+    let opened = File::open(path);
+
+    let Ok(file) = opened else {
         return;
     };
-    let modified = UNIX_EPOCH + Duration::from_millis(time_millis.max(0) as u64);
-    let times = std::fs::FileTimes::new().set_modified(modified);
     let _ = file.set_times(times);
 }
 
@@ -364,6 +390,32 @@ mod tests {
 
         assert_eq!(exit, ExitCode::SUCCESS);
         assert_eq!(fs::read(target.join("empty.txt")).unwrap(), b"");
+    }
+
+    #[test]
+    fn restores_a_directorys_own_mtime() {
+        let (temp_dir, repo_root) = init_repo();
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_write_connection().unwrap();
+        db::insert_directory(&conn, 0, "sub", 1_704_067_200_000).unwrap();
+        drop(conn);
+        let target = temp_dir.path().join("out");
+        fs::create_dir(&target).unwrap();
+
+        let exit = run_restore(
+            &repo_root,
+            RestoreArgs {
+                overwrite: false,
+                paths: vec![PathBuf::from(""), target.clone()],
+            },
+        );
+
+        assert_eq!(exit, ExitCode::SUCCESS);
+        let mtime = fs::metadata(target.join("sub")).unwrap().modified().unwrap();
+        assert_eq!(
+            mtime.duration_since(UNIX_EPOCH).unwrap().as_millis() as i64,
+            1_704_067_200_000
+        );
     }
 
     #[test]
