@@ -28,6 +28,18 @@ const HELLO_CONTENT: &[u8] = b"hello from the mountfs Windows spike\n";
 /// `sys::fuse_exit`'s doc comment for why this is the only way to get it.
 static ACTIVE_FUSE_HANDLE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
 
+fn debug_log(msg: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(std::env::temp_dir().join("mountfs_debug.log"))
+    {
+        let _ = writeln!(f, "{msg}");
+        let _ = f.flush();
+    }
+}
+
 fn remember_fuse_handle() {
     let ctx = sys::fuse_get_context();
     if !ctx.is_null() {
@@ -41,12 +53,13 @@ fn remember_fuse_handle() {
 unsafe extern "C" fn getattr(
     path: *const c_char,
     stbuf: *mut fuse_stat,
-    _fi: *mut sys::fuse_file_info,
+    fi: *mut sys::fuse_file_info,
 ) -> c_int {
     remember_fuse_handle();
     let path = unsafe { CStr::from_ptr(path) };
+    debug_log(&format!("getattr enter path={path:?} fi={fi:?}"));
     unsafe { std::ptr::write_bytes(stbuf, 0, 1) };
-    if path.to_bytes() == b"/" {
+    let result = if path.to_bytes() == b"/" {
         unsafe {
             (*stbuf).st_mode = 0o040000 | 0o755; // S_IFDIR
             (*stbuf).st_nlink = 2;
@@ -61,7 +74,9 @@ unsafe extern "C" fn getattr(
         0
     } else {
         -libc::ENOENT
-    }
+    };
+    debug_log(&format!("getattr exit result={result}"));
+    result
 }
 
 unsafe extern "C" fn readdir(
@@ -74,6 +89,7 @@ unsafe extern "C" fn readdir(
 ) -> c_int {
     remember_fuse_handle();
     let path = unsafe { CStr::from_ptr(path) };
+    debug_log(&format!("readdir enter path={path:?}"));
     if path.to_bytes() != b"/" {
         return -libc::ENOENT;
     }
@@ -83,12 +99,42 @@ unsafe extern "C" fn readdir(
     for name in [c".", c"..", HELLO_NAME] {
         unsafe { filler(buf, name.as_ptr(), std::ptr::null(), 0, 0) };
     }
+    debug_log("readdir exit");
     0
 }
 
-unsafe extern "C" fn open(path: *const c_char, _fi: *mut sys::fuse_file_info) -> c_int {
+unsafe extern "C" fn open(path: *const c_char, fi: *mut sys::fuse_file_info) -> c_int {
     let path = unsafe { CStr::from_ptr(path) };
-    if path == HELLO_PATH { 0 } else { -libc::ENOENT }
+    debug_log(&format!("open enter path={path:?} fi={fi:?}"));
+    let result = if path == HELLO_PATH { 0 } else { -libc::ENOENT };
+    debug_log(&format!("open exit result={result}"));
+    result
+}
+
+unsafe extern "C" fn release(_path: *const c_char, _fi: *mut sys::fuse_file_info) -> c_int {
+    debug_log("release enter/exit");
+    0
+}
+
+unsafe extern "C" fn flush(_path: *const c_char, _fi: *mut sys::fuse_file_info) -> c_int {
+    debug_log("flush enter/exit");
+    0
+}
+
+unsafe extern "C" fn opendir(path: *const c_char, _fi: *mut sys::fuse_file_info) -> c_int {
+    let path = unsafe { CStr::from_ptr(path) };
+    debug_log(&format!("opendir enter/exit path={path:?}"));
+    if path.to_bytes() == b"/" {
+        0
+    } else {
+        -libc::ENOENT
+    }
+}
+
+unsafe extern "C" fn access(path: *const c_char, mask: c_int) -> c_int {
+    let path = unsafe { CStr::from_ptr(path) };
+    debug_log(&format!("access enter/exit path={path:?} mask={mask}"));
+    0
 }
 
 /// Runs the spike filesystem, blocking until unmounted (see
@@ -100,6 +146,10 @@ pub fn run(mountpoint: &Path) -> i32 {
         getattr: Some(getattr),
         readdir: Some(readdir),
         open: Some(open),
+        release: Some(release),
+        flush: Some(flush),
+        opendir: Some(opendir),
+        access: Some(access),
         ..sys::fuse_operations::default()
     };
 
