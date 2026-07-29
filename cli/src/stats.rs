@@ -123,7 +123,7 @@ fn print_repo_stats(stats: &RepoStats) {
 
 /// Reports gaps left in the data store by past `reclaim-space` runs that
 /// `store` hasn't (yet, or ever, if none since fit a new chunk) reused - see
-/// `docs/plans/chunk-extents.md` for why this is surfaced rather than left a
+/// `docs/plans/implemented/03-chunk-extents.md` for why this is surfaced rather than left a
 /// silent, growing blind spot.
 fn print_free_space(gap_count: i64, total_free_bytes: i64) {
     if gap_count == 0 {

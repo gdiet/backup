@@ -1,5 +1,7 @@
 # Mount a FUSE dedup filesystem (read-only now, read-write designed for later) + fix `list <file>` missing mtime
 
+**Status**: §0 (mtime fix) and §1 (Phase 1, read-only mount) are implemented - see `backup mount` in the README. §2 (Phase 2, read-write) is still just a design, not implemented; this doc stays in `docs/plans/` (not `docs/plans/implemented/`) until that's done.
+
 ## Context
 
 The Scala tool this Rust rewrite replaces can be FUSE-mounted read-only or read-write, with an in-process write cache (RAM, spilling to a temp file under memory pressure) and a backpressure mechanism that slows writers down as the async persist pipeline falls behind. The user wants the same capability here, modeled closely on the Scala design, plus a small unrelated bug fix: `list <path-to-a-file>` doesn't show the file's mtime (only `list <path-to-a-directory>`'s per-child listing does), because both call the same shared `print_file_info` helper, which never prints a timestamp.
@@ -94,7 +96,7 @@ Mirrors Scala's `Handle{count, current_dataId, current_cache, persisting_queue}`
 
 ## 3. Prerequisite: store-space reuse after `reclaim-space`
 
-Raised during this planning session, detailed and decided separately in `docs/plans/chunk-extents.md` (multi-part chunk extents + an encapsulated free-list allocator, Option A there) - a prerequisite for Phase 2 (read-write) above, since that's the other place that would otherwise inherit today's flawed append-only space allocation. Independent of Phase 1 (read-only, never allocates store space). Not yet decided whether to build it before or after Phase 1.
+Raised during this planning session, detailed and decided separately in `docs/plans/implemented/03-chunk-extents.md` (multi-part chunk extents + an encapsulated free-list allocator, Option A there) - a prerequisite for Phase 2 (read-write) above, since that's the other place that would otherwise inherit today's flawed append-only space allocation. Independent of Phase 1 (read-only, never allocates store space). **Implemented** (before Phase 1 below), so Phase 2 can build directly on `cli::chunk_store`'s allocator/read/write helpers when it's taken up.
 
 ---
 

@@ -210,7 +210,7 @@ pub fn chunk_extents_sorted(conn: &Connection) -> Result<Vec<(i64, i64)>, Error>
 /// Fragmentation visibility for `stats`: the number of gaps between existing
 /// extents, and their total size in bytes. Does not count the open-ended
 /// region past the last extent - that's simply not-yet-used store space, not
-/// waste. See `docs/plans/chunk-extents.md` for why this is worth surfacing
+/// waste. See `docs/plans/implemented/03-chunk-extents.md` for why this is worth surfacing
 /// rather than leaving as a silent, growing blind spot.
 pub fn free_space_summary(conn: &Connection) -> Result<(i64, i64), Error> {
     let extents = chunk_extents_sorted(conn)?;

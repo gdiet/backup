@@ -1,5 +1,5 @@
 //! Encapsulates "a chunk's bytes may live in more than one physical extent
-//! in the data store" (see `docs/plans/chunk-extents.md`) behind a small
+//! in the data store" (see `docs/plans/implemented/03-chunk-extents.md`) behind a small
 //! space allocator and two read/write helpers - the only things in this
 //! codebase that need to know that. Every other consumer of chunk bytes
 //! (`store`'s writer, `check`, `restore`, a future FUSE mount) goes through

@@ -756,7 +756,7 @@ mod tests {
         );
     }
 
-    /// Acceptance test for `docs/plans/chunk-extents.md`: space freed by
+    /// Acceptance test for `docs/plans/implemented/03-chunk-extents.md`: space freed by
     /// deleting and reclaiming a chunk must be reused by a later `store` run,
     /// instead of the data store only ever growing.
     #[test]
