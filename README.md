@@ -186,7 +186,7 @@ terminal (`fusermount -u <mountpoint>` or `umount <mountpoint>`).
 
 Read-write support (writes held in-process, only committed to the
 repository once the write handle closes) is designed but not yet
-implemented - see `docs/plans/fuse-mount.md`.
+implemented - see `docs/plans/fuse-mount-readwrite.md`.
 
 ## Development
 

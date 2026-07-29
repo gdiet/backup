@@ -1,6 +1,7 @@
 //! Read-only FUSE mount (`backup mount <mountpoint>`) - see
-//! `docs/plans/fuse-mount.md` §1 for the design (§2 covers a future
-//! read-write phase, not implemented here).
+//! `docs/plans/implemented/04-fuse-mount-readonly.md` for the design.
+//! `docs/plans/fuse-mount-readwrite.md` covers a future read-write phase,
+//! not implemented here.
 //!
 //! Every callback is answerable with functions the other commands already
 //! use (`db::find_tree_entry`/`get_tree_entry`, `db::list_children`,
