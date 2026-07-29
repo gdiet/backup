@@ -15,7 +15,7 @@ mod sys;
 
 use std::ffi::{CStr, CString, c_char, c_int, c_void};
 use std::path::Path;
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
 
 use sys::{fuse_off_t, fuse_stat};
 
@@ -27,6 +27,11 @@ const HELLO_CONTENT: &[u8] = b"hello from the mountfs Windows spike\n";
 /// from `fuse_get_context()` the first time any callback fires - see
 /// `sys::fuse_exit`'s doc comment for why this is the only way to get it.
 static ACTIVE_FUSE_HANDLE: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
+
+/// Set once `release` has actually completed for the test's one file
+/// handle - see the doc comment on the test's wait loop for why calling
+/// `fuse_exit` before that is unsound.
+static RELEASE_SEEN: AtomicBool = AtomicBool::new(false);
 
 fn debug_log(msg: &str) {
     use std::io::Write;
@@ -42,8 +47,17 @@ fn debug_log(msg: &str) {
 
 fn remember_fuse_handle() {
     let ctx = sys::fuse_get_context();
+    debug_log(&format!("remember_fuse_handle ctx={ctx:?}"));
     if !ctx.is_null() {
         let fuse = unsafe { (*ctx).fuse };
+        debug_log(&format!(
+            "remember_fuse_handle ctx.fuse={fuse:?} uid={} gid={} pid={} private_data={:?} umask={}",
+            unsafe { (*ctx).uid },
+            unsafe { (*ctx).gid },
+            unsafe { (*ctx).pid },
+            unsafe { (*ctx).private_data },
+            unsafe { (*ctx).umask }
+        ));
         if !fuse.is_null() {
             ACTIVE_FUSE_HANDLE.store(fuse, Ordering::Release);
         }
@@ -113,6 +127,7 @@ unsafe extern "C" fn open(path: *const c_char, fi: *mut sys::fuse_file_info) -> 
 
 unsafe extern "C" fn release(_path: *const c_char, _fi: *mut sys::fuse_file_info) -> c_int {
     debug_log("release enter/exit");
+    RELEASE_SEEN.store(true, Ordering::Release);
     0
 }
 
@@ -181,9 +196,11 @@ pub fn run(mountpoint: &Path) -> i32 {
 #[allow(dead_code)] // referenced only from the test below for now
 fn request_exit() {
     let handle = ACTIVE_FUSE_HANDLE.load(Ordering::Acquire);
+    debug_log(&format!("request_exit handle={handle:?}"));
     if !handle.is_null() {
         unsafe { sys::fuse_exit(handle) };
     }
+    debug_log("request_exit done");
 }
 
 #[cfg(test)]
@@ -193,9 +210,27 @@ mod tests {
 
     /// End-to-end: mounts the spike filesystem via real WinFSP
     /// (`fsp_fuse3_main_real`), reads it back through ordinary `std::fs`
-    /// calls, and unmounts via `fuse_exit` (see its doc comment) - proving
-    /// the hand-written WinFSP bindings work end-to-end on this machine's
-    /// installed WinFSP runtime, not just that they compile.
+    /// calls. The read path (getattr/readdir/open/flush/release) is
+    /// confirmed working end-to-end against the real installed WinFSP
+    /// runtime - the part this #[ignore] is about is purely the clean-
+    /// shutdown step at the end.
+    ///
+    /// Ignored by default: two different ways of asking WinFSP to stop the
+    /// mount were tried and neither is sound yet -
+    /// `fuse_exit`/`fsp_fuse3_exit` crashes deterministically inside
+    /// `winfsp-x64.dll` (confirmed with a real stack trace via `cdb`:
+    /// faults in `fsp_fuse3_exit+0xd`, reading address `0x478`, regardless
+    /// of whether any request is in flight when it's called), and
+    /// externally stopping the Windows service WinFSP registers for the
+    /// mount (`Stop-Service`) hangs indefinitely instead of unblocking the
+    /// in-process `fuse_main_real`-equivalent call. Run with
+    /// `--ignored` to reproduce - it *will* either crash the whole test
+    /// binary or hang until killed, so don't run it as part of the normal
+    /// suite. See the conversation/commit history around this test for the
+    /// full investigation and the decision to explore whether a built-in
+    /// Windows API (ProjFS) sidesteps this before sinking more time into
+    /// WinFSP's exit path specifically.
+    #[ignore = "fuse_exit crashes / external Stop-Service hangs - see doc comment"]
     #[test]
     fn mounts_and_serves_getattr_and_readdir_via_real_winfsp() {
         let parent_dir = tempfile::tempdir().unwrap();
@@ -233,6 +268,25 @@ mod tests {
         assert!(meta.is_file());
         assert_eq!(meta.len(), HELLO_CONTENT.len() as u64);
 
+        // `std::fs::metadata`'s underlying handle close (`release`) is
+        // dispatched asynchronously by WinFSP - `metadata()` returning
+        // doesn't mean it already ran. Calling `fuse_exit` while a request
+        // is still in flight crashed (see the investigation in this
+        // commit's history); wait for `release` to actually finish first.
+        let release_deadline = Instant::now() + Duration::from_secs(5);
+        while !RELEASE_SEEN.load(Ordering::Acquire) {
+            assert!(
+                Instant::now() < release_deadline,
+                "release() was not observed within 5s"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+
+        // Both known ways to ask WinFSP to stop turned out unsound - see
+        // the #[ignore] reason above. request_exit() (fuse_exit) is kept
+        // here as the more central, better-diagnosed of the two (crashes
+        // fast and deterministically, rather than hanging indefinitely
+        // like externally stopping the WinFSP-registered service did).
         request_exit();
         let exit_code = handle.join().expect("mount thread panicked");
         assert_eq!(exit_code, 0, "fsp_fuse3_main_real exited with an error");

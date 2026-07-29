@@ -1,6 +1,6 @@
 # A platform-abstracted mount crate (Linux + Windows/WinFSP)
 
-**Status**: implementation starting on branch `mountfs` (branched off `rust`), since it's a real architectural change (new crate, dropping or reworking the `fuser` dependency) rather than an incremental addition.
+**Status**: on branch `mountfs` (branched off `rust`). Linux side fully done and in use (sequencing steps 1-3): `cli mount` runs on `mountfs` in production, `fuser` is gone. Windows (step 4) is a checkpoint, not a completion - see "Windows checkpoint" below before picking this back up.
 
 ## Context
 
@@ -79,12 +79,24 @@ pub fn mount(fs: impl MountFilesystem, mountpoint: &Path, read_only: bool) -> io
 
 ## Sequencing
 
-1. **Spike, Linux only**: hand-write the FFI bindings and a minimal `mountfs` implementing just `getattr`+`readdir` against real libfuse3 (pkg-config), prove the shared-API concept end-to-end on the one platform this environment can actually test, without touching the existing `fuser`-based `cli/src/mount.rs` yet.
-2. Flesh out `mountfs`'s Linux backend to the full read-only set (`open`/`read`/`release`/`statfs`), get it passing the same kind of real mount/unmount integration test `cli/src/mount.rs` already has.
-3. Switch `cli` over to `mountfs` (`DedupFs` implements `MountFilesystem`, drop the `fuser`-based code and dependency). Full regression: existing manual smoke test (mount, `ls`/`cat`/`stat`/`diff`, unmount) plus the automated suite.
-4. **On a real Windows machine** (Visual Studio Build Tools, current WinFSP installed): vendor WinFSP's `fuse3/fuse.h` headers, wire up `build.rs`'s Windows branch, build and manually smoke-test `backup mount` there. This is the actual go/no-go checkpoint for the shared-implementation approach.
+1. ~~**Spike, Linux only**~~ - done (commit `21654174`). Hand-written FFI bindings, minimal `mountfs` implementing `getattr`+`readdir` against real libfuse3, proven end-to-end under WSL2.
+2. ~~Flesh out `mountfs`'s Linux backend to the full read-only set~~ - done (commit `45ced113`). Added the public `MountFilesystem` trait/`Attr`/`DirEntry`/`Handle`/`StatfsInfo`/`Errno` types from "Crate design" below as real code, generic `extern "C"` trampolines dispatching `getattr`/`readdir`/`open`/`read`/`release`/`statfs` to any `T: MountFilesystem`.
+3. ~~Switch `cli` over to `mountfs`~~ - done (commit `535008dd`). `DedupFs` implements `MountFilesystem`, `fuser` dropped entirely from `cli/Cargo.toml`. Manually smoke-tested under WSL2 per "Verification" below (real repository, nested dirs, a 50KB multi-chunk binary file, `ls -laR`/`stat`/`cat`/`diff -r` - identical - a rejected write, clean unmount).
+4. **On a real Windows machine** (this one - Visual Studio Build Tools and WinFSP 2.0.23075 already installed, see prior conversation): vendor WinFSP's `fuse3/fuse.h` headers, wire up a Windows backend, build and manually smoke-test `backup mount` there. This is the actual go/no-go checkpoint for the shared-implementation approach - **see "Windows checkpoint (step 4)" below: partially done, deliberately paused here, not blocked outright.**
 5. If step 4 succeeds: done, add the WinFSP attribution notice (README/`--version`), document the new `libfuse3-dev` Linux build dependency, write a Windows section in the README (WinFSP install prerequisite, matching the Scala README's existing Windows section).
 6. If step 4 blocks: implement the fallback Windows-native backend described above instead, same trait, same public interface - everything from step 3 onward on the `cli` side is unaffected either way.
+
+### Windows checkpoint (step 4)
+
+As of commits `ef688414`/`39abfb12`, on this machine, against the real installed WinFSP 2.0.23075 runtime:
+
+- **The read path works end-to-end**: hand-written bindings (`mountfs/src/windows/sys.rs`) resolve WinFSP's `fsp_fuse3_*` DLL exports entirely at runtime (`LoadLibraryW`/`GetProcAddress`, falling back to the `HKLM\Software\WOW6432Node\WinFsp\InstallDir` registry value - no WinFSP SDK or import library needed at build time, confirmed). `getattr`, `readdir`, `open`, `flush`, and `release` all correctly serve real syscalls through a mounted directory (verified via file-based call logging, not just "it didn't crash").
+- **Blocker: no working clean-shutdown mechanism was found.** Two approaches were tried and ruled out with a real stack trace (via `cdb`, part of the standalone "Debugging Tools for Windows" - see the conversation for install steps if picking this up again):
+  - `fuse_exit`/`fsp_fuse3_exit(env, fuse)` crashes deterministically inside `winfsp-x64.dll` (`fsp_fuse3_exit+0xd`, reading address `0x478` - looks like a null-or-near-null internal pointer dereference inside WinFSP's own code, not obviously anything wrong on our side: `env` and `fuse` are both confirmed valid/stable via logging, and a suspected in-flight-request race was fixed and made no difference).
+  - Externally stopping the Windows service WinFSP registers for the mount (visible as "The service `<name>` has been started" on mount) via `Stop-Service`/`sc stop` hangs indefinitely instead of unblocking the in-process blocking call.
+- **This is narrower than it sounds**: it's a test-harness/lifecycle problem, not evidence the shared-API approach is unsound - the actual filesystem operations all demonstrably work. A real `cli mount` on Windows plausibly doesn't need a programmatic exit at all (Ctrl+C/closing the console/killing the process already unmounts cleanly - confirmed via `Get-Service` showing no leftover registration after the crash), matching how `run_mount` already behaves on Linux ("blocks until unmounted from another terminal"). The concrete next step if resumed: make the *test* spawn the mount as a real child process instead of an in-process thread, and terminate it externally (`taskkill`/`Stop-Process`) - sidesteps `fuse_exit` entirely rather than solving its ABI mystery.
+- The failing test (`mountfs/src/windows/mod.rs`, `mounts_and_serves_getattr_and_readdir_via_real_winfsp`) is marked `#[ignore]` with the same detail as above, so it doesn't crash/hang the normal suite.
+- **Before resuming this specific path**: a separate branch is being used to spike whether a *built-in* Windows API (no third-party driver install) - Projected File System (ProjFS), specifically - is a better fit than WinFSP altogether for the read-only phase. See that branch (name TBD when created) for the outcome; come back here and continue from this checkpoint if it doesn't pan out.
 
 ## Not yet decided
 

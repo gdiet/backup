@@ -216,11 +216,36 @@ unsafe extern "C" fn noop_set_signal_handlers(_se: *mut c_void) -> c_int {
     0
 }
 
+#[link(name = "kernel32")]
+unsafe extern "system" {
+    fn GetProcessHeap() -> *mut c_void;
+    fn HeapAlloc(h_heap: *mut c_void, dw_flags: u32, dw_bytes: usize) -> *mut c_void;
+    fn HeapFree(h_heap: *mut c_void, dw_flags: u32, lp_mem: *mut c_void) -> i32;
+}
+
+/// Uses the process's default OS heap (`GetProcessHeap`) rather than
+/// `libc::malloc`/`free` - ruling out a CRT-mismatch heap corruption
+/// hypothesis (winfsp-x64.dll and this Rust binary could plausibly link
+/// against different CRT instances; `HeapAlloc`/`HeapFree` operate on an
+/// OS-level heap handle, not a CRT-specific one, so are safe to pair
+/// across a DLL boundary regardless of which CRT compiled which side).
+unsafe extern "C" fn heap_alloc(size: usize) -> *mut c_void {
+    unsafe { HeapAlloc(GetProcessHeap(), 0, size) }
+}
+
+unsafe extern "C" fn heap_free(ptr: *mut c_void) {
+    if !ptr.is_null() {
+        unsafe {
+            HeapFree(GetProcessHeap(), 0, ptr);
+        }
+    }
+}
+
 fn fuse_env() -> &'static fuse_env {
     static ENV: fuse_env = fuse_env {
         environment: b'W' as u32,
-        memalloc: Some(libc::malloc),
-        memfree: Some(libc::free),
+        memalloc: Some(heap_alloc),
+        memfree: Some(heap_free),
         daemonize: Some(noop_daemonize),
         set_signal_handlers: Some(noop_set_signal_handlers),
         conv_to_win_path: None,
