@@ -152,14 +152,84 @@ pull-based scheduler gate (it decides when to start the next file/chunk),
 doesn't control the timing of. That orchestration layer likely still
 wants two shapes even if the buffer underneath is one.
 
-## Mount-specific detail (from the retired standalone stub)
+## Mount-specific detail: implemented
+
+The mount side of this problem (below) is now implemented (`cli/src/
+mount.rs`) - a bounded `mpsc::sync_channel<PersistJob>` (capacity
+`PERSIST_QUEUE_CAPACITY = 4`) plus a single dedicated background thread
+(`persist_worker`) that every persist now actually runs on. `release`
+(closing a dirty file) and bare `truncate`/`O_TRUNC` (no open handle) both
+hand their `WriteCache` off via `Inner::enqueue_persist` instead of
+persisting on the calling FUSE/WinFSP worker thread - that call only
+blocks once `PERSIST_QUEUE_CAPACITY` persists are already queued ahead of
+it, which is the actual backpressure point. `Inner` (holding all the state
+`DedupFs` used to own directly) is wrapped in `Arc` and shared between the
+FUSE/WinFSP dispatch threads and this one background thread; `DedupFs`
+itself is now just a thin `MountFilesystem`-forwarding wrapper around
+`Arc<Inner>`.
+
+This directly fixes the worker-pool-exhaustion failure mode described
+below: for the first `PERSIST_QUEUE_CAPACITY` closes in a burst, `release`
+now returns almost immediately (enqueueing is fast; the actual slow I/O
+happens on the one background thread instead), keeping every other
+FUSE/WinFSP worker thread free to service unrelated requests throughout.
+Only once the queue is genuinely full does a *new* close start blocking -
+at that point it degrades to (but never worse than) today's-shipped
+synchronous behavior, applied to a bounded number of worker threads
+instead of all of them. This is deliberately a simpler mechanism than
+Scala's `cacheLoadDelay` sleep formula (see below) - not ported, for the
+same reasons noted there - but achieves the same practical goal (smooth a
+burst, only degrade under genuinely sustained overload) with primitives
+that don't need an unverified tuning constant.
+
+Serializing persists onto one background thread (mirroring Scala's own
+single background persist thread) also means at most one persist is ever
+actually writing to the store at a time, which incidentally makes the
+pre-existing, deliberately-tolerated chunk-write race (`db::
+apply_backup_batch`'s `ON CONFLICT DO NOTHING` handling) less likely to
+fire, not more - not a goal, just a side effect worth noting.
+
+**A correctness gap closed as a side effect**: making persist
+asynchronous meant bare `truncate`/`O_TRUNC` (no open handle) could no
+longer rely on the calling thread blocking for the whole persist to keep
+a racing `open`/`read`/`getattr` from observing stale pre-truncate content
+after the `truncate(2)` call had already returned success. Fixed by
+registering a `persisting = true` placeholder in `write_states` for that
+tree id in the *same* lock hold as the "does a handle already exist"
+check, before ever enqueueing - closing a window that, on inspection,
+already existed (for the whole duration of the synchronous persist, not
+just briefly) in the shipped synchronous code too, since it never
+registered any placeholder for the bare-truncate case at all. Covered by
+`mount::tests::bare_truncate_without_a_handle_persists_before_a_racing_read_returns`
+(uses the real `truncate(1)` utility - deliberately not
+`OpenOptions::truncate(true)`, which goes through `open`'s `write_intent`
+flag rather than `MountFilesystem::truncate` and so doesn't actually
+exercise this path at all, a real trap this doc is recording for next time).
+
+The `PERSIST_QUEUE_CAPACITY` constant is fixed, not a CLI flag - see its
+doc comment in `mount.rs` for why (queued jobs are already RAM-budgeted/
+spillover-bounded the same as any other open file, so this only bounds
+how many recently-closed files can have unpersisted changes in flight at
+once, not memory directly).
+
+What's *not* addressed here: `write` itself still isn't throttled beyond
+the existing RAM-budget-driven spillover, deliberately - writes only
+touch the local write cache, decoupled from the slow-target-disk concern
+until persist time (see "Where 'the source' lives, memory-wise" above),
+so there was no failure mode there to fix. And the `write_conn` mutex
+contention noted below is unchanged (if anything, slightly reduced, since
+persist's own `apply_backup_batch` commits now come from one thread
+instead of potentially several).
+
+### Original write-up (context for the above)
 
 Kept here rather than lost - `mount`'s side of this problem was written
 up in isolation first, before the `store` discussion revealed the shared
-scope; the mount-specific mechanics below still apply and matter once a
-real design gets written.
+scope; the mount-specific mechanics below explain the failure mode the
+implementation above fixes.
 
-**Current shipped behavior**: `DedupFs::persist` runs synchronously
+**Previously shipped behavior** (now superseded by the above):
+`DedupFs::persist` ran synchronously
 inside `release` (a file's last close) and inside a bare `truncate`/
 `O_TRUNC` with no open handle - on whatever thread FUSE/WinFSP dispatched
 that call to. No background queue, no backpressure: `write` calls are

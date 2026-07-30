@@ -211,10 +211,12 @@ default, since a mount is a much larger blast radius for a mistake than
 `store`/`restore`. Writes are held in a per-file write cache (RAM up to
 `--write-cache-mb`, default 128, then spilling to a temp file) and only
 committed to the repository once the write handle closes - persisting
-runs synchronously at that point, not on a background queue, so closing
-a very large file against a slow repository disk can take a while (see
-`docs/plans/bounded-memory-io-pipeline.md` for the known limitation this
-implies and why it wasn't built yet). At startup,
+runs on a dedicated background thread via a small bounded queue, not on
+the closing call itself, so closing a file returns quickly even against a
+slow repository disk; only once several persists are already queued up
+does a further close start blocking (see
+`docs/plans/bounded-memory-io-pipeline.md`'s "Mount-specific detail" for
+the design). At startup,
 `--read-write` refuses to run if `--write-cache-mb` looks large enough,
 relative to *currently available* RAM, to risk pushing the machine into
 swapping - pass `--allow-swap-risk` to start anyway. See

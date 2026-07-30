@@ -20,7 +20,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, mpsc};
+use std::thread::JoinHandle;
 
 use cdc::{BufferingHashingChunker, CdcConfig};
 use clap::Args;
@@ -89,6 +90,22 @@ fn check_write_cache_budget(write_cache_mb: u64, allow_swap_risk: bool) -> Resul
 /// of its total size, mirroring `store.rs`'s own `READ_BUFFER_SIZE`
 /// streaming loop.
 const PERSIST_CHUNK_SIZE: u64 = 256 * 1024;
+
+/// How many closed-and-dirty files' persists can be queued ahead of the
+/// background persist thread (see `persist_worker`) before a *new*
+/// `release`/bare `truncate` call starts blocking its own FUSE/WinFSP
+/// worker thread waiting for room - the actual backpressure point. A
+/// small constant, not a CLI flag: each queued job already holds its own
+/// `WriteCache` (RAM-budgeted with disk spillover via `Inner::ram_budget`/
+/// `spill_dir`, same as any other open file), so this only bounds how many
+/// *recently closed* files can have unpersisted changes in flight at
+/// once, not memory directly - a handful is enough to smooth a burst of
+/// closes without needing to be generous. See
+/// `docs/plans/bounded-memory-io-pipeline.md`'s "Mount-specific detail"
+/// section for the failure mode this exists to fix (synchronous persist
+/// exhausting the whole worker-thread pool under a sustained slow target
+/// disk).
+const PERSIST_QUEUE_CAPACITY: usize = 4;
 
 #[derive(Args)]
 pub struct MountArgs {
@@ -261,7 +278,7 @@ fn build_filesystem(repo: &Path, read_write: bool, write_cache_mb: u64) -> Resul
     let data_store = LongTermStore::new(repository.data_dir(), !read_write);
     // A dedicated, per-process spill directory for write-cache overflow
     // (see `write_cache::WriteCache`) - created empty here, removed
-    // whole in `DedupFs::on_unmount` once every spill file in it (each
+    // whole in `Inner::on_unmount` once every spill file in it (each
     // deleted by its own `WriteCache`'s `Drop`) is gone.
     let spill_dir =
         std::env::temp_dir().join(format!("backup-mount-write-cache-{}", std::process::id()));
@@ -271,7 +288,13 @@ fn build_filesystem(repo: &Path, read_write: bool, write_cache_mb: u64) -> Resul
             spill_dir.display()
         )
     })?;
-    Ok(DedupFs {
+
+    // The persist queue and its background thread (see `persist_worker`)
+    // - `Inner` is wrapped in `Arc` (via `DedupFs`) specifically so this
+    // thread and the FUSE/WinFSP dispatch threads can share the same
+    // state safely.
+    let (persist_tx, persist_rx) = mpsc::sync_channel::<PersistJob>(PERSIST_QUEUE_CAPACITY);
+    let inner = Arc::new(Inner {
         read_only: !read_write,
         conn: Mutex::new(conn),
         write_conn: Mutex::new(write_conn),
@@ -283,10 +306,52 @@ fn build_filesystem(repo: &Path, read_write: bool, write_cache_mb: u64) -> Resul
         spill_id_seq: AtomicU64::new(0),
         write_states: Mutex::new(HashMap::new()),
         write_states_cv: Condvar::new(),
-    })
+        persist_tx: Mutex::new(Some(persist_tx)),
+        persist_thread: Mutex::new(None),
+    });
+    let worker_inner = Arc::clone(&inner);
+    let handle = std::thread::spawn(move || persist_worker(worker_inner, persist_rx));
+    *inner
+        .persist_thread
+        .lock()
+        .expect("persist thread mutex poisoned") = Some(handle);
+
+    Ok(DedupFs(inner))
 }
 
-struct DedupFs {
+/// One closed-and-dirty file's worth of unpersisted changes, handed from
+/// `release`/bare `truncate` to [`persist_worker`] via [`Inner::persist_tx`].
+/// See [`PERSIST_QUEUE_CAPACITY`]'s doc comment for why this is queued
+/// rather than persisted inline on the calling thread.
+struct PersistJob {
+    tree_id: i64,
+    cache: WriteCache,
+    mtime_millis: i64,
+}
+
+/// The single background thread every persist actually runs on (spawned
+/// once in [`build_filesystem`], joined in [`Inner::on_unmount`]) - moving
+/// persist off whichever FUSE/WinFSP worker thread called `release`/bare
+/// `truncate` is what fixes the worker-pool-exhaustion failure mode (see
+/// [`PERSIST_QUEUE_CAPACITY`]'s doc comment): that thread now only has to
+/// enqueue a job (fast, unless the queue is already full) instead of
+/// blocking for as long as the target store's disk takes. Serial by
+/// design, mirroring the Scala prototype's own single background persist
+/// thread - also means at most one persist is ever actually writing to
+/// the store at a time, which if anything makes the pre-existing,
+/// deliberately-tolerated chunk-write race (`db::apply_backup_batch`'s
+/// `ON CONFLICT DO NOTHING` handling) less likely to fire, not more.
+fn persist_worker(inner: Arc<Inner>, jobs: mpsc::Receiver<PersistJob>) {
+    for job in jobs {
+        inner.persist(job.tree_id, job.cache, job.mtime_millis);
+        inner.finish_persisting(job.tree_id);
+    }
+}
+
+/// Holds every bit of state a mount needs, shared (via `Arc`, see
+/// [`DedupFs`]) between the FUSE/WinFSP dispatch threads and the
+/// background persist thread ([`persist_worker`]).
+struct Inner {
     /// Mirrors `--read-write`'s absence - checked explicitly by every
     /// mutating `MountFilesystem` method rather than trusted to the
     /// platform's own `-oro`/`ReadOnlyVolume` mount-level enforcement:
@@ -312,15 +377,32 @@ struct DedupFs {
     /// spillover - see `build_filesystem`.
     spill_dir: PathBuf,
     spill_id_seq: AtomicU64,
-    /// One entry per tree id with an open write-intent handle - see
-    /// [`FileWriteState`] and "Phase 2b" in
+    /// One entry per tree id with an open write-intent handle, or with a
+    /// persist in flight for it - see [`FileWriteState`] and "Phase 2b" in
     /// `docs/plans/implemented/06-fuse-mount-readwrite.md`.
     write_states: Mutex<HashMap<i64, FileWriteState>>,
     /// Paired with `write_states` - notified whenever an entry's
     /// `persisting` flag clears (see [`FileWriteState::persisting`] and
-    /// [`DedupFs::wait_while_persisting`]).
+    /// [`Inner::wait_while_persisting`]).
     write_states_cv: Condvar,
+    /// The sending half of the persist queue - `None` once
+    /// [`Inner::on_unmount`] has taken it, which is what lets
+    /// [`persist_worker`]'s loop (and thus the thread join right after)
+    /// actually finish. Cloned out (not sent through while holding this
+    /// lock) by `enqueue_persist`, since `send` is the part that can block
+    /// once the queue is full.
+    persist_tx: Mutex<Option<mpsc::SyncSender<PersistJob>>>,
+    /// The background thread `persist_worker` runs on - `None` before
+    /// `build_filesystem` finishes spawning it, and after `on_unmount` has
+    /// joined it.
+    persist_thread: Mutex<Option<JoinHandle<()>>>,
 }
+
+/// Thin wrapper making [`Inner`] (shared with the background persist
+/// thread, [`persist_worker`], via `Arc`) implement [`MountFilesystem`] -
+/// every method just forwards to the identically-signatured method on
+/// `Inner`.
+struct DedupFs(Arc<Inner>);
 
 /// Per-open-file write-side state, keyed by tree id (the same id used as
 /// this file's [`Handle`]) - refcounts every open handle (read *and*
@@ -333,27 +415,29 @@ struct FileWriteState {
     cache: Option<WriteCache>,
     /// `true` once `cache` has unpersisted changes. `write`/`truncate`
     /// requests: default `EROFS`, same rationale as the phase 2a methods
-    /// set it; `release` persists (see [`DedupFs::persist`]) and clears it
-    /// once `open_count` reaches `0`.
+    /// set it; `release` hands off to the persist queue (see
+    /// [`Inner::enqueue_persist`]) and clears it once `open_count` reaches
+    /// `0`.
     dirty: bool,
-    /// `true` while `release` is running [`DedupFs::persist`] for this
-    /// entry (on the releasing thread, synchronously) - `cache` is `None`
-    /// at that point (already handed to `persist`), but the entry itself
+    /// `true` while this entry's persist is either queued or actually
+    /// running on the background thread ([`persist_worker`]) - `cache` is
+    /// `None` at that point (already handed off), but the entry itself
     /// stays in the map for the whole persist rather than being removed
     /// upfront. This matters because closing a file descriptor does *not*
     /// wait for FUSE's `release` callback to finish (release is
-    /// inherently best-effort/asynchronous per the FUSE contract) - a
-    /// program that closes and immediately reopens/reads the same file
-    /// can otherwise race ahead of the persist and see neither the write
-    /// cache (already taken) nor the new DB content (not committed yet).
-    /// [`DedupFs::wait_while_persisting`] blocks a racing `read`/`write`/
-    /// `truncate`/`getattr` on this exact entry (not the whole mount)
-    /// until it clears - mirrors the Scala prototype's
-    /// `Handle.readLock`/`DataEntry`'s read-write lock, minus the
-    /// multi-generation "persisting queue" (see the "Phase 2b" notes in
-    /// `docs/plans/implemented/06-fuse-mount-readwrite.md` for why that's out of scope
-    /// here: at most one persist per file is ever in flight in this
-    /// implementation, a later writer simply waits for it).
+    /// inherently best-effort/asynchronous per the FUSE contract), and
+    /// persist itself now runs asynchronously too (see
+    /// [`PERSIST_QUEUE_CAPACITY`]) - a program that closes and immediately
+    /// reopens/reads the same file can otherwise race ahead of the persist
+    /// and see neither the write cache (already taken) nor the new DB
+    /// content (not committed yet). [`Inner::wait_while_persisting`]
+    /// blocks a racing `read`/`write`/`truncate`/`getattr` on this exact
+    /// entry (not the whole mount) until it clears - mirrors the Scala
+    /// prototype's `Handle.readLock`/`DataEntry`'s read-write lock, minus
+    /// the multi-generation "persisting queue" (see the "Phase 2b" notes
+    /// in `docs/plans/implemented/06-fuse-mount-readwrite.md` for why
+    /// that's out of scope here: at most one persist per file is ever in
+    /// flight in this implementation, a later writer simply waits for it).
     persisting: bool,
     /// Refreshed on every `write`/`truncate` (real filesystems bump mtime
     /// on a content change) - `getattr` prefers this over the persisted
@@ -379,6 +463,68 @@ fn now_millis() -> i64 {
 }
 
 impl MountFilesystem for DedupFs {
+    fn getattr(&self, path: &str) -> Result<Attr, Errno> {
+        self.0.getattr(path)
+    }
+
+    fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, Errno> {
+        self.0.readdir(path)
+    }
+
+    fn open(&self, path: &str, write_intent: bool) -> Result<Handle, Errno> {
+        self.0.open(path, write_intent)
+    }
+
+    fn read(&self, handle: Handle, offset: u64, size: u32) -> Result<Vec<u8>, Errno> {
+        self.0.read(handle, offset, size)
+    }
+
+    fn release(&self, handle: Handle) {
+        self.0.release(handle)
+    }
+
+    fn write(&self, handle: Handle, offset: u64, data: &[u8]) -> Result<u32, Errno> {
+        self.0.write(handle, offset, data)
+    }
+
+    fn truncate(&self, path: &str, size: u64) -> Result<(), Errno> {
+        self.0.truncate(path, size)
+    }
+
+    fn statfs(&self) -> Result<mountfs::StatfsInfo, Errno> {
+        self.0.statfs()
+    }
+
+    fn mkdir(&self, path: &str) -> Result<(), Errno> {
+        self.0.mkdir(path)
+    }
+
+    fn create(&self, path: &str) -> Result<Handle, Errno> {
+        self.0.create(path)
+    }
+
+    fn unlink(&self, path: &str) -> Result<(), Errno> {
+        self.0.unlink(path)
+    }
+
+    fn rmdir(&self, path: &str) -> Result<(), Errno> {
+        self.0.rmdir(path)
+    }
+
+    fn rename(&self, old_path: &str, new_path: &str) -> Result<(), Errno> {
+        self.0.rename(old_path, new_path)
+    }
+
+    fn utimens(&self, path: &str, mtime_millis: i64) -> Result<(), Errno> {
+        self.0.utimens(path, mtime_millis)
+    }
+
+    fn on_unmount(&self) {
+        self.0.on_unmount()
+    }
+}
+
+impl Inner {
     fn getattr(&self, path: &str) -> Result<Attr, Errno> {
         let entry = self.resolve_active_entry(path)?;
         let (kind, mut size) = match entry.kind {
@@ -496,33 +642,15 @@ impl MountFilesystem for DedupFs {
         // removing it outright - see [`FileWriteState::persisting`] for
         // why a racing `read`/`write`/`truncate`/`getattr` on this same
         // `tree_id` must keep observing *something* consistent (blocking
-        // via `wait_while_persisting`) instead of a state that's neither
-        // the old nor the new content.
-        let cache = state.cache.take();
+        // via `wait_while_persisting`) until [`Inner::finish_persisting`]
+        // clears it - which now happens on the background persist thread
+        // (see `persist_worker`), not necessarily this one.
+        let cache = state.cache.take().expect("dirty implies a live cache");
         state.persisting = true;
         let mtime_millis = state.mtime_millis;
         drop(states);
 
-        if let Some(cache) = cache {
-            self.persist(tree_id, cache, mtime_millis);
-        }
-
-        // Only remove the entry if nobody reopened this file while the
-        // persist above was running (`open_count` would be > 0 again) -
-        // that new session's own `write`/`release` cycle owns the entry
-        // from here on.
-        let mut states = self
-            .write_states
-            .lock()
-            .expect("write states mutex poisoned");
-        if let Some(state) = states.get_mut(&tree_id) {
-            state.persisting = false;
-            if state.open_count == 0 {
-                states.remove(&tree_id);
-            }
-        }
-        drop(states);
-        self.write_states_cv.notify_all();
+        self.enqueue_persist(tree_id, cache, mtime_millis);
     }
 
     fn write(&self, handle: Handle, offset: u64, data: &[u8]) -> Result<u32, Errno> {
@@ -559,6 +687,7 @@ impl MountFilesystem for DedupFs {
             return Err(Errno::EISDIR);
         }
         let tree_id = entry.id;
+        let mtime_millis = now_millis();
 
         let mut states = self
             .write_states
@@ -574,17 +703,44 @@ impl MountFilesystem for DedupFs {
                 .expect("just ensured Some")
                 .truncate(size);
             state.dirty = true;
-            state.mtime_millis = now_millis();
+            state.mtime_millis = mtime_millis;
             return Ok(());
         }
         // No open handle for this file (a bare `truncate(2)`/`O_TRUNC`
         // without a held write handle) - nothing will ever call `release`
-        // to persist this later, so materialize, resize and persist it
-        // immediately instead.
+        // to persist this later, so this hands it to the background
+        // persist thread itself (same pipeline a normal close uses - see
+        // `enqueue_persist`/`persist_worker`). Registers a persisting-only
+        // placeholder in the *same* lock hold as the check above (so no
+        // concurrent `open`/`register_open` for this exact id can slip in
+        // between) before dropping the lock - without this, a racing
+        // `open` could resolve to this about-to-be-replaced tree id and
+        // bind a `Handle` to it that can never observe this truncate's
+        // effect (see `resolve_active_entry`'s doc comment), since
+        // persisting is no longer synchronous with this call returning.
+        states.insert(
+            tree_id,
+            FileWriteState {
+                open_count: 0,
+                cache: None,
+                dirty: false,
+                persisting: true,
+                mtime_millis,
+            },
+        );
         drop(states);
-        let mut cache = self.new_write_cache(tree_id)?;
+
+        let mut cache = match self.new_write_cache(tree_id) {
+            Ok(cache) => cache,
+            Err(err) => {
+                // Roll back the placeholder - nothing will ever persist
+                // for it now, so nothing should ever wait on it either.
+                self.finish_persisting(tree_id);
+                return Err(err);
+            }
+        };
         cache.truncate(size);
-        self.persist(tree_id, cache, now_millis());
+        self.enqueue_persist(tree_id, cache, mtime_millis);
         Ok(())
     }
 
@@ -749,7 +905,10 @@ impl MountFilesystem for DedupFs {
         // tearing down its own write-cache temp directory. A clean
         // unmount only happens once every FUSE-level handle is closed in
         // the ordinary case, but WinFSP/libfuse can still reach this with
-        // handles outstanding on a forced/lazy unmount.
+        // handles outstanding on a forced/lazy unmount. Persisted directly
+        // here rather than through `enqueue_persist` - shutdown is the one
+        // place backpressure doesn't matter, and this guarantees every
+        // still-dirty file is flushed before the queue is closed below.
         let dirty: Vec<(i64, WriteCache, i64)> = {
             let mut states = self
                 .write_states
@@ -771,11 +930,29 @@ impl MountFilesystem for DedupFs {
         for (tree_id, cache, mtime_millis) in dirty {
             self.persist(tree_id, cache, mtime_millis);
         }
+
+        // Close the persist queue and wait for the background thread (see
+        // `persist_worker`) to finish flushing anything a `release`/bare
+        // `truncate` already handed off before this unmount started -
+        // otherwise a just-closed file's queued-but-not-yet-persisted
+        // changes would be silently lost when `spill_dir` is removed
+        // below.
+        self.persist_tx
+            .lock()
+            .expect("persist queue mutex poisoned")
+            .take();
+        if let Some(handle) = self
+            .persist_thread
+            .lock()
+            .expect("persist thread mutex poisoned")
+            .take()
+        {
+            let _ = handle.join();
+        }
+
         let _ = std::fs::remove_dir_all(&self.spill_dir);
     }
-}
 
-impl DedupFs {
     /// Creates (or reuses, bumping its refcount) a [`FileWriteState`] entry
     /// for `tree_id` - called by both `open` and `create` so `release`'s
     /// refcounting sees every open handle, not just write-intent ones (a
@@ -799,12 +976,12 @@ impl DedupFs {
             .open_count += 1;
     }
 
-    /// Blocks the calling thread while `tree_id` has a persist in flight
-    /// (see [`FileWriteState::persisting`]) - called before any read or
-    /// mutation of `write_states`' entry for `tree_id` so a racing
-    /// `read`/`write`/`truncate`/`getattr` can't observe the gap between
-    /// `release` handing a dirty cache to `persist` and `persist`
-    /// actually committing it to the database.
+    /// Blocks the calling thread while `tree_id` has a persist queued or
+    /// running (see [`FileWriteState::persisting`]) - called before any
+    /// read or mutation of `write_states`' entry for `tree_id` so a racing
+    /// `read`/`write`/`truncate`/`getattr` can't observe the gap between a
+    /// dirty cache being handed off to the persist queue and
+    /// [`Inner::finish_persisting`] actually clearing it once committed.
     fn wait_while_persisting(&self, tree_id: i64) {
         let mut states = self
             .write_states
@@ -824,7 +1001,7 @@ impl DedupFs {
     /// change replaces a file's tree entry with a *new* row (a new id -
     /// `apply_backup_batch`'s soft-delete-old-insert-new pattern, never an
     /// in-place update) rather than mutating the old one, and that
-    /// replacement isn't visible on `self.conn` until `persist` actually
+    /// replacement isn't visible on `self.conn` until the persist actually
     /// commits (see [`FileWriteState::persisting`]). Resolving naively
     /// while a persist for this exact path is in flight would silently
     /// return the about-to-be-replaced old row - wrong for `getattr`
@@ -884,7 +1061,7 @@ impl DedupFs {
     /// only (never consults a live write cache) - the phase 1 read path,
     /// factored out so it can also serve as the "old content" gap-filler
     /// for a live [`WriteCache`]'s [`WriteCache::read_filling_gaps`] (both
-    /// in [`MountFilesystem::read`] and in [`Self::persist`]).
+    /// in [`Inner::read`] and in [`Inner::persist`]).
     fn read_persisted(&self, tree_id: i64, offset: u64, size: u64) -> Result<Vec<u8>, Errno> {
         let conn = self.conn.lock().expect("db connection mutex poisoned");
         let entry = db::get_tree_entry(&conn, tree_id)
@@ -922,6 +1099,71 @@ impl DedupFs {
         Ok(result)
     }
 
+    /// Hands `cache` off to the background persist thread ([`persist_worker`])
+    /// instead of persisting on the calling thread - blocks only once
+    /// [`PERSIST_QUEUE_CAPACITY`] persists are already queued ahead of it
+    /// (the intended backpressure point). The caller must already have set
+    /// `persisting = true` on this `tree_id`'s [`FileWriteState`] before
+    /// calling this (both `release` and bare `truncate` do) so a racing
+    /// `read`/`getattr`/`open` on the same id blocks via
+    /// `wait_while_persisting` until [`Inner::finish_persisting`] clears
+    /// it, rather than observing stale pre-persist content after this call
+    /// has already returned.
+    fn enqueue_persist(&self, tree_id: i64, cache: WriteCache, mtime_millis: i64) {
+        // Cloned out from under the lock rather than sent while holding
+        // it - `send` is the blocking part once the queue is full, and
+        // holding `persist_tx`'s mutex through that would serialize every
+        // *unrelated* enqueue attempt behind whichever one happened to
+        // fill the queue first, not just the ones actually contending for
+        // queue space.
+        let tx = self
+            .persist_tx
+            .lock()
+            .expect("persist queue mutex poisoned")
+            .clone();
+        let job = PersistJob {
+            tree_id,
+            cache,
+            mtime_millis,
+        };
+        let delivered = match tx {
+            Some(tx) => tx.send(job).is_ok(),
+            None => false,
+        };
+        if !delivered {
+            // Only reachable if `on_unmount` already closed the queue -
+            // by that point no new FUSE calls should be arriving, but if
+            // one still raced in, don't leave this entry wedged forever.
+            eprintln!(
+                "mount: persist queue already closed (unmounting) - discarding unsaved \
+                 changes for tree id {tree_id}"
+            );
+            self.finish_persisting(tree_id);
+        }
+    }
+
+    /// Clears `tree_id`'s `persisting` flag once its persist has actually
+    /// finished (or been abandoned - see [`Inner::enqueue_persist`]'s
+    /// already-closed-queue fallback), and removes the [`FileWriteState`]
+    /// entry if nothing reopened it in the meantime. The same cleanup
+    /// `release` used to do inline before persisting moved to a background
+    /// thread - factored out so both [`persist_worker`] and
+    /// `enqueue_persist`'s fallback can reach it.
+    fn finish_persisting(&self, tree_id: i64) {
+        let mut states = self
+            .write_states
+            .lock()
+            .expect("write states mutex poisoned");
+        if let Some(state) = states.get_mut(&tree_id) {
+            state.persisting = false;
+            if state.open_count == 0 {
+                states.remove(&tree_id);
+            }
+        }
+        drop(states);
+        self.write_states_cv.notify_all();
+    }
+
     /// Drains `cache`'s full current content into the store and commits it
     /// via `apply_backup_batch` - the phase 2b persist pipeline. Reuses
     /// `store.rs`'s own chunking/dedup machinery
@@ -930,12 +1172,13 @@ impl DedupFs {
     /// memory use doesn't scale with the file's total size even though
     /// `cache` may itself have spilled to disk.
     ///
-    /// Best-effort: `MountFilesystem::release`/`on_unmount` (this method's
-    /// only two callers) can't propagate an error back through the FUSE
-    /// contract, so any failure here is logged to stderr and the
-    /// unpersisted changes are simply lost - an accepted limitation (see
-    /// `docs/plans/implemented/06-fuse-mount-readwrite.md`'s "Phase 2b" notes) rather
-    /// than a real per-write error path like `write`'s own `Result`.
+    /// Best-effort: this method's callers (`persist_worker`, and
+    /// `on_unmount` for handles still outstanding at shutdown) can't
+    /// propagate an error back through the FUSE contract, so any failure
+    /// here is logged to stderr and the unpersisted changes are simply
+    /// lost - an accepted limitation (see `docs/plans/implemented/
+    /// 06-fuse-mount-readwrite.md`'s "Phase 2b" notes) rather than a real
+    /// per-write error path like `write`'s own `Result`.
     fn persist(&self, tree_id: i64, mut cache: WriteCache, mtime_millis: i64) {
         let (parent_id, name) = {
             let conn = self.conn.lock().expect("db connection mutex poisoned");
@@ -1455,5 +1698,73 @@ mod tests {
             "identical final content must dedupe to one contents row"
         );
         assert_eq!(db::file_size(&conn, &a).unwrap(), 5);
+    }
+
+    /// A bare `truncate(2)`/`O_TRUNC` on a file with no open handle now
+    /// persists asynchronously (see `Inner::truncate`'s bare-path branch
+    /// and `enqueue_persist`) - this exercises that path specifically
+    /// (`std::fs::write` with `.truncate(true)` and no prior open) and
+    /// verifies a `read` immediately after still observes the truncated
+    /// (here: emptied) content, not the pre-truncate bytes, proving the
+    /// persisting placeholder actually blocks the race.
+    #[test]
+    fn bare_truncate_without_a_handle_persists_before_a_racing_read_returns() {
+        let (_temp_dir, repo_root) = init_repo();
+        {
+            let repository = db::open_repository(&repo_root).unwrap();
+            let conn = repository.open_write_connection().unwrap();
+            db::insert_directory(&conn, 0, "marker", 0).unwrap();
+        }
+        seed_file(&repo_root, 0, "a.txt", b"hello world");
+
+        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB).unwrap();
+        let mount_dir = tempfile::tempdir().unwrap();
+        let mount_path = mount_dir.path().to_path_buf();
+        let handle = {
+            let mount_path = mount_path.clone();
+            std::thread::spawn(move || mountfs::mount(fs, &mount_path, false))
+        };
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if std::fs::read(mount_path.join("a.txt")).is_ok() {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "mount did not become ready within 5s"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // A real bare `truncate(2)` on the path, via the `truncate(1)`
+        // utility - deliberately not `OpenOptions::truncate(true)`: an
+        // O_TRUNC *open* goes through `MountFilesystem::open` (which never
+        // sees the O_TRUNC bit at all - `dispatch_open` only forwards
+        // `write_intent`) rather than `MountFilesystem::truncate`, so it
+        // wouldn't actually exercise the bare-truncate path this test is
+        // for. `truncate(1)` issues the real path-only `truncate(2)`
+        // syscall with no open handle involved, which does dispatch to
+        // `Inner::truncate`'s bare-path branch.
+        let status = std::process::Command::new("truncate")
+            .arg("-s")
+            .arg("0")
+            .arg(mount_path.join("a.txt"))
+            .status()
+            .expect("failed to run truncate(1)");
+        assert!(status.success(), "truncate -s 0 failed: {status}");
+
+        assert_eq!(std::fs::read(mount_path.join("a.txt")).unwrap(), b"");
+
+        let status = std::process::Command::new("fusermount3")
+            .arg("-u")
+            .arg(&mount_path)
+            .status()
+            .expect("failed to run fusermount3 -u");
+        assert!(status.success(), "fusermount3 -u failed: {status}");
+        handle
+            .join()
+            .expect("mount thread panicked")
+            .expect("mount() returned an error");
     }
 }
