@@ -1,14 +1,18 @@
 # Read-write FUSE/WinFSP mount (Phase 2)
 
-**Status**: implementation starting. Rewritten from its original Linux-only,
-`fuser`-based draft now that `docs/plans/cross-platform-mount-crate.md` has
-shipped: `backup mount` runs on the platform-independent `mountfs` crate on
-both Linux (real libfuse3) and Windows (real WinFSP) today, read-only. This
-phase extends `mountfs::MountFilesystem` with write operations and
-implements them in `cli`'s `DedupFs` - the platform-specific plumbing
-(dispatch trampolines on both backends) was already designed to make this
-a mechanical extension, not a redesign (see "What moves where" in the
-cross-platform plan).
+**Status**: phase 2a (structural operations) done and verified on both
+Linux and Windows - see "Phase 2a - Windows verification notes" below for
+the real debugging process that took (two separate WinFSP-specific bugs,
+neither of which had a Linux counterpart). Phase 2b (content writes) not
+started. Rewritten from its original Linux-only, `fuser`-based draft now
+that `docs/plans/cross-platform-mount-crate.md` has shipped: `backup mount`
+runs on the platform-independent `mountfs` crate on both Linux (real
+libfuse3) and Windows (real WinFSP), read-only or read-write via
+`--read-write`. This phase extends `mountfs::MountFilesystem` with write
+operations and implements them in `cli`'s `DedupFs` - the platform-specific
+plumbing (dispatch trampolines on both backends) was already designed to
+make this a mechanical extension, not a redesign (see "What moves where"
+in the cross-platform plan).
 
 ## Sequencing (revised)
 
@@ -20,13 +24,16 @@ cross-platform plan).
    to `backup mount` (defaults to read-only - this is a real behavior
    change to a backup tool's data, opt-in only). Verify on Linux (this
    environment can build/test that leg directly) before touching Windows.
+   **Done.**
 2. **Phase 2a - Windows**: wire the same trait methods into
    `mountfs::windows`'s dispatch (the `fuse_operations` slots for all of
    these already exist in `windows/sys.rs`, currently `Unimplemented` -
    same mechanical extension as the Linux side). Needs a real Windows
    verification pass the same way the read-only phase did (this went
    through a real debugging process last time - budget for that, don't
-   assume it'll be friction-free just because Linux was).
+   assume it'll be friction-free just because Linux was). **Done** - see
+   "Phase 2a - Windows verification notes" below for what that debugging
+   process actually found.
 3. **Phase 2b - content writes**: the `write` operation and the write
    cache/persist pipeline (§§1-2, 4 below) - `write`, `truncate` to a
    non-zero/non-current size, and the backpressure mechanism. This is the
@@ -40,12 +47,70 @@ cross-platform plan).
 
 `chmod`/`chown` become accepted no-ops (`Ok(())`, nothing persisted) rather
 than real per-file permission tracking - consistent with today's read path,
-which already fabricates fixed `0o444`/`0o555` permissions in `getattr`
-(`cli/src/mount.rs`) since the schema has no permission columns at all.
-Adding real permission storage would be a schema migration and a much
-bigger scope change; revisit only if a concrete need shows up (e.g. an
-editor that refuses to write to a file it perceives as read-only based on
-the fabricated mode bits - not observed yet).
+which already fabricates fixed permissions in `getattr` (`cli/src/mount.rs`)
+since the schema has no permission columns at all. Adding real permission
+storage would be a schema migration and a much bigger scope change; revisit
+only if a concrete need shows up (e.g. an editor that refuses to write to a
+file it perceives as read-only based on the fabricated mode bits - not
+observed yet). The two backends' `getattr` dispatch fabricate different
+mode bits for a reason - see "Phase 2a - Windows verification notes" below:
+Linux (`mountfs::linux::dispatch_getattr`) still reports `0o444`/`0o555`
+(read-only-looking) unconditionally, since real libfuse's kernel VFS
+doesn't check them without `-o default_permissions` (not passed); Windows
+(`mountfs::windows::dispatch_getattr`) reports `0o666`/`0o777`
+unconditionally instead, because WinFSP *does* derive and enforce an NT
+security descriptor from these bits before ever calling into this crate's
+own write operations - a read-only-looking mode there made every write op
+fail at the driver level, regardless of what `DedupFs` would have allowed.
+Actual read-only enforcement on both platforms comes from the mount-level
+`-oro`/`ReadOnlyVolume` flag (see `mount`'s `read_only` parameter), not
+from either backend's fabricated mode bits.
+
+## Phase 2a - Windows verification notes
+
+Two WinFSP-specific bugs surfaced during Windows verification, neither
+with a Linux counterpart (Linux's read-write structural test passed on the
+first real run) - both are now fixed, but recorded here since they're easy
+to reintroduce if `windows/mod.rs`'s `dispatch_getattr`/`open` change
+without re-reading this:
+
+- **Mode bits gate write ops at the driver level.** WinFSP performs its
+  own NT-style access check derived from `getattr`'s reported `st_mode`
+  *before* ever invoking this crate's `mkdir`/`create`/`open`/etc. - unlike
+  real libfuse's kernel VFS, which (without `-o default_permissions`, not
+  passed here) calls straight through to the filesystem's own operations
+  regardless of reported mode. The original read-only-looking `0o555`/
+  `0o444` (copied verbatim from the Linux backend when phase 2a's dispatch
+  was first wired up) made every structural write op fail with a
+  Windows-level "access is denied" - `dispatch_mkdir` was never even
+  entered. Fixed by reporting `0o777`/`0o666` unconditionally instead (see
+  "Not modeling permissions" above for why this is still consistent with
+  the read-only case).
+- **`st_uid`/`st_gid` must be populated for the mode bits to grant
+  anything.** Fixing the mode bits alone wasn't enough: `getattr` never
+  set `st_uid`/`st_gid` (left at `0` by the buffer-zeroing at the top of
+  `dispatch_getattr`), so WinFSP built a security descriptor that didn't
+  recognize the mounting process as the file's owner, and access was still
+  denied even with fully-open mode bits. Fixed by reading the real caller
+  identity via `fuse_get_context()->uid/gid` and writing it into
+  `st_uid`/`st_gid` - exactly what WinFSP's own `memfs-fuse3.cpp` reference
+  implementation does, and the detail that made this easy to miss (nothing
+  in the real libfuse/Linux path needs it).
+- **`open`'s old blanket `write_intent → EROFS` had to go.** Predating
+  phase 2a (from when the whole mount was read-only), `DedupFs::open`
+  rejected any write-intent open outright. Phase 2a's `utimens` on an
+  *existing* file needs a write-intent open to succeed on Windows
+  specifically: `SetFileTime` requires the handle to carry
+  `FILE_WRITE_ATTRIBUTES`, unlike POSIX `futimens`, which is permission-
+  checked by file ownership rather than by how the fd was opened (why this
+  never surfaced verifying Linux alone - `File::open`'s default read-only
+  handle was already sufficient there). Removing the check doesn't open a
+  content-write hole: `write` still isn't wired into either backend's
+  dispatch (phase 2b), so the kernel/WinFSP answers any real write attempt
+  with `ENOSYS` on its own regardless of how the file was opened. A
+  genuinely read-only mount is unaffected either way - `-oro`/
+  `ReadOnlyVolume` rejects a write-intent open before `DedupFs::open` is
+  ever called, on both platforms.
 
 ## `db` additions needed
 
@@ -241,6 +306,7 @@ bottleneck at typical single-mount FUSE call volumes" reasoning.
   (phase 2b).
 - Whether `rename`'s no-overwrite limitation (see above) turns out to
   matter in practice once phase 2a is actually used.
-- Windows verification budget for phase 2a/2b - same caveat the
-  cross-platform plan's "Windows checkpoint" already recorded: assume it
-  needs real debugging time, not a formality.
+- Windows verification budget for phase 2b - phase 2a's Windows pass is
+  done (see "Phase 2a - Windows verification notes"), but the same caveat
+  the cross-platform plan's "Windows checkpoint" recorded still applies to
+  2b: assume it needs real debugging time, not a formality.

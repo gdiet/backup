@@ -16,14 +16,15 @@
 //! (`inc/winfsp/winfsp.h`) rather than vendoring that much larger header
 //! just for one function.
 //!
-//! `getattr`/`readdir`/`open`/`read`/`release`/`statfs` (the full read-only
-//! set, matching the Linux backend) are given real signatures - every
-//! other `fuse3_operations` slot is typed as a same-size, unused
-//! function-pointer placeholder.
+//! The full read-only set plus phase 2a's structural read-write set
+//! (`mkdir`/`create`/`unlink`/`rmdir`/`rename`/`utimens`/`chmod`/`chown` -
+//! see `docs/plans/fuse-mount-readwrite.md`, mirroring `linux::sys`) are
+//! given real signatures - every other `fuse3_operations` slot is typed as
+//! a same-size, unused function-pointer placeholder.
 
 #![allow(non_camel_case_types)]
 
-use std::ffi::{CStr, c_char, c_int, c_void};
+use std::ffi::{CStr, c_char, c_int, c_uint, c_void};
 use std::sync::OnceLock;
 
 // --- WinFSP's `fuse_*` types (Win64, non-Cygwin - `inc/fuse/winfsp_fuse.h`'s
@@ -141,14 +142,17 @@ pub struct fuse_operations {
         Option<unsafe extern "C" fn(*const c_char, *mut fuse_stat, *mut fuse_file_info) -> c_int>,
     pub readlink: Unimplemented,
     pub mknod: Unimplemented,
-    pub mkdir: Unimplemented,
-    pub unlink: Unimplemented,
-    pub rmdir: Unimplemented,
+    pub mkdir: Option<unsafe extern "C" fn(*const c_char, fuse_mode_t) -> c_int>,
+    pub unlink: Option<unsafe extern "C" fn(*const c_char) -> c_int>,
+    pub rmdir: Option<unsafe extern "C" fn(*const c_char) -> c_int>,
     pub symlink: Unimplemented,
-    pub rename: Unimplemented,
+    pub rename: Option<unsafe extern "C" fn(*const c_char, *const c_char, c_uint) -> c_int>,
     pub link: Unimplemented,
-    pub chmod: Unimplemented,
-    pub chown: Unimplemented,
+    pub chmod:
+        Option<unsafe extern "C" fn(*const c_char, fuse_mode_t, *mut fuse_file_info) -> c_int>,
+    pub chown: Option<
+        unsafe extern "C" fn(*const c_char, fuse_uid_t, fuse_gid_t, *mut fuse_file_info) -> c_int,
+    >,
     pub truncate: Unimplemented,
     pub open: Option<unsafe extern "C" fn(*const c_char, *mut fuse_file_info) -> c_int>,
     pub read: Option<
@@ -185,9 +189,12 @@ pub struct fuse_operations {
     pub init: Unimplemented,
     pub destroy: Unimplemented,
     pub access: Option<unsafe extern "C" fn(*const c_char, c_int) -> c_int>,
-    pub create: Unimplemented,
+    pub create:
+        Option<unsafe extern "C" fn(*const c_char, fuse_mode_t, *mut fuse_file_info) -> c_int>,
     pub lock: Unimplemented,
-    pub utimens: Unimplemented,
+    pub utimens: Option<
+        unsafe extern "C" fn(*const c_char, *const fuse_timespec, *mut fuse_file_info) -> c_int,
+    >,
     pub bmap: Unimplemented,
     pub ioctl: Unimplemented,
     pub poll: Unimplemented,

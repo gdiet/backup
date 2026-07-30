@@ -147,3 +147,116 @@ fn mounts_and_serves_a_real_repository_read_only_via_the_backup_binary() {
     child.kill().expect("failed to kill backup mount");
     child.wait().expect("failed to wait for backup mount");
 }
+
+/// Windows counterpart to `cli/src/mount.rs`'s
+/// `mounts_read_write_and_supports_structural_changes` (Linux-only, same
+/// reason as the read-only test above) - exercises phase 2a's structural
+/// ops (mkdir/create/utimens/rename/rmdir/unlink, see
+/// `docs/plans/fuse-mount-readwrite.md`) through a real `backup mount
+/// --read-write` child process and real WinFSP.
+#[test]
+fn mounts_read_write_and_supports_structural_changes_via_the_backup_binary() {
+    let (_temp_dir, repo_root) = init_repo();
+    // Same readiness-probe rationale as the read-only test's marker
+    // directory: `read_dir` on the mountpoint only ever reports real
+    // content once WinFSP is actually serving it.
+    {
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_write_connection().unwrap();
+        db::insert_directory(&conn, 0, "marker", 0).unwrap();
+    }
+
+    let parent_dir = tempfile::tempdir().unwrap();
+    let mount_path = parent_dir.path().join("mnt");
+
+    let backup = env!("CARGO_BIN_EXE_backup");
+    let mut child = std::process::Command::new(backup)
+        .arg("--repo")
+        .arg(&repo_root)
+        .arg("mount")
+        .arg("--read-write")
+        .arg(&mount_path)
+        .spawn()
+        .expect("failed to spawn backup mount --read-write");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            panic!("backup mount exited early with {status}");
+        }
+        let names: Vec<String> = std::fs::read_dir(&mount_path)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !names.is_empty() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "mount did not become ready within 10s \
+             (requires WinFSP to be installed - investigate if this fails in CI)"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // mkdir + create (empty file).
+    std::fs::create_dir(mount_path.join("sub")).unwrap();
+    assert!(std::fs::metadata(mount_path.join("sub")).unwrap().is_dir());
+    std::fs::write(mount_path.join("sub").join("empty.txt"), b"").unwrap();
+    assert_eq!(
+        std::fs::metadata(mount_path.join("sub").join("empty.txt"))
+            .unwrap()
+            .len(),
+        0
+    );
+
+    // mkdir on an existing name fails.
+    assert!(std::fs::create_dir(mount_path.join("sub")).is_err());
+
+    // utimens. `File::open` (read-only) isn't enough on Windows: unlike
+    // POSIX `futimens` (permission-checked by ownership, not by how the fd
+    // was opened - the Linux counterpart of this test uses plain
+    // `File::open` for exactly that reason), `SetFileTime` requires the
+    // handle to carry `FILE_WRITE_ATTRIBUTES`, which only a write-capable
+    // open grants.
+    let new_mtime = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    std::fs::File::options()
+        .write(true)
+        .open(mount_path.join("sub").join("empty.txt"))
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(new_mtime))
+        .unwrap();
+    assert_eq!(
+        std::fs::metadata(mount_path.join("sub").join("empty.txt"))
+            .unwrap()
+            .modified()
+            .unwrap(),
+        new_mtime
+    );
+
+    // rename.
+    std::fs::rename(
+        mount_path.join("sub").join("empty.txt"),
+        mount_path.join("sub").join("renamed.txt"),
+    )
+    .unwrap();
+    assert!(std::fs::metadata(mount_path.join("sub").join("empty.txt")).is_err());
+    assert!(
+        std::fs::metadata(mount_path.join("sub").join("renamed.txt"))
+            .unwrap()
+            .is_file()
+    );
+
+    // rmdir on a non-empty directory fails; unlink then rmdir succeeds.
+    assert!(std::fs::remove_dir(mount_path.join("sub")).is_err());
+    std::fs::remove_file(mount_path.join("sub").join("renamed.txt")).unwrap();
+    std::fs::remove_dir(mount_path.join("sub")).unwrap();
+    assert!(std::fs::metadata(mount_path.join("sub")).is_err());
+
+    child.kill().expect("failed to kill backup mount");
+    child.wait().expect("failed to wait for backup mount");
+}

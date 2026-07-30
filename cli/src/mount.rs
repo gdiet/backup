@@ -229,9 +229,21 @@ impl MountFilesystem for DedupFs {
     }
 
     fn open(&self, path: &str, write_intent: bool) -> Result<Handle, Errno> {
-        if write_intent {
-            return Err(Errno::EROFS);
-        }
+        // No longer rejects `write_intent` outright (a leftover from the
+        // read-only-only phase): phase 2a's `utimens`/`chmod` on an
+        // *existing* file need a write-intent open to succeed too - on
+        // Windows in particular, `SetFileTime` requires the handle to
+        // carry `FILE_WRITE_ATTRIBUTES`, which only a write-capable
+        // `CreateFileW` grants (unlike POSIX `futimens`, permission-checked
+        // by ownership rather than by how the fd was opened - so this
+        // never came up while verifying the Linux side alone). Actual
+        // content writes still aren't possible: `write` isn't wired into
+        // either backend's dispatch yet (phase 2b), so the kernel/WinFSP
+        // answers any real write attempt with ENOSYS on its own. A
+        // genuinely read-only mount (`backup mount` without `--read-write`)
+        // is unaffected: `-oro`/`ReadOnlyVolume` rejects a write-intent
+        // open before it ever reaches this method, on both platforms.
+        let _ = write_intent;
         let conn = self.conn.lock().expect("db connection mutex poisoned");
         let entry = db::resolve_path(&conn, path)
             .map_err(|_| Errno::EIO)?
