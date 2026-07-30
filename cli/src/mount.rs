@@ -23,66 +23,27 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::JoinHandle;
 
-use cdc::{BufferingHashingChunker, CdcConfig};
+use cdc::CdcConfig;
 use clap::Args;
 use mountfs::{Attr, DirEntry, Errno, FileKind, Handle, MountFilesystem};
 use rusqlite::Connection;
 use store::{LongTermStore, ReadIntegrity};
 
 use crate::chunk_store::{self, SpaceAllocator, read_chunk_bytes};
+use crate::ram_budget_check::check_ram_budget;
+use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
 use crate::store::{Blake3Hasher, HASH_LENGTH, make_chunker};
 use crate::write_cache::{RamBudget, WriteCache};
 
 /// Default RAM budget for `backup mount --read-write`'s write cache (see
 /// `MountArgs::write_cache_mb`), shared across every file open for writing
-/// at once. A modest default: this is a soft buffer that spills to disk
-/// once exceeded (see `write_cache::WriteCache`), not something that
-/// needs to be generous to work correctly - and `check_write_cache_budget`
-/// below warns at mount time if even this much risks swapping.
+/// at once, *and* reused as the budget for in-flight persist chunk
+/// buffering (see [`Inner::persist`]) - a modest default: both are soft
+/// buffers that spill to disk once exceeded (see `write_cache::
+/// WriteCache`), not something that needs to be generous to work
+/// correctly, and `check_ram_budget` (called from `run_mount`) refuses to
+/// start if even this much risks swapping.
 const DEFAULT_WRITE_CACHE_MB: u64 = 128;
-
-/// Refuses to start (unless `allow_swap_risk` downgrades this to a
-/// warning - `MountArgs::allow_swap_risk`) if `write_cache_mb` is large
-/// enough, relative to *currently available* (not total) system RAM,
-/// that actually using it could push the system into swapping.
-/// Deliberately checks available rather than total memory - the mount
-/// isn't the only thing running on the machine, and total memory says
-/// nothing about what's actually free right now. A hard error by
-/// default even though the write cache itself degrades gracefully to
-/// disk spillover if ever actually exhausted (see `write_cache::
-/// WriteCache`): swapping is a machine-wide problem this mount would be
-/// causing for *everything else* running on it, not just a local
-/// slowdown for the mount itself, so it defaults to refusing rather than
-/// merely warning.
-fn check_write_cache_budget(write_cache_mb: u64, allow_swap_risk: bool) -> Result<(), String> {
-    let mut sys = sysinfo::System::new();
-    sys.refresh_memory();
-    let available_mb = sys.available_memory() / (1024 * 1024);
-    let reason = if write_cache_mb > available_mb {
-        Some(format!(
-            "--write-cache-mb={write_cache_mb} exceeds currently available RAM \
-             (~{available_mb} MB) - writing files up to that size may cause swapping"
-        ))
-    } else if write_cache_mb * 2 > available_mb {
-        Some(format!(
-            "--write-cache-mb={write_cache_mb} is more than half of currently \
-             available RAM (~{available_mb} MB) - writing several large files at once may \
-             cause swapping"
-        ))
-    } else {
-        None
-    };
-    match reason {
-        None => Ok(()),
-        Some(reason) if allow_swap_risk => {
-            eprintln!("warning: {reason}; continuing because --allow-swap-risk was given");
-            Ok(())
-        }
-        Some(reason) => Err(format!(
-            "{reason}; pass --allow-swap-risk to start anyway, or lower --write-cache-mb"
-        )),
-    }
-}
 
 /// Content is read from/persisted to the write cache in pieces this large
 /// at a time (during `write`'s lazy materialization and during `release`'s
@@ -209,7 +170,8 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
         return ExitCode::FAILURE;
     }
     if args.read_write
-        && let Err(msg) = check_write_cache_budget(args.write_cache_mb, args.allow_swap_risk)
+        && let Err(msg) =
+            check_ram_budget("write-cache-mb", args.write_cache_mb, args.allow_swap_risk)
     {
         eprintln!("error: {msg}");
         return ExitCode::FAILURE;
@@ -276,18 +238,22 @@ fn build_filesystem(repo: &Path, read_write: bool, write_cache_mb: u64) -> Resul
     // like the read-only-only phase used: a read-write mount's persist
     // pipeline needs to actually write new chunk bytes to the store.
     let data_store = LongTermStore::new(repository.data_dir(), !read_write);
-    // A dedicated, per-process spill directory for write-cache overflow
-    // (see `write_cache::WriteCache`) - created empty here, removed
-    // whole in `Inner::on_unmount` once every spill file in it (each
-    // deleted by its own `WriteCache`'s `Drop`) is gone.
-    let spill_dir =
-        std::env::temp_dir().join(format!("backup-mount-write-cache-{}", std::process::id()));
-    std::fs::create_dir_all(&spill_dir).map_err(|err| {
-        format!(
-            "failed to create write-cache temp dir {}: {err}",
-            spill_dir.display()
-        )
-    })?;
+    // A dedicated, uniquely-named spill directory for write-cache overflow
+    // (see `write_cache::WriteCache`) - created empty here, removed whole
+    // in `Inner::on_unmount` once every spill file in it (each deleted by
+    // its own `WriteCache`'s `Drop`) is gone. Named via `tempfile` rather
+    // than `std::process::id()`: a process id is only unique across
+    // *processes*, but `build_filesystem` can run more than once within
+    // one process (every mount integration test does exactly that,
+    // concurrently) - a process-id-based name let two concurrent mounts
+    // collide on the same directory, each unaware of the other's spill
+    // files with the same generated names, and race to delete it out from
+    // under each other on unmount.
+    let spill_dir = tempfile::Builder::new()
+        .prefix("backup-mount-write-cache-")
+        .tempdir()
+        .map_err(|err| format!("failed to create write-cache temp dir: {err}"))?
+        .keep();
 
     // The persist queue and its background thread (see `persist_worker`)
     // - `Inner` is wrapped in `Arc` (via `DedupFs`) specifically so this
@@ -1167,10 +1133,15 @@ impl Inner {
     /// Drains `cache`'s full current content into the store and commits it
     /// via `apply_backup_batch` - the phase 2b persist pipeline. Reuses
     /// `store.rs`'s own chunking/dedup machinery
-    /// (`BufferingHashingChunker`/`Blake3Hasher`/`chunk_store`) rather than
+    /// (`SpillingHashingChunker`/`Blake3Hasher`/`chunk_store`) rather than
     /// duplicating it, streamed in [`PERSIST_CHUNK_SIZE`] pieces so peak
     /// memory use doesn't scale with the file's total size even though
-    /// `cache` may itself have spilled to disk.
+    /// `cache` may itself have spilled to disk. `SpillingHashingChunker`
+    /// buffers each in-progress chunk's own bytes in a `WriteCache` sharing
+    /// `self.ram_budget` (not a plain `Vec<u8>`) - without that, a large
+    /// CDC chunk or (under `chunking: none`) the entire file would need to
+    /// be fully RAM-resident again here even though `cache` itself is
+    /// already bounded (see `docs/plans/bounded-memory-io-pipeline.md`).
     ///
     /// Best-effort: this method's callers (`persist_worker`, and
     /// `on_unmount` for handles still outstanding at shutdown) can't
@@ -1225,9 +1196,11 @@ impl Inner {
         };
 
         let size = cache.size();
-        let mut chunker = BufferingHashingChunker::new(
+        let mut chunker = SpillingHashingChunker::new(
             Blake3Hasher(blake3::Hasher::new()),
             make_chunker(&self.cdc_config),
+            Arc::clone(&self.ram_budget),
+            || self.spill_path(),
         );
         let mut content_hasher = blake3::Hasher::new();
         let mut chunk_refs: Vec<db::ChunkRef> = Vec::new();
@@ -1241,12 +1214,18 @@ impl Inner {
                             .unwrap_or_else(|_| vec![0u8; gap_len as usize])
                     })
                     .map_err(|err| format!("failed reading the write cache: {err}"))?;
-                for chunk in chunker.next(&bytes) {
+                let chunks = chunker
+                    .next(&bytes)
+                    .map_err(|err| format!("chunk buffering failed: {err}"))?;
+                for chunk in chunks {
                     self.resolve_persist_chunk(chunk, &mut chunk_refs, &mut content_hasher)?;
                 }
                 pos += n;
             }
-            if let Some(chunk) = chunker.flush() {
+            let flushed = chunker
+                .flush()
+                .map_err(|err| format!("chunk buffering failed: {err}"))?;
+            if let Some(chunk) = flushed {
                 self.resolve_persist_chunk(chunk, &mut chunk_refs, &mut content_hasher)?;
             }
             Ok(())
@@ -1286,7 +1265,7 @@ impl Inner {
     /// into `content_hasher` (see `contents.hash` in `db/src/migrations.rs`).
     fn resolve_persist_chunk(
         &self,
-        chunk: cdc::ChunkWithBytes,
+        chunk: SpilledChunk,
         chunk_refs: &mut Vec<db::ChunkRef>,
         content_hasher: &mut blake3::Hasher,
     ) -> Result<(), String> {
@@ -1306,9 +1285,17 @@ impl Inner {
                 length: length_hash.length,
             },
             None => {
-                let extents =
-                    chunk_store::write_chunk_bytes(&self.data_store, &self.allocator, &chunk.bytes)
-                        .map_err(|err| format!("store write failed: {err}"))?;
+                // `chunk.bytes` (dropped here on the dedup-hit branch above
+                // without ever being drained) is a `WriteCache`, not a plain
+                // `Vec<u8>` - see `SpillingHashingChunker`'s doc comment.
+                let mut bytes = chunk.bytes;
+                let extents = chunk_store::write_chunk_from_cache(
+                    &self.data_store,
+                    &self.allocator,
+                    &mut bytes,
+                    length_hash.length,
+                )
+                .map_err(|err| format!("store write failed: {err}"))?;
                 db::ChunkRef::New {
                     length: length_hash.length,
                     hash: length_hash.hash,
@@ -1766,5 +1753,73 @@ mod tests {
             .join()
             .expect("mount thread panicked")
             .expect("mount() returned an error");
+    }
+
+    /// End-to-end regression for `docs/plans/bounded-memory-io-pipeline.md`:
+    /// `chunking: none` makes an entire file one chunk (see
+    /// `cdc::SingleChunkChunker`), so `Inner::persist`'s `SpillingHashingChunker`
+    /// must buffer it via disk spillover rather than needing it RAM-resident.
+    /// `write_cache_mb: 0` forces spillover for every byte, both in the
+    /// write cache itself and in the persist-time chunk buffer - the most
+    /// aggressive case for both tiers at once.
+    #[test]
+    fn chunking_none_with_a_zero_byte_write_cache_still_round_trips_correctly() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        db::init_repository(
+            &repo_root,
+            &db::RepositorySettings::new(12, db::Chunking::None).unwrap(),
+        )
+        .unwrap();
+        {
+            let repository = db::open_repository(&repo_root).unwrap();
+            let conn = repository.open_write_connection().unwrap();
+            db::insert_directory(&conn, 0, "marker", 0).unwrap();
+        }
+
+        let fs = build_filesystem(&repo_root, true, 0).unwrap();
+        let mount_dir = tempfile::tempdir().unwrap();
+        let mount_path = mount_dir.path().to_path_buf();
+        let handle = {
+            let mount_path = mount_path.clone();
+            std::thread::spawn(move || mountfs::mount(fs, &mount_path, false))
+        };
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if std::fs::read_dir(&mount_path)
+                .map(|mut e| e.next().is_some())
+                .unwrap_or(false)
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "mount did not become ready within 5s"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // Varied, non-trivial content spanning several `PERSIST_CHUNK_SIZE`
+        // (256 KiB) pieces.
+        let content: Vec<u8> = (0u32..300_000).map(|i| (i % 251) as u8).collect();
+        std::fs::write(mount_path.join("a.txt"), &content).unwrap();
+        assert_eq!(std::fs::read(mount_path.join("a.txt")).unwrap(), content);
+
+        let status = std::process::Command::new("fusermount3")
+            .arg("-u")
+            .arg(&mount_path)
+            .status()
+            .expect("failed to run fusermount3 -u");
+        assert!(status.success(), "fusermount3 -u failed: {status}");
+        handle
+            .join()
+            .expect("mount thread panicked")
+            .expect("mount() returned an error");
+
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_read_connection().unwrap();
+        let a = db::resolve_path(&conn, "a.txt").unwrap().unwrap();
+        assert_eq!(db::file_size(&conn, &a).unwrap(), content.len() as i64);
     }
 }

@@ -10,10 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use cdc::{
-    BufferingHashingChunker, CdcChunker, CdcConfig, ChunkHasher, ChunkWithBytes, Chunker,
-    SingleChunkChunker,
-};
+use cdc::{CdcChunker, CdcConfig, ChunkHasher, Chunker, SingleChunkChunker};
 use clap::Args;
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
@@ -21,9 +18,19 @@ use rusqlite::Connection;
 use walkdir::WalkDir;
 
 use crate::chunk_store::{self, SpaceAllocator};
+use crate::ram_budget_check::check_ram_budget;
+use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
+use crate::write_cache::RamBudget;
 
 /// Number of bytes read from a file at a time.
 const READ_BUFFER_SIZE: usize = 64 * 1024;
+
+/// Default RAM budget, in megabytes, for buffering an in-progress chunk's
+/// bytes while its dedup status is resolved (see [`BackupArgs::chunk_buffer_mb`]
+/// and [`crate::spilling_chunker::SpillingHashingChunker`]) - shared across
+/// every concurrent worker, same spirit as `mount --read-write`'s
+/// `--write-cache-mb` (see its doc comment in `mount.rs`).
+const DEFAULT_CHUNK_BUFFER_MB: u64 = 128;
 
 /// Number of hash bytes taken from blake3's extendable output, for both chunk
 /// hashes and the content hash. `pub(crate)`: `mount.rs`'s phase 2b persist
@@ -51,6 +58,21 @@ pub struct BackupArgs {
     /// pool (one thread per CPU core).
     #[arg(short = 'c', long, value_parser = clap::value_parser!(u32).range(1..=32))]
     concurrency: Option<u32>,
+
+    /// RAM budget, in megabytes, for buffering an in-progress chunk's bytes
+    /// while its dedup status is resolved - shared across every concurrent
+    /// worker (see `--concurrency`). A chunk that exceeds this budget spills
+    /// to a temp file instead of failing; without this, a single large CDC
+    /// chunk, or an entire file under `chunking: none`, would need to be
+    /// fully RAM-resident at once (see
+    /// `docs/plans/bounded-memory-io-pipeline.md`).
+    #[arg(long, default_value_t = DEFAULT_CHUNK_BUFFER_MB)]
+    chunk_buffer_mb: u64,
+
+    /// Start anyway if `--chunk-buffer-mb` looks large enough, relative to
+    /// currently available RAM, to risk pushing the machine into swapping.
+    #[arg(long)]
+    allow_swap_risk: bool,
 
     /// One or more source paths followed by the target path in the repository.
     #[arg(required = true, num_args = 2.., value_name = "PATH")]
@@ -135,6 +157,23 @@ struct RunContext {
     abort: Arc<AtomicBool>,
     warnings: Arc<AtomicU64>,
     sender: Mutex<mpsc::Sender<db::FileBackupRecord>>,
+    /// Shared RAM budget for [`SpillingHashingChunker`]'s per-worker
+    /// in-progress chunk buffering - see [`BackupArgs::chunk_buffer_mb`].
+    chunk_buffer_budget: Arc<RamBudget>,
+    /// This run's private temp directory for chunk-buffer disk spillover -
+    /// see [`run_store`], removed whole once every spill file in it (each
+    /// deleted by its own `WriteCache`'s `Drop`) is gone.
+    spill_dir: PathBuf,
+    spill_id_seq: AtomicU64,
+}
+
+impl RunContext {
+    /// A private, never-yet-created spill path for a new chunk buffer -
+    /// mirrors `mount.rs`'s `Inner::spill_path`.
+    fn spill_path(&self) -> PathBuf {
+        let id = self.spill_id_seq.fetch_add(1, Ordering::Relaxed);
+        self.spill_dir.join(id.to_string())
+    }
 }
 
 thread_local! {
@@ -159,6 +198,15 @@ fn with_read_connection<R>(
 }
 
 pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
+    if let Err(msg) = check_ram_budget(
+        "chunk-buffer-mb",
+        args.chunk_buffer_mb,
+        args.allow_swap_risk,
+    ) {
+        eprintln!("error: {msg}");
+        return ExitCode::FAILURE;
+    }
+
     let (sources, target) = args.paths.split_at(args.paths.len() - 1);
     let target = &target[0];
 
@@ -239,6 +287,27 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
     let abort = Arc::new(AtomicBool::new(false));
     let warnings = Arc::new(AtomicU64::new(warning_count));
 
+    // A dedicated, uniquely-named spill directory for chunk-buffer
+    // overflow (see `spilling_chunker::SpillingHashingChunker`) - created
+    // empty here, removed whole below once every spill file in it (each
+    // deleted by its own `WriteCache`'s `Drop`) is gone. Named via
+    // `tempfile` rather than `std::process::id()`: a process id is only
+    // unique across *processes*, but `run_store` can run more than once
+    // within one process (every store integration test does exactly that,
+    // concurrently) - a process-id-based name let two concurrent runs
+    // collide on the same directory and race to delete it out from under
+    // each other (see the identical fix in `mount.rs`'s `build_filesystem`).
+    let spill_dir = match tempfile::Builder::new()
+        .prefix("backup-store-chunk-buffer-")
+        .tempdir()
+    {
+        Ok(dir) => dir.keep(),
+        Err(err) => {
+            eprintln!("error: failed to create chunk-buffer temp dir: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     let ctx = Arc::new(RunContext {
         repository,
         cdc_config,
@@ -247,6 +316,9 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
         abort: Arc::clone(&abort),
         warnings: Arc::clone(&warnings),
         sender: Mutex::new(tx),
+        chunk_buffer_budget: Arc::new(RamBudget::new(args.chunk_buffer_mb * 1024 * 1024)),
+        spill_dir: spill_dir.clone(),
+        spill_id_seq: AtomicU64::new(0),
     });
 
     let writer_abort = Arc::clone(&abort);
@@ -273,6 +345,7 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
     }
 
     writer_handle.join().expect("writer thread panicked");
+    let _ = std::fs::remove_dir_all(&spill_dir);
 
     if abort.load(Ordering::Relaxed) {
         eprintln!("error: backup aborted after a fatal error");
@@ -534,14 +607,21 @@ fn warn(ctx: &RunContext, msg: &str) {
 /// Reads and chunks `file`, resolving each chunk against the dedup index and
 /// writing new chunks' bytes to the store as they're found, and returns the
 /// resolved chunk list together with the hash over the ordered chunk sequence
-/// (see `contents.hash` in `db/src/migrations.rs`).
+/// (see `contents.hash` in `db/src/migrations.rs`). Chunk bytes are buffered
+/// via `SpillingHashingChunker` (RAM-budgeted, spills to disk - see
+/// `ctx.chunk_buffer_budget`/`spill_path`), not a plain `Vec<u8>`: without
+/// that, a single large CDC chunk, or the entire file under `chunking:
+/// none`, would need to be fully RAM-resident at once (see
+/// `docs/plans/bounded-memory-io-pipeline.md`).
 fn read_and_chunk(
     ctx: &RunContext,
     mut file: File,
 ) -> Result<(Vec<db::ChunkRef>, [u8; HASH_LENGTH]), WorkerError> {
-    let mut chunker = BufferingHashingChunker::new(
+    let mut chunker = SpillingHashingChunker::new(
         Blake3Hasher(blake3::Hasher::new()),
         make_chunker(&ctx.cdc_config),
+        Arc::clone(&ctx.chunk_buffer_budget),
+        || ctx.spill_path(),
     );
     let mut content_hasher = blake3::Hasher::new();
     let mut chunk_refs = Vec::new();
@@ -552,11 +632,17 @@ fn read_and_chunk(
         if n == 0 {
             break;
         }
-        for chunk in chunker.next(&buf[..n]) {
+        let chunks = chunker
+            .next(&buf[..n])
+            .map_err(|err| WorkerError::Fatal(format!("chunk buffering failed: {err}")))?;
+        for chunk in chunks {
             resolve_chunk(ctx, chunk, &mut chunk_refs, &mut content_hasher)?;
         }
     }
-    if let Some(chunk) = chunker.flush() {
+    let flushed = chunker
+        .flush()
+        .map_err(|err| WorkerError::Fatal(format!("chunk buffering failed: {err}")))?;
+    if let Some(chunk) = flushed {
         resolve_chunk(ctx, chunk, &mut chunk_refs, &mut content_hasher)?;
     }
 
@@ -570,7 +656,7 @@ fn read_and_chunk(
 /// miss. Also feeds the chunk's length and hash into `content_hasher`.
 fn resolve_chunk(
     ctx: &RunContext,
-    chunk: ChunkWithBytes,
+    chunk: SpilledChunk,
     chunk_refs: &mut Vec<db::ChunkRef>,
     content_hasher: &mut blake3::Hasher,
 ) -> Result<(), WorkerError> {
@@ -590,9 +676,17 @@ fn resolve_chunk(
             length: length_hash.length,
         },
         None => {
-            let extents =
-                chunk_store::write_chunk_bytes(&ctx.data_store, &ctx.allocator, &chunk.bytes)
-                    .map_err(|err| WorkerError::Fatal(format!("store write failed: {err}")))?;
+            // `chunk.bytes` (dropped here on the dedup-hit branch above
+            // without ever being drained) is a `WriteCache`, not a plain
+            // `Vec<u8>` - see `SpillingHashingChunker`'s doc comment.
+            let mut bytes = chunk.bytes;
+            let extents = chunk_store::write_chunk_from_cache(
+                &ctx.data_store,
+                &ctx.allocator,
+                &mut bytes,
+                length_hash.length,
+            )
+            .map_err(|err| WorkerError::Fatal(format!("store write failed: {err}")))?;
             db::ChunkRef::New {
                 length: length_hash.length,
                 hash: length_hash.hash,
@@ -670,6 +764,8 @@ mod tests {
             create_dirs: true,
             target_exists: false,
             concurrency: Some(2),
+            chunk_buffer_mb: DEFAULT_CHUNK_BUFFER_MB,
+            allow_swap_risk: false,
             paths: std::mem::take(&mut paths),
         }
     }
@@ -915,5 +1011,73 @@ mod tests {
             (a_start, a_stop),
             "c.txt must reuse exactly the space freed by deleting+reclaiming a.txt"
         );
+    }
+
+    /// End-to-end regression for `docs/plans/bounded-memory-io-pipeline.md`:
+    /// `chunking: none` makes the entire file one chunk (see
+    /// `cdc::SingleChunkChunker`), so `SpillingHashingChunker` must buffer
+    /// it via disk spillover rather than needing it RAM-resident. A
+    /// `chunk_buffer_mb: 0` budget forces spillover for every single byte
+    /// written, the most aggressive case - if draining a spilled chunk
+    /// (`chunk_store::write_chunk_from_cache`) or its dedup handling were
+    /// broken, this would corrupt the stored content instead of just being
+    /// slow.
+    #[test]
+    fn chunking_none_with_a_zero_byte_chunk_buffer_still_round_trips_correctly() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        db::init_repository(
+            &repo_root,
+            &db::RepositorySettings::new(12, db::Chunking::None).unwrap(),
+        )
+        .unwrap();
+
+        let source_dir = tempfile::tempdir().unwrap();
+        // Varied, non-trivial content - large enough to span many
+        // `READ_BUFFER_SIZE`/spill-write pieces.
+        let content: Vec<u8> = (0u32..300_000).map(|i| (i % 251) as u8).collect();
+        std::fs::write(source_dir.path().join("a.txt"), &content).unwrap();
+        std::fs::write(source_dir.path().join("b.txt"), &content).unwrap();
+
+        let args = BackupArgs {
+            create_dirs: true,
+            target_exists: false,
+            concurrency: Some(2),
+            chunk_buffer_mb: 0,
+            allow_swap_risk: false,
+            paths: vec![source_dir.path().to_path_buf(), PathBuf::from("target")],
+        };
+        let exit = run_store(&repo_root, args);
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let c = conn(&repo_root);
+        assert_eq!(
+            count(&c, "contents"),
+            1,
+            "a.txt and b.txt have identical content - must dedupe to one contents row \
+             even though chunking:none means only one (whole-file) chunk is ever compared"
+        );
+        assert_eq!(count(&c, "chunks"), 1);
+
+        let source_name = source_dir.path().file_name().unwrap().to_str().unwrap();
+        let a_entry = db::resolve_path(&c, &format!("target/{source_name}/a.txt"))
+            .unwrap()
+            .unwrap();
+        let (start, stop): (i64, i64) = c
+            .query_row(
+                "SELECT ce.start, ce.stop FROM chunk_extents ce
+                 JOIN content_chunks cc ON cc.chunk_id = ce.chunk_id
+                 WHERE cc.content_id = ?1",
+                [a_entry.content_id.unwrap()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((stop - start) as usize, content.len());
+
+        let data_store = store::LongTermStore::new(repo_root.join("data"), true);
+        let mut buf = vec![0u8; content.len()];
+        let integrity = data_store.read(start as u64, &mut buf).unwrap();
+        assert_eq!(integrity, store::ReadIntegrity::Complete);
+        assert_eq!(buf, content);
     }
 }

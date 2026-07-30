@@ -11,6 +11,15 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 use store::{LongTermStore, ReadIntegrity};
 
+use crate::write_cache::WriteCache;
+
+/// Size of the pieces [`write_chunk_from_cache`] drains `bytes` in - keeps
+/// peak memory for writing out a chunk bounded regardless of the chunk's
+/// total size, the same way `mount.rs`'s `PERSIST_CHUNK_SIZE` and
+/// `store.rs`'s `READ_BUFFER_SIZE` already bound their own streaming
+/// loops.
+const DRAIN_PIECE_SIZE: u64 = 256 * 1024;
+
 /// First-fit allocator over the gaps left in the data store by
 /// `reclaim-space`-deleted chunks, plus an open-ended trailing region past
 /// the highest byte ever written (mirrors Scala's `Long.MAX_VALUE`-sentinel
@@ -115,20 +124,37 @@ pub fn read_chunk_bytes(
     Ok((buf, integrity))
 }
 
-/// Reserves store space for `bytes` via `allocator` and writes them across
-/// as many extents as the reservation needed, returning those extents for
-/// the caller to pass to `db::ChunkRef::New`.
-pub fn write_chunk_bytes(
+/// Reserves store space for a chunk of `total_len` bytes (its boundary/
+/// hash is already known - see `spilling_chunker::SpillingHashingChunker`)
+/// and writes it out by draining `bytes` (a [`WriteCache`], not a plain
+/// `&[u8]`) in [`DRAIN_PIECE_SIZE`] pieces across as many extents as the
+/// reservation needed, returning those extents for the caller to pass to
+/// `db::ChunkRef::New`. Draining in bounded pieces rather than requiring
+/// the caller to already hold `total_len` contiguously in memory is the
+/// entire point of buffering a chunk in a `WriteCache` (RAM-budgeted,
+/// spills to disk) instead of a plain `Vec<u8>` in the first place - a
+/// single very large chunk (a large CDC chunk, or an entire file under
+/// `chunking: none`) never needs its full size resident in RAM at once,
+/// either while buffering it or while writing it out.
+pub fn write_chunk_from_cache(
     store: &LongTermStore,
     allocator: &SpaceAllocator,
-    bytes: &[u8],
+    bytes: &mut WriteCache,
+    total_len: u64,
 ) -> std::io::Result<Vec<(u64, u64)>> {
-    let extents = allocator.reserve(bytes.len() as u64);
-    let mut offset = 0usize;
+    let extents = allocator.reserve(total_len);
+    let mut chunk_pos = 0u64;
     for &(start, stop) in &extents {
-        let extent_len = (stop - start) as usize;
-        store.write(start, &bytes[offset..offset + extent_len])?;
-        offset += extent_len;
+        let mut store_pos = start;
+        while store_pos < stop {
+            let piece_len = DRAIN_PIECE_SIZE.min(stop - store_pos);
+            let piece = bytes.read_filling_gaps(chunk_pos, piece_len, |_, _| {
+                unreachable!("a freshly-accumulated chunk buffer has no gaps to fill")
+            })?;
+            store.write(store_pos, &piece)?;
+            chunk_pos += piece_len;
+            store_pos += piece_len;
+        }
     }
     Ok(extents)
 }
@@ -233,12 +259,24 @@ mod tests {
     }
 
     #[test]
-    fn write_chunk_bytes_reserves_and_writes_across_returned_extents() {
+    fn write_chunk_from_cache_drains_a_write_cache_across_returned_extents() {
+        use crate::write_cache::RamBudget;
+        use std::sync::Arc;
+
         let temp_dir = tempfile::tempdir().unwrap();
         let store = LongTermStore::new(temp_dir.path(), false);
         let allocator = SpaceAllocator::from_sorted_extents(&[(0, 1000), (2000, 3000)]);
 
-        let extents = write_chunk_bytes(&store, &allocator, &[7u8; 1200]).unwrap();
+        // A tiny RAM budget forces the cache to spill to disk partway
+        // through - `write_chunk_from_cache` must still drain it correctly
+        // regardless of which tier(s) the bytes actually live in.
+        let budget = Arc::new(RamBudget::new(4));
+        let spill_dir = tempfile::tempdir().unwrap();
+        let mut cache = WriteCache::new(budget, spill_dir.path().join("chunk"), 0);
+        let payload = [7u8; 1200];
+        cache.write(0, &payload).unwrap();
+
+        let extents = write_chunk_from_cache(&store, &allocator, &mut cache, 1200).unwrap();
 
         assert_eq!(extents, vec![(1000, 2000), (3000, 3200)]);
         let mut buf = [0u8; 1200];
@@ -247,6 +285,6 @@ mod tests {
             store.read(3000, &mut buf[1000..]).unwrap()
         };
         assert_eq!(integrity, ReadIntegrity::Complete);
-        assert!(buf.iter().all(|&b| b == 7));
+        assert_eq!(buf, payload);
     }
 }

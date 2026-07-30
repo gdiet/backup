@@ -1,15 +1,17 @@
 # Bounded-memory, backpressured I/O for `store` and `mount --read-write`
 
-**Status**: requirements gathering only - no design yet, deliberately.
+**Status**: the core memory-bounding problem is implemented for both
+commands (see "Chunk-buffer spillover: implemented" below) - the mount
+worker-thread-exhaustion/backpressure problem is also implemented (see
+"Mount-specific detail: implemented"). What's left open is noted inline
+where relevant; nothing here still says "do not implement from this doc."
 This doc supersedes `docs/plans/mount-async-persist-and-backpressure.md`'s
 scope (folds its content in below) - a chat discussion starting from "what
 happens with very large CDC chunks or `chunking: none`" in `store`
 revealed that `store` and `mount --read-write` share the same underlying
 problem (bounding memory while reading from a source and writing to a
 target that can each independently be slow, without corrupting data or
-needlessly re-reading/re-writing), not two separate ones. Do not start
-implementing from this doc - it's the input to a real design, not the
-design itself.
+needlessly re-reading/re-writing), not two separate ones.
 
 ## Requirements identified so far
 
@@ -122,8 +124,9 @@ have to be rediscovered.
 
 ## Shared implementation or two?
 
-Not decided - recorded as an open question, not resolved here. Revised
-after direct pushback on an earlier, too-strong version of this section
+**Decided and implemented** (see "Chunk-buffer spillover: implemented"
+below) - kept as a record of the reasoning, not just the conclusion.
+Revised after direct pushback on an earlier, too-strong version of this section
 (originally argued `store`'s append-only pattern was a "structural
 mismatch" for `mount`'s random-access `WriteCache`/span-map machinery -
 that doesn't actually hold up): `write_cache::WriteCache` has **no
@@ -137,20 +140,109 @@ constant per-call overhead (`BTreeMap` remove/insert vs. a plain
 `extend_from_slice`) that's immaterial at the call granularity this would
 actually run at (a handful of KB-sized pieces per chunk, not per byte).
 The unused random-access/hole capability costs nothing at runtime when
-never exercised - it's present, not active. **Current leaning: reuse
-`WriteCache` (or close to it) as the shared spillable-buffer primitive
-for both**, rather than also building a separate dedicated append-only
-type - the existing 13 unit tests already cover the behavior this would
-rely on, nothing new to verify beyond "still correct when used
-append-only," which is implied by general correctness.
+never exercised - it's present, not active. **`WriteCache` was reused
+as the shared spillable-buffer primitive for both**, rather than also
+building a separate dedicated append-only type - see "Chunk-buffer
+spillover: implemented" below for how.
 
 What *doesn't* transfer directly is the layer on top: **admission
 control / when to even start reading more data**, given the "who
 controls admission" asymmetry above - `store`'s natural shape is a
 pull-based scheduler gate (it decides when to start the next file/chunk),
 `mount`'s is a block-before-returning check inside a reactive callback it
-doesn't control the timing of. That orchestration layer likely still
-wants two shapes even if the buffer underneath is one.
+doesn't control the timing of. `store` doesn't have such a gate today
+(unlike mount's persist queue, below) - `--concurrency` is a static cap
+chosen up front, not a dynamic backpressure mechanism. Left as a real
+open item, not addressed by the chunk-buffer-spillover work: that work
+only bounds *one worker's* peak memory (down from "the whole file" to
+"the shared chunk-buffer budget"), not how many workers run at once.
+
+## Chunk-buffer spillover: implemented
+
+Closes the "very large files must not cause OOM, even with `chunking:
+none`" requirement above, for both commands - previously the actual
+biggest gap, since the mount backpressure work (below) only fixed
+worker-thread exhaustion, not the underlying unbounded buffering.
+
+**Root cause** (confirmed by reading the code, not assumed): `cdc::
+BufferingHashingChunker` buffers a completed chunk's raw bytes in a plain
+`Vec<u8>` so a caller can write a new (non-duplicate) chunk without
+re-reading the source (necessary - see "Additions from earlier" above on
+why re-reading isn't safe). For `chunking: none` specifically, `cdc::
+SingleChunkChunker::next` *always* returns an empty boundary list (`Vec::
+new()`) and only reports the one whole-file chunk from `flush()` at EOF -
+so `BufferingHashingChunker`'s `buffer.extend_from_slice(data)` runs on
+every single call with nothing ever draining it, meaning the entire file
+ends up in that one `Vec<u8>` before anything else can happen. The same
+mechanism, just bounded by the configured max chunk size instead of the
+whole file, applies to a large CDC chunk (`target_size_bits` near its
+max, ~16.6 GB worst case).
+
+**Fix**: a new type, `cli::spilling_chunker::SpillingHashingChunker<H, C,
+F>`, duplicating `BufferingHashingChunker`'s exact slicing/hashing logic
+but buffering each in-progress chunk's bytes in a `write_cache::
+WriteCache` instead of a `Vec<u8>` - the RAM-budgeted, disk-spilling
+primitive `mount --read-write`'s write cache already used (see "Shared
+implementation or two?" above: this is that reuse, realized). Each
+completed chunk hands back its own detached `WriteCache` (`SpilledChunk`)
+via `std::mem::replace`, mirroring exactly how `BufferingHashingChunker`
+hands back its buffer via `std::mem::take` - the caller looks the chunk
+up in the dedup index and either drops it (a hit - `WriteCache::Drop`
+releases the RAM reservation and deletes any spill file) or drains it via
+a new `chunk_store::write_chunk_from_cache` (a miss - reserves store
+extents exactly as the old `write_chunk_bytes` did, but writes them out
+by reading the `WriteCache` back in bounded pieces rather than requiring
+the whole chunk contiguously in memory; `write_chunk_bytes` itself was
+removed once nothing called it anymore).
+
+**Wiring**: `store.rs`'s `read_and_chunk`/`resolve_chunk` and `mount.rs`'s
+`Inner::persist`/`resolve_persist_chunk` both switched from
+`BufferingHashingChunker`+`write_chunk_bytes` to
+`SpillingHashingChunker`+`write_chunk_from_cache`. `mount` reuses its
+*existing* `--write-cache-mb` budget and spill directory for this (the
+persist-time chunk buffer and the write cache are never both being
+filled for the same bytes at a truly simultaneous peak in a way that
+matters enough to warrant a second budget - see below). `store` gained
+its own new `--chunk-buffer-mb` (default 128, same default as mount) and
+`--allow-swap-risk` flags, plus a private spill directory created at
+startup and removed at the end of the run - `check_ram_budget` (factored
+out of `mount.rs` into `cli::ram_budget_check`, since both commands now
+need the identical startup guard) is called for both.
+
+**A real, accepted memory-accounting subtlety for mount**: reusing the
+same `RamBudget` for both the write cache and the persist-time chunk
+buffer means both can be charged against it *simultaneously* while a
+large file is being persisted (the write cache still holds the original
+bytes while `Inner::persist` reads through it and re-buffers into the
+chunker) - this is correct, not a double-counting bug: they really are
+two separate copies in memory at that point, and the shared budget
+reflects that true aggregate pressure rather than hiding it.
+
+**A latent, pre-existing bug found and fixed while wiring this up**: both
+`mount.rs`'s and `store.rs`'s spill directories were named from
+`std::process::id()` - unique across *processes*, but not across
+*invocations within one process*. `cargo test` runs many tests
+concurrently in one process, and `build_filesystem`/`run_store` are each
+called once per test - two concurrent tests collided on the same spill
+directory name, silently overwriting each other's spill files (same
+generated filenames, since each `WriteCache`'s spill-id counter starts
+fresh at 0 per instance) and racing to `remove_dir_all` it out from under
+each other on completion. Fixed by naming both via `tempfile::Builder`
+(genuinely unique per call) instead - caught by a new test forcing heavy
+spillover (`chunking_none_with_a_zero_byte_write_cache_still_round_trips_
+correctly` in `mount.rs`, `chunking_none_with_a_zero_byte_chunk_buffer_
+still_round_trips_correctly` in `store.rs`), which is what actually
+surfaced it (nothing before forced enough concurrent spillover to hit the
+collision in practice).
+
+**Still open**: `store`'s own admission control (noted above - a static
+`--concurrency`, not a dynamic backpressure gate like mount's persist
+queue) and the not-yet-configurable temp/spill directory location for
+either command (both currently hardcode `std::env::temp_dir()` - the
+"operational expectation" requirement above wanted this configurable,
+matching the Scala prototype's own guidance, but neither command has a
+`--temp`-style flag yet; deferred as a separate, smaller enhancement
+rather than folded into this pass).
 
 ## Mount-specific detail: implemented
 
