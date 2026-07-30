@@ -1,6 +1,77 @@
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+
+/// How many recently-used read file handles each thread keeps open - see
+/// `LongTermStore`'s "Performance note" doc comment and
+/// `docs/plans/implemented/long-term-store-read-handle-cache.md` for why (repeatedly
+/// re-opening for every read call measured 1.2x-3.5x slower than keeping
+/// a handle open) and why this is bounded (avoid unbounded
+/// file-descriptor growth against a repository with many physical LTS
+/// files - not chosen from any specific measurement, just a modest cap).
+const READ_HANDLE_CACHE_CAPACITY: usize = 8;
+
+thread_local! {
+    // One small LRU of open read handles per OS thread, not a single
+    // shared cache - avoids introducing a lock/contention point on what's
+    // otherwise a fully lock-free read path (mirrors `cli::store`'s own
+    // `READ_CONNECTION` thread-local pattern for DB connections, same
+    // reasoning). Keyed by the full absolute file path, so this stays
+    // correct even if a single thread uses more than one `LongTermStore`
+    // pointed at a different `data_dir` - their paths never collide.
+    // Most-recently-used entry at the front; a linear scan to find/evict
+    // is fine at this small a capacity, cheaper than hashing.
+    static READ_HANDLES: RefCell<VecDeque<(PathBuf, File)>> = const { RefCell::new(VecDeque::new()) };
+}
+
+/// Runs `f` with a read handle for `full_path` - reuses a cached handle
+/// for this thread if there is one (see [`READ_HANDLES`]), opens (and
+/// caches) a fresh one otherwise. Returns `Ok(None)` if `full_path`
+/// doesn't exist - a normal, expected condition for [`LongTermStore::
+/// read`]'s callers (a data file that was never written, or was deleted
+/// out from under the repository), not an error condition to cache or
+/// propagate as one.
+///
+/// Every successfully opened handle is cached after use, regardless of
+/// what `f` returned - `f` always `seek`s to an absolute position before
+/// reading (see `LongTermStore::read`), so the handle's cursor position
+/// never carries meaning across calls, and a transient read error doesn't
+/// mean the handle itself is broken.
+fn with_read_handle<R>(
+    full_path: &Path,
+    f: impl FnOnce(&mut File) -> io::Result<R>,
+) -> io::Result<Option<R>> {
+    let cached = READ_HANDLES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache
+            .iter()
+            .position(|(path, _)| path == full_path)
+            .map(|idx| cache.remove(idx).expect("just found via position").1)
+    });
+
+    let mut file = match cached {
+        Some(file) => file,
+        None => match File::open(full_path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        },
+    };
+
+    let result = f(&mut file);
+
+    READ_HANDLES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= READ_HANDLE_CACHE_CAPACITY {
+            cache.pop_back(); // evict the least-recently-used entry
+        }
+        cache.push_front((full_path.to_owned(), file));
+    });
+
+    result.map(Some)
+}
 
 /// Size of each backing data file in bytes. Must not be changed without a migration.
 const FILE_SIZE: u64 = 100_000_000;
@@ -39,15 +110,20 @@ pub enum ReadIntegrity {
 ///
 /// # Thread safety
 ///
-/// Each call opens its own file handle, so concurrent calls on any region are safe
-/// without external locking.
+/// `write` opens its own file handle per call, so concurrent writes on any region are
+/// safe without external locking. `read` reuses a small per-thread cache of recently
+/// opened handles (see [`with_read_handle`]) instead - still lock-free across threads
+/// (each thread's cache is entirely its own), and always `seek`s to an absolute
+/// position before reading, so reusing a handle across calls changes nothing
+/// observable versus opening fresh each time.
 ///
 /// # Performance note
 ///
-/// For workloads with many small writes (< ~32 KB) to the same files, caching file
-/// handles would avoid the ~1 µs open/close overhead per operation. For the dedup backup
-/// use case with average chunk sizes well above 100 KB the overhead is negligible.
-/// A simpler open/close-per-call design is implemented.
+/// Measured (see `store/examples/bench.rs` and `docs/plans/implemented/
+/// long-term-store-read-handle-cache.md`): re-opening on every call costs little to
+/// nothing for writes, but a real, consistent 1.2x-3.5x for reads, at the block sizes
+/// this codebase actually uses (64 KiB-256 KiB) - worse on Windows than Linux. `read`
+/// caches handles for that reason; `write` doesn't, since the data didn't support it.
 ///
 /// # Atomicity
 ///
@@ -139,28 +215,31 @@ impl LongTermStore {
             let (path, file_offset, chunk_size) = path_offset_size(pos, remaining.len());
             let (chunk, rest) = remaining.split_at_mut(chunk_size);
             let full_path = self.data_dir.join(&path);
+            let chunk_len = chunk.len();
 
-            match File::open(&full_path) {
-                Ok(mut file) => {
-                    file.seek(SeekFrom::Start(file_offset))?;
-                    let mut bytes_read = 0;
-                    while bytes_read < chunk.len() {
-                        match file.read(&mut chunk[bytes_read..]) {
-                            Ok(0) => break, // EOF: file is shorter than expected
-                            Ok(n) => bytes_read += n,
-                            Err(e) => return Err(e),
-                        }
-                    }
-                    if bytes_read < chunk.len() {
-                        chunk[bytes_read..].fill(0);
-                        incomplete.push(path);
+            let bytes_read = with_read_handle(&full_path, |file| {
+                file.seek(SeekFrom::Start(file_offset))?;
+                let mut bytes_read = 0;
+                while bytes_read < chunk.len() {
+                    match file.read(&mut chunk[bytes_read..]) {
+                        Ok(0) => break, // EOF: file is shorter than expected
+                        Ok(n) => bytes_read += n,
+                        Err(e) => return Err(e),
                     }
                 }
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                if bytes_read < chunk.len() {
+                    chunk[bytes_read..].fill(0);
+                }
+                Ok(bytes_read)
+            })?;
+
+            match bytes_read {
+                Some(bytes_read) if bytes_read < chunk_len => incomplete.push(path),
+                Some(_) => {}
+                None => {
                     chunk.fill(0);
                     incomplete.push(path);
                 }
-                Err(e) => return Err(e),
             }
 
             remaining = rest;
@@ -344,6 +423,94 @@ mod tests {
             ReadIntegrity::Incomplete {
                 missing_or_short: vec!["00/00/0100000000".to_string()]
             }
+        );
+    }
+
+    // --- Read handle cache (`with_read_handle`/`READ_HANDLES`) ---
+
+    #[test]
+    fn repeated_reads_reuse_the_cached_handle_and_still_return_correct_data() {
+        let dir = TempDir::new().unwrap();
+        let s = make_store(&dir, false);
+        s.write(0, b"hello world").unwrap();
+
+        // Each iteration hits the cached handle from the previous one.
+        for _ in 0..3 {
+            let mut buf = [0u8; 11];
+            assert_eq!(s.read(0, &mut buf).unwrap(), ReadIntegrity::Complete);
+            assert_eq!(&buf, b"hello world");
+        }
+    }
+
+    #[test]
+    fn a_write_after_a_cached_read_is_visible_on_the_next_read() {
+        // A cached read handle must never serve stale data - `write` always
+        // goes through its own fresh handle, and the OS makes that write
+        // visible to any other handle on the same file immediately, cached
+        // or not.
+        let dir = TempDir::new().unwrap();
+        let s = make_store(&dir, false);
+        s.write(0, b"before").unwrap();
+
+        let mut buf = [0u8; 6];
+        assert_eq!(s.read(0, &mut buf).unwrap(), ReadIntegrity::Complete);
+        assert_eq!(&buf, b"before");
+
+        s.write(0, b"after!").unwrap();
+        let mut buf = [0u8; 6];
+        assert_eq!(s.read(0, &mut buf).unwrap(), ReadIntegrity::Complete);
+        assert_eq!(&buf, b"after!");
+    }
+
+    #[test]
+    fn reading_more_distinct_files_than_the_cache_capacity_still_returns_correct_data() {
+        // More distinct physical files than READ_HANDLE_CACHE_CAPACITY, so
+        // this exercises LRU eviction - and then re-reads the earliest
+        // (now-evicted) ones again, which must re-open correctly rather
+        // than somehow returning a stale/wrong cached handle.
+        let dir = TempDir::new().unwrap();
+        let s = make_store(&dir, false);
+        let file_count = READ_HANDLE_CACHE_CAPACITY + 4;
+
+        for i in 0..file_count {
+            s.write(i as u64 * FILE_SIZE, &[i as u8; 4]).unwrap();
+        }
+        for round in 0..2 {
+            for i in 0..file_count {
+                let mut buf = [0u8; 4];
+                assert_eq!(
+                    s.read(i as u64 * FILE_SIZE, &mut buf).unwrap(),
+                    ReadIntegrity::Complete,
+                    "round {round}, file {i}"
+                );
+                assert_eq!(buf, [i as u8; 4], "round {round}, file {i}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_cached_read_handle_does_not_prevent_deleting_its_directory() {
+        // Windows-specific concern flagged (but not verified) in
+        // docs/plans/implemented/long-term-store-read-handle-cache.md: does keeping a
+        // read handle open longer than a single call interfere with
+        // deleting the file/directory it belongs to (NTFS share-mode
+        // semantics differ from POSIX unlink-while-open)? Checked
+        // directly here rather than just trusting that `TempDir`'s own
+        // cleanup (which silently ignores errors) never visibly fails.
+        let dir = TempDir::new().unwrap();
+        let s = make_store(&dir, false);
+        s.write(0, b"data").unwrap();
+
+        let mut buf = [0u8; 4];
+        assert_eq!(s.read(0, &mut buf).unwrap(), ReadIntegrity::Complete);
+        // A read handle for this file is now cached on this thread.
+
+        let dir_path = dir.path().to_path_buf();
+        drop(dir); // TempDir::drop -> remove_dir_all, errors ignored
+        assert!(
+            !dir_path.exists(),
+            "directory should be gone even with a cached read handle still open for a \
+             file in it"
         );
     }
 }
