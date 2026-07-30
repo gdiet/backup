@@ -237,7 +237,8 @@ fn restore_file(
     // reopening the path: a fresh read-only open (`File::open`) doesn't carry
     // FILE_WRITE_ATTRIBUTES on Windows, which makes `set_times` a silent
     // no-op there.
-    let _ = file.set_times(std::fs::FileTimes::new().set_modified(mtime_from_millis(entry.time_millis)));
+    let _ = file
+        .set_times(std::fs::FileTimes::new().set_modified(mtime_from_millis(entry.time_millis)));
     drop(file);
 }
 
@@ -411,7 +412,10 @@ mod tests {
         );
 
         assert_eq!(exit, ExitCode::SUCCESS);
-        let mtime = fs::metadata(target.join("sub")).unwrap().modified().unwrap();
+        let mtime = fs::metadata(target.join("sub"))
+            .unwrap()
+            .modified()
+            .unwrap();
         assert_eq!(
             mtime.duration_since(UNIX_EPOCH).unwrap().as_millis() as i64,
             1_704_067_200_000
