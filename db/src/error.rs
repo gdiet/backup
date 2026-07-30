@@ -16,6 +16,9 @@ pub enum Error {
     /// [`crate::apply_backup_batch`] was asked to record a file at a name that
     /// already exists as a directory (not a file) under `parent_id`.
     NotAFile { parent_id: i64, name: String },
+    /// [`crate::rename_entry`] was asked to move an entry to a
+    /// `(parent_id, name)` that already has an active entry.
+    AlreadyExists { parent_id: i64, name: String },
     /// Creating the repository directory layout failed.
     Io(std::io::Error),
     /// A SQLite operation failed.
@@ -43,6 +46,9 @@ impl fmt::Display for Error {
                     "'{name}' under tree entry {parent_id} is a directory, not a file"
                 )
             }
+            Self::AlreadyExists { parent_id, name } => {
+                write!(f, "'{name}' already exists under tree entry {parent_id}")
+            }
             Self::Io(err) => write!(f, "I/O error: {err}"),
             Self::Sqlite(err) => write!(f, "SQLite error: {err}"),
             Self::Migration(err) => write!(f, "database migration error: {err}"),
@@ -57,6 +63,7 @@ impl std::error::Error for Error {
             Self::InvalidSettings(err) => Some(err),
             Self::NotADirectory { .. } => None,
             Self::NotAFile { .. } => None,
+            Self::AlreadyExists { .. } => None,
             Self::Io(err) => Some(err),
             Self::Sqlite(err) => Some(err),
             Self::Migration(err) => Some(err),

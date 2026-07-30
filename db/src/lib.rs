@@ -32,7 +32,10 @@ pub use query::{
     subtree_entries_with_paths, subtree_stats,
 };
 pub use settings::{CDC_TARGET_SIZE_BITS_RANGE, Chunking, RepositorySettings, SettingsError};
-pub use tree::{EntryKind, TreeEntryRow, find_tree_entry, get_tree_entry, insert_directory};
+pub use tree::{
+    EntryKind, TreeEntryRow, find_tree_entry, get_tree_entry, insert_directory, rename_entry,
+    touch_mtime,
+};
 
 use std::fs;
 use std::path::Path;

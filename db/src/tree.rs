@@ -112,6 +112,40 @@ pub fn insert_directory(
     Ok(entry.id)
 }
 
+/// Updates `id`'s `time` in place. Used by the mount's `utimens` - not
+/// needed by `store`, which always inserts a fresh row or goes through
+/// [`crate::apply_backup_batch`]'s own unchanged-content branch instead.
+pub fn touch_mtime(conn: &Connection, id: i64, time_millis: i64) -> Result<(), Error> {
+    conn.execute(
+        "UPDATE tree_entries SET time = ?1 WHERE id = ?2 AND deleted_at IS NULL",
+        params![time_millis, id],
+    )?;
+    Ok(())
+}
+
+/// Moves `id` to a new `(parent_id, name)`. Fails with [`Error::AlreadyExists`]
+/// if an active entry already occupies the destination - no overwrite support
+/// (see `docs/plans/fuse-mount-readwrite.md` for why this is a deliberate,
+/// documented limitation rather than an oversight).
+pub fn rename_entry(
+    conn: &Connection,
+    id: i64,
+    new_parent_id: i64,
+    new_name: &str,
+) -> Result<(), Error> {
+    if find_tree_entry(conn, new_parent_id, new_name)?.is_some() {
+        return Err(Error::AlreadyExists {
+            parent_id: new_parent_id,
+            name: new_name.to_string(),
+        });
+    }
+    conn.execute(
+        "UPDATE tree_entries SET parent_id = ?1, name = ?2 WHERE id = ?3 AND deleted_at IS NULL",
+        params![new_parent_id, new_name, id],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,5 +204,41 @@ mod tests {
         assert!(
             matches!(result, Err(Error::NotADirectory { parent_id: 0, name }) if name == "sub")
         );
+    }
+
+    #[test]
+    fn touch_mtime_updates_time_in_place() {
+        let (_temp_dir, conn) = test_connection();
+        let id = insert_directory(&conn, 0, "sub", 1000).unwrap();
+
+        touch_mtime(&conn, id, 2000).unwrap();
+
+        let entry = find_tree_entry(&conn, 0, "sub").unwrap().unwrap();
+        assert_eq!(entry.time_millis, 2000);
+    }
+
+    #[test]
+    fn rename_entry_moves_to_a_new_parent_and_name() {
+        let (_temp_dir, conn) = test_connection();
+        let src = insert_directory(&conn, 0, "src", 0).unwrap();
+        let dst = insert_directory(&conn, 0, "dst", 0).unwrap();
+        let id = insert_directory(&conn, src, "child", 0).unwrap();
+
+        rename_entry(&conn, id, dst, "renamed").unwrap();
+
+        assert_eq!(find_tree_entry(&conn, src, "child").unwrap(), None);
+        let entry = find_tree_entry(&conn, dst, "renamed").unwrap().unwrap();
+        assert_eq!(entry.id, id);
+    }
+
+    #[test]
+    fn rename_entry_rejects_an_existing_target() {
+        let (_temp_dir, conn) = test_connection();
+        let id = insert_directory(&conn, 0, "a", 0).unwrap();
+        insert_directory(&conn, 0, "b", 0).unwrap();
+
+        let result = rename_entry(&conn, id, 0, "b");
+
+        assert!(matches!(result, Err(Error::AlreadyExists { parent_id: 0, name }) if name == "b"));
     }
 }

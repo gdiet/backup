@@ -34,6 +34,19 @@ pub struct MountArgs {
     /// existing mountpoint). On Windows, must *not* already exist (WinFSP
     /// creates it itself as part of mounting).
     mountpoint: PathBuf,
+
+    /// Allow structural changes through the mount: `mkdir`/`rmdir`/
+    /// `unlink`/`rename`/creating empty files/touching timestamps (see
+    /// `docs/plans/fuse-mount-readwrite.md`, phase 2a - writing actual
+    /// file *content* isn't implemented yet regardless of this flag).
+    /// Off by default: a mount is a much larger blast radius for a mistake
+    /// (an editor autosave, a stray `rm -rf`, a build tool scribbling into
+    /// it) than `store`/`restore`. Do not run `store`/`del`/
+    /// `reclaim-space` against the same repository while a read-write
+    /// mount is active - both need the single write connection this holds
+    /// for the mount's whole lifetime.
+    #[arg(short = 'w', long)]
+    read_write: bool,
 }
 
 /// FUSE (Linux) mounts onto an existing, empty directory; WinFSP
@@ -108,11 +121,16 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
     };
 
     println!(
-        "mounted read-only at {} ({})",
+        "mounted {} at {} ({})",
+        if args.read_write {
+            "read-write"
+        } else {
+            "read-only"
+        },
         args.mountpoint.display(),
         unmount_hint(&args.mountpoint)
     );
-    match mountfs::mount(fs, &args.mountpoint, true) {
+    match mountfs::mount(fs, &args.mountpoint, !args.read_write) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("error: mount failed: {err}");
@@ -131,16 +149,45 @@ fn build_filesystem(repo: &Path) -> Result<DedupFs, String> {
     let conn = repository
         .open_read_connection()
         .map_err(|err| format!("failed to open the metadata database: {err}"))?;
+    // Opened unconditionally (even for a read-only mount) - cheap, and
+    // keeps DedupFs's shape identical regardless of --read-write; the
+    // read_only flag passed to mountfs::mount is what actually keeps the
+    // kernel/WinFSP from ever calling a write operation in that case, not
+    // this connection's mere existence.
+    let write_conn = repository
+        .open_write_connection()
+        .map_err(|err| format!("failed to open the metadata database for writing: {err}"))?;
     let data_store = LongTermStore::new(repository.data_dir(), true);
     Ok(DedupFs {
         conn: Mutex::new(conn),
+        write_conn: Mutex::new(write_conn),
         data_store,
     })
 }
 
 struct DedupFs {
     conn: Mutex<Connection>,
+    /// Held for the mount's whole lifetime - see `MountArgs::read_write`'s
+    /// doc comment on why `store`/`del`/`reclaim-space` mustn't run
+    /// concurrently against the same repository while this is open.
+    write_conn: Mutex<Connection>,
     data_store: LongTermStore,
+}
+
+/// Splits an absolute mount path into its parent path and final component -
+/// `db::resolve_path`'s own path-splitting rules apply to the parent half
+/// (a leading `/` and empty components are both fine), so no special-casing
+/// is needed for a root-level entry (`"/name"` splits to `("", "name")`,
+/// and `db::resolve_path(conn, "")` is documented to resolve to the root).
+fn split_parent(path: &str) -> (&str, &str) {
+    path.rsplit_once('/').unwrap_or(("", path))
+}
+
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 impl MountFilesystem for DedupFs {
@@ -248,6 +295,129 @@ impl MountFilesystem for DedupFs {
             max_name_length: 255,
             ..Default::default()
         })
+    }
+
+    fn mkdir(&self, path: &str) -> Result<(), Errno> {
+        let (parent_path, name) = split_parent(path);
+        let conn = self
+            .write_conn
+            .lock()
+            .expect("write connection mutex poisoned");
+        let parent = db::resolve_path(&conn, parent_path)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::ENOENT)?;
+        // insert_directory is idempotent (get-or-create) - fine for `store`,
+        // but a real mkdir(2) must fail on an existing name (file or
+        // directory alike), so the existence check happens here first.
+        if db::find_tree_entry(&conn, parent.id, name)
+            .map_err(|_| Errno::EIO)?
+            .is_some()
+        {
+            return Err(Errno::EEXIST);
+        }
+        db::insert_directory(&conn, parent.id, name, now_millis()).map_err(|_| Errno::EIO)?;
+        Ok(())
+    }
+
+    fn create(&self, path: &str) -> Result<Handle, Errno> {
+        let (parent_path, name) = split_parent(path);
+        let mut conn = self
+            .write_conn
+            .lock()
+            .expect("write connection mutex poisoned");
+        let parent = db::resolve_path(&conn, parent_path)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::ENOENT)?;
+        if db::find_tree_entry(&conn, parent.id, name)
+            .map_err(|_| Errno::EIO)?
+            .is_some()
+        {
+            return Err(Errno::EEXIST);
+        }
+        // No content/write-cache support yet (phase 2b) - this always
+        // creates an empty file, the same shape `open`/`read` already
+        // treat a zero-length file as (`content_id IS NULL`).
+        db::apply_backup_batch(
+            &mut conn,
+            &[db::FileBackupRecord {
+                parent_id: parent.id,
+                name: name.to_string(),
+                time_millis: now_millis(),
+                chunks: Vec::new(),
+                content_hash: Vec::new(),
+            }],
+        )
+        .map_err(|_| Errno::EIO)?;
+        let entry = db::find_tree_entry(&conn, parent.id, name)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::EIO)?;
+        Ok(Handle(entry.id as u64))
+    }
+
+    fn unlink(&self, path: &str) -> Result<(), Errno> {
+        let conn = self
+            .write_conn
+            .lock()
+            .expect("write connection mutex poisoned");
+        let entry = db::resolve_path(&conn, path)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::ENOENT)?;
+        if entry.kind != db::EntryKind::File {
+            return Err(Errno::EISDIR);
+        }
+        db::soft_delete(&conn, entry.id, now_millis()).map_err(|_| Errno::EIO)?;
+        Ok(())
+    }
+
+    fn rmdir(&self, path: &str) -> Result<(), Errno> {
+        let conn = self
+            .write_conn
+            .lock()
+            .expect("write connection mutex poisoned");
+        let entry = db::resolve_path(&conn, path)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::ENOENT)?;
+        if entry.kind != db::EntryKind::Dir {
+            return Err(Errno::ENOTDIR);
+        }
+        if !db::list_children(&conn, entry.id)
+            .map_err(|_| Errno::EIO)?
+            .is_empty()
+        {
+            return Err(Errno::ENOTEMPTY);
+        }
+        db::soft_delete(&conn, entry.id, now_millis()).map_err(|_| Errno::EIO)?;
+        Ok(())
+    }
+
+    fn rename(&self, old_path: &str, new_path: &str) -> Result<(), Errno> {
+        let conn = self
+            .write_conn
+            .lock()
+            .expect("write connection mutex poisoned");
+        let entry = db::resolve_path(&conn, old_path)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::ENOENT)?;
+        let (new_parent_path, new_name) = split_parent(new_path);
+        let new_parent = db::resolve_path(&conn, new_parent_path)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::ENOENT)?;
+        db::rename_entry(&conn, entry.id, new_parent.id, new_name).map_err(|err| match err {
+            db::Error::AlreadyExists { .. } => Errno::EEXIST,
+            _ => Errno::EIO,
+        })
+    }
+
+    fn utimens(&self, path: &str, mtime_millis: i64) -> Result<(), Errno> {
+        let conn = self
+            .write_conn
+            .lock()
+            .expect("write connection mutex poisoned");
+        let entry = db::resolve_path(&conn, path)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::ENOENT)?;
+        db::touch_mtime(&conn, entry.id, mtime_millis).map_err(|_| Errno::EIO)?;
+        Ok(())
     }
 }
 
@@ -386,6 +556,114 @@ mod tests {
             17
         );
         assert!(std::fs::metadata(mount_path.join("sub")).unwrap().is_dir());
+
+        let status = std::process::Command::new("fusermount3")
+            .arg("-u")
+            .arg(&mount_path)
+            .status()
+            .expect("failed to run fusermount3 -u");
+        assert!(status.success(), "fusermount3 -u failed: {status}");
+
+        handle
+            .join()
+            .expect("mount thread panicked")
+            .expect("mount() returned an error");
+    }
+
+    /// End-to-end phase 2a (structural read-write) test: mounts
+    /// `--read-write`, and exercises `mkdir`/`create`-empty-file/
+    /// `utimens`/`rename`/`rmdir`/`unlink` through ordinary `std::fs`
+    /// calls - not `write`/content-bearing files yet (phase 2b, not
+    /// implemented).
+    #[test]
+    fn mounts_read_write_and_supports_structural_changes() {
+        let (_temp_dir, repo_root) = init_repo();
+        // A marker only the mounted filesystem (not the plain, pre-mount
+        // host directory) would ever report - `create_dir`/similar probes
+        // against the mountpoint itself trivially "succeed" even before
+        // the mount is live (they just create a real directory on the
+        // host), so readiness has to be detected by content that can only
+        // come from the mount, same as the read-only test above.
+        {
+            let repository = db::open_repository(&repo_root).unwrap();
+            let conn = repository.open_write_connection().unwrap();
+            db::insert_directory(&conn, 0, "marker", 0).unwrap();
+        }
+
+        let fs = build_filesystem(&repo_root).unwrap();
+        let mount_dir = tempfile::tempdir().unwrap();
+        let mount_path = mount_dir.path().to_path_buf();
+        let handle = {
+            let mount_path = mount_path.clone();
+            std::thread::spawn(move || mountfs::mount(fs, &mount_path, false))
+        };
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let names: Vec<String> = std::fs::read_dir(&mount_path)
+                .map(|entries| {
+                    entries
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.file_name().to_string_lossy().into_owned())
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !names.is_empty() {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "mount did not become ready within 5s"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // mkdir + create (empty file).
+        std::fs::create_dir(mount_path.join("sub")).unwrap();
+        assert!(std::fs::metadata(mount_path.join("sub")).unwrap().is_dir());
+        std::fs::write(mount_path.join("sub").join("empty.txt"), b"").unwrap();
+        assert_eq!(
+            std::fs::metadata(mount_path.join("sub").join("empty.txt"))
+                .unwrap()
+                .len(),
+            0
+        );
+
+        // mkdir on an existing name fails.
+        assert!(std::fs::create_dir(mount_path.join("sub")).is_err());
+
+        // utimens.
+        let new_mtime = std::time::UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        std::fs::File::open(mount_path.join("sub").join("empty.txt"))
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(new_mtime))
+            .unwrap();
+        assert_eq!(
+            std::fs::metadata(mount_path.join("sub").join("empty.txt"))
+                .unwrap()
+                .modified()
+                .unwrap(),
+            new_mtime
+        );
+
+        // rename.
+        std::fs::rename(
+            mount_path.join("sub").join("empty.txt"),
+            mount_path.join("sub").join("renamed.txt"),
+        )
+        .unwrap();
+        assert!(std::fs::metadata(mount_path.join("sub").join("empty.txt")).is_err());
+        assert!(
+            std::fs::metadata(mount_path.join("sub").join("renamed.txt"))
+                .unwrap()
+                .is_file()
+        );
+
+        // rmdir on a non-empty directory fails; unlink then rmdir succeeds.
+        assert!(std::fs::remove_dir(mount_path.join("sub")).is_err());
+        std::fs::remove_file(mount_path.join("sub").join("renamed.txt")).unwrap();
+        std::fs::remove_dir(mount_path.join("sub")).unwrap();
+        assert!(std::fs::metadata(mount_path.join("sub")).is_err());
 
         let status = std::process::Command::new("fusermount3")
             .arg("-u")

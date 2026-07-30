@@ -61,6 +61,18 @@ unsafe extern "C" fn dispatch_getattr<T: MountFilesystem>(
                     (*stbuf).st_size = attr.size as off_t;
                 },
             }
+            // No separate access/change time tracked - `mtime_millis` fills
+            // all three, same convention the old fuser-based mount.rs used.
+            let secs = attr.mtime_millis.div_euclid(1000);
+            let nsecs = attr.mtime_millis.rem_euclid(1000) * 1_000_000;
+            unsafe {
+                (*stbuf).st_atime = secs;
+                (*stbuf).st_atime_nsec = nsecs;
+                (*stbuf).st_mtime = secs;
+                (*stbuf).st_mtime_nsec = nsecs;
+                (*stbuf).st_ctime = secs;
+                (*stbuf).st_ctime_nsec = nsecs;
+            }
             0
         }
         Err(errno) => -errno.0,
@@ -172,6 +184,127 @@ unsafe extern "C" fn dispatch_statfs<T: MountFilesystem>(
     }
 }
 
+unsafe extern "C" fn dispatch_mkdir<T: MountFilesystem>(
+    path: *const c_char,
+    _mode: libc::mode_t,
+) -> c_int {
+    let Some(path) = path_str(path) else {
+        return -Errno::EIO.0;
+    };
+    let fs = unsafe { context::<T>() };
+    match fs.mkdir(path) {
+        Ok(()) => 0,
+        Err(errno) => -errno.0,
+    }
+}
+
+unsafe extern "C" fn dispatch_create<T: MountFilesystem>(
+    path: *const c_char,
+    _mode: libc::mode_t,
+    fi: *mut sys::fuse_file_info,
+) -> c_int {
+    let Some(path) = path_str(path) else {
+        return -Errno::EIO.0;
+    };
+    let fs = unsafe { context::<T>() };
+    match fs.create(path) {
+        Ok(handle) => {
+            unsafe { (*fi).fh = handle.0 };
+            0
+        }
+        Err(errno) => -errno.0,
+    }
+}
+
+unsafe extern "C" fn dispatch_unlink<T: MountFilesystem>(path: *const c_char) -> c_int {
+    let Some(path) = path_str(path) else {
+        return -Errno::EIO.0;
+    };
+    let fs = unsafe { context::<T>() };
+    match fs.unlink(path) {
+        Ok(()) => 0,
+        Err(errno) => -errno.0,
+    }
+}
+
+unsafe extern "C" fn dispatch_rmdir<T: MountFilesystem>(path: *const c_char) -> c_int {
+    let Some(path) = path_str(path) else {
+        return -Errno::EIO.0;
+    };
+    let fs = unsafe { context::<T>() };
+    match fs.rmdir(path) {
+        Ok(()) => 0,
+        Err(errno) => -errno.0,
+    }
+}
+
+unsafe extern "C" fn dispatch_rename<T: MountFilesystem>(
+    old_path: *const c_char,
+    new_path: *const c_char,
+    _flags: libc::c_uint,
+) -> c_int {
+    let (Some(old_path), Some(new_path)) = (path_str(old_path), path_str(new_path)) else {
+        return -Errno::EIO.0;
+    };
+    let fs = unsafe { context::<T>() };
+    match fs.rename(old_path, new_path) {
+        Ok(()) => 0,
+        Err(errno) => -errno.0,
+    }
+}
+
+unsafe extern "C" fn dispatch_utimens<T: MountFilesystem>(
+    path: *const c_char,
+    tv: *const libc::timespec,
+    _fi: *mut sys::fuse_file_info,
+) -> c_int {
+    let Some(path) = path_str(path) else {
+        return -Errno::EIO.0;
+    };
+    let fs = unsafe { context::<T>() };
+    // tv[0] is atime, tv[1] is mtime - this crate tracks only mtime. Real
+    // UTIME_NOW/UTIME_OMIT sentinels aren't special-cased: rare outside
+    // low-level tools, and treating them as literal timestamps just means
+    // an unusual value gets stored instead of "now"/"unchanged".
+    let mtime = unsafe { *tv.add(1) };
+    let mtime_millis = mtime.tv_sec * 1000 + mtime.tv_nsec / 1_000_000;
+    match fs.utimens(path, mtime_millis) {
+        Ok(()) => 0,
+        Err(errno) => -errno.0,
+    }
+}
+
+unsafe extern "C" fn dispatch_chmod<T: MountFilesystem>(
+    path: *const c_char,
+    _mode: libc::mode_t,
+    _fi: *mut sys::fuse_file_info,
+) -> c_int {
+    let Some(path) = path_str(path) else {
+        return -Errno::EIO.0;
+    };
+    let fs = unsafe { context::<T>() };
+    match fs.chmod(path) {
+        Ok(()) => 0,
+        Err(errno) => -errno.0,
+    }
+}
+
+unsafe extern "C" fn dispatch_chown<T: MountFilesystem>(
+    path: *const c_char,
+    _uid: libc::uid_t,
+    _gid: libc::gid_t,
+    _fi: *mut sys::fuse_file_info,
+) -> c_int {
+    let Some(path) = path_str(path) else {
+        return -Errno::EIO.0;
+    };
+    let fs = unsafe { context::<T>() };
+    match fs.chown(path) {
+        Ok(()) => 0,
+        Err(errno) => -errno.0,
+    }
+}
+
 /// Mounts `fs` at `mountpoint`, blocking (in the foreground - see the
 /// `-f` note below) until it's unmounted (e.g. via `fusermount3 -u
 /// <mountpoint>`, `umount <mountpoint>`, or process signal).
@@ -190,6 +323,14 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
         read: Some(dispatch_read::<T>),
         release: Some(dispatch_release::<T>),
         statfs: Some(dispatch_statfs::<T>),
+        mkdir: Some(dispatch_mkdir::<T>),
+        create: Some(dispatch_create::<T>),
+        unlink: Some(dispatch_unlink::<T>),
+        rmdir: Some(dispatch_rmdir::<T>),
+        rename: Some(dispatch_rename::<T>),
+        utimens: Some(dispatch_utimens::<T>),
+        chmod: Some(dispatch_chmod::<T>),
+        chown: Some(dispatch_chown::<T>),
         ..sys::fuse_operations::default()
     };
 
