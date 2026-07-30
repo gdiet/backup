@@ -182,7 +182,7 @@ Mounts the repository's file tree read-only at `<mountpoint>`, so it can be
 browsed and read with ordinary tools (`ls`, `cat`, `cp`, etc.) instead of
 `list`/`restore`. Works on both Linux (via real system libfuse3) and
 Windows (via [WinFSP]) through the platform-abstracted `mountfs` crate -
-see `docs/plans/cross-platform-mount-crate.md` for how.
+see `docs/plans/implemented/05-cross-platform-mount-crate.md` for how.
 
 **Linux**: `<mountpoint>` must already exist and be empty. Blocks until
 the filesystem is unmounted from another terminal (`fusermount3 -u
@@ -201,9 +201,23 @@ doc's "Windows checkpoint" for why).
 Proxy, Copyright (C) Bill Zissimopoulos, used here under its FLOSS
 exception to the GPLv3 (see the plan doc for the full exception text).
 
-Read-write support (writes held in-process, only committed to the
-repository once the write handle closes) is designed but not yet
-implemented - see `docs/plans/fuse-mount-readwrite.md`.
+```bash
+backup mount --read-write [--write-cache-mb <n>] <mountpoint>
+```
+
+`--read-write` additionally allows structural changes
+(`mkdir`/`rm`/`mv`/creating files) and real content writes - off by
+default, since a mount is a much larger blast radius for a mistake than
+`store`/`restore`. Writes are held in a per-file write cache (RAM up to
+`--write-cache-mb`, default 128, then spilling to a temp file; a startup
+warning fires if the configured budget risks swapping given currently
+available RAM) and only committed to the repository once the write
+handle closes - persisting runs synchronously at that point, not on a
+background queue, so closing a very large file against a slow repository
+disk can take a while (see `docs/plans/mount-async-persist-and-
+backpressure.md` for the known limitation this implies and why it wasn't
+built yet). See `docs/plans/implemented/06-fuse-mount-readwrite.md` for
+the full design and verification notes.
 
 ## Development
 
@@ -237,7 +251,7 @@ both platforms. Beyond that:
   the vendored WinFSP headers; `mountfs` itself never depends on `bindgen`
   or `libclang` at build time - this project deliberately hand-writes its
   FFI bindings instead of generating them (see
-  `docs/plans/cross-platform-mount-crate.md`). No Windows package manager
+  `docs/plans/implemented/05-cross-platform-mount-crate.md`). No Windows package manager
   (`winget`/`choco`/`scoop`) was available to install `libclang` there
   when this was last needed, so this was done from WSL instead, cross-
   target-parsing the headers for `x86_64-pc-windows-msvc` - works fine

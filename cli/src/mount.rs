@@ -1,11 +1,12 @@
-//! Read-only FUSE mount (`backup mount <mountpoint>`) - see
-//! `docs/plans/implemented/04-fuse-mount-readonly.md` for the original
-//! design and `docs/plans/cross-platform-mount-crate.md` for why this now
-//! goes through the platform-abstracted `mountfs` crate (real libfuse3 on
-//! Linux, WinFSP planned for Windows) instead of `fuser`'s Linux-only,
-//! low-level `/dev/fuse` protocol.
-//! `docs/plans/fuse-mount-readwrite.md` covers a future read-write phase,
-//! not implemented here.
+//! FUSE/WinFSP mount (`backup mount <mountpoint>`, read-only or
+//! `--read-write`) - see `docs/plans/implemented/04-fuse-mount-readonly.md`
+//! for the original read-only design, `docs/plans/implemented/
+//! 05-cross-platform-mount-crate.md` for why this goes through the
+//! platform-abstracted `mountfs` crate (real libfuse3 on Linux, real
+//! WinFSP on Windows) instead of `fuser`'s Linux-only, low-level
+//! `/dev/fuse` protocol, and `docs/plans/implemented/
+//! 06-fuse-mount-readwrite.md` for the read-write phases (structural ops,
+//! then content writes) built on top of it.
 //!
 //! Every [`mountfs::MountFilesystem`] method is answerable with functions
 //! the other commands already use (`db::resolve_path`, `db::list_children`,
@@ -33,8 +34,38 @@ use crate::write_cache::{RamBudget, WriteCache};
 
 /// Default RAM budget for `backup mount --read-write`'s write cache (see
 /// `MountArgs::write_cache_mb`), shared across every file open for writing
-/// at once.
-const DEFAULT_WRITE_CACHE_MB: u64 = 256;
+/// at once. A modest default: this is a soft buffer that spills to disk
+/// once exceeded (see `write_cache::WriteCache`), not something that
+/// needs to be generous to work correctly - and `check_write_cache_budget`
+/// below warns at mount time if even this much risks swapping.
+const DEFAULT_WRITE_CACHE_MB: u64 = 128;
+
+/// Warns (doesn't refuse to start - the write cache degrades gracefully
+/// to disk spillover if it's ever actually exhausted, see
+/// `write_cache::WriteCache`) if `write_cache_mb` is large enough,
+/// relative to *currently available* (not total) system RAM, that
+/// actually using it could push the system into swapping. Deliberately
+/// checks available rather than total memory - the mount isn't the only
+/// thing running on the machine, and total memory says nothing about
+/// what's actually free right now.
+fn check_write_cache_budget(write_cache_mb: u64) {
+    let mut sys = sysinfo::System::new();
+    sys.refresh_memory();
+    let available_mb = sys.available_memory() / (1024 * 1024);
+    if write_cache_mb > available_mb {
+        eprintln!(
+            "warning: --write-cache-mb={write_cache_mb} exceeds currently available RAM \
+             (~{available_mb} MB) - writing files up to that size may cause swapping; \
+             consider a lower value"
+        );
+    } else if write_cache_mb * 2 > available_mb {
+        eprintln!(
+            "warning: --write-cache-mb={write_cache_mb} is more than half of currently \
+             available RAM (~{available_mb} MB) - writing several large files at once may \
+             cause swapping; consider a lower value"
+        );
+    }
+}
 
 /// Content is read from/persisted to the write cache in pieces this large
 /// at a time (during `write`'s lazy materialization and during `release`'s
@@ -54,7 +85,7 @@ pub struct MountArgs {
 
     /// Allow structural changes through the mount: `mkdir`/`rmdir`/
     /// `unlink`/`rename`/creating and writing files/touching timestamps
-    /// (see `docs/plans/fuse-mount-readwrite.md`). Off by default: a mount
+    /// (see `docs/plans/implemented/06-fuse-mount-readwrite.md`). Off by default: a mount
     /// is a much larger blast radius for a mistake (an editor autosave, a
     /// stray `rm -rf`, a build tool scribbling into it) than `store`/
     /// `restore`. Do not run `store`/`del`/`reclaim-space` against the
@@ -67,7 +98,7 @@ pub struct MountArgs {
     /// they're persisted to the store - shared across every file
     /// currently open for writing. A file's writes that exceed this
     /// budget spill to a temp file instead of failing (see
-    /// `docs/plans/fuse-mount-readwrite.md`'s "Phase 2b" section). Only
+    /// `docs/plans/implemented/06-fuse-mount-readwrite.md`'s "Phase 2b" section). Only
     /// meaningful with `--read-write`.
     #[arg(long, default_value_t = DEFAULT_WRITE_CACHE_MB)]
     write_cache_mb: u64,
@@ -134,6 +165,9 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
     if let Err(msg) = validate_mountpoint(&args.mountpoint) {
         eprintln!("error: {msg}");
         return ExitCode::FAILURE;
+    }
+    if args.read_write {
+        check_write_cache_budget(args.write_cache_mb);
     }
 
     let fs = match build_filesystem(repo, args.read_write, args.write_cache_mb) {
@@ -252,7 +286,7 @@ struct DedupFs {
     spill_id_seq: AtomicU64,
     /// One entry per tree id with an open write-intent handle - see
     /// [`FileWriteState`] and "Phase 2b" in
-    /// `docs/plans/fuse-mount-readwrite.md`.
+    /// `docs/plans/implemented/06-fuse-mount-readwrite.md`.
     write_states: Mutex<HashMap<i64, FileWriteState>>,
     /// Paired with `write_states` - notified whenever an entry's
     /// `persisting` flag clears (see [`FileWriteState::persisting`] and
@@ -289,7 +323,7 @@ struct FileWriteState {
     /// until it clears - mirrors the Scala prototype's
     /// `Handle.readLock`/`DataEntry`'s read-write lock, minus the
     /// multi-generation "persisting queue" (see the "Phase 2b" notes in
-    /// `docs/plans/fuse-mount-readwrite.md` for why that's out of scope
+    /// `docs/plans/implemented/06-fuse-mount-readwrite.md` for why that's out of scope
     /// here: at most one persist per file is ever in flight in this
     /// implementation, a later writer simply waits for it).
     persisting: bool,
@@ -872,7 +906,7 @@ impl DedupFs {
     /// only two callers) can't propagate an error back through the FUSE
     /// contract, so any failure here is logged to stderr and the
     /// unpersisted changes are simply lost - an accepted limitation (see
-    /// `docs/plans/fuse-mount-readwrite.md`'s "Phase 2b" notes) rather
+    /// `docs/plans/implemented/06-fuse-mount-readwrite.md`'s "Phase 2b" notes) rather
     /// than a real per-write error path like `write`'s own `Result`.
     fn persist(&self, tree_id: i64, mut cache: WriteCache, mtime_millis: i64) {
         let (parent_id, name) = {

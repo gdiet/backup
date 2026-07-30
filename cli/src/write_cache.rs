@@ -1,5 +1,5 @@
 //! Per-open-file write cache for phase 2b content writes
-//! (`docs/plans/fuse-mount-readwrite.md`) - ported from the Scala
+//! (`docs/plans/implemented/06-fuse-mount-readwrite.md`) - ported from the Scala
 //! prototype's `dedup.cache` package (`MemCache`/`FileCache`/`Allocation`/
 //! `WriteCache`), adapted to this project's chunk-based dedup store and
 //! simplified where the JVM-specific parts don't translate (see individual

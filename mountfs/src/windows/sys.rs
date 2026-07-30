@@ -3,7 +3,7 @@
 //! see `mountfs/vendor/winfsp/NOTICE.md`) - the same high-level, path-based
 //! shape as real libfuse3's API that `linux/sys.rs` binds directly, which
 //! is the entire point of this crate (see
-//! `docs/plans/cross-platform-mount-crate.md`).
+//! `docs/plans/implemented/05-cross-platform-mount-crate.md`).
 //!
 //! Unlike the Linux backend, nothing here is linked at build time: WinFSP's
 //! *runtime* installer (all an end user needs) ships no headers or import
@@ -18,7 +18,7 @@
 //!
 //! The full read-only set plus phase 2a's structural read-write set
 //! (`mkdir`/`create`/`unlink`/`rmdir`/`rename`/`utimens`/`chmod`/`chown` -
-//! see `docs/plans/fuse-mount-readwrite.md`, mirroring `linux::sys`) are
+//! see `docs/plans/implemented/06-fuse-mount-readwrite.md`, mirroring `linux::sys`) are
 //! given real signatures - every other `fuse3_operations` slot is typed as
 //! a same-size, unused function-pointer placeholder.
 

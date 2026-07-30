@@ -1,5 +1,5 @@
 //! Platform-abstracted repository mounting. See
-//! `docs/plans/cross-platform-mount-crate.md` for the design and current
+//! `docs/plans/implemented/05-cross-platform-mount-crate.md` for the design and current
 //! status - the [`MountFilesystem`] trait and [`mount`] below match that
 //! plan's "Crate design" section. Both the Linux (`linux`, real system
 //! libfuse3) and Windows (`windows`, WinFSP's FUSE3-compatible API)
@@ -146,7 +146,7 @@ pub trait MountFilesystem: Send + Sync + 'static {
     /// Writes `data` at `offset` into the file identified by `handle`
     /// (from a prior [`MountFilesystem::open`]/[`MountFilesystem::create`]
     /// call), returning the number of bytes written. Phase 2b
-    /// (`docs/plans/fuse-mount-readwrite.md`) - default `EROFS`, same
+    /// (`docs/plans/implemented/06-fuse-mount-readwrite.md`) - default `EROFS`, same
     /// rationale as the phase 2a methods above.
     fn write(&self, handle: Handle, offset: u64, data: &[u8]) -> Result<u32, Errno> {
         let _ = (handle, offset, data);
@@ -199,6 +199,6 @@ pub fn mount<T: MountFilesystem>(
     Err(std::io::Error::new(
         std::io::ErrorKind::Unsupported,
         "mountfs: no backend implemented yet for this platform \
-         (see docs/plans/cross-platform-mount-crate.md)",
+         (see docs/plans/implemented/05-cross-platform-mount-crate.md)",
     ))
 }

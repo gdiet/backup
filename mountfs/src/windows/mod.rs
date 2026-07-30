@@ -1,7 +1,7 @@
 //! Windows backend: bindings to WinFSP's FUSE3-compatible API (see
 //! `sys.rs`) - the same high-level, path-based shape the Linux backend
 //! binds directly against real libfuse3. See
-//! `docs/plans/cross-platform-mount-crate.md`, in particular the "Windows
+//! `docs/plans/implemented/05-cross-platform-mount-crate.md`, in particular the "Windows
 //! checkpoint" note on `fuse_exit`/`fsp_fuse3_exit` (confirmed to crash
 //! deterministically inside `winfsp-x64.dll`, not something this crate can
 //! fix) - not needed in practice, though: on Ctrl+C, WinFSP's own

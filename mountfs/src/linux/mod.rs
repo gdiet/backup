@@ -2,7 +2,7 @@
 //! against the *high-level* `fuse_operations` API (see `sys.rs`) instead of
 //! `fuser`'s low-level `/dev/fuse` protocol - the whole point being that
 //! this same API surface is also what WinFSP's `cygfuse` layer emulates on
-//! Windows. See `docs/plans/cross-platform-mount-crate.md`.
+//! Windows. See `docs/plans/implemented/05-cross-platform-mount-crate.md`.
 //!
 //! [`mount`] dispatches every `fuse_operations` callback to a
 //! [`crate::MountFilesystem`] implementation via monomorphized `extern "C"`

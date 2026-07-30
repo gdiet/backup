@@ -3,7 +3,7 @@
 //! mounts it by running the actual `backup` binary as a child process and
 //! killing it - matching how a user actually stops `backup mount` on
 //! Windows today (Ctrl+C/closing the console also just kills the process).
-//! See `docs/plans/cross-platform-mount-crate.md`'s "Windows checkpoint"
+//! See `docs/plans/implemented/05-cross-platform-mount-crate.md`'s "Windows checkpoint"
 //! for why an in-process unmount isn't available yet.
 //!
 //! An integration test (not a unit test in `cli/src/mount.rs`) specifically
@@ -152,7 +152,7 @@ fn mounts_and_serves_a_real_repository_read_only_via_the_backup_binary() {
 /// `mounts_read_write_and_supports_structural_changes` (Linux-only, same
 /// reason as the read-only test above) - exercises phase 2a's structural
 /// ops (mkdir/create/utimens/rename/rmdir/unlink, see
-/// `docs/plans/fuse-mount-readwrite.md`) through a real `backup mount
+/// `docs/plans/implemented/06-fuse-mount-readwrite.md`) through a real `backup mount
 /// --read-write` child process and real WinFSP.
 #[test]
 fn mounts_read_write_and_supports_structural_changes_via_the_backup_binary() {

@@ -7,7 +7,7 @@ for the real debugging process each took - phase 2b in particular
 surfaced two significant, genuinely subtle bugs (a release/persist race
 and a Windows read-only enforcement gap), not just mechanical wiring.
 Rewritten from its original Linux-only, `fuser`-based draft now that
-`docs/plans/cross-platform-mount-crate.md` has shipped: `backup mount`
+`docs/plans/implemented/05-cross-platform-mount-crate.md` has shipped: `backup mount`
 runs on the platform-independent `mountfs` crate on both Linux (real
 libfuse3) and Windows (real WinFSP), read-only or read-write via
 `--read-write`, including real byte-level content writes. This phase

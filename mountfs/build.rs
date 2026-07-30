@@ -1,5 +1,5 @@
 //! Links against the platform FUSE-compatible implementation. See
-//! `docs/plans/cross-platform-mount-crate.md` for why: Linux links real
+//! `docs/plans/implemented/05-cross-platform-mount-crate.md` for why: Linux links real
 //! system libfuse3 via pkg-config (requires `libfuse3-dev`/`fuse3-devel` at
 //! build time, `libfuse3` at runtime); Windows will vendor WinFSP's
 //! `fuse3/fuse.h` headers instead (not implemented yet - no build-time

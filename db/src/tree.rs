@@ -139,7 +139,7 @@ pub fn touch_mtime(conn: &Connection, id: i64, time_millis: i64) -> Result<(), E
 
 /// Moves `id` to a new `(parent_id, name)`. Fails with [`Error::AlreadyExists`]
 /// if an active entry already occupies the destination - no overwrite support
-/// (see `docs/plans/fuse-mount-readwrite.md` for why this is a deliberate,
+/// (see `docs/plans/implemented/06-fuse-mount-readwrite.md` for why this is a deliberate,
 /// documented limitation rather than an oversight).
 pub fn rename_entry(
     conn: &Connection,

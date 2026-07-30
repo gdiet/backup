@@ -1,6 +1,6 @@
 # Read-only FUSE mount (`backup mount`) + fix `list <file>` missing mtime
 
-**Status**: implemented - see `backup mount` in the README. Originally planned together with a read-write phase; that phase was split out into its own not-yet-implemented plan, `docs/plans/fuse-mount-readwrite.md`, once this part shipped.
+**Status**: implemented - see `backup mount` in the README. Originally planned together with a read-write phase; that phase was split out into its own not-yet-implemented plan, `docs/plans/implemented/06-fuse-mount-readwrite.md`, once this part shipped.
 
 ## Context
 
@@ -8,7 +8,7 @@ The Scala tool this Rust rewrite replaces can be FUSE-mounted read-only or read-
 
 Research into the Scala implementation (`server/Server.scala`, `server/Backend.scala`, `server/{Handles,Handle}.scala`, `cache/{MemCache,FileCache,WriteCache,Allocation,CacheBase}.scala`, `server/FreeAreas.scala`, `Main.scala`'s `mount` entry point) surfaced the mechanisms this plan (and its read-write follow-up) are based on.
 
-**Phasing**: **Phase 1 (this doc): read-only mount, fully working.** No write cache, no backpressure, no schema change, no store-space allocator needed - it's almost entirely wiring `fuser` callbacks to already-built `db`/`store` query functions. Read-write (write cache, backpressure, persist pipeline) is designed separately in `docs/plans/fuse-mount-readwrite.md`, not implemented here.
+**Phasing**: **Phase 1 (this doc): read-only mount, fully working.** No write cache, no backpressure, no schema change, no store-space allocator needed - it's almost entirely wiring `fuser` callbacks to already-built `db`/`store` query functions. Read-write (write cache, backpressure, persist pipeline) is designed separately in `docs/plans/implemented/06-fuse-mount-readwrite.md`, not implemented here.
 
 Platform scope: Linux only (via the `fuser` crate, which talks to `/dev/fuse` directly and shells out to `fusermount`/`fusermount3` for the privileged mount syscall - both confirmed present in this environment). Matches every other part of this Rust port, which has no Windows-specific code anywhere. Cross-platform (WinFSP) support is out of scope, not attempted - see the read-write plan's context for why reusing `fuser` there isn't viable either.
 

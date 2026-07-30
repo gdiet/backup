@@ -33,7 +33,7 @@ WinFSP is Copyright (C) Bill Zissimopoulos, licensed under GPLv3 with an
 explicit FLOSS exception permitting linking with (and, per WinFSP's own
 practice of publishing these headers for exactly this purpose, referencing
 the structure of) a platform-specific WinFsp DLL from FLOSS software such
-as this project (MIT-licensed) - see `docs/plans/cross-platform-mount-crate.md`
+as this project (MIT-licensed) - see `docs/plans/implemented/05-cross-platform-mount-crate.md`
 for the exception's full text and this project's compliance notes.
 
 > WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos

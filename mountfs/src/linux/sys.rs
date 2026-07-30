@@ -1,6 +1,6 @@
 //! Hand-written bindings to libfuse3's *high-level*, path-based C API
 //! (`fuse3/fuse.h`) - deliberately not bindgen-generated, see
-//! `docs/plans/cross-platform-mount-crate.md`. This is the same API surface
+//! `docs/plans/implemented/05-cross-platform-mount-crate.md`. This is the same API surface
 //! WinFSP's `cygfuse` compatibility layer emulates on Windows, which is the
 //! whole point of building against it instead of `fuser`'s low-level,
 //! Linux-only `/dev/fuse` protocol.
@@ -8,7 +8,7 @@
 //! The full read-only set plus phase 2a's structural read-write set
 //! (`mkdir`/`create`/`unlink`/`rmdir`/`rename`/`utimens`/`chmod`/`chown`)
 //! and phase 2b's `write`/`truncate` (see
-//! `docs/plans/fuse-mount-readwrite.md`) are given real signatures; every
+//! `docs/plans/implemented/06-fuse-mount-readwrite.md`) are given real signatures; every
 //! other `fuse_operations` slot (everything this crate has no plans for)
 //! is typed as a same-size, unused function-pointer placeholder - correct
 //! for `struct` layout/size purposes (all slots are pointer-sized on every

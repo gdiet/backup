@@ -6,7 +6,7 @@
 
 `backup mount` currently works read-only on Linux only (`cli/src/mount.rs`, `docs/plans/implemented/04-fuse-mount-readonly.md`), implemented directly against the `fuser` crate's `Filesystem` trait. `fuser` talks to Linux's `/dev/fuse` kernel protocol directly and has no Windows story at all (confirmed in an earlier conversation: it's categorized `os::unix-apis`, depends unconditionally on the Unix-only `nix` crate, and even its `libfuse`/`libfuse2`/`libfuse3` feature flags only link against libfuse's *low-level*, session-based C API - which WinFSP's FUSE compatibility layer does not implement).
 
-The goal now: a dedicated crate that owns all of this platform-specific mounting logic, exposing a small, platform-independent interface to the rest of the tool (`cli`, which currently is the only thing that would depend on it) - so `db`, `store`, `cdc`, and the rest of `cli` never need to know or care whether they're running under Linux/FUSE or Windows/WinFSP. Read-only first (matching what's already implemented), with a clear extension point for the read-write design already sketched in `docs/plans/fuse-mount-readwrite.md`.
+The goal now: a dedicated crate that owns all of this platform-specific mounting logic, exposing a small, platform-independent interface to the rest of the tool (`cli`, which currently is the only thing that would depend on it) - so `db`, `store`, `cdc`, and the rest of `cli` never need to know or care whether they're running under Linux/FUSE or Windows/WinFSP. Read-only first (matching what's already implemented), with a clear extension point for the read-write design already sketched in `docs/plans/implemented/06-fuse-mount-readwrite.md`.
 
 Development happens at different times under WSL2/Ubuntu and under native Windows with the Visual Studio Build Tools; only the Linux leg can actually be built and tested from this environment. Windows verification requires a real Windows machine with a current WinFSP installed, and is explicitly out of scope for what can be checked while writing/executing this plan from here - see "Verification" below.
 
@@ -35,7 +35,7 @@ This is the load-bearing research behind the recommendation below - worth record
 
 Why this over `fuser` on Linux too, given `fuser` already works well there: the entire point of this crate is *one* implementation, not two - if the high-level API can serve both platforms (which the research above says it can), maintaining a second, purely-Linux, `fuser`-based implementation forever just for symmetry has no upside. The real trade-off worth naming honestly: this drops `fuser`'s major practical advantage on Linux - no system package dependency, since `fuser` talks to the kernel directly and needs nothing beyond the kernel FUSE module. Moving to the high-level C API means `libfuse3-dev` becomes a new **build-time** system dependency on Linux (and `libfuse3`/equivalent a runtime one) that doesn't exist today. Worth stating in the README once this lands.
 
-**Concrete API surface needed** (matching what Scala/jnr-fuse already uses, restricted to what the read-only phase needs first): `getattr`, `readdir`, `open`, `read`, `release`, `statfs`. The remaining Scala-used operations (`mkdir`, `rename`, `rmdir`, `utimens`, `chmod`, `chown`, `create`, `truncate`, `write`, `unlink`) are exactly the read-write phase's callback list from `docs/plans/fuse-mount-readwrite.md` §5 - the same `struct fuse_operations` fields, just left as unimplemented/`ENOSYS` function pointers until that phase is taken up. No redesign needed to add them later.
+**Concrete API surface needed** (matching what Scala/jnr-fuse already uses, restricted to what the read-only phase needs first): `getattr`, `readdir`, `open`, `read`, `release`, `statfs`. The remaining Scala-used operations (`mkdir`, `rename`, `rmdir`, `utimens`, `chmod`, `chown`, `create`, `truncate`, `write`, `unlink`) are exactly the read-write phase's callback list from `docs/plans/implemented/06-fuse-mount-readwrite.md` §5 - the same `struct fuse_operations` fields, just left as unimplemented/`ENOSYS` function pointers until that phase is taken up. No redesign needed to add them later.
 
 ### Fallback, if the shared approach hits a real blocker
 
@@ -108,7 +108,7 @@ What actually shipped, against the real installed WinFSP 2.0.23075 runtime:
 
 - Exact crate name (`mountfs` is a placeholder).
 - Whether WinFSP header vendoring lives directly in `mountfs/vendor/` or a separate `mountfs-winfsp-sys`-style internal crate - depends on how much Windows-specific code ends up existing once step 4/6 above is actually attempted.
-- How `write_intent`/permission handling should be modeled in the trait once read-write is added - deferred to when `docs/plans/fuse-mount-readwrite.md` is actually implemented on top of this crate.
+- How `write_intent`/permission handling should be modeled in the trait once read-write is added - deferred to when `docs/plans/implemented/06-fuse-mount-readwrite.md` is actually implemented on top of this crate.
 - CI: this environment can only ever validate the Linux leg. Whether/how to set up a Windows CI runner (GitHub Actions has Windows runners; WinFSP would need installing there too) is out of scope for this plan.
 
 ## Verification

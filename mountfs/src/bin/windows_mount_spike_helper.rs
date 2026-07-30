@@ -2,7 +2,7 @@
 //! the path given as `argv[1]` and blocks until killed.
 //!
 //! Exists because `mountfs::windows::mount` has no working in-process
-//! clean-shutdown path yet (see `docs/plans/cross-platform-mount-crate.md`,
+//! clean-shutdown path yet (see `docs/plans/implemented/05-cross-platform-mount-crate.md`,
 //! "Windows checkpoint") - `mountfs/src/windows/mod.rs`'s integration test
 //! runs this as a real child process instead, so it can terminate the
 //! mount by killing the process (exactly how a user would stop `backup

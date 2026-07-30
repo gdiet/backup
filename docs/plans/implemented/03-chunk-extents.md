@@ -2,7 +2,7 @@
 
 ## Context
 
-Raised while planning the FUSE mount (see `docs/plans/fuse-mount-readwrite.md` §3, which points back here), but independent of it: our `store` command never reuses space freed by `reclaim-space`.
+Raised while planning the FUSE mount (see `docs/plans/implemented/06-fuse-mount-readwrite.md` §3, which points back here), but independent of it: our `store` command never reuses space freed by `reclaim-space`.
 
 **The problem, concretely**: store 3×1000-byte (1-chunk) files, contiguous at `[0,1000)`, `[1000,2000)`, `[2000,3000)`. Delete the middle one and run `reclaim-space` - its `chunks` row is gone, but the physical bytes at `[1000,2000)` are still sitting in `store::LongTermStore`'s files, now referenced by nothing. Store a new 1200-byte file next: `cli/src/store.rs`'s worker allocates its position via `ctx.position_cursor.fetch_add(length, Ordering::SeqCst)`, a cursor seeded once from `SELECT COALESCE(MAX(stop), 0) FROM chunks` - it only ever knows "the current highest `stop` among rows that still exist," never revisits gaps left by deleted rows. So the new file lands at `[3000, 4200)`, and `[1000,2000)` is now a **permanent** hole - the store file only ever grows, even across repeated delete+reclaim+rewrite cycles.
 
