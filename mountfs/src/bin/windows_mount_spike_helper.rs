@@ -16,6 +16,10 @@ use mountfs::{Attr, DirEntry, Errno, FileKind, Handle, MountFilesystem};
 
 struct TestFs {
     files: BTreeMap<&'static str, &'static [u8]>,
+    /// If set, `on_unmount` writes to this path - lets a test observe that
+    /// it actually ran (from a clean shutdown, not a hard kill) without
+    /// needing IPC.
+    on_unmount_marker: Option<PathBuf>,
 }
 
 impl MountFilesystem for TestFs {
@@ -98,17 +102,28 @@ impl MountFilesystem for TestFs {
             ..Default::default()
         })
     }
+
+    fn on_unmount(&self) {
+        if let Some(marker) = &self.on_unmount_marker {
+            let _ = std::fs::write(marker, b"on_unmount ran");
+        }
+    }
 }
 
 fn main() {
-    let mountpoint = std::env::args()
-        .nth(1)
-        .expect("usage: windows-mount-spike-helper <mountpoint>");
+    let mut args = std::env::args().skip(1);
+    let mountpoint = args
+        .next()
+        .expect("usage: windows-mount-spike-helper <mountpoint> [on-unmount-marker-path]");
+    let on_unmount_marker = args.next().map(PathBuf::from);
 
     let mut files = BTreeMap::new();
     files.insert("/top.txt", b"top level content".as_slice());
     files.insert("/sub/nested.txt", b"hello from a subdirectory".as_slice());
-    let fs = TestFs { files };
+    let fs = TestFs {
+        files,
+        on_unmount_marker,
+    };
 
     if let Err(err) = mountfs::mount(fs, &PathBuf::from(mountpoint), true) {
         eprintln!("mount failed: {err}");

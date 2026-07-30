@@ -77,6 +77,24 @@ pub trait MountFilesystem: Send + Sync + 'static {
     fn read(&self, handle: Handle, offset: u64, size: u32) -> Result<Vec<u8>, Errno>;
     fn release(&self, handle: Handle);
     fn statfs(&self) -> Result<StatfsInfo, Errno>;
+
+    /// Called once, exactly once, as the mount is shutting down - the one
+    /// place to flush caches, close connections, or otherwise wrap up
+    /// state before the process goes away. Default no-op (nothing to do
+    /// for a stateless read-only filesystem like `cli`'s current
+    /// `DedupFs`); real state matters once phase 2 (read-write) adds it.
+    ///
+    /// Both backends guarantee this runs on a *clean* shutdown path, not
+    /// an external `kill -9`/`TerminateProcess`: called right after the
+    /// platform's blocking mount call (`fuse_main_real` on Linux, its
+    /// WinFSP equivalent on Windows) returns, which on both platforms
+    /// already happens on Ctrl+C without this crate needing to do
+    /// anything itself - real libfuse's own `SIGINT`/`SIGTERM` handling on
+    /// Linux, WinFSP's own internal handling on Windows (confirmed by
+    /// manual testing: WinFSP unmounts cleanly and returns on Ctrl+C on
+    /// its own, the same way real libfuse does - see `windows::mount`'s
+    /// doc comment). Runs on the mount's own thread on both platforms.
+    fn on_unmount(&self) {}
 }
 
 #[cfg(target_os = "linux")]

@@ -2,11 +2,16 @@
 //! `sys.rs`) - the same high-level, path-based shape the Linux backend
 //! binds directly against real libfuse3. See
 //! `docs/plans/cross-platform-mount-crate.md`, in particular the "Windows
-//! checkpoint" note on why this backend's `mount()` has no working clean-
-//! shutdown path yet (`fuse_exit` crashes inside `winfsp-x64.dll`) - the
-//! integration test below works around that by running the mount in a
-//! separate child process and terminating it, rather than asking it to
-//! exit gracefully.
+//! checkpoint" note on `fuse_exit`/`fsp_fuse3_exit` (confirmed to crash
+//! deterministically inside `winfsp-x64.dll`, not something this crate can
+//! fix) - not needed in practice, though: on Ctrl+C, WinFSP's own
+//! `fuse_main_real` already unmounts cleanly and returns on its own
+//! (confirmed by manual testing in a real terminal - WinFSP itself prints
+//! "The service ... has been stopped." and even removes the mountpoint
+//! directory it created), exactly mirroring real libfuse's `SIGINT`
+//! handling on Linux. [`mount`] relies on that directly: no custom
+//! console-control handling here, [`MountFilesystem::on_unmount`] is
+//! called right after `fuse_main_real` returns, same as `linux::mount`.
 //!
 //! [`mount`] dispatches every `fuse_operations` callback to a
 //! [`crate::MountFilesystem`] implementation the same way the Linux
@@ -168,12 +173,13 @@ unsafe extern "C" fn dispatch_statfs<T: MountFilesystem>(
     }
 }
 
-/// Mounts `fs` at `mountpoint`, blocking until the process is killed - see
-/// this module's doc comment for why there's no graceful in-process way to
-/// stop it yet. Unlike the Linux backend, no `-f` (foreground) flag is
-/// needed: WinFSP's Windows branch never forks (`fsp_fuse_daemonize` is a
-/// no-op there - see `sys.rs`), so the footgun `-f` guards against on
-/// Linux doesn't exist on this platform.
+/// Mounts `fs` at `mountpoint`, blocking until WinFSP unmounts it (Ctrl+C,
+/// the console closing, or the process otherwise ending - see this
+/// module's doc comment for why no custom handling is needed here for
+/// that). Unlike the Linux backend, no `-f` (foreground) flag is needed:
+/// WinFSP's Windows branch never forks (`fsp_fuse_daemonize` is a no-op
+/// there - see `sys.rs`), so the footgun `-f` guards against on Linux
+/// doesn't exist on this platform.
 pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> io::Result<()> {
     let ops = sys::fuse_operations {
         getattr: Some(dispatch_getattr::<T>),
@@ -212,6 +218,7 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
             private_data.cast::<c_void>(),
         )
     };
+    unsafe { (*private_data).on_unmount() };
     unsafe { drop(Box::from_raw(private_data)) };
 
     if exit_code == 0 {

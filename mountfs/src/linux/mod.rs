@@ -222,6 +222,7 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
             private_data.cast::<c_void>(),
         )
     };
+    unsafe { (*private_data).on_unmount() };
     unsafe { drop(Box::from_raw(private_data)) };
 
     if exit_code == 0 {
