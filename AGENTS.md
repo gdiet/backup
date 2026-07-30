@@ -61,6 +61,15 @@ version is correct:
 - Write self-documenting code with clear variable names
 - If possible, avoid complex logic and not obvious code. If unavoidable, add
   explaining comments
+- In production code (not tests), never use a bare `.unwrap()`. Use `.expect("...")`
+  instead, with a message that states *why* the failure can't happen here (a poisoned
+  mutex, a value just established a few lines above, a hardcoded literal that can't fail
+  to parse, etc.) — this is what an audit of the whole codebase found already in
+  consistent use, so keep it that way. If the failure genuinely *can* happen at runtime
+  (I/O, external input, anything filesystem- or network-dependent), return a `Result`/
+  `Errno` instead of panicking - this matters especially in `mount.rs`, where a panic in
+  one FUSE/WinFSP callback can take down the whole mount session, not just the one
+  request. Bare `.unwrap()` remains fine in `#[cfg(test)]` code.
 - Do not reference the Go implementation (`go/`) in Rust code or comments (e.g.
   "matches the Go implementation's ...") — the Go implementation is not being
   developed further and such references add no value going forward. The only
