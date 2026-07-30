@@ -70,11 +70,14 @@ already exists with no new Scala-side work. Plan:
    `store::LongTermStore` (works out of the box per the compatibility
    finding above), and run them through the same chunk-and-store pipeline
    `store.rs`/`cli::mount`'s persist path already use
-   (`BufferingHashingChunker` + `db::find_chunk` dedup + `chunk_store::
-   write_chunk_bytes`/`SpaceAllocator` + `apply_backup_batch`) - writing
-   into a **new**, empty `data/` directory and a **new** repository, not
-   in place. Multiple old tree entries sharing one `dataId` should only
-   be chunked once (cache the old-`dataId` → new-`content_id` mapping).
+   (`cli::spilling_chunker::SpillingHashingChunker` + `db::find_chunk`
+   dedup + `chunk_store::write_chunk_from_cache`/`SpaceAllocator` +
+   `apply_backup_batch` - see `docs/plans/bounded-memory-io-pipeline.md`
+   for why chunk buffering goes through a spillable `WriteCache` rather
+   than a plain in-memory buffer) - writing into a **new**, empty `data/`
+   directory and a **new** repository, not in place. Multiple old tree
+   entries sharing one `dataId` should only be chunked once (cache the
+   old-`dataId` → new-`content_id` mapping).
 4. Report a summary at the end, notably **space saved by chunk-level
    dedup**: sum of old `DataEntries` storage actually referenced by
    *active* tree entries (the bytes a naive whole-file copy would need)

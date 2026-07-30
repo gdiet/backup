@@ -22,7 +22,6 @@ impl Errno {
     pub const EEXIST: Errno = Errno(17);
     pub const ENOTDIR: Errno = Errno(20);
     pub const EISDIR: Errno = Errno(21);
-    pub const ENOSPC: Errno = Errno(28);
     pub const EROFS: Errno = Errno(30);
     pub const ENOTEMPTY: Errno = Errno(39);
 }

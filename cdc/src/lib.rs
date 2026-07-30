@@ -229,6 +229,18 @@ pub struct LengthHash {
 ///
 /// Wraps any [`Chunker`] and a [`ChunkHasher`], feeding each completed chunk
 /// through the hasher and emitting [`LengthHash`] values.
+///
+/// Currently unused by any command (`store`/`mount` both need a completed
+/// chunk's raw bytes too, for writing a dedup miss - see `cli::
+/// spilling_chunker::SpillingHashingChunker`, which duplicates this type's
+/// slicing loop rather than wrapping it, since this type hashes and
+/// discards each byte slice internally without ever exposing it). Kept as
+/// the simpler hash-only building block this crate's other types are
+/// described against (see their own doc comments), and as a plausible fit
+/// for a future dedup-only use case (e.g. a dry-run/verify mode that only
+/// needs to detect duplicates, never write new chunk bytes) - not proven
+/// premature, since removing and later re-adding an identical ~15-line
+/// type costs more than leaving it.
 pub struct HashingChunker<H, C> {
     chunker: C,
     hasher: H,
