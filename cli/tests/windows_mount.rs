@@ -260,3 +260,165 @@ fn mounts_read_write_and_supports_structural_changes_via_the_backup_binary() {
     child.kill().expect("failed to kill backup mount");
     child.wait().expect("failed to wait for backup mount");
 }
+
+/// Windows counterpart to `cli/src/mount.rs`'s
+/// `mounts_read_write_and_supports_content_writes` (Linux-only, same
+/// reason as the other tests above) - exercises phase 2b's real
+/// byte-level `write`/`read`/`truncate` (`docs/plans/fuse-mount-
+/// readwrite.md`) through a real `backup mount --read-write` child
+/// process and real WinFSP, plus confirms a genuinely read-only mount
+/// (no `--read-write`) still rejects a content write - the regression
+/// this test was added to catch: WinFSP's `-oro`/`ReadOnlyVolume` does
+/// *not* block a write-intent `CreateFileW`+`WriteFile` at the driver
+/// level the way Linux's `MS_RDONLY` blocks `write(2)`, so `DedupFs`
+/// itself has to reject it explicitly (see `DedupFs::read_only`).
+#[test]
+fn mounts_read_write_and_supports_content_writes_via_the_backup_binary() {
+    let (_temp_dir, repo_root) = init_repo();
+    {
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_write_connection().unwrap();
+        db::insert_directory(&conn, 0, "marker", 0).unwrap();
+    }
+
+    let parent_dir = tempfile::tempdir().unwrap();
+    let mount_path = parent_dir.path().join("mnt");
+
+    let backup = env!("CARGO_BIN_EXE_backup");
+    let mut child = std::process::Command::new(backup)
+        .arg("--repo")
+        .arg(&repo_root)
+        .arg("mount")
+        .arg("--read-write")
+        .arg(&mount_path)
+        .spawn()
+        .expect("failed to spawn backup mount --read-write");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            panic!("backup mount exited early with {status}");
+        }
+        let names: Vec<String> = std::fs::read_dir(&mount_path)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !names.is_empty() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "mount did not become ready within 10s \
+             (requires WinFSP to be installed - investigate if this fails in CI)"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // Write content to a new file, read it back.
+    std::fs::write(mount_path.join("a.txt"), b"hello write cache").unwrap();
+    assert_eq!(
+        std::fs::read(mount_path.join("a.txt")).unwrap(),
+        b"hello write cache"
+    );
+
+    // Overwrite in the middle via an explicit seek+write.
+    {
+        use std::io::{Seek, SeekFrom, Write};
+        let mut f = std::fs::OpenOptions::new()
+            .write(true)
+            .open(mount_path.join("a.txt"))
+            .unwrap();
+        f.seek(SeekFrom::Start(6)).unwrap();
+        f.write_all(b"WRITE").unwrap();
+    }
+    assert_eq!(
+        std::fs::read(mount_path.join("a.txt")).unwrap(),
+        b"hello WRITE cache"
+    );
+
+    // set_len grow zero-pads; set_len shrink drops the tail.
+    {
+        let f = std::fs::OpenOptions::new()
+            .write(true)
+            .open(mount_path.join("a.txt"))
+            .unwrap();
+        f.set_len(20).unwrap();
+    }
+    let grown = std::fs::read(mount_path.join("a.txt")).unwrap();
+    assert_eq!(grown.len(), 20);
+    assert_eq!(&grown[..17], b"hello WRITE cache");
+    assert_eq!(&grown[17..], &[0u8, 0, 0]);
+
+    {
+        let f = std::fs::OpenOptions::new()
+            .write(true)
+            .open(mount_path.join("a.txt"))
+            .unwrap();
+        f.set_len(5).unwrap();
+    }
+    assert_eq!(std::fs::read(mount_path.join("a.txt")).unwrap(), b"hello");
+
+    child.kill().expect("failed to kill backup mount");
+    child.wait().expect("failed to wait for backup mount");
+
+    // Verify persisted state directly against the DB, after the mount
+    // process is gone (so its own write connection is guaranteed closed).
+    let repository = db::open_repository(&repo_root).unwrap();
+    let conn = repository.open_read_connection().unwrap();
+    let a = db::resolve_path(&conn, "a.txt").unwrap().unwrap();
+    assert_eq!(db::file_size(&conn, &a).unwrap(), 5);
+}
+
+/// A content write on a genuinely read-only mount (no `--read-write`) must
+/// be rejected - see this test module's doc comment on
+/// `mounts_read_write_and_supports_content_writes_via_the_backup_binary`
+/// for the Windows-specific regression this guards against.
+#[test]
+fn a_read_only_mount_rejects_content_writes_via_the_backup_binary() {
+    let (_temp_dir, repo_root) = init_repo();
+    seed_file(&repo_root, 0, "top.txt", b"top level content");
+
+    let parent_dir = tempfile::tempdir().unwrap();
+    let mount_path = parent_dir.path().join("mnt");
+
+    let backup = env!("CARGO_BIN_EXE_backup");
+    let mut child = std::process::Command::new(backup)
+        .arg("--repo")
+        .arg(&repo_root)
+        .arg("mount")
+        .arg(&mount_path)
+        .spawn()
+        .expect("failed to spawn backup mount");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            panic!("backup mount exited early with {status}");
+        }
+        let names: Vec<String> = std::fs::read_dir(&mount_path)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !names.is_empty() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "mount did not become ready within 10s"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    assert!(std::fs::write(mount_path.join("top.txt"), b"nope").is_err());
+
+    child.kill().expect("failed to kill backup mount");
+    child.wait().expect("failed to wait for backup mount");
+}

@@ -151,6 +151,37 @@ unsafe extern "C" fn dispatch_read<T: MountFilesystem>(
     }
 }
 
+unsafe extern "C" fn dispatch_write<T: MountFilesystem>(
+    _path: *const c_char,
+    buf: *const c_char,
+    size: size_t,
+    offset: off_t,
+    fi: *mut sys::fuse_file_info,
+) -> c_int {
+    let fs = unsafe { context::<T>() };
+    let handle = Handle(unsafe { (*fi).fh });
+    let data = unsafe { std::slice::from_raw_parts(buf.cast::<u8>(), size) };
+    match fs.write(handle, offset as u64, data) {
+        Ok(written) => written as c_int,
+        Err(errno) => -errno.0,
+    }
+}
+
+unsafe extern "C" fn dispatch_truncate<T: MountFilesystem>(
+    path: *const c_char,
+    size: off_t,
+    _fi: *mut sys::fuse_file_info,
+) -> c_int {
+    let Some(path) = path_str(path) else {
+        return -Errno::EIO.0;
+    };
+    let fs = unsafe { context::<T>() };
+    match fs.truncate(path, size as u64) {
+        Ok(()) => 0,
+        Err(errno) => -errno.0,
+    }
+}
+
 unsafe extern "C" fn dispatch_release<T: MountFilesystem>(
     _path: *const c_char,
     fi: *mut sys::fuse_file_info,
@@ -331,6 +362,8 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
         utimens: Some(dispatch_utimens::<T>),
         chmod: Some(dispatch_chmod::<T>),
         chown: Some(dispatch_chown::<T>),
+        write: Some(dispatch_write::<T>),
+        truncate: Some(dispatch_truncate::<T>),
         ..sys::fuse_operations::default()
     };
 

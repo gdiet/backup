@@ -15,6 +15,7 @@ mod reclaim_space;
 mod restore;
 mod stats;
 mod store;
+mod write_cache;
 
 /// Deduplicating backup application.
 #[derive(Parser)]

@@ -33,8 +33,8 @@ pub use query::{
 };
 pub use settings::{CDC_TARGET_SIZE_BITS_RANGE, Chunking, RepositorySettings, SettingsError};
 pub use tree::{
-    EntryKind, TreeEntryRow, find_tree_entry, get_tree_entry, insert_directory, rename_entry,
-    touch_mtime,
+    EntryKind, TreeEntryRow, find_tree_entry, get_tree_entry, insert_directory, parent_id,
+    rename_entry, touch_mtime,
 };
 
 use std::fs;

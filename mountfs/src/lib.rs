@@ -143,6 +143,22 @@ pub trait MountFilesystem: Send + Sync + 'static {
         Ok(())
     }
 
+    /// Writes `data` at `offset` into the file identified by `handle`
+    /// (from a prior [`MountFilesystem::open`]/[`MountFilesystem::create`]
+    /// call), returning the number of bytes written. Phase 2b
+    /// (`docs/plans/fuse-mount-readwrite.md`) - default `EROFS`, same
+    /// rationale as the phase 2a methods above.
+    fn write(&self, handle: Handle, offset: u64, data: &[u8]) -> Result<u32, Errno> {
+        let _ = (handle, offset, data);
+        Err(Errno::EROFS)
+    }
+
+    /// Resizes `path` to `size`, zero-padding if it grows. Phase 2b.
+    fn truncate(&self, path: &str, size: u64) -> Result<(), Errno> {
+        let _ = (path, size);
+        Err(Errno::EROFS)
+    }
+
     /// Called once, exactly once, as the mount is shutting down - the one
     /// place to flush caches, close connections, or otherwise wrap up
     /// state before the process goes away. Default no-op (nothing to do

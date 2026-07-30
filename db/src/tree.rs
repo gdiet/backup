@@ -68,6 +68,20 @@ pub fn get_tree_entry(conn: &Connection, id: i64) -> Result<Option<TreeEntryRow>
     .map_err(Error::from)
 }
 
+/// Looks up `id`'s `parent_id`, regardless of whether it's soft-deleted -
+/// `TreeEntryRow` itself doesn't carry this (see its own doc comment), so
+/// this is the standalone way to get it (used by the mount's phase 2b
+/// persist pipeline, which needs it to build a `FileBackupRecord`).
+pub fn parent_id(conn: &Connection, id: i64) -> Result<Option<i64>, Error> {
+    conn.query_row(
+        "SELECT parent_id FROM tree_entries WHERE id = ?1",
+        [id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
 /// Looks up the active (non-soft-deleted) child of `parent_id` named `name`.
 pub fn find_tree_entry(
     conn: &Connection,

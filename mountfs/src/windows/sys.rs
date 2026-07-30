@@ -153,7 +153,8 @@ pub struct fuse_operations {
     pub chown: Option<
         unsafe extern "C" fn(*const c_char, fuse_uid_t, fuse_gid_t, *mut fuse_file_info) -> c_int,
     >,
-    pub truncate: Unimplemented,
+    pub truncate:
+        Option<unsafe extern "C" fn(*const c_char, fuse_off_t, *mut fuse_file_info) -> c_int>,
     pub open: Option<unsafe extern "C" fn(*const c_char, *mut fuse_file_info) -> c_int>,
     pub read: Option<
         unsafe extern "C" fn(
@@ -164,7 +165,15 @@ pub struct fuse_operations {
             *mut fuse_file_info,
         ) -> c_int,
     >,
-    pub write: Unimplemented,
+    pub write: Option<
+        unsafe extern "C" fn(
+            *const c_char,
+            *const c_char,
+            usize,
+            fuse_off_t,
+            *mut fuse_file_info,
+        ) -> c_int,
+    >,
     pub statfs: Option<unsafe extern "C" fn(*const c_char, *mut fuse_statvfs) -> c_int>,
     pub flush: Option<unsafe extern "C" fn(*const c_char, *mut fuse_file_info) -> c_int>,
     pub release: Option<unsafe extern "C" fn(*const c_char, *mut fuse_file_info) -> c_int>,

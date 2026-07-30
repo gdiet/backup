@@ -6,13 +6,14 @@
 //! Linux-only `/dev/fuse` protocol.
 //!
 //! The full read-only set plus phase 2a's structural read-write set
-//! (`mkdir`/`create`/`unlink`/`rmdir`/`rename`/`utimens`/`chmod`/`chown` -
-//! see `docs/plans/fuse-mount-readwrite.md`) are given real signatures;
-//! every other `fuse_operations` slot (phase 2b's `write`, and everything
-//! this crate has no plans for) is typed as a same-size, unused function-
-//! pointer placeholder - correct for `struct` layout/size purposes (all
-//! slots are pointer-sized on every platform this targets) without
-//! committing to a signature before it's implemented.
+//! (`mkdir`/`create`/`unlink`/`rmdir`/`rename`/`utimens`/`chmod`/`chown`)
+//! and phase 2b's `write`/`truncate` (see
+//! `docs/plans/fuse-mount-readwrite.md`) are given real signatures; every
+//! other `fuse_operations` slot (everything this crate has no plans for)
+//! is typed as a same-size, unused function-pointer placeholder - correct
+//! for `struct` layout/size purposes (all slots are pointer-sized on every
+//! platform this targets) without committing to a signature before it's
+//! implemented.
 
 #![allow(non_camel_case_types)]
 
@@ -82,7 +83,7 @@ pub struct fuse_operations {
     pub chmod: Option<unsafe extern "C" fn(*const c_char, mode_t, *mut fuse_file_info) -> c_int>,
     pub chown:
         Option<unsafe extern "C" fn(*const c_char, uid_t, gid_t, *mut fuse_file_info) -> c_int>,
-    pub truncate: Unimplemented,
+    pub truncate: Option<unsafe extern "C" fn(*const c_char, off_t, *mut fuse_file_info) -> c_int>,
     pub open: Option<unsafe extern "C" fn(*const c_char, *mut fuse_file_info) -> c_int>,
     pub read: Option<
         unsafe extern "C" fn(
@@ -93,7 +94,15 @@ pub struct fuse_operations {
             *mut fuse_file_info,
         ) -> c_int,
     >,
-    pub write: Unimplemented,
+    pub write: Option<
+        unsafe extern "C" fn(
+            *const c_char,
+            *const c_char,
+            size_t,
+            off_t,
+            *mut fuse_file_info,
+        ) -> c_int,
+    >,
     pub statfs: Option<unsafe extern "C" fn(*const c_char, *mut statvfs) -> c_int>,
     pub flush: Unimplemented,
     pub release: Option<unsafe extern "C" fn(*const c_char, *mut fuse_file_info) -> c_int>,

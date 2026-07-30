@@ -26,8 +26,9 @@ use crate::chunk_store::{self, SpaceAllocator};
 const READ_BUFFER_SIZE: usize = 64 * 1024;
 
 /// Number of hash bytes taken from blake3's extendable output, for both chunk
-/// hashes and the content hash.
-const HASH_LENGTH: usize = 20;
+/// hashes and the content hash. `pub(crate)`: `mount.rs`'s phase 2b persist
+/// pipeline reuses this and [`Blake3Hasher`] rather than duplicating them.
+pub(crate) const HASH_LENGTH: usize = 20;
 
 /// Records queued by workers are flushed to the database once this many have
 /// accumulated, or after `WRITE_BATCH_IDLE_TIMEOUT` since the last flush,
@@ -60,7 +61,7 @@ pub struct BackupArgs {
 ///
 /// A local newtype is required because Rust's orphan rule forbids implementing a
 /// foreign trait (`cdc::ChunkHasher`) for a foreign type (`blake3::Hasher`) directly.
-struct Blake3Hasher(blake3::Hasher);
+pub(crate) struct Blake3Hasher(pub(crate) blake3::Hasher);
 
 impl ChunkHasher for Blake3Hasher {
     fn update(&mut self, data: &[u8]) {
@@ -79,7 +80,9 @@ impl ChunkHasher for Blake3Hasher {
 ///
 /// A small delegating enum instead of `Box<dyn Chunker>`, since there are only
 /// ever these two concrete chunker types and the choice is made once per run.
-enum RepoChunker {
+/// `pub(crate)`: `mount.rs`'s phase 2b persist pipeline reuses this and
+/// [`make_chunker`] rather than duplicating them.
+pub(crate) enum RepoChunker {
     Cdc(CdcChunker),
     Single(SingleChunkChunker),
 }
@@ -107,7 +110,7 @@ impl Chunker for RepoChunker {
     }
 }
 
-fn make_chunker(cdc_config: &Option<CdcConfig>) -> RepoChunker {
+pub(crate) fn make_chunker(cdc_config: &Option<CdcConfig>) -> RepoChunker {
     match cdc_config {
         Some(config) => RepoChunker::Cdc(config.chunker()),
         None => RepoChunker::Single(SingleChunkChunker::default()),
