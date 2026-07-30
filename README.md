@@ -178,17 +178,101 @@ bound. `stats` reports any gaps not yet reused as free space.
 backup mount <mountpoint>
 ```
 
-Mounts the repository's file tree read-only via FUSE at `<mountpoint>`
-(Linux only), so it can be browsed and read with ordinary tools (`ls`,
-`cat`, `cp`, etc.) instead of `list`/`restore`. `<mountpoint>` must already
-exist and be empty. Blocks until the filesystem is unmounted from another
-terminal (`fusermount -u <mountpoint>` or `umount <mountpoint>`).
+Mounts the repository's file tree read-only at `<mountpoint>`, so it can be
+browsed and read with ordinary tools (`ls`, `cat`, `cp`, etc.) instead of
+`list`/`restore`. Works on both Linux (via real system libfuse3) and
+Windows (via [WinFSP]) through the platform-abstracted `mountfs` crate -
+see `docs/plans/cross-platform-mount-crate.md` for how.
+
+**Linux**: `<mountpoint>` must already exist and be empty. Blocks until
+the filesystem is unmounted from another terminal (`fusermount3 -u
+<mountpoint>` or `umount <mountpoint>`). Requires `libfuse3-dev`/
+`fuse3-devel` at build time and `libfuse3` at runtime (Debian/Ubuntu: `apt
+install libfuse3-dev`; Fedora: `dnf install fuse3-devel`).
+
+**Windows**: requires [WinFSP] to be installed (the runtime is enough - no
+SDK/import library needed to build this project). `<mountpoint>` must
+*not* already exist - WinFSP creates it itself as part of mounting.
+Blocks until the process is stopped (Ctrl+C, closing the console, or
+killing it - there's currently no separate unmount command, see the plan
+doc's "Windows checkpoint" for why).
+
+[WinFSP]: https://github.com/winfsp/winfsp - WinFsp - Windows File System
+Proxy, Copyright (C) Bill Zissimopoulos, used here under its FLOSS
+exception to the GPLv3 (see the plan doc for the full exception text).
 
 Read-write support (writes held in-process, only committed to the
 repository once the write handle closes) is designed but not yet
 implemented - see `docs/plans/fuse-mount-readwrite.md`.
 
 ## Development
+
+### Prerequisites
+
+A Rust toolchain (`rustc`/`cargo`, e.g. via [rustup](https://rustup.rs)) on
+both platforms. Beyond that:
+
+**Linux**:
+- `libfuse3-dev` (Debian/Ubuntu) or `fuse3-devel` (Fedora) - build-time
+  header for `mount`'s real-libfuse3 backend; `libfuse3`/`fuse3` itself is
+  needed at runtime.
+- `pkg-config` - used by `mountfs`'s `build.rs` to find the above.
+
+**Windows**:
+- Visual Studio Build Tools (the MSVC linker/`cl.exe` - the usual
+  prerequisite for any Rust `*-pc-windows-msvc` build, not specific to
+  this project).
+- [WinFSP](https://github.com/winfsp/winfsp) installed - required at
+  *runtime* for `mount` to work; **not** required at build time (`mountfs`
+  resolves its DLL exports dynamically, no SDK/import library needed).
+
+**Occasional, not needed for routine build/test** (both platforms):
+- The standalone "Debugging Tools for Windows" (`cdb`/`windbg`, via the
+  [Windows SDK installer](https://learn.microsoft.com/windows-hardware/drivers/debugger/debugger-download-tools) -
+  select only that component) - for diagnosing a native crash inside
+  WinFSP itself, not something routine development needs.
+- `bindgen-cli` + `libclang` - only for re-running `bindgen` as a one-off
+  sanity check against `mountfs/src/windows/sys.rs`'s hand-written struct
+  layouts (see that file's doc comment) after touching them or updating
+  the vendored WinFSP headers; `mountfs` itself never depends on `bindgen`
+  or `libclang` at build time - this project deliberately hand-writes its
+  FFI bindings instead of generating them (see
+  `docs/plans/cross-platform-mount-crate.md`). No Windows package manager
+  (`winget`/`choco`/`scoop`) was available to install `libclang` there
+  when this was last needed, so this was done from WSL instead, cross-
+  target-parsing the headers for `x86_64-pc-windows-msvc` - works fine
+  even though the crate itself only builds this way on native Windows:
+
+  ```bash
+  # WSL (Debian/Ubuntu)
+  sudo apt-get install -y libclang-dev
+  cargo install bindgen-cli
+
+  # Symlink around clang's MSVC/SDK header lookup needing paths without
+  # spaces/parens (only needed because we're parsing for a Windows target
+  # from Linux - a real Windows+clang setup wouldn't need this) - adjust
+  # the SDK/MSVC version numbers to what's actually installed.
+  mkdir -p ~/winsdk-links
+  ln -sfn "/mnt/c/Program Files (x86)/Windows Kits/10/Include/<version>/ucrt" ~/winsdk-links/ucrt
+  ln -sfn "/mnt/c/Program Files (x86)/Windows Kits/10/Include/<version>/um" ~/winsdk-links/um
+  ln -sfn "/mnt/c/Program Files (x86)/Windows Kits/10/Include/<version>/shared" ~/winsdk-links/shared
+  ln -sfn "/mnt/c/Program Files (x86)/Microsoft Visual Studio/<edition>/BuildTools/VC/Tools/MSVC/<version>/include" ~/winsdk-links/msvc
+
+  # From the repo root (rust/):
+  bindgen mountfs/vendor/winfsp/fuse3/fuse.h \
+    --no-layout-tests \
+    --allowlist-type "fuse_operations|fuse_file_info|fuse_context|fuse_stat|fuse_statvfs|fsp_fuse_env" \
+    -o /tmp/winfsp_bindgen.rs \
+    -- -target x86_64-pc-windows-msvc \
+       -I mountfs/vendor/winfsp/fuse3 -I mountfs/vendor/winfsp/fuse \
+       -isystem ~/winsdk-links/msvc -isystem ~/winsdk-links/ucrt \
+       -isystem ~/winsdk-links/um -isystem ~/winsdk-links/shared \
+       -DFUSE_USE_VERSION=312 -x c
+  ```
+
+  Then diff `/tmp/winfsp_bindgen.rs`'s struct definitions against
+  `mountfs/src/windows/sys.rs` by hand (field order, types, and - the one
+  real bug this already caught once - bitfield packing).
 
 ### Build (debug)
 

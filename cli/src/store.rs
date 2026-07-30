@@ -648,6 +648,7 @@ fn flush(conn: &mut Connection, batch: &mut Vec<db::FileBackupRecord>, abort: &A
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     fn init_repo() -> (tempfile::TempDir, PathBuf) {
@@ -701,6 +702,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn run_store_fails_fast_for_an_unreadable_source_directory() {
         let (_temp_dir, repo_root) = init_repo();

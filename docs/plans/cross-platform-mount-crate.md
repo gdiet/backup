@@ -1,6 +1,6 @@
 # A platform-abstracted mount crate (Linux + Windows/WinFSP)
 
-**Status**: implementation starting on branch `mountfs` (branched off `rust`), since it's a real architectural change (new crate, dropping or reworking the `fuser` dependency) rather than an incremental addition.
+**Status**: on branch `mountfs` (branched off `rust`). **Both platforms work**: `backup mount` runs on `mountfs` on Linux (real libfuse3) and Windows (real WinFSP) alike, `fuser` is gone entirely. One known gap: no working in-process clean-shutdown call on Windows yet (`fuse_exit` crashes) - not a blocker for the feature itself, see "Windows checkpoint" below. Remaining work per "Sequencing": the WinFSP attribution notice and a Windows README section (step 5).
 
 ## Context
 
@@ -62,6 +62,7 @@ pub trait MountFilesystem: Send + Sync + 'static {
     fn read(&self, handle: Handle, offset: u64, size: u32) -> Result<Vec<u8>, Errno>;
     fn release(&self, handle: Handle);
     fn statfs(&self) -> Result<StatfsInfo, Errno>;
+    fn on_unmount(&self) {} // default no-op; called once, after a clean shutdown
     // Phase 2 (read-write) extends this trait with write/create/mkdir/unlink/
     // rmdir/rename/truncate/utimens/chmod/chown - not added until that phase.
 }
@@ -79,12 +80,29 @@ pub fn mount(fs: impl MountFilesystem, mountpoint: &Path, read_only: bool) -> io
 
 ## Sequencing
 
-1. **Spike, Linux only**: hand-write the FFI bindings and a minimal `mountfs` implementing just `getattr`+`readdir` against real libfuse3 (pkg-config), prove the shared-API concept end-to-end on the one platform this environment can actually test, without touching the existing `fuser`-based `cli/src/mount.rs` yet.
-2. Flesh out `mountfs`'s Linux backend to the full read-only set (`open`/`read`/`release`/`statfs`), get it passing the same kind of real mount/unmount integration test `cli/src/mount.rs` already has.
-3. Switch `cli` over to `mountfs` (`DedupFs` implements `MountFilesystem`, drop the `fuser`-based code and dependency). Full regression: existing manual smoke test (mount, `ls`/`cat`/`stat`/`diff`, unmount) plus the automated suite.
-4. **On a real Windows machine** (Visual Studio Build Tools, current WinFSP installed): vendor WinFSP's `fuse3/fuse.h` headers, wire up `build.rs`'s Windows branch, build and manually smoke-test `backup mount` there. This is the actual go/no-go checkpoint for the shared-implementation approach.
-5. If step 4 succeeds: done, add the WinFSP attribution notice (README/`--version`), document the new `libfuse3-dev` Linux build dependency, write a Windows section in the README (WinFSP install prerequisite, matching the Scala README's existing Windows section).
-6. If step 4 blocks: implement the fallback Windows-native backend described above instead, same trait, same public interface - everything from step 3 onward on the `cli` side is unaffected either way.
+1. ~~**Spike, Linux only**~~ - done (commit `21654174`). Hand-written FFI bindings, minimal `mountfs` implementing `getattr`+`readdir` against real libfuse3, proven end-to-end under WSL2.
+2. ~~Flesh out `mountfs`'s Linux backend to the full read-only set~~ - done (commit `45ced113`). Added the public `MountFilesystem` trait/`Attr`/`DirEntry`/`Handle`/`StatfsInfo`/`Errno` types from "Crate design" below as real code, generic `extern "C"` trampolines dispatching `getattr`/`readdir`/`open`/`read`/`release`/`statfs` to any `T: MountFilesystem`.
+3. ~~Switch `cli` over to `mountfs`~~ - done (commit `535008dd`). `DedupFs` implements `MountFilesystem`, `fuser` dropped entirely from `cli/Cargo.toml`. Manually smoke-tested under WSL2 per "Verification" below (real repository, nested dirs, a 50KB multi-chunk binary file, `ls -laR`/`stat`/`cat`/`diff -r` - identical - a rejected write, clean unmount).
+4. ~~**On a real Windows machine**~~ - done (this one - Visual Studio Build Tools and WinFSP 2.0.23075 already installed). Vendored WinFSP's `fuse3/fuse.h` headers, built a full Windows backend (`mountfs/src/windows/`), manually smoke-tested `backup mount` there via a real repository through the actual `backup` binary. **The go/no-go checkpoint resolved go** - see "Windows checkpoint" below for the one known gap and how it was worked around.
+5. Remaining from the original step 5: add the WinFSP attribution notice to the README/`--version` output, and a Windows section in the README (WinFSP install prerequisite, matching the Scala README's existing Windows section) - not done yet.
+6. ~~If step 4 blocks: implement the fallback Windows-native backend~~ - not needed. Step 4 succeeded with the shared FUSE-compatible-API approach; WinFSP's native `FSP_FILE_SYSTEM_INTERFACE` was never required.
+
+### Windows checkpoint
+
+Two side quests were explored and abandoned in favor of continuing the WinFSP path - kept here as a pointer in case they're worth revisiting for a *different* reason later, not because either turned out to be viable for this use case:
+
+- **ProjFS/CfApi** (Windows' own built-in virtualization APIs, no third-party driver): ruled out. Both are architecturally a "hydrate to local disk on access, evict later" cache model (the shape OneDrive Files-On-Demand and Git VFS use), not a pass-through streaming model - reading through a mount backed by either would materialize the accessed content onto the local NTFS volume the mount lives on. For a multi-TB deduplicated store on external storage that the user explicitly doesn't want mirrored onto the Windows partition (e.g. during a `diff -r`-style full-tree verify, exactly what this crate's own smoke test does), that defeats the point. WinFSP/Dokan's FUSE-style direct callback-per-read model doesn't have this problem.
+- **Dokan**: the other third-party-driver alternative to WinFSP (MIT-licensed, cleaner than WinFSP's GPL+FLOSS-exception). Not pursued once WinFSP itself turned out to work.
+
+What actually shipped, against the real installed WinFSP 2.0.23075 runtime:
+
+- `mountfs/src/windows/sys.rs` resolves WinFSP's `fsp_fuse3_*` DLL exports entirely at runtime (`LoadLibraryW`/`GetProcAddress`, falling back to the `HKLM\Software\WOW6432Node\WinFsp\InstallDir` registry value) - no WinFSP SDK or import library needed at build time, confirmed.
+- `mountfs/src/windows/mod.rs` dispatches the full read-only set (`getattr`/`readdir`/`open`/`read`/`release`/`statfs`) to any `T: MountFilesystem`, mirroring the Linux backend's generic trampolines exactly.
+- **One real bug found and fixed along the way**: WinFSP's `fuse3_file_info` bitfield group (`writepage`/`direct_io`/.../`padding:27`) is 33 bits total, which overflows a single 32-bit storage unit - MSVC packs it into *two* 4-byte units, not one. Getting this wrong shifted `fh` from offset 16 to offset 8 in this crate's struct, which silently corrupted the file handle threaded through `open`/`read`/`release` - a `top.txt` read returning `sub/nested.txt`'s content is what surfaced it. Fixed in `sys.rs`'s `fuse_file_info` (see its doc comment).
+- **`fuse_exit`/`fsp_fuse3_exit(env, fuse)` is broken** - crashes deterministically inside `winfsp-x64.dll` (root-caused with a real stack trace via `cdb`, part of the standalone "Debugging Tools for Windows": faults in `fsp_fuse3_exit+0xd`, reading address `0x478`) - and not needed anyway: manually confirmed in a real terminal (`[System.Console]` is unavailable in this environment's automated shell, so this genuinely required a human at a real console) that **WinFSP already handles Ctrl+C on its own**, cleanly unmounting and returning from `fuse_main_real` without this crate doing anything - WinFSP itself prints "The service ... has been stopped." and even removes the mountpoint directory it created, exactly mirroring real libfuse's own `SIGINT` handling on Linux. An initial version of this crate built a whole `SetConsoleCtrlHandler`-based workaround assuming WinFSP needed help here (see git history around commit range `ef688414`..`984e2a0d`); once the real terminal test disproved that assumption, it was removed again - `windows::mount` now just calls `MountFilesystem::on_unmount` right after `fuse_main_real` returns, identically to `linux::mount`, no platform-specific shutdown code at all.
+- Both this crate's own integration test (`mountfs/tests/windows_mount.rs`) and `cli`'s (`cli/tests/windows_mount.rs`) still use `Child::kill` (`TerminateProcess`) to end the mount for their *read/write op-set* tests - simpler than sending a real Ctrl+C event from an automated test (which needs a real attached console this project's dev/build environment doesn't have - confirmed via `[System.Console]::CursorLeft` throwing "the handle is invalid", `AllocConsole()` didn't change that). `mountfs/tests/windows_mount.rs` additionally has an `on_unmount_runs_and_process_exits_cleanly_on_ctrl_c` test that *does* send a real `CTRL_C_EVENT` via `GenerateConsoleCtrlEvent` and checks `on_unmount` fired - `#[ignore]`d here for the same console-availability reason, run it with `--ignored` from a real terminal to reproduce as an automated check.
+- `cli/src/mount.rs`'s `validate_mountpoint` is platform-gated: Linux/FUSE mounts onto an *existing, empty* directory; WinFSP creates the mountpoint itself and errors ("mount point in use") if it already exists - opposite preconditions, so the pre-flight check couldn't stay platform-independent.
+- Found and flagged (not fixed, out of scope for this plan): `cli/src/restore.rs`'s `set_mtime` silently fails to set file times on Windows (opens the target read-only, which lacks the `FILE_WRITE_ATTRIBUTES` access Windows needs) - surfaced only now because `cli` never compiled on Windows at all before this branch removed `fuser`. Tracked as a separate follow-up; `restores_a_file_with_content_and_mtime` is `#[ignore]`d on Windows in the meantime.
 
 ## Not yet decided
 
@@ -95,5 +113,5 @@ pub fn mount(fs: impl MountFilesystem, mountpoint: &Path, read_only: bool) -> io
 
 ## Verification
 
-- Linux: `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test` workspace-wide, plus a real mount/unmount integration test (as `cli/src/mount.rs` already has) and the same manual smoke test procedure (mount a real repository, `ls`/`cat`/`stat`/`diff` against the source, unmount) run against `mountfs` before and after the `cli` cutover in step 3, to confirm no behavioral regression.
-- Windows: **cannot be done from this environment.** Requires an actual Windows machine with the Visual Studio Build Tools and a current WinFSP release installed - budget for this explicitly when picking up step 4/6, rather than assuming it'll just work because the Linux leg does.
+- Linux: `cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test` workspace-wide, plus a real mount/unmount integration test (`cli/src/mount.rs`'s `mounts_and_serves_a_real_repository_read_only`) and a manual smoke test (mount a real repository, `ls -laR`/`stat`/`cat`/`diff -r` against the source, a rejected write, unmount) - all done, all passing, under WSL2.
+- Windows: same `cargo fmt`/`clippy`/`test` workspace-wide, now genuinely possible (previously `cli` didn't compile on Windows at all, due to `fuser`) - all passing on this machine. `cli/tests/windows_mount.rs` is the Windows equivalent of the Linux manual smoke test: builds a real repository, runs the actual `backup` binary as a child process to mount it, exercises `ls`/`read`/`stat` against nested content, checks a write is rejected, kills the process. Run it with `cargo test -p cli --test windows_mount`.

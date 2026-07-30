@@ -13,7 +13,7 @@ blake3 = "1.8.5"
 cdc = { version = "0.1.0", path = "../cdc" }
 clap = { version = "4", features = ["derive"] }
 db = { version = "0.1.0", path = "../db" }
-fuser = { version = "0.18.0", default-features = false }
+mountfs = { version = "0.1.0", path = "../mountfs" }
 rayon = "1.12.0"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 store = { version = "0.1.0", path = "../store" }

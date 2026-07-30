@@ -1,3 +1,3 @@
 [workspace]
-members = ["cdc", "store", "cli", "db"]
+members = ["cdc", "store", "cli", "db", "mountfs"]
 resolver = "2"

@@ -1,26 +1,26 @@
 //! Read-only FUSE mount (`backup mount <mountpoint>`) - see
-//! `docs/plans/implemented/04-fuse-mount-readonly.md` for the design.
+//! `docs/plans/implemented/04-fuse-mount-readonly.md` for the original
+//! design and `docs/plans/cross-platform-mount-crate.md` for why this now
+//! goes through the platform-abstracted `mountfs` crate (real libfuse3 on
+//! Linux, WinFSP planned for Windows) instead of `fuser`'s Linux-only,
+//! low-level `/dev/fuse` protocol.
 //! `docs/plans/fuse-mount-readwrite.md` covers a future read-write phase,
 //! not implemented here.
 //!
-//! Every callback is answerable with functions the other commands already
-//! use (`db::find_tree_entry`/`get_tree_entry`, `db::list_children`,
+//! Every [`mountfs::MountFilesystem`] method is answerable with functions
+//! the other commands already use (`db::resolve_path`, `db::list_children`,
 //! `db::file_size`, `db::ordered_content_chunks`, and `chunk_store`'s
 //! multi-part-aware chunk reader) - this module is almost entirely wiring
-//! those up to `fuser`'s callback table, not new logic.
+//! those up to `mountfs`'s trait, not new logic. `mountfs`'s API is
+//! path-based (matching `db::resolve_path`), so unlike the old `fuser`
+//! version there's no inode-number bookkeeping here at all.
 
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Mutex;
-use std::time::{Duration, UNIX_EPOCH};
 
 use clap::Args;
-use fuser::{
-    Config, Errno, FileAttr, FileHandle, FileType, Filesystem, FopenFlags, Generation, INodeNo,
-    LockOwner, MountOption, OpenAccMode, OpenFlags, ReplyAttr, ReplyData, ReplyDirectory,
-    ReplyEntry, ReplyOpen, ReplyStatfs, Request,
-};
+use mountfs::{Attr, DirEntry, Errno, FileKind, Handle, MountFilesystem};
 use rusqlite::Connection;
 use store::{LongTermStore, ReadIntegrity};
 
@@ -28,60 +28,79 @@ use crate::chunk_store::read_chunk_bytes;
 
 #[derive(Args)]
 pub struct MountArgs {
-    /// Directory to mount the repository's file tree at. Must already exist
-    /// and be empty.
+    /// Directory to mount the repository's file tree at.
+    ///
+    /// On Linux, must already exist and be empty (FUSE mounts onto an
+    /// existing mountpoint). On Windows, must *not* already exist (WinFSP
+    /// creates it itself as part of mounting).
     mountpoint: PathBuf,
 }
 
-/// How long the kernel may cache directory-entry/attribute replies before
-/// re-asking. Generous, since nothing else writes to the repository through
-/// this read-only mount - a concurrent `store`/`del`/`reclaim-space` run
-/// against the same repository while it's mounted can still make cached
-/// entries briefly stale, a known, accepted limitation of this phase (no
-/// cache-invalidation notifications are sent).
-const ATTR_TTL: Duration = Duration::from_secs(1);
-
-/// FUSE reserves inode `1` for the mount root; our tree root is
-/// `tree_entries.id = 0`. A fixed `+1`/`-1` shift bridges the two id spaces,
-/// applied at the boundary of every callback - nothing else in this module
-/// needs to know about the offset.
-fn to_fuse_ino(tree_id: i64) -> INodeNo {
-    INodeNo((tree_id + 1) as u64)
-}
-
-fn to_tree_id(ino: INodeNo) -> i64 {
-    ino.0 as i64 - 1
-}
-
-pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
-    if !args.mountpoint.is_dir() {
-        eprintln!(
-            "error: mountpoint '{}' is not an existing directory",
-            args.mountpoint.display()
-        );
-        return ExitCode::FAILURE;
+/// FUSE (Linux) mounts onto an existing, empty directory; WinFSP
+/// (Windows) creates the mountpoint itself and errors if it's already
+/// there ("mount point in use") - opposite preconditions, so this can't be
+/// one platform-independent check.
+#[cfg(target_os = "windows")]
+fn validate_mountpoint(mountpoint: &Path) -> Result<(), String> {
+    if mountpoint.exists() {
+        return Err(format!(
+            "mountpoint '{}' already exists - WinFSP creates it itself, remove it first",
+            mountpoint.display()
+        ));
     }
-    match std::fs::read_dir(&args.mountpoint) {
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn validate_mountpoint(mountpoint: &Path) -> Result<(), String> {
+    if !mountpoint.is_dir() {
+        return Err(format!(
+            "mountpoint '{}' is not an existing directory",
+            mountpoint.display()
+        ));
+    }
+    match std::fs::read_dir(mountpoint) {
         Ok(mut entries) => {
             if entries.next().is_some() {
-                eprintln!(
-                    "error: mountpoint '{}' is not empty",
-                    args.mountpoint.display()
-                );
-                return ExitCode::FAILURE;
+                return Err(format!(
+                    "mountpoint '{}' is not empty",
+                    mountpoint.display()
+                ));
             }
         }
         Err(err) => {
-            eprintln!(
-                "error: failed to read mountpoint '{}': {err}",
-                args.mountpoint.display()
-            );
-            return ExitCode::FAILURE;
+            return Err(format!(
+                "failed to read mountpoint '{}': {err}",
+                mountpoint.display()
+            ));
         }
     }
+    Ok(())
+}
 
-    let (fs, config) = match build_filesystem(repo) {
-        Ok(v) => v,
+#[cfg(target_os = "windows")]
+fn unmount_hint(mountpoint: &Path) -> String {
+    let _ = mountpoint;
+    "unmount by closing this process (Ctrl+C) or killing it".to_string()
+}
+
+#[cfg(not(target_os = "windows"))]
+fn unmount_hint(mountpoint: &Path) -> String {
+    format!(
+        "unmount with `fusermount3 -u {}` or `umount {}`",
+        mountpoint.display(),
+        mountpoint.display()
+    )
+}
+
+pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
+    if let Err(msg) = validate_mountpoint(&args.mountpoint) {
+        eprintln!("error: {msg}");
+        return ExitCode::FAILURE;
+    }
+
+    let fs = match build_filesystem(repo) {
+        Ok(fs) => fs,
         Err(msg) => {
             eprintln!("error: {msg}");
             return ExitCode::FAILURE;
@@ -89,12 +108,11 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
     };
 
     println!(
-        "mounted read-only at {} (unmount with `fusermount -u {}` or `umount {}`)",
+        "mounted read-only at {} ({})",
         args.mountpoint.display(),
-        args.mountpoint.display(),
-        args.mountpoint.display()
+        unmount_hint(&args.mountpoint)
     );
-    match fuser::mount(fs, &args.mountpoint, &config) {
+    match mountfs::mount(fs, &args.mountpoint, true) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("error: mount failed: {err}");
@@ -103,28 +121,21 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
     }
 }
 
-/// Builds the [`DedupFs`] and its mount [`Config`] for `repo`, without
-/// touching the mountpoint itself - split out from [`run_mount`] so tests can
-/// drive [`fuser::spawn_mount`] directly instead of the blocking, process-
-/// exit-coupled [`fuser::mount`] call above.
-fn build_filesystem(repo: &Path) -> Result<(DedupFs, Config), String> {
+/// Builds the [`DedupFs`] for `repo`, without touching the mountpoint
+/// itself - split out from [`run_mount`] so tests can drive [`mountfs::mount`]
+/// directly (in a background thread - it blocks until unmounted) instead of
+/// going through the process-exit-coupled [`run_mount`] above.
+fn build_filesystem(repo: &Path) -> Result<DedupFs, String> {
     let repository = db::open_repository(repo)
         .map_err(|err| format!("failed to open repository at {}: {err}", repo.display()))?;
     let conn = repository
         .open_read_connection()
         .map_err(|err| format!("failed to open the metadata database: {err}"))?;
     let data_store = LongTermStore::new(repository.data_dir(), true);
-    let fs = DedupFs {
+    Ok(DedupFs {
         conn: Mutex::new(conn),
         data_store,
-    };
-
-    let mut config = Config::default();
-    config.mount_options = vec![
-        MountOption::RO,
-        MountOption::FSName("backup-dedup".to_string()),
-    ];
-    Ok((fs, config))
+    })
 }
 
 struct DedupFs {
@@ -132,177 +143,67 @@ struct DedupFs {
     data_store: LongTermStore,
 }
 
-impl DedupFs {
-    /// Builds a [`FileAttr`] for `entry`, attributing ownership to whoever
-    /// made the request - there's no real multi-user ownership model here,
-    /// this is purely cosmetic (without the `default_permissions` mount
-    /// option, the kernel doesn't enforce these bits anyway).
-    fn attr_for(
-        &self,
-        conn: &Connection,
-        entry: &db::TreeEntryRow,
-        uid: u32,
-        gid: u32,
-    ) -> FileAttr {
-        let (kind, perm, size) = match entry.kind {
+impl MountFilesystem for DedupFs {
+    fn getattr(&self, path: &str) -> Result<Attr, Errno> {
+        let conn = self.conn.lock().expect("db connection mutex poisoned");
+        let entry = db::resolve_path(&conn, path)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::ENOENT)?;
+        let (kind, size) = match entry.kind {
+            db::EntryKind::Dir => (FileKind::Directory, 0),
             db::EntryKind::File => (
-                FileType::RegularFile,
-                0o444,
-                db::file_size(conn, entry).unwrap_or(0) as u64,
+                FileKind::File,
+                db::file_size(&conn, &entry).map_err(|_| Errno::EIO)? as u64,
             ),
-            db::EntryKind::Dir => (FileType::Directory, 0o555, 0),
         };
-        let mtime = UNIX_EPOCH + Duration::from_millis(entry.time_millis.max(0) as u64);
-        FileAttr {
-            ino: to_fuse_ino(entry.id),
-            size,
-            blocks: size.div_ceil(512),
-            atime: mtime,
-            mtime,
-            ctime: mtime,
-            crtime: mtime,
+        Ok(Attr {
             kind,
-            perm,
-            nlink: 1,
-            uid,
-            gid,
-            rdev: 0,
-            blksize: 512,
-            flags: 0,
-        }
+            size,
+            mtime_millis: entry.time_millis,
+        })
     }
-}
 
-impl Filesystem for DedupFs {
-    fn lookup(&self, req: &Request, parent: INodeNo, name: &OsStr, reply: ReplyEntry) {
-        let Some(name) = name.to_str() else {
-            reply.error(Errno::ENOENT);
-            return;
-        };
+    fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, Errno> {
         let conn = self.conn.lock().expect("db connection mutex poisoned");
-        match db::find_tree_entry(&conn, to_tree_id(parent), name) {
-            Ok(Some(entry)) => {
-                let attr = self.attr_for(&conn, &entry, req.uid(), req.gid());
-                reply.entry(&ATTR_TTL, &attr, Generation(0));
-            }
-            Ok(None) => reply.error(Errno::ENOENT),
-            Err(_) => reply.error(Errno::EIO),
-        }
+        let dir = db::resolve_path(&conn, path)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::ENOENT)?;
+        let children = db::list_children(&conn, dir.id).map_err(|_| Errno::EIO)?;
+        Ok(children
+            .into_iter()
+            .map(|child| DirEntry {
+                name: child.name,
+                kind: match child.kind {
+                    db::EntryKind::Dir => FileKind::Directory,
+                    db::EntryKind::File => FileKind::File,
+                },
+            })
+            .collect())
     }
 
-    fn getattr(&self, req: &Request, ino: INodeNo, _fh: Option<FileHandle>, reply: ReplyAttr) {
+    fn open(&self, path: &str, write_intent: bool) -> Result<Handle, Errno> {
+        if write_intent {
+            return Err(Errno::EROFS);
+        }
         let conn = self.conn.lock().expect("db connection mutex poisoned");
-        match db::get_tree_entry(&conn, to_tree_id(ino)) {
-            Ok(Some(entry)) => {
-                let attr = self.attr_for(&conn, &entry, req.uid(), req.gid());
-                reply.attr(&ATTR_TTL, &attr);
-            }
-            Ok(None) => reply.error(Errno::ENOENT),
-            Err(_) => reply.error(Errno::EIO),
+        let entry = db::resolve_path(&conn, path)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::ENOENT)?;
+        match entry.kind {
+            db::EntryKind::File => Ok(Handle(entry.id as u64)),
+            db::EntryKind::Dir => Err(Errno::EISDIR),
         }
     }
 
-    fn readdir(
-        &self,
-        _req: &Request,
-        ino: INodeNo,
-        _fh: FileHandle,
-        offset: u64,
-        mut reply: ReplyDirectory,
-    ) {
-        let tree_id = to_tree_id(ino);
+    fn read(&self, handle: Handle, offset: u64, size: u32) -> Result<Vec<u8>, Errno> {
         let conn = self.conn.lock().expect("db connection mutex poisoned");
-        let parent_tree_id: i64 = match conn.query_row(
-            "SELECT parent_id FROM tree_entries WHERE id = ?1",
-            [tree_id],
-            |row| row.get(0),
-        ) {
-            Ok(id) => id,
-            Err(_) => {
-                reply.error(Errno::ENOENT);
-                return;
-            }
-        };
-        let children = match db::list_children(&conn, tree_id) {
-            Ok(children) => children,
-            Err(_) => {
-                reply.error(Errno::EIO);
-                return;
-            }
-        };
-
-        let mut entries: Vec<(INodeNo, FileType, String)> = vec![
-            (ino, FileType::Directory, ".".to_string()),
-            (
-                to_fuse_ino(parent_tree_id),
-                FileType::Directory,
-                "..".to_string(),
-            ),
-        ];
-        entries.extend(children.into_iter().map(|child| {
-            let kind = match child.kind {
-                db::EntryKind::Dir => FileType::Directory,
-                db::EntryKind::File => FileType::RegularFile,
-            };
-            (to_fuse_ino(child.id), kind, child.name)
-        }));
-
-        for (i, (ino, kind, name)) in entries.into_iter().enumerate().skip(offset as usize) {
-            // Each entry's offset is where the *next* readdir call should
-            // resume - the kernel echoes it back verbatim as `offset` above.
-            if reply.add(ino, (i + 1) as u64, kind, name) {
-                break; // reply buffer full; the kernel will call again with a higher offset
-            }
-        }
-        reply.ok();
-    }
-
-    fn open(&self, _req: &Request, _ino: INodeNo, flags: OpenFlags, reply: ReplyOpen) {
-        if flags.acc_mode() != OpenAccMode::O_RDONLY {
-            reply.error(Errno::EROFS);
-            return;
-        }
-        // Stateless: no per-handle mutable state exists in this read-only
-        // phase, so the inode number itself doubles as the file handle,
-        // mirroring Scala's simplification (its FUSE handle is the file's
-        // own database row id).
-        reply.opened(FileHandle(0), FopenFlags::empty());
-    }
-
-    fn read(
-        &self,
-        _req: &Request,
-        ino: INodeNo,
-        _fh: FileHandle,
-        offset: u64,
-        size: u32,
-        _flags: OpenFlags,
-        _lock_owner: Option<LockOwner>,
-        reply: ReplyData,
-    ) {
-        let conn = self.conn.lock().expect("db connection mutex poisoned");
-        let entry = match db::get_tree_entry(&conn, to_tree_id(ino)) {
-            Ok(Some(entry)) => entry,
-            Ok(None) => {
-                reply.error(Errno::ENOENT);
-                return;
-            }
-            Err(_) => {
-                reply.error(Errno::EIO);
-                return;
-            }
-        };
+        let entry = db::get_tree_entry(&conn, handle.0 as i64)
+            .map_err(|_| Errno::EIO)?
+            .ok_or(Errno::ENOENT)?;
         let Some(content_id) = entry.content_id else {
-            reply.data(&[]);
-            return;
+            return Ok(Vec::new());
         };
-        let chunks = match db::ordered_content_chunks(&conn, content_id) {
-            Ok(chunks) => chunks,
-            Err(_) => {
-                reply.error(Errno::EIO);
-                return;
-            }
-        };
+        let chunks = db::ordered_content_chunks(&conn, content_id).map_err(|_| Errno::EIO)?;
 
         // Walk chunk boundaries to find the requested [want_start, want_end)
         // slice, reading only the chunks that actually overlap it rather
@@ -319,16 +220,10 @@ impl Filesystem for DedupFs {
                 continue;
             }
             let (bytes, integrity) =
-                match read_chunk_bytes(&conn, &self.data_store, chunk.chunk_id, chunk_len) {
-                    Ok(result) => result,
-                    Err(_) => {
-                        reply.error(Errno::EIO);
-                        return;
-                    }
-                };
+                read_chunk_bytes(&conn, &self.data_store, chunk.chunk_id, chunk_len)
+                    .map_err(|_| Errno::EIO)?;
             if let ReadIntegrity::Incomplete { .. } = integrity {
-                reply.error(Errno::EIO);
-                return;
+                return Err(Errno::EIO);
             }
             let local_start = want_start.saturating_sub(chunk_start).min(chunk_len);
             let local_end = want_end.saturating_sub(chunk_start).min(chunk_len);
@@ -337,29 +232,38 @@ impl Filesystem for DedupFs {
                 break;
             }
         }
-        reply.data(&result);
+        Ok(result)
     }
 
-    // release: the default implementation already replies `ok()` - there's
-    // nothing to flush in a read-only mount.
+    fn release(&self, _handle: Handle) {
+        // Stateless: nothing was allocated in `open` beyond the tree id
+        // already carried in the handle itself.
+    }
 
-    fn statfs(&self, _req: &Request, _ino: INodeNo, reply: ReplyStatfs) {
+    fn statfs(&self) -> Result<mountfs::StatfsInfo, Errno> {
         // Approximate/unused values - Scala's own Linux FUSE implementation
         // is a no-op here too; not worth over-building for a read-only mount.
-        reply.statfs(0, 0, 0, 0, 0, 512, 255, 0);
+        Ok(mountfs::StatfsInfo {
+            block_size: 512,
+            max_name_length: 255,
+            ..Default::default()
+        })
     }
 }
 
-#[cfg(test)]
+// This test's design (in-process mount thread, `fusermount3 -u` to
+// unmount, a pre-existing empty directory as the mountpoint) is Linux/FUSE-
+// specific throughout - see `validate_mountpoint`'s doc comment for why
+// Windows needs the opposite mountpoint precondition, and
+// `mountfs::windows`'s doc comment for why an in-process `fuse_exit`-style
+// unmount doesn't work there yet. `cli/tests/windows_mount.rs` covers the
+// equivalent ground on Windows instead, via a child process (the real
+// `backup` binary) killed from the outside.
+#[cfg(all(test, not(target_os = "windows")))]
 mod tests {
     use super::*;
     use std::path::PathBuf;
-
-    #[test]
-    fn fuse_and_tree_inode_numbers_round_trip() {
-        assert_eq!(to_fuse_ino(0), INodeNo::ROOT);
-        assert_eq!(to_tree_id(to_fuse_ino(42)), 42);
-    }
+    use std::time::{Duration, Instant};
 
     fn init_repo() -> (tempfile::TempDir, PathBuf) {
         let temp_dir = tempfile::tempdir().unwrap();
@@ -419,11 +323,11 @@ mod tests {
     }
 
     /// End-to-end mount/read/unmount test: seeds a real repository with a
-    /// nested file, mounts it via [`fuser::spawn_mount`] (non-blocking,
-    /// unmounts automatically when the returned session is dropped, unlike
-    /// [`run_mount`]'s blocking [`fuser::mount`]), and reads it back through
-    /// ordinary `std::fs` calls - exercising `lookup`/`getattr`/`readdir`/
-    /// `open`/`read` together the way a real FUSE client would.
+    /// nested file, mounts it via [`mountfs::mount`] in a background thread
+    /// (it blocks until unmounted, unlike the old `fuser::spawn_mount` this
+    /// replaces), and reads it back through ordinary `std::fs` calls -
+    /// exercising every `MountFilesystem` method together the way a real
+    /// FUSE client would.
     #[test]
     fn mounts_and_serves_a_real_repository_read_only() {
         let (_temp_dir, repo_root) = init_repo();
@@ -434,38 +338,65 @@ mod tests {
         seed_file(&repo_root, 0, "top.txt", b"top level content");
         seed_file(&repo_root, sub_id, "a.txt", b"hello fuse");
 
-        let (fs, config) = build_filesystem(&repo_root).unwrap();
+        let fs = build_filesystem(&repo_root).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
-        let session = fuser::spawn_mount(fs, mount_dir.path(), &config)
-            .expect("mounting requires /dev/fuse access - skip/investigate if this fails in CI");
+        let mount_path = mount_dir.path().to_path_buf();
+        let handle = {
+            let mount_path = mount_path.clone();
+            std::thread::spawn(move || mountfs::mount(fs, &mount_path, true))
+        };
 
-        let mut names: Vec<String> = std::fs::read_dir(mount_dir.path())
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
+        // The mountpoint exists (and reads as empty) before the mount is
+        // live, so "readdir succeeds" alone isn't a valid readiness signal
+        // - wait for it to actually start reporting our entries.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut names: Vec<String>;
+        loop {
+            names = std::fs::read_dir(&mount_path)
+                .map(|entries| {
+                    entries
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.file_name().to_string_lossy().into_owned())
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !names.is_empty() {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "mount did not become ready within 5s \
+                 (requires /dev/fuse access - investigate if this fails in CI)"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
         names.sort();
-        assert_eq!(names, vec!["sub", "top.txt"]);
+        assert_eq!(names, vec!["sub".to_string(), "top.txt".to_string()]);
 
         assert_eq!(
-            std::fs::read(mount_dir.path().join("top.txt")).unwrap(),
+            std::fs::read(mount_path.join("top.txt")).unwrap(),
             b"top level content"
         );
         assert_eq!(
-            std::fs::read(mount_dir.path().join("sub").join("a.txt")).unwrap(),
+            std::fs::read(mount_path.join("sub").join("a.txt")).unwrap(),
             b"hello fuse"
         );
         assert_eq!(
-            std::fs::metadata(mount_dir.path().join("top.txt"))
-                .unwrap()
-                .len(),
+            std::fs::metadata(mount_path.join("top.txt")).unwrap().len(),
             17
         );
-        assert!(
-            std::fs::metadata(mount_dir.path().join("sub"))
-                .unwrap()
-                .is_dir()
-        );
+        assert!(std::fs::metadata(mount_path.join("sub")).unwrap().is_dir());
 
-        drop(session); // unmounts
+        let status = std::process::Command::new("fusermount3")
+            .arg("-u")
+            .arg(&mount_path)
+            .status()
+            .expect("failed to run fusermount3 -u");
+        assert!(status.success(), "fusermount3 -u failed: {status}");
+
+        handle
+            .join()
+            .expect("mount thread panicked")
+            .expect("mount() returned an error");
     }
 }
