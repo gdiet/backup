@@ -209,15 +209,17 @@ backup mount --read-write [--write-cache-mb <n>] <mountpoint>
 (`mkdir`/`rm`/`mv`/creating files) and real content writes - off by
 default, since a mount is a much larger blast radius for a mistake than
 `store`/`restore`. Writes are held in a per-file write cache (RAM up to
-`--write-cache-mb`, default 128, then spilling to a temp file; a startup
-warning fires if the configured budget risks swapping given currently
-available RAM) and only committed to the repository once the write
-handle closes - persisting runs synchronously at that point, not on a
-background queue, so closing a very large file against a slow repository
-disk can take a while (see `docs/plans/mount-async-persist-and-
-backpressure.md` for the known limitation this implies and why it wasn't
-built yet). See `docs/plans/implemented/06-fuse-mount-readwrite.md` for
-the full design and verification notes.
+`--write-cache-mb`, default 128, then spilling to a temp file) and only
+committed to the repository once the write handle closes - persisting
+runs synchronously at that point, not on a background queue, so closing
+a very large file against a slow repository disk can take a while (see
+`docs/plans/mount-async-persist-and-backpressure.md` for the known
+limitation this implies and why it wasn't built yet). At startup,
+`--read-write` refuses to run if `--write-cache-mb` looks large enough,
+relative to *currently available* RAM, to risk pushing the machine into
+swapping - pass `--allow-swap-risk` to start anyway. See
+`docs/plans/implemented/06-fuse-mount-readwrite.md` for the full design
+and verification notes.
 
 ## Development
 

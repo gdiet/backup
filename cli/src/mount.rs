@@ -40,30 +40,46 @@ use crate::write_cache::{RamBudget, WriteCache};
 /// below warns at mount time if even this much risks swapping.
 const DEFAULT_WRITE_CACHE_MB: u64 = 128;
 
-/// Warns (doesn't refuse to start - the write cache degrades gracefully
-/// to disk spillover if it's ever actually exhausted, see
-/// `write_cache::WriteCache`) if `write_cache_mb` is large enough,
-/// relative to *currently available* (not total) system RAM, that
-/// actually using it could push the system into swapping. Deliberately
-/// checks available rather than total memory - the mount isn't the only
-/// thing running on the machine, and total memory says nothing about
-/// what's actually free right now.
-fn check_write_cache_budget(write_cache_mb: u64) {
+/// Refuses to start (unless `allow_swap_risk` downgrades this to a
+/// warning - `MountArgs::allow_swap_risk`) if `write_cache_mb` is large
+/// enough, relative to *currently available* (not total) system RAM,
+/// that actually using it could push the system into swapping.
+/// Deliberately checks available rather than total memory - the mount
+/// isn't the only thing running on the machine, and total memory says
+/// nothing about what's actually free right now. A hard error by
+/// default even though the write cache itself degrades gracefully to
+/// disk spillover if ever actually exhausted (see `write_cache::
+/// WriteCache`): swapping is a machine-wide problem this mount would be
+/// causing for *everything else* running on it, not just a local
+/// slowdown for the mount itself, so it defaults to refusing rather than
+/// merely warning.
+fn check_write_cache_budget(write_cache_mb: u64, allow_swap_risk: bool) -> Result<(), String> {
     let mut sys = sysinfo::System::new();
     sys.refresh_memory();
     let available_mb = sys.available_memory() / (1024 * 1024);
-    if write_cache_mb > available_mb {
-        eprintln!(
-            "warning: --write-cache-mb={write_cache_mb} exceeds currently available RAM \
-             (~{available_mb} MB) - writing files up to that size may cause swapping; \
-             consider a lower value"
-        );
+    let reason = if write_cache_mb > available_mb {
+        Some(format!(
+            "--write-cache-mb={write_cache_mb} exceeds currently available RAM \
+             (~{available_mb} MB) - writing files up to that size may cause swapping"
+        ))
     } else if write_cache_mb * 2 > available_mb {
-        eprintln!(
-            "warning: --write-cache-mb={write_cache_mb} is more than half of currently \
+        Some(format!(
+            "--write-cache-mb={write_cache_mb} is more than half of currently \
              available RAM (~{available_mb} MB) - writing several large files at once may \
-             cause swapping; consider a lower value"
-        );
+             cause swapping"
+        ))
+    } else {
+        None
+    };
+    match reason {
+        None => Ok(()),
+        Some(reason) if allow_swap_risk => {
+            eprintln!("warning: {reason}; continuing because --allow-swap-risk was given");
+            Ok(())
+        }
+        Some(reason) => Err(format!(
+            "{reason}; pass --allow-swap-risk to start anyway, or lower --write-cache-mb"
+        )),
     }
 }
 
@@ -102,6 +118,15 @@ pub struct MountArgs {
     /// meaningful with `--read-write`.
     #[arg(long, default_value_t = DEFAULT_WRITE_CACHE_MB)]
     write_cache_mb: u64,
+
+    /// Start anyway if `--write-cache-mb` looks large enough, relative to
+    /// currently available RAM, to risk pushing the machine into swapping
+    /// (see `check_write_cache_budget`) - without this, that condition is
+    /// a startup error, not just a warning, since swapping is a
+    /// machine-wide problem, not just a slowdown local to the mount. Only
+    /// meaningful with `--read-write`.
+    #[arg(long)]
+    allow_swap_risk: bool,
 }
 
 /// FUSE (Linux) mounts onto an existing, empty directory; WinFSP
@@ -166,8 +191,11 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
         eprintln!("error: {msg}");
         return ExitCode::FAILURE;
     }
-    if args.read_write {
-        check_write_cache_budget(args.write_cache_mb);
+    if args.read_write
+        && let Err(msg) = check_write_cache_budget(args.write_cache_mb, args.allow_swap_risk)
+    {
+        eprintln!("error: {msg}");
+        return ExitCode::FAILURE;
     }
 
     let fs = match build_filesystem(repo, args.read_write, args.write_cache_mb) {
