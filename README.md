@@ -213,8 +213,8 @@ default, since a mount is a much larger blast radius for a mistake than
 committed to the repository once the write handle closes - persisting
 runs synchronously at that point, not on a background queue, so closing
 a very large file against a slow repository disk can take a while (see
-`docs/plans/mount-async-persist-and-backpressure.md` for the known
-limitation this implies and why it wasn't built yet). At startup,
+`docs/plans/bounded-memory-io-pipeline.md` for the known limitation this
+implies and why it wasn't built yet). At startup,
 `--read-write` refuses to run if `--write-cache-mb` looks large enough,
 relative to *currently available* RAM, to risk pushing the machine into
 swapping - pass `--allow-swap-risk` to start anyway. See
