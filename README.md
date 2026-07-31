@@ -172,40 +172,6 @@ those gaps for new chunks' bytes before appending past the end, so
 repeated delete/reclaim/store cycles don't make the store grow without
 bound. `stats` reports any gaps not yet reused as free space.
 
-### Blacklist
-
-```bash
-backup blacklist add <blacklist-dir> [--dfs-blacklist <name>] [--delete-files]
-```
-
-Hashes and backs up `<blacklist-dir>`'s direct contents (files and
-subdirectories, each keeping its own name/structure) into the tree under
-`<dfs-blacklist>/<timestamp>` (`<dfs-blacklist>` defaults to `blacklist`, at
-the repository root) - functionally a normal `store` run into that fixed
-target path, reusing the same hash-and-store pipeline. Pass `--delete-files`
-to delete each original once its backup is independently confirmed present
-in the tree, and remove any now-empty source subdirectories; off by
-default, since deleting source data by default felt too easy to trigger by
-accident.
-
-```bash
-backup blacklist process [--dfs-blacklist <name>] [--delete-copies] [--backup]
-```
-
-Soft-deletes every active file entry under `<dfs-blacklist>` - it becomes
-inactive and disappears from normal browsing (`list`/`find`/`mount`) the
-same way any `del`'d file does, recoverable only within `reclaim-space`'s
-grace window before its content is actually freed. This is *not* the Scala
-tool's "reads as zeros, stays listed" content mutation, where the entry
-remains visible with its original size (see
-`docs/plans/implemented/blacklist.md` for why the two chunk-dedup models
-don't map onto that 1:1). Pass `--delete-copies` to also soft-delete
-every other active entry anywhere in the tree that shares a processed
-entry's content, so nothing outside the blacklist directory still
-references it. Pass `--backup` to take a database backup first - off by
-default, since this command never does anything `del` doesn't already do
-without one.
-
 ### Mount
 
 ```bash

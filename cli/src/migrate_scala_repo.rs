@@ -465,7 +465,10 @@ impl Migration<'_> {
                     None => {
                         self.warn(&format!(
                             "skipping '{}' (old dataId {old_data_id} has no recoverable \
-                             data - blacklisted or corrupt?)",
+                             data - most likely the Scala blacklist tool already zeroed \
+                             its storage before this export was taken, which permanently \
+                             discarded the original bytes; there is nothing this migration \
+                             can recover, in any repository format)",
                             child.name
                         ));
                         self.stats.skipped += 1;
