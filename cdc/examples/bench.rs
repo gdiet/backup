@@ -1,4 +1,4 @@
-use cdc::{CdcConfig, Chunker};
+use cdc::{Chunker, ChunkerConfig};
 use std::time::{Duration, Instant};
 
 fn main() {
@@ -11,7 +11,7 @@ fn main() {
         })
         .collect();
 
-    let config = CdcConfig::new(20).unwrap(); // ~1 MB average chunk size
+    let config = ChunkerConfig::new(Some(20)).unwrap(); // ~1 MB average chunk size
     let mut chunker = config.chunker();
 
     // Matches the Go benchmark: each iteration calls next() then flush().

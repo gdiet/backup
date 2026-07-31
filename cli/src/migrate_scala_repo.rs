@@ -37,7 +37,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 
-use cdc::CdcConfig;
+use cdc::ChunkerConfig;
 use clap::Args;
 use rusqlite::Connection;
 
@@ -45,7 +45,7 @@ use crate::chunk_store::{self, SpaceAllocator};
 use crate::format::readable_bytes;
 use crate::ram_budget_check::check_ram_budget;
 use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
-use crate::store::{Blake3Hasher, HASH_LENGTH, make_chunker};
+use crate::store::{Blake3Hasher, HASH_LENGTH};
 use crate::write_cache::RamBudget;
 
 /// Number of bytes read from the old data store at a time while re-chunking
@@ -147,13 +147,11 @@ pub fn run_migrate_scala_repo(repo: &Path, args: MigrateScalaRepoArgs) -> ExitCo
         return ExitCode::FAILURE;
     }
 
-    let cdc_config = match repository.settings().chunking() {
-        db::Chunking::Cdc => Some(
-            CdcConfig::new(repository.settings().cdc_target_size_bits())
-                .expect("validated by RepositorySettings"),
-        ),
+    let chunker_config = ChunkerConfig::new(match repository.settings().chunking() {
+        db::Chunking::Cdc => Some(repository.settings().cdc_target_size_bits()),
         db::Chunking::None => None,
-    };
+    })
+    .expect("validated by RepositorySettings");
 
     let script_text = match load_script_text(&args.script) {
         Ok(text) => text,
@@ -225,7 +223,7 @@ pub fn run_migrate_scala_repo(repo: &Path, args: MigrateScalaRepoArgs) -> ExitCo
         old_store: &old_store,
         new_store: &new_store,
         allocator: &allocator,
-        cdc_config: &cdc_config,
+        chunker_config: &chunker_config,
         ram_budget,
         spill_dir,
         data_id_cache: HashMap::new(),
@@ -328,7 +326,7 @@ struct Migration<'a> {
     old_store: &'a store::LongTermStore,
     new_store: &'a store::LongTermStore,
     allocator: &'a SpaceAllocator,
-    cdc_config: &'a Option<CdcConfig>,
+    chunker_config: &'a ChunkerConfig,
     ram_budget: Arc<RamBudget>,
     spill_dir: PathBuf,
     /// Old Scala `dataId` -> new repository `content_id`, `None` for an old
@@ -543,7 +541,7 @@ impl Migration<'_> {
         let mut spill_seq = 0u64;
         let mut chunker = SpillingHashingChunker::new(
             Blake3Hasher(blake3::Hasher::new()),
-            make_chunker(self.cdc_config),
+            self.chunker_config.chunker(),
             Arc::clone(&self.ram_budget),
             move || {
                 spill_seq += 1;

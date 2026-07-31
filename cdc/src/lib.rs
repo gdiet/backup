@@ -13,16 +13,16 @@ pub trait Chunker {
     fn bytes_into_chunk(&self) -> u64;
 }
 
-/// Error returned by [`CdcConfig::new`].
+/// Error returned by [`ChunkerConfig::new`].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CdcConfigError {
+pub enum ChunkerConfigError {
     /// `target_size_bits` is less than 6.
     TargetSizeBitsTooSmall(u32),
     /// `target_size_bits` is greater than 30.
     TargetSizeBitsTooBig(u32),
 }
 
-impl std::fmt::Display for CdcConfigError {
+impl std::fmt::Display for ChunkerConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::TargetSizeBitsTooSmall(v) => {
@@ -35,31 +35,42 @@ impl std::fmt::Display for CdcConfigError {
     }
 }
 
-impl std::error::Error for CdcConfigError {}
+impl std::error::Error for ChunkerConfigError {}
 
-/// Validated configuration for a CDC chunker.
+/// Validated configuration for [`ChunkerConfig::chunker`].
+///
+/// `target_size_bits: Some(_)` selects content-defined chunking; `None` selects
+/// whole-input, single-chunk output (no rolling-fingerprint work at all).
 #[derive(Debug, Clone)]
-pub struct CdcConfig {
-    target_size_bits: u32,
+pub struct ChunkerConfig {
+    target_size_bits: Option<u32>,
 }
 
-impl CdcConfig {
-    /// Creates a validated CDC chunker config.
+impl ChunkerConfig {
+    /// Creates a validated chunker config.
     ///
-    /// `target_size_bits` must be between 6 and 30 (inclusive).
-    pub fn new(target_size_bits: u32) -> Result<CdcConfig, CdcConfigError> {
-        if target_size_bits < 6 {
-            return Err(CdcConfigError::TargetSizeBitsTooSmall(target_size_bits));
+    /// `target_size_bits`, if given, must be between 6 and 30 (inclusive).
+    pub fn new(target_size_bits: Option<u32>) -> Result<ChunkerConfig, ChunkerConfigError> {
+        if let Some(bits) = target_size_bits {
+            if bits < 6 {
+                return Err(ChunkerConfigError::TargetSizeBitsTooSmall(bits));
+            }
+            if bits > 30 {
+                return Err(ChunkerConfigError::TargetSizeBitsTooBig(bits));
+            }
         }
-        if target_size_bits > 30 {
-            return Err(CdcConfigError::TargetSizeBitsTooBig(target_size_bits));
-        }
-        Ok(CdcConfig { target_size_bits })
+        Ok(ChunkerConfig { target_size_bits })
     }
 
-    /// Creates a CDC chunker that produces an average chunk size slightly above
-    /// `2^target_size_bits`. The minimum chunk size is `base_size = 2^(target_size_bits - 1)`,
-    /// the maximum is `base_size * (target_size_bits + 1)`.
+    /// Creates the chunker selected by this config.
+    ///
+    /// With `target_size_bits: None`, returns a [`SingleChunkChunker`]: the entire
+    /// input becomes one chunk, with no rolling-fingerprint work.
+    ///
+    /// With `target_size_bits: Some(_)`, returns a [`CdcChunker`] that produces an
+    /// average chunk size slightly above `2^target_size_bits`. The minimum chunk
+    /// size is `base_size = 2^(target_size_bits - 1)`, the maximum is
+    /// `base_size * (target_size_bits + 1)`.
     ///
     /// Chunk boundaries are detected by checking whether the last N bits of the current
     /// fingerprint are all 0. Every `base_size` bytes, N is reduced by one, until a boundary
@@ -80,19 +91,47 @@ impl CdcConfig {
     /// - `'ependent khanates. Following th'` - 20 bit mask
     /// - `'ric power|power]] consumption o'` - 29 bit mask
     /// - `hex(c1e4c85714eff62c19d6399112736f3d82bc1f15494286dab830c581b78a5e)` - 31 bit mask
-    pub fn chunker(&self) -> CdcChunker {
-        let base_size: usize = 1 << (self.target_size_bits - 1);
-        CdcChunker {
-            base_size,
-            bytes_into_chunk: 0,
-            current_mask: (2 * base_size - 1) as u32,
-            next_mask_shift: (2 * base_size - 1) as u64,
-            fingerprint: 0,
+    pub fn chunker(&self) -> ConfiguredChunker {
+        match self.target_size_bits {
+            Some(target_size_bits) => ConfiguredChunker::Cdc(CdcChunker::new(target_size_bits)),
+            None => ConfiguredChunker::Single(SingleChunkChunker::default()),
         }
     }
 }
 
-/// CDC chunker created by [`CdcConfig::chunker`].
+/// The chunker selected by [`ChunkerConfig::chunker`].
+///
+/// A small delegating enum instead of `Box<dyn Chunker>`, since there are only
+/// ever these two concrete chunker types and the choice is made once per config.
+pub enum ConfiguredChunker {
+    Cdc(CdcChunker),
+    Single(SingleChunkChunker),
+}
+
+impl Chunker for ConfiguredChunker {
+    fn next(&mut self, data: &[u8]) -> Vec<u64> {
+        match self {
+            ConfiguredChunker::Cdc(c) => c.next(data),
+            ConfiguredChunker::Single(c) => c.next(data),
+        }
+    }
+
+    fn flush(&mut self) -> Option<u64> {
+        match self {
+            ConfiguredChunker::Cdc(c) => c.flush(),
+            ConfiguredChunker::Single(c) => c.flush(),
+        }
+    }
+
+    fn bytes_into_chunk(&self) -> u64 {
+        match self {
+            ConfiguredChunker::Cdc(c) => c.bytes_into_chunk(),
+            ConfiguredChunker::Single(c) => c.bytes_into_chunk(),
+        }
+    }
+}
+
+/// CDC chunker created by [`ChunkerConfig::chunker`].
 pub struct CdcChunker {
     base_size: usize,
     bytes_into_chunk: u64,
@@ -102,6 +141,17 @@ pub struct CdcChunker {
 }
 
 impl CdcChunker {
+    fn new(target_size_bits: u32) -> CdcChunker {
+        let base_size: usize = 1 << (target_size_bits - 1);
+        CdcChunker {
+            base_size,
+            bytes_into_chunk: 0,
+            current_mask: (2 * base_size - 1) as u32,
+            next_mask_shift: (2 * base_size - 1) as u64,
+            fingerprint: 0,
+        }
+    }
+
     fn reset(&mut self) {
         self.bytes_into_chunk = 0;
         self.current_mask = (2 * self.base_size - 1) as u32;
@@ -362,8 +412,7 @@ mod tests {
     /// history, feeding exactly 31 fresh bytes from here on reproduces the same fingerprint
     /// as feeding those same 31 bytes at any other position.
     fn chunker_ready_to_scan(target_size_bits: u32) -> CdcChunker {
-        let config = CdcConfig::new(target_size_bits).unwrap();
-        let mut chunker = config.chunker();
+        let mut chunker = CdcChunker::new(target_size_bits);
         chunker.bytes_into_chunk = chunker.base_size as u64 - 1;
         chunker
     }
@@ -393,16 +442,42 @@ mod tests {
 
     #[test]
     fn test_illegal_config() {
-        assert!(CdcConfig::new(5).is_err());
-        assert!(CdcConfig::new(6).is_ok());
-        assert!(CdcConfig::new(30).is_ok());
-        assert!(CdcConfig::new(31).is_err());
+        assert!(ChunkerConfig::new(Some(5)).is_err());
+        assert!(ChunkerConfig::new(Some(6)).is_ok());
+        assert!(ChunkerConfig::new(Some(30)).is_ok());
+        assert!(ChunkerConfig::new(Some(31)).is_err());
+        assert!(ChunkerConfig::new(None).is_ok());
+    }
+
+    #[test]
+    fn test_configured_chunker_none_behaves_like_single_chunk() {
+        let config = ChunkerConfig::new(None).unwrap();
+        let mut chunker = config.chunker();
+        assert_eq!(chunker.next(b"hello "), vec![]);
+        assert_eq!(chunker.next(b"world"), vec![]);
+        assert_eq!(chunker.flush(), Some(11));
+        assert_eq!(chunker.flush(), None);
+    }
+
+    #[test]
+    fn test_configured_chunker_some_behaves_like_cdc() {
+        let config = ChunkerConfig::new(Some(20)).unwrap();
+        let mut chunker = config.chunker();
+        let data = pseudo_random_data(42, 7 * 1024 * 1024);
+        let mut chunk_sizes = chunker.next(&data);
+        chunk_sizes.extend(chunker.flush());
+        assert_eq!(
+            chunk_sizes,
+            vec![
+                1606795, 697894, 638611, 642966, 857992, 829401, 524432, 730375, 811566
+            ]
+        );
     }
 
     #[test]
     fn test_basic() {
         // Verify chunking in the most basic case, chunk size 1 MB.
-        let config = CdcConfig::new(20).unwrap();
+        let config = ChunkerConfig::new(Some(20)).unwrap();
         let mut chunker = config.chunker();
         let data = pseudo_random_data(42, 7 * 1024 * 1024);
         let mut chunk_sizes = chunker.next(&data);
@@ -418,7 +493,7 @@ mod tests {
     #[test]
     fn test_text() {
         // Verify chunking of text-like data, chunk size 1 kB.
-        let config = CdcConfig::new(10).unwrap();
+        let config = ChunkerConfig::new(Some(10)).unwrap();
         let mut chunker = config.chunker();
         let data = pseudo_random_text(42, 7 * 1024);
         let mut chunk_sizes = chunker.next(&data);
@@ -429,7 +504,7 @@ mod tests {
     #[test]
     fn test_repeated_value() {
         // Verify chunking of data consisting of repeated values, chunk size 1 kB.
-        let config = CdcConfig::new(10).unwrap();
+        let config = ChunkerConfig::new(Some(10)).unwrap();
         // max_chunk_size = base_size * (target_size_bits + 1) = (1<<10)/2 * (10+1)
         let max_chunk_size = (1u64 << 10) / 2 * (10 + 1);
         let mut chunker = config.chunker();
@@ -442,7 +517,7 @@ mod tests {
     #[test]
     fn test_small() {
         // Verify chunking with very small average chunk sizes (64 B).
-        let config = CdcConfig::new(6).unwrap();
+        let config = ChunkerConfig::new(Some(6)).unwrap();
         let mut chunker = config.chunker();
         let data = pseudo_random_data(42, 7 * 64);
         let mut chunk_sizes = chunker.next(&data);
@@ -457,7 +532,7 @@ mod tests {
         use rand::{Rng, SeedableRng, rngs::StdRng};
 
         let mut rng = StdRng::from_seed([0u8; 32]);
-        let config = CdcConfig::new(6).unwrap();
+        let config = ChunkerConfig::new(Some(6)).unwrap();
         let mut chunker = config.chunker();
         let mut data = vec![0u8; (1 << 6) * 1000];
         rng.fill_bytes(&mut data);
@@ -466,7 +541,7 @@ mod tests {
         let avg_6 = data.len() / chunks.len();
 
         let mut rng = StdRng::from_seed([0u8; 32]);
-        let config = CdcConfig::new(16).unwrap();
+        let config = ChunkerConfig::new(Some(16)).unwrap();
         let mut chunker = config.chunker();
         let mut data = vec![0u8; (1 << 16) * 1000];
         rng.fill_bytes(&mut data);
@@ -486,7 +561,7 @@ mod tests {
         let expected = vec![
             1606795u64, 697894, 638611, 642966, 857992, 829401, 524432, 730375, 811566,
         ];
-        let config = CdcConfig::new(20).unwrap();
+        let config = ChunkerConfig::new(Some(20)).unwrap();
 
         let test_cases: &[(&str, &[usize])] = &[
             ("in one piece", &[]),
@@ -531,7 +606,7 @@ mod tests {
     fn test_chunk_end_detection() {
         // Use a known chunk end pattern to verify that chunks end at the expected positions.
         let data = pseudo_random_data(42, 7 * 1024);
-        let config = CdcConfig::new(10).unwrap();
+        let config = ChunkerConfig::new(Some(10)).unwrap();
         let pattern = b"kR9MVTnItt1y6KUcekTf,wO-ymFECPi";
 
         let test_cases: &[(&str, &[usize], &[u64])] = &[
@@ -587,7 +662,7 @@ mod tests {
             0x70, 0xce, 0x9a, 0x7f, 0x3b, 0x59, 0xf9, 0xa2, 0xaa, 0xe3, 0xeb, 0x28, 0xcb, 0x67,
             0x0f, 0x0e, 0x97,
         ];
-        let config = CdcConfig::new(10).unwrap();
+        let config = ChunkerConfig::new(Some(10)).unwrap();
         let mut chunker = config.chunker();
         let mut data = vec![0u8; 1031];
         let start = data.len() - pattern.len();
@@ -607,7 +682,7 @@ mod tests {
             0x59, 0x73, 0x69, 0x08, 0xf3, 0xfe, 0x1a, 0xd8, 0x7a, 0x97, 0xe8, 0xc2, 0xcd, 0x89,
             0xd8, 0xa4, 0x79,
         ];
-        let config = CdcConfig::new(10).unwrap();
+        let config = ChunkerConfig::new(Some(10)).unwrap();
         let mut chunker = config.chunker();
         let mut data = vec![0u8; 1031];
         let start = data.len() - pattern.len();
@@ -617,7 +692,7 @@ mod tests {
 
     #[test]
     fn test_example_pattern_10bit_mask() {
-        // Real-text pattern documented on `CdcConfig::chunker` as an example end-of-chunk
+        // Real-text pattern documented on `ChunkerConfig::chunker` as an example end-of-chunk
         // sequence for a 10 bit mask: right after the minimum chunk size is reached for
         // target_size_bits=10, this pattern ends a chunk exactly at its last byte. The
         // reported chunk length is `base_size - 1` (bytes already "in" the simulated chunk)
@@ -633,7 +708,7 @@ mod tests {
 
     #[test]
     fn test_example_pattern_20bit_mask() {
-        // Real-text pattern documented on `CdcConfig::chunker` as an example end-of-chunk
+        // Real-text pattern documented on `ChunkerConfig::chunker` as an example end-of-chunk
         // sequence for a 20 bit mask.
         let pattern = b"ependent khanates. Following th";
         let base_size = 1u64 << (20 - 1);
@@ -646,7 +721,7 @@ mod tests {
 
     #[test]
     fn test_example_pattern_29bit_mask() {
-        // Real-text pattern documented on `CdcConfig::chunker` as an example end-of-chunk
+        // Real-text pattern documented on `ChunkerConfig::chunker` as an example end-of-chunk
         // sequence for a 29 bit mask.
         let pattern = b"ric power|power]] consumption o";
         let base_size = 1u64 << (29 - 1);
@@ -659,7 +734,7 @@ mod tests {
 
     #[test]
     fn test_example_pattern_31bit_mask() {
-        // Pattern documented on `CdcConfig::chunker` as an example end-of-chunk sequence for
+        // Pattern documented on `ChunkerConfig::chunker` as an example end-of-chunk sequence for
         // a 31 bit mask, i.e. a fully-zero fingerprint. `target_size_bits` only goes up to 30
         // (the widest mask this crate can produce), but a fully-zero fingerprint satisfies
         // any mask width, so it still ends a chunk right at the pattern's last byte there.
@@ -731,7 +806,7 @@ mod tests {
     #[test]
     fn test_hashing_chunker_multiple_chunks() {
         // Verify that the hasher is reset between chunks: each chunk's hash is independent.
-        let config = CdcConfig::new(20).unwrap();
+        let config = ChunkerConfig::new(Some(20)).unwrap();
         let data = pseudo_random_data(42, 7 * 1024 * 1024);
         let mut chunker = HashingChunker::new(XorHasher(0), config.chunker());
         let mut results = chunker.next(&data);
@@ -769,7 +844,7 @@ mod tests {
 
         #[test]
         fn test_hashing_chunker_blake3_expected_values() {
-            // Expected values for seed=42, 7 MB, CdcConfig target_size_bits=20,
+            // Expected values for seed=42, 7 MB, ChunkerConfig target_size_bits=20,
             // blake3 with 20-byte output.
             let expected: &[(u64, &[u8])] = &[
                 (
@@ -838,7 +913,7 @@ mod tests {
             ];
 
             let data = pseudo_random_data(42, 7 * 1024 * 1024);
-            let config = CdcConfig::new(20).unwrap();
+            let config = ChunkerConfig::new(Some(20)).unwrap();
             let mut chunker = HashingChunker::new(blake3::Hasher::new(), config.chunker());
             let mut results = chunker.next(&data);
             results.extend(chunker.flush());

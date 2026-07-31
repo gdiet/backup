@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use cdc::{CdcChunker, CdcConfig, ChunkHasher, Chunker, SingleChunkChunker};
+use cdc::{ChunkHasher, ChunkerConfig};
 use clap::Args;
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
@@ -108,47 +108,6 @@ impl ChunkHasher for Blake3Hasher {
     }
 }
 
-/// The chunker selected at runtime from the repository's `chunking` setting.
-///
-/// A small delegating enum instead of `Box<dyn Chunker>`, since there are only
-/// ever these two concrete chunker types and the choice is made once per run.
-/// `pub(crate)`: `mount.rs`'s phase 2b persist pipeline reuses this and
-/// [`make_chunker`] rather than duplicating them.
-pub(crate) enum RepoChunker {
-    Cdc(CdcChunker),
-    Single(SingleChunkChunker),
-}
-
-impl Chunker for RepoChunker {
-    fn next(&mut self, data: &[u8]) -> Vec<u64> {
-        match self {
-            RepoChunker::Cdc(c) => c.next(data),
-            RepoChunker::Single(c) => c.next(data),
-        }
-    }
-
-    fn flush(&mut self) -> Option<u64> {
-        match self {
-            RepoChunker::Cdc(c) => c.flush(),
-            RepoChunker::Single(c) => c.flush(),
-        }
-    }
-
-    fn bytes_into_chunk(&self) -> u64 {
-        match self {
-            RepoChunker::Cdc(c) => c.bytes_into_chunk(),
-            RepoChunker::Single(c) => c.bytes_into_chunk(),
-        }
-    }
-}
-
-pub(crate) fn make_chunker(cdc_config: &Option<CdcConfig>) -> RepoChunker {
-    match cdc_config {
-        Some(config) => RepoChunker::Cdc(config.chunker()),
-        None => RepoChunker::Single(SingleChunkChunker::default()),
-    }
-}
-
 /// Shared state for one `store` run, read by every worker thread and the writer
 /// thread. `abort`/`warnings` are also cloned out separately by [`run_store`] so
 /// their final values can be read after this whole context (and the [`Mutex`]
@@ -156,7 +115,7 @@ pub(crate) fn make_chunker(cdc_config: &Option<CdcConfig>) -> RepoChunker {
 /// lets the writer thread's `Receiver` see the channel disconnect and exit.
 struct RunContext {
     repository: db::Repository,
-    cdc_config: Option<CdcConfig>,
+    chunker_config: ChunkerConfig,
     data_store: store::LongTermStore,
     /// Reserves store space for new chunks' bytes, reusing gaps left by past
     /// `reclaim-space` runs before falling back to appending - see
@@ -247,13 +206,11 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let cdc_config = match repository.settings().chunking() {
-        db::Chunking::Cdc => Some(
-            CdcConfig::new(repository.settings().cdc_target_size_bits())
-                .expect("validated by RepositorySettings"),
-        ),
+    let chunker_config = ChunkerConfig::new(match repository.settings().chunking() {
+        db::Chunking::Cdc => Some(repository.settings().cdc_target_size_bits()),
         db::Chunking::None => None,
-    };
+    })
+    .expect("validated by RepositorySettings");
 
     // A single connection drives the up-front target resolution and directory
     // pass below (all on the main thread, before any parallel work starts), then
@@ -320,7 +277,7 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
 
     let ctx = Arc::new(RunContext {
         repository,
-        cdc_config,
+        chunker_config,
         data_store,
         allocator,
         abort: Arc::clone(&abort),
@@ -629,7 +586,7 @@ fn read_and_chunk(
 ) -> Result<(Vec<db::ChunkRef>, [u8; HASH_LENGTH]), WorkerError> {
     let mut chunker = SpillingHashingChunker::new(
         Blake3Hasher(blake3::Hasher::new()),
-        make_chunker(&ctx.cdc_config),
+        ctx.chunker_config.chunker(),
         Arc::clone(&ctx.chunk_buffer_budget),
         || ctx.spill_path(),
     );

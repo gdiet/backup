@@ -23,7 +23,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread::JoinHandle;
 
-use cdc::CdcConfig;
+use cdc::ChunkerConfig;
 use clap::Args;
 use mountfs::{Attr, DirEntry, Errno, FileKind, Handle, MountFilesystem};
 use rusqlite::Connection;
@@ -32,7 +32,7 @@ use store::{LongTermStore, ReadIntegrity};
 use crate::chunk_store::{self, SpaceAllocator, read_chunk_bytes};
 use crate::ram_budget_check::check_ram_budget;
 use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
-use crate::store::{Blake3Hasher, HASH_LENGTH, make_chunker};
+use crate::store::{Blake3Hasher, HASH_LENGTH};
 use crate::temp_dir::{create_spill_dir, validate_temp_dir};
 use crate::write_cache::{RamBudget, WriteCache};
 
@@ -253,13 +253,11 @@ fn build_filesystem(
     let extents = db::chunk_extents_sorted(&write_conn)
         .map_err(|err| format!("failed to determine free store space: {err}"))?;
     let allocator = SpaceAllocator::from_sorted_extents(&extents);
-    let cdc_config = match repository.settings().chunking() {
-        db::Chunking::Cdc => Some(
-            CdcConfig::new(repository.settings().cdc_target_size_bits())
-                .expect("validated by RepositorySettings"),
-        ),
+    let chunker_config = ChunkerConfig::new(match repository.settings().chunking() {
+        db::Chunking::Cdc => Some(repository.settings().cdc_target_size_bits()),
         db::Chunking::None => None,
-    };
+    })
+    .expect("validated by RepositorySettings");
     // `read_only` mirrors the `--read-write` flag, not hardcoded `true`
     // like the read-only-only phase used: a read-write mount's persist
     // pipeline needs to actually write new chunk bytes to the store.
@@ -285,7 +283,7 @@ fn build_filesystem(
         write_conn: Mutex::new(write_conn),
         data_store,
         allocator,
-        cdc_config,
+        chunker_config,
         ram_budget: Arc::new(RamBudget::new(write_cache_mb * 1024 * 1024)),
         spill_dir,
         spill_id_seq: AtomicU64::new(0),
@@ -356,7 +354,7 @@ struct Inner {
     /// Reserves store space for new chunks written by the phase 2b persist
     /// pipeline - see `chunk_store::SpaceAllocator`.
     allocator: SpaceAllocator,
-    cdc_config: Option<CdcConfig>,
+    chunker_config: ChunkerConfig,
     ram_budget: Arc<RamBudget>,
     /// This mount's private temp directory for [`WriteCache`] disk
     /// spillover - see `build_filesystem`.
@@ -1217,7 +1215,7 @@ impl Inner {
         let size = cache.size();
         let mut chunker = SpillingHashingChunker::new(
             Blake3Hasher(blake3::Hasher::new()),
-            make_chunker(&self.cdc_config),
+            self.chunker_config.chunker(),
             Arc::clone(&self.ram_budget),
             || self.spill_path(),
         );

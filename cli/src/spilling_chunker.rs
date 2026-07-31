@@ -131,7 +131,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cdc::{CdcConfig, SingleChunkChunker};
+    use cdc::{ChunkerConfig, SingleChunkChunker};
 
     struct SumHasher(u64);
 
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn cdc_chunking_can_complete_several_chunks_within_one_call() {
-        let config = CdcConfig::new(6).unwrap(); // small target size for a short test input
+        let config = ChunkerConfig::new(Some(6)).unwrap(); // small target size for a short test input
         let mut chunker = SpillingHashingChunker::new(
             SumHasher(0),
             config.chunker(),
