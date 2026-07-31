@@ -100,9 +100,8 @@ impl ChunkerConfig {
 }
 
 /// The chunker selected by [`ChunkerConfig::chunker`].
-///
-/// A small delegating enum instead of `Box<dyn Chunker>`, since there are only
-/// ever these two concrete chunker types and the choice is made once per config.
+// A small delegating enum instead of `Box<dyn Chunker>`, since there are only
+// ever these two concrete chunker types and the choice is made once per config.
 pub enum ConfiguredChunker {
     Cdc(CdcChunker),
     Single(SingleChunkChunker),

@@ -97,6 +97,15 @@ version is correct:
 - Write self-documenting code with clear variable names
 - If possible, avoid complex logic and not obvious code. If unavoidable, add
   explaining comments
+- Doc comments (`///`) describe an item's public contract - what it is, how to use
+  it, its invariants. Keep pure implementation rationale (why this internal
+  representation was chosen over an alternative, e.g. "a delegating enum instead of
+  `Box<dyn Trait>`, since there are only ever two concrete types") out of `///` and in
+  a regular `//` comment next to the code instead, so `cargo doc` output for public
+  API stays focused on what callers need. This mainly matters for `pub` items in the
+  library crates (`cdc`, `db`, `mountfs`); private items in `cli`'s binary code have no
+  external consumers, so the distinction is less load-bearing there and existing
+  rationale-heavy `///` comments on private items don't need to be split up.
 - In production code (not tests), never use a bare `.unwrap()`. Use `.expect("...")`
   instead, with a message that states *why* the failure can't happen here (a poisoned
   mutex, a value just established a few lines above, a hardcoded literal that can't fail
