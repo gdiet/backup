@@ -47,6 +47,15 @@ Keep the two in sync through the shared remote, never by copying files directly:
   Linux behavior against what's already pushed, not as a second place to develop. If a
   Linux-only fix is needed, make it in the Windows checkout, push, then sync as above.
 
+When invoking `wsl` from this (Git Bash/MSYS) shell with a WSL-only path (anything
+under `/home/...`, not `/mnt/c/...`) anywhere in the command - e.g.
+`wsl bash -lc '/home/georg/.../java -version'` - MSYS's automatic path conversion can
+silently mangle it into a bogus Windows path (`C:/Program Files/Git/home/...`), failing
+with a confusing `No such file or directory`. `/mnt/c/...` paths are unaffected (MSYS
+already special-cases them), so this only bites when a command touches something that
+only exists inside WSL, like a JRE unpacked under the Linux home directory. Fix: prefix
+the call with `MSYS_NO_PATHCONV=1`, e.g. `MSYS_NO_PATHCONV=1 wsl bash -lc '...'`.
+
 ## Verification Of Changes
 
 When making changes to the codebase, always verify your changes before finishing and
