@@ -109,6 +109,7 @@ impl BackupArgs {
             concurrency: None,
             chunk_buffer_mb: DEFAULT_CHUNK_BUFFER_MB,
             allow_swap_risk: false,
+            temp: None,
             paths,
         }
     }

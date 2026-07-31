@@ -192,12 +192,14 @@ accident.
 backup blacklist process [--dfs-blacklist <name>] [--delete-copies] [--backup]
 ```
 
-Soft-deletes every active file entry under `<dfs-blacklist>`, so it stays a
-visible record in the tree of what was excluded, but no longer references
-its content - the same recoverable-until-`reclaim-space` mechanism `del`
-uses, not the Scala tool's "reads as zeros, stays listed" content mutation
-(see `docs/plans/implemented/blacklist.md` for why the two chunk-dedup
-models don't map onto that 1:1). Pass `--delete-copies` to also soft-delete
+Soft-deletes every active file entry under `<dfs-blacklist>` - it becomes
+inactive and disappears from normal browsing (`list`/`find`/`mount`) the
+same way any `del`'d file does, recoverable only within `reclaim-space`'s
+grace window before its content is actually freed. This is *not* the Scala
+tool's "reads as zeros, stays listed" content mutation, where the entry
+remains visible with its original size (see
+`docs/plans/implemented/blacklist.md` for why the two chunk-dedup models
+don't map onto that 1:1). Pass `--delete-copies` to also soft-delete
 every other active entry anywhere in the tree that shares a processed
 entry's content, so nothing outside the blacklist directory still
 references it. Pass `--backup` to take a database backup first - off by
