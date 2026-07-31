@@ -373,6 +373,154 @@ fn mounts_read_write_and_supports_content_writes_via_the_backup_binary() {
     assert_eq!(db::file_size(&conn, &a).unwrap(), 5);
 }
 
+/// `--temp` (see `cli/src/mount.rs`'s `MountArgs::temp`) redirects
+/// `--read-write`'s write-cache spillover directory, created
+/// unconditionally at mount startup (`build_filesystem`) - this confirms
+/// it actually lands under the given directory rather than the OS default
+/// (`std::env::temp_dir()`), and that a real write-cache spill *file* ends
+/// up there too once `--write-cache-mb 0` forces spillover on the very
+/// first written byte.
+#[test]
+fn mount_read_write_uses_a_custom_temp_dir_for_write_cache_spillover_via_the_backup_binary() {
+    let (_temp_dir, repo_root) = init_repo();
+    {
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_write_connection().unwrap();
+        db::insert_directory(&conn, 0, "marker", 0).unwrap();
+    }
+
+    let parent_dir = tempfile::tempdir().unwrap();
+    let mount_path = parent_dir.path().join("mnt");
+    let custom_temp = tempfile::tempdir().unwrap();
+
+    let backup = env!("CARGO_BIN_EXE_backup");
+    let mut child = std::process::Command::new(backup)
+        .arg("--repo")
+        .arg(&repo_root)
+        .arg("mount")
+        .arg("--read-write")
+        .arg("--write-cache-mb")
+        .arg("0")
+        .arg("--temp")
+        .arg(custom_temp.path())
+        .arg(&mount_path)
+        .spawn()
+        .expect("failed to spawn backup mount --read-write --temp");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            panic!("backup mount exited early with {status}");
+        }
+        let names: Vec<String> = std::fs::read_dir(&mount_path)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !names.is_empty() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "mount did not become ready within 10s \
+             (requires WinFSP to be installed - investigate if this fails in CI)"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    // The write-cache spill directory is created at mount startup,
+    // unconditionally - it must already be under the custom --temp dir by
+    // the time the mount is ready to serve requests, never under the OS
+    // default temp dir.
+    let spill_dirs: Vec<PathBuf> = std::fs::read_dir(custom_temp.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .map(|n| n.to_string_lossy().starts_with("backup-mount-write-cache-"))
+                .unwrap_or(false)
+        })
+        .collect();
+    assert_eq!(
+        spill_dirs.len(),
+        1,
+        "expected exactly one backup-mount-write-cache-* dir under the custom --temp dir, found {spill_dirs:?}"
+    );
+
+    // Force an actual spilled write-cache file: `--write-cache-mb 0` means
+    // even the first written byte exceeds the RAM budget. The handle is
+    // kept open (not `std::fs::write`, which would close it immediately)
+    // so the write cache - and its spill file - stays alive for the
+    // check below rather than racing the background persist that runs
+    // once the file closes.
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(mount_path.join("a.txt"))
+        .expect("failed to open a.txt for writing");
+    {
+        use std::io::Write;
+        f.write_all(b"hello write cache")
+            .expect("failed to write to a.txt");
+        f.flush().expect("failed to flush a.txt");
+    }
+    let spill_files: Vec<PathBuf> = std::fs::read_dir(&spill_dirs[0])
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .collect();
+    assert!(
+        !spill_files.is_empty(),
+        "expected at least one spilled write-cache file under the custom --temp dir"
+    );
+    drop(f);
+
+    child.kill().expect("failed to kill backup mount");
+    child.wait().expect("failed to wait for backup mount");
+}
+
+/// `--temp` (see `cli/src/mount.rs`'s `MountArgs::temp`) is validated up
+/// front, before the mountpoint is ever touched - WinFSP creates the
+/// mountpoint itself as part of mounting (see `validate_mountpoint`), so
+/// confirming it was never created is a direct check that this failed
+/// before reaching that point.
+#[test]
+fn mount_fails_fast_for_a_nonexistent_temp_dir_without_creating_the_mountpoint() {
+    let (_temp_dir, repo_root) = init_repo();
+    seed_file(&repo_root, 0, "top.txt", b"top level content");
+
+    let parent_dir = tempfile::tempdir().unwrap();
+    let mount_path = parent_dir.path().join("mnt");
+    let missing_temp = parent_dir.path().join("does-not-exist-temp");
+
+    let backup = env!("CARGO_BIN_EXE_backup");
+    let output = std::process::Command::new(backup)
+        .arg("--repo")
+        .arg(&repo_root)
+        .arg("mount")
+        .arg("--temp")
+        .arg(&missing_temp)
+        .arg(&mount_path)
+        .output()
+        .expect("failed to run backup mount");
+
+    assert!(
+        !output.status.success(),
+        "expected backup mount to fail fast for a nonexistent --temp dir, stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !mount_path.exists(),
+        "mountpoint must never have been created - WinFSP creates it itself, only reached \
+         after --temp validation"
+    );
+}
+
 /// A content write on a genuinely read-only mount (no `--read-write`) must
 /// be rejected - see this test module's doc comment on
 /// `mounts_read_write_and_supports_content_writes_via_the_backup_binary`

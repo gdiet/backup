@@ -237,12 +237,13 @@ collision in practice).
 
 **Still open**: `store`'s own admission control (noted above - a static
 `--concurrency`, not a dynamic backpressure gate like mount's persist
-queue) and the not-yet-configurable temp/spill directory location for
-either command (both currently hardcode `std::env::temp_dir()` - the
-"operational expectation" requirement above wanted this configurable,
-matching the Scala prototype's own guidance, but neither command has a
-`--temp`-style flag yet; deferred as a separate, smaller enhancement
-rather than folded into this pass).
+queue). The temp/spill directory location is now configurable for both
+commands via `--temp <DIR>` (`cli/src/temp_dir.rs`, wired into both
+`store.rs`'s and `mount.rs`'s spill-directory creation) - closing the
+"operational expectation" requirement above; both previously hardcoded
+`std::env::temp_dir()` with no way to override it. `--temp` is validated
+up front (must already exist and be writable) before any other command
+work, the same way `check_ram_budget` already was.
 
 ## Mount-specific detail: implemented
 

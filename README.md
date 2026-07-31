@@ -202,7 +202,7 @@ Proxy, Copyright (C) Bill Zissimopoulos, used here under its FLOSS
 exception to the GPLv3 (see the plan doc for the full exception text).
 
 ```bash
-backup mount --read-write [--write-cache-mb <n>] <mountpoint>
+backup mount --read-write [--write-cache-mb <n>] [--temp <dir>] <mountpoint>
 ```
 
 `--read-write` additionally allows structural changes
@@ -219,7 +219,11 @@ does a further close start blocking (see
 the design). At startup,
 `--read-write` refuses to run if `--write-cache-mb` looks large enough,
 relative to *currently available* RAM, to risk pushing the machine into
-swapping - pass `--allow-swap-risk` to start anyway. See
+swapping - pass `--allow-swap-risk` to start anyway. `--temp` overrides
+where the write-cache spillover directory is created (must already exist
+and be writable; defaults to the OS temp directory) - for best
+throughput, point it at the fastest disk available, ideally not the same
+physical drive as the repository. See
 `docs/plans/implemented/06-fuse-mount-readwrite.md` for the full design
 and verification notes.
 

@@ -33,6 +33,7 @@ use crate::chunk_store::{self, SpaceAllocator, read_chunk_bytes};
 use crate::ram_budget_check::check_ram_budget;
 use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
 use crate::store::{Blake3Hasher, HASH_LENGTH, make_chunker};
+use crate::temp_dir::{create_spill_dir, validate_temp_dir};
 use crate::write_cache::{RamBudget, WriteCache};
 
 /// Default RAM budget for `backup mount --read-write`'s write cache (see
@@ -105,6 +106,15 @@ pub struct MountArgs {
     /// meaningful with `--read-write`.
     #[arg(long)]
     allow_swap_risk: bool,
+
+    /// Directory to create this mount's write-cache spillover directory in
+    /// (see `--write-cache-mb`) - must already exist and be writable.
+    /// Defaults to the OS temp directory (`std::env::temp_dir()`) if not
+    /// given. For best throughput, point this at the fastest disk
+    /// available, ideally not the same physical drive as the repository.
+    /// Only meaningful with `--read-write`.
+    #[arg(long)]
+    temp: Option<PathBuf>,
 }
 
 /// FUSE (Linux) mounts onto an existing, empty directory; WinFSP
@@ -169,6 +179,12 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
         eprintln!("error: {msg}");
         return ExitCode::FAILURE;
     }
+    if let Some(temp) = &args.temp
+        && let Err(msg) = validate_temp_dir(temp)
+    {
+        eprintln!("error: {msg}");
+        return ExitCode::FAILURE;
+    }
     if args.read_write
         && let Err(msg) =
             check_ram_budget("write-cache-mb", args.write_cache_mb, args.allow_swap_risk)
@@ -177,7 +193,12 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let fs = match build_filesystem(repo, args.read_write, args.write_cache_mb) {
+    let fs = match build_filesystem(
+        repo,
+        args.read_write,
+        args.write_cache_mb,
+        args.temp.as_deref(),
+    ) {
         Ok(fs) => fs,
         Err(msg) => {
             eprintln!("error: {msg}");
@@ -208,7 +229,12 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
 /// itself - split out from [`run_mount`] so tests can drive [`mountfs::mount`]
 /// directly (in a background thread - it blocks until unmounted) instead of
 /// going through the process-exit-coupled [`run_mount`] above.
-fn build_filesystem(repo: &Path, read_write: bool, write_cache_mb: u64) -> Result<DedupFs, String> {
+fn build_filesystem(
+    repo: &Path,
+    read_write: bool,
+    write_cache_mb: u64,
+    temp: Option<&Path>,
+) -> Result<DedupFs, String> {
     let repository = db::open_repository(repo)
         .map_err(|err| format!("failed to open repository at {}: {err}", repo.display()))?;
     let conn = repository
@@ -241,19 +267,12 @@ fn build_filesystem(repo: &Path, read_write: bool, write_cache_mb: u64) -> Resul
     // A dedicated, uniquely-named spill directory for write-cache overflow
     // (see `write_cache::WriteCache`) - created empty here, removed whole
     // in `Inner::on_unmount` once every spill file in it (each deleted by
-    // its own `WriteCache`'s `Drop`) is gone. Named via `tempfile` rather
-    // than `std::process::id()`: a process id is only unique across
-    // *processes*, but `build_filesystem` can run more than once within
-    // one process (every mount integration test does exactly that,
-    // concurrently) - a process-id-based name let two concurrent mounts
-    // collide on the same directory, each unaware of the other's spill
-    // files with the same generated names, and race to delete it out from
-    // under each other on unmount.
-    let spill_dir = tempfile::Builder::new()
-        .prefix("backup-mount-write-cache-")
-        .tempdir()
-        .map_err(|err| format!("failed to create write-cache temp dir: {err}"))?
-        .keep();
+    // its own `WriteCache`'s `Drop`) is gone. Under `--temp` if given
+    // (already validated by `run_mount`), otherwise under the OS default -
+    // see `create_spill_dir`'s doc comment for why this goes through
+    // `tempfile::Builder` rather than `std::process::id()`.
+    let spill_dir = create_spill_dir("backup-mount-write-cache-", temp)
+        .map_err(|err| format!("failed to create write-cache temp dir: {err}"))?;
 
     // The persist queue and its background thread (see `persist_worker`)
     // - `Inner` is wrapped in `Arc` (via `DedupFs`) specifically so this
@@ -1395,7 +1414,7 @@ mod tests {
         seed_file(&repo_root, 0, "top.txt", b"top level content");
         seed_file(&repo_root, sub_id, "a.txt", b"hello fuse");
 
-        let fs = build_filesystem(&repo_root, false, DEFAULT_WRITE_CACHE_MB).unwrap();
+        let fs = build_filesystem(&repo_root, false, DEFAULT_WRITE_CACHE_MB, None).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -1477,7 +1496,7 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB).unwrap();
+        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -1581,7 +1600,7 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB).unwrap();
+        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -1704,7 +1723,7 @@ mod tests {
         }
         seed_file(&repo_root, 0, "a.txt", b"hello world");
 
-        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB).unwrap();
+        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -1777,7 +1796,7 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, 0).unwrap();
+        let fs = build_filesystem(&repo_root, true, 0, None).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {

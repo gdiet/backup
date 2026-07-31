@@ -20,6 +20,7 @@ use walkdir::WalkDir;
 use crate::chunk_store::{self, SpaceAllocator};
 use crate::ram_budget_check::check_ram_budget;
 use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
+use crate::temp_dir::{create_spill_dir, validate_temp_dir};
 use crate::write_cache::RamBudget;
 
 /// Number of bytes read from a file at a time.
@@ -73,6 +74,15 @@ pub struct BackupArgs {
     /// currently available RAM, to risk pushing the machine into swapping.
     #[arg(long)]
     allow_swap_risk: bool,
+
+    /// Directory to create this run's chunk-buffer spillover directory in
+    /// (see `--chunk-buffer-mb`) - must already exist and be writable.
+    /// Defaults to the OS temp directory (`std::env::temp_dir()`) if not
+    /// given. For best throughput, point this at the fastest disk
+    /// available, ideally not the same physical drive as either a source
+    /// or the repository itself.
+    #[arg(long)]
+    temp: Option<PathBuf>,
 
     /// One or more source paths followed by the target path in the repository.
     #[arg(required = true, num_args = 2.., value_name = "PATH")]
@@ -206,6 +216,12 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
         eprintln!("error: {msg}");
         return ExitCode::FAILURE;
     }
+    if let Some(temp) = &args.temp
+        && let Err(msg) = validate_temp_dir(temp)
+    {
+        eprintln!("error: {msg}");
+        return ExitCode::FAILURE;
+    }
 
     let (sources, target) = args.paths.split_at(args.paths.len() - 1);
     let target = &target[0];
@@ -290,18 +306,12 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
     // A dedicated, uniquely-named spill directory for chunk-buffer
     // overflow (see `spilling_chunker::SpillingHashingChunker`) - created
     // empty here, removed whole below once every spill file in it (each
-    // deleted by its own `WriteCache`'s `Drop`) is gone. Named via
-    // `tempfile` rather than `std::process::id()`: a process id is only
-    // unique across *processes*, but `run_store` can run more than once
-    // within one process (every store integration test does exactly that,
-    // concurrently) - a process-id-based name let two concurrent runs
-    // collide on the same directory and race to delete it out from under
-    // each other (see the identical fix in `mount.rs`'s `build_filesystem`).
-    let spill_dir = match tempfile::Builder::new()
-        .prefix("backup-store-chunk-buffer-")
-        .tempdir()
-    {
-        Ok(dir) => dir.keep(),
+    // deleted by its own `WriteCache`'s `Drop`) is gone. Under `--temp` if
+    // given (already validated above), otherwise under the OS default -
+    // see `create_spill_dir`'s doc comment for why this goes through
+    // `tempfile::Builder` rather than `std::process::id()`.
+    let spill_dir = match create_spill_dir("backup-store-chunk-buffer-", args.temp.as_deref()) {
+        Ok(dir) => dir,
         Err(err) => {
             eprintln!("error: failed to create chunk-buffer temp dir: {err}");
             return ExitCode::FAILURE;
@@ -766,6 +776,7 @@ mod tests {
             concurrency: Some(2),
             chunk_buffer_mb: DEFAULT_CHUNK_BUFFER_MB,
             allow_swap_risk: false,
+            temp: None,
             paths: std::mem::take(&mut paths),
         }
     }
@@ -798,6 +809,133 @@ mod tests {
             count(&c, "tree_entries"),
             1,
             "only the root entry - the target must never have been created"
+        );
+    }
+
+    /// `--temp` (see `BackupArgs::temp`) is validated up front, before any
+    /// other command work - like `run_store_fails_fast_for_a_missing_source_
+    /// without_touching_the_target` above, checks this by confirming the
+    /// target was never created, not just that the exit code is a failure.
+    #[test]
+    fn run_store_fails_fast_for_a_nonexistent_temp_dir_without_touching_the_target() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("a.txt"), b"hello").unwrap();
+        let missing_temp = source_dir.path().join("does-not-exist-temp");
+
+        let mut args = backup_args(vec![
+            source_dir.path().to_path_buf(),
+            PathBuf::from("target"),
+        ]);
+        args.temp = Some(missing_temp);
+
+        let exit = run_store(&repo_root, args);
+
+        assert_eq!(exit, ExitCode::FAILURE);
+        let c = conn(&repo_root);
+        assert_eq!(
+            count(&c, "tree_entries"),
+            1,
+            "only the root entry - the target must never have been created"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_store_fails_fast_for_an_unwritable_temp_dir_without_touching_the_target() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("a.txt"), b"hello").unwrap();
+        let temp_parent = tempfile::tempdir().unwrap();
+        let locked_temp = temp_parent.path().join("locked");
+        std::fs::create_dir(&locked_temp).unwrap();
+        std::fs::set_permissions(&locked_temp, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let mut args = backup_args(vec![
+            source_dir.path().to_path_buf(),
+            PathBuf::from("target"),
+        ]);
+        args.temp = Some(locked_temp.clone());
+
+        let exit = run_store(&repo_root, args);
+
+        std::fs::set_permissions(&locked_temp, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(exit, ExitCode::FAILURE);
+        let c = conn(&repo_root);
+        assert_eq!(
+            count(&c, "tree_entries"),
+            1,
+            "only the root entry - the target must never have been created"
+        );
+    }
+
+    /// Confirms `--temp` actually redirects chunk-buffer spillover: with a
+    /// custom `--temp` dir given, the spill directory `run_store` creates
+    /// (see `create_spill_dir`) must appear under it - never under the OS
+    /// default (`std::env::temp_dir()`), since `create_spill_dir` only
+    /// ever calls `tempdir_in` when a custom dir is given, not `tempdir`.
+    /// `chunk_buffer_mb: 0` (and `chunking: none`, so the whole file is
+    /// one chunk) forces the very first byte written to spill to disk,
+    /// so this also confirms a real spill *file* lands under the custom
+    /// dir, not just the empty container directory.
+    #[test]
+    fn run_store_uses_a_custom_temp_dir_for_chunk_buffer_spillover() {
+        use std::time::Instant;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        db::init_repository(
+            &repo_root,
+            &db::RepositorySettings::new(12, db::Chunking::None).unwrap(),
+        )
+        .unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        // Large enough that chunking/hashing/writing isn't instantaneous,
+        // giving the polling loop below a real window to observe the spill
+        // directory before `run_store` removes it at the end of the run.
+        let content: Vec<u8> = (0u32..2_000_000).map(|i| (i % 251) as u8).collect();
+        std::fs::write(source_dir.path().join("a.txt"), &content).unwrap();
+
+        let custom_temp = tempfile::tempdir().unwrap();
+        let mut args = backup_args(vec![
+            source_dir.path().to_path_buf(),
+            PathBuf::from("target"),
+        ]);
+        args.chunk_buffer_mb = 0;
+        args.concurrency = Some(1);
+        args.temp = Some(custom_temp.path().to_path_buf());
+
+        let handle = thread::spawn(move || run_store(&repo_root, args));
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut spill_dir_path = None;
+        while Instant::now() < deadline {
+            if let Ok(entries) = std::fs::read_dir(custom_temp.path()) {
+                for entry in entries.flatten() {
+                    if entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with("backup-store-chunk-buffer-")
+                    {
+                        spill_dir_path = Some(entry.path());
+                        break;
+                    }
+                }
+            }
+            if spill_dir_path.is_some() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(5));
+        }
+        let spill_dir_path = spill_dir_path
+            .expect("expected a backup-store-chunk-buffer-* spill dir under the custom --temp dir");
+        assert!(spill_dir_path.starts_with(custom_temp.path()));
+
+        let exit = handle.join().expect("run_store thread panicked");
+        assert_eq!(exit, ExitCode::SUCCESS);
+        assert!(
+            !spill_dir_path.exists(),
+            "spill dir should be removed once run_store finishes"
         );
     }
 
@@ -1045,6 +1183,7 @@ mod tests {
             concurrency: Some(2),
             chunk_buffer_mb: 0,
             allow_swap_risk: false,
+            temp: None,
             paths: vec![source_dir.path().to_path_buf(), PathBuf::from("target")],
         };
         let exit = run_store(&repo_root, args);
