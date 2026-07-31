@@ -19,6 +19,20 @@ impl EntryKind {
             other => unreachable!("tree_entries.kind CHECK constraint violated: {other:?}"),
         }
     }
+
+    /// The `tree_entries.kind` column value for this variant - the inverse of
+    /// [`EntryKind::from_db_str`]. `pub(crate)`: needed by
+    /// [`insert_historical_tree_entry`], which (unlike [`apply_backup_batch`]
+    /// and [`insert_directory`]) inserts either kind through one shared
+    /// function rather than a hardcoded literal per call site.
+    ///
+    /// [`apply_backup_batch`]: crate::apply_backup_batch
+    pub(crate) fn as_db_str(self) -> &'static str {
+        match self {
+            EntryKind::Dir => "dir",
+            EntryKind::File => "file",
+        }
+    }
 }
 
 /// A row from `tree_entries`, as returned by [`find_tree_entry`]/[`get_tree_entry`].
@@ -126,6 +140,49 @@ pub fn insert_directory(
     Ok(entry.id)
 }
 
+/// Inserts a tree entry with an explicit `deleted_at`, bypassing the
+/// active-name conflict/replace handling that [`crate::apply_backup_batch`]
+/// and [`insert_directory`] apply for an *incremental* backup run. Used by
+/// the Scala repository migration tool, which replays a full historical tree
+/// (including already soft-deleted entries) rather than folding updates into
+/// a single current state: each old entry becomes exactly one new row,
+/// carrying whatever `deleted_at` it already had in the old repository.
+///
+/// Multiple historical rows may share a `(parent_id, name)` (the norm for a
+/// repeatedly overwritten path); at most one may be active (`deleted_at ==
+/// None`) at a time, enforced the same way as everywhere else by the
+/// schema's partial unique index - inserting a second active row for the
+/// same `(parent_id, name)` fails with a uniqueness violation, surfaced as
+/// [`Error::Sqlite`].
+///
+/// Returns the new row's id, for the caller to use as `parent_id` when
+/// recursing into a migrated directory's own children.
+///
+/// [`Error::Sqlite`]: crate::Error::Sqlite
+pub fn insert_historical_tree_entry(
+    conn: &Connection,
+    parent_id: i64,
+    name: &str,
+    time_millis: i64,
+    deleted_at: Option<i64>,
+    kind: EntryKind,
+    content_id: Option<i64>,
+) -> Result<i64, Error> {
+    conn.execute(
+        "INSERT INTO tree_entries (parent_id, name, time, deleted_at, kind, content_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            parent_id,
+            name,
+            time_millis,
+            deleted_at,
+            kind.as_db_str(),
+            content_id
+        ],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
 /// Updates `id`'s `time` in place. Used by the mount's `utimens` - not
 /// needed by `store`, which always inserts a fresh row or goes through
 /// [`crate::apply_backup_batch`]'s own unchanged-content branch instead.
@@ -218,6 +275,90 @@ mod tests {
         assert!(
             matches!(result, Err(Error::NotADirectory { parent_id: 0, name }) if name == "sub")
         );
+    }
+
+    #[test]
+    fn insert_historical_tree_entry_preserves_an_explicit_deleted_at() {
+        let (_temp_dir, conn) = test_connection();
+
+        let active =
+            insert_historical_tree_entry(&conn, 0, "a.txt", 1000, None, EntryKind::File, None)
+                .unwrap();
+        let deleted =
+            insert_historical_tree_entry(&conn, 0, "b.txt", 500, Some(900), EntryKind::File, None)
+                .unwrap();
+
+        let active_row = get_tree_entry(&conn, active).unwrap().unwrap();
+        assert_eq!(active_row.name, "a.txt");
+        let deleted_at: Option<i64> = conn
+            .query_row(
+                "SELECT deleted_at FROM tree_entries WHERE id = ?1",
+                [deleted],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(deleted_at, Some(900));
+        // The soft-deleted row is invisible to find_tree_entry (active-only).
+        assert_eq!(find_tree_entry(&conn, 0, "b.txt").unwrap(), None);
+    }
+
+    #[test]
+    fn insert_historical_tree_entry_allows_several_historical_rows_for_one_name() {
+        let (_temp_dir, conn) = test_connection();
+
+        let first =
+            insert_historical_tree_entry(&conn, 0, "a.txt", 100, Some(200), EntryKind::File, None)
+                .unwrap();
+        let second =
+            insert_historical_tree_entry(&conn, 0, "a.txt", 300, Some(400), EntryKind::File, None)
+                .unwrap();
+        let active =
+            insert_historical_tree_entry(&conn, 0, "a.txt", 500, None, EntryKind::File, None)
+                .unwrap();
+
+        assert_ne!(first, second);
+        assert_ne!(second, active);
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM tree_entries WHERE parent_id = 0 AND name = 'a.txt'",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 3);
+        assert_eq!(
+            find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap().id,
+            active
+        );
+    }
+
+    #[test]
+    fn insert_historical_tree_entry_rejects_a_second_active_row_for_the_same_name() {
+        let (_temp_dir, conn) = test_connection();
+        insert_historical_tree_entry(&conn, 0, "a.txt", 100, None, EntryKind::File, None).unwrap();
+
+        let result =
+            insert_historical_tree_entry(&conn, 0, "a.txt", 200, None, EntryKind::File, None);
+
+        assert!(matches!(result, Err(Error::Sqlite(_))));
+    }
+
+    #[test]
+    fn insert_historical_tree_entry_can_create_a_directory_with_children() {
+        let (_temp_dir, conn) = test_connection();
+        let dir_id =
+            insert_historical_tree_entry(&conn, 0, "sub", 1000, None, EntryKind::Dir, None)
+                .unwrap();
+
+        let file_id =
+            insert_historical_tree_entry(&conn, dir_id, "a.txt", 1000, None, EntryKind::File, None)
+                .unwrap();
+
+        let entry = get_tree_entry(&conn, file_id).unwrap().unwrap();
+        assert_eq!(entry.kind, EntryKind::File);
+        let parent = find_tree_entry(&conn, 0, "sub").unwrap().unwrap();
+        assert_eq!(parent.kind, EntryKind::Dir);
+        assert_eq!(parent.id, dir_id);
     }
 
     #[test]

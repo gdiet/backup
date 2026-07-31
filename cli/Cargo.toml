@@ -20,3 +20,4 @@ store = { version = "0.1.0", path = "../store" }
 sysinfo = "0.33.1"
 tempfile = "3.27.0"
 walkdir = "2.5.0"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

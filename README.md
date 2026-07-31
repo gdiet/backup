@@ -261,6 +261,36 @@ physical drive as the repository. See
 `docs/plans/implemented/06-fuse-mount-readwrite.md` for the full design
 and verification notes.
 
+### Migrate A Scala Repository
+
+```bash
+backup -r <target-repo> migrate-scala-repo --script <export> --old-data <old-data-dir>
+```
+
+One-shot migration of an old Scala `dedup` repository into a Rust one.
+`<target-repo>` must already be an initialized (`backup init`), empty
+repository - this is not a merge tool. `--script` is the H2 SQL script
+export produced by the Scala tool's `fsc db-backup` command (`org.h2.tools
+.Script`) - either the zipped script as produced directly, or an
+already-unzipped `.sql` file; `--old-data` is the old repository's `data/`
+directory (read-only, never modified).
+
+Migrates the *entire* old tree, including soft-deleted history (not just
+the currently-active files), so restore-from-history capability is
+preserved. Content is genuinely re-chunked and re-hashed through the same
+CDC pipeline `store` uses, since Scala dedupes whole files while Rust
+dedupes at the chunk level - there's no mechanical translation between the
+two metadata models. The final summary reports the headline number this
+exists for: how much smaller the migrated repository is than a naive
+whole-file copy would have been, thanks to chunk-level dedup finding
+sharing Scala's whole-file model never could. See
+`docs/plans/implemented/scala-rust-store-migration.md` for the full design
+(compatibility findings, staging-database approach, decisions made).
+
+A failure partway through leaves the target repository untouched (the
+whole migration runs in one transaction, committed only at the very end) -
+recovery is simply re-running the command from scratch, not resuming.
+
 ## Development
 
 ### Prerequisites

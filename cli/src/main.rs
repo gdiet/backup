@@ -11,6 +11,7 @@ mod del;
 mod find;
 mod format;
 mod list;
+mod migrate_scala_repo;
 mod mount;
 mod ram_budget_check;
 mod reclaim_space;
@@ -64,6 +65,10 @@ enum Command {
     Mount(mount::MountArgs),
     /// Add external files to, or process, the repository's blacklist.
     Blacklist(blacklist::BlacklistArgs),
+    /// Migrate an old Scala repository (its `fsc db-backup` SQL export plus
+    /// its `data/` directory) into this, already-initialized but empty,
+    /// repository - re-chunking and re-hashing all content along the way.
+    MigrateScalaRepo(migrate_scala_repo::MigrateScalaRepoArgs),
 }
 
 #[derive(Args)]
@@ -118,6 +123,9 @@ fn main() -> ExitCode {
         Command::ReclaimSpace(args) => reclaim_space::run_reclaim_space(&cli.repo, args),
         Command::Mount(args) => mount::run_mount(&cli.repo, args),
         Command::Blacklist(args) => blacklist::run_blacklist(&cli.repo, args),
+        Command::MigrateScalaRepo(args) => {
+            migrate_scala_repo::run_migrate_scala_repo(&cli.repo, args)
+        }
     }
 }
 

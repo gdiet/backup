@@ -23,7 +23,7 @@ mod query;
 mod settings;
 mod tree;
 
-pub use backup::{ChunkRef, FileBackupRecord, apply_backup_batch, find_chunk};
+pub use backup::{ChunkRef, FileBackupRecord, apply_backup_batch, find_chunk, resolve_content};
 pub use error::Error;
 pub use maintenance::{ReclaimStats, reclaim_space, soft_delete};
 pub use query::{
@@ -33,8 +33,8 @@ pub use query::{
 };
 pub use settings::{CDC_TARGET_SIZE_BITS_RANGE, Chunking, RepositorySettings, SettingsError};
 pub use tree::{
-    EntryKind, TreeEntryRow, find_tree_entry, get_tree_entry, insert_directory, parent_id,
-    rename_entry, touch_mtime,
+    EntryKind, TreeEntryRow, find_tree_entry, get_tree_entry, insert_directory,
+    insert_historical_tree_entry, parent_id, rename_entry, touch_mtime,
 };
 
 use std::fs;

@@ -55,15 +55,95 @@ pub struct FileBackupRecord {
     pub content_hash: Vec<u8>,
 }
 
+/// Resolves `chunks` against the dedup index (inserting any not-yet-known
+/// chunk and its extents) and resolves-or-inserts a `contents` row for
+/// `content_hash`, returning the resulting `content_id` - `None` for an
+/// empty file (`chunks` is empty, matching the `kind` doc comment in
+/// `migrations.rs`: an empty file has `content_id IS NULL` too).
+///
+/// Insert-or-get for both `chunks` and `contents` is race-safe: if another
+/// caller already created a row for the same `(length, hash)`/`content_hash`
+/// (e.g. an earlier batch within the same [`apply_backup_batch`] call, or a
+/// concurrent one), `ON CONFLICT ... DO NOTHING` makes the insert a no-op and
+/// the subsequent `SELECT` picks up the existing row.
+///
+/// Factored out of [`apply_backup_batch`]'s per-record loop (which still does
+/// the actual chunk/content resolution by calling this) so other callers that
+/// need the same dedup behavior without `apply_backup_batch`'s
+/// active-tree-only `tree_entries` insert/replace semantics can reuse it -
+/// notably the Scala repository migration tool, which resolves each migrated
+/// file's content this way before inserting its own `tree_entries` row via
+/// [`crate::insert_historical_tree_entry`].
+pub fn resolve_content(
+    conn: &Connection,
+    chunks: &[ChunkRef],
+    content_hash: &[u8],
+) -> Result<Option<i64>, Error> {
+    if chunks.is_empty() {
+        return Ok(None);
+    }
+
+    let mut chunk_ids = Vec::with_capacity(chunks.len());
+    for chunk_ref in chunks {
+        let chunk_id = match chunk_ref {
+            ChunkRef::Existing { id, .. } => *id,
+            ChunkRef::New {
+                length,
+                hash,
+                extents,
+            } => {
+                conn.execute(
+                    "INSERT INTO chunks (length, hash) VALUES (?1, ?2)
+                     ON CONFLICT (length, hash) DO NOTHING",
+                    params![*length as i64, hash],
+                )?;
+                let chunk_id: i64 = conn.query_row(
+                    "SELECT id FROM chunks WHERE length = ?1 AND hash = ?2",
+                    params![*length as i64, hash],
+                    |row| row.get(0),
+                )?;
+                // INSERT OR IGNORE, not a bare INSERT: on the losing side of
+                // the chunks race just resolved above, this chunk_id already
+                // has extents from whichever caller's insert won - this
+                // caller's own (redundant, harmless) copy of the same bytes
+                // elsewhere in the store is simply never referenced.
+                for (seq, (start, stop)) in extents.iter().enumerate() {
+                    conn.execute(
+                        "INSERT OR IGNORE INTO chunk_extents (chunk_id, seq, start, stop)
+                         VALUES (?1, ?2, ?3, ?4)",
+                        params![chunk_id, seq as i64, *start as i64, *stop as i64],
+                    )?;
+                }
+                chunk_id
+            }
+        };
+        chunk_ids.push(chunk_id);
+    }
+
+    let total_length: i64 = chunks.iter().map(|c| c.length() as i64).sum();
+    conn.execute(
+        "INSERT INTO contents (length, hash) VALUES (?1, ?2)
+         ON CONFLICT (hash) DO NOTHING",
+        params![total_length, content_hash],
+    )?;
+    let content_id: i64 = conn.query_row(
+        "SELECT id FROM contents WHERE hash = ?1",
+        params![content_hash],
+        |row| row.get(0),
+    )?;
+    for (seq, chunk_id) in chunk_ids.iter().enumerate() {
+        conn.execute(
+            "INSERT OR IGNORE INTO content_chunks (content_id, seq, chunk_id) VALUES (?1, ?2, ?3)",
+            params![content_id, seq as i64, chunk_id],
+        )?;
+    }
+    Ok(Some(content_id))
+}
+
 /// Applies a batch of [`FileBackupRecord`]s in a single transaction: resolves or
 /// inserts each new chunk, resolves or inserts the file's `contents` row
 /// (deduplicated by `content_hash`), and inserts or updates each file's
 /// `tree_entries` row.
-///
-/// Insert-or-get for both `chunks` and `contents` is race-safe: if another
-/// worker's earlier batch already created a row for the same
-/// `(length, hash)`/`content_hash`, `ON CONFLICT ... DO NOTHING` makes the insert
-/// a no-op and the subsequent `SELECT` picks up the existing row.
 ///
 /// Re-running a backup for a file at a path that already has an active entry is
 /// handled per the immutable-`content_id` invariant the `ref_count` triggers rely
@@ -89,65 +169,7 @@ pub fn apply_backup_batch(conn: &mut Connection, batch: &[FileBackupRecord]) -> 
     let tx = conn.transaction()?;
 
     for record in batch {
-        let mut chunk_ids = Vec::with_capacity(record.chunks.len());
-        for chunk_ref in &record.chunks {
-            let chunk_id = match chunk_ref {
-                ChunkRef::Existing { id, .. } => *id,
-                ChunkRef::New {
-                    length,
-                    hash,
-                    extents,
-                } => {
-                    tx.execute(
-                        "INSERT INTO chunks (length, hash) VALUES (?1, ?2)
-                         ON CONFLICT (length, hash) DO NOTHING",
-                        params![*length as i64, hash],
-                    )?;
-                    let chunk_id: i64 = tx.query_row(
-                        "SELECT id FROM chunks WHERE length = ?1 AND hash = ?2",
-                        params![*length as i64, hash],
-                        |row| row.get(0),
-                    )?;
-                    // INSERT OR IGNORE, not a bare INSERT: on the losing side of
-                    // the chunks race just resolved above, this chunk_id already
-                    // has extents from whichever batch's insert won - this
-                    // worker's own (redundant, harmless) copy of the same bytes
-                    // elsewhere in the store is simply never referenced.
-                    for (seq, (start, stop)) in extents.iter().enumerate() {
-                        tx.execute(
-                            "INSERT OR IGNORE INTO chunk_extents (chunk_id, seq, start, stop)
-                             VALUES (?1, ?2, ?3, ?4)",
-                            params![chunk_id, seq as i64, *start as i64, *stop as i64],
-                        )?;
-                    }
-                    chunk_id
-                }
-            };
-            chunk_ids.push(chunk_id);
-        }
-
-        let content_id = if chunk_ids.is_empty() {
-            None
-        } else {
-            let total_length: i64 = record.chunks.iter().map(|c| c.length() as i64).sum();
-            tx.execute(
-                "INSERT INTO contents (length, hash) VALUES (?1, ?2)
-                 ON CONFLICT (hash) DO NOTHING",
-                params![total_length, record.content_hash],
-            )?;
-            let content_id: i64 = tx.query_row(
-                "SELECT id FROM contents WHERE hash = ?1",
-                params![record.content_hash],
-                |row| row.get(0),
-            )?;
-            for (seq, chunk_id) in chunk_ids.iter().enumerate() {
-                tx.execute(
-                    "INSERT OR IGNORE INTO content_chunks (content_id, seq, chunk_id) VALUES (?1, ?2, ?3)",
-                    params![content_id, seq as i64, chunk_id],
-                )?;
-            }
-            Some(content_id)
-        };
+        let content_id = resolve_content(&tx, &record.chunks, &record.content_hash)?;
 
         match find_tree_entry(&tx, record.parent_id, &record.name)? {
             None => {
