@@ -930,6 +930,9 @@ mod script_import {
         }
     }
 
+    // A named struct would need the same 6 fields spelled out anyway, for a
+    // tuple that's immediately destructured once at its single call site -
+    // not worth a whole extra type for.
     #[allow(clippy::type_complexity)]
     fn tree_entry_from_tuple(
         tuple: &[Value],
@@ -947,6 +950,7 @@ mod script_import {
         Some((id, parent_id, name, time, deleted, data_id))
     }
 
+    // Same reasoning as `tree_entry_from_tuple` above.
     #[allow(clippy::type_complexity)]
     fn data_entry_from_tuple(
         tuple: &[Value],
