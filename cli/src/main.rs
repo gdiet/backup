@@ -3,6 +3,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+mod blacklist;
 mod check;
 mod chunk_store;
 mod db_maintenance;
@@ -61,6 +62,8 @@ enum Command {
     ReclaimSpace(reclaim_space::ReclaimSpaceArgs),
     /// Mount the repository's file tree read-only via FUSE.
     Mount(mount::MountArgs),
+    /// Add external files to, or process, the repository's blacklist.
+    Blacklist(blacklist::BlacklistArgs),
 }
 
 #[derive(Args)]
@@ -114,6 +117,7 @@ fn main() -> ExitCode {
         Command::Db(args) => db_maintenance::run_db(&cli.repo, args),
         Command::ReclaimSpace(args) => reclaim_space::run_reclaim_space(&cli.repo, args),
         Command::Mount(args) => mount::run_mount(&cli.repo, args),
+        Command::Blacklist(args) => blacklist::run_blacklist(&cli.repo, args),
     }
 }
 

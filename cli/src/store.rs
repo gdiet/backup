@@ -89,6 +89,31 @@ pub struct BackupArgs {
     paths: Vec<PathBuf>,
 }
 
+impl BackupArgs {
+    /// Builds `BackupArgs` for a non-interactive [`run_store`] call with
+    /// sensible defaults: create missing target directory components, don't
+    /// require the target to already exist, and use the default thread pool
+    /// and chunk-buffer RAM budget. `paths` must be at least one source
+    /// followed by the target, exactly as the CLI's own `paths` argument
+    /// requires - see [`run_store`]'s `sources`/`target` split.
+    ///
+    /// Used by `blacklist.rs`'s `blacklist add`, which is functionally a
+    /// normal `store` run into a fixed target path under the repository's
+    /// blacklist directory and has no need to expose `store`'s own
+    /// CLI-tuning flags (`--concurrency`, `--chunk-buffer-mb`, ...) on its
+    /// own command line.
+    pub(crate) fn for_paths(paths: Vec<PathBuf>) -> Self {
+        Self {
+            create_dirs: true,
+            target_exists: false,
+            concurrency: None,
+            chunk_buffer_mb: DEFAULT_CHUNK_BUFFER_MB,
+            allow_swap_risk: false,
+            paths,
+        }
+    }
+}
+
 /// A [`ChunkHasher`] backed by [`blake3::Hasher`].
 ///
 /// A local newtype is required because Rust's orphan rule forbids implementing a

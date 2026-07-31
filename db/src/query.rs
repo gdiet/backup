@@ -131,6 +131,24 @@ pub fn file_size(conn: &Connection, entry: &TreeEntryRow) -> Result<i64, Error> 
     }
 }
 
+/// Every active (non-soft-deleted) tree entry whose `content_id` is
+/// `content_id` - i.e. every file sharing this exact content, wherever it
+/// lives in the tree, including `id` itself if it's still active. Used by
+/// `blacklist process --delete-copies` to find every other occurrence of a
+/// blacklisted file's content so those can be soft-deleted too, leaving only
+/// the canonical blacklist copy (or copies, if more than one blacklisted file
+/// shared this content) referencing it.
+pub fn entries_for_content(conn: &Connection, content_id: i64) -> Result<Vec<TreeEntryRow>, Error> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name, time, kind, content_id FROM tree_entries
+         WHERE content_id = ?1 AND deleted_at IS NULL",
+    )?;
+    let rows = stmt
+        .query_map([content_id], crate::tree::row_to_tree_entry)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// A chunk making up part of a content's byte sequence, as stored - not to be
 /// confused with `db::ChunkRef`, which describes a chunk a backup worker has
 /// just resolved (possibly not yet persisted).
@@ -359,6 +377,35 @@ mod tests {
             .unwrap();
 
         assert_eq!(subtree_entries_with_paths(&conn, 0).unwrap(), vec![]);
+    }
+
+    #[test]
+    fn entries_for_content_finds_every_active_entry_sharing_the_content_but_not_deleted_ones() {
+        let (_temp_dir, conn) = test_connection();
+        let content_id = insert_content(&conn, 5, b"h1");
+        let other_content_id = insert_content(&conn, 5, b"h2");
+        let a_id = insert_file(&conn, 0, "a.txt", Some(content_id));
+        let b_id = insert_file(&conn, 0, "b.txt", Some(content_id));
+        insert_file(&conn, 0, "c.txt", Some(other_content_id));
+        let deleted_id = insert_file(&conn, 0, "deleted.txt", Some(content_id));
+        conn.execute(
+            "UPDATE tree_entries SET deleted_at = 1 WHERE id = ?1",
+            [deleted_id],
+        )
+        .unwrap();
+
+        let mut ids: Vec<i64> = entries_for_content(&conn, content_id)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.id)
+            .collect();
+        ids.sort();
+        let mut expected = vec![a_id, b_id];
+        expected.sort();
+        assert_eq!(
+            ids, expected,
+            "shares content and active, excluding the soft-deleted entry"
+        );
     }
 
     #[test]
