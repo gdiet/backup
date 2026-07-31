@@ -405,3 +405,35 @@ Go benchmark for comparison:
 ```bash
 go test -bench=BenchmarkCdc -benchtime=10s -count=1 ./internal/cdc
 ```
+
+### Hashing: Rust `blake3` vs. Java `MD5`
+
+This project hashes chunks/content with `blake3` (truncated to 20 bytes -
+see `cli::store::Blake3Hasher`); the Scala prototype it replaces hashed
+whole files with Java's `MessageDigest("MD5")`. A raw single-threaded
+throughput comparison - hashing a 128 MiB buffer in a loop for 5 seconds
+(1 second discarded first as warm-up) - not a comparison of the
+*algorithms'* cryptographic properties (MD5 is broken and isn't used here
+for security), only of how fast each hashes bytes on the same hardware:
+
+```bash
+cd scrapbook/blake3-vs-md5
+cargo run --release                    # Rust blake3
+javac Md5Bench.java && java Md5Bench   # Java MD5 - needs a JDK on PATH
+```
+
+Measured on Intel Core i5-6200U (2 cores / 4 threads, 2.30 GHz), Rust
+1.97.0, Java 21 (Temurin 21.0.6 on Windows / 21.0.7 on WSL2):
+
+| Platform                                          | Rust `blake3` | Java `MD5` | Ratio |
+|----------------------------------------------------|---------------|------------|-------|
+| Windows 10 IoT Enterprise LTSC 2021                 | 2.74 GB/s     | 0.56 GB/s  | ~4.9x |
+| WSL2 (Debian 12 "bookworm", kernel 6.6.87.2)        | 2.60 GB/s     | 0.55 GB/s  | ~4.7x |
+
+`blake3` is roughly 5x faster than Java's `MD5` on this hardware, on both
+platforms - consistent with `blake3`'s SIMD-friendly, tree-mode design
+(parallelizable internally even within this single-threaded benchmark)
+versus MD5's much older, purely serial construction. Benchmark source in
+`scrapbook/blake3-vs-md5/` (its own standalone Cargo project, not part of
+the `rust/` workspace or `cargo test`/CI - a one-off comparison, kept for
+reference; see its own `README.md` for more detail).
