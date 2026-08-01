@@ -9,6 +9,7 @@ mod db_maintenance;
 mod del;
 mod find;
 mod format;
+mod io_limiter;
 mod list;
 mod migrate_scala_repo;
 mod mount;

@@ -1311,6 +1311,7 @@ impl Inner {
                     &self.allocator,
                     &mut bytes,
                     length_hash.length,
+                    None,
                 )
                 .map_err(|err| format!("store write failed: {err}"))?;
                 db::ChunkRef::New {

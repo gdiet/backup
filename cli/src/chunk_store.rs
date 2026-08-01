@@ -11,6 +11,7 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 use store::{LongTermStore, ReadIntegrity};
 
+use crate::io_limiter::IoLimiter;
 use crate::write_cache::WriteCache;
 
 /// Size of the pieces [`write_chunk_from_cache`] drains `bytes` in - keeps
@@ -136,11 +137,18 @@ pub fn read_chunk_bytes(
 /// single very large chunk (a large CDC chunk, or an entire file under
 /// `chunking: none`) never needs its full size resident in RAM at once,
 /// either while buffering it or while writing it out.
+///
+/// `io_limiter`, if given, is acquired around each individual `store.write`
+/// call (not around the whole chunk) - see [`crate::io_limiter`] for why
+/// this is a plain semaphore gating the calling thread rather than a
+/// separate thread pool, and why it lives at this level rather than inside
+/// `LongTermStore` itself.
 pub fn write_chunk_from_cache(
     store: &LongTermStore,
     allocator: &SpaceAllocator,
     bytes: &mut WriteCache,
     total_len: u64,
+    io_limiter: Option<&IoLimiter>,
 ) -> std::io::Result<Vec<(u64, u64)>> {
     let extents = allocator.reserve(total_len);
     let mut chunk_pos = 0u64;
@@ -151,6 +159,7 @@ pub fn write_chunk_from_cache(
             let piece = bytes.read_filling_gaps(chunk_pos, piece_len, |_, _| {
                 unreachable!("a freshly-accumulated chunk buffer has no gaps to fill")
             })?;
+            let _permit = io_limiter.map(IoLimiter::acquire);
             store.write(store_pos, &piece)?;
             chunk_pos += piece_len;
             store_pos += piece_len;
@@ -276,7 +285,8 @@ mod tests {
         let payload = [7u8; 1200];
         cache.write(0, &payload).unwrap();
 
-        let extents = write_chunk_from_cache(&store, &allocator, &mut cache, 1200).unwrap();
+        let extents =
+            write_chunk_from_cache(&store, &allocator, &mut cache, 1200, None).unwrap();
 
         assert_eq!(extents, vec![(1000, 2000), (3000, 3200)]);
         let mut buf = [0u8; 1200];

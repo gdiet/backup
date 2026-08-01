@@ -235,9 +235,39 @@ still_round_trips_correctly` in `store.rs`), which is what actually
 surfaced it (nothing before forced enough concurrent spillover to hit the
 collision in practice).
 
-**Still open**: `store`'s own admission control (noted above - a static
+**`store`'s I/O-vs-CPU concurrency split: implemented.** `--concurrency`
+still sizes one rayon pool for the whole read/chunk/hash pipeline, but that
+conflated the hardware-optimal degree of parallelism for CPU-bound
+chunking/hashing (≈ core count) with that of the I/O calls the same
+workers make into `LongTermStore` (disk/network-share dependent, can be
+much smaller or larger). Added `--store-io-parallelism` (`cli::io_limiter::
+IoLimiter`, a plain `Mutex`+`Condvar` counting semaphore) - when given, every
+individual `store::LongTermStore::write` call inside `chunk_store::
+write_chunk_from_cache` acquires a permit first (per write piece, not per
+whole chunk), blocking the calling worker until one is free. Deliberately
+*not* a second thread pool with a channel-based API on `LongTermStore`
+itself: every call site already blocks its calling thread until its own
+I/O call returns, so a second pool would only add a cross-thread hand-off
+(and, if built as an actor behind a channel, would force copying the
+read/write buffer across it, undermining the zero-copy handle-cache work
+above) without letting the caller do anything else meanwhile - a semaphore
+gates access in place for less overhead and no new threads. Lives in `cli`
+(`io_limiter.rs`), not in the `store` crate: how much I/O concurrency is
+appropriate is a property of the workload/deployment (which command is
+running, what's behind the repository), not of `LongTermStore` itself, which
+stays the simple, stateless-per-call, call-from-any-thread primitive it
+already was - unaware of how many callers exist or how they're scheduled.
+`write_chunk_from_cache`/`RunContext` take an `Option<&IoLimiter>` so
+`mount.rs`/`migrate_scala_repo.rs` (which don't have this flag) simply pass
+`None`, unchanged behavior. Only wired into `store`'s write path so far -
+`mount`/`restore`/`check`'s read/write paths could reuse the same
+`IoLimiter` later if needed, not done here (no concrete need yet).
+
+**Still open**: `store`'s own *admission* control (noted above - a static
 `--concurrency`, not a dynamic backpressure gate like mount's persist
-queue). The temp/spill directory location is now configurable for both
+queue). `--store-io-parallelism` bounds concurrent I/O *once a worker
+already started a file*, it doesn't gate *when* a new file starts being
+read/chunked in the first place - that remains the open item. The temp/spill directory location is now configurable for both
 commands via `--temp <DIR>` (`cli/src/temp_dir.rs`, wired into both
 `store.rs`'s and `mount.rs`'s spill-directory creation) - closing the
 "operational expectation" requirement above; both previously hardcoded

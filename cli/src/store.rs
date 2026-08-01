@@ -18,6 +18,7 @@ use rusqlite::Connection;
 use walkdir::WalkDir;
 
 use crate::chunk_store::{self, SpaceAllocator};
+use crate::io_limiter::IoLimiter;
 use crate::ram_budget_check::check_ram_budget;
 use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
 use crate::temp_dir::{create_spill_dir, validate_temp_dir};
@@ -59,6 +60,19 @@ pub struct BackupArgs {
     /// pool (one thread per CPU core).
     #[arg(short = 'c', long, value_parser = clap::value_parser!(u32).range(1..=32))]
     concurrency: Option<u32>,
+
+    /// Maximum number of concurrent writes into the repository's data store
+    /// (1-32). This is independent of `--concurrency`: `--concurrency`
+    /// controls how many threads run the CPU-bound read/chunk/hash
+    /// pipeline, while this controls how many of those threads may be
+    /// inside a store write at once - the hardware-optimal number of
+    /// concurrent I/O operations against the disk/network share behind the
+    /// repository is often much smaller (or larger) than the number of CPU
+    /// cores. Default: unlimited (as many concurrent store writes as
+    /// `--concurrency` allows chunking threads). See
+    /// `docs/plans/bounded-memory-io-pipeline.md`.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=32))]
+    store_io_parallelism: Option<u32>,
 
     /// RAM budget, in megabytes, for buffering an in-progress chunk's bytes
     /// while its dedup status is resolved - shared across every concurrent
@@ -123,6 +137,12 @@ struct RunContext {
     /// currently in the repository; multiple workers reserve from it
     /// concurrently under its own internal lock.
     allocator: SpaceAllocator,
+    /// Bounds concurrent `data_store` writes independently of how many
+    /// chunking workers `--concurrency` runs - see [`BackupArgs::
+    /// store_io_parallelism`]. `None` when the flag wasn't given: every
+    /// worker writes to the store without waiting for a permit, same as
+    /// before this existed.
+    io_limiter: Option<IoLimiter>,
     abort: Arc<AtomicBool>,
     warnings: Arc<AtomicU64>,
     sender: Mutex<mpsc::Sender<db::FileBackupRecord>>,
@@ -280,6 +300,7 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
         chunker_config,
         data_store,
         allocator,
+        io_limiter: args.store_io_parallelism.map(IoLimiter::new),
         abort: Arc::clone(&abort),
         warnings: Arc::clone(&warnings),
         sender: Mutex::new(tx),
@@ -652,6 +673,7 @@ fn resolve_chunk(
                 &ctx.allocator,
                 &mut bytes,
                 length_hash.length,
+                ctx.io_limiter.as_ref(),
             )
             .map_err(|err| WorkerError::Fatal(format!("store write failed: {err}")))?;
             db::ChunkRef::New {
@@ -731,6 +753,7 @@ mod tests {
             create_dirs: true,
             target_exists: false,
             concurrency: Some(2),
+            store_io_parallelism: None,
             chunk_buffer_mb: DEFAULT_CHUNK_BUFFER_MB,
             allow_swap_risk: false,
             temp: None,
@@ -1108,6 +1131,46 @@ mod tests {
         );
     }
 
+    /// End-to-end regression for `BackupArgs::store_io_parallelism`: several
+    /// workers (`--concurrency`) each write a distinct (non-duplicate,
+    /// multi-piece) chunk at the same time while store writes are capped to
+    /// one at a time. Guards against the `IoLimiter` wiring in
+    /// `resolve_chunk`/`chunk_store::write_chunk_from_cache` deadlocking or
+    /// otherwise breaking the run under real concurrent contention - the
+    /// gating behavior of `IoLimiter` itself has its own focused tests in
+    /// `io_limiter`.
+    #[test]
+    fn run_store_with_store_io_parallelism_one_still_backs_up_every_file_correctly() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        // Distinct content per file (not just distinct filenames) so every
+        // file produces its own new chunk, each one large enough to span
+        // several `DRAIN_PIECE_SIZE` write pieces - each piece acquires and
+        // releases the single I/O permit in turn.
+        let file_count = 6;
+        for i in 0..file_count {
+            let content: Vec<u8> = (0u32..300_000).map(|b| ((b + i * 37) % 251) as u8).collect();
+            std::fs::write(source_dir.path().join(format!("f{i}.txt")), &content).unwrap();
+        }
+
+        let mut args = backup_args(vec![
+            source_dir.path().to_path_buf(),
+            PathBuf::from("target"),
+        ]);
+        args.concurrency = Some(4);
+        args.store_io_parallelism = Some(1);
+
+        let exit = run_store(&repo_root, args);
+
+        assert_eq!(exit, ExitCode::SUCCESS);
+        let c = conn(&repo_root);
+        assert_eq!(
+            count(&c, "contents"),
+            file_count as i64,
+            "every file has distinct content, so each must get its own contents row"
+        );
+    }
+
     /// End-to-end regression for `docs/plans/bounded-memory-io-pipeline.md`:
     /// `chunking: none` makes the entire file one chunk (see
     /// `cdc::SingleChunkChunker`), so `SpillingHashingChunker` must buffer
@@ -1138,6 +1201,7 @@ mod tests {
             create_dirs: true,
             target_exists: false,
             concurrency: Some(2),
+            store_io_parallelism: None,
             chunk_buffer_mb: 0,
             allow_swap_risk: false,
             temp: None,

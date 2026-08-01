@@ -637,6 +637,7 @@ impl Migration<'_> {
                     self.allocator,
                     &mut bytes,
                     length_hash.length,
+                    None,
                 )
                 .map_err(|err| format!("store write failed: {err}"))?;
                 self.stats.new_storage_bytes += length_hash.length;
