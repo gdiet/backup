@@ -1,7 +1,7 @@
 //! Shared startup guard for any `--*-mb`-style RAM budget flag (`mount
 //! --write-cache-mb`, `store --chunk-buffer-mb`) - factored out of
 //! `mount.rs` once `store` needed the exact same check for its own new
-//! chunk-buffer budget (see `docs/plans/bounded-memory-io-pipeline.md`).
+//! chunk-buffer budget (see `docs/plans/implemented/bounded-memory-io-pipeline.md`).
 
 /// Refuses to start (unless `allow_swap_risk` downgrades this to a
 /// warning) if `budget_mb` is large enough, relative to *currently

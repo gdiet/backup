@@ -70,7 +70,7 @@ pub struct BackupArgs {
     /// repository is often much smaller (or larger) than the number of CPU
     /// cores. Default: unlimited (as many concurrent store writes as
     /// `--concurrency` allows chunking threads). See
-    /// `docs/plans/bounded-memory-io-pipeline.md`.
+    /// `docs/plans/implemented/bounded-memory-io-pipeline.md`.
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..=32))]
     store_io_parallelism: Option<u32>,
 
@@ -80,7 +80,7 @@ pub struct BackupArgs {
     /// to a temp file instead of failing; without this, a single large CDC
     /// chunk, or an entire file under `chunking: none`, would need to be
     /// fully RAM-resident at once (see
-    /// `docs/plans/bounded-memory-io-pipeline.md`).
+    /// `docs/plans/implemented/bounded-memory-io-pipeline.md`).
     #[arg(long, default_value_t = DEFAULT_CHUNK_BUFFER_MB)]
     chunk_buffer_mb: u64,
 
@@ -600,7 +600,7 @@ fn warn(ctx: &RunContext, msg: &str) {
 /// `ctx.chunk_buffer_budget`/`spill_path`), not a plain `Vec<u8>`: without
 /// that, a single large CDC chunk, or the entire file under `chunking:
 /// none`, would need to be fully RAM-resident at once (see
-/// `docs/plans/bounded-memory-io-pipeline.md`).
+/// `docs/plans/implemented/bounded-memory-io-pipeline.md`).
 fn read_and_chunk(
     ctx: &RunContext,
     mut file: File,
@@ -1171,7 +1171,7 @@ mod tests {
         );
     }
 
-    /// End-to-end regression for `docs/plans/bounded-memory-io-pipeline.md`:
+    /// End-to-end regression for `docs/plans/implemented/bounded-memory-io-pipeline.md`:
     /// `chunking: none` makes the entire file one chunk (see
     /// `cdc::SingleChunkChunker`), so `SpillingHashingChunker` must buffer
     /// it via disk spillover rather than needing it RAM-resident. A

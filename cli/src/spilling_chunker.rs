@@ -13,7 +13,7 @@
 //! type keeps the same read-once, buffer-until-resolved shape but spills to
 //! a temp file once a shared RAM budget is exhausted (the same mechanism
 //! `mount --read-write`'s write cache already uses - see
-//! `docs/plans/bounded-memory-io-pipeline.md`'s design notes), so neither
+//! `docs/plans/implemented/bounded-memory-io-pipeline.md`'s design notes), so neither
 //! `store` nor `mount`'s persist pipeline can be pushed into unbounded
 //! memory growth by one large chunk or file.
 //!

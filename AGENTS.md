@@ -68,7 +68,7 @@ suggesting commits:
   harmless, fix them (or, if a lint truly is a false positive, silence it explicitly
   and locally with a comment explaining why)
 - Run `cargo test`
-- Check whether `docs/` (plan stubs, `docs/plans/bounded-memory-io-pipeline.md`, etc.) or
+- Check whether `docs/` (plan stubs, `docs/plans/implemented/bounded-memory-io-pipeline.md`, etc.) or
   `README.md` describe behavior this change affects, and update them - stale docs are
   worse than no docs, since they actively mislead the next read. Move a plan doc under
   `docs/plans/implemented/` once the work it describes has actually shipped.

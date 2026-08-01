@@ -1,11 +1,12 @@
 //! Bounds how many `store::LongTermStore` I/O calls are in flight at once,
 //! independent of how many worker threads are running the surrounding
-//! pipeline (see `docs/plans/bounded-memory-io-pipeline.md`, "Still open":
-//! `store`'s `--concurrency` sizes one pool for CPU-bound chunking/hashing
-//! *and* the I/O calls it makes into the store, even though the
-//! hardware-optimal degree of parallelism for each can be very different -
-//! e.g. a spinning disk or a network share behind the repository wants far
-//! fewer concurrent I/O calls than there are CPU cores doing chunking).
+//! pipeline (see `docs/plans/implemented/bounded-memory-io-pipeline.md`,
+//! "`store`'s I/O-vs-CPU concurrency split": `store`'s `--concurrency`
+//! sizes one pool for CPU-bound chunking/hashing *and* the I/O calls it
+//! makes into the store, even though the hardware-optimal degree of
+//! parallelism for each can be very different - e.g. a spinning disk or a
+//! network share behind the repository wants far fewer concurrent I/O
+//! calls than there are CPU cores doing chunking).
 //!
 //! Deliberately a plain counting semaphore, not a second thread pool: every
 //! call site already blocks the calling worker thread until its own I/O

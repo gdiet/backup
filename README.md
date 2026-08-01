@@ -215,7 +215,7 @@ runs on a dedicated background thread via a small bounded queue, not on
 the closing call itself, so closing a file returns quickly even against a
 slow repository disk; only once several persists are already queued up
 does a further close start blocking (see
-`docs/plans/bounded-memory-io-pipeline.md`'s "Mount-specific detail" for
+`docs/plans/implemented/bounded-memory-io-pipeline.md`'s "Mount-specific detail" for
 the design). At startup,
 `--read-write` refuses to run if `--write-cache-mb` looks large enough,
 relative to *currently available* RAM, to risk pushing the machine into

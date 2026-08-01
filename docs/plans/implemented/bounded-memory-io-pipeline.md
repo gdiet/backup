@@ -1,10 +1,14 @@
 # Bounded-memory, backpressured I/O for `store` and `mount --read-write`
 
-**Status**: the core memory-bounding problem is implemented for both
-commands (see "Chunk-buffer spillover: implemented" below) - the mount
-worker-thread-exhaustion/backpressure problem is also implemented (see
-"Mount-specific detail: implemented"). What's left open is noted inline
-where relevant; nothing here still says "do not implement from this doc."
+**Status**: implemented, for both commands - memory-bounding (see
+"Chunk-buffer spillover: implemented"), mount's worker-thread-exhaustion/
+backpressure problem (see "Mount-specific detail: implemented"), and
+`store`'s I/O-vs-CPU concurrency split (see "`store`'s I/O-vs-CPU
+concurrency split: implemented"). The one item left open for a while,
+`store`'s own admission control, turned out on inspection not to be a gap
+at all - see the closing note at the end of the I/O-vs-CPU section for why.
+Kept under `docs/plans/implemented/` as a record of the reasoning, not
+just the conclusion.
 This doc supersedes `docs/plans/mount-async-persist-and-backpressure.md`'s
 scope (folds its content in below) - a chat discussion starting from "what
 happens with very large CDC chunks or `chunking: none`" in `store`
@@ -145,17 +149,19 @@ as the shared spillable-buffer primitive for both**, rather than also
 building a separate dedicated append-only type - see "Chunk-buffer
 spillover: implemented" below for how.
 
-What *doesn't* transfer directly is the layer on top: **admission
-control / when to even start reading more data**, given the "who
-controls admission" asymmetry above - `store`'s natural shape is a
-pull-based scheduler gate (it decides when to start the next file/chunk),
-`mount`'s is a block-before-returning check inside a reactive callback it
-doesn't control the timing of. `store` doesn't have such a gate today
-(unlike mount's persist queue, below) - `--concurrency` is a static cap
-chosen up front, not a dynamic backpressure mechanism. Left as a real
-open item, not addressed by the chunk-buffer-spillover work: that work
-only bounds *one worker's* peak memory (down from "the whole file" to
-"the shared chunk-buffer budget"), not how many workers run at once.
+What looked at first like it *wouldn't* transfer directly was the layer on
+top - **admission control / when to even start reading more data** -
+given the "who controls admission" asymmetry above: `store`'s natural
+shape is a pull-based scheduler gate (it decides when to start the next
+file/chunk), `mount`'s is a block-before-returning check inside a reactive
+callback it doesn't control the timing of. That asymmetry is real, but it
+turned out not to matter: `store` doesn't need a *separate* gate the way
+`mount` needed its persist queue. See the closing note in "`store`'s
+I/O-vs-CPU concurrency split: implemented" below for why - the short
+version is that `store`'s worker pool and its fully-synchronous
+read/chunk/write loop already are the gate, unlike `mount`'s FUSE/WinFSP
+dispatch threads, which serve unrelated requests too and so couldn't be
+allowed to block on persist.
 
 ## Chunk-buffer spillover: implemented
 
@@ -263,11 +269,32 @@ already was - unaware of how many callers exist or how they're scheduled.
 `mount`/`restore`/`check`'s read/write paths could reuse the same
 `IoLimiter` later if needed, not done here (no concrete need yet).
 
-**Still open**: `store`'s own *admission* control (noted above - a static
-`--concurrency`, not a dynamic backpressure gate like mount's persist
-queue). `--store-io-parallelism` bounds concurrent I/O *once a worker
-already started a file*, it doesn't gate *when* a new file starts being
-read/chunked in the first place - that remains the open item. The temp/spill directory location is now configurable for both
+**`store`'s own admission control: closed by analysis, not by new code.**
+This was open for a while (noted above - a static `--concurrency`, not a
+dynamic backpressure gate like mount's persist queue), on the theory that
+`--store-io-parallelism` only bounds concurrent I/O *once a worker already
+started a file* and doesn't gate *when* a new file starts being
+read/chunked in the first place. Revisited while closing out this doc, and
+that theory doesn't hold up: `read_and_chunk`'s loop calls `resolve_chunk`
+- which calls `write_chunk_from_cache`, which blocks the calling thread on
+`store.write` (and on the `IoLimiter` permit, if `--store-io-parallelism`
+is set) - inline, before reading any more of the file. Nothing is
+pipelined ahead of a slow write: a worker cannot start its next chunk,
+let alone its next *file*, while a write is outstanding. Combined with
+`files.into_par_iter().for_each(...)` running on a pool sized by
+`--concurrency` (rayon splits the file list lazily via work-stealing, not
+eagerly - a thread only picks up a new file once it's free), the number of
+files concurrently being read/chunked/written is already hard-bounded by
+`--concurrency`, and a worker blocked on a slow store write is a worker
+that, by construction, cannot have started a new file in the meantime.
+That's the same practical effect mount's persist queue achieves, just
+without needing a separate queue: `store`'s worker pool has no *other*
+kind of work competing for its threads the way mount's FUSE/WinFSP
+dispatch pool does (arbitrary unrelated reads/writes on other files), so
+there's no "keep other work responsive while this one blocks" problem to
+solve - blocking the one thread that's actually doing the slow write *is*
+correct throttling here, not starvation. A separate explicit admission
+gate would only duplicate what the thread pool already guarantees. The temp/spill directory location is now configurable for both
 commands via `--temp <DIR>` (`cli/src/temp_dir.rs`, wired into both
 `store.rs`'s and `mount.rs`'s spill-directory creation) - closing the
 "operational expectation" requirement above; both previously hardcoded

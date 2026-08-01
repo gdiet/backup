@@ -4,7 +4,7 @@
 //! created somewhere other than `tempfile`'s own default
 //! (`std::env::temp_dir()`), matching the Scala prototype's own README
 //! guidance to put this on the fastest available disk, not necessarily
-//! the OS default (see `docs/plans/bounded-memory-io-pipeline.md`'s
+//! the OS default (see `docs/plans/implemented/bounded-memory-io-pipeline.md`'s
 //! "operational expectation" requirement).
 
 use std::path::{Path, PathBuf};
@@ -38,7 +38,7 @@ pub(crate) fn validate_temp_dir(dir: &Path) -> Result<(), String> {
 /// two concurrent runs collide on the same directory and race to
 /// `remove_dir_all` it out from under each other (the bug this was
 /// originally fixed for, before `--temp` existed - see
-/// `docs/plans/bounded-memory-io-pipeline.md`).
+/// `docs/plans/implemented/bounded-memory-io-pipeline.md`).
 pub(crate) fn create_spill_dir(prefix: &str, temp: Option<&Path>) -> std::io::Result<PathBuf> {
     let mut builder = tempfile::Builder::new();
     builder.prefix(prefix);

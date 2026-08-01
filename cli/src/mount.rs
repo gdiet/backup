@@ -63,7 +63,7 @@ const PERSIST_CHUNK_SIZE: u64 = 256 * 1024;
 /// *recently closed* files can have unpersisted changes in flight at
 /// once, not memory directly - a handful is enough to smooth a burst of
 /// closes without needing to be generous. See
-/// `docs/plans/bounded-memory-io-pipeline.md`'s "Mount-specific detail"
+/// `docs/plans/implemented/bounded-memory-io-pipeline.md`'s "Mount-specific detail"
 /// section for the failure mode this exists to fix (synchronous persist
 /// exhausting the whole worker-thread pool under a sustained slow target
 /// disk).
@@ -1158,7 +1158,7 @@ impl Inner {
     /// `self.ram_budget` (not a plain `Vec<u8>`) - without that, a large
     /// CDC chunk or (under `chunking: none`) the entire file would need to
     /// be fully RAM-resident again here even though `cache` itself is
-    /// already bounded (see `docs/plans/bounded-memory-io-pipeline.md`).
+    /// already bounded (see `docs/plans/implemented/bounded-memory-io-pipeline.md`).
     ///
     /// Best-effort: this method's callers (`persist_worker`, and
     /// `on_unmount` for handles still outstanding at shutdown) can't
@@ -1773,7 +1773,7 @@ mod tests {
             .expect("mount() returned an error");
     }
 
-    /// End-to-end regression for `docs/plans/bounded-memory-io-pipeline.md`:
+    /// End-to-end regression for `docs/plans/implemented/bounded-memory-io-pipeline.md`:
     /// `chunking: none` makes an entire file one chunk (see
     /// `cdc::SingleChunkChunker`), so `Inner::persist`'s `SpillingHashingChunker`
     /// must buffer it via disk spillover rather than needing it RAM-resident.
