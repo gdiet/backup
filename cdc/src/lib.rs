@@ -1,4 +1,48 @@
-//! Content-defined chunker inspired by fastcdc.
+//! Content-defined chunking (CDC): splits a byte stream into variable-length
+//! chunks at boundaries determined by the content itself (a rolling
+//! fingerprint over a sliding window), rather than at fixed byte offsets.
+//! [`CdcChunker`]'s algorithm is inspired by FastCDC (Xia et al.,
+//! <https://www.usenix.org/conference/atc16/technical-sessions/presentation/xia>).
+//!
+//! The practical payoff over fixed-size chunking: inserting, deleting, or
+//! changing a few bytes anywhere in the stream only shifts the one or two
+//! chunk boundaries nearest the edit - every chunk before and after that
+//! point comes out byte-identical to before, because each boundary is a
+//! function of a local window of content, not of a running byte count. That
+//! makes CDC a natural building block wherever the goal is finding
+//! duplicate or partially-duplicate data across byte streams that aren't
+//! identical as a whole - e.g. deduplicating storage, measuring how much of
+//! a modified file is actually new, or incremental sync of large files -
+//! since re-running the chunker after a small edit reproduces almost all of
+//! the same chunk boundaries (and thus chunk hashes) as before the edit.
+//!
+//! Pure computation, no I/O: every type here just turns bytes into chunk
+//! boundaries (and optionally hashes), streamed incrementally across
+//! however many calls the input arrives in - nothing here reads a file or
+//! owns a copy of the input itself.
+//!
+//! # Building blocks
+//!
+//! - [`Chunker`] is the core trait: feed it bytes via `next` (any number of
+//!   calls, any size each), get back the lengths of chunks completed so
+//!   far; `flush` closes out a final partial chunk at end of input.
+//! - [`CdcChunker`] is the actual content-defined implementation, using a
+//!   Gear-style rolling fingerprint over a 256-entry lookup table. Target
+//!   chunk size is configurable (`target_size_bits`, see [`ChunkerConfig`]),
+//!   with a fixed minimum/maximum band around it - see
+//!   [`ChunkerConfig::chunker`] for the resulting size distribution.
+//! - [`SingleChunkChunker`] is the trivial case: never splits, the whole
+//!   input becomes one chunk. It implements the same [`Chunker`] trait, so
+//!   callers that want chunking to be optional don't need a separate code
+//!   path for "disabled".
+//! - [`ChunkerConfig`]/[`ConfiguredChunker`] validate a `target_size_bits`
+//!   (or its absence) once and hand back whichever of the two chunkers
+//!   above that selects, behind one concrete type (not a trait object,
+//!   since there are only ever these two choices).
+//! - [`ChunkHasher`] + [`HashingChunker`] are an optional layer on top: hash
+//!   each chunk as its boundary is found, without this crate depending on
+//!   any specific hash algorithm - implement `ChunkHasher` for whatever
+//!   hasher the caller already uses (e.g. blake3, SHA-256).
 
 /// A chunker that produces chunk lengths from a stream of bytes.
 pub trait Chunker {
