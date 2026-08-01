@@ -4,11 +4,15 @@ This workspace contains Rust crates used by the backup application.
 
 ## Crates
 
-| Crate   | Description                                                                          |
-|---------|--------------------------------------------------------------------------------------|
-| `cdc`   | Content-defined chunking library (rolling-fingerprint based)                         |
-| `store` | Sequential on-disk byte store, file format compatible with the Scala `LongTermStore` |
-| `cli`   | Deduplicating backup application; builds the `backup` binary                         |
+| Crate     | Description                                                                          |
+|-----------|---------------------------------------------------------------------------------------|
+| `cdc`     | Content-defined chunking library (rolling-fingerprint based); no I/O, pure bytes-in/chunk-boundaries-out |
+| `store`   | Sequential on-disk byte store, file format compatible with the Scala `LongTermStore` |
+| `db`      | SQLite-backed metadata: the file/directory tree, the dedup index, repository settings |
+| `mountfs` | Platform-abstracted repository mounting (Linux FUSE / Windows WinFSP)                |
+| `cli`     | Deduplicating backup application; orchestrates the crates above; builds the `backup` binary |
+
+None of `cdc`, `store`, or `db` depend on each other or on `mountfs` - `cli` is the only crate that ties them together (see [docs/architecture.md](docs/architecture.md) for how, with a data-flow walkthrough for the `store` and `mount --read-write` commands).
 
 ## Usage
 

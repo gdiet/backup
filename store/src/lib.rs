@@ -1,3 +1,19 @@
+//! The physical, on-disk byte store for a deduplicating backup repository -
+//! [`LongTermStore`] reads and writes chunk bytes at arbitrary positions in
+//! one large logical address space, splitting that space internally across
+//! many fixed-size 100 MB files internally, file format and naming
+//! compatible with the Scala `LongTermStore` it replaces.
+//!
+//! This crate knows nothing about chunking, hashing, or deduplication - it's
+//! a stateless-per-call, call-from-any-thread primitive that just moves
+//! bytes to and from a given position, unaware of how many callers there
+//! are or how they're scheduled ([`LongTermStore`]'s own doc comment has
+//! its concurrency/atomicity guarantees). Callers (`cli::chunk_store`,
+//! `cli::store`, `cli::mount`) are responsible for deciding *what* to write
+//! where and *when* - e.g. deduplication (only write bytes for a chunk once)
+//! and space allocation (reusing gaps left by deleted chunks) both live in
+//! `cli`, not here.
+
 use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
@@ -112,7 +128,7 @@ pub enum ReadIntegrity {
 ///
 /// `write` opens its own file handle per call, so concurrent writes on any region are
 /// safe without external locking. `read` reuses a small per-thread cache of recently
-/// opened handles (see [`with_read_handle`]) instead - still lock-free across threads
+/// opened handles (see `with_read_handle`) instead - still lock-free across threads
 /// (each thread's cache is entirely its own), and always `seek`s to an absolute
 /// position before reading, so reusing a handle across calls changes nothing
 /// observable versus opening fresh each time.

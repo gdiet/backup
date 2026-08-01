@@ -2,8 +2,8 @@
 //! in the data store" (see `docs/plans/implemented/03-chunk-extents.md`) behind a small
 //! space allocator and two read/write helpers - the only things in this
 //! codebase that need to know that. Every other consumer of chunk bytes
-//! (`store`'s writer, `check`, `restore`, a future FUSE mount) goes through
-//! [`read_chunk_bytes`]/[`write_chunk_bytes`] instead of touching
+//! (`store`'s writer, `check`, `restore`, `mount`) goes through
+//! [`read_chunk_bytes`]/[`write_chunk_from_cache`] instead of touching
 //! `store::LongTermStore::read`/`write` with a single range directly.
 
 use std::sync::Mutex;

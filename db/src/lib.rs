@@ -166,7 +166,7 @@ impl Repository {
     /// Opens a new connection to this repository's metadata database.
     ///
     /// There is no distinction between a "read" and a "write" connection at the
-    /// SQLite level - both are opened the same way (see [`open_connection`]) - but
+    /// SQLite level - both are opened the same way (see `open_connection`) - but
     /// callers should still open one dedicated connection for writing and any
     /// number of separate connections for reading, per the module-level doc
     /// comment: WAL only ever admits one writer transaction at a time, so treating

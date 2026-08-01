@@ -68,6 +68,10 @@ suggesting commits:
   harmless, fix them (or, if a lint truly is a false positive, silence it explicitly
   and locally with a comment explaining why)
 - Run `cargo test`
+- Run `cargo doc --no-deps` and check it produces no warnings - doc comments drift out
+  of sync with renamed/removed items just like any other reference to them (broken
+  intra-doc links, links to now-private items), and this is the cheapest way to catch
+  that before it's the next reader's problem
 - Check whether `docs/` (plan stubs, `docs/plans/implemented/bounded-memory-io-pipeline.md`, etc.) or
   `README.md` describe behavior this change affects, and update them - stale docs are
   worse than no docs, since they actively mislead the next read. Move a plan doc under
