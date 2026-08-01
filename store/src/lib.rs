@@ -1,18 +1,24 @@
-//! The physical, on-disk byte store for a deduplicating backup repository -
-//! [`LongTermStore`] reads and writes chunk bytes at arbitrary positions in
-//! one large logical address space, splitting that space internally across
-//! many fixed-size 100 MB files internally, file format and naming
-//! compatible with the Scala `LongTermStore` it replaces.
+//! A byte store for large amounts of data on disk: [`LongTermStore`] reads
+//! and writes bytes at arbitrary positions within one large logical address
+//! space, internally splitting that space across many fixed-size physical
+//! files so no single file grows without bound - transparent to callers,
+//! who only ever see one flat, randomly addressable range of bytes.
 //!
-//! This crate knows nothing about chunking, hashing, or deduplication - it's
-//! a stateless-per-call, call-from-any-thread primitive that just moves
-//! bytes to and from a given position, unaware of how many callers there
+//! A good fit wherever data needs to be written and read back at caller-
+//! chosen byte offsets that don't necessarily arrive in order - e.g. as the
+//! backing store for a content-addressable or deduplicated data store
+//! (each unique piece of data written once, at a position the caller
+//! allocates), an append-mostly log, or generally any case where keeping
+//! the logical data set out of the way of a single huge OS file's limits
+//! and quirks (filesystem max-file-size, slow whole-file copies) matters
+//! more than having one literal file per logical object.
+//!
+//! This crate is a stateless-per-call, call-from-any-thread primitive that just
+//! moves bytes to and from a given position, unaware of how many callers there
 //! are or how they're scheduled ([`LongTermStore`]'s own doc comment has
-//! its concurrency/atomicity guarantees). Callers (`cli::chunk_store`,
-//! `cli::store`, `cli::mount`) are responsible for deciding *what* to write
-//! where and *when* - e.g. deduplication (only write bytes for a chunk once)
-//! and space allocation (reusing gaps left by deleted chunks) both live in
-//! `cli`, not here.
+//! its concurrency/atomicity guarantees). Deciding *what* to write *where*
+//! and *when* - deduplication, space allocation/reuse, and so on - is
+//! entirely up to the caller.
 
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -121,8 +127,10 @@ pub enum ReadIntegrity {
     Incomplete { missing_or_short: Vec<String> },
 }
 
-/// A sequential byte store on disk. File format and naming are compatible with the
-/// Scala `LongTermStore`.
+/// A byte store on disk, addressed by an arbitrary `u64` position within one
+/// logical address space (see the module doc comment). Internally splits
+/// that space across many fixed-size physical files - transparent to
+/// callers, who only ever deal with one flat address space.
 ///
 /// # Thread safety
 ///
@@ -137,16 +145,18 @@ pub enum ReadIntegrity {
 ///
 /// Measured (see `store/examples/bench.rs` and `docs/plans/implemented/
 /// long-term-store-read-handle-cache.md`): re-opening on every call costs little to
-/// nothing for writes, but a real, consistent 1.2x-3.5x for reads, at the block sizes
-/// this codebase actually uses (64 KiB-256 KiB) - worse on Windows than Linux. `read`
-/// caches handles for that reason; `write` doesn't, since the data didn't support it.
+/// nothing for writes, but a real, consistent 1.2x-3.5x for reads, at block sizes in
+/// the 64 KiB-256 KiB range - worse on Windows than Linux. `read` caches handles for
+/// that reason; `write` doesn't, since the data didn't support it.
 ///
 /// # Atomicity
 ///
 /// Writes are atomic within a single 100 MB data file (the OS serializes concurrent
 /// writes to the same file). Writes spanning more than one file are **not** atomic:
 /// two concurrent writes to the same large position range may interleave file by file.
-/// In practice this is not an issue because the dedup store writes each position exactly once.
+/// Not an issue for a caller that only ever writes each position once - true, for
+/// example, of a content-addressable/deduplicated store, which never overwrites
+/// already-written data.
 pub struct LongTermStore {
     data_dir: PathBuf,
     read_only: bool,
