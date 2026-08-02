@@ -1,11 +1,30 @@
-//! Platform-abstracted repository mounting. See
-//! `docs/plans/implemented/05-cross-platform-mount-crate.md` for the design and current
-//! status - the [`MountFilesystem`] trait and [`mount`] below match that
-//! plan's "Crate design" section. Both the Linux (`linux`, real system
-//! libfuse3) and Windows (`windows`, WinFSP's FUSE3-compatible API)
-//! backends implement the full read-only op set - see the plan's "Windows
-//! checkpoint" note for `windows`'s one known gap (no working in-process
-//! clean-shutdown path yet).
+//! A small trait-based abstraction for exposing a virtual filesystem
+//! through a real OS mount point, without writing separate platform-
+//! specific glue for each backend: implement [`MountFilesystem`] once (a
+//! path-based, synchronous, POSIX-flavored trait - `getattr`, `readdir`,
+//! `open`/`read`/`write`/`release`, and the usual structural operations),
+//! then call [`mount`] to serve it - on Linux via libfuse3, on Windows via
+//! WinFSP's FUSE3-compatible API, behind the identical trait.
+//!
+//! A good fit for presenting any programmatically-computed or otherwise
+//! non-native data as an ordinary directory tree that unmodified
+//! applications can open, read, and (optionally) write through normal file
+//! I/O - e.g. a virtual filesystem backed by some other data source, a
+//! debugging/inspection view of in-memory state, or a compatibility shim
+//! that makes something not naturally file-shaped look like files.
+//!
+//! [`MountFilesystem`]'s write-related methods each default to
+//! [`Errno::EROFS`] - see its own doc comment - so a read-only
+//! implementation only has to implement the read-side subset and gets
+//! correct read-only behavior on everything else for free. Both backends
+//! also guarantee [`MountFilesystem::on_unmount`] runs on a clean shutdown
+//! (Ctrl+C included), not just on an explicit unmount call - see its own
+//! doc comment.
+//!
+//! See `docs/plans/implemented/05-cross-platform-mount-crate.md` for the
+//! design history and current per-backend status (as of writing: both
+//! backends implement the full read-only op set; `windows` has one known
+//! gap, no working in-process clean-shutdown path yet).
 
 /// A POSIX error number (e.g. `Errno::ENOENT`), returned by
 /// [`MountFilesystem`] methods on failure. Kept as this crate's own type
@@ -67,17 +86,16 @@ pub struct StatfsInfo {
 }
 
 /// Path-based (not inode-based - see [`Handle`]) mount backend, implemented
-/// once by callers (`cli`'s `DedupFs`) and served identically by every
-/// platform backend in this crate.
+/// once by the caller and served identically by every platform backend in
+/// this crate.
 ///
-/// Phase 2a (read-write structural operations, `docs/plans/fuse-mount-
-/// readwrite.md`) adds `mkdir`/`create`/`unlink`/`rmdir`/`rename`/
-/// `utimens`/`chmod`/`chown` below, each defaulting to `EROFS` (or, for
-/// `chmod`/`chown`, an accepted no-op - this crate models no permissions
-/// at all, see the plan) so a read-only-only implementation (this crate's
-/// own test fixtures, for instance) doesn't have to implement any of them
-/// just to keep compiling. Phase 2b (content writes: `write`, non-trivial
-/// `truncate`, the write cache) isn't added yet.
+/// The write-related methods below (`mkdir`/`create`/`unlink`/`rmdir`/
+/// `rename`/`utimens`/`chmod`/`chown`/`write`/`truncate`) each default to
+/// `EROFS` (or, for `chmod`/`chown`, an accepted no-op - this crate models
+/// no permissions at all), so a read-only implementation (this crate's own
+/// test fixtures, for instance) only needs to implement the read-side
+/// methods above and gets correct read-only behavior on everything else
+/// for free.
 pub trait MountFilesystem: Send + Sync + 'static {
     fn getattr(&self, path: &str) -> Result<Attr, Errno>;
     fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, Errno>;
@@ -144,15 +162,14 @@ pub trait MountFilesystem: Send + Sync + 'static {
 
     /// Writes `data` at `offset` into the file identified by `handle`
     /// (from a prior [`MountFilesystem::open`]/[`MountFilesystem::create`]
-    /// call), returning the number of bytes written. Phase 2b
-    /// (`docs/plans/implemented/06-fuse-mount-readwrite.md`) - default `EROFS`, same
-    /// rationale as the phase 2a methods above.
+    /// call), returning the number of bytes written. Defaults to `EROFS`,
+    /// same rationale as the other write-related methods above.
     fn write(&self, handle: Handle, offset: u64, data: &[u8]) -> Result<u32, Errno> {
         let _ = (handle, offset, data);
         Err(Errno::EROFS)
     }
 
-    /// Resizes `path` to `size`, zero-padding if it grows. Phase 2b.
+    /// Resizes `path` to `size`, zero-padding if it grows.
     fn truncate(&self, path: &str, size: u64) -> Result<(), Errno> {
         let _ = (path, size);
         Err(Errno::EROFS)
@@ -161,8 +178,8 @@ pub trait MountFilesystem: Send + Sync + 'static {
     /// Called once, exactly once, as the mount is shutting down - the one
     /// place to flush caches, close connections, or otherwise wrap up
     /// state before the process goes away. Default no-op (nothing to do
-    /// for a stateless read-only filesystem like `cli`'s current
-    /// `DedupFs`); real state matters once phase 2 (read-write) adds it.
+    /// for a stateless read-only implementation); real state matters once
+    /// an implementation has something to flush (e.g. write buffering).
     ///
     /// Both backends guarantee this runs on a *clean* shutdown path, not
     /// an external `kill -9`/`TerminateProcess`: called right after the
