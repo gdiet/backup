@@ -51,7 +51,10 @@ impl IoLimiter {
     pub fn acquire(&self) -> IoPermit<'_> {
         let mut available = self.available.lock().expect("IoLimiter mutex poisoned");
         while *available == 0 {
-            available = self.freed.wait(available).expect("IoLimiter mutex poisoned");
+            available = self
+                .freed
+                .wait(available)
+                .expect("IoLimiter mutex poisoned");
         }
         *available -= 1;
         IoPermit { limiter: self }
@@ -94,7 +97,11 @@ mod tests {
         let a_holding = Arc::new(AtomicUsize::new(0));
         let start = Arc::new(Barrier::new(2));
 
-        let (l1, h1, s1) = (Arc::clone(&limiter), Arc::clone(&a_holding), Arc::clone(&start));
+        let (l1, h1, s1) = (
+            Arc::clone(&limiter),
+            Arc::clone(&a_holding),
+            Arc::clone(&start),
+        );
         let a = thread::spawn(move || {
             s1.wait();
             let _permit = l1.acquire();
@@ -103,7 +110,11 @@ mod tests {
             h1.store(0, Ordering::SeqCst);
         });
 
-        let (l2, h2, s2) = (Arc::clone(&limiter), Arc::clone(&a_holding), Arc::clone(&start));
+        let (l2, h2, s2) = (
+            Arc::clone(&limiter),
+            Arc::clone(&a_holding),
+            Arc::clone(&start),
+        );
         let observed_while_a_held = Arc::new(AtomicUsize::new(2)); // sentinel: never observed
         let observed = Arc::clone(&observed_while_a_held);
         let b = thread::spawn(move || {

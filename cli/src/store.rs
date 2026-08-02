@@ -1149,7 +1149,9 @@ mod tests {
         // releases the single I/O permit in turn.
         let file_count = 6;
         for i in 0..file_count {
-            let content: Vec<u8> = (0u32..300_000).map(|b| ((b + i * 37) % 251) as u8).collect();
+            let content: Vec<u8> = (0u32..300_000)
+                .map(|b| ((b + i * 37) % 251) as u8)
+                .collect();
             std::fs::write(source_dir.path().join(format!("f{i}.txt")), &content).unwrap();
         }
 

@@ -285,8 +285,7 @@ mod tests {
         let payload = [7u8; 1200];
         cache.write(0, &payload).unwrap();
 
-        let extents =
-            write_chunk_from_cache(&store, &allocator, &mut cache, 1200, None).unwrap();
+        let extents = write_chunk_from_cache(&store, &allocator, &mut cache, 1200, None).unwrap();
 
         assert_eq!(extents, vec![(1000, 2000), (3000, 3200)]);
         let mut buf = [0u8; 1200];
