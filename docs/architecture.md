@@ -106,7 +106,7 @@ last handle (or a bare truncate) triggers an actual write to the store.
 ```mermaid
 flowchart TD
     FS["FUSE/WinFSP dispatch\n(mountfs)"] -->|write/read/release| DFS["DedupFs\ncli::mount"]
-    DFS -->|write(offset, data)| WC["WriteCache\nspillcache\n(per open file)"]
+    DFS -->|"write(offset, data)"| WC["WriteCache\nspillcache\n(per open file)"]
     DFS -->|read, cache miss/gap| RP["read_persisted\ncli::mount"]
     RP --> CB["chunk_store::read_chunk_bytes"]
     CB --> ST1["store::LongTermStore::read"]
