@@ -20,7 +20,6 @@ mod spilling_chunker;
 mod stats;
 mod store;
 mod temp_dir;
-mod write_cache;
 
 /// Deduplicating backup application.
 #[derive(Parser)]

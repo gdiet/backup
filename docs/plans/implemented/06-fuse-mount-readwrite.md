@@ -319,7 +319,7 @@ Implemented by porting the Scala prototype's actual write-cache design
 `dedup.server.{Handle,Handles,Backend}` in the `scala` checkout - a
 sibling checkout of the same repo, not part of this Rust tree) rather
 than re-deriving it from scratch, once it became clear that source was
-directly available. `cli/src/write_cache.rs`'s module doc comment has the
+directly available. `spillcache/src/lib.rs`'s module doc comment has the
 tier-by-tier mapping. Three deliberate departures from both the original
 Scala design and this doc's own earlier draft above:
 

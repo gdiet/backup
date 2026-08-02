@@ -1,6 +1,6 @@
 //! Shared validation and spill-directory creation for `store`/`mount
 //! --read-write`'s `--temp <DIR>` flag - lets either command's chunk-
-//! buffer/write-cache disk spillover (see `write_cache::WriteCache`) be
+//! buffer/write-cache disk spillover (see `spillcache::WriteCache`) be
 //! created somewhere other than `tempfile`'s own default
 //! (`std::env::temp_dir()`), matching the Scala prototype's own README
 //! guidance to put this on the fastest available disk, not necessarily

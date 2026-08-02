@@ -22,7 +22,7 @@ use crate::io_limiter::IoLimiter;
 use crate::ram_budget_check::check_ram_budget;
 use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
 use crate::temp_dir::{create_spill_dir, validate_temp_dir};
-use crate::write_cache::RamBudget;
+use spillcache::RamBudget;
 
 /// Number of bytes read from a file at a time.
 const READ_BUFFER_SIZE: usize = 64 * 1024;

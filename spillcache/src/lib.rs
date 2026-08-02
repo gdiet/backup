@@ -1,22 +1,31 @@
-//! Per-open-file write cache for phase 2b content writes
-//! (`docs/plans/implemented/06-fuse-mount-readwrite.md`) - ported from the Scala
-//! prototype's `dedup.cache` package (`MemCache`/`FileCache`/`Allocation`/
-//! `WriteCache`), adapted to this project's chunk-based dedup store and
-//! simplified where the JVM-specific parts don't translate (see individual
-//! doc comments below for what changed and why).
+//! A random-access byte buffer with a shared RAM budget and automatic disk
+//! spillover: write bytes at any position, read them back (including
+//! ranges spanning both RAM- and disk-resident data transparently), grow
+//! or shrink it - all while a fixed byte budget, shared across every
+//! buffer created against it, caps how much RAM the whole set can use at
+//! once. Once that budget is exhausted, further bytes spill to a private
+//! temp file per buffer instead of failing or blocking.
 //!
-//! Three tiers, mirroring the Scala design exactly:
-//! - [`ByteSpanMap`] (mem): actual bytes, budget-limited via [`RamBudget`].
-//! - a private disk-spillover tier (`FileCache`): a sparse temp file, only
-//!   `position -> length` is tracked here (the bytes themselves live in the
-//!   file at that offset) - used once the RAM budget is exhausted.
-//! - `zero` (`LengthSpanMap`): zero-filled holes from a `truncate` that grew
-//!   the file - real zero bytes are never materialized until actually read.
+//! A good fit for assembling data of unpredictable, potentially large size
+//! from many small writes - e.g. buffering content written through a
+//! virtual filesystem before it's persisted elsewhere, or accumulating a
+//! variable-length unit of data (a chunk, a record, a message) piece by
+//! piece - in any setting where several of these buffers might be active
+//! at once and the total memory they use collectively needs a hard
+//! ceiling, without requiring any individual buffer to know its own
+//! eventual size upfront.
 //!
-//! A read walks the tiers in that order, falling through to the next tier's
-//! [`fill_gap`](WriteCache::read_filling_gaps) callback for anything not
-//! part of this write session at all (the file's previously-persisted
-//! content).
+//! # Building blocks
+//!
+//! - [`RamBudget`] is the shared ceiling: a fixed byte count, reserved
+//!   from and released back to as buffers grow and shrink. Reservation
+//!   never blocks - once exhausted, a [`WriteCache`] falls back to disk
+//!   instead.
+//! - [`WriteCache`] is the buffer itself: three internal tiers (in-RAM
+//!   bytes, a disk-spillover file, and zero-filled holes from growing past
+//!   the previously-written end) that [`WriteCache::read_filling_gaps`]
+//!   reads through transparently, falling through to a caller-supplied
+//!   callback for anything not written in this session at all.
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
@@ -25,12 +34,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
-/// Global RAM budget shared by every open write cache in this process -
-/// mirrors Scala's `MemCache.availableMem`, but sized from a fixed,
-/// CLI-configurable byte count (`backup mount --write-cache-mb`) rather
-/// than probed from JVM heap settings (nothing analogous exists in a
-/// native Rust binary, and this tool has no other RAM-hungry consumer to
-/// budget around).
+/// A fixed byte budget shared (via `Arc`) by every [`WriteCache`] created
+/// against it. Each reservation attempt either succeeds immediately or
+/// fails immediately - there is no blocking/waiting variant, by design:
+/// see [`WriteCache`]'s disk-spillover tier, which is what callers are
+/// expected to fall back to on failure.
 pub struct RamBudget(AtomicI64);
 
 impl RamBudget {
@@ -65,11 +73,7 @@ impl RamBudget {
 /// Tracks non-overlapping `position -> length` spans - shared by the disk
 /// spillover tier (bytes live in the spill file at the same offset, only
 /// the length needs tracking here) and the zero-hole tier (bytes are
-/// implicitly zero, nothing stored at all). Ported from the Scala
-/// prototype's `LongCache`/`Allocation` (`dedup.cache.CacheBase`), minus
-/// the general `CacheBase[M]` abstraction over the stored value type - not
-/// worth it in Rust for just two callers with different value shapes
-/// (see [`ByteSpanMap`] for the other one).
+/// implicitly zero, nothing stored at all).
 #[derive(Default, Debug, PartialEq, Eq)]
 struct LengthSpanMap(BTreeMap<u64, u64>);
 
@@ -189,11 +193,7 @@ impl LengthSpanMap {
 }
 
 /// RAM tier: non-overlapping `position -> bytes` spans, budget-limited via
-/// [`RamBudget`]. Ported from the Scala prototype's `MemCache`. Unlike
-/// Scala's version, merged spans aren't capped at a `memChunk`-sized
-/// maximum (that cap existed to bound individual JVM byte-array
-/// allocations for GC-friendliness, per `MemCache`'s doc comment - not a
-/// concern for a native Rust `Vec<u8>`).
+/// [`RamBudget`].
 struct ByteSpanMap {
     entries: BTreeMap<u64, Vec<u8>>,
     budget: Arc<RamBudget>,
@@ -349,8 +349,7 @@ impl Drop for ByteSpanMap {
 /// [`LengthSpanMap`] recording which byte ranges have actually been
 /// written - stale bytes physically left behind by an overwrite/clear are
 /// simply never read again (the span map is the single source of truth for
-/// what's valid), so `clear` doesn't need to touch the file at all. Ported
-/// from the Scala prototype's `FileCache`.
+/// what's valid), so `clear` doesn't need to touch the file at all.
 struct FileCache {
     path: PathBuf,
     file: Option<File>,
@@ -423,10 +422,9 @@ impl Drop for FileCache {
     }
 }
 
-/// Per-open-file write cache combining all three tiers - see the module
-/// doc comment. Not thread-safe (mirrors the Scala prototype's `WriteCache`
-/// doc comment: "Used to keep track of changes to a single file's contents
-/// for as long as that file is kept open" under the caller's own lock).
+/// A growable, position-addressed byte buffer combining all three tiers -
+/// see the module doc comment. Not thread-safe: a caller sharing one
+/// across threads must provide its own external locking.
 pub struct WriteCache {
     mem: ByteSpanMap,
     file: FileCache,
@@ -437,8 +435,9 @@ pub struct WriteCache {
 impl WriteCache {
     /// `spill_path` is this cache's private temp file location (deleted on
     /// drop) - never actually created unless the RAM budget is exhausted.
-    /// `initial_size` is the file's size before this write session started
-    /// (its last-persisted size, or `0` for a freshly `create`d file).
+    /// `initial_size` is the size this buffer should report before any
+    /// `write`/`truncate` call (`0` for a freshly created buffer, or
+    /// whatever size the caller's own prior state implies otherwise).
     pub fn new(budget: Arc<RamBudget>, spill_path: PathBuf, initial_size: u64) -> Self {
         Self {
             mem: ByteSpanMap::new(budget),
@@ -491,10 +490,11 @@ impl WriteCache {
     /// Reads `[position, position+size)`, clipped to the cache's current
     /// size. Bytes not covered by any tier (i.e. untouched by this write
     /// session) are resolved via `fill_gap(position, length)`, which the
-    /// caller wires up to read the file's previously-persisted content -
-    /// this is what lets an editor read back a file it's mid-editing
-    /// without this cache needing to know anything about `db`/the chunk
-    /// store itself.
+    /// caller wires up to read whatever this buffer's previously-persisted
+    /// content is - this is what lets a reader see a consistent view of
+    /// data that's only partially been (re)written in this session,
+    /// without this cache needing to know anything about where that
+    /// previously-persisted content actually lives.
     pub fn read_filling_gaps(
         &mut self,
         position: u64,

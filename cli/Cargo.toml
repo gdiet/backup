@@ -16,6 +16,7 @@ db = { version = "0.1.0", path = "../db" }
 mountfs = { version = "0.1.0", path = "../mountfs" }
 rayon = "1.12.0"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
+spillcache = { version = "0.1.0", path = "../spillcache" }
 store = { version = "0.1.0", path = "../store" }
 sysinfo = "0.33.1"
 tempfile = "3.27.0"

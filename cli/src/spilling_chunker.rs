@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use cdc::{ChunkHasher, Chunker, LengthHash};
 
-use crate::write_cache::{RamBudget, WriteCache};
+use spillcache::{RamBudget, WriteCache};
 
 /// One completed chunk: its [`LengthHash`] (for the dedup lookup the
 /// caller must do) and its raw bytes, held in a dedicated [`WriteCache`]
@@ -154,7 +154,7 @@ mod tests {
     fn spill_path_factory() -> impl FnMut() -> PathBuf {
         // `dir` is moved into (and so kept alive by) the returned closure,
         // for as long as whatever holds the closure needs fresh paths -
-        // no `mem::forget` needed here, unlike `write_cache`'s own
+        // no `mem::forget` needed here, unlike `spillcache`'s own
         // single-path test helper, since there's no premature drop.
         let dir = tempfile::tempdir().unwrap();
         let mut next = 0u64;

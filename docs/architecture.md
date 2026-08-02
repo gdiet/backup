@@ -15,29 +15,32 @@ graph TD
     cli --> db
     cli --> store
     cli --> mountfs
+    cli --> spillcache
 ```
 
-| Crate     | Role                                                                                   |
-|-----------|-----------------------------------------------------------------------------------------|
-| `cdc`     | Content-defined chunking algorithm. Pure: bytes in, chunk-boundary lengths out - no I/O, no knowledge of files, dedup, or storage. |
-| `db`      | SQLite-backed metadata: the file/directory tree, the dedup index (chunk hash → id), contents, repository settings. |
-| `store`   | The physical on-disk byte store (`LongTermStore`). Reads/writes bytes at a position; stateless per call, no knowledge of chunking or dedup. |
-| `mountfs` | Platform-abstracted filesystem mounting (Linux FUSE / Windows WinFSP) behind one `MountFilesystem` trait. |
-| `cli`     | Orchestrates all of the above; builds the `backup` binary and implements every subcommand. |
+| Crate        | Role                                                                                   |
+|--------------|-----------------------------------------------------------------------------------------|
+| `cdc`        | Content-defined chunking algorithm. Pure: bytes in, chunk-boundary lengths out - no I/O, no knowledge of files, dedup, or storage. |
+| `db`         | SQLite-backed metadata: the file/directory tree, the dedup index (chunk hash → id), contents, repository settings. |
+| `store`      | The physical on-disk byte store (`LongTermStore`). Reads/writes bytes at a position; stateless per call, no knowledge of chunking or dedup. |
+| `mountfs`    | Platform-abstracted filesystem mounting (Linux FUSE / Windows WinFSP) behind one `MountFilesystem` trait. |
+| `spillcache` | A RAM-budgeted, disk-spilling random-access byte buffer (`RamBudget`, `WriteCache`). No knowledge of chunking, files, or dedup either. |
+| `cli`        | Orchestrates all of the above; builds the `backup` binary and implements every subcommand. |
 
-`cdc`, `db`, `store`, and `mountfs` don't depend on each other or know about
-one another - **`cli` is the only crate that ties them together**. That's a
-deliberate boundary, not an accident: it's what let the chunk-buffer
-spillover mechanism (`cli::write_cache::WriteCache`, originally built for
-`mount`'s write cache) get reused as-is for `store`'s chunk buffering too -
-see [plans/implemented/bounded-memory-io-pipeline.md](plans/implemented/bounded-memory-io-pipeline.md).
-Concretely, within `cli`, the glue lives in a handful of files:
+`cdc`, `db`, `store`, `mountfs`, and `spillcache` don't depend on each other
+or know about one another - **`cli` is the only crate that ties them
+together**. That's a deliberate boundary, not an accident: it's what let the
+chunk-buffer spillover mechanism (`spillcache::WriteCache`, originally built
+for `mount`'s write cache) get reused as-is for `store`'s chunk buffering
+too - see
+[plans/implemented/bounded-memory-io-pipeline.md](plans/implemented/bounded-memory-io-pipeline.md)
+(that reuse is also what later motivated pulling `spillcache` out into its
+own crate). Concretely, within `cli`, the glue lives in a handful of files:
 
 - `cli/src/store.rs` - the `store` subcommand.
 - `cli/src/mount.rs` - the `mount` subcommand (both `--read-only` and `--read-write`).
 - `cli/src/chunk_store.rs` - shared dedup-write/space-allocation glue used by both of the above (`write_chunk_from_cache`, `read_chunk_bytes`, `SpaceAllocator`).
-- `cli/src/spilling_chunker.rs` - wraps a `cdc::Chunker` with RAM-budgeted, disk-spillable chunk buffering (`cli::write_cache::WriteCache` underneath), used by both `store.rs` and `mount.rs`.
-- `cli/src/write_cache.rs` - the generic budgeted byte buffer with disk spillover (`RamBudget`, `WriteCache`) - originally `mount`'s write cache, now the shared primitive above too.
+- `cli/src/spilling_chunker.rs` - wraps a `cdc::Chunker` with RAM-budgeted, disk-spillable chunk buffering (`spillcache::WriteCache` underneath), used by both `store.rs` and `mount.rs`.
 - `cli/src/io_limiter.rs` - an optional counting semaphore bounding concurrent `store::LongTermStore` I/O calls, independent of CPU-thread concurrency.
 
 ## Data flow: `store` (backing up files)
@@ -72,7 +75,7 @@ Step by step, with crate boundaries marked:
    **`cli::spilling_chunker::SpillingHashingChunker`**, which internally
    drives a **`cdc::Chunker`** (pure algorithm, no I/O) to find chunk
    boundaries, buffering each in-progress chunk's bytes in a RAM-budgeted,
-   disk-spillable `cli::write_cache::WriteCache` rather than a plain `Vec<u8>`.
+   disk-spillable `spillcache::WriteCache` rather than a plain `Vec<u8>`.
 3. For each completed chunk, **`cli::store::resolve_chunk`** asks
    **`db::find_chunk`** whether this content already exists (dedup lookup).
    On a hit, the buffered bytes are just dropped. On a miss,
@@ -97,13 +100,13 @@ workers at once. See the closing note in
 
 `mountfs` calls into **`cli::mount::DedupFs`** (a thin wrapper around
 `Arc<Inner>`) for every FUSE/WinFSP operation. Reads and writes on an open
-file go through a per-file `write_cache::WriteCache` first; only closing the
+file go through a per-file `spillcache::WriteCache` first; only closing the
 last handle (or a bare truncate) triggers an actual write to the store.
 
 ```mermaid
 flowchart TD
     FS["FUSE/WinFSP dispatch\n(mountfs)"] -->|write/read/release| DFS["DedupFs\ncli::mount"]
-    DFS -->|write(offset, data)| WC["WriteCache\ncli::write_cache\n(per open file)"]
+    DFS -->|write(offset, data)| WC["WriteCache\nspillcache\n(per open file)"]
     DFS -->|read, cache miss/gap| RP["read_persisted\ncli::mount"]
     RP --> CB["chunk_store::read_chunk_bytes"]
     CB --> ST1["store::LongTermStore::read"]

@@ -12,7 +12,7 @@ use rusqlite::Connection;
 use store::{LongTermStore, ReadIntegrity};
 
 use crate::io_limiter::IoLimiter;
-use crate::write_cache::WriteCache;
+use spillcache::WriteCache;
 
 /// Size of the pieces [`write_chunk_from_cache`] drains `bytes` in - keeps
 /// peak memory for writing out a chunk bounded regardless of the chunk's
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn write_chunk_from_cache_drains_a_write_cache_across_returned_extents() {
-        use crate::write_cache::RamBudget;
+        use spillcache::RamBudget;
         use std::sync::Arc;
 
         let temp_dir = tempfile::tempdir().unwrap();

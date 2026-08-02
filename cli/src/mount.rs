@@ -34,13 +34,13 @@ use crate::ram_budget_check::check_ram_budget;
 use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
 use crate::store::{Blake3Hasher, HASH_LENGTH};
 use crate::temp_dir::{create_spill_dir, validate_temp_dir};
-use crate::write_cache::{RamBudget, WriteCache};
+use spillcache::{RamBudget, WriteCache};
 
 /// Default RAM budget for `backup mount --read-write`'s write cache (see
 /// `MountArgs::write_cache_mb`), shared across every file open for writing
 /// at once, *and* reused as the budget for in-flight persist chunk
 /// buffering (see [`Inner::persist`]) - a modest default: both are soft
-/// buffers that spill to disk once exceeded (see `write_cache::
+/// buffers that spill to disk once exceeded (see `spillcache::
 /// WriteCache`), not something that needs to be generous to work
 /// correctly, and `check_ram_budget` (called from `run_mount`) refuses to
 /// start if even this much risks swapping.
@@ -263,7 +263,7 @@ fn build_filesystem(
     // pipeline needs to actually write new chunk bytes to the store.
     let data_store = LongTermStore::new(repository.data_dir(), !read_write);
     // A dedicated, uniquely-named spill directory for write-cache overflow
-    // (see `write_cache::WriteCache`) - created empty here, removed whole
+    // (see `spillcache::WriteCache`) - created empty here, removed whole
     // in `Inner::on_unmount` once every spill file in it (each deleted by
     // its own `WriteCache`'s `Drop`) is gone. Under `--temp` if given
     // (already validated by `run_mount`), otherwise under the OS default -

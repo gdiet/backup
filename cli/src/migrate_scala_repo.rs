@@ -46,7 +46,7 @@ use crate::format::readable_bytes;
 use crate::ram_budget_check::check_ram_budget;
 use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
 use crate::store::{Blake3Hasher, HASH_LENGTH};
-use crate::write_cache::RamBudget;
+use spillcache::RamBudget;
 
 /// Number of bytes read from the old data store at a time while re-chunking
 /// one old file's content - mirrors `store.rs`'s `READ_BUFFER_SIZE`.

@@ -11,7 +11,7 @@
 /// machine, and total memory says nothing about what's actually free
 /// right now. A hard error by default even though the budget itself
 /// degrades gracefully to disk spillover if ever actually exhausted (see
-/// `write_cache::WriteCache`): swapping is a machine-wide problem this
+/// `spillcache::WriteCache`): swapping is a machine-wide problem this
 /// process would be causing for *everything else* running on it, not
 /// just a local slowdown for itself, so it defaults to refusing rather
 /// than merely warning.

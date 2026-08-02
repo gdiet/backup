@@ -32,7 +32,7 @@ have to be rediscovered.
   and `mount --read-write`.
 - **Operational expectation: the (configurable) temp directory should be
   as fast as possible.** Already the documented expectation for the
-  mount's existing write-cache spillover (see `write_cache.rs`) and
+  mount's existing write-cache spillover (see `spillcache/src/lib.rs`) and
   matches the Scala prototype's own README guidance ("Configure The Temp
   Directory": fast SSD, not on the same physical drive as the repository
   or the source) - any new spillover mechanism for `store` should carry
@@ -97,7 +97,7 @@ have to be rediscovered.
 
 - **Data shape**: `store` reads a source file **linearly, once, forward
   only** - chunk buffering is inherently append-only, never overwritten.
-  `mount --read-write`'s `write_cache::WriteCache` has to support
+  `mount --read-write`'s `spillcache::WriteCache` has to support
   **random-access overwrites** (a `write(2)` can land anywhere, including
   overwriting bytes written moments ago) - hence its
   `LengthSpanMap`/`ByteSpanMap` machinery, which `store`'s simpler
@@ -133,7 +133,7 @@ below) - kept as a record of the reasoning, not just the conclusion.
 Revised after direct pushback on an earlier, too-strong version of this section
 (originally argued `store`'s append-only pattern was a "structural
 mismatch" for `mount`'s random-access `WriteCache`/span-map machinery -
-that doesn't actually hold up): `write_cache::WriteCache` has **no
+that doesn't actually hold up): `spillcache::WriteCache` has **no
 mount/FUSE-specific coupling at all** - it's already a generic budgeted
 byte buffer with disk spillover. Used in a strictly append-only pattern
 (every `write` call at `position == current size`, never below, never
@@ -186,7 +186,7 @@ max, ~16.6 GB worst case).
 
 **Fix**: a new type, `cli::spilling_chunker::SpillingHashingChunker<H, C,
 F>`, duplicating `BufferingHashingChunker`'s exact slicing/hashing logic
-but buffering each in-progress chunk's bytes in a `write_cache::
+but buffering each in-progress chunk's bytes in a `spillcache::
 WriteCache` instead of a `Vec<u8>` - the RAM-budgeted, disk-spilling
 primitive `mount --read-write`'s write cache already used (see "Shared
 implementation or two?" above: this is that reuse, realized). Each

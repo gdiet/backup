@@ -107,7 +107,8 @@ version is correct:
   `Box<dyn Trait>`, since there are only ever two concrete types") out of `///` and in
   a regular `//` comment next to the code instead, so `cargo doc` output for public
   API stays focused on what callers need. This mainly matters for `pub` items in the
-  library crates (`cdc`, `db`, `mountfs`); private items in `cli`'s binary code have no
+  library crates (`cdc`, `db`, `mountfs`, `store`, `spillcache`); private items in
+  `cli`'s binary code have no
   external consumers, so the distinction is less load-bearing there and existing
   rationale-heavy `///` comments on private items don't need to be split up.
 - In production code (not tests), never use a bare `.unwrap()`. Use `.expect("...")`
