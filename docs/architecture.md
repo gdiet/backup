@@ -48,6 +48,27 @@ own crate). Concretely, within `cli`, the glue lives in a handful of files:
 `cli::store::run_store` ([cli/src/store.rs](../cli/src/store.rs)) is the
 entry point and the only place that talks to more than one other crate.
 
+Quick overview first, detailed crate-boundary diagram below it:
+
+```mermaid
+flowchart TD
+    A["setup & validation\nopen repo, resolve target"] --> B["walk source tree\ncreate dirs, collect files"]
+    B --> C
+    subgraph par["parallel: one worker thread per file"]
+        C["read file\n64KB buffers"] --> D["chunk + hash\nCDC, blake3"]
+        D --> E{"chunk already\nin index?"}
+        E -->|yes| F["reuse chunk id\ndedup hit"]
+        E -->|no| G["write chunk bytes\nreserve space, LongTermStore"]
+        F --> H["queue file record"]
+        G --> H
+    end
+    H --> I["writer thread\nbatches records"]
+    I --> J["apply batch to SQLite\ntree, chunks, contents"]
+    J --> K["finish\ncleanup, report result"]
+```
+
+Same flow, now with the actual crate/function names behind each step:
+
 ```mermaid
 flowchart TD
     A["run_store\ncli::store"] -->|open repository, settings| DB1["db::open_repository"]
@@ -84,6 +105,23 @@ Step by step, with crate boundaries marked:
    buffer into **`store::LongTermStore::write`** - optionally gated by
    **`cli::io_limiter::IoLimiter`** (`--store-io-parallelism`) so I/O
    concurrency can be tuned independently of CPU-chunking concurrency.
+
+   The dedup lookup in step 3 is a plain, unlocked `SELECT` - two workers
+   can independently decide the same new chunk needs storing and both
+   write its bytes. This race is deliberately tolerated, not prevented:
+   it's resolved deterministically later, when the single writer thread
+   applies the batch - **`db::resolve_content`**'s `INSERT ... ON CONFLICT
+   (length, hash) DO NOTHING` (chunks) and `INSERT OR IGNORE`
+   (`chunk_extents`) make the losing insert a no-op, so both workers'
+   records converge on the same `chunk_id`. The losing worker's bytes stay
+   in the store, unreferenced by any `chunk_extents` row - wasted space,
+   but self-healing: the next run's `SpaceAllocator` computes free gaps
+   purely from what's actually referenced in `chunk_extents`, so that
+   orphaned range looks like ordinary free space and gets reused, no
+   `reclaim-space` needed. See
+   [plans/implemented/01-store-command.md](plans/implemented/01-store-command.md)
+   and the `racing_batches_inserting_the_same_new_chunk_resolve_to_one_chunk_row`
+   test in `db/src/backup.rs`.
 4. Each finished file's record (chunk list + content hash) goes over an
    `mpsc` channel to one dedicated writer thread, which batches inserts via
    **`db::apply_backup_batch`**.
