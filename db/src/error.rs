@@ -6,7 +6,9 @@ use crate::SettingsError;
 /// Error returned by this crate's repository operations.
 #[derive(Debug)]
 pub enum Error {
-    /// The repository directory passed to [`crate::init_repository`] already exists.
+    /// The repository directory passed to [`crate::init_repository`] already
+    /// exists, or the `meta` subdirectory passed to
+    /// [`crate::adopt_repository_in_place`] already exists.
     RepositoryAlreadyExists(PathBuf),
     /// The provided [`crate::RepositorySettings`] failed validation.
     InvalidSettings(SettingsError),
