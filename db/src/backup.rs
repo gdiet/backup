@@ -40,19 +40,36 @@ impl ChunkRef {
     }
 }
 
+/// How a [`FileBackupRecord`]'s content is determined.
+#[derive(Debug, Clone)]
+pub enum ContentSource {
+    /// Chunked, hashed, and deduplicated normally - `apply_backup_batch`
+    /// resolves this into a `content_id` via [`resolve_content`].
+    Resolved {
+        /// The file's chunks in order. Empty for a zero-length file.
+        chunks: Vec<ChunkRef>,
+        /// Hash over the ordered sequence of chunk lengths and hashes (see
+        /// the `contents.hash` doc comment in `migrations.rs`). Ignored for
+        /// an empty file (no `contents` row is created for those - see the
+        /// `kind` doc comment).
+        content_hash: Vec<u8>,
+    },
+    /// An already-known `content_id`, used as-is - e.g. reused from a
+    /// reference file's tree entry (see `docs/plans/backup-reference-and-ignore.md`),
+    /// skipping chunking/hashing/dedup-lookup entirely. `None` for an empty
+    /// file, mirroring `Resolved` with empty `chunks`.
+    Known(Option<i64>),
+}
+
 /// A file ready to be recorded, produced by a worker after chunking, hashing,
-/// deduplicating and (for new chunks) writing bytes to the store.
+/// deduplicating and (for new chunks) writing bytes to the store - or, for a
+/// reference hit, with no worker involvement at all (see [`ContentSource::Known`]).
 #[derive(Debug, Clone)]
 pub struct FileBackupRecord {
     pub parent_id: i64,
     pub name: String,
     pub time_millis: i64,
-    /// The file's chunks in order. Empty for a zero-length file.
-    pub chunks: Vec<ChunkRef>,
-    /// Hash over the ordered sequence of chunk lengths and hashes (see the
-    /// `contents.hash` doc comment in `migrations.rs`). Ignored for an empty file
-    /// (no `contents` row is created for those - see the `kind` doc comment).
-    pub content_hash: Vec<u8>,
+    pub content: ContentSource,
 }
 
 /// Resolves `chunks` against the dedup index (inserting any not-yet-known
@@ -169,7 +186,13 @@ pub fn apply_backup_batch(conn: &mut Connection, batch: &[FileBackupRecord]) -> 
     let tx = conn.transaction()?;
 
     for record in batch {
-        let content_id = resolve_content(&tx, &record.chunks, &record.content_hash)?;
+        let content_id = match &record.content {
+            ContentSource::Resolved {
+                chunks,
+                content_hash,
+            } => resolve_content(&tx, chunks, content_hash)?,
+            ContentSource::Known(content_id) => *content_id,
+        };
 
         match find_tree_entry(&tx, record.parent_id, &record.name)? {
             None => {
@@ -246,12 +269,14 @@ mod tests {
             parent_id: 0,
             name: name.to_string(),
             time_millis: 1000,
-            chunks: vec![ChunkRef::New {
-                length: 5,
-                hash: b"hash1".to_vec(),
-                extents: vec![(position, position + 5)],
-            }],
-            content_hash: b"content-hash-1".to_vec(),
+            content: ContentSource::Resolved {
+                chunks: vec![ChunkRef::New {
+                    length: 5,
+                    hash: b"hash1".to_vec(),
+                    extents: vec![(position, position + 5)],
+                }],
+                content_hash: b"content-hash-1".to_vec(),
+            },
         }
     }
 
@@ -282,12 +307,14 @@ mod tests {
             parent_id: 0,
             name: "a.txt".to_string(),
             time_millis: 1000,
-            chunks: vec![ChunkRef::New {
-                length: 8,
-                hash: b"hash1".to_vec(),
-                extents: vec![(10, 15), (100, 103)],
-            }],
-            content_hash: b"content-hash-1".to_vec(),
+            content: ContentSource::Resolved {
+                chunks: vec![ChunkRef::New {
+                    length: 8,
+                    hash: b"hash1".to_vec(),
+                    extents: vec![(10, 15), (100, 103)],
+                }],
+                content_hash: b"content-hash-1".to_vec(),
+            },
         };
 
         apply_backup_batch(&mut conn, &[record]).unwrap();
@@ -318,8 +345,53 @@ mod tests {
             parent_id: 0,
             name: "empty.txt".to_string(),
             time_millis: 1000,
-            chunks: vec![],
-            content_hash: vec![],
+            content: ContentSource::Resolved {
+                chunks: vec![],
+                content_hash: vec![],
+            },
+        };
+
+        apply_backup_batch(&mut conn, &[record]).unwrap();
+
+        let entry = find_tree_entry(&conn, 0, "empty.txt").unwrap().unwrap();
+        assert_eq!(entry.kind, EntryKind::File);
+        assert_eq!(entry.content_id, None);
+    }
+
+    #[test]
+    fn known_content_source_skips_resolve_content_and_reuses_the_id_as_is() {
+        let (_temp_dir, mut conn) = test_connection();
+        apply_backup_batch(&mut conn, &[one_chunk_record("a.txt", 0)]).unwrap();
+        let a = find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+
+        let record = FileBackupRecord {
+            parent_id: 0,
+            name: "b.txt".to_string(),
+            time_millis: 2000,
+            content: ContentSource::Known(a.content_id),
+        };
+        apply_backup_batch(&mut conn, &[record]).unwrap();
+
+        let b = find_tree_entry(&conn, 0, "b.txt").unwrap().unwrap();
+        assert_eq!(b.content_id, a.content_id);
+        let ref_count: i64 = conn
+            .query_row(
+                "SELECT ref_count FROM contents WHERE id = ?1",
+                [a.content_id.unwrap()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(ref_count, 2, "both entries now reference the same content");
+    }
+
+    #[test]
+    fn known_content_source_none_behaves_like_an_empty_file() {
+        let (_temp_dir, mut conn) = test_connection();
+        let record = FileBackupRecord {
+            parent_id: 0,
+            name: "empty.txt".to_string(),
+            time_millis: 1000,
+            content: ContentSource::Known(None),
         };
 
         apply_backup_batch(&mut conn, &[record]).unwrap();
@@ -368,12 +440,19 @@ mod tests {
         // the first batch committed), and wrote its own (wasted, but harmless)
         // copy of the bytes elsewhere.
         let mut b = one_chunk_record("b.txt", 100);
-        b.chunks.push(ChunkRef::New {
+        let ContentSource::Resolved {
+            chunks,
+            content_hash,
+        } = &mut b.content
+        else {
+            unreachable!("one_chunk_record always builds a Resolved record")
+        };
+        chunks.push(ChunkRef::New {
             length: 9,
             hash: b"hash2".to_vec(),
             extents: vec![(105, 114)],
         });
-        b.content_hash = b"content-hash-2".to_vec();
+        *content_hash = b"content-hash-2".to_vec();
         apply_backup_batch(&mut conn, &[b]).unwrap();
 
         let chunk_count: i64 = conn
@@ -455,12 +534,14 @@ mod tests {
             parent_id: 0,
             name: "a.txt".to_string(),
             time_millis: 2000,
-            chunks: vec![ChunkRef::New {
-                length: 9,
-                hash: b"hash2".to_vec(),
-                extents: vec![(100, 109)],
-            }],
-            content_hash: b"content-hash-2".to_vec(),
+            content: ContentSource::Resolved {
+                chunks: vec![ChunkRef::New {
+                    length: 9,
+                    hash: b"hash2".to_vec(),
+                    extents: vec![(100, 109)],
+                }],
+                content_hash: b"content-hash-2".to_vec(),
+            },
         };
         apply_backup_batch(&mut conn, std::slice::from_mut(&mut second)).unwrap();
 

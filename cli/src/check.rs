@@ -259,12 +259,14 @@ mod tests {
                 parent_id: 0,
                 name: name.to_string(),
                 time_millis: 0,
-                chunks: vec![db::ChunkRef::New {
-                    length: bytes.len() as u64,
-                    hash: hash.to_vec(),
-                    extents: vec![(0, bytes.len() as u64)],
-                }],
-                content_hash: b"content-hash".to_vec(),
+                content: db::ContentSource::Resolved {
+                    chunks: vec![db::ChunkRef::New {
+                        length: bytes.len() as u64,
+                        hash: hash.to_vec(),
+                        extents: vec![(0, bytes.len() as u64)],
+                    }],
+                    content_hash: b"content-hash".to_vec(),
+                },
             }],
         )
         .unwrap();
@@ -346,12 +348,14 @@ mod tests {
                 parent_id: 0,
                 name: "a.txt".to_string(),
                 time_millis: 0,
-                chunks: vec![db::ChunkRef::New {
-                    length: 5,
-                    hash: b"h".to_vec(),
-                    extents: vec![(0, 5)],
-                }],
-                content_hash: b"c".to_vec(),
+                content: db::ContentSource::Resolved {
+                    chunks: vec![db::ChunkRef::New {
+                        length: 5,
+                        hash: b"h".to_vec(),
+                        extents: vec![(0, 5)],
+                    }],
+                    content_hash: b"c".to_vec(),
+                },
             }],
         )
         .unwrap();

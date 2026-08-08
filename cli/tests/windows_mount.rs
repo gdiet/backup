@@ -61,16 +61,18 @@ fn seed_file(repo_root: &Path, parent_id: i64, name: &str, bytes: &[u8]) {
             parent_id,
             name: name.to_string(),
             time_millis: 0,
-            chunks: if bytes.is_empty() {
-                vec![]
-            } else {
-                vec![db::ChunkRef::New {
-                    length: bytes.len() as u64,
-                    hash: hash.to_vec(),
-                    extents: vec![(start as u64, start as u64 + bytes.len() as u64)],
-                }]
+            content: db::ContentSource::Resolved {
+                chunks: if bytes.is_empty() {
+                    vec![]
+                } else {
+                    vec![db::ChunkRef::New {
+                        length: bytes.len() as u64,
+                        hash: hash.to_vec(),
+                        extents: vec![(start as u64, start as u64 + bytes.len() as u64)],
+                    }]
+                },
+                content_hash: hash.to_vec(),
             },
-            content_hash: hash.to_vec(),
         }],
     )
     .unwrap();

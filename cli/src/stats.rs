@@ -260,12 +260,14 @@ mod tests {
             parent_id: 0,
             name: name.to_string(),
             time_millis: 0,
-            chunks: vec![db::ChunkRef::New {
-                length: 10,
-                hash: b"h".to_vec(),
-                extents: vec![(0, 10)],
-            }],
-            content_hash: b"c".to_vec(),
+            content: db::ContentSource::Resolved {
+                chunks: vec![db::ChunkRef::New {
+                    length: 10,
+                    hash: b"h".to_vec(),
+                    extents: vec![(0, 10)],
+                }],
+                content_hash: b"c".to_vec(),
+            },
         };
         db::apply_backup_batch(&mut conn, &[record("a.txt"), record("b.txt")]).unwrap();
 

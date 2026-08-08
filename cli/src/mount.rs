@@ -791,8 +791,10 @@ impl Inner {
                 parent_id: parent.id,
                 name: name.to_string(),
                 time_millis,
-                chunks: Vec::new(),
-                content_hash: Vec::new(),
+                content: db::ContentSource::Resolved {
+                    chunks: Vec::new(),
+                    content_hash: Vec::new(),
+                },
             }],
         )
         .map_err(|_| Errno::EIO)?;
@@ -1261,8 +1263,10 @@ impl Inner {
             parent_id,
             name: name.clone(),
             time_millis: mtime_millis,
-            chunks: chunk_refs,
-            content_hash: content_hash.to_vec(),
+            content: db::ContentSource::Resolved {
+                chunks: chunk_refs,
+                content_hash: content_hash.to_vec(),
+            },
         };
         let mut write_conn = self
             .write_conn
@@ -1382,16 +1386,18 @@ mod tests {
                 parent_id,
                 name: name.to_string(),
                 time_millis: 0,
-                chunks: if bytes.is_empty() {
-                    vec![]
-                } else {
-                    vec![db::ChunkRef::New {
-                        length: bytes.len() as u64,
-                        hash: hash.to_vec(),
-                        extents: vec![(start as u64, start as u64 + bytes.len() as u64)],
-                    }]
+                content: db::ContentSource::Resolved {
+                    chunks: if bytes.is_empty() {
+                        vec![]
+                    } else {
+                        vec![db::ChunkRef::New {
+                            length: bytes.len() as u64,
+                            hash: hash.to_vec(),
+                            extents: vec![(start as u64, start as u64 + bytes.len() as u64)],
+                        }]
+                    },
+                    content_hash: hash.to_vec(),
                 },
-                content_hash: hash.to_vec(),
             }],
         )
         .unwrap();

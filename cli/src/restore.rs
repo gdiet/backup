@@ -318,16 +318,18 @@ mod tests {
                 parent_id,
                 name: name.to_string(),
                 time_millis,
-                chunks: if bytes.is_empty() {
-                    vec![]
-                } else {
-                    vec![db::ChunkRef::New {
-                        length: bytes.len() as u64,
-                        hash: hash.to_vec(),
-                        extents: vec![(start as u64, start as u64 + bytes.len() as u64)],
-                    }]
+                content: db::ContentSource::Resolved {
+                    chunks: if bytes.is_empty() {
+                        vec![]
+                    } else {
+                        vec![db::ChunkRef::New {
+                            length: bytes.len() as u64,
+                            hash: hash.to_vec(),
+                            extents: vec![(start as u64, start as u64 + bytes.len() as u64)],
+                        }]
+                    },
+                    content_hash: hash.to_vec(),
                 },
-                content_hash: hash.to_vec(),
             }],
         )
         .unwrap();

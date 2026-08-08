@@ -23,7 +23,9 @@ mod query;
 mod settings;
 mod tree;
 
-pub use backup::{ChunkRef, FileBackupRecord, apply_backup_batch, find_chunk, resolve_content};
+pub use backup::{
+    ChunkRef, ContentSource, FileBackupRecord, apply_backup_batch, find_chunk, resolve_content,
+};
 pub use error::Error;
 pub use maintenance::{ReclaimStats, reclaim_space, soft_delete};
 pub use query::{

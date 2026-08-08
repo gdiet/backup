@@ -603,8 +603,10 @@ fn process_file(ctx: &RunContext, path: &Path, parent_id: i64) {
                 parent_id,
                 name,
                 time_millis,
-                chunks,
-                content_hash: content_hash.to_vec(),
+                content: db::ContentSource::Resolved {
+                    chunks,
+                    content_hash: content_hash.to_vec(),
+                },
             };
             let send_result = ctx
                 .sender
