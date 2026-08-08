@@ -264,8 +264,12 @@ running, what's behind the repository), not of `LongTermStore` itself, which
 stays the simple, stateless-per-call, call-from-any-thread primitive it
 already was - unaware of how many callers exist or how they're scheduled.
 `write_chunk_from_cache`/`RunContext` take an `Option<&IoLimiter>` so
-`mount.rs`/`migrate_scala_repo.rs` (which don't have this flag) simply pass
-`None`, unchanged behavior. Only wired into `store`'s write path so far -
+`mount.rs` (which doesn't have this flag) simply passes `None`, unchanged
+behavior - `migrate_scala_repo.rs` doesn't call `write_chunk_from_cache` at
+all since its later in-place-adoption redesign (see
+`docs/plans/implemented/scala-rust-store-migration.md`), which made
+migration read-only against the store entirely. Only wired into `store`'s
+write path so far -
 `mount`/`restore`/`check`'s read/write paths could reuse the same
 `IoLimiter` later if needed, not done here (no concrete need yet).
 

@@ -403,16 +403,24 @@ the repository.
 ## Migrate A Scala Repository
 
 ```bash
-backup -r <target-repo> migrate-scala-repo --script <export> --old-data <old-data-dir>
+backup -r <scala-repo-root> migrate-scala-repo --script <export>
 ```
 
-One-shot migration of an old Scala DedupFS repository into a new Rust one.
-`<target-repo>` must already be an initialized (`backup init`), empty
-repository - this is not a merge tool. `--script` is the H2 SQL script
-export produced by the Scala tool's `fsc db-backup` command - either the
-zipped script as produced directly, or an already-unzipped `.sql` file;
-`--old-data` is the old repository's `data/` directory (read-only, never
-modified).
+One-shot, in-place migration of an old Scala DedupFS repository into a Rust
+one. `<scala-repo-root>` is the *existing* Scala repository directory
+(already containing `data/` and `fsdb/`) - this adds a `meta/` directory
+alongside them and adopts `data/` as its own, without copying or rewriting
+a single byte: the byte store's on-disk layout is identical between Scala
+and Rust, and every chunk this tool identifies already exists somewhere in
+`data/` (Scala already stored it, just without chunk-level dedup), so
+migration only ever *reads* bytes (to compute chunk boundaries and hashes)
+and records metadata pointing at wherever they already are. No separate
+`backup init` step is needed - refuses only if `<scala-repo-root>/meta`
+already exists. `--script` is the H2 SQL script export produced by the
+Scala tool's `fsc db-backup` command - either the zipped script as produced
+directly, or an already-unzipped `.sql` file. `--cdc-target-size-bits`/
+`--chunking` configure the new repository, same as `backup init`'s flags of
+the same name (this tool does its own equivalent initialization).
 
 Migrates the *entire* old tree, including soft-deleted history (not just
 the currently-active files), so restore-from-history capability is
@@ -420,13 +428,15 @@ preserved. Content is genuinely re-chunked and re-hashed through the same
 content-defined-chunking pipeline `store` uses, since Scala dedupes whole
 files while Rust dedupes at the chunk level - there's no mechanical
 translation between the two metadata models. The final summary reports how
-much smaller the migrated repository is than a naive whole-file copy would
-have been, thanks to chunk-level dedup finding sharing Scala's whole-file
-model never could.
+much smaller the migrated repository's distinct content is than a naive
+whole-file copy would have been, thanks to chunk-level dedup finding
+sharing Scala's whole-file model never could - informational only, since no
+bytes are ever copied to begin with.
 
-A failure partway through leaves the target repository untouched (the
-whole migration runs in one transaction, committed only at the very end) -
-recovery is simply re-running the command from scratch, not resuming.
+A failure partway through removes the incomplete `meta` directory it
+created before returning - recovery is simply re-running the command from
+scratch, no manual cleanup needed (nothing under `data/` is ever touched,
+so there's nothing to undo there).
 
 ## For Developers
 

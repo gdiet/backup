@@ -83,9 +83,11 @@ struct InitArgs {
 }
 
 /// CLI-facing mirror of [`db::Chunking`] (`clap::ValueEnum` can't be derived for a
-/// type defined in another crate).
+/// type defined in another crate). `pub(crate)`: also used by
+/// `migrate_scala_repo`, which performs its own equivalent repository
+/// initialization (see its module doc comment).
 #[derive(Clone, Copy, ValueEnum)]
-enum ChunkingArg {
+pub(crate) enum ChunkingArg {
     Cdc,
     None,
 }

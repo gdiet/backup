@@ -1,12 +1,18 @@
-//! Migrates an old Scala repository into a fresh Rust repository.
+//! Migrates an old Scala repository into a Rust repository, in place.
 //!
 //! Input is the zipped SQL script produced by the Scala tool's `fsc db-backup`
 //! (`org.h2.tools.Script`, see the plan doc this implements:
 //! `docs/plans/implemented/scala-rust-store-migration.md`) - a portable, plain-SQL
-//! reconstruction of the old H2 `TreeEntries`/`DataEntries` tables - plus the old
-//! repository's `data/` directory (read-only; Rust's own `store::LongTermStore`
-//! reads it directly, no conversion needed, since the byte store's on-disk layout
-//! is 1:1 compatible between Scala and Rust).
+//! reconstruction of the old H2 `TreeEntries`/`DataEntries` tables. `--repo`
+//! points directly at the *existing* Scala repository root (already
+//! containing `data/` and `fsdb/`): this tool adds a `meta/` directory
+//! alongside them and reuses `data/` as-is, never copying or rewriting it,
+//! since the byte store's on-disk layout is 1:1 compatible between Scala
+//! and Rust. Every chunk this tool identifies already exists somewhere in
+//! `data/` (Scala already stored it - just without chunk-level dedup), so
+//! migration only ever *reads* bytes (to compute new chunk boundaries and
+//! hashes) and records metadata pointing at wherever they already are -
+//! see [`map_to_old_store_extents`].
 //!
 //! High level flow:
 //! 1. [`script_import::build_staging_db`] loads the script's `TreeEntries`/
@@ -19,13 +25,13 @@
 //!    root, recreating every entry - active *and* soft-deleted, preserving full
 //!    history/restore capability - in the target repository via
 //!    `db::insert_historical_tree_entry`.
-//! 3. Each old file's content is read back from the old `data/` directory,
-//!    re-chunked and re-hashed through the same pipeline `store`'s `store`
-//!    command uses (`SpillingHashingChunker` + `db::find_chunk` dedup +
-//!    `chunk_store::write_chunk_from_cache` + `db::resolve_content`), written
-//!    into the *new* repository's own `data/` directory. Multiple old tree
-//!    entries sharing one old `dataId` are only ever chunked once (see
-//!    [`Migration::data_id_cache`]).
+//! 3. Each old file's content is read back from `data/` purely to compute CDC
+//!    chunk boundaries and blake3 hashes (`cdc::HashingChunker` - discards
+//!    the bytes themselves, unlike `store`'s own chunker, which needs to
+//!    keep them to write a dedup miss), then recorded as `chunk_extents`
+//!    pointing at the byte ranges just read (see [`Migration::chunk_and_store`]).
+//!    Multiple old tree entries sharing one old `dataId` are only ever
+//!    chunked once (see [`Migration::data_id_cache`]).
 //! 4. A summary is printed, notably comparing the old repository's whole-file-
 //!    dedup storage size against the new repository's chunk-level-dedup
 //!    storage size - see [`Stats`].
@@ -35,27 +41,18 @@ use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
 
-use cdc::ChunkerConfig;
+use cdc::{ChunkerConfig, HashingChunker, LengthHash};
 use clap::Args;
 use rusqlite::Connection;
 
-use crate::chunk_store::{self, SpaceAllocator};
+use crate::ChunkingArg;
 use crate::format::readable_bytes;
-use crate::ram_budget_check::check_ram_budget;
-use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
 use crate::store::{Blake3Hasher, HASH_LENGTH};
-use spillcache::RamBudget;
 
 /// Number of bytes read from the old data store at a time while re-chunking
 /// one old file's content - mirrors `store.rs`'s `READ_BUFFER_SIZE`.
 const READ_BUFFER_SIZE: usize = 64 * 1024;
-
-/// Same default as `store --chunk-buffer-mb` (see its doc comment for the
-/// full rationale) - this tool reuses the identical RAM-budgeted,
-/// disk-spilling chunk buffer.
-const DEFAULT_CHUNK_BUFFER_MB: u64 = 128;
 
 #[derive(Args)]
 pub struct MigrateScalaRepoArgs {
@@ -65,87 +62,91 @@ pub struct MigrateScalaRepoArgs {
     #[arg(long)]
     script: PathBuf,
 
-    /// Path to the old Scala repository's `data/` directory. Opened
-    /// read-only - the old repository is never modified.
-    #[arg(long = "old-data")]
-    old_data: PathBuf,
+    /// Average CDC chunk size target for the new repository, as `2^N` bytes,
+    /// same as `backup init`'s flag of the same name. This tool performs its
+    /// own equivalent initialization (adopting the existing Scala
+    /// repository directory - see the module doc comment - rather than
+    /// requiring a separate `backup init` step first), so it needs its own
+    /// copy of this setting.
+    #[arg(long, default_value_t = 20, value_parser = clap::value_parser!(u32).range(
+        *db::CDC_TARGET_SIZE_BITS_RANGE.start() as i64..=*db::CDC_TARGET_SIZE_BITS_RANGE.end() as i64
+    ))]
+    cdc_target_size_bits: u32,
 
-    /// RAM budget, in megabytes, for buffering an in-progress chunk's bytes
-    /// while its dedup status is resolved - see `store --chunk-buffer-mb`'s
-    /// doc comment for the full rationale; this tool reuses the same
-    /// RAM-budgeted, disk-spilling chunk buffer.
-    #[arg(long, default_value_t = DEFAULT_CHUNK_BUFFER_MB)]
-    chunk_buffer_mb: u64,
-
-    /// Start anyway if `--chunk-buffer-mb` looks large enough, relative to
-    /// currently available RAM, to risk pushing the machine into swapping.
-    #[arg(long)]
-    allow_swap_risk: bool,
+    /// Chunking method for the new repository - see `backup init`'s flag of
+    /// the same name.
+    #[arg(long, value_enum, default_value_t = ChunkingArg::Cdc)]
+    chunking: ChunkingArg,
 }
 
 pub fn run_migrate_scala_repo(repo: &Path, args: MigrateScalaRepoArgs) -> ExitCode {
-    if let Err(msg) = check_ram_budget(
-        "chunk-buffer-mb",
-        args.chunk_buffer_mb,
-        args.allow_swap_risk,
-    ) {
-        eprintln!("error: {msg}");
-        return ExitCode::FAILURE;
-    }
-
-    if let Err(err) = std::fs::metadata(&args.old_data) {
+    let old_data_dir = repo.join("data");
+    if let Err(err) = std::fs::metadata(&old_data_dir) {
         eprintln!(
-            "error: cannot access old data directory '{}': {err}",
-            args.old_data.display()
-        );
-        return ExitCode::FAILURE;
-    }
-
-    let repository = match db::open_repository(repo) {
-        Ok(r) => r,
-        Err(err) => {
-            eprintln!(
-                "error: failed to open target repository at {}: {err}",
-                repo.display()
-            );
-            eprintln!(
-                "hint: the target repository must already be initialized (run \
-                 'backup -r {} init' first) with a fresh, empty repository - this \
-                 tool migrates into an existing but empty repository, it doesn't \
-                 create one",
-                repo.display()
-            );
-            return ExitCode::FAILURE;
-        }
-    };
-
-    let mut write_conn = match repository.open_write_connection() {
-        Ok(c) => c,
-        Err(err) => {
-            eprintln!("error: failed to open the target metadata database: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
-
-    let existing_entries: i64 = match write_conn.query_row(
-        "SELECT COUNT(*) FROM tree_entries WHERE id != 0",
-        (),
-        |row| row.get(0),
-    ) {
-        Ok(n) => n,
-        Err(err) => {
-            eprintln!("error: failed to inspect target repository: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
-    if existing_entries > 0 {
-        eprintln!(
-            "error: target repository at {} is not empty (it already has tree \
-             entries besides the root) - migrate into a fresh, empty repository",
+            "error: cannot access '{}' - expected an existing Scala repository \
+             at '{}' (with its 'data' directory already there); this tool \
+             adopts it in place, see its module doc comment: {err}",
+            old_data_dir.display(),
             repo.display()
         );
         return ExitCode::FAILURE;
     }
+
+    let settings = db::RepositorySettings::new(args.cdc_target_size_bits, args.chunking.into())
+        .expect("validated by clap's value_parser range");
+
+    // `repo` is the *existing* Scala repository root; this adds `meta/`
+    // alongside its `data/`/`fsdb/` without touching either (see the module
+    // doc comment) - so migration needs no separate `backup init` step
+    // first, unlike a normal `store` run into a fresh repository.
+    if let Err(err) = db::adopt_repository_in_place(repo, &settings) {
+        eprintln!(
+            "error: failed to initialize repository metadata at '{}': {err}",
+            repo.display()
+        );
+        eprintln!(
+            "hint: if a previous migration attempt into this repository failed \
+             partway through, remove '{}' and re-run",
+            repo.join("meta").display()
+        );
+        return ExitCode::FAILURE;
+    }
+
+    // From here on, any failure removes the `meta/` directory just created
+    // (best-effort) so a re-run starts genuinely fresh, matching this tool's
+    // "just re-run from scratch" recovery story - `data/` is never written
+    // to by this tool at all (see the module doc comment), so there is
+    // nothing else to clean up.
+    match run_migration(repo, &old_data_dir, args) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(msg) => {
+            eprintln!("error: {msg}");
+            eprintln!(
+                "migration aborted; removing the incomplete 'meta' directory so \
+                 a re-run starts fresh"
+            );
+            if let Err(err) = std::fs::remove_dir_all(repo.join("meta")) {
+                eprintln!(
+                    "warning: failed to remove '{}': {err} - remove it manually \
+                     before retrying",
+                    repo.join("meta").display()
+                );
+            }
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_migration(
+    repo: &Path,
+    old_data_dir: &Path,
+    args: MigrateScalaRepoArgs,
+) -> Result<(), String> {
+    let repository =
+        db::open_repository(repo).map_err(|err| format!("failed to open repository: {err}"))?;
+    let mut write_conn = repository
+        .open_write_connection()
+        .map_err(|err| format!("failed to open the metadata database: {err}"))?;
 
     let chunker_config = ChunkerConfig::new(match repository.settings().chunking() {
         db::Chunking::Cdc => Some(repository.settings().cdc_target_size_bits()),
@@ -153,103 +154,68 @@ pub fn run_migrate_scala_repo(repo: &Path, args: MigrateScalaRepoArgs) -> ExitCo
     })
     .expect("validated by RepositorySettings");
 
-    let script_text = match load_script_text(&args.script) {
-        Ok(text) => text,
-        Err(msg) => {
-            eprintln!("error: {msg}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let script_text = load_script_text(&args.script)?;
 
-    // One scoped work directory for both the staging database and the
-    // chunk-buffer spillover files - a plain `TempDir` (not `.keep()`'d, unlike
-    // `store.rs`'s spill dir) is enough since, unlike `store`'s multi-threaded
-    // pipeline, this whole migration runs sequentially within this function's
-    // stack frame: nothing outlives it, so RAII cleanup on drop (success *or*
-    // error return) is all that's needed.
-    let work_dir = match tempfile::Builder::new()
+    // Scoped work directory for the staging database - a plain `TempDir` is
+    // enough since, unlike `store`'s multi-threaded pipeline, this whole
+    // migration runs sequentially within this function's stack frame:
+    // nothing outlives it, so RAII cleanup on drop (success *or* error
+    // return) is all that's needed.
+    let work_dir = tempfile::Builder::new()
         .prefix("migrate-scala-repo-")
         .tempdir()
-    {
-        Ok(dir) => dir,
-        Err(err) => {
-            eprintln!("error: failed to create a working temp directory: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
+        .map_err(|err| format!("failed to create a working temp directory: {err}"))?;
     let staging_path = work_dir.path().join("staging.db");
-    let spill_dir = work_dir.path().join("chunk-buffer");
-    if let Err(err) = std::fs::create_dir(&spill_dir) {
-        eprintln!("error: failed to create chunk-buffer temp dir: {err}");
-        return ExitCode::FAILURE;
-    }
 
     let (staging_conn, staging_stats) =
-        match script_import::build_staging_db(&script_text, &staging_path) {
-            Ok(result) => result,
-            Err(msg) => {
-                eprintln!("error: {msg}");
-                return ExitCode::FAILURE;
-            }
-        };
+        script_import::build_staging_db(&script_text, &staging_path)?;
     println!(
         "Loaded {} tree entries and {} data entries from the script export.",
         staging_stats.tree_entries, staging_stats.data_entries
     );
 
-    let extents = match db::chunk_extents_sorted(&write_conn) {
-        Ok(e) => e,
-        Err(err) => {
-            eprintln!("error: failed to inspect target repository free space: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
-    let allocator = SpaceAllocator::from_sorted_extents(&extents);
-    let new_store = store::LongTermStore::new(repository.data_dir(), false);
-    let old_store = store::LongTermStore::new(&args.old_data, true);
-    let ram_budget = Arc::new(RamBudget::new(args.chunk_buffer_mb * 1024 * 1024));
+    // Total bytes the chunk/hash walk below will read from the old data
+    // store - known upfront from the staging import, used as the
+    // denominator for `Progress`. A slight overcount is possible (a
+    // `data_id` present in the export but not referenced by any tree entry
+    // would never actually be read) but not worth a more precise query for
+    // a progress percentage that's explicitly not meant to be exact.
+    let total_old_bytes: i64 = staging_conn
+        .query_row(
+            "SELECT COALESCE(SUM(stop - start), 0) FROM data_entries WHERE stop > start",
+            (),
+            |row| row.get(0),
+        )
+        .map_err(|err| format!("failed to size the migration for progress reporting: {err}"))?;
+    println!(
+        "Old content to read and re-chunk: {}",
+        readable_bytes(total_old_bytes as u64)
+    );
 
-    let tx = match write_conn.transaction() {
-        Ok(tx) => tx,
-        Err(err) => {
-            eprintln!("error: failed to start the migration transaction: {err}");
-            return ExitCode::FAILURE;
-        }
-    };
+    let old_store = store::LongTermStore::new(old_data_dir, true);
+
+    let tx = write_conn
+        .transaction()
+        .map_err(|err| format!("failed to start the migration transaction: {err}"))?;
 
     let mut migration = Migration {
         tx,
         staging: &staging_conn,
         old_store: &old_store,
-        new_store: &new_store,
-        allocator: &allocator,
         chunker_config: &chunker_config,
-        ram_budget,
-        spill_dir,
         data_id_cache: HashMap::new(),
         stats: Stats::default(),
+        progress: Progress::new(total_old_bytes as u64),
     };
 
-    match migration.walk_directory(0, 0) {
-        Ok(()) => match migration.tx.commit() {
-            Ok(()) => {
-                print_summary(&migration.stats);
-                ExitCode::SUCCESS
-            }
-            Err(err) => {
-                eprintln!("error: failed to commit the migration: {err}");
-                ExitCode::FAILURE
-            }
-        },
-        Err(msg) => {
-            eprintln!("error: {msg}");
-            eprintln!(
-                "migration aborted; the target repository was left unchanged (the \
-                 in-progress transaction was rolled back)"
-            );
-            ExitCode::FAILURE
-        }
-    }
+    migration.walk_directory(0, 0)?;
+    migration.progress.finish();
+    migration
+        .tx
+        .commit()
+        .map_err(|err| format!("failed to commit the migration: {err}"))?;
+    print_summary(&migration.stats);
+    Ok(())
 }
 
 /// Reads `path` as UTF-8 SQL script text, transparently unzipping it first if
@@ -323,18 +289,101 @@ fn load_script_text(path: &Path) -> Result<String, String> {
 struct Migration<'a> {
     tx: rusqlite::Transaction<'a>,
     staging: &'a Connection,
+    /// Read-only handle onto `data/` - which, in this in-place design (see
+    /// the module doc comment), is also exactly where the migrated
+    /// repository's own content already lives; nothing else ever opens this
+    /// directory for writing.
     old_store: &'a store::LongTermStore,
-    new_store: &'a store::LongTermStore,
-    allocator: &'a SpaceAllocator,
     chunker_config: &'a ChunkerConfig,
-    ram_budget: Arc<RamBudget>,
-    spill_dir: PathBuf,
     /// Old Scala `dataId` -> new repository `content_id`, `None` for an old
     /// `dataId` whose bytes couldn't be recovered (see [`Self::resolve_content_id`]).
     /// Ensures a `dataId` shared by several old tree entries (Scala's own
     /// whole-file dedup) is only ever chunked once.
     data_id_cache: HashMap<i64, Option<i64>>,
     stats: Stats,
+    progress: Progress,
+}
+
+/// Time-throttled progress reporting for the chunk/hash walk - the one step
+/// of this tool slow enough (large old repositories, one read+chunk+hash
+/// pass over every distinct file content) to need it. Printed at most once
+/// per [`Progress::INTERVAL`], so a run with many small files doesn't spam
+/// the console, but a single huge file being chunked still gets periodic
+/// updates instead of going silent for as long as that takes - deliberately
+/// approximate (see `total_bytes`' own doc comment at its call site), not
+/// meant to be exact to the byte.
+struct Progress {
+    total_bytes: u64,
+    done_bytes: u64,
+    started: std::time::Instant,
+    last_printed: std::time::Instant,
+}
+
+impl Progress {
+    const INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
+
+    fn new(total_bytes: u64) -> Self {
+        let now = std::time::Instant::now();
+        Self {
+            total_bytes,
+            done_bytes: 0,
+            started: now,
+            last_printed: now,
+        }
+    }
+
+    /// Counts `bytes` as read/chunked, printing a progress line if
+    /// [`Progress::INTERVAL`] has elapsed since the last one.
+    fn add(&mut self, bytes: u64) {
+        self.done_bytes += bytes;
+        if self.last_printed.elapsed() >= Self::INTERVAL {
+            self.print();
+            self.last_printed = std::time::Instant::now();
+        }
+    }
+
+    /// Prints one final line regardless of the interval - so a run doesn't
+    /// end without ever showing 100%, or showing a stale percentage from
+    /// partway through the last interval.
+    fn finish(&mut self) {
+        self.print();
+    }
+
+    fn print(&self) {
+        if self.total_bytes == 0 {
+            return;
+        }
+        let percent = self.done_bytes as f64 / self.total_bytes as f64 * 100.0;
+        let elapsed = self.started.elapsed();
+        let eta = if self.done_bytes > 0 && self.done_bytes < self.total_bytes {
+            let total_secs =
+                elapsed.as_secs_f64() * self.total_bytes as f64 / self.done_bytes as f64;
+            format!(
+                ", ETA {}",
+                format_duration_secs(total_secs - elapsed.as_secs_f64())
+            )
+        } else {
+            String::new()
+        };
+        println!(
+            "progress: {} / {} ({percent:.1}%), elapsed {}{eta}",
+            readable_bytes(self.done_bytes),
+            readable_bytes(self.total_bytes),
+            format_duration_secs(elapsed.as_secs_f64()),
+        );
+    }
+}
+
+fn format_duration_secs(secs: f64) -> String {
+    let total = secs.max(0.0).round() as u64;
+    let (h, m, s) = (total / 3600, (total % 3600) / 60, total % 60);
+    if h > 0 {
+        format!("{h}h {m}m {s}s")
+    } else if m > 0 {
+        format!("{m}m {s}s")
+    } else {
+        format!("{s}s")
+    }
 }
 
 /// Counts and sizes reported at the end of a migration run.
@@ -358,10 +407,13 @@ struct Stats {
     /// bytes a naive whole-file copy would have needed, already deduplicated
     /// at the whole-file level the way Scala itself already did.
     old_storage_bytes: u64,
-    /// Sum of chunk lengths actually newly written to the new repository's
-    /// data store during this run (`db::ChunkRef::New` chunks only) - the new
-    /// repository's actual physical storage size after chunk-level dedup,
-    /// since the target starts out empty.
+    /// Sum of chunk lengths for chunks *not* found to already be a dedup hit
+    /// against another chunk already seen this run (`db::ChunkRef::New`
+    /// chunks only) - the total size of distinct chunk content actually
+    /// referenced by the migrated repository. No bytes are ever written
+    /// anywhere during migration (see the module doc comment), so this is
+    /// informational only: it's what chunk-level dedup found still needs to
+    /// be *kept* of the old physical storage, not anything newly written.
     new_storage_bytes: u64,
 }
 
@@ -393,7 +445,7 @@ fn print_summary(stats: &Stats) {
         readable_bytes(stats.old_storage_bytes)
     );
     println!(
-        "  New storage written (chunk-level dedup):        {}",
+        "  Distinct content kept (chunk-level dedup):      {}",
         readable_bytes(stats.new_storage_bytes)
     );
     let saved = stats
@@ -405,7 +457,9 @@ fn print_summary(stats: &Stats) {
         0.0
     };
     println!(
-        "  Additional space saved by chunk-level dedup: {} ({percent:.1}%)",
+        "  Additional redundancy chunk-level dedup found: {} ({percent:.1}%) - \
+         no bytes were copied; the migrated repository's 'data/' is the same \
+         directory as the old Scala repository's",
         readable_bytes(saved)
     );
 }
@@ -524,34 +578,26 @@ impl Migration<'_> {
     }
 
     /// Reads `old_data_id`'s bytes back from the old data store (concatenating
-    /// `parts` in order) and re-chunks/re-hashes/re-stores them into the new
-    /// repository, returning the resulting `content_id`.
+    /// `parts` in order) purely to compute CDC chunk boundaries and blake3
+    /// hashes, returning the resulting `content_id` - see the module doc
+    /// comment for why nothing is ever written anywhere: each resulting
+    /// chunk's bytes already exist at a known position within `parts`
+    /// (translated via [`map_to_old_store_extents`]), reused as-is.
     fn chunk_and_store(&mut self, old_data_id: i64, parts: &[(u64, u64)]) -> Result<i64, String> {
-        // Self-contained (doesn't borrow `self`), unlike a closure calling
-        // back into a `&mut self` method would: `chunker` stays alive across
-        // this whole function, including later calls to `self.resolve_chunk`
-        // - a closure borrowing `self` here would conflict with those.
-        // Restarting the counter at 0 for every old `dataId` is safe (not a
-        // spill-path collision risk) only because this tool is
-        // single-threaded and fully sequential: every `WriteCache` handed
-        // out by one `chunk_and_store` call (and thus every spill file it
-        // may have created) is resolved and dropped - see `resolve_chunk` -
-        // before the next call starts.
-        let spill_dir = self.spill_dir.clone();
-        let mut spill_seq = 0u64;
-        let mut chunker = SpillingHashingChunker::new(
+        let mut chunker = HashingChunker::new(
             Blake3Hasher(blake3::Hasher::new()),
             self.chunker_config.chunker(),
-            Arc::clone(&self.ram_budget),
-            move || {
-                spill_seq += 1;
-                spill_dir.join(format!("{old_data_id}-{spill_seq}"))
-            },
         );
         let mut content_hasher = blake3::Hasher::new();
         let mut chunk_refs = Vec::new();
         let mut read_buf = vec![0u8; READ_BUFFER_SIZE];
         let mut incomplete_reads = false;
+        // Logical offset, within the concatenation of `parts`, of the end of
+        // the last chunk resolved so far - i.e. the start of the next one.
+        // Advanced only by completed chunks' lengths, not by how many bytes
+        // have been fed to the chunker (which may be running ahead, holding
+        // an incomplete pending chunk).
+        let mut chunk_boundary = 0u64;
 
         for &(start, stop) in parts {
             let mut pos = start;
@@ -564,26 +610,35 @@ impl Migration<'_> {
                 if matches!(integrity, store::ReadIntegrity::Incomplete { .. }) {
                     incomplete_reads = true;
                 }
-                let chunks = chunker
-                    .next(&read_buf[..n])
-                    .map_err(|err| format!("chunk buffering failed: {err}"))?;
-                for chunk in chunks {
-                    self.resolve_chunk(chunk, &mut chunk_refs, &mut content_hasher)?;
+                for length_hash in chunker.next(&read_buf[..n]) {
+                    self.resolve_chunk(
+                        length_hash,
+                        parts,
+                        &mut chunk_boundary,
+                        &mut chunk_refs,
+                        &mut content_hasher,
+                    )?;
                 }
                 pos += n as u64;
+                self.progress.add(n as u64);
             }
         }
-        if let Some(chunk) = chunker
-            .flush()
-            .map_err(|err| format!("chunk buffering failed: {err}"))?
-        {
-            self.resolve_chunk(chunk, &mut chunk_refs, &mut content_hasher)?;
+        if let Some(length_hash) = chunker.flush() {
+            self.resolve_chunk(
+                length_hash,
+                parts,
+                &mut chunk_boundary,
+                &mut chunk_refs,
+                &mut content_hasher,
+            )?;
         }
 
         if incomplete_reads {
             self.warn(&format!(
                 "old data for dataId {old_data_id} was missing or shorter than \
-                 expected in one or more places; the gap was filled with zero bytes"
+                 expected in one or more places; the corresponding chunk(s) will \
+                 read back as zero bytes (no placeholder bytes are written - see \
+                 the module doc comment)"
             ));
         }
 
@@ -607,20 +662,25 @@ impl Migration<'_> {
     }
 
     /// Resolves one completed chunk against the dedup index: reuses an
-    /// existing chunk id on a hit, or reserves store space and writes the
-    /// chunk's bytes into the *new* repository's data store on a miss. Also
-    /// feeds the chunk's length and hash into `content_hasher` - mirrors
-    /// `store.rs`'s `resolve_chunk`, single-connection instead of a
-    /// thread-local read connection since this tool is single-threaded.
+    /// existing chunk id on a hit, or - on a miss - records the chunk's
+    /// *existing* position(s) in the old data store as its extents (see
+    /// [`map_to_old_store_extents`]), writing nothing. Also advances
+    /// `chunk_boundary` past this chunk and feeds its length/hash into
+    /// `content_hasher`.
     fn resolve_chunk(
         &mut self,
-        chunk: SpilledChunk,
+        length_hash: LengthHash,
+        parts: &[(u64, u64)],
+        chunk_boundary: &mut u64,
         chunk_refs: &mut Vec<db::ChunkRef>,
         content_hasher: &mut blake3::Hasher,
     ) -> Result<(), String> {
-        let length_hash = chunk.length_hash;
         content_hasher.update(&length_hash.length.to_le_bytes());
         content_hasher.update(&length_hash.hash);
+
+        let chunk_start = *chunk_boundary;
+        let chunk_end = chunk_start + length_hash.length;
+        *chunk_boundary = chunk_end;
 
         let existing = db::find_chunk(&self.tx, length_hash.length, &length_hash.hash)
             .map_err(|err| format!("dedup lookup failed: {err}"))?;
@@ -631,26 +691,48 @@ impl Migration<'_> {
                 length: length_hash.length,
             },
             None => {
-                let mut bytes = chunk.bytes;
-                let extents = chunk_store::write_chunk_from_cache(
-                    self.new_store,
-                    self.allocator,
-                    &mut bytes,
-                    length_hash.length,
-                    None,
-                )
-                .map_err(|err| format!("store write failed: {err}"))?;
                 self.stats.new_storage_bytes += length_hash.length;
                 db::ChunkRef::New {
                     length: length_hash.length,
                     hash: length_hash.hash,
-                    extents,
+                    extents: map_to_old_store_extents(parts, chunk_start, chunk_end),
                 }
             }
         };
         chunk_refs.push(chunk_ref);
         Ok(())
     }
+}
+
+/// Translates a logical byte range `[logical_start, logical_end)` - within
+/// the concatenation of `parts` in order - into the corresponding absolute
+/// byte extents in the old data store: one `(start, stop)` pair per `parts`
+/// entry the range overlaps, in order. A chunk usually maps to exactly one
+/// extent, but can straddle a `parts` boundary (Scala's own storage for one
+/// file isn't always contiguous - see `DataEntries.seq`), in which case it
+/// maps to more than one - exactly like a `store` run's own multi-extent
+/// `db::ChunkRef::New` already supports.
+fn map_to_old_store_extents(
+    parts: &[(u64, u64)],
+    logical_start: u64,
+    logical_end: u64,
+) -> Vec<(u64, u64)> {
+    let mut extents = Vec::new();
+    let mut logical_pos = 0u64;
+    for &(old_start, old_stop) in parts {
+        let part_logical_start = logical_pos;
+        let part_logical_end = logical_pos + (old_stop - old_start);
+        let overlap_start = logical_start.max(part_logical_start);
+        let overlap_end = logical_end.min(part_logical_end);
+        if overlap_start < overlap_end {
+            extents.push((
+                old_start + (overlap_start - part_logical_start),
+                old_start + (overlap_end - part_logical_start),
+            ));
+        }
+        logical_pos = part_logical_end;
+    }
+    extents
 }
 
 /// Loads the Scala H2 SQL script export into a temporary staging SQLite
@@ -736,7 +818,25 @@ mod script_import {
         let tx = conn
             .transaction()
             .map_err(|err| format!("failed to start staging import transaction: {err}"))?;
+        let cleaned_len = cleaned.len().max(1);
+        let cleaned_start = cleaned.as_ptr() as usize;
+        let mut last_progress = std::time::Instant::now();
         for stmt in iter_statements(&cleaned) {
+            if last_progress.elapsed() >= super::Progress::INTERVAL {
+                // `stmt` is always a subslice of `cleaned` (see
+                // `iter_statements`), so this pointer subtraction is a valid,
+                // cheap way to know how far through the script we are - used
+                // only for this approximate progress percentage, not to
+                // index back into `cleaned`.
+                let consumed = stmt.as_ptr() as usize - cleaned_start;
+                println!(
+                    "  parsing script: {:.1}% ({} tree entries, {} data entries so far)",
+                    consumed as f64 / cleaned_len as f64 * 100.0,
+                    stats.tree_entries,
+                    stats.data_entries
+                );
+                last_progress = std::time::Instant::now();
+            }
             if !starts_with_ci(stmt, "insert") {
                 continue;
             }
@@ -1219,6 +1319,48 @@ mod script_import {
             .collect()
     }
 
+    /// Decodes the body of an H2 `U&'...'` Unicode-escape string literal
+    /// (SQL:2008 syntax; H2's `Script` tool emits this - instead of a plain
+    /// `'...'` literal - for any string containing a non-ASCII character,
+    /// keeping the script file itself pure ASCII): `''` is a literal quote
+    /// (same doubling convention as a plain string), `\\` a literal
+    /// backslash, `\XXXX` a 4-hex-digit Unicode code point, `\+XXXXXX` a
+    /// 6-hex-digit one (for code points beyond the Basic Multilingual
+    /// Plane - e.g. emoji). `None` on any malformed escape.
+    fn parse_unicode_escaped_string(inner: &str) -> Option<String> {
+        let chars: Vec<char> = inner.chars().collect();
+        let mut out = String::with_capacity(chars.len());
+        let mut i = 0;
+        while i < chars.len() {
+            match chars[i] {
+                '\'' if chars.get(i + 1) == Some(&'\'') => {
+                    out.push('\'');
+                    i += 2;
+                }
+                '\'' => return None, // unbalanced - the caller already sliced between matched outer quotes
+                '\\' if chars.get(i + 1) == Some(&'\\') => {
+                    out.push('\\');
+                    i += 2;
+                }
+                '\\' if chars.get(i + 1) == Some(&'+') => {
+                    let hex: String = chars.get(i + 2..i + 8)?.iter().collect();
+                    out.push(char::from_u32(u32::from_str_radix(&hex, 16).ok()?)?);
+                    i += 8;
+                }
+                '\\' => {
+                    let hex: String = chars.get(i + 1..i + 5)?.iter().collect();
+                    out.push(char::from_u32(u32::from_str_radix(&hex, 16).ok()?)?);
+                    i += 5;
+                }
+                c => {
+                    out.push(c);
+                    i += 1;
+                }
+            }
+        }
+        Some(out)
+    }
+
     fn parse_value(token: &str) -> Option<Value> {
         let token = token.trim();
         if token.eq_ignore_ascii_case("null") {
@@ -1226,6 +1368,9 @@ mod script_import {
         }
         if let Some(inner) = token.strip_prefix('\'').and_then(|t| t.strip_suffix('\'')) {
             return Some(Value::Text(inner.replace("''", "'")));
+        }
+        if let Some(inner) = strip_prefix_ci(token, "u&'").and_then(|t| t.strip_suffix('\'')) {
+            return parse_unicode_escaped_string(inner).map(Value::Text);
         }
         if token.len() >= 3
             && (token.starts_with("X'") || token.starts_with("x'"))
@@ -1359,6 +1504,42 @@ mod script_import {
             assert_eq!(parsed.tuples[0][2], Value::Text("it's".to_string()));
         }
 
+        /// Regression test: a real-world export (H2's `Script` tool emitting
+        /// `U&'...'` instead of a plain `'...'` literal for any string
+        /// containing a non-ASCII character) failed to parse entirely before
+        /// `parse_value` learned this syntax - found via `backup
+        /// migrate-scala-repo` against a real Scala repository export
+        /// containing German filenames with umlauts.
+        #[test]
+        fn unicode_escaped_strings_decode_4_and_6_hex_digit_and_backslash_escapes() {
+            let parsed = parse_insert(
+                "INSERT INTO TREEENTRIES VALUES \
+                 (1, 0, U&'Decathlon R\\00fccksendung.pdf', 0, 0, NULL),\
+                 (2, 0, U&'emoji \\+01f600 face', 0, 0, NULL),\
+                 (3, 0, U&'back\\\\slash', 0, 0, NULL),\
+                 (4, 0, U&'quote''d', 0, 0, NULL)",
+            )
+            .unwrap();
+            assert_eq!(
+                parsed.tuples[0][2],
+                Value::Text("Decathlon Rücksendung.pdf".to_string())
+            );
+            assert_eq!(
+                parsed.tuples[1][2],
+                Value::Text("emoji \u{1f600} face".to_string())
+            );
+            assert_eq!(parsed.tuples[2][2], Value::Text("back\\slash".to_string()));
+            assert_eq!(parsed.tuples[3][2], Value::Text("quote'd".to_string()));
+        }
+
+        #[test]
+        fn unicode_escaped_string_prefix_is_case_insensitive() {
+            let parsed =
+                parse_insert("INSERT INTO TREEENTRIES VALUES (1, 0, u&'\\00fc', 0, 0, NULL)")
+                    .unwrap();
+            assert_eq!(parsed.tuples[0][2], Value::Text("ü".to_string()));
+        }
+
         #[test]
         fn strip_line_comments_removes_h2_row_count_comments_but_keeps_string_content() {
             let script = "-- 2 +/- SELECT COUNT(*) FROM PUBLIC.TREEENTRIES;\n\
@@ -1438,6 +1619,7 @@ mod script_import {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chunk_store;
     use std::io::Write as _;
 
     /// A small, deterministic xorshift64 PRNG - just needs to produce
@@ -1459,13 +1641,16 @@ mod tests {
         bytes.iter().map(|b| format!("{b:02x}")).collect()
     }
 
-    /// A hand-built fixture standing in for a real `fsc db-backup` export:
-    /// an old `data/` directory with real bytes (written directly via
-    /// `store::LongTermStore::write`, mirroring how other tests in this
-    /// codebase build fake stores) plus a `.sql` script text in the same
-    /// shape H2's `Script` tool produces (schema-qualified quoted
-    /// identifiers, multi-row `VALUES`, `--` row-count comments, stray
-    /// `CREATE`/`ALTER` noise our parser must ignore).
+    /// A hand-built fixture standing in for a real Scala repository: a
+    /// repository root (`repo_dir`) with a `data/` directory holding real
+    /// bytes (written directly via `store::LongTermStore::write`, mirroring
+    /// how other tests in this codebase build fake stores) plus a `.sql`
+    /// script text in the same shape H2's `Script` tool produces (schema-
+    /// qualified quoted identifiers, multi-row `VALUES`, `--` row-count
+    /// comments, stray `CREATE`/`ALTER` noise our parser must ignore).
+    /// `repo_dir`'s path is passed to `run_migrate_scala_repo` directly -
+    /// this tool adopts `data/` in place (see the module doc comment)
+    /// rather than taking a separate old-data argument.
     ///
     /// Covers every scenario called for by the plan this implements: nested
     /// directories, a mix of active and soft-deleted entries, an empty file,
@@ -1476,8 +1661,7 @@ mod tests {
     /// storage allocation was removed, `start == stop == 0`) that must be
     /// skipped rather than crash the migration.
     struct Fixture {
-        _old_data_dir: tempfile::TempDir,
-        old_data_path: PathBuf,
+        repo_dir: tempfile::TempDir,
         _script_dir: tempfile::TempDir,
         script_path: PathBuf,
         readme_bytes: Vec<u8>,
@@ -1486,9 +1670,15 @@ mod tests {
         big2: Vec<u8>,
     }
 
+    impl Fixture {
+        fn repo_path(&self) -> PathBuf {
+            self.repo_dir.path().to_path_buf()
+        }
+    }
+
     fn build_fixture() -> Fixture {
-        let old_data_dir = tempfile::tempdir().unwrap();
-        let old_data_path = old_data_dir.path().join("data");
+        let repo_dir = tempfile::tempdir().unwrap();
+        let old_data_path = repo_dir.path().join("data");
         let old_store = store::LongTermStore::new(&old_data_path, false);
 
         let readme_bytes = b"Hello World!".to_vec();
@@ -1569,8 +1759,7 @@ mod tests {
         std::fs::write(&script_path, script).unwrap();
 
         Fixture {
-            _old_data_dir: old_data_dir,
-            old_data_path,
+            repo_dir,
             _script_dir: script_dir,
             script_path,
             readme_bytes,
@@ -1580,30 +1769,39 @@ mod tests {
         }
     }
 
-    fn init_target_repo() -> (tempfile::TempDir, PathBuf) {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-        db::init_repository(
-            &repo_root,
-            // A small target chunk size so a ~100 KB fixture file reliably
-            // spans many chunks within a fast test.
-            &db::RepositorySettings::new(12, db::Chunking::Cdc).unwrap(),
-        )
-        .unwrap();
-        (temp_dir, repo_root)
-    }
-
     fn migrate_args(fixture: &Fixture) -> MigrateScalaRepoArgs {
         MigrateScalaRepoArgs {
             script: fixture.script_path.clone(),
-            old_data: fixture.old_data_path.clone(),
-            chunk_buffer_mb: DEFAULT_CHUNK_BUFFER_MB,
-            allow_swap_risk: false,
+            // A small target chunk size so a ~100 KB fixture file reliably
+            // spans many chunks within a fast test.
+            cdc_target_size_bits: 12,
+            chunking: crate::ChunkingArg::Cdc,
         }
     }
 
-    /// Reads a content's full bytes back from the target repository's data
-    /// store (concatenating its chunks in order) and asserts they match
+    /// Total bytes physically present in `dir`, recursively - used to
+    /// confirm migration never writes anything under `data/` (see the
+    /// module doc comment): this must come out identical before and after
+    /// a run.
+    fn total_bytes_in(dir: &Path) -> u64 {
+        fn walk(dir: &Path, total: &mut u64) {
+            for entry in std::fs::read_dir(dir).unwrap() {
+                let entry = entry.unwrap();
+                let file_type = entry.file_type().unwrap();
+                if file_type.is_dir() {
+                    walk(&entry.path(), total);
+                } else if file_type.is_file() {
+                    *total += entry.metadata().unwrap().len();
+                }
+            }
+        }
+        let mut total = 0;
+        walk(dir, &mut total);
+        total
+    }
+
+    /// Reads a content's full bytes back from the repository's data store
+    /// (concatenating its chunks in order) and asserts they match
     /// `expected`.
     fn assert_content_bytes(conn: &Connection, repo: &Path, content_id: i64, expected: &[u8]) {
         let data_store = store::LongTermStore::new(repo.join("data"), true);
@@ -1625,10 +1823,18 @@ mod tests {
     #[test]
     fn migrates_a_full_scala_repository_end_to_end() {
         let fixture = build_fixture();
-        let (_temp_dir, target_repo) = init_target_repo();
+        let target_repo = fixture.repo_path();
+        let data_bytes_before = total_bytes_in(&target_repo.join("data"));
 
         let exit = run_migrate_scala_repo(&target_repo, migrate_args(&fixture));
         assert_eq!(exit, ExitCode::SUCCESS);
+
+        assert_eq!(
+            total_bytes_in(&target_repo.join("data")),
+            data_bytes_before,
+            "migration must never write into data/ - it only reads from it and \
+             points metadata at bytes already there (see the module doc comment)"
+        );
 
         let repository = db::open_repository(&target_repo).unwrap();
         let conn = repository.open_read_connection().unwrap();
@@ -1715,19 +1921,27 @@ mod tests {
              whole-file content"
         );
 
-        // The physical storage actually written is well under the naive sum
-        // of both files' sizes - the "space saved by chunk-level dedup"
-        // this tool's summary reports on.
-        let physical_bytes: i64 = conn
-            .query_row(
-                "SELECT COALESCE(MAX(stop), 0) FROM chunk_extents",
-                (),
-                |row| row.get(0),
-            )
-            .unwrap();
+        // The distinct chunk content the two files actually reference,
+        // combined, is well under the naive sum of both files' sizes - the
+        // "redundancy chunk-level dedup found" this tool's summary reports
+        // on (see the module doc comment: no bytes are copied, so this
+        // measures distinct referenced content, not anything written).
+        let union: std::collections::HashSet<i64> = chunks1.union(&chunks2).copied().collect();
+        let referenced_bytes: i64 = union
+            .iter()
+            .map(|&chunk_id| {
+                conn.query_row(
+                    "SELECT length FROM chunks WHERE id = ?1",
+                    [chunk_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap()
+            })
+            .sum();
         assert!(
-            (physical_bytes as usize) < fixture.big1.len() + fixture.big2.len(),
-            "chunk-level dedup between big1.txt/big2.txt must save some physical space"
+            (referenced_bytes as usize) < fixture.big1.len() + fixture.big2.len(),
+            "chunk-level dedup between big1.txt/big2.txt must reduce distinct \
+             referenced content below their combined size"
         );
     }
 
@@ -1750,14 +1964,13 @@ mod tests {
             writer.finish().unwrap();
         }
 
-        let (_temp_dir, target_repo) = init_target_repo();
         let mut args = migrate_args(&fixture);
         args.script = zip_path;
 
-        let exit = run_migrate_scala_repo(&target_repo, args);
+        let exit = run_migrate_scala_repo(&fixture.repo_path(), args);
         assert_eq!(exit, ExitCode::SUCCESS);
 
-        let repository = db::open_repository(&target_repo).unwrap();
+        let repository = db::open_repository(&fixture.repo_path()).unwrap();
         let conn = repository.open_read_connection().unwrap();
         assert!(
             db::resolve_path(&conn, "docs/readme.txt")
@@ -1767,45 +1980,107 @@ mod tests {
     }
 
     #[test]
-    fn refuses_to_migrate_into_a_non_empty_target_repository() {
+    fn refuses_to_migrate_if_meta_already_exists() {
         let fixture = build_fixture();
-        let (_temp_dir, target_repo) = init_target_repo();
-        {
-            let repository = db::open_repository(&target_repo).unwrap();
-            let conn = repository.open_write_connection().unwrap();
-            db::insert_directory(&conn, 0, "preexisting", 0).unwrap();
-        }
+        let repo = fixture.repo_path();
+        db::adopt_repository_in_place(
+            &repo,
+            &db::RepositorySettings::new(20, db::Chunking::Cdc).unwrap(),
+        )
+        .unwrap();
 
-        let exit = run_migrate_scala_repo(&target_repo, migrate_args(&fixture));
-        assert_eq!(exit, ExitCode::FAILURE);
+        let exit = run_migrate_scala_repo(&repo, migrate_args(&fixture));
+
+        assert_eq!(
+            exit,
+            ExitCode::FAILURE,
+            "must not silently adopt/overwrite an already-migrated repository"
+        );
     }
 
     #[test]
-    fn fails_cleanly_for_an_uninitialized_target_repository() {
+    fn fails_fast_if_repo_has_no_data_directory() {
         let fixture = build_fixture();
         let temp_dir = tempfile::tempdir().unwrap();
-        let target_repo = temp_dir.path().join("does-not-exist");
+        let repo = temp_dir.path().join("not-a-scala-repo");
+        std::fs::create_dir(&repo).unwrap();
 
-        let exit = run_migrate_scala_repo(&target_repo, migrate_args(&fixture));
+        let exit = run_migrate_scala_repo(&repo, migrate_args(&fixture));
+
         assert_eq!(exit, ExitCode::FAILURE);
+        assert!(
+            !repo.join("meta").exists(),
+            "must fail before creating anything"
+        );
     }
 
     #[test]
-    fn fails_cleanly_for_a_missing_old_data_directory() {
+    fn a_failed_migration_removes_the_incomplete_meta_directory_so_a_rerun_can_start_fresh() {
         let fixture = build_fixture();
-        let (_temp_dir, target_repo) = init_target_repo();
-        let mut args = migrate_args(&fixture);
-        args.old_data = fixture.old_data_path.join("does-not-exist");
+        let repo = fixture.repo_path();
+        let bad_script = tempfile::NamedTempFile::new().unwrap();
+        // A throwaway 4-byte prefix: `load_script_text` peeks the first 4
+        // bytes to detect a zip archive, then keeps reading the *same*
+        // handle for the plain-text path - fine for a real, multi-KB
+        // export (a handful of lost leading bytes fall within its opening
+        // `-- H2 ...` comment line), but this script is a deliberately
+        // tiny malformed statement, so losing real content off the front
+        // would corrupt the `INSERT` keyword itself instead of the
+        // intended parse failure.
+        std::fs::write(
+            bad_script.path(),
+            b"----\nINSERT INTO TREEENTRIES VALUES NOT VALID SQL;\n",
+        )
+        .unwrap();
+        let mut bad_args = migrate_args(&fixture);
+        bad_args.script = bad_script.path().to_path_buf();
 
-        let exit = run_migrate_scala_repo(&target_repo, args);
+        let exit = run_migrate_scala_repo(&repo, bad_args);
+
         assert_eq!(exit, ExitCode::FAILURE);
+        assert!(
+            !repo.join("meta").exists(),
+            "the incomplete 'meta' directory must be removed on failure, so a \
+             re-run doesn't need any manual cleanup first"
+        );
 
-        // Nothing must have been committed to the target repository.
-        let repository = db::open_repository(&target_repo).unwrap();
-        let conn = repository.open_read_connection().unwrap();
-        let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM tree_entries", (), |row| row.get(0))
-            .unwrap();
-        assert_eq!(count, 1, "only the root entry");
+        // Re-running with a corrected script succeeds, with no manual
+        // intervention - the "just re-run from scratch" recovery story.
+        let exit = run_migrate_scala_repo(&repo, migrate_args(&fixture));
+        assert_eq!(exit, ExitCode::SUCCESS);
+    }
+}
+
+#[cfg(test)]
+mod map_to_old_store_extents_tests {
+    use super::map_to_old_store_extents;
+
+    #[test]
+    fn maps_a_range_entirely_within_one_part() {
+        let parts = [(1000, 2000)]; // logical 0..1000
+        assert_eq!(
+            map_to_old_store_extents(&parts, 100, 300),
+            vec![(1100, 1300)]
+        );
+    }
+
+    #[test]
+    fn maps_a_range_spanning_the_whole_of_several_parts() {
+        let parts = [(10, 20), (30, 50)]; // logical 0..10, 10..30
+        assert_eq!(
+            map_to_old_store_extents(&parts, 0, 30),
+            vec![(10, 20), (30, 50)]
+        );
+    }
+
+    #[test]
+    fn splits_a_range_straddling_a_part_boundary() {
+        // part 0: logical 0..500 -> old 1000..1500
+        // part 1: logical 500..1500 -> old 5000..6000
+        let parts = [(1000, 1500), (5000, 6000)];
+        assert_eq!(
+            map_to_old_store_extents(&parts, 400, 700),
+            vec![(1400, 1500), (5000, 5200)]
+        );
     }
 }
