@@ -55,7 +55,7 @@ pub enum ContentSource {
         content_hash: Vec<u8>,
     },
     /// An already-known `content_id`, used as-is - e.g. reused from a
-    /// reference file's tree entry (see `docs/plans/backup-reference-and-ignore.md`),
+    /// reference file's tree entry (see `docs/plans/implemented/backup-reference.md`),
     /// skipping chunking/hashing/dedup-lookup entirely. `None` for an empty
     /// file, mirroring `Resolved` with empty `chunks`.
     Known(Option<i64>),

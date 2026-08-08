@@ -99,6 +99,28 @@ pub struct BackupArgs {
     #[arg(long)]
     temp: Option<PathBuf>,
 
+    /// A repository path (not a filesystem path) to an earlier backup run,
+    /// used to skip reading/chunking/hashing a source file entirely when a
+    /// same-named file exists there with matching size and modified time -
+    /// the new tree entry just reuses that file's content, with no I/O on
+    /// the source file at all. `*`/`?` wildcards are resolved per
+    /// `/`-separated path segment, picking the alphabetically last match at
+    /// each segment - e.g. `backup/????/????.??.??_*` resolves to the
+    /// latest-named year, then within it the latest-named run. Before use,
+    /// checked against the given sources for plausibility (see
+    /// `--force-reference`); see `docs/plans/implemented/backup-reference.md`
+    /// for the full design.
+    #[arg(long)]
+    reference: Option<PathBuf>,
+
+    /// Skip the plausibility check `--reference` normally runs first (that
+    /// the reference directory's contents look similar enough to the given
+    /// sources to plausibly be an earlier backup of them) - use when you're
+    /// confident the reference is correct despite the check failing. No
+    /// effect without `--reference`.
+    #[arg(long)]
+    force_reference: bool,
+
     /// One or more source paths followed by the target path in the repository.
     #[arg(required = true, num_args = 2.., value_name = "PATH")]
     paths: Vec<PathBuf>,
@@ -233,15 +255,35 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
     })
     .expect("validated by RepositorySettings");
 
-    // A single connection drives the up-front target resolution and directory
-    // pass below (all on the main thread, before any parallel work starts), then
-    // is handed to the writer thread by value - see RunContext's doc comment.
-    let main_conn = match repository.open_write_connection() {
+    // A single connection drives the up-front target/reference resolution and
+    // directory pass below (all on the main thread, before any parallel work
+    // starts), then is handed to the writer thread by value - see
+    // RunContext's doc comment.
+    let mut main_conn = match repository.open_write_connection() {
         Ok(conn) => conn,
         Err(err) => {
             eprintln!("error: failed to open the metadata database: {err}");
             return ExitCode::FAILURE;
         }
+    };
+
+    let ref_root_id = match &args.reference {
+        None => None,
+        Some(reference) => match resolve_reference(&main_conn, reference) {
+            Ok(id) => {
+                if !args.force_reference
+                    && let Err(msg) = validate_reference(&main_conn, sources, id)
+                {
+                    eprintln!("error: {msg}");
+                    return ExitCode::FAILURE;
+                }
+                Some(id)
+            }
+            Err(msg) => {
+                eprintln!("error: {msg}");
+                return ExitCode::FAILURE;
+            }
+        },
     };
 
     let target_id = match resolve_target(&main_conn, target, args.create_dirs, args.target_exists) {
@@ -253,18 +295,28 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
     };
 
     let mut files: Vec<(PathBuf, i64)> = Vec::new();
+    let mut reference_hits: Vec<db::FileBackupRecord> = Vec::new();
     let mut warning_count = 0u64;
     for source in sources {
         if let Err(msg) = walk_and_create_dirs(
             &main_conn,
             source,
             target_id,
+            ref_root_id,
             &mut files,
+            &mut reference_hits,
             &mut warning_count,
         ) {
             eprintln!("error: {msg}");
             return ExitCode::FAILURE;
         }
+    }
+
+    if !reference_hits.is_empty()
+        && let Err(err) = db::apply_backup_batch(&mut main_conn, &reference_hits)
+    {
+        eprintln!("error: failed to apply reference-hit backup batch: {err}");
+        return ExitCode::FAILURE;
     }
 
     let extents = match db::chunk_extents_sorted(&main_conn) {
@@ -365,6 +417,38 @@ fn path_mtime_millis(path: &Path) -> i64 {
         .unwrap_or(0)
 }
 
+/// Checks `source` against a same-named candidate reference tree entry:
+/// if its size and modified time match, returns `Some((time_millis,
+/// content_id))` - everything `--reference` needs to record a hit, with no
+/// further source I/O. `None` on any mismatch, *or* if `source`'s metadata
+/// can't be read at all (falls through to normal processing, where the
+/// worker's own open/read will surface and report that failure - this
+/// function only ever short-circuits a match, never turns an unreadable
+/// source into a hard error).
+fn matching_reference(
+    conn: &Connection,
+    source: &Path,
+    ref_entry: &db::TreeEntryRow,
+) -> Result<Option<(i64, Option<i64>)>, db::Error> {
+    let Ok(metadata) = std::fs::metadata(source) else {
+        return Ok(None);
+    };
+    let Some(source_time_millis) = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+    else {
+        return Ok(None);
+    };
+    let ref_size = db::file_size(conn, ref_entry)?;
+    if metadata.len() as i64 == ref_size && source_time_millis == ref_entry.time_millis {
+        Ok(Some((source_time_millis, ref_entry.content_id)))
+    } else {
+        Ok(None)
+    }
+}
+
 /// Resolves `target`'s id in the repository tree, creating path components per
 /// the flag semantics:
 /// - `target_exists`: every component must already exist; missing ones are a
@@ -423,6 +507,145 @@ fn resolve_target(
     Ok(parent_id)
 }
 
+/// Resolves `reference`'s `/`-separated path against the repository tree,
+/// one segment at a time from the root: each segment is wildcard-matched
+/// (`*`/`?`, via [`backup_ignore::wildcard_match`]) against the current
+/// node's directory children, picking the alphabetically last match (already
+/// sorted ascending by [`db::list_children`], so the last filtered match is
+/// the alphabetically last one) - e.g. `????/????.??.??_*` resolves the year
+/// segment to the latest-named year directory, then within it the latest-
+/// named run. Errors if a segment has no matching directory, or if the
+/// fully-resolved reference directory turns out to have no children at all.
+fn resolve_reference(conn: &Connection, reference: &Path) -> Result<i64, String> {
+    let mut current_id = 0i64;
+    let mut resolved_path = String::from("/");
+    for component in reference.components() {
+        let std::path::Component::Normal(segment) = component else {
+            continue;
+        };
+        let segment = segment.to_string_lossy();
+        let children = db::list_children(conn, current_id).map_err(|e| e.to_string())?;
+        let matched = children
+            .iter()
+            .rfind(|c| {
+                c.kind == db::EntryKind::Dir && backup_ignore::wildcard_match(&segment, &c.name)
+            })
+            .ok_or_else(|| {
+                format!("reference directory not found while resolving '{resolved_path}{segment}'")
+            })?;
+        current_id = matched.id;
+        resolved_path.push_str(&matched.name);
+        resolved_path.push('/');
+    }
+    if db::list_children(conn, current_id)
+        .map_err(|e| e.to_string())?
+        .is_empty()
+    {
+        return Err(format!("reference directory '{resolved_path}' is empty"));
+    }
+    println!("reference:          {resolved_path}");
+    Ok(current_id)
+}
+
+/// Fuzzy plausibility check for a resolved `--reference` directory against
+/// the actual sources about to be backed up - a guard against a typo'd or
+/// unrelated reference silently "working" (matching almost nothing, so every
+/// file falls back to a full read/hash anyway, quietly defeating the whole
+/// point of `--reference`) rather than being caught up front. Skipped
+/// entirely when `--force-reference` is given.
+///
+/// Builds two comparable listings and requires them to overlap enough: the
+/// reference directory's top-level children (directories bare, files marked
+/// with a leading `:` so a same-named file and directory don't collide in
+/// the comparison), plus one extra level into any reference subdirectory
+/// whose name matches one of `sources`' basenames *as a directory* - and the
+/// mirror image built from the real `sources` paths (top-level basenames,
+/// plus one level into any source directory whose basename matches one of
+/// the reference's top-level directory names).
+fn validate_reference(conn: &Connection, sources: &[PathBuf], ref_id: i64) -> Result<(), String> {
+    let ref_children = db::list_children(conn, ref_id).map_err(|e| e.to_string())?;
+    let ref_dir_names: std::collections::HashSet<&str> = ref_children
+        .iter()
+        .filter(|c| c.kind == db::EntryKind::Dir)
+        .map(|c| c.name.as_str())
+        .collect();
+    let source_dir_names: std::collections::HashSet<String> = sources
+        .iter()
+        .filter(|s| s.is_dir())
+        .map(|s| source_basename(s))
+        .collect();
+
+    let mut reference_listing: Vec<String> = Vec::new();
+    for child in &ref_children {
+        match child.kind {
+            db::EntryKind::File => reference_listing.push(format!(":{}", child.name)),
+            db::EntryKind::Dir => {
+                reference_listing.push(child.name.clone());
+                if source_dir_names.contains(&child.name) {
+                    for grandchild in
+                        db::list_children(conn, child.id).map_err(|e| e.to_string())?
+                    {
+                        let listed = match grandchild.kind {
+                            db::EntryKind::File => format!(":{}", grandchild.name),
+                            db::EntryKind::Dir => grandchild.name,
+                        };
+                        reference_listing.push(format!("{}/{listed}", child.name));
+                    }
+                }
+            }
+        }
+    }
+
+    let mut source_listing: Vec<String> = Vec::new();
+    for source in sources {
+        let name = source_basename(source);
+        if !source.is_dir() {
+            source_listing.push(format!(":{name}"));
+            continue;
+        }
+        source_listing.push(name.clone());
+        if ref_dir_names.contains(name.as_str()) {
+            let entries = std::fs::read_dir(source).map_err(|e| e.to_string())?;
+            for entry in entries {
+                let entry = entry.map_err(|e| e.to_string())?;
+                let child_name = entry.file_name().to_string_lossy().into_owned();
+                let is_dir = entry.file_type().map_err(|e| e.to_string())?.is_dir();
+                let listed = if is_dir {
+                    child_name
+                } else {
+                    format!(":{child_name}")
+                };
+                source_listing.push(format!("{name}/{listed}"));
+            }
+        }
+    }
+
+    let reference_set: std::collections::HashSet<&String> = reference_listing.iter().collect();
+    let source_set: std::collections::HashSet<&String> = source_listing.iter().collect();
+    let intersect_count = source_set.intersection(&reference_set).count();
+    let max_len = reference_listing.len().max(source_listing.len());
+    if max_len as f64 > intersect_count as f64 * 1.6 + 1.0 {
+        return Err(format!(
+            "not enough matches ({intersect_count}) between source ({} entries) and reference ({} entries) - pass --force-reference to skip this check",
+            source_listing.len(),
+            reference_listing.len()
+        ));
+    }
+    println!(
+        "reference validation OK, {intersect_count} matches between source ({} entries) and reference ({} entries)",
+        source_listing.len(),
+        reference_listing.len()
+    );
+    Ok(())
+}
+
+fn source_basename(source: &Path) -> String {
+    source
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
 /// Checks that `source` itself (just this one node, not anything beneath it)
 /// exists and is actually readable, before any repository/target work
 /// starts. `walk_and_create_dirs` below already logs-and-skips access errors
@@ -469,15 +692,27 @@ fn check_source_readable(source: &Path) -> Result<(), String> {
 /// `ignore_scopes`, threaded alongside `dir_ids` the same way: keyed by
 /// directory path, holding the rules inherited by (and to be propagated
 /// further from) that directory's children.
+///
+/// A third map, `ref_ids`, threaded the same way again, mirrors `dir_ids` but
+/// walks the `ref_root_id` reference tree (see
+/// `docs/plans/implemented/backup-reference.md`) in parallel by name, not by
+/// path - seeded at depth 0 from `ref_root_id` itself instead of a parent
+/// lookup, same as `dir_ids` is seeded from `target_id`. A file whose
+/// same-named reference-tree counterpart matches on size and modified time
+/// is recorded into `reference_hits` (its content reused as-is, no chunking)
+/// instead of `files`.
 fn walk_and_create_dirs(
     conn: &Connection,
     source: &Path,
     target_id: i64,
+    ref_root_id: Option<i64>,
     files: &mut Vec<(PathBuf, i64)>,
+    reference_hits: &mut Vec<db::FileBackupRecord>,
     warnings: &mut u64,
 ) -> Result<(), String> {
     let mut dir_ids: HashMap<PathBuf, i64> = HashMap::new();
     let mut ignore_scopes: HashMap<PathBuf, Vec<IgnoreRule>> = HashMap::new();
+    let mut ref_ids: HashMap<PathBuf, i64> = HashMap::new();
 
     let mut walker = WalkDir::new(source).into_iter();
     while let Some(entry) = walker.next() {
@@ -512,6 +747,11 @@ fn walk_and_create_dirs(
             .and_then(|p| ignore_scopes.get(p))
             .cloned()
             .unwrap_or_default();
+        let inherited_ref_id = if entry.depth() == 0 {
+            ref_root_id
+        } else {
+            entry.path().parent().and_then(|p| ref_ids.get(p).copied())
+        };
         let name = entry.file_name().to_string_lossy().into_owned();
 
         if entry.file_type().is_dir() {
@@ -535,6 +775,15 @@ fn walk_and_create_dirs(
                         entry.path().to_path_buf(),
                         backup_ignore::child_scope(&inherited, &own_rules, &name),
                     );
+                    if let Some(ref_parent) = inherited_ref_id {
+                        let ref_entry = db::find_tree_entry(conn, ref_parent, &name)
+                            .map_err(|e| e.to_string())?;
+                        if let Some(ref_entry) = ref_entry
+                            && ref_entry.kind == db::EntryKind::Dir
+                        {
+                            ref_ids.insert(entry.path().to_path_buf(), ref_entry.id);
+                        }
+                    }
                 }
                 Err(db::Error::NotADirectory { .. }) => {
                     eprintln!(
@@ -554,7 +803,27 @@ fn walk_and_create_dirs(
             if backup_ignore::matches_file_skip(&inherited, &name) {
                 continue;
             }
-            files.push((entry.path().to_path_buf(), parent_id));
+            let reference_hit = match inherited_ref_id {
+                Some(ref_parent) => {
+                    match db::find_tree_entry(conn, ref_parent, &name).map_err(|e| e.to_string())? {
+                        Some(ref_entry) if ref_entry.kind == db::EntryKind::File => {
+                            matching_reference(conn, entry.path(), &ref_entry)
+                                .map_err(|e| e.to_string())?
+                        }
+                        _ => None,
+                    }
+                }
+                None => None,
+            };
+            match reference_hit {
+                Some((time_millis, content_id)) => reference_hits.push(db::FileBackupRecord {
+                    parent_id,
+                    name,
+                    time_millis,
+                    content: db::ContentSource::Known(content_id),
+                }),
+                None => files.push((entry.path().to_path_buf(), parent_id)),
+            }
         }
         // Symlinks and other special files are silently skipped, matching the
         // pre-existing behavior of the walk this replaces.
@@ -799,6 +1068,8 @@ mod tests {
             chunk_buffer_mb: DEFAULT_CHUNK_BUFFER_MB,
             allow_swap_risk: false,
             temp: None,
+            reference: None,
+            force_reference: false,
             paths: std::mem::take(&mut paths),
         }
     }
@@ -1202,6 +1473,217 @@ mod tests {
         assert!(find_child(&c, source_id, ".backupignore").is_none());
     }
 
+    fn content_id_of(c: &Connection, id: i64) -> Option<i64> {
+        c.query_row(
+            "SELECT content_id FROM tree_entries WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    /// The reference path must be taken (not just coincidental chunk-level
+    /// dedup): the source file's bytes are changed to different content of
+    /// the *same length*, but its modified time is reset to the original
+    /// value, so a real re-read/re-hash would produce a different
+    /// content_id - only reusing the reference's content_id without ever
+    /// reading the new bytes reproduces the *old* one.
+    #[test]
+    fn reference_hit_reuses_the_reference_content_id_without_rereading_the_source() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        let file_path = source_dir.path().join("a.txt");
+        std::fs::write(&file_path, b"hello world").unwrap();
+        let original_mtime = std::fs::metadata(&file_path).unwrap().modified().unwrap();
+
+        let exit = run_store(
+            &repo_root,
+            backup_args(vec![source_dir.path().to_path_buf(), PathBuf::from("run1")]),
+        );
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let source_name = source_dir.path().file_name().unwrap().to_str().unwrap();
+        let original_content_id = {
+            let c = conn(&repo_root);
+            let run1_id = find_child(&c, 0, "run1").unwrap();
+            let src_id = find_child(&c, run1_id, source_name).unwrap();
+            let a_id = find_child(&c, src_id, "a.txt").unwrap();
+            content_id_of(&c, a_id)
+        };
+
+        // Same length (11 bytes), different bytes - a real re-hash would not
+        // match the original content_id.
+        std::fs::write(&file_path, b"HELLO WORLD").unwrap();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&file_path)
+            .unwrap()
+            .set_modified(original_mtime)
+            .unwrap();
+
+        let mut args = backup_args(vec![source_dir.path().to_path_buf(), PathBuf::from("run2")]);
+        args.reference = Some(PathBuf::from("run1"));
+        args.force_reference = true;
+        let exit = run_store(&repo_root, args);
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let c = conn(&repo_root);
+        let run2_id = find_child(&c, 0, "run2").unwrap();
+        let src_id = find_child(&c, run2_id, source_name).unwrap();
+        let a_id = find_child(&c, src_id, "a.txt").unwrap();
+        assert_eq!(
+            content_id_of(&c, a_id),
+            original_content_id,
+            "a reference hit must reuse the old content_id even though the \
+             bytes on disk changed - proves the source was never re-read"
+        );
+    }
+
+    #[test]
+    fn reference_mismatch_falls_back_to_normal_processing() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        let file_path = source_dir.path().join("a.txt");
+        std::fs::write(&file_path, b"hello world").unwrap();
+
+        let exit = run_store(
+            &repo_root,
+            backup_args(vec![source_dir.path().to_path_buf(), PathBuf::from("run1")]),
+        );
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let source_name = source_dir.path().file_name().unwrap().to_str().unwrap();
+        let original_content_id = {
+            let c = conn(&repo_root);
+            let run1_id = find_child(&c, 0, "run1").unwrap();
+            let src_id = find_child(&c, run1_id, source_name).unwrap();
+            let a_id = find_child(&c, src_id, "a.txt").unwrap();
+            content_id_of(&c, a_id)
+        };
+
+        // Different content, mtime left alone (naturally advances) - a
+        // straightforward change, not a spoofed match.
+        std::fs::write(&file_path, b"a completely different, longer body").unwrap();
+
+        let mut args = backup_args(vec![source_dir.path().to_path_buf(), PathBuf::from("run2")]);
+        args.reference = Some(PathBuf::from("run1"));
+        args.force_reference = true;
+        let exit = run_store(&repo_root, args);
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let c = conn(&repo_root);
+        let run2_id = find_child(&c, 0, "run2").unwrap();
+        let src_id = find_child(&c, run2_id, source_name).unwrap();
+        let a_id = find_child(&c, src_id, "a.txt").unwrap();
+        assert_ne!(
+            content_id_of(&c, a_id),
+            original_content_id,
+            "size/mtime mismatch must fall back to actually reading the new content"
+        );
+    }
+
+    #[test]
+    fn run_store_fails_fast_for_an_unresolvable_reference_without_touching_the_target() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("a.txt"), b"hello").unwrap();
+
+        let mut args = backup_args(vec![
+            source_dir.path().to_path_buf(),
+            PathBuf::from("target"),
+        ]);
+        args.reference = Some(PathBuf::from("does-not-exist"));
+        let exit = run_store(&repo_root, args);
+
+        assert_eq!(exit, ExitCode::FAILURE);
+        let c = conn(&repo_root);
+        assert_eq!(
+            count(&c, "tree_entries"),
+            1,
+            "only the root entry - the target must never have been created"
+        );
+    }
+
+    #[test]
+    fn resolve_reference_wildcard_picks_the_alphabetically_last_match_per_segment() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("a.txt"), b"x").unwrap();
+
+        for year in ["2024", "2025"] {
+            for stamp in ["01.01", "06.15", "12.31"] {
+                let exit = run_store(
+                    &repo_root,
+                    backup_args(vec![
+                        source_dir.path().to_path_buf(),
+                        PathBuf::from(format!("backup/{year}/{stamp}")),
+                    ]),
+                );
+                assert_eq!(exit, ExitCode::SUCCESS);
+            }
+        }
+
+        let c = conn(&repo_root);
+        let resolved = resolve_reference(&c, Path::new("backup/????/??.??")).unwrap();
+        let expected = find_child(&c, 0, "backup")
+            .and_then(|backup_id| find_child(&c, backup_id, "2025"))
+            .and_then(|year_id| find_child(&c, year_id, "12.31"))
+            .expect("the latest year/timestamp directories must exist");
+        assert_eq!(
+            resolved, expected,
+            "must resolve to the alphabetically last match at each segment independently"
+        );
+    }
+
+    #[test]
+    fn force_reference_bypasses_a_failing_validation() {
+        let (_temp_dir, repo_root) = init_repo();
+
+        // Establishes a reference tree whose top-level name has nothing to
+        // do with the sources used below.
+        let unrelated = tempfile::tempdir().unwrap();
+        std::fs::write(unrelated.path().join("x.txt"), b"x").unwrap();
+        let exit = run_store(
+            &repo_root,
+            backup_args(vec![unrelated.path().to_path_buf(), PathBuf::from("ref")]),
+        );
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        // Two differently-named sources with no overlap against 'ref' at
+        // all, so the fuzzy validation has nothing to match.
+        let source_a = tempfile::tempdir().unwrap();
+        std::fs::write(source_a.path().join("a.txt"), b"a").unwrap();
+        let source_b = tempfile::tempdir().unwrap();
+        std::fs::write(source_b.path().join("b.txt"), b"b").unwrap();
+
+        let mut args = backup_args(vec![
+            source_a.path().to_path_buf(),
+            source_b.path().to_path_buf(),
+            PathBuf::from("target"),
+        ]);
+        args.reference = Some(PathBuf::from("ref"));
+        let exit = run_store(&repo_root, args);
+        assert_eq!(
+            exit,
+            ExitCode::FAILURE,
+            "validation should reject an unrelated reference"
+        );
+
+        let mut args = backup_args(vec![
+            source_a.path().to_path_buf(),
+            source_b.path().to_path_buf(),
+            PathBuf::from("target"),
+        ]);
+        args.reference = Some(PathBuf::from("ref"));
+        args.force_reference = true;
+        let exit = run_store(&repo_root, args);
+        assert_eq!(
+            exit,
+            ExitCode::SUCCESS,
+            "--force-reference must skip the validation"
+        );
+    }
+
     #[test]
     fn rerunning_the_same_backup_creates_no_new_chunks_or_contents() {
         let (_temp_dir, repo_root) = init_repo();
@@ -1389,6 +1871,8 @@ mod tests {
             chunk_buffer_mb: 0,
             allow_swap_risk: false,
             temp: None,
+            reference: None,
+            force_reference: false,
             paths: vec![source_dir.path().to_path_buf(), PathBuf::from("target")],
         };
         let exit = run_store(&repo_root, args);

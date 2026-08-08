@@ -1,6 +1,10 @@
 # `store`: reference-based backup
 
-**Status**: plan complete, ready to implement.
+**Status**: implemented. `--reference`/`--force-reference` on `cli store`
+(`cli/src/store.rs`: `resolve_reference`, `validate_reference`,
+`matching_reference`, the `ref_ids`/`reference_hits` threading in
+`walk_and_create_dirs`). Kept as a record of the Scala comparison and the
+design decisions taken.
 
 `.backupignore` used to be covered here too; it shipped separately, see
 `docs/plans/implemented/backupignore.md`.

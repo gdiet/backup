@@ -94,7 +94,7 @@ repository:
 ## Back Up Files And Directories
 
 ```bash
-backup store [-p | -t] [-c <n>] [--store-io-parallelism <n>] [--chunk-buffer-mb <n>] [--temp <dir>] <source...> <target>
+backup store [-p | -t] [-c <n>] [--store-io-parallelism <n>] [--chunk-buffer-mb <n>] [--temp <dir>] [--reference <path> [--force-reference]] <source...> <target>
 ```
 
 Copies one or more source files/directories from the real file system into
@@ -131,6 +131,49 @@ Performance tuning (the defaults are reasonable for most cases):
   already exist and be writable); defaults to the OS temp directory. For
   best throughput, point it at the fastest disk available, ideally not the
   same physical drive as either a source or the repository.
+
+### Speeding Up A Backup With `--reference`
+
+```bash
+backup store --reference <path> [--force-reference] <source...> <target>
+```
+
+If a directory containing many and/or large files has been backed up
+before and most files haven't changed since, `--reference <path>` can
+**significantly accelerate** another backup of it: for each source file, if
+a same-named file exists at the corresponding path under `<path>` (a
+repository path - typically an earlier backup run's target) with the same
+size and modified time, the new backup entry just reuses that file's
+existing content - no reading, chunking, or hashing of the source file at
+all. This is on top of (not a replacement for) the repository's normal
+chunk-level dedup: even with perfect dedup, an unchanged file still costs a
+full read+chunk+hash on every run just to *discover* that it dedupes -
+`--reference` skips that discovery cost entirely for the common case
+(nightly backup of a mostly-unchanged tree).
+
+**Caveat**: if a file's contents changed but its size and modified time
+happen not to have, the changed content is **not** detected and **not**
+stored - the same trade-off the Scala predecessor makes.
+
+`<path>` resolves against the repository tree, one `/`-separated segment at
+a time from the root; `*`/`?` wildcards in a segment are resolved against
+that segment's directory children, picking the alphabetically last match -
+e.g. `backup/????/????.??.??_*` resolves to the latest-named year, then
+within it the latest-named run:
+
+```bash
+# First backup:
+backup store src backup/2026.01.06
+# Later backups, referencing the previous run:
+backup store --reference "backup/????.??.??" src "backup/2026.01.13"
+```
+
+Before use, the resolved reference directory is checked against the given
+sources for plausibility (do their top-level contents overlap enough to
+plausibly be an earlier backup of them?) - a guard against a typo'd or
+unrelated reference silently "working" (matching almost nothing, so every
+file falls back to a full read/hash anyway). Pass `--force-reference` to
+skip this check.
 
 ### Excluding Files / Directories From The Backup (`.backupignore`)
 
