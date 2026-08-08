@@ -3,8 +3,10 @@
 ## Project Overview
 
 The goal of this project is a deduplicating backup application. The directory
-this AGENTS.md file is in contains the Rust implementation (see [README.md](README.md)
-for the crate layout).
+this AGENTS.md file is in contains the Rust implementation (see
+[README.md](README.md) for user-facing usage, or
+[docs/development.md](docs/development.md) for the crate layout and build
+setup).
 
 ## Interaction With The Developer
 
