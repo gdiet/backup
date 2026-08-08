@@ -3,6 +3,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+mod backup_ignore;
 mod check;
 mod chunk_store;
 mod db_maintenance;

@@ -1,7 +1,9 @@
-# `store`: reference-based backup and `.backupignore`
+# `store`: reference-based backup
 
-**Status**: not started - this is a stub, not a plan. Neither feature
-exists in Rust's `cli store` today.
+**Status**: not started - this is a stub, not a plan.
+
+`.backupignore` used to be covered here too; it now has its own plan at
+`docs/plans/backupignore.md`.
 
 ## Reference-based backup (Scala: `reference`/`forceReference`)
 
@@ -31,31 +33,9 @@ name-overlap heuristic in `BackupTool.validateReference`) before trusting
 it - guards against silently backing up against a typo'd/unrelated
 reference.
 
-## `.backupignore` (Scala: same name)
-
-A per-directory ignore mechanism, checked during the source tree walk:
-
-- An **empty** `.backupignore` file in a directory skips that whole
-  directory (fast path, no rules to parse).
-- A **non-empty** `.backupignore` is a `.gitignore`-ish rule list: one
-  glob per line (`*`/`?` wildcards only, no `**`), `#` comments, blank
-  lines ignored, a trailing `/` marks a directory-only rule. Rules apply
-  to the directory they're found in *and* propagate into subdirectories
-  (each rule's remaining path elements carried down, per
-  `BackupTool.process`'s `ignore: Seq[List[String]]` threading).
-
-Rust's `store.rs` (`walk_and_create_dirs`) has no ignore mechanism at all
-today - every readable file/directory under a source is backed up. A
-`.backupignore`-alike would need a new field threaded through the
-existing `WalkDir`-based walk, checked before pushing a file into `files`
-or descending into a directory.
-
 ## Rough shape if/when planned
 
-Two independent, separately-implementable pieces - could land one without
-the other. `.backupignore` is the more self-contained of the two (pure
-source-side filtering, no interaction with `db`/dedup); reference-based
-backup needs a new CLI flag, a tree lookup against the reference path, and
-a "just copy this tree entry's `content_id`" path through
+Needs a new CLI flag, a tree lookup against the reference path, and a
+"just copy this tree entry's `content_id`" path through
 `apply_backup_batch` that doesn't exist yet (today every `FileBackupRecord`
 carries real resolved chunks).

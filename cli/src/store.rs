@@ -17,6 +17,7 @@ use rayon::prelude::*;
 use rusqlite::Connection;
 use walkdir::WalkDir;
 
+use crate::backup_ignore::{self, IgnoreRule, OwnIgnoreFile};
 use crate::chunk_store::{self, SpaceAllocator};
 use crate::io_limiter::IoLimiter;
 use crate::ram_budget_check::check_ram_budget;
@@ -462,6 +463,12 @@ fn check_source_readable(source: &Path) -> Result<(), String> {
 /// subtree is silently omitted, but the run continues. This deliberately avoids
 /// the failure mode found in the tool this replaces, where an unreadable
 /// subdirectory crashes the entire backup.
+///
+/// Entries excluded by a `.backupignore` (see `docs/plans/backupignore.md`) are
+/// skipped the same way - silently, no warning - via a second map,
+/// `ignore_scopes`, threaded alongside `dir_ids` the same way: keyed by
+/// directory path, holding the rules inherited by (and to be propagated
+/// further from) that directory's children.
 fn walk_and_create_dirs(
     conn: &Connection,
     source: &Path,
@@ -470,8 +477,10 @@ fn walk_and_create_dirs(
     warnings: &mut u64,
 ) -> Result<(), String> {
     let mut dir_ids: HashMap<PathBuf, i64> = HashMap::new();
+    let mut ignore_scopes: HashMap<PathBuf, Vec<IgnoreRule>> = HashMap::new();
 
-    for entry in WalkDir::new(source) {
+    let mut walker = WalkDir::new(source).into_iter();
+    while let Some(entry) = walker.next() {
         let entry = match entry {
             Ok(entry) => entry,
             Err(err) => {
@@ -493,11 +502,39 @@ fn walk_and_create_dirs(
             continue;
         };
 
+        // Cloned (not borrowed) so `ignore_scopes` can be mutated further down
+        // in the same iteration (inserting this directory's own child scope)
+        // without a borrow conflict; rule lists are small (a handful of lines
+        // per `.backupignore`), so this is cheap.
+        let inherited: Vec<IgnoreRule> = entry
+            .path()
+            .parent()
+            .and_then(|p| ignore_scopes.get(p))
+            .cloned()
+            .unwrap_or_default();
+        let name = entry.file_name().to_string_lossy().into_owned();
+
         if entry.file_type().is_dir() {
-            let name = entry.file_name().to_string_lossy().into_owned();
+            if backup_ignore::matches_dir_skip(&inherited, &name) {
+                walker.skip_current_dir();
+                continue;
+            }
+            let own_rules = match backup_ignore::read_own_ignore_file(entry.path()) {
+                OwnIgnoreFile::Empty => {
+                    walker.skip_current_dir();
+                    continue;
+                }
+                OwnIgnoreFile::Absent => Vec::new(),
+                OwnIgnoreFile::Rules(rules) => rules,
+            };
+
             match db::insert_directory(conn, parent_id, &name, path_mtime_millis(entry.path())) {
                 Ok(id) => {
                     dir_ids.insert(entry.path().to_path_buf(), id);
+                    ignore_scopes.insert(
+                        entry.path().to_path_buf(),
+                        backup_ignore::child_scope(&inherited, &own_rules, &name),
+                    );
                 }
                 Err(db::Error::NotADirectory { .. }) => {
                     eprintln!(
@@ -514,6 +551,9 @@ fn walk_and_create_dirs(
                 }
             }
         } else if entry.file_type().is_file() {
+            if backup_ignore::matches_file_skip(&inherited, &name) {
+                continue;
+            }
             files.push((entry.path().to_path_buf(), parent_id));
         }
         // Symlinks and other special files are silently skipped, matching the
@@ -1018,6 +1058,146 @@ mod tests {
         let integrity = data_store.read(start as u64, &mut buf).unwrap();
         assert_eq!(integrity, store::ReadIntegrity::Complete);
         assert_eq!(buf, b"hello world");
+    }
+
+    /// `Some(id)` if `parent_id` has a child named `name`, `None` otherwise -
+    /// used by the `.backupignore` tests below to assert an entry's absence,
+    /// not just its presence.
+    fn find_child(c: &Connection, parent_id: i64, name: &str) -> Option<i64> {
+        match c.query_row(
+            "SELECT id FROM tree_entries WHERE parent_id = ?1 AND name = ?2",
+            rusqlite::params![parent_id, name],
+            |row| row.get(0),
+        ) {
+            Ok(id) => Some(id),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(err) => panic!("query failed: {err}"),
+        }
+    }
+
+    #[test]
+    fn backupignore_empty_file_skips_the_whole_directory() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("kept.txt"), b"kept").unwrap();
+        std::fs::create_dir(source_dir.path().join("skip")).unwrap();
+        std::fs::write(source_dir.path().join("skip").join(".backupignore"), b"").unwrap();
+        std::fs::write(source_dir.path().join("skip").join("inside.txt"), b"x").unwrap();
+
+        let exit = run_store(
+            &repo_root,
+            backup_args(vec![
+                source_dir.path().to_path_buf(),
+                PathBuf::from("target"),
+            ]),
+        );
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let c = conn(&repo_root);
+        let source_name = source_dir.path().file_name().unwrap().to_str().unwrap();
+        let target_id = find_child(&c, 0, "target").unwrap();
+        let source_id = find_child(&c, target_id, source_name).unwrap();
+
+        assert!(find_child(&c, source_id, "kept.txt").is_some());
+        assert!(
+            find_child(&c, source_id, "skip").is_none(),
+            "a directory with an empty .backupignore must not be created at all"
+        );
+    }
+
+    #[test]
+    fn backupignore_excludes_a_matching_file_and_a_matching_directory() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            source_dir.path().join(".backupignore"),
+            b"secret.txt\ntemp/\n",
+        )
+        .unwrap();
+        std::fs::write(source_dir.path().join("secret.txt"), b"x").unwrap();
+        std::fs::write(source_dir.path().join("kept.txt"), b"kept").unwrap();
+        std::fs::create_dir(source_dir.path().join("temp")).unwrap();
+        std::fs::write(source_dir.path().join("temp").join("inside.txt"), b"x").unwrap();
+
+        let exit = run_store(
+            &repo_root,
+            backup_args(vec![
+                source_dir.path().to_path_buf(),
+                PathBuf::from("target"),
+            ]),
+        );
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let c = conn(&repo_root);
+        let source_name = source_dir.path().file_name().unwrap().to_str().unwrap();
+        let target_id = find_child(&c, 0, "target").unwrap();
+        let source_id = find_child(&c, target_id, source_name).unwrap();
+
+        assert!(find_child(&c, source_id, "kept.txt").is_some());
+        assert!(find_child(&c, source_id, "secret.txt").is_none());
+        assert!(find_child(&c, source_id, "temp").is_none());
+    }
+
+    /// The scenario that demonstrates the fix of a bug present in the Scala
+    /// tool this ports (see `docs/plans/backupignore.md`): a multi-segment
+    /// rule like `log*/*.log` must only filter matching files inside a
+    /// matching directory, not skip the whole directory outright.
+    #[test]
+    fn backupignore_multi_segment_rule_only_excludes_matching_files_not_the_whole_directory() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join(".backupignore"), b"log*/*.log\n").unwrap();
+        std::fs::create_dir(source_dir.path().join("logs")).unwrap();
+        std::fs::write(source_dir.path().join("logs").join("app.log"), b"x").unwrap();
+        std::fs::write(source_dir.path().join("logs").join("keep.txt"), b"kept").unwrap();
+
+        let exit = run_store(
+            &repo_root,
+            backup_args(vec![
+                source_dir.path().to_path_buf(),
+                PathBuf::from("target"),
+            ]),
+        );
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let c = conn(&repo_root);
+        let source_name = source_dir.path().file_name().unwrap().to_str().unwrap();
+        let target_id = find_child(&c, 0, "target").unwrap();
+        let source_id = find_child(&c, target_id, source_name).unwrap();
+        let logs_id = find_child(&c, source_id, "logs")
+            .expect("the 'logs' directory itself must still be backed up");
+
+        assert!(find_child(&c, logs_id, "keep.txt").is_some());
+        assert!(find_child(&c, logs_id, "app.log").is_none());
+    }
+
+    #[test]
+    fn backupignore_can_exclude_itself() {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            source_dir.path().join(".backupignore"),
+            b"# Do not store the .backupignore itself in the backup.\n.backupignore\n",
+        )
+        .unwrap();
+        std::fs::write(source_dir.path().join("kept.txt"), b"kept").unwrap();
+
+        let exit = run_store(
+            &repo_root,
+            backup_args(vec![
+                source_dir.path().to_path_buf(),
+                PathBuf::from("target"),
+            ]),
+        );
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let c = conn(&repo_root);
+        let source_name = source_dir.path().file_name().unwrap().to_str().unwrap();
+        let target_id = find_child(&c, 0, "target").unwrap();
+        let source_id = find_child(&c, target_id, source_name).unwrap();
+
+        assert!(find_child(&c, source_id, "kept.txt").is_some());
+        assert!(find_child(&c, source_id, ".backupignore").is_none());
     }
 
     #[test]
