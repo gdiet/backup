@@ -152,7 +152,7 @@ resolve some files to the wrong bytes.
 surfaced that the identical hazard already exists today via ordinary
 `store`/`mount --read-write` runs reusing a gap left by `reclaim-space` -
 entirely independent of whether `compact-store` ever ships. Split out to
-its own plan, `docs/plans/stale-backup-guard.md`: a `store_generation`
+its own plan, `docs/plans/implemented/stale-backup-guard.md`: a `store_generation`
 counter in `repository_settings`, bumped inside `reclaim_space` itself
 (where gaps are *created* - sufficient to catch every real case, since a
 gap can only ever come from there), stamped into every `db backup`
@@ -199,7 +199,7 @@ backup predates the live repository's current generation.
 - `store`: a new truncate operation on `LongTermStore` (remove shard files
   entirely past a target size, `set_len()` the one straddling it).
 - `db`: bumping `store_generation` on a successful run - see
-  `docs/plans/stale-backup-guard.md`, which this depends on (should land
+  `docs/plans/implemented/stale-backup-guard.md`, which this depends on (should land
   first, or alongside). No change to `chunk_extents` itself, which already
   supports everything the move step needs.
 - `cli`: a new `compact_store` module/command wired into `main.rs`,

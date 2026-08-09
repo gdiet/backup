@@ -226,6 +226,20 @@ pub fn reclaim_space(conn: &mut Connection, cutoff_millis: i64) -> Result<Reclai
     )?;
     let contents_purged = tx.execute("DELETE FROM contents WHERE ref_count = 0", ())?;
     let chunks_purged = tx.execute("DELETE FROM chunks WHERE ref_count = 0", ())?;
+    // Purging a chunks row frees its chunk_extents (ON DELETE CASCADE),
+    // turning that byte range into a gap a later store/mount --read-write
+    // write may reuse - the only way that ever happens (see
+    // repository_settings's doc comment in migrations.rs). Bumping the
+    // generation here, guarded on actually having purged something, is
+    // therefore sufficient to catch every case where restoring an older
+    // db backup could resolve an entry to the wrong physical bytes - see
+    // docs/plans/stale-backup-guard.md.
+    if chunks_purged > 0 {
+        tx.execute(
+            "UPDATE repository_settings SET store_generation = store_generation + 1",
+            (),
+        )?;
+    }
     tx.commit()?;
     Ok(ReclaimStats {
         tree_entries_purged,
@@ -534,6 +548,52 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM tree_entries", (), |row| row.get(0))
             .unwrap();
         assert_eq!(remaining, 1, "only the root remains");
+    }
+
+    #[test]
+    fn reclaim_space_bumps_store_generation_only_when_chunks_are_purged() {
+        let (_temp_dir, mut conn) = test_connection();
+        assert_eq!(crate::store_generation(&conn).unwrap(), 0);
+
+        // Nothing eligible: no soft-deleted entries at all, so nothing is
+        // purged - must not bump.
+        reclaim_space(&mut conn, 1000).unwrap();
+        assert_eq!(crate::store_generation(&conn).unwrap(), 0);
+
+        conn.execute(
+            "INSERT INTO chunks (id, length, hash) VALUES (1, 5, x'AA')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO contents (id, length, hash) VALUES (1, 5, x'BB')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (1, 0, 1)",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind, content_id, deleted_at)
+             VALUES (1, 0, 'a.txt', 0, 'file', 1, 1000)",
+            (),
+        )
+        .unwrap();
+
+        let stats = reclaim_space(&mut conn, 1000).unwrap();
+
+        assert_eq!(stats.chunks_purged, 1);
+        assert_eq!(
+            crate::store_generation(&conn).unwrap(),
+            1,
+            "a purged chunk frees a gap a later write could reuse - must bump exactly once"
+        );
+
+        // A second run with nothing left to purge must not bump again.
+        reclaim_space(&mut conn, 1000).unwrap();
+        assert_eq!(crate::store_generation(&conn).unwrap(), 1);
     }
 
     #[test]

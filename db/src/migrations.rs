@@ -4,7 +4,15 @@ use rusqlite_migration::{M, Migrations};
 ///
 /// - `repository_settings` holds the single row of per-repository settings chosen
 ///   at `init` time. The hash algorithm (blake3) is not a setting: it's fixed in
-///   code, so it has no column here.
+///   code, so it has no column here. `store_generation` is the exception - not a
+///   setting chosen at `init` time, but a counter bumped by `reclaim_space`
+///   (whenever it actually purges a `chunks` row - see its own doc comment) and
+///   by the future `compact-store` command, tracking how many times the data
+///   store's physical byte layout may have changed underneath already-taken `db
+///   backup` snapshots. `db restore` compares a backup's stamped value against
+///   the live repository's current one to warn (not refuse) when restoring it
+///   might resolve some entries to the wrong physical bytes - see
+///   `docs/plans/stale-backup-guard.md`.
 /// - `chunks` is the content-addressable chunk store: the deduplication key is
 ///   `(length, hash)`, one row per unique chunk. `ref_count` is the number of
 ///   `content_chunks` rows referencing this chunk, maintained by triggers; a
@@ -112,6 +120,7 @@ CREATE TABLE repository_settings (
   id                   INTEGER PRIMARY KEY,
   cdc_target_size_bits INTEGER NOT NULL,
   chunking             TEXT    NOT NULL,
+  store_generation     INTEGER NOT NULL DEFAULT 0,
   CONSTRAINT chk_repository_settings_id CHECK (id = 1),
   CONSTRAINT chk_repository_settings_cdc_target_size_bits CHECK (cdc_target_size_bits BETWEEN 10 AND 30),
   CONSTRAINT chk_repository_settings_chunking CHECK (chunking IN ('cdc', 'none'))

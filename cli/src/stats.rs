@@ -42,6 +42,10 @@ pub fn run_stats(repo: &Path, args: StatsArgs) -> ExitCode {
                     }
                     Err(err) => eprintln!("warning: failed to compute free space summary: {err}"),
                 }
+                match db::store_generation(&conn) {
+                    Ok(generation) => println!("Store generation: {generation}"),
+                    Err(err) => eprintln!("warning: failed to read store generation: {err}"),
+                }
                 ExitCode::SUCCESS
             }
             Err(err) => {

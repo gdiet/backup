@@ -200,6 +200,14 @@ fn run_restore_db(repo: &Path, file: &Path) -> ExitCode {
     };
 
     let db_file = db::db_file_path(repo);
+
+    if let Some(msg) = stale_backup_warning(
+        try_read_store_generation(backup_path),
+        try_read_store_generation(&db_file),
+    ) {
+        eprintln!("warning: {msg} - proceeding anyway.");
+    }
+
     // A VACUUM INTO backup has no WAL sidecars of its own, but the live file
     // being replaced might - remove any stale ones at the destination first,
     // so the next connection doesn't pair the freshly restored main file
@@ -233,6 +241,49 @@ fn run_restore_db(repo: &Path, file: &Path) -> ExitCode {
             let _ = fs::remove_file(&staging);
             ExitCode::FAILURE
         }
+    }
+}
+
+/// Best-effort read of `store_generation` from `path` as a standalone,
+/// genuinely read-only SQLite connection - `None` for any failure (file
+/// doesn't exist or isn't a database, doesn't have the column yet, or any
+/// other read error), not just the specific "predates this feature" case.
+/// Used for both the backup file being restored and the live database
+/// (which, per `run_restore_db`'s own doc comment, might currently be
+/// broken - that's fine here, it just means the comparison below is
+/// skipped rather than blocking the recovery this command exists for).
+fn try_read_store_generation(path: &Path) -> Option<i64> {
+    let conn = rusqlite::Connection::open_with_flags(
+        path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .ok()?;
+    db::store_generation(&conn).ok()
+}
+
+/// Decides whether restoring a backup with `backup_generation` (see
+/// [`try_read_store_generation`]) is worth warning about, given the live
+/// repository's `live_generation`. See `docs/plans/stale-backup-guard.md` -
+/// warns, never blocks: the user restoring a backup may have a specific
+/// reason to do so even when it's behind.
+fn stale_backup_warning(
+    backup_generation: Option<i64>,
+    live_generation: Option<i64>,
+) -> Option<String> {
+    let live = live_generation?;
+    match backup_generation {
+        Some(backup) if backup < live => Some(format!(
+            "this backup is {} data-store-changing maintenance run(s) (reclaim-space/compact-store) \
+             behind the live repository - restoring it may resolve some entries to the wrong \
+             physical bytes",
+            live - backup
+        )),
+        Some(_) => None,
+        None => Some(
+            "this backup predates the store-staleness safety check and can't be verified - it may \
+             resolve some entries to the wrong physical bytes"
+                .to_string(),
+        ),
     }
 }
 
@@ -422,6 +473,76 @@ mod tests {
             run_restore_db(&repo_root, &PathBuf::from("no-such-backup.sqlite3")),
             ExitCode::FAILURE
         );
+    }
+
+    #[test]
+    fn stale_backup_warning_is_none_when_generations_match_or_live_is_unknown() {
+        assert_eq!(stale_backup_warning(Some(3), Some(3)), None);
+        assert_eq!(
+            stale_backup_warning(Some(3), None),
+            None,
+            "can't compare against a live database whose generation couldn't be read \
+             (e.g. it's currently broken - exactly the case restore exists to recover from)"
+        );
+    }
+
+    #[test]
+    fn stale_backup_warning_fires_with_the_generation_delta_when_the_backup_is_behind() {
+        let msg = stale_backup_warning(Some(2), Some(5)).unwrap();
+        assert!(msg.contains('3'), "delta of 3 should appear in: {msg}");
+    }
+
+    #[test]
+    fn stale_backup_warning_fires_for_an_unknown_backup_generation() {
+        assert!(stale_backup_warning(None, Some(1)).is_some());
+        assert!(
+            stale_backup_warning(None, Some(0)).is_some(),
+            "unknown is treated as possibly-stale even against a live generation of 0"
+        );
+    }
+
+    #[test]
+    fn try_read_store_generation_reads_the_live_value_and_none_for_a_missing_file() {
+        let (_temp_dir, repo_root) = init_repo();
+        assert_eq!(
+            try_read_store_generation(&db::db_file_path(&repo_root)),
+            Some(0)
+        );
+        assert_eq!(
+            try_read_store_generation(&repo_root.join("does-not-exist.sqlite3")),
+            None
+        );
+    }
+
+    #[test]
+    fn restore_warns_but_still_succeeds_when_the_backup_is_behind_the_live_generation() {
+        let (_temp_dir, repo_root) = init_repo();
+        assert_eq!(run_backup(&repo_root), ExitCode::SUCCESS);
+        let backup_file = fs::read_dir(db::meta_dir(&repo_root).join("backups"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+
+        // Bump the live generation past the backup's, the same way
+        // reclaim_space does when it actually purges a chunk - see
+        // db::maintenance::reclaim_space_bumps_store_generation_only_when_chunks_are_purged
+        // for that unit itself; here just simulate the resulting state.
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_write_connection().unwrap();
+        conn.execute(
+            "UPDATE repository_settings SET store_generation = store_generation + 1",
+            (),
+        )
+        .unwrap();
+        drop(conn);
+
+        // The warning goes to stderr, not the return value - this only
+        // confirms restoring a stale-generation backup still succeeds
+        // rather than being blocked (the explicit "warn, don't hard-block"
+        // decision).
+        assert_eq!(run_restore_db(&repo_root, &backup_file), ExitCode::SUCCESS);
     }
 
     #[test]

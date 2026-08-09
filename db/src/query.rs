@@ -364,6 +364,22 @@ pub fn free_space_summary(conn: &Connection) -> Result<(i64, i64), Error> {
     Ok((gap_count, total_free_bytes))
 }
 
+/// The repository's current `store_generation` counter - see
+/// `repository_settings`'s doc comment in `migrations.rs` and
+/// `docs/plans/stale-backup-guard.md`. Bumped by [`crate::reclaim_space`]
+/// and the future `compact-store` command; read by `db restore` (against
+/// both the live database and a backup file being restored) to warn when a
+/// backup might be stale relative to the live data store's physical
+/// layout.
+pub fn store_generation(conn: &Connection) -> Result<i64, Error> {
+    conn.query_row(
+        "SELECT store_generation FROM repository_settings WHERE id = 1",
+        (),
+        |row| row.get(0),
+    )
+    .map_err(Error::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

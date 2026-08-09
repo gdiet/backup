@@ -415,6 +415,15 @@ database**. `<file>` can be a path, or just a filename to look up under
 snapshots `db backup` produces and older, plain `.sqlite3` ones (from
 before compression, or restored from elsewhere).
 
+Prints a warning (but still proceeds) if the backup looks stale relative to
+the data store's physical layout: `reclaim-space` and `compact-store` both
+free up space that a later `store`/`mount --read-write` run may reuse for
+different content, so a backup taken before one of those runs can - after
+being restored - resolve some entries to the wrong physical bytes without
+any other sign of a problem. Take a fresh backup before either of those
+commands if you want to be able to restore back to exactly this point in
+time.
+
 ```bash
 backup db compact
 ```

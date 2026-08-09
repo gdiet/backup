@@ -1,11 +1,16 @@
 # Detect a metadata backup gone stale relative to the physical data store
 
-**Status**: proposed, not implemented. Split out of `docs/plans/compact-store.md`
-while working out that plan's backup-invalidation open question - the
-underlying hazard turned out to already be live in the shipped codebase,
-via ordinary `store`/`mount --read-write` runs, entirely independent of
-whether `compact-store` ever gets built. Tracked here on its own so it
-isn't stuck waiting on that larger, still-undecided feature.
+**Status**: implemented. `store_generation` was folded directly into
+`SCHEMA_V1` (no released version to preserve compatibility for yet - see
+`migrations.rs`), and the real `dedup/` repository's live database was
+patched with the same `ALTER TABLE` directly, matching the earlier
+`auto_vacuum` fix's approach.
+
+Originally split out of `docs/plans/compact-store.md` while working out
+that plan's backup-invalidation open question - the underlying hazard
+turned out to already be live in the shipped codebase, via ordinary
+`store`/`mount --read-write` runs, entirely independent of whether
+`compact-store` ever gets built.
 
 **Trigger simplified from the original draft**: bump the counter in
 `reclaim_space` (where gaps are *created*), not in every `store`/`mount
@@ -102,14 +107,10 @@ database's current value:
 - `README.md`: document the warning and what it means, near the existing
   `db backup`/`db restore` section.
 
-## Open questions
+## Resolved while implementing
 
-- Exact warning wording/format - should it also say *how many* gap-reusing
-  runs happened since (readable from the generation delta), or just
-  "since"? A delta is easy to compute and probably more reassuring/alarming
-  as appropriate ("1 run" vs. "47 runs").
-- Whether `stats` should also surface the current `store_generation`
-  alongside its existing `free_space_summary` fragmentation line, so a
-  cautious user can check it before deciding whether an old backup is
-  still likely safe, without having to attempt a restore first to find
-  out.
+- The warning includes the generation delta (`"this backup is N data-
+  store-changing maintenance run(s) ... behind"`), not just a bare
+  "stale" notice.
+- `stats` surfaces the current `store_generation` as its own line,
+  alongside the existing `free_space_summary` fragmentation line.
