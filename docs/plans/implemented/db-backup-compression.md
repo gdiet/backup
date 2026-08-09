@@ -1,6 +1,6 @@
 # Compress `backup db backup` snapshots
 
-**Status**: plan only, not yet implemented (explicitly requested as plan-first).
+**Status**: implemented.
 
 ## Measured, not estimated
 
@@ -106,13 +106,19 @@ matter in practice, but isn't obviously needed up front.
 
 ## Verification checklist
 
-- Confirm the `zip` crate's fastest Deflate setting performs comparably to
-  the `Compress-Archive -CompressionLevel Fastest` measurement above,
-  against the same real snapshot.
-- `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
+- [x] Confirmed the `zip` crate's fastest Deflate setting (level 1) for
+  real, against the real `dedup/` repository's database, release build:
+  **30.8s total** (`VACUUM INTO` + zip together - actually *faster* than
+  the ~36s `VACUUM INTO` alone used to take before compression existed,
+  most likely just run-to-run variance rather than compression being
+  free), producing a **399 MB** zip from the 760 MB original (52.6% of
+  original, ~47% smaller) - a somewhat worse ratio than the
+  `Compress-Archive -Fastest` stand-in measured (39.4%), but the "fast,
+  no flag needed" conclusion holds regardless.
+- [x] `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
   warnings && cargo test --workspace && cargo doc --no-deps --workspace`.
-- Round-trip test: `db backup` (zipped) then `db restore` from the
-  resulting file, against a real or realistic-sized test repository.
-- Update `README.md`'s `## Database Backup, Restore, and Compaction`
+- [x] Round-trip tests in `cli/src/db_maintenance.rs`: backup-then-restore
+  (now implicitly through a zip), plus a dedicated test confirming an old,
+  plain (pre-compression) `.sqlite3` backup still restores correctly.
+- [x] Updated `README.md`'s `## Database Backup, Restore, and Compaction`
   section.
-- Once shipped, move this file under `docs/plans/implemented/`.

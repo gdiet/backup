@@ -391,11 +391,14 @@ get the content back onto disk without touching the repository's own state.
 backup db backup
 ```
 
-Creates a timestamped, fully self-contained snapshot of the metadata
-database under `meta/backups/` - safe to run against the live database (it
-never blocks or is blocked by ongoing reads or writes, and never touches the
-live file), unlike a plain file copy of a database that might still be open
-elsewhere. Each run creates a new file; nothing is ever overwritten.
+Creates a timestamped, fully self-contained, zip-compressed snapshot of the
+metadata database under `meta/backups/` - safe to run against the live
+database (it never blocks or is blocked by ongoing reads or writes, and
+never touches the live file), unlike a plain file copy of a database that
+might still be open elsewhere. Each run creates a new file; nothing is ever
+overwritten. Compressed at a fast setting deliberately, not the smallest
+possible: measured against a real ~760 MB database, the whole backup (dump
+plus compression) took 30.8s and produced a 399 MB file (~47% smaller).
 
 ```bash
 backup db restore <file>
@@ -404,7 +407,9 @@ backup db restore <file>
 Restores the metadata database from a backup, **overwriting the live
 database**. `<file>` can be a path, or just a filename to look up under
 `meta/backups/`. Doesn't require the current database to be openable first
-- this is the recovery path for when it isn't.
+- this is the recovery path for when it isn't. Accepts both the zipped
+snapshots `db backup` produces and older, plain `.sqlite3` ones (from
+before compression, or restored from elsewhere).
 
 ```bash
 backup db compact
