@@ -30,6 +30,7 @@ deduplicated byte content itself.
 * [List Files](#list-files)
 * [Find Files By Name Pattern](#find-files-by-name-pattern)
 * [Check Integrity](#check-integrity)
+* [Find And Fix Files With Missing Store Data](#find-and-fix-files-with-missing-store-data)
 * [Restore Files](#restore-files)
 * [Delete A File Or A Directory](#delete-a-file-or-a-directory)
 * [List And Recover Deleted Entries](#list-and-recover-deleted-entries)
@@ -275,6 +276,33 @@ file, checks just that file's chunks; given a directory, recurses through
 everything under it. Exit code reflects the result: `0` if everything
 checked out, non-zero if any problem was found - so this can be used in a
 script/CI job.
+
+## Find And Fix Files With Missing Store Data
+
+```bash
+backup problems [path]
+```
+
+Lists every active file affected by missing or short store data - the same
+condition that makes `mount` return an I/O error reading that part of a
+file (see [Mount](#mount)), just found in bulk instead of one read at a
+time. `path` scopes the scan like `check` does; a file whose broken content
+is shared (via dedup) with a file outside `path` is still listed, since it
+genuinely has the same problem. Wrong-but-present data (a hash or length
+mismatch, `check`'s other problem categories) isn't in scope here - that's
+corruption, not absence, and destroying it isn't this command's job.
+
+```bash
+backup fix-problems [path]
+backup fix-problems [path] --replace-empty
+```
+
+Soft-deletes every file `problems` currently finds in scope. With
+`--replace-empty`, also inserts a fresh 0-byte file at the same path,
+keeping the original's last-modified time, so the tree still has something
+there instead of a hole. Acts on whatever `problems` would currently find,
+not on a cached result from an earlier run - there's no id to go stale in
+between, unlike `undelete`.
 
 ## Restore Files
 

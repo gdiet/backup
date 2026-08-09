@@ -98,7 +98,14 @@ pub fn run_check(repo: &Path, args: CheckArgs) -> ExitCode {
 /// file, or every active descendant file's chunks (deduplicated - a chunk or
 /// a whole content may be shared by more than one file) if it names a
 /// directory.
-fn scoped_chunks(conn: &Connection, path: &str) -> Result<Option<Vec<ChunkInfo>>, db::Error> {
+///
+/// `pub(crate)`: also used by `problems`, which needs the exact same
+/// path-scoped chunk walk to find missing/short store data at file
+/// granularity instead of `check`'s per-chunk report.
+pub(crate) fn scoped_chunks(
+    conn: &Connection,
+    path: &str,
+) -> Result<Option<Vec<ChunkInfo>>, db::Error> {
     let Some(entry) = db::resolve_path(conn, path)? else {
         return Ok(None);
     };

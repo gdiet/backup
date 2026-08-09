@@ -10,11 +10,13 @@ mod db_maintenance;
 mod del;
 mod deleted;
 mod find;
+mod fix_problems;
 mod format;
 mod io_limiter;
 mod list;
 mod migrate_scala_repo;
 mod mount;
+mod problems;
 mod ram_budget_check;
 mod reclaim_space;
 mod restore;
@@ -57,6 +59,11 @@ enum Command {
     Find(find::FindArgs),
     /// Verify stored chunk data against the metadata database.
     Check(check::CheckArgs),
+    /// List active files affected by missing or short store data.
+    Problems(problems::ProblemsArgs),
+    /// Soft-delete files `problems` finds, optionally replacing each with
+    /// an empty file at the same path.
+    FixProblems(fix_problems::FixProblemsArgs),
     /// Soft-delete a file, or a directory and everything under it.
     Del(del::DelArgs),
     /// List soft-deleted entries, still recoverable via `undelete`.
@@ -124,6 +131,8 @@ fn main() -> ExitCode {
         Command::List(args) => list::run_list(&cli.repo, args),
         Command::Find(args) => find::run_find(&cli.repo, args),
         Command::Check(args) => check::run_check(&cli.repo, args),
+        Command::Problems(args) => problems::run_problems(&cli.repo, args),
+        Command::FixProblems(args) => fix_problems::run_fix_problems(&cli.repo, args),
         Command::Del(args) => del::run_del(&cli.repo, args),
         Command::Deleted(args) => deleted::run_deleted(&cli.repo, args),
         Command::Undelete(args) => undelete::run_undelete(&cli.repo, args),

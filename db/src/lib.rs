@@ -30,8 +30,9 @@ pub use error::Error;
 pub use maintenance::{ReclaimStats, reclaim_space, soft_delete, undelete};
 pub use query::{
     ChunkInfo, DeletedEntry, PathEntry, SubtreeStats, all_chunks, chunk_extents,
-    chunk_extents_sorted, deleted_entries, entries_for_content, file_size, free_space_summary,
-    list_children, ordered_content_chunks, resolve_path, subtree_entries_with_paths, subtree_stats,
+    chunk_extents_sorted, contents_for_chunk, deleted_entries, entries_for_content, file_size,
+    free_space_summary, list_children, ordered_content_chunks, path_of, resolve_path,
+    subtree_entries_with_paths, subtree_stats,
 };
 pub use settings::{CDC_TARGET_SIZE_BITS_RANGE, Chunking, RepositorySettings, SettingsError};
 pub use tree::{

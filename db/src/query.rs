@@ -1,7 +1,7 @@
 //! Read-only tree queries shared by the reporting/inspection commands
 //! (`stats`, `list`, `find`, `check`, `restore`). Nothing here mutates state.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::Error;
 use crate::tree::{TreeEntryRow, find_tree_entry, get_tree_entry};
@@ -202,6 +202,50 @@ pub fn entries_for_content(conn: &Connection, content_id: i64) -> Result<Vec<Tre
         .query_map([content_id], crate::tree::row_to_tree_entry)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// Every distinct content built (at least partly) from `chunk_id` - the
+/// reverse of `ordered_content_chunks`. Used by `problems` to map a chunk
+/// found to have missing/short store data back to the content(s), and from
+/// there (via `entries_for_content`) the active file(s), it affects.
+pub fn contents_for_chunk(conn: &Connection, chunk_id: i64) -> Result<Vec<i64>, Error> {
+    let mut stmt =
+        conn.prepare("SELECT DISTINCT content_id FROM content_chunks WHERE chunk_id = ?1")?;
+    let rows = stmt
+        .query_map([chunk_id], |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Reconstructs `id`'s full path (root-relative, `/`-separated, no leading
+/// slash - the same convention `resolve_path` takes as input), by walking
+/// `parent_id` up to the root. `None` if `id` doesn't exist. The reverse of
+/// `resolve_path`; unlike `subtree_entries_with_paths`, this doesn't walk
+/// the whole tree, so it's only worth it for a handful of individual
+/// lookups (e.g. `problems`' small, per-affected-file result set), not for
+/// many paths at once.
+pub fn path_of(conn: &Connection, id: i64) -> Result<Option<String>, Error> {
+    let mut parts = Vec::new();
+    let mut current_id = id;
+    loop {
+        let row: Option<(i64, String)> = conn
+            .query_row(
+                "SELECT parent_id, name FROM tree_entries WHERE id = ?1",
+                [current_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()?;
+        let Some((parent_id, name)) = row else {
+            return Ok(None);
+        };
+        if current_id == 0 {
+            break;
+        }
+        parts.push(name);
+        current_id = parent_id;
+    }
+    parts.reverse();
+    Ok(Some(parts.join("/")))
 }
 
 /// A chunk making up part of a content's byte sequence, as stored - not to be
@@ -553,6 +597,45 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn contents_for_chunk_finds_every_content_built_from_it_including_shared_ones() {
+        let (_temp_dir, conn) = test_connection();
+        conn.execute(
+            "INSERT INTO chunks (id, length, hash) VALUES (1, 5, x'AA'), (2, 3, x'BB')",
+            (),
+        )
+        .unwrap();
+        let content_a = insert_content(&conn, 5, b"a");
+        let content_b = insert_content(&conn, 8, b"b");
+        conn.execute(
+            "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES
+             (?1, 0, 1), (?2, 0, 1), (?2, 1, 2)",
+            [content_a, content_b],
+        )
+        .unwrap();
+
+        let mut for_chunk_1 = contents_for_chunk(&conn, 1).unwrap();
+        for_chunk_1.sort();
+        assert_eq!(for_chunk_1, vec![content_a, content_b]);
+        assert_eq!(contents_for_chunk(&conn, 2).unwrap(), vec![content_b]);
+        assert_eq!(contents_for_chunk(&conn, 999).unwrap(), Vec::<i64>::new());
+    }
+
+    #[test]
+    fn path_of_reconstructs_a_full_path_and_the_root_is_empty() {
+        let (_temp_dir, conn) = test_connection();
+        let sub_id = crate::insert_directory(&conn, 0, "sub", 0).unwrap();
+        let file_id = insert_file(&conn, sub_id, "a.txt", None);
+
+        assert_eq!(path_of(&conn, 0).unwrap(), Some(String::new()));
+        assert_eq!(path_of(&conn, sub_id).unwrap(), Some("sub".to_string()));
+        assert_eq!(
+            path_of(&conn, file_id).unwrap(),
+            Some("sub/a.txt".to_string())
+        );
+        assert_eq!(path_of(&conn, 99999).unwrap(), None);
     }
 
     #[test]
