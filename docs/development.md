@@ -164,6 +164,46 @@ Go benchmark for comparison:
 go test -bench=BenchmarkCdc -benchtime=10s -count=1 ./internal/cdc
 ```
 
+### Mount backpressure (persist-queue) benchmarks
+
+`mount --read-write`'s persist path (see `docs/plans/implemented/
+memory-pressure-backpressure.md`) gates how much unpersisted data can
+accumulate before a `release`/bare `truncate` call starts blocking. Two
+manual, real-`libfuse3`-mount benchmarks in `cli/src/mount.rs`'s
+Linux-only test module measure this - not part of `cargo test`'s normal
+run (`#[ignore]`), and Linux-only (the read-write FUSE test harness they
+reuse doesn't compile on Windows):
+
+```bash
+# Many small files - throughput/latency under a simulated slow datastore disk.
+BACKUP_BENCH_THROTTLE_STORE_MBPS=30 cargo test --release --package cli --bin backup \
+  mount::tests::bench_many_small_files -- --ignored --nocapture
+
+# A burst of large files - how much spilled-but-unpersisted data piles up,
+# and how long the full drain takes once the burst is over.
+BACKUP_BENCH_THROTTLE_STORE_MBPS=5 BACKUP_BENCH_LARGE_FILES=20 cargo test --release \
+  --package cli --bin backup mount::tests::bench_large_files_spill_pressure -- --ignored --nocapture
+```
+
+Both use `store::bench_throttle_store_write` (`store/src/lib.rs`) to cap
+`LongTermStore::write`'s throughput at `BACKUP_BENCH_THROTTLE_STORE_MBPS`
+MB/s, simulating a slow target disk (e.g. ~30 MB/s for USB2) without
+needing the real hardware - a no-op unless that variable is set, and
+compiled into every build including release (see its own doc comment for
+why it isn't `#[cfg(test)]`-gated: `cli`'s benchmarks pull `store` in as
+an ordinary dependency, so a `store`-local test-only guard wouldn't take
+effect there). `BACKUP_BENCH_FILES`/`BACKUP_BENCH_FILE_SIZE`/
+`BACKUP_BENCH_LARGE_FILES`/`BACKUP_BENCH_LARGE_FILE_SIZE` tune the
+workload shape; see the tests' own doc comments for defaults.
+
+Real before/after results (same commands, same machine) from the change
+that replaced the old fixed job-count gate with this byte-based one are
+saved in `docs/plans/backpressure-bench/results.md` - including a
+genuine nuance found while measuring: FUSE's `release` callback dispatches
+asynchronously, so a small burst needs to be large enough to exhaust
+libfuse's worker-thread pool before backpressure becomes visible to the
+calling process at all.
+
 ### Hashing: Rust `blake3` vs. Java `MD5`
 
 This project hashes chunks/content with `blake3` (truncated to 20 bytes -

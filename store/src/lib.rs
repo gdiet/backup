@@ -30,11 +30,22 @@ use std::path::{Path, PathBuf};
 /// number, [`LongTermStore::write`] sleeps just long enough after each
 /// physical write to cap throughput at that many MB/s - simulating a slow
 /// target disk (e.g. ~30 MB/s for USB2) without needing the real hardware.
-/// A no-op (one cheap env-var-cache lookup) unless the variable is set;
-/// never touches [`LongTermStore::read`]. See
-/// `docs/plans/memory-pressure-backpressure.md`'s "Validation approach"
-/// for what this exists to measure, and `cli/src/mount.rs`'s `bench_*`
-/// tests for how it's actually used.
+/// A no-op (one cheap `OnceLock` lookup, cached after the first call)
+/// unless the variable is set; never touches [`LongTermStore::read`].
+///
+/// **Deliberately shipped in every build, including release, not
+/// `#[cfg(test)]`-gated**: `cli`'s Linux-only mount benchmarks (see
+/// `cli/src/mount.rs`'s `bench_*` tests) pull `store` in as an ordinary,
+/// non-test dependency, so a `#[cfg(test)]` guard here would only take
+/// effect for `store`'s *own* test build, not `cli`'s - it would silently
+/// stop working the moment it's actually needed. The always-on cost is
+/// one no-op lookup per physical write call once the `OnceLock` is
+/// warm - not worth a build-time feature flag to avoid. See
+/// `docs/plans/implemented/memory-pressure-backpressure.md`'s "Validation
+/// approach"/"Validation results" for what this was built to measure and
+/// the real before/after numbers it produced
+/// (`docs/plans/backpressure-bench/results.md`), and `cli/src/mount.rs`'s
+/// `bench_*` tests for how to actually run it again.
 fn bench_throttle_store_write(bytes: usize) {
     use std::sync::OnceLock;
     static MBPS: OnceLock<Option<f64>> = OnceLock::new();
