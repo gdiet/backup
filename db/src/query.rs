@@ -168,6 +168,27 @@ pub fn deleted_entries(conn: &Connection, root_id: i64) -> Result<Vec<DeletedEnt
     Ok(rows)
 }
 
+/// Whether `parent_id` has at least one *direct* deleted child - cheap
+/// (uses the same `tree_entries_parent_id_idx` the `deleted_entries`
+/// performance fix added, filtered to a single parent rather than walking
+/// the whole subtree), unlike calling `deleted_entries` and checking
+/// whether it's non-empty. Used by `mount`'s `[deleted]` folder to decide
+/// whether to show it at all - showing it unconditionally, even for a
+/// directory with no deleted history, breaks Windows' own directory-
+/// emptiness check (`RemoveDirectory`), which refuses to remove a
+/// directory that still has *any* visible entry, synthetic or not.
+pub fn has_deleted_children(conn: &Connection, parent_id: i64) -> Result<bool, Error> {
+    conn.query_row(
+        "SELECT EXISTS(
+             SELECT 1 FROM tree_entries
+             WHERE parent_id = ?1 AND id != ?1 AND deleted_at IS NOT NULL
+         )",
+        [parent_id],
+        |row| row.get(0),
+    )
+    .map_err(Error::from)
+}
+
 /// The logical size of a file entry: `0` for an empty file (`content_id` is
 /// `None`), otherwise the referenced content's length. Only meaningful for a
 /// `File` entry - a directory also has `content_id == None`, so this silently
@@ -534,6 +555,28 @@ mod tests {
 
         assert_eq!(scoped.len(), 1);
         assert_eq!(scoped[0].path, "a.txt");
+    }
+
+    #[test]
+    fn has_deleted_children_is_true_only_for_direct_deleted_children() {
+        let (_temp_dir, conn) = test_connection();
+        let sub_id = crate::insert_directory(&conn, 0, "sub", 0).unwrap();
+        let nested_id = crate::insert_directory(&conn, sub_id, "nested", 0).unwrap();
+        let deep_file = insert_file(&conn, nested_id, "deep.txt", None);
+
+        assert!(!has_deleted_children(&conn, 0).unwrap());
+        assert!(!has_deleted_children(&conn, sub_id).unwrap());
+
+        // A deleted grandchild doesn't count as a direct deleted child of
+        // the root or even of "sub" - only of "nested" itself.
+        mark_deleted(&conn, deep_file, 1000);
+        assert!(!has_deleted_children(&conn, 0).unwrap());
+        assert!(!has_deleted_children(&conn, sub_id).unwrap());
+        assert!(has_deleted_children(&conn, nested_id).unwrap());
+
+        let direct_file = insert_file(&conn, sub_id, "a.txt", None);
+        mark_deleted(&conn, direct_file, 1000);
+        assert!(has_deleted_children(&conn, sub_id).unwrap());
     }
 
     #[test]

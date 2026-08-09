@@ -30,6 +30,7 @@ use rusqlite::Connection;
 use store::{LongTermStore, ReadIntegrity};
 
 use crate::chunk_store::{self, SpaceAllocator, read_chunk_bytes};
+use crate::mount_deleted::{self, DeletedResolution};
 use crate::ram_budget_check::check_ram_budget;
 use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
 use crate::store::{Blake3Hasher, HASH_LENGTH};
@@ -532,6 +533,34 @@ impl MountFilesystem for DedupFs {
 
 impl Inner {
     fn getattr(&self, path: &str) -> Result<Attr, Errno> {
+        {
+            let conn = self.conn.lock().expect("db connection mutex poisoned");
+            if let Some((scope_id, virtual_path)) = mount_deleted::split_deleted_path(&conn, path)?
+            {
+                return match mount_deleted::resolve_deleted(&conn, scope_id, &virtual_path)? {
+                    Some(DeletedResolution::Listing { .. }) => Ok(Attr {
+                        kind: FileKind::Directory,
+                        size: 0,
+                        mtime_millis: now_millis(),
+                    }),
+                    Some(DeletedResolution::Entry(entry)) => {
+                        let (kind, size) = match entry.kind {
+                            db::EntryKind::Dir => (FileKind::Directory, 0),
+                            db::EntryKind::File => (
+                                FileKind::File,
+                                db::file_size(&conn, &entry).map_err(|_| Errno::EIO)? as u64,
+                            ),
+                        };
+                        Ok(Attr {
+                            kind,
+                            size,
+                            mtime_millis: entry.time_millis,
+                        })
+                    }
+                    None => Err(Errno::ENOENT),
+                };
+            }
+        }
         let entry = self.resolve_active_entry(path)?;
         let (kind, mut size) = match entry.kind {
             db::EntryKind::Dir => (FileKind::Directory, 0),
@@ -566,11 +595,23 @@ impl Inner {
 
     fn readdir(&self, path: &str) -> Result<Vec<DirEntry>, Errno> {
         let conn = self.conn.lock().expect("db connection mutex poisoned");
+        if let Some((scope_id, virtual_path)) = mount_deleted::split_deleted_path(&conn, path)? {
+            return match mount_deleted::resolve_deleted(&conn, scope_id, &virtual_path)? {
+                Some(DeletedResolution::Listing { root_id }) => {
+                    mount_deleted::list_deleted_children(&conn, root_id)
+                }
+                Some(DeletedResolution::Entry(entry)) if entry.kind == db::EntryKind::Dir => {
+                    mount_deleted::list_deleted_children(&conn, entry.id)
+                }
+                Some(DeletedResolution::Entry(_)) => Err(Errno::ENOTDIR),
+                None => Err(Errno::ENOENT),
+            };
+        }
         let dir = db::resolve_path(&conn, path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
         let children = db::list_children(&conn, dir.id).map_err(|_| Errno::EIO)?;
-        Ok(children
+        let mut result: Vec<DirEntry> = children
             .into_iter()
             .map(|child| DirEntry {
                 name: child.name,
@@ -579,7 +620,29 @@ impl Inner {
                     db::EntryKind::File => FileKind::File,
                 },
             })
-            .collect())
+            .collect();
+        // Only shown when there's actually something deleted to see, and
+        // only if a real active entry doesn't already occupy that name
+        // here (see `mount_deleted::split_deleted_path`'s "real entry
+        // wins" rule). Unconditional visibility was tried first (matching
+        // a real recycle bin's own "always there" convention) and reverted
+        // after a real regression: Windows' own directory-emptiness check
+        // (`RemoveDirectory`/`std::fs::remove_dir`) refuses to remove a
+        // directory with *any* visible entry, synthetic or not, before our
+        // own `rmdir` (which only checks real children) ever gets called -
+        // an always-present `[deleted]` would make every directory
+        // permanently non-removable through the mount.
+        if db::has_deleted_children(&conn, dir.id).map_err(|_| Errno::EIO)?
+            && db::find_tree_entry(&conn, dir.id, mount_deleted::DELETED_DIR_NAME)
+                .map_err(|_| Errno::EIO)?
+                .is_none()
+        {
+            result.push(DirEntry {
+                name: mount_deleted::DELETED_DIR_NAME.to_string(),
+                kind: FileKind::Directory,
+            });
+        }
+        Ok(result)
     }
 
     fn open(&self, path: &str, write_intent: bool) -> Result<Handle, Errno> {
@@ -595,6 +658,19 @@ impl Inner {
         // unaffected: `-oro`/`ReadOnlyVolume` rejects a write-intent open
         // before it ever reaches this method, on both platforms.
         let _ = write_intent;
+        {
+            let conn = self.conn.lock().expect("db connection mutex poisoned");
+            if let Some((scope_id, virtual_path)) = mount_deleted::split_deleted_path(&conn, path)?
+            {
+                return match mount_deleted::resolve_deleted(&conn, scope_id, &virtual_path)? {
+                    Some(DeletedResolution::Entry(entry)) if entry.kind == db::EntryKind::File => {
+                        Ok(mount_deleted::deleted_handle(entry.id))
+                    }
+                    Some(_) => Err(Errno::EISDIR),
+                    None => Err(Errno::ENOENT),
+                };
+            }
+        }
         let entry = self.resolve_active_entry(path)?;
         if entry.kind != db::EntryKind::File {
             return Err(Errno::EISDIR);
@@ -604,6 +680,13 @@ impl Inner {
     }
 
     fn read(&self, handle: Handle, offset: u64, size: u32) -> Result<Vec<u8>, Errno> {
+        if mount_deleted::is_deleted_handle(handle) {
+            return self.read_persisted(
+                mount_deleted::deleted_handle_id(handle),
+                offset,
+                u64::from(size),
+            );
+        }
         let tree_id = handle.0 as i64;
         // A live write cache (phase 2b) takes priority over the persisted
         // content - an app that reads back a file it's mid-editing must
@@ -628,6 +711,12 @@ impl Inner {
     }
 
     fn release(&self, handle: Handle) {
+        // A deleted-entry handle was never registered in `write_states`
+        // (`open` returns early for those, before `register_open`) - there
+        // is nothing to release.
+        if mount_deleted::is_deleted_handle(handle) {
+            return;
+        }
         let tree_id = handle.0 as i64;
         let mut states = self
             .write_states
@@ -879,6 +968,47 @@ impl Inner {
             .write_conn
             .lock()
             .expect("write connection mutex poisoned");
+
+        // The recovery gesture: dragging something out of `[deleted]`
+        // arrives here as an ordinary `rename` (confirmed against real
+        // Windows Explorer - see the plan doc's resolved spike) - recognize
+        // a source under `[deleted]/...` and call `db::undelete` instead of
+        // `db::rename_entry`. The destination always lands exactly where
+        // the caller asked (not wherever the entry was originally deleted
+        // from), and a directory always recovers recursively at the same
+        // `deleted_at` scope - there's no way for a drag gesture to express
+        // anything narrower, matching `undelete --recursive`'s own
+        // semantics (see the plan doc's "Directory rename-out scope"
+        // decision).
+        if let Some((scope_id, virtual_path)) = mount_deleted::split_deleted_path(&conn, old_path)?
+        {
+            let Some(DeletedResolution::Entry(entry)) =
+                mount_deleted::resolve_deleted(&conn, scope_id, &virtual_path)?
+            else {
+                return Err(Errno::ENOENT);
+            };
+            if mount_deleted::split_deleted_path(&conn, new_path)?.is_some() {
+                // Moving between two deleted views isn't a recovery
+                // gesture and has no defined meaning here.
+                return Err(Errno::EIO);
+            }
+            let (new_parent_path, new_name) = split_parent(new_path);
+            let new_parent = db::resolve_path(&conn, new_parent_path)
+                .map_err(|_| Errno::EIO)?
+                .ok_or(Errno::ENOENT)?;
+            let recursive = entry.kind == db::EntryKind::Dir;
+            let count = db::undelete(&conn, entry.id, recursive, Some((new_parent.id, new_name)))
+                .map_err(|err| match err {
+                db::Error::AlreadyExists { .. } => Errno::EEXIST,
+                _ => Errno::EIO,
+            })?;
+            return if count > 0 {
+                Ok(())
+            } else {
+                Err(Errno::ENOENT)
+            };
+        }
+
         let entry = db::resolve_path(&conn, old_path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;

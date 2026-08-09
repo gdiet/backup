@@ -1,7 +1,9 @@
 # Mount: a `[deleted]` virtual folder for browsing/recovering deletions
 
-**Status**: plan complete, ready to implement - the empirical blocker
-below has been resolved.
+**Status**: implemented. One design decision below ("every directory")
+was refined during implementation after a real test caught a consequence
+neither the plan nor the original design discussion anticipated - see
+"Refined during implementation" below.
 
 ## Motivation
 
@@ -48,6 +50,26 @@ as a real, renamable directory.
   case that motivated `docs/plans/implemented/deleted-entries-performance.md`),
   so this should be cheap - worth confirming with a real measurement
   during implementation (see verification checklist), not just assumed.
+  **Refined during implementation**: originally "always shown, even when
+  empty" (matching how a real recycle bin icon is always present). A real
+  Windows integration test caught a consequence neither this plan nor the
+  original design discussion anticipated: `RemoveDirectory` (what
+  `std::fs::remove_dir`/Explorer's "Delete folder" call) does its own
+  directory-emptiness check via `readdir` *before* our own `rmdir` handler
+  (which only counts real children) is ever reached - an unconditionally
+  visible `[deleted]` would make *every* directory permanently
+  non-removable through the mount, breaking the ordinary "delete the last
+  file, then delete the now-empty folder" workflow. Fixed by only showing
+  `[deleted]` when `db::has_deleted_children` is true (a new, cheap,
+  `tree_entries_parent_id_idx`-backed query - see that function's own doc
+  comment). Given the choice between reverting to root-only or keeping
+  per-directory with a documented residual limitation, the latter was
+  chosen: **a directory that currently has deletion history still can't be
+  removed through the mount until that history is gone** (either
+  recovered via `[deleted]` itself, or purged by `reclaim-space` past its
+  retention window) - `cli/tests/windows_mount.rs`'s
+  `mounts_read_write_and_supports_structural_changes_via_the_backup_binary`
+  asserts this explicitly now, and it's documented in the README.
 - **Disambiguating repeat-deletions**: `photo.jpg [42]` (id suffix) only
   when more than one deleted row in that directory's listing shares the
   name `photo.jpg`; plain `photo.jpg` otherwise - mirrors `backup
@@ -107,10 +129,20 @@ spike.)
 
 ## Verification checklist
 
-- Measure per-directory `deleted_entries` cost for real (a `readdir` on a
-  directory with many active children plus a nontrivial deleted-children
-  count, against the real `dedup/` repository) before assuming it's cheap
-  enough to run on every `readdir`.
-- `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
+- [x] Measured `has_deleted_children`'s cost for real against the
+  `dedup/` repository: `EXPLAIN QUERY PLAN` confirms `SEARCH tree_entries
+  USING INDEX tree_entries_parent_id_idx (parent_id=?)`, and it returns
+  instantly in practice.
+- [x] `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
   warnings && cargo test --workspace && cargo doc --no-deps --workspace`.
-- Once shipped, move this file under `docs/plans/implemented/`.
+- [x] New unit tests in `cli/src/mount_deleted.rs` (path splitting, "real
+  entry wins", id-suffix disambiguation, nested browsing, listing) and
+  `db/src/query.rs` (`has_deleted_children`); two existing
+  `cli/tests/windows_mount.rs` integration tests updated for the new
+  `[deleted]` entry appearing in listings and the documented `rmdir`
+  limitation.
+- [x] Manually verified end-to-end against a real WinFSP mount: `[deleted]`
+  appears only where expected, browsing/reading works, dragging a file out
+  (`mv` in this case) correctly recovers it via `db::undelete` without
+  copying, and the `rmdir` limitation reproduces exactly as documented.
+- [x] Updated `README.md`'s `## Mount` section.

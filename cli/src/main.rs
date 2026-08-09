@@ -16,6 +16,7 @@ mod io_limiter;
 mod list;
 mod migrate_scala_repo;
 mod mount;
+mod mount_deleted;
 mod problems;
 mod progress;
 mod ram_budget_check;

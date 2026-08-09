@@ -535,6 +535,39 @@ writable; defaults to the OS temp directory) - for best throughput, point
 it at the fastest disk available, ideally not the same physical drive as
 the repository.
 
+### Recovering Deleted Files Through The Mount
+
+Every directory in the mount shows a `[deleted]` entry whenever it has
+something deleted directly in it (not shown at all otherwise - an empty
+directory with no deletion history stays exactly that). Browse into it
+like any other folder to see and read what was deleted there, including
+descending into an already-deleted subdirectory. If the same name was
+deleted more than once, each is disambiguated with its id, e.g. `photo.jpg
+[42]` (matching `backup deleted`'s own id-based disambiguation) - plain
+`photo.jpg` when there's only one.
+
+To recover something (requires `--read-write`), drag it (or `mv`/rename
+it) out of `[deleted]` to wherever you want it - this reactivates the
+entry in the repository (via the same mechanism as `backup undelete`)
+rather than copying it; a deleted directory always recovers together with
+everything that was deleted alongside it at the same time, since a drag
+gesture has no way to express anything narrower. If you'd rather just get
+the bytes out without touching the repository's own state, use `backup
+restore --deleted <id>` instead (see [Restore Files](#restore-files)) -
+find the id by browsing `[deleted]` first, or via `backup deleted`.
+
+If a directory already has a real, active subfolder literally named
+`[deleted]`, that real folder is shown as-is - it always takes priority
+over the synthetic view, which simply doesn't appear there.
+
+**Known limitation**: once a directory has any deletion history, it can no
+longer be removed through the mount (`rmdir`/"Delete folder"), even after
+its real content is completely empty - Windows' own directory-emptiness
+check runs before the mount ever gets a chance to only count real
+entries, and it sees `[deleted]` as content too. Use `backup del
+--recursive` from the command line instead if you need to remove a
+directory like that.
+
 ```bash
 backup mount --zero-fill-missing <mountpoint>
 ```
