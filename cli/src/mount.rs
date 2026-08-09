@@ -54,21 +54,15 @@ const DEFAULT_WRITE_CACHE_MB: u64 = 128;
 /// streaming loop.
 const PERSIST_CHUNK_SIZE: u64 = 256 * 1024;
 
-/// How many closed-and-dirty files' persists can be queued ahead of the
-/// background persist thread (see `persist_worker`) before a *new*
-/// `release`/bare `truncate` call starts blocking its own FUSE/WinFSP
-/// worker thread waiting for room - the actual backpressure point. A
-/// small constant, not a CLI flag: each queued job already holds its own
-/// `WriteCache` (RAM-budgeted with disk spillover via `Inner::ram_budget`/
-/// `spill_dir`, same as any other open file), so this only bounds how many
-/// *recently closed* files can have unpersisted changes in flight at
-/// once, not memory directly - a handful is enough to smooth a burst of
-/// closes without needing to be generous. See
-/// `docs/plans/implemented/bounded-memory-io-pipeline.md`'s "Mount-specific detail"
-/// section for the failure mode this exists to fix (synchronous persist
-/// exhausting the whole worker-thread pool under a sustained slow target
-/// disk).
-const PERSIST_QUEUE_CAPACITY: usize = 4;
+/// How long [`Inner::enqueue_persist`] sleeps between checks while waiting
+/// for queued persist bytes to drop back under
+/// [`Inner::spill_backpressure_threshold_bytes`] - a plain poll rather
+/// than a wake-based wait, since this check only runs once per `release`/
+/// bare `truncate` (not a hot path), making the periodic-wakeup cost
+/// negligible - and it avoids threading a notification channel from
+/// `spillcache` (a low-level, mount-unaware crate) back into this
+/// mount-specific policy.
+const SPILL_BACKPRESSURE_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(10);
 
 #[derive(Args)]
 pub struct MountArgs {
@@ -294,8 +288,11 @@ fn build_filesystem(
     // The persist queue and its background thread (see `persist_worker`)
     // - `Inner` is wrapped in `Arc` (via `DedupFs`) specifically so this
     // thread and the FUSE/WinFSP dispatch threads can share the same
-    // state safely.
-    let (persist_tx, persist_rx) = mpsc::sync_channel::<PersistJob>(PERSIST_QUEUE_CAPACITY);
+    // state safely. Unbounded: the actual backpressure point moved from
+    // channel capacity to `enqueue_persist`'s own byte-based wait (see
+    // `Inner::spill_backpressure_threshold_bytes`), so nothing should ever
+    // need to block *inside* `send` itself any more.
+    let (persist_tx, persist_rx) = mpsc::channel::<PersistJob>();
     let inner = Arc::new(Inner {
         read_only: !read_write,
         zero_fill_missing,
@@ -311,6 +308,8 @@ fn build_filesystem(
         write_states_cv: Condvar::new(),
         persist_tx: Mutex::new(Some(persist_tx)),
         persist_thread: Mutex::new(None),
+        queued_persist_bytes: AtomicU64::new(0),
+        spill_backpressure_threshold_bytes: write_cache_mb * 1024 * 1024,
     });
     let worker_inner = Arc::clone(&inner);
     let handle = std::thread::spawn(move || persist_worker(worker_inner, persist_rx));
@@ -324,20 +323,27 @@ fn build_filesystem(
 
 /// One closed-and-dirty file's worth of unpersisted changes, handed from
 /// `release`/bare `truncate` to [`persist_worker`] via [`Inner::persist_tx`].
-/// See [`PERSIST_QUEUE_CAPACITY`]'s doc comment for why this is queued
+/// See [`Inner::enqueue_persist`]'s doc comment for why this is queued
 /// rather than persisted inline on the calling thread.
 struct PersistJob {
     tree_id: i64,
     cache: WriteCache,
     mtime_millis: i64,
+    /// `cache.size()`, captured before `cache` moves into this job -
+    /// [`persist_worker`] reports this back via
+    /// [`Inner::queued_persist_bytes`] once done, so
+    /// [`Inner::enqueue_persist`]'s backpressure check doesn't need the
+    /// (by then already-consumed) `cache` back to know how much to
+    /// release.
+    queued_bytes: u64,
 }
 
 /// The single background thread every persist actually runs on (spawned
 /// once in [`build_filesystem`], joined in [`Inner::on_unmount`]) - moving
 /// persist off whichever FUSE/WinFSP worker thread called `release`/bare
 /// `truncate` is what fixes the worker-pool-exhaustion failure mode (see
-/// [`PERSIST_QUEUE_CAPACITY`]'s doc comment): that thread now only has to
-/// enqueue a job (fast, unless the queue is already full) instead of
+/// `Inner::enqueue_persist`'s doc comment): that thread now only has to
+/// enqueue a job (fast, unless backpressure is active) instead of
 /// blocking for as long as the target store's disk takes. Serial by
 /// design, mirroring the Scala prototype's own single background persist
 /// thread - also means at most one persist is ever actually writing to
@@ -347,6 +353,9 @@ struct PersistJob {
 fn persist_worker(inner: Arc<Inner>, jobs: mpsc::Receiver<PersistJob>) {
     for job in jobs {
         inner.persist(job.tree_id, job.cache, job.mtime_millis);
+        inner
+            .queued_persist_bytes
+            .fetch_sub(job.queued_bytes, Ordering::Relaxed);
         inner.finish_persisting(job.tree_id);
     }
 }
@@ -396,13 +405,41 @@ struct Inner {
     /// [`Inner::on_unmount`] has taken it, which is what lets
     /// [`persist_worker`]'s loop (and thus the thread join right after)
     /// actually finish. Cloned out (not sent through while holding this
-    /// lock) by `enqueue_persist`, since `send` is the part that can block
-    /// once the queue is full.
-    persist_tx: Mutex<Option<mpsc::SyncSender<PersistJob>>>,
+    /// lock) by `enqueue_persist` purely to keep the lock's critical
+    /// section small - unlike the old bounded channel, `send` on this
+    /// unbounded one never itself blocks.
+    persist_tx: Mutex<Option<mpsc::Sender<PersistJob>>>,
     /// The background thread `persist_worker` runs on - `None` before
     /// `build_filesystem` finishes spawning it, and after `on_unmount` has
     /// joined it.
     persist_thread: Mutex<Option<JoinHandle<()>>>,
+    /// Total bytes across every [`PersistJob`] currently queued or being
+    /// persisted (not bytes still accumulating in an open, not-yet-closed
+    /// file) - the actual backpressure signal for
+    /// [`Inner::enqueue_persist`], replacing the old fixed job-count gate.
+    /// See [`Inner::spill_backpressure_threshold_bytes`] and
+    /// `docs/plans/memory-pressure-backpressure.md` for why.
+    queued_persist_bytes: AtomicU64,
+    /// How many bytes' worth of [`Inner::queued_persist_bytes`] can
+    /// accumulate before a *new* `release`/bare `truncate` call starts
+    /// blocking its own FUSE/WinFSP worker thread waiting for room - see
+    /// [`Inner::enqueue_persist`]. Tied to `--write-cache-mb` (the same
+    /// figure `ram_budget` uses as its own RAM ceiling) rather than a
+    /// separate flag: a user who already sized that for their machine has
+    /// implicitly said how much buffered-but-not-yet-durable data they're
+    /// comfortable with, and reusing the number avoids a second knob to
+    /// explain.
+    ///
+    /// Replaces the older fixed *job-count* gate (`PERSIST_QUEUE_CAPACITY
+    /// = 4`) - see `docs/plans/memory-pressure-backpressure.md`'s
+    /// benchmarks for what motivated the change: a job-count gate
+    /// throttled small files earlier than any real pressure justified
+    /// (~27% aggregate throughput lost to `N = 4` vs. a much larger count,
+    /// for many 1 MB files under a throttled disk) while providing *no*
+    /// protection at all for large files, letting 300 MB (6x a single
+    /// 50 MB file) accumulate unpersisted with zero client-visible
+    /// backpressure under that same `N = 4`.
+    spill_backpressure_threshold_bytes: u64,
 }
 
 /// Thin wrapper making [`Inner`] (shared with the background persist
@@ -434,7 +471,7 @@ struct FileWriteState {
     /// wait for FUSE's `release` callback to finish (release is
     /// inherently best-effort/asynchronous per the FUSE contract), and
     /// persist itself now runs asynchronously too (see
-    /// [`PERSIST_QUEUE_CAPACITY`]) - a program that closes and immediately
+    /// [`Inner::enqueue_persist`]) - a program that closes and immediately
     /// reopens/reads the same file can otherwise race ahead of the persist
     /// and see neither the write cache (already taken) nor the new DB
     /// content (not committed yet). [`Inner::wait_while_persisting`]
@@ -1250,21 +1287,35 @@ impl Inner {
 
     /// Hands `cache` off to the background persist thread ([`persist_worker`])
     /// instead of persisting on the calling thread - blocks only once
-    /// [`PERSIST_QUEUE_CAPACITY`] persists are already queued ahead of it
-    /// (the intended backpressure point). The caller must already have set
-    /// `persisting = true` on this `tree_id`'s [`FileWriteState`] before
-    /// calling this (both `release` and bare `truncate` do) so a racing
-    /// `read`/`getattr`/`open` on the same id blocks via
-    /// `wait_while_persisting` until [`Inner::finish_persisting`] clears
-    /// it, rather than observing stale pre-persist content after this call
-    /// has already returned.
+    /// [`Inner::queued_persist_bytes`] (measured *before* this job's own
+    /// contribution - see below) already exceeds
+    /// [`Inner::spill_backpressure_threshold_bytes`] (the intended
+    /// backpressure point). The caller must already have set `persisting =
+    /// true` on this `tree_id`'s [`FileWriteState`] before calling this
+    /// (both `release` and bare `truncate` do) so a racing `read`/
+    /// `getattr`/`open` on the same id blocks via `wait_while_persisting`
+    /// until [`Inner::finish_persisting`] clears it, rather than observing
+    /// stale pre-persist content after this call has already returned.
     fn enqueue_persist(&self, tree_id: i64, cache: WriteCache, mtime_millis: i64) {
-        // Cloned out from under the lock rather than sent while holding
-        // it - `send` is the blocking part once the queue is full, and
-        // holding `persist_tx`'s mutex through that would serialize every
-        // *unrelated* enqueue attempt behind whichever one happened to
-        // fill the queue first, not just the ones actually contending for
-        // queue space.
+        // Checked against bytes already queued *before* this job - not
+        // after adding it - so one file bigger than the whole threshold
+        // still gets sent immediately when nothing else is queued, rather
+        // than blocking forever waiting for pressure only it itself
+        // created (the queue can only ever drain by this job actually
+        // being sent and persisted).
+        while self.queued_persist_bytes.load(Ordering::Relaxed)
+            > self.spill_backpressure_threshold_bytes
+        {
+            std::thread::sleep(SPILL_BACKPRESSURE_POLL_INTERVAL);
+        }
+        let queued_bytes = cache.size();
+        self.queued_persist_bytes
+            .fetch_add(queued_bytes, Ordering::Relaxed);
+
+        // Cloned out from under the lock rather than sent while holding it
+        // - keeps the critical section small, even though `send` on this
+        // unbounded channel never itself blocks (unlike the old bounded
+        // one).
         let tx = self
             .persist_tx
             .lock()
@@ -1274,6 +1325,7 @@ impl Inner {
             tree_id,
             cache,
             mtime_millis,
+            queued_bytes,
         };
         let delivered = match tx {
             Some(tx) => tx.send(job).is_ok(),
@@ -1287,6 +1339,8 @@ impl Inner {
                 "mount: persist queue already closed (unmounting) - discarding unsaved \
                  changes for tree id {tree_id}"
             );
+            self.queued_persist_bytes
+                .fetch_sub(queued_bytes, Ordering::Relaxed);
             self.finish_persisting(tree_id);
         }
     }

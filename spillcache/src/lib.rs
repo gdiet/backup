@@ -34,16 +34,32 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
-/// A fixed byte budget shared (via `Arc`) by every [`WriteCache`] created
-/// against it. Each reservation attempt either succeeds immediately or
-/// fails immediately - there is no blocking/waiting variant, by design:
-/// see [`WriteCache`]'s disk-spillover tier, which is what callers are
-/// expected to fall back to on failure.
-pub struct RamBudget(AtomicI64);
+/// A fixed RAM byte budget shared (via `Arc`) by every [`WriteCache`]
+/// created against it, plus a live count of how many bytes have spilled to
+/// disk across all of them - two independent numbers, not one conflated
+/// signal (see `docs/plans/memory-pressure-backpressure.md` for why they
+/// need to stay separate: RAM headroom alone can't distinguish "nothing
+/// queued" from "everything's spilling to disk but RAM shows free because
+/// nothing new is being retained").
+///
+/// RAM reservation either succeeds immediately or fails immediately - there
+/// is no blocking/waiting variant, by design: see [`WriteCache`]'s
+/// disk-spillover tier, which is what callers are expected to fall back to
+/// on failure. The spilled-bytes count is purely informational here (a
+/// plain counter, not a second budget with its own acquire/fail path) -
+/// callers that want to gate on it (e.g. `mount --read-write`'s persist
+/// queue) read [`RamBudget::spilled_bytes`] and apply their own policy.
+pub struct RamBudget {
+    ram: AtomicI64,
+    spilled: AtomicI64,
+}
 
 impl RamBudget {
     pub fn new(bytes: u64) -> Self {
-        Self(AtomicI64::new(bytes.min(i64::MAX as u64) as i64))
+        Self {
+            ram: AtomicI64::new(bytes.min(i64::MAX as u64) as i64),
+            spilled: AtomicI64::new(0),
+        }
     }
 
     /// `false` if not enough budget remains - the caller is expected to
@@ -51,12 +67,12 @@ impl RamBudget {
     fn try_acquire(&self, size: u64) -> bool {
         let size = size as i64;
         loop {
-            let avail = self.0.load(Ordering::Relaxed);
+            let avail = self.ram.load(Ordering::Relaxed);
             if avail < size {
                 return false;
             }
             if self
-                .0
+                .ram
                 .compare_exchange_weak(avail, avail - size, Ordering::Relaxed, Ordering::Relaxed)
                 .is_ok()
             {
@@ -66,7 +82,29 @@ impl RamBudget {
     }
 
     fn release(&self, size: u64) {
-        self.0.fetch_add(size as i64, Ordering::Relaxed);
+        self.ram.fetch_add(size as i64, Ordering::Relaxed);
+    }
+
+    /// Records `size` more bytes now sitting in some [`WriteCache`]'s
+    /// disk-spillover tier - called from [`FileCache`], never fails or
+    /// blocks (spilling itself never does either).
+    fn spill(&self, size: u64) {
+        self.spilled.fetch_add(size as i64, Ordering::Relaxed);
+    }
+
+    /// The reverse of [`RamBudget::spill`] - called wherever spilled bytes
+    /// stop being spilled (overwritten, truncated away, or the whole
+    /// [`WriteCache`] dropped).
+    fn unspill(&self, size: u64) {
+        self.spilled.fetch_sub(size as i64, Ordering::Relaxed);
+    }
+
+    /// Total bytes currently spilled to disk across every [`WriteCache`]
+    /// sharing this budget - the pressure signal a caller-side backpressure
+    /// gate should read, not [`RamBudget`]'s RAM headroom (see the type's
+    /// own doc comment for why).
+    pub fn spilled_bytes(&self) -> u64 {
+        self.spilled.load(Ordering::Relaxed).max(0) as u64
     }
 }
 
@@ -354,14 +392,21 @@ struct FileCache {
     path: PathBuf,
     file: Option<File>,
     spans: LengthSpanMap,
+    /// Reports this cache's spilled-byte count changes to the shared
+    /// budget (see [`RamBudget::spill`]/[`RamBudget::unspill`]) - by
+    /// comparing [`Self::spans_total`] before and after each
+    /// spans-mutating call, rather than threading a delta through
+    /// `LengthSpanMap`'s own (already non-trivial) span-splitting logic.
+    budget: Arc<RamBudget>,
 }
 
 impl FileCache {
-    fn new(path: PathBuf) -> Self {
+    fn new(path: PathBuf, budget: Arc<RamBudget>) -> Self {
         Self {
             path,
             file: None,
             spans: LengthSpanMap::default(),
+            budget,
         }
     }
 
@@ -379,20 +424,32 @@ impl FileCache {
         Ok(self.file.as_mut().expect("just set above"))
     }
 
+    fn spans_total(&self) -> u64 {
+        self.spans.0.values().sum()
+    }
+
     fn clear(&mut self, position: u64, size: u64) {
+        let before = self.spans_total();
         self.spans.clear(position, size);
+        self.budget
+            .unspill(before.saturating_sub(self.spans_total()));
     }
 
     fn write(&mut self, position: u64, data: &[u8]) -> io::Result<()> {
+        let before = self.spans_total();
         let file = self.file()?;
         file.seek(SeekFrom::Start(position))?;
         file.write_all(data)?;
         self.spans.put(position, data.len() as u64);
+        self.budget.spill(self.spans_total().saturating_sub(before));
         Ok(())
     }
 
     fn keep(&mut self, new_size: u64) {
+        let before = self.spans_total();
         self.spans.keep(new_size);
+        self.budget
+            .unspill(before.saturating_sub(self.spans_total()));
     }
 
     fn read(&mut self, position: u64, size: u64) -> io::Result<Vec<(u64, Span<Vec<u8>>)>> {
@@ -416,6 +473,7 @@ impl FileCache {
 
 impl Drop for FileCache {
     fn drop(&mut self) {
+        self.budget.unspill(self.spans_total());
         if self.file.take().is_some() {
             let _ = std::fs::remove_file(&self.path);
         }
@@ -440,8 +498,8 @@ impl WriteCache {
     /// whatever size the caller's own prior state implies otherwise).
     pub fn new(budget: Arc<RamBudget>, spill_path: PathBuf, initial_size: u64) -> Self {
         Self {
-            mem: ByteSpanMap::new(budget),
-            file: FileCache::new(spill_path),
+            mem: ByteSpanMap::new(Arc::clone(&budget)),
+            file: FileCache::new(spill_path, budget),
             zero: LengthSpanMap::default(),
             size: initial_size,
         }
@@ -667,6 +725,37 @@ mod tests {
         cache.write(0, b"ab").unwrap(); // fits the 4-byte budget
         cache.write(2, b"cdef").unwrap(); // doesn't fit - must spill to disk
         assert_eq!(read_all(&mut cache), b"abcdef");
+    }
+
+    #[test]
+    fn ram_budget_spilled_bytes_tracks_only_the_disk_spillover_tier() {
+        let b = budget(4);
+        let mut cache = WriteCache::new(Arc::clone(&b), spill_path(), 0);
+        cache.write(0, b"ab").unwrap(); // fits the RAM budget - no spill
+        assert_eq!(b.spilled_bytes(), 0);
+        cache.write(2, b"cdef").unwrap(); // exceeds it - spills in full
+        assert_eq!(b.spilled_bytes(), 4);
+    }
+
+    #[test]
+    fn ram_budget_spilled_bytes_decreases_on_overwrite_truncate_and_drop() {
+        let b = budget(0); // every byte spills
+        let mut cache = WriteCache::new(Arc::clone(&b), spill_path(), 0);
+        cache.write(0, b"abcdefghij").unwrap();
+        assert_eq!(b.spilled_bytes(), 10);
+
+        cache.write(2, b"XXXX").unwrap(); // overwrite, same total size
+        assert_eq!(b.spilled_bytes(), 10);
+
+        cache.truncate(5); // drops [5,10)
+        assert_eq!(b.spilled_bytes(), 5);
+
+        drop(cache);
+        assert_eq!(
+            b.spilled_bytes(),
+            0,
+            "dropping the cache must release everything still spilled"
+        );
     }
 
     #[test]
