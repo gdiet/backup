@@ -394,6 +394,13 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
 
     let program_name = CString::new("mountfs").unwrap();
     let read_only_flag = CString::new("-oro").unwrap();
+    // Shows up as the volume label in Explorer/`vol`/etc. - otherwise
+    // blank, unlike a real drive. Matches the Scala predecessor's own
+    // `Array("-o", "volname=DedupFS")` (Windows-only there too - this
+    // mount option isn't meaningful the same way on Linux, where a FUSE
+    // mount's "label" isn't a GUI-visible concept the way it is here).
+    let volname_flag = CString::new("-o").unwrap();
+    let volname_value = CString::new("volname=DedupFS").unwrap();
     let mountpoint_str = mountpoint.to_str().ok_or_else(|| {
         io::Error::new(io::ErrorKind::InvalidInput, "mountpoint is not valid UTF-8")
     })?;
@@ -404,6 +411,8 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
     if read_only {
         args.push(read_only_flag.as_ptr().cast_mut());
     }
+    args.push(volname_flag.as_ptr().cast_mut());
+    args.push(volname_value.as_ptr().cast_mut());
     args.push(mountpoint_c.as_ptr().cast_mut());
 
     // See linux::mount's identical comment: fuse_main_real carries this

@@ -510,7 +510,10 @@ backup mount C:\mnt\dedup
 A drive letter shows up like any other drive (in Explorer, `dir`, etc.); a
 path mount only shows up under that path (the parent directory must already
 exist, same as the "must not already exist" rule above - only the final
-component is created).
+component is created). Either way, the volume is labeled "DedupFS" (`vol
+<drive>:` for a drive letter; a path mount's underlying volume carries the
+same label too, visible via `GetVolumeInformation` even though `vol.exe`
+itself only accepts a drive letter, not a path).
 
 [WinFSP]: https://github.com/winfsp/winfsp - WinFsp - Windows File System
 Proxy, Copyright (C) Bill Zissimopoulos, used here under its FLOSS
