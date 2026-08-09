@@ -1,5 +1,9 @@
 # `compact-store`: defragment the data store's physical layout
 
+**Naming decided**: `compact-store` (kebab-case, matching `fix-problems`/
+`reclaim-space`; clearly distinct from `db compact`'s unrelated SQLite
+`VACUUM`).
+
 **Status**: proposed, not implemented. Requested alongside a broader
 question - whether every command already leaves the repository in a clean,
 resumable state if killed (`SIGINT`, `SIGKILL`, or power loss) mid-run. That
@@ -142,79 +146,65 @@ still contains `chunk_extents` rows pointing at the *old* positions - and
 after compaction, those old positions aren't just gone, they've very
 likely been overwritten by a *different* chunk's bytes during the move.
 Restoring such a backup (`db restore`) wouldn't fail - it would silently
-resolve some files to the wrong bytes. This needs to be caught
-automatically, not just documented and hoped for.
+resolve some files to the wrong bytes.
 
-## Open questions
+**Resolved, but not scoped to this command**: working through this
+surfaced that the identical hazard already exists today via ordinary
+`store`/`mount --read-write` runs reusing a gap left by `reclaim-space` -
+entirely independent of whether `compact-store` ever ships. Split out to
+its own plan, `docs/plans/stale-backup-guard.md`: a `store_generation`
+counter in `repository_settings`, bumped whenever a write reuses a real
+gap (always, for `compact-store`), stamped into every `db backup`
+snapshot for free (it's just a DB dump), and checked by `db restore`
+before it overwrites the live database - warns (doesn't refuse) when the
+backup predates the live repository's current generation.
+`compact-store`'s own contribution here is simple: always bump
+`store_generation` on a successful run.
 
-- **Naming.** `compact-store` (top-level command, kebab-case matching
-  `fix-problems`/`reclaim-space`) is this doc's placeholder - needs to
-  read as clearly distinct from the existing `db compact` (SQLite
-  `VACUUM`/`incremental_vacuum` on the metadata file only, unrelated
-  subsystem). Alternatives: `defrag`, `pack`, `gc-store`. Pick one.
-- **How to guard against the silent-wrong-restore hazard above.**
-  Candidates, not mutually exclusive: (a) document prominently and print a
-  loud warning after a successful run - relies on the user reading it at
-  the right time, weakest guarantee; (b) require an explicit
-  acknowledgment flag to run at all; (c) after a successful run, move
-  every existing `meta/backups/*.zip` out of the way (or delete them)
-  automatically; (d) stamp a "store generation" counter in
-  `repository_settings`, bumped on every successful `compact-store` run,
-  embedded in each backup's own metadata, and have `db restore` refuse
-  (or require an override) if the backup's stamped generation doesn't
-  match the live repository's current one. (d) is the only option that
-  protects a user who restores a backup long after forgetting a
-  compaction ever happened - recommend it as the real fix, with (c) as an
-  optional belt-and-suspenders cleanup on top. Needs a decision either
-  way.
-- **Exclusivity while running.** Nothing in this codebase enforces
-  cross-process mutual exclusion for a repository today (the "single
-  writer" doc comment in `db/src/lib.rs` is a within-process connection
-  discipline, not a cross-process lock) - running `compact-store`
-  concurrently with `store`/`mount --read-write`/`reclaim-space` would
-  race on the same `chunk_extents` rows and store bytes. Add a real
-  repo-level lock for this (and retroactively for the other maintenance
-  commands?), or keep relying on documented "don't run these
-  concurrently" discipline, consistent with how the rest of the codebase
-  currently handles it?
-- **Verification depth.** After writing a chunk's bytes to their new
-  location (step 2), re-read and re-hash before committing the extent
-  switch (catches a copy bug before it becomes silent data corruption, at
-  the cost of extra I/O/CPU - roughly doubling the read volume), or trust
-  the write and rely on a later `check` run to catch problems? Given how
-  bad a silent-copy-bug outcome would be here specifically (unlike most
-  commands, a bug in this one can corrupt data that was previously fine),
-  leaning toward verifying - but that's a real, measurable cost worth
-  deciding deliberately, not defaulting into.
-- **Full pack vs. bounded/incremental run.** Always run to full completion
-  (one contiguous block, no gaps left) in a single invocation, or support
-  a `--max-bytes`/time-boxed mode for very large repositories where a
-  user wants to deliberately spread the work across several sessions
-  rather than run one very long operation? Resumability (above) already
-  makes an *interrupted* run safe either way - this question is only
-  about whether to offer *voluntary* early stopping as a first-class flag
-  from day one, or add it later only if it turns out to matter.
-- **Should `compact-store` require or suggest running `reclaim-space`
-  first?** Compacting before `reclaim-space` would move data that's about
-  to become garbage anyway once `reclaim-space` next runs, wasting I/O -
-  worth at least a README-level recommended order (`reclaim-space` then
-  `compact-store`), possibly a warning if `compact-store` sees active
-  soft-deleted-but-not-yet-reclaimed entries with an eligible cutoff.
-  Enforcing this automatically feels like overreach; a printed hint
-  probably suffices - confirm.
+## Decisions
+
+- **Exclusivity while running.** Add a real repo-level lock file for
+  `compact-store` - nothing in this codebase enforces cross-process mutual
+  exclusion for a repository today (the "single writer" doc comment in
+  `db/src/lib.rs` is a within-process connection discipline, not a
+  cross-process lock), and running `compact-store` concurrently with
+  `store`/`mount --read-write`/`reclaim-space` would race on the same
+  `chunk_extents` rows and store bytes. Still open at implementation time:
+  exact lock mechanism (a `meta/.lock` file held for the process's
+  lifetime, checked/created at startup) and whether to retrofit it onto
+  the other maintenance commands too, or scope it to just this one for
+  now.
+- **Verification depth.** No read-back/re-hash verification after writing
+  a chunk's bytes to their new location - ordinary `store` doesn't re-read
+  what it just wrote either (trusts the write, relies on a later `check`
+  run to catch problems), and `compact-store` stays consistent with that
+  existing risk posture rather than holding itself to a stricter bar.
+- **Full pack vs. bounded/incremental run.** Always runs to full
+  completion (one contiguous block, no gaps left) in a single invocation
+  for now - no `--max-bytes`/time-boxed flag at first. Resumability
+  (above) already makes an *interrupted* run safe either way, so adding
+  voluntary early-stopping later, if a large repository turns out to need
+  it, is a pure addition - nothing about this decision needs revisiting
+  up front.
+- **Ordering relative to `reclaim-space`.** No enforcement -
+  `compact-store` doesn't check for or warn about pending
+  soft-deleted-but-not-yet-reclaimed entries. Just a documented
+  recommendation (`reclaim-space` before `compact-store` - compacting
+  first would move data that's about to become garbage anyway once
+  `reclaim-space` next runs, wasting I/O) in `README.md`.
 
 ## What this touches
 
 - `store`: a new truncate operation on `LongTermStore` (remove shard files
   entirely past a target size, `set_len()` the one straddling it).
-- `db`: whichever backup-generation mechanism the second open question
-  above settles on (new `repository_settings` column, or similar); no
-  change to `chunk_extents` itself, which already supports everything the
-  move step needs.
+- `db`: bumping `store_generation` on a successful run - see
+  `docs/plans/stale-backup-guard.md`, which this depends on (should land
+  first, or alongside). No change to `chunk_extents` itself, which already
+  supports everything the move step needs.
 - `cli`: a new `compact_store` module/command wired into `main.rs`,
   reusing `chunk_store`'s allocator and read/write helpers, `io_limiter`,
-  and `progress::Progress`.
+  and `progress::Progress`; a new repo-level lock file mechanism (see
+  "Exclusivity while running" above).
 - `README.md`: a new section (matching the existing "Database Backup,
-  Restore, and Compaction" section's style), explicitly cross-linking the
-  backup-invalidation hazard from wherever `db backup`/`db restore` are
-  documented.
+  Restore, and Compaction" section's style), cross-linking
+  `stale-backup-guard.md`'s warning behavior.
