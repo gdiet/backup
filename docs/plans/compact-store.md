@@ -153,13 +153,14 @@ surfaced that the identical hazard already exists today via ordinary
 `store`/`mount --read-write` runs reusing a gap left by `reclaim-space` -
 entirely independent of whether `compact-store` ever ships. Split out to
 its own plan, `docs/plans/stale-backup-guard.md`: a `store_generation`
-counter in `repository_settings`, bumped whenever a write reuses a real
-gap (always, for `compact-store`), stamped into every `db backup`
+counter in `repository_settings`, bumped inside `reclaim_space` itself
+(where gaps are *created* - sufficient to catch every real case, since a
+gap can only ever come from there), stamped into every `db backup`
 snapshot for free (it's just a DB dump), and checked by `db restore`
 before it overwrites the live database - warns (doesn't refuse) when the
 backup predates the live repository's current generation.
 `compact-store`'s own contribution here is simple: always bump
-`store_generation` on a successful run.
+`store_generation` unconditionally on a successful run.
 
 ## Decisions
 

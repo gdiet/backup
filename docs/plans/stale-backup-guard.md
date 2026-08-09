@@ -7,6 +7,11 @@ via ordinary `store`/`mount --read-write` runs, entirely independent of
 whether `compact-store` ever gets built. Tracked here on its own so it
 isn't stuck waiting on that larger, still-undecided feature.
 
+**Trigger simplified from the original draft**: bump the counter in
+`reclaim_space` (where gaps are *created*), not in every `store`/`mount
+--read-write` write that *reuses* one - see "Fix" below for why that's
+still sound, not just simpler.
+
 ## The problem, concretely
 
 1. `store a.txt` (1000 bytes) - lands at `[0, 1000)`.
@@ -30,29 +35,36 @@ combined with the entirely separate, also-intended behavior of `db
 backup`/`db restore`. The two features were never checked against each
 other. `store` and `mount --read-write`'s persist path both go through the
 same shared allocator (`cli::chunk_store::SpaceAllocator`/
-`write_chunk_from_cache`), so both can trigger this.
+`write_chunk_from_cache`), so both can trigger this - but neither is where
+the fix below hooks in.
 
 ## Fix: a store-generation counter, stamped into every backup
 
 Add a `store_generation` column to `repository_settings` (schema
-migration), starting at `0`. Bump it by exactly one, in the same DB
-transaction that commits the newly-written chunk's `chunk_extents` rows,
-whenever a write actually consumed bytes from a *real* gap (not the
-open-ended trailing region past the highest known position) - i.e.
-exactly the case that can overwrite a range some earlier backup still
-references. One increment per run that did any gap reuse is enough
-granularity; no need to count how many gaps.
+migration), starting at `0`.
 
-`SpaceAllocator` already distinguishes real gaps from the trailing region
-internally (`reserve`'s `gaps[0]` vs. the sentinel `u64::MAX`-terminated
-last entry) - it just needs to expose whether *any* reservation during
-this run's lifetime touched a real one, via a simple `AtomicBool`
-alongside its existing `Mutex<Vec<(start, stop)>>` (`false` by default,
-set `true` the first time a real gap is consumed, read once by the caller
-after the run's writes are done, right before that run's final commit).
-`compact-store` (see its own plan) always bumps this counter on a
-successful run - it doesn't need the same-gap-detection nuance, since
-relocating live chunks is its entire purpose.
+**Bump it where gaps are created, not where they're reused.** A gap in
+the data store only ever comes from one place: `reclaim_space`'s `DELETE
+FROM chunks WHERE ref_count = 0`, cascading to `chunk_extents` via `ON
+DELETE CASCADE` (see the schema doc comment in `migrations.rs`). Nothing
+else in the codebase ever deletes a `chunks` row - soft-delete (`del`)
+never frees anything, a soft-deleted entry keeps holding its content's
+`ref_count` until an actual hard-delete. So every real danger case (a
+later `store`/`mount --read-write` write overwriting a position some
+older backup still references) is necessarily preceded by a
+`reclaim_space` run that created the gap it went on to reuse. Bumping
+`store_generation` inside `reclaim_space` itself - in the same
+transaction, guarded by `chunks_purged > 0` (see `ReclaimStats`) so a
+no-op run doesn't bump it - therefore misses no real case. It's coarser
+than bumping only when a gap actually gets reused later (a backup gets
+flagged as soon as *any* eligible space exists, whether or not anything
+ever ends up overwriting it), but that coarseness is exactly right for a
+warn-only, "possibly unsafe, use at your own risk" guard, and it avoids
+touching `SpaceAllocator`, `store.rs`'s workers, or `mount.rs`'s persist
+path at all - a single one-line bump in one already-transactional
+function. `compact-store` (see its own plan) always bumps this counter
+on a successful run, unconditionally - relocating live chunks is its
+entire purpose, no need to check anything first.
 
 Because `store_generation` lives in `repository_settings`, every `db
 backup` snapshot - being a plain database dump - automatically carries
@@ -80,15 +92,13 @@ database's current value:
 ## What this touches
 
 - `db`: schema migration adding `repository_settings.store_generation`; a
-  small read/bump helper; `db restore`'s pre-overwrite comparison and
-  warning message.
-- `cli::chunk_store`: `SpaceAllocator` gains the `AtomicBool` "touched a
-  real gap" flag and an accessor for it.
-- `cli/src/store.rs` and `cli/src/mount.rs`: after a run/persist
-  transaction's writes are done, check the allocator's flag and, if set,
-  bump `store_generation` in that same commit.
+  small read/bump helper; `reclaim_space` bumps it (guarded by
+  `chunks_purged > 0`) in its existing transaction; `db restore`'s
+  pre-overwrite comparison and warning message.
 - `cli/src/db_maintenance.rs`: `run_restore_db` reads and compares
   generations before proceeding.
+- The future `compact-store` command: bumps `store_generation`
+  unconditionally on a successful run (see `docs/plans/compact-store.md`).
 - `README.md`: document the warning and what it means, near the existing
   `db backup`/`db restore` section.
 
