@@ -1,7 +1,9 @@
 # Mount: a `[deleted]` virtual folder for browsing/recovering deletions
 
-**Status**: sketch only - open questions listed below are deliberately
-unresolved. Do not implement from this without going through them first.
+**Status**: design decisions made (see below) - one empirical blocker
+remains (file-manager drag-and-drop behavior) before implementation can
+start responsibly. Not a sketch anymore, but not "ready to implement"
+either until that spike is done.
 
 ## Motivation
 
@@ -16,91 +18,99 @@ This is a materially bigger change than the CLI commands: it touches live
 filesystem semantics (`readdir`, `open`, `read`, and critically `rename`),
 not just three new subcommands.
 
-## Rough shape
+## Design
 
 A synthetic directory entry named `[deleted]` appears in `readdir` output
-(root only, or every directory - see open questions), not backed by a real
-`tree_entries` row. Listing it shows the current directory's own deleted
-children (via `db::deleted_entries`, scoped to that directory rather than
-the whole repository - the CLI's `backup deleted [path]` already does
-exactly this scoping). Reading a file under `[deleted]/...` serves its
-content read-only, same as any other file. The recovery gesture is a
-`rename` from a path under `[deleted]/...` to a real destination path -
-intercepted specially in `DedupFs::rename` (`cli/src/mount.rs`) to call
-`db::undelete` instead of `db::rename_entry`, rather than actually treating
-`[deleted]` as a real, renamable directory.
+for **every** directory (not root-only), not backed by a real
+`tree_entries` row. Listing it shows that directory's own deleted children
+(via `db::deleted_entries`, scoped to that directory - the CLI's `backup
+deleted [path]` already does exactly this scoping, so no new query is
+needed, just calling it per-directory instead of once for the whole
+repository). Reading a file under `[deleted]/...` serves its content
+read-only, same as any other file. The recovery gesture is a `rename` from
+a path under `[deleted]/...` to a real destination path - intercepted
+specially in `DedupFs::rename` (`cli/src/mount.rs`) to call `db::undelete`
+instead of `db::rename_entry`, rather than actually treating `[deleted]`
+as a real, renamable directory.
 
-## Open questions
+### Decisions (resolved)
 
-- **Name conflict with a real `[deleted]` entry.** If a directory already
-  has a real, active child literally named `[deleted]`, the synthetic entry
-  can't be synthesized there without shadowing it (or vice versa). Options:
-  refuse to mount / warn once at mount time if any such conflict exists
-  anywhere in the tree (expensive to check eagerly); pick a name less likely
-  to collide (e.g. reserve a leading-`\0`-adjacent or otherwise
-  filesystem-illegal-elsewhere name); or only synthesize `[deleted]` at the
-  repository root (smaller conflict surface, but loses "trash right where
-  you deleted it" locality - see next question). Not resolved.
-- **Root-only vs. every directory.** Every directory showing its own
-  `[deleted]` is more discoverable (you find what you just deleted right
-  there) but multiplies the name-conflict surface above by every directory
-  in the tree, and multiplies `readdir`'s cost (an extra `deleted_entries`
-  query per directory listing, though scoped so probably cheap - see the
-  known `deleted_entries` performance caveat in the soft-delete-recovery
-  plan for the *unscoped* case, which doesn't directly apply here but is a
-  reason to actually measure the scoped-per-directory cost before deciding).
-  Root-only is simpler and matches how `backup deleted` defaults (whole
-  repository) but requires remembering *where* something used to live to
-  find it, rather than looking in the folder it disappeared from.
-- **Disambiguating repeat-deletions of the same name.** `backup deleted`
-  already handles "the same path deleted more than once" by showing each as
-  its own id-tagged row (see the soft-delete-recovery plan's own resolved
-  question on this). A mount listing has no natural place to show an id
-  next to a filename without changing the visible name - e.g. suffixing
-  `photo.jpg` as `photo.jpg [42]` when more than one deleted row shares that
-  name, plain `photo.jpg` otherwise. Not decided, and interacts with the
-  next question (what a rename *of* the suffixed name means).
-- **What a directory rename-out actually recovers.** `backup undelete
-  --recursive` reactivates exactly the descendants sharing the same
-  `deleted_at` as the target - a coherent, deliberate scope. Dragging a
-  *virtual* deleted directory out of `[deleted]` needs the same semantics,
-  but "recursive" isn't a flag a file manager's drag gesture can express -
-  it would need to always be recursive-with-same-`deleted_at`-scope
-  (probably right, but worth stating as a decision, not an accident).
-- **Read-only mounts.** Should `[deleted]` even appear when the mount was
-  opened `--read-only`? Browsing/reading seems fine (nothing being
-  mutated); the rename-based recovery gesture obviously can't work there.
-  Showing the folder but having every rename-out fail with `EROFS` is
-  consistent with how the rest of a read-only mount already behaves, but
-  worth confirming that's not confusing UX (a trash folder you can look
-  into but never empty).
-- **File manager drag-and-drop reality.** A same-volume "move" isn't always
-  a plain `rename(2)`/`MoveFile` syscall in practice - some file managers
-  implement cross-directory drag as copy-then-delete-source, especially
-  once a path *looks* unusual (bracketed name, synthetic directory). If
-  that happens here, the "recovery" would actually be: read the deleted
-  file's bytes out (fine, already supported), then call `unlink` on the
-  *virtual* source path - which would need to also trigger the same
-  undelete-or-move logic as a `rename`, but now decoupled from having a
-  real destination path to hand (the copy already landed via a normal
-  `create`+`write` at the real destination, driven by the file manager, not
-  by this code). Needs testing against real file managers (Windows
-  Explorer, at minimum) before assuming `rename` interception alone is
-  sufficient.
-- **Nested browsing into an already-deleted directory.** `backup deleted`
-  itself only lets you scope by an *active* path (resolvable via the normal
-  tree) - it can list what's under a deleted directory in its output, but
-  can't take a deleted directory's own (unresolvable) path as a starting
-  scope. Does `[deleted]` need to support browsing *into* a listed deleted
-  directory (`[deleted]/old-photos/vacation/`) to see and selectively
-  recover individual grandchildren, or is whole-subtree-at-once (via the
-  directory-rename-out gesture above) enough? Real trash-folder UX
-  (Windows/macOS) usually does support browsing in; whether it's worth the
-  extra `readdir`-path-parsing complexity here is undecided.
+- **Name conflict with a real `[deleted]` entry**: the real entry always
+  wins, locally. `readdir` only synthesizes the virtual `[deleted]` entry
+  for a directory if that directory doesn't already have a real active
+  child by that name - no global scan at mount time, no refusal to mount.
+  A directory with a real `[deleted]` subfolder just doesn't get the
+  synthetic trash view for that one directory; every other directory is
+  unaffected.
+- **Every directory, not root-only**: each directory shows its own deleted
+  children, matching how a real trash-can/recycle-bin usually works
+  (you find what you just deleted right where it disappeared from), not
+  just `backup deleted`'s whole-repository default. The per-directory
+  `deleted_entries` call is already scoped (not the expensive unscoped
+  case that motivated `docs/plans/implemented/deleted-entries-performance.md`),
+  so this should be cheap - worth confirming with a real measurement
+  during implementation (see verification checklist), not just assumed.
+- **Disambiguating repeat-deletions**: `photo.jpg [42]` (id suffix) only
+  when more than one deleted row in that directory's listing shares the
+  name `photo.jpg`; plain `photo.jpg` otherwise - mirrors `backup
+  deleted`'s own id-based disambiguation. A `rename` *of* a suffixed name
+  needs to parse the `[<id>]` suffix back out to know which specific row
+  to undelete (see "Nested browsing" below for the closely related parsing
+  need).
+- **Nested browsing into an already-deleted directory**: supported.
+  `[deleted]/old-photos/vacation/...` must resolve - `readdir`/`getattr`/
+  `open`/`read` on any path under a `[deleted]/...` prefix need their own
+  resolution logic, separate from the normal active-tree
+  `db::resolve_path` path: walk from the synthesized `[deleted]` entry
+  down through `db::deleted_entries`' result set (which already returns
+  full relative paths - see that function's doc comment), matching path
+  components (including the `[<id>]` suffix disambiguation rule above)
+  instead of doing normal active `tree_entries` lookups. This is the most
+  code-shaped-different part of the whole feature: every read-side
+  `MountFilesystem` method needs a branch that detects a `[deleted]/...`
+  prefix and takes this alternate resolution path instead of the existing
+  one.
+- **Directory rename-out scope**: always recursive-with-same-`deleted_at`
+  (mirrors `undelete --recursive`) - there's no way for a drag gesture to
+  express "just this one file, not its siblings", so partial recovery of
+  a dragged-out directory was never actually on the table.
+- **Read-only mounts**: `[deleted]` still appears and is browsable/readable
+  (nothing being mutated); a rename-out attempt fails with `EROFS`, same as
+  every other mutating operation on a read-only mount already does.
 
-## Explicitly not decided by this sketch
+### Remaining blocker: file-manager drag-and-drop reality (empirical, not a preference)
 
-Whether this is worth building at all yet, relative to its size, versus the
-CLI-only recovery path already shipped. This sketch exists so that
-decision (and, if "yes", the open questions above) can be made deliberately
-later, not to argue either way.
+A same-volume "move" isn't always a plain `rename(2)`/`MoveFile` syscall in
+practice - some file managers implement cross-directory drag as
+copy-then-delete-source, especially once a path *looks* unusual (bracketed
+name, synthetic directory). If that happens here, the "recovery" gesture
+would actually arrive as: a normal `create`+`write` at the real
+destination (already supported, no special handling needed - reads
+`[deleted]/...` content just fine), followed by `unlink` on the *virtual*
+source path - which would need to trigger the same undelete logic a
+`rename` would, but now decoupled from ever having seen the real
+destination path. `unlink` handling would need to become "if the path is
+under `[deleted]/...`, call `db::soft_delete`... no - call nothing, since
+the content was already read out; the entry should just stay soft-deleted,
+matching `backup restore --deleted`'s "copy the bytes without touching
+repository state" behavior, not `undelete`'s. This is a materially
+different code path than the `rename` interception described above, and
+whether it's even needed depends entirely on what real file managers
+actually do - needs testing against Windows Explorer (at minimum) before
+committing to `rename`-interception-only as sufficient. Treat this as a
+short, dedicated spike before writing any other code for this feature, not
+something to discover mid-implementation.
+
+## Verification checklist (once the spike above is done)
+
+- Confirm via the spike whether `unlink`-based recovery handling (see
+  above) is actually needed, or whether `rename` interception alone
+  suffices for the file managers this project cares about (at minimum
+  Windows Explorer, given the primary platform).
+- Measure per-directory `deleted_entries` cost for real (a `readdir` on a
+  directory with many active children plus a nontrivial deleted-children
+  count, against the real `dedup/` repository) before assuming it's cheap
+  enough to run on every `readdir`.
+- `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
+  warnings && cargo test --workspace && cargo doc --no-deps --workspace`.
+- Once shipped, move this file under `docs/plans/implemented/`.
