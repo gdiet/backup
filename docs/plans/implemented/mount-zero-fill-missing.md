@@ -1,6 +1,6 @@
 # Mount: opt-in `--zero-fill-missing` flag
 
-**Status**: plan complete, ready to implement.
+**Status**: implemented.
 
 ## Context
 
@@ -96,11 +96,12 @@ specific to mount.
 
 ## Verification checklist
 
-- `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
+- [x] `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
   warnings && cargo test --workspace && cargo doc --no-deps --workspace`.
-- New test(s) in `cli/src/mount.rs`: a read overlapping missing store data
-  returns `Ok` with zero-filled bytes when `--zero-fill-missing` is set,
-  and still returns `Err(Errno::EIO)` when it isn't (regression coverage
-  for the existing default).
-- Update `README.md`'s `## Mount` section with the new flag.
-- Once shipped, move this file under `docs/plans/implemented/`.
+- [x] New tests in `cli/tests/windows_mount.rs` (not `cli/src/mount.rs`
+  itself - that file's own embedded tests are Linux/FUSE-only, gated
+  `#[cfg(not(target_os = "windows"))]`; Windows coverage lives in the
+  integration test file, spawning the real binary against real WinFSP,
+  matching this project's existing convention): `a_missing_chunk_returns_an_io_error_by_default`
+  and `zero_fill_missing_serves_zero_bytes_instead_of_failing` - both pass.
+- [x] Update `README.md`'s `## Mount` section with the new flag.

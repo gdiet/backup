@@ -115,6 +115,16 @@ pub struct MountArgs {
     /// Only meaningful with `--read-write`.
     #[arg(long)]
     temp: Option<PathBuf>,
+
+    /// Serve missing or short store data as zero bytes for exactly the
+    /// affected range, instead of failing that read with an I/O error. Off
+    /// by default (see docs/plans/mount-zero-fill-missing.md for why): once
+    /// this is on, a reader has no way to tell zero-filled bytes from real
+    /// ones, so only turn it on when you specifically want best-effort
+    /// access to a file you already know is affected (e.g. via `backup
+    /// problems`) rather than a hard failure.
+    #[arg(long)]
+    zero_fill_missing: bool,
 }
 
 /// FUSE (Linux) mounts onto an existing, empty directory; WinFSP
@@ -198,6 +208,7 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
         args.read_write,
         args.write_cache_mb,
         args.temp.as_deref(),
+        args.zero_fill_missing,
     ) {
         Ok(fs) => fs,
         Err(msg) => {
@@ -216,6 +227,12 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
         args.mountpoint.display(),
         unmount_hint(&args.mountpoint)
     );
+    if args.zero_fill_missing {
+        println!(
+            "zero-fill-missing enabled: files with missing or short store data \
+             will read as zero-filled instead of failing with an I/O error"
+        );
+    }
     match mountfs::mount(fs, &args.mountpoint, !args.read_write) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
@@ -234,6 +251,7 @@ fn build_filesystem(
     read_write: bool,
     write_cache_mb: u64,
     temp: Option<&Path>,
+    zero_fill_missing: bool,
 ) -> Result<DedupFs, String> {
     let repository = db::open_repository(repo)
         .map_err(|err| format!("failed to open repository at {}: {err}", repo.display()))?;
@@ -279,6 +297,7 @@ fn build_filesystem(
     let (persist_tx, persist_rx) = mpsc::sync_channel::<PersistJob>(PERSIST_QUEUE_CAPACITY);
     let inner = Arc::new(Inner {
         read_only: !read_write,
+        zero_fill_missing,
         conn: Mutex::new(conn),
         write_conn: Mutex::new(write_conn),
         data_store,
@@ -345,6 +364,10 @@ struct Inner {
     /// a `--read-write`-less mount silently accepted writes into the
     /// cache, only discovering `store is read-only` once persist ran).
     read_only: bool,
+    /// Mirrors `--zero-fill-missing` - see `MountArgs`' own doc comment.
+    /// Checked once, in `read_persisted`, at the single point missing/short
+    /// store data would otherwise become `Errno::EIO`.
+    zero_fill_missing: bool,
     conn: Mutex<Connection>,
     /// Held for the mount's whole lifetime - see `MountArgs::read_write`'s
     /// doc comment on why `store`/`del`/`reclaim-space` mustn't run
@@ -1071,9 +1094,15 @@ impl Inner {
             let (bytes, integrity) =
                 read_chunk_bytes(&conn, &self.data_store, chunk.chunk_id, chunk_len)
                     .map_err(|_| Errno::EIO)?;
-            if let ReadIntegrity::Incomplete { .. } = integrity {
+            if let ReadIntegrity::Incomplete { .. } = integrity
+                && !self.zero_fill_missing
+            {
                 return Err(Errno::EIO);
             }
+            // `bytes` is already zero-filled for any unreadable range by
+            // `store::read` itself (see its own doc comment) - with
+            // `zero_fill_missing` set, there's nothing left to do here but
+            // use it, same as the `Complete` case.
             let local_start = want_start.saturating_sub(chunk_start).min(chunk_len);
             let local_end = want_end.saturating_sub(chunk_start).min(chunk_len);
             result.extend_from_slice(&bytes[local_start as usize..local_end as usize]);
@@ -1419,7 +1448,7 @@ mod tests {
         seed_file(&repo_root, 0, "top.txt", b"top level content");
         seed_file(&repo_root, sub_id, "a.txt", b"hello fuse");
 
-        let fs = build_filesystem(&repo_root, false, DEFAULT_WRITE_CACHE_MB, None).unwrap();
+        let fs = build_filesystem(&repo_root, false, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -1501,7 +1530,7 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None).unwrap();
+        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -1605,7 +1634,7 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None).unwrap();
+        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -1728,7 +1757,7 @@ mod tests {
         }
         seed_file(&repo_root, 0, "a.txt", b"hello world");
 
-        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None).unwrap();
+        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -1801,7 +1830,7 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, 0, None).unwrap();
+        let fs = build_filesystem(&repo_root, true, 0, None, false).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {

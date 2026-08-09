@@ -515,6 +515,24 @@ writable; defaults to the OS temp directory) - for best throughput, point
 it at the fastest disk available, ideally not the same physical drive as
 the repository.
 
+```bash
+backup mount --zero-fill-missing <mountpoint>
+```
+
+Missing or short store data normally makes the affected read fail with an
+I/O error (see [Check Integrity](#check-integrity) and
+[Find And Fix Files With Missing Store Data](#find-and-fix-files-with-missing-store-data)
+for how to find and clean those up) - never silently zero-filled, so a
+tool reading through the mount can always tell something's wrong rather
+than copying out corrupted-looking-valid data. `--zero-fill-missing`
+trades that guarantee away deliberately: reads overlapping missing data
+return zero bytes for exactly the affected range instead of failing, for
+when you already know a file is affected (e.g. via `backup problems`) and
+still want best-effort access - a JPEG missing its last few KB may still
+decode and display up to where the data stops, for instance. Off by
+default; once it's on, there's no way to tell zero-filled bytes from real
+ones, so only turn it on when you specifically want that trade-off.
+
 ## Migrate A Scala Repository
 
 ```bash

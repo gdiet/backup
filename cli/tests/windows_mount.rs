@@ -572,3 +572,101 @@ fn a_read_only_mount_rejects_content_writes_via_the_backup_binary() {
     child.kill().expect("failed to kill backup mount");
     child.wait().expect("failed to wait for backup mount");
 }
+
+/// Deletes the single data file backing a chunk written at store position 0
+/// (the same path convention `problems`' own tests use) - simulating
+/// missing/short store data without needing a truncated real repository.
+fn break_data_at_position_zero(repo_root: &Path) {
+    std::fs::remove_file(
+        repo_root
+            .join("data")
+            .join("00")
+            .join("00")
+            .join("0000000000"),
+    )
+    .unwrap();
+}
+
+fn spawn_and_wait_for_mount(
+    backup: &str,
+    repo_root: &Path,
+    mount_path: &Path,
+    extra_args: &[&str],
+) -> std::process::Child {
+    let mut command = std::process::Command::new(backup);
+    command.arg("--repo").arg(repo_root).arg("mount");
+    for arg in extra_args {
+        command.arg(arg);
+    }
+    let mut child = command
+        .arg(mount_path)
+        .spawn()
+        .expect("failed to spawn backup mount");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            panic!("backup mount exited early with {status}");
+        }
+        let ready = std::fs::read_dir(mount_path)
+            .map(|mut entries| entries.next().is_some())
+            .unwrap_or(false);
+        if ready {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "mount did not become ready within 10s"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    child
+}
+
+/// Default behavior (no `--zero-fill-missing`): a read overlapping missing
+/// store data fails with an I/O error, exactly as `docs/plans/implemented/
+/// mount-zero-fill-missing.md` intends - data fidelity by default.
+#[test]
+fn a_missing_chunk_returns_an_io_error_by_default() {
+    let (_temp_dir, repo_root) = init_repo();
+    seed_file(&repo_root, 0, "a.txt", b"hello world");
+    break_data_at_position_zero(&repo_root);
+
+    let parent_dir = tempfile::tempdir().unwrap();
+    let mount_path = parent_dir.path().join("mnt");
+    let backup = env!("CARGO_BIN_EXE_backup");
+    let mut child = spawn_and_wait_for_mount(backup, &repo_root, &mount_path, &[]);
+
+    assert!(
+        std::fs::read(mount_path.join("a.txt")).is_err(),
+        "a read overlapping missing store data must fail by default"
+    );
+
+    child.kill().expect("failed to kill backup mount");
+    child.wait().expect("failed to wait for backup mount");
+}
+
+/// With `--zero-fill-missing`, the same read instead succeeds, returning
+/// the already-zero-filled bytes `store::read` produces for an unreadable
+/// range (see that function's own doc comment) - `read_persisted` just
+/// stops discarding them.
+#[test]
+fn zero_fill_missing_serves_zero_bytes_instead_of_failing() {
+    let (_temp_dir, repo_root) = init_repo();
+    let content = b"hello world";
+    seed_file(&repo_root, 0, "a.txt", content);
+    break_data_at_position_zero(&repo_root);
+
+    let parent_dir = tempfile::tempdir().unwrap();
+    let mount_path = parent_dir.path().join("mnt");
+    let backup = env!("CARGO_BIN_EXE_backup");
+    let mut child =
+        spawn_and_wait_for_mount(backup, &repo_root, &mount_path, &["--zero-fill-missing"]);
+
+    let bytes = std::fs::read(mount_path.join("a.txt"))
+        .expect("a read overlapping missing store data must succeed with --zero-fill-missing");
+    assert_eq!(bytes, vec![0u8; content.len()]);
+
+    child.kill().expect("failed to kill backup mount");
+    child.wait().expect("failed to wait for backup mount");
+}
