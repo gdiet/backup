@@ -1,8 +1,8 @@
 # Fix `backup deleted`'s unscoped performance; audit other commands for the same UX bar
 
-**Status**: plan complete for the confirmed bug below, ready to implement.
-The broader "every command gives quick feedback" audit is scoped but not
-exhaustively pre-solved - see its own section.
+**Status**: the confirmed bug below is implemented. The broader "every
+command gives quick feedback" audit is scoped but not exhaustively
+pre-solved - see its own section, still open.
 
 ## The confirmed bug: `deleted_entries` does a full table scan per tree level
 
@@ -36,22 +36,25 @@ rows):
 
 ### Design
 
-- New migration (`SCHEMA_V2` again - a real installation now exists, this
-  project's own `dedup/` repository at minimum, and the squash reasoning in
-  `SCHEMA_V1`'s doc comment doesn't apply the same way twice; see that
-  comment for why squashing was fine exactly once, not as a standing
-  habit): `CREATE INDEX tree_entries_parent_id_idx ON tree_entries(parent_id);`.
-  Non-partial deliberately - the whole problem was the existing partial
+- `CREATE INDEX tree_entries_parent_id_idx ON tree_entries(parent_id);`,
+  non-partial deliberately - the whole problem was the existing partial
   index being unusable for a query that must see deleted rows too.
+- Folded directly into `SCHEMA_V1`, not shipped as a separate `SCHEMA_V2`:
+  nothing built on this crate is released yet, so - per the same reasoning
+  that justified squashing the previous `SCHEMA_V2` back into `SCHEMA_V1`
+  (see that doc comment) - there's still nothing to gain from tracking
+  schema history across a step nobody outside this project has been
+  migrated past. The real `dedup/` repository's `user_version` (already
+  `1`) didn't need touching this time either: since the migration count
+  stayed at one, only the index itself had to be added to that live file
+  directly (a plain, additive `CREATE INDEX`) - no export/reimport dance
+  needed, unlike the previous squash.
 - Redundancy check: does this make `tree_entries_active_name_idx`
   (`parent_id, name` WHERE `deleted_at IS NULL`) redundant? No - that index
   is still strictly better for the active-only case (`resolve_path`,
   `find_tree_entry`, `subtree_entries_with_paths`, etc.), both because it's
   a smaller partial index and because it additionally covers `name`, which
   the new plain `parent_id`-only index doesn't. Keep both.
-- Apply via `open_repository`'s existing migration-on-open mechanism - no
-  special handling needed, same as the original `tree_entries_deleted_at_idx`
-  migration.
 
 ## Broader question: does every command give feedback in reasonable time?
 
@@ -98,12 +101,16 @@ bundled in here as an afterthought.
 
 ## Verification checklist
 
-- Add the `tree_entries_parent_id_idx` migration; add a migration test
-  mirroring the existing `a_fresh_schema_includes_the_deleted_at_index`
-  pattern.
-- Re-run the same timing check against the real `dedup/` repository after
-  the migration lands for real (not just the temporary-index measurement
-  above) to confirm the fix holds end to end through `open_repository`.
-- `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
+- [x] Add the `tree_entries_parent_id_idx` index; add a migration test
+  (`tree_entries_parent_id_idx_is_non_partial`).
+- [x] Re-run the same timing check against the real `dedup/` repository
+  through `open_repository`/`backup deleted` itself, not just the raw SQL
+  measurement above: **1m58s** end to end (debug build), consistent with
+  the 1m48s raw-SQL figure.
+- [x] `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
   warnings && cargo test --workspace && cargo doc --no-deps --workspace`.
-- Once shipped, move this file under `docs/plans/implemented/`.
+
+The "does every command give feedback in reasonable time" audit above
+identified one follow-up item (a progress indicator for `check`/
+`problems`), deliberately scoped out of this plan's own deliverable -
+tracked separately, not blocking this file's move to `implemented/`.

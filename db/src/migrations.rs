@@ -68,24 +68,45 @@ use rusqlite_migration::{M, Migrations};
 /// `content_chunks` rows, which in turn decrements the `ref_count` of chunks that
 /// only that content used, so those chunks must be swept in a second pass.
 ///
-/// Note on `tree_entries_deleted_at_idx`: it indexes the soft-deleted-entry
-/// side (`reclaim_space`'s cutoff `DELETE` and `db::query::deleted_entries`,
-/// i.e. `backup deleted`, both filter/join on it, otherwise an unindexed
-/// full table scan; partial, `WHERE deleted_at IS NOT NULL`, since the
-/// large majority of rows in a real repository are active, not deleted - no
-/// benefit to indexing those). It originally shipped as a separate
-/// `SCHEMA_V2` migration, folded back in here once it was clear no real
-/// installation existed yet that needed to stay compatible with the
-/// two-step history - verified empirically (see
-/// `migrations::tests::a_database_already_past_the_given_migration_list_fails_to_open`
-/// and its doc comment) by exporting the one real, but disposable/test,
-/// repository this project had ever produced to SQL and reimporting it
-/// against this squashed schema. Once a real installation exists, schema
+/// Two indexes were added to this schema after its initial version, both
+/// folded directly in here rather than shipped as separate migrations -
+/// nothing built on this crate has been released yet, so there's no reason
+/// to track schema history across steps nobody has been migrated past;
+/// see `migrations::tests::a_database_already_past_the_given_migration_list_fails_to_open`
+/// for what that would cost once it *does* matter (verified empirically by
+/// exporting the one real, but disposable/test, repository this project
+/// has ever produced to SQL and reimporting it against a squashed schema -
+/// twice now, each time this schema changed). Once something real
+/// depends on a given schema shape, this stops being free and schema
 /// changes go back to being genuine new migrations appended below, not
 /// edits here: `rusqlite_migration` refuses to open a database whose
-/// `user_version` exceeds the number of migrations it's given, so
-/// squashing stops being free the moment something has actually been
-/// migrated past a given point.
+/// `user_version` exceeds the number of migrations it's given.
+///
+/// - `tree_entries_deleted_at_idx` indexes the soft-deleted-entry side
+///   (`reclaim_space`'s cutoff `DELETE` and `db::query::deleted_entries`,
+///   i.e. `backup deleted`, both filter/join on it, otherwise an unindexed
+///   full table scan; partial, `WHERE deleted_at IS NOT NULL`, since the
+///   large majority of rows in a real repository are active, not deleted -
+///   no benefit to indexing those).
+/// - `tree_entries_parent_id_idx` is a plain (non-partial) index on
+///   `parent_id` alone, covering every row regardless of `deleted_at` -
+///   fixing a confirmed, severe performance bug in `deleted_entries`
+///   itself: its recursive walk must follow deleted ancestors too (see
+///   that function's own doc comment), so it can't filter on `deleted_at
+///   IS NULL` - which means it couldn't use `tree_entries_active_name_idx`
+///   either, since that index doesn't cover deleted rows. Without any
+///   usable index, SQLite fell back to a full table scan of `tree_entries`
+///   at *every* level of the recursive walk. Measured against the real
+///   ~7.16M-row `dedup/` repository: unscoped `backup deleted` never
+///   finished in under an hour before this index existed (`EXPLAIN QUERY
+///   PLAN` showed `SCAN t` inside the recursive step); with an equivalent
+///   index in place, the same query completed in 1m48s, returning the
+///   exact same row count. Doesn't replace `tree_entries_active_name_idx`:
+///   that one is still strictly better for every active-only lookup
+///   (`resolve_path`, `find_tree_entry`, `subtree_entries_with_paths`,
+///   etc.) - smaller (partial) and covers `name` too, which this index
+///   doesn't. See `docs/plans/deleted-entries-performance.md` for the full
+///   investigation.
 const SCHEMA_V1: &str = "
 CREATE TABLE repository_settings (
   id                   INTEGER PRIMARY KEY,
@@ -144,6 +165,7 @@ CREATE TABLE tree_entries (
 CREATE UNIQUE INDEX tree_entries_active_name_idx ON tree_entries(parent_id, name) WHERE deleted_at IS NULL;
 CREATE INDEX tree_entries_content_id_idx ON tree_entries(content_id);
 CREATE INDEX tree_entries_deleted_at_idx ON tree_entries(deleted_at) WHERE deleted_at IS NOT NULL;
+CREATE INDEX tree_entries_parent_id_idx ON tree_entries(parent_id);
 
 CREATE TRIGGER content_chunks_ref_count_ins AFTER INSERT ON content_chunks BEGIN
   UPDATE chunks SET ref_count = ref_count + 1 WHERE id = NEW.chunk_id;
@@ -192,6 +214,27 @@ mod tests {
             )
             .unwrap();
         assert!(index_exists);
+    }
+
+    #[test]
+    fn tree_entries_parent_id_idx_is_non_partial() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap();
+
+        let indexed_columns: Option<String> = conn
+            .query_row(
+                "SELECT sql FROM sqlite_master
+                 WHERE type = 'index' AND name = 'tree_entries_parent_id_idx'",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        let sql = indexed_columns.unwrap();
+        assert!(sql.contains("parent_id"));
+        assert!(
+            !sql.to_uppercase().contains("WHERE"),
+            "must be non-partial to cover deleted rows too: {sql}"
+        );
     }
 
     /// Documents, with a throwaway two-step schema (standing in for the
