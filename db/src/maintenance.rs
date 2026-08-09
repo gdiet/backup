@@ -235,10 +235,7 @@ pub fn reclaim_space(conn: &mut Connection, cutoff_millis: i64) -> Result<Reclai
     // db backup could resolve an entry to the wrong physical bytes - see
     // docs/plans/stale-backup-guard.md.
     if chunks_purged > 0 {
-        tx.execute(
-            "UPDATE repository_settings SET store_generation = store_generation + 1",
-            (),
-        )?;
+        crate::compact::bump_store_generation(&tx)?;
     }
     tx.commit()?;
     Ok(ReclaimStats {

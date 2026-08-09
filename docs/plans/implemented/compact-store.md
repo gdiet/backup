@@ -4,11 +4,34 @@
 `reclaim-space`; clearly distinct from `db compact`'s unrelated SQLite
 `VACUUM`).
 
-**Status**: proposed, not implemented. Requested alongside a broader
-question - whether every command already leaves the repository in a clean,
-resumable state if killed (`SIGINT`, `SIGKILL`, or power loss) mid-run. That
-question was answered and acted on first (see "Crash-safety today" below) -
-this plan is the deferred feature itself.
+**Status**: implemented (`cli/src/compact_store.rs`, `db/src/compact.rs`,
+`LongTermStore::truncate_to`, `cli/src/repo_lock.rs`). Requested alongside
+a broader question - whether every command already leaves the repository
+in a clean, resumable state if killed (`SIGINT`, `SIGKILL`, or power
+loss) mid-run. That question was answered and acted on first (see
+"Crash-safety today" below) - this plan was the deferred feature itself.
+
+Two refinements made while implementing, both narrower/safer than what
+this doc originally said:
+
+- `store_generation` is bumped only if at least one chunk was actually
+  relocated, not unconditionally on every successful run - a no-op run
+  against an already-packed store now correctly doesn't invalidate any
+  backups. Mirrors `reclaim_space`'s own `chunks_purged > 0` guard.
+- No `IoLimiter` use: the relocation loop is a single sequential
+  read-then-write per chunk, not a worker-thread pool like `store`'s - with
+  no concurrent I/O in flight to begin with, there's nothing for a
+  concurrency limiter to bound. Worth revisiting only if a future version
+  parallelizes the loop.
+
+Verified end-to-end against a disposable repo (store 3 files, delete one,
+`reclaim-space`, `compact-store`, `check`, `restore` - the two remaining
+files came back byte-identical to their originals) and confirmed the
+physical data file actually shrank (150000 → 100000 bytes) with the gap
+gone from `stats`. Not yet run against the real `dedup/` repository
+(2.39 TB, 1.57 TB / 82614 gaps at last check) - that's a long-running,
+physically-mutating operation on real data, left for the user to run
+deliberately rather than as part of implementation verification.
 
 ## The problem
 

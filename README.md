@@ -36,6 +36,7 @@ deduplicated byte content itself.
 * [List And Recover Deleted Entries](#list-and-recover-deleted-entries)
 * [Database Backup, Restore, and Compaction](#database-backup-restore-and-compaction)
 * [Reclaim Space](#reclaim-space)
+* [Compact Store](#compact-store)
 * [Mount](#mount)
 * [Migrate A Scala Repository](#migrate-a-scala-repository)
 * [For Developers](#for-developers)
@@ -496,6 +497,36 @@ freed by a purged chunk *are* tracked and reused: the next `store` run
 reuses those gaps for new chunks' bytes before appending past the end, so
 repeated delete/reclaim/store cycles don't make the store grow without
 bound. `stats` reports any gaps not yet reused as free space.
+
+## Compact Store
+
+```bash
+backup compact-store
+```
+
+Defragments the data store: relocates every live chunk so the store's used
+address space becomes one contiguous block starting at 0, then shrinks the
+backing files to match - turning `reclaim-space`'s reported free space (see
+above) into space actually returned to the OS. Unrelated to `db compact`,
+which only ever touches the metadata database file, not the byte store.
+
+Run this only if you actually want the disk space back - unlike
+`reclaim-space`, there's no ongoing cost to leaving gaps unpacked (`store`
+already reuses them opportunistically), so this is a one-off, on-demand
+operation, best run after `reclaim-space`, not before (compacting first
+would relocate data that's about to become garbage anyway once
+`reclaim-space` next runs).
+
+Exclusive (refuses to run if another `compact-store` - or anything else
+holding the repository's lock file - is already running against this
+repository) and safe to interrupt at any point (`SIGINT`/`SIGKILL`/power
+loss) and resume with another run.
+
+**Invalidates older `db backup` snapshots** for restore purposes, the same
+way `reclaim-space` followed by a `store` run already can (see "Database
+Backup, Restore, and Compaction" above) - `db restore` warns automatically
+when this has happened, but take a fresh backup first if you want to be
+able to restore back to exactly this point in time.
 
 ## Mount
 

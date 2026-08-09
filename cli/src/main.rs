@@ -6,6 +6,7 @@ use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 mod backup_ignore;
 mod check;
 mod chunk_store;
+mod compact_store;
 mod db_maintenance;
 mod del;
 mod deleted;
@@ -21,6 +22,7 @@ mod problems;
 mod progress;
 mod ram_budget_check;
 mod reclaim_space;
+mod repo_lock;
 mod restore;
 mod spilling_chunker;
 mod stats;
@@ -77,6 +79,11 @@ enum Command {
     Db(db_maintenance::DbArgs),
     /// Hard-delete old soft-deleted entries and orphaned chunks/contents.
     ReclaimSpace(reclaim_space::ReclaimSpaceArgs),
+    /// Defragment the data store: relocate every live chunk into one
+    /// contiguous block and shrink the backing files to match, reclaiming
+    /// disk space left behind by `reclaim-space`. See `db compact` for the
+    /// unrelated metadata-database equivalent.
+    CompactStore(compact_store::CompactStoreArgs),
     /// Mount the repository's file tree read-only via FUSE.
     Mount(mount::MountArgs),
     /// Migrate an old Scala repository (its `fsc db-backup` SQL export plus
@@ -161,6 +168,7 @@ fn main() -> ExitCode {
         Command::Undelete(args) => undelete::run_undelete(&cli.repo, args),
         Command::Db(args) => db_maintenance::run_db(&cli.repo, args),
         Command::ReclaimSpace(args) => reclaim_space::run_reclaim_space(&cli.repo, args),
+        Command::CompactStore(args) => compact_store::run_compact_store(&cli.repo, args),
         Command::Mount(args) => mount::run_mount(&cli.repo, args),
         Command::MigrateScalaRepo(args) => {
             migrate_scala_repo::run_migrate_scala_repo(&cli.repo, args)

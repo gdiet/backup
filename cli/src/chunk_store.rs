@@ -168,6 +168,29 @@ pub fn write_chunk_from_cache(
     Ok(extents)
 }
 
+/// Reserves store space for `bytes.len()` bytes and writes them out across
+/// as many extents as the reservation needed, returning those extents.
+/// The `compact-store` counterpart to [`write_chunk_from_cache`]: used
+/// when the bytes to write are already fully materialized (from
+/// [`read_chunk_bytes`], relocating an existing chunk) rather than being
+/// accumulated into a [`WriteCache`] for the first time - no draining in
+/// bounded pieces needed, since nothing here is buffering a chunk that
+/// might still be growing.
+pub fn write_chunk_bytes(
+    store: &LongTermStore,
+    allocator: &SpaceAllocator,
+    bytes: &[u8],
+) -> std::io::Result<Vec<(u64, u64)>> {
+    let extents = allocator.reserve(bytes.len() as u64);
+    let mut offset = 0usize;
+    for &(start, stop) in &extents {
+        let len = (stop - start) as usize;
+        store.write(start, &bytes[offset..offset + len])?;
+        offset += len;
+    }
+    Ok(extents)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -295,5 +318,20 @@ mod tests {
         };
         assert_eq!(integrity, ReadIntegrity::Complete);
         assert_eq!(buf, payload);
+    }
+
+    #[test]
+    fn write_chunk_bytes_writes_a_plain_slice_across_returned_extents() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let store = LongTermStore::new(temp_dir.path(), false);
+        let allocator = SpaceAllocator::from_sorted_extents(&[(0, 100), (200, 300)]);
+
+        let extents = write_chunk_bytes(&store, &allocator, &[9u8; 150]).unwrap();
+
+        assert_eq!(extents, vec![(100, 200), (300, 350)]);
+        let mut buf = [0u8; 150];
+        store.read(100, &mut buf[..100]).unwrap();
+        store.read(300, &mut buf[100..]).unwrap();
+        assert_eq!(buf, [9u8; 150]);
     }
 }

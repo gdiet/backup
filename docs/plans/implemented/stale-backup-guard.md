@@ -6,7 +6,7 @@
 patched with the same `ALTER TABLE` directly, matching the earlier
 `auto_vacuum` fix's approach.
 
-Originally split out of `docs/plans/compact-store.md` while working out
+Originally split out of `docs/plans/implemented/compact-store.md` while working out
 that plan's backup-invalidation open question - the underlying hazard
 turned out to already be live in the shipped codebase, via ordinary
 `store`/`mount --read-write` runs, entirely independent of whether
@@ -103,7 +103,7 @@ database's current value:
 - `cli/src/db_maintenance.rs`: `run_restore_db` reads and compares
   generations before proceeding.
 - The future `compact-store` command: bumps `store_generation`
-  unconditionally on a successful run (see `docs/plans/compact-store.md`).
+  unconditionally on a successful run (see `docs/plans/implemented/compact-store.md`).
 - `README.md`: document the warning and what it means, near the existing
   `db backup`/`db restore` section.
 

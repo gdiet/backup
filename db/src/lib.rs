@@ -16,6 +16,7 @@
 //! (e.g. a WAL checkpoint in progress), not as a substitute for this design.
 
 mod backup;
+mod compact;
 mod error;
 mod maintenance;
 mod migrations;
@@ -25,6 +26,10 @@ mod tree;
 
 pub use backup::{
     ChunkRef, ContentSource, FileBackupRecord, apply_backup_batch, find_chunk, resolve_content,
+};
+pub use compact::{
+    bump_store_generation, bytes_to_relocate, next_chunk_to_relocate, relocate_chunk,
+    total_live_bytes,
 };
 pub use error::Error;
 pub use maintenance::{

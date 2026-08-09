@@ -280,6 +280,69 @@ impl LongTermStore {
             })
         }
     }
+
+    /// Shrinks the store down to `target_len` bytes, freeing disk space for
+    /// everything at or past that position - the physical-truncation half
+    /// of `compact-store` (see `docs/plans/implemented/compact-store.md`),
+    /// run only once every live chunk has already been relocated below
+    /// `target_len` by the caller. Deletes every backing file entirely
+    /// past `target_len`, and `set_len()`s the single file straddling it
+    /// down to just its live portion.
+    ///
+    /// Walks `data_dir` for files to remove/shrink (parsing each leaf
+    /// file's own name back into its starting position - see
+    /// `path_offset_size`'s doc comment for the naming scheme) rather
+    /// than requiring the caller to enumerate them, so it never depends on
+    /// `target_len` having been the store's actual previous high-water
+    /// mark. That also makes a repeat call idempotent: a file already
+    /// removed or already exactly the right length is simply left alone
+    /// the second time, e.g. after `compact-store` is resumed following a
+    /// kill between finishing the relocation and finishing this step.
+    /// Never grows a file - a `target_len` at or past the current highest
+    /// written position is a no-op.
+    pub fn truncate_to(&self, target_len: u64) -> io::Result<()> {
+        if self.read_only {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "store is read-only",
+            ));
+        }
+        if !self.data_dir.is_dir() {
+            return Ok(());
+        }
+        for dir1 in fs::read_dir(&self.data_dir)? {
+            let dir1 = dir1?;
+            if !dir1.file_type()?.is_dir() {
+                continue;
+            }
+            for dir2 in fs::read_dir(dir1.path())? {
+                let dir2 = dir2?;
+                if !dir2.file_type()?.is_dir() {
+                    continue;
+                }
+                for entry in fs::read_dir(dir2.path())? {
+                    let entry = entry?;
+                    if !entry.file_type()?.is_file() {
+                        continue;
+                    }
+                    let Some(file_start) = entry
+                        .file_name()
+                        .to_str()
+                        .and_then(|name| name.parse::<u64>().ok())
+                    else {
+                        continue;
+                    };
+                    if file_start >= target_len {
+                        fs::remove_file(entry.path())?;
+                    } else if file_start + FILE_SIZE > target_len {
+                        let file = OpenOptions::new().write(true).open(entry.path())?;
+                        file.set_len(target_len - file_start)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -370,6 +433,73 @@ mod tests {
 
         let err = s.write(0, b"data").unwrap_err();
         assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn read_only_truncate_to_returns_permission_denied() {
+        let dir = TempDir::new().unwrap();
+        let s = make_store(&dir, true);
+
+        let err = s.truncate_to(0).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn truncate_to_removes_files_entirely_past_the_target_and_shrinks_the_straddling_one() {
+        let dir = TempDir::new().unwrap();
+        let s = make_store(&dir, false);
+        s.write(0, &[1u8; 10]).unwrap();
+        s.write(FILE_SIZE, &[2u8; 10]).unwrap();
+        s.write(FILE_SIZE * 2, &[3u8; 10]).unwrap();
+
+        s.truncate_to(FILE_SIZE + 5).unwrap();
+
+        assert!(dir.path().join("00/00/0000000000").is_file(), "untouched");
+        let straddling = dir.path().join(format!("00/00/{FILE_SIZE:010}"));
+        assert_eq!(std::fs::metadata(&straddling).unwrap().len(), 5);
+        assert!(
+            !dir.path()
+                .join(format!("00/00/{:010}", FILE_SIZE * 2))
+                .exists(),
+            "entirely past the target - removed"
+        );
+    }
+
+    #[test]
+    fn truncate_to_zero_removes_every_file() {
+        let dir = TempDir::new().unwrap();
+        let s = make_store(&dir, false);
+        s.write(0, &[1u8; 10]).unwrap();
+        s.write(FILE_SIZE, &[2u8; 10]).unwrap();
+
+        s.truncate_to(0).unwrap();
+
+        assert!(!dir.path().join("00/00/0000000000").exists());
+        assert!(!dir.path().join(format!("00/00/{FILE_SIZE:010}")).exists());
+    }
+
+    #[test]
+    fn truncate_to_is_idempotent() {
+        let dir = TempDir::new().unwrap();
+        let s = make_store(&dir, false);
+        s.write(0, &[1u8; 100]).unwrap();
+
+        s.truncate_to(40).unwrap();
+        s.truncate_to(40).unwrap();
+
+        assert_eq!(
+            std::fs::metadata(dir.path().join("00/00/0000000000"))
+                .unwrap()
+                .len(),
+            40
+        );
+    }
+
+    #[test]
+    fn truncate_to_on_a_missing_data_dir_is_a_no_op() {
+        let dir = TempDir::new().unwrap();
+        let s = LongTermStore::new(dir.path().join("does-not-exist"), false);
+        s.truncate_to(100).unwrap();
     }
 
     #[test]
