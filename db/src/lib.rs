@@ -70,6 +70,17 @@ pub fn meta_dir(repo_root: &Path) -> std::path::PathBuf {
 
 /// Opens (creating if missing) the SQLite database at `path` with the pragmas
 /// required for correct and durable operation.
+///
+/// Uses `rusqlite::Connection::open`'s own default flags rather than
+/// `open_with_flags` with an explicit list, unlike
+/// `open_connection_read_only` below - worth noting so the two don't look
+/// inconsistent at a glance: those defaults are `SQLITE_OPEN_READ_WRITE |
+/// SQLITE_OPEN_CREATE | SQLITE_OPEN_NO_MUTEX | SQLITE_OPEN_URI`, i.e.
+/// already `NO_MUTEX` (safe here because a `Connection` is never shared
+/// across threads without external synchronization - every caller already
+/// holds one behind its own `Mutex` or owns it for a single function
+/// call's duration) and already `URI`, matching `open_connection_read_only`
+/// on both.
 fn open_connection(path: &Path) -> Result<Connection, Error> {
     let conn = Connection::open(path)?;
     // foreign_keys and synchronous are not stored in the database file: they're

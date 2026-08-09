@@ -460,7 +460,15 @@ initialized, since the script's own `CREATE TABLE` statements would then
 collide with the tables that already exist. The script doesn't carry the
 schema version (`PRAGMA user_version`) this application tracks internally,
 so a reimported database needs that set to match before this application
-will open it again.
+will open it again. It also doesn't carry `PRAGMA auto_vacuum` - this
+application always tries to set `auto_vacuum = INCREMENTAL` on open, but
+that request is silently ineffective on a database that already has
+tables/data by the time it runs (SQLite can only enable `auto_vacuum` for
+free on a table-less, empty database - anything already populated needs a
+real `VACUUM` to actually take effect). A reimported database therefore
+needs `sqlite3 new.sqlite3 "PRAGMA auto_vacuum = INCREMENTAL; VACUUM;"`
+run once, or `backup db compact` (`PRAGMA incremental_vacuum`) will look
+like it succeeds while silently doing nothing.
 
 ## Reclaim Space
 
