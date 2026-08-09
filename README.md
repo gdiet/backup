@@ -40,8 +40,7 @@ deduplicated byte content itself.
 
 ## System Requirements
 
-A single self-contained `backup` binary - no separate runtime needed (unlike
-the Scala predecessor, which needs a Java 21 runtime).
+A single self-contained `backup` binary - no separate runtime needed.
 
 Only [`mount`](#mount) has an extra runtime requirement, since it needs a
 real filesystem-in-userspace driver:
@@ -153,7 +152,7 @@ full read+chunk+hash on every run just to *discover* that it dedupes -
 
 **Caveat**: if a file's contents changed but its size and modified time
 happen not to have, the changed content is **not** detected and **not**
-stored - the same trade-off the Scala predecessor makes.
+stored.
 
 `<path>` resolves against the repository tree, one `/`-separated segment at
 a time from the root; `*`/`?` wildcards in a segment are resolved against
@@ -335,9 +334,28 @@ backup db compact
 ```
 
 Reclaims free pages left behind by past deletions (`del`/`reclaim-space`),
-shrinking the database file in place. Cheap compared to a full rewrite -
-freed pages are already tracked as they happen, so this doesn't need extra
-disk space or a long exclusive lock.
+shrinking the database file in place. Fast and safe to run any time - it
+doesn't need extra disk space or a long exclusive lock, so there's no
+reason to put it off.
+
+### Inspecting Or Exporting The Metadata Database Directly
+
+`meta/repository.sqlite3` is a plain SQLite database - no separate export
+command is needed, the [SQLite command-line shell](https://www.sqlite.org/download.html)
+(`sqlite3`) already covers both reading and exporting it directly:
+
+```bash
+sqlite3 <repo>/meta/repository.sqlite3 "SELECT COUNT(*) FROM tree_entries;"
+```
+
+```bash
+sqlite3 <repo>/meta/repository.sqlite3 .dump > export.sql
+```
+
+`.dump` produces a portable SQL script (`CREATE TABLE`/`INSERT` statements)
+of the whole database. Do this against a `backup db backup` snapshot rather
+than the live database if you want a guaranteed-consistent point-in-time
+export without holding a lock on the live one.
 
 ## Reclaim Space
 
@@ -424,10 +442,10 @@ the same name (this tool does its own equivalent initialization).
 
 Migrates the *entire* old tree, including soft-deleted history (not just
 the currently-active files), so restore-from-history capability is
-preserved. Content is genuinely re-chunked and re-hashed through the same
-content-defined-chunking pipeline `store` uses, since Scala dedupes whole
-files while Rust dedupes at the chunk level - there's no mechanical
-translation between the two metadata models. The final summary reports how
+preserved. Every file's content is genuinely re-read, re-chunked, and
+re-hashed through the same content-defined-chunking pipeline `store` uses
+- expect this to take real time proportional to how much data is actually
+present, not a quick metadata-only copy. The final summary reports how
 much smaller the migrated repository's distinct content is than a naive
 whole-file copy would have been, thanks to chunk-level dedup finding
 sharing Scala's whole-file model never could - informational only, since no
