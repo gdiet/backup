@@ -103,6 +103,65 @@ all-or-nothing block at it) would match the goal better. Which shape to
 build should be decided from what these benchmarks actually show, not
 assumed up front - see the added open question below.
 
+## Validation results
+
+Ran both benchmarks for real (WSL2/Debian, release build, real `libfuse3`
+mount via the existing in-process test harness in `cli/src/mount.rs`'s
+Linux-only test module - not against real USB2 hardware; throughput was
+capped by a temporary `bench_throttle` hook added to `LongTermStore::
+write`/`spillcache::FileCache::write`, gated by an env var, fully reverted
+afterward). Two harness bugs worth flagging for whoever reruns this:
+byte-identical payloads across files CDC-dedup to one chunk after the
+first file, making every later "write" free (no real store I/O) and
+defeating the point of the test; and generating payloads *inside* the
+timed loop (even if not itself individually timed) still inflates the
+outer wall-clock measurement - precompute payloads first.
+
+**Many small files** (200 files x 1 MB, datastore throttled to 30 MB/s):
+comparing today's `PERSIST_QUEUE_CAPACITY = 4` against a temporarily
+patched `= 64` under otherwise identical conditions -
+
+| capacity | end-to-end | throughput | close p50/p95/max |
+|---|---|---|---|
+| 4  | 10.14s | 19.72 MB/s | 52.8 / 65.5 / 103.4 ms |
+| 64 | 7.40s  | 27.02 MB/s | 51.8 / 72.8 / 128.9 ms |
+
+`N = 4` costs ~27% aggregate throughput versus `N = 64` here, even though
+per-file p50 latency is nearly identical in both - the loss is in how far
+the client can get ahead of the single-threaded `persist_worker` before
+hitting backpressure, not in individual operation latency. Neither
+capacity showed a dramatically bursty shape (max stayed within ~2x of
+p50 in both cases) - the "runs fast, then stalls hard" failure mode this
+plan worried about wasn't strongly present at this file size either way.
+**Confirms the first hypothesis**: job-count gating measurably costs
+throughput for many-small-files, since 4 (or even 64) tiny files' worth
+of buffered data is nowhere near real memory/disk pressure.
+
+**Large files** (6 files x 50 MB, `write_cache_mb: 1` forcing every byte
+to spill, datastore throttled to 5 MB/s): the write loop - all 6
+`close()` calls - finished in **1.37s**, with zero client-visible
+slowdown. But peak spilled-and-unpersisted data reached **300 MB (6x a
+single file)**, and unmounting (which waits for the drain) took roughly
+**65 seconds** afterward. **Confirms the second hypothesis, more
+severely than expected**: `N = 4` isn't just "a bit too permissive" for
+large files, it provides *no observable backpressure at all* - no
+slowdown, no warning, nothing - right up until unmount (or a crash, which
+would lose all of that "successfully closed" but never-durable data)
+reveals a large invisible backlog. This is arguably worse than the
+"stall, then burst" pattern originally worried about: it's "looks
+completely fine, then a nasty surprise."
+
+**Informs, but doesn't fully settle, the open questions below**: a byte
+threshold clearly needs to be small enough to have caught the 300 MB
+large-file backlog (nowhere near current behavior) while staying
+generous enough not to gate small-file bursts as early as `N = 4`
+effectively does today (measured cost: ~27%) - a concrete number still
+needs picking, not just inferred from these two data points. The
+observed latency shape (no dramatic burstiness in the small-files case)
+is a point in favor of trying a plain hard cutoff first, before building
+the extra complexity of a graduated/proportional throttle - but that's
+a leaning, not a decision made here.
+
 ## Open questions (why this isn't implemented yet)
 
 - What spilled-byte threshold should gate `enqueue_persist`? Unlike
