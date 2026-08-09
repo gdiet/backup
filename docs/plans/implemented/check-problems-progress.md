@@ -1,7 +1,6 @@
 # Progress indicator for `check`/`problems`
 
-**Status**: plan complete, ready to implement. No open questions - the
-mechanism this reuses is already proven in production.
+**Status**: implemented.
 
 ## Context
 
@@ -63,13 +62,18 @@ design needed for the reporting mechanism itself - just reuse it.
 
 ## Verification checklist
 
-- `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
-  warnings && cargo test --workspace && cargo doc --no-deps --workspace`.
-- Existing `check`/`problems` tests keep passing unmodified (progress
-  output only adds `println!` lines, doesn't change exit codes or the
-  existing problem-report lines).
-- Spot-check against the real `dedup/` repository: run `backup check`
-  scoped to a moderately-sized directory (not the full 2.39 TB - that's a
-  multi-hour read, not a quick verification step) and confirm progress
-  lines appear at a sensible cadence.
-- Once shipped, move this file under `docs/plans/implemented/`.
+- [x] `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
+  warnings && cargo test --workspace && cargo doc --no-deps --workspace`
+  (including `migrate_scala_repo`'s own tests, confirming the `Progress`
+  extraction was a pure move).
+- [x] Existing `check`/`problems` tests kept passing unmodified.
+- [x] Spot-checked against the real `dedup/` repository: `backup check
+  Z_Papierkorb` (release build) printed the expected final progress line
+  (`progress: 162.81 MB / 162.81 MB (100.0%), elapsed 0s`) cleanly
+  alongside the existing problem-report lines. That particular scope
+  finished in under `Progress::INTERVAL` (2s), so only the guaranteed
+  final line printed, not an interim one - expected, and the interim-print
+  path itself is unchanged, already-proven code from
+  `migrate_scala_repo.rs`'s own long-running use.
+- [x] Updated `README.md` (`## Check Integrity` and `## Find And Fix Files
+  With Missing Store Data`).

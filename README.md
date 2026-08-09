@@ -275,7 +275,10 @@ a sanity check rather than an expected source of problems.
 file, checks just that file's chunks; given a directory, recurses through
 everything under it. Exit code reflects the result: `0` if everything
 checked out, non-zero if any problem was found - so this can be used in a
-script/CI job.
+script/CI job. Since this reads every chunk's actual bytes back from disk,
+an unscoped run against a large repository can take a while - a progress
+line (bytes done/total, elapsed, ETA) is printed periodically so it's clear
+the run is still going, not stuck.
 
 ## Find And Fix Files With Missing Store Data
 
@@ -286,11 +289,12 @@ backup problems [path]
 Lists every active file affected by missing or short store data - the same
 condition that makes `mount` return an I/O error reading that part of a
 file (see [Mount](#mount)), just found in bulk instead of one read at a
-time. `path` scopes the scan like `check` does; a file whose broken content
-is shared (via dedup) with a file outside `path` is still listed, since it
-genuinely has the same problem. Wrong-but-present data (a hash or length
-mismatch, `check`'s other problem categories) isn't in scope here - that's
-corruption, not absence, and destroying it isn't this command's job.
+time. `path` scopes the scan like `check` does (including the same
+periodic progress line for a large, unscoped scan); a file whose broken
+content is shared (via dedup) with a file outside `path` is still listed,
+since it genuinely has the same problem. Wrong-but-present data (a hash or
+length mismatch, `check`'s other problem categories) isn't in scope here -
+that's corruption, not absence, and destroying it isn't this command's job.
 
 ```bash
 backup fix-problems [path]

@@ -17,6 +17,7 @@ mod list;
 mod migrate_scala_repo;
 mod mount;
 mod problems;
+mod progress;
 mod ram_budget_check;
 mod reclaim_space;
 mod restore;

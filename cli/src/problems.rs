@@ -9,6 +9,7 @@ use store::{LongTermStore, ReadIntegrity};
 use crate::check::scoped_chunks;
 use crate::chunk_store::read_chunk_bytes;
 use crate::format::readable_bytes;
+use crate::progress::Progress;
 
 #[derive(Args)]
 pub struct ProblemsArgs {
@@ -113,13 +114,17 @@ pub(crate) fn find_problem_files(
     };
 
     let mut broken_chunk_ids = HashSet::new();
+    let total_bytes: u64 = chunks.iter().map(|c| c.length as u64).sum();
+    let mut progress = Progress::new(total_bytes);
     for chunk in &chunks {
         let (_, integrity) =
             read_chunk_bytes(conn, data_store, chunk.chunk_id, chunk.length as u64)?;
         if let ReadIntegrity::Incomplete { .. } = integrity {
             broken_chunk_ids.insert(chunk.chunk_id);
         }
+        progress.add(chunk.length as u64);
     }
+    progress.finish();
 
     let mut broken_content_ids = HashSet::new();
     for &chunk_id in &broken_chunk_ids {

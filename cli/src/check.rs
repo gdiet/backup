@@ -9,6 +9,7 @@ use store::{LongTermStore, ReadIntegrity};
 use db::ChunkInfo;
 
 use crate::chunk_store::read_chunk_bytes;
+use crate::progress::Progress;
 
 #[derive(Args)]
 pub struct CheckArgs {
@@ -71,9 +72,13 @@ pub fn run_check(repo: &Path, args: CheckArgs) -> ExitCode {
     let data_store = LongTermStore::new(repository.data_dir(), true);
     let mut problems = 0u64;
     println!("Checking {} chunk(s)...", chunks.len());
+    let total_bytes: u64 = chunks.iter().map(|c| c.length as u64).sum();
+    let mut progress = Progress::new(total_bytes);
     for chunk in &chunks {
         problems += check_chunk(&conn, &data_store, chunk);
+        progress.add(chunk.length as u64);
     }
+    progress.finish();
 
     println!("Checking ref_count consistency...");
     match check_ref_counts(&conn) {
