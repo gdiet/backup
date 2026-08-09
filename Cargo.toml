@@ -2,6 +2,9 @@
 members = ["cdc", "store", "cli", "db", "mountfs", "spillcache"]
 resolver = "2"
 
+[workspace.package]
+license = "MIT OR Apache-2.0"
+
 # Tuned for a production release binary: strip removes rustc-embedded debug
 # symbols from the .exe itself (Windows/MSVC still splits the bulk of debug
 # info into a separate .pdb regardless - this only trims what Cargo's

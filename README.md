@@ -396,9 +396,8 @@ process is stopped (Ctrl+C, closing the console, or killing it).
 
 [WinFSP]: https://github.com/winfsp/winfsp - WinFsp - Windows File System
 Proxy, Copyright (C) Bill Zissimopoulos, used here under its FLOSS
-exception to the GPLv3 (see
-`docs/plans/implemented/05-cross-platform-mount-crate.md` for the full
-exception text).
+exception to the GPLv3 (see [NOTICE.md](NOTICE.md) for the full exception
+text).
 
 ```bash
 backup mount --read-write [--write-cache-mb <n>] [--temp <dir>] <mountpoint>
@@ -462,3 +461,9 @@ Building from source, running tests, crate layout, internal architecture,
 and performance benchmarks are covered in
 [docs/development.md](docs/development.md) and
 [docs/architecture.md](docs/architecture.md), not here.
+
+## License
+
+Licensed under either of [MIT](LICENSE-MIT) or
+[Apache-2.0](LICENSE-APACHE), at your option. See [NOTICE.md](NOTICE.md)
+for third-party notices (WinFSP).
