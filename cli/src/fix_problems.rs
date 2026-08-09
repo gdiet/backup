@@ -71,33 +71,31 @@ pub fn run_fix_problems(repo: &Path, args: FixProblemsArgs) -> ExitCode {
 
     let now = now_millis();
     for problem in &problems {
-        if let Err(err) = db::soft_delete(&conn, problem.entry.id, now) {
-            eprintln!("error: failed to soft-delete '{}': {err}", problem.path);
-            return ExitCode::FAILURE;
-        }
         if args.replace_empty {
-            let record = db::FileBackupRecord {
-                parent_id: match db::parent_id(&conn, problem.entry.id) {
-                    Ok(Some(id)) => id,
-                    Ok(None) | Err(_) => {
-                        eprintln!("error: failed to look up the parent of '{}'", problem.path);
-                        return ExitCode::FAILURE;
-                    }
-                },
-                name: problem.entry.name.clone(),
-                time_millis: problem.entry.time_millis,
-                content: db::ContentSource::Resolved {
-                    chunks: vec![],
-                    content_hash: vec![],
-                },
+            let parent_id = match db::parent_id(&conn, problem.entry.id) {
+                Ok(Some(id)) => id,
+                Ok(None) | Err(_) => {
+                    eprintln!("error: failed to look up the parent of '{}'", problem.path);
+                    return ExitCode::FAILURE;
+                }
             };
-            if let Err(err) = db::apply_backup_batch(&mut conn, &[record]) {
+            if let Err(err) = db::soft_delete_and_replace_with_empty(
+                &mut conn,
+                problem.entry.id,
+                now,
+                parent_id,
+                &problem.entry.name,
+                problem.entry.time_millis,
+            ) {
                 eprintln!(
-                    "error: failed to insert the empty replacement for '{}': {err}",
+                    "error: failed to soft-delete and replace '{}': {err}",
                     problem.path
                 );
                 return ExitCode::FAILURE;
             }
+        } else if let Err(err) = db::soft_delete(&conn, problem.entry.id, now) {
+            eprintln!("error: failed to soft-delete '{}': {err}", problem.path);
+            return ExitCode::FAILURE;
         }
         println!("fixed: {}", problem.path);
     }

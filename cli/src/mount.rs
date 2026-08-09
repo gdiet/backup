@@ -964,7 +964,7 @@ impl Inner {
         if self.read_only {
             return Err(Errno::EROFS);
         }
-        let conn = self
+        let mut conn = self
             .write_conn
             .lock()
             .expect("write connection mutex poisoned");
@@ -997,8 +997,13 @@ impl Inner {
                 .map_err(|_| Errno::EIO)?
                 .ok_or(Errno::ENOENT)?;
             let recursive = entry.kind == db::EntryKind::Dir;
-            let count = db::undelete(&conn, entry.id, recursive, Some((new_parent.id, new_name)))
-                .map_err(|err| match err {
+            let count = db::undelete(
+                &mut conn,
+                entry.id,
+                recursive,
+                Some((new_parent.id, new_name)),
+            )
+            .map_err(|err| match err {
                 db::Error::AlreadyExists { .. } => Errno::EEXIST,
                 _ => Errno::EIO,
             })?;

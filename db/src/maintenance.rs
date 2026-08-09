@@ -40,6 +40,41 @@ pub fn soft_delete(conn: &Connection, id: i64, deleted_at: i64) -> Result<usize,
     Ok(count)
 }
 
+/// Soft-deletes `id` (via [`soft_delete`]) and, in the same transaction,
+/// inserts a fresh zero-byte file at `(parent_id, name)` with `content_id
+/// NULL` - the atomic form of `fix-problems --replace-empty`'s two-step
+/// "soft-delete, then re-insert" behavior.
+///
+/// Wrapping both statements in one transaction closes a crash-safety gap: a
+/// process killed between two separate top-level calls would leave `id`
+/// soft-deleted with no replacement ever inserted. Because a soft-deleted
+/// entry is no longer active, a later re-run of `fix-problems` would never
+/// find it again to retry - the placeholder would simply be gone for good,
+/// not just delayed. Committing them together means either both happen or
+/// neither does, so a re-run always sees a consistent, retryable state.
+///
+/// `id` is expected to be a plain file (this exists for `fix-problems`,
+/// which only ever calls it for entries `problems` already found to be
+/// files) - unlike [`soft_delete`], this does not need to consider `id`
+/// being a directory with descendants.
+pub fn soft_delete_and_replace_with_empty(
+    conn: &mut Connection,
+    id: i64,
+    deleted_at_millis: i64,
+    parent_id: i64,
+    name: &str,
+    time_millis: i64,
+) -> Result<(), Error> {
+    let tx = conn.transaction()?;
+    soft_delete(&tx, id, deleted_at_millis)?;
+    tx.execute(
+        "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (?1, ?2, ?3, 'file')",
+        params![parent_id, name, time_millis],
+    )?;
+    tx.commit()?;
+    Ok(())
+}
+
 /// Reactivates `id` (clearing `deleted_at`), and - if `recursive` - every
 /// descendant that still carries the exact same `deleted_at` timestamp `id`
 /// itself had, i.e. exactly the set [`soft_delete`] originally marked
@@ -69,13 +104,20 @@ pub fn soft_delete(conn: &Connection, id: i64, deleted_at: i64) -> Result<usize,
 /// it), and the `tree_entries_ref_count_*` triggers only fire on
 /// `INSERT`/`DELETE` of `tree_entries` rows, never `UPDATE` - so flipping
 /// `deleted_at` back to `NULL` is already ref-count-neutral.
+///
+/// Runs the relocate and reactivate steps (when both apply) in one
+/// transaction: a process killed between two separate top-level statements
+/// would leave the entry relocated but still deleted - recoverable via a
+/// second `undelete` call, but not atomic, and briefly visible in that
+/// half-done state to any concurrent reader.
 pub fn undelete(
-    conn: &Connection,
+    conn: &mut Connection,
     id: i64,
     recursive: bool,
     relocate_to: Option<(i64, &str)>,
 ) -> Result<usize, Error> {
-    let current: Option<(i64, String, Option<i64>)> = conn
+    let tx = conn.transaction()?;
+    let current: Option<(i64, String, Option<i64>)> = tx
         .query_row(
             "SELECT parent_id, name, deleted_at FROM tree_entries WHERE id = ?1",
             [id],
@@ -93,7 +135,7 @@ pub fn undelete(
         Some((parent_id, name)) => (parent_id, name.to_string()),
         None => (current_parent_id, current_name),
     };
-    if find_tree_entry(conn, target_parent_id, &target_name)?.is_some() {
+    if find_tree_entry(&tx, target_parent_id, &target_name)?.is_some() {
         return Err(Error::AlreadyExists {
             parent_id: target_parent_id,
             name: target_name,
@@ -110,14 +152,14 @@ pub fn undelete(
     // (as in this test's own setup: something else may well have reused the
     // name since this entry was deleted) and fail there instead.
     if relocate_to.is_some() {
-        conn.execute(
+        tx.execute(
             "UPDATE tree_entries SET parent_id = ?1, name = ?2 WHERE id = ?3",
             params![target_parent_id, target_name, id],
         )?;
     }
 
     let count = if recursive {
-        conn.execute(
+        tx.execute(
             "UPDATE tree_entries SET deleted_at = NULL
              WHERE deleted_at = (SELECT deleted_at FROM tree_entries WHERE id = ?1)
              AND id IN (
@@ -132,12 +174,13 @@ pub fn undelete(
             [id],
         )?
     } else {
-        conn.execute(
+        tx.execute(
             "UPDATE tree_entries SET deleted_at = NULL WHERE id = ?1 AND deleted_at IS NOT NULL",
             [id],
         )?
     };
 
+    tx.commit()?;
     Ok(count)
 }
 
@@ -311,11 +354,11 @@ mod tests {
 
     #[test]
     fn undelete_reactivates_a_single_entry() {
-        let (_temp_dir, conn) = test_connection();
+        let (_temp_dir, mut conn) = test_connection();
         let id = insert_file(&conn, 0, "a.txt");
         soft_delete(&conn, id, 1000).unwrap();
 
-        let count = undelete(&conn, id, false, None).unwrap();
+        let count = undelete(&mut conn, id, false, None).unwrap();
 
         assert_eq!(count, 1);
         assert!(!is_deleted(&conn, id));
@@ -323,12 +366,16 @@ mod tests {
 
     #[test]
     fn undelete_returns_zero_for_a_missing_or_already_active_id() {
-        let (_temp_dir, conn) = test_connection();
+        let (_temp_dir, mut conn) = test_connection();
         let active_id = insert_file(&conn, 0, "a.txt");
 
-        assert_eq!(undelete(&conn, 999, false, None).unwrap(), 0, "no such id");
         assert_eq!(
-            undelete(&conn, active_id, false, None).unwrap(),
+            undelete(&mut conn, 999, false, None).unwrap(),
+            0,
+            "no such id"
+        );
+        assert_eq!(
+            undelete(&mut conn, active_id, false, None).unwrap(),
             0,
             "not currently deleted"
         );
@@ -336,12 +383,12 @@ mod tests {
 
     #[test]
     fn undelete_without_recursive_leaves_descendants_deleted() {
-        let (_temp_dir, conn) = test_connection();
+        let (_temp_dir, mut conn) = test_connection();
         let dir_id = insert_dir(&conn, 0, "sub");
         let file_id = insert_file(&conn, dir_id, "a.txt");
         soft_delete(&conn, dir_id, 1000).unwrap();
 
-        let count = undelete(&conn, dir_id, false, None).unwrap();
+        let count = undelete(&mut conn, dir_id, false, None).unwrap();
 
         assert_eq!(count, 1);
         assert!(!is_deleted(&conn, dir_id));
@@ -353,13 +400,13 @@ mod tests {
 
     #[test]
     fn undelete_recursive_reactivates_descendants_sharing_the_same_deleted_at() {
-        let (_temp_dir, conn) = test_connection();
+        let (_temp_dir, mut conn) = test_connection();
         let dir_id = insert_dir(&conn, 0, "sub");
         let nested_id = insert_dir(&conn, dir_id, "nested");
         let file_id = insert_file(&conn, nested_id, "a.txt");
         soft_delete(&conn, dir_id, 1000).unwrap();
 
-        let count = undelete(&conn, dir_id, true, None).unwrap();
+        let count = undelete(&mut conn, dir_id, true, None).unwrap();
 
         assert_eq!(count, 3, "sub, nested, and a.txt");
         assert!(!is_deleted(&conn, dir_id));
@@ -369,14 +416,14 @@ mod tests {
 
     #[test]
     fn undelete_recursive_leaves_an_independently_deleted_descendant_alone() {
-        let (_temp_dir, conn) = test_connection();
+        let (_temp_dir, mut conn) = test_connection();
         let dir_id = insert_dir(&conn, 0, "sub");
         let file_id = insert_file(&conn, dir_id, "a.txt");
         // Deleted separately, at a different time, from the directory itself.
         soft_delete(&conn, file_id, 500).unwrap();
         soft_delete(&conn, dir_id, 1000).unwrap();
 
-        let count = undelete(&conn, dir_id, true, None).unwrap();
+        let count = undelete(&mut conn, dir_id, true, None).unwrap();
 
         assert_eq!(count, 1, "only 'sub' shares deleted_at 1000");
         assert!(!is_deleted(&conn, dir_id));
@@ -388,12 +435,12 @@ mod tests {
 
     #[test]
     fn undelete_refuses_a_conflict_with_an_active_entry() {
-        let (_temp_dir, conn) = test_connection();
+        let (_temp_dir, mut conn) = test_connection();
         let id = insert_file(&conn, 0, "a.txt");
         soft_delete(&conn, id, 1000).unwrap();
         insert_file(&conn, 0, "a.txt"); // a new active entry re-occupies the name
 
-        let result = undelete(&conn, id, false, None);
+        let result = undelete(&mut conn, id, false, None);
 
         assert!(matches!(
             result,
@@ -404,12 +451,12 @@ mod tests {
 
     #[test]
     fn undelete_can_relocate_to_a_different_name_to_avoid_a_conflict() {
-        let (_temp_dir, conn) = test_connection();
+        let (_temp_dir, mut conn) = test_connection();
         let id = insert_file(&conn, 0, "a.txt");
         soft_delete(&conn, id, 1000).unwrap();
         insert_file(&conn, 0, "a.txt");
 
-        let count = undelete(&conn, id, false, Some((0, "a-recovered.txt"))).unwrap();
+        let count = undelete(&mut conn, id, false, Some((0, "a-recovered.txt"))).unwrap();
 
         assert_eq!(count, 1);
         assert!(!is_deleted(&conn, id));
@@ -425,7 +472,7 @@ mod tests {
 
     #[test]
     fn undelete_does_not_change_content_ref_count() {
-        let (_temp_dir, conn) = test_connection();
+        let (_temp_dir, mut conn) = test_connection();
         conn.execute(
             "INSERT INTO contents (id, length, hash) VALUES (1, 5, x'AA')",
             (),
@@ -438,7 +485,7 @@ mod tests {
         .unwrap();
         soft_delete(&conn, 1, 1000).unwrap();
 
-        undelete(&conn, 1, false, None).unwrap();
+        undelete(&mut conn, 1, false, None).unwrap();
 
         let ref_count: i64 = conn
             .query_row("SELECT ref_count FROM contents WHERE id = 1", (), |row| {

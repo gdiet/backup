@@ -38,7 +38,7 @@ pub fn run_undelete(repo: &Path, args: UndeleteArgs) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    let conn = match repository.open_write_connection() {
+    let mut conn = match repository.open_write_connection() {
         Ok(c) => c,
         Err(err) => {
             eprintln!("error: failed to open the metadata database: {err}");
@@ -91,7 +91,7 @@ pub fn run_undelete(repo: &Path, args: UndeleteArgs) -> ExitCode {
         }
     };
 
-    match db::undelete(&conn, args.id, args.recursive, relocate_to) {
+    match db::undelete(&mut conn, args.id, args.recursive, relocate_to) {
         Ok(count) => {
             let entries = if count == 1 { "entry" } else { "entries" };
             println!("Reactivated {count} {entries}.");

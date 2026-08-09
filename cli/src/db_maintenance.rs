@@ -113,7 +113,6 @@ pub(crate) fn run_backup(repo: &Path) -> ExitCode {
         Err(err) => {
             eprintln!("error: failed to compress backup: {err}");
             let _ = fs::remove_file(&uncompressed);
-            let _ = fs::remove_file(&target);
             ExitCode::FAILURE
         }
     }
@@ -122,8 +121,26 @@ pub(crate) fn run_backup(repo: &Path) -> ExitCode {
 /// Compresses `source` into a single-entry zip at `target` (the entry named
 /// `entry_name`, matching the plain filename `db restore` should see once
 /// it extracts this again), then removes `source`.
+///
+/// Writes to a same-directory staging path first and only `rename`s it to
+/// `target` once fully written, rather than writing `target` directly - a
+/// same-volume rename is atomic on both Windows and POSIX, so a kill
+/// (SIGINT/SIGKILL/power loss) mid-write never leaves a truncated,
+/// corrupt file sitting at the filename `db restore` would otherwise treat
+/// as a complete, ready-to-use backup.
 fn zip_and_remove(source: &Path, target: &Path, entry_name: &str) -> io::Result<()> {
-    let zip_file = File::create(target)?;
+    let staging = target.with_extension("zip.tmp");
+    if let Err(err) = write_zip(&staging, source, entry_name) {
+        let _ = fs::remove_file(&staging);
+        return Err(err);
+    }
+    fs::rename(&staging, target)?;
+    fs::remove_file(source)?;
+    Ok(())
+}
+
+fn write_zip(staging: &Path, source: &Path, entry_name: &str) -> io::Result<()> {
+    let zip_file = File::create(staging)?;
     let mut writer = zip::ZipWriter::new(zip_file);
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
@@ -134,7 +151,6 @@ fn zip_and_remove(source: &Path, target: &Path, entry_name: &str) -> io::Result<
     let mut source_file = File::open(source)?;
     io::copy(&mut source_file, &mut writer)?;
     writer.finish().map_err(io::Error::other)?;
-    fs::remove_file(source)?;
     Ok(())
 }
 
@@ -193,13 +209,28 @@ fn run_restore_db(repo: &Path, file: &Path) -> ExitCode {
         let _ = fs::remove_file(sidecar);
     }
 
-    match fs::copy(backup_path, &db_file) {
-        Ok(_) => {
+    // Copy to a same-directory staging file first, then atomically `rename`
+    // it into place - a plain `fs::copy` straight onto `db_file` would leave
+    // a half-old-half-new, corrupted database if killed mid-copy (SIGINT/
+    // SIGKILL/power loss), an especially bad failure mode for the one
+    // command that's specifically the recovery path for a broken database.
+    // A same-volume rename is atomic on both Windows and POSIX: either the
+    // live file is untouched, or it's fully replaced - no observable
+    // in-between state either way.
+    let staging = db_file.with_extension("sqlite3.restoring");
+    if let Err(err) = fs::copy(backup_path, &staging) {
+        eprintln!("error: failed to stage restored database: {err}");
+        let _ = fs::remove_file(&staging);
+        return ExitCode::FAILURE;
+    }
+    match fs::rename(&staging, &db_file) {
+        Ok(()) => {
             println!("Database restored from '{}'.", backup_path.display());
             ExitCode::SUCCESS
         }
         Err(err) => {
             eprintln!("error: failed to restore database: {err}");
+            let _ = fs::remove_file(&staging);
             ExitCode::FAILURE
         }
     }

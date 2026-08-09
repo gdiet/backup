@@ -27,7 +27,9 @@ pub use backup::{
     ChunkRef, ContentSource, FileBackupRecord, apply_backup_batch, find_chunk, resolve_content,
 };
 pub use error::Error;
-pub use maintenance::{ReclaimStats, reclaim_space, soft_delete, undelete};
+pub use maintenance::{
+    ReclaimStats, reclaim_space, soft_delete, soft_delete_and_replace_with_empty, undelete,
+};
 pub use query::{
     ChunkInfo, DeletedEntry, PathEntry, SubtreeStats, all_chunks, chunk_extents,
     chunk_extents_sorted, contents_for_chunk, deleted_entries, entries_for_content, file_size,
@@ -47,6 +49,9 @@ use rusqlite::{Connection, OpenFlags};
 
 /// Directory (relative to the repository root) holding the metadata database.
 const META_DIR: &str = "meta";
+/// Staging directory [`create_repository_files`] builds [`META_DIR`]'s
+/// contents under before the final atomic rename - see its doc comment.
+const META_TMP_DIR: &str = "meta.tmp";
 /// File name of the metadata database within [`META_DIR`].
 const META_DB_FILE: &str = "repository.sqlite3";
 /// Directory (relative to the repository root) holding the chunk data store.
@@ -162,11 +167,30 @@ fn open_connection_read_only(path: &Path) -> Result<Connection, Error> {
 /// entry) and the given `settings`. Shared by [`init_repository`] and
 /// [`adopt_repository_in_place`], which differ only in what they require of
 /// `repo_root` beforehand.
+///
+/// Builds the database under a sibling [`META_TMP_DIR`] staging directory
+/// first, and only `fs::rename`s it to the real [`META_DIR`] - atomic on the
+/// same volume, on both Windows and POSIX - once schema and settings are
+/// fully committed. A process killed anywhere before that rename leaves at
+/// most a `meta.tmp/` directory behind and no `meta/` at all, so a re-run's
+/// `RepositoryAlreadyExists` check (which only ever looks at `meta/`, both
+/// here and in [`init_repository`]/[`adopt_repository_in_place`]) still
+/// correctly treats the repository as not yet created; any stale
+/// `meta.tmp/` from that killed attempt is simply removed and rebuilt from
+/// scratch here rather than ever being resumed in place. `data/` is still
+/// created directly (no staging) - it was never part of the
+/// "already exists" signal, and an empty or partially-adopted `data/` left
+/// behind by a killed run is harmless clutter, not a correctness problem.
 fn create_repository_files(repo_root: &Path, settings: &RepositorySettings) -> Result<(), Error> {
-    fs::create_dir_all(repo_root.join(META_DIR))?;
     fs::create_dir_all(repo_root.join(DATA_DIR))?;
 
-    let mut conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE))?;
+    let staging_meta = repo_root.join(META_TMP_DIR);
+    if staging_meta.exists() {
+        fs::remove_dir_all(&staging_meta)?;
+    }
+    fs::create_dir_all(&staging_meta)?;
+
+    let mut conn = open_connection(&staging_meta.join(META_DB_FILE))?;
     migrations::migrations().to_latest(&mut conn)?;
 
     conn.execute(
@@ -176,6 +200,9 @@ fn create_repository_files(repo_root: &Path, settings: &RepositorySettings) -> R
             settings.chunking().as_str(),
         ),
     )?;
+    drop(conn);
+
+    fs::rename(&staging_meta, repo_root.join(META_DIR))?;
 
     Ok(())
 }
