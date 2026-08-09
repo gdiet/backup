@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 
 mod backup_ignore;
 mod check;
@@ -25,6 +25,7 @@ mod stats;
 mod store;
 mod temp_dir;
 mod undelete;
+mod usage_log;
 
 /// Deduplicating backup application.
 #[derive(Parser)]
@@ -115,11 +116,31 @@ impl From<ChunkingArg> for db::Chunking {
 }
 
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    // The two-step equivalent of `Cli::parse()` (which is what it does
+    // internally) - kept explicit so the raw `ArgMatches`/`Command` stay
+    // available afterward for `usage_log::log_invocation`, which needs
+    // them to find out which optional flags were actually passed. See
+    // `docs/plans/implemented/usage-log.md`.
+    let command = Cli::command();
+    let matches = command.clone().get_matches();
+    let cli = match Cli::from_arg_matches(&matches) {
+        Ok(cli) => cli,
+        Err(err) => err.exit(),
+    };
+
+    // `init` is the one command where meta/ doesn't exist yet at this
+    // point - logged after it succeeds instead, everything else logs
+    // before dispatch (see that doc's "Timing and failure handling").
+    if !matches!(cli.command, Command::Init(_)) {
+        usage_log::log_invocation(&cli.repo, &command, &matches);
+    }
 
     match cli.command {
         Command::Init(args) => match run_init(&cli.repo, args) {
-            Ok(()) => ExitCode::SUCCESS,
+            Ok(()) => {
+                usage_log::log_invocation(&cli.repo, &command, &matches);
+                ExitCode::SUCCESS
+            }
             Err(err) => {
                 eprintln!("error: {err}");
                 ExitCode::FAILURE

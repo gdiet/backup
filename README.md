@@ -420,6 +420,17 @@ shrinking the database file in place. Fast and safe to run any time - it
 doesn't need extra disk space or a long exclusive lock, so there's no
 reason to put it off.
 
+### Usage Log
+
+Every command run against a repository appends one line to
+`meta/usage.log`: a timestamp, the command (e.g. `restore` or `db
+backup`), and which optional flags were used (e.g. `overwrite,deleted`) -
+never argument values (no paths, no ids). Purely local bookkeeping, never
+transmitted anywhere, meant to make it possible to look back after a long
+time and see which features actually got used - useful for deciding what's
+safe to simplify or remove later. Best-effort: nothing ever fails or slows
+down because of it.
+
 ### Inspecting Or Exporting The Metadata Database Directly
 
 `meta/repository.sqlite3` is a plain SQLite database - no separate export

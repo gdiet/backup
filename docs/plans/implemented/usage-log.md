@@ -1,6 +1,6 @@
 # Usage log: track which features/flags actually get used
 
-**Status**: plan complete, no open questions - ready to implement.
+**Status**: implemented.
 
 ## Motivation
 
@@ -112,20 +112,29 @@ depend on.
   building a summarizer now would be solving a problem that doesn't exist
   yet.
 
+## One thing found during implementation
+
+`ArgMatches::ids()` (the originally planned iteration source, see "Which
+flags get logged" above) turned out to also yield a synthetic id named
+after the flattened `Args` struct itself (e.g. `"RestoreArgs"`, from
+`Command::Restore(RestoreArgs)`), not a real flag - clap's derive
+generates this for enum variants wrapping a single `#[derive(Args)]`
+struct. Fixed by iterating `leaf_command.get_arguments()` (the actual,
+individually declared `Arg`s in the `Command` tree) instead of
+`leaf_matches.ids()`, checking each one's `value_source` - same generic,
+no-per-command-maintenance property as originally designed, just sourced
+from the right place.
+
 ## Verification checklist
 
-- New tests in `cli/src/usage_log.rs`: a logged invocation appends exactly
-  one well-formed line; positional args are excluded; a flag left at its
-  default is excluded; an explicitly-passed flag (including one
-  explicitly set *to* its default value, which `ValueSource::CommandLine`
-  still correctly distinguishes from "not passed") is included; a missing
-  `meta/` directory doesn't error, it's silently skipped.
-- Spot-check a handful of real commands (including one with a nested
-  subcommand, `db backup`, and one with no optional flags at all) produce
-  the expected line.
-- `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
+- [x] New tests in `cli/src/usage_log.rs`: a logged invocation appends
+  exactly one well-formed line; positional args are excluded; a flag left
+  at its default is excluded; an explicitly-passed flag is included; a
+  missing `meta/` directory doesn't error, it's silently skipped.
+- [x] Spot-checked real commands (`init`, `stats`, `db backup`, `store`,
+  `restore --overwrite`) against a throwaway repository - each produced
+  exactly the expected line, including the nested `db backup` chain and
+  `restore`'s correctly-captured `overwrite` flag.
+- [x] `cargo fmt --check && cargo clippy --workspace --all-targets -- -D
   warnings && cargo test --workspace && cargo doc --no-deps --workspace`.
-- Update `README.md`: a short note (near `## Database Backup, Restore, and
-  Compaction`, since it's the other `meta/`-adjacent file the README
-  already documents) that `meta/usage.log` exists and what it's for.
-- Once shipped, move this file under `docs/plans/implemented/`.
+- [x] Updated `README.md`.
