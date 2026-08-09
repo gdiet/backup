@@ -27,16 +27,16 @@ pub use backup::{
     ChunkRef, ContentSource, FileBackupRecord, apply_backup_batch, find_chunk, resolve_content,
 };
 pub use error::Error;
-pub use maintenance::{ReclaimStats, reclaim_space, soft_delete};
+pub use maintenance::{ReclaimStats, reclaim_space, soft_delete, undelete};
 pub use query::{
-    ChunkInfo, PathEntry, SubtreeStats, all_chunks, chunk_extents, chunk_extents_sorted,
-    entries_for_content, file_size, free_space_summary, list_children, ordered_content_chunks,
-    resolve_path, subtree_entries_with_paths, subtree_stats,
+    ChunkInfo, DeletedEntry, PathEntry, SubtreeStats, all_chunks, chunk_extents,
+    chunk_extents_sorted, deleted_entries, entries_for_content, file_size, free_space_summary,
+    list_children, ordered_content_chunks, resolve_path, subtree_entries_with_paths, subtree_stats,
 };
 pub use settings::{CDC_TARGET_SIZE_BITS_RANGE, Chunking, RepositorySettings, SettingsError};
 pub use tree::{
     EntryKind, TreeEntryRow, find_tree_entry, get_tree_entry, insert_directory,
-    insert_historical_tree_entry, parent_id, rename_entry, touch_mtime,
+    insert_historical_tree_entry, is_deleted, parent_id, rename_entry, touch_mtime,
 };
 
 use std::fs;
@@ -218,8 +218,20 @@ impl Repository {
 }
 
 /// Opens an existing repository at `repo_root`, reading back its settings.
+///
+/// Also brings the metadata database up to the latest schema, applying any
+/// migration added since this repository was created (e.g. a repository
+/// from before `SCHEMA_V2` existed - `create_repository_files` only ever
+/// applies the latest schema to a *brand new* database; an already-existing
+/// one only ever gets upgraded by actually being opened, which is here, not
+/// in `open_connection` - called once per command via this function, not
+/// once per connection, which matters for `store`'s per-worker-thread read
+/// connections: applying a migration is safe to repeat (a no-op once
+/// already current), but there's no reason to even check on every one of
+/// those when checking once up front already covers the whole run).
 pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
-    let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE))?;
+    let mut conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE))?;
+    migrations::migrations().to_latest(&mut conn)?;
 
     let (cdc_target_size_bits, chunking): (u32, String) = conn.query_row(
         "SELECT cdc_target_size_bits, chunking FROM repository_settings WHERE id = 1",

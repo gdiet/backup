@@ -8,6 +8,7 @@ mod check;
 mod chunk_store;
 mod db_maintenance;
 mod del;
+mod deleted;
 mod find;
 mod format;
 mod io_limiter;
@@ -21,6 +22,7 @@ mod spilling_chunker;
 mod stats;
 mod store;
 mod temp_dir;
+mod undelete;
 
 /// Deduplicating backup application.
 #[derive(Parser)]
@@ -57,6 +59,10 @@ enum Command {
     Check(check::CheckArgs),
     /// Soft-delete a file, or a directory and everything under it.
     Del(del::DelArgs),
+    /// List soft-deleted entries, still recoverable via `undelete`.
+    Deleted(deleted::DeletedArgs),
+    /// Reactivate a soft-deleted entry.
+    Undelete(undelete::UndeleteArgs),
     /// Database maintenance: backup, restore, compact.
     Db(db_maintenance::DbArgs),
     /// Hard-delete old soft-deleted entries and orphaned chunks/contents.
@@ -119,6 +125,8 @@ fn main() -> ExitCode {
         Command::Find(args) => find::run_find(&cli.repo, args),
         Command::Check(args) => check::run_check(&cli.repo, args),
         Command::Del(args) => del::run_del(&cli.repo, args),
+        Command::Deleted(args) => deleted::run_deleted(&cli.repo, args),
+        Command::Undelete(args) => undelete::run_undelete(&cli.repo, args),
         Command::Db(args) => db_maintenance::run_db(&cli.repo, args),
         Command::ReclaimSpace(args) => reclaim_space::run_reclaim_space(&cli.repo, args),
         Command::Mount(args) => mount::run_mount(&cli.repo, args),

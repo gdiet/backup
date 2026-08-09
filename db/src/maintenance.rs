@@ -1,9 +1,10 @@
 //! Mutating maintenance operations: soft-deletion (`del`) and hard-deletion of
 //! old soft-deleted entries plus orphan cleanup (`reclaim-space`).
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
+use crate::tree::find_tree_entry;
 
 /// Soft-deletes `id` and its entire active subtree (if it's a directory) in
 /// one statement, all with the same `deleted_at` timestamp.
@@ -36,6 +37,107 @@ pub fn soft_delete(conn: &Connection, id: i64, deleted_at: i64) -> Result<usize,
          )",
         params![deleted_at, id],
     )?;
+    Ok(count)
+}
+
+/// Reactivates `id` (clearing `deleted_at`), and - if `recursive` - every
+/// descendant that still carries the exact same `deleted_at` timestamp `id`
+/// itself had, i.e. exactly the set [`soft_delete`] originally marked
+/// together in one operation, mirrored in reverse (see its own doc
+/// comment). A descendant deleted independently, at a different time, is
+/// left alone: its `deleted_at` won't match, so the query below simply
+/// never selects it.
+///
+/// `relocate_to`, if given, reactivates `id` at a *different*
+/// `(parent_id, name)` instead of its original one - only `id` itself
+/// moves; any reactivated descendants already reference its `id` as their
+/// own `parent_id`, unaffected by this. Either way (original location or
+/// `relocate_to`), fails with [`Error::AlreadyExists`] if an active entry
+/// already occupies the target - no silent auto-rename, the same
+/// uniqueness conflict [`crate::rename_entry`] already guards against.
+///
+/// Returns the number of rows reactivated - `0` if `id` doesn't exist or
+/// isn't currently deleted (callers that want a more specific error for
+/// that case, e.g. `backup undelete`'s CLI layer, should check first via
+/// [`crate::get_tree_entry`], the same way `del`'s CLI layer already
+/// pre-checks before calling [`soft_delete`] rather than pushing CLI-
+/// friendly messages into this crate).
+///
+/// Content/`ref_count` need no special handling here: a soft-deleted entry
+/// already keeps holding its content's `ref_count` contribution (see
+/// `migrations.rs`'s schema doc comment - only an actual `DELETE` releases
+/// it), and the `tree_entries_ref_count_*` triggers only fire on
+/// `INSERT`/`DELETE` of `tree_entries` rows, never `UPDATE` - so flipping
+/// `deleted_at` back to `NULL` is already ref-count-neutral.
+pub fn undelete(
+    conn: &Connection,
+    id: i64,
+    recursive: bool,
+    relocate_to: Option<(i64, &str)>,
+) -> Result<usize, Error> {
+    let current: Option<(i64, String, Option<i64>)> = conn
+        .query_row(
+            "SELECT parent_id, name, deleted_at FROM tree_entries WHERE id = ?1",
+            [id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?;
+    let Some((current_parent_id, current_name, deleted_at)) = current else {
+        return Ok(0);
+    };
+    if deleted_at.is_none() {
+        return Ok(0);
+    }
+
+    let (target_parent_id, target_name) = match relocate_to {
+        Some((parent_id, name)) => (parent_id, name.to_string()),
+        None => (current_parent_id, current_name),
+    };
+    if find_tree_entry(conn, target_parent_id, &target_name)?.is_some() {
+        return Err(Error::AlreadyExists {
+            parent_id: target_parent_id,
+            name: target_name,
+        });
+    }
+
+    // Relocate *before* clearing deleted_at, not after: while a row is still
+    // deleted it's exempt from the partial unique index (`WHERE deleted_at
+    // IS NULL`), so changing its parent_id/name here can never conflict -
+    // clearing deleted_at afterwards is what actually re-checks uniqueness,
+    // now against the already-relocated (and already conflict-checked
+    // above) target. Doing this in the other order would briefly reactivate
+    // the row at its *original* location, which can easily still be taken
+    // (as in this test's own setup: something else may well have reused the
+    // name since this entry was deleted) and fail there instead.
+    if relocate_to.is_some() {
+        conn.execute(
+            "UPDATE tree_entries SET parent_id = ?1, name = ?2 WHERE id = ?3",
+            params![target_parent_id, target_name, id],
+        )?;
+    }
+
+    let count = if recursive {
+        conn.execute(
+            "UPDATE tree_entries SET deleted_at = NULL
+             WHERE deleted_at = (SELECT deleted_at FROM tree_entries WHERE id = ?1)
+             AND id IN (
+                 WITH RECURSIVE subtree(id) AS (
+                     SELECT ?1
+                     UNION ALL
+                     SELECT t.id FROM tree_entries t JOIN subtree s ON t.parent_id = s.id
+                     WHERE t.id != t.parent_id
+                 )
+                 SELECT id FROM subtree
+             )",
+            [id],
+        )?
+    } else {
+        conn.execute(
+            "UPDATE tree_entries SET deleted_at = NULL WHERE id = ?1 AND deleted_at IS NOT NULL",
+            [id],
+        )?
+    };
+
     Ok(count)
 }
 
@@ -185,6 +287,158 @@ mod tests {
         .unwrap();
 
         soft_delete(&conn, 1, 1000).unwrap();
+
+        let ref_count: i64 = conn
+            .query_row("SELECT ref_count FROM contents WHERE id = 1", (), |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(ref_count, 1);
+    }
+
+    fn insert_dir(conn: &Connection, parent_id: i64, name: &str) -> i64 {
+        crate::insert_directory(conn, parent_id, name, 0).unwrap()
+    }
+
+    fn insert_file(conn: &Connection, parent_id: i64, name: &str) -> i64 {
+        conn.execute(
+            "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (?1, ?2, 0, 'file')",
+            params![parent_id, name],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    #[test]
+    fn undelete_reactivates_a_single_entry() {
+        let (_temp_dir, conn) = test_connection();
+        let id = insert_file(&conn, 0, "a.txt");
+        soft_delete(&conn, id, 1000).unwrap();
+
+        let count = undelete(&conn, id, false, None).unwrap();
+
+        assert_eq!(count, 1);
+        assert!(!is_deleted(&conn, id));
+    }
+
+    #[test]
+    fn undelete_returns_zero_for_a_missing_or_already_active_id() {
+        let (_temp_dir, conn) = test_connection();
+        let active_id = insert_file(&conn, 0, "a.txt");
+
+        assert_eq!(undelete(&conn, 999, false, None).unwrap(), 0, "no such id");
+        assert_eq!(
+            undelete(&conn, active_id, false, None).unwrap(),
+            0,
+            "not currently deleted"
+        );
+    }
+
+    #[test]
+    fn undelete_without_recursive_leaves_descendants_deleted() {
+        let (_temp_dir, conn) = test_connection();
+        let dir_id = insert_dir(&conn, 0, "sub");
+        let file_id = insert_file(&conn, dir_id, "a.txt");
+        soft_delete(&conn, dir_id, 1000).unwrap();
+
+        let count = undelete(&conn, dir_id, false, None).unwrap();
+
+        assert_eq!(count, 1);
+        assert!(!is_deleted(&conn, dir_id));
+        assert!(
+            is_deleted(&conn, file_id),
+            "not reactivated without --recursive"
+        );
+    }
+
+    #[test]
+    fn undelete_recursive_reactivates_descendants_sharing_the_same_deleted_at() {
+        let (_temp_dir, conn) = test_connection();
+        let dir_id = insert_dir(&conn, 0, "sub");
+        let nested_id = insert_dir(&conn, dir_id, "nested");
+        let file_id = insert_file(&conn, nested_id, "a.txt");
+        soft_delete(&conn, dir_id, 1000).unwrap();
+
+        let count = undelete(&conn, dir_id, true, None).unwrap();
+
+        assert_eq!(count, 3, "sub, nested, and a.txt");
+        assert!(!is_deleted(&conn, dir_id));
+        assert!(!is_deleted(&conn, nested_id));
+        assert!(!is_deleted(&conn, file_id));
+    }
+
+    #[test]
+    fn undelete_recursive_leaves_an_independently_deleted_descendant_alone() {
+        let (_temp_dir, conn) = test_connection();
+        let dir_id = insert_dir(&conn, 0, "sub");
+        let file_id = insert_file(&conn, dir_id, "a.txt");
+        // Deleted separately, at a different time, from the directory itself.
+        soft_delete(&conn, file_id, 500).unwrap();
+        soft_delete(&conn, dir_id, 1000).unwrap();
+
+        let count = undelete(&conn, dir_id, true, None).unwrap();
+
+        assert_eq!(count, 1, "only 'sub' shares deleted_at 1000");
+        assert!(!is_deleted(&conn, dir_id));
+        assert!(
+            is_deleted(&conn, file_id),
+            "deleted_at 500 != 1000, left alone"
+        );
+    }
+
+    #[test]
+    fn undelete_refuses_a_conflict_with_an_active_entry() {
+        let (_temp_dir, conn) = test_connection();
+        let id = insert_file(&conn, 0, "a.txt");
+        soft_delete(&conn, id, 1000).unwrap();
+        insert_file(&conn, 0, "a.txt"); // a new active entry re-occupies the name
+
+        let result = undelete(&conn, id, false, None);
+
+        assert!(matches!(
+            result,
+            Err(Error::AlreadyExists { parent_id: 0, name }) if name == "a.txt"
+        ));
+        assert!(is_deleted(&conn, id), "left untouched on conflict");
+    }
+
+    #[test]
+    fn undelete_can_relocate_to_a_different_name_to_avoid_a_conflict() {
+        let (_temp_dir, conn) = test_connection();
+        let id = insert_file(&conn, 0, "a.txt");
+        soft_delete(&conn, id, 1000).unwrap();
+        insert_file(&conn, 0, "a.txt");
+
+        let count = undelete(&conn, id, false, Some((0, "a-recovered.txt"))).unwrap();
+
+        assert_eq!(count, 1);
+        assert!(!is_deleted(&conn, id));
+        let (parent_id, name): (i64, String) = conn
+            .query_row(
+                "SELECT parent_id, name FROM tree_entries WHERE id = ?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((parent_id, name.as_str()), (0, "a-recovered.txt"));
+    }
+
+    #[test]
+    fn undelete_does_not_change_content_ref_count() {
+        let (_temp_dir, conn) = test_connection();
+        conn.execute(
+            "INSERT INTO contents (id, length, hash) VALUES (1, 5, x'AA')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind, content_id) VALUES (1, 0, 'a.txt', 0, 'file', 1)",
+            (),
+        )
+        .unwrap();
+        soft_delete(&conn, 1, 1000).unwrap();
+
+        undelete(&conn, 1, false, None).unwrap();
 
         let ref_count: i64 = conn
             .query_row("SELECT ref_count FROM contents WHERE id = 1", (), |row| {

@@ -20,8 +20,24 @@ pub struct RestoreArgs {
     #[arg(long)]
     overwrite: bool,
 
-    /// One or more source paths in the repository followed by the target directory.
-    #[arg(required = true, num_args = 2.., value_name = "PATH")]
+    /// Restore a soft-deleted entry (its id, as shown by `backup deleted`)
+    /// instead of one or more active repository paths - the entry stays
+    /// deleted in the repository; this only copies its content out. With
+    /// this, `PATH` takes just the target directory, no source paths.
+    #[arg(long)]
+    deleted: Option<i64>,
+
+    /// With `--deleted` naming a directory, also restore its descendants
+    /// that were deleted together with it (the same scope `backup undelete
+    /// --recursive` would reactivate) - see that flag's own doc comment.
+    /// Ignored (and meaningless) without `--deleted`.
+    #[arg(long, requires = "deleted")]
+    recursive: bool,
+
+    /// Without `--deleted`: one or more source paths in the repository
+    /// followed by the target directory. With `--deleted <id>`: just the
+    /// target directory.
+    #[arg(required = true, num_args = 1.., value_name = "PATH")]
     paths: Vec<PathBuf>,
 }
 
@@ -35,8 +51,21 @@ pub struct RestoreArgs {
 /// `mkdir` that silently failed) aborts the entire restore with no partial-
 /// completion tracking.
 pub fn run_restore(repo: &Path, args: RestoreArgs) -> ExitCode {
-    let (sources, target) = args.paths.split_at(args.paths.len() - 1);
-    let target = &target[0];
+    let target = match (args.deleted, args.paths.as_slice()) {
+        (Some(_), [target]) => target,
+        (Some(_), _) => {
+            eprintln!("error: --deleted takes just a target directory, no source paths");
+            return ExitCode::FAILURE;
+        }
+        (None, paths) if paths.len() >= 2 => &paths[paths.len() - 1],
+        (None, _) => {
+            eprintln!(
+                "error: at least one source path and a target directory are required \
+                 (or --deleted <id> and just a target directory)"
+            );
+            return ExitCode::FAILURE;
+        }
+    };
 
     if !target.is_dir() {
         eprintln!(
@@ -66,34 +95,50 @@ pub fn run_restore(repo: &Path, args: RestoreArgs) -> ExitCode {
     let data_store = LongTermStore::new(repository.data_dir(), true);
 
     let mut warnings = 0u64;
-    for source in sources {
-        let source_label = source.to_string_lossy();
-        match db::resolve_path(&conn, &source_label) {
-            Ok(Some(entry)) => match entry.kind {
-                db::EntryKind::Dir => restore_dir(
-                    &conn,
-                    &data_store,
-                    &entry,
-                    target,
-                    args.overwrite,
-                    &mut warnings,
-                ),
-                db::EntryKind::File => restore_file(
-                    &conn,
-                    &data_store,
-                    &entry,
-                    target,
-                    args.overwrite,
-                    &mut warnings,
-                ),
-            },
-            Ok(None) => {
-                eprintln!("warning: source path '{source_label}' does not exist");
-                warnings += 1;
-            }
-            Err(err) => {
-                eprintln!("error: {err}");
-                return ExitCode::FAILURE;
+    if let Some(id) = args.deleted {
+        if let Err(msg) = restore_deleted(
+            &conn,
+            &data_store,
+            id,
+            args.recursive,
+            target,
+            args.overwrite,
+            &mut warnings,
+        ) {
+            eprintln!("error: {msg}");
+            return ExitCode::FAILURE;
+        }
+    } else {
+        let sources = &args.paths[..args.paths.len() - 1];
+        for source in sources {
+            let source_label = source.to_string_lossy();
+            match db::resolve_path(&conn, &source_label) {
+                Ok(Some(entry)) => match entry.kind {
+                    db::EntryKind::Dir => restore_dir(
+                        &conn,
+                        &data_store,
+                        &entry,
+                        target,
+                        args.overwrite,
+                        &mut warnings,
+                    ),
+                    db::EntryKind::File => restore_file(
+                        &conn,
+                        &data_store,
+                        &entry,
+                        target,
+                        args.overwrite,
+                        &mut warnings,
+                    ),
+                },
+                Ok(None) => {
+                    eprintln!("warning: source path '{source_label}' does not exist");
+                    warnings += 1;
+                }
+                Err(err) => {
+                    eprintln!("error: {err}");
+                    return ExitCode::FAILURE;
+                }
             }
         }
     }
@@ -104,6 +149,88 @@ pub fn run_restore(repo: &Path, args: RestoreArgs) -> ExitCode {
         println!("restore completed successfully");
     }
     ExitCode::SUCCESS
+}
+
+/// Restores a single soft-deleted entry (found by `id`, e.g. via `backup
+/// deleted`) - a file, or a directory and (if `recursive`) its descendants
+/// that were deleted together with it, per [`db::undelete`]'s identical
+/// "same `deleted_at`" scoping (see its own doc comment). The entry stays
+/// deleted in the repository; this only ever reads, never touches
+/// `deleted_at`. Nested directories' own mtimes aren't restored in this
+/// path (unlike [`restore_dir`]'s active-tree walk) - a minor scope cut,
+/// not a correctness issue.
+fn restore_deleted(
+    conn: &Connection,
+    data_store: &LongTermStore,
+    id: i64,
+    recursive: bool,
+    target: &Path,
+    overwrite: bool,
+    warnings: &mut u64,
+) -> Result<(), String> {
+    let entry = db::get_tree_entry(conn, id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no entry with id {id}"))?;
+    if db::is_deleted(conn, id).map_err(|e| e.to_string())? != Some(true) {
+        return Err(format!("entry {id} exists but is not currently deleted"));
+    }
+
+    match entry.kind {
+        db::EntryKind::File => {
+            restore_file_at(
+                conn,
+                data_store,
+                &entry,
+                &target.join(&entry.name),
+                overwrite,
+                warnings,
+            );
+        }
+        db::EntryKind::Dir => {
+            let dir_target = target.join(&entry.name);
+            if let Err(err) = fs::create_dir(&dir_target)
+                && !dir_target.is_dir()
+            {
+                eprintln!(
+                    "warning: failed to create directory '{}': {err}",
+                    dir_target.display()
+                );
+                *warnings += 1;
+                return Ok(());
+            }
+            if recursive {
+                let descendants = db::deleted_entries(conn, id).map_err(|e| e.to_string())?;
+                for descendant in &descendants {
+                    let dest = dir_target.join(&descendant.path);
+                    match descendant.entry.kind {
+                        db::EntryKind::Dir => {
+                            if let Err(err) = fs::create_dir(&dest)
+                                && !dest.is_dir()
+                            {
+                                eprintln!(
+                                    "warning: failed to create directory '{}': {err}",
+                                    dest.display()
+                                );
+                                *warnings += 1;
+                            }
+                        }
+                        db::EntryKind::File => {
+                            restore_file_at(
+                                conn,
+                                data_store,
+                                &descendant.entry,
+                                &dest,
+                                overwrite,
+                                warnings,
+                            );
+                        }
+                    }
+                }
+            }
+            set_mtime(&dir_target, entry.time_millis);
+        }
+    }
+    Ok(())
 }
 
 fn restore_dir(
@@ -163,6 +290,17 @@ fn restore_file(
     warnings: &mut u64,
 ) {
     let file_target = parent_target.join(&entry.name);
+    restore_file_at(conn, data_store, entry, &file_target, overwrite, warnings);
+}
+
+fn restore_file_at(
+    conn: &Connection,
+    data_store: &LongTermStore,
+    entry: &db::TreeEntryRow,
+    file_target: &Path,
+    overwrite: bool,
+    warnings: &mut u64,
+) {
     let mut open_options = OpenOptions::new();
     open_options.write(true);
     if overwrite {
@@ -171,7 +309,7 @@ fn restore_file(
         open_options.create_new(true);
     }
 
-    let mut file = match open_options.open(&file_target) {
+    let mut file = match open_options.open(file_target) {
         Ok(file) => file,
         Err(err) => {
             eprintln!(
@@ -209,7 +347,7 @@ fn restore_file(
                 );
                 *warnings += 1;
                 drop(file);
-                let _ = fs::remove_file(&file_target);
+                let _ = fs::remove_file(file_target);
                 return;
             }
             Err(err) => {
@@ -219,7 +357,7 @@ fn restore_file(
                 );
                 *warnings += 1;
                 drop(file);
-                let _ = fs::remove_file(&file_target);
+                let _ = fs::remove_file(file_target);
                 return;
             }
         };
@@ -344,6 +482,8 @@ mod tests {
                 &repo_root,
                 RestoreArgs {
                     overwrite: false,
+                    deleted: None,
+                    recursive: false,
                     paths: vec![PathBuf::from("a.txt"), missing_target],
                 }
             ),
@@ -362,6 +502,8 @@ mod tests {
             &repo_root,
             RestoreArgs {
                 overwrite: false,
+                deleted: None,
+                recursive: false,
                 paths: vec![PathBuf::from("a.txt"), target.clone()],
             },
         );
@@ -387,6 +529,8 @@ mod tests {
             &repo_root,
             RestoreArgs {
                 overwrite: false,
+                deleted: None,
+                recursive: false,
                 paths: vec![PathBuf::from("empty.txt"), target.clone()],
             },
         );
@@ -409,6 +553,8 @@ mod tests {
             &repo_root,
             RestoreArgs {
                 overwrite: false,
+                deleted: None,
+                recursive: false,
                 paths: vec![PathBuf::from(""), target.clone()],
             },
         );
@@ -440,6 +586,8 @@ mod tests {
             &repo_root,
             RestoreArgs {
                 overwrite: false,
+                deleted: None,
+                recursive: false,
                 paths: vec![PathBuf::from(""), target.clone()],
             },
         );
@@ -459,6 +607,8 @@ mod tests {
             &repo_root,
             RestoreArgs {
                 overwrite: false,
+                deleted: None,
+                recursive: false,
                 paths: vec![PathBuf::from("a.txt"), target.clone()],
             },
         );
@@ -479,6 +629,8 @@ mod tests {
             &repo_root,
             RestoreArgs {
                 overwrite: true,
+                deleted: None,
+                recursive: false,
                 paths: vec![PathBuf::from("a.txt"), target.clone()],
             },
         );
@@ -497,10 +649,134 @@ mod tests {
             &repo_root,
             RestoreArgs {
                 overwrite: false,
+                deleted: None,
+                recursive: false,
                 paths: vec![PathBuf::from("missing.txt"), target],
             },
         );
 
         assert_eq!(exit, ExitCode::SUCCESS);
+    }
+
+    fn mark_deleted(repo_root: &Path, id: i64, deleted_at_millis: i64) {
+        let repository = db::open_repository(repo_root).unwrap();
+        let conn = repository.open_write_connection().unwrap();
+        conn.execute(
+            "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+            rusqlite::params![deleted_at_millis, id],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn restores_a_deleted_file_by_id_without_undeleting_it() {
+        let (temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "a.txt", b"hello world", 0);
+        let id = {
+            let repository = db::open_repository(&repo_root).unwrap();
+            let conn = repository.open_read_connection().unwrap();
+            db::resolve_path(&conn, "a.txt").unwrap().unwrap().id
+        };
+        mark_deleted(&repo_root, id, 1_704_067_200_000);
+        let target = temp_dir.path().join("out");
+        fs::create_dir(&target).unwrap();
+
+        let exit = run_restore(
+            &repo_root,
+            RestoreArgs {
+                overwrite: false,
+                deleted: Some(id),
+                recursive: false,
+                paths: vec![target.clone()],
+            },
+        );
+
+        assert_eq!(exit, ExitCode::SUCCESS);
+        assert_eq!(fs::read(target.join("a.txt")).unwrap(), b"hello world");
+
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_read_connection().unwrap();
+        assert_eq!(db::is_deleted(&conn, id).unwrap(), Some(true));
+    }
+
+    #[test]
+    fn restores_a_deleted_directory_recursively_by_id() {
+        let (temp_dir, repo_root) = init_repo();
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_write_connection().unwrap();
+        let sub_id = db::insert_directory(&conn, 0, "sub", 0).unwrap();
+        drop(conn);
+        seed_file(&repo_root, sub_id, "b.txt", b"nested", 0);
+        db::soft_delete(
+            &db::open_repository(&repo_root)
+                .unwrap()
+                .open_write_connection()
+                .unwrap(),
+            sub_id,
+            1_704_067_200_000,
+        )
+        .unwrap();
+        let target = temp_dir.path().join("out");
+        fs::create_dir(&target).unwrap();
+
+        let exit = run_restore(
+            &repo_root,
+            RestoreArgs {
+                overwrite: false,
+                deleted: Some(sub_id),
+                recursive: true,
+                paths: vec![target.clone()],
+            },
+        );
+
+        assert_eq!(exit, ExitCode::SUCCESS);
+        assert_eq!(
+            fs::read(target.join("sub").join("b.txt")).unwrap(),
+            b"nested"
+        );
+    }
+
+    #[test]
+    fn fails_to_restore_an_id_that_is_not_deleted() {
+        let (temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "a.txt", b"hello", 0);
+        let id = {
+            let repository = db::open_repository(&repo_root).unwrap();
+            let conn = repository.open_read_connection().unwrap();
+            db::resolve_path(&conn, "a.txt").unwrap().unwrap().id
+        };
+        let target = temp_dir.path().join("out");
+        fs::create_dir(&target).unwrap();
+
+        let exit = run_restore(
+            &repo_root,
+            RestoreArgs {
+                overwrite: false,
+                deleted: Some(id),
+                recursive: false,
+                paths: vec![target],
+            },
+        );
+
+        assert_eq!(exit, ExitCode::FAILURE);
+    }
+
+    #[test]
+    fn deleted_with_more_than_one_path_is_rejected() {
+        let (temp_dir, repo_root) = init_repo();
+        let target = temp_dir.path().join("out");
+        fs::create_dir(&target).unwrap();
+
+        let exit = run_restore(
+            &repo_root,
+            RestoreArgs {
+                overwrite: false,
+                deleted: Some(1),
+                recursive: false,
+                paths: vec![PathBuf::from("extra"), target],
+            },
+        );
+
+        assert_eq!(exit, ExitCode::FAILURE);
     }
 }

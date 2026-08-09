@@ -113,6 +113,61 @@ pub fn subtree_entries_with_paths(
     Ok(rows)
 }
 
+/// One soft-deleted entry found by [`deleted_entries`], with its current
+/// path (reconstructed from its ancestors' *current* names - if an ancestor
+/// was renamed after this entry was deleted, the path reflects the rename,
+/// not the name at deletion time) and its own deletion timestamp (not part
+/// of [`TreeEntryRow`], which only ever represents active entries elsewhere
+/// in this crate).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeletedEntry {
+    pub path: String,
+    pub entry: TreeEntryRow,
+    pub deleted_at_millis: i64,
+}
+
+/// Every soft-deleted descendant of `root_id` (not including `root_id`
+/// itself, even if it's deleted), each with its current path relative to
+/// `root_id`. Pass `0` (the repository root) to search the entire
+/// repository - same convention as [`subtree_entries_with_paths`], which
+/// this is a sibling of, differing in exactly two ways: the walk does *not*
+/// filter to active entries at each step (a deleted entry's ancestors may
+/// themselves be deleted - e.g. everything under a `del --recursive`'d
+/// directory), and the final `SELECT` filters to `deleted_at IS NOT NULL`
+/// instead of relying on the walk to have already excluded inactive rows.
+///
+/// A `(parent_id, name)` can have any number of deleted rows (the partial
+/// unique index only constrains *active* rows - see `migrations.rs`), e.g.
+/// a path created, deleted, re-created, and deleted again: every one of
+/// those rows is returned here, independently, sorted by `path` then by
+/// `deleted_at_millis` descending (most recently deleted first) so every
+/// version of the same path is grouped together - `entry.id` is what
+/// distinguishes which one a caller (`backup undelete <id>`) means.
+pub fn deleted_entries(conn: &Connection, root_id: i64) -> Result<Vec<DeletedEntry>, Error> {
+    let mut stmt = conn.prepare(
+        "WITH RECURSIVE walk(id, path) AS (
+             SELECT id, name FROM tree_entries WHERE parent_id = ?1 AND id != ?1
+             UNION ALL
+             SELECT t.id, walk.path || '/' || t.name
+             FROM tree_entries t JOIN walk ON t.parent_id = walk.id
+         )
+         SELECT walk.path, t.id, t.name, t.time, t.kind, t.content_id, t.deleted_at
+         FROM walk JOIN tree_entries t ON t.id = walk.id
+         WHERE t.deleted_at IS NOT NULL
+         ORDER BY walk.path, t.deleted_at DESC",
+    )?;
+    let rows = stmt
+        .query_map([root_id], |row| {
+            Ok(DeletedEntry {
+                path: row.get(0)?,
+                entry: crate::tree::row_to_tree_entry_at(row, 1)?,
+                deleted_at_millis: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 /// The logical size of a file entry: `0` for an empty file (`content_id` is
 /// `None`), otherwise the referenced content's length. Only meaningful for a
 /// `File` entry - a directory also has `content_id == None`, so this silently
@@ -377,6 +432,64 @@ mod tests {
             .unwrap();
 
         assert_eq!(subtree_entries_with_paths(&conn, 0).unwrap(), vec![]);
+    }
+
+    fn mark_deleted(conn: &Connection, id: i64, deleted_at: i64) {
+        conn.execute(
+            "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+            rusqlite::params![deleted_at, id],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn deleted_entries_finds_every_deleted_row_including_under_a_deleted_ancestor() {
+        let (_temp_dir, conn) = test_connection();
+        let sub_id = crate::insert_directory(&conn, 0, "sub", 0).unwrap();
+        let nested_file = insert_file(&conn, sub_id, "a.txt", None);
+        insert_file(&conn, 0, "kept.txt", None);
+        // A whole subtree deleted together (mirrors `del --recursive`): the
+        // ancestor ('sub') is deleted too, not just the leaf.
+        mark_deleted(&conn, sub_id, 1000);
+        mark_deleted(&conn, nested_file, 1000);
+
+        let deleted = deleted_entries(&conn, 0).unwrap();
+        let paths: Vec<&str> = deleted.iter().map(|d| d.path.as_str()).collect();
+        assert_eq!(paths, vec!["sub", "sub/a.txt"], "kept.txt is still active");
+        assert!(deleted.iter().all(|d| d.deleted_at_millis == 1000));
+    }
+
+    #[test]
+    fn deleted_entries_lists_every_historical_version_of_a_repeatedly_deleted_path() {
+        let (_temp_dir, conn) = test_connection();
+        let first = insert_file(&conn, 0, "a.txt", None);
+        mark_deleted(&conn, first, 1000);
+        let second = insert_file(&conn, 0, "a.txt", None);
+        mark_deleted(&conn, second, 2000);
+
+        let deleted = deleted_entries(&conn, 0).unwrap();
+
+        assert_eq!(deleted.len(), 2, "both historical deletions are listed");
+        // Sorted by path, then deleted_at descending - most recent first.
+        assert_eq!(deleted[0].entry.id, second);
+        assert_eq!(deleted[0].deleted_at_millis, 2000);
+        assert_eq!(deleted[1].entry.id, first);
+        assert_eq!(deleted[1].deleted_at_millis, 1000);
+    }
+
+    #[test]
+    fn deleted_entries_can_be_scoped_to_a_subtree() {
+        let (_temp_dir, conn) = test_connection();
+        let sub_id = crate::insert_directory(&conn, 0, "sub", 0).unwrap();
+        let inside = insert_file(&conn, sub_id, "a.txt", None);
+        let outside = insert_file(&conn, 0, "b.txt", None);
+        mark_deleted(&conn, inside, 1000);
+        mark_deleted(&conn, outside, 1000);
+
+        let scoped = deleted_entries(&conn, sub_id).unwrap();
+
+        assert_eq!(scoped.len(), 1);
+        assert_eq!(scoped[0].path, "a.txt");
     }
 
     #[test]

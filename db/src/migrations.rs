@@ -147,8 +147,53 @@ INSERT INTO tree_entries (id, parent_id, name, time, kind)
   VALUES (0, 0, '', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 'dir');
 ";
 
+/// Adds an index on `tree_entries.deleted_at` for the soft-deleted-entry
+/// side: `reclaim_space`'s cutoff `DELETE` and `db::query::deleted_entries`
+/// (`backup deleted`) both filter/join on it, previously an unindexed full
+/// table scan. Partial (`WHERE deleted_at IS NOT NULL`) since the large
+/// majority of rows in a real repository are active, not deleted - no
+/// benefit to indexing those.
+///
+/// First schema change since `SCHEMA_V1` - real repositories (e.g. the one
+/// `migrate-scala-repo` produced from a live Scala export) already exist
+/// with `SCHEMA_V1` applied and tracked via `PRAGMA user_version`, so this
+/// is a genuine migration, not an edit to `SCHEMA_V1` in place.
+const SCHEMA_V2: &str = "
+CREATE INDEX tree_entries_deleted_at_idx ON tree_entries(deleted_at) WHERE deleted_at IS NOT NULL;
+";
+
 /// All database migrations, in order. Applying them is tracked via SQLite's built-in
 /// `PRAGMA user_version`, so no separate schema-version table is needed.
 pub(crate) fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(SCHEMA_V1)])
+    Migrations::new(vec![M::up(SCHEMA_V1), M::up(SCHEMA_V2)])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    /// The scenario `open_repository` now handles (see its own doc comment):
+    /// a database that already has `SCHEMA_V1` applied, from before
+    /// `SCHEMA_V2` existed, must cleanly pick up just the still-pending
+    /// migration when the full set is run against it again.
+    #[test]
+    fn schema_v2_applies_cleanly_on_top_of_an_existing_v1_only_database() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        Migrations::new(vec![M::up(SCHEMA_V1)])
+            .to_latest(&mut conn)
+            .unwrap();
+
+        migrations().to_latest(&mut conn).unwrap();
+
+        let index_exists: bool = conn
+            .query_row(
+                "SELECT COUNT(*) > 0 FROM sqlite_master
+                 WHERE type = 'index' AND name = 'tree_entries_deleted_at_idx'",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(index_exists);
+    }
 }

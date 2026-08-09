@@ -96,6 +96,21 @@ pub fn parent_id(conn: &Connection, id: i64) -> Result<Option<i64>, Error> {
     .map_err(Error::from)
 }
 
+/// Whether `id` exists and, if so, whether it's currently soft-deleted -
+/// `None` if `id` doesn't exist at all. Like [`parent_id`], a standalone
+/// lookup for the one bit `TreeEntryRow` doesn't carry - used by `backup
+/// undelete`'s CLI layer to distinguish "no such id" from "exists but isn't
+/// deleted" before calling [`crate::undelete`].
+pub fn is_deleted(conn: &Connection, id: i64) -> Result<Option<bool>, Error> {
+    conn.query_row(
+        "SELECT deleted_at IS NOT NULL FROM tree_entries WHERE id = ?1",
+        [id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
 /// Looks up the active (non-soft-deleted) child of `parent_id` named `name`.
 pub fn find_tree_entry(
     conn: &Connection,

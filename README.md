@@ -32,6 +32,7 @@ deduplicated byte content itself.
 * [Check Integrity](#check-integrity)
 * [Restore Files](#restore-files)
 * [Delete A File Or A Directory](#delete-a-file-or-a-directory)
+* [List And Recover Deleted Entries](#list-and-recover-deleted-entries)
 * [Database Backup, Restore, and Compaction](#database-backup-restore-and-compaction)
 * [Reclaim Space](#reclaim-space)
 * [Mount](#mount)
@@ -295,6 +296,19 @@ it. A per-file or per-directory problem (a permission error, an existing
 file without `--overwrite`) is logged and only that entry is skipped - the
 rest of the restore still runs to completion.
 
+```bash
+backup restore --deleted <id> <target>
+backup restore --deleted <id> --recursive <target>
+```
+
+Restores a single *soft-deleted* entry (its `id`, as shown by `backup
+deleted` below) straight to disk, without undeleting it in the repository
+first - the entry stays deleted afterwards, this only copies its content
+out. `<target>` is just the destination directory this time, not a list of
+sources. For a deleted directory, `--recursive` also restores the
+descendants that were deleted together with it (the same scope `backup
+undelete --recursive` would reactivate - see below).
+
 ## Delete A File Or A Directory
 
 ```bash
@@ -307,6 +321,41 @@ even for an empty directory) a directory and everything under it, all with
 the same timestamp in one atomic step. Soft-deleted entries stay recoverable
 and keep referencing their content until a future `reclaim-space` run
 actually purges entries older than its retention window.
+
+## List And Recover Deleted Entries
+
+```bash
+backup deleted
+backup deleted <path>
+```
+
+Lists every soft-deleted entry, or only those under `<path>`. Because the
+same path can have been deleted (and re-created) more than once, each row is
+its own independent entry, disambiguated by a numeric `id` and shown with
+its deletion timestamp - sorted by path, most recently deleted first for a
+given path:
+
+```
+[42] - Bilder/urlaub.jpg   2.3 MiB   deleted 2026-06-01 10:15:00
+[41] > Bilder                        deleted 2026-05-30 09:00:00
+```
+
+```bash
+backup undelete <id>
+backup undelete <id> --to <path>
+backup undelete <id> --recursive
+```
+
+Reactivates a deleted entry by the `id` shown above. Refuses (rather than
+silently overwriting) if an active entry already occupies its original
+location; pass `--to <path>` to reactivate it at a different location
+instead. `--recursive` also reactivates descendants that were deleted at the
+exact same timestamp - mirroring `del --recursive`'s cascade in reverse, so
+it won't accidentally resurrect a descendant that was deleted separately,
+before or after.
+
+Prefer `backup restore --deleted <id>` above instead if the goal is just to
+get the content back onto disk without touching the repository's own state.
 
 ## Database Backup, Restore, and Compaction
 
@@ -393,6 +442,19 @@ the filesystem is unmounted from another terminal (`fusermount3 -u
 [System Requirements](#system-requirements) above). `<mountpoint>` must
 *not* already exist - it's created as part of mounting. Blocks until the
 process is stopped (Ctrl+C, closing the console, or killing it).
+
+`<mountpoint>` can be either an unused drive letter or a path - WinFSP
+supports both, and this tool passes whatever you give it straight through:
+
+```bash
+backup mount J:
+backup mount C:\mnt\dedup
+```
+
+A drive letter shows up like any other drive (in Explorer, `dir`, etc.); a
+path mount only shows up under that path (the parent directory must already
+exist, same as the "must not already exist" rule above - only the final
+component is created).
 
 [WinFSP]: https://github.com/winfsp/winfsp - WinFsp - Windows File System
 Proxy, Copyright (C) Bill Zissimopoulos, used here under its FLOSS
