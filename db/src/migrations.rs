@@ -67,6 +67,25 @@ use rusqlite_migration::{M, Migrations};
 /// order: deleting an unreferenced content cascades into deleting its
 /// `content_chunks` rows, which in turn decrements the `ref_count` of chunks that
 /// only that content used, so those chunks must be swept in a second pass.
+///
+/// Note on `tree_entries_deleted_at_idx`: it indexes the soft-deleted-entry
+/// side (`reclaim_space`'s cutoff `DELETE` and `db::query::deleted_entries`,
+/// i.e. `backup deleted`, both filter/join on it, otherwise an unindexed
+/// full table scan; partial, `WHERE deleted_at IS NOT NULL`, since the
+/// large majority of rows in a real repository are active, not deleted - no
+/// benefit to indexing those). It originally shipped as a separate
+/// `SCHEMA_V2` migration, folded back in here once it was clear no real
+/// installation existed yet that needed to stay compatible with the
+/// two-step history - verified empirically (see
+/// `migrations::tests::a_database_already_past_the_given_migration_list_fails_to_open`
+/// and its doc comment) by exporting the one real, but disposable/test,
+/// repository this project had ever produced to SQL and reimporting it
+/// against this squashed schema. Once a real installation exists, schema
+/// changes go back to being genuine new migrations appended below, not
+/// edits here: `rusqlite_migration` refuses to open a database whose
+/// `user_version` exceeds the number of migrations it's given, so
+/// squashing stops being free the moment something has actually been
+/// migrated past a given point.
 const SCHEMA_V1: &str = "
 CREATE TABLE repository_settings (
   id                   INTEGER PRIMARY KEY,
@@ -124,6 +143,7 @@ CREATE TABLE tree_entries (
 );
 CREATE UNIQUE INDEX tree_entries_active_name_idx ON tree_entries(parent_id, name) WHERE deleted_at IS NULL;
 CREATE INDEX tree_entries_content_id_idx ON tree_entries(content_id);
+CREATE INDEX tree_entries_deleted_at_idx ON tree_entries(deleted_at) WHERE deleted_at IS NOT NULL;
 
 CREATE TRIGGER content_chunks_ref_count_ins AFTER INSERT ON content_chunks BEGIN
   UPDATE chunks SET ref_count = ref_count + 1 WHERE id = NEW.chunk_id;
@@ -147,25 +167,10 @@ INSERT INTO tree_entries (id, parent_id, name, time, kind)
   VALUES (0, 0, '', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 'dir');
 ";
 
-/// Adds an index on `tree_entries.deleted_at` for the soft-deleted-entry
-/// side: `reclaim_space`'s cutoff `DELETE` and `db::query::deleted_entries`
-/// (`backup deleted`) both filter/join on it, previously an unindexed full
-/// table scan. Partial (`WHERE deleted_at IS NOT NULL`) since the large
-/// majority of rows in a real repository are active, not deleted - no
-/// benefit to indexing those.
-///
-/// First schema change since `SCHEMA_V1` - real repositories (e.g. the one
-/// `migrate-scala-repo` produced from a live Scala export) already exist
-/// with `SCHEMA_V1` applied and tracked via `PRAGMA user_version`, so this
-/// is a genuine migration, not an edit to `SCHEMA_V1` in place.
-const SCHEMA_V2: &str = "
-CREATE INDEX tree_entries_deleted_at_idx ON tree_entries(deleted_at) WHERE deleted_at IS NOT NULL;
-";
-
 /// All database migrations, in order. Applying them is tracked via SQLite's built-in
 /// `PRAGMA user_version`, so no separate schema-version table is needed.
 pub(crate) fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(SCHEMA_V1), M::up(SCHEMA_V2)])
+    Migrations::new(vec![M::up(SCHEMA_V1)])
 }
 
 #[cfg(test)]
@@ -173,17 +178,9 @@ mod tests {
     use super::*;
     use rusqlite::Connection;
 
-    /// The scenario `open_repository` now handles (see its own doc comment):
-    /// a database that already has `SCHEMA_V1` applied, from before
-    /// `SCHEMA_V2` existed, must cleanly pick up just the still-pending
-    /// migration when the full set is run against it again.
     #[test]
-    fn schema_v2_applies_cleanly_on_top_of_an_existing_v1_only_database() {
+    fn a_fresh_schema_includes_the_deleted_at_index() {
         let mut conn = Connection::open_in_memory().unwrap();
-        Migrations::new(vec![M::up(SCHEMA_V1)])
-            .to_latest(&mut conn)
-            .unwrap();
-
         migrations().to_latest(&mut conn).unwrap();
 
         let index_exists: bool = conn
@@ -197,19 +194,24 @@ mod tests {
         assert!(index_exists);
     }
 
-    /// Documents why `SCHEMA_V2` can't just be folded back into `SCHEMA_V1`
-    /// now that a real database (the migrated `dedup/` repository) already
-    /// has both steps applied (`user_version = 2`): `rusqlite_migration`
-    /// refuses to open a database whose recorded version is higher than the
-    /// number of migrations it's given, rather than silently treating it as
-    /// current. Squashing history is only free for a database nothing has
-    /// been migrated *past* yet.
+    /// Documents, with a throwaway two-step schema (standing in for the
+    /// real `SCHEMA_V1`+`SCHEMA_V2` pair that was actually squashed - see
+    /// `SCHEMA_V1`'s own doc comment), why folding a later migration back
+    /// into an earlier one isn't free once something has already been
+    /// migrated past that point: `rusqlite_migration` refuses to open a
+    /// database whose recorded `user_version` is higher than the number of
+    /// migrations it's given, rather than silently treating it as current.
     #[test]
     fn a_database_already_past_the_given_migration_list_fails_to_open() {
-        let mut conn = Connection::open_in_memory().unwrap();
-        migrations().to_latest(&mut conn).unwrap(); // user_version = 2
+        const STEP_ONE: &str = "CREATE TABLE t (id INTEGER PRIMARY KEY);";
+        const STEP_TWO: &str = "CREATE INDEX t_id_idx ON t(id);";
 
-        let squashed = Migrations::new(vec![M::up(SCHEMA_V1)]); // only 1 step
+        let mut conn = Connection::open_in_memory().unwrap();
+        Migrations::new(vec![M::up(STEP_ONE), M::up(STEP_TWO)])
+            .to_latest(&mut conn)
+            .unwrap(); // user_version = 2
+
+        let squashed = Migrations::new(vec![M::up(STEP_ONE)]); // only 1 step
         assert!(squashed.to_latest(&mut conn).is_err());
     }
 }

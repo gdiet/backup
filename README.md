@@ -434,6 +434,14 @@ of the whole database. Do this against a `backup db backup` snapshot rather
 than the live database if you want a guaranteed-consistent point-in-time
 export without holding a lock on the live one.
 
+To reimport such a script, feed it into a **new, empty** database file
+(`sqlite3 new.sqlite3 < export.sql`) - not one this application already
+initialized, since the script's own `CREATE TABLE` statements would then
+collide with the tables that already exist. The script doesn't carry the
+schema version (`PRAGMA user_version`) this application tracks internally,
+so a reimported database needs that set to match before this application
+will open it again.
+
 ## Reclaim Space
 
 ```bash
