@@ -2010,4 +2010,267 @@ mod tests {
         let a = db::resolve_path(&conn, "a.txt").unwrap().unwrap();
         assert_eq!(db::file_size(&conn, &a).unwrap(), content.len() as i64);
     }
+
+    // Manual before/after benchmarks for
+    // docs/plans/memory-pressure-backpressure.md - not part of the normal
+    // suite (#[ignore], slow and needs a real `libfuse3` mount), run
+    // explicitly and their output captured to a committed results file
+    // when comparing the persist-queue gate's behavior across a change.
+    // Run with, e.g.:
+    //   BACKUP_BENCH_THROTTLE_STORE_MBPS=30 cargo test --release --package cli \
+    //     --bin backup mount::tests::bench_many_small_files -- --ignored --nocapture
+
+    /// Sequential `open+write+close` for `BACKUP_BENCH_FILES` files of
+    /// `BACKUP_BENCH_FILE_SIZE` bytes each (defaults: 200 files, 1 MB),
+    /// with `BACKUP_BENCH_THROTTLE_STORE_MBPS` optionally capping the
+    /// simulated datastore disk (see `store::bench_throttle_store_write`).
+    /// Prints total wall-clock/throughput plus per-file latency
+    /// percentiles - the shape (smooth vs. bursty/long-tailed) matters as
+    /// much as the aggregate number. Payloads are precomputed with
+    /// distinct content per file *before* timing starts: byte-identical
+    /// payloads would CDC-dedup to one chunk after the first file (every
+    /// later "write" then costs zero store I/O, defeating the point), and
+    /// generating them inside the timed loop would count CPU-bound fill
+    /// time as write time.
+    #[test]
+    #[ignore]
+    fn bench_many_small_files() {
+        let (_temp_dir, repo_root) = init_repo();
+        {
+            let repository = db::open_repository(&repo_root).unwrap();
+            let conn = repository.open_write_connection().unwrap();
+            db::insert_directory(&conn, 0, "marker", 0).unwrap();
+        }
+
+        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
+        let mount_dir = tempfile::tempdir().unwrap();
+        let mount_path = mount_dir.path().to_path_buf();
+        let handle = {
+            let mount_path = mount_path.clone();
+            std::thread::spawn(move || mountfs::mount(fs, &mount_path, false))
+        };
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let names: Vec<String> = std::fs::read_dir(&mount_path)
+                .map(|entries| {
+                    entries
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.file_name().to_string_lossy().into_owned())
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !names.is_empty() {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "mount did not become ready within 5s"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        let file_count: usize = std::env::var("BACKUP_BENCH_FILES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(200);
+        let file_size: usize = std::env::var("BACKUP_BENCH_FILE_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1_000_000);
+        let sub = mount_path.join("marker");
+
+        let payloads: Vec<Vec<u8>> = (0..file_count)
+            .map(|i| {
+                let pattern = (i as u64).wrapping_mul(2_654_435_761).to_le_bytes();
+                let mut payload = vec![0u8; file_size];
+                for chunk in payload.chunks_mut(8) {
+                    chunk.copy_from_slice(&pattern[..chunk.len()]);
+                }
+                payload
+            })
+            .collect();
+
+        let mut iter_millis = Vec::with_capacity(file_count);
+        let overall_start = Instant::now();
+        for (i, payload) in payloads.iter().enumerate() {
+            let start = Instant::now();
+            std::fs::write(sub.join(format!("f{i}.bin")), payload).unwrap();
+            iter_millis.push(start.elapsed().as_secs_f64() * 1000.0);
+        }
+        let total = overall_start.elapsed();
+
+        iter_millis.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let p50 = iter_millis[iter_millis.len() / 2];
+        let p95 = iter_millis[iter_millis.len() * 95 / 100];
+        let max = *iter_millis.last().unwrap();
+        let total_bytes = file_count * file_size;
+        println!(
+            "files={file_count} size={file_size}B total_bytes={total_bytes}B \
+             close_loop={total:?} close_loop_throughput={:.2}MB/s p50={p50:.1}ms \
+             p95={p95:.1}ms max={max:.1}ms",
+            total_bytes as f64 / total.as_secs_f64() / 1_000_000.0
+        );
+
+        // Unmounting has to wait for the background persist thread to
+        // fully drain (see `on_unmount`) - times how long that actually
+        // takes, separately from the close-loop above, since `close()`
+        // returning doesn't mean the file's bytes are safely on disk yet.
+        let drain_start = Instant::now();
+        let status = std::process::Command::new("fusermount3")
+            .arg("-u")
+            .arg(&mount_path)
+            .status()
+            .expect("failed to run fusermount3 -u");
+        assert!(status.success(), "fusermount3 -u failed: {status}");
+        let drain = drain_start.elapsed();
+        println!(
+            "drain_on_unmount={drain:?} end_to_end={:?} end_to_end_throughput={:.2}MB/s",
+            total + drain,
+            total_bytes as f64 / (total + drain).as_secs_f64() / 1_000_000.0
+        );
+        handle
+            .join()
+            .expect("mount thread panicked")
+            .expect("mount() returned an error");
+    }
+
+    /// Writes `BACKUP_BENCH_LARGE_FILES` large files (default 6, 50 MB
+    /// each) with `write_cache_mb: 1` (forces near-immediate spill for
+    /// every byte) against a datastore throttled slow enough that
+    /// `persist_worker` can't keep up, sampling the mount's spill
+    /// directory's on-disk size after each file closes - demonstrating
+    /// directly how much spilled-but-unpersisted data can accumulate at
+    /// once under whatever gate `enqueue_persist` currently uses.
+    #[test]
+    #[ignore]
+    fn bench_large_files_spill_pressure() {
+        let (_temp_dir, repo_root) = init_repo();
+        {
+            let repository = db::open_repository(&repo_root).unwrap();
+            let conn = repository.open_write_connection().unwrap();
+            db::insert_directory(&conn, 0, "marker", 0).unwrap();
+        }
+
+        let fs = build_filesystem(&repo_root, true, 1, None, false).unwrap();
+        let mount_dir = tempfile::tempdir().unwrap();
+        let mount_path = mount_dir.path().to_path_buf();
+        let handle = {
+            let mount_path = mount_path.clone();
+            std::thread::spawn(move || mountfs::mount(fs, &mount_path, false))
+        };
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let names: Vec<String> = std::fs::read_dir(&mount_path)
+                .map(|entries| {
+                    entries
+                        .filter_map(|e| e.ok())
+                        .map(|e| e.file_name().to_string_lossy().into_owned())
+                        .collect()
+                })
+                .unwrap_or_default();
+            if !names.is_empty() {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "mount did not become ready within 5s"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // `create_spill_dir("backup-mount-write-cache-", None)` creates
+        // exactly one fresh subdirectory of the OS temp dir for this
+        // mount - find it by its unique prefix (rather than reaching into
+        // `Inner`, private with no accessor) instead of walking the whole
+        // temp dir, which can be very slow if it holds unrelated content.
+        let spill_root = std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with("backup-mount-write-cache-"))
+            })
+            .expect("build_filesystem must have created its spill dir by now");
+        let du = |root: &Path| -> u64 {
+            fn walk(dir: &Path, total: &mut u64) {
+                let Ok(entries) = std::fs::read_dir(dir) else {
+                    return;
+                };
+                for entry in entries.flatten() {
+                    if let Ok(meta) = entry.metadata() {
+                        if meta.is_dir() {
+                            walk(&entry.path(), total);
+                        } else {
+                            *total += meta.len();
+                        }
+                    }
+                }
+            }
+            let mut total = 0;
+            walk(root, &mut total);
+            total
+        };
+        let baseline_temp_bytes = du(&spill_root);
+
+        let file_count: usize = std::env::var("BACKUP_BENCH_LARGE_FILES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(6);
+        let file_size: usize = std::env::var("BACKUP_BENCH_LARGE_FILE_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(50_000_000);
+        let sub = mount_path.join("marker");
+
+        let payloads: Vec<Vec<u8>> = (0..file_count)
+            .map(|i| {
+                let pattern = (i as u64).wrapping_mul(2_654_435_761).to_le_bytes();
+                let mut payload = vec![0u8; file_size];
+                for chunk in payload.chunks_mut(8) {
+                    chunk.copy_from_slice(&pattern[..chunk.len()]);
+                }
+                payload
+            })
+            .collect();
+
+        let mut peak_spilled = 0u64;
+        let overall_start = Instant::now();
+        for (i, payload) in payloads.iter().enumerate() {
+            let start = Instant::now();
+            std::fs::write(sub.join(format!("big{i}.bin")), payload).unwrap();
+            let elapsed = start.elapsed();
+            let spilled = du(&spill_root).saturating_sub(baseline_temp_bytes);
+            peak_spilled = peak_spilled.max(spilled);
+            println!(
+                "file {i}: close={elapsed:?} spill_dir_now={:.1}MB peak_so_far={:.1}MB",
+                spilled as f64 / 1_000_000.0,
+                peak_spilled as f64 / 1_000_000.0
+            );
+        }
+        let write_loop = overall_start.elapsed();
+
+        let drain_start = Instant::now();
+        let status = std::process::Command::new("fusermount3")
+            .arg("-u")
+            .arg(&mount_path)
+            .status()
+            .expect("failed to run fusermount3 -u");
+        assert!(status.success(), "fusermount3 -u failed: {status}");
+        let drain = drain_start.elapsed();
+
+        println!(
+            "files={file_count} size={file_size}B write_loop={write_loop:?} \
+             drain_on_unmount={drain:?} peak_spilled={:.1}MB ({:.1}x a single file)",
+            peak_spilled as f64 / 1_000_000.0,
+            peak_spilled as f64 / file_size as f64
+        );
+        handle
+            .join()
+            .expect("mount thread panicked")
+            .expect("mount() returned an error");
+    }
 }

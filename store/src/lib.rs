@@ -26,6 +26,29 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
+/// Benchmarking aid: if `BACKUP_BENCH_THROTTLE_STORE_MBPS` is set to a
+/// number, [`LongTermStore::write`] sleeps just long enough after each
+/// physical write to cap throughput at that many MB/s - simulating a slow
+/// target disk (e.g. ~30 MB/s for USB2) without needing the real hardware.
+/// A no-op (one cheap env-var-cache lookup) unless the variable is set;
+/// never touches [`LongTermStore::read`]. See
+/// `docs/plans/memory-pressure-backpressure.md`'s "Validation approach"
+/// for what this exists to measure, and `cli/src/mount.rs`'s `bench_*`
+/// tests for how it's actually used.
+fn bench_throttle_store_write(bytes: usize) {
+    use std::sync::OnceLock;
+    static MBPS: OnceLock<Option<f64>> = OnceLock::new();
+    let mbps = *MBPS.get_or_init(|| {
+        std::env::var("BACKUP_BENCH_THROTTLE_STORE_MBPS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+    });
+    if let Some(mbps) = mbps {
+        let seconds = bytes as f64 / (mbps * 1_000_000.0);
+        std::thread::sleep(std::time::Duration::from_secs_f64(seconds));
+    }
+}
+
 /// How many recently-used read file handles each thread keeps open - see
 /// `LongTermStore`'s "Performance note" doc comment and
 /// `docs/plans/implemented/long-term-store-read-handle-cache.md` for why (repeatedly
@@ -219,6 +242,7 @@ impl LongTermStore {
             }?;
             file.seek(SeekFrom::Start(file_offset))?;
             file.write_all(chunk)?;
+            bench_throttle_store_write(chunk.len());
 
             remaining = &remaining[chunk_size..];
             pos += chunk_size as u64;
