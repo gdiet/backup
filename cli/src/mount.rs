@@ -2253,24 +2253,32 @@ mod tests {
         }
         let write_loop = overall_start.elapsed();
 
-        let drain_start = Instant::now();
+        // `fusermount3 -u` itself only requests the unmount - it doesn't
+        // wait for `on_unmount`'s drain (persist_worker fully catching
+        // up) to finish. That happens inside `mountfs::mount`'s own
+        // blocking call, on the background thread `handle` joins below -
+        // timed separately, since it's the number that actually answers
+        // "how long until every closed file's bytes are safely durable".
+        let unmount_start = Instant::now();
         let status = std::process::Command::new("fusermount3")
             .arg("-u")
             .arg(&mount_path)
             .status()
             .expect("failed to run fusermount3 -u");
         assert!(status.success(), "fusermount3 -u failed: {status}");
-        let drain = drain_start.elapsed();
-
-        println!(
-            "files={file_count} size={file_size}B write_loop={write_loop:?} \
-             drain_on_unmount={drain:?} peak_spilled={:.1}MB ({:.1}x a single file)",
-            peak_spilled as f64 / 1_000_000.0,
-            peak_spilled as f64 / file_size as f64
-        );
+        let unmount_request = unmount_start.elapsed();
         handle
             .join()
             .expect("mount thread panicked")
             .expect("mount() returned an error");
+        let drain = unmount_start.elapsed();
+
+        println!(
+            "files={file_count} size={file_size}B write_loop={write_loop:?} \
+             unmount_request={unmount_request:?} full_drain={drain:?} \
+             peak_spilled={:.1}MB ({:.1}x a single file)",
+            peak_spilled as f64 / 1_000_000.0,
+            peak_spilled as f64 / file_size as f64
+        );
     }
 }
