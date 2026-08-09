@@ -1,9 +1,7 @@
 # Mount: a `[deleted]` virtual folder for browsing/recovering deletions
 
-**Status**: design decisions made (see below) - one empirical blocker
-remains (file-manager drag-and-drop behavior) before implementation can
-start responsibly. Not a sketch anymore, but not "ready to implement"
-either until that spike is done.
+**Status**: plan complete, ready to implement - the empirical blocker
+below has been resolved.
 
 ## Motivation
 
@@ -78,35 +76,37 @@ as a real, renamable directory.
   (nothing being mutated); a rename-out attempt fails with `EROFS`, same as
   every other mutating operation on a read-only mount already does.
 
-### Remaining blocker: file-manager drag-and-drop reality (empirical, not a preference)
+### Resolved: file-manager drag-and-drop reality (was the remaining blocker)
 
 A same-volume "move" isn't always a plain `rename(2)`/`MoveFile` syscall in
 practice - some file managers implement cross-directory drag as
 copy-then-delete-source, especially once a path *looks* unusual (bracketed
-name, synthetic directory). If that happens here, the "recovery" gesture
-would actually arrive as: a normal `create`+`write` at the real
-destination (already supported, no special handling needed - reads
-`[deleted]/...` content just fine), followed by `unlink` on the *virtual*
-source path - which would need to trigger the same undelete logic a
-`rename` would, but now decoupled from ever having seen the real
-destination path. `unlink` handling would need to become "if the path is
-under `[deleted]/...`, call `db::soft_delete`... no - call nothing, since
-the content was already read out; the entry should just stay soft-deleted,
-matching `backup restore --deleted`'s "copy the bytes without touching
-repository state" behavior, not `undelete`'s. This is a materially
-different code path than the `rename` interception described above, and
-whether it's even needed depends entirely on what real file managers
-actually do - needs testing against Windows Explorer (at minimum) before
-committing to `rename`-interception-only as sufficient. Treat this as a
-short, dedicated spike before writing any other code for this feature, not
-something to discover mid-implementation.
+name, synthetic directory). Tested for real: instrumented `DedupFs::open`/
+`write`/`create`/`unlink`/`rename` in `cli/src/mount.rs` with temporary
+`eprintln!` logging, mounted a small disposable test repository read-write
+at a drive letter, and dragged a file from one folder to another *within
+that same mounted drive* in Windows Explorer. Observed call sequence:
 
-## Verification checklist (once the spike above is done)
+```
+open("/in/dnd_src/testfile.txt", write_intent=false)
+open("/in/dnd_src/testfile.txt", write_intent=false)
+rename("/in/dnd_src/testfile.txt", "/testfile.txt")
+open("/testfile.txt", write_intent=false)
+open("/testfile.txt", write_intent=false)
+```
 
-- Confirm via the spike whether `unlink`-based recovery handling (see
-  above) is actually needed, or whether `rename` interception alone
-  suffices for the file managers this project cares about (at minimum
-  Windows Explorer, given the primary platform).
+**Explorer calls `rename()` directly** for a same-drive move - the `open`
+calls before/after are just its usual property/icon/thumbnail refresh
+reads, not part of the move itself. No `create`/`write`/`unlink` sequence
+at all. This means the simpler design holds: `rename` interception alone
+is sufficient, and the more complex `unlink`-based fallback path sketched
+in the original version of this section is **not needed** - dropped from
+the design rather than kept as unused complexity. (Instrumentation was
+temporary and has been reverted - `cli/src/mount.rs` is unchanged by this
+spike.)
+
+## Verification checklist
+
 - Measure per-directory `deleted_entries` cost for real (a `readdir` on a
   directory with many active children plus a nontrivial deleted-children
   count, against the real `dedup/` repository) before assuming it's cheap
