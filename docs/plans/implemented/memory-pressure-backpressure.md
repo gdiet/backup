@@ -1,12 +1,23 @@
 # Mount: replace the fixed persist-queue capacity with memory-pressure backpressure
 
-**Status**: proposed, not implemented. Raised while discussing whether
-`WriteCache::write`'s return value should report aggregate RAM-remaining/
-spillover state (`docs/plans/implemented/bounded-memory-io-pipeline.md`'s
-successor discussion) - the concrete question was whether a memory-pressure
-signal could *replace* an existing backpressure mechanism rather than just
-add a new one, since replacing one is a real simplification and adding one
-is just more surface area to understand.
+**Status**: implemented, on branch `rust-backpressure` (`spillcache::
+RamBudget`'s new spilled-bytes counter; `cli/src/mount.rs`'s
+`enqueue_persist` gating on `queued_persist_bytes` vs.
+`spill_backpressure_threshold_bytes`, tied to `--write-cache-mb`).
+Real before/after benchmark results (same commands, same machine, real
+`libfuse3` mount) in `docs/plans/backpressure-bench/results.md`: ~3.5x
+throughput for many small files, ~20-27% less peak unpersisted data and
+faster full-drain time for a large-file burst large enough to exhaust the
+FUSE worker pool (a real, structural nuance discovered while measuring
+this - see that file's "Important nuance").
+
+Raised while discussing whether `WriteCache::write`'s return value should
+report aggregate RAM-remaining/spillover state (`docs/plans/implemented/
+bounded-memory-io-pipeline.md`'s successor discussion) - the concrete
+question was whether a memory-pressure signal could *replace* an existing
+backpressure mechanism rather than just add a new one, since replacing one
+is a real simplification and adding one is just more surface area to
+understand.
 
 ## The candidate
 
@@ -162,26 +173,24 @@ is a point in favor of trying a plain hard cutoff first, before building
 the extra complexity of a graduated/proportional throttle - but that's
 a leaning, not a decision made here.
 
-## Open questions (why this isn't implemented yet)
+## Decisions (resolved during implementation)
 
-- What spilled-byte threshold should gate `enqueue_persist`? Unlike
-  `PERSIST_QUEUE_CAPACITY = 4` (an arbitrary but easy-to-reason-about job
-  count), a byte threshold needs an actual justified number - fixed
-  fraction of `--write-cache-mb`? A separate flag? Needs real measurement
-  (see "Validation approach") or at least a defensible default, not a
-  guess.
-- Hard cutoff or graduated throttle? A single threshold that blocks
-  `enqueue_persist` outright reproduces the "runs fast, then stalls, then
-  bursts back to fast" pattern this plan's discussion wants to avoid; a
-  throttle that gradually slows writes as spilled bytes approach the
-  threshold would feel smoother to the user but is more code and more
-  behavior to reason about (what curve? where does it start?). Decide from
-  the "Validation approach" benchmarks - if a hard cutoff already tests out
-  smooth enough at a well-chosen threshold, the simpler shape wins by
-  default.
-- Whether a single combined `Pressure` type (RAM-remaining +
-  spilled-bytes) is worth introducing now, or whether adding just the
-  spilled-bytes counter to the existing `RamBudget` (in its new
-  `spillcache` crate) is enough for this one consumer - decide once the
-  threshold question above is settled, since that determines what the
-  actual call site needs to read.
+- **Threshold**: `write_cache_mb * 1024 * 1024` bytes - reuses the
+  `--write-cache-mb` figure already there for the RAM budget rather than
+  adding a second flag. No dedicated sweep of alternative values was run;
+  this is a defensible default (see "Validation results" above for the
+  reasoning), not a value separately tuned against the benchmarks.
+- **Hard cutoff, not graduated throttle** - matches the leaning above (no
+  dramatic burstiness observed from the old job-count gate either, so the
+  simpler shape was tried first). Worth revisiting only if real usage
+  shows the cutoff itself feels jarring once it does engage.
+- **Single counter added to the existing `RamBudget`** (in `spillcache`),
+  not a new combined `Pressure` type - the simpler of the two options this
+  plan had left open, sufficient for `enqueue_persist`, its only consumer
+  so far.
+- **Gate lives on `Inner::queued_persist_bytes`** (bytes already
+  queued-or-persisting), not directly on `RamBudget::spilled_bytes()`
+  (mount-wide, including still-open files) - checked *before* adding the
+  new job's own contribution, so a single file bigger than the whole
+  threshold still gets admitted immediately when nothing else is queued,
+  rather than deadlocking on pressure only it itself created.
