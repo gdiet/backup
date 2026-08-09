@@ -47,7 +47,7 @@ use rusqlite::Connection;
 /// Directory (relative to the repository root) holding the metadata database.
 const META_DIR: &str = "meta";
 /// File name of the metadata database within [`META_DIR`].
-const META_DB_FILE: &str = "repository.db";
+const META_DB_FILE: &str = "repository.sqlite3";
 /// Directory (relative to the repository root) holding the chunk data store.
 const DATA_DIR: &str = "data";
 
@@ -249,7 +249,7 @@ mod tests {
 
         assert_eq!(
             db_file_path(&repo_root),
-            repo_root.join("meta").join("repository.db")
+            repo_root.join("meta").join("repository.sqlite3")
         );
         assert_eq!(meta_dir(&repo_root), repo_root.join("meta"));
     }

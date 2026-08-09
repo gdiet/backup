@@ -1075,7 +1075,7 @@ mod tests {
     }
 
     fn conn(repo_root: &Path) -> Connection {
-        Connection::open(repo_root.join("meta").join("repository.db")).unwrap()
+        Connection::open(repo_root.join("meta").join("repository.sqlite3")).unwrap()
     }
 
     fn count(c: &Connection, table: &str) -> i64 {

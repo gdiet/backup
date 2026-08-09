@@ -65,7 +65,7 @@ pub(crate) fn run_backup(repo: &Path) -> ExitCode {
         return ExitCode::FAILURE;
     }
     let target = backups_dir.join(format!(
-        "repository_{}.db",
+        "repository_{}.sqlite3",
         timestamp_for_filename(now_millis())
     ));
 
@@ -262,7 +262,7 @@ mod tests {
     fn restore_fails_for_a_missing_backup_file() {
         let (_temp_dir, repo_root) = init_repo();
         assert_eq!(
-            run_restore_db(&repo_root, &PathBuf::from("no-such-backup.db")),
+            run_restore_db(&repo_root, &PathBuf::from("no-such-backup.sqlite3")),
             ExitCode::FAILURE
         );
     }
