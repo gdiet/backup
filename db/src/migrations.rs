@@ -196,4 +196,20 @@ mod tests {
             .unwrap();
         assert!(index_exists);
     }
+
+    /// Documents why `SCHEMA_V2` can't just be folded back into `SCHEMA_V1`
+    /// now that a real database (the migrated `dedup/` repository) already
+    /// has both steps applied (`user_version = 2`): `rusqlite_migration`
+    /// refuses to open a database whose recorded version is higher than the
+    /// number of migrations it's given, rather than silently treating it as
+    /// current. Squashing history is only free for a database nothing has
+    /// been migrated *past* yet.
+    #[test]
+    fn a_database_already_past_the_given_migration_list_fails_to_open() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrations().to_latest(&mut conn).unwrap(); // user_version = 2
+
+        let squashed = Migrations::new(vec![M::up(SCHEMA_V1)]); // only 1 step
+        assert!(squashed.to_latest(&mut conn).is_err());
+    }
 }

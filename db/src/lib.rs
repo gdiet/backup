@@ -43,7 +43,7 @@ pub use tree::{
 use std::fs;
 use std::path::Path;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 
 /// Directory (relative to the repository root) holding the metadata database.
 const META_DIR: &str = "meta";
@@ -110,6 +110,39 @@ fn open_connection(path: &Path) -> Result<Connection, Error> {
     // function correct on its own even if it's ever called on a pre-WAL
     // database file.
     conn.pragma_update_and_check(None, "journal_mode", "WAL", |_row| Ok(()))?;
+    Ok(conn)
+}
+
+/// Opens the SQLite database at `path` genuinely read-only at the SQLite
+/// level (`SQLITE_OPEN_READ_ONLY`) - not just "a connection this crate's
+/// callers happen to only issue `SELECT`s through", the way every
+/// connection used to be before this existed. A stray write attempt
+/// through a connection from this function now fails outright instead of
+/// silently succeeding.
+///
+/// Doesn't create the file if missing (`open_connection` does, via
+/// SQLite's default flags) - callers only ever use this once a repository
+/// is already known to exist.
+///
+/// Only sets the pragmas that matter for a connection that will never
+/// write: `busy_timeout`, in case a read still transiently contends with
+/// the writer (e.g. mid-checkpoint - see the module-level doc comment).
+/// `synchronous`/`auto_vacuum`/`journal_mode` all govern write/commit
+/// behavior and are meaningless here; `journal_mode` in particular can't be
+/// reasserted on a read-only connection even as a same-value no-op (SQLite
+/// requires write access to execute the pragma's assignment form at all) -
+/// harmless to skip, since by the time any caller opens a read-only
+/// connection, [`open_repository`] has already run migrations (and with
+/// them, `open_connection`'s own `journal_mode` switch) over a regular
+/// read-write connection first.
+fn open_connection_read_only(path: &Path) -> Result<Connection, Error> {
+    let conn = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_URI
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    conn.pragma_update(None, "busy_timeout", 5000)?;
     Ok(conn)
 }
 
@@ -198,21 +231,23 @@ impl Repository {
         self.repo_root.join(META_DIR).join(META_DB_FILE)
     }
 
-    /// Opens a new connection to this repository's metadata database.
-    ///
-    /// There is no distinction between a "read" and a "write" connection at the
-    /// SQLite level - both are opened the same way (see `open_connection`) - but
-    /// callers should still open one dedicated connection for writing and any
-    /// number of separate connections for reading, per the module-level doc
-    /// comment: WAL only ever admits one writer transaction at a time, so treating
-    /// every connection as a potential writer would only add lock contention
-    /// without adding throughput.
+    /// Opens a new, genuinely read-only connection to this repository's
+    /// metadata database (`SQLITE_OPEN_READ_ONLY` - see
+    /// `open_connection_read_only`): any write attempt through it fails
+    /// outright rather than merely being something callers are expected not
+    /// to do. Open as many of these as needed; per the module-level doc
+    /// comment, WAL only ever admits one writer transaction at a time, so
+    /// treating every connection as a potential writer would only add lock
+    /// contention without adding throughput - which a read-only connection
+    /// can't do even by accident now.
     pub fn open_read_connection(&self) -> Result<Connection, Error> {
-        open_connection(&self.meta_db_path())
+        open_connection_read_only(&self.meta_db_path())
     }
 
-    /// See [`Repository::open_read_connection`]; use exactly one of these per
-    /// repository at a time.
+    /// Opens a new read-write connection to this repository's metadata
+    /// database. Use exactly one of these per repository at a time - see
+    /// [`Repository::open_read_connection`] and the module-level doc
+    /// comment.
     pub fn open_write_connection(&self) -> Result<Connection, Error> {
         open_connection(&self.meta_db_path())
     }
@@ -333,6 +368,38 @@ mod tests {
         assert_eq!(repo.settings().cdc_target_size_bits(), 18);
         assert_eq!(repo.settings().chunking(), Chunking::None);
         assert_eq!(repo.data_dir(), repo_root.join(DATA_DIR));
+    }
+
+    #[test]
+    fn a_read_connection_is_genuinely_read_only_and_can_still_read_after_a_write() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        let repo = open_repository(&repo_root).unwrap();
+
+        let write_conn = repo.open_write_connection().unwrap();
+        crate::insert_directory(&write_conn, 0, "sub", 0).unwrap();
+        drop(write_conn);
+
+        let read_conn = repo.open_read_connection().unwrap();
+        // Sees the committed write above - not a stale snapshot from before it.
+        assert!(
+            crate::find_tree_entry(&read_conn, 0, "sub")
+                .unwrap()
+                .is_some()
+        );
+        // A write attempt through it fails outright rather than merely being
+        // discouraged by convention.
+        let err = read_conn
+            .execute(
+                "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (0, 'x', 0, 'dir')",
+                (),
+            )
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            rusqlite::Error::SqliteFailure(e, _) if e.code == rusqlite::ErrorCode::ReadOnly
+        ));
     }
 
     #[test]

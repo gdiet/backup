@@ -1,5 +1,13 @@
 # Implement the `store` (backup) subcommand
 
+**Later change**: `open_read_connection()`/`open_write_connection()`
+(mentioned in section 2 below) stopped being "thin wrappers around the
+same `open_connection`" - `open_read_connection()` now opens genuinely
+read-only at the SQLite level (`SQLITE_OPEN_READ_ONLY`, see
+`open_connection_read_only` in `db/src/lib.rs`), so a stray write through
+it fails outright instead of merely being something callers were expected
+not to do.
+
 ## Context
 
 The Rust workspace (`cdc`, `store`, `db`, `cli`) has all the individual building blocks for a deduplicating backup tool, but `cli store` currently only walks source files, chunks/hashes them, and prints the result — nothing is written to the SQLite metadata DB or to the on-disk byte store. This plan wires those pieces together into a working `store` command.
