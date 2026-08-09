@@ -69,13 +69,57 @@ re-litigated later:
   at all - the synchronous read/chunk/write loop plus the `--concurrency`-
   sized thread pool already gate it. Nothing to replace there.
 
+## Validation approach
+
+Before committing to a byte threshold (or even to this change at all), get
+real numbers via two synthetic slow-disk benchmarks - simulated by a
+temporary code change that caps write throughput to roughly USB2 speed
+(~30 MB/s), rather than requiring actual USB2 hardware on hand:
+
+- **Many small files, capped datastore disk.** Back up a large number of
+  small files with the datastore write path throttled, and compare
+  wall-clock/throughput between today's job-count gate
+  (`PERSIST_QUEUE_CAPACITY = 4`) and a byte-based gate. Small files each
+  carry little unpersisted-byte pressure, so a fixed job count may be
+  throttling earlier than the actual pressure justifies - this test shows
+  whether that's a real, measurable loss or just theoretical.
+- **Very large files, capped spillover disk.** With the spillcache's
+  disk-spill path throttled instead, back up files large enough to spill
+  and check whether `N = 4` jobs is actually *too permissive* here - a
+  single spilled `WriteCache` for a huge file can represent far more
+  unpersisted bytes than 4 was ever calibrated for, so the byte threshold
+  might need to gate *earlier* (a lower effective limit) than the current
+  count-based one does in this case, not just replace it 1:1.
+
+Both benchmarks should also check the UX goal raised alongside this plan:
+backpressure should show up as writes *progressively slowing down* as
+pressure rises, not running at full speed until a hard limit is hit and
+then blocking a single `write` call for a long pause before snapping back
+to fast. A hard cutoff - whether today's job-count check or a same-shaped
+byte-threshold check - produces exactly that "stall, then burst" pattern;
+a proportional/graduated throttle (e.g. inserting a small, increasing delay
+per `write` as spilled bytes approach the threshold, rather than an
+all-or-nothing block at it) would match the goal better. Which shape to
+build should be decided from what these benchmarks actually show, not
+assumed up front - see the added open question below.
+
 ## Open questions (why this isn't implemented yet)
 
 - What spilled-byte threshold should gate `enqueue_persist`? Unlike
   `PERSIST_QUEUE_CAPACITY = 4` (an arbitrary but easy-to-reason-about job
   count), a byte threshold needs an actual justified number - fixed
   fraction of `--write-cache-mb`? A separate flag? Needs real measurement
-  or at least a defensible default, not a guess.
+  (see "Validation approach") or at least a defensible default, not a
+  guess.
+- Hard cutoff or graduated throttle? A single threshold that blocks
+  `enqueue_persist` outright reproduces the "runs fast, then stalls, then
+  bursts back to fast" pattern this plan's discussion wants to avoid; a
+  throttle that gradually slows writes as spilled bytes approach the
+  threshold would feel smoother to the user but is more code and more
+  behavior to reason about (what curve? where does it start?). Decide from
+  the "Validation approach" benchmarks - if a hard cutoff already tests out
+  smooth enough at a well-chosen threshold, the simpler shape wins by
+  default.
 - Whether a single combined `Pressure` type (RAM-remaining +
   spilled-bytes) is worth introducing now, or whether adding just the
   spilled-bytes counter to the existing `RamBudget` (in its new
