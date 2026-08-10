@@ -23,12 +23,18 @@ A Rust toolchain (`rustc`/`cargo`, e.g. via [rustup](https://rustup.rs)) on
 both platforms. Beyond that:
 
 **Linux**:
-- [libfuse3](https://github.com/libfuse/libfuse) installed (Debian/Ubuntu:
-  `apt install libfuse3-3`; Fedora: usually already present as `fuse3`) -
-  required at *runtime* for `mount` to work; **not** required at build
-  time (`mountfs` resolves it dynamically via `dlopen`, no headers or
-  `pkg-config` needed - see
-  [plans/implemented/linux-libfuse3-lazy-loading.md](plans/implemented/linux-libfuse3-lazy-loading.md)).
+- [libfuse3](https://github.com/libfuse/libfuse) installed - required at
+  *runtime* for `mount` to work; **not** required at build time (`mountfs`
+  resolves it dynamically via `dlopen`, no headers or `pkg-config` needed -
+  see [plans/implemented/linux-libfuse3-lazy-loading.md](plans/implemented/linux-libfuse3-lazy-loading.md)).
+  Two separate Debian/Ubuntu packages are needed, not just one:
+  `apt install libfuse3-3 fuse3` - `libfuse3-3` alone is not enough,
+  since `fuse3` is what actually provides the `fusermount3` setuid helper
+  that performs the real mount syscall on `dlopen`'d libfuse3's behalf
+  (confirmed the hard way: `libfuse3-3` alone in a minimal container
+  produced `fuse_main_real exited with code 8`, with no `fusermount3` on
+  `PATH` - installing `fuse3` too fixed it). Fedora: usually already
+  present as `fuse3`, which bundles both.
 
 **Windows**:
 - Visual Studio Build Tools (the MSVC linker/`cl.exe` - the usual

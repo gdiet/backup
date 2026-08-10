@@ -50,8 +50,10 @@ real filesystem-in-userspace driver:
 
 - **Windows**: [WinFSP](https://github.com/winfsp/winfsp) installed (the
   runtime is enough).
-- **Linux**: `libfuse3`/`fuse3` installed (Debian/Ubuntu: `apt install
-  libfuse3-3`; Fedora: already present on most systems as `fuse3`).
+- **Linux**: `libfuse3` and `fuse3` installed (Debian/Ubuntu: `apt install
+  libfuse3-3 fuse3` - both packages, `libfuse3-3` alone is missing the
+  `fusermount3` helper the mount actually needs; Fedora: already present
+  on most systems as `fuse3`, which bundles both).
 
 Every other command (`store`, `restore`, `list`, `find`, `stats`, `check`,
 `del`, `db`, `reclaim-space`) works without either.
