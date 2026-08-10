@@ -25,6 +25,7 @@
 #![allow(non_camel_case_types)]
 
 use std::ffi::{CStr, c_char, c_int, c_uint, c_void};
+use std::io;
 use std::sync::OnceLock;
 
 // --- WinFSP's `fuse_*` types (Win64, non-Cygwin - `inc/fuse/winfsp_fuse.h`'s
@@ -393,37 +394,67 @@ struct Exports {
 unsafe impl Send for Exports {}
 unsafe impl Sync for Exports {}
 
-fn exports() -> &'static Exports {
-    static EXPORTS: OnceLock<Exports> = OnceLock::new();
-    EXPORTS.get_or_init(|| {
-        let module =
-            load_winfsp_dll().expect("failed to locate winfsp-x64.dll (is WinFSP installed?)");
-        let main_real = unsafe { resolve(module, c"fsp_fuse3_main_real") }
-            .expect("winfsp-x64.dll is missing fsp_fuse3_main_real");
-        let get_context = unsafe { resolve(module, c"fsp_fuse3_get_context") }
-            .expect("winfsp-x64.dll is missing fsp_fuse3_get_context");
-        Exports {
-            main_real,
-            get_context,
-        }
-    })
+/// WinFSP is a runtime-only dependency (see `load_winfsp_dll`'s doc
+/// comment) - genuinely absent on a system without it installed, so this
+/// reports that as an `io::Result` instead of panicking (unlike Linux,
+/// where real libfuse3 is linked at build time and can't be "missing" at
+/// this point - see `AGENTS.md`'s "Code Quality" section on when a bare
+/// panic is/isn't appropriate).
+fn exports() -> io::Result<&'static Exports> {
+    static EXPORTS: OnceLock<Result<Exports, String>> = OnceLock::new();
+    EXPORTS
+        .get_or_init(|| {
+            let module = load_winfsp_dll().ok_or_else(|| {
+                "WinFSP not found (winfsp-x64.dll) - install it from \
+                 https://github.com/winfsp/winfsp"
+                    .to_string()
+            })?;
+            let main_real = unsafe { resolve(module, c"fsp_fuse3_main_real") }
+                .ok_or("winfsp-x64.dll is missing fsp_fuse3_main_real")?;
+            let get_context = unsafe { resolve(module, c"fsp_fuse3_get_context") }
+                .ok_or("winfsp-x64.dll is missing fsp_fuse3_get_context")?;
+            Ok(Exports {
+                main_real,
+                get_context,
+            })
+        })
+        .as_ref()
+        .map_err(|msg| io::Error::other(msg.clone()))
+}
+
+/// Cheap check for whether WinFSP is actually available right now, without
+/// starting a mount - see `exports`. Exposed so `windows::mount`'s caller
+/// can report a clean error before announcing a mount as started, rather
+/// than after (see that module's `preflight`).
+pub fn check_available() -> io::Result<()> {
+    exports().map(|_| ())
 }
 
 /// Equivalent to real libfuse3's `fuse_main_real` (see `linux::sys`) -
 /// `op_size` must be `size_of::<fuse_operations>()`, same caveat as there.
+/// Returns `Err` if WinFSP itself couldn't be located (see `exports`) -
+/// distinct from a nonzero exit code, which the caller (`windows::mount`)
+/// still has to check separately.
 pub unsafe fn fuse_main_real(
     argc: c_int,
     argv: *mut *mut c_char,
     op: *const fuse_operations,
     op_size: usize,
     private_data: *mut c_void,
-) -> c_int {
-    let main_real = exports().main_real;
-    unsafe { main_real(fuse_env(), argc, argv, op, op_size, private_data) }
+) -> io::Result<c_int> {
+    let main_real = exports()?.main_real;
+    Ok(unsafe { main_real(fuse_env(), argc, argv, op, op_size, private_data) })
 }
 
 /// Equivalent to real libfuse3's `fuse_get_context` (see `linux::sys`).
 pub fn fuse_get_context() -> *mut fuse_context {
-    let get_context = exports().get_context;
+    // Only ever called from within a `dispatch_*` trampoline (see
+    // `mod.rs`'s `context()`), i.e. from WinFSP's own callback thread -
+    // reachable only once `fuse_main_real` above already resolved
+    // `exports()` successfully and handed control to WinFSP, so the cached
+    // `OnceLock` result here is always `Ok`.
+    let get_context = exports()
+        .expect("fuse_get_context called before fuse_main_real resolved WinFSP")
+        .get_context;
     unsafe { get_context(fuse_env()) }
 }

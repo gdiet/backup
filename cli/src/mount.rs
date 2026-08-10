@@ -212,6 +212,11 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
         }
     };
 
+    if let Err(err) = mountfs::preflight() {
+        eprintln!("error: {err}");
+        return ExitCode::FAILURE;
+    }
+
     println!(
         "mounted {} at {} ({})",
         if args.read_write {

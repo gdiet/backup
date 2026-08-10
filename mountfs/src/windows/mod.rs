@@ -371,6 +371,15 @@ unsafe extern "C" fn dispatch_chown<T: MountFilesystem>(
 /// WinFSP's Windows branch never forks (`fsp_fuse_daemonize` is a no-op
 /// there - see `sys.rs`), so the footgun `-f` guards against on Linux
 /// doesn't exist on this platform.
+/// Cheap check for whether WinFSP is actually installed, without starting
+/// a mount. Meant to be called *before* announcing a mount as started -
+/// `mount` below only discovers WinFSP's absence mid-call, once
+/// `fuse_main_real` actually needs it, which is too late for a caller that
+/// already printed a "mounted" message by then.
+pub fn preflight() -> io::Result<()> {
+    sys::check_available()
+}
+
 pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> io::Result<()> {
     let ops = sys::fuse_operations {
         getattr: Some(dispatch_getattr::<T>),
@@ -419,7 +428,7 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
     // pointer through to fuse_get_context() for the duration of the
     // (blocking) call below, so the Box must outlive that call.
     let private_data = Box::into_raw(Box::new(fs));
-    let exit_code = unsafe {
+    let result = unsafe {
         sys::fuse_main_real(
             args.len() as c_int,
             args.as_mut_ptr(),
@@ -428,14 +437,18 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
             private_data.cast::<c_void>(),
         )
     };
-    unsafe { (*private_data).on_unmount() };
+    // on_unmount() is a lifecycle hook for a mount that actually started -
+    // if fuse_main_real returned Err before that (WinFSP not found), there
+    // was never a mount to unmount.
+    if result.is_ok() {
+        unsafe { (*private_data).on_unmount() };
+    }
     unsafe { drop(Box::from_raw(private_data)) };
 
-    if exit_code == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::other(format!(
+    match result? {
+        0 => Ok(()),
+        exit_code => Err(io::Error::other(format!(
             "WinFSP fuse_main_real exited with code {exit_code}"
-        )))
+        ))),
     }
 }

@@ -200,11 +200,27 @@ pub mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::mount;
 
+/// Cheap check for whether the platform's mount backend is actually usable
+/// right now - meant to be called before announcing a mount as started, so
+/// a caller can report a clean error instead of one that only surfaces
+/// mid-mount (see `windows::preflight`'s doc comment for why this matters
+/// there specifically). Linux's backend links real libfuse3 at build time,
+/// so it can never be "missing" at this point - nothing to check.
+#[cfg(target_os = "linux")]
+pub fn preflight() -> std::io::Result<()> {
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 pub mod windows;
 
 #[cfg(target_os = "windows")]
-pub use windows::mount;
+pub use windows::{mount, preflight};
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn preflight() -> std::io::Result<()> {
+    Ok(())
+}
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub fn mount<T: MountFilesystem>(
