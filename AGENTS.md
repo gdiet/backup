@@ -61,8 +61,27 @@ the call with `MSYS_NO_PATHCONV=1`, e.g. `MSYS_NO_PATHCONV=1 wsl bash -lc '...'`
 ## Verification Of Changes
 
 When making changes to the codebase, always verify your changes before finishing and
-suggesting commits:
+suggesting commits. Scope which checks apply by what actually changed, not by how large
+the change looks:
 
+- Any `.rs` file, `Cargo.toml`/`Cargo.lock`, or `build.rs` touched — run the full suite
+  below, regardless of how small the diff looks. Diff size doesn't predict blast radius
+  in Rust: a one-line signature change can break call sites elsewhere, a `Cargo.lock`
+  bump can silently change behavior, a single added `.unwrap()` violates this file's own
+  conventions. This workspace is small enough that the full suite is cheap (under a
+  minute with a warm build cache, ~10s measured on one dev machine) - there's no real
+  time saved by carving out an exception for "micro" changes, so don't; stay strict.
+- Only non-Rust files touched (docs, shell scripts, `Dockerfile`s, etc.) — the Rust suite
+  below is a no-op and can be skipped; instead verify what's actually at risk (e.g. run a
+  changed shell script, `docker build` a changed `Dockerfile`, confirm doc
+  cross-references still resolve).
+- Mixed changes — run the full suite.
+- While iterating mid-task, before actually proposing a commit, `cargo check` is a fine
+  faster substitute for `cargo build` to get a quick compile signal. It is not a
+  substitute for the full suite below, which still has to run once before proposing a
+  commit.
+
+Full suite:
 - Verify that the code compiles: `cargo build`
 - Run `cargo fmt` (or `cargo fmt --check` to verify without modifying)
 - Run `cargo clippy -- -D warnings` — always treat Clippy warnings as errors, not just
