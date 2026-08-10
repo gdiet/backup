@@ -35,6 +35,12 @@ both platforms. Beyond that:
 - [WinFSP](https://github.com/winfsp/winfsp) installed - required at
   *runtime* for `mount` to work; **not** required at build time (`mountfs`
   resolves its DLL exports dynamically, no SDK/import library needed).
+- Alternatively, `backup.exe` can be cross-built from Linux with Docker,
+  no Visual Studio needed - see "Build (release, Windows via Docker)"
+  below. This produces a compilable/linkable `.exe` only; it cannot run
+  `backup mount` there (WinFSP is a Windows kernel driver), so the manual
+  Windows smoke test (see [plans/implemented/05-cross-platform-mount-crate.md](plans/implemented/05-cross-platform-mount-crate.md),
+  "Verification") is still needed before trusting such a build.
 
 **Occasional, not needed for routine build/test** (both platforms):
 - The standalone "Debugging Tools for Windows" (`cdb`/`windbg`, via the
@@ -51,7 +57,10 @@ both platforms. Beyond that:
   (`winget`/`choco`/`scoop`) was available to install `libclang` there
   when this was last needed, so this was done from WSL instead, cross-
   target-parsing the headers for `x86_64-pc-windows-msvc` - works fine
-  even though the crate itself only builds this way on native Windows:
+  even though the crate itself is normally only *built* this way on native
+  Windows (a Docker-based cross-build also exists, see "Build (release,
+  Windows via Docker)" below, but that's a separate, coarser-grained tool
+  than `bindgen`):
 
   ```bash
   # WSL (Debian/Ubuntu)
@@ -96,6 +105,28 @@ cargo build
 ```bash
 cargo build --release
 ```
+
+## Build (release, Windows via Docker)
+
+Cross-builds `backup.exe` for `x86_64-pc-windows-msvc` from Linux, using
+[cargo-xwin](https://github.com/rust-cross/cargo-xwin) inside Docker - no
+Visual Studio install needed. See
+[plans/implemented/windows-docker-cross-build.md](plans/implemented/windows-docker-cross-build.md)
+for why MSVC/`cargo-xwin` rather than mingw-w64 (this project hand-binds
+WinFSP's C API and its layout was only ever verified against MSVC).
+
+```bash
+# from rust/ - requires a running Docker daemon
+scripts/build-windows-docker.sh
+```
+
+Produces `target/release-docker/backup.exe` (or a directory passed as the
+first argument). The first run downloads the MSVC CRT/SDK pieces `cargo-xwin`
+needs (a few hundred MB); later runs reuse a Docker volume cache. This only
+proves the code compiles/links for Windows - `backup mount` cannot be
+exercised this way (WinFSP is a Windows kernel driver, unavailable under
+Linux/Wine), so the manual smoke test on real Windows is still required
+before trusting the result.
 
 ## Run directly via cargo
 
