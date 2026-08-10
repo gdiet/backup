@@ -97,6 +97,14 @@ Full suite:
   `README.md` describe behavior this change affects, and update them - stale docs are
   worse than no docs, since they actively mislead the next read. Move a plan doc under
   `docs/plans/implemented/` once the work it describes has actually shipped.
+- Same check, but for plain code comments in the files you're touching (not just `///`
+  doc comments, which `cargo doc` above already covers): a comment stating *why* code
+  is shaped a certain way rarely goes stale on its own, but a comment stating a
+  *current status* ("not implemented yet", a specific measured number, "X doesn't
+  support Y") can silently drift once that status changes, with nothing forcing a
+  revisit - `cargo doc`/tests/clippy won't catch prose going stale. Update or remove
+  such a comment if the change you're making falsifies it, even if it's outside the
+  files you'd otherwise touch for the change itself.
 
 Suggest an English semantic commit message following the Conventional Commits format.
 
