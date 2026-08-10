@@ -28,7 +28,7 @@ use crate::{DirEntry, Errno, FileKind, Handle, MountFilesystem};
 /// call from within a `dispatch_*` trampoline, i.e. from libfuse's own
 /// calling thread during a callback.
 unsafe fn context<'a, T>() -> &'a T {
-    let ctx = unsafe { sys::fuse_get_context() };
+    let ctx = sys::fuse_get_context();
     unsafe { &*((*ctx).private_data as *const T) }
 }
 
@@ -346,6 +346,16 @@ unsafe extern "C" fn dispatch_chown<T: MountFilesystem>(
 /// binary, or any multi-threaded caller) - exactly the kind of footgun
 /// `fuser` sidesteps by not going through libfuse at all, and why callers
 /// of this binding must not be able to opt out of it.
+/// Cheap check for whether libfuse3 is actually available right now,
+/// without starting a mount. Meant to be called *before* announcing a
+/// mount as started - `mount` below only discovers libfuse3's absence
+/// mid-call, once `fuse_main_real` actually needs it, which is too late
+/// for a caller that already printed a "mounted" message by then (mirrors
+/// `windows::preflight`).
+pub fn preflight() -> io::Result<()> {
+    sys::check_available()
+}
+
 pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> io::Result<()> {
     let ops = sys::fuse_operations {
         getattr: Some(dispatch_getattr::<T>),
@@ -387,7 +397,7 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
     // duration of the (blocking) call below, so the `Box` must outlive
     // that call and be reclaimed only after it returns.
     let private_data = Box::into_raw(Box::new(fs));
-    let exit_code = unsafe {
+    let result = unsafe {
         sys::fuse_main_real(
             args.len() as c_int,
             args.as_mut_ptr(),
@@ -396,15 +406,19 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
             private_data.cast::<c_void>(),
         )
     };
-    unsafe { (*private_data).on_unmount() };
+    // on_unmount() is a lifecycle hook for a mount that actually started -
+    // if fuse_main_real returned Err before that (libfuse3 not found),
+    // there was never a mount to unmount.
+    if result.is_ok() {
+        unsafe { (*private_data).on_unmount() };
+    }
     unsafe { drop(Box::from_raw(private_data)) };
 
-    if exit_code == 0 {
-        Ok(())
-    } else {
-        Err(io::Error::other(format!(
+    match result? {
+        0 => Ok(()),
+        exit_code => Err(io::Error::other(format!(
             "fuse_main_real exited with code {exit_code}"
-        )))
+        ))),
     }
 }
 

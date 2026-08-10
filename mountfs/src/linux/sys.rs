@@ -17,6 +17,10 @@
 
 #![allow(non_camel_case_types)]
 
+use std::ffi::CStr;
+use std::io;
+use std::sync::OnceLock;
+
 use libc::{
     c_char, c_int, c_uint, c_void, gid_t, mode_t, off_t, pid_t, size_t, stat, statvfs, timespec,
     uid_t,
@@ -164,19 +168,105 @@ pub struct fuse_context {
     pub umask: mode_t,
 }
 
-unsafe extern "C" {
-    /// `fuse_main_real` - the non-macro function `fuse_main(argc, argv, op,
-    /// private_data)` expands to (`fuse_main` adds `sizeof(*op)` as
-    /// `op_size`, which a hand-written binding has to pass explicitly since
-    /// it can't rely on the C macro).
-    pub fn fuse_main_real(
-        argc: c_int,
-        argv: *mut *mut c_char,
-        op: *const fuse_operations,
-        op_size: size_t,
-        private_data: *mut c_void,
-    ) -> c_int;
+type FuseMainReal = unsafe extern "C" fn(
+    argc: c_int,
+    argv: *mut *mut c_char,
+    op: *const fuse_operations,
+    op_size: size_t,
+    private_data: *mut c_void,
+) -> c_int;
 
-    /// Valid only during a callback made by libfuse on the calling thread.
-    pub fn fuse_get_context() -> *mut fuse_context;
+/// Valid only during a callback made by libfuse on the calling thread.
+type FuseGetContext = unsafe extern "C" fn() -> *mut fuse_context;
+
+struct Exports {
+    main_real: FuseMainReal,
+    get_context: FuseGetContext,
+}
+
+// SAFETY: these are plain code pointers into a library that stays loaded
+// and unchanged for the life of the process; sharing them across threads
+// is exactly what every other consumer of this API does too (same
+// rationale as `windows::sys::Exports`).
+unsafe impl Send for Exports {}
+unsafe impl Sync for Exports {}
+
+unsafe fn resolve<T: Copy>(handle: *mut c_void, name: &CStr) -> Option<T> {
+    let addr = unsafe { libc::dlsym(handle, name.as_ptr()) };
+    if addr.is_null() {
+        None
+    } else {
+        // Same shape every FFI crate binding `dlsym` relies on: a function
+        // pointer and a data pointer are both plain machine addresses.
+        Some(unsafe { std::mem::transmute_copy::<*mut c_void, T>(&addr) })
+    }
+}
+
+/// libfuse3 is a runtime-only dependency (unlike a system linked at build
+/// time, it's genuinely possible to run this binary on a system without it
+/// installed) - reported as an `io::Result` instead of panicking, same
+/// rationale as `windows::sys::exports` (see `AGENTS.md`'s "Code Quality"
+/// section on when a bare panic is/isn't appropriate).
+fn exports() -> io::Result<&'static Exports> {
+    static EXPORTS: OnceLock<Result<Exports, String>> = OnceLock::new();
+    EXPORTS
+        .get_or_init(|| {
+            let handle = unsafe { libc::dlopen(c"libfuse3.so.3".as_ptr(), libc::RTLD_NOW) };
+            if handle.is_null() {
+                let reason = unsafe { CStr::from_ptr(libc::dlerror()) }
+                    .to_string_lossy()
+                    .into_owned();
+                return Err(format!(
+                    "libfuse3 not found ({reason}) - install it (Debian/Ubuntu: `apt install \
+                     libfuse3-3`; Fedora: usually already present as `fuse3`)"
+                ));
+            }
+            let main_real = unsafe { resolve(handle, c"fuse_main_real") }
+                .ok_or("libfuse3.so.3 is missing fuse_main_real")?;
+            let get_context = unsafe { resolve(handle, c"fuse_get_context") }
+                .ok_or("libfuse3.so.3 is missing fuse_get_context")?;
+            Ok(Exports {
+                main_real,
+                get_context,
+            })
+        })
+        .as_ref()
+        .map_err(|msg| io::Error::other(msg.clone()))
+}
+
+/// Cheap check for whether libfuse3 is actually available right now,
+/// without starting a mount - see `exports`. Exposed so `linux::mount`'s
+/// caller can report a clean error before announcing a mount as started,
+/// rather than after (mirrors `windows::sys::check_available`).
+pub fn check_available() -> io::Result<()> {
+    exports().map(|_| ())
+}
+
+/// `fuse_main_real` - the non-macro function `fuse_main(argc, argv, op,
+/// private_data)` expands to (`fuse_main` adds `sizeof(*op)` as `op_size`,
+/// which a hand-written binding has to pass explicitly since it can't rely
+/// on the C macro). Returns `Err` if libfuse3 itself couldn't be located
+/// (see `exports`) - distinct from a nonzero exit code, which the caller
+/// (`linux::mount`) still has to check separately.
+pub unsafe fn fuse_main_real(
+    argc: c_int,
+    argv: *mut *mut c_char,
+    op: *const fuse_operations,
+    op_size: size_t,
+    private_data: *mut c_void,
+) -> io::Result<c_int> {
+    let main_real = exports()?.main_real;
+    Ok(unsafe { main_real(argc, argv, op, op_size, private_data) })
+}
+
+pub fn fuse_get_context() -> *mut fuse_context {
+    // Only ever called from within a dispatch_* trampoline, i.e. from
+    // libfuse's own calling thread during a callback - reachable only once
+    // fuse_main_real above already resolved exports() successfully, so the
+    // cached OnceLock result here is always Ok (mirrors
+    // `windows::sys::fuse_get_context`).
+    let get_context = exports()
+        .expect("fuse_get_context called before fuse_main_real resolved libfuse3")
+        .get_context;
+    unsafe { get_context() }
 }

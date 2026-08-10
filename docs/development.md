@@ -23,10 +23,12 @@ A Rust toolchain (`rustc`/`cargo`, e.g. via [rustup](https://rustup.rs)) on
 both platforms. Beyond that:
 
 **Linux**:
-- `libfuse3-dev` (Debian/Ubuntu) or `fuse3-devel` (Fedora) - build-time
-  header for `mount`'s real-libfuse3 backend; `libfuse3`/`fuse3` itself is
-  needed at runtime.
-- `pkg-config` - used by `mountfs`'s `build.rs` to find the above.
+- [libfuse3](https://github.com/libfuse/libfuse) installed (Debian/Ubuntu:
+  `apt install libfuse3-3`; Fedora: usually already present as `fuse3`) -
+  required at *runtime* for `mount` to work; **not** required at build
+  time (`mountfs` resolves it dynamically via `dlopen`, no headers or
+  `pkg-config` needed - see
+  [plans/linux-libfuse3-lazy-loading.md](plans/linux-libfuse3-lazy-loading.md)).
 
 **Windows**:
 - Visual Studio Build Tools (the MSVC linker/`cl.exe` - the usual
