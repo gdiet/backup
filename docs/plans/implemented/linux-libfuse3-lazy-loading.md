@@ -1,5 +1,13 @@
 # Make `libfuse3` a runtime-only dependency on Linux (dlopen, like WinFSP on Windows)
 
+**Status**: implemented (`mountfs/src/linux/sys.rs`, `mountfs/src/linux/mod.rs`,
+`mountfs/src/lib.rs`; `mountfs/build.rs` and the `pkg-config` build-dependency removed). Verified
+in Docker: builds with no `libfuse3(-dev)` present at all, `--help` and other non-`mount`
+subcommands now work without `libfuse3` installed (previously the whole binary failed to start),
+`mount` fails with a clean `"libfuse3 not found"` error instead of a dynamic-linker crash, and the
+"`libfuse3` present" path still reaches `fuse_main_real` correctly (full end-to-end mount success
+already covered by the existing native real-libfuse3 test suite, unaffected by this change).
+
 ## Context
 
 Investigating an unrelated question ("can WSL run a cross-built `backup.exe`?") surfaced a real

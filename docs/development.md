@@ -28,7 +28,7 @@ both platforms. Beyond that:
   required at *runtime* for `mount` to work; **not** required at build
   time (`mountfs` resolves it dynamically via `dlopen`, no headers or
   `pkg-config` needed - see
-  [plans/linux-libfuse3-lazy-loading.md](plans/linux-libfuse3-lazy-loading.md)).
+  [plans/implemented/linux-libfuse3-lazy-loading.md](plans/implemented/linux-libfuse3-lazy-loading.md)).
 
 **Windows**:
 - Visual Studio Build Tools (the MSVC linker/`cl.exe` - the usual
