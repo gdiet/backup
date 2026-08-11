@@ -58,8 +58,54 @@ while ! grep -q " $MOUNTPOINT fuse" /proc/mounts 2>/dev/null; do
 done
 echo "mounted."
 
+CLEANUP_DONE=0
 cleanup() {
+    # Idempotency guard: this can genuinely be entered twice for one
+    # shutdown - killing $SMBD_PID from inside this function (needed, see
+    # below) makes the top-level `wait "$SMBD_PID"` below complete too,
+    # which reaches its own plain (non-trap) call to `cleanup` right after
+    # it - a real second invocation observed in practice, not just a
+    # theoretical race, and left unguarded it made two concurrent copies
+    # of the unmount/wait-for-`backup mount` logic below interfere with
+    # each other badly enough to turn a clean shutdown into a
+    # `fuse_main_real exited with code 8`.
+    [ "$CLEANUP_DONE" = 1 ] && return 0
+    CLEANUP_DONE=1
     echo "shutting down..."
+    # Kill every smbd process - not just the main one - before attempting
+    # to unmount: Samba forks a child smbd per active session (plus a
+    # couple of background helpers it forks unconditionally at startup),
+    # and a still-open SMB session (e.g. a live Windows Explorer window
+    # browsing the share) keeps its own forked child holding an open
+    # file/directory handle into the FUSE mount. That made `fusermount3
+    # -u` below fail (busy) for as long as that handle stayed open, i.e.
+    # indefinitely, not just transiently - reproduced for real (a CIFS
+    # client left connected, then this container signaled): without this,
+    # `fusermount3 -u` kept failing for the full 20s grace period below,
+    # ending in the SIGTERM fallback and `backup mount` exiting via
+    # `fuse_main_real exited with code 8` instead of cleanly. `pkill`, not
+    # `kill "$SMBD_PID"`: killing only the main smbd doesn't kill its
+    # already-forked children (they're independent processes, not torn
+    # down just because their parent exits) - matching by name catches all
+    # of them regardless of how many Samba happened to fork.
+    pkill -TERM smbd 2>/dev/null || true
+    k=0
+    while pgrep smbd >/dev/null 2>&1; do
+        k=$((k + 1))
+        if [ "$k" -ge 25 ]; then
+            echo "smbd did not exit within 5s - sending SIGKILL" >&2
+            pkill -KILL smbd 2>/dev/null || true
+            break
+        fi
+        sleep 0.2
+    done
+    # `backup mount` can still end up exiting via `fuse_main_real exited
+    # with code 8` right around here even with smbd fully gone by this
+    # point (observed, root cause not fully pinned down) - harmless either
+    # way: a --read-write mount's writes are already durably committed
+    # regardless of a clean vs. abrupt unmount (see the comment below), so
+    # this is at worst a `fusermount3 -u` racing something that already
+    # unmounted the filesystem itself, hence `|| true` here same as always.
     fusermount3 -u "$MOUNTPOINT" 2>/dev/null || true
     # Give backup mount a chance to notice the unmount and exit on its own
     # first, rather than SIGTERM-ing it immediately: its on_unmount handler

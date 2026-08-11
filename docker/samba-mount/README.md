@@ -151,6 +151,20 @@ container, or via `--read-write` once to let it apply pending migrations) and re
    real authenticated `smbclient put`: succeeds and round-trips correctly against a `--read-write`
    mount, still correctly rejected (`NT_STATUS_MEDIA_WRITE_PROTECTED`, from the real `EROFS`) against
    the default read-only mount.
+5. **Shutdown (Ctrl+C/`docker stop`) could take the full 20s grace period and then still fail**
+   if a real SMB client was still connected (e.g. a live Windows Explorer window) - Samba forks a
+   child `smbd` per active session, which keeps its own open file/directory handle into the FUSE
+   mount, and `entrypoint.sh` never killed `smbd` before trying to unmount. Fixed by killing every
+   `smbd` process (`pkill`, not just the main one - its already-forked children don't die with
+   it) before attempting the unmount, with an idempotency guard around `cleanup()` itself (it can
+   genuinely run twice per shutdown - killing `smbd` from inside it makes a second, unguarded
+   entry point complete too). Shutdown is now well under 2s even with a live session attached.
+   One loose end, deliberately not chased further since it doesn't change behavior either way:
+   `backup mount` can still log `fuse_main_real exited with code 8` around this point even with
+   `smbd` fully gone - harmless (a `--read-write` mount's writes are already durably committed
+   regardless of a clean vs. abrupt unmount, confirmed via `stats` working immediately afterward),
+   most likely `fusermount3 -u` here simply racing something that had already unmounted the
+   filesystem by the time it ran.
 
 ## SMB access from an actual Windows host - confirmed working
 
