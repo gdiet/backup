@@ -286,10 +286,11 @@ fn build_filesystem(
         db::Chunking::None => None,
     })
     .expect("validated by RepositorySettings");
+    let data_dir = repository.data_dir();
     // `read_only` mirrors the `--read-write` flag, not hardcoded `true`
     // like the read-only-only phase used: a read-write mount's persist
     // pipeline needs to actually write new chunk bytes to the store.
-    let data_store = LongTermStore::new(repository.data_dir(), !read_write);
+    let data_store = LongTermStore::new(&data_dir, !read_write);
     // A dedicated, uniquely-named spill directory for write-cache overflow
     // (see `spillcache::WriteCache`) - created empty here, removed whole
     // in `Inner::on_unmount` once every spill file in it (each deleted by
@@ -325,6 +326,7 @@ fn build_filesystem(
         persist_thread: Mutex::new(None),
         queued_persist_bytes: AtomicU64::new(0),
         spill_backpressure_threshold_bytes: write_cache_mb * 1024 * 1024,
+        disk_space: Mutex::new(DiskSpaceCache::new(data_dir)),
     });
     let worker_inner = Arc::clone(&inner);
     let handle = std::thread::spawn(move || persist_worker(worker_inner, persist_rx));
@@ -373,6 +375,73 @@ fn persist_worker(inner: Arc<Inner>, jobs: mpsc::Receiver<PersistJob>) {
             .fetch_sub(job.queued_bytes, Ordering::Relaxed);
         inner.finish_persisting(job.tree_id);
     }
+}
+
+/// How long a [`DiskSpaceCache`] answer is trusted before doing a fresh,
+/// real disk-space query. `statfs` can be called quite often by a real
+/// client (a Windows/SMB client in particular typically checks free space
+/// before every save), and each real query costs at least one syscall -
+/// this trades a little staleness for not paying that cost on every single
+/// call.
+const DISK_SPACE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Caches the (total, available) bytes of the filesystem underlying the
+/// repository's `data/` directory - see [`Inner::statfs`] for why this
+/// needs to be a *real* value at all, not the zeroed-out placeholder it
+/// used to be.
+struct DiskSpaceCache {
+    disks: sysinfo::Disks,
+    data_dir: PathBuf,
+    last_refresh: std::time::Instant,
+    total_available: (u64, u64),
+}
+
+impl DiskSpaceCache {
+    fn new(data_dir: PathBuf) -> Self {
+        let disks = sysinfo::Disks::new_with_refreshed_list();
+        let total_available = disk_space_for(&disks, &data_dir);
+        Self {
+            disks,
+            data_dir,
+            last_refresh: std::time::Instant::now(),
+            total_available,
+        }
+    }
+
+    /// The real (total, available) bytes for `data_dir`'s filesystem,
+    /// refreshed at most once every [`DISK_SPACE_REFRESH_INTERVAL`] -
+    /// `disks.refresh` re-queries the already-known disks in place (a
+    /// syscall per disk), not a full re-discovery of what disks exist at
+    /// all, so this is cheap enough to call from `statfs` directly rather
+    /// than needing its own background thread.
+    fn total_available(&mut self) -> (u64, u64) {
+        if self.last_refresh.elapsed() >= DISK_SPACE_REFRESH_INTERVAL {
+            self.disks.refresh(false);
+            self.total_available = disk_space_for(&self.disks, &self.data_dir);
+            self.last_refresh = std::time::Instant::now();
+        }
+        self.total_available
+    }
+}
+
+/// The (total, available) bytes of whichever disk in `disks` most
+/// specifically contains `path` - the entry with the longest matching
+/// mount point, the same "most specific match wins" rule every real
+/// filesystem-path-to-mount-point lookup uses (nested mounts are normal:
+/// think `/` and `/home` both matching a path under `/home`, where `/home`
+/// is the right answer). `(0, 0)` if somehow none matches (`path` failed
+/// to canonicalize, or - in principle - no listed disk covers it at all) -
+/// exactly today's old always-zero behavior, so this never makes a client
+/// see a *more* confusing answer than before, only a correct one when it
+/// can find one.
+fn disk_space_for(disks: &sysinfo::Disks, path: &Path) -> (u64, u64) {
+    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    disks
+        .list()
+        .iter()
+        .filter(|disk| path.starts_with(disk.mount_point()))
+        .max_by_key(|disk| disk.mount_point().as_os_str().len())
+        .map_or((0, 0), |disk| (disk.total_space(), disk.available_space()))
 }
 
 /// Holds every bit of state a mount needs, shared (via `Arc`, see
@@ -476,6 +545,11 @@ struct Inner {
     /// 50 MB file) accumulate unpersisted with zero client-visible
     /// backpressure under that same `N = 4`.
     spill_backpressure_threshold_bytes: u64,
+    /// Real, periodically-refreshed free/total space of the filesystem
+    /// underlying `data/` - see [`Inner::statfs`] for why this exists at
+    /// all (a real bug, not a nicety) and [`DiskSpaceCache`] for the
+    /// caching.
+    disk_space: Mutex<DiskSpaceCache>,
 }
 
 /// Thin wrapper making [`Inner`] (shared with the background persist
@@ -918,12 +992,30 @@ impl Inner {
     }
 
     fn statfs(&self) -> Result<mountfs::StatfsInfo, Errno> {
-        // Approximate/unused values - Scala's own Linux FUSE implementation
-        // is a no-op here too; not worth over-building for a read-only mount.
+        // Used to report zeroed-out placeholder values here unconditionally
+        // (matching Scala's own Linux FUSE implementation, also a no-op) -
+        // harmless enough over a direct Linux/WSL FUSE mount, but a real
+        // bug once re-exported over Samba: SMB clients (Windows in
+        // particular) check free space via this before permitting a save,
+        // and zero free space made every save through a Samba-re-exported
+        // `--read-write` mount fail with a "not enough space on disk"
+        // dialog despite plenty of real space being available. Now reports
+        // the real, periodically-refreshed free/total space of the
+        // filesystem underlying `data/` - see `DiskSpaceCache`.
+        let (total, available) = self
+            .disk_space
+            .lock()
+            .expect("disk space cache mutex poisoned")
+            .total_available();
+        let block_size: u64 = 512;
         Ok(mountfs::StatfsInfo {
-            block_size: 512,
+            block_size: block_size as u32,
             max_name_length: 255,
-            ..Default::default()
+            blocks: total / block_size,
+            blocks_free: available / block_size,
+            blocks_available: available / block_size,
+            files: 0,
+            files_free: 0,
         })
     }
 
@@ -1707,6 +1799,26 @@ mod tests {
         if let Err(err) = build_filesystem(&repo_root, false, DEFAULT_WRITE_CACHE_MB, None, false) {
             panic!("{err}");
         }
+    }
+
+    /// Regression test for a real bug (not just a nicety): `statfs` used to
+    /// unconditionally report zero total/free space, which - re-exported
+    /// over Samba to a real Windows client - made every save fail with a
+    /// "not enough space on disk" dialog despite plenty of real space being
+    /// available (harmless over a direct Linux/WSL FUSE mount, which
+    /// doesn't consult `statfs` before a write the way SMB clients do). No
+    /// real mount needed to exercise this - `statfs` is a plain
+    /// `MountFilesystem` method callable directly.
+    #[test]
+    fn statfs_reports_real_nonzero_free_space_not_the_old_always_zero_placeholder() {
+        let (_temp_dir, repo_root) = init_repo();
+        let fs = build_filesystem(&repo_root, false, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
+
+        let info = fs.statfs().unwrap();
+
+        assert!(info.blocks > 0, "{info:?}");
+        assert!(info.blocks_free > 0, "{info:?}");
+        assert!(info.blocks_available > 0, "{info:?}");
     }
 
     /// End-to-end mount/read/unmount test: seeds a real repository with a
