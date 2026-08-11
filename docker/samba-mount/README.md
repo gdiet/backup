@@ -10,7 +10,11 @@ Raspberry Pi), not a maintained product. Core path (mount in Docker, serve via S
 a real Windows host over the network) verified working end-to-end - see "SMB access from an actual
 Windows host" below. Every `backup mount` flag, including `--read-write`, is reachable via
 `MOUNT_ARGS` (see "Mount options" below) - smoke-tested for each flag, including the actionable
-abort case.
+abort case. **A real, authenticated `smbclient put`/`get` round trip against a live `--read-write`
+container is now part of that verification too** (see "Two non-obvious problems" #3/#4 below) - an
+earlier round of smoke-testing only confirmed each flag made the container *start* correctly, which
+missed two real bugs that only a real write, through real Samba, over a real SMB session, actually
+exercised.
 
 ## Build and run
 
@@ -120,6 +124,33 @@ container, or via `--read-write` once to let it apply pending migrations) and re
    mount. (The alternative - adding a `--allow-other` flag to `backup mount` itself - was
    deliberately not pursued here, to keep this experiment from touching the core `cli`/`mountfs`
    code.)
+3. **`statfs` (free-space reporting) deadlocked the whole mount solid the first time a real SMB
+   client checked free space against a `--read-write` container** - Windows Explorer does this
+   before permitting a save, so this hit real usage almost immediately, hanging so completely that
+   only `wsl --shutdown` recovered the host. Root cause (in `cli/src/mount.rs`'s free-space code,
+   not anything Samba-specific): the earlier implementation used the `sysinfo` crate's `Disks`
+   list, which enumerates *every* mounted filesystem and calls `statvfs` on each one - including
+   this container's own FUSE mount. That `statvfs` call blocks in the kernel until this same
+   process answers it, which requires re-entering the very `statfs` handler that's already running
+   (and, in the old code, already holding the cache's lock) - a self-deadlock. Fixed by replacing
+   that "enumerate everything" approach with a single, targeted query of exactly the repository's
+   `data/` directory (`mountfs::disk_space`, `statvfs`/`GetDiskFreeSpaceExW` directly - see its own
+   doc comment), which can never touch this process's own mount point. Reproduced and confirmed
+   fixed without needing another `wsl --shutdown`: `docker exec <container> df /mnt/dedup` hung
+   solid with the old code, returns instantly with the fix.
+4. **`read only = yes` in `smb.conf` silently made `--read-write` (via `MOUNT_ARGS`) do nothing**
+   over real SMB - the FUSE mount itself was genuinely read-write, but Samba rejected every write
+   with `NT_STATUS_ACCESS_DENIED` before it ever reached the filesystem, since that setting is
+   static and has no idea what `MOUNT_ARGS` says. Fixed by setting `read only = no` instead
+   (Samba's own default, confirmed via `testparm -v`, is `Yes` - simply removing the line is *not*
+   equivalent and does not fix this). Real read-only enforcement doesn't need a Samba-level copy:
+   it already happens one layer down, at the FUSE/kernel level (`backup mount` passes libfuse's own
+   `-oro` whenever `--read-write` isn't given, which the kernel enforces regardless of what smbd
+   does) - so `read only = no` here doesn't weaken anything, it just stops Samba from
+   second-guessing a decision the FUSE mount already made correctly. Verified both directions via a
+   real authenticated `smbclient put`: succeeds and round-trips correctly against a `--read-write`
+   mount, still correctly rejected (`NT_STATUS_MEDIA_WRITE_PROTECTED`, from the real `EROFS`) against
+   the default read-only mount.
 
 ## SMB access from an actual Windows host - confirmed working
 

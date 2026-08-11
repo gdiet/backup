@@ -194,6 +194,9 @@ pub trait MountFilesystem: Send + Sync + 'static {
     fn on_unmount(&self) {}
 }
 
+mod disk_space;
+pub use disk_space::disk_space;
+
 #[cfg(target_os = "linux")]
 pub mod linux;
 

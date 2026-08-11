@@ -388,9 +388,13 @@ const DISK_SPACE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::fr
 /// Caches the (total, available) bytes of the filesystem underlying the
 /// repository's `data/` directory - see [`Inner::statfs`] for why this
 /// needs to be a *real* value at all, not the zeroed-out placeholder it
-/// used to be.
+/// used to be. Backed by [`mountfs::disk_space`] - a single, targeted query
+/// of exactly `data_dir`, deliberately not an "enumerate every mounted
+/// filesystem" approach (that was this cache's first version, built on
+/// `sysinfo::Disks`; see [`mountfs::disk_space`]'s own doc comment for why
+/// that was a real, reproduced-in-production deadlock risk for a process
+/// that is itself serving a mount, not just a style preference).
 struct DiskSpaceCache {
-    disks: sysinfo::Disks,
     data_dir: PathBuf,
     last_refresh: std::time::Instant,
     total_available: (u64, u64),
@@ -398,10 +402,8 @@ struct DiskSpaceCache {
 
 impl DiskSpaceCache {
     fn new(data_dir: PathBuf) -> Self {
-        let disks = sysinfo::Disks::new_with_refreshed_list();
-        let total_available = disk_space_for(&disks, &data_dir);
+        let total_available = mountfs::disk_space(&data_dir).unwrap_or((0, 0));
         Self {
-            disks,
             data_dir,
             last_refresh: std::time::Instant::now(),
             total_available,
@@ -409,39 +411,21 @@ impl DiskSpaceCache {
     }
 
     /// The real (total, available) bytes for `data_dir`'s filesystem,
-    /// refreshed at most once every [`DISK_SPACE_REFRESH_INTERVAL`] -
-    /// `disks.refresh` re-queries the already-known disks in place (a
-    /// syscall per disk), not a full re-discovery of what disks exist at
-    /// all, so this is cheap enough to call from `statfs` directly rather
-    /// than needing its own background thread.
+    /// refreshed at most once every [`DISK_SPACE_REFRESH_INTERVAL`] - a
+    /// single `statvfs`/`GetDiskFreeSpaceExW` call, cheap enough to call
+    /// from `statfs` directly rather than needing its own background
+    /// thread. Keeps the last known-good value on a query error (e.g. a
+    /// transient/racy unmount of the underlying filesystem) rather than
+    /// reporting zero.
     fn total_available(&mut self) -> (u64, u64) {
-        if self.last_refresh.elapsed() >= DISK_SPACE_REFRESH_INTERVAL {
-            self.disks.refresh(false);
-            self.total_available = disk_space_for(&self.disks, &self.data_dir);
+        if self.last_refresh.elapsed() >= DISK_SPACE_REFRESH_INTERVAL
+            && let Ok(fresh) = mountfs::disk_space(&self.data_dir)
+        {
+            self.total_available = fresh;
             self.last_refresh = std::time::Instant::now();
         }
         self.total_available
     }
-}
-
-/// The (total, available) bytes of whichever disk in `disks` most
-/// specifically contains `path` - the entry with the longest matching
-/// mount point, the same "most specific match wins" rule every real
-/// filesystem-path-to-mount-point lookup uses (nested mounts are normal:
-/// think `/` and `/home` both matching a path under `/home`, where `/home`
-/// is the right answer). `(0, 0)` if somehow none matches (`path` failed
-/// to canonicalize, or - in principle - no listed disk covers it at all) -
-/// exactly today's old always-zero behavior, so this never makes a client
-/// see a *more* confusing answer than before, only a correct one when it
-/// can find one.
-fn disk_space_for(disks: &sysinfo::Disks, path: &Path) -> (u64, u64) {
-    let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    disks
-        .list()
-        .iter()
-        .filter(|disk| path.starts_with(disk.mount_point()))
-        .max_by_key(|disk| disk.mount_point().as_os_str().len())
-        .map_or((0, 0), |disk| (disk.total_space(), disk.available_space()))
 }
 
 /// Holds every bit of state a mount needs, shared (via `Arc`, see
