@@ -413,18 +413,66 @@ further once the integration-test-level repro was reliable):
   always won. 0 failures in 9+ real reverted runs. Fixed anyway, rather
   than relying on a race that merely happens to resolve favorably today.
 
-**Fix**: always build a real, scoped `ThreadPool` (even without
-`--concurrency` - omitting `.num_threads()` applies rayon's own default
-sizing unchanged, without the previously-considered-and-rejected
+**Correction, found shortly after landing the fix**: the in-process sanity
+check this section originally described (`assert_store_leaves_no_pending_wal_behind`
+in `cli/src/store.rs`, "0 failures across dozens of in-process tries") turned
+out not to be reliably true after all - it failed for real (not reverted,
+the fix in place) under a handful of repeated full `cargo test --workspace`
+runs, at roughly 1-in-6 to 1-in-8. Serialized/isolated runs alone weren't
+representative of the CPU contention a full parallel workspace run creates.
+Rather than keep a test that fails a real, if small, fraction of the time in
+the suite every commit is supposed to be gated on, it was removed outright,
+and a temporary diagnostic replacement (`diag_store_with_default_concurrency_leaves_no_pending_wal_behind`)
+kept around specifically to keep chasing the actual mechanism under stress -
+which paid off (see "Second correction" below): the first fix was genuinely
+incomplete, not just an unrelated flake.
+
+**Fix, first attempt**: always build a real, scoped `ThreadPool` (even
+without `--concurrency` - omitting `.num_threads()` applies rayon's own
+default sizing unchanged, without the previously-considered-and-rejected
 alternative of querying `rayon::current_num_threads()` to replicate it,
 which turned out to have its own side effect: called from a non-worker
 thread, it lazily initializes rayon's *global* pool just to answer the
 question, spinning up threads that would then sit there entirely unused).
 An extra `mpsc::Sender` clone (`outlasting_tx`) is kept alive on the main
-thread and only dropped after that scoped pool has gone out of scope -
-this is what actually enforces the ordering: the channel can't disconnect
-(and the writer thread holding `main_conn` can't finish) until every
-chunking worker's read connection is already closed.
+thread and only dropped after that scoped pool has gone out of scope - the
+assumption being that this enforces the ordering: the channel can't
+disconnect (and the writer thread holding `main_conn` can't finish) until
+every chunking worker's read connection is already closed, because
+`ThreadPool`'s own `Drop` joins its worker threads first.
+
+**Second correction: that assumption about `ThreadPool::drop` was wrong.**
+More stress-testing (repeated full `cargo test --workspace --release` runs
+under heavy concurrent load) turned up a second, real failure even with the
+first fix in place - both the temporary diagnostic test and, once, even the
+"reliable" `cli/tests/store_checkpoint.rs` integration test failed with
+`Error::UncheckpointedWal` and a genuine, substantial (94792-byte) pending
+`-wal`. Traced via rayon's own source (`rayon-core`'s
+`thread_pool/mod.rs`/`registry.rs`): `ThreadPool::drop` is just
+`self.registry.terminate()`, and `Registry::terminate` only sets a latch and
+wakes worker threads - it does **not** join them. So `pool.install(run)`
+returning, and even the whole `{ ... }` scope around `pool` ending, gives no
+actual guarantee that every worker OS thread (and, with it, its
+`READ_CONNECTION` thread-local's own `Drop`) has finished by that point -
+only that they've been *told* to stop. Ruled out "SQLite checkpoint
+unreliable under generic system load" as an alternative explanation via a
+throwaway stress example (`db/examples/checkpoint_stress.rs`): 40 separate
+concurrent processes, each a single connection doing one write and closing,
+checkpointed cleanly 40/40 even under heavy load - the problem is specific
+to `store`'s own multi-thread teardown timing, not a general SQLite/OS
+phenomenon.
+
+**Actual fix**: after `pool.install(run)`, call `pool.broadcast(|_ctx|
+READ_CONNECTION.with(|cell| *cell.borrow_mut() = None))` - `ThreadPool::broadcast`
+runs its closure on every worker thread and, unlike `drop`, is genuinely
+synchronous (rayon's own docs: propagates a panic "only after all threads
+have completed... their own op"). This gives a real guarantee that every
+worker's read connection is closed before `outlasting_tx` is dropped just
+below, which is what actually lets the writer thread's own close of
+`main_conn` be the last connection to close, and SQLite auto-checkpoint on
+exit. `ThreadPool`'s own `Drop` right after is now redundant for
+correctness (every read connection is already closed by the time it runs) -
+kept anyway since the pool has to be dropped eventually regardless.
 
 Also added a comment to `mount.rs`'s `Inner` struct locking in the
 `conn`-before-`write_conn` field order this same investigation showed

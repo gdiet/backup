@@ -30,12 +30,26 @@
 //! function returned, making it "only" an unsynchronized race between that
 //! teardown and the writer thread noticing its channel disconnect - never
 //! actually observed losing that race in 9+ reverted tries, but fixed the
-//! same way regardless rather than relying on it reliably winning. See
-//! `docs/plans/implemented/read-only-repository-access.md`'s addendum on
-//! `store` for the full investigation (including why the in-process test
-//! can't catch either variant: real OS process/thread scheduling behaves
-//! differently than `cargo test`'s own long-lived, already-multi-threaded
-//! process).
+//! same way regardless rather than relying on it reliably winning.
+//!
+//! **A first fix attempt (unifying both branches onto an always-scoped
+//! `ThreadPool`, relying on that pool's own `Drop` to join its worker
+//! threads before the channel disconnects) turned out to still be
+//! incomplete**, caught only by running this very test repeatedly under
+//! heavy concurrent system load (many parallel `cargo test --workspace`
+//! processes at once): `ThreadPool::drop` calls `Registry::terminate`,
+//! which only *signals* worker threads to stop - it does not join them, so
+//! a worker's `READ_CONNECTION` can still be alive (and its file lock/WAL
+//! participation with it) well after `ThreadPool::drop` has already
+//! returned. The actual fix adds an explicit `pool.broadcast(..)` call
+//! (confirmed genuinely synchronous, unlike `drop`) that runs on every
+//! worker thread and clears its `READ_CONNECTION` before the surrounding
+//! block ends - see `cli/src/store.rs`'s `run_store` for the code and full
+//! comment. See `docs/plans/implemented/read-only-repository-access.md`'s
+//! addendum on `store` for the full investigation (including why the
+//! in-process test can't catch either variant reliably: real OS
+//! process/thread scheduling behaves differently than `cargo test`'s own
+//! long-lived, already-multi-threaded process).
 
 use std::path::PathBuf;
 use std::process::Command;
