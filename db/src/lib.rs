@@ -93,6 +93,14 @@ pub fn meta_dir(repo_root: &Path) -> std::path::PathBuf {
 /// call's duration) and already `URI`, matching `open_connection_read_only`
 /// on both.
 fn open_connection(path: &Path) -> Result<Connection, Error> {
+    // Checked (only if the file already exists - see this helper's own doc
+    // comment) *before* the real open below, which would otherwise fail
+    // too, but with a much less useful error - see `reject_if_not_writable`
+    // for why that generic failure can't be trusted to mean specifically
+    // this.
+    if path.exists() {
+        reject_if_not_writable(path)?;
+    }
     let conn = Connection::open(path)?;
     // foreign_keys and synchronous are not stored in the database file: they're
     // purely per-connection settings that default to off/FULL, so they must be
@@ -133,6 +141,73 @@ fn open_connection(path: &Path) -> Result<Connection, Error> {
     // database file.
     conn.pragma_update_and_check(None, "journal_mode", "WAL", |_row| Ok(()))?;
     Ok(conn)
+}
+
+/// Fails with [`Error::ReadOnlyFilesystem`] if `path` cannot be written to
+/// because the underlying filesystem/storage medium is read-only (e.g. a
+/// `:ro` bind mount, or any other read-only mount) - established via a
+/// real, non-destructive write probe (`OpenOptions::append`, which neither
+/// truncates existing content nor creates the file if missing, and is never
+/// actually written through - the opened `File` is just dropped again),
+/// not merely inferred from `Connection::open`'s own failure a moment
+/// later: SQLite only ever reports that as a generic `SQLITE_CANTOPEN`
+/// ("unable to open database file"), which also covers plenty of unrelated
+/// causes (a missing parent directory, an unrelated permission problem,
+/// ...) - a message claiming specifically "read-only filesystem" for all
+/// of those would be a guess dressed up as a fact. `std::io::ErrorKind::
+/// ReadOnlyFilesystem` is what Rust's standard library maps the
+/// corresponding OS-level error (`EROFS`) to on Unix, so checking for
+/// exactly that variant - not any other `PermissionDenied`/`NotFound`/etc.
+/// - is what keeps this an actual finding rather than another guess.
+///
+/// Unix-only, deliberately: confirmed on Linux (both an `unshare --mount
+/// --user --map-root-user` read-only bind mount and a real Docker `:ro`
+/// mount) that this probe never touches the file's mtime/size/content -
+/// `OpenOptions::append` without an actual `write()` call is genuinely a
+/// no-op beyond opening and closing a file descriptor. Windows has no such
+/// guarantee: Microsoft's own `SetFileTime` docs ("To prevent file
+/// operations using the given handle from modifying the last write time,
+/// call `SetFileTime` immediately after opening...") document that merely
+/// holding a handle opened with write access can update a file's last-write
+/// time on close, independent of whether anything was actually written -
+/// and this crate has no way to verify in this codebase's own CI whether
+/// that risk is real for this exact call, or whether `ErrorKind::
+/// ReadOnlyFilesystem` is even populated correctly by Rust's Windows I/O
+/// backend for the equivalent condition. Rather than ship an unverified
+/// behavior change on a platform this project can't currently test against,
+/// Windows keeps today's existing (less precise, but known-safe) generic
+/// `SQLITE_CANTOPEN` error path unchanged - see `Error::ReadOnlyFilesystem`'s
+/// doc comment.
+///
+/// Only ever called for a path that already exists (see `open_connection`).
+/// Probing a not-yet-created database (e.g. `init_repository`'s brand new
+/// file) would only ever report `NotFound`, testing nothing useful.
+#[cfg(unix)]
+fn reject_if_not_writable(path: &Path) -> Result<(), Error> {
+    classify_write_probe(path, std::fs::OpenOptions::new().append(true).open(path))
+}
+
+/// See [`reject_if_not_writable`]'s doc comment for why this is a no-op on
+/// Windows for now, rather than running the same write probe.
+#[cfg(not(unix))]
+fn reject_if_not_writable(_path: &Path) -> Result<(), Error> {
+    Ok(())
+}
+
+/// The decision half of [`reject_if_not_writable`], split out so it's
+/// testable against a synthetic [`std::io::Error`] - genuinely reproducing
+/// `ErrorKind::ReadOnlyFilesystem` needs an actual read-only-mounted
+/// filesystem (verified manually against a real `:ro` Docker bind mount
+/// while implementing this; not something worth a mount-namespace dance in
+/// the ordinary test suite just to re-prove).
+#[cfg(unix)]
+fn classify_write_probe(path: &Path, probe: std::io::Result<std::fs::File>) -> Result<(), Error> {
+    if let Err(err) = probe
+        && err.kind() == std::io::ErrorKind::ReadOnlyFilesystem
+    {
+        return Err(Error::ReadOnlyFilesystem(path.to_path_buf()));
+    }
+    Ok(())
 }
 
 /// Opens the SQLite database at `path` genuinely read-only at the SQLite
@@ -737,6 +812,56 @@ mod tests {
             matches!(result, Err(Error::SchemaTooNew { db_version: 99 })),
             "{result:?}"
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn classify_write_probe_flags_only_a_genuine_read_only_filesystem_error() {
+        let path = Path::new("/some/repo/meta/repository.sqlite3");
+
+        let result = classify_write_probe(
+            path,
+            Err(std::io::Error::from(std::io::ErrorKind::ReadOnlyFilesystem)),
+        );
+        assert!(
+            matches!(&result, Err(Error::ReadOnlyFilesystem(p)) if p == path),
+            "{result:?}"
+        );
+
+        // A plain permission problem is a genuinely different OS-level
+        // condition (EACCES, not EROFS) - must not be misreported as the
+        // same thing.
+        let result = classify_write_probe(
+            path,
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+        );
+        assert!(
+            result.is_ok(),
+            "a plain permission problem isn't a read-only filesystem: {result:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_repository_gives_a_generic_error_not_read_only_filesystem_for_a_plain_permission_problem()
+     {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        let db_path = repo_root.join(META_DIR).join(META_DB_FILE);
+        let mut perms = fs::metadata(&db_path).unwrap().permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(&db_path, perms).unwrap();
+
+        let result = open_repository(&repo_root);
+
+        assert!(
+            !matches!(result, Err(Error::ReadOnlyFilesystem(_))),
+            "a plain chmod restriction isn't a read-only filesystem: {result:?}"
+        );
+        assert!(result.is_err(), "still expected to fail somehow");
     }
 
     #[test]
