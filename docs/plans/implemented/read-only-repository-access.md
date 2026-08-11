@@ -134,20 +134,27 @@ sites, which just call `open_repository_read_only(...)` and then
 
 ## Design
 
-### 1. `db compact` also checkpoints the WAL (done)
+### 1. `db compact` checkpointing the WAL - tried, then reverted
 
-`db compact` (`cli/src/db_maintenance.rs::run_compact`) already does
-`PRAGMA incremental_vacuum` under a write connection and is documented as
-"safe to run any time" - the natural, existing place for "clean up the
-database file" to live, so this reuses it rather than adding a new command
-(`db checkpoint`, considered and rejected: same underlying concept - getting
-the on-disk file into a clean, minimal state - and a second command would
-just be one more thing to remember for no real gain).
+Originally added `PRAGMA wal_checkpoint(TRUNCATE)` to `db compact` (which
+already does `PRAGMA incremental_vacuum` under a write connection, and is
+documented as "safe to run any time" - the natural, existing place for
+"clean up the database file" to live, over a separate new `db checkpoint`
+command). The reasoning at the time: folds the WAL back into the main file,
+and since `db compact` holds the only open connection at that point, SQLite
+removes the `-wal`/`-shm` sidecars entirely on close.
 
-Added `PRAGMA wal_checkpoint(TRUNCATE)` right after the existing
-`incremental_vacuum`, then drops the connection: folds the WAL back into the
-main file, and since this command holds the only open connection at that
-point, SQLite removes the `-wal`/`-shm` sidecars entirely on close.
+**Reverted after checking empirically**: SQLite already does exactly that -
+fold the WAL back in and remove both sidecars - whenever the *last* open
+connection to the database closes cleanly, with no explicit checkpoint
+pragma needed. `db compact`'s own write connection normally *is* the last
+one open, so the explicit pragma turned out to be a no-op in the common
+case. The one case it would actually add something is a genuinely
+concurrent connection (e.g. an active read-only `mount`) still being open
+at the exact moment `db compact` runs - forcing a checkpoint attempt right
+then instead of relying on SQLite's own threshold-based passive
+auto-checkpoint. Decided not to carry that complexity for a scenario that's
+real but has never actually come up - add it back if/when it does.
 
 ### 2. `db::Error` gets actionable variants (done)
 
@@ -199,8 +206,8 @@ pure read, no reason it ever needed the write connection).
 - `db/src/lib.rs`: `open_repository_read_only`, `open_connection_immutable`,
   `sqlite_uri_path`, `reject_if_schema_too_new`, `Repository::read_only`.
 - `db/src/error.rs`: `SchemaTooNew`, `MigrationsPending`, `UncheckpointedWal`.
-- `cli/src/db_maintenance.rs`: `run_compact` (WAL checkpoint); `run_backup`
-  (read-only opener).
+- `cli/src/db_maintenance.rs`: `run_backup` (read-only opener). `run_compact`
+  ends up unchanged - see design section 1.
 - `cli/src/{restore,stats,list,find,check,problems,deleted}.rs`: read-only
   opener.
 - `cli/src/mount.rs`: read-only opener + `write_conn` made `Option`-al for a
@@ -216,10 +223,13 @@ pure read, no reason it ever needed the write connection).
   and for a genuinely non-writable `meta/` *directory*, not just the
   database file (`db::tests::open_repository_read_only_works_even_when_the_meta_directory_is_not_writable`,
   `cli::mount::tests::build_filesystem_read_only_works_even_when_the_database_file_is_not_writable`).
-  `cargo test --workspace` needs `--test-threads=1` in this sandbox - the
-  default parallel run wedges on concurrent real FUSE mounts (confirmed
-  environmental: the same mount tests all pass serialized, and in isolation
-  under `-p cli`), not a deadlock in this plan's own changes.
+  `cargo test --workspace` hung once mid-session on a wedged real FUSE
+  mount (a stuck kernel-side request, cleared via
+  `/sys/fs/fuse/connections/<id>/abort` without needing a reboot) - several
+  repeated full-parallel reruns afterwards all passed cleanly in a few
+  seconds, so this was a one-off environmental glitch in the sandbox, not a
+  deadlock in this plan's changes and not a general "no concurrent FUSE
+  mounts" limitation.
 - Re-ran the `docker/samba-mount/` image with the repository bind-mounted
   `:ro` (after a `db compact`): the container's `backup mount` (default,
   read-only) came up successfully, file content read back correctly through
@@ -239,3 +249,6 @@ pure read, no reason it ever needed the write connection).
   `immutable=1`, not plain `SQLITE_OPEN_READ_ONLY` - same section.
 - `Mount` (non-`--read-write`) needed `Inner::write_conn` to become
   `Option`-al, not just a call-site swap - see design section 4.
+- `db compact`'s explicit WAL checkpoint was added, then reverted after
+  confirming empirically it was a no-op in the common (single-connection)
+  case - see design section 1.

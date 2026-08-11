@@ -432,9 +432,7 @@ backup db compact
 ```
 
 Reclaims free pages left behind by past deletions (`del`/`reclaim-space`),
-shrinking the database file in place, and checkpoints the write-ahead log
-(folding pending writes into the main database file and removing the
-`-wal`/`-shm` sidecar files next to it). Fast and safe to run any time - it
+shrinking the database file in place. Fast and safe to run any time - it
 doesn't need extra disk space or a long exclusive lock, so there's no
 reason to put it off.
 

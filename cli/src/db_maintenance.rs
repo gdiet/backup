@@ -315,16 +315,17 @@ fn extract_single_entry(zip_path: &Path) -> io::Result<tempfile::NamedTempFile> 
 /// already tracks which pages are free - see the db crate's `open_connection`
 /// doc comment for why that mode was chosen over `FULL`/leaving it off.
 ///
-/// Also runs `PRAGMA wal_checkpoint(TRUNCATE)`, folding the WAL back into the
-/// main database file and truncating `-wal` to 0 bytes - the only way to get
-/// rid of the `-wal`/`-shm` sidecars SQLite's WAL mode otherwise always keeps
-/// next to the database file, which is what a genuinely read-only mount of
-/// the repository directory (see `open_repository_read_only`) needs. This is
-/// this connection's own doing: it's the write connection opened just above,
-/// so nothing else is holding the database open at this point, and SQLite
-/// removes the sidecars entirely once every connection has closed - not
-/// merely truncated `-wal` at 0 bytes, which is as far as `TRUNCATE` itself
-/// gets while a connection remains open.
+/// Doesn't explicitly checkpoint the write-ahead log: SQLite already does
+/// that itself (folding pending writes into the main file and removing the
+/// `-wal`/`-shm` sidecars) whenever the *last* open connection to the
+/// database closes cleanly - which this one, opened just above, normally
+/// is by the time this function returns. An explicit `PRAGMA
+/// wal_checkpoint(TRUNCATE)` would only add anything in the narrower case
+/// of another connection (e.g. a concurrent read-only `mount`) still being
+/// open at the same time - deliberately left out until that's an actual
+/// problem in practice, not a hypothetical one; see
+/// `docs/plans/implemented/read-only-repository-access.md` for the
+/// reasoning and the empirical check behind this.
 fn run_compact(repo: &Path) -> ExitCode {
     let repository = match db::open_repository(repo) {
         Ok(r) => r,
@@ -343,17 +344,16 @@ fn run_compact(repo: &Path) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    if let Err(err) = conn.execute_batch("PRAGMA incremental_vacuum;") {
-        eprintln!("error: failed to compact database: {err}");
-        return ExitCode::FAILURE;
+    match conn.execute_batch("PRAGMA incremental_vacuum;") {
+        Ok(()) => {
+            println!("Database compacted.");
+            ExitCode::SUCCESS
+        }
+        Err(err) => {
+            eprintln!("error: failed to compact database: {err}");
+            ExitCode::FAILURE
+        }
     }
-    if let Err(err) = conn.pragma_update(None, "wal_checkpoint", "TRUNCATE") {
-        eprintln!("error: failed to checkpoint the write-ahead log: {err}");
-        return ExitCode::FAILURE;
-    }
-    drop(conn);
-    println!("Database compacted.");
-    ExitCode::SUCCESS
 }
 
 fn now_millis() -> i64 {
@@ -561,33 +561,5 @@ mod tests {
     fn compact_succeeds_on_a_fresh_repository() {
         let (_temp_dir, repo_root) = init_repo();
         assert_eq!(run_compact(&repo_root), ExitCode::SUCCESS);
-    }
-
-    #[test]
-    fn compact_checkpoints_the_wal_so_no_sidecar_files_remain() {
-        let (_temp_dir, repo_root) = init_repo();
-        let repository = db::open_repository(&repo_root).unwrap();
-        // SQLite auto-checkpoints (and removes the sidecars) when the *last*
-        // connection to a WAL database closes - so a second connection is
-        // kept open here while writing, to actually observe the sidecars
-        // surviving a single connection's close, the state `db compact`
-        // exists to clean up.
-        let outlasting_conn = repository.open_write_connection().unwrap();
-        let write_conn = repository.open_write_connection().unwrap();
-        db::insert_directory(&write_conn, 0, "sub", 0).unwrap();
-        drop(write_conn);
-        let db_file = db::db_file_path(&repo_root);
-        let wal_file = PathBuf::from(format!("{}-wal", db_file.display()));
-        let shm_file = PathBuf::from(format!("{}-shm", db_file.display()));
-        assert!(
-            wal_file.is_file() || shm_file.is_file(),
-            "a write should have left WAL sidecars behind while another connection is open"
-        );
-        drop(outlasting_conn);
-
-        assert_eq!(run_compact(&repo_root), ExitCode::SUCCESS);
-
-        assert!(!wal_file.is_file());
-        assert!(!shm_file.is_file());
     }
 }
