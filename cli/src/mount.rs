@@ -666,6 +666,11 @@ impl Inner {
                 None => Err(Errno::ENOENT),
             };
         }
+        // Deliberately not `resolve_active_entry` (see its own doc comment
+        // for when that's required): this only ever resolves a
+        // *directory*, whose id/row is never replaced by a content-change
+        // persist the way a file's is - directories only change via
+        // mkdir/rmdir/rename, ordinary in-place tree mutations.
         let dir = db::resolve_path(&conn, path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
@@ -1224,6 +1229,18 @@ impl Inner {
     /// nothing ever updates that old row again). Waits out any persist
     /// racing this specific id and re-resolves, rather than the whole
     /// mount blocking on unrelated files.
+    ///
+    /// **Any new method added to this `impl` block that resolves a *file*
+    /// path (not a directory - see `readdir`'s own comment for why that one
+    /// is exempt) and then keeps using the resolved id/entry after
+    /// releasing the lock it was resolved under must go through this
+    /// function** (or, for an id already in hand, [`Inner::wait_while_persisting`]
+    /// directly) instead of calling `db::resolve_path` on `self.conn`
+    /// itself - nothing in the type system enforces this, it has to stay a
+    /// convention. A method that resolves and acts *within the same lock
+    /// hold* (no gap for a persist to land in between, the way
+    /// `mkdir`/`create`/`unlink`/`rmdir`/`rename`/`utimens` already do
+    /// today via `write_conn`) doesn't need it.
     fn resolve_active_entry(&self, path: &str) -> Result<db::TreeEntryRow, Errno> {
         loop {
             let conn = self.conn.lock().expect("db connection mutex poisoned");
