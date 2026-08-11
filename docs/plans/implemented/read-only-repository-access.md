@@ -261,51 +261,74 @@ Follow-up, spawned by "what happens if you bind-mount `:ro` *and* pass
 generic `SQLITE_CANTOPEN` ("unable to open database file"), the same
 unhelpful message this whole plan replaced for the read-only path.
 
-**What actually fails, precisely traced** (source: `unixOpen`/
-`sqlite3PagerOpen` in the bundled `sqlite3.c`, cross-checked against a real
-reproduction): opening the *existing* main database file for read-write
-against a genuinely read-only-mounted directory does **not** itself fail -
-`unixOpen` has a built-in fallback (`errno != EISDIR && isReadWrite` ->
-retry as `O_RDONLY`) that silently succeeds, since reading an existing file
-on a read-only filesystem is always fine. The actual `SQLITE_CANTOPEN`
-only appears moments later, when `open_connection`'s `PRAGMA
-journal_mode=WAL` tries to *create* the `-wal` file - a brand-new file in a
-read-only directory has no such fallback. Confirmed directly: a raw
-`rusqlite::Connection::open()` against a real read-only-mounted repo
-succeeds, and only the subsequent `journal_mode` pragma fails with
-`CannotOpen`/"unable to open database file". `SQLITE_CANTOPEN` is
-otherwise a pure OS-level "couldn't even open the file" signal - distinct
-from `NotADatabase`/`Corrupt` (which require a successful open first, only
+### First attempt: an OS-level write probe (reverted)
+
+Tried detecting "is the underlying storage actually read-only" ourselves,
+via a real, non-destructive write probe (`OpenOptions::append`, opened and
+immediately dropped, never actually written through) checked against
+`std::io::ErrorKind::ReadOnlyFilesystem` specifically - confirmed via a
+unit test that a plain `chmod`-restricted file does *not* trigger this,
+only genuine `EROFS` does, and confirmed on Linux (both a real Docker `:ro`
+mount and a much-faster-to-iterate `unshare --mount --user --map-root-user`
+read-only bind mount) that the probe never touches the file's
+mtime/size/content.
+
+**Reverted after review** (see conversation, not reproduced here): asked to
+run this on Windows too, checking Microsoft's own `SetFileTime` docs turned
+up an explicit warning - "To prevent file operations using the given
+handle from modifying the last write time, call `SetFileTime` immediately
+after opening the file handle..." - official confirmation that merely
+holding a write-access handle open on Windows/NTFS can touch a file's
+last-write time on close, independent of whether anything was actually
+written. Also unverified: whether `ErrorKind::ReadOnlyFilesystem` is even
+populated correctly by Rust's Windows I/O backend for the equivalent
+condition. Neither is something this project's dev setup (no Windows
+environment) can test, and the whole point of an active probe was to be
+*more* certain than SQLite's own generic error - not worth an unverified
+platform-specific side effect risk for that.
+
+### What shipped instead: translate SQLite's own error, don't add a probe
+
+Simpler alternative: don't try to determine the real cause ourselves at
+all - just recognize `SQLITE_CANTOPEN` (SQLite's own, single, generic "the
+OS-level `open()` call failed" code) wherever `open_connection` hits it,
+and rewrite the message to *ask* whether the storage might be read-only
+rather than assert it as fact. No extra file operation, so no new
+platform-specific risk of any kind - relies on the exact same C SQLite
+library, and hence the exact same `SQLITE_CANTOPEN` code, on every
+platform this project targets.
+
+**Where `SQLITE_CANTOPEN` actually appears, precisely traced** (source:
+`unixOpen`/`sqlite3PagerOpen` in the bundled `sqlite3.c`, cross-checked
+against real reproductions): opening the *existing* main database file for
+read-write against a genuinely read-only-mounted directory does **not**
+itself fail - `unixOpen` has a built-in fallback (`errno != EISDIR &&
+isReadWrite` -> retry as `O_RDONLY`) that silently succeeds, since reading
+an existing file on a read-only filesystem is always fine. `SQLITE_CANTOPEN`
+only appears once some *later* operation needs SQLite to actually set up
+its WAL shared-memory index for real (the first genuine read transaction) -
+and *which* operation that turns out to be is not reliably the same one
+every time: one traced run failed at the `synchronous` pragma, an earlier
+one at `journal_mode` - both several calls into `open_connection`'s
+sequence, neither the first thing that runs. Because of that
+unpredictability, `open_connection`'s pragma sequence was split into an
+inner helper (`open_connection_inner`, returning a plain `rusqlite::Result`)
+so the classification (`classify_open_error`) is applied exactly once, to
+whatever error the *whole* sequence exits with - not repeated at each
+individual call site, which would be one call away from silently missing
+whichever one actually turns out to fail. `SQLITE_CANTOPEN` is otherwise a
+pure OS-level "couldn't even open the file" signal - distinct from
+`NotADatabase`/`Corrupt` (which require a successful open first, only
 surfacing once SQLite actually reads header/page content - confirmed with
 a garbage-bytes file: `Connection::open()` succeeds, only the first real
 query fails with `NotADatabase`).
 
-**Fix**: `open_connection()` now runs `reject_if_not_writable()` before
-attempting the real open, for an existing path - a genuine, non-destructive
-write probe (`OpenOptions::append`, opened and immediately dropped, never
-actually written through), checked against `std::io::ErrorKind::
-ReadOnlyFilesystem` specifically (not `PermissionDenied`/anything weaker -
-confirmed via a unit test that a plain `chmod`-restricted file does *not*
-trigger this, only genuine `EROFS` does). New `Error::ReadOnlyFilesystem`
-variant with a message naming every read-only-safe command as the
-alternative. Verified end-to-end (not just unit-tested) via both a real
-Docker `:ro` mount and an `unshare --mount --user --map-root-user`
-read-only bind mount (much faster to iterate with, no image rebuild) - the
-same mechanism used for `open_repository_read_only`'s own directory-level
-test.
-
-**Deliberately Unix-only** (`#[cfg(unix)]`), after checking Microsoft's own
-`SetFileTime` docs: "To prevent file operations using the given handle from
-modifying the last write time, call `SetFileTime` immediately after opening
-the file handle..." - official confirmation that merely holding a
-write-access handle open on Windows/NTFS can touch a file's last-write time
-on close, independent of whether anything was actually written. Confirmed
-empirically on Linux that the probe here is genuinely inert (mtime/size/
-content unchanged before and after), but that can't be verified for Windows
-without an actual Windows environment, which this project's development
-setup doesn't have. Also unverified: whether `ErrorKind::ReadOnlyFilesystem`
-is even populated correctly by Rust's Windows I/O backend for the
-equivalent condition. Windows keeps the original generic `SQLITE_CANTOPEN`
-error unchanged rather than risk an unverified side effect or a
-silently-never-firing check - a real Windows test-drive is needed before
-extending this cross-platform.
+New `Error::CannotOpenForWriting(PathBuf)` variant; message: "the metadata
+database at {path} could not be opened for writing - is it on a read-only
+filesystem? If you only need to read the repository, a read-only command
+(...) doesn't need write access at all." Verified end-to-end via the same
+`unshare`-based read-only bind mount, both for an existing repository
+(`--read-write` against a `:ro` mount) and for `init_repository` targeting
+a read-only parent directory (which turned out to already fail earlier,
+at `fs::create_dir_all`, with an already-self-explanatory plain I/O error
+- "Read-only file system (os error 30)" - so needed no change).

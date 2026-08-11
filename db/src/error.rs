@@ -47,15 +47,16 @@ pub enum Error {
     /// is ruled out first). An empty `-wal`/any `-shm` don't trigger this -
     /// see [`crate::open_repository_read_only`]'s own doc comment for why.
     UncheckpointedWal,
-    /// A write connection couldn't be opened because the underlying
-    /// filesystem/storage medium is genuinely read-only (confirmed via a
-    /// real write probe, `std::io::ErrorKind::ReadOnlyFilesystem` - not
-    /// inferred from anything weaker) - see `reject_if_not_writable` in
-    /// `lib.rs` for why this is trustworthy where SQLite's own generic
-    /// `SQLITE_CANTOPEN` isn't. Unix-only for now - see that same doc
-    /// comment for why; on Windows this case still falls through to the
-    /// generic `Sqlite`/`SQLITE_CANTOPEN` variant instead.
-    ReadOnlyFilesystem(PathBuf),
+    /// A write connection failed with SQLite's generic `SQLITE_CANTOPEN`
+    /// ("unable to open database file") - see `classify_open_error` in
+    /// `lib.rs` for the full reasoning. Deliberately doesn't claim a
+    /// specific cause (e.g. "read-only filesystem") the way the other
+    /// variants here do: `SQLITE_CANTOPEN` alone can't distinguish that
+    /// from several other unrelated causes (a missing parent directory, an
+    /// unrelated permission problem, too many open files, ...), so the
+    /// message only asks the question rather than asserting an answer it
+    /// doesn't actually have.
+    CannotOpenForWriting(PathBuf),
 }
 
 impl fmt::Display for Error {
@@ -99,12 +100,12 @@ impl fmt::Display for Error {
                  yet folded into it - run `db compact` once to clean this up before using a \
                  read-only command"
             ),
-            Self::ReadOnlyFilesystem(path) => write!(
+            Self::CannotOpenForWriting(path) => write!(
                 f,
-                "the metadata database at {} is on a read-only filesystem, but this command \
-                 needs write access to it - if you only need to read the repository, use a \
-                 read-only command instead (restore/stats/list/find/check/problems/deleted/db \
-                 backup/mount without --read-write)",
+                "the metadata database at {} could not be opened for writing - is it on a \
+                 read-only filesystem? If you only need to read the repository, a read-only \
+                 command (restore/stats/list/find/check/problems/deleted/db backup/mount \
+                 without --read-write) doesn't need write access at all",
                 path.display()
             ),
         }
@@ -125,7 +126,7 @@ impl std::error::Error for Error {
             Self::SchemaTooNew { .. } => None,
             Self::MigrationsPending => None,
             Self::UncheckpointedWal => None,
-            Self::ReadOnlyFilesystem(_) => None,
+            Self::CannotOpenForWriting(_) => None,
         }
     }
 }

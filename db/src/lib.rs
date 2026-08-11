@@ -93,14 +93,22 @@ pub fn meta_dir(repo_root: &Path) -> std::path::PathBuf {
 /// call's duration) and already `URI`, matching `open_connection_read_only`
 /// on both.
 fn open_connection(path: &Path) -> Result<Connection, Error> {
-    // Checked (only if the file already exists - see this helper's own doc
-    // comment) *before* the real open below, which would otherwise fail
-    // too, but with a much less useful error - see `reject_if_not_writable`
-    // for why that generic failure can't be trusted to mean specifically
-    // this.
-    if path.exists() {
-        reject_if_not_writable(path)?;
-    }
+    open_connection_inner(path).map_err(|err| classify_open_error(err, path))
+}
+
+/// The fallible body of [`open_connection`], split out so its single
+/// `rusqlite::Error` exit point can be classified exactly once by the
+/// caller - see [`classify_open_error`]'s doc comment for why that matters
+/// here: which one of the calls below is actually the one that first fails
+/// with `SQLITE_CANTOPEN` against a read-only underlying filesystem turns
+/// out not to be reliably the same call every time (traced empirically:
+/// depends on incidental details of when SQLite lazily sets up its WAL
+/// shared-memory index on first real use, not simply "whichever call looks
+/// like it touches the file most directly") - wrapping every call
+/// individually would be fragile (easy to add a future call here and
+/// forget it needs the same treatment) where wrapping the whole function
+/// once isn't.
+fn open_connection_inner(path: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
     // foreign_keys and synchronous are not stored in the database file: they're
     // purely per-connection settings that default to off/FULL, so they must be
@@ -143,71 +151,51 @@ fn open_connection(path: &Path) -> Result<Connection, Error> {
     Ok(conn)
 }
 
-/// Fails with [`Error::ReadOnlyFilesystem`] if `path` cannot be written to
-/// because the underlying filesystem/storage medium is read-only (e.g. a
-/// `:ro` bind mount, or any other read-only mount) - established via a
-/// real, non-destructive write probe (`OpenOptions::append`, which neither
-/// truncates existing content nor creates the file if missing, and is never
-/// actually written through - the opened `File` is just dropped again),
-/// not merely inferred from `Connection::open`'s own failure a moment
-/// later: SQLite only ever reports that as a generic `SQLITE_CANTOPEN`
-/// ("unable to open database file"), which also covers plenty of unrelated
-/// causes (a missing parent directory, an unrelated permission problem,
-/// ...) - a message claiming specifically "read-only filesystem" for all
-/// of those would be a guess dressed up as a fact. `std::io::ErrorKind::
-/// ReadOnlyFilesystem` is what Rust's standard library maps the
-/// corresponding OS-level error (`EROFS`) to on Unix, so checking for
-/// exactly that variant - not any other `PermissionDenied`/`NotFound`/etc.
-/// - is what keeps this an actual finding rather than another guess.
+/// Rewrites a `rusqlite::Error` into [`Error::CannotOpenForWriting`] if it's
+/// specifically `SQLITE_CANTOPEN` - SQLite's one, generic "the OS-level
+/// `open()` call failed" code, covering many distinct underlying causes
+/// (missing parent directory, a read-only filesystem/mount, an unrelated
+/// permission problem, too many open files, ...) with no way to tell them
+/// apart from the error alone. So rather than claim a specific cause, the
+/// rewritten message only *asks* whether the storage might be read-only -
+/// honest about the uncertainty, unlike a flat assertion would be.
 ///
-/// Unix-only, deliberately: confirmed on Linux (both an `unshare --mount
-/// --user --map-root-user` read-only bind mount and a real Docker `:ro`
-/// mount) that this probe never touches the file's mtime/size/content -
-/// `OpenOptions::append` without an actual `write()` call is genuinely a
-/// no-op beyond opening and closing a file descriptor. Windows has no such
-/// guarantee: Microsoft's own `SetFileTime` docs ("To prevent file
-/// operations using the given handle from modifying the last write time,
-/// call `SetFileTime` immediately after opening...") document that merely
-/// holding a handle opened with write access can update a file's last-write
-/// time on close, independent of whether anything was actually written -
-/// and this crate has no way to verify in this codebase's own CI whether
-/// that risk is real for this exact call, or whether `ErrorKind::
-/// ReadOnlyFilesystem` is even populated correctly by Rust's Windows I/O
-/// backend for the equivalent condition. Rather than ship an unverified
-/// behavior change on a platform this project can't currently test against,
-/// Windows keeps today's existing (less precise, but known-safe) generic
-/// `SQLITE_CANTOPEN` error path unchanged - see `Error::ReadOnlyFilesystem`'s
-/// doc comment.
+/// Deliberately doesn't try to determine the real cause itself (e.g. via an
+/// OS-level write probe before opening) the way an earlier version of this
+/// function did: that approach needed to open a real file handle with
+/// write intent to get a trustworthy answer, which turned out to have a
+/// platform-specific catch - Microsoft's own `SetFileTime` docs note that
+/// merely holding a handle opened with write access can touch a file's
+/// last-write time on Windows/NTFS when closed, *even if nothing was ever
+/// written* - a side effect this project has no way to verify one way or
+/// the other without a real Windows environment to test against. Relying
+/// on the error SQLite already produces (the exact same C library, hence
+/// the exact same `SQLITE_CANTOPEN` code, on every platform) instead of an
+/// extra probe of our own sidesteps that platform risk entirely, at the
+/// cost of a less certain-sounding message.
 ///
-/// Only ever called for a path that already exists (see `open_connection`).
-/// Probing a not-yet-created database (e.g. `init_repository`'s brand new
-/// file) would only ever report `NotFound`, testing nothing useful.
-#[cfg(unix)]
-fn reject_if_not_writable(path: &Path) -> Result<(), Error> {
-    classify_write_probe(path, std::fs::OpenOptions::new().append(true).open(path))
-}
-
-/// See [`reject_if_not_writable`]'s doc comment for why this is a no-op on
-/// Windows for now, rather than running the same write probe.
-#[cfg(not(unix))]
-fn reject_if_not_writable(_path: &Path) -> Result<(), Error> {
-    Ok(())
-}
-
-/// The decision half of [`reject_if_not_writable`], split out so it's
-/// testable against a synthetic [`std::io::Error`] - genuinely reproducing
-/// `ErrorKind::ReadOnlyFilesystem` needs an actual read-only-mounted
-/// filesystem (verified manually against a real `:ro` Docker bind mount
-/// while implementing this; not something worth a mount-namespace dance in
-/// the ordinary test suite just to re-prove).
-#[cfg(unix)]
-fn classify_write_probe(path: &Path, probe: std::io::Result<std::fs::File>) -> Result<(), Error> {
-    if let Err(err) = probe
-        && err.kind() == std::io::ErrorKind::ReadOnlyFilesystem
+/// Applied once, to whatever `rusqlite::Error` [`open_connection_inner`]'s
+/// call sequence exits with - not to each call individually. Traced
+/// empirically against a real read-only-mounted *existing* database file:
+/// `Connection::open` alone doesn't fail at all (SQLite's own `unixOpen`
+/// silently retries as read-only internally, since reading an existing
+/// file never needs write access) - some *later* pragma in the sequence is
+/// what actually fails, once SQLite lazily sets up the WAL shared-memory
+/// index on first real use. Which specific pragma that turns out to be is
+/// not consistent (observed `synchronous` failing in one run, `journal_mode`
+/// in another, depending on incidental init-order details this crate has
+/// no control over) - exactly why this is applied to the whole function's
+/// outcome rather than guessed at a single call site. For a not-yet-existing
+/// file (e.g. `init_repository` targeting a read-only directory),
+/// `Connection::open` itself is where it appears instead, since there's no
+/// existing file for that same retry-as-read-only fallback to read.
+fn classify_open_error(err: rusqlite::Error, path: &Path) -> Error {
+    if let rusqlite::Error::SqliteFailure(ffi_err, _) = &err
+        && ffi_err.code == rusqlite::ErrorCode::CannotOpen
     {
-        return Err(Error::ReadOnlyFilesystem(path.to_path_buf()));
+        return Error::CannotOpenForWriting(path.to_path_buf());
     }
-    Ok(())
+    Error::Sqlite(err)
 }
 
 /// Opens the SQLite database at `path` genuinely read-only at the SQLite
@@ -814,54 +802,45 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
-    fn classify_write_probe_flags_only_a_genuine_read_only_filesystem_error() {
+    fn classify_open_error_rewrites_only_cantopen_not_other_sqlite_errors() {
         let path = Path::new("/some/repo/meta/repository.sqlite3");
 
-        let result = classify_write_probe(
-            path,
-            Err(std::io::Error::from(std::io::ErrorKind::ReadOnlyFilesystem)),
+        let cantopen = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CANTOPEN),
+            Some("unable to open database file".to_string()),
         );
+        let result = classify_open_error(cantopen, path);
         assert!(
-            matches!(&result, Err(Error::ReadOnlyFilesystem(p)) if p == path),
+            matches!(&result, Error::CannotOpenForWriting(p) if p == path),
             "{result:?}"
         );
 
-        // A plain permission problem is a genuinely different OS-level
-        // condition (EACCES, not EROFS) - must not be misreported as the
-        // same thing.
-        let result = classify_write_probe(
-            path,
-            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+        // Some other SQLite failure (e.g. a locked database) must pass
+        // through unchanged, not get relabeled as a possible read-only
+        // filesystem too.
+        let busy = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            Some("database is locked".to_string()),
         );
-        assert!(
-            result.is_ok(),
-            "a plain permission problem isn't a read-only filesystem: {result:?}"
-        );
+        let result = classify_open_error(busy, path);
+        assert!(matches!(result, Error::Sqlite(_)), "{result:?}");
     }
 
-    #[cfg(unix)]
     #[test]
-    fn open_repository_gives_a_generic_error_not_read_only_filesystem_for_a_plain_permission_problem()
-     {
-        use std::os::unix::fs::PermissionsExt;
-
+    fn open_repository_gives_the_cannot_open_for_writing_error_for_a_missing_parent_directory() {
+        // Portable (works the same on every platform, no chmod/mount
+        // tricks needed) way to reproduce a genuine SQLITE_CANTOPEN: the
+        // containing directory for the database file doesn't exist at all.
         let temp_dir = tempfile::tempdir().unwrap();
-        let repo_root = temp_dir.path().join("repo");
-        init_repository(&repo_root, &test_settings()).unwrap();
-        let db_path = repo_root.join(META_DIR).join(META_DB_FILE);
-        let mut perms = fs::metadata(&db_path).unwrap().permissions();
-        perms.set_mode(0o444);
-        fs::set_permissions(&db_path, perms).unwrap();
+        let repo_root = temp_dir.path().join("does-not-exist").join("repo");
 
         let result = open_repository(&repo_root);
 
         assert!(
-            !matches!(result, Err(Error::ReadOnlyFilesystem(_))),
-            "a plain chmod restriction isn't a read-only filesystem: {result:?}"
+            matches!(result, Err(Error::CannotOpenForWriting(_))),
+            "{result:?}"
         );
-        assert!(result.is_err(), "still expected to fail somehow");
     }
 
     #[test]
