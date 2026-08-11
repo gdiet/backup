@@ -148,8 +148,10 @@ impl ChunkHasher for Blake3Hasher {
 /// Shared state for one `store` run, read by every worker thread and the writer
 /// thread. `abort`/`warnings` are also cloned out separately by [`run_store`] so
 /// their final values can be read after this whole context (and the [`Mutex`]
-/// around the channel [`mpsc::Sender`] it owns) has been dropped, which is what
-/// lets the writer thread's `Receiver` see the channel disconnect and exit.
+/// around the channel [`mpsc::Sender`] it owns) has been dropped. Dropping this
+/// context alone doesn't make the writer thread's `Receiver` see the channel
+/// disconnect and exit, though - see [`run_store`]'s own `outlasting_tx` for
+/// the extra `Sender` clone that also has to go first.
 struct RunContext {
     repository: db::Repository,
     chunker_config: ChunkerConfig,
@@ -330,6 +332,24 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
 
     let data_store = store::LongTermStore::new(repository.data_dir(), false);
     let (tx, rx) = mpsc::channel::<db::FileBackupRecord>();
+    // A second, otherwise-unused `Sender` clone, kept alive on this (the
+    // main) thread and dropped explicitly below, only once the read
+    // connections opened by chunking workers are already closed - see the
+    // comment down there for why this matters. Without it, the channel
+    // disconnects (and the writer thread below, which owns `main_conn`,
+    // finishes) as soon as `ctx` drops - two confirmed-different failure
+    // modes depending on `--concurrency` (see `cli/tests/store_checkpoint.rs`
+    // for the actual repro/measurements, not reproducible as an in-process
+    // unit test): without `--concurrency`, `run()` used rayon's *global*
+    // thread pool directly, whose worker threads (and their read
+    // connections) are simply never torn down within this process's own
+    // lifetime at all - a deterministic bug, reproduced 3/3 real runs. With
+    // `--concurrency`, the scoped pool built below *does* get torn down
+    // before this function returns, so it's "only" an unsynchronized race
+    // between that teardown and the writer thread noticing the disconnect -
+    // never actually observed losing that race in dozens of tries, but
+    // fixed the same way anyway rather than relying on it reliably winning.
+    let outlasting_tx = tx.clone();
     let abort = Arc::new(AtomicBool::new(false));
     let warnings = Arc::new(AtomicU64::new(warning_count));
 
@@ -365,25 +385,44 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
     let writer_abort = Arc::clone(&abort);
     let writer_handle = thread::spawn(move || run_writer(main_conn, rx, writer_abort));
 
-    // `ctx` is moved into this closure and dropped when it returns (after all
-    // files are processed), which drops its Sender and lets the writer thread's
-    // Receiver see the channel disconnect and finish - see RunContext's doc
-    // comment. `abort`/`warnings` are separate Arc clones, unaffected by that.
+    // `ctx` is moved into this closure and dropped when it returns (after
+    // all files are processed), which drops *its* Sender - but the channel
+    // doesn't actually disconnect yet even then, because `outlasting_tx`
+    // (see its own comment above) still holds one more clone open at that
+    // point. `abort`/`warnings` are separate `Arc` clones, unaffected by
+    // any of this.
     let run = move || {
         files
             .into_par_iter()
             .for_each(|(path, parent_id)| process_file(&ctx, &path, parent_id));
     };
-    match args.concurrency {
-        Some(concurrency) => {
-            let pool = ThreadPoolBuilder::new()
-                .num_threads(concurrency as usize)
-                .build()
-                .expect("failed to build thread pool");
-            pool.install(run);
+    {
+        // Always a real, scoped `ThreadPool` - even with no `--concurrency`
+        // given, rather than just calling `run()` directly (which would use
+        // rayon's own *global* pool instead): a scoped pool is guaranteed
+        // to join and tear down its worker threads (and, with them, their
+        // thread-local read connections - see `READ_CONNECTION`) when it's
+        // dropped - which this block makes happen right here, before
+        // `outlasting_tx` below is dropped. The global pool gives no such
+        // guarantee - its threads simply persist for the rest of the
+        // process. Omitting `.num_threads()` entirely (rather than
+        // querying `rayon::current_num_threads()` to match it) applies
+        // rayon's own default sizing logic unchanged, without the side
+        // effect of also spinning up the (otherwise entirely unused)
+        // global pool just to ask it how big it'd be.
+        let mut pool_builder = ThreadPoolBuilder::new();
+        if let Some(concurrency) = args.concurrency {
+            pool_builder = pool_builder.num_threads(concurrency as usize);
         }
-        None => run(),
-    }
+        let pool = pool_builder.build().expect("failed to build thread pool");
+        pool.install(run);
+    } // `pool` dropped here - its worker threads' read connections are closed by now.
+
+    // Only now does the channel actually disconnect - see `outlasting_tx`'s
+    // own comment for why this ordering is what makes `main_conn` (owned
+    // by the writer thread joined right below) the last connection to
+    // close, letting SQLite auto-checkpoint on a clean run.
+    drop(outlasting_tx);
 
     writer_handle.join().expect("writer thread panicked");
     let _ = std::fs::remove_dir_all(&spill_dir);
@@ -1331,6 +1370,56 @@ mod tests {
         let integrity = data_store.read(start as u64, &mut buf).unwrap();
         assert_eq!(integrity, store::ReadIntegrity::Complete);
         assert_eq!(buf, b"hello world");
+    }
+
+    /// Sanity check, *not* the real regression test for this - see
+    /// `cli/tests/store_checkpoint.rs` for that, and for why: `store` uses
+    /// several SQLite connections with independent lifetimes (`main_conn`
+    /// in its own writer thread, one read connection per chunking worker
+    /// thread - see `READ_CONNECTION`), unlike every single-connection
+    /// command, which gets SQLite's auto-checkpoint-on-clean-close "for
+    /// free". Without the ordering `outlasting_tx` (see `run_store`)
+    /// enforces, `main_conn` could close before every worker's read
+    /// connection does, leaving a non-empty `-wal` behind - visible exactly
+    /// as a read-only command immediately afterwards refusing with
+    /// `Error::UncheckpointedWal` - despite `store` itself having exited
+    /// perfectly cleanly. That race turns out not to reproduce reliably
+    /// when `run_store` is called in-process the way this test does it
+    /// (confirmed: 0 failures in dozens of tries, debug and release, even
+    /// reverting the fix locally) - only a real, separately-spawned `backup`
+    /// process reliably shows it (confirmed: 5/5). This is kept anyway as a
+    /// fast, cheap functional check that both concurrency branches still
+    /// produce a normally-readable repository, not as the thing that would
+    /// catch a regression here.
+    fn assert_store_leaves_no_pending_wal_behind(concurrency: Option<u32>) {
+        let (_temp_dir, repo_root) = init_repo();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("a.txt"), b"hello world").unwrap();
+
+        let mut args = backup_args(vec![
+            source_dir.path().to_path_buf(),
+            PathBuf::from("target"),
+        ]);
+        args.concurrency = concurrency;
+
+        let exit = run_store(&repo_root, args);
+        assert_eq!(exit, ExitCode::SUCCESS);
+
+        let result = db::open_repository_read_only(&repo_root);
+        assert!(
+            result.is_ok(),
+            "a read-only command right after a clean store run must not see a pending WAL: {result:?}"
+        );
+    }
+
+    #[test]
+    fn store_with_explicit_concurrency_leaves_no_pending_wal_behind() {
+        assert_store_leaves_no_pending_wal_behind(Some(2));
+    }
+
+    #[test]
+    fn store_with_default_concurrency_leaves_no_pending_wal_behind() {
+        assert_store_leaves_no_pending_wal_behind(None);
     }
 
     /// `Some(id)` if `parent_id` has a child named `name`, `None` otherwise -

@@ -362,3 +362,71 @@ Confirmed for real:
 No corrections needed as a result - this confirmed the design rather than
 finding a new platform-specific problem, unlike the write-probe attempt
 above.
+
+## Addendum: `store` itself doesn't always get a clean, checkpointed exit
+
+Follow-up, spawned by a question about whether the "clean single-connection
+exit checkpoints the WAL for free" property (established while investigating
+whether `db compact` needed an explicit `PRAGMA wal_checkpoint` - it
+doesn't, for that command) actually holds for *every* command, or just the
+ones that only ever use one connection.
+
+**White-box review of every command opening more than one connection**:
+`check`/`problems`/`fix-problems`/`del`/`reclaim-space`/`compact-store` -
+single connection, sequential, no threading, unaffected. `mount.rs` opens
+both `conn` (read) and `write_conn` (write) for the mount's whole lifetime,
+shared via `Arc<Inner>` across the FUSE/WinFSP dispatch and the
+`persist_worker` background thread - but both are plain fields of the same
+`Inner`, and Rust drops struct fields in declaration order, so `conn`
+(declared first) always closes before `write_conn` once the last
+`Arc<Inner>` clone goes away; `on_unmount` already explicitly joins
+`persist_worker` first, so there's no lingering background-thread reference
+to complicate that. Net: already correct, if somewhat accidentally so (see
+the field-order comment now added to lock it in) - not by any deliberate
+ordering guarantee before this session. `store` is the one place this
+genuinely goes wrong: `main_conn` (the write connection) lives in its own
+`thread::spawn`'d writer thread; each chunking worker thread has its own
+lazily-opened, thread-local read connection (`READ_CONNECTION`). These have
+no synchronization between their independent shutdown paths.
+
+**Two distinct failure modes found, not equally severe** - confirmed by
+reverting the fix locally and re-running each many times (see
+`cli/tests/store_checkpoint.rs`, an integration test specifically because
+the underlying issue turned out **not to reproduce at all as an in-process
+unit test** - 0 failures across dozens of in-process tries, debug and
+release, reverted or not; only spawning the real compiled binary as a
+genuinely separate OS process reliably showed it. Root cause of that gap
+unconfirmed - most likely real OS thread/process scheduling behaves
+differently for a lean, freshly-`exec`'d process than for `cargo test`'s
+own long-lived, already-multi-threaded process, but this wasn't chased
+further once the integration-test-level repro was reliable):
+- **Without `--concurrency`**: chunking ran directly on rayon's *global*
+  thread pool. That pool's worker threads (and their read connections) are
+  never torn down within the process's own lifetime at all - a
+  deterministic bug, not really a timing race in the usual sense. 3/3 real
+  runs failed with `Error::UncheckpointedWal` immediately after `store`
+  exited cleanly.
+- **With `--concurrency N`**: a *scoped* `ThreadPool` was already being
+  built and dropped (joining its worker threads) before `run_store`
+  returned - a real, unsynchronized race against the writer thread noticing
+  its channel disconnect, but one where the pool's teardown empirically
+  always won. 0 failures in 9+ real reverted runs. Fixed anyway, rather
+  than relying on a race that merely happens to resolve favorably today.
+
+**Fix**: always build a real, scoped `ThreadPool` (even without
+`--concurrency` - omitting `.num_threads()` applies rayon's own default
+sizing unchanged, without the previously-considered-and-rejected
+alternative of querying `rayon::current_num_threads()` to replicate it,
+which turned out to have its own side effect: called from a non-worker
+thread, it lazily initializes rayon's *global* pool just to answer the
+question, spinning up threads that would then sit there entirely unused).
+An extra `mpsc::Sender` clone (`outlasting_tx`) is kept alive on the main
+thread and only dropped after that scoped pool has gone out of scope -
+this is what actually enforces the ordering: the channel can't disconnect
+(and the writer thread holding `main_conn` can't finish) until every
+chunking worker's read connection is already closed.
+
+Also added a comment to `mount.rs`'s `Inner` struct locking in the
+`conn`-before-`write_conn` field order this same investigation showed
+matters there too, so a future refactor doesn't silently reorder them and
+lose that property.

@@ -393,6 +393,19 @@ struct Inner {
     /// Checked once, in `read_persisted`, at the single point missing/short
     /// store data would otherwise become `Errno::EIO`.
     zero_fill_missing: bool,
+    /// **Must stay declared before `write_conn` below.** Rust drops struct
+    /// fields in declaration order, and that's the only thing that makes
+    /// `write_conn` (not this one) the *last* of the two to close when
+    /// `Inner` itself is finally dropped (the last `Arc<Inner>` clone
+    /// going away, once `on_unmount` has already joined `persist_worker` -
+    /// see its own doc comment - so there's no lingering background thread
+    /// holding a reference past that point either). That ordering is what
+    /// lets SQLite auto-checkpoint and remove `-wal`/`-shm` on a clean
+    /// `--read-write` unmount: only a write-capable connection closing
+    /// *last* can do that (see `docs/plans/implemented/
+    /// read-only-repository-access.md`'s addendum on `store` for what goes
+    /// wrong when a read connection ends up closing after the write one
+    /// instead). Reordering these two fields would silently break this.
     conn: Mutex<Connection>,
     /// `None` for a read-only mount (`--read-write` not given) - never
     /// opened at all in that case, so a genuinely read-only repository
@@ -403,7 +416,8 @@ struct Inner {
     /// already proves this is a `--read-write` mount. `Some` and held for
     /// the mount's whole lifetime otherwise - see `MountArgs::read_write`'s
     /// doc comment on why `store`/`del`/`reclaim-space` mustn't run
-    /// concurrently against the same repository while this is open.
+    /// concurrently against the same repository while this is open. Must
+    /// stay declared *after* `conn` above - see that field's own comment.
     write_conn: Mutex<Option<Connection>>,
     data_store: LongTermStore,
     /// Reserves store space for new chunks written by the phase 2b persist
