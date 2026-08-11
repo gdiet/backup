@@ -1,0 +1,9 @@
+# Keeps the Docker build context (docker/windows-cross, docker/samba-mount -
+# both COPY . . then build fresh with cargo/cargo-xwin inside the container)
+# down to just the source the build actually needs. Without this, `target/`
+# alone (regenerated fresh in the container anyway - stale host build
+# artifacts are never useful there) balloons the context into gigabytes.
+/target/
+/.git/
+/.idea/
+/scrapbook/
