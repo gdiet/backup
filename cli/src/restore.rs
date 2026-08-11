@@ -75,7 +75,7 @@ pub fn run_restore(repo: &Path, args: RestoreArgs) -> ExitCode {
         return ExitCode::FAILURE;
     }
 
-    let repository = match db::open_repository(repo) {
+    let repository = match db::open_repository_read_only(repo) {
         Ok(r) => r,
         Err(err) => {
             eprintln!(

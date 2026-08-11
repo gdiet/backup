@@ -1,9 +1,9 @@
 # Mounts a dedup-backup repository via FUSE inside the container and
 # re-exports it as a Samba (SMB) share, so Windows clients can browse it
 # over the network without installing WinFSP at all - an alternative to
-# the native Windows/WinFSP mount this project also supports. Experimental
-# (branch `docker-samba-mount`, not yet merged) - see
-# ../../docs/plans/docker-samba-mount.md for the tradeoffs.
+# the native Windows/WinFSP mount this project also supports. Experimental,
+# kept as a template rather than a maintained product - see README.md in
+# this directory for the tradeoffs.
 #
 # Build from the rust/ repo root:
 #   docker build -t dedup-samba-mount -f docker/samba-mount/Dockerfile .

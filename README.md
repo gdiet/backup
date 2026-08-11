@@ -432,9 +432,32 @@ backup db compact
 ```
 
 Reclaims free pages left behind by past deletions (`del`/`reclaim-space`),
-shrinking the database file in place. Fast and safe to run any time - it
+shrinking the database file in place, and checkpoints the write-ahead log
+(folding pending writes into the main database file and removing the
+`-wal`/`-shm` sidecar files next to it). Fast and safe to run any time - it
 doesn't need extra disk space or a long exclusive lock, so there's no
 reason to put it off.
+
+### Read-Only Commands Need A Clean Database
+
+`restore`, `stats`, `list`, `find`, `check`, `problems`, `deleted`, `db
+backup`, and `mount` (without `--read-write`) never write to the metadata
+database, and refuse up front rather than degrading silently if it isn't in
+a state that guarantees a consistent read:
+
+- **Pending migrations** - run any write command, or `db compact`, once to
+  apply them.
+- **A pending write-ahead log** (a non-empty `-wal` file next to
+  `repository.sqlite3` - writes not yet folded into the main file) - run
+  `db compact` to fold them in.
+- **A schema newer than this build understands** - update `backup`.
+
+This is also what makes it possible to bind-mount a repository directory
+genuinely read-only (e.g. Docker's `-v /path:/repo:ro`, see
+[`docker/samba-mount/`](docker/samba-mount/)): once `db compact` has run, a
+read-only command never needs to write anything to `meta/` at all, not even
+the `-wal`/`-shm` sidecars SQLite's WAL mode would otherwise create even
+for a plain read.
 
 ### Usage Log
 

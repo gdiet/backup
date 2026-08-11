@@ -168,6 +168,64 @@ fn open_connection_read_only(path: &Path) -> Result<Connection, Error> {
     Ok(conn)
 }
 
+/// Percent-encodes `path` for SQLite's `file:` URI filename syntax
+/// (<https://www.sqlite.org/uri.html>), for use by
+/// [`open_connection_immutable`] - a real filesystem path can contain any
+/// byte that syntax would otherwise misinterpret as a query (`?`), fragment
+/// (`#`), or escape (`%`) delimiter, so every byte outside the small set
+/// URIs leave unencoded is escaped here. Backslashes are normalized to `/`
+/// first: SQLite's URI parser expects forward slashes even for a Windows
+/// drive path (`file:C:/repo/...`), per the same doc's Windows section.
+/// Lossy for non-UTF-8 paths (matches this codebase's existing convention
+/// for turning a `Path` into a displayable/transportable string, e.g.
+/// `Path::display` in every "failed to open repository at {}" error
+/// message) - a mismatched byte would make SQLite fail to find the file
+/// rather than open the wrong one, which is a safe failure mode.
+fn sqlite_uri_path(path: &Path) -> String {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let mut encoded = String::with_capacity(normalized.len());
+    for byte in normalized.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' | b':' => {
+                encoded.push(byte as char);
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+/// Opens the SQLite database at `path` genuinely read-only, via SQLite's
+/// `immutable=1` URI query parameter
+/// (<https://www.sqlite.org/uri.html#uriimmutable>) rather than plain
+/// `SQLITE_OPEN_READ_ONLY` (see [`open_connection_read_only`]) - the two
+/// sound equivalent but aren't: even a plain read-only connection to a
+/// WAL-mode database still needs to create/write the `-shm` sidecar file
+/// (readers record their "read mark" there), and - unlike a writer - can
+/// never remove it again on close, since only a connection that can write
+/// the *main* database file can ever checkpoint. `immutable=1` instead
+/// tells SQLite to trust that the file won't change underneath it and read
+/// straight from the main database file, never touching `-wal`/`-shm` at
+/// all. Only correct to use once the caller has already confirmed there's
+/// no pending (non-empty) `-wal` to ignore - see [`open_repository_read_only`],
+/// the only caller - otherwise "ignoring WAL entirely" would mean silently
+/// serving stale data instead of the equivalent-to-checkpointed state it
+/// relies on here.
+///
+/// No `busy_timeout` pragma, unlike [`open_connection_read_only`]: an
+/// immutable connection never takes any SQLite-level lock, so there is
+/// nothing for it to ever wait on.
+fn open_connection_immutable(path: &Path) -> Result<Connection, Error> {
+    let uri = format!("file:{}?immutable=1", sqlite_uri_path(path));
+    let conn = Connection::open_with_flags(
+        uri,
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_URI
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+    Ok(conn)
+}
+
 /// Fails with [`Error::SchemaTooNew`] if `conn`'s database schema is newer
 /// than any migration this build of `backup` knows about - i.e. it was
 /// created or last opened by a newer version of the program. Checked via
@@ -272,11 +330,20 @@ pub fn adopt_repository_in_place(
     create_repository_files(repo_root, settings)
 }
 
-/// A handle to an existing repository, opened via [`open_repository`].
+/// A handle to an existing repository, opened via [`open_repository`] or
+/// [`open_repository_read_only`].
 #[derive(Debug)]
 pub struct Repository {
     repo_root: std::path::PathBuf,
     settings: RepositorySettings,
+    /// Whether this was opened via [`open_repository_read_only`] rather
+    /// than [`open_repository`] - determines which kind of connection
+    /// [`Repository::open_read_connection`] opens (see its doc comment).
+    /// Doesn't affect [`Repository::open_write_connection`]: nothing in
+    /// this crate stops a caller from calling it on a `read_only`
+    /// `Repository` (the type alone can't enforce that), but every
+    /// `open_repository_read_only` caller in `cli` simply never does.
+    read_only: bool,
 }
 
 impl Repository {
@@ -295,16 +362,26 @@ impl Repository {
     }
 
     /// Opens a new, genuinely read-only connection to this repository's
-    /// metadata database (`SQLITE_OPEN_READ_ONLY` - see
-    /// `open_connection_read_only`): any write attempt through it fails
-    /// outright rather than merely being something callers are expected not
-    /// to do. Open as many of these as needed; per the module-level doc
-    /// comment, WAL only ever admits one writer transaction at a time, so
-    /// treating every connection as a potential writer would only add lock
+    /// metadata database: any write attempt through it fails outright
+    /// rather than merely being something callers are expected not to do.
+    /// Open as many of these as needed; per the module-level doc comment,
+    /// WAL only ever admits one writer transaction at a time, so treating
+    /// every connection as a potential writer would only add lock
     /// contention without adding throughput - which a read-only connection
     /// can't do even by accident now.
+    ///
+    /// Uses `open_connection_immutable` for a `Repository` obtained via
+    /// [`open_repository_read_only`], `open_connection_read_only` otherwise.
+    /// See `open_connection_immutable`'s doc comment for why these aren't
+    /// interchangeable: only the immutable path never needs to write
+    /// `-wal`/`-shm`, which is the entire point of `open_repository_read_only`
+    /// existing.
     pub fn open_read_connection(&self) -> Result<Connection, Error> {
-        open_connection_read_only(&self.meta_db_path())
+        if self.read_only {
+            open_connection_immutable(&self.meta_db_path())
+        } else {
+            open_connection_read_only(&self.meta_db_path())
+        }
     }
 
     /// Opens a new read-write connection to this repository's metadata
@@ -343,6 +420,7 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
     Ok(Repository {
         repo_root: repo_root.to_path_buf(),
         settings,
+        read_only: false,
     })
 }
 
@@ -350,30 +428,39 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
 /// without ever opening a read-write connection - suitable for a repository
 /// directory that is genuinely read-only on disk (e.g. bind-mounted `:ro`),
 /// which [`open_repository`] can't handle: it always opens a read-write
-/// connection first, to check for and apply pending migrations.
+/// connection first, to check for and apply pending migrations. The
+/// [`Repository`] this returns opens every later
+/// [`Repository::open_read_connection`] via `open_connection_immutable`,
+/// which - unlike a plain `SQLITE_OPEN_READ_ONLY` connection - never
+/// touches `-wal`/`-shm` at all (see that function's doc comment for why
+/// the distinction matters).
 ///
 /// Fails, rather than silently degrading, in the three ways a read-only
 /// command could otherwise misbehave against such a repository:
-/// - [`Error::UncheckpointedWal`] if `-wal`/`-shm` sidecar files are present
-///   next to the database file - SQLite's WAL mode needs to write to those
-///   even for a read-only connection (updating a reader's "read mark" slot),
-///   so their mere presence means this repository isn't actually usable
-///   read-only yet, regardless of what this function itself would need.
-///   Point the user at `db compact`, which checkpoints and (once it's the
-///   last connection open) removes them.
+/// - [`Error::UncheckpointedWal`] if a non-empty `-wal` sidecar is present
+///   next to the database file - i.e. there are writes not yet folded into
+///   the main database file. An *empty* `-wal` (and any `-shm`, which never
+///   by itself indicates pending writes - see `open_connection_immutable`)
+///   is harmless and ignored: merely opening an ordinary read connection
+///   leaves exactly that behind (readers need `-shm` for their "read mark"
+///   slot, but never write actual data to `-wal`), so treating any
+///   *presence* as disqualifying would make every read-only command fail
+///   after the very first one ever run against a repository - refusing
+///   would defeat the purpose of this function rather than serve it. Point
+///   the user at `db compact`, which checkpoints (folding pending writes
+///   into the main file) and removes both sidecars entirely.
 /// - [`Error::SchemaTooNew`] if the schema is newer than this build knows
-///   about (see [`reject_if_schema_too_new`]).
+///   about (see `reject_if_schema_too_new`).
 /// - [`Error::MigrationsPending`] if migrations are pending - unlike
 ///   [`open_repository`], this function never applies them itself.
 pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> {
     let db_path = repo_root.join(META_DIR).join(META_DB_FILE);
-    for suffix in ["-wal", "-shm"] {
-        if Path::new(&format!("{}{suffix}", db_path.display())).exists() {
-            return Err(Error::UncheckpointedWal);
-        }
+    let wal_path = Path::new(&format!("{}-wal", db_path.display())).to_path_buf();
+    if wal_path.metadata().is_ok_and(|metadata| metadata.len() > 0) {
+        return Err(Error::UncheckpointedWal);
     }
 
-    let conn = open_connection_read_only(&db_path)?;
+    let conn = open_connection_immutable(&db_path)?;
     reject_if_schema_too_new(&conn)?;
     if migrations::migrations().pending_migrations(&conn)? > 0 {
         return Err(Error::MigrationsPending);
@@ -389,6 +476,7 @@ pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> 
     Ok(Repository {
         repo_root: repo_root.to_path_buf(),
         settings,
+        read_only: true,
     })
 }
 
@@ -502,31 +590,56 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn open_repository_read_only_works_even_when_the_database_file_is_not_writable() {
+    fn open_repository_read_only_works_even_when_the_meta_directory_is_not_writable() {
+        // Chmodding just the database *file* wouldn't actually exercise the
+        // scenario this whole function exists for (a `:ro`-bind-mounted
+        // repository directory, see docs/plans/read-only-repository-access.md):
+        // creating a *new* file (-wal/-shm) needs write permission on the
+        // containing *directory*, not the database file itself - a plain
+        // SQLITE_OPEN_READ_ONLY connection would have happily opened a
+        // read-only-permissioned file in an otherwise-writable directory
+        // and then failed trying to create -shm there, so this must chmod
+        // meta/ itself to actually prove the fix.
         use std::os::unix::fs::PermissionsExt;
 
         let temp_dir = tempfile::tempdir().unwrap();
         let repo_root = temp_dir.path().join("repo");
         init_repository(&repo_root, &test_settings()).unwrap();
-        let db_path = repo_root.join(META_DIR).join(META_DB_FILE);
-        let mut perms = fs::metadata(&db_path).unwrap().permissions();
-        perms.set_mode(0o444);
-        fs::set_permissions(&db_path, perms).unwrap();
+        let meta_dir = meta_dir(&repo_root);
+        let mut perms = fs::metadata(&meta_dir).unwrap().permissions();
+        perms.set_mode(0o555);
+        fs::set_permissions(&meta_dir, perms).unwrap();
 
-        let result = open_repository_read_only(&repo_root);
+        let repo = open_repository_read_only(&repo_root).unwrap();
+        let conn = repo.open_read_connection().unwrap();
+        let result = resolve_path(&conn, "");
+
+        // Restore write permission before the tempdir's own Drop tries to
+        // remove it - not needed for the assertion itself.
+        let mut perms = fs::metadata(&meta_dir).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(&meta_dir, perms).unwrap();
 
         assert!(result.is_ok(), "{result:?}");
+        let wal_path = meta_dir.join(format!("{META_DB_FILE}-wal"));
+        let shm_path = meta_dir.join(format!("{META_DB_FILE}-shm"));
+        assert!(!wal_path.exists(), "immutable mode must never create -wal");
+        assert!(!shm_path.exists(), "immutable mode must never create -shm");
     }
 
     #[test]
-    fn open_repository_read_only_fails_when_wal_sidecars_are_present() {
+    fn open_repository_read_only_fails_when_the_wal_has_unwritten_data() {
         let temp_dir = tempfile::tempdir().unwrap();
         let repo_root = temp_dir.path().join("repo");
         init_repository(&repo_root, &test_settings()).unwrap();
         let repo = open_repository(&repo_root).unwrap();
         // Kept open so the write below doesn't auto-checkpoint away its own
         // WAL sidecars when it closes - see the equivalent trick in
-        // cli::db_maintenance's WAL-checkpoint test.
+        // cli::db_maintenance's WAL-checkpoint test. Without this, `-wal`
+        // would end up empty (0 bytes) rather than actually holding this
+        // write's frames, which is exactly the harmless case the next test
+        // (`..._survives_a_prior_read_only_open`) exists to distinguish
+        // from this one.
         let outlasting_conn = repo.open_write_connection().unwrap();
         let write_conn = repo.open_write_connection().unwrap();
         insert_directory(&write_conn, 0, "sub", 0).unwrap();
@@ -539,6 +652,36 @@ mod tests {
             "{result:?}"
         );
         drop(outlasting_conn);
+    }
+
+    #[test]
+    fn open_repository_read_only_survives_a_prior_plain_read_only_connection() {
+        // A regression test for the bug this whole design revolves around:
+        // merely *opening* a plain SQLITE_OPEN_READ_ONLY connection to a
+        // WAL-mode database (what `open_read_connection` used to do
+        // unconditionally, before it started branching on `read_only` -
+        // see `open_connection_read_only`'s own doc comment) creates an
+        // (empty) `-wal` and a (fixed-size, content-free) `-shm` sidecar of
+        // its own - readers need `-shm` for their "read mark" slot - and,
+        // unlike a writer, can never remove them again on close (only a
+        // connection able to write the *main* file can ever checkpoint).
+        // Simulates that history directly (rather than relying on
+        // `open_repository_read_only`'s own internals, which now avoid this
+        // entirely via `open_connection_immutable`) so this test still
+        // means something once that implementation detail changes: if
+        // `open_repository_read_only` ever went back to treating mere
+        // sidecar *presence* as disqualifying (rather than checking
+        // `-wal`'s actual size), every read-only command would fail after
+        // the very first plain read-only connection anyone ever opened
+        // against a repository.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        drop(open_connection_read_only(&db_file_path(&repo_root)).unwrap());
+
+        let result = open_repository_read_only(&repo_root);
+
+        assert!(result.is_ok(), "{result:?}");
     }
 
     #[test]

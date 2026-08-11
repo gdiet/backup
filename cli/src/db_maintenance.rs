@@ -66,7 +66,7 @@ pub fn run_db(repo: &Path, args: DbArgs) -> ExitCode {
 /// past the `VACUUM INTO` step, removes both the temporary uncompressed
 /// file and any partial zip, leaving nothing half-finished behind.
 pub(crate) fn run_backup(repo: &Path) -> ExitCode {
-    let repository = match db::open_repository(repo) {
+    let repository = match db::open_repository_read_only(repo) {
         Ok(r) => r,
         Err(err) => {
             eprintln!(

@@ -39,11 +39,13 @@ pub enum Error {
     /// been applied yet - a read-only connection can't apply them itself,
     /// unlike [`crate::open_repository`].
     MigrationsPending,
-    /// [`crate::open_repository_read_only`] found `-wal`/`-shm` sidecar
-    /// files still present next to the metadata database file. A repository
-    /// directory can't be genuinely read-only (e.g. bind-mounted `:ro`)
-    /// while these exist, since SQLite's WAL mode needs to write to them
-    /// even for a read-only connection - see [`crate::open_repository_read_only`].
+    /// [`crate::open_repository_read_only`] found a non-empty `-wal`
+    /// sidecar next to the metadata database file - writes not yet folded
+    /// into the main database file, which a read-only connection could
+    /// only ever see by ignoring (this function relies on `immutable=1`
+    /// SQLite connections internally, which is only correct once this case
+    /// is ruled out first). An empty `-wal`/any `-shm` don't trigger this -
+    /// see [`crate::open_repository_read_only`]'s own doc comment for why.
     UncheckpointedWal,
 }
 
@@ -84,8 +86,9 @@ impl fmt::Display for Error {
             ),
             Self::UncheckpointedWal => write!(
                 f,
-                "found leftover write-ahead-log files (-wal/-shm) next to the metadata database \
-                 - run `db compact` once to clean them up before using a read-only command"
+                "found a pending write-ahead-log file (-wal) next to the metadata database, not \
+                 yet folded into it - run `db compact` once to clean this up before using a \
+                 read-only command"
             ),
         }
     }

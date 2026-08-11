@@ -30,7 +30,7 @@ pub struct CheckArgs {
 /// directory recurses through everything under it, and the exit code
 /// reflects the result.
 pub fn run_check(repo: &Path, args: CheckArgs) -> ExitCode {
-    let repository = match db::open_repository(repo) {
+    let repository = match db::open_repository_read_only(repo) {
         Ok(r) => r,
         Err(err) => {
             eprintln!(

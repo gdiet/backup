@@ -5,10 +5,11 @@ browse it without installing WinFSP at all - reachable as an ordinary network sh
 local drive/mount. Alternative to the native Windows/WinFSP mount and the Linux/WSL2 mount this
 project already supports natively.
 
-**Status: experimental, on branch `docker-samba-mount`, not merged into `rust`.** Core path
-(mount in Docker, serve via Samba, connect from a real Windows host over the network) verified
-working end-to-end - see "SMB access from an actual Windows host" below. Remaining known gap:
-`--read-write` isn't wired up in `entrypoint.sh` yet (see below).
+**Status: experimental, kept as a template** for a dedicated Linux dedup server with Samba (e.g. a
+Raspberry Pi), not a maintained product. Core path (mount in Docker, serve via Samba, connect from
+a real Windows host over the network) verified working end-to-end - see "SMB access from an actual
+Windows host" below. Remaining known gap: `--read-write` isn't wired up in `entrypoint.sh` yet (see
+below).
 
 ## Build and run
 
@@ -24,11 +25,13 @@ docker run --rm --cap-add SYS_ADMIN --device /dev/fuse \
 
 - `--cap-add SYS_ADMIN --device /dev/fuse`: required for the container to perform the actual FUSE
   mount syscall.
-- `-v /path/to/repository:/repo` - **not** `:ro`: SQLite's WAL mode needs to create `-wal`/`-shm`
-  sidecar files in the repository's `meta/` directory even for read-only queries, so the bind
-  mount itself can't be read-only. This is independent of `backup mount`'s own read-only serving
-  to SMB/FUSE clients (still the default; pass `--read-write` via `MOUNT_ARGS` - not currently
-  wired up in `entrypoint.sh`, would need a small addition there - to change that).
+- `-v /path/to/repository:/repo:ro` - **now works** (verified end-to-end: container mounts, file
+  content reads back correctly, host-side `meta/` stays completely untouched) as long as the
+  repository has no pending write-ahead log - run `backup db compact` on it first if unsure (see
+  "Read-Only Commands Need A Clean Database" in the main [README](../../README.md)). Without a
+  prior `db compact`, the container's `backup mount` will fail to start with an actionable
+  `UncheckpointedWal`/`MigrationsPending` error rather than silently misbehaving. Drop `:ro` if
+  running with `--read-write` (see below) - a read-write mount always needs to write to `meta/`.
 - Default SMB credentials: user `dedup`, password `dedup` (override via `-e SMB_USER=... -e
   SMB_PASSWORD=...`). Fixed-user auth, not guest access - modern Windows clients don't reliably
   allow anonymous SMB logons by default.

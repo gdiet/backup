@@ -37,7 +37,7 @@ pub(crate) struct ProblemFile {
 /// own doc comment for what "missing or short" means), lists every active
 /// file affected, at file rather than chunk granularity.
 pub fn run_problems(repo: &Path, args: ProblemsArgs) -> ExitCode {
-    let repository = match db::open_repository(repo) {
+    let repository = match db::open_repository_read_only(repo) {
         Ok(r) => r,
         Err(err) => {
             eprintln!(

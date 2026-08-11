@@ -22,7 +22,7 @@ pub struct DeletedArgs {
 /// with its own `id` - `[id]` is what `backup undelete` takes to say which
 /// one.
 pub fn run_deleted(repo: &Path, args: DeletedArgs) -> ExitCode {
-    let repository = match db::open_repository(repo) {
+    let repository = match db::open_repository_read_only(repo) {
         Ok(r) => r,
         Err(err) => {
             eprintln!(

@@ -253,22 +253,32 @@ fn build_filesystem(
     temp: Option<&Path>,
     zero_fill_missing: bool,
 ) -> Result<DedupFs, String> {
-    let repository = db::open_repository(repo)
-        .map_err(|err| format!("failed to open repository at {}: {err}", repo.display()))?;
+    // A read-only mount (see docs/plans/read-only-repository-access.md)
+    // must never open a read-write connection - the repository directory
+    // may genuinely be read-only on disk (e.g. bind-mounted `:ro`).
+    let repository = if read_write {
+        db::open_repository(repo)
+    } else {
+        db::open_repository_read_only(repo)
+    }
+    .map_err(|err| format!("failed to open repository at {}: {err}", repo.display()))?;
     let conn = repository
         .open_read_connection()
         .map_err(|err| format!("failed to open the metadata database: {err}"))?;
-    // Opened unconditionally (even for a read-only mount) - cheap, and
-    // keeps DedupFs's shape identical regardless of --read-write; the
-    // read_only flag passed to mountfs::mount is what actually keeps the
-    // kernel/WinFSP from ever calling a write operation in that case, not
-    // this connection's mere existence.
-    let write_conn = repository
-        .open_write_connection()
-        .map_err(|err| format!("failed to open the metadata database for writing: {err}"))?;
+    // `None` for a read-only mount - see `Inner::write_conn`'s doc comment.
+    let write_conn =
+        if read_write {
+            Some(repository.open_write_connection().map_err(|err| {
+                format!("failed to open the metadata database for writing: {err}")
+            })?)
+        } else {
+            None
+        };
     // Seeded once, like `store`'s own allocator - reused across every
-    // persist for this mount's whole lifetime (not just one command's).
-    let extents = db::chunk_extents_sorted(&write_conn)
+    // persist for this mount's whole lifetime (not just one command's). Uses
+    // the always-open read connection, not `write_conn` (`None` for a
+    // read-only mount anyway) - a plain read, no reason to need more.
+    let extents = db::chunk_extents_sorted(&conn)
         .map_err(|err| format!("failed to determine free store space: {err}"))?;
     let allocator = SpaceAllocator::from_sorted_extents(&extents);
     let chunker_config = ChunkerConfig::new(match repository.settings().chunking() {
@@ -384,10 +394,17 @@ struct Inner {
     /// store data would otherwise become `Errno::EIO`.
     zero_fill_missing: bool,
     conn: Mutex<Connection>,
-    /// Held for the mount's whole lifetime - see `MountArgs::read_write`'s
+    /// `None` for a read-only mount (`--read-write` not given) - never
+    /// opened at all in that case, so a genuinely read-only repository
+    /// directory (see `docs/plans/read-only-repository-access.md`) can be
+    /// mounted read-only too. Every call site that locks this is already
+    /// behind its own `if self.read_only { return Err(Errno::EROFS) }`
+    /// check, so `.expect`ing `Some` there is safe - reaching it at all
+    /// already proves this is a `--read-write` mount. `Some` and held for
+    /// the mount's whole lifetime otherwise - see `MountArgs::read_write`'s
     /// doc comment on why `store`/`del`/`reclaim-space` mustn't run
     /// concurrently against the same repository while this is open.
-    write_conn: Mutex<Connection>,
+    write_conn: Mutex<Option<Connection>>,
     data_store: LongTermStore,
     /// Reserves store space for new chunks written by the phase 2b persist
     /// pipeline - see `chunk_store::SpaceAllocator`.
@@ -896,23 +913,26 @@ impl Inner {
             return Err(Errno::EROFS);
         }
         let (parent_path, name) = split_parent(path);
-        let conn = self
+        let mut guard = self
             .write_conn
             .lock()
             .expect("write connection mutex poisoned");
-        let parent = db::resolve_path(&conn, parent_path)
+        let conn = guard
+            .as_mut()
+            .expect("only reached when read_write - checked by the read_only guard above");
+        let parent = db::resolve_path(conn, parent_path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
         // insert_directory is idempotent (get-or-create) - fine for `store`,
         // but a real mkdir(2) must fail on an existing name (file or
         // directory alike), so the existence check happens here first.
-        if db::find_tree_entry(&conn, parent.id, name)
+        if db::find_tree_entry(conn, parent.id, name)
             .map_err(|_| Errno::EIO)?
             .is_some()
         {
             return Err(Errno::EEXIST);
         }
-        db::insert_directory(&conn, parent.id, name, now_millis()).map_err(|_| Errno::EIO)?;
+        db::insert_directory(conn, parent.id, name, now_millis()).map_err(|_| Errno::EIO)?;
         Ok(())
     }
 
@@ -921,14 +941,17 @@ impl Inner {
             return Err(Errno::EROFS);
         }
         let (parent_path, name) = split_parent(path);
-        let mut conn = self
+        let mut guard = self
             .write_conn
             .lock()
             .expect("write connection mutex poisoned");
-        let parent = db::resolve_path(&conn, parent_path)
+        let conn = guard
+            .as_mut()
+            .expect("only reached when read_write - checked by the read_only guard above");
+        let parent = db::resolve_path(conn, parent_path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
-        if db::find_tree_entry(&conn, parent.id, name)
+        if db::find_tree_entry(conn, parent.id, name)
             .map_err(|_| Errno::EIO)?
             .is_some()
         {
@@ -940,7 +963,7 @@ impl Inner {
         // same as `open`ing an existing file for writing.
         let time_millis = now_millis();
         db::apply_backup_batch(
-            &mut conn,
+            conn,
             &[db::FileBackupRecord {
                 parent_id: parent.id,
                 name: name.to_string(),
@@ -952,10 +975,10 @@ impl Inner {
             }],
         )
         .map_err(|_| Errno::EIO)?;
-        let entry = db::find_tree_entry(&conn, parent.id, name)
+        let entry = db::find_tree_entry(conn, parent.id, name)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::EIO)?;
-        drop(conn);
+        drop(guard);
         self.register_open(entry.id, time_millis);
         Ok(Handle(entry.id as u64))
     }
@@ -964,17 +987,20 @@ impl Inner {
         if self.read_only {
             return Err(Errno::EROFS);
         }
-        let conn = self
+        let mut guard = self
             .write_conn
             .lock()
             .expect("write connection mutex poisoned");
-        let entry = db::resolve_path(&conn, path)
+        let conn = guard
+            .as_mut()
+            .expect("only reached when read_write - checked by the read_only guard above");
+        let entry = db::resolve_path(conn, path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
         if entry.kind != db::EntryKind::File {
             return Err(Errno::EISDIR);
         }
-        db::soft_delete(&conn, entry.id, now_millis()).map_err(|_| Errno::EIO)?;
+        db::soft_delete(conn, entry.id, now_millis()).map_err(|_| Errno::EIO)?;
         Ok(())
     }
 
@@ -982,23 +1008,26 @@ impl Inner {
         if self.read_only {
             return Err(Errno::EROFS);
         }
-        let conn = self
+        let mut guard = self
             .write_conn
             .lock()
             .expect("write connection mutex poisoned");
-        let entry = db::resolve_path(&conn, path)
+        let conn = guard
+            .as_mut()
+            .expect("only reached when read_write - checked by the read_only guard above");
+        let entry = db::resolve_path(conn, path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
         if entry.kind != db::EntryKind::Dir {
             return Err(Errno::ENOTDIR);
         }
-        if !db::list_children(&conn, entry.id)
+        if !db::list_children(conn, entry.id)
             .map_err(|_| Errno::EIO)?
             .is_empty()
         {
             return Err(Errno::ENOTEMPTY);
         }
-        db::soft_delete(&conn, entry.id, now_millis()).map_err(|_| Errno::EIO)?;
+        db::soft_delete(conn, entry.id, now_millis()).map_err(|_| Errno::EIO)?;
         Ok(())
     }
 
@@ -1006,10 +1035,13 @@ impl Inner {
         if self.read_only {
             return Err(Errno::EROFS);
         }
-        let mut conn = self
+        let mut guard = self
             .write_conn
             .lock()
             .expect("write connection mutex poisoned");
+        let conn = guard
+            .as_mut()
+            .expect("only reached when read_write - checked by the read_only guard above");
 
         // The recovery gesture: dragging something out of `[deleted]`
         // arrives here as an ordinary `rename` (confirmed against real
@@ -1022,33 +1054,27 @@ impl Inner {
         // anything narrower, matching `undelete --recursive`'s own
         // semantics (see the plan doc's "Directory rename-out scope"
         // decision).
-        if let Some((scope_id, virtual_path)) = mount_deleted::split_deleted_path(&conn, old_path)?
-        {
+        if let Some((scope_id, virtual_path)) = mount_deleted::split_deleted_path(conn, old_path)? {
             let Some(DeletedResolution::Entry(entry)) =
-                mount_deleted::resolve_deleted(&conn, scope_id, &virtual_path)?
+                mount_deleted::resolve_deleted(conn, scope_id, &virtual_path)?
             else {
                 return Err(Errno::ENOENT);
             };
-            if mount_deleted::split_deleted_path(&conn, new_path)?.is_some() {
+            if mount_deleted::split_deleted_path(conn, new_path)?.is_some() {
                 // Moving between two deleted views isn't a recovery
                 // gesture and has no defined meaning here.
                 return Err(Errno::EIO);
             }
             let (new_parent_path, new_name) = split_parent(new_path);
-            let new_parent = db::resolve_path(&conn, new_parent_path)
+            let new_parent = db::resolve_path(conn, new_parent_path)
                 .map_err(|_| Errno::EIO)?
                 .ok_or(Errno::ENOENT)?;
             let recursive = entry.kind == db::EntryKind::Dir;
-            let count = db::undelete(
-                &mut conn,
-                entry.id,
-                recursive,
-                Some((new_parent.id, new_name)),
-            )
-            .map_err(|err| match err {
-                db::Error::AlreadyExists { .. } => Errno::EEXIST,
-                _ => Errno::EIO,
-            })?;
+            let count = db::undelete(conn, entry.id, recursive, Some((new_parent.id, new_name)))
+                .map_err(|err| match err {
+                    db::Error::AlreadyExists { .. } => Errno::EEXIST,
+                    _ => Errno::EIO,
+                })?;
             return if count > 0 {
                 Ok(())
             } else {
@@ -1056,14 +1082,14 @@ impl Inner {
             };
         }
 
-        let entry = db::resolve_path(&conn, old_path)
+        let entry = db::resolve_path(conn, old_path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
         let (new_parent_path, new_name) = split_parent(new_path);
-        let new_parent = db::resolve_path(&conn, new_parent_path)
+        let new_parent = db::resolve_path(conn, new_parent_path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
-        db::rename_entry(&conn, entry.id, new_parent.id, new_name).map_err(|err| match err {
+        db::rename_entry(conn, entry.id, new_parent.id, new_name).map_err(|err| match err {
             db::Error::AlreadyExists { .. } => Errno::EEXIST,
             _ => Errno::EIO,
         })
@@ -1073,14 +1099,17 @@ impl Inner {
         if self.read_only {
             return Err(Errno::EROFS);
         }
-        let conn = self
+        let mut guard = self
             .write_conn
             .lock()
             .expect("write connection mutex poisoned");
-        let entry = db::resolve_path(&conn, path)
+        let conn = guard
+            .as_mut()
+            .expect("only reached when read_write - checked by the read_only guard above");
+        let entry = db::resolve_path(conn, path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
-        db::touch_mtime(&conn, entry.id, mtime_millis).map_err(|_| Errno::EIO)?;
+        db::touch_mtime(conn, entry.id, mtime_millis).map_err(|_| Errno::EIO)?;
         Ok(())
     }
 
@@ -1491,11 +1520,14 @@ impl Inner {
                 content_hash: content_hash.to_vec(),
             },
         };
-        let mut write_conn = self
+        let mut guard = self
             .write_conn
             .lock()
             .expect("write connection mutex poisoned");
-        if let Err(err) = db::apply_backup_batch(&mut write_conn, &[record]) {
+        let write_conn = guard
+            .as_mut()
+            .expect("only reached when read_write - persist is only ever invoked via a write path");
+        if let Err(err) = db::apply_backup_batch(write_conn, &[record]) {
             eprintln!(
                 "error: mount: failed to persist changes to '{name}': {err} - changes have been lost"
             );
@@ -1624,6 +1656,26 @@ mod tests {
             }],
         )
         .unwrap();
+    }
+
+    /// A read-only mount (no `--read-write`) must never open a read-write
+    /// connection to the metadata database - see
+    /// `docs/plans/read-only-repository-access.md`. If it did, this would
+    /// fail: a chmod-read-only database file can't be opened for writing.
+    #[cfg(unix)]
+    #[test]
+    fn build_filesystem_read_only_works_even_when_the_database_file_is_not_writable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_temp_dir, repo_root) = init_repo();
+        let db_path = db::db_file_path(&repo_root);
+        let mut perms = std::fs::metadata(&db_path).unwrap().permissions();
+        perms.set_mode(0o444);
+        std::fs::set_permissions(&db_path, perms).unwrap();
+
+        if let Err(err) = build_filesystem(&repo_root, false, DEFAULT_WRITE_CACHE_MB, None, false) {
+            panic!("{err}");
+        }
     }
 
     /// End-to-end mount/read/unmount test: seeds a real repository with a
