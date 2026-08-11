@@ -1,8 +1,9 @@
 # Audit: long file/directory names and paths, across all commands, on Linux and Windows
 
-**Status**: not started - this is an investigation plan, not a design for a specific change. No
-code has been written yet; nothing here is a confirmed bug, only a list of what needs to actually
-be checked before we know whether one exists.
+**Status**: first round of empirical testing done (2026-08-11, Linux + a real Windows-backed
+filesystem via WSL2's DrvFs `/mnt/c` - see "Findings" below); native WinFSP mount and raw SMB
+protocol-level limits still untested (no WinFSP available in this environment). One concrete,
+scoped gap found and worth fixing; everything else checked so far already behaves reasonably.
 
 ## Why this needs checking at all
 
@@ -109,3 +110,59 @@ that's tabulated does it make sense to decide whether anything needs fixing, and
 (upfront validation in `store`/`mount`'s write paths, vs. just improving the error message at the
 point of syscall failure, vs. leaving it as "not supported, OS error surfaces as-is" if that's an
 acceptable, documented limitation).
+
+## Findings (2026-08-11, empirical, Linux + real Windows-backed filesystem via WSL2 DrvFs)
+
+All tests below used a throwaway repository, not `backup-repository/`. Every result is from
+actually running the command, not reasoned about.
+
+1. **Linux `NAME_MAX` boundary, `store`/`restore` round-trip**: a 255-byte (ext4's real limit)
+   filename round-trips through `store` → `list` → `restore` with byte-identical content. A
+   256-byte name can't even be *created* on ext4 in the first place (`File name too long`, before
+   `backup` is ever involved) - confirms failure mode 1 ("source already too long for its own
+   OS") is essentially unreachable via `store`, since `walkdir` can only ever see names the source
+   filesystem itself already accepted.
+
+2. **`mount --read-write`'s `create` has no length validation at all - the one real gap found.**
+   Creating a file with a 256-byte name *through the FUSE mount* succeeded (exit 0) and the full
+   256-byte name landed intact in `tree_entries` (`TEXT`, no length constraint - see above). This
+   is the one command that can inject a name into the repository that no real source filesystem
+   could ever have produced via `store`, since it's backed by SQLite, not a real directory entry.
+   Confirmed the kernel/libfuse do **not** enforce `NAME_MAX` here on our virtual filesystem's
+   behalf - `max_name_length` in `StatfsInfo` is advisory only, nothing rejects an actual create
+   that exceeds it. Reading it back also isn't blocked: a fresh read-only `mount`'s `readdir` and
+   `stat` on that same 256-byte entry both succeeded without any OS-level error - Linux's FUSE
+   layer is fully permissive here, more so than a real disk filesystem would be.
+
+3. **`restore` already handles a too-long *destination* name well - no fix needed.** Restoring
+   that same 256-byte-named entry back to a real ext4 target produced a clear, specific warning
+   (`warning: failed to create '.../bbb...': File name too long (os error 36)`), restored every
+   other entry normally, and exited 0 with an accurate `restore completed with 1 warning(s)`
+   summary - not a crash, not a silent drop, not a partial/inconsistent state.
+
+4. **Deep paths (many components) round-trip cleanly through real Windows/NTFS, both
+   directions - including well past the classic 260-character `MAX_PATH`.** Built a 20-level-deep
+   source tree on Linux (508-character full path once restored under a `C:\Users\...` prefix),
+   restored it onto real NTFS via WSL2's `/mnt/c` (DrvFs) - succeeded with no warning, content
+   verified byte-identical. Then `store`d that same long-path tree back *from* `/mnt/c` as the
+   source - also succeeded cleanly. This is genuinely useful, non-obvious data: at least through
+   DrvFs, modern Windows/NTFS handles long paths transparently, without needing this project to do
+   anything special (no `\\?\` prefixing attempted or apparently required). **Not yet tested**: a
+   *native* WinFSP mount (no WinFSP available in this environment) or classic, non-long-path-aware
+   Win32 client applications, which are a separate, real caveat even on a long-path-capable
+   filesystem - a filesystem accepting a path doesn't guarantee every Windows application that
+   might later open it does too.
+
+### Conclusion so far
+
+The practical risk is narrower than the original scope worried about: `store` can't produce an
+unrestorable name (constrained by the real source filesystem), deep paths work fine at least via
+DrvFs, and `restore` already degrades gracefully when it does hit a real OS rejection. The one
+concrete, worth-fixing gap is **`mount --read-write`'s write-side dispatch
+(`mkdir`/`create`/`rename` in `mountfs`/`cli/src/mount.rs`) accepting names with no length
+validation at all** - the only path that can put an entry into a repository that's later
+impossible to restore by name on *any* real filesystem. A reasonable fix: validate each new
+name's length against a conservative, cross-platform-safe limit (e.g. 255 UTF-8 bytes, matching
+Linux `NAME_MAX` and close to NTFS's 255-UTF-16-unit component limit) in those three dispatch
+methods, returning `Errno` equivalent to `ENAMETOOLONG` instead of silently accepting it - not yet
+implemented, a deliberate small follow-up rather than bundled into this audit.
