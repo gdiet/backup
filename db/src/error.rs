@@ -27,6 +27,24 @@ pub enum Error {
     Sqlite(rusqlite::Error),
     /// Applying database migrations failed.
     Migration(rusqlite_migration::Error),
+    /// The database's schema version is newer than any migration this build
+    /// of `backup` knows about - it was created or last opened by a newer
+    /// version of the program. Detected up front (via
+    /// [`rusqlite_migration::Migrations::current_version`]) rather than left
+    /// to surface as the much less actionable
+    /// [`rusqlite_migration::MigrationDefinitionError::DatabaseTooFarAhead`]
+    /// error `to_latest` would otherwise fail with.
+    SchemaTooNew { db_version: usize },
+    /// [`crate::open_repository_read_only`] found migrations that haven't
+    /// been applied yet - a read-only connection can't apply them itself,
+    /// unlike [`crate::open_repository`].
+    MigrationsPending,
+    /// [`crate::open_repository_read_only`] found `-wal`/`-shm` sidecar
+    /// files still present next to the metadata database file. A repository
+    /// directory can't be genuinely read-only (e.g. bind-mounted `:ro`)
+    /// while these exist, since SQLite's WAL mode needs to write to them
+    /// even for a read-only connection - see [`crate::open_repository_read_only`].
+    UncheckpointedWal,
 }
 
 impl fmt::Display for Error {
@@ -54,6 +72,21 @@ impl fmt::Display for Error {
             Self::Io(err) => write!(f, "I/O error: {err}"),
             Self::Sqlite(err) => write!(f, "SQLite error: {err}"),
             Self::Migration(err) => write!(f, "database migration error: {err}"),
+            Self::SchemaTooNew { db_version } => write!(
+                f,
+                "this repository's database schema (version {db_version}) is newer than this \
+                 version of `backup` understands - please update `backup`"
+            ),
+            Self::MigrationsPending => write!(
+                f,
+                "this repository has pending database migrations that a read-only command can't \
+                 apply - run any write command (e.g. `db compact`) once to bring it up to date"
+            ),
+            Self::UncheckpointedWal => write!(
+                f,
+                "found leftover write-ahead-log files (-wal/-shm) next to the metadata database \
+                 - run `db compact` once to clean them up before using a read-only command"
+            ),
         }
     }
 }
@@ -69,6 +102,9 @@ impl std::error::Error for Error {
             Self::Io(err) => Some(err),
             Self::Sqlite(err) => Some(err),
             Self::Migration(err) => Some(err),
+            Self::SchemaTooNew { .. } => None,
+            Self::MigrationsPending => None,
+            Self::UncheckpointedWal => None,
         }
     }
 }

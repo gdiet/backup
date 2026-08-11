@@ -51,6 +51,7 @@ use std::fs;
 use std::path::Path;
 
 use rusqlite::{Connection, OpenFlags};
+use rusqlite_migration::SchemaVersion;
 
 /// Directory (relative to the repository root) holding the metadata database.
 const META_DIR: &str = "meta";
@@ -167,6 +168,24 @@ fn open_connection_read_only(path: &Path) -> Result<Connection, Error> {
     Ok(conn)
 }
 
+/// Fails with [`Error::SchemaTooNew`] if `conn`'s database schema is newer
+/// than any migration this build of `backup` knows about - i.e. it was
+/// created or last opened by a newer version of the program. Checked via
+/// [`rusqlite_migration::Migrations::current_version`], which only reads
+/// `PRAGMA user_version` (works on a read-only connection, doesn't migrate),
+/// so this can run before [`open_repository`] attempts `to_latest` (which
+/// would otherwise fail on the same condition with a far less actionable
+/// error - see [`Error::SchemaTooNew`]'s doc comment) and before
+/// [`open_repository_read_only`] does anything else.
+fn reject_if_schema_too_new(conn: &Connection) -> Result<(), Error> {
+    if let SchemaVersion::Outside(db_version) = migrations::migrations().current_version(conn)? {
+        return Err(Error::SchemaTooNew {
+            db_version: db_version.get(),
+        });
+    }
+    Ok(())
+}
+
 /// Creates the `meta`/`data` directory layout at `repo_root` and initializes
 /// the metadata database within it: the schema (which seeds the root tree
 /// entry) and the given `settings`. Shared by [`init_repository`] and
@@ -254,6 +273,7 @@ pub fn adopt_repository_in_place(
 }
 
 /// A handle to an existing repository, opened via [`open_repository`].
+#[derive(Debug)]
 pub struct Repository {
     repo_root: std::path::PathBuf,
     settings: RepositorySettings,
@@ -310,7 +330,54 @@ impl Repository {
 /// those when checking once up front already covers the whole run).
 pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
     let mut conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE))?;
+    reject_if_schema_too_new(&conn)?;
     migrations::migrations().to_latest(&mut conn)?;
+
+    let (cdc_target_size_bits, chunking): (u32, String) = conn.query_row(
+        "SELECT cdc_target_size_bits, chunking FROM repository_settings WHERE id = 1",
+        (),
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )?;
+    let settings = RepositorySettings::new(cdc_target_size_bits, Chunking::from_db_str(&chunking))?;
+
+    Ok(Repository {
+        repo_root: repo_root.to_path_buf(),
+        settings,
+    })
+}
+
+/// Opens an existing repository at `repo_root` like [`open_repository`], but
+/// without ever opening a read-write connection - suitable for a repository
+/// directory that is genuinely read-only on disk (e.g. bind-mounted `:ro`),
+/// which [`open_repository`] can't handle: it always opens a read-write
+/// connection first, to check for and apply pending migrations.
+///
+/// Fails, rather than silently degrading, in the three ways a read-only
+/// command could otherwise misbehave against such a repository:
+/// - [`Error::UncheckpointedWal`] if `-wal`/`-shm` sidecar files are present
+///   next to the database file - SQLite's WAL mode needs to write to those
+///   even for a read-only connection (updating a reader's "read mark" slot),
+///   so their mere presence means this repository isn't actually usable
+///   read-only yet, regardless of what this function itself would need.
+///   Point the user at `db compact`, which checkpoints and (once it's the
+///   last connection open) removes them.
+/// - [`Error::SchemaTooNew`] if the schema is newer than this build knows
+///   about (see [`reject_if_schema_too_new`]).
+/// - [`Error::MigrationsPending`] if migrations are pending - unlike
+///   [`open_repository`], this function never applies them itself.
+pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> {
+    let db_path = repo_root.join(META_DIR).join(META_DB_FILE);
+    for suffix in ["-wal", "-shm"] {
+        if Path::new(&format!("{}{suffix}", db_path.display())).exists() {
+            return Err(Error::UncheckpointedWal);
+        }
+    }
+
+    let conn = open_connection_read_only(&db_path)?;
+    reject_if_schema_too_new(&conn)?;
+    if migrations::migrations().pending_migrations(&conn)? > 0 {
+        return Err(Error::MigrationsPending);
+    }
 
     let (cdc_target_size_bits, chunking): (u32, String) = conn.query_row(
         "SELECT cdc_target_size_bits, chunking FROM repository_settings WHERE id = 1",
@@ -411,6 +478,122 @@ mod tests {
         assert_eq!(repo.settings().cdc_target_size_bits(), 18);
         assert_eq!(repo.settings().chunking(), Chunking::None);
         assert_eq!(repo.data_dir(), repo_root.join(DATA_DIR));
+    }
+
+    #[test]
+    fn open_repository_read_only_reads_back_the_settings_of_a_freshly_initialized_repository() {
+        // A freshly initialized repository has no WAL sidecars left behind
+        // (create_repository_files drops its sole connection before
+        // returning, which auto-checkpoints them away) - so this must
+        // succeed without needing a `db compact` in between.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(
+            &repo_root,
+            &RepositorySettings::new(18, Chunking::None).unwrap(),
+        )
+        .unwrap();
+
+        let repo = open_repository_read_only(&repo_root).unwrap();
+
+        assert_eq!(repo.settings().cdc_target_size_bits(), 18);
+        assert_eq!(repo.settings().chunking(), Chunking::None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn open_repository_read_only_works_even_when_the_database_file_is_not_writable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        let db_path = repo_root.join(META_DIR).join(META_DB_FILE);
+        let mut perms = fs::metadata(&db_path).unwrap().permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(&db_path, perms).unwrap();
+
+        let result = open_repository_read_only(&repo_root);
+
+        assert!(result.is_ok(), "{result:?}");
+    }
+
+    #[test]
+    fn open_repository_read_only_fails_when_wal_sidecars_are_present() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        let repo = open_repository(&repo_root).unwrap();
+        // Kept open so the write below doesn't auto-checkpoint away its own
+        // WAL sidecars when it closes - see the equivalent trick in
+        // cli::db_maintenance's WAL-checkpoint test.
+        let outlasting_conn = repo.open_write_connection().unwrap();
+        let write_conn = repo.open_write_connection().unwrap();
+        insert_directory(&write_conn, 0, "sub", 0).unwrap();
+        drop(write_conn);
+
+        let result = open_repository_read_only(&repo_root);
+
+        assert!(
+            matches!(result, Err(Error::UncheckpointedWal)),
+            "{result:?}"
+        );
+        drop(outlasting_conn);
+    }
+
+    #[test]
+    fn open_repository_read_only_fails_when_migrations_are_pending() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
+        conn.pragma_update(None, "user_version", 0).unwrap();
+        drop(conn);
+
+        let result = open_repository_read_only(&repo_root);
+
+        assert!(
+            matches!(result, Err(Error::MigrationsPending)),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn open_repository_read_only_fails_with_the_actual_version_when_the_schema_is_too_new() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
+        conn.pragma_update(None, "user_version", 99).unwrap();
+        drop(conn);
+
+        let result = open_repository_read_only(&repo_root);
+
+        assert!(
+            matches!(result, Err(Error::SchemaTooNew { db_version: 99 })),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn open_repository_also_fails_with_the_actual_version_when_the_schema_is_too_new() {
+        // The write path (open_repository) must give the same actionable
+        // error, not just open_repository_read_only - it hit the same
+        // confusing rusqlite_migration error before reject_if_schema_too_new
+        // existed.
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
+        conn.pragma_update(None, "user_version", 99).unwrap();
+        drop(conn);
+
+        let result = open_repository(&repo_root);
+
+        assert!(
+            matches!(result, Err(Error::SchemaTooNew { db_version: 99 })),
+            "{result:?}"
+        );
     }
 
     #[test]
