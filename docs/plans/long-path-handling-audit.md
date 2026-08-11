@@ -2,8 +2,11 @@
 
 **Status**: first round of empirical testing done (2026-08-11, Linux + a real Windows-backed
 filesystem via WSL2's DrvFs `/mnt/c` - see "Findings" below); native WinFSP mount and raw SMB
-protocol-level limits still untested (no WinFSP available in this environment). One concrete,
-scoped gap found and worth fixing; everything else checked so far already behaves reasonably.
+protocol-level limits still untested (no WinFSP available in this environment). The one concrete
+gap found (`mount --read-write`'s `mkdir`/`create`/`rename` accepting unbounded name lengths) is
+**fixed** - see `MAX_ENTRY_NAME_BYTES`/`check_entry_name_length` in `cli/src/mount.rs` and
+`Errno::ENAMETOOLONG` in `mountfs/src/lib.rs`. Everything else checked so far already behaved
+reasonably without needing a code change (see "Findings").
 
 ## Why this needs checking at all
 

@@ -43,6 +43,7 @@ impl Errno {
     pub const EISDIR: Errno = Errno(21);
     pub const EROFS: Errno = Errno(30);
     pub const ENOTEMPTY: Errno = Errno(39);
+    pub const ENAMETOOLONG: Errno = Errno(36);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
