@@ -332,3 +332,33 @@ filesystem? If you only need to read the repository, a read-only command
 a read-only parent directory (which turned out to already fail earlier,
 at `fs::create_dir_all`, with an already-self-explanatory plain I/O error
 - "Read-only file system (os error 30)" - so needed no change).
+
+### Verified on real Windows, not just reasoned about
+
+`scripts/build-windows-docker.sh` cross-compiled `backup.exe`, run directly
+from WSL2 - genuine interop launches it as a real Windows process (confirmed:
+`file` reports a PE32+ executable, not anything emulated) against real
+NTFS/Windows volume paths, no WinFSP needed for any of this (that's only
+for `backup mount`'s actual FUSE-equivalent serving, untested here and
+irrelevant to what follows). A read-only test volume was built without
+needing admin rights: a Docker container with `genisoimage` packaged a
+`data`/`meta` layout into an `.iso` (ISO9660 is inherently read-only), then
+PowerShell's `Mount-DiskImage` mounted it as a drive letter (`D:`).
+
+Confirmed for real:
+- `backup.exe del -r D:\` against the genuinely read-only mounted volume ->
+  the exact new `CannotOpenForWriting` message, verbatim.
+- `backup.exe stats -r D:\` against that same volume succeeds - meaning
+  `open_repository_read_only`'s whole `immutable=1`/`sqlite_uri_path`
+  machinery (backslash-normalized Windows drive-letter paths, `file:`
+  URI construction) actually works on real Windows, not just "should work
+  per the Rust stdlib docs" - this was previously unverified on this
+  platform for the entire read-only-access feature, not just this addendum.
+- A real `store` followed immediately by `list` on an ordinary writable
+  `C:\...` repository correctly hits `UncheckpointedWal` (the pending
+  `-wal` `store` leaves behind) until `db compact` runs - also previously
+  Linux-only verified.
+
+No corrections needed as a result - this confirmed the design rather than
+finding a new platform-specific problem, unlike the write-probe attempt
+above.
