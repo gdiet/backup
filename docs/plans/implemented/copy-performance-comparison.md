@@ -2,10 +2,14 @@
 
 **Status**: executed (2026-08-12) on julius, against a release build (`cargo build --release`).
 See "Results" at the bottom for the numbers and findings; see "Deviations from the original
-methodology" for what was scaled down or added and why. The two flagged, action-worthy findings
-(store's parallel writes losing to mount's serial write on a slow/contended disk for large files;
-mount's small-file write path costing ~7x a plain copy even with zero dedup benefit on either
-side) are not yet fixed - this document is the measurement, not the fix.
+methodology" for what was scaled down or added and why. One finding is action-worthy and
+well-evidenced (mount's small-file write path costing ~7x a plain copy even with zero dedup
+benefit on either side - CPU-saturated on its single `persist_worker` thread); one is a confirmed,
+real regression whose *cause* turned out not to be what a first guess suggested (`store`'s large
+files are slower than mount's on a slow drive, but directly testing `--store-io-parallelism`
+ruled out thread contention as the reason - the actual cause is still open, see
+`docs/plans/store-vs-mount-slow-drive-write-path.md`). Neither is fixed - this document is the
+measurement, not the fix.
 
 **Goal**: compare wall-clock performance across five workflows, each for two very different file
 profiles (many small files, few large files), to see whether the comparison surfaces a genuine
@@ -168,9 +172,27 @@ thread - lives), record the metrics, and compare against the predictions in this
 than starting from a blank slate. Where a prediction doesn't hold, that mismatch is itself the
 interesting finding.
 
+## Environment
+
+- **Machine**: `julius`, a Toshiba Satellite C70-C-1DV laptop. CPU: Intel Core i5-6200U @ 2.30 GHz,
+  **2 physical cores, 4 logical (hyperthreaded)** - not 4 independent cores; `--concurrency`'s
+  default (one thread per logical core) means `store`'s 4-way parallelism below is really 2
+  physical cores shared across 4 hyperthreads, worth keeping in mind when extrapolating the
+  parallelism-gap numbers to real server-class hardware. RAM: 7.9 GB total.
+- **OS**: Windows 10 IoT Enterprise LTSC 2021, build 10.0.19044, 64-bit.
+- **Toolchain**: `rustc 1.97.0` / `cargo 1.97.0`, built with `cargo build --release` (LTO +
+  `codegen-units = 1`, see `Cargo.toml`).
+- **WinFSP**: 2023, version 2.0.23075 (required for every mount scenario below).
+- **`fast-ssd-C`**: `C:` drive, backed by a WDC WDS100T2B0A-00SM50 SATA SSD (also the OS drive -
+  not an isolated/idle device, other on-machine activity could in principle share its bandwidth,
+  though nothing else was intentionally running during the measured scenarios).
+- **`slow-usb-I`**: `I:` drive, a plain USB flash stick (Windows reports it generically as
+  "General USB Flash Disk"), 3.75 GB total capacity, connected directly (not through a hub, as far
+  as known) - exact make/model/USB revision not captured.
+
 ## Deviations from the original methodology
 
-Run on julius, a 4-logical-core machine, against `target/release/backup.exe`. Everything below
+Run on `julius` (see "Environment" above), against `target/release/backup.exe`. Everything below
 was actually executed, not simulated - but scaled down and extended relative to the plan above:
 
 - **Repetitions**: 3, not 5 (median of 3 still a real median, not an average of 2) - time budget.
@@ -254,18 +276,24 @@ in every scenario measured**, no red flag per the plan's own top-priority check.
    throughput ceiling for many-small-files mount writes, independent of disk speed.
 
 2. **Large files: the same hypothesis *inverts* on the slow drive - the most interesting finding
-   here.** On `fast-ssd-C`, `store` beats mount as expected (3.82s vs. 10.2s, ~2.7x, parallelism
-   wins). But on `slow-usb-I`, **`store` is 2.4x *slower* than mount** (304.8s vs. 126.0s) despite
-   using all 4 cores against mount's 1. CPU time tells the real story: `store`'s CPU cost
-   (6.45s) is actually *lower* than mount's (8.08s) - the wall-clock loss isn't compute, it's disk
-   contention: 4 threads issuing large concurrent writes against one slow USB stick apparently
-   interfere with each other worse than one thread writing serially. **Actionable**: for the
-   large-file profile specifically, `store`'s per-file parallelism (`--concurrency`) can be a net
-   *loss* against a slow/contended destination, and `--store-io-parallelism` (already exists,
-   independent of `--concurrency`, see `store --help`) is the documented knob to fix exactly this
-   - worth testing whether `--store-io-parallelism 1` recovers the slow-drive large-file case
-   without hurting the fast-SSD case, as a possible new *default heuristic* (e.g. based on
-   detected I/O latency) rather than something a user has to know to reach for.
+   here, though the original explanation for it turned out to be wrong.** On `fast-ssd-C`, `store`
+   beats mount as expected (3.82s vs. 10.2s, ~2.7x, parallelism wins). But on `slow-usb-I`,
+   **`store` is 2.4x *slower* than mount** (304.8s vs. 126.0s) despite using up to 4 threads
+   against mount's 1. CPU time confirms it isn't compute (`store`'s CPU cost, 6.45s, is actually
+   *lower* than mount's 8.08s) - the wall-clock loss is disk-side.
+   >
+   > **First guess - "4 threads fighting over one slow device" - directly tested and falsified.**
+   > `--store-io-parallelism` (already exists, gates concurrent physical chunk writes independent
+   > of `--concurrency`, see `store --help` and `cli/src/io_limiter.rs`) is the documented knob to
+   > fix exactly that if it were the cause. Swept `--store-io-parallelism 1/2/4` on `slow-usb-I`,
+   > same large-file profile, 2 reps each: **284.5s / 302.8s / 320.9s wall (mean of 2), no
+   > meaningful trend, and *none* of them come close to mount's 126.0s** - `parallelism=1` (fully
+   > serialized physical writes, structurally the closest analogue to mount's single-threaded
+   > writer) is just as slow as the 4-way default. This rules out concurrent-write contention as
+   > the explanation. **The real cause is still open** - something about `store`'s physical
+   > chunk-write path costs more per byte or per chunk on this slow device than mount's does, even
+   > at matched (or zero) concurrency; not investigated further here. Filed as its own question in
+   > `docs/plans/store-vs-mount-slow-drive-write-path.md` rather than guessed at further.
 
 3. **Repeat `store` run without `--reference` "should cost about as much as the first" -
    contradicted, and by a lot, whenever the first run was disk-write-bound.** Prediction held only
