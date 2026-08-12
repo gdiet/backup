@@ -155,15 +155,27 @@ fn dispatch_rejects_a_name_over_max_name_bytes_before_reaching_the_filesystem() 
 /// delivery isn't scoped to a single process, only a whole group.
 ///
 /// Ignored by default: this needs a real Win32 console attached to work
-/// (`GenerateConsoleCtrlEvent` has nothing to deliver through otherwise) -
-/// confirmed absent in this project's automated dev/build environment
-/// (`[System.Console]::CursorLeft` throws "the handle is invalid" there),
-/// and `AllocConsole()` before spawning didn't change that (this
-/// environment appears not to provide a console subsystem at all, not
-/// just a not-yet-attached one). Confirmed working manually instead, in a
-/// real terminal, by running `windows_mount_spike_helper.exe` directly and
-/// pressing Ctrl+C - run this test with `--ignored` in an environment with
-/// a real console to reproduce that as an automated check.
+/// (`GenerateConsoleCtrlEvent` has nothing to deliver through otherwise).
+/// Confirmed absent in *any* Claude Code agent's own process tree on
+/// Windows, not just a "wrong session" issue: an earlier check blamed
+/// Windows session isolation (agent process in session 0, the isolated
+/// services session, vs. the interactive desktop's session 1) - a later
+/// check ran the agent itself in session 1 (a real interactive login) and
+/// the test still failed the same way. Root cause turned out to be one
+/// level further down: `GetConsoleWindow()` returns null for *any* shell
+/// process an agent's own harness spawns, session 0 or 1 alike - the
+/// harness starts its child shells without an attached console handle at
+/// all (comparable to `DETACHED_PROCESS`/redirected pipes), and
+/// `AllocConsole()` before spawning the helper doesn't fix that: the
+/// artificial background console it creates doesn't reliably deliver
+/// `CTRL_C_EVENT` to a `CREATE_NEW_PROCESS_GROUP` child the way a real,
+/// inherited console does. So this needs a terminal window a human opened
+/// themselves (locally, or via RDP) - no agent-spawned process, however
+/// "interactive" its Windows session looks from the outside, can satisfy
+/// this. Confirmed working manually in exactly such a real terminal, by
+/// running `windows_mount_spike_helper.exe` directly and pressing Ctrl+C -
+/// run this test with `--ignored` there to reproduce that as an automated
+/// check.
 #[ignore = "needs a real attached console - see doc comment"]
 #[test]
 fn on_unmount_runs_and_process_exits_cleanly_on_ctrl_c() {

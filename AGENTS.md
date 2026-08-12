@@ -58,6 +58,28 @@ already special-cases them), so this only bites when a command touches something
 only exists inside WSL, like a JRE unpacked under the Linux home directory. Fix: prefix
 the call with `MSYS_NO_PATHCONV=1`, e.g. `MSYS_NO_PATHCONV=1 wsl bash -lc '...'`.
 
+## Agent TODOs (Cross-Environment Handoffs)
+
+This project is routinely worked on from more than one environment (see "Working Across Windows
+And WSL" above, and in practice sometimes also a separate Windows machine reached over SSH) - an
+agent in one environment regularly hits a wall that's trivial for an agent in another (needs a
+real Windows console, WinFSP, Docker, network access to a specific host, etc.). `agent-todos/`
+(see its own `README.md` for the exact file format) is where those get parked instead of silently
+dropped.
+
+When starting work in this repo, check `agent-todos/` for open items:
+
+- **Small item** (a doc/comment fix, a quick local check, anything low-risk and quick): just do it
+  yourself, right away, no need to ask first - then move its file to `agent-todos/done/` with a
+  short note on what you did.
+- **Medium/large item**: read it, but confirm with the user before starting - the file's own
+  "Size" field is a starting guess, not a substitute for judgment; if in doubt, ask.
+- Don't silently delete a `agent-todos/` file instead of moving it to `done/` - the record of what
+  was done (and by which environment) is the point, for whichever agent looks next.
+- If you hit a wall yourself that another environment could clear, add a new file there (see the
+  README's format) rather than leaving a comment only in chat/session history that won't survive
+  past this conversation.
+
 ## Verification Of Changes
 
 When making changes to the codebase, always verify your changes before finishing and
