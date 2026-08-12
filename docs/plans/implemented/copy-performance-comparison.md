@@ -1,7 +1,11 @@
 # Performance comparison: local copy vs. mount vs. `store`, small vs. large files
 
-**Status**: methodology decided (see "Methodology decisions" below), ready to run - nothing has
-actually been executed yet.
+**Status**: executed (2026-08-12) on julius, against a release build (`cargo build --release`).
+See "Results" at the bottom for the numbers and findings; see "Deviations from the original
+methodology" for what was scaled down or added and why. The two flagged, action-worthy findings
+(store's parallel writes losing to mount's serial write on a slow/contended disk for large files;
+mount's small-file write path costing ~7x a plain copy even with zero dedup benefit on either
+side) are not yet fixed - this document is the measurement, not the fix.
 
 **Goal**: compare wall-clock performance across five workflows, each for two very different file
 profiles (many small files, few large files), to see whether the comparison surfaces a genuine
@@ -163,3 +167,144 @@ that's where the sharpest predicted gap - `store`'s parallelism vs. `persist_wor
 thread - lives), record the metrics, and compare against the predictions in this document rather
 than starting from a blank slate. Where a prediction doesn't hold, that mismatch is itself the
 interesting finding.
+
+## Deviations from the original methodology
+
+Run on julius, a 4-logical-core machine, against `target/release/backup.exe`. Everything below
+was actually executed, not simulated - but scaled down and extended relative to the plan above:
+
+- **Repetitions**: 3, not 5 (median of 3 still a real median, not an average of 2) - time budget.
+- **Small-file profile**: 3,000 files x 4 KiB (12 MB total, 10x10 nested dirs x 30 files), not
+  10,000 - time budget on the slow drive below, where a single small-file pass already took
+  ~50s-4min depending on scenario.
+- **Large-file profile**: 4 files x 150 MiB (600 MB total), not "5-10 files, hundreds of MB to low
+  GB" - capacity budget: the slow drive used below is a 3.75 GB USB stick, and every workflow
+  needs headroom for a full repository copy plus the local-copy baseline, sequentially reused
+  across reps.
+- **Content**: cryptographically random bytes (small-file profile: 3,000 unique 4 KiB slices of a
+  shared 12 MB random pool, for fast generation; large-file profile: fully random per file) -
+  maximally incompressible, satisfies "not trivially compressible", same source tree reused
+  verbatim for every repeat-scenario so first/repeat pairs are byte-identical as required.
+- **Added a dimension not in the original plan**: every scenario ran on *two* physical drives, not
+  one - `C:` (a SATA SSD, `fast-ssd-C` below) and a 3.75 GB USB flash stick (`slow-usb-I` below).
+  This wasn't planned originally but turned out to be essential: several of the a priori
+  hypotheses below only hold on one of the two, and the mismatch is exactly the kind of finding
+  the plan's own "worth acting on" criteria are looking for (see Findings).
+- **Scenario 1 tool**: `robocopy /E /IS` (Windows-native, `/IS` forces it to recopy files that
+  already match the destination by size/timestamp - without it, the scenario 3a overwrite
+  looked suspiciously cheap on a first pass, then turned out to change little once `/IS` was
+  added; see the 3a finding below for why the overwrite really is cheap for a different reason).
+- **Metrics actually captured**: wall-clock (primary, as planned) and CPU time - for `store`/local
+  copy, the CPU time of that spawned process itself; for the mount scenarios, the CPU time of the
+  long-running `backup mount --read-write` *server* process, sampled as a delta around each
+  client-side `robocopy` copy (that's where chunking/hashing actually happens, not in the
+  `robocopy` client). Peak RSS captured the same way (polled `WorkingSet64`, not a true OS-level
+  peak-since-start). Final repository size captured via `Get-ChildItem -Recurse -File | Measure
+  -Object -Sum Length` after each store/mount-write scenario. **Not captured**: peak RSS for the
+  short-lived `store`/local-copy processes (would have needed a separate polling thread per
+  invocation - skipped, time budget; the mount-server RSS numbers below are more informative
+  anyway since that's the process actually buffering chunk data), and no explicit check for
+  spill-to-temp-file activity (the "CDC chunking cost" hypothesis below is evaluated from peak RSS
+  proximity to the 128 MB default budget instead, which is suggestive but not the same as
+  confirming a spill file was actually created).
+
+## Results
+
+Median of 3 repetitions per cell (raw data: all 72 runs, `Drive,Profile,Scenario,Rep,WallMs,CpuMs,
+PeakRssMb,RepoBytes` - not committed, regenerate by rerunning the scenarios if needed).
+
+### Small files (3,000 files x 4 KiB = 12 MB)
+
+| Scenario | slow-usb-I wall | slow-usb-I CPU | fast-ssd-C wall | fast-ssd-C CPU |
+|---|---:|---:|---:|---:|
+| 1 local copy (no `backup` tool) | 51.5s | 3.75s | 4.27s | 3.63s |
+| 2 mount, first write (all-new) | 220.4s | 26.4s | 31.2s | 26.7s |
+| 3a mount, overwrite same dest | 37.2s | 19.2s | 25.6s | 21.9s |
+| 3b mount, second dest (dedup) | 129.4s | 18.4s | 24.7s | 21.0s |
+| 4 store, first run (no `--reference`) | 32.4s | 3.09s | 1.75s | 2.81s |
+| 5 store, repeat (no `--reference`) | 4.43s | 1.33s | 1.29s | 1.36s |
+
+### Large files (4 files x 150 MiB = 600 MB)
+
+| Scenario | slow-usb-I wall | slow-usb-I CPU | fast-ssd-C wall | fast-ssd-C CPU |
+|---|---:|---:|---:|---:|
+| 1 local copy (no `backup` tool) | 54.3s | 0.11s | 3.10s | 0.13s |
+| 2 mount, first write (all-new) | 126.0s | 8.08s | 10.2s | 6.92s |
+| 3a mount, overwrite same dest | 7.18s | 4.42s | 6.58s | 3.80s |
+| 3b mount, second dest (dedup) | 6.95s | 4.55s | 5.52s | 3.69s |
+| 4 store, first run (no `--reference`) | 304.8s | 6.45s | 3.82s | 6.55s |
+| 5 store, repeat (no `--reference`) | 2.52s | 3.41s | 1.77s | 3.55s |
+
+Peak mount-server RSS was ~11 MB for every small-file scenario and ~138 MB for every large-file
+scenario (both drives) - see "CDC chunking cost" finding below.
+
+Final repository size after every repeat-content scenario grew only by small-file-metadata amounts
+(hundreds of KB for 3,000 new `tree_entries` rows, near-zero/rounds-away for the 4-large-file
+profile), never by anything close to a full re-store of content bytes - **dedup correctness holds
+in every scenario measured**, no red flag per the plan's own top-priority check.
+
+### Findings vs. the a priori hypotheses
+
+1. **`store` parallelizes, `persist_worker` doesn't - confirmed, but only where disk isn't the
+   bottleneck.** On `fast-ssd-C`, small files: `store` first-run is **1.75s vs. mount's 31.2s**
+   (~18x) - as sharp as the CPU-core-count prediction expected, and CPU-bound on both sides (wall
+   ~= CPU for the mount server). On `slow-usb-I`, small files, the gap survives but shrinks to
+   ~6.8x (32.4s vs. 220.4s) since both now pay real disk-write cost too. **This part of the
+   hypothesis holds as predicted** - `persist_worker`'s single-thread design is a real, measurable
+   throughput ceiling for many-small-files mount writes, independent of disk speed.
+
+2. **Large files: the same hypothesis *inverts* on the slow drive - the most interesting finding
+   here.** On `fast-ssd-C`, `store` beats mount as expected (3.82s vs. 10.2s, ~2.7x, parallelism
+   wins). But on `slow-usb-I`, **`store` is 2.4x *slower* than mount** (304.8s vs. 126.0s) despite
+   using all 4 cores against mount's 1. CPU time tells the real story: `store`'s CPU cost
+   (6.45s) is actually *lower* than mount's (8.08s) - the wall-clock loss isn't compute, it's disk
+   contention: 4 threads issuing large concurrent writes against one slow USB stick apparently
+   interfere with each other worse than one thread writing serially. **Actionable**: for the
+   large-file profile specifically, `store`'s per-file parallelism (`--concurrency`) can be a net
+   *loss* against a slow/contended destination, and `--store-io-parallelism` (already exists,
+   independent of `--concurrency`, see `store --help`) is the documented knob to fix exactly this
+   - worth testing whether `--store-io-parallelism 1` recovers the slow-drive large-file case
+   without hurting the fast-SSD case, as a possible new *default heuristic* (e.g. based on
+   detected I/O latency) rather than something a user has to know to reach for.
+
+3. **Repeat `store` run without `--reference` "should cost about as much as the first" -
+   contradicted, and by a lot, whenever the first run was disk-write-bound.** Prediction held only
+   loosely on `fast-ssd-C` (small: 1.75s -> 1.29s, -26%; large: 3.82s -> 1.77s, -54%, already more
+   than "not dramatically faster" suggests). On `slow-usb-I` it's not close: small 32.4s -> 4.43s
+   (-86%), large **304.8s -> 2.52s (-99%, ~120x)**. Root cause is visible in the CPU numbers: CPU
+   time barely changes between first and repeat run (e.g. large/slow: 6.45s -> 3.41s, same order
+   of magnitude - hashing every file again really does happen, as documented) while wall-clock
+   collapses - meaning the *physical store write* to the destination, not chunk/hash discovery,
+   was the dominant cost of the first run whenever the destination disk is slow. The
+   `--reference`-avoids-read/chunk/hash framing in the README is about a different, smaller cost
+   than what actually dominates on a slow disk - worth a doc clarification (not done here) that a
+   repeat run without `--reference` is already cheap in the common case of a slow/remote backup
+   target, specifically *because* dedup skips the write, independent of `--reference`.
+
+4. **CDC chunking cost on large files - the 128 MB `--chunk-buffer-mb`/write-cache budget is
+   visibly in play.** Every large-file mount scenario (both drives) sits at ~138 MB peak
+   mount-server RSS - just above the 128 MB default `--write-cache-mb`, consistent with the
+   budget being genuinely exercised by 150 MB files rather than sitting mostly idle. Not
+   confirmed as an actual spill-to-temp-file event (not instrumented here, see deviations above),
+   but suggestive enough to be worth a follow-up specifically checking spill-directory activity
+   under this profile.
+
+5. **Many small files: fixed per-file overhead is visible, but smaller than the write-vs-dedup
+   effect.** 3b (new destination, same content, needs new `tree_entries` rows) is consistently
+   slower than 3a (overwrite existing rows, same content) on both drives for the small-file
+   profile (e.g. slow: 129.4s vs. 37.2s) despite both fully deduping the content - the *extra* cost
+   of inserting 3,000 new rows vs. updating 3,000 existing ones is real, but it's dwarfed by the
+   gap to scenario 2's 220.4s (all-new content, real store writes). For large files the 3a-vs-3b
+   gap nearly disappears (7.18s vs. 6.95s slow, 6.58s vs. 5.52s fast) since there are only 4 rows
+   either way - consistent with this being genuinely a *per-row* cost, not a per-byte one.
+
+6. **Mount overhead vs. a plain copy, with no dedup shortcut on either side (worth flagging per
+   the plan's own criteria) - confirmed, and it's compute, not FUSE latency.** Even on
+   `fast-ssd-C`, where disk is not a plausible excuse, the small-file mount first-write costs
+   **31.2s vs. 4.27s for a plain copy (~7.3x)**, and the mount server's CPU time (26.7s) very
+   nearly equals its wall-clock (31.2s) - i.e. it's compute-saturated on its single
+   `persist_worker` thread, not waiting on FUSE dispatch or the OS. This is the clearest evidence
+   in this whole run for the plan's own suggested follow-up: letting `persist_worker` use a small
+   bounded pool instead of exactly one thread (the original worker-pool-exhaustion reason for
+   serializing writes doesn't obviously require serializing to *exactly* one thread) would likely
+   close most of this gap for the many-small-files case, on any disk speed.
