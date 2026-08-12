@@ -98,6 +98,47 @@ fn mounts_and_serves_the_full_read_only_op_set_via_real_winfsp() {
     child.wait().expect("failed to wait for the mount helper");
 }
 
+/// Confirms `dispatch_mkdir`/`dispatch_create` reject an over-long name
+/// themselves, before ever calling into `TestFs`'s own (default-`EROFS`,
+/// since it doesn't override them) `mkdir`/`create` - mirrors
+/// `mountfs::linux`'s own equivalent test. Reuses this same helper/mount
+/// (rather than a dedicated read-write one): WinFSP's read-only flag,
+/// unlike Linux's kernel-level `-oro`, does not block a write-intent call
+/// at the driver level (confirmed by the test above - `top.txt`'s write
+/// attempt above still reaches our own dispatch layer, which is what
+/// rejects it), so a too-long `mkdir`/`create` attempt reaches
+/// `dispatch_mkdir`/`dispatch_create` here too, same as on a real
+/// read-write mount.
+#[test]
+fn dispatch_rejects_a_name_over_max_name_bytes_before_reaching_the_filesystem() {
+    let helper = env!("CARGO_BIN_EXE_windows_mount_spike_helper");
+    let parent_dir = tempfile::tempdir().unwrap();
+    let mount_path = parent_dir.path().join("mnt");
+
+    let mut child = std::process::Command::new(helper)
+        .arg(&mount_path)
+        .spawn()
+        .expect("failed to spawn windows_mount_spike_helper");
+
+    wait_for_mount_ready(&mut child, &mount_path);
+
+    let too_long = "a".repeat(mountfs::MAX_NAME_BYTES + 1);
+    let just_right = "a".repeat(mountfs::MAX_NAME_BYTES);
+
+    let too_long_err = std::fs::create_dir(mount_path.join(&too_long)).unwrap_err();
+    let just_right_err = std::fs::create_dir(mount_path.join(&just_right)).unwrap_err();
+    assert_ne!(
+        too_long_err.raw_os_error(),
+        just_right_err.raw_os_error(),
+        "an over-long name must fail differently (rejected by our own dispatch layer) \
+         than a name that's merely rejected by TestFs's own read-only behavior - \
+         too_long: {too_long_err:?}, just_right: {just_right_err:?}"
+    );
+
+    child.kill().expect("failed to kill the mount helper");
+    child.wait().expect("failed to wait for the mount helper");
+}
+
 /// Verifies the actual Windows shutdown mechanism (see `mountfs::windows`'s
 /// doc comment - WinFSP unmounts and returns from `fuse_main_real` on its
 /// own on Ctrl+C, no custom handling needed on this crate's side, manually

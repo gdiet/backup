@@ -4,9 +4,10 @@
 Windows machine ("julius", 2026-08-12 - remote via SSH, see "Findings" below and "Windows
 findings" further down). The one concrete gap found (`mount --read-write`'s
 `mkdir`/`create`/`rename` accepting unbounded name lengths) is **fixed and confirmed working via
-real WinFSP**, not just Linux/FUSE - see `MAX_ENTRY_NAME_BYTES`/`check_entry_name_length` in
-`cli/src/mount.rs`, `Errno::ENAMETOOLONG` in `mountfs/src/lib.rs`, and
-`cli/tests/windows_mount.rs`'s `mount_read_write_rejects_a_name_over_max_entry_name_bytes_via_the_backup_binary`.
+real WinFSP**, not just Linux/FUSE. As of 2026-08-12 the fix and its tests live in `mountfs`
+itself, not `cli` - see "Moved to `mountfs`" below for why and where exactly. `restore` also now
+has its own regression test for the complementary case (a too-long name already *in* the
+repository, restored to a real filesystem that rejects it) - see "cli-level tests" below.
 Everything else checked so far already behaved reasonably without needing a code change. Raw SMB
 protocol-level limits (as opposed to WinFSP/NTFS itself) remain untested.
 
@@ -86,11 +87,10 @@ and vice versa.
   that lets clients opt into that longer limit, or caps them at the classic 260 regardless.
 - NTFS per-component limit: 255 UTF-16 code units.
 
-**FUSE/WinFSP layer itself** (`mountfs/`): both backends currently pass names/paths through
-largely unvalidated (confirmed by reading `mountfs/src/linux/mod.rs` /`windows/mod.rs`'s dispatch
-functions - no length check in either). Whether that's fine (the underlying OS/filesystem call
-will reject it appropriately) or produces a worse failure mode (e.g. silent truncation somewhere
-in a C string conversion) needs checking directly, not assumed either way.
+**FUSE/WinFSP layer itself** (`mountfs/`): at the time this audit started, both backends passed
+names/paths through completely unvalidated (confirmed by reading `mountfs/src/linux/mod.rs`/
+`windows/mod.rs`'s dispatch functions - no length check in either). That's since been fixed - see
+"Moved to `mountfs`" further down for where the check landed and why.
 
 ## Two distinct failure modes to test separately
 
@@ -217,3 +217,61 @@ simpler.
   the whole issue by automatically using verbatim paths internally when needed - which is exactly
   why the new automated test above uses `std::fs` rather than trying to replicate a literal Win32
   client call.
+
+## Moved to `mountfs` (2026-08-12)
+
+The name-length check and its tests originally lived in `cli` (`MAX_ENTRY_NAME_BYTES`/
+`check_entry_name_length` in `cli/src/mount.rs`, called from `Inner::mkdir`/`create`/`rename`).
+Moved to `mountfs` itself instead, since this is a property of the *mount protocol layer*, not
+anything backup-specific: neither libfuse nor WinFSP enforce name length on a virtual
+filesystem's behalf (that's the entire reason this bug existed in the first place), and the
+`dispatch_mkdir`/`dispatch_create`/`dispatch_rename` trampolines that every `MountFilesystem`
+implementor goes through are structurally identical on both platforms - the natural, single place
+to guarantee this for any implementor, not something each one has to remember to add itself.
+Also fixes an incidental duplication the move surfaced: `Inner::statfs()`'s advisory
+`max_name_length: 255` and the enforcement's own `255` were two independent magic numbers that
+happened to match, not the same source of truth. Now both read `mountfs::MAX_NAME_BYTES`.
+
+- **`mountfs/src/lib.rs`**: `pub const MAX_NAME_BYTES: usize = 255` and a private
+  `reject_if_name_too_long(path)` helper, called from both platforms' `dispatch_mkdir`/
+  `dispatch_create`/`dispatch_rename` *before* calling into the implementor's own method - so an
+  over-long name never even reaches `T::mkdir`/`create`/`rename`.
+- **Tests moved with it**: `mountfs/src/linux/mod.rs`'s
+  `dispatch_rejects_a_name_over_max_name_bytes_before_reaching_the_filesystem` and
+  `mountfs/tests/windows_mount.rs`'s test of the same name - both reuse the crate's own existing
+  lightweight `TestFs` fixture (already read-only, no changes needed to it) rather than needing a
+  full backup repository: since the check runs *before* `T::mkdir` is ever called, even a
+  read-only `TestFs` proves the mechanism - a normal-length name reaches `TestFs`'s own
+  default-`EROFS` rejection, an over-long one never gets that far, and the two produce
+  distinguishably different OS errors on the client side. `cli`'s own former unit test
+  (`write_ops_reject_a_name_longer_than_max_entry_name_bytes`, which called `fs.mkdir()` etc.
+  *directly*, bypassing the dispatch trampolines entirely) had to be removed rather than kept
+  alongside - it would no longer exercise anything, since the check no longer lives in
+  `Inner::mkdir` at all. Same for `cli/tests/windows_mount.rs`'s equivalent subprocess test.
+- **Pitfall hit while writing the Linux `mountfs`-level test**: a freshly-created mountpoint
+  directory exists as a real, empty, *writable* directory on disk before FUSE actually attaches
+  to it - `read_dir(mount_path).is_ok()` alone is not a valid readiness signal (it trivially
+  succeeds against that real pre-mount directory too), and following it blindly let both the
+  255-byte and 256-byte `create_dir` attempts race straight past FUSE entirely, hitting the real
+  host filesystem instead (silently "passing" for the wrong reason). Fixed by waiting for actual
+  *content* (`TestFs`'s hardcoded `sub` entry) to appear via `readdir`, matching the pattern the
+  crate's own pre-existing read-only mount test already used correctly.
+
+## cli-level tests: `restore`'s own resilience
+
+Separately from `mountfs`'s enforcement, `cli/src/restore.rs` now has
+`restore_warns_and_continues_past_a_name_too_long_for_the_destination_filesystem`: seeds a
+too-long name directly via the test module's `seed_file` helper (bypassing `mount` - `restore`
+needs to stay robust against such a name regardless of how it got into the repository, e.g. an
+already-existing repository from before the `mountfs` fix existed), then confirms `restore`
+reports a warning, restores every other entry normally, and exits with `ExitCode::SUCCESS` - not
+a crash, not an early abort, not a silent drop. Matches exactly what was manually verified during
+the original audit, now as a permanent regression test.
+
+`list`/`find` weren't given dedicated tests: they only ever print an existing name, no OS
+filesystem interaction with that name's length is involved, so there's no realistic failure mode
+to regress against. `migrate_scala_repo` is a more plausible way for a too-long name to end up in
+a repository for real (a direct DB-to-DB import, no `mount` involved) and would be a reasonable
+next candidate, but wasn't added now - it needs a full Scala-export test fixture, disproportionate
+effort for this pass; noted here as a known, lower-priority open item rather than silently
+skipped.

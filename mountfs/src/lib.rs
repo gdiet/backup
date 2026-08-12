@@ -75,6 +75,38 @@ pub struct DirEntry {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Handle(pub u64);
 
+/// Longest single path-component name (the destination of `mkdir`/
+/// `create`/`rename`) accepted by either backend, in UTF-8 bytes - matches
+/// Linux's own `NAME_MAX` and stays within NTFS's 255-UTF-16-unit
+/// per-component limit (a UTF-8 byte count is always >= the equivalent
+/// UTF-16 unit count, so this is conservative on Windows too). Enforced by
+/// both backends' dispatch layer, before a call ever reaches
+/// [`MountFilesystem::mkdir`]/[`MountFilesystem::create`]/
+/// [`MountFilesystem::rename`] - not something each implementor needs to
+/// remember to check itself, since neither libfuse nor WinFSP enforce
+/// this on a virtual filesystem's behalf (confirmed: creating and reading
+/// back a much longer name than this through an unvalidated mount worked
+/// with no OS-level error on Linux - `max_name_length` in [`StatfsInfo`]
+/// is advisory only, nothing rejects an actual create that exceeds it).
+/// See `docs/plans/long-path-handling-audit.md` for the investigation
+/// that found this.
+pub const MAX_NAME_BYTES: usize = 255;
+
+/// Rejects `path` with [`Errno::ENAMETOOLONG`] if its final component
+/// exceeds [`MAX_NAME_BYTES`] - shared by both backends' `dispatch_mkdir`/
+/// `dispatch_create`/`dispatch_rename` (called with `new_path` for the
+/// latter, matching `MountFilesystem::rename`'s "old path stays whatever
+/// it already was, only the new name is being freshly introduced"
+/// asymmetry).
+fn reject_if_name_too_long(path: &str) -> Result<(), Errno> {
+    let name = path.rsplit_once('/').map_or(path, |(_, name)| name);
+    if name.len() > MAX_NAME_BYTES {
+        Err(Errno::ENAMETOOLONG)
+    } else {
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StatfsInfo {
     pub blocks: u64,

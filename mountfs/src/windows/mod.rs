@@ -252,6 +252,9 @@ unsafe extern "C" fn dispatch_mkdir<T: MountFilesystem>(
     let Some(path) = path_str(path) else {
         return -Errno::EIO.0;
     };
+    if let Err(errno) = crate::reject_if_name_too_long(path) {
+        return -errno.0;
+    }
     let fs = unsafe { context::<T>() };
     match fs.mkdir(path) {
         Ok(()) => 0,
@@ -267,6 +270,9 @@ unsafe extern "C" fn dispatch_create<T: MountFilesystem>(
     let Some(path) = path_str(path) else {
         return -Errno::EIO.0;
     };
+    if let Err(errno) = crate::reject_if_name_too_long(path) {
+        return -errno.0;
+    }
     let fs = unsafe { context::<T>() };
     match fs.create(path) {
         Ok(handle) => {
@@ -307,6 +313,9 @@ unsafe extern "C" fn dispatch_rename<T: MountFilesystem>(
     let (Some(old_path), Some(new_path)) = (path_str(old_path), path_str(new_path)) else {
         return -Errno::EIO.0;
     };
+    if let Err(errno) = crate::reject_if_name_too_long(new_path) {
+        return -errno.0;
+    }
     let fs = unsafe { context::<T>() };
     match fs.rename(old_path, new_path) {
         Ok(()) => 0,

@@ -222,6 +222,9 @@ unsafe extern "C" fn dispatch_mkdir<T: MountFilesystem>(
     let Some(path) = path_str(path) else {
         return -Errno::EIO.0;
     };
+    if let Err(errno) = crate::reject_if_name_too_long(path) {
+        return -errno.0;
+    }
     let fs = unsafe { context::<T>() };
     match fs.mkdir(path) {
         Ok(()) => 0,
@@ -237,6 +240,9 @@ unsafe extern "C" fn dispatch_create<T: MountFilesystem>(
     let Some(path) = path_str(path) else {
         return -Errno::EIO.0;
     };
+    if let Err(errno) = crate::reject_if_name_too_long(path) {
+        return -errno.0;
+    }
     let fs = unsafe { context::<T>() };
     match fs.create(path) {
         Ok(handle) => {
@@ -277,6 +283,9 @@ unsafe extern "C" fn dispatch_rename<T: MountFilesystem>(
     let (Some(old_path), Some(new_path)) = (path_str(old_path), path_str(new_path)) else {
         return -Errno::EIO.0;
     };
+    if let Err(errno) = crate::reject_if_name_too_long(new_path) {
+        return -errno.0;
+    }
     let fs = unsafe { context::<T>() };
     match fs.rename(old_path, new_path) {
         Ok(()) => 0,
@@ -586,6 +595,83 @@ mod tests {
 
         // A write attempt must be rejected - this is a read-only mount.
         assert!(std::fs::write(mount_path.join("top.txt"), b"nope").is_err());
+
+        let status = std::process::Command::new("fusermount3")
+            .arg("-u")
+            .arg(&mount_path)
+            .status()
+            .expect("failed to run fusermount3 -u");
+        assert!(status.success(), "fusermount3 -u failed: {status}");
+
+        handle
+            .join()
+            .expect("mount thread panicked")
+            .expect("mount() returned an error");
+    }
+
+    /// Confirms `dispatch_mkdir`/`dispatch_create`/`dispatch_rename` reject
+    /// an over-long name themselves, before ever calling into
+    /// [`MountFilesystem::mkdir`]/[`MountFilesystem::create`]/
+    /// [`MountFilesystem::rename`] - not something each implementor needs
+    /// to remember to check itself (see `crate::MAX_NAME_BYTES`'s own doc
+    /// comment for why this can't be left to the OS/protocol layer).
+    /// Mounted with `read_only: false` (unlike the test above) so the
+    /// *kernel's* own `-oro` enforcement doesn't intercept the write
+    /// attempt before it ever reaches our dispatch layer - [`TestFs`]
+    /// itself still rejects any write it doesn't specifically support
+    /// (`EROFS`, its own `open`'s default behavior for `write_intent`), so
+    /// a normal-length name reaching that fallback (not our length check)
+    /// is exactly the signal that distinguishes "rejected for being too
+    /// long" from "rejected for an unrelated reason".
+    #[test]
+    fn dispatch_rejects_a_name_over_max_name_bytes_before_reaching_the_filesystem() {
+        let fs = TestFs {
+            files: BTreeMap::new(),
+        };
+
+        let mount_dir = tempfile::tempdir().unwrap();
+        let mount_path = mount_dir.path().to_path_buf();
+        let handle = {
+            let mount_path = mount_path.clone();
+            std::thread::spawn(move || mount(fs, &mount_path, false))
+        };
+
+        // `mount_path` exists as a plain, empty, real (writable!) directory
+        // *before* FUSE actually attaches to it - `read_dir` alone succeeding
+        // isn't a valid readiness signal (it'd trivially succeed against
+        // that real, empty directory too, racing straight past FUSE
+        // entirely and invalidating the whole test). Wait for content
+        // specifically: TestFs's `readdir("/")` always reports its
+        // hardcoded "sub" entry once the mount is actually live, which the
+        // real pre-mount directory never has.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let has_content = std::fs::read_dir(&mount_path)
+                .map(|mut entries| entries.next().is_some())
+                .unwrap_or(false);
+            if has_content {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "mount did not become ready within 5s"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        let too_long = "a".repeat(crate::MAX_NAME_BYTES + 1);
+        let just_right = "a".repeat(crate::MAX_NAME_BYTES);
+
+        let too_long_err = std::fs::create_dir(mount_path.join(&too_long)).unwrap_err();
+        let just_right_err = std::fs::create_dir(mount_path.join(&just_right)).unwrap_err();
+        assert_ne!(
+            too_long_err.raw_os_error(),
+            just_right_err.raw_os_error(),
+            "an over-long name must fail differently (rejected by our own dispatch layer) \
+             than a name that's merely rejected by TestFs's own read-only behavior - \
+             too_long: {too_long_err:?}, just_right: {just_right_err:?}"
+        );
+        assert_eq!(too_long_err.raw_os_error(), Some(Errno::ENAMETOOLONG.0));
 
         let status = std::process::Command::new("fusermount3")
             .arg("-u")

@@ -779,4 +779,48 @@ mod tests {
 
         assert_eq!(exit, ExitCode::FAILURE);
     }
+
+    /// Regression test for `docs/plans/long-path-handling-audit.md`'s
+    /// audit: a name too long for the destination filesystem must produce
+    /// a warning and let every other entry restore normally, not abort the
+    /// whole run or silently drop the rest. Seeds the over-long name
+    /// directly via `seed_file` (bypassing `mount --read-write`, which now
+    /// rejects such a name itself - see `mountfs::MAX_NAME_BYTES`) since
+    /// `restore` must stay robust against one regardless of how it ended
+    /// up in the repository (an already-existing repository from before
+    /// that mount-side fix existed, for instance).
+    #[test]
+    fn restore_warns_and_continues_past_a_name_too_long_for_the_destination_filesystem() {
+        let (temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "normal.txt", b"hello", 0);
+        let too_long_name = "a".repeat(300);
+        seed_file(&repo_root, 0, &too_long_name, b"unreachable", 0);
+        let target = temp_dir.path().join("out");
+        fs::create_dir(&target).unwrap();
+
+        let exit = run_restore(
+            &repo_root,
+            RestoreArgs {
+                overwrite: false,
+                deleted: None,
+                recursive: false,
+                paths: vec![
+                    PathBuf::from("normal.txt"),
+                    PathBuf::from(&too_long_name),
+                    target.clone(),
+                ],
+            },
+        );
+
+        assert_eq!(
+            exit,
+            ExitCode::SUCCESS,
+            "a too-long name must be a warning, not a failure"
+        );
+        assert_eq!(fs::read(target.join("normal.txt")).unwrap(), b"hello");
+        assert!(
+            fs::read_dir(&target).unwrap().count() == 1,
+            "only the normally-named file should have actually landed on disk"
+        );
+    }
 }

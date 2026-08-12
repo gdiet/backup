@@ -593,32 +593,6 @@ fn split_parent(path: &str) -> (&str, &str) {
     path.rsplit_once('/').unwrap_or(("", path))
 }
 
-/// Longest single tree-entry name (`mkdir`/`create`/`rename`'s destination
-/// component) accepted, in UTF-8 bytes - matches Linux's own `NAME_MAX` and
-/// stays within NTFS's 255-UTF-16-unit per-component limit (a UTF-8 byte
-/// count is always >= the equivalent UTF-16 unit count, so this is
-/// conservative on Windows too). Deliberately not enforced anywhere in
-/// `store`'s own ingestion: `store` only ever sees names the *source*
-/// filesystem already accepted, so no real filesystem can hand it
-/// something this would reject - `mount --read-write`'s write ops are the
-/// only way to put a name into the repository that no real filesystem
-/// (and therefore no later `restore`/mount on any real target) could ever
-/// have produced or honored - confirmed via a real repro: a 256-byte name
-/// created this way landed intact in the database with no error, but then
-/// failed `restore` with a raw `ENAMETOOLONG` on the destination
-/// filesystem. See `docs/plans/long-path-handling-audit.md`.
-const MAX_ENTRY_NAME_BYTES: usize = 255;
-
-/// Rejects `name` with [`Errno::ENAMETOOLONG`] if it exceeds
-/// [`MAX_ENTRY_NAME_BYTES`] - see that constant's own doc comment.
-fn check_entry_name_length(name: &str) -> Result<(), Errno> {
-    if name.len() > MAX_ENTRY_NAME_BYTES {
-        Err(Errno::ENAMETOOLONG)
-    } else {
-        Ok(())
-    }
-}
-
 fn now_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1020,7 +994,7 @@ impl Inner {
         let block_size: u64 = 512;
         Ok(mountfs::StatfsInfo {
             block_size: block_size as u32,
-            max_name_length: 255,
+            max_name_length: mountfs::MAX_NAME_BYTES as u32,
             blocks: total / block_size,
             blocks_free: available / block_size,
             blocks_available: available / block_size,
@@ -1034,7 +1008,6 @@ impl Inner {
             return Err(Errno::EROFS);
         }
         let (parent_path, name) = split_parent(path);
-        check_entry_name_length(name)?;
         let mut guard = self
             .write_conn
             .lock()
@@ -1063,7 +1036,6 @@ impl Inner {
             return Err(Errno::EROFS);
         }
         let (parent_path, name) = split_parent(path);
-        check_entry_name_length(name)?;
         let mut guard = self
             .write_conn
             .lock()
@@ -1189,7 +1161,6 @@ impl Inner {
                 return Err(Errno::EIO);
             }
             let (new_parent_path, new_name) = split_parent(new_path);
-            check_entry_name_length(new_name)?;
             let new_parent = db::resolve_path(conn, new_parent_path)
                 .map_err(|_| Errno::EIO)?
                 .ok_or(Errno::ENOENT)?;
@@ -1210,7 +1181,6 @@ impl Inner {
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
         let (new_parent_path, new_name) = split_parent(new_path);
-        check_entry_name_length(new_name)?;
         let new_parent = db::resolve_path(conn, new_parent_path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
@@ -1833,35 +1803,6 @@ mod tests {
         assert!(info.blocks > 0, "{info:?}");
         assert!(info.blocks_free > 0, "{info:?}");
         assert!(info.blocks_available > 0, "{info:?}");
-    }
-
-    /// Regression test for a real gap found by
-    /// `docs/plans/long-path-handling-audit.md`: `mkdir`/`create`/`rename`
-    /// used to accept a name of any length, landing it intact in the
-    /// database (`TEXT`, unconstrained) even though no real source
-    /// filesystem could ever have produced it via `store`, and no real
-    /// destination filesystem could later `restore` it back out cleanly
-    /// (confirmed separately: it failed `restore` with a raw OS
-    /// `ENAMETOOLONG`). `mkdir`/`create`/`rename` are the only ways to
-    /// inject such a name - this closes that off at the source instead.
-    #[test]
-    fn write_ops_reject_a_name_longer_than_max_entry_name_bytes() {
-        let (_temp_dir, repo_root) = init_repo();
-        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
-
-        let too_long = "a".repeat(MAX_ENTRY_NAME_BYTES + 1);
-        let just_right = "a".repeat(MAX_ENTRY_NAME_BYTES);
-
-        assert_eq!(fs.mkdir(&format!("/{too_long}")), Err(Errno::ENAMETOOLONG));
-        assert_eq!(
-            fs.create(&format!("/{too_long}")).unwrap_err(),
-            Errno::ENAMETOOLONG
-        );
-        assert!(fs.mkdir(&format!("/{just_right}")).is_ok());
-        assert_eq!(
-            fs.rename(&format!("/{just_right}"), &format!("/{too_long}")),
-            Err(Errno::ENAMETOOLONG)
-        );
     }
 
     /// End-to-end mount/read/unmount test: seeds a real repository with a
