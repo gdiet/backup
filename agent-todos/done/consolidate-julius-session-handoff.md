@@ -130,3 +130,20 @@ Shell-Aufrufe hinweg beobachten will:
 
 Move this file to `agent-todos/done/` with a short note (which environment/session did it, and
 whether any newer content had to be merged in per "Before overwriting" above).
+
+## Done (2026-08-12, native julius session)
+
+The situation had moved on since this was written: the old root path (`C:\Dateien\Computer\git\
+bdev\SESSION_HANDOFF.md`) no longer existed by the time this was picked up - the user confirmed
+intentionally deleting it (along with an unrelated untracked file), separately from this task.
+Since the file's content was already safely preserved in an earlier commit on `origin/rust` at
+`rust/SESSION_HANDOFF.md` (a different native session had copied it there and pushed, before the
+root copy was removed), nothing from "Before overwriting" was actually at risk of being silently
+discarded - the already-committed copy served as the thing to check for newer content against,
+instead of the now-nonexistent root file.
+
+Wrote the replacement text above to `rust/SESSION_HANDOFF.md` (its now-permanent home, not the old
+root path - matches what the replacement text itself already recommended), and appended one more
+section for a same-day, unrelated (performance-benchmark) native session's open follow-ups
+(`docs/plans/persist-worker-thread-pool.md` and
+`docs/plans/store-vs-mount-slow-drive-write-path.md`) while already in there.
