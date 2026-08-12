@@ -1,15 +1,19 @@
 # Audit: long file/directory names and paths, across all commands, on Linux and Windows
 
 **Status**: empirically tested on Linux (2026-08-11) and, since, on a real WinFSP-installed
-Windows machine ("julius", 2026-08-12 - remote via SSH, see "Findings" below and "Windows
-findings" further down). The one concrete gap found (`mount --read-write`'s
+Windows machine ("julius", 2026-08-12 - first remote via SSH, then natively, see "Findings" below
+and "Windows findings" further down). The one concrete gap found (`mount --read-write`'s
 `mkdir`/`create`/`rename` accepting unbounded name lengths) is **fixed and confirmed working via
 real WinFSP**, not just Linux/FUSE. As of 2026-08-12 the fix and its tests live in `mountfs`
 itself, not `cli` - see "Moved to `mountfs`" below for why and where exactly. `restore` also now
 has its own regression test for the complementary case (a too-long name already *in* the
 repository, restored to a real filesystem that rejects it) - see "cli-level tests" below.
-Everything else checked so far already behaved reasonably without needing a code change. Raw SMB
-protocol-level limits (as opposed to WinFSP/NTFS itself) remain untested.
+Everything else checked so far already behaved reasonably without needing a code change. Native
+Windows SMB re-export of a WinFSP mount was checked (2026-08-12, see "Windows findings") and
+showed no length behavior beyond what direct WinFSP access already does - a true non-Win32-API SMB
+client (e.g. Samba's `smbclient`, which would bypass the client-side `MAX_PATH` pre-checks that
+dominated this check) was not available to test with, so the SMB *wire protocol's* own limits,
+independent of any Win32 client, remain untested.
 
 ## Why this needs checking at all
 
@@ -217,6 +221,40 @@ simpler.
   the whole issue by automatically using verbatim paths internally when needed - which is exactly
   why the new automated test above uses `std::fs` rather than trying to replicate a literal Win32
   client call.
+- **Follow-up (2026-08-12, native session on julius): the `\\?\` workaround does work correctly
+  against a WinFSP directory mount** - refines the point directly above, which reported *both* the
+  255- and 256-byte cases failing identically. Retested via `New-Item` (PowerShell/.NET, a
+  different Win32-API client than whatever produced the earlier result): a 255-byte name via
+  `\\?\C:\...\mnt\<name>` **succeeds**, full name confirmed intact via a directory listing (no
+  truncation); a 256-byte name **fails**, but with a different, more specific error ("the filename,
+  directory name, or volume label syntax is incorrect") than this project's own `ENAMETOOLONG` -
+  i.e. Windows' own NTFS-facing layer rejects it before the request ever reaches WinFSP's user-mode
+  callback into this project's code, meaning a normal Win32 client can never actually exercise this
+  project's own 255-byte check via `\\?\` - Windows already enforces the identical boundary one
+  layer down. The cause of the earlier session's differing 255-byte result (same mount type, same
+  general approach) wasn't identified - possibly a different mount path length, or a literal Win32
+  `CreateFileW` call behaving differently than `New-Item`'s underlying `.NET` path resolution -
+  low-value to chase further given the boundary itself is now confirmed correct.
+- **Native Windows SMB re-export of a WinFSP mount was tried (2026-08-12), with one genuine new
+  finding**: a WinFSP directory mountpoint **cannot be the share root itself** - both
+  `New-SmbShare` and classic `net share` fail immediately with Windows System Error 32
+  (`ERROR_SHARING_VIOLATION`), confirmed with two independent tools, before any SMB client ever
+  connects. A plain (non-WinFSP) directory shares without issue for comparison, so this is specific
+  to WinFSP's mountpoint, not a general share-creation problem in this environment. **Workaround
+  that works**: share the mount's *parent* directory instead (an ordinary folder) - the mount then
+  shows up and is fully browsable/writable as a subdirectory of that share
+  (`\\host\share\mountdir\...`), reads/writes/`readdir` all confirmed working, including this
+  project's own `[deleted]` soft-delete view. Once reached that way, the 255/256-byte boundary and
+  the `\\?\`-over-SMB (`\\?\UNC\host\share\mountdir\<name>`) behavior were both byte-for-byte
+  identical to direct local access (same errors, same successes) - no evidence the SMB layer itself
+  changes any length behavior, at least as exercised through Windows' own SMB client stack. This
+  doesn't rule out the SMB *wire protocol* having its own independent limits, since every client
+  used here (PowerShell/.NET, `net share`/`net use`) still goes through the same Win32 file API and
+  its `MAX_PATH` pre-checks that already dominated the local-only testing above - a client that
+  talks SMB directly without that Win32 layer (e.g. Samba's `smbclient`) would be needed to fully
+  rule that out, and wasn't available in this environment (no Docker on julius for
+  `docker/samba-mount`; the local WSL2 Debian distro has no `smbclient` installed and no
+  passwordless `sudo` to install it non-interactively).
 
 ## Moved to `mountfs` (2026-08-12)
 
