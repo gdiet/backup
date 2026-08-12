@@ -541,6 +541,77 @@ fn mount_fails_fast_for_a_nonexistent_temp_dir_without_creating_the_mountpoint()
     );
 }
 
+/// Windows counterpart to `cli/src/mount.rs`'s
+/// `write_ops_reject_a_name_longer_than_max_entry_name_bytes` (Linux-only,
+/// same reason as the other tests above) - confirms the check landed by
+/// `docs/plans/long-path-handling-audit.md` actually rejects an over-long
+/// name through a real `backup mount --read-write` child process and real
+/// WinFSP, not just in the in-process Linux test. Uses `std::fs` (not a
+/// naive path join through e.g. PowerShell cmdlets, which hit Windows'
+/// classic ~260-char `MAX_PATH` client-side before ever reaching the
+/// mount): Rust's std automatically uses verbatim (`\\?\`-prefixed) paths
+/// internally for absolute paths that need it, so a 255/256-byte *name*
+/// component is exercised here without also tripping the unrelated,
+/// separate total-path-length limit.
+#[test]
+fn mount_read_write_rejects_a_name_over_max_entry_name_bytes_via_the_backup_binary() {
+    let (_temp_dir, repo_root) = init_repo();
+    {
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_write_connection().unwrap();
+        db::insert_directory(&conn, 0, "marker", 0).unwrap();
+    }
+
+    let parent_dir = tempfile::tempdir().unwrap();
+    let mount_path = parent_dir.path().join("mnt");
+
+    let backup = env!("CARGO_BIN_EXE_backup");
+    let mut child = std::process::Command::new(backup)
+        .arg("--repo")
+        .arg(&repo_root)
+        .arg("mount")
+        .arg("--read-write")
+        .arg(&mount_path)
+        .spawn()
+        .expect("failed to spawn backup mount --read-write");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            panic!("backup mount exited early with {status}");
+        }
+        let names: Vec<String> = std::fs::read_dir(&mount_path)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .map(|e| e.file_name().to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !names.is_empty() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "mount did not become ready within 10s"
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    let name_255 = "y".repeat(255);
+    let name_256 = "z".repeat(256);
+
+    std::fs::write(mount_path.join(&name_255), b"hi")
+        .expect("a 255-byte name must still be accepted");
+    assert!(
+        std::fs::write(mount_path.join(&name_256), b"hi").is_err(),
+        "a 256-byte name must be rejected, not silently accepted"
+    );
+
+    child.kill().expect("failed to kill backup mount");
+    child.wait().expect("failed to wait for backup mount");
+}
+
 /// A content write on a genuinely read-only mount (no `--read-write`) must
 /// be rejected - see this test module's doc comment on
 /// `mounts_read_write_and_supports_content_writes_via_the_backup_binary`

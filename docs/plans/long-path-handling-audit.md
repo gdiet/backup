@@ -1,12 +1,14 @@
 # Audit: long file/directory names and paths, across all commands, on Linux and Windows
 
-**Status**: first round of empirical testing done (2026-08-11, Linux + a real Windows-backed
-filesystem via WSL2's DrvFs `/mnt/c` - see "Findings" below); native WinFSP mount and raw SMB
-protocol-level limits still untested (no WinFSP available in this environment). The one concrete
-gap found (`mount --read-write`'s `mkdir`/`create`/`rename` accepting unbounded name lengths) is
-**fixed** - see `MAX_ENTRY_NAME_BYTES`/`check_entry_name_length` in `cli/src/mount.rs` and
-`Errno::ENAMETOOLONG` in `mountfs/src/lib.rs`. Everything else checked so far already behaved
-reasonably without needing a code change (see "Findings").
+**Status**: empirically tested on Linux (2026-08-11) and, since, on a real WinFSP-installed
+Windows machine ("julius", 2026-08-12 - remote via SSH, see "Findings" below and "Windows
+findings" further down). The one concrete gap found (`mount --read-write`'s
+`mkdir`/`create`/`rename` accepting unbounded name lengths) is **fixed and confirmed working via
+real WinFSP**, not just Linux/FUSE - see `MAX_ENTRY_NAME_BYTES`/`check_entry_name_length` in
+`cli/src/mount.rs`, `Errno::ENAMETOOLONG` in `mountfs/src/lib.rs`, and
+`cli/tests/windows_mount.rs`'s `mount_read_write_rejects_a_name_over_max_entry_name_bytes_via_the_backup_binary`.
+Everything else checked so far already behaved reasonably without needing a code change. Raw SMB
+protocol-level limits (as opposed to WinFSP/NTFS itself) remain untested.
 
 ## Why this needs checking at all
 
@@ -161,11 +163,57 @@ actually running the command, not reasoned about.
 The practical risk is narrower than the original scope worried about: `store` can't produce an
 unrestorable name (constrained by the real source filesystem), deep paths work fine at least via
 DrvFs, and `restore` already degrades gracefully when it does hit a real OS rejection. The one
-concrete, worth-fixing gap is **`mount --read-write`'s write-side dispatch
+concrete, worth-fixing gap was **`mount --read-write`'s write-side dispatch
 (`mkdir`/`create`/`rename` in `mountfs`/`cli/src/mount.rs`) accepting names with no length
 validation at all** - the only path that can put an entry into a repository that's later
-impossible to restore by name on *any* real filesystem. A reasonable fix: validate each new
-name's length against a conservative, cross-platform-safe limit (e.g. 255 UTF-8 bytes, matching
-Linux `NAME_MAX` and close to NTFS's 255-UTF-16-unit component limit) in those three dispatch
-methods, returning `Errno` equivalent to `ENAMETOOLONG` instead of silently accepting it - not yet
-implemented, a deliberate small follow-up rather than bundled into this audit.
+impossible to restore by name on *any* real filesystem. Fixed: each new name's length is now
+checked against 255 UTF-8 bytes (matching Linux `NAME_MAX`, close to NTFS's 255-UTF-16-unit
+component limit) in those three dispatch methods, returning `Errno::ENAMETOOLONG` instead of
+silently accepting it - see "Windows findings" below for confirmation this also works correctly
+through real WinFSP, not just Linux/FUSE.
+
+## Windows findings (2026-08-12, empirical, real WinFSP on "julius")
+
+Access via SSH to a real Windows machine with WinFSP installed (see `SESSION_HANDOFF.md` for how
+that connection is reached - link-local IPv6 from `ping` doesn't work from WSL2, needed an IPv4
+LAN address instead). Native `cargo build`/`test` there turned out fast enough (dependencies
+already cached from a prior checkout - a from-scratch single-crate rebuild was ~6s, a full
+`cargo test --workspace` including recompiling `db`/`mountfs`/`cli` was ~47s) that cross-compiling
+on Linux and copying binaries over wasn't necessary - just working natively there over SSH was
+simpler.
+
+- **Real, correction to an earlier claim in this doc**: `cli/src/mount.rs`'s own `mod tests`
+  (where `write_ops_reject_a_name_longer_than_max_entry_name_bytes`, the unit test for this fix,
+  lives) is `#[cfg(all(test, not(target_os = "windows")))]` - Linux-only. It never ran on Windows
+  at all, contrary to what an earlier revision of this doc implied by citing a passing
+  `cargo test --workspace` run on Windows as if it covered this. The real Windows-side
+  verification needed its own test in `cli/tests/windows_mount.rs` (the existing pattern for
+  Windows mount tests - subprocess-based, spawns the real `backup.exe` and drives it through real
+  WinFSP, since in-process WinFSP mounting isn't supported the way libfuse's in-thread mounting on
+  Linux is). Added:
+  `mount_read_write_rejects_a_name_over_max_entry_name_bytes_via_the_backup_binary` - confirms via
+  a real `backup mount --read-write` child process and real WinFSP: a 255-byte name is accepted,
+  a 256-byte name is rejected. Passes.
+- **`mounts_and_serves_the_full_read_only_op_set_via_real_winfsp`** (the existing `mountfs`-level
+  WinFSP integration test) and the full `cli/tests/windows_mount.rs` suite (9 tests, including
+  real read-write mounts, content writes, structural changes, and now the name-length check) all
+  pass natively on real WinFSP. `cargo fmt --check`/`cargo clippy --all-targets -- -D warnings`
+  both clean on Windows too.
+- **Isolating the exact 255-vs-256-byte boundary via a real, interactive Win32 client tool (not
+  just Rust's own `std::fs`) turned out impractical, and that's itself worth recording**: any
+  near-maximal single *component* name, even under the shortest realistic mount path, already
+  exceeds classic Windows' ~260-character `MAX_PATH` as a *whole path* - the two limits are close
+  enough in magnitude that classic (non-long-path-aware) Windows APIs essentially always hit
+  `MAX_PATH` first, regardless of how short the surrounding path is. The usual workaround
+  (`\\?\`-prefixed "verbatim" paths, which opt into the much larger ~32,767-character limit)
+  didn't cleanly address a WinFSP-created directory mountpoint in this setup either - both a
+  255-byte and a 256-byte name failed identically with "the filename, directory name, or volume
+  label syntax is incorrect" via `\\?\`, on the same connection/session as the mount itself (so
+  not a session-scoping artifact - that was separately confirmed to be real for both drive-letter
+  and plain-directory WinFSP mounts accessed from a *different* SSH session/logon than the one
+  that created them, an unrelated finding also worth noting for future remote Windows testing).
+  Whether that `\\?\` failure is a general WinFSP limitation or specific to this exact
+  setup/WinFSP version wasn't chased further (diminishing returns). Rust's own `std::fs` sidestepped
+  the whole issue by automatically using verbatim paths internally when needed - which is exactly
+  why the new automated test above uses `std::fs` rather than trying to replicate a literal Win32
+  client call.
