@@ -178,9 +178,9 @@ through real WinFSP, not just Linux/FUSE.
 
 ## Windows findings (2026-08-12, empirical, real WinFSP on "julius")
 
-Access via SSH to a real Windows machine with WinFSP installed (see `AGENTS.md`'s "Working With A
-Separate Windows Machine Over SSH" for how that connection is reached - link-local IPv6 from `ping`
-doesn't work from WSL2, needed an IPv4 LAN address instead). Native `cargo build`/`test` there
+Access via SSH to a real Windows machine with WinFSP installed (see the `julius-winfsp-ssh` skill
+for how that connection is reached - link-local IPv6 from `ping` doesn't work from WSL2, needed an
+IPv4 LAN address instead). Native `cargo build`/`test` there
 turned out fast enough (dependencies
 already cached from a prior checkout - a from-scratch single-crate rebuild was ~6s, a full
 `cargo test --workspace` including recompiling `db`/`mountfs`/`cli` was ~47s) that cross-compiling

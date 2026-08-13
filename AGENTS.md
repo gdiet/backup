@@ -17,78 +17,19 @@ The developer is an experience programmer, but this is his first real rust proje
 Expect him to make both obvious and subtle mistakes, and point them out to him,
 especially the latter.
 
-## Shell Commands
+## Working Across Environments
 
-Avoid unscoped, recursive filesystem searches such as `find /` or `find / -maxdepth N`
-— these traverse the entire filesystem and can take a very long time. Scope `find` (and
-similar tools) to a specific, known directory instead (e.g. the workspace, or
-`~/.cargo/registry/src/...` for crate sources). Prefer more targeted alternatives when
-available, e.g. `cargo metadata` or `cargo tree` to locate crate sources/dependencies
-instead of searching the filesystem blindly.
-
-## Working Across Windows And WSL
-
-The primary checkout is on the Windows filesystem (this repository's location under
-`C:\...`). Linux-specific verification (real FUSE mount tests, `cargo build`/`clippy`/
-`test` as they'd actually run on Linux) needs WSL - but run it against the native WSL
-clone at `~/git/backup` (Linux `ext4`), not against the Windows checkout reached via
-`/mnt/c/...`. `cargo` through the `/mnt/c` DrvFs/9p bridge is noticeably slower and can
-surface filesystem quirks (permissions, locking, `/dev/fuse` access) that don't reflect
-real Linux behavior - the whole point of testing on WSL in the first place.
-
-Keep the two in sync through the shared remote, never by copying files directly:
-
-- Make and commit all changes in the Windows checkout, same as always.
-- After pushing from the Windows checkout, sync `~/git/backup` with:
-  `git fetch origin <branch> && git merge --ff-only origin/<branch>`
-  (fast-forward only - if that fails, something unexpected changed `~/git/backup`
-  itself; investigate rather than force it).
-- Verify `git status --short` is clean in `~/git/backup` right after syncing, before
-  trusting any build/test output from it.
-- Never make or commit changes directly in `~/git/backup` - it exists only to verify
-  Linux behavior against what's already pushed, not as a second place to develop. If a
-  Linux-only fix is needed, make it in the Windows checkout, push, then sync as above.
-
-When invoking `wsl` from this (Git Bash/MSYS) shell with a WSL-only path (anything
-under `/home/...`, not `/mnt/c/...`) anywhere in the command - e.g.
-`wsl bash -lc '/home/georg/.../java -version'` - MSYS's automatic path conversion can
-silently mangle it into a bogus Windows path (`C:/Program Files/Git/home/...`), failing
-with a confusing `No such file or directory`. `/mnt/c/...` paths are unaffected (MSYS
-already special-cases them), so this only bites when a command touches something that
-only exists inside WSL, like a JRE unpacked under the Linux home directory. Fix: prefix
-the call with `MSYS_NO_PATHCONV=1`, e.g. `MSYS_NO_PATHCONV=1 wsl bash -lc '...'`.
-
-## Working With A Separate Windows Machine Over SSH
-
-Distinct from "Working Across Windows And WSL" above (same machine, dual environment) - this is
-about reaching a genuinely separate physical/VM Windows machine (in practice, one nicknamed
-"julius") over SSH to run real WinFSP tests that neither the primary checkout nor WSL can perform.
-Gotchas learned the hard way across several sessions:
-
-- **SSH-Exec-Sessions (Win32-OpenSSH) tie spawned child processes to a Job Object** - when the SSH
-  connection ends, every child process dies with it, even ones started with `start /b`. Workaround:
-  launch via Task Scheduler instead (`schtasks /create ... /sc once /st 23:59 /f` then
-  `schtasks /run /tn ...`) - runs independently of the SSH session's Job Object.
-- **Drive-letter and directory-based WinFSP mounts are bound to the logon session that created
-  them** - a mount started from one SSH session isn't visible from a different SSH session (a
-  different logon session), even though the mount process is confirmed still running. Keep
-  mounting and observing/testing in the same script/process/session.
-- `powershell -File ...` is blocked by the default execution policy - pass
-  `-ExecutionPolicy Bypass`.
-- Multi-layer shell escaping (bash → ssh → cmd → powershell) is error-prone for anything
-  non-trivial - prefer staging a script on the remote machine (`scp`) and executing that, over
-  inlining complex commands through every layer.
-- The hostname itself may not resolve from WSL2 (no NetBIOS/mDNS there) - `ping <host>` in `cmd.exe`
-  may only return a link-local IPv6 address unreachable from WSL2's own virtual network;
-  `ping /4 <host>` returns a usable IPv4 LAN address instead.
-- A WinFSP mountpoint can't itself be an SMB share root (`ERROR_SHARING_VIOLATION`) - share the
-  parent directory instead; the mount is then reachable as a subfolder of that share.
+Cross-environment operational knowledge (Windows checkout ↔ WSL clone sync, SSH access to a
+separate Windows/WinFSP machine) lives in skills now, not inline here, since it's only relevant
+on the (comparatively rare) occasions this actually comes up - see the `wsl-windows-sync` and
+`julius-winfsp-ssh` skills. Load the relevant one before doing that kind of work rather than
+re-deriving it from scratch.
 
 ## Agent TODOs (Cross-Environment Handoffs)
 
-This project is routinely worked on from more than one environment (see "Working Across Windows
-And WSL" above, and in practice sometimes also a separate Windows machine reached over SSH) - an
-agent in one environment regularly hits a wall that's trivial for an agent in another (needs a
+This project is routinely worked on from more than one environment (see "Working Across
+Environments" above, and in practice sometimes also a separate Windows machine reached over SSH) -
+an agent in one environment regularly hits a wall that's trivial for an agent in another (needs a
 real Windows console, WinFSP, Docker, network access to a specific host, etc.). `agent-todos/`
 (see its own `README.md` for the exact file format) is where those get parked instead of silently
 dropped.
