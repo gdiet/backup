@@ -394,6 +394,11 @@ fn restore_file_at(
         }
     };
 
+    // A settled empty file has a real content_id (db::EMPTY_CONTENT_ID, zero
+    // chunks); None only ever means a mount create() placeholder still
+    // lingering on disk (a crashed or still-running mount session - see
+    // EMPTY_CONTENT_ID's own doc comment), for which "no chunks to write"
+    // is exactly as correct as it is for a real empty file.
     let chunks = match entry.content_id {
         None => Vec::new(),
         Some(content_id) => match db::ordered_content_chunks(conn, content_id) {

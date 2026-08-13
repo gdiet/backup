@@ -222,7 +222,7 @@ mod tests {
         let repository = db::open_repository(&repo_root).unwrap();
         let conn = repository.open_read_connection().unwrap();
         let replacement = db::resolve_path(&conn, "a.txt").unwrap().unwrap();
-        assert_eq!(replacement.content_id, None);
+        assert_eq!(replacement.content_id, Some(db::EMPTY_CONTENT_ID));
         assert_eq!(replacement.time_millis, 1_704_067_200_000);
         assert_eq!(db::file_size(&conn, &replacement).unwrap(), 0);
     }

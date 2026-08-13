@@ -929,6 +929,24 @@ impl Inner {
         }
         if !state.dirty {
             states.remove(&tree_id);
+            drop(states);
+            // A create()'d file closed without ever being written (dirty
+            // stays false, no persist ever runs for it) would otherwise
+            // leave content_id IS NULL as this row's permanent state - see
+            // db::finalize_as_empty_if_undecided's own doc comment. Cheap
+            // no-op for every other release (a real file's content_id is
+            // never NULL by this point).
+            if let Some(conn) = self
+                .write_conn
+                .lock()
+                .expect("write connection mutex poisoned")
+                .as_mut()
+                && let Err(err) = db::finalize_as_empty_if_undecided(conn, tree_id)
+            {
+                eprintln!(
+                    "error: mount: failed to settle tree entry {tree_id} as an empty file: {err}"
+                );
+            }
             return;
         }
         // Take the cache out and mark this entry as persisting rather than
@@ -1114,10 +1132,16 @@ impl Inner {
         {
             return Err(Errno::EEXIST);
         }
-        // Starts empty - the same shape `open`/`read` already treat a
-        // zero-length file as (`content_id IS NULL`); an ensuing `write`
-        // (phase 2b) materializes a real write cache for it on demand,
-        // same as `open`ing an existing file for writing.
+        // Starts with no content decided yet (`content_id IS NULL`) - not
+        // the same as an empty file (`db::EMPTY_CONTENT_ID`, see its own
+        // doc comment): `ContentSource::Known(None)` deliberately bypasses
+        // `resolve_content`'s dedup lookup to get exactly that, since
+        // `Resolved` with empty `chunks` would now resolve to the shared
+        // empty-content row instead. `open`/`read` already treat a
+        // zero-length file as `content_id IS NULL`, whichever of the two
+        // this row currently is; an ensuing `write` (phase 2b) materializes
+        // a real write cache for it on demand, same as `open`ing an
+        // existing file for writing.
         let time_millis = now_millis();
         db::apply_backup_batch(
             conn,
@@ -1125,10 +1149,7 @@ impl Inner {
                 parent_id: parent.id,
                 name: name.to_string(),
                 time_millis,
-                content: db::ContentSource::Resolved {
-                    chunks: Vec::new(),
-                    content_hash: Vec::new(),
-                },
+                content: db::ContentSource::Known(None),
             }],
         )
         .map_err(|_| Errno::EIO)?;
@@ -1463,6 +1484,11 @@ impl Inner {
         let entry = db::get_tree_entry(&conn, tree_id)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
+        // A settled empty file has a real content_id (db::EMPTY_CONTENT_ID,
+        // zero chunks) and falls through to the ordinary path below - None
+        // here only ever means a still-open create() placeholder nothing
+        // has been written to yet (see EMPTY_CONTENT_ID's own doc comment),
+        // for which "no bytes" is exactly the right answer too.
         let Some(content_id) = entry.content_id else {
             return Ok(Vec::new());
         };
@@ -1860,6 +1886,44 @@ mod tests {
             Duration::ZERO,
         )
         .unwrap()
+    }
+
+    /// Regression test for `docs/plans/implemented/empty-file-real-content-id.md`:
+    /// a bare `touch` through the mount (create, never write, close) must
+    /// settle as a real, deduplicated empty file (`db::EMPTY_CONTENT_ID`),
+    /// not leave `content_id IS NULL` as its permanent state.
+    #[test]
+    fn create_without_a_write_settles_as_the_shared_empty_content_on_release() {
+        let (_temp_dir, repo_root) = init_repo();
+        let fs = build_test_filesystem(&repo_root);
+
+        let handle = fs.create("/touch.txt").unwrap();
+        // Still open, nothing written yet - content_id genuinely undecided.
+        let attr = fs.getattr("/touch.txt").unwrap();
+        assert_eq!(attr.size, 0);
+        fs.release(handle);
+
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_read_connection().unwrap();
+        let entry = db::find_tree_entry(&conn, 0, "touch.txt").unwrap().unwrap();
+        assert_eq!(entry.content_id, Some(db::EMPTY_CONTENT_ID));
+        assert_eq!(db::file_size(&conn, &entry).unwrap(), 0);
+    }
+
+    #[test]
+    fn two_touched_files_dedup_onto_the_same_empty_content() {
+        let (_temp_dir, repo_root) = init_repo();
+        let fs = build_test_filesystem(&repo_root);
+
+        fs.release(fs.create("/a.txt").unwrap());
+        fs.release(fs.create("/b.txt").unwrap());
+
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_read_connection().unwrap();
+        let a = db::find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+        let b = db::find_tree_entry(&conn, 0, "b.txt").unwrap().unwrap();
+        assert_eq!(a.content_id, Some(db::EMPTY_CONTENT_ID));
+        assert_eq!(a.content_id, b.content_id);
     }
 
     #[test]

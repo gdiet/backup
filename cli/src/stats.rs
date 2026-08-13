@@ -279,7 +279,10 @@ mod tests {
         assert_eq!(stats.live_files, 2);
         assert_eq!(stats.deleted_files, 0);
         assert_eq!(stats.chunks, 1, "both files share one chunk");
-        assert_eq!(stats.contents, 1, "both files share one content");
+        assert_eq!(
+            stats.contents, 2,
+            "both files share one content, plus the always-seeded EMPTY_CONTENT_ID row"
+        );
         assert_eq!(stats.physical_bytes, 10);
         assert_eq!(stats.logical_bytes, 20, "counted once per referencing file");
     }

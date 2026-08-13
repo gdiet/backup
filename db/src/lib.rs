@@ -43,8 +43,9 @@ pub use query::{
 };
 pub use settings::{CDC_TARGET_SIZE_BITS_RANGE, Chunking, RepositorySettings, SettingsError};
 pub use tree::{
-    EntryKind, TreeEntryRow, find_tree_entry, get_tree_entry, insert_directory,
-    insert_historical_tree_entry, is_deleted, parent_id, rename_entry, touch_mtime,
+    EntryKind, TreeEntryRow, finalize_as_empty_if_undecided, find_tree_entry, get_tree_entry,
+    insert_directory, insert_historical_tree_entry, is_deleted, parent_id, rename_entry,
+    touch_mtime,
 };
 
 use std::fs;
@@ -62,6 +63,23 @@ const META_TMP_DIR: &str = "meta.tmp";
 const META_DB_FILE: &str = "repository.sqlite3";
 /// Directory (relative to the repository root) holding the chunk data store.
 const DATA_DIR: &str = "data";
+
+/// The `contents.id` every genuinely empty file (zero chunks) resolves to -
+/// seeded once, at a fixed id, by `migrations.rs`'s `SCHEMA_V1` (`length =
+/// 0`, `hash` = BLAKE3's XOF output for an empty input), not created on
+/// demand the way every other `contents` row is. This is what makes
+/// `content_id IS NULL` on a *file* `tree_entries` row unambiguous: it no
+/// longer means "empty file" (that's now `Some(EMPTY_CONTENT_ID)`, exactly
+/// like any other deduplicated content) - it means specifically "no content
+/// decided yet", the mount's `create()` placeholder before its first write
+/// (`ContentSource::Known(None)`, see that variant's own doc comment). A
+/// directory is unaffected either way, still identified by `kind` alone,
+/// never by `content_id`.
+///
+/// [`crate::reclaim_space`] never purges this row even at `ref_count = 0`
+/// (see its own doc comment) - `resolve_content` returns it directly,
+/// without re-checking it still exists, so it must always exist.
+pub const EMPTY_CONTENT_ID: i64 = 1;
 
 /// The metadata database file path for a repository at `repo_root`, without
 /// opening or validating it - unlike [`open_repository`]. Useful for
@@ -972,40 +990,42 @@ mod tests {
         init_repository(&repo_root, &test_settings()).unwrap();
         let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
 
+        // id=1 is taken by the seeded EMPTY_CONTENT_ID row (see
+        // migrations.rs), so this test's own content uses id=2 throughout.
         conn.execute(
-            "INSERT INTO contents (id, length, hash) VALUES (1, 0, x'AA')",
+            "INSERT INTO contents (id, length, hash) VALUES (2, 0, x'AA')",
             (),
         )
         .unwrap();
-        assert_eq!(content_ref_count(&conn, 1), 0);
+        assert_eq!(content_ref_count(&conn, 2), 0);
 
         conn.execute(
-            "INSERT INTO tree_entries (id, parent_id, name, time, content_id, kind) VALUES (1, 0, 'a', 0, 1, 'file')",
+            "INSERT INTO tree_entries (id, parent_id, name, time, content_id, kind) VALUES (1, 0, 'a', 0, 2, 'file')",
             (),
         )
         .unwrap();
-        assert_eq!(content_ref_count(&conn, 1), 1);
+        assert_eq!(content_ref_count(&conn, 2), 1);
 
         conn.execute(
-            "INSERT INTO tree_entries (id, parent_id, name, time, content_id, kind) VALUES (2, 0, 'b', 0, 1, 'file')",
+            "INSERT INTO tree_entries (id, parent_id, name, time, content_id, kind) VALUES (2, 0, 'b', 0, 2, 'file')",
             (),
         )
         .unwrap();
-        assert_eq!(content_ref_count(&conn, 1), 2);
+        assert_eq!(content_ref_count(&conn, 2), 2);
 
         // Soft-deleting an entry must not release its content: it's still needed
         // to keep the entry recoverable.
         conn.execute("UPDATE tree_entries SET deleted_at = 1 WHERE id = 1", ())
             .unwrap();
-        assert_eq!(content_ref_count(&conn, 1), 2);
+        assert_eq!(content_ref_count(&conn, 2), 2);
 
         conn.execute("DELETE FROM tree_entries WHERE id = 1", ())
             .unwrap();
-        assert_eq!(content_ref_count(&conn, 1), 1);
+        assert_eq!(content_ref_count(&conn, 2), 1);
 
         conn.execute("DELETE FROM tree_entries WHERE id = 2", ())
             .unwrap();
-        assert_eq!(content_ref_count(&conn, 1), 0);
+        assert_eq!(content_ref_count(&conn, 2), 0);
     }
 
     /// `chunks.ref_count` must track live `content_chunks` references, and
@@ -1019,28 +1039,29 @@ mod tests {
         init_repository(&repo_root, &test_settings()).unwrap();
         let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
 
+        // Content id=2, not 1 - id=1 is taken by the seeded EMPTY_CONTENT_ID row.
         conn.execute(
             "INSERT INTO chunks (id, length, hash) VALUES (1, 3, x'AA')",
             (),
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO contents (id, length, hash) VALUES (1, 3, x'BB')",
+            "INSERT INTO contents (id, length, hash) VALUES (2, 3, x'BB')",
             (),
         )
         .unwrap();
         assert_eq!(chunk_ref_count(&conn, 1), 0);
 
         conn.execute(
-            "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (1, 0, 1)",
+            "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (2, 0, 1)",
             (),
         )
         .unwrap();
         assert_eq!(chunk_ref_count(&conn, 1), 1);
 
         // ref_count = 0, so this content is eligible for purging.
-        assert_eq!(content_ref_count(&conn, 1), 0);
-        conn.execute("DELETE FROM contents WHERE id = 1 AND ref_count = 0", ())
+        assert_eq!(content_ref_count(&conn, 2), 0);
+        conn.execute("DELETE FROM contents WHERE id = 2 AND ref_count = 0", ())
             .unwrap();
 
         let remaining_content_chunks: i64 = conn

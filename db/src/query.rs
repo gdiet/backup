@@ -189,11 +189,16 @@ pub fn has_deleted_children(conn: &Connection, parent_id: i64) -> Result<bool, E
     .map_err(Error::from)
 }
 
-/// The logical size of a file entry: `0` for an empty file (`content_id` is
-/// `None`), otherwise the referenced content's length. Only meaningful for a
-/// `File` entry - a directory also has `content_id == None`, so this silently
-/// returns `0` for one rather than distinguishing it; callers should check
-/// `entry.kind` first.
+/// The logical size of a file entry: the referenced content's length, or `0`
+/// if `content_id` is still `None` - a settled empty file has a real
+/// `content_id` (`crate::EMPTY_CONTENT_ID`, itself `length = 0`) and would
+/// hit the `Some` branch below anyway, so reaching `None` here only ever
+/// means a still-open mount `create()` placeholder with nothing written to
+/// it yet (see `EMPTY_CONTENT_ID`'s own doc comment) - `0` bytes is the
+/// correct answer for that too. Only meaningful for a `File` entry - a
+/// directory also has `content_id == None`, so this silently returns `0`
+/// for one rather than distinguishing it; callers should check `entry.kind`
+/// first.
 pub fn file_size(conn: &Connection, entry: &TreeEntryRow) -> Result<i64, Error> {
     match entry.content_id {
         None => Ok(0),

@@ -37,23 +37,32 @@ use rusqlite_migration::{M, Migrations};
 ///   directly - it's derived from data already computed while chunking, so it
 ///   costs nothing extra to obtain), used to deduplicate `contents` rows the same
 ///   way `chunks.hash` deduplicates chunks: files with byte-identical content
-///   share one `contents` row instead of each getting their own. An empty file
-///   hashes the empty chunk sequence, so all empty files share one `contents` row
-///   with zero `content_chunks`. Multiple `tree_entries` can reference the same
-///   content. `ref_count` is the number of `tree_entries` rows referencing this
-///   content, maintained by triggers; a content with `ref_count = 0` is
-///   unreferenced and can be purged.
+///   share one `contents` row instead of each getting their own. A genuinely
+///   empty file resolves to `crate::EMPTY_CONTENT_ID`, a fixed row (`id = 1`)
+///   seeded below rather than lazily inserted - every empty file shares it, with
+///   zero `content_chunks`, exactly like any other deduplicated content.
+///   Multiple `tree_entries` can reference the same content. `ref_count` is the
+///   number of `tree_entries` rows referencing this content, maintained by
+///   triggers; a content with `ref_count = 0` is unreferenced and can be purged,
+///   with one exception: `crate::EMPTY_CONTENT_ID`, which `reclaim_space`
+///   deliberately keeps even at `ref_count = 0` (see its own doc comment) -
+///   `resolve_content` returns that id directly without re-checking the row
+///   still exists, so purging it would leave the next empty file's insert
+///   violating the `content_id` foreign key. Costs nothing worth reclaiming
+///   anyway - unlike a real chunk, it has no physical store bytes behind it.
 /// - `content_chunks` records, for each content, the ordered sequence of chunks
 ///   that make it up (chunks themselves may be shared across contents). It needs
 ///   no `ref_count` of its own: it has no dependents other than `contents`, so
 ///   `ON DELETE CASCADE` on `content_id` is sufficient to keep it free of orphans
 ///   whenever an unreferenced content is purged.
-/// - `tree_entries` is the file system tree. `kind` distinguishes a directory from
-///   a file; this is needed because `content_id IS NULL` alone is ambiguous
-///   between "directory" (never has content) and "empty file" (has content
-///   conceptually, but zero chunks) - `kind` is the sole authority for that
-///   distinction, `content_id` is simply `NULL` for both directories and empty
-///   files. The root entry (id 0) is its own parent (`parent_id = 0`); this is the
+/// - `tree_entries` is the file system tree. `kind` distinguishes a directory
+///   from a file; a directory's `content_id` is always `NULL` (it never has
+///   content at all), and `kind` remains the sole authority for that even
+///   though a file's `content_id` can also be `NULL` - not for "empty"
+///   anymore (that's `crate::EMPTY_CONTENT_ID`, see `contents` above), only
+///   for a file with no content decided yet (the mount's `create()`
+///   placeholder before its first write - see `EMPTY_CONTENT_ID`'s own doc
+///   comment). The root entry (id 0) is its own parent (`parent_id = 0`); this is the
 ///   only way to give it a well-defined, fixed anchor while keeping `parent_id`
 ///   non-null everywhere - which matters because SQL treats every `NULL` as
 ///   distinct from every other `NULL` for
@@ -196,6 +205,17 @@ END;
 
 INSERT INTO tree_entries (id, parent_id, name, time, kind)
   VALUES (0, 0, '', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 'dir');
+
+-- The shared content row every genuinely empty file resolves to (see
+-- crate::EMPTY_CONTENT_ID's own doc comment for the full rationale: this
+-- is what lets `content_id IS NULL` on a file mean, unambiguously, 'no
+-- content decided yet' rather than also doing double duty for a settled
+-- empty file). hash is BLAKE3's XOF output for an empty input, truncated
+-- to this crate's HASH_LENGTH (20 bytes) - the same hash any real empty
+-- file's own content-hashing would independently compute, reproducible via
+-- `blake3::Hasher::new().finalize_xof()` with zero prior `.update()` calls.
+INSERT INTO contents (id, length, hash)
+  VALUES (1, 0, X'af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9');
 ";
 
 /// All database migrations, in order. Applying them is tracked via SQLite's built-in

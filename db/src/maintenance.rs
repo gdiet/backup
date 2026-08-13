@@ -41,9 +41,13 @@ pub fn soft_delete(conn: &Connection, id: i64, deleted_at: i64) -> Result<usize,
 }
 
 /// Soft-deletes `id` (via [`soft_delete`]) and, in the same transaction,
-/// inserts a fresh zero-byte file at `(parent_id, name)` with `content_id
-/// NULL` - the atomic form of `fix-problems --replace-empty`'s two-step
-/// "soft-delete, then re-insert" behavior.
+/// inserts a fresh zero-byte file at `(parent_id, name)` with `content_id =
+/// crate::EMPTY_CONTENT_ID` - the atomic form of `fix-problems
+/// --replace-empty`'s two-step "soft-delete, then re-insert" behavior. A
+/// real, settled empty file (recoverable via `[deleted]`/`undelete` like any
+/// other replaced entry, deduplicated with every other empty file in the
+/// repository) - not `content_id IS NULL`, which is reserved for a still-open
+/// mount placeholder (see `EMPTY_CONTENT_ID`'s own doc comment).
 ///
 /// Wrapping both statements in one transaction closes a crash-safety gap: a
 /// process killed between two separate top-level calls would leave `id`
@@ -68,8 +72,8 @@ pub fn soft_delete_and_replace_with_empty(
     let tx = conn.transaction()?;
     soft_delete(&tx, id, deleted_at_millis)?;
     tx.execute(
-        "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (?1, ?2, ?3, 'file')",
-        params![parent_id, name, time_millis],
+        "INSERT INTO tree_entries (parent_id, name, time, kind, content_id) VALUES (?1, ?2, ?3, 'file', ?4)",
+        params![parent_id, name, time_millis, crate::EMPTY_CONTENT_ID],
     )?;
     tx.commit()?;
     Ok(())
@@ -251,7 +255,14 @@ pub struct ReclaimStats {
 /// content or chunk only reaches `ref_count = 0` once nothing live (or
 /// soft-deleted-but-within-the-grace-period) references it any more, which
 /// this first statement is what actually brings about for anything that was
-/// only kept alive by an old soft-deleted entry.
+/// only kept alive by an old soft-deleted entry. The `contents` sweep
+/// excludes [`crate::EMPTY_CONTENT_ID`] even if it's currently unreferenced -
+/// that row is a fixed, seeded id `resolve_content` returns directly without
+/// re-checking it still exists (see its own doc comment), so purging it here
+/// would leave the very next empty file's `tree_entries` insert violating the
+/// `content_id` foreign key. Keeping one all-zero row around indefinitely
+/// costs nothing worth reclaiming anyway - unlike a real chunk, it has no
+/// physical store bytes behind it.
 ///
 /// Does not reclaim physical byte-store space (`store::LongTermStore` has no
 /// delete/truncate operation) - only database rows.
@@ -261,7 +272,10 @@ pub fn reclaim_space(conn: &mut Connection, cutoff_millis: i64) -> Result<Reclai
         "DELETE FROM tree_entries WHERE deleted_at IS NOT NULL AND deleted_at <= ?1",
         [cutoff_millis],
     )?;
-    let contents_purged = tx.execute("DELETE FROM contents WHERE ref_count = 0", ())?;
+    let contents_purged = tx.execute(
+        "DELETE FROM contents WHERE ref_count = 0 AND id != ?1",
+        [crate::EMPTY_CONTENT_ID],
+    )?;
     let chunks_purged = tx.execute("DELETE FROM chunks WHERE ref_count = 0", ())?;
     // Purging a chunks row frees its chunk_extents (ON DELETE CASCADE),
     // turning that byte range into a gap a later store/mount --read-write
@@ -366,13 +380,14 @@ mod tests {
         // the entry recoverable, and reclaim-space is what actually frees it
         // later via a real DELETE (which the ref_count triggers do react to).
         let (_temp_dir, conn) = test_connection();
+        // Content id=2, not 1 - id=1 is taken by the seeded EMPTY_CONTENT_ID row.
         conn.execute(
-            "INSERT INTO contents (id, length, hash) VALUES (1, 5, x'AA')",
+            "INSERT INTO contents (id, length, hash) VALUES (2, 5, x'AA')",
             (),
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tree_entries (id, parent_id, name, time, kind, content_id) VALUES (1, 0, 'a.txt', 0, 'file', 1)",
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind, content_id) VALUES (1, 0, 'a.txt', 0, 'file', 2)",
             (),
         )
         .unwrap();
@@ -380,7 +395,7 @@ mod tests {
         soft_delete(&conn, 1, 1000).unwrap();
 
         let ref_count: i64 = conn
-            .query_row("SELECT ref_count FROM contents WHERE id = 1", (), |row| {
+            .query_row("SELECT ref_count FROM contents WHERE id = 2", (), |row| {
                 row.get(0)
             })
             .unwrap();
@@ -556,13 +571,14 @@ mod tests {
     #[test]
     fn undelete_does_not_change_content_ref_count() {
         let (_temp_dir, mut conn) = test_connection();
+        // Content id=2, not 1 - id=1 is taken by the seeded EMPTY_CONTENT_ID row.
         conn.execute(
-            "INSERT INTO contents (id, length, hash) VALUES (1, 5, x'AA')",
+            "INSERT INTO contents (id, length, hash) VALUES (2, 5, x'AA')",
             (),
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tree_entries (id, parent_id, name, time, kind, content_id) VALUES (1, 0, 'a.txt', 0, 'file', 1)",
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind, content_id) VALUES (1, 0, 'a.txt', 0, 'file', 2)",
             (),
         )
         .unwrap();
@@ -571,7 +587,7 @@ mod tests {
         undelete(&mut conn, 1, false, None, false, 999).unwrap();
 
         let ref_count: i64 = conn
-            .query_row("SELECT ref_count FROM contents WHERE id = 1", (), |row| {
+            .query_row("SELECT ref_count FROM contents WHERE id = 2", (), |row| {
                 row.get(0)
             })
             .unwrap();
@@ -581,24 +597,26 @@ mod tests {
     #[test]
     fn reclaim_space_purges_old_soft_deleted_entries_and_the_orphaned_content_and_chunk() {
         let (_temp_dir, mut conn) = test_connection();
+        // Content id=2, not 1 - id=1 is taken by the seeded EMPTY_CONTENT_ID row,
+        // which reclaim_space must never purge (see its own doc comment).
         conn.execute(
             "INSERT INTO chunks (id, length, hash) VALUES (1, 5, x'AA')",
             (),
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO contents (id, length, hash) VALUES (1, 5, x'BB')",
+            "INSERT INTO contents (id, length, hash) VALUES (2, 5, x'BB')",
             (),
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (1, 0, 1)",
+            "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (2, 0, 1)",
             (),
         )
         .unwrap();
         conn.execute(
             "INSERT INTO tree_entries (id, parent_id, name, time, kind, content_id, deleted_at)
-             VALUES (1, 0, 'a.txt', 0, 'file', 1, 1000)",
+             VALUES (1, 0, 'a.txt', 0, 'file', 2, 1000)",
             (),
         )
         .unwrap();
@@ -635,18 +653,18 @@ mod tests {
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO contents (id, length, hash) VALUES (1, 5, x'BB')",
+            "INSERT INTO contents (id, length, hash) VALUES (2, 5, x'BB')",
             (),
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (1, 0, 1)",
+            "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (2, 0, 1)",
             (),
         )
         .unwrap();
         conn.execute(
             "INSERT INTO tree_entries (id, parent_id, name, time, kind, content_id, deleted_at)
-             VALUES (1, 0, 'a.txt', 0, 'file', 1, 1000)",
+             VALUES (1, 0, 'a.txt', 0, 'file', 2, 1000)",
             (),
         )
         .unwrap();

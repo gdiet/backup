@@ -2,8 +2,10 @@ use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
 
-/// The kind of a `tree_entries` row - see the schema doc comment in `migrations.rs`
-/// for why this is needed (an empty file and a directory are otherwise
+/// The kind of a `tree_entries` row - see the schema doc comment in
+/// `migrations.rs` for why this is needed (a directory and a file with no
+/// content decided yet - a still-open mount `create()` placeholder, see
+/// `crate::EMPTY_CONTENT_ID`'s own doc comment - are otherwise
 /// indistinguishable: both have `content_id IS NULL`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryKind {
@@ -211,6 +213,42 @@ pub fn touch_mtime(conn: &Connection, id: i64, time_millis: i64) -> Result<(), E
         "UPDATE tree_entries SET time = ?1 WHERE id = ?2 AND deleted_at IS NULL",
         params![time_millis, id],
     )?;
+    Ok(())
+}
+
+/// Settles `id`'s `content_id` to [`crate::EMPTY_CONTENT_ID`] if it's still
+/// `NULL` - a no-op otherwise (including for an entry that's already settled
+/// as the shared empty content). Used by the mount's `release`, for exactly
+/// one case: a `create()`'d file closed without ever being written to. No
+/// persist ever runs for that file (nothing was written, so `dirty` stays
+/// `false` - see `Inner::release`), which would otherwise leave `content_id
+/// IS NULL` as this row's *permanent* state - breaking the very invariant
+/// `EMPTY_CONTENT_ID` exists to establish (that `NULL` means "still open",
+/// never "settled"). A bare `touch` through the mount is exactly this case,
+/// and real POSIX `touch` is expected to just work.
+///
+/// Deliberately an `UPDATE` in place, not the usual soft-delete-and-reinsert
+/// replace pattern (see `docs/plans/implemented/mount-rename-overwrite.md`
+/// for that one, or `rename_entry`'s own doc comment) - there is no history
+/// to preserve here (the row was never independently observable with any
+/// other content), and this is the one narrow, deliberate exception to
+/// "never mutate `content_id` in place": since `tree_entries_ref_count_ins`/
+/// `_del` (`migrations.rs`) only fire on `INSERT`/`DELETE`, never `UPDATE`,
+/// this manually bumps `contents.ref_count` for `EMPTY_CONTENT_ID` itself in
+/// the same transaction, rather than relying on a trigger that won't fire.
+pub fn finalize_as_empty_if_undecided(conn: &mut Connection, id: i64) -> Result<(), Error> {
+    let tx = conn.transaction()?;
+    let updated = tx.execute(
+        "UPDATE tree_entries SET content_id = ?1 WHERE id = ?2 AND content_id IS NULL",
+        params![crate::EMPTY_CONTENT_ID, id],
+    )?;
+    if updated > 0 {
+        tx.execute(
+            "UPDATE contents SET ref_count = ref_count + 1 WHERE id = ?1",
+            [crate::EMPTY_CONTENT_ID],
+        )?;
+    }
+    tx.commit()?;
     Ok(())
 }
 
@@ -550,5 +588,82 @@ mod tests {
         let result = rename_entry(&mut conn, id, 0, "b", false, 999);
 
         assert!(matches!(result, Err(Error::TargetNotEmpty { parent_id: 0, name }) if name == "b"));
+    }
+
+    fn content_ref_count(conn: &Connection, content_id: i64) -> i64 {
+        conn.query_row(
+            "SELECT ref_count FROM contents WHERE id = ?1",
+            [content_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn finalize_as_empty_if_undecided_settles_a_placeholder() {
+        let (_temp_dir, mut conn) = test_connection();
+        // A mount create() placeholder: content_id left NULL, matching what
+        // ContentSource::Known(None) inserts.
+        conn.execute(
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind) VALUES (1, 0, 'a.txt', 0, 'file')",
+            (),
+        )
+        .unwrap();
+        let ref_count_before = content_ref_count(&conn, crate::EMPTY_CONTENT_ID);
+
+        finalize_as_empty_if_undecided(&mut conn, 1).unwrap();
+
+        let entry = get_tree_entry(&conn, 1).unwrap().unwrap();
+        assert_eq!(entry.content_id, Some(crate::EMPTY_CONTENT_ID));
+        assert_eq!(
+            content_ref_count(&conn, crate::EMPTY_CONTENT_ID),
+            ref_count_before + 1,
+            "the INSERT/DELETE-only ref_count triggers don't fire for this UPDATE, \
+             so finalize_as_empty_if_undecided must bump it by hand"
+        );
+    }
+
+    #[test]
+    fn finalize_as_empty_if_undecided_is_a_noop_for_an_entry_with_real_content() {
+        let (_temp_dir, mut conn) = test_connection();
+        conn.execute(
+            "INSERT INTO contents (id, length, hash) VALUES (2, 3, x'AA')",
+            (),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind, content_id) VALUES (1, 0, 'a.txt', 0, 'file', 2)",
+            (),
+        )
+        .unwrap();
+
+        finalize_as_empty_if_undecided(&mut conn, 1).unwrap();
+
+        let entry = get_tree_entry(&conn, 1).unwrap().unwrap();
+        assert_eq!(
+            entry.content_id,
+            Some(2),
+            "already has real content - must not be overwritten"
+        );
+        assert_eq!(content_ref_count(&conn, crate::EMPTY_CONTENT_ID), 0);
+    }
+
+    #[test]
+    fn finalize_as_empty_if_undecided_is_a_noop_for_an_already_settled_empty_file() {
+        let (_temp_dir, mut conn) = test_connection();
+        conn.execute(
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind, content_id) VALUES (1, 0, 'a.txt', 0, 'file', ?1)",
+            [crate::EMPTY_CONTENT_ID],
+        )
+        .unwrap();
+        let ref_count_before = content_ref_count(&conn, crate::EMPTY_CONTENT_ID);
+
+        finalize_as_empty_if_undecided(&mut conn, 1).unwrap();
+
+        assert_eq!(
+            content_ref_count(&conn, crate::EMPTY_CONTENT_ID),
+            ref_count_before,
+            "already settled - must not double-count"
+        );
     }
 }

@@ -56,8 +56,12 @@ pub enum ContentSource {
     },
     /// An already-known `content_id`, used as-is - e.g. reused from a
     /// reference file's tree entry (see `docs/plans/implemented/backup-reference.md`),
-    /// skipping chunking/hashing/dedup-lookup entirely. `None` for an empty
-    /// file, mirroring `Resolved` with empty `chunks`.
+    /// skipping chunking/hashing/dedup-lookup entirely. `None` deliberately
+    /// leaves `content_id` unset (unlike `Resolved` with empty `chunks`,
+    /// which now always resolves to [`crate::EMPTY_CONTENT_ID`]) - the way
+    /// the mount's `create()` records its own "no content decided yet"
+    /// placeholder, the one legitimate remaining case for `content_id IS
+    /// NULL` on a file (see `EMPTY_CONTENT_ID`'s own doc comment).
     Known(Option<i64>),
 }
 
@@ -74,9 +78,12 @@ pub struct FileBackupRecord {
 
 /// Resolves `chunks` against the dedup index (inserting any not-yet-known
 /// chunk and its extents) and resolves-or-inserts a `contents` row for
-/// `content_hash`, returning the resulting `content_id` - `None` for an
-/// empty file (`chunks` is empty, matching the `kind` doc comment in
-/// `migrations.rs`: an empty file has `content_id IS NULL` too).
+/// `content_hash`, returning the resulting `content_id` - always a real id,
+/// never `None`: an empty file (`chunks` empty) resolves directly to
+/// [`crate::EMPTY_CONTENT_ID`], the one shared, seeded row every empty file
+/// dedups onto, without even needing `content_hash` (ignored in that case -
+/// every caller passing empty `chunks` already agrees on there being
+/// exactly one possible content).
 ///
 /// Insert-or-get for both `chunks` and `contents` is race-safe: if another
 /// caller already created a row for the same `(length, hash)`/`content_hash`
@@ -95,9 +102,9 @@ pub fn resolve_content(
     conn: &Connection,
     chunks: &[ChunkRef],
     content_hash: &[u8],
-) -> Result<Option<i64>, Error> {
+) -> Result<i64, Error> {
     if chunks.is_empty() {
-        return Ok(None);
+        return Ok(crate::EMPTY_CONTENT_ID);
     }
 
     let mut chunk_ids = Vec::with_capacity(chunks.len());
@@ -154,7 +161,7 @@ pub fn resolve_content(
             params![content_id, seq as i64, chunk_id],
         )?;
     }
-    Ok(Some(content_id))
+    Ok(content_id)
 }
 
 /// Applies a batch of [`FileBackupRecord`]s in a single transaction: resolves or
@@ -190,7 +197,7 @@ pub fn apply_backup_batch(conn: &mut Connection, batch: &[FileBackupRecord]) -> 
             ContentSource::Resolved {
                 chunks,
                 content_hash,
-            } => resolve_content(&tx, chunks, content_hash)?,
+            } => Some(resolve_content(&tx, chunks, content_hash)?),
             ContentSource::Known(content_id) => *content_id,
         };
 
@@ -339,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_file_gets_no_content_row() {
+    fn empty_file_gets_the_shared_empty_content_row() {
         let (_temp_dir, mut conn) = test_connection();
         let record = FileBackupRecord {
             parent_id: 0,
@@ -355,7 +362,39 @@ mod tests {
 
         let entry = find_tree_entry(&conn, 0, "empty.txt").unwrap().unwrap();
         assert_eq!(entry.kind, EntryKind::File);
-        assert_eq!(entry.content_id, None);
+        assert_eq!(entry.content_id, Some(crate::EMPTY_CONTENT_ID));
+    }
+
+    #[test]
+    fn two_empty_files_share_the_shared_empty_content_row() {
+        let (_temp_dir, mut conn) = test_connection();
+        let empty_record = |name: &str| FileBackupRecord {
+            parent_id: 0,
+            name: name.to_string(),
+            time_millis: 1000,
+            content: ContentSource::Resolved {
+                chunks: vec![],
+                content_hash: vec![],
+            },
+        };
+
+        apply_backup_batch(&mut conn, &[empty_record("a.txt"), empty_record("b.txt")]).unwrap();
+
+        let a = find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+        let b = find_tree_entry(&conn, 0, "b.txt").unwrap().unwrap();
+        assert_eq!(a.content_id, Some(crate::EMPTY_CONTENT_ID));
+        assert_eq!(a.content_id, b.content_id);
+        let ref_count: i64 = conn
+            .query_row(
+                "SELECT ref_count FROM contents WHERE id = ?1",
+                [crate::EMPTY_CONTENT_ID],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            ref_count, 2,
+            "both entries reference the shared empty content"
+        );
     }
 
     #[test]
@@ -384,19 +423,26 @@ mod tests {
         assert_eq!(ref_count, 2, "both entries now reference the same content");
     }
 
+    /// Unlike `ContentSource::Resolved` with empty `chunks` (which now
+    /// resolves to `EMPTY_CONTENT_ID`, see
+    /// `empty_file_gets_the_shared_empty_content_row`), `Known(None)`
+    /// deliberately leaves `content_id` unset - the mount's `create()`
+    /// placeholder representation, not "an empty file".
     #[test]
-    fn known_content_source_none_behaves_like_an_empty_file() {
+    fn known_content_source_none_leaves_content_id_unset() {
         let (_temp_dir, mut conn) = test_connection();
         let record = FileBackupRecord {
             parent_id: 0,
-            name: "empty.txt".to_string(),
+            name: "placeholder.txt".to_string(),
             time_millis: 1000,
             content: ContentSource::Known(None),
         };
 
         apply_backup_batch(&mut conn, &[record]).unwrap();
 
-        let entry = find_tree_entry(&conn, 0, "empty.txt").unwrap().unwrap();
+        let entry = find_tree_entry(&conn, 0, "placeholder.txt")
+            .unwrap()
+            .unwrap();
         assert_eq!(entry.kind, EntryKind::File);
         assert_eq!(entry.content_id, None);
     }
@@ -466,8 +512,9 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM contents", (), |row| row.get(0))
             .unwrap();
         assert_eq!(
-            content_count, 2,
-            "different content_hash: two distinct contents"
+            content_count, 3,
+            "different content_hash: two distinct contents, plus the always-seeded \
+             EMPTY_CONTENT_ID row"
         );
         let hash1_ref_count: i64 = conn
             .query_row(

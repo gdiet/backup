@@ -1412,8 +1412,9 @@ mod tests {
         );
         assert_eq!(
             count(&c, "contents"),
-            2,
-            "two distinct contents: 'hello world' and 'different'"
+            3,
+            "two distinct contents: 'hello world' and 'different', plus the \
+             always-seeded EMPTY_CONTENT_ID row"
         );
         assert_eq!(
             count(&c, "chunks"),
@@ -1955,8 +1956,9 @@ mod tests {
         let c = conn(&repo_root);
         assert_eq!(
             count(&c, "contents"),
-            file_count as i64,
-            "every file has distinct content, so each must get its own contents row"
+            file_count as i64 + 1,
+            "every file has distinct content, so each must get its own contents row, \
+             plus the always-seeded EMPTY_CONTENT_ID row"
         );
     }
 
@@ -2005,9 +2007,10 @@ mod tests {
         let c = conn(&repo_root);
         assert_eq!(
             count(&c, "contents"),
-            1,
+            2,
             "a.txt and b.txt have identical content - must dedupe to one contents row \
-             even though chunking:none means only one (whole-file) chunk is ever compared"
+             even though chunking:none means only one (whole-file) chunk is ever compared - \
+             plus the always-seeded EMPTY_CONTENT_ID row"
         );
         assert_eq!(count(&c, "chunks"), 1);
 

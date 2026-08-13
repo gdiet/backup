@@ -426,8 +426,19 @@ impl Migration<'_> {
                     }
                     self.walk_directory(child.id, new_id)?;
                 }
+                // Scala's own sentinel for "genuinely empty, never held any
+                // data" (see the `dataId` doc comment on `StagingTreeEntry`)
+                // - resolves to the shared EMPTY_CONTENT_ID row like any
+                // other empty file, not `None` (reserved for the Rust
+                // mount's own transient create() placeholder, which nothing
+                // in a migrated repository can be).
                 Some(-1) => {
-                    self.insert_file(new_parent_id, &child, deleted_at, None)?;
+                    self.insert_file(
+                        new_parent_id,
+                        &child,
+                        deleted_at,
+                        Some(db::EMPTY_CONTENT_ID),
+                    )?;
                 }
                 Some(old_data_id) => match self.resolve_content_id(old_data_id)? {
                     Some(content_id) => {
@@ -471,7 +482,7 @@ impl Migration<'_> {
         if deleted_at.is_some() {
             self.stats.deleted_files += 1;
         }
-        if content_id.is_none() {
+        if content_id == Some(db::EMPTY_CONTENT_ID) {
             self.stats.empty_files += 1;
         }
         Ok(())
@@ -563,15 +574,10 @@ impl Migration<'_> {
 
         let mut content_hash = [0u8; HASH_LENGTH];
         content_hasher.finalize_xof().fill(&mut content_hash);
-        let content_id = db::resolve_content(&self.tx, &chunk_refs, &content_hash)
-            .map_err(|err| {
+        let content_id =
+            db::resolve_content(&self.tx, &chunk_refs, &content_hash).map_err(|err| {
                 format!("failed to resolve content for old dataId {old_data_id}: {err}")
-            })?
-            .expect(
-                "parts is non-empty and every part has stop > start, so chunking \
-                 produces at least one chunk - resolve_content only returns None \
-                 for zero chunks",
-            );
+            })?;
 
         let old_storage_bytes: u64 = parts.iter().map(|&(s, e)| e - s).sum();
         self.stats.old_storage_bytes += old_storage_bytes;
@@ -1791,9 +1797,10 @@ mod tests {
             &fixture.old_txt_bytes,
         );
 
-        // An empty file has no content row, same as a `store`-backed one.
+        // An empty file resolves to the shared EMPTY_CONTENT_ID row, same as
+        // a `store`-backed one.
         let empty = db::resolve_path(&conn, "empty.txt").unwrap().unwrap();
-        assert_eq!(empty.content_id, None);
+        assert_eq!(empty.content_id, Some(db::EMPTY_CONTENT_ID));
 
         // A "blacklisted" dataId (no recoverable bytes) is skipped entirely,
         // not inserted with bogus/empty content.
