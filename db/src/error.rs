@@ -18,9 +18,28 @@ pub enum Error {
     /// [`crate::apply_backup_batch`] was asked to record a file at a name that
     /// already exists as a directory (not a file) under `parent_id`.
     NotAFile { parent_id: i64, name: String },
-    /// [`crate::rename_entry`] was asked to move an entry to a
-    /// `(parent_id, name)` that already has an active entry.
+    /// [`crate::rename_entry`]/[`crate::undelete`] was asked to move/recover
+    /// an entry to a `(parent_id, name)` that already has an active entry,
+    /// and either `no_replace` was set or the entry being moved doesn't
+    /// resolve to that same active entry - the "would otherwise replace it"
+    /// cases below don't apply, so nothing happened.
     AlreadyExists { parent_id: i64, name: String },
+    /// [`crate::rename_entry`]/[`crate::undelete`]'s destination is
+    /// occupied by an active directory, but the entry being moved/recovered
+    /// there is a file - real `rename(2)` semantics reject replacing a
+    /// directory with a file (`EISDIR` at the FUSE/WinFSP layer), rather
+    /// than silently coercing either side.
+    TargetIsADirectory { parent_id: i64, name: String },
+    /// [`crate::rename_entry`]/[`crate::undelete`]'s destination is
+    /// occupied by an active file, but the entry being moved/recovered
+    /// there is a directory - real `rename(2)` semantics reject replacing a
+    /// file with a directory (`ENOTDIR` at the FUSE/WinFSP layer).
+    TargetIsAFile { parent_id: i64, name: String },
+    /// [`crate::rename_entry`]/[`crate::undelete`]'s destination is
+    /// occupied by a non-empty active directory - real `rename(2)`
+    /// semantics reject this (`ENOTEMPTY` at the FUSE/WinFSP layer),
+    /// mirroring the mount's own `rmdir` non-empty check.
+    TargetNotEmpty { parent_id: i64, name: String },
     /// Creating the repository directory layout failed.
     Io(std::io::Error),
     /// A SQLite operation failed.
@@ -81,6 +100,20 @@ impl fmt::Display for Error {
             Self::AlreadyExists { parent_id, name } => {
                 write!(f, "'{name}' already exists under tree entry {parent_id}")
             }
+            Self::TargetIsADirectory { parent_id, name } => write!(
+                f,
+                "'{name}' under tree entry {parent_id} is a directory, can't replace it with a \
+                 file"
+            ),
+            Self::TargetIsAFile { parent_id, name } => write!(
+                f,
+                "'{name}' under tree entry {parent_id} is a file, can't replace it with a \
+                 directory"
+            ),
+            Self::TargetNotEmpty { parent_id, name } => write!(
+                f,
+                "'{name}' under tree entry {parent_id} is a non-empty directory, can't replace it"
+            ),
             Self::Io(err) => write!(f, "I/O error: {err}"),
             Self::Sqlite(err) => write!(f, "SQLite error: {err}"),
             Self::Migration(err) => write!(f, "database migration error: {err}"),
@@ -120,6 +153,9 @@ impl std::error::Error for Error {
             Self::NotADirectory { .. } => None,
             Self::NotAFile { .. } => None,
             Self::AlreadyExists { .. } => None,
+            Self::TargetIsADirectory { .. } => None,
+            Self::TargetIsAFile { .. } => None,
+            Self::TargetNotEmpty { .. } => None,
             Self::Io(err) => Some(err),
             Self::Sqlite(err) => Some(err),
             Self::Migration(err) => Some(err),

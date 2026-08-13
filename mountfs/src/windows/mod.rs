@@ -308,7 +308,7 @@ unsafe extern "C" fn dispatch_rmdir<T: MountFilesystem>(path: *const c_char) -> 
 unsafe extern "C" fn dispatch_rename<T: MountFilesystem>(
     old_path: *const c_char,
     new_path: *const c_char,
-    _flags: c_uint,
+    flags: c_uint,
 ) -> c_int {
     let (Some(old_path), Some(new_path)) = (path_str(old_path), path_str(new_path)) else {
         return -Errno::EIO.0;
@@ -316,8 +316,12 @@ unsafe extern "C" fn dispatch_rename<T: MountFilesystem>(
     if let Err(errno) = crate::reject_if_name_too_long(new_path) {
         return -errno.0;
     }
+    let no_replace = match crate::parse_rename_flags(flags) {
+        Ok(no_replace) => no_replace,
+        Err(errno) => return -errno.0,
+    };
     let fs = unsafe { context::<T>() };
-    match fs.rename(old_path, new_path) {
+    match fs.rename(old_path, new_path, no_replace) {
         Ok(()) => 0,
         Err(errno) => -errno.0,
     }

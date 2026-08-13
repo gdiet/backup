@@ -12,7 +12,12 @@ pub enum EntryKind {
 }
 
 impl EntryKind {
-    fn from_db_str(s: &str) -> Self {
+    /// `pub(crate)`: needed by [`crate::undelete`], which (like
+    /// [`row_to_tree_entry_at`]) parses a hand-written `kind` column read
+    /// alongside other columns `TreeEntryRow` doesn't carry (`parent_id`/
+    /// `deleted_at`), rather than through [`get_tree_entry`]/
+    /// [`find_tree_entry`].
+    pub(crate) fn from_db_str(s: &str) -> Self {
         match s {
             "dir" => EntryKind::Dir,
             "file" => EntryKind::File,
@@ -209,26 +214,80 @@ pub fn touch_mtime(conn: &Connection, id: i64, time_millis: i64) -> Result<(), E
     Ok(())
 }
 
-/// Moves `id` to a new `(parent_id, name)`. Fails with [`Error::AlreadyExists`]
-/// if an active entry already occupies the destination - no overwrite support
-/// (see `docs/plans/implemented/06-fuse-mount-readwrite.md` for why this is a deliberate,
-/// documented limitation rather than an oversight).
+/// Moves `id` to a new `(parent_id, new_name)` - a no-op (`Ok(())`) if that's
+/// already where `id` is (matches the Scala prototype's own
+/// `oldParts.sameElements(newParts) => OK` check: nothing to replace and
+/// nothing to move). If a *different* active entry already occupies the
+/// destination:
+/// - `no_replace` set → always fails with [`Error::AlreadyExists`],
+///   regardless of kind (matches `RENAME_NOREPLACE`/`renameat2(2)`).
+/// - Otherwise, a kind-compatible entry (file replacing file, empty
+///   directory replacing empty directory) is soft-deleted (`deleted_at =
+///   deleted_at`, the same value `id` would get from an ordinary `unlink`/
+///   `rmdir`) and `id` takes its place in the same transaction - real POSIX
+///   `rename(2)` replace semantics, matching what `rm target && mv source
+///   target` would already leave behind through two separate operations
+///   (see `docs/plans/mount-rename-overwrite.md`). An incompatible kind, or
+///   a non-empty target directory, fails with [`Error::TargetIsADirectory`]/
+///   [`Error::TargetIsAFile`]/[`Error::TargetNotEmpty`] respectively rather
+///   than attempting anything.
 pub fn rename_entry(
-    conn: &Connection,
+    conn: &mut Connection,
     id: i64,
     new_parent_id: i64,
     new_name: &str,
+    no_replace: bool,
+    deleted_at: i64,
 ) -> Result<(), Error> {
-    if find_tree_entry(conn, new_parent_id, new_name)?.is_some() {
-        return Err(Error::AlreadyExists {
-            parent_id: new_parent_id,
-            name: new_name.to_string(),
-        });
+    let tx = conn.transaction()?;
+
+    if let Some(existing) = find_tree_entry(&tx, new_parent_id, new_name)? {
+        if existing.id == id {
+            return Ok(());
+        }
+        if no_replace {
+            return Err(Error::AlreadyExists {
+                parent_id: new_parent_id,
+                name: new_name.to_string(),
+            });
+        }
+        let moving_kind = get_tree_entry(&tx, id)?
+            .expect("id is the entry rename_entry was called to move - must still exist")
+            .kind;
+        match (moving_kind, existing.kind) {
+            (EntryKind::File, EntryKind::Dir) => {
+                return Err(Error::TargetIsADirectory {
+                    parent_id: new_parent_id,
+                    name: new_name.to_string(),
+                });
+            }
+            (EntryKind::Dir, EntryKind::File) => {
+                return Err(Error::TargetIsAFile {
+                    parent_id: new_parent_id,
+                    name: new_name.to_string(),
+                });
+            }
+            (EntryKind::Dir, EntryKind::Dir) => {
+                if !crate::list_children(&tx, existing.id)?.is_empty() {
+                    return Err(Error::TargetNotEmpty {
+                        parent_id: new_parent_id,
+                        name: new_name.to_string(),
+                    });
+                }
+            }
+            (EntryKind::File, EntryKind::File) => {}
+        }
+        tx.execute(
+            "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+            params![deleted_at, existing.id],
+        )?;
     }
-    conn.execute(
+
+    tx.execute(
         "UPDATE tree_entries SET parent_id = ?1, name = ?2 WHERE id = ?3 AND deleted_at IS NULL",
         params![new_parent_id, new_name, id],
     )?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -389,12 +448,12 @@ mod tests {
 
     #[test]
     fn rename_entry_moves_to_a_new_parent_and_name() {
-        let (_temp_dir, conn) = test_connection();
+        let (_temp_dir, mut conn) = test_connection();
         let src = insert_directory(&conn, 0, "src", 0).unwrap();
         let dst = insert_directory(&conn, 0, "dst", 0).unwrap();
         let id = insert_directory(&conn, src, "child", 0).unwrap();
 
-        rename_entry(&conn, id, dst, "renamed").unwrap();
+        rename_entry(&mut conn, id, dst, "renamed", false, 999).unwrap();
 
         assert_eq!(find_tree_entry(&conn, src, "child").unwrap(), None);
         let entry = find_tree_entry(&conn, dst, "renamed").unwrap().unwrap();
@@ -402,13 +461,94 @@ mod tests {
     }
 
     #[test]
-    fn rename_entry_rejects_an_existing_target() {
-        let (_temp_dir, conn) = test_connection();
+    fn rename_entry_is_a_noop_for_a_self_rename() {
+        let (_temp_dir, mut conn) = test_connection();
+        let id = insert_directory(&conn, 0, "a", 0).unwrap();
+
+        rename_entry(&mut conn, id, 0, "a", false, 999).unwrap();
+
+        let entry = find_tree_entry(&conn, 0, "a").unwrap().unwrap();
+        assert_eq!(entry.id, id);
+    }
+
+    #[test]
+    fn rename_entry_with_no_replace_rejects_an_existing_target() {
+        let (_temp_dir, mut conn) = test_connection();
         let id = insert_directory(&conn, 0, "a", 0).unwrap();
         insert_directory(&conn, 0, "b", 0).unwrap();
 
-        let result = rename_entry(&conn, id, 0, "b");
+        let result = rename_entry(&mut conn, id, 0, "b", true, 999);
 
         assert!(matches!(result, Err(Error::AlreadyExists { parent_id: 0, name }) if name == "b"));
+    }
+
+    #[test]
+    fn rename_entry_replaces_a_compatible_existing_target() {
+        let (_temp_dir, mut conn) = test_connection();
+        let id = insert_directory(&conn, 0, "a", 0).unwrap();
+        let replaced_id = insert_directory(&conn, 0, "b", 0).unwrap();
+
+        rename_entry(&mut conn, id, 0, "b", false, 999).unwrap();
+
+        let entry = find_tree_entry(&conn, 0, "b").unwrap().unwrap();
+        assert_eq!(entry.id, id, "the moved entry now occupies the name");
+        let replaced = get_tree_entry(&conn, replaced_id).unwrap().unwrap();
+        let deleted_at: Option<i64> = conn
+            .query_row(
+                "SELECT deleted_at FROM tree_entries WHERE id = ?1",
+                [replaced.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            deleted_at,
+            Some(999),
+            "the replaced entry is soft-deleted, not gone"
+        );
+    }
+
+    #[test]
+    fn rename_entry_rejects_a_file_replacing_a_directory() {
+        let (_temp_dir, mut conn) = test_connection();
+        conn.execute(
+            "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (0, 'a', 0, 'file')",
+            (),
+        )
+        .unwrap();
+        let id = find_tree_entry(&conn, 0, "a").unwrap().unwrap().id;
+        insert_directory(&conn, 0, "b", 0).unwrap();
+
+        let result = rename_entry(&mut conn, id, 0, "b", false, 999);
+
+        assert!(
+            matches!(result, Err(Error::TargetIsADirectory { parent_id: 0, name }) if name == "b")
+        );
+    }
+
+    #[test]
+    fn rename_entry_rejects_a_directory_replacing_a_file() {
+        let (_temp_dir, mut conn) = test_connection();
+        let id = insert_directory(&conn, 0, "a", 0).unwrap();
+        conn.execute(
+            "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (0, 'b', 0, 'file')",
+            (),
+        )
+        .unwrap();
+
+        let result = rename_entry(&mut conn, id, 0, "b", false, 999);
+
+        assert!(matches!(result, Err(Error::TargetIsAFile { parent_id: 0, name }) if name == "b"));
+    }
+
+    #[test]
+    fn rename_entry_rejects_replacing_a_nonempty_directory() {
+        let (_temp_dir, mut conn) = test_connection();
+        let id = insert_directory(&conn, 0, "a", 0).unwrap();
+        let b = insert_directory(&conn, 0, "b", 0).unwrap();
+        insert_directory(&conn, b, "child", 0).unwrap();
+
+        let result = rename_entry(&mut conn, id, 0, "b", false, 999);
+
+        assert!(matches!(result, Err(Error::TargetNotEmpty { parent_id: 0, name }) if name == "b"));
     }
 }

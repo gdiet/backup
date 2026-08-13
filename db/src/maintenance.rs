@@ -4,7 +4,7 @@
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
-use crate::tree::find_tree_entry;
+use crate::tree::{EntryKind, find_tree_entry};
 
 /// Soft-deletes `id` and its entire active subtree (if it's a directory) in
 /// one statement, all with the same `deleted_at` timestamp.
@@ -87,9 +87,14 @@ pub fn soft_delete_and_replace_with_empty(
 /// `(parent_id, name)` instead of its original one - only `id` itself
 /// moves; any reactivated descendants already reference its `id` as their
 /// own `parent_id`, unaffected by this. Either way (original location or
-/// `relocate_to`), fails with [`Error::AlreadyExists`] if an active entry
-/// already occupies the target - no silent auto-rename, the same
-/// uniqueness conflict [`crate::rename_entry`] already guards against.
+/// `relocate_to`), an active entry already occupying the target is handled
+/// exactly like [`crate::rename_entry`]'s own replace semantics: `no_replace`
+/// set → always [`Error::AlreadyExists`]; otherwise a kind-compatible entry
+/// (file replacing file, empty directory replacing empty directory) is
+/// soft-deleted (`deleted_at = replaced_at`) and `id` takes its place, an
+/// incompatible kind or non-empty target directory fails with
+/// [`Error::TargetIsADirectory`]/[`Error::TargetIsAFile`]/
+/// [`Error::TargetNotEmpty`] - no silent auto-rename either way.
 ///
 /// Returns the number of rows reactivated - `0` if `id` doesn't exist or
 /// isn't currently deleted (callers that want a more specific error for
@@ -115,31 +120,63 @@ pub fn undelete(
     id: i64,
     recursive: bool,
     relocate_to: Option<(i64, &str)>,
+    no_replace: bool,
+    replaced_at: i64,
 ) -> Result<usize, Error> {
     let tx = conn.transaction()?;
-    let current: Option<(i64, String, Option<i64>)> = tx
+    let current: Option<(i64, String, Option<i64>, String)> = tx
         .query_row(
-            "SELECT parent_id, name, deleted_at FROM tree_entries WHERE id = ?1",
+            "SELECT parent_id, name, deleted_at, kind FROM tree_entries WHERE id = ?1",
             [id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    let Some((current_parent_id, current_name, deleted_at)) = current else {
+    let Some((current_parent_id, current_name, deleted_at, kind)) = current else {
         return Ok(0);
     };
     if deleted_at.is_none() {
         return Ok(0);
     }
+    let kind = EntryKind::from_db_str(&kind);
 
     let (target_parent_id, target_name) = match relocate_to {
         Some((parent_id, name)) => (parent_id, name.to_string()),
         None => (current_parent_id, current_name),
     };
-    if find_tree_entry(&tx, target_parent_id, &target_name)?.is_some() {
-        return Err(Error::AlreadyExists {
-            parent_id: target_parent_id,
-            name: target_name,
-        });
+    if let Some(existing) = find_tree_entry(&tx, target_parent_id, &target_name)? {
+        if no_replace {
+            return Err(Error::AlreadyExists {
+                parent_id: target_parent_id,
+                name: target_name,
+            });
+        }
+        match (kind, existing.kind) {
+            (EntryKind::File, EntryKind::Dir) => {
+                return Err(Error::TargetIsADirectory {
+                    parent_id: target_parent_id,
+                    name: target_name,
+                });
+            }
+            (EntryKind::Dir, EntryKind::File) => {
+                return Err(Error::TargetIsAFile {
+                    parent_id: target_parent_id,
+                    name: target_name,
+                });
+            }
+            (EntryKind::Dir, EntryKind::Dir) => {
+                if !crate::list_children(&tx, existing.id)?.is_empty() {
+                    return Err(Error::TargetNotEmpty {
+                        parent_id: target_parent_id,
+                        name: target_name,
+                    });
+                }
+            }
+            (EntryKind::File, EntryKind::File) => {}
+        }
+        tx.execute(
+            "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+            params![replaced_at, existing.id],
+        )?;
     }
 
     // Relocate *before* clearing deleted_at, not after: while a row is still
@@ -369,7 +406,7 @@ mod tests {
         let id = insert_file(&conn, 0, "a.txt");
         soft_delete(&conn, id, 1000).unwrap();
 
-        let count = undelete(&mut conn, id, false, None).unwrap();
+        let count = undelete(&mut conn, id, false, None, false, 999).unwrap();
 
         assert_eq!(count, 1);
         assert!(!is_deleted(&conn, id));
@@ -381,12 +418,12 @@ mod tests {
         let active_id = insert_file(&conn, 0, "a.txt");
 
         assert_eq!(
-            undelete(&mut conn, 999, false, None).unwrap(),
+            undelete(&mut conn, 999, false, None, false, 999).unwrap(),
             0,
             "no such id"
         );
         assert_eq!(
-            undelete(&mut conn, active_id, false, None).unwrap(),
+            undelete(&mut conn, active_id, false, None, false, 999).unwrap(),
             0,
             "not currently deleted"
         );
@@ -399,7 +436,7 @@ mod tests {
         let file_id = insert_file(&conn, dir_id, "a.txt");
         soft_delete(&conn, dir_id, 1000).unwrap();
 
-        let count = undelete(&mut conn, dir_id, false, None).unwrap();
+        let count = undelete(&mut conn, dir_id, false, None, false, 999).unwrap();
 
         assert_eq!(count, 1);
         assert!(!is_deleted(&conn, dir_id));
@@ -417,7 +454,7 @@ mod tests {
         let file_id = insert_file(&conn, nested_id, "a.txt");
         soft_delete(&conn, dir_id, 1000).unwrap();
 
-        let count = undelete(&mut conn, dir_id, true, None).unwrap();
+        let count = undelete(&mut conn, dir_id, true, None, false, 999).unwrap();
 
         assert_eq!(count, 3, "sub, nested, and a.txt");
         assert!(!is_deleted(&conn, dir_id));
@@ -434,7 +471,7 @@ mod tests {
         soft_delete(&conn, file_id, 500).unwrap();
         soft_delete(&conn, dir_id, 1000).unwrap();
 
-        let count = undelete(&mut conn, dir_id, true, None).unwrap();
+        let count = undelete(&mut conn, dir_id, true, None, false, 999).unwrap();
 
         assert_eq!(count, 1, "only 'sub' shares deleted_at 1000");
         assert!(!is_deleted(&conn, dir_id));
@@ -445,13 +482,13 @@ mod tests {
     }
 
     #[test]
-    fn undelete_refuses_a_conflict_with_an_active_entry() {
+    fn undelete_with_no_replace_refuses_a_conflict_with_an_active_entry() {
         let (_temp_dir, mut conn) = test_connection();
         let id = insert_file(&conn, 0, "a.txt");
         soft_delete(&conn, id, 1000).unwrap();
         insert_file(&conn, 0, "a.txt"); // a new active entry re-occupies the name
 
-        let result = undelete(&mut conn, id, false, None);
+        let result = undelete(&mut conn, id, false, None, true, 999);
 
         assert!(matches!(
             result,
@@ -461,13 +498,48 @@ mod tests {
     }
 
     #[test]
+    fn undelete_replaces_a_compatible_active_entry_by_default() {
+        let (_temp_dir, mut conn) = test_connection();
+        let id = insert_file(&conn, 0, "a.txt");
+        soft_delete(&conn, id, 1000).unwrap();
+        let replaced_id = insert_file(&conn, 0, "a.txt"); // a new active entry re-occupies the name
+
+        let count = undelete(&mut conn, id, false, None, false, 2000).unwrap();
+
+        assert_eq!(count, 1);
+        assert!(!is_deleted(&conn, id));
+        let entry = find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+        assert_eq!(entry.id, id, "the recovered entry now occupies the name");
+        let deleted_at: Option<i64> = conn
+            .query_row(
+                "SELECT deleted_at FROM tree_entries WHERE id = ?1",
+                [replaced_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            deleted_at,
+            Some(2000),
+            "the replaced entry is soft-deleted, not gone"
+        );
+    }
+
+    #[test]
     fn undelete_can_relocate_to_a_different_name_to_avoid_a_conflict() {
         let (_temp_dir, mut conn) = test_connection();
         let id = insert_file(&conn, 0, "a.txt");
         soft_delete(&conn, id, 1000).unwrap();
         insert_file(&conn, 0, "a.txt");
 
-        let count = undelete(&mut conn, id, false, Some((0, "a-recovered.txt"))).unwrap();
+        let count = undelete(
+            &mut conn,
+            id,
+            false,
+            Some((0, "a-recovered.txt")),
+            false,
+            999,
+        )
+        .unwrap();
 
         assert_eq!(count, 1);
         assert!(!is_deleted(&conn, id));
@@ -496,7 +568,7 @@ mod tests {
         .unwrap();
         soft_delete(&conn, 1, 1000).unwrap();
 
-        undelete(&mut conn, 1, false, None).unwrap();
+        undelete(&mut conn, 1, false, None, false, 999).unwrap();
 
         let ref_count: i64 = conn
             .query_row("SELECT ref_count FROM contents WHERE id = 1", (), |row| {

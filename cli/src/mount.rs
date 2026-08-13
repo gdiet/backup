@@ -647,6 +647,21 @@ fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
+/// Maps a [`db::Error`] from `db::rename_entry`/`db::undelete`'s
+/// replace-on-conflict handling (see `docs/plans/mount-rename-overwrite.md`)
+/// to the `Errno` a real `rename(2)` would give for the same situation -
+/// shared by both call sites in [`Inner::rename`] (the ordinary path and the
+/// `[deleted]`-recovery path), which hit exactly the same set of variants.
+fn map_rename_error(err: db::Error) -> Errno {
+    match err {
+        db::Error::AlreadyExists { .. } => Errno::EEXIST,
+        db::Error::TargetIsADirectory { .. } => Errno::EISDIR,
+        db::Error::TargetIsAFile { .. } => Errno::ENOTDIR,
+        db::Error::TargetNotEmpty { .. } => Errno::ENOTEMPTY,
+        _ => Errno::EIO,
+    }
+}
+
 impl MountFilesystem for DedupFs {
     fn getattr(&self, path: &str) -> Result<Attr, Errno> {
         self.0.getattr(path)
@@ -696,8 +711,8 @@ impl MountFilesystem for DedupFs {
         self.0.rmdir(path)
     }
 
-    fn rename(&self, old_path: &str, new_path: &str) -> Result<(), Errno> {
-        self.0.rename(old_path, new_path)
+    fn rename(&self, old_path: &str, new_path: &str, no_replace: bool) -> Result<(), Errno> {
+        self.0.rename(old_path, new_path, no_replace)
     }
 
     fn utimens(&self, path: &str, mtime_millis: i64) -> Result<(), Errno> {
@@ -1173,7 +1188,7 @@ impl Inner {
         Ok(())
     }
 
-    fn rename(&self, old_path: &str, new_path: &str) -> Result<(), Errno> {
+    fn rename(&self, old_path: &str, new_path: &str, no_replace: bool) -> Result<(), Errno> {
         if self.read_only {
             return Err(Errno::EROFS);
         }
@@ -1195,7 +1210,11 @@ impl Inner {
         // `deleted_at` scope - there's no way for a drag gesture to express
         // anything narrower, matching `undelete --recursive`'s own
         // semantics (see the plan doc's "Directory rename-out scope"
-        // decision).
+        // decision). `no_replace`/replace-on-conflict (see
+        // `docs/plans/mount-rename-overwrite.md`) apply here exactly like
+        // the ordinary rename path below - a client that already confirmed
+        // "yes, replace" doesn't care whether the source came from
+        // `[deleted]` or not.
         if let Some((scope_id, virtual_path)) = mount_deleted::split_deleted_path(conn, old_path)? {
             let Some(DeletedResolution::Entry(entry)) =
                 mount_deleted::resolve_deleted(conn, scope_id, &virtual_path)?
@@ -1212,11 +1231,15 @@ impl Inner {
                 .map_err(|_| Errno::EIO)?
                 .ok_or(Errno::ENOENT)?;
             let recursive = entry.kind == db::EntryKind::Dir;
-            let count = db::undelete(conn, entry.id, recursive, Some((new_parent.id, new_name)))
-                .map_err(|err| match err {
-                    db::Error::AlreadyExists { .. } => Errno::EEXIST,
-                    _ => Errno::EIO,
-                })?;
+            let count = db::undelete(
+                conn,
+                entry.id,
+                recursive,
+                Some((new_parent.id, new_name)),
+                no_replace,
+                now_millis(),
+            )
+            .map_err(map_rename_error)?;
             return if count > 0 {
                 Ok(())
             } else {
@@ -1231,10 +1254,15 @@ impl Inner {
         let new_parent = db::resolve_path(conn, new_parent_path)
             .map_err(|_| Errno::EIO)?
             .ok_or(Errno::ENOENT)?;
-        db::rename_entry(conn, entry.id, new_parent.id, new_name).map_err(|err| match err {
-            db::Error::AlreadyExists { .. } => Errno::EEXIST,
-            _ => Errno::EIO,
-        })
+        db::rename_entry(
+            conn,
+            entry.id,
+            new_parent.id,
+            new_name,
+            no_replace,
+            now_millis(),
+        )
+        .map_err(map_rename_error)
     }
 
     fn utimens(&self, path: &str, mtime_millis: i64) -> Result<(), Errno> {
@@ -1810,6 +1838,151 @@ mod tests {
             }],
         )
         .unwrap();
+    }
+
+    /// Creates a directory directly via `db::insert_directory` - the
+    /// structural counterpart to `seed_file` above, for tests that need a
+    /// tree shape (not just a file's content) in place before exercising
+    /// the mount.
+    fn seed_dir(repo_root: &Path, parent_id: i64, name: &str) -> i64 {
+        let repository = db::open_repository(repo_root).unwrap();
+        let conn = repository.open_write_connection().unwrap();
+        db::insert_directory(&conn, parent_id, name, 0).unwrap()
+    }
+
+    fn build_test_filesystem(repo_root: &Path) -> DedupFs {
+        build_filesystem(
+            repo_root,
+            true,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn map_rename_error_matches_real_rename_semantics() {
+        assert_eq!(
+            map_rename_error(db::Error::AlreadyExists {
+                parent_id: 0,
+                name: "x".to_string()
+            }),
+            Errno::EEXIST
+        );
+        assert_eq!(
+            map_rename_error(db::Error::TargetIsADirectory {
+                parent_id: 0,
+                name: "x".to_string()
+            }),
+            Errno::EISDIR
+        );
+        assert_eq!(
+            map_rename_error(db::Error::TargetIsAFile {
+                parent_id: 0,
+                name: "x".to_string()
+            }),
+            Errno::ENOTDIR
+        );
+        assert_eq!(
+            map_rename_error(db::Error::TargetNotEmpty {
+                parent_id: 0,
+                name: "x".to_string()
+            }),
+            Errno::ENOTEMPTY
+        );
+    }
+
+    #[test]
+    fn rename_replaces_a_compatible_active_target_by_default() {
+        let (_temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "a.txt", b"aaa");
+        seed_file(&repo_root, 0, "b.txt", b"bbb");
+        let fs = build_test_filesystem(&repo_root);
+
+        fs.rename("/a.txt", "/b.txt", false).unwrap();
+
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_read_connection().unwrap();
+        assert_eq!(db::find_tree_entry(&conn, 0, "a.txt").unwrap(), None);
+        let entry = db::find_tree_entry(&conn, 0, "b.txt").unwrap().unwrap();
+        assert_eq!(
+            db::file_size(&conn, &entry).unwrap(),
+            3,
+            "b.txt now holds a.txt's content"
+        );
+    }
+
+    #[test]
+    fn rename_with_no_replace_still_fails_with_eexist_on_a_compatible_target() {
+        let (_temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "a.txt", b"aaa");
+        seed_file(&repo_root, 0, "b.txt", b"bbb");
+        let fs = build_test_filesystem(&repo_root);
+
+        let result = fs.rename("/a.txt", "/b.txt", true);
+
+        assert_eq!(result, Err(Errno::EEXIST));
+    }
+
+    #[test]
+    fn rename_is_a_noop_for_a_self_rename() {
+        let (_temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "a.txt", b"aaa");
+        let fs = build_test_filesystem(&repo_root);
+
+        fs.rename("/a.txt", "/a.txt", false).unwrap();
+
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_read_connection().unwrap();
+        let entry = db::find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+        assert_eq!(db::file_size(&conn, &entry).unwrap(), 3);
+    }
+
+    #[test]
+    fn rename_rejects_a_file_replacing_a_nonempty_directory() {
+        let (_temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "a.txt", b"aaa");
+        let b = seed_dir(&repo_root, 0, "b");
+        seed_file(&repo_root, b, "child.txt", b"c");
+        let fs = build_test_filesystem(&repo_root);
+
+        let result = fs.rename("/a.txt", "/b", false);
+
+        assert_eq!(result, Err(Errno::EISDIR));
+    }
+
+    /// End-to-end regression test for the original bug report
+    /// (`docs/plans/mount-rename-overwrite.md`): recovering a file from
+    /// `[deleted]` onto an existing active file of the same name used to
+    /// hang the client with `EEXIST` instead of replacing it.
+    #[test]
+    fn rename_recovers_from_deleted_and_replaces_an_existing_active_target() {
+        let (_temp_dir, repo_root) = init_repo();
+        let dir1 = seed_dir(&repo_root, 0, "1");
+        let dir2 = seed_dir(&repo_root, 0, "2");
+        seed_file(&repo_root, dir1, "file.txt", b"hello");
+        seed_file(&repo_root, dir2, "file.txt", b"hello");
+        {
+            let repository = db::open_repository(&repo_root).unwrap();
+            let conn = repository.open_write_connection().unwrap();
+            let entry = db::find_tree_entry(&conn, dir1, "file.txt")
+                .unwrap()
+                .unwrap();
+            db::soft_delete(&conn, entry.id, 500).unwrap();
+        }
+
+        let fs = build_test_filesystem(&repo_root);
+        fs.rename("/1/[deleted]/file.txt", "/2/file.txt", false)
+            .unwrap();
+
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_read_connection().unwrap();
+        let entry = db::find_tree_entry(&conn, dir2, "file.txt")
+            .unwrap()
+            .unwrap();
+        assert_eq!(db::file_size(&conn, &entry).unwrap(), 5);
     }
 
     #[test]

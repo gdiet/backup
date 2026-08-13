@@ -414,8 +414,10 @@ detail since they're easy to reintroduce:
 
 ## Not yet decided
 
-- Whether `rename`'s no-overwrite limitation (see above) turns out to
-  matter in practice once the mount is actually used.
+- ~~Whether `rename`'s no-overwrite limitation (see above) turns out to
+  matter in practice once the mount is actually used.~~ It did - see
+  `docs/plans/implemented/mount-rename-overwrite.md`: real POSIX
+  `rename(2)` replace semantics are now implemented.
 - Whether the synchronous (not async/queued) persist-on-release turns out
   to matter in practice for large files - see "Phase 2b - implementation
   notes" above for the reasoning behind deferring the async pipeline.

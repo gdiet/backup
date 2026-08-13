@@ -44,6 +44,7 @@ impl Errno {
     pub const EROFS: Errno = Errno(30);
     pub const ENOTEMPTY: Errno = Errno(39);
     pub const ENAMETOOLONG: Errno = Errno(36);
+    pub const EINVAL: Errno = Errno(22);
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -107,6 +108,37 @@ fn reject_if_name_too_long(path: &str) -> Result<(), Errno> {
     }
 }
 
+/// `RENAME_NOREPLACE` bit, matching Linux's `renameat2(2)`/real libfuse3's
+/// high-level `rename` callback's own `flags` parameter - "don't replace
+/// an existing `new_path`, fail instead" (see
+/// [`MountFilesystem::rename`]'s doc comment for how this crate surfaces
+/// it). WinFSP's Windows backend is documented (see `linux`'s own module
+/// doc comment) to emulate this same high-level libfuse3 API via its
+/// `cygfuse` layer, so its own `flags` parameter is expected to use the
+/// identical bit convention - not yet empirically confirmed against real
+/// WinFSP (see `docs/plans/mount-rename-overwrite.md`), only reasoned
+/// about from that documented compatibility claim.
+const RENAME_NOREPLACE: u32 = 1 << 0;
+
+/// `RENAME_EXCHANGE` bit - an atomic two-way swap of two already-existing
+/// entries. Out of scope for [`MountFilesystem::rename`] entirely: both
+/// backends reject it via [`parse_rename_flags`] before ever calling into
+/// the trait, rather than silently mishandling it as an ordinary replace.
+const RENAME_EXCHANGE: u32 = 1 << 1;
+
+/// Interprets a `rename` callback's raw `flags` parameter (as delivered by
+/// either backend - see [`RENAME_NOREPLACE`]'s doc comment) into the
+/// `no_replace` argument [`MountFilesystem::rename`] expects, or rejects
+/// the call outright with [`Errno::EINVAL`] if [`RENAME_EXCHANGE`] is set -
+/// shared so both backends parse the same bits identically rather than
+/// each guessing at their own copy.
+fn parse_rename_flags(flags: u32) -> Result<bool, Errno> {
+    if flags & RENAME_EXCHANGE != 0 {
+        return Err(Errno::EINVAL);
+    }
+    Ok(flags & RENAME_NOREPLACE != 0)
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct StatfsInfo {
     pub blocks: u64,
@@ -163,12 +195,18 @@ pub trait MountFilesystem: Send + Sync + 'static {
         Err(Errno::EROFS)
     }
 
-    /// Moves/renames `old_path` to `new_path`. Implementations are not
-    /// required to support overwriting an existing `new_path` - returning
-    /// [`Errno::EEXIST`] in that case is a valid, documented limitation,
-    /// not a bug (see the plan doc).
-    fn rename(&self, old_path: &str, new_path: &str) -> Result<(), Errno> {
-        let _ = (old_path, new_path);
+    /// Moves/renames `old_path` to `new_path`. If `new_path` already names
+    /// an active entry, an implementation *may* replace it (real POSIX
+    /// `rename(2)` semantics) - unless `no_replace` is set (from
+    /// `RENAME_NOREPLACE`, `renameat2(2)`'s own flag), in which case an
+    /// existing `new_path` must always be rejected with
+    /// [`Errno::EEXIST`] regardless of what replacing it would otherwise
+    /// have done. Implementations are not required to support replacing an
+    /// existing `new_path` at all - returning [`Errno::EEXIST`]
+    /// unconditionally remains a valid, documented limitation, not a bug
+    /// (see the plan doc).
+    fn rename(&self, old_path: &str, new_path: &str, no_replace: bool) -> Result<(), Errno> {
+        let _ = (old_path, new_path, no_replace);
         Err(Errno::EROFS)
     }
 
@@ -258,4 +296,37 @@ pub fn mount<T: MountFilesystem>(
         "mountfs: no backend implemented yet for this platform \
          (see docs/plans/implemented/05-cross-platform-mount-crate.md)",
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_rename_flags_defaults_to_replace_allowed() {
+        assert_eq!(parse_rename_flags(0), Ok(false));
+    }
+
+    #[test]
+    fn parse_rename_flags_recognizes_no_replace() {
+        assert_eq!(parse_rename_flags(RENAME_NOREPLACE), Ok(true));
+    }
+
+    #[test]
+    fn parse_rename_flags_rejects_exchange() {
+        assert_eq!(parse_rename_flags(RENAME_EXCHANGE), Err(Errno::EINVAL));
+    }
+
+    #[test]
+    fn parse_rename_flags_rejects_exchange_even_combined_with_no_replace() {
+        assert_eq!(
+            parse_rename_flags(RENAME_NOREPLACE | RENAME_EXCHANGE),
+            Err(Errno::EINVAL)
+        );
+    }
+
+    #[test]
+    fn parse_rename_flags_ignores_unrelated_bits() {
+        assert_eq!(parse_rename_flags(1 << 5), Ok(false));
+    }
 }

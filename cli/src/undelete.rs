@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::process::ExitCode;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::Args;
 
@@ -91,7 +92,21 @@ pub fn run_undelete(repo: &Path, args: UndeleteArgs) -> ExitCode {
         }
     };
 
-    match db::undelete(&mut conn, args.id, args.recursive, relocate_to) {
+    // `no_replace: true` - unlike the mount's `[deleted]`-folder drag-out
+    // gesture (which mirrors an already-confirmed "yes, replace" from the
+    // client), this CLI command's `--to` doc comment explicitly promises
+    // "fails otherwise, rather than silently renaming" if the target is
+    // occupied - silently replacing an active entry here would break that
+    // documented contract and risk surprising data loss for a command a
+    // user runs deliberately, not through a GUI's own overwrite prompt.
+    match db::undelete(
+        &mut conn,
+        args.id,
+        args.recursive,
+        relocate_to,
+        true,
+        now_millis(),
+    ) {
         Ok(count) => {
             let entries = if count == 1 { "entry" } else { "entries" };
             println!("Reactivated {count} {entries}.");
@@ -109,6 +124,13 @@ pub fn run_undelete(repo: &Path, args: UndeleteArgs) -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn now_millis() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
 }
 
 /// Splits a repository path into `(parent, last component)` - e.g.
