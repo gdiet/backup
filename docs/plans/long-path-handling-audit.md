@@ -10,10 +10,12 @@ has its own regression test for the complementary case (a too-long name already 
 repository, restored to a real filesystem that rejects it) - see "cli-level tests" below.
 Everything else checked so far already behaved reasonably without needing a code change. Native
 Windows SMB re-export of a WinFSP mount was checked (2026-08-12, see "Windows findings") and
-showed no length behavior beyond what direct WinFSP access already does - a true non-Win32-API SMB
-client (e.g. Samba's `smbclient`, which would bypass the client-side `MAX_PATH` pre-checks that
-dominated this check) was not available to test with, so the SMB *wire protocol's* own limits,
-independent of any Win32 client, remain untested.
+showed no length behavior beyond what direct WinFSP access already does. The remaining gap - the
+SMB *wire protocol's* own limits, independent of any Win32 client - was closed on 2026-08-13: a
+real `smbclient` (Samba, run from a Docker container on the Linux/WSL2 side, network-reachable to
+julius once SSH connectivity to it was set up) against a real WinFSP-mounted, SMB-shared
+repository on julius confirmed the identical 255/256-byte boundary, with no gap - see "Windows
+findings" below for the session record.
 
 ## Why this needs checking at all
 
@@ -256,6 +258,26 @@ simpler.
   rule that out, and wasn't available in this environment (no Docker on julius for
   `docker/samba-mount`; the local WSL2 Debian distro has no `smbclient` installed and no
   passwordless `sudo` to install it non-interactively).
+- **Follow-up (2026-08-13), the SMB wire-protocol gap above closed**: once SSH connectivity from
+  the Linux/WSL2 side to julius was set up (unrelated work, see `AGENTS.md`), the environment split
+  that blocked this stopped applying - Docker (available on the Linux/WSL2 side) can reach julius's
+  network directly, so a real `smbclient` never needed to run on julius itself. Concretely: a
+  disposable local Windows account (`smbtest`, deleted afterward) was created on julius via `net
+  user`, a repository was initialized and mounted read-write via WinFSP at `C:\Temp\smb-test\mnt`,
+  and its *parent* `C:\Temp\smb-test` (not the mountpoint itself - see the workaround above) was
+  shared via `net share`, granted to `smbtest`. From the Linux/WSL2 side, a `debian:bookworm-slim`
+  Docker container with `smbclient` installed connected to `\\<julius-ip>\smbtest-share\mnt` and
+  attempted creating both a 255-byte and a 256-byte directory name directly over the wire protocol,
+  no Win32 API involved at any point:
+  - 255 bytes: **succeeds**, confirmed via a subsequent `ls`.
+  - 256 bytes: **fails**, with `NT_STATUS_OBJECT_NAME_INVALID` - a real SMB-level rejection, not a
+    client-side pre-check (there is no Win32 `MAX_PATH` layer in `smbclient` to have done that).
+
+  Same boundary, same outcome, as every other client tried against this project's own
+  `MAX_NAME_BYTES = 255` check - no gap. This closes the "remain untested" state noted at the top
+  of this document; the whole audit is now fully empirically checked, Linux and Windows, Win32 and
+  raw SMB wire protocol alike. Test account, share, mount, and repository were all torn down
+  afterward - nothing left behind on julius.
 
 ## Moved to `mountfs` (2026-08-12)
 

@@ -48,3 +48,16 @@ limits, since a true SMB client bypasses that Win32 layer entirely.
    untested" framing. If this turns up a real gap (SMB accepting something WinFSP/NTFS itself
    would reject, or vice versa with a confusing error), decide whether it's worth a fix; if not,
    this is purely closing out the audit's last open question.
+
+---
+
+## Done (2026-08-13, Docker smbclient on Linux/WSL2 against real WinFSP on julius)
+
+The environment split described above stopped applying once SSH connectivity from this
+Linux/WSL2 session to julius was set up (see `AGENTS.md`, unrelated work) - Docker here can reach
+julius's network directly, so `smbclient` never needed to run on julius's own WSL2 distro after
+all. Full recipe and result now in `docs/plans/long-path-handling-audit.md`'s "Windows findings"
+section. Summary: 255-byte name succeeds, 256-byte name fails with `NT_STATUS_OBJECT_NAME_INVALID`
+- same boundary as every other client already tested, confirmed this time with zero Win32 API
+involvement. No gap found. Disposable Windows account/share/mount/repository all cleaned up
+afterward.
