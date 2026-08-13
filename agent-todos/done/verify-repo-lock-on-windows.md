@@ -41,3 +41,31 @@ status"/top status line with the result. If everything behaves as expected, this
 out the open question, not a code change. If something doesn't match (e.g. the lock doesn't
 release on an abrupt kill, or waits/fails don't behave as documented), that's a real finding -
 flag it clearly rather than silently working around it.
+
+---
+
+## Done (2026-08-13, via SSH from Linux/WSL2 to julius)
+
+Built `backup` natively on julius (release), ran the full sequence from "What to actually do"
+against a disposable test repository (`C:\Temp\lock-test`, cleaned up afterward):
+
+1. `mount --read-write` as lock holder, second `store` without `--lock-wait` → failed immediately
+   with the expected "meta/.lock is held" message.
+2. Second `store --lock-wait 25` → blocked while the holder was up, succeeded right after the
+   holder was terminated (`taskkill /F` on its PID).
+3. Repeated explicitly: started the holder again, `taskkill /F`'d it, then a third access with no
+   `--lock-wait` at all acquired the lock immediately - no stale hold left behind after an abrupt
+   (non-graceful) kill.
+
+All three match the documented design exactly - `LockFileEx` behaves as expected on real Windows.
+Full write-up moved into `docs/plans/implemented/cross-process-repository-locking.md`'s "Windows
+verification status" section (including one incidental, unrelated finding: `reclaim-space`'s
+automatic pre-backup step surfaces a confusing WAL error instead of the lock message when a
+concurrent writer is active - not a locking bug, see that section for detail).
+
+One operational hiccup along the way, not a repository-locking finding: an early lock-holder
+process survived its own SSH session being killed by a local `timeout` wrapper (leaving an
+orphaned `backup.exe` still holding the lock, cleaned up via `taskkill`) - a variant of the
+`julius-winfsp-ssh` skill's existing Job-Object gotcha worth keeping in mind (don't wrap a
+long-lived remote process's `ssh` invocation in a local `timeout` shorter than you actually want
+it to live).
