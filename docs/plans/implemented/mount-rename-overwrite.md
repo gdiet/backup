@@ -1,13 +1,9 @@
 # Mount: `rename` overwrite support
 
-**Status**: implemented and verified on Linux/FUSE (2026-08-13) - confirmed as an actionable item
-during a `docs/plans/deleted-folder-ux-review.md` walkthrough the same day. Real POSIX `rename(2)`
-replace semantics now work through the mount, including the recovery-from-`[deleted]` path that
-originally surfaced the bug. **Not yet independently verified against real WinFSP** (see "Windows
-verification status" below) - the underlying `renameat2(2)`/`RENAME_NOREPLACE` flag plumbing is
-reasoned to work identically there (WinFSP's Windows backend is documented to emulate the same
-high-level libfuse3 API this crate binds against on Linux), but that's not the same as an actual
-round-trip test against a real WinFSP mount and a real "skip" vs. "replace" Explorer dialog choice.
+**Status**: implemented and verified on both real Linux/FUSE and real Windows/WinFSP (2026-08-13,
+the latter on "julius" - see "Windows verification status" below for the full session record).
+Real POSIX `rename(2)` replace semantics now work through the mount on both platforms, including
+the recovery-from-`[deleted]` path that originally surfaced the bug.
 
 ## What was found
 
@@ -99,13 +95,31 @@ already normalizes what it needs to for the cases that matter.
 
 ## Windows verification status
 
-Not yet checked against a real Windows/WinFSP mount. The `flags`→`no_replace` translation relies
-on WinFSP's Windows backend emulating the same high-level libfuse3 `fuse_operations` API the Linux
-backend binds directly (`mountfs/src/windows/mod.rs`'s own module doc comment: "bindings to
-WinFSP's FUSE3-compatible API"), which strongly suggests (but doesn't guarantee without an actual
-test) that NTFS's `FILE_RENAME_INFORMATION.ReplaceIfExists` gets translated into the identical
-`RENAME_NOREPLACE` bit convention on the way through. Once a Windows/WinFSP session (e.g. "julius",
-see the `julius-winfsp-ssh` skill) is available, confirm concretely: drag-and-drop overwrite in
-Explorer (should now succeed instead of hanging), and specifically choosing "Skip"/cancel on the
-overwrite prompt if that's exposed as a distinguishable client-side signal (should still fail
-cleanly, not replace).
+Verified on real Windows/WinFSP (julius, native release build, 2026-08-13). Interactive Explorer
+drag-and-drop itself wasn't exercised (no GUI session available over plain SSH) - instead used
+PowerShell's `Move-Item` against a real WinFSP `--read-write` mount, which goes through the same
+real Win32 `MoveFileEx`/`SetFileInformationByHandle` APIs a real Explorer drag ultimately calls
+into, `-Force` vs. not being the direct Win32-level equivalent of a confirmed-overwrite vs.
+no-replace request:
+
+- **The original bug report, replayed exactly**: `1\[deleted]\file.txt` (an 8-byte recovered file)
+  moved with `Move-Item -Force` onto an already-occupied `2\file.txt` (7 bytes) - succeeded
+  cleanly, no hang. `2\file.txt` afterward holds the recovered content, and a new `[deleted]`
+  entry appeared under `2\` holding the replaced original - confirms both the replace itself and
+  that it's recoverable, exactly as designed.
+- **No-replace**: plain `Move-Item` (no `-Force`) onto an existing target failed immediately with
+  a clean "a file cannot be created because it already exists" error (the same message .NET gives
+  for `ERROR_FILE_EXISTS`) - no hang, and (confirmed via a clean, isolated repeat - see below)
+  both source and destination files were left completely untouched.
+
+One false alarm along the way, worth recording so it isn't re-investigated later: an *initial*
+no-replace attempt appeared to leave the source file truncated to 0 bytes despite the move
+correctly failing. Traced to the test harness, not the mount: that attempt used a single
+inline `powershell -Command "..."` string quoted across bash → ssh → cmd.exe → PowerShell, which
+failed with a PowerShell parser error before `Move-Item` ever ran - almost certainly a stray shell
+redirection operator leaking through the mangled command line and truncating the file itself,
+unrelated to `rename`/WinFSP at all. Switching to a staged `.ps1` script file (`scp`'d to julius
+and run via `-File`, avoiding the multi-layer quoting entirely - see the `julius-winfsp-ssh`
+skill's own advice on this) and repeating the exact same no-replace scenario on a fresh file pair
+showed no corruption at all: both files fully intact after the (correctly) failed move. No code
+changes resulted from this - it never was a real bug.
