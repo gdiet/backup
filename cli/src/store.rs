@@ -21,6 +21,7 @@ use crate::backup_ignore::{self, IgnoreRule, OwnIgnoreFile};
 use crate::chunk_store::{self, SpaceAllocator};
 use crate::io_limiter::IoLimiter;
 use crate::ram_budget_check::check_ram_budget;
+use crate::repo_lock::RepoLock;
 use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
 use crate::temp_dir::{create_spill_dir, validate_temp_dir};
 use spillcache::RamBudget;
@@ -120,6 +121,13 @@ pub struct BackupArgs {
     /// effect without `--reference`.
     #[arg(long)]
     force_reference: bool,
+
+    /// How long to wait, in seconds, for the repository's lock to become
+    /// free if another `store`/`mount --read-write`/`compact-store`/
+    /// `reclaim-space` run already holds it, before giving up. Default:
+    /// don't wait, fail immediately.
+    #[arg(long = "lock-wait", default_value_t = 0)]
+    lock_wait_secs: u64,
 
     /// One or more source paths followed by the target path in the repository.
     #[arg(required = true, num_args = 2.., value_name = "PATH")]
@@ -256,6 +264,29 @@ pub fn run_store(repo: &Path, args: BackupArgs) -> ExitCode {
         db::Chunking::None => None,
     })
     .expect("validated by RepositorySettings");
+
+    // Exclusive against every other command that physically
+    // allocates/relocates store bytes (`store` itself, `mount --read-write`,
+    // `compact-store`, `reclaim-space`) - see
+    // `docs/plans/cross-process-repository-locking.md`. Held for this whole
+    // run via `_lock`'s `Drop`.
+    let _lock = match RepoLock::acquire(
+        &db::meta_dir(repo),
+        Duration::from_secs(args.lock_wait_secs),
+    ) {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            eprintln!(
+                "error: another command is already running against this repository \
+                 (meta/.lock is held) - try again once it finishes, or pass --lock-wait to wait"
+            );
+            return ExitCode::FAILURE;
+        }
+        Err(err) => {
+            eprintln!("error: failed to acquire the repository lock: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     // A single connection drives the up-front target/reference resolution and
     // directory pass below (all on the main thread, before any parallel work
@@ -1123,6 +1154,7 @@ mod tests {
             temp: None,
             reference: None,
             force_reference: false,
+            lock_wait_secs: 0,
             paths: std::mem::take(&mut paths),
         }
     }
@@ -1156,6 +1188,26 @@ mod tests {
             1,
             "only the root entry - the target must never have been created"
         );
+    }
+
+    #[test]
+    fn run_store_refuses_when_the_lock_is_already_held() {
+        let (_temp_dir, repo_root) = init_repo();
+        let _lock = RepoLock::acquire(&db::meta_dir(&repo_root), Duration::ZERO)
+            .unwrap()
+            .unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        std::fs::write(source_dir.path().join("a.txt"), b"hello").unwrap();
+
+        let exit = run_store(
+            &repo_root,
+            backup_args(vec![
+                source_dir.path().to_path_buf(),
+                PathBuf::from("target"),
+            ]),
+        );
+
+        assert_eq!(exit, ExitCode::FAILURE);
     }
 
     /// `--temp` (see `BackupArgs::temp`) is validated up front, before any
@@ -1944,6 +1996,7 @@ mod tests {
             temp: None,
             reference: None,
             force_reference: false,
+            lock_wait_secs: 0,
             paths: vec![source_dir.path().to_path_buf(), PathBuf::from("target")],
         };
         let exit = run_store(&repo_root, args);

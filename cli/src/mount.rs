@@ -32,6 +32,7 @@ use store::{LongTermStore, ReadIntegrity};
 use crate::chunk_store::{self, SpaceAllocator, read_chunk_bytes};
 use crate::mount_deleted::{self, DeletedResolution};
 use crate::ram_budget_check::check_ram_budget;
+use crate::repo_lock;
 use crate::spilling_chunker::{SpilledChunk, SpillingHashingChunker};
 use crate::store::{Blake3Hasher, HASH_LENGTH};
 use crate::temp_dir::{create_spill_dir, validate_temp_dir};
@@ -78,9 +79,12 @@ pub struct MountArgs {
     /// (see `docs/plans/implemented/06-fuse-mount-readwrite.md`). Off by default: a mount
     /// is a much larger blast radius for a mistake (an editor autosave, a
     /// stray `rm -rf`, a build tool scribbling into it) than `store`/
-    /// `restore`. Do not run `store`/`del`/`reclaim-space` against the
-    /// same repository while a read-write mount is active - both need the
-    /// single write connection this holds for the mount's whole lifetime.
+    /// `restore`. Exclusive against `store`/`compact-store`/`reclaim-space`
+    /// (or a second `--read-write` mount) for the mount's whole lifetime,
+    /// enforced automatically via the repository's lock file - see
+    /// `--lock-wait` and `docs/plans/cross-process-repository-locking.md`.
+    /// `del`/`undelete`/`fix-problems`/`db compact` remain safe to run
+    /// concurrently (metadata-only, no physical store-byte conflict).
     #[arg(short = 'w', long)]
     read_write: bool,
 
@@ -120,6 +124,13 @@ pub struct MountArgs {
     /// problems`) rather than a hard failure.
     #[arg(long)]
     zero_fill_missing: bool,
+
+    /// How long to wait, in seconds, for the repository's lock to become
+    /// free if another `store`/`mount --read-write`/`compact-store`/
+    /// `reclaim-space` run already holds it, before giving up. Default:
+    /// don't wait, fail immediately. Only meaningful with `--read-write`.
+    #[arg(long = "lock-wait", default_value_t = 0)]
+    lock_wait_secs: u64,
 }
 
 /// FUSE (Linux) mounts onto an existing, empty directory; WinFSP
@@ -204,6 +215,7 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
         args.write_cache_mb,
         args.temp.as_deref(),
         args.zero_fill_missing,
+        std::time::Duration::from_secs(args.lock_wait_secs),
     ) {
         Ok(fs) => fs,
         Err(msg) => {
@@ -252,6 +264,7 @@ fn build_filesystem(
     write_cache_mb: u64,
     temp: Option<&Path>,
     zero_fill_missing: bool,
+    lock_wait: std::time::Duration,
 ) -> Result<DedupFs, String> {
     // A read-only mount (see docs/plans/read-only-repository-access.md)
     // must never open a read-write connection - the repository directory
@@ -262,6 +275,31 @@ fn build_filesystem(
         db::open_repository_read_only(repo)
     }
     .map_err(|err| format!("failed to open repository at {}: {err}", repo.display()))?;
+
+    // Exclusive against every other command that physically
+    // allocates/relocates store bytes (`store`, `compact-store`,
+    // `reclaim-space`, or a second `--read-write` mount) - see
+    // `docs/plans/cross-process-repository-locking.md`. `None` for a
+    // read-only mount: it never touches store bytes, so it stays lock-free
+    // like every other read-only command (and must, to keep working
+    // against a genuinely `:ro`-mounted repository directory).
+    let repo_lock = if read_write {
+        match repo_lock::RepoLock::acquire(&db::meta_dir(repo), lock_wait) {
+            Ok(Some(lock)) => Some(lock),
+            Ok(None) => {
+                return Err(
+                    "another command is already running against this repository \
+                     (meta/.lock is held) - try again once it finishes, or pass \
+                     --lock-wait to wait"
+                        .to_string(),
+                );
+            }
+            Err(err) => return Err(format!("failed to acquire the repository lock: {err}")),
+        }
+    } else {
+        None
+    };
+
     let conn = repository
         .open_read_connection()
         .map_err(|err| format!("failed to open the metadata database: {err}"))?;
@@ -312,6 +350,7 @@ fn build_filesystem(
     let inner = Arc::new(Inner {
         read_only: !read_write,
         zero_fill_missing,
+        _repo_lock: repo_lock,
         conn: Mutex::new(conn),
         write_conn: Mutex::new(write_conn),
         data_store,
@@ -446,6 +485,14 @@ struct Inner {
     /// Checked once, in `read_persisted`, at the single point missing/short
     /// store data would otherwise become `Errno::EIO`.
     zero_fill_missing: bool,
+    /// Held for the mount's whole lifetime when `--read-write` (`None`
+    /// otherwise) - see `MountArgs::read_write`'s doc comment and
+    /// `docs/plans/cross-process-repository-locking.md`. Not
+    /// drop-order-sensitive like `conn`/`write_conn` below (releasing the
+    /// cross-process lock has no bearing on this process's own SQLite
+    /// connection/checkpoint behavior), so its position in this struct
+    /// doesn't matter.
+    _repo_lock: Option<repo_lock::RepoLock>,
     /// **Must stay declared before `write_conn` below.** Rust drops struct
     /// fields in declaration order, and that's the only thing that makes
     /// `write_conn` (not this one) the *last* of the two to close when
@@ -1765,6 +1812,48 @@ mod tests {
         .unwrap();
     }
 
+    #[test]
+    fn build_filesystem_refuses_read_write_when_the_lock_is_already_held() {
+        let (_temp_dir, repo_root) = init_repo();
+        let _lock = repo_lock::RepoLock::acquire(&db::meta_dir(&repo_root), Duration::ZERO)
+            .unwrap()
+            .unwrap();
+
+        let result = build_filesystem(
+            &repo_root,
+            true,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+        );
+
+        assert!(result.is_err());
+    }
+
+    /// A read-only mount never touches the lock at all - it must keep
+    /// working exactly as if nothing else were running, same as every
+    /// other read-only command (and the same reason a read-only mount must
+    /// work against a genuinely `:ro`-mounted repository directory).
+    #[test]
+    fn build_filesystem_read_only_ignores_an_existing_lock() {
+        let (_temp_dir, repo_root) = init_repo();
+        let _lock = repo_lock::RepoLock::acquire(&db::meta_dir(&repo_root), Duration::ZERO)
+            .unwrap()
+            .unwrap();
+
+        let result = build_filesystem(
+            &repo_root,
+            false,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+        );
+
+        assert!(result.is_ok());
+    }
+
     /// A read-only mount (no `--read-write`) must never open a read-write
     /// connection to the metadata database - see
     /// `docs/plans/read-only-repository-access.md`. If it did, this would
@@ -1780,7 +1869,14 @@ mod tests {
         perms.set_mode(0o444);
         std::fs::set_permissions(&db_path, perms).unwrap();
 
-        if let Err(err) = build_filesystem(&repo_root, false, DEFAULT_WRITE_CACHE_MB, None, false) {
+        if let Err(err) = build_filesystem(
+            &repo_root,
+            false,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+        ) {
             panic!("{err}");
         }
     }
@@ -1796,7 +1892,15 @@ mod tests {
     #[test]
     fn statfs_reports_real_nonzero_free_space_not_the_old_always_zero_placeholder() {
         let (_temp_dir, repo_root) = init_repo();
-        let fs = build_filesystem(&repo_root, false, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
+        let fs = build_filesystem(
+            &repo_root,
+            false,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+        )
+        .unwrap();
 
         let info = fs.statfs().unwrap();
 
@@ -1821,7 +1925,15 @@ mod tests {
         seed_file(&repo_root, 0, "top.txt", b"top level content");
         seed_file(&repo_root, sub_id, "a.txt", b"hello fuse");
 
-        let fs = build_filesystem(&repo_root, false, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
+        let fs = build_filesystem(
+            &repo_root,
+            false,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+        )
+        .unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -1903,7 +2015,15 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
+        let fs = build_filesystem(
+            &repo_root,
+            true,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+        )
+        .unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -2007,7 +2127,15 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
+        let fs = build_filesystem(
+            &repo_root,
+            true,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+        )
+        .unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -2130,7 +2258,15 @@ mod tests {
         }
         seed_file(&repo_root, 0, "a.txt", b"hello world");
 
-        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
+        let fs = build_filesystem(
+            &repo_root,
+            true,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+        )
+        .unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -2203,7 +2339,7 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, 0, None, false).unwrap();
+        let fs = build_filesystem(&repo_root, true, 0, None, false, Duration::ZERO).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -2280,7 +2416,15 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, DEFAULT_WRITE_CACHE_MB, None, false).unwrap();
+        let fs = build_filesystem(
+            &repo_root,
+            true,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+        )
+        .unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -2390,7 +2534,7 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, 1, None, false).unwrap();
+        let fs = build_filesystem(&repo_root, true, 1, None, false, Duration::ZERO).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {

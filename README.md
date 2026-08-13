@@ -98,7 +98,7 @@ repository:
 ## Back Up Files And Directories
 
 ```bash
-backup store [-p | -t] [-c <n>] [--store-io-parallelism <n>] [--chunk-buffer-mb <n>] [--temp <dir>] [--reference <path> [--force-reference]] <source...> <target>
+backup store [-p | -t] [-c <n>] [--store-io-parallelism <n>] [--chunk-buffer-mb <n>] [--temp <dir>] [--reference <path> [--force-reference]] [--lock-wait <secs>] <source...> <target>
 ```
 
 Copies one or more source files/directories from the real file system into
@@ -116,6 +116,10 @@ Target path handling:
 - Neither flag: only the target path's *last* component may be missing
   (like plain `mkdir`, not `mkdir -p`); a missing intermediate component is
   an error.
+
+Exclusive against `mount --read-write`/`compact-store`/`reclaim-space`/
+`db restore` (or another `store`) - see "Running Multiple Commands At Once"
+below.
 
 Performance tuning (the defaults are reasonable for most cases):
 
@@ -408,7 +412,7 @@ possible: measured against a real ~760 MB database, the whole backup (dump
 plus compression) took 30.8s and produced a 399 MB file (~47% smaller).
 
 ```bash
-backup db restore <file>
+backup db restore <file> [--lock-wait <secs>]
 ```
 
 Restores the metadata database from a backup, **overwriting the live
@@ -426,6 +430,17 @@ being restored - resolve some entries to the wrong physical bytes without
 any other sign of a problem. Take a fresh backup before either of those
 commands if you want to be able to restore back to exactly this point in
 time.
+
+Exclusive against `store`/`mount --read-write`/`compact-store`/
+`reclaim-space`, same as those four are against each other (see "Running
+Multiple Commands At Once" below) - but **run this only when nothing else
+at all is accessing the repository regardless**. Unlike every other
+command, it replaces the whole database file at once rather than
+committing a single transaction, so it's unsafe next to a concurrent
+*read-only* command too (`list`, `stats`, `check`, ...) - and those aren't
+blocked by the lock, which deliberately doesn't cover readers (see below).
+There's no way to detect or block that case automatically; it's on you to
+make sure nothing else is running first.
 
 ```bash
 backup db compact
@@ -521,6 +536,10 @@ reuses those gaps for new chunks' bytes before appending past the end, so
 repeated delete/reclaim/store cycles don't make the store grow without
 bound. `stats` reports any gaps not yet reused as free space.
 
+Exclusive against `store`/`mount --read-write`/`compact-store`/
+`db restore` (or another `reclaim-space`) - see "Running Multiple Commands
+At Once" below.
+
 ## Compact Store
 
 ```bash
@@ -540,16 +559,59 @@ operation, best run after `reclaim-space`, not before (compacting first
 would relocate data that's about to become garbage anyway once
 `reclaim-space` next runs).
 
-Exclusive (refuses to run if another `compact-store` - or anything else
-holding the repository's lock file - is already running against this
-repository) and safe to interrupt at any point (`SIGINT`/`SIGKILL`/power
-loss) and resume with another run.
+Exclusive against `store`/`mount --read-write`/`reclaim-space`/`db restore`
+(or another `compact-store`) - see "Running Multiple Commands At Once"
+below - and safe to interrupt at any point (`SIGINT`/`SIGKILL`/power loss)
+and resume with another run.
 
 **Invalidates older `db backup` snapshots** for restore purposes, the same
 way `reclaim-space` followed by a `store` run already can (see "Database
 Backup, Restore, and Compaction" above) - `db restore` warns automatically
 when this has happened, but take a fresh backup first if you want to be
 able to restore back to exactly this point in time.
+
+## Running Multiple Commands At Once
+
+`store`, `mount --read-write`, `compact-store`, and `reclaim-space` are the
+four commands that physically allocate or relocate bytes in the data store
+(or change what byte ranges are free to reuse) - running two of them
+against the same repository at once, even two `store` runs, risks real
+data corruption (two writers allocating the same free space to different
+content). `db restore` (see "Database Backup, Restore, and Compaction"
+above) joins them as a fifth: it replaces the whole database file at once,
+which is just as unsafe to run alongside any of the other four. To prevent
+that, all five take an exclusive lock on the repository (`meta/.lock`)
+before doing anything: by default, if another one of the five already
+holds it, the new command fails immediately with an error rather than
+proceeding; pass `--lock-wait <secs>` to instead wait up to that many
+seconds for the lock to free up before giving up. The lock releases
+automatically - including on a crash or `SIGKILL`, not just a clean exit -
+so a killed command never leaves a stale lock behind for a later run to
+work around manually.
+
+Every other command (`list`, `find`, `deleted`, `problems`, `stats`,
+`check`, `restore`, `del`, `undelete`, `fix-problems`, `db backup`,
+`db compact`, a plain read-only `mount`, `migrate-scala-repo`) is
+unaffected by this lock, in either direction: it doesn't take the lock
+itself, and doesn't wait if one of the five above is currently holding it.
+This is deliberate, not an oversight for four of the five - every one of
+these either never touches store bytes at all, or (for the read-only
+commands specifically) is protected by the same "write new bytes, then
+commit the one transaction that starts referencing them" pattern every
+store-byte-mutating command already follows, which is what already makes
+e.g. checking `stats` while a `store` is running safe today without
+needing to wait for anything.
+
+**`db restore` is the exception this reasoning doesn't cover**: the lock
+protects it against the other four, but a concurrent *read-only* command
+is still unsafe next to it and isn't blocked by anything automatic - the
+lock deliberately doesn't extend to readers (doing so would either need a
+second lock kind or make every read command lock-aware, for a workflow
+rare and disruptive enough not to be worth that cost - see
+`docs/plans/implemented/cross-process-repository-locking.md`). Make sure
+nothing else at all is accessing the repository before running `db
+restore`, not just the other four commands this lock actually protects
+you from.
 
 ## Mount
 
@@ -592,7 +654,7 @@ exception to the GPLv3 (see [NOTICE.md](NOTICE.md) for the full exception
 text).
 
 ```bash
-backup mount --read-write [--write-cache-mb <n>] [--temp <dir>] <mountpoint>
+backup mount --read-write [--write-cache-mb <n>] [--temp <dir>] [--lock-wait <secs>] <mountpoint>
 ```
 
 `--read-write` additionally allows structural changes
@@ -608,6 +670,11 @@ write-cache spillover directory is created (must already exist and be
 writable; defaults to the OS temp directory) - for best throughput, point
 it at the fastest disk available, ideally not the same physical drive as
 the repository.
+
+Exclusive against `store`/`compact-store`/`reclaim-space`/`db restore` (or
+a second `--read-write` mount) for the mount's whole lifetime - see
+"Running Multiple Commands At Once" below. A plain read-only mount (no
+`--read-write`) is unaffected either way.
 
 ### Recovering Deleted Files Through The Mount
 

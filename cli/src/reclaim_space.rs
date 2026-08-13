@@ -1,8 +1,10 @@
 use std::path::Path;
 use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::Args;
+
+use crate::repo_lock::RepoLock;
 
 const MILLIS_PER_DAY: i64 = 24 * 60 * 60 * 1000;
 
@@ -16,6 +18,13 @@ pub struct ReclaimSpaceArgs {
     /// (unlike `del`, genuinely irreversible) operation.
     #[arg(long)]
     no_backup: bool,
+
+    /// How long to wait, in seconds, for the repository's lock to become
+    /// free if another `store`/`mount --read-write`/`compact-store`/
+    /// `reclaim-space` run already holds it, before giving up. Default:
+    /// don't wait, fail immediately.
+    #[arg(long = "lock-wait", default_value_t = 0)]
+    lock_wait_secs: u64,
 }
 
 /// Hard-deletes soft-deleted entries older than `--keep-days` and sweeps
@@ -47,6 +56,30 @@ pub fn run_reclaim_space(repo: &Path, args: ReclaimSpaceArgs) -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
+
+    // Exclusive against every other command that physically
+    // allocates/relocates store bytes or changes what byte ranges are free
+    // to reuse (`store`, `mount --read-write`, `compact-store`, and a
+    // second `reclaim-space`) - see
+    // `docs/plans/cross-process-repository-locking.md`.
+    let _lock = match RepoLock::acquire(
+        &db::meta_dir(repo),
+        Duration::from_secs(args.lock_wait_secs),
+    ) {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            eprintln!(
+                "error: another command is already running against this repository \
+                 (meta/.lock is held) - try again once it finishes, or pass --lock-wait to wait"
+            );
+            return ExitCode::FAILURE;
+        }
+        Err(err) => {
+            eprintln!("error: failed to acquire the repository lock: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+
     let mut conn = match repository.open_write_connection() {
         Ok(c) => c,
         Err(err) => {
@@ -112,6 +145,7 @@ mod tests {
             ReclaimSpaceArgs {
                 keep_days: 0,
                 no_backup: false,
+                lock_wait_secs: 0,
             },
         );
 
@@ -142,6 +176,7 @@ mod tests {
                 ReclaimSpaceArgs {
                     keep_days: 0,
                     no_backup: true,
+                    lock_wait_secs: 0,
                 }
             ),
             ExitCode::SUCCESS
@@ -170,6 +205,7 @@ mod tests {
                 ReclaimSpaceArgs {
                     keep_days: 30,
                     no_backup: true,
+                    lock_wait_secs: 0,
                 }
             ),
             ExitCode::SUCCESS
@@ -187,5 +223,25 @@ mod tests {
             )
             .unwrap();
         assert_eq!(remaining, 1, "just deleted, well within a 30-day window");
+    }
+
+    #[test]
+    fn run_reclaim_space_refuses_when_the_lock_is_already_held() {
+        let (_temp_dir, repo_root) = init_repo();
+        let _lock = RepoLock::acquire(&db::meta_dir(&repo_root), Duration::ZERO)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            run_reclaim_space(
+                &repo_root,
+                ReclaimSpaceArgs {
+                    keep_days: 0,
+                    no_backup: true,
+                    lock_wait_secs: 0,
+                }
+            ),
+            ExitCode::FAILURE
+        );
     }
 }

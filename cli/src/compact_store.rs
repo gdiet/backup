@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use clap::Args;
 use store::{LongTermStore, ReadIntegrity};
@@ -9,7 +10,14 @@ use crate::progress::Progress;
 use crate::repo_lock::RepoLock;
 
 #[derive(Args)]
-pub struct CompactStoreArgs {}
+pub struct CompactStoreArgs {
+    /// How long to wait, in seconds, for the repository's lock to become
+    /// free if another `store`/`mount --read-write`/`compact-store`/
+    /// `reclaim-space` run already holds it, before giving up. Default:
+    /// don't wait, fail immediately.
+    #[arg(long = "lock-wait", default_value_t = 0)]
+    lock_wait_secs: u64,
+}
 
 /// Defragments the data store: relocates every live chunk so the store's
 /// used address space becomes one contiguous block starting at 0, then
@@ -39,7 +47,7 @@ pub struct CompactStoreArgs {}
 /// start of each run, never a remembered plan - matching
 /// `docs/plans/implemented/03-chunk-extents.md`'s own "no persisted
 /// free-list" choice.
-pub fn run_compact_store(repo: &Path, _args: CompactStoreArgs) -> ExitCode {
+pub fn run_compact_store(repo: &Path, args: CompactStoreArgs) -> ExitCode {
     let repository = match db::open_repository(repo) {
         Ok(r) => r,
         Err(err) => {
@@ -51,12 +59,15 @@ pub fn run_compact_store(repo: &Path, _args: CompactStoreArgs) -> ExitCode {
         }
     };
 
-    let _lock = match RepoLock::try_acquire(&db::meta_dir(repo)) {
+    let _lock = match RepoLock::acquire(
+        &db::meta_dir(repo),
+        Duration::from_secs(args.lock_wait_secs),
+    ) {
         Ok(Some(lock)) => lock,
         Ok(None) => {
             eprintln!(
                 "error: another command is already running against this repository \
-                 (meta/.lock is held) - try again once it finishes"
+                 (meta/.lock is held) - try again once it finishes, or pass --lock-wait to wait"
             );
             return ExitCode::FAILURE;
         }
@@ -222,7 +233,7 @@ mod tests {
     fn run_compact_store_succeeds_on_an_empty_repository() {
         let (_temp_dir, repo_root) = init_repo();
         assert_eq!(
-            run_compact_store(&repo_root, CompactStoreArgs {}),
+            run_compact_store(&repo_root, CompactStoreArgs { lock_wait_secs: 0 }),
             ExitCode::SUCCESS
         );
     }
@@ -242,7 +253,7 @@ mod tests {
         drop(conn);
 
         assert_eq!(
-            run_compact_store(&repo_root, CompactStoreArgs {}),
+            run_compact_store(&repo_root, CompactStoreArgs { lock_wait_secs: 0 }),
             ExitCode::SUCCESS
         );
 
@@ -278,7 +289,7 @@ mod tests {
         drop(conn);
 
         assert_eq!(
-            run_compact_store(&repo_root, CompactStoreArgs {}),
+            run_compact_store(&repo_root, CompactStoreArgs { lock_wait_secs: 0 }),
             ExitCode::SUCCESS
         );
 
@@ -296,13 +307,32 @@ mod tests {
     #[test]
     fn run_compact_store_refuses_when_the_lock_is_already_held() {
         let (_temp_dir, repo_root) = init_repo();
-        let _lock = RepoLock::try_acquire(&db::meta_dir(&repo_root))
+        let _lock = RepoLock::acquire(&db::meta_dir(&repo_root), Duration::ZERO)
             .unwrap()
             .unwrap();
 
         assert_eq!(
-            run_compact_store(&repo_root, CompactStoreArgs {}),
+            run_compact_store(&repo_root, CompactStoreArgs { lock_wait_secs: 0 }),
             ExitCode::FAILURE
         );
+    }
+
+    #[test]
+    fn run_compact_store_waits_for_the_lock_via_lock_wait_and_then_succeeds() {
+        let (_temp_dir, repo_root) = init_repo();
+        let lock = RepoLock::acquire(&db::meta_dir(&repo_root), Duration::ZERO)
+            .unwrap()
+            .unwrap();
+
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            drop(lock);
+        });
+
+        assert_eq!(
+            run_compact_store(&repo_root, CompactStoreArgs { lock_wait_secs: 2 }),
+            ExitCode::SUCCESS
+        );
+        releaser.join().unwrap();
     }
 }

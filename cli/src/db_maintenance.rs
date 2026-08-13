@@ -2,11 +2,12 @@ use std::fs::{self, File};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use clap::{Args, Subcommand};
 
 use crate::format::timestamp_for_filename;
+use crate::repo_lock::RepoLock;
 
 /// Deflate level `db backup` compresses with - the fastest end of the
 /// scale (1..=9, zlib convention), not the default (6) or best (9). A
@@ -30,12 +31,27 @@ enum DbCommand {
     /// Create a timestamped backup of the metadata database.
     Backup,
     /// Restore the metadata database from a backup file (overwrites the
-    /// live database).
+    /// live database). Excludes `store`/`mount --read-write`/`compact-store`/
+    /// `reclaim-space` automatically, same as those four exclude each other
+    /// (see `--lock-wait`) - but run this only when nothing else at all is
+    /// accessing the repository regardless: unlike every other command, it
+    /// replaces the whole database file at once rather than a single
+    /// committing transaction, so a concurrent *read-only* command (which
+    /// isn't blocked by the lock - see
+    /// `docs/plans/implemented/cross-process-repository-locking.md`) can
+    /// still see undefined behavior, not a clean snapshot, while this runs.
     Restore {
         /// Backup file to restore from - either a path, or (if that path
         /// doesn't exist as given) a bare filename looked up under
         /// meta/backups/.
         file: PathBuf,
+
+        /// How long to wait, in seconds, for the repository's lock to
+        /// become free if another `store`/`mount --read-write`/
+        /// `compact-store`/`reclaim-space` run already holds it, before
+        /// giving up. Default: don't wait, fail immediately.
+        #[arg(long = "lock-wait", default_value_t = 0)]
+        lock_wait_secs: u64,
     },
     /// Reclaim free pages in the metadata database file, shrinking it in
     /// place.
@@ -45,7 +61,10 @@ enum DbCommand {
 pub fn run_db(repo: &Path, args: DbArgs) -> ExitCode {
     match args.command {
         DbCommand::Backup => run_backup(repo),
-        DbCommand::Restore { file } => run_restore_db(repo, &file),
+        DbCommand::Restore {
+            file,
+            lock_wait_secs,
+        } => run_restore_db(repo, &file, Duration::from_secs(lock_wait_secs)),
         DbCommand::Compact => run_compact(repo),
     }
 }
@@ -159,7 +178,19 @@ fn write_zip(staging: &Path, source: &Path, entry_name: &str) -> io::Result<()> 
 /// other commands) - this needs to work even if it's the current database
 /// that's broken, which is the situation this command exists to recover
 /// from.
-fn run_restore_db(repo: &Path, file: &Path) -> ExitCode {
+///
+/// Takes the same repository lock `store`/`mount --read-write`/
+/// `compact-store`/`reclaim-space` do (see `repo_lock`), so it's
+/// automatically excluded from running alongside any of those four - but
+/// that's a partial guarantee, not a full one: replacing the database file
+/// wholesale (rather than via a single committing transaction, like every
+/// other write path in this codebase) is also unsafe next to a concurrent
+/// *reader*, and the lock deliberately doesn't cover readers at all (see
+/// `docs/plans/implemented/cross-process-repository-locking.md`'s "Is a
+/// reader-side lock worth adding? No"). `DbCommand::Restore`'s doc comment
+/// (surfaced via `--help`) spells this out for the user; nothing here
+/// attempts to detect or block a concurrent reader.
+fn run_restore_db(repo: &Path, file: &Path, lock_wait: Duration) -> ExitCode {
     let backup_path = if file.is_file() {
         file.to_path_buf()
     } else {
@@ -172,6 +203,21 @@ fn run_restore_db(repo: &Path, file: &Path) -> ExitCode {
         );
         return ExitCode::FAILURE;
     }
+
+    let _lock = match RepoLock::acquire(&db::meta_dir(repo), lock_wait) {
+        Ok(Some(lock)) => lock,
+        Ok(None) => {
+            eprintln!(
+                "error: another command is already running against this repository \
+                 (meta/.lock is held) - try again once it finishes, or pass --lock-wait to wait"
+            );
+            return ExitCode::FAILURE;
+        }
+        Err(err) => {
+            eprintln!("error: failed to acquire the repository lock: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
 
     // `db backup` has produced zipped snapshots since
     // docs/plans/implemented/db-backup-compression.md; older, plain
@@ -432,12 +478,58 @@ mod tests {
         db::insert_directory(&conn, 0, "after-backup", 0).unwrap();
         drop(conn);
 
-        let exit = run_restore_db(&repo_root, &backup_file);
+        let exit = run_restore_db(&repo_root, &backup_file, Duration::ZERO);
 
         assert_eq!(exit, ExitCode::SUCCESS);
         let repository = db::open_repository(&repo_root).unwrap();
         let conn = repository.open_read_connection().unwrap();
         assert_eq!(db::resolve_path(&conn, "after-backup").unwrap(), None);
+    }
+
+    #[test]
+    fn restore_refuses_when_the_lock_is_already_held() {
+        let (_temp_dir, repo_root) = init_repo();
+        assert_eq!(run_backup(&repo_root), ExitCode::SUCCESS);
+        let backup_file = fs::read_dir(db::meta_dir(&repo_root).join("backups"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let _lock = RepoLock::acquire(&db::meta_dir(&repo_root), Duration::ZERO)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            run_restore_db(&repo_root, &backup_file, Duration::ZERO),
+            ExitCode::FAILURE
+        );
+    }
+
+    #[test]
+    fn restore_waits_for_the_lock_via_lock_wait_and_then_succeeds() {
+        let (_temp_dir, repo_root) = init_repo();
+        assert_eq!(run_backup(&repo_root), ExitCode::SUCCESS);
+        let backup_file = fs::read_dir(db::meta_dir(&repo_root).join("backups"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        let lock = RepoLock::acquire(&db::meta_dir(&repo_root), Duration::ZERO)
+            .unwrap()
+            .unwrap();
+
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(200));
+            drop(lock);
+        });
+
+        assert_eq!(
+            run_restore_db(&repo_root, &backup_file, Duration::from_secs(2)),
+            ExitCode::SUCCESS
+        );
+        releaser.join().unwrap();
     }
 
     #[test]
@@ -452,7 +544,10 @@ mod tests {
             .path();
         let bare_name = PathBuf::from(backup_file.file_name().unwrap());
 
-        assert_eq!(run_restore_db(&repo_root, &bare_name), ExitCode::SUCCESS);
+        assert_eq!(
+            run_restore_db(&repo_root, &bare_name, Duration::ZERO),
+            ExitCode::SUCCESS
+        );
     }
 
     #[test]
@@ -472,7 +567,10 @@ mod tests {
         db::insert_directory(&conn, 0, "after-backup", 0).unwrap();
         drop(conn);
 
-        assert_eq!(run_restore_db(&repo_root, &plain_backup), ExitCode::SUCCESS);
+        assert_eq!(
+            run_restore_db(&repo_root, &plain_backup, Duration::ZERO),
+            ExitCode::SUCCESS
+        );
         let repository = db::open_repository(&repo_root).unwrap();
         let conn = repository.open_read_connection().unwrap();
         assert_eq!(db::resolve_path(&conn, "after-backup").unwrap(), None);
@@ -482,7 +580,11 @@ mod tests {
     fn restore_fails_for_a_missing_backup_file() {
         let (_temp_dir, repo_root) = init_repo();
         assert_eq!(
-            run_restore_db(&repo_root, &PathBuf::from("no-such-backup.sqlite3")),
+            run_restore_db(
+                &repo_root,
+                &PathBuf::from("no-such-backup.sqlite3"),
+                Duration::ZERO
+            ),
             ExitCode::FAILURE
         );
     }
@@ -554,7 +656,10 @@ mod tests {
         // confirms restoring a stale-generation backup still succeeds
         // rather than being blocked (the explicit "warn, don't hard-block"
         // decision).
-        assert_eq!(run_restore_db(&repo_root, &backup_file), ExitCode::SUCCESS);
+        assert_eq!(
+            run_restore_db(&repo_root, &backup_file, Duration::ZERO),
+            ExitCode::SUCCESS
+        );
     }
 
     #[test]

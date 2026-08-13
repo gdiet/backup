@@ -1,18 +1,28 @@
 # Cross-process repository locking (generalized)
 
-**Status**: design only, not implemented. Written up after a conversation surfaced that today
-only `compact-store` takes any cross-process lock (`cli/src/repo_lock.rs`) - every other
-repo-mutating command (`store`, `mount --read-write`, `del`, `undelete`, `fix-problems`,
-`reclaim-space`, `db compact`, `db restore`, `migrate-scala-repo`) can run concurrently with
-itself or with each other today, with real corruption risk in some combinations (see "Why this
-matters" below).
+**Status**: implemented. `store`, `mount --read-write`, `compact-store`, `reclaim-space`, and
+`db restore` now all take the repository's exclusive lock (`RepoLock::acquire`,
+`cli/src/repo_lock.rs`), each with its own `--lock-wait <secs>` flag. `db restore`'s residual
+incompatibility with concurrent *readers* (the lock doesn't cover them, by design - see "Is a
+reader-side lock worth adding? No" below) is documented rather than enforced in code, per the
+decision below. Not yet verified on real Windows - see
+`agent-todos/verify-repo-lock-on-windows.md`.
+
+Written up after a conversation surfaced that at the time only `compact-store` took any
+cross-process lock - every other repo-mutating command (`store`, `mount --read-write`, `del`,
+`undelete`, `fix-problems`, `reclaim-space`, `db compact`, `db restore`, `migrate-scala-repo`)
+could run concurrently with itself or with each other, with real corruption risk in some
+combinations (see "Why this matters" below).
 
 **Decision** (see "Is a reader-side lock worth adding?" below for the reasoning): scope this to
-**writer-vs-writer exclusion only** (the commands that physically allocate/relocate store bytes:
-`store`, `mount --read-write`, `compact-store`, `reclaim-space`). No generic reader-side lock -
-read-only commands keep working exactly as they do today, unconditionally. `db restore`'s
-incompatibility with concurrent readers is handled as a documentation note, not a code exception -
-see its own section below.
+**writer-vs-writer exclusion**, where "writer" means every command that physically
+allocates/relocates store bytes (`store`, `mount --read-write`, `compact-store`, `reclaim-space`)
+*or* replaces the whole database file wholesale (`db restore` - initially scoped out of this plan
+entirely, then added once review pointed out the same plain exclusive lock the other four already
+need also protects `db restore` against those same four, for free, even though it can't protect it
+against everything - see "`db restore`: takes the lock too, but only closes part of the gap"
+below). No generic reader-side lock - read-only commands keep working exactly as they do today,
+unconditionally.
 
 ## Why this matters (recap of the triggering discussion)
 
@@ -35,13 +45,17 @@ see its own section below.
 ## Scheme
 
 - Every command that writes store bytes (even only potentially, e.g. depending on a flag) -
-  `store`, `mount --read-write`, `compact-store`, `reclaim-space` - acquires an **exclusive** lock
-  before doing anything. Default: don't wait, fail immediately if already held. Configurable: wait
-  up to N seconds (flag, e.g. `--lock-wait <secs>`).
+  `store`, `mount --read-write`, `compact-store`, `reclaim-space` - plus `db restore` (which
+  doesn't write store bytes, but replaces the whole database file, a different but equally real
+  conflict with the same four) acquires an **exclusive** lock before doing anything. Default:
+  don't wait, fail immediately if already held. Configurable: wait up to N seconds (flag,
+  `--lock-wait <secs>`).
 - No reader-side lock. Read-only commands (`list`, `find`, `deleted`, `problems`, `stats`, `check`,
   `restore`, `db backup`) and metadata-only writers (`del`, `undelete`, `fix-problems`,
   `db compact`) don't touch the lock at all, exactly as today. See "Is a reader-side lock worth
-  adding?" for why this was considered and rejected rather than just left out by default.
+  adding?" for why this was considered and rejected rather than just left out by default. This is
+  also exactly why `db restore` isn't *fully* covered even though it takes the lock - see its own
+  section below.
 
 ## Is this clean/simple to build? Yes, with one caveat
 
@@ -86,9 +100,11 @@ real usability for no actual safety gain. Not implementing it.
 
 ## Command classification (verified by reading each subcommand's repository-open call, not assumed)
 
-**Takes the new exclusive lock** (physically allocates/relocates store bytes, the actual
-corruption risk this plan addresses): `store`, `mount --read-write`, `compact-store`,
-`reclaim-space`.
+**Takes the new exclusive lock**: `store`, `mount --read-write`, `compact-store`, `reclaim-space`
+(physically allocate/relocate store bytes - the original corruption risk this plan addresses), and
+`db restore` (doesn't touch store bytes, but replaces the whole database file wholesale - a
+different conflict, but just as real against the same four - see its own section below for why it
+only gets *partial* protection from this).
 
 **Stays lock-free, read-only against the repo** (`db::open_repository_read_only`, production code
 path): `list`, `find`, `deleted`, `problems`, `stats`, `check`, `restore` (writes to the *restore
@@ -100,31 +116,37 @@ argument as the read-only commands): `del`, `undelete`, `fix-problems`, `db comp
 `migrate-scala-repo` (a one-shot, explicitly supervised operation against what's normally a fresh
 target repo - see `compact-store.md:82-90`'s crash-safety note on it).
 
-**Special case, not covered by this scheme**: `db restore` - see its own section below.
-
 Conditional: `mount` opens read-only by default, read-write only with `--read-write`
 (`mount.rs:260-262`) - it only takes the exclusive lock in the latter case. The synthetic
 `[deleted]` folder (`mount_deleted.rs`) is part of the same `mount` write connection, not a
 separate command.
 
-## `db restore`: documented risk, not a code exception
+## `db restore`: takes the lock too, but only closes part of the gap
 
 `db restore` replaces the entire metadata database file at once - it doesn't fit the "write new
-bytes, then commit a pointer-switching transaction" pattern everything else follows, so it's not
-just unsafe against other *writers* (which the exclusive lock above doesn't cover it against
-either, since it's not in the "takes the lock" list) but against *any* concurrent access to the
-repository, readers included: a reader mid-read against the old file while it's being replaced
-sees undefined behavior, not a clean snapshot.
+bytes, then commit a pointer-switching transaction" pattern everything else follows, so it's unsafe
+next to *any* concurrent access to the repository, not just the other four lock-taking commands:
+a reader mid-read against the old file while it's being replaced sees undefined behavior, not a
+clean snapshot.
 
-Decision: **don't extend the locking mechanism to cover this** - it would mean either giving `db
-restore` a third lock flavor ("exclusive against literally everyone, readers included") that
-nothing else needs, or forcing every read command to check a lock after all (the thing rejected
-above). Given `db restore` is already a rare, deliberately manual, supervised operation (correcting
-a `meta/repository.db` from a `db backup` archive, not something run as part of routine workflows),
-the simpler answer is to document the requirement clearly (README.md and the command's own
-`--help`/doc comment: *run this only when nothing else is accessing the repository*) and leave
-enforcement to the operator, the same way this project already handles `migrate-scala-repo`'s
-narrower one-shot caveat.
+**Initial version of this plan scoped `db restore` out of the lock entirely**, reasoning that
+since full protection (readers included) wasn't achievable without either a second lock kind or
+making every read command lock-aware (both rejected above), there was no point taking the lock at
+all - document the whole requirement instead and leave enforcement to the operator, the same way
+`migrate-scala-repo`'s narrower one-shot caveat is handled.
+
+**That reasoning was wrong, caught in review**: "can't get full protection" doesn't imply "get no
+protection." `db restore` can simply take the *same* plain exclusive lock the other four already
+use - no new lock kind, no reader-awareness anywhere - and that closes the real, previously
+completely unaddressed risk of `db restore` racing `store`/`mount --read-write`/`compact-store`/
+`reclaim-space` (a decent lower bound: those four are the more likely, more automatable-to-guard
+concurrent commands - a script/cron `store` running when someone happens to restore a database is
+far more plausible than a human deliberately opening `check` mid-restore). What remains genuinely
+unprotected - a concurrent *read-only* command - is exactly the same reader gap already accepted
+everywhere else in this plan (see "Is a reader-side lock worth adding? No" above), not a new,
+`db restore`-specific one. Documenting *that* narrower remaining gap (README.md, the command's own
+`--help`/doc comment: still run this only when nothing else at all is accessing the repository) is
+the right amount of manual-discipline reliance, not the whole thing.
 
 ## Interaction with genuinely read-only repositories
 
@@ -138,9 +160,9 @@ with `.write(true).create(true)` - on a real `:ro` mount this fails with `EROFS`
 `compact-store`'s generic "failed to acquire the repository lock" error branch
 (`compact_store.rs:62-64`) rather than a clean "not applicable, repository is read-only" message.
 That's pre-existing behavior, not something this plan changes - every command that would newly
-take this lock (`store`, `mount --read-write`, `reclaim-space`) already requires a writable
-repository to do anything useful anyway, so a confusing lock-acquisition error instead of a
-confusing "read-only filesystem" error at the first actual write isn't a regression, just a
+take this lock (`store`, `mount --read-write`, `reclaim-space`, `db restore`) already requires a
+writable repository to do anything useful anyway, so a confusing lock-acquisition error instead of
+a confusing "read-only filesystem" error at the first actual write isn't a regression, just a
 possible future polish item (a clearer message) if it comes up in practice.
 
 ## Windows verification status
@@ -154,14 +176,36 @@ actually implemented, add an `agent-todos/` entry (or verify directly if a Windo
 is available at the time) confirming exclusive locking on `meta/.lock` behaves as expected across
 two real Windows processes, not just in theory.
 
-## Suggested scope for a first implementation pass (not decided, just a starting point)
+## Implementation (done)
 
-1. Extend `repo_lock.rs` with a poll-based wait-with-timeout wrapper around the existing exclusive
-   `try_acquire` (the `--lock-wait <secs>` behavior) - no shared-lock addition needed, per the
-   decision above.
-2. Wire exclusive acquisition into `store`, `mount --read-write`, and `reclaim-space` (only
-   `compact-store` has it today).
-3. Migrate `compact-store`'s existing call onto the same wait-enabled API so there's exactly one
-   code path, not two.
-4. Document `db restore`'s exclusivity requirement in README.md and its own doc comment (no code
-   change).
+1. `repo_lock.rs`'s `try_acquire` became `acquire(meta_dir, wait: Duration)` - a poll loop
+   (`try_lock` every 100ms) when `wait` is non-zero, identical to the old behavior at
+   `Duration::ZERO`. No shared-lock addition, per the decision above.
+2. Exclusive acquisition wired into `store` (right after `db::open_repository`, before opening the
+   write connection), `mount --read-write` (inside `build_filesystem`, held for the mount's whole
+   lifetime via a new `Inner::_repo_lock` field - `None` for a read-only mount, which never touches
+   the lock at all), and `reclaim-space` (after its own `db::open_repository`, after the optional
+   automatic `db backup` step). Each command's `--lock-wait <secs>` flag defaults to `0`.
+3. `compact-store` migrated onto the same `acquire` API - one code path now, not two.
+4. `db restore` also wired onto the same `acquire` API (right after confirming the backup file
+   exists, before extracting/staging anything) - added in a second pass after review caught that
+   the initial "documented risk, not a code exception" framing was giving up more protection than
+   necessary (see "`db restore`: takes the lock too, but only closes part of the gap" above). Its
+   remaining, narrower gap (concurrent read-only commands, which the lock deliberately never
+   covers for anything) is documented in its `DbCommand::Restore` doc comment (surfaces via
+   `--help`), a code comment on `run_restore_db`, and README.md.
+5. README.md gained a "Running Multiple Commands At Once" section covering all five commands'
+   `--lock-wait` behavior and the exclusivity matrix between them, plus `db restore`'s residual
+   manual-discipline requirement.
+
+Verified: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace`, `cargo doc --no-deps --workspace` all clean. New tests: `repo_lock.rs`
+covers `acquire` directly (zero-wait conflict, release-unblocks, wait-then-timeout,
+wait-then-succeeds-mid-wait via a second thread); `store.rs`/`compact_store.rs`/`reclaim_space.rs`/
+`db_maintenance.rs` each got a `_refuses_when_the_lock_is_already_held` test
+(`compact_store.rs`/`db_maintenance.rs` also got a `_waits_for_the_lock_via_lock_wait_and_then_
+succeeds` end-to-end test); `mount.rs` got both a refusal test and a same-lock-held
+read-only-mount-is-unaffected test, directly against `build_filesystem` rather than a full FUSE
+mount (no need to exercise the mount machinery itself just to prove the lock wiring).
+
+Not yet verified: real Windows/WinFSP behavior - see `agent-todos/verify-repo-lock-on-windows.md`.
