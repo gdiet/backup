@@ -101,6 +101,18 @@ Only commit changes when explicitly asked to do so by the user. Even if you've m
 changes and suggested a commit message, wait for explicit permission before running
 `git commit`.
 
+## Shell Commands
+
+Never run an unscoped recursive filesystem search (`find /`, `find / -maxdepth N`, or any variant
+that walks the whole filesystem) - on a real disk this can take minutes and burn resources for no
+benefit (confirmed concretely: one such search during this project's own work ran past a two-minute
+timeout and had to be killed). Only fall back to a search this broad when there is genuinely no
+narrower option available - in practice that's essentially never for this project:
+- Prefer `cargo metadata`/`cargo tree` over `find` for locating crate sources, including
+  dependency source (e.g. a specific crate's code under `~/.cargo/registry/src/`).
+- Otherwise scope `find`/`grep` to a specific, known directory (`.`, `rust/`, a crate's `src/`),
+  not `/`.
+
 ## Dependencies
 
 Suggest required or helpful dependencies to the user, but do not add them to the
