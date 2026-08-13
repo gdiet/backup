@@ -5,8 +5,8 @@
 `cli/src/repo_lock.rs`), each with its own `--lock-wait <secs>` flag. `db restore`'s residual
 incompatibility with concurrent *readers* (the lock doesn't cover them, by design - see "Is a
 reader-side lock worth adding? No" below) is documented rather than enforced in code, per the
-decision below. Not yet verified on real Windows - see
-`agent-todos/verify-repo-lock-on-windows.md`.
+decision below. Verified on real Windows/WinFSP (julius, 2026-08-13) - see "Windows verification
+status" below.
 
 Written up after a conversation surfaced that at the time only `compact-store` took any
 cross-process lock - every other repo-mutating command (`store`, `mount --read-write`, `del`,
@@ -167,14 +167,29 @@ possible future polish item (a clearer message) if it comes up in practice.
 
 ## Windows verification status
 
-Not yet checked against a real Windows/WinFSP mount - `std::fs::File`'s lock methods are
-documented as cross-platform (`LockFileEx` under the hood on Windows) and nothing here is
-Unix-specific, but this project's own convention (see `agent-todos/README.md`) is to treat
-"verified on Linux only" and "verified on real Windows" as different states for anything touching
-`mount`, given `mount --read-write` runs in production on Windows via WinFSP. Once this is
-actually implemented, add an `agent-todos/` entry (or verify directly if a Windows/WinFSP session
-is available at the time) confirming exclusive locking on `meta/.lock` behaves as expected across
-two real Windows processes, not just in theory.
+Verified on real Windows/WinFSP (julius, native release build, 2026-08-13) - see
+`agent-todos/done/verify-repo-lock-on-windows.md` for the full session record. Summary: a
+`mount --read-write` lock holder, and a second real process (`store`) against the same
+repository, confirmed all three documented behaviors -
+
+1. Without `--lock-wait`: the second process fails immediately with the expected "meta/.lock is
+   held" message.
+2. With `--lock-wait <secs>`: the second process blocks, then succeeds once the holder is
+   terminated (confirmed via `taskkill /F` on the holder's PID - `LockFileEx`'s OS-level release
+   fires correctly even on a forceful/non-graceful termination, not just a clean shutdown).
+3. A third access, started immediately after the abrupt kill with no `--lock-wait` at all,
+   acquires the lock right away with no stale hold left behind - repeated as its own explicit pass
+   after (2) already demonstrated the same thing incidentally.
+
+One incidental, unrelated finding along the way: `reclaim-space` against a repository with an
+actively-open `mount --read-write` elsewhere failed with a confusing "found a pending
+write-ahead-log file ... run `db compact`" error instead of the expected lock message - not a
+locking bug. `reclaim-space` runs an automatic `db backup` *before* even opening the repository
+for its own purposes (`cli/src/reclaim_space.rs:41-47`, `--no-backup` skips it), and that backup
+step opens read-only (`db::open_repository_read_only`), which correctly refuses a live,
+uncheckpointed WAL - it just doesn't yet mention "or another process currently has it open" as a
+possible cause, only suggesting `db compact` (not actually the right remedy when the real cause is
+a concurrent writer). Low-severity message-wording gap, not filed as its own follow-up.
 
 ## Implementation (done)
 
@@ -208,4 +223,5 @@ succeeds` end-to-end test); `mount.rs` got both a refusal test and a same-lock-h
 read-only-mount-is-unaffected test, directly against `build_filesystem` rather than a full FUSE
 mount (no need to exercise the mount machinery itself just to prove the lock wiring).
 
-Not yet verified: real Windows/WinFSP behavior - see `agent-todos/verify-repo-lock-on-windows.md`.
+Verified: real Windows/WinFSP behavior (julius, 2026-08-13) - see "Windows verification status"
+above.
