@@ -125,6 +125,22 @@ pub fn read_chunk_bytes(
     Ok((buf, integrity))
 }
 
+/// Computes `buf`'s content hash the same way `store`'s chunking pipeline
+/// does (blake3 extendable output, truncated to `crate::store::HASH_LENGTH`
+/// bytes) and reports whether it matches `expected` (a chunk's recorded
+/// `chunks.hash`). Shared by `check`'s integrity verification and
+/// `restore`'s optional `--verify` - the only two places in this codebase
+/// that need to re-derive a chunk's hash from its bytes rather than trust
+/// what `store` already recorded.
+pub(crate) fn chunk_hash_matches(buf: &[u8], expected: &[u8]) -> bool {
+    let mut hash = [0u8; crate::store::HASH_LENGTH];
+    blake3::Hasher::new()
+        .update(buf)
+        .finalize_xof()
+        .fill(&mut hash);
+    hash.as_slice() == expected
+}
+
 /// Reserves store space for a chunk of `total_len` bytes (its boundary/
 /// hash is already known - see `spilling_chunker::SpillingHashingChunker`)
 /// and writes it out by draining `bytes` (a [`WriteCache`], not a plain

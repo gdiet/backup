@@ -10,7 +10,7 @@ use clap::Args;
 use rusqlite::Connection;
 use store::{LongTermStore, ReadIntegrity};
 
-use crate::chunk_store::read_chunk_bytes;
+use crate::chunk_store::{chunk_hash_matches, read_chunk_bytes};
 
 #[derive(Args)]
 pub struct RestoreArgs {
@@ -34,11 +34,70 @@ pub struct RestoreArgs {
     #[arg(long, requires = "deleted")]
     recursive: bool,
 
+    /// Verify each chunk's content hash against what's recorded in the
+    /// metadata database before writing it out, the same check `backup
+    /// check` does - off by default, since it costs a second hash pass over
+    /// every restored byte. A mismatch is treated like missing store data:
+    /// the file is skipped (its partial output deleted) and the whole
+    /// restore exits with a failure code - see `--keep-on-hash-mismatch` to
+    /// keep the output anyway.
+    #[arg(long)]
+    verify: bool,
+
+    /// Keep a file's output even though some of its store data was missing
+    /// or shorter than expected, instead of deleting it - the missing
+    /// portion reads as zero bytes, same trade-off as `mount
+    /// --zero-fill-missing`: once this is on, there's no way to tell
+    /// zero-filled bytes from real ones in the restored file. Off by
+    /// default. Independent of `--keep-on-hash-mismatch` - either, both, or
+    /// neither can be given.
+    #[arg(long)]
+    zero_fill_missing: bool,
+
+    /// Keep a file's output even though `--verify` found its content hash
+    /// doesn't match what's recorded, instead of deleting it - for when the
+    /// data might still be partially useful despite the mismatch. Off by
+    /// default; meaningless without `--verify`. Independent of
+    /// `--zero-fill-missing`.
+    #[arg(long)]
+    keep_on_hash_mismatch: bool,
+
     /// Without `--deleted`: one or more source paths in the repository
     /// followed by the target directory. With `--deleted <id>`: just the
     /// target directory.
     #[arg(required = true, num_args = 1.., value_name = "PATH")]
     paths: Vec<PathBuf>,
+}
+
+/// Read-only restore configuration, threaded through the whole call chain
+/// instead of separate bool parameters - see the corresponding
+/// [`RestoreArgs`] flags for what each one means.
+struct RestoreOptions {
+    overwrite: bool,
+    verify: bool,
+    zero_fill_missing: bool,
+    keep_on_hash_mismatch: bool,
+}
+
+/// Mutable counters accumulated across one whole restore run - see
+/// [`run_restore`]'s final summary/exit-code logic.
+#[derive(Default)]
+struct RestoreStats {
+    /// Every per-file/per-directory problem that doesn't affect the exit
+    /// code (a permission error, an existing file without `--overwrite`, a
+    /// missing source path, a name too long for the destination
+    /// filesystem, ...) - matches this project's existing, unchanged
+    /// behavior for these.
+    warnings: u64,
+    /// Files skipped (or kept, with `--zero-fill-missing`) because some of
+    /// their store data was missing or shorter than expected - unlike
+    /// `warnings`, causes the overall run to exit `FAILURE` (a deliberate
+    /// behavior change - see `docs/plans/restore-time-hash-verification.md`).
+    incomplete: u64,
+    /// Files skipped (or kept, with `--keep-on-hash-mismatch`) because
+    /// `--verify` found a chunk's content hash didn't match what was
+    /// recorded - also causes the overall run to exit `FAILURE`.
+    corrupted: u64,
 }
 
 /// Restores one or more repository paths to a real filesystem directory.
@@ -94,7 +153,13 @@ pub fn run_restore(repo: &Path, args: RestoreArgs) -> ExitCode {
     };
     let data_store = LongTermStore::new(repository.data_dir(), true);
 
-    let mut warnings = 0u64;
+    let options = RestoreOptions {
+        overwrite: args.overwrite,
+        verify: args.verify,
+        zero_fill_missing: args.zero_fill_missing,
+        keep_on_hash_mismatch: args.keep_on_hash_mismatch,
+    };
+    let mut stats = RestoreStats::default();
     if let Some(id) = args.deleted {
         if let Err(msg) = restore_deleted(
             &conn,
@@ -102,8 +167,8 @@ pub fn run_restore(repo: &Path, args: RestoreArgs) -> ExitCode {
             id,
             args.recursive,
             target,
-            args.overwrite,
-            &mut warnings,
+            &options,
+            &mut stats,
         ) {
             eprintln!("error: {msg}");
             return ExitCode::FAILURE;
@@ -114,26 +179,16 @@ pub fn run_restore(repo: &Path, args: RestoreArgs) -> ExitCode {
             let source_label = source.to_string_lossy();
             match db::resolve_path(&conn, &source_label) {
                 Ok(Some(entry)) => match entry.kind {
-                    db::EntryKind::Dir => restore_dir(
-                        &conn,
-                        &data_store,
-                        &entry,
-                        target,
-                        args.overwrite,
-                        &mut warnings,
-                    ),
-                    db::EntryKind::File => restore_file(
-                        &conn,
-                        &data_store,
-                        &entry,
-                        target,
-                        args.overwrite,
-                        &mut warnings,
-                    ),
+                    db::EntryKind::Dir => {
+                        restore_dir(&conn, &data_store, &entry, target, &options, &mut stats)
+                    }
+                    db::EntryKind::File => {
+                        restore_file(&conn, &data_store, &entry, target, &options, &mut stats)
+                    }
                 },
                 Ok(None) => {
                     eprintln!("warning: source path '{source_label}' does not exist");
-                    warnings += 1;
+                    stats.warnings += 1;
                 }
                 Err(err) => {
                     eprintln!("error: {err}");
@@ -143,8 +198,26 @@ pub fn run_restore(repo: &Path, args: RestoreArgs) -> ExitCode {
         }
     }
 
-    if warnings > 0 {
-        println!("restore completed with {warnings} warning(s)");
+    if stats.incomplete > 0 || stats.corrupted > 0 {
+        if stats.incomplete > 0 {
+            println!(
+                "restore found {} file(s) with missing or short store data",
+                stats.incomplete
+            );
+        }
+        if stats.corrupted > 0 {
+            println!(
+                "restore found {} file(s) with a content hash mismatch",
+                stats.corrupted
+            );
+        }
+        if stats.warnings > 0 {
+            println!("restore also had {} other warning(s)", stats.warnings);
+        }
+        return ExitCode::FAILURE;
+    }
+    if stats.warnings > 0 {
+        println!("restore completed with {} warning(s)", stats.warnings);
     } else {
         println!("restore completed successfully");
     }
@@ -165,8 +238,8 @@ fn restore_deleted(
     id: i64,
     recursive: bool,
     target: &Path,
-    overwrite: bool,
-    warnings: &mut u64,
+    options: &RestoreOptions,
+    stats: &mut RestoreStats,
 ) -> Result<(), String> {
     let entry = db::get_tree_entry(conn, id)
         .map_err(|e| e.to_string())?
@@ -182,8 +255,8 @@ fn restore_deleted(
                 data_store,
                 &entry,
                 &target.join(&entry.name),
-                overwrite,
-                warnings,
+                options,
+                stats,
             );
         }
         db::EntryKind::Dir => {
@@ -195,7 +268,7 @@ fn restore_deleted(
                     "warning: failed to create directory '{}': {err}",
                     dir_target.display()
                 );
-                *warnings += 1;
+                stats.warnings += 1;
                 return Ok(());
             }
             if recursive {
@@ -211,7 +284,7 @@ fn restore_deleted(
                                     "warning: failed to create directory '{}': {err}",
                                     dest.display()
                                 );
-                                *warnings += 1;
+                                stats.warnings += 1;
                             }
                         }
                         db::EntryKind::File => {
@@ -220,8 +293,8 @@ fn restore_deleted(
                                 data_store,
                                 &descendant.entry,
                                 &dest,
-                                overwrite,
-                                warnings,
+                                options,
+                                stats,
                             );
                         }
                     }
@@ -238,8 +311,8 @@ fn restore_dir(
     data_store: &LongTermStore,
     entry: &db::TreeEntryRow,
     parent_target: &Path,
-    overwrite: bool,
-    warnings: &mut u64,
+    options: &RestoreOptions,
+    stats: &mut RestoreStats,
 ) {
     let dir_target = parent_target.join(&entry.name);
     // Directories are always create-if-missing/reuse-if-present - unlike
@@ -253,7 +326,7 @@ fn restore_dir(
             "warning: failed to create directory '{}': {err}",
             dir_target.display()
         );
-        *warnings += 1;
+        stats.warnings += 1;
         return;
     }
 
@@ -262,17 +335,17 @@ fn restore_dir(
             for child in children {
                 match child.kind {
                     db::EntryKind::Dir => {
-                        restore_dir(conn, data_store, &child, &dir_target, overwrite, warnings)
+                        restore_dir(conn, data_store, &child, &dir_target, options, stats)
                     }
                     db::EntryKind::File => {
-                        restore_file(conn, data_store, &child, &dir_target, overwrite, warnings)
+                        restore_file(conn, data_store, &child, &dir_target, options, stats)
                     }
                 }
             }
         }
         Err(err) => {
             eprintln!("warning: failed to list '{}': {err}", dir_target.display());
-            *warnings += 1;
+            stats.warnings += 1;
         }
     }
 
@@ -286,11 +359,11 @@ fn restore_file(
     data_store: &LongTermStore,
     entry: &db::TreeEntryRow,
     parent_target: &Path,
-    overwrite: bool,
-    warnings: &mut u64,
+    options: &RestoreOptions,
+    stats: &mut RestoreStats,
 ) {
     let file_target = parent_target.join(&entry.name);
-    restore_file_at(conn, data_store, entry, &file_target, overwrite, warnings);
+    restore_file_at(conn, data_store, entry, &file_target, options, stats);
 }
 
 fn restore_file_at(
@@ -298,12 +371,12 @@ fn restore_file_at(
     data_store: &LongTermStore,
     entry: &db::TreeEntryRow,
     file_target: &Path,
-    overwrite: bool,
-    warnings: &mut u64,
+    options: &RestoreOptions,
+    stats: &mut RestoreStats,
 ) {
     let mut open_options = OpenOptions::new();
     open_options.write(true);
-    if overwrite {
+    if options.overwrite {
         open_options.create(true).truncate(true);
     } else {
         open_options.create_new(true);
@@ -316,7 +389,7 @@ fn restore_file_at(
                 "warning: failed to create '{}': {err}",
                 file_target.display()
             );
-            *warnings += 1;
+            stats.warnings += 1;
             return;
         }
     };
@@ -330,43 +403,64 @@ fn restore_file_at(
                     "warning: failed to read chunk list for '{}': {err}",
                     file_target.display()
                 );
-                *warnings += 1;
+                stats.warnings += 1;
                 return;
             }
         },
     };
 
     for chunk in chunks {
-        let buf = match read_chunk_bytes(conn, data_store, chunk.chunk_id, chunk.length as u64) {
-            Ok((buf, ReadIntegrity::Complete)) => buf,
-            Ok((_, ReadIntegrity::Incomplete { missing_or_short })) => {
-                eprintln!(
-                    "warning: incomplete store data for '{}': {}",
-                    file_target.display(),
-                    missing_or_short.join(", ")
-                );
-                *warnings += 1;
+        // `complete` gates the hash check below: a chunk already known to
+        // be missing/short shouldn't also be reported as a hash mismatch -
+        // its (zero-filled-where-incomplete) buffer is expected not to
+        // match, for the reason already reported, not a second, distinct
+        // problem.
+        let (buf, complete) =
+            match read_chunk_bytes(conn, data_store, chunk.chunk_id, chunk.length as u64) {
+                Ok((buf, ReadIntegrity::Complete)) => (buf, true),
+                Ok((buf, ReadIntegrity::Incomplete { missing_or_short })) => {
+                    eprintln!(
+                        "warning: incomplete store data for '{}': {}",
+                        file_target.display(),
+                        missing_or_short.join(", ")
+                    );
+                    stats.incomplete += 1;
+                    if !options.zero_fill_missing {
+                        drop(file);
+                        let _ = fs::remove_file(file_target);
+                        return;
+                    }
+                    (buf, false)
+                }
+                Err(err) => {
+                    eprintln!(
+                        "warning: failed to read store data for '{}': {err}",
+                        file_target.display()
+                    );
+                    stats.warnings += 1;
+                    drop(file);
+                    let _ = fs::remove_file(file_target);
+                    return;
+                }
+            };
+        if complete && options.verify && !chunk_hash_matches(&buf, &chunk.hash) {
+            eprintln!(
+                "warning: content hash does not match for '{}'",
+                file_target.display()
+            );
+            stats.corrupted += 1;
+            if !options.keep_on_hash_mismatch {
                 drop(file);
                 let _ = fs::remove_file(file_target);
                 return;
             }
-            Err(err) => {
-                eprintln!(
-                    "warning: failed to read store data for '{}': {err}",
-                    file_target.display()
-                );
-                *warnings += 1;
-                drop(file);
-                let _ = fs::remove_file(file_target);
-                return;
-            }
-        };
+        }
         if let Err(err) = file.write_all(&buf) {
             eprintln!(
                 "warning: failed to write '{}': {err}",
                 file_target.display()
             );
-            *warnings += 1;
+            stats.warnings += 1;
             return;
         }
     }
@@ -484,6 +578,9 @@ mod tests {
                     overwrite: false,
                     deleted: None,
                     recursive: false,
+                    verify: false,
+                    zero_fill_missing: false,
+                    keep_on_hash_mismatch: false,
                     paths: vec![PathBuf::from("a.txt"), missing_target],
                 }
             ),
@@ -504,6 +601,9 @@ mod tests {
                 overwrite: false,
                 deleted: None,
                 recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![PathBuf::from("a.txt"), target.clone()],
             },
         );
@@ -531,6 +631,9 @@ mod tests {
                 overwrite: false,
                 deleted: None,
                 recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![PathBuf::from("empty.txt"), target.clone()],
             },
         );
@@ -555,6 +658,9 @@ mod tests {
                 overwrite: false,
                 deleted: None,
                 recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![PathBuf::from(""), target.clone()],
             },
         );
@@ -588,6 +694,9 @@ mod tests {
                 overwrite: false,
                 deleted: None,
                 recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![PathBuf::from(""), target.clone()],
             },
         );
@@ -609,6 +718,9 @@ mod tests {
                 overwrite: false,
                 deleted: None,
                 recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![PathBuf::from("a.txt"), target.clone()],
             },
         );
@@ -631,6 +743,9 @@ mod tests {
                 overwrite: true,
                 deleted: None,
                 recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![PathBuf::from("a.txt"), target.clone()],
             },
         );
@@ -651,6 +766,9 @@ mod tests {
                 overwrite: false,
                 deleted: None,
                 recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![PathBuf::from("missing.txt"), target],
             },
         );
@@ -687,6 +805,9 @@ mod tests {
                 overwrite: false,
                 deleted: Some(id),
                 recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![target.clone()],
             },
         );
@@ -725,6 +846,9 @@ mod tests {
                 overwrite: false,
                 deleted: Some(sub_id),
                 recursive: true,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![target.clone()],
             },
         );
@@ -754,6 +878,9 @@ mod tests {
                 overwrite: false,
                 deleted: Some(id),
                 recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![target],
             },
         );
@@ -773,6 +900,9 @@ mod tests {
                 overwrite: false,
                 deleted: Some(1),
                 recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![PathBuf::from("extra"), target],
             },
         );
@@ -804,6 +934,9 @@ mod tests {
                 overwrite: false,
                 deleted: None,
                 recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
                 paths: vec![
                     PathBuf::from("normal.txt"),
                     PathBuf::from(&too_long_name),
@@ -821,6 +954,174 @@ mod tests {
         assert!(
             fs::read_dir(&target).unwrap().count() == 1,
             "only the normally-named file should have actually landed on disk"
+        );
+    }
+
+    /// Corrupts `a.txt`'s single stored chunk in place, keeping the same
+    /// length - same technique `check.rs`'s own hash-mismatch test uses, so
+    /// this specifically exercises the hash-mismatch path rather than the
+    /// missing/short-data one.
+    fn corrupt_stored_chunk_same_length(repo_root: &Path) {
+        let data_file = repo_root
+            .join("data")
+            .join("00")
+            .join("00")
+            .join("0000000000");
+        fs::write(&data_file, b"corrupted!!").unwrap();
+    }
+
+    #[test]
+    fn restore_without_verify_ignores_a_hash_mismatch() {
+        let (temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "a.txt", b"hello world", 0);
+        corrupt_stored_chunk_same_length(&repo_root);
+        let target = temp_dir.path().join("out");
+        fs::create_dir(&target).unwrap();
+
+        let exit = run_restore(
+            &repo_root,
+            RestoreArgs {
+                overwrite: false,
+                deleted: None,
+                recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
+                paths: vec![PathBuf::from("a.txt"), target.clone()],
+            },
+        );
+
+        assert_eq!(exit, ExitCode::SUCCESS, "--verify wasn't given");
+        assert_eq!(fs::read(target.join("a.txt")).unwrap(), b"corrupted!!");
+    }
+
+    #[test]
+    fn restore_with_verify_detects_a_hash_mismatch_deletes_the_output_and_fails() {
+        let (temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "a.txt", b"hello world", 0);
+        corrupt_stored_chunk_same_length(&repo_root);
+        let target = temp_dir.path().join("out");
+        fs::create_dir(&target).unwrap();
+
+        let exit = run_restore(
+            &repo_root,
+            RestoreArgs {
+                overwrite: false,
+                deleted: None,
+                recursive: false,
+                verify: true,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
+                paths: vec![PathBuf::from("a.txt"), target.clone()],
+            },
+        );
+
+        assert_eq!(exit, ExitCode::FAILURE);
+        assert!(!target.join("a.txt").exists());
+    }
+
+    #[test]
+    fn restore_with_verify_and_keep_on_hash_mismatch_keeps_the_output_but_still_fails() {
+        let (temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "a.txt", b"hello world", 0);
+        corrupt_stored_chunk_same_length(&repo_root);
+        let target = temp_dir.path().join("out");
+        fs::create_dir(&target).unwrap();
+
+        let exit = run_restore(
+            &repo_root,
+            RestoreArgs {
+                overwrite: false,
+                deleted: None,
+                recursive: false,
+                verify: true,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: true,
+                paths: vec![PathBuf::from("a.txt"), target.clone()],
+            },
+        );
+
+        assert_eq!(
+            exit,
+            ExitCode::FAILURE,
+            "still fails - just keeps the output"
+        );
+        assert_eq!(fs::read(target.join("a.txt")).unwrap(), b"corrupted!!");
+    }
+
+    /// Deletes `a.txt`'s single stored chunk's underlying data file
+    /// entirely - same technique `problems.rs`'s own missing-data tests
+    /// use, producing `ReadIntegrity::Incomplete` rather than a hash
+    /// mismatch.
+    fn delete_stored_chunk(repo_root: &Path) {
+        fs::remove_file(
+            repo_root
+                .join("data")
+                .join("00")
+                .join("00")
+                .join("0000000000"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn restore_with_missing_store_data_now_fails_deleting_the_partial_output() {
+        let (temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "a.txt", b"hello world", 0);
+        delete_stored_chunk(&repo_root);
+        let target = temp_dir.path().join("out");
+        fs::create_dir(&target).unwrap();
+
+        let exit = run_restore(
+            &repo_root,
+            RestoreArgs {
+                overwrite: false,
+                deleted: None,
+                recursive: false,
+                verify: false,
+                zero_fill_missing: false,
+                keep_on_hash_mismatch: false,
+                paths: vec![PathBuf::from("a.txt"), target.clone()],
+            },
+        );
+
+        assert_eq!(
+            exit,
+            ExitCode::FAILURE,
+            "behavior change: used to be SUCCESS with a warning"
+        );
+        assert!(!target.join("a.txt").exists());
+    }
+
+    #[test]
+    fn restore_with_zero_fill_missing_keeps_the_zero_filled_output_but_still_fails() {
+        let (temp_dir, repo_root) = init_repo();
+        seed_file(&repo_root, 0, "a.txt", b"hello world", 0);
+        delete_stored_chunk(&repo_root);
+        let target = temp_dir.path().join("out");
+        fs::create_dir(&target).unwrap();
+
+        let exit = run_restore(
+            &repo_root,
+            RestoreArgs {
+                overwrite: false,
+                deleted: None,
+                recursive: false,
+                verify: false,
+                zero_fill_missing: true,
+                keep_on_hash_mismatch: false,
+                paths: vec![PathBuf::from("a.txt"), target.clone()],
+            },
+        );
+
+        assert_eq!(
+            exit,
+            ExitCode::FAILURE,
+            "still fails - just keeps the output"
+        );
+        assert_eq!(
+            fs::read(target.join("a.txt")).unwrap(),
+            vec![0u8; b"hello world".len()]
         );
     }
 }

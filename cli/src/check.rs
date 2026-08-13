@@ -8,7 +8,7 @@ use store::{LongTermStore, ReadIntegrity};
 
 use db::ChunkInfo;
 
-use crate::chunk_store::read_chunk_bytes;
+use crate::chunk_store::{chunk_hash_matches, read_chunk_bytes};
 use crate::progress::Progress;
 
 #[derive(Args)]
@@ -181,12 +181,7 @@ fn check_chunk(conn: &Connection, data_store: &LongTermStore, chunk: &ChunkInfo)
         return 1;
     }
 
-    let mut hash = [0u8; 20];
-    blake3::Hasher::new()
-        .update(&buf)
-        .finalize_xof()
-        .fill(&mut hash);
-    if hash.as_slice() != chunk.hash.as_slice() {
+    if !chunk_hash_matches(&buf, &chunk.hash) {
         println!("BAD chunk {}: content hash does not match", chunk.chunk_id);
         return 1;
     }

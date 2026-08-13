@@ -336,6 +336,38 @@ file without `--overwrite`) is logged and only that entry is skipped - the
 rest of the restore still runs to completion.
 
 ```bash
+backup restore --verify [--zero-fill-missing] [--keep-on-hash-mismatch] <source...> <target>
+```
+
+`--verify` checks each restored chunk's content hash against what's
+recorded in the metadata database (the same check `check` does) before
+writing it out - off by default, since it costs a second hash pass over
+every restored byte. **Both a hash mismatch and missing/short store data
+(the latter checked unconditionally, regardless of `--verify`) skip the
+affected file, delete its partial output, and make the whole `restore` run
+exit with a failure code** - unlike every other per-file problem (a
+permission error, an existing file without `--overwrite`, ...), which stays
+a warning that doesn't affect the exit code.
+
+**This is a behavior change**: a `restore` affected by missing/short store
+data used to exit successfully (just printing a warning); it now exits with
+a failure code even without ever passing `--verify`. A script/cron job
+relying on the old "restore always exits 0" behavior is affected.
+
+Two independent flags keep the output anyway instead of deleting it, for
+when partial data might still be useful:
+
+- `--zero-fill-missing`: for missing/short store data - the affected range
+  reads as zero bytes (same trade-off as `mount --zero-fill-missing`: once
+  this is on, there's no way to tell zero-filled bytes from real ones in
+  the restored file).
+- `--keep-on-hash-mismatch`: for a `--verify` hash mismatch - keeps the
+  file's content even though it doesn't match what was recorded.
+
+Either, both, or neither can be given; neither changes whether the run
+still exits with a failure code, only whether the file is left on disk.
+
+```bash
 backup restore --deleted <id> <target>
 backup restore --deleted <id> --recursive <target>
 ```

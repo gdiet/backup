@@ -1,6 +1,9 @@
 # Optional chunk-hash verification during `restore` (and other read commands)
 
-**Status**: design decided, ready to implement (see "Decisions" below) - not yet built.
+**Status**: implemented. `restore` has `--verify` (hash-check, off by default), plus two
+independent "keep the output anyway" overrides (`--zero-fill-missing` for missing/short data,
+`--keep-on-hash-mismatch` for a verify failure) - see "Implementation (done)" at the bottom for
+exactly what changed and where.
 
 **Trigger**: today, verifying that stored chunk bytes still match their recorded content hash only
 happens via a separate `backup check` run. `restore` already reads every chunk it writes out but
@@ -110,23 +113,37 @@ exits 0, warnings are only in the text output" behavior will start seeing `FAILU
 that has missing store data, even without ever passing `--verify`. Needs a call-out in the
 changelog/README, not just the new-flag documentation.
 
-## Suggested shape for a first implementation pass
+## Implementation (done)
 
-1. Add a `--verify`/`--verify-hashes` flag to `restore`'s `RestoreArgs`, plus the two independent
-   override flags (`--zero-fill-missing`, `--keep-on-hash-mismatch`) from the table above.
-2. In `restore_file_at`'s per-chunk loop (`restore.rs:339-363`):
-   - When `--verify` is set, hash the buffer the same way `check_chunk` does and compare against
-     `chunk.hash` right after the existing `ReadIntegrity::Complete` match arm, before writing it
-     out.
-   - Replace the unconditional `fs::remove_file` calls (`restore.rs:349-350` and the hash-mismatch
-     equivalent) with a check against the relevant override flag.
-   - Track two separate counters (`incomplete`/`corrupted`, or similar - distinct from the existing
-     `warnings`) so the final message and exit code can report/react to each kind distinctly, even
-     though both now map to `FAILURE`.
-3. Update `restore.rs:146-151`'s final summary/exit-code logic: `FAILURE` if either counter is
-   nonzero, not just on a hard error as today.
-4. Extract the actual hash-compare logic (currently inlined in `check_chunk`) into a small shared
-   helper in `chunk_store.rs` (next to `read_chunk_bytes`) so `check.rs` and `restore.rs` call the
-   same code instead of duplicating the blake3 XOF/truncation details.
-5. README: document the new flags, and prominently call out the exit-code behavior change for the
-   pre-existing missing-data case.
+1. `chunk_store.rs` gained `pub(crate) fn chunk_hash_matches(buf: &[u8], expected: &[u8]) -> bool`
+   next to `read_chunk_bytes` - the blake3 XOF/truncation logic extracted out of `check.rs`'s
+   `check_chunk`, which now calls it too. One code path, not two, per the plan above.
+2. `RestoreArgs` gained `--verify`, `--zero-fill-missing`, `--keep-on-hash-mismatch` (all
+   `bool`, off by default). Rather than threading four more parameters through the whole
+   `restore_deleted`/`restore_dir`/`restore_file`/`restore_file_at` call chain, introduced two
+   small structs: `RestoreOptions` (the read-only flags) and `RestoreStats` (`warnings`,
+   `incomplete`, `corrupted` - replacing the old bare `warnings: &mut u64` parameter), both passed
+   by reference instead of the old `overwrite: bool`/`warnings: &mut u64` pair.
+3. `restore_file_at`'s per-chunk loop: `read_chunk_bytes`'s result now also reports whether the
+   read was `complete` (not just the buffer) - a chunk already flagged `incomplete` deliberately
+   skips the hash check entirely (its zero-filled-where-missing buffer is *expected* not to match,
+   for the reason already reported, not a second, distinct "corrupted" finding). On a real hash
+   mismatch (`--verify` on, read complete, hash doesn't match), same skip-and-delete-unless-
+   overridden shape as the missing-data path, just a different counter and message.
+4. `run_restore`'s final summary: `FAILURE` (with a specific message per kind) if `incomplete > 0`
+   or `corrupted > 0`, checked *before* the pre-existing `warnings`-only branch - so the original
+   "N warning(s), still `SUCCESS`" behavior for every other kind of per-file problem (permission
+   errors, an existing file without `--overwrite`, a too-long name, a missing source path) is
+   completely unchanged, confirmed by every pre-existing test in `restore.rs` still passing
+   unmodified.
+5. README.md's "Restore Files" section documents the new flags and prominently calls out the
+   missing-data exit-code behavior change.
+
+Verified: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace`, `cargo doc --no-deps --workspace` all clean, plus a manual smoke test
+against the real `backup` binary (intact data, a same-length corrupted chunk, and a fully missing
+chunk, each with and without the relevant override flag) confirming the exit codes and on-disk
+output match this document exactly. New unit tests in `restore.rs`: hash mismatch ignored without
+`--verify`; detected and deletes output with `--verify`; kept with `--verify
+--keep-on-hash-mismatch`; missing data now fails (behavior change) and deletes output; kept
+zero-filled with `--zero-fill-missing`.
