@@ -57,23 +57,56 @@ Ordered by how directly each depends on what's now confirmed vs. still open. Non
 implemented yet - each item below still needs its own real prototype-and-measure pass before being
 trusted, per this project's own "verify, don't assume" convention.
 
+**Recommended starting point: item 2, not item 1** - despite item 1 being listed first (it targets
+the more directly-measured trigger) and having a clean existing precedent to mirror
+(`run_writer`), item 2 is the safer *first* slice for three independent reasons: (a) no identified
+performance-regression risk (see item 1's own risk below - item 2 has no equivalent), (b) it only
+touches `mount.rs`, which is the *worse* performer today in every scenario measured so far, so
+there's nothing to regress; item 1 touches `store.rs`'s hot path, which already performs well in 3
+of the 4 measured drive-x-file-size quadrants (only the slow-drive/large-file one is bad) - a
+subtle bug there risks breaking something that currently works, and (c) the gap item 2 addresses
+(mount's small-file write throughput, ~7x-18x slower than a plain copy/`store`) shows up on *every*
+drive speed measured so far (both fast-ssd-C and slow-usb-I), while item 1's gap is specific to
+slow/cheap destination drives - item 2 plausibly matters to more real workloads more of the time.
+**"Starting with item 2" concretely means starting with items 3 and 4 below** (re-verifying the
+worker-pool-exhaustion rationale, and working out the concurrent-mutation correctness question) -
+those are real, unresolved design work, not optional preamble to skip before writing the pool
+itself.
+
 1. **Give `store` a single dedicated physical-chunk-writer thread, decoupled from `--concurrency`**
    (mirrors `run_writer`'s existing shape, applied one level lower). Concretely: `resolve_chunk`'s
    dedup-miss branch stops calling `chunk_store::write_chunk_from_cache` inline; instead it sends
    the chunk's bytes (still as a `WriteCache`, not materialized to a `Vec<u8>` - keep the existing
    bounded-memory property) over a channel to one new dedicated writer thread, which drains it and
    returns the resulting extents (needs a response channel or a shared slot per in-flight chunk,
-   since the calling worker still needs those extents to build its `ChunkRef::New`). This is the
-   highest-confidence item here: it directly targets the specific, now-measured trigger
-   (`--concurrency`'s thread count reaching `LongTermStore::write`), on the exact workload
-   (large files, slow drive) where the regression was confirmed. **Verify**: re-run the
-   `--concurrency` sweep from `docs/plans/store-vs-mount-slow-drive-write-path.md` against this
-   changed `store` and confirm `--concurrency 4`'s wall-clock now tracks close to the
-   already-measured `--concurrency 1` number (139.4s) instead of the current default's 309.4s -
-   i.e. that decoupling the write thread, not just lowering `--concurrency`, is what closes the
-   gap. Also re-run the small-file profile to confirm this doesn't regress `store`'s existing
-   ~18x small-file advantage (a single writer thread could plausibly become the new bottleneck
-   there if per-chunk handoff overhead is too high - worth checking, not assumed safe).
+   since the calling worker still needs those extents to build its `ChunkRef::New`). This directly
+   targets the specific, now-measured trigger (`--concurrency`'s thread count reaching
+   `LongTermStore::write`), on the exact workload (large files, slow drive) where the regression
+   was confirmed.
+   - **Risk, not just a "verify" footnote: this could regress `store`'s existing fast-SSD
+     small-file advantage.** That advantage (1.75s vs. mount's 31.2s, ~18x, on `fast-ssd-C`) comes
+     from `store`'s *whole* pipeline running in parallel today, physical writes included - forcing
+     every one of potentially thousands of small chunk writes through one thread removes that,
+     and `LongTermStore::write` opens a brand-new file handle on *every single call* (no
+     handle-caching, unlike the read side - see its own doc comment), so what's lost isn't
+     throughput headroom (a fast SSD has plenty) but the *overlap* between N threads' open+seek
+     +write+close cycles. Whether that overlap was actually contributing meaningfully to the
+     1.75s, or whether that number is dominated by something else (SQLite/dedup-lookup overhead,
+     which stays parallel either way), is genuinely unknown until measured - don't assume safe.
+   - **Possible mitigation, not yet evaluated**: make the physical-writer thread count a small
+     tunable (e.g. `--store-write-threads`, default 1) instead of hardcoding exactly one -
+     precedent already exists for exposing this kind of I/O-shape knob separately from
+     `--concurrency` (`--store-io-parallelism`). Lets a slow-drive user keep the safe default while
+     a fast-SSD user with a many-small-file workload can opt back into more write parallelism if
+     benchmarking shows they need it - at the cost of one more flag to explain, and it doesn't
+     remove the need to actually benchmark the default.
+   - **Verify**: re-run the `--concurrency` sweep from
+     `docs/plans/store-vs-mount-slow-drive-write-path.md` against this changed `store` and confirm
+     `--concurrency 4`'s wall-clock now tracks close to the already-measured `--concurrency 1`
+     number (139.4s) instead of the current default's 309.4s. **Just as importantly**, re-run the
+     small-file profile on `fast-ssd-C` and confirm it doesn't regress below today's 1.75s by a
+     meaningful margin - this is the one measurement in the whole plan most likely to produce an
+     unpleasant surprise, given the risk above.
 2. **Give `persist_worker` a small worker pool for chunk/hash, keeping physical writes on one
    thread** - the mount-side mirror of item 1, and the one this doc originally proposed, now
    scoped more precisely: don't pool the whole `PersistJob` (chunk + hash + physical write)
@@ -81,8 +114,12 @@ trusted, per this project's own "verify, don't assume" convention.
    chunk/hash stage, and keep funneling the actual `LongTermStore::write` calls through the
    existing single `persist_worker` thread (or a still-single, differently-shaped writer thread
    if item 1's redesign produces a reusable shared writer component both commands can use - worth
-   checking once item 1 exists, rather than building two separate one-off writer threads).
-   **Verify**: re-run the small-file profile from `docs/plans/implemented/
+   checking once item 1 exists, rather than building two separate one-off writer threads). Unlike
+   item 1, no fast-SSD regression risk has been identified for this one: it only adds parallelism
+   to a stage (`mount`'s chunk/hash) that's currently compute-saturated on a single thread with
+   idle cores sitting next to it, and it doesn't touch the physical-write shape (already a single
+   thread today, staying a single thread) - so there's no existing behavior on the write side to
+   regress. **Verify**: re-run the small-file profile from `docs/plans/implemented/
    copy-performance-comparison.md` and confirm mount's write time moves toward `store`'s (currently
    ~18x apart); re-run the large-file/slow-drive profile too, specifically to confirm this
    *doesn't* reintroduce the item-1 regression on the mount side (a pool feeding a single writer
