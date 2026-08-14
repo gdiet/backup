@@ -184,12 +184,13 @@ repository, confirmed all three documented behaviors -
 One incidental, unrelated finding along the way: `reclaim-space` against a repository with an
 actively-open `mount --read-write` elsewhere failed with a confusing "found a pending
 write-ahead-log file ... run `db compact`" error instead of the expected lock message - not a
-locking bug. `reclaim-space` runs an automatic `db backup` *before* even opening the repository
-for its own purposes (`cli/src/reclaim_space.rs:41-47`, `--no-backup` skips it), and that backup
-step opens read-only (`db::open_repository_read_only`), which correctly refuses a live,
-uncheckpointed WAL - it just doesn't yet mention "or another process currently has it open" as a
-possible cause, only suggesting `db compact` (not actually the right remedy when the real cause is
-a concurrent writer). Low-severity message-wording gap, not filed as its own follow-up.
+locking bug, `RepoLock` itself was already correct. `reclaim-space` ran its automatic `db backup`
+step *before* acquiring the lock, and that backup step opens read-only
+(`db::open_repository_read_only`), which correctly refuses a live, uncheckpointed WAL - it just
+didn't mention "or another process currently has it open" as a possible cause, only suggesting
+`db compact` (not actually the right remedy when the real cause is a concurrent writer). Fixed
+(not just documented) in `docs/plans/implemented/reclaim-space-misleading-wal-error.md`: the lock
+is now acquired first, so a concurrent writer is always caught by the correct message.
 
 ## Implementation (done)
 

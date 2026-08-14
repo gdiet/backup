@@ -37,26 +37,16 @@ pub struct ReclaimSpaceArgs {
 /// Backs up the database first by default (matching the Scala tool's
 /// `reclaimSpace`, the one default worth keeping - this is the one genuinely
 /// irreversible operation of the whole command set; `del` alone never is).
+///
+/// Acquires the repository lock *before* that backup step (and before
+/// opening the repository at all) rather than after - see
+/// `docs/plans/implemented/reclaim-space-misleading-wal-error.md`: the
+/// backup opens the database read-only, which correctly refuses a live,
+/// uncheckpointed `-wal` left by a concurrent writer, but that surfaced as a
+/// confusing "run `db compact`" error instead of the correct, actionable
+/// "meta/.lock is held" one. Locking first means a concurrent writer is
+/// always caught by the right message, before anything else runs.
 pub fn run_reclaim_space(repo: &Path, args: ReclaimSpaceArgs) -> ExitCode {
-    if !args.no_backup {
-        let exit = crate::db_maintenance::run_backup(repo);
-        if exit != ExitCode::SUCCESS {
-            eprintln!("error: aborting reclaim-space: backup failed");
-            return exit;
-        }
-    }
-
-    let repository = match db::open_repository(repo) {
-        Ok(r) => r,
-        Err(err) => {
-            eprintln!(
-                "error: failed to open repository at {}: {err}",
-                repo.display()
-            );
-            return ExitCode::FAILURE;
-        }
-    };
-
     // Exclusive against every other command that physically
     // allocates/relocates store bytes or changes what byte ranges are free
     // to reuse (`store`, `mount --read-write`, `compact-store`, and a
@@ -76,6 +66,25 @@ pub fn run_reclaim_space(repo: &Path, args: ReclaimSpaceArgs) -> ExitCode {
         }
         Err(err) => {
             eprintln!("error: failed to acquire the repository lock: {err}");
+            return ExitCode::FAILURE;
+        }
+    };
+
+    if !args.no_backup {
+        let exit = crate::db_maintenance::run_backup(repo);
+        if exit != ExitCode::SUCCESS {
+            eprintln!("error: aborting reclaim-space: backup failed");
+            return exit;
+        }
+    }
+
+    let repository = match db::open_repository(repo) {
+        Ok(r) => r,
+        Err(err) => {
+            eprintln!(
+                "error: failed to open repository at {}: {err}",
+                repo.display()
+            );
             return ExitCode::FAILURE;
         }
     };
@@ -242,6 +251,38 @@ mod tests {
                 }
             ),
             ExitCode::FAILURE
+        );
+    }
+
+    /// Regression test for `docs/plans/implemented/
+    /// reclaim-space-misleading-wal-error.md`: with the lock already held
+    /// and `--no-backup` *not* given, the lock check must still be what
+    /// fails this - not the automatic backup step tripping over the other
+    /// holder's live `-wal` first. Asserted indirectly (no captured stderr
+    /// text in this test harness): if the backup ran at all, it would have
+    /// left a file under `meta/backups/`, backup failure or not.
+    #[test]
+    fn run_reclaim_space_checks_the_lock_before_attempting_the_automatic_backup() {
+        let (_temp_dir, repo_root) = init_repo();
+        let _lock = RepoLock::acquire(&db::meta_dir(&repo_root), Duration::ZERO)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            run_reclaim_space(
+                &repo_root,
+                ReclaimSpaceArgs {
+                    keep_days: 0,
+                    no_backup: false,
+                    lock_wait_secs: 0,
+                }
+            ),
+            ExitCode::FAILURE
+        );
+        let backups_dir = db::meta_dir(&repo_root).join("backups");
+        assert!(
+            !backups_dir.exists(),
+            "the backup step must never have run at all"
         );
     }
 }
