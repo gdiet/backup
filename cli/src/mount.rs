@@ -708,10 +708,10 @@ struct Inner {
     disk_space: Mutex<DiskSpaceCache>,
 }
 
-/// Thin wrapper making [`Inner`] (shared with the background persist
-/// thread, [`persist_worker`], via `Arc`) implement [`MountFilesystem`] -
-/// every method just forwards to the identically-signatured method on
-/// `Inner`.
+/// Thin wrapper making [`Inner`] (shared with the chunk/hash worker pool,
+/// [`persist_chunk_worker`], and the writer thread, [`persist_writer`],
+/// via `Arc`) implement [`MountFilesystem`] - every method just forwards
+/// to the identically-signatured method on `Inner`.
 struct DedupFs(Arc<Inner>);
 
 /// Per-open-file write-side state, keyed by tree id (the same id used as
@@ -730,7 +730,8 @@ struct FileWriteState {
     /// `0`.
     dirty: bool,
     /// `true` while this entry's persist is either queued or actually
-    /// running on the background thread ([`persist_worker`]) - `cache` is
+    /// running on a chunk/hash pool worker ([`persist_chunk_worker`]) -
+    /// `cache` is
     /// `None` at that point (already handed off), but the entry itself
     /// stays in the map for the whole persist rather than being removed
     /// upfront. This matters because closing a file descriptor does *not*
@@ -1079,8 +1080,8 @@ impl Inner {
         // why a racing `read`/`write`/`truncate`/`getattr` on this same
         // `tree_id` must keep observing *something* consistent (blocking
         // via `wait_while_persisting`) until [`Inner::finish_persisting`]
-        // clears it - which now happens on the background persist thread
-        // (see `persist_worker`), not necessarily this one.
+        // clears it - which now happens on a chunk/hash pool worker (see
+        // `persist_chunk_worker`), not necessarily this one.
         let cache = state.cache.take().expect("dirty implies a live cache");
         state.persisting = true;
         let mtime_millis = state.mtime_millis;
@@ -1145,8 +1146,8 @@ impl Inner {
         // No open handle for this file (a bare `truncate(2)`/`O_TRUNC`
         // without a held write handle) - nothing will ever call `release`
         // to persist this later, so this hands it to the background
-        // persist thread itself (same pipeline a normal close uses - see
-        // `enqueue_persist`/`persist_worker`). Registers a persisting-only
+        // persist pipeline itself (same pipeline a normal close uses - see
+        // `enqueue_persist`/`persist_chunk_worker`). Registers a persisting-only
         // placeholder in the *same* lock hold as the check above (so no
         // concurrent `open`/`register_open` for this exact id can slip in
         // between) before dropping the lock - without this, a racing
@@ -3234,8 +3235,8 @@ mod tests {
 
     /// Writes `BACKUP_BENCH_LARGE_FILES` large files (default 6, 50 MB
     /// each) with `write_cache_mb: 1` (forces near-immediate spill for
-    /// every byte) against a datastore throttled slow enough that
-    /// `persist_worker` can't keep up, sampling the mount's spill
+    /// every byte) against a datastore throttled slow enough that the
+    /// persist pipeline can't keep up, sampling the mount's spill
     /// directory's on-disk size after each file closes - demonstrating
     /// directly how much spilled-but-unpersisted data can accumulate at
     /// once under whatever gate `enqueue_persist` currently uses.
@@ -3351,8 +3352,8 @@ mod tests {
         let write_loop = overall_start.elapsed();
 
         // `fusermount3 -u` itself only requests the unmount - it doesn't
-        // wait for `on_unmount`'s drain (persist_worker fully catching
-        // up) to finish. That happens inside `mountfs::mount`'s own
+        // wait for `on_unmount`'s drain (the persist pipeline fully
+        // catching up) to finish. That happens inside `mountfs::mount`'s own
         // blocking call, on the background thread `handle` joins below -
         // timed separately, since it's the number that actually answers
         // "how long until every closed file's bytes are safely durable".
