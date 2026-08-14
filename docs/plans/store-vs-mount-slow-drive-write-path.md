@@ -1,7 +1,70 @@
 # Open question: why is `store`'s physical chunk-write path slower than mount's on a slow drive?
 
-**Status**: open question, not investigated beyond ruling out the first (wrong) guess. No code
-changed. Not a plan to implement anything yet - a note to come back to before assuming a cause.
+**Status**: root trigger identified and empirically confirmed (2026-08-14, real `slow-usb-I`
+hardware, see "Update" below) - it's `--concurrency` (how many distinct OS threads ever call
+`LongTermStore::write`), not `--store-io-parallelism` (how many may be *inside* a write call at
+once) or physical allocation layout (ruled out by re-reading `SpaceAllocator::reserve` - see
+below). The exact device/driver-level reason multi-threaded write-call churn costs so much more on
+this hardware than single-threaded churn is still not confirmed via OS-level tracing (no `procmon`
+available in the environment this was investigated in) - but the trigger is now precise enough to
+act on. See `docs/plans/persist-worker-thread-pool.md` for what this changes about that plan.
+
+## Update (2026-08-14): resolved via a `--concurrency` sweep on real `slow-usb-I` hardware
+
+Run on the same machine (`julius` - confirmed by matching CPU model/core count) and drive
+(`I:`, the same 3.75 GB USB stick) as the original measurement, same profile (4 files x 150 MiB
+random content, source on fast `C:`, repository on `I:`), release build. **1 rep per point, not
+median-of-3** (time budget) - less statistically solid than the original benchmark, but the effect
+size and monotonic trend below are large enough not to be noise:
+
+| `--concurrency` | wall-clock |
+|---|---:|
+| 1 | 139.4s |
+| 2 | 242.4s |
+| 4 (default on this 4-logical-core machine) | 309.4s |
+
+309.4s vs. the original run's 304.8s at default concurrency confirms this reproduces cleanly on
+the same hardware. **`--concurrency 1` alone closes almost the entire gap to mount's 126.0s**
+(139.4s, ~2.2x faster than default, within ~11% of mount) - and the trend across 1/2/4 is a smooth
+gradient, not a step, consistent with "more threads sharing the write path" as the actual
+variable, not some threshold effect.
+
+This was the *other* knob from the one already swept (`--store-io-parallelism`, ruled out
+earlier below) - the two are easy to conflate but control different things: `--store-io-parallelism`
+gates how many `LongTermStore::write` calls may be *executing concurrently* via a semaphore, without
+changing which or how many distinct OS threads take turns making those calls over the run.
+`--concurrency` controls the size of the rayon pool that does read+chunk+hash+write *inline, per
+file* (`cli::store::resolve_chunk` calls `chunk_store::write_chunk_from_cache` directly on whichever
+worker thread is processing that file) - so it's the one that actually determines how many distinct
+threads ever call `LongTermStore::write` over the course of a run. `--store-io-parallelism 1` still
+lets all 4 worker threads take turns calling `write` (never concurrently, but still 4 different
+threads across the run); `--concurrency 1` is the only setting where literally one thread issues
+every single write call for the whole run - the same shape mount's `persist_worker` already has.
+That structural match plausibly explains why their timings converge (139.4s vs. 126.0s).
+
+**Allocation-layout fragmentation, ruled out by re-reading the code** (a candidate this doc listed
+below before this update): `chunk_store::write_chunk_from_cache` calls `SpaceAllocator::reserve`
+once per chunk, which is a single-`Mutex`-protected bump allocator - it always hands out the
+lowest available gap or extends the trailing region, so the *sequence of extents handed out* is
+monotonically non-decreasing in store address space regardless of how many threads call `reserve`
+concurrently. A fresh repository (no `reclaim-space`-left gaps, true for this benchmark) has no
+gaps to complicate that further. So concurrent chunking workers cannot spatially scatter each
+file's bytes across the store any more than one worker would - ruling this candidate out
+definitively rather than just deprioritizing it.
+
+**What's still open**: *why* multiple threads calling `LongTermStore::write` (each opening a fresh
+file handle per call - see its own "Thread safety" doc comment) costs more on this device than one
+thread doing the same total work serially, given the allocator already guarantees the *logical*
+write-position sequence is identical either way. The leading hypothesis, not independently
+confirmed: true OS-thread parallelism has no ordering guarantee on which write's syscall actually
+lands on the device first, so even though positions are allocated monotonically, concurrent workers
+can complete their writes to the disk *out of that order* - and a cheap USB flash controller
+optimized for strictly sequential writes may fall back to much slower handling once it sees any
+reordering, even among writes that are only slightly out of sequence. Confirming this would need
+device-level I/O tracing (Windows `Process Monitor` or equivalent - not available in the
+environment this was investigated in), so it's recorded as the most plausible mechanism, not a
+proven one. Doesn't block acting on the now-confirmed trigger (`--concurrency`/thread count) either
+way - see the actionable items in `docs/plans/persist-worker-thread-pool.md`.
 
 ## The observation
 
@@ -35,35 +98,32 @@ the cause is, it isn't threads racing each other for the disk.
 parallelism settings) is in the same ballpark as mount's (8.08s) - neither is CPU-bound here, both
 are overwhelmingly wall-clock-vs-CPU I/O-wait.
 
-## What's still open
+## What was still open at this point (superseded - see "Update" above)
 
-Something about how `store` physically writes chunk bytes to the data store costs more per byte or
-per chunk on this slow device than mount's write path does, at matched concurrency. Candidates not
-yet checked:
+Kept for the historical record of what was actually checked and why, not as current guidance -
+the "Update" section above supersedes this. Candidates considered at the time, and how the
+`--concurrency` sweep resolved each:
 
-- **Write call pattern**: does `store`'s `chunk_store::write_chunk_from_cache` path do more/smaller
-  `write()` calls, more `fsync`/flush operations, or open the backing file more often per chunk
-  than whatever mount's `persist_worker` path does for the same chunk? A slow USB stick is
-  disproportionately sensitive to per-syscall overhead (each one can cost tens to hundreds of ms),
-  so a difference invisible on a fast SSD could dominate here.
-- **Allocation pattern**: does `store`'s target-size CDC chunking (default `2^20` = 1 MiB, see
-  `init --cdc-target-size-bits`) produce more chunks, or chunks laid out less sequentially on the
-  backing store files, than the mount write path does for the same source content? More/smaller
-  physical writes, or more seeking between them, would hit a slow USB stick hard even at the same
-  total byte count.
-- **The single SQLite writer thread** (`run_writer` in `cli/src/store.rs`): CPU time doesn't
-  implicate it, but wall-clock-vs-CPU doesn't rule out SQLite-side `fsync`/WAL-checkpoint I/O
-  either - worth checking whether `store`'s batching (`WRITE_BATCH_SIZE`/`WRITE_BATCH_IDLE_TIMEOUT`)
-  produces a different commit/fsync frequency than mount's own metadata-write path for the same
-  workload.
-- **Read side**: source files live on the fast SSD in both scenarios, so source reads shouldn't
-  differ - but not explicitly confirmed source I/O isn't somehow serialized differently between
-  the two code paths.
+- **Write call pattern** - resolved as a non-factor, not by measurement but by re-reading the
+  code: `mount`'s persist path calls the exact same `chunk_store::write_chunk_from_cache` /
+  `LongTermStore::write` functions `store` does (`cli/src/mount.rs`'s `resolve_persist_chunk`),
+  same `DRAIN_PIECE_SIZE` piece size, same no-write-handle-caching behavior on both sides - there
+  is no *pattern* difference to find here, the two paths are code-identical at this layer. The
+  actual difference is only ever *how many distinct threads* invoke that identical code, which is
+  what the "Update" section above confirms and quantifies.
+- **Allocation pattern** - ruled out definitively, see "Allocation-layout fragmentation, ruled out
+  by re-reading the code" in the "Update" section above.
+- **The single SQLite writer thread** - not re-investigated directly, but implicitly deprioritized:
+  the `--concurrency` sweep's effect size and monotonic trend are already fully explained by the
+  physical-write thread-count mechanism, leaving little room for a second, separately-timed SQLite
+  effect of comparable magnitude. Worth re-checking only if item 1 in
+  `docs/plans/persist-worker-thread-pool.md` (decoupling `store`'s physical write onto its own
+  thread) doesn't fully close the gap in practice.
+- **Read side** - not re-investigated; still an untested assumption, though now a much less likely
+  one given how cleanly the `--concurrency` sweep's numbers already explain the observed gap.
 
-## Suggested next step
-
-Before guessing further: instrument (or straceish-profile, e.g. Windows `Process Monitor` filtered
-to the repository's data files) one `store` run and one mount-write run of the identical
-large-file profile on the slow drive, and directly compare syscall counts/sizes/timing against the
-store's backing files - the answer is almost certainly visible there rather than guessable from
-wall-clock numbers alone.
+The original "Suggested next step" here (OS-level I/O tracing via `Process Monitor` or equivalent)
+was never actually executed - no such tool was available in the environment this ended up being
+investigated in - and turned out not to be necessary to identify the actionable trigger. It would
+still be the way to confirm the "Update" section's leading hypothesis for *why* thread count
+matters at the device level, if that's ever worth pinning down precisely.

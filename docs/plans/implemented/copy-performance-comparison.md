@@ -6,10 +6,11 @@ methodology" for what was scaled down or added and why. One finding is action-wo
 well-evidenced (mount's small-file write path costing ~7x a plain copy even with zero dedup
 benefit on either side - CPU-saturated on its single `persist_worker` thread); one is a confirmed,
 real regression whose *cause* turned out not to be what a first guess suggested (`store`'s large
-files are slower than mount's on a slow drive, but directly testing `--store-io-parallelism`
-ruled out thread contention as the reason - the actual cause is still open, see
-`docs/plans/store-vs-mount-slow-drive-write-path.md`). Neither is fixed - this document is the
-measurement, not the fix.
+files are slower than mount's on a slow drive - directly testing `--store-io-parallelism`
+ruled out concurrent-write contention as the reason; a follow-up `--concurrency` sweep on the same
+hardware then found the actual trigger - see `docs/plans/store-vs-mount-slow-drive-write-path.md`,
+resolved 2026-08-14). Neither is fixed yet - this document is the measurement, not the fix; see
+`docs/plans/persist-worker-thread-pool.md` for the resulting actionable items.
 
 **Goal**: compare wall-clock performance across five workflows, each for two very different file
 profiles (many small files, few large files), to see whether the comparison surfaces a genuine
@@ -290,10 +291,15 @@ in every scenario measured**, no red flag per the plan's own top-priority check.
    > meaningful trend, and *none* of them come close to mount's 126.0s** - `parallelism=1` (fully
    > serialized physical writes, structurally the closest analogue to mount's single-threaded
    > writer) is just as slow as the 4-way default. This rules out concurrent-write contention as
-   > the explanation. **The real cause is still open** - something about `store`'s physical
-   > chunk-write path costs more per byte or per chunk on this slow device than mount's does, even
-   > at matched (or zero) concurrency; not investigated further here. Filed as its own question in
-   > `docs/plans/store-vs-mount-slow-drive-write-path.md` rather than guessed at further.
+   > the explanation. **Resolved as a follow-up (2026-08-14)**: not `--store-io-parallelism`
+   > (which only gates concurrent *execution*), but `--concurrency` (which determines how many
+   > distinct threads ever call `LongTermStore::write` at all, since `store` writes chunk bytes
+   > inline on whichever worker chunked them) - a `--concurrency` sweep on the same hardware found
+   > 139.4s/242.4s/309.4s at 1/2/4, `--concurrency 1` alone closing almost the entire gap to
+   > mount's 126.0s. Full writeup, including why this rules out physical allocation-layout
+   > fragmentation as an alternative explanation, in
+   > `docs/plans/store-vs-mount-slow-drive-write-path.md`; resulting actionable items in
+   > `docs/plans/persist-worker-thread-pool.md`.
 
 3. **Repeat `store` run without `--reference` "should cost about as much as the first" -
    contradicted, and by a lot, whenever the first run was disk-write-bound.** Prediction held only
