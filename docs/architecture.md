@@ -149,13 +149,15 @@ flowchart TD
     RP -->|"chunk + extent lookup\n(under conn lock)"| DB2["db::ordered_content_chunks\n+ db::chunk_extents"]
     RP -->|"disk I/O\n(lock released)"| CB["chunk_store::read_chunk_bytes_from_extents"]
     CB --> ST1["store::LongTermStore::read"]
-    DFS -->|"release (last close), dirty"| EQ["enqueue_persist\n(bounded mpsc queue,\ncapacity 4)"]
-    EQ --> PW["persist_worker\n(one background thread)"]
-    PW --> P["Inner::persist"]
+    DFS -->|"release (last close), dirty"| EQ["enqueue_persist\n(unbounded mpsc queue,\nbyte-budget backpressure)"]
+    EQ --> PCW["persist_chunk_worker pool\n(N threads, --persist-workers)"]
+    PCW --> P["Inner::persist"]
     P -->|re-chunk cache contents| SC["SpillingHashingChunker\ncli::spilling_chunker"]
     SC --> CDC["cdc::Chunker"]
-    P -->|dedup lookup + write| RPC["resolve_persist_chunk"]
-    RPC --> CS["chunk_store::write_chunk_from_cache"]
+    P -->|dedup lookup| RPC["resolve_persist_chunk"]
+    RPC -->|"hit: reuse id"| DB3["db::find_chunk"]
+    RPC -->|"miss: hand off bytes,\nblock for extents"| PW["persist_writer\n(one dedicated thread)"]
+    PW --> CS["chunk_store::write_chunk_from_cache"]
     CS --> ST2["store::LongTermStore::write"]
     P -->|commit record| DB["db::apply_backup_batch"]
 ```
@@ -174,13 +176,30 @@ flowchart TD
   potentially slow disk read would otherwise serialize every other
   thread's own (unrelated) database access behind it.
 - **`release`** on the last close of a dirty file hands the `WriteCache` off
-  to a bounded queue (`enqueue_persist`, capacity 4) instead of persisting
-  synchronously - `release` only blocks once that queue is already full.
-  One dedicated background thread (`persist_worker`) drains it, calling
-  **`Inner::persist`**, which re-chunks the cache's contents through the
-  same **`cli::spilling_chunker::SpillingHashingChunker`** +
-  **`cli::chunk_store::write_chunk_from_cache`** path `store` uses, then
-  commits via **`db::apply_backup_batch`**.
+  to an unbounded queue (`enqueue_persist`) instead of persisting
+  synchronously - `release` only blocks once
+  `--write-cache-mb`'s worth of not-yet-persisted bytes are already queued
+  (see `docs/plans/implemented/memory-pressure-backpressure.md`), not on a
+  fixed job count. A pool of **`persist_chunk_worker`** threads (sized by
+  `--persist-workers`, default one per CPU core) drains it, each calling
+  **`Inner::persist`** for its own job - re-chunking the cache's contents
+  through the same **`cli::spilling_chunker::SpillingHashingChunker`**
+  `store` uses, then resolving each chunk against the dedup index
+  (**`resolve_persist_chunk`**). Only a dedup *miss* touches the store's
+  physical write path at all, and even then not directly: the pool worker
+  hands the chunk's bytes to a single dedicated **`persist_writer`** thread
+  (via a one-shot response channel) and blocks on its own reply, rather
+  than calling **`cli::chunk_store::write_chunk_from_cache`** itself the
+  way `store`'s own (fully inline, per-worker) write path does - see
+  `docs/plans/persist-worker-thread-pool.md` for why physical writes stay
+  funneled through one thread even though the chunk/hash stage above them
+  is pooled (a slow/cheap destination drive was measured to get *worse*,
+  not better, the more distinct threads called into
+  **`store::LongTermStore::write`** at once). Once every chunk is
+  resolved, the pool worker itself commits via **`db::apply_backup_batch`**
+  (serialized against every other structural mutation by the same
+  `write_conn` mutex `mkdir`/`create`/`unlink`/`rename` already use, not a
+  new mechanism).
 
 See [plans/implemented/06-fuse-mount-readwrite.md](plans/implemented/06-fuse-mount-readwrite.md)
 for why persist is asynchronous and how read/write races around it are

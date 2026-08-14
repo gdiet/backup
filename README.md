@@ -703,7 +703,7 @@ exception to the GPLv3 (see [NOTICE.md](NOTICE.md) for the full exception
 text).
 
 ```bash
-backup mount --read-write [--write-cache-mb <n>] [--temp <dir>] [--lock-wait <secs>] <mountpoint>
+backup mount --read-write [--write-cache-mb <n>] [--persist-workers <n>] [--temp <dir>] [--lock-wait <secs>] <mountpoint>
 ```
 
 `--read-write` additionally allows structural changes
@@ -719,6 +719,14 @@ write-cache spillover directory is created (must already exist and be
 writable; defaults to the OS temp directory) - for best throughput, point
 it at the fastest disk available, ideally not the same physical drive as
 the repository.
+
+A closed file's content is chunked/hashed by a pool of threads (`--persist-workers`,
+1-32, default one per CPU core), same as `store --concurrency` - but unlike
+that flag, this does *not* also change how many threads physically write
+into the store: every chunk write always funnels through one dedicated
+thread regardless of `--persist-workers`, since a slow/cheap destination
+drive was measured to get *worse*, not better, throughput the more
+distinct threads called into the store's write path at once.
 
 Exclusive against `store`/`compact-store`/`reclaim-space`/`db restore` (or
 a second `--read-write` mount) for the mount's whole lifetime - see

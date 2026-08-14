@@ -1,10 +1,53 @@
 # Idea: decouple chunk/hash parallelism from physical-write thread count, for both `store` and `mount --read-write`
 
-**Status**: candidate architecture with strong supporting evidence on both sides now (small-file
-*and* large-file/slow-drive), not implemented. The blocking open question this doc's own
-"Suggested next step" pointed at is now resolved (2026-08-14, see
-`docs/plans/store-vs-mount-slow-drive-write-path.md`) - its answer changes the shape of the fix
-from "just pool `persist_worker`" to something more specific, see "Actionable items" below.
+**Status**: mount side (items 2-4 below) implemented and verified 2026-08-14 - see "Implemented:
+mount's chunk/hash pool" below for what shipped and how it was checked. `store`'s side (item 1) is
+still just a candidate, not implemented - it's the higher-risk half (see item 1's own "Risk"
+paragraph) and was deliberately sequenced *after* mount's lower-risk change, not before, despite
+being listed first below (kept in its original position since the two items' own reasoning still
+references each other).
+
+## Implemented: mount's chunk/hash pool (2026-08-14)
+
+Items 2 (the pool itself), 3 (worker-pool-exhaustion re-check), and 4 (concurrent-mutation
+correctness) below are done, on `cli/src/mount.rs`:
+
+- `persist_worker` (one thread, did chunking *and* physical writes) replaced by
+  `persist_chunk_worker` (a pool, sized by the new `--persist-workers`, default one thread per CPU
+  core - shares the job queue via `Arc<Mutex<mpsc::Receiver<PersistJob>>>` since `mpsc::Receiver`
+  isn't itself `Clone`/`Sync`) feeding a single dedicated `persist_writer` thread that every
+  physical `LongTermStore::write` call is funneled through regardless of pool size, via a new
+  `PersistWriteRequest`/one-shot-response channel - exactly the split "Actionable items" below
+  called for.
+- **Item 3's answer, confirmed by re-reading, not just re-asserted**: dispatch threads only ever
+  interact with `enqueue_persist` (a byte-budget check, then a non-blocking send on an unbounded
+  channel) - never with "is a pool worker free," which is what actually made the original
+  worker-pool-exhaustion fix work. Since that property doesn't depend on how many threads drain the
+  queue on the other end, pooling the consumer side cannot reintroduce dispatch-thread exhaustion;
+  the byte-budget gate (unchanged) remains the only place a dispatch thread can block.
+- **Item 4's answer, turned out to need no new mechanism at all**: `FileWriteState::persisting`/
+  `wait_while_persisting`/`resolve_active_entry` are already keyed per `tree_id`, not global, so
+  they already tolerate arbitrary concurrent FUSE activity on other files even under the old
+  single-threaded pool. `Inner::persist`'s own "was removed or replaced while open for writing"
+  check is itself per-`tree_id` and re-verified at commit time regardless of how many other
+  persists are mid-flight. And two pool workers independently discovering the same *new* chunk
+  content at once is exactly the pre-existing, already-tolerated `apply_backup_batch` race
+  (`ON CONFLICT DO NOTHING`, see `db::resolve_content`'s doc comment) `store`'s own N-way-parallel
+  workers already exercise today - pooling mount's chunk/hash stage just means mount can hit that
+  same, already-proven-safe race too, not a new one. Full reasoning now lives as a doc comment on
+  `Inner::persist` itself, not just here.
+- **Verification**: `cargo build`/`fmt`/`clippy --all-targets`/`test`/`doc` clean on both native
+  Windows and, via the `wsl-windows-sync` skill, real Linux (`cargo test`: 195 passed, 0 failed,
+  including real `libfuse3` mount integration tests exercising the new pool end to end) - plus the
+  equivalent real-`WinFSP` integration tests already passing natively on Windows. Two new targeted
+  tests (`pooled_persist_settles_many_concurrent_files_correctly`,
+  `pooled_persist_dedupes_identical_new_content_raced_across_files`) drive genuine concurrent
+  persists via `std::thread::scope`, not just FUSE dispatch timing - each run 15x in a row on Linux
+  with zero flakiness before trusting them.
+- **Not done as part of this**: no fresh performance re-measurement against
+  `docs/plans/implemented/copy-performance-comparison.md`'s scenarios (item 5 below still applies -
+  worth doing, especially the small-file case this pool specifically targets, but is its own
+  separate pass, not a correctness gate for shipping the mechanism itself).
 
 ## The evidence for it
 
@@ -53,9 +96,10 @@ but not for the *chunk data itself*; `mount --read-write` already has this right
 
 ## Actionable items
 
-Ordered by how directly each depends on what's now confirmed vs. still open. None of this is
-implemented yet - each item below still needs its own real prototype-and-measure pass before being
-trusted, per this project's own "verify, don't assume" convention.
+Ordered by how directly each depends on what's now confirmed vs. still open. Items 2-4 are done
+(see "Implemented" above); items 1 and 5 are still just candidates and need their own real
+prototype-and-measure pass before being trusted, per this project's own "verify, don't assume"
+convention.
 
 **Recommended starting point: item 2, not item 1** - despite item 1 being listed first (it targets
 the more directly-measured trigger) and having a clean existing precedent to mirror
@@ -107,8 +151,9 @@ itself.
      small-file profile on `fast-ssd-C` and confirm it doesn't regress below today's 1.75s by a
      meaningful margin - this is the one measurement in the whole plan most likely to produce an
      unpleasant surprise, given the risk above.
-2. **Give `persist_worker` a small worker pool for chunk/hash, keeping physical writes on one
-   thread** - the mount-side mirror of item 1, and the one this doc originally proposed, now
+2. **DONE (2026-08-14, see "Implemented" above). Give `persist_worker` a small worker pool for
+   chunk/hash, keeping physical writes on one thread** - the mount-side mirror of item 1, and the
+   one this doc originally proposed, now
    scoped more precisely: don't pool the whole `PersistJob` (chunk + hash + physical write)
    the way the original "small bounded pool" framing implied - pool only the CPU-bound
    chunk/hash stage, and keep funneling the actual `LongTermStore::write` calls through the
@@ -125,7 +170,8 @@ itself.
    *doesn't* reintroduce the item-1 regression on the mount side (a pool feeding a single writer
    thread should be immune to it by construction, but that's exactly the kind of assumption this
    project's conventions say to re-verify, not trust).
-3. **Re-verify the original worker-pool-exhaustion rationale still holds** for whatever the
+3. **DONE (2026-08-14, see "Implemented" above). Re-verify the original worker-pool-exhaustion
+   rationale still holds** for whatever the
    chunk/hash pool size ends up being (see `docs/plans/implemented/06-fuse-mount-readwrite.md` and
    `docs/plans/implemented/bounded-memory-io-pipeline.md`'s "Mount-specific detail" for the
    original failure mode: FUSE/WinFSP dispatch threads blocking on synchronous persist, exhausting
@@ -133,7 +179,8 @@ itself.
    `enqueue_persist`/queue mechanism (dispatch threads still only ever enqueue, never block on
    the pool directly) shouldn't reintroduce this, but this is exactly the kind of inference this
    project's conventions say to re-check against the original doc's reasoning, not assume past.
-4. **Work out the concurrent-mutation correctness question** before shipping either pool: unlike
+4. **DONE (2026-08-14, see "Implemented" above). Work out the concurrent-mutation correctness
+   question** before shipping either pool: unlike
    `store` (processes a static source tree for one run), mount's tree can be mutated by other live
    FUSE calls (`rename`/`unlink`/new `create`s) while a pool worker is still mid-flight on an older
    `PersistJob` for the same or a related path. Needs its own explicit answer - not free to copy
