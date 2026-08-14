@@ -101,6 +101,40 @@ Only commit changes when explicitly asked to do so by the user. Even if you've m
 changes and suggested a commit message, wait for explicit permission before running
 `git commit`.
 
+### Attributing Agent-Authored Commits
+
+This project is on GitHub, and the developer wants agent-authored work distinguishable from their
+own. Whenever you are the sole author or a co-author of a commit, add a trailer alongside the
+standard `Co-Authored-By:` trailer (keep that one too - GitHub parses it specifically to show
+co-author avatars):
+
+```
+Generated-By: <agent-name> (harness: <harness>; model: <model>; role: author|co-author)
+```
+
+- `role: co-author` — a human was actively involved in producing this specific commit (the normal
+  case under the commit-permission rule above: someone reviewed and approved it). `role: author` —
+  the agent produced this commit without a human actively present at that moment (e.g. a
+  previously-authorized autonomous/scheduled run) - this is about actual involvement in *this*
+  commit, not about which name ends up in git's own `Author:` field.
+- `harness` is the interface this session is running through (terminal CLI, Desktop app, web app,
+  an IDE extension, etc.) - not reliably inferable, so ask for it rather than guessing.
+
+**Ask early, not at commit time.** As soon as it looks like a commit will eventually be wanted in
+this session (not every session ends in one - don't ask if it's not yet foreseeable), ask once,
+before you're mid-commit:
+
+> "Über welche Oberfläche läuft diese Session?" ("Which interface is this session running
+> through?") - options along the lines of: Terminal-CLI · Desktop-App · Web-App (claude.ai) ·
+> VSCode-Extension · JetBrains-Extension · (something else, free text)
+
+List the IDE options separately (not bundled as "VSCode/JetBrains") - collapsing them loses exactly
+the information the trailer is meant to capture. The harness is tied to how *this session* was
+launched, not to the machine/environment it runs in (the same WSL checkout might be driven from
+Desktop in one session and VSCode in the next) - so don't try to cache the answer anywhere durable
+(not in this file, not in the machine-local root `AGENTS.md`); just hold onto it for the rest of
+the current session once asked.
+
 ## Shell Commands
 
 Never run an unscoped recursive filesystem search (`find /`, `find / -maxdepth N`, or any variant
