@@ -171,6 +171,23 @@ Desktop in one session and VSCode in the next) - so don't try to cache the answe
 (not in this file, not in the machine-local root `AGENTS.md`); just hold onto it for the rest of
 the current session once asked.
 
+### Verify Git Identity At Session Start (Privacy)
+
+Cheap and worth doing every session, before any commit: check the effective git identity (`git
+config user.name` / `git config user.email` - already resolves repo-local config over global) that
+commits in this session would actually use.
+
+The developer's human commits on this project should use a privacy-preserving identity like
+`gdiet <gdiet@users.noreply.github.com>` unless explicitly requested otherwise -
+regardless of what a given machine/environment happens to have configured globally. (A session's
+global config may legitimately be set up for other, unrelated projects.)
+
+If the effective git identity doesn't match: fix it scoped to this repo only if it is obvious how, e.g. using
+`git config --local user.name "gdiet"` / `git config --local user.email "gdiet@users.noreply.github.com"`, never touching
+global config. This is a small, local, reversible fix - safe to just apply directly rather than
+asking first. Only escalate to asking the developer if something is genuinely ambiguous (e.g. local
+config already holds a different, seemingly intentional override).
+
 ## Shell Commands
 
 Never run an unscoped recursive filesystem search (`find /`, `find / -maxdepth N`, or any variant
