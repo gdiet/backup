@@ -92,21 +92,28 @@ impl SpaceAllocator {
     }
 }
 
-/// Reads `chunk_id`'s bytes back from the store, looking up and
-/// concatenating its extents in order. `length` is the chunk's total byte
-/// length (already known to the caller from `chunks.length`/`ChunkInfo`),
-/// used to size the output buffer up front.
-pub fn read_chunk_bytes(
-    conn: &Connection,
+/// Reads bytes back from the store given already-resolved extents (see
+/// `db::chunk_extents`), without touching the metadata database at all -
+/// the I/O-only half of [`read_chunk_bytes`], split out so a caller that
+/// resolved those extents itself under a database lock (currently only
+/// `mount.rs`'s `Inner::read_persisted`, the one place chunk reads happen
+/// from genuinely concurrent threads - `check`/`restore`/`compact-store`
+/// are all single-threaded, so holding the lock for the whole read there
+/// costs nothing) can release that lock *before* doing the actual disk
+/// I/O, instead of blocking every other FUSE/WinFSP dispatch thread's own
+/// database access behind however long this read's `store.read` calls
+/// take. `length` is the chunk's total byte length (already known to the
+/// caller from `chunks.length`/`ChunkInfo`), used to size the output
+/// buffer up front.
+pub fn read_chunk_bytes_from_extents(
     store: &LongTermStore,
-    chunk_id: i64,
+    extents: &[(i64, i64)],
     length: u64,
-) -> Result<(Vec<u8>, ReadIntegrity), db::Error> {
-    let extents = db::chunk_extents(conn, chunk_id)?;
+) -> std::io::Result<(Vec<u8>, ReadIntegrity)> {
     let mut buf = vec![0u8; length as usize];
     let mut offset = 0usize;
     let mut missing_or_short = Vec::new();
-    for (start, stop) in extents {
+    for &(start, stop) in extents {
         let extent_len = (stop - start) as usize;
         let integrity = store.read(start as u64, &mut buf[offset..offset + extent_len])?;
         if let ReadIntegrity::Incomplete {
@@ -123,6 +130,20 @@ pub fn read_chunk_bytes(
         ReadIntegrity::Incomplete { missing_or_short }
     };
     Ok((buf, integrity))
+}
+
+/// Reads `chunk_id`'s bytes back from the store, looking up and
+/// concatenating its extents in order. `length` is the chunk's total byte
+/// length (already known to the caller from `chunks.length`/`ChunkInfo`),
+/// used to size the output buffer up front.
+pub fn read_chunk_bytes(
+    conn: &Connection,
+    store: &LongTermStore,
+    chunk_id: i64,
+    length: u64,
+) -> Result<(Vec<u8>, ReadIntegrity), db::Error> {
+    let extents = db::chunk_extents(conn, chunk_id)?;
+    Ok(read_chunk_bytes_from_extents(store, &extents, length)?)
 }
 
 /// Computes `buf`'s content hash the same way `store`'s chunking pipeline

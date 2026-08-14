@@ -146,7 +146,8 @@ flowchart TD
     FS["FUSE/WinFSP dispatch\n(mountfs)"] -->|write/read/release| DFS["DedupFs\ncli::mount"]
     DFS -->|"write(offset, data)"| WC["WriteCache\nspillcache\n(per open file)"]
     DFS -->|read, cache miss/gap| RP["read_persisted\ncli::mount"]
-    RP --> CB["chunk_store::read_chunk_bytes"]
+    RP -->|"chunk + extent lookup\n(under conn lock)"| DB2["db::ordered_content_chunks\n+ db::chunk_extents"]
+    RP -->|"disk I/O\n(lock released)"| CB["chunk_store::read_chunk_bytes_from_extents"]
     CB --> ST1["store::LongTermStore::read"]
     DFS -->|"release (last close), dirty"| EQ["enqueue_persist\n(bounded mpsc queue,\ncapacity 4)"]
     EQ --> PW["persist_worker\n(one background thread)"]
@@ -164,8 +165,14 @@ flowchart TD
   by the target disk's speed.
 - **`DedupFs::read`** prefers the live `WriteCache` if the file is open and
   dirty (so a program reads back its own unpersisted writes); otherwise
-  falls through to **`cli::mount::read_persisted`**, which uses
-  **`cli::chunk_store::read_chunk_bytes`** and **`store::LongTermStore::read`**.
+  falls through to **`cli::mount::read_persisted`**, which resolves the
+  overlapping chunks and their extents under `self.conn`'s lock, then
+  releases it *before* doing the actual disk I/O via
+  **`cli::chunk_store::read_chunk_bytes_from_extents`** and
+  **`store::LongTermStore::read`** - `read` runs concurrently on every
+  FUSE/WinFSP dispatch thread, so holding the database lock across a
+  potentially slow disk read would otherwise serialize every other
+  thread's own (unrelated) database access behind it.
 - **`release`** on the last close of a dirty file hands the `WriteCache` off
   to a bounded queue (`enqueue_persist`, capacity 4) instead of persisting
   synchronously - `release` only blocks once that queue is already full.

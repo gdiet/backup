@@ -29,7 +29,7 @@ use mountfs::{Attr, DirEntry, Errno, FileKind, Handle, MountFilesystem};
 use rusqlite::Connection;
 use store::{LongTermStore, ReadIntegrity};
 
-use crate::chunk_store::{self, SpaceAllocator, read_chunk_bytes};
+use crate::chunk_store::{self, SpaceAllocator};
 use crate::mount_deleted::{self, DeletedResolution};
 use crate::ram_budget_check::check_ram_budget;
 use crate::repo_lock;
@@ -1479,35 +1479,74 @@ impl Inner {
     /// factored out so it can also serve as the "old content" gap-filler
     /// for a live [`WriteCache`]'s [`WriteCache::read_filling_gaps`] (both
     /// in [`Inner::read`] and in [`Inner::persist`]).
+    ///
+    /// Only holds `self.conn` long enough to resolve which chunks overlap
+    /// the wanted range and their extents - the actual disk I/O
+    /// (`chunk_store::read_chunk_bytes_from_extents`, backed by
+    /// `LongTermStore::read`, itself lock-free across threads - see its own
+    /// doc comment) runs after the lock is released. `read` is called from
+    /// every FUSE/WinFSP dispatch thread concurrently (unlike
+    /// `check`/`restore`/`compact-store`'s single-threaded callers of the
+    /// same store), so holding a single shared `Connection`'s lock across a
+    /// potentially slow disk read would otherwise serialize every other
+    /// dispatch thread's own database access (even an unrelated file's
+    /// `getattr`) behind it, for as long as this read's underlying disk
+    /// takes.
     fn read_persisted(&self, tree_id: i64, offset: u64, size: u64) -> Result<Vec<u8>, Errno> {
-        let conn = self.conn.lock().expect("db connection mutex poisoned");
-        let entry = db::get_tree_entry(&conn, tree_id)
-            .map_err(|_| Errno::EIO)?
-            .ok_or(Errno::ENOENT)?;
-        // A settled empty file has a real content_id (db::EMPTY_CONTENT_ID,
-        // zero chunks) and falls through to the ordinary path below - None
-        // here only ever means a still-open create() placeholder nothing
-        // has been written to yet (see EMPTY_CONTENT_ID's own doc comment),
-        // for which "no bytes" is exactly the right answer too.
-        let Some(content_id) = entry.content_id else {
-            return Ok(Vec::new());
-        };
-        let chunks = db::ordered_content_chunks(&conn, content_id).map_err(|_| Errno::EIO)?;
-
         let want_start = offset;
         let want_end = want_start.saturating_add(size);
-        let mut result = Vec::new();
-        let mut pos: u64 = 0;
-        for chunk in chunks {
-            let chunk_len = chunk.length as u64;
-            let chunk_start = pos;
-            pos += chunk_len;
-            if pos <= want_start || chunk_start >= want_end {
-                continue;
+
+        struct WantedChunk {
+            chunk_start: u64,
+            length: u64,
+            extents: Vec<(i64, i64)>,
+        }
+        let wanted: Vec<WantedChunk> = {
+            let conn = self.conn.lock().expect("db connection mutex poisoned");
+            let entry = db::get_tree_entry(&conn, tree_id)
+                .map_err(|_| Errno::EIO)?
+                .ok_or(Errno::ENOENT)?;
+            // A settled empty file has a real content_id
+            // (db::EMPTY_CONTENT_ID, zero chunks) and falls through to the
+            // ordinary path below - None here only ever means a still-open
+            // create() placeholder nothing has been written to yet (see
+            // EMPTY_CONTENT_ID's own doc comment), for which "no bytes" is
+            // exactly the right answer too.
+            let Some(content_id) = entry.content_id else {
+                return Ok(Vec::new());
+            };
+            let chunks = db::ordered_content_chunks(&conn, content_id).map_err(|_| Errno::EIO)?;
+
+            let mut wanted = Vec::new();
+            let mut pos: u64 = 0;
+            for chunk in chunks {
+                let chunk_len = chunk.length as u64;
+                let chunk_start = pos;
+                pos += chunk_len;
+                if pos <= want_start || chunk_start >= want_end {
+                    continue;
+                }
+                let extents = db::chunk_extents(&conn, chunk.chunk_id).map_err(|_| Errno::EIO)?;
+                wanted.push(WantedChunk {
+                    chunk_start,
+                    length: chunk_len,
+                    extents,
+                });
+                if pos >= want_end {
+                    break;
+                }
             }
-            let (bytes, integrity) =
-                read_chunk_bytes(&conn, &self.data_store, chunk.chunk_id, chunk_len)
-                    .map_err(|_| Errno::EIO)?;
+            wanted
+        };
+
+        let mut result = Vec::new();
+        for chunk in wanted {
+            let (bytes, integrity) = chunk_store::read_chunk_bytes_from_extents(
+                &self.data_store,
+                &chunk.extents,
+                chunk.length,
+            )
+            .map_err(|_| Errno::EIO)?;
             if let ReadIntegrity::Incomplete { .. } = integrity
                 && !self.zero_fill_missing
             {
@@ -1517,12 +1556,11 @@ impl Inner {
             // `store::read` itself (see its own doc comment) - with
             // `zero_fill_missing` set, there's nothing left to do here but
             // use it, same as the `Complete` case.
-            let local_start = want_start.saturating_sub(chunk_start).min(chunk_len);
-            let local_end = want_end.saturating_sub(chunk_start).min(chunk_len);
+            let local_start = want_start
+                .saturating_sub(chunk.chunk_start)
+                .min(chunk.length);
+            let local_end = want_end.saturating_sub(chunk.chunk_start).min(chunk.length);
             result.extend_from_slice(&bytes[local_start as usize..local_end as usize]);
-            if pos >= want_end {
-                break;
-            }
         }
         Ok(result)
     }
@@ -1866,6 +1904,60 @@ mod tests {
         .unwrap();
     }
 
+    /// Like `seed_file` above, but records `chunks` as separate,
+    /// individually-stored chunks rather than one - for tests that need to
+    /// exercise `Inner::read_persisted`'s multi-chunk path (a single `read`
+    /// call whose range spans more than one chunk, each requiring its own
+    /// `db::chunk_extents` lookup and `store.read` call).
+    fn seed_file_multi_chunk(repo_root: &Path, parent_id: i64, name: &str, chunks: &[&[u8]]) {
+        let data_store = LongTermStore::new(repo_root.join("data"), false);
+        let mut chunk_refs = Vec::new();
+        for bytes in chunks {
+            let start: i64 = {
+                let repository = db::open_repository(repo_root).unwrap();
+                let conn = repository.open_read_connection().unwrap();
+                conn.query_row(
+                    "SELECT COALESCE(MAX(stop), 0) FROM chunk_extents",
+                    (),
+                    |row| row.get(0),
+                )
+                .unwrap()
+            };
+            data_store.write(start as u64, bytes).unwrap();
+
+            let mut hash = [0u8; 20];
+            blake3::Hasher::new()
+                .update(bytes)
+                .finalize_xof()
+                .fill(&mut hash);
+            chunk_refs.push(db::ChunkRef::New {
+                length: bytes.len() as u64,
+                hash: hash.to_vec(),
+                extents: vec![(start as u64, start as u64 + bytes.len() as u64)],
+            });
+        }
+
+        let repository = db::open_repository(repo_root).unwrap();
+        let mut conn = repository.open_write_connection().unwrap();
+        db::apply_backup_batch(
+            &mut conn,
+            &[db::FileBackupRecord {
+                parent_id,
+                name: name.to_string(),
+                time_millis: 0,
+                content: db::ContentSource::Resolved {
+                    chunks: chunk_refs,
+                    // Not recomputed/verified by `apply_backup_batch` or by
+                    // `read_persisted` - a placeholder of the right length
+                    // is fine for a test seed helper (`seed_file` above
+                    // already takes the same shortcut).
+                    content_hash: vec![0u8; HASH_LENGTH],
+                },
+            }],
+        )
+        .unwrap();
+    }
+
     /// Creates a directory directly via `db::insert_directory` - the
     /// structural counterpart to `seed_file` above, for tests that need a
     /// tree shape (not just a file's content) in place before exercising
@@ -1955,6 +2047,34 @@ mod tests {
             !db::has_deleted_children(&conn, 0).unwrap(),
             "no ghost placeholder should be left behind under [deleted]"
         );
+    }
+
+    /// Regression test for `Inner::read_persisted`'s refactor to release
+    /// `self.conn`'s lock before doing the actual store I/O (see
+    /// `chunk_store::read_chunk_bytes_from_extents`): a single `read` call
+    /// whose range spans a chunk boundary must still reassemble the exact
+    /// requested bytes from across the two chunks, byte-for-byte - the
+    /// gathering-then-reading split must not shift any offset.
+    #[test]
+    fn read_spans_a_chunk_boundary_correctly() {
+        let (_temp_dir, repo_root) = init_repo();
+        seed_file_multi_chunk(&repo_root, 0, "multi.bin", &[b"0123456789", b"abcdefghij"]);
+        let fs = build_test_filesystem(&repo_root);
+
+        let handle = fs.open("/multi.bin", false).unwrap();
+
+        // Entirely within the first chunk.
+        assert_eq!(fs.read(handle, 2, 5).unwrap(), b"23456");
+        // Entirely within the second chunk.
+        assert_eq!(fs.read(handle, 12, 5).unwrap(), b"cdefg");
+        // Spans the boundary between the two chunks.
+        assert_eq!(fs.read(handle, 7, 6).unwrap(), b"789abc");
+        // The full file, both chunks concatenated.
+        assert_eq!(fs.read(handle, 0, 20).unwrap(), b"0123456789abcdefghij");
+        // Past the end of the file.
+        assert_eq!(fs.read(handle, 18, 10).unwrap(), b"ij");
+
+        fs.release(handle);
     }
 
     #[test]
