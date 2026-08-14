@@ -131,6 +131,20 @@ pub struct MountArgs {
     /// don't wait, fail immediately. Only meaningful with `--read-write`.
     #[arg(long = "lock-wait", default_value_t = 0)]
     lock_wait_secs: u64,
+
+    /// Number of threads chunking/hashing closed files' content concurrently,
+    /// before handing each completed chunk off to the single thread that
+    /// actually writes it into the store (1-32). Default: one thread per CPU
+    /// core, mirroring `store --concurrency`'s own default - unlike that
+    /// command's `--concurrency`, this does *not* also control how many
+    /// threads write to the store: physical chunk writes always funnel
+    /// through one dedicated thread regardless of this setting (see
+    /// `docs/plans/persist-worker-thread-pool.md` for why - a slow/cheap
+    /// destination drive was measured to get *worse*, not better, the more
+    /// distinct threads call into the store's write path at once). Only
+    /// meaningful with `--read-write`.
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=32))]
+    persist_workers: Option<u32>,
 }
 
 /// FUSE (Linux) mounts onto an existing, empty directory; WinFSP
@@ -216,6 +230,7 @@ pub fn run_mount(repo: &Path, args: MountArgs) -> ExitCode {
         args.temp.as_deref(),
         args.zero_fill_missing,
         std::time::Duration::from_secs(args.lock_wait_secs),
+        args.persist_workers,
     ) {
         Ok(fs) => fs,
         Err(msg) => {
@@ -265,6 +280,7 @@ fn build_filesystem(
     temp: Option<&Path>,
     zero_fill_missing: bool,
     lock_wait: std::time::Duration,
+    persist_workers: Option<u32>,
 ) -> Result<DedupFs, String> {
     // A read-only mount (see docs/plans/read-only-repository-access.md)
     // must never open a read-write connection - the repository directory
@@ -339,14 +355,22 @@ fn build_filesystem(
     let spill_dir = create_spill_dir("backup-mount-write-cache-", temp)
         .map_err(|err| format!("failed to create write-cache temp dir: {err}"))?;
 
-    // The persist queue and its background thread (see `persist_worker`)
-    // - `Inner` is wrapped in `Arc` (via `DedupFs`) specifically so this
-    // thread and the FUSE/WinFSP dispatch threads can share the same
-    // state safely. Unbounded: the actual backpressure point moved from
-    // channel capacity to `enqueue_persist`'s own byte-based wait (see
-    // `Inner::spill_backpressure_threshold_bytes`), so nothing should ever
-    // need to block *inside* `send` itself any more.
+    // The persist queue, its chunk/hash worker pool, and the single
+    // dedicated physical-writer thread the pool funnels store writes
+    // through (see `persist_chunk_worker`/`persist_writer` and
+    // `docs/plans/persist-worker-thread-pool.md`) - `Inner` is wrapped in
+    // `Arc` (via `DedupFs`) specifically so these threads and the
+    // FUSE/WinFSP dispatch threads can share the same state safely.
+    // `persist_rx` is wrapped in `Arc<Mutex<_>>` (not just cloned - `mpsc::
+    // Receiver` is neither `Clone` nor `Sync`) so every pool worker can pull
+    // from the same queue, the standard way to share one `mpsc` consumer
+    // across several threads. The job queue itself stays unbounded: the
+    // actual backpressure point is `enqueue_persist`'s own byte-based wait
+    // (see `Inner::spill_backpressure_threshold_bytes`), so nothing should
+    // ever need to block *inside* `send` itself.
     let (persist_tx, persist_rx) = mpsc::channel::<PersistJob>();
+    let persist_rx = Arc::new(Mutex::new(persist_rx));
+    let (persist_write_tx, persist_write_rx) = mpsc::channel::<PersistWriteRequest>();
     let inner = Arc::new(Inner {
         read_only: !read_write,
         zero_fill_missing,
@@ -362,31 +386,62 @@ fn build_filesystem(
         write_states: Mutex::new(HashMap::new()),
         write_states_cv: Condvar::new(),
         persist_tx: Mutex::new(Some(persist_tx)),
-        persist_thread: Mutex::new(None),
+        persist_chunk_threads: Mutex::new(Vec::new()),
+        persist_write_tx: Mutex::new(Some(persist_write_tx)),
+        persist_writer_thread: Mutex::new(None),
         queued_persist_bytes: AtomicU64::new(0),
         spill_backpressure_threshold_bytes: write_cache_mb * 1024 * 1024,
         disk_space: Mutex::new(DiskSpaceCache::new(data_dir)),
     });
-    let worker_inner = Arc::clone(&inner);
-    let handle = std::thread::spawn(move || persist_worker(worker_inner, persist_rx));
+
+    // The single dedicated writer thread - spawned before the chunk/hash
+    // pool below so it's already there to receive their first requests.
+    let writer_inner = Arc::clone(&inner);
+    let writer_handle = std::thread::spawn(move || persist_writer(writer_inner, persist_write_rx));
     *inner
-        .persist_thread
+        .persist_writer_thread
         .lock()
-        .expect("persist thread mutex poisoned") = Some(handle);
+        .expect("persist writer thread mutex poisoned") = Some(writer_handle);
+
+    // The chunk/hash worker pool - sized by `--persist-workers`, default
+    // one thread per CPU core (mirrors `store --concurrency`'s own default;
+    // see `MountArgs::persist_workers`'s doc comment for why this doesn't
+    // also affect physical-write concurrency the way `--concurrency` does
+    // for `store`).
+    let persist_worker_count = persist_workers
+        .map(|n| n as usize)
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(std::num::NonZeroUsize::get)
+                .unwrap_or(1)
+        })
+        .max(1);
+    let chunk_threads = (0..persist_worker_count)
+        .map(|_| {
+            let worker_inner = Arc::clone(&inner);
+            let worker_rx = Arc::clone(&persist_rx);
+            std::thread::spawn(move || persist_chunk_worker(worker_inner, worker_rx))
+        })
+        .collect();
+    *inner
+        .persist_chunk_threads
+        .lock()
+        .expect("persist chunk threads mutex poisoned") = chunk_threads;
 
     Ok(DedupFs(inner))
 }
 
 /// One closed-and-dirty file's worth of unpersisted changes, handed from
-/// `release`/bare `truncate` to [`persist_worker`] via [`Inner::persist_tx`].
-/// See [`Inner::enqueue_persist`]'s doc comment for why this is queued
-/// rather than persisted inline on the calling thread.
+/// `release`/bare `truncate` to the chunk/hash worker pool (see
+/// `persist_chunk_worker`) via [`Inner::persist_tx`]. See
+/// [`Inner::enqueue_persist`]'s doc comment for why this is queued rather
+/// than persisted inline on the calling thread.
 struct PersistJob {
     tree_id: i64,
     cache: WriteCache,
     mtime_millis: i64,
     /// `cache.size()`, captured before `cache` moves into this job -
-    /// [`persist_worker`] reports this back via
+    /// [`persist_chunk_worker`] reports this back via
     /// [`Inner::queued_persist_bytes`] once done, so
     /// [`Inner::enqueue_persist`]'s backpressure check doesn't need the
     /// (by then already-consumed) `cache` back to know how much to
@@ -394,25 +449,80 @@ struct PersistJob {
     queued_bytes: u64,
 }
 
-/// The single background thread every persist actually runs on (spawned
-/// once in [`build_filesystem`], joined in [`Inner::on_unmount`]) - moving
-/// persist off whichever FUSE/WinFSP worker thread called `release`/bare
-/// `truncate` is what fixes the worker-pool-exhaustion failure mode (see
-/// `Inner::enqueue_persist`'s doc comment): that thread now only has to
-/// enqueue a job (fast, unless backpressure is active) instead of
-/// blocking for as long as the target store's disk takes. Serial by
-/// design, mirroring the Scala prototype's own single background persist
-/// thread - also means at most one persist is ever actually writing to
-/// the store at a time, which if anything makes the pre-existing,
-/// deliberately-tolerated chunk-write race (`db::apply_backup_batch`'s
-/// `ON CONFLICT DO NOTHING` handling) less likely to fire, not more.
-fn persist_worker(inner: Arc<Inner>, jobs: mpsc::Receiver<PersistJob>) {
-    for job in jobs {
+/// One completed chunk's bytes, handed from a chunk/hash pool worker (see
+/// `persist_chunk_worker`) to the single dedicated [`persist_writer`]
+/// thread via [`Inner::persist_write_tx`] on a dedup miss - see
+/// `docs/plans/persist-worker-thread-pool.md` for why physical chunk
+/// writes stay funneled through one thread even though the chunk/hash
+/// stage feeding it is pooled. `response_tx` is a fresh one-shot channel
+/// per request (not a shared one) so each pool worker gets back exactly
+/// its own chunk's resulting extents, not some other worker's.
+struct PersistWriteRequest {
+    bytes: WriteCache,
+    length: u64,
+    response_tx: mpsc::Sender<std::io::Result<Vec<(u64, u64)>>>,
+}
+
+/// Runs on each thread in the chunk/hash worker pool (see
+/// `MountArgs::persist_workers`) - pulls `PersistJob`s off the shared queue
+/// (behind `persist_rx`'s `Mutex`, since `mpsc::Receiver` isn't itself
+/// `Sync`/`Clone` - the standard way to share one `mpsc` consumer across
+/// several threads) and runs the full persist pipeline for each
+/// (`Inner::persist`, same as the single-threaded `persist_worker` this
+/// replaces used to) - the CPU-bound chunk/hash work happens right here on
+/// this pool worker's own thread, concurrently with every other pool
+/// worker's own job; only the actual physical chunk writes (see
+/// `Inner::resolve_persist_chunk`'s dedup-miss branch) get funneled off to
+/// the single dedicated [`persist_writer`] thread via
+/// [`Inner::persist_write_tx`]. Exits once the job queue is closed and
+/// drained (`recv()` on the shared, `Mutex`-guarded receiver returning
+/// `Err` once every [`Inner::persist_tx`] clone is gone) - mirrors
+/// [`persist_writer`]'s identical exit condition on its own, separate
+/// channel.
+fn persist_chunk_worker(inner: Arc<Inner>, jobs: Arc<Mutex<mpsc::Receiver<PersistJob>>>) {
+    loop {
+        let job = {
+            let rx = jobs.lock().expect("persist job queue mutex poisoned");
+            rx.recv()
+        };
+        let Ok(job) = job else {
+            break;
+        };
         inner.persist(job.tree_id, job.cache, job.mtime_millis);
         inner
             .queued_persist_bytes
             .fetch_sub(job.queued_bytes, Ordering::Relaxed);
         inner.finish_persisting(job.tree_id);
+    }
+}
+
+/// The single thread every physical chunk write actually runs on (spawned
+/// once in [`build_filesystem`], joined in [`Inner::on_unmount`]) - see
+/// `docs/plans/persist-worker-thread-pool.md` for the measurement behind
+/// keeping this at exactly one thread regardless of how many chunk/hash
+/// pool workers (see [`persist_chunk_worker`]) feed it: on a slow/cheap
+/// destination drive, wall-clock time for the identical write workload got
+/// *worse*, not better, the more distinct OS threads called into the
+/// store's physical write path, independent of how many were allowed to
+/// execute concurrently - so unlike the chunk/hash stage, this one
+/// deliberately isn't pooled. Receives a completed chunk's bytes on a
+/// dedup miss (`Inner::resolve_persist_chunk`, via
+/// [`Inner::persist_write_tx`]), writes them into the store, and reports
+/// the resulting extents back over that request's own one-shot response
+/// channel. Exits once every sender clone of its own channel is dropped -
+/// see `Inner::on_unmount`'s shutdown sequence for why that's only safe to
+/// do after every chunk/hash pool worker (the only callers that ever send
+/// on it) has already been joined.
+fn persist_writer(inner: Arc<Inner>, requests: mpsc::Receiver<PersistWriteRequest>) {
+    for mut request in requests {
+        let result = chunk_store::write_chunk_from_cache(
+            &inner.data_store,
+            &inner.allocator,
+            &mut request.bytes,
+            request.length,
+            None,
+        );
+        let _ = request.response_tx.send(result);
     }
 }
 
@@ -468,8 +578,9 @@ impl DiskSpaceCache {
 }
 
 /// Holds every bit of state a mount needs, shared (via `Arc`, see
-/// [`DedupFs`]) between the FUSE/WinFSP dispatch threads and the
-/// background persist thread ([`persist_worker`]).
+/// [`DedupFs`]) between the FUSE/WinFSP dispatch threads, the chunk/hash
+/// worker pool ([`persist_chunk_worker`]), and the single dedicated
+/// physical-writer thread ([`persist_writer`]).
 struct Inner {
     /// Mirrors `--read-write`'s absence - checked explicitly by every
     /// mutating `MountFilesystem` method rather than trusted to the
@@ -497,8 +608,9 @@ struct Inner {
     /// fields in declaration order, and that's the only thing that makes
     /// `write_conn` (not this one) the *last* of the two to close when
     /// `Inner` itself is finally dropped (the last `Arc<Inner>` clone
-    /// going away, once `on_unmount` has already joined `persist_worker` -
-    /// see its own doc comment - so there's no lingering background thread
+    /// going away, once `on_unmount` has already joined every chunk/hash
+    /// pool worker and the writer thread - see their own doc comments -
+    /// so there's no lingering background thread
     /// holding a reference past that point either). That ordering is what
     /// lets SQLite auto-checkpoint and remove `-wal`/`-shm` on a clean
     /// `--read-write` unmount: only a write-capable connection closing
@@ -538,17 +650,30 @@ struct Inner {
     /// [`Inner::wait_while_persisting`]).
     write_states_cv: Condvar,
     /// The sending half of the persist queue - `None` once
-    /// [`Inner::on_unmount`] has taken it, which is what lets
-    /// [`persist_worker`]'s loop (and thus the thread join right after)
-    /// actually finish. Cloned out (not sent through while holding this
-    /// lock) by `enqueue_persist` purely to keep the lock's critical
+    /// [`Inner::on_unmount`] has taken it, which is what lets every
+    /// [`persist_chunk_worker`]'s loop (and thus their thread joins right
+    /// after) actually finish. Cloned out (not sent through while holding
+    /// this lock) by `enqueue_persist` purely to keep the lock's critical
     /// section small - unlike the old bounded channel, `send` on this
     /// unbounded one never itself blocks.
     persist_tx: Mutex<Option<mpsc::Sender<PersistJob>>>,
-    /// The background thread `persist_worker` runs on - `None` before
+    /// The chunk/hash worker pool's threads (see [`persist_chunk_worker`]
+    /// and `MountArgs::persist_workers`) - empty before `build_filesystem`
+    /// finishes spawning them, drained and joined by `on_unmount`.
+    persist_chunk_threads: Mutex<Vec<JoinHandle<()>>>,
+    /// The sending half of the physical-chunk-write queue, consumed by the
+    /// single dedicated [`persist_writer`] thread - see its own doc comment
+    /// for why chunk writes stay on one thread even though the chunk/hash
+    /// stage above it is pooled. `None` once [`Inner::on_unmount`] has
+    /// taken it (after every chunk/hash pool worker - the only other code
+    /// that ever sends on it, via `Inner::resolve_persist_chunk` - has
+    /// already been joined), which is what lets `persist_writer`'s loop
+    /// (and thus its own thread join right after) actually finish.
+    persist_write_tx: Mutex<Option<mpsc::Sender<PersistWriteRequest>>>,
+    /// The background thread `persist_writer` runs on - `None` before
     /// `build_filesystem` finishes spawning it, and after `on_unmount` has
     /// joined it.
-    persist_thread: Mutex<Option<JoinHandle<()>>>,
+    persist_writer_thread: Mutex<Option<JoinHandle<()>>>,
     /// Total bytes across every [`PersistJob`] currently queued or being
     /// persisted (not bytes still accumulating in an open, not-yet-closed
     /// file) - the actual backpressure signal for
@@ -1336,20 +1461,39 @@ impl Inner {
             self.persist(tree_id, cache, mtime_millis);
         }
 
-        // Close the persist queue and wait for the background thread (see
-        // `persist_worker`) to finish flushing anything a `release`/bare
-        // `truncate` already handed off before this unmount started -
-        // otherwise a just-closed file's queued-but-not-yet-persisted
-        // changes would be silently lost when `spill_dir` is removed
-        // below.
+        // Close the persist queue and wait for the chunk/hash worker pool
+        // (see `persist_chunk_worker`) to finish flushing anything a
+        // `release`/bare `truncate` already handed off before this unmount
+        // started - otherwise a just-closed file's queued-but-not-yet-
+        // persisted changes would be silently lost when `spill_dir` is
+        // removed below.
         self.persist_tx
             .lock()
             .expect("persist queue mutex poisoned")
             .take();
-        if let Some(handle) = self
-            .persist_thread
+        for handle in std::mem::take(
+            &mut *self
+                .persist_chunk_threads
+                .lock()
+                .expect("persist chunk threads mutex poisoned"),
+        ) {
+            let _ = handle.join();
+        }
+
+        // Only now close the physical-write queue and join the writer
+        // thread - every chunk/hash pool worker (the only code that ever
+        // sends on `persist_write_tx`, from `resolve_persist_chunk`) is
+        // guaranteed done by this point (the join loop above), so nothing
+        // can still be waiting on a response from `persist_writer` when its
+        // own receive loop ends below.
+        self.persist_write_tx
             .lock()
-            .expect("persist thread mutex poisoned")
+            .expect("persist write queue mutex poisoned")
+            .take();
+        if let Some(handle) = self
+            .persist_writer_thread
+            .lock()
+            .expect("persist writer thread mutex poisoned")
             .take()
         {
             let _ = handle.join();
@@ -1565,8 +1709,9 @@ impl Inner {
         Ok(result)
     }
 
-    /// Hands `cache` off to the background persist thread ([`persist_worker`])
-    /// instead of persisting on the calling thread - blocks only once
+    /// Hands `cache` off to the chunk/hash worker pool
+    /// ([`persist_chunk_worker`]) instead of persisting on the calling
+    /// thread - blocks only once
     /// [`Inner::queued_persist_bytes`] (measured *before* this job's own
     /// contribution - see below) already exceeds
     /// [`Inner::spill_backpressure_threshold_bytes`] (the intended
@@ -1630,7 +1775,7 @@ impl Inner {
     /// already-closed-queue fallback), and removes the [`FileWriteState`]
     /// entry if nothing reopened it in the meantime. The same cleanup
     /// `release` used to do inline before persisting moved to a background
-    /// thread - factored out so both [`persist_worker`] and
+    /// thread - factored out so both [`persist_chunk_worker`] and
     /// `enqueue_persist`'s fallback can reach it.
     fn finish_persisting(&self, tree_id: i64) {
         let mut states = self
@@ -1660,13 +1805,31 @@ impl Inner {
     /// be fully RAM-resident again here even though `cache` itself is
     /// already bounded (see `docs/plans/implemented/bounded-memory-io-pipeline.md`).
     ///
-    /// Best-effort: this method's callers (`persist_worker`, and
+    /// Best-effort: this method's callers (`persist_chunk_worker`, and
     /// `on_unmount` for handles still outstanding at shutdown) can't
     /// propagate an error back through the FUSE contract, so any failure
     /// here is logged to stderr and the unpersisted changes are simply
     /// lost - an accepted limitation (see `docs/plans/implemented/
     /// 06-fuse-mount-readwrite.md`'s "Phase 2b" notes) rather than a real
     /// per-write error path like `write`'s own `Result`.
+    ///
+    /// **Runs concurrently for different `tree_id`s** since
+    /// `persist_chunk_worker`'s pool has more than one thread - safe
+    /// without any new mechanism: [`FileWriteState::persisting`]/
+    /// [`Inner::wait_while_persisting`] are already keyed per `tree_id`, not
+    /// global, so they already tolerate arbitrary concurrent FUSE activity
+    /// on other files even with a single-threaded pool; the "was removed or
+    /// replaced" check just below is itself per-`tree_id` and re-verified at
+    /// commit time regardless of how many other persists happen to be
+    /// mid-flight; and two pool workers independently discovering the same
+    /// *new* chunk content at once (each seeing a dedup miss before either
+    /// has committed) is exactly the pre-existing, already-tolerated
+    /// `apply_backup_batch` race (`ON CONFLICT DO NOTHING`, see
+    /// `db::resolve_content`'s own doc comment) `store`'s own N-way-parallel
+    /// workers already exercise today - pooling this stage just means mount
+    /// can hit that same, already-proven-safe race too, not a new one. See
+    /// `docs/plans/persist-worker-thread-pool.md`'s "item 4" for the full
+    /// reasoning this comment summarizes.
     fn persist(&self, tree_id: i64, mut cache: WriteCache, mtime_millis: i64) {
         let (parent_id, name) = {
             let conn = self.conn.lock().expect("db connection mutex poisoned");
@@ -1782,9 +1945,18 @@ impl Inner {
 
     /// Resolves one completed chunk against the dedup index during
     /// persist, mirroring `store.rs`'s own `resolve_chunk` - a chunk hit
-    /// reuses the existing chunk id, a miss reserves store space and
-    /// writes the chunk's bytes. Also feeds the chunk's length and hash
-    /// into `content_hasher` (see `contents.hash` in `db/src/migrations.rs`).
+    /// reuses the existing chunk id; a miss hands the chunk's bytes off to
+    /// the single dedicated [`persist_writer`] thread (via
+    /// [`Inner::persist_write_tx`]) to actually reserve store space and
+    /// write them, then blocks this call (which may itself be running
+    /// concurrently with other [`persist_chunk_worker`]s' own calls, on a
+    /// dedup miss of their own) on that request's one-shot response
+    /// channel for the resulting extents - see `docs/plans/
+    /// persist-worker-thread-pool.md` for why physical writes are kept off
+    /// the (now pooled) chunk/hash stage entirely, rather than just writing
+    /// inline here the way `store.rs`'s `resolve_chunk` still does. Also
+    /// feeds the chunk's length and hash into `content_hasher` (see
+    /// `contents.hash` in `db/src/migrations.rs`).
     fn resolve_persist_chunk(
         &self,
         chunk: SpilledChunk,
@@ -1810,15 +1982,8 @@ impl Inner {
                 // `chunk.bytes` (dropped here on the dedup-hit branch above
                 // without ever being drained) is a `WriteCache`, not a plain
                 // `Vec<u8>` - see `SpillingHashingChunker`'s doc comment.
-                let mut bytes = chunk.bytes;
-                let extents = chunk_store::write_chunk_from_cache(
-                    &self.data_store,
-                    &self.allocator,
-                    &mut bytes,
-                    length_hash.length,
-                    None,
-                )
-                .map_err(|err| format!("store write failed: {err}"))?;
+                let extents =
+                    self.write_chunk_via_writer_thread(chunk.bytes, length_hash.length)?;
                 db::ChunkRef::New {
                     length: length_hash.length,
                     hash: length_hash.hash,
@@ -1828,6 +1993,41 @@ impl Inner {
         };
         chunk_refs.push(chunk_ref);
         Ok(())
+    }
+
+    /// Sends `bytes` (`length` bytes long) to the single dedicated
+    /// [`persist_writer`] thread over [`Inner::persist_write_tx`] and blocks
+    /// on that one request's own one-shot response channel for the
+    /// resulting extents - the only place a chunk/hash pool worker
+    /// ([`persist_chunk_worker`]) ever actually touches the store's
+    /// physical write path. Kept as its own method (rather than inlined
+    /// into [`Inner::resolve_persist_chunk`]) since nothing about this
+    /// send-and-wait round trip is specific to the dedup-miss case it's
+    /// currently only called from.
+    fn write_chunk_via_writer_thread(
+        &self,
+        bytes: WriteCache,
+        length: u64,
+    ) -> Result<Vec<(u64, u64)>, String> {
+        let (response_tx, response_rx) = mpsc::channel();
+        let request = PersistWriteRequest {
+            bytes,
+            length,
+            response_tx,
+        };
+        let sent = self
+            .persist_write_tx
+            .lock()
+            .expect("persist write queue mutex poisoned")
+            .as_ref()
+            .is_some_and(|tx| tx.send(request).is_ok());
+        if !sent {
+            return Err("persist writer thread is gone".to_string());
+        }
+        response_rx
+            .recv()
+            .map_err(|_| "persist writer thread is gone".to_string())?
+            .map_err(|err| format!("store write failed: {err}"))
     }
 }
 
@@ -1984,6 +2184,7 @@ mod tests {
             None,
             false,
             Duration::ZERO,
+            None,
         )
         .unwrap()
     }
@@ -2024,6 +2225,115 @@ mod tests {
         let b = db::find_tree_entry(&conn, 0, "b.txt").unwrap().unwrap();
         assert_eq!(a.content_id, Some(db::EMPTY_CONTENT_ID));
         assert_eq!(a.content_id, b.content_id);
+    }
+
+    /// Regression test for pooling `persist_chunk_worker`'s chunk/hash
+    /// stage (see `docs/plans/persist-worker-thread-pool.md`): several
+    /// different files closed at effectively the same time, forcing
+    /// genuine concurrent persists across distinct tree ids (real OS
+    /// threads racing via `std::thread::scope`, not just relying on FUSE
+    /// dispatch timing), must all still settle with their own correct
+    /// content - not cross-contaminate or lose any of them.
+    #[test]
+    fn pooled_persist_settles_many_concurrent_files_correctly() {
+        let (_temp_dir, repo_root) = init_repo();
+        let fs = build_filesystem(
+            &repo_root,
+            true,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+            Some(4),
+        )
+        .unwrap();
+
+        const N: usize = 12;
+        std::thread::scope(|scope| {
+            for i in 0..N {
+                let fs = &fs;
+                scope.spawn(move || {
+                    let handle = fs.create(&format!("/f{i}.bin")).unwrap();
+                    let payload = format!("payload for file {i}").repeat(50);
+                    fs.write(handle, 0, payload.as_bytes()).unwrap();
+                    fs.release(handle);
+                });
+            }
+        });
+
+        for i in 0..N {
+            let path = format!("/f{i}.bin");
+            let expected = format!("payload for file {i}").repeat(50);
+            // Blocks on `Inner::wait_while_persisting` internally - a
+            // reliable synchronization point before reading content back.
+            let attr = fs.getattr(&path).unwrap();
+            assert_eq!(attr.size, expected.len() as u64);
+            let handle = fs.open(&path, false).unwrap();
+            let content = fs.read(handle, 0, expected.len() as u32).unwrap();
+            assert_eq!(content, expected.as_bytes());
+            fs.release(handle);
+        }
+    }
+
+    /// Regression test for the dedup-insert race pooling makes newly
+    /// reachable for mount specifically (see `Inner::persist`'s own doc
+    /// comment, "Runs concurrently for different `tree_id`s"): several
+    /// different files given the *same*, previously-unseen content, closed
+    /// at effectively the same time, so more than one `persist_chunk_worker`
+    /// can plausibly discover the identical new chunk as a dedup miss
+    /// before either has committed. `db::resolve_content`'s
+    /// `ON CONFLICT DO NOTHING` handling (already relied on by `store`'s
+    /// own long-parallel workers) must still converge all of them onto
+    /// exactly one shared chunk/content id, whichever order they actually
+    /// commit in.
+    #[test]
+    fn pooled_persist_dedupes_identical_new_content_raced_across_files() {
+        let (_temp_dir, repo_root) = init_repo();
+        let fs = build_filesystem(
+            &repo_root,
+            true,
+            DEFAULT_WRITE_CACHE_MB,
+            None,
+            false,
+            Duration::ZERO,
+            Some(4),
+        )
+        .unwrap();
+
+        const N: usize = 8;
+        let payload = b"identical content raced across several files".repeat(20);
+        std::thread::scope(|scope| {
+            for i in 0..N {
+                let fs = &fs;
+                let payload = &payload;
+                scope.spawn(move || {
+                    let handle = fs.create(&format!("/dup{i}.bin")).unwrap();
+                    fs.write(handle, 0, payload).unwrap();
+                    fs.release(handle);
+                });
+            }
+        });
+        for i in 0..N {
+            // Blocks on `Inner::wait_while_persisting` internally.
+            fs.getattr(&format!("/dup{i}.bin")).unwrap();
+        }
+
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_read_connection().unwrap();
+        let content_ids: Vec<i64> = (0..N)
+            .map(|i| {
+                let entry = db::find_tree_entry(&conn, 0, &format!("dup{i}.bin"))
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(db::file_size(&conn, &entry).unwrap(), payload.len() as i64);
+                entry.content_id.unwrap()
+            })
+            .collect();
+        assert!(
+            content_ids.windows(2).all(|w| w[0] == w[1]),
+            "identical content raced across several files must dedupe onto exactly \
+             one content id regardless of commit order, got {content_ids:?}"
+        );
     }
 
     /// Regression test for the real report that prompted this fix: copying
@@ -2222,6 +2532,7 @@ mod tests {
             None,
             false,
             Duration::ZERO,
+            None,
         );
 
         assert!(result.is_err());
@@ -2245,6 +2556,7 @@ mod tests {
             None,
             false,
             Duration::ZERO,
+            None,
         );
 
         assert!(result.is_ok());
@@ -2272,6 +2584,7 @@ mod tests {
             None,
             false,
             Duration::ZERO,
+            None,
         ) {
             panic!("{err}");
         }
@@ -2295,6 +2608,7 @@ mod tests {
             None,
             false,
             Duration::ZERO,
+            None,
         )
         .unwrap();
 
@@ -2328,6 +2642,7 @@ mod tests {
             None,
             false,
             Duration::ZERO,
+            None,
         )
         .unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
@@ -2418,6 +2733,7 @@ mod tests {
             None,
             false,
             Duration::ZERO,
+            None,
         )
         .unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
@@ -2530,6 +2846,7 @@ mod tests {
             None,
             false,
             Duration::ZERO,
+            None,
         )
         .unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
@@ -2661,6 +2978,7 @@ mod tests {
             None,
             false,
             Duration::ZERO,
+            None,
         )
         .unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
@@ -2735,7 +3053,7 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, 0, None, false, Duration::ZERO).unwrap();
+        let fs = build_filesystem(&repo_root, true, 0, None, false, Duration::ZERO, None).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
@@ -2819,6 +3137,7 @@ mod tests {
             None,
             false,
             Duration::ZERO,
+            None,
         )
         .unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
@@ -2930,7 +3249,7 @@ mod tests {
             db::insert_directory(&conn, 0, "marker", 0).unwrap();
         }
 
-        let fs = build_filesystem(&repo_root, true, 1, None, false, Duration::ZERO).unwrap();
+        let fs = build_filesystem(&repo_root, true, 1, None, false, Duration::ZERO, None).unwrap();
         let mount_dir = tempfile::tempdir().unwrap();
         let mount_path = mount_dir.path().to_path_buf();
         let handle = {
