@@ -1911,19 +1911,27 @@ mod tests {
     /// `db::chunk_extents` lookup and `store.read` call).
     fn seed_file_multi_chunk(repo_root: &Path, parent_id: i64, name: &str, chunks: &[&[u8]]) {
         let data_store = LongTermStore::new(repo_root.join("data"), false);
+        // Tracked locally rather than re-querying `MAX(stop) FROM
+        // chunk_extents` per chunk (the way single-chunk `seed_file` does):
+        // that table is only populated once, by the single
+        // `apply_backup_batch` call below, so a per-iteration query would
+        // see the same (pre-loop) starting position for every chunk here
+        // and silently write them all on top of each other in the store.
+        let mut next_start: i64 = {
+            let repository = db::open_repository(repo_root).unwrap();
+            let conn = repository.open_read_connection().unwrap();
+            conn.query_row(
+                "SELECT COALESCE(MAX(stop), 0) FROM chunk_extents",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
         let mut chunk_refs = Vec::new();
         for bytes in chunks {
-            let start: i64 = {
-                let repository = db::open_repository(repo_root).unwrap();
-                let conn = repository.open_read_connection().unwrap();
-                conn.query_row(
-                    "SELECT COALESCE(MAX(stop), 0) FROM chunk_extents",
-                    (),
-                    |row| row.get(0),
-                )
-                .unwrap()
-            };
+            let start = next_start;
             data_store.write(start as u64, bytes).unwrap();
+            next_start += bytes.len() as i64;
 
             let mut hash = [0u8; 20];
             blake3::Hasher::new()
