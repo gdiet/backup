@@ -720,9 +720,11 @@ something deleted directly in it (not shown at all otherwise - an empty
 directory with no deletion history stays exactly that). Browse into it
 like any other folder to see and read what was deleted there, including
 descending into an already-deleted subdirectory. If the same name was
-deleted more than once, each is disambiguated with its id, e.g. `photo.jpg
-[42]` (matching `backup deleted`'s own id-based disambiguation) - plain
-`photo.jpg` when there's only one.
+deleted more than once, each is disambiguated with its id inserted before
+the extension, e.g. `photo [42].jpg` (so a file manager's icon/type/"open
+with" association still keys off a real trailing extension; a dot file like
+`.gitignore` has no extension to insert before, so it gets `.gitignore
+[42]` instead) - plain `photo.jpg` when there's only one.
 
 To recover something (requires `--read-write`), drag it (or `mv`/rename
 it) out of `[deleted]` to wherever you want it - this reactivates the

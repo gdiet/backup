@@ -76,7 +76,11 @@ as a real, renamable directory.
   deleted`'s own id-based disambiguation. A `rename` *of* a suffixed name
   needs to parse the `[<id>]` suffix back out to know which specific row
   to undelete (see "Nested browsing" below for the closely related parsing
-  need).
+  need). **Revised in `docs/plans/implemented/
+  deleted-listing-suffix-before-extension.md`**: the suffix now goes before
+  the extension (`photo [42].jpg`), not after it - a name ending in `.jpg
+  [42]` isn't a valid extension for a file manager's own icon/type/"open
+  with" association to key off.
 - **Nested browsing into an already-deleted directory**: supported.
   `[deleted]/old-photos/vacation/...` must resolve - `readdir`/`getattr`/
   `open`/`read` on any path under a `[deleted]/...` prefix need their own

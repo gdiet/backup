@@ -97,27 +97,53 @@ pub(crate) fn split_deleted_path(
 
 /// Parses a virtual path component back into its bare name and, if
 /// present, the `[<id>]` disambiguation suffix - the reverse of
-/// [`display_name`].
-fn parse_component(component: &str) -> (&str, Option<i64>) {
-    if component.ends_with(']')
-        && let Some(open) = component.rfind(" [")
-        && let Ok(id) = component[open + 2..component.len() - 1].parse::<i64>()
+/// [`display_name`]. The suffix sits before the extension for a display
+/// name like `photo [42].jpg` (see `display_name`'s own doc comment for
+/// why), so this can't just look at the end of the string: it finds the
+/// rightmost well-formed `" [<digits>]"` marker anywhere in `component` and
+/// splices out everything from `" ["` through the matching `"]"`, joining
+/// whatever's left on either side back together (empty on the right for a
+/// dot-file or extension-less name, where the marker really was at the end).
+fn parse_component(component: &str) -> (std::borrow::Cow<'_, str>, Option<i64>) {
+    if let Some(open) = component.rfind(" [")
+        && let Some(close_rel) = component[open + 2..].find(']')
+        && let Ok(id) = component[open + 2..open + 2 + close_rel].parse::<i64>()
     {
-        return (&component[..open], Some(id));
+        let base = &component[..open];
+        let ext = &component[open + 2 + close_rel + 1..];
+        return (format!("{base}{ext}").into(), Some(id));
     }
-    (component, None)
+    (component.into(), None)
 }
 
 /// The name a deleted entry should be shown under in a listing: suffixed
 /// with its id only when another entry in the same listing shares its bare
 /// name (repeat-deletions of the same path) - see the plan doc's
 /// disambiguation decision, mirroring `backup deleted`'s own approach.
+///
+/// The suffix goes *before* the extension (`photo [42].jpg`, not
+/// `photo.jpg [42]`) - a real file manager relies on the trailing extension
+/// for icon/type/"open with" association and sorting, and `name [42]` isn't
+/// a valid one. Exactly one exception: a name starting with `.` (a Unix
+/// "dot file", e.g. `.gitignore`) has no splittable extension in the usual
+/// sense - the whole name is treated as opaque and the suffix goes at the
+/// end, same as a name with no dot at all (e.g. `README [42]`). Deliberately
+/// a simple last-`.` split, not an attempt to recognize multi-part
+/// extensions like `.tar.gz` as one unit - matches Windows Explorer's own
+/// "(2)" duplicate-naming convention (this project already targets/mirrors
+/// Explorer elsewhere), and avoids needing a list of known compound
+/// extensions that don't otherwise belong in a generic dedup backup tool.
 fn display_name(name: &str, id: i64, name_is_ambiguous: bool) -> String {
-    if name_is_ambiguous {
-        format!("{name} [{id}]")
-    } else {
-        name.to_string()
+    if !name_is_ambiguous {
+        return name.to_string();
     }
+    if !name.starts_with('.')
+        && let Some(dot) = name.rfind('.')
+    {
+        let (base, ext) = name.split_at(dot);
+        return format!("{base} [{id}]{ext}");
+    }
+    format!("{name} [{id}]")
 }
 
 /// Resolves a virtual path (as returned by [`split_deleted_path`]) against
@@ -365,19 +391,48 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "dup.txt [".to_string() + &dup1.to_string() + "]",
-                "dup.txt [".to_string() + &dup2.to_string() + "]",
+                "dup [".to_string() + &dup1.to_string() + "].txt",
+                "dup [".to_string() + &dup2.to_string() + "].txt",
                 "unique.txt".to_string(),
             ]
         );
     }
 
     #[test]
+    fn display_name_puts_the_suffix_before_the_extension() {
+        assert_eq!(display_name("photo.jpg", 42, true), "photo [42].jpg");
+        assert_eq!(display_name("photo.jpg", 42, false), "photo.jpg");
+        // Last dot only, not an attempt to recognize "compound" extensions.
+        assert_eq!(
+            display_name("archive.tar.gz", 42, true),
+            "archive.tar [42].gz"
+        );
+        // No extension at all - suffix at the end, same as today.
+        assert_eq!(display_name("README", 42, true), "README [42]");
+        // A dot file has no splittable extension in the usual sense, even
+        // with further dots in it - treated as fully opaque.
+        assert_eq!(display_name(".gitignore", 42, true), ".gitignore [42]");
+        assert_eq!(display_name(".env.local", 42, true), ".env.local [42]");
+    }
+
+    #[test]
     fn parse_component_round_trips_display_name() {
-        assert_eq!(parse_component("photo.jpg"), ("photo.jpg", None));
-        assert_eq!(parse_component("photo.jpg [42]"), ("photo.jpg", Some(42)));
+        assert_eq!(parse_component("photo.jpg"), ("photo.jpg".into(), None));
+        assert_eq!(
+            parse_component("photo [42].jpg"),
+            ("photo.jpg".into(), Some(42))
+        );
+        assert_eq!(
+            parse_component("archive.tar [42].gz"),
+            ("archive.tar.gz".into(), Some(42))
+        );
+        assert_eq!(parse_component("README [42]"), ("README".into(), Some(42)));
+        assert_eq!(
+            parse_component(".gitignore [42]"),
+            (".gitignore".into(), Some(42))
+        );
         // A name that merely contains brackets without being a valid
-        // trailing " [<id>]" suffix is left alone.
-        assert_eq!(parse_component("weird[name]"), ("weird[name]", None));
+        // " [<id>]" marker is left alone.
+        assert_eq!(parse_component("weird[name]"), ("weird[name]".into(), None));
     }
 }
