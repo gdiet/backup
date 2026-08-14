@@ -112,13 +112,49 @@ co-author avatars):
 Generated-By: <agent-name> (harness: <harness>; model: <model>; role: author|co-author)
 ```
 
-- `role: co-author` — a human was actively involved in producing this specific commit (the normal
-  case under the commit-permission rule above: someone reviewed and approved it). `role: author` —
-  the agent produced this commit without a human actively present at that moment (e.g. a
-  previously-authorized autonomous/scheduled run) - this is about actual involvement in *this*
-  commit, not about which name ends up in git's own `Author:` field.
+- `role: co-author` — a human genuinely reviewed *this specific change* before it was committed:
+  read the diff/content, asked questions about it, requested revisions, or otherwise engaged with
+  what was actually produced. `role: author` — the agent produced the change from a short or
+  high-level instruction and no such review happened before commit. Authorizing a commit ("ja",
+  "go ahead") is not the same as reviewing its content - the common plan-summary → "ja" → implement
+  → verify → commit cycle used throughout this project is `role: author` by default, even though a
+  human is present and explicitly permitted the commit (see the commit-permission rule above, which
+  is unaffected by this - permission is still always required either way). Only use `co-author` when
+  review of the actual content demonstrably happened.
+- **Determine this from context you already have - don't ask.** This rule must not increase how
+  often you ask the developer anything. Decide `author` vs. `co-author` from what already happened
+  in the conversation (did the developer read/comment on the actual content, or just approve a
+  plan/summary and give the go-ahead?); if nothing in context indicates real review, default
+  straight to `author`, silently, with no confirmation question. Only surface a question here if the
+  developer's own words already asked for review/confirmation on this change - never invent one.
+- If you do need to show a change for review (because it was asked for, not by default), don't paste
+  a raw unified diff into chat - it's not good to read that way. Either present it in a more
+  human-readable form (e.g. a prose summary of what changed and why, grouped by file/concern) or
+  point the developer at a proper diff tool (their IDE, `git diff`/`git difftool` locally, GitHub's
+  PR view) to look at themselves.
 - `harness` is the interface this session is running through (terminal CLI, Desktop app, web app,
   an IDE extension, etc.) - not reliably inferable, so ask for it rather than guessing.
+
+### Distinct Git Author Identity For Agent-Authored Commits
+
+When `role: author` applies (see above), also make the commit's actual git Author identity reflect
+that, not just the trailer: set `GIT_AUTHOR_NAME`/`GIT_AUTHOR_EMAIL` as env vars scoped to that one
+`git commit` invocation only, e.g.:
+
+```
+GIT_AUTHOR_NAME="Claude Sonnet 5" GIT_AUTHOR_EMAIL="noreply@anthropic.com" git commit -m "..."
+```
+
+Use the same name/email already used in the `Co-Authored-By` trailer, kept consistent with whichever
+agent/model is actually running. Never do this by editing global (`~/.gitconfig`) or even this
+repo's local git config - it must only ever apply to the single `git commit` invocation it's set
+for. Leave `GIT_COMMITTER_NAME`/`GIT_COMMITTER_EMAIL` unset so the ambient (human) identity is used
+for Committer - this correctly reflects that a human ran the actual `git commit` command even though
+they didn't author the content; GitHub displays this as "X authored, Y committed" when the two
+differ.
+
+When `role: co-author` applies, leave the git Author identity alone (ambient/human, as normal, i.e.
+don't set the env vars above) - only the trailers change.
 
 **Ask early, not at commit time.** As soon as it looks like a commit will eventually be wanted in
 this session (not every session ends in one - don't ask if it's not yet foreseeable), ask once,
