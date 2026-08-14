@@ -94,11 +94,14 @@ schema, specifically to fix `apply_backup_batch`'s replace branch leaving a soft
 placeholder visible in `[deleted]` after every mount-created file. That's no longer needed: with
 `content_id IS NULL` now unambiguous, `apply_backup_batch`'s replace branch could straightforwardly
 be taught to hard-delete the old row whenever `existing.content_id.is_none()` - the exact heuristic
-that doc originally rejected, now correct by construction. That specific follow-up (touching
-`apply_backup_batch`'s replace branch itself) was not part of this change and remains open if the
-cosmetic `[deleted]`-noise issue still matters in practice - the superseded doc's file was deleted
+that doc originally rejected, now correct by construction. The superseded doc's file was deleted
 since its proposed *mechanism* (the session flag) is obsolete, not because the underlying cosmetic
-issue is fixed yet.
+issue was fixed yet - **it has been since, 2026-08-14: see `apply_backup_batch`'s own doc comment
+and replace branch (`db/src/backup.rs`), which now hard-deletes exactly when
+`existing.content_id.is_none()`**, closing this out for real. Surfaced again by a concrete report -
+copying a `.git` checkout's many files into the mount left one ghost entry per file, impossible to
+miss at that volume even though the underlying mechanism had been present (and mostly unnoticed)
+since the mount's read-write support first shipped.
 
 ## Verification
 
@@ -111,3 +114,11 @@ already-settled empty file); `cli::mount::tests` (a `create()`+no-write+`release
 as `EMPTY_CONTENT_ID` on release, two touched files dedup onto the same content); every pre-existing
 test whose fixture hardcoded `contents.id = 1` (now taken by the seed) or asserted a raw `contents`
 row count updated to account for the always-present seeded row.
+
+**2026-08-14 follow-up** (the `apply_backup_batch` hard-delete described above): new
+`db::backup::tests::a_create_placeholder_replaced_by_real_content_leaves_no_deleted_ghost` (mirrors
+`create()` then `persist()` directly against `apply_backup_batch`, confirms the placeholder is gone
+- not soft-deleted - and `deleted_entries` shows nothing) and
+`cli::mount::tests::create_then_write_leaves_no_deleted_ghost` (the same thing end to end through a
+real `DedupFs`: create, write, release, confirm `has_deleted_children` is `false`). Full suite
+re-run clean.

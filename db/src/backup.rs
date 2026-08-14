@@ -172,10 +172,17 @@ pub fn resolve_content(
 /// Re-running a backup for a file at a path that already has an active entry is
 /// handled per the immutable-`content_id` invariant the `ref_count` triggers rely
 /// on (see `migrations.rs`): if the resolved content is unchanged, only `time` is
-/// refreshed in place; if it changed, the old entry is soft-deleted (`deleted_at`
-/// set to this record's `time_millis` - a run timestamp isn't threaded through
-/// separately) and a new entry is inserted, never mutating `content_id` in place.
-/// A name that already exists as a directory is a hard error.
+/// refreshed in place; if it changed, a new entry is inserted, never mutating
+/// `content_id` in place - the old entry is soft-deleted (`deleted_at` set to this
+/// record's `time_millis` - a run timestamp isn't threaded through separately) if
+/// it ever held real content, but hard-deleted instead when its own `content_id`
+/// was still `NULL` (a mount `create()` placeholder nothing has decided content
+/// for yet - see [`crate::EMPTY_CONTENT_ID`]'s own doc comment for why `NULL` is
+/// unambiguous enough to make this safe): there is nothing worth keeping
+/// recoverable about a row that never had any content to begin with, and leaving
+/// it soft-deleted would only accumulate as content-less noise in `[deleted]` for
+/// every single file ever created through the mount, regardless of what it ends
+/// up containing. A name that already exists as a directory is a hard error.
 ///
 /// Uses a plain (`DEFERRED`) transaction. That's fine only because the caller is
 /// expected to be the *sole* writer connection for the repository (see the
@@ -227,10 +234,18 @@ pub fn apply_backup_batch(conn: &mut Connection, batch: &[FileBackupRecord]) -> 
                 )?;
             }
             Some(existing) => {
-                tx.execute(
-                    "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
-                    params![record.time_millis, existing.id],
-                )?;
+                if existing.content_id.is_none() {
+                    // Never had content - just a mount create() placeholder,
+                    // nothing to preserve. Hard-delete rather than the usual
+                    // soft-delete, so it doesn't linger as noise in
+                    // `[deleted]` (see this function's own doc comment).
+                    tx.execute("DELETE FROM tree_entries WHERE id = ?1", [existing.id])?;
+                } else {
+                    tx.execute(
+                        "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+                        params![record.time_millis, existing.id],
+                    )?;
+                }
                 tx.execute(
                     "INSERT INTO tree_entries (parent_id, name, time, kind, content_id)
                      VALUES (?1, ?2, ?3, 'file', ?4)",
@@ -445,6 +460,50 @@ mod tests {
             .unwrap();
         assert_eq!(entry.kind, EntryKind::File);
         assert_eq!(entry.content_id, None);
+    }
+
+    /// Regression test for the exact real-world observation that motivated
+    /// this fix: copying many files through the mount (a `.git` checkout,
+    /// in the report that surfaced this) used to leave one soft-deleted
+    /// "ghost" row per file in `[deleted]`, since every mount `create()`
+    /// placeholder (`content_id NULL`) gets replaced by a real-content row
+    /// the moment anything is actually written - see this function's own
+    /// doc comment. The placeholder must now be hard-deleted, not
+    /// soft-deleted: no trace left in `deleted_entries` at all.
+    #[test]
+    fn a_create_placeholder_replaced_by_real_content_leaves_no_deleted_ghost() {
+        let (_temp_dir, mut conn) = test_connection();
+        // Mirrors mount.rs's `create()`: an empty placeholder inserted first.
+        apply_backup_batch(
+            &mut conn,
+            &[FileBackupRecord {
+                parent_id: 0,
+                name: "a.txt".to_string(),
+                time_millis: 1000,
+                content: ContentSource::Known(None),
+            }],
+        )
+        .unwrap();
+
+        // Mirrors `persist()`: the same path, now with real content.
+        apply_backup_batch(&mut conn, &[one_chunk_record("a.txt", 0)]).unwrap();
+
+        let entry = find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+        assert_ne!(entry.content_id, None);
+        assert!(
+            crate::deleted_entries(&conn, 0).unwrap().is_empty(),
+            "nothing should show up under [deleted] for this - there was never \
+             any real content to lose"
+        );
+        // Confirms there isn't a second, orphaned row left behind under a
+        // different id either - a hard-delete plus a fresh insert can
+        // freely reuse the freed rowid (ordinary SQLite `INTEGER PRIMARY
+        // KEY` behavior, not `AUTOINCREMENT`), so this doesn't assume
+        // anything about whether the new row's id matches the old one.
+        let total_rows: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tree_entries", (), |row| row.get(0))
+            .unwrap();
+        assert_eq!(total_rows, 2, "just the root and this one active entry");
     }
 
     #[test]

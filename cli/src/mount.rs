@@ -1926,6 +1926,37 @@ mod tests {
         assert_eq!(a.content_id, b.content_id);
     }
 
+    /// Regression test for the real report that prompted this fix: copying
+    /// a `.git` checkout's many files into the mount (via the Samba
+    /// re-export) left one soft-deleted "ghost" entry in `[deleted]` per
+    /// file - every `create()`+write()+close() leaves its up-front
+    /// placeholder replaced, and that replace used to always soft-delete.
+    /// Confirms end to end, through a real `DedupFs`, that creating and
+    /// actually writing a file no longer leaves anything behind in
+    /// `[deleted]`.
+    #[test]
+    fn create_then_write_leaves_no_deleted_ghost() {
+        let (_temp_dir, repo_root) = init_repo();
+        let fs = build_test_filesystem(&repo_root);
+
+        let handle = fs.create("/a.txt").unwrap();
+        fs.write(handle, 0, b"hello").unwrap();
+        fs.release(handle);
+        // release()'s persist runs on a background thread - getattr blocks
+        // on Inner::wait_while_persisting internally, giving a reliable
+        // synchronization point before checking the database directly.
+        fs.getattr("/a.txt").unwrap();
+
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_read_connection().unwrap();
+        let entry = db::find_tree_entry(&conn, 0, "a.txt").unwrap().unwrap();
+        assert_ne!(entry.content_id, None);
+        assert!(
+            !db::has_deleted_children(&conn, 0).unwrap(),
+            "no ghost placeholder should be left behind under [deleted]"
+        );
+    }
+
     #[test]
     fn map_rename_error_matches_real_rename_semantics() {
         assert_eq!(
