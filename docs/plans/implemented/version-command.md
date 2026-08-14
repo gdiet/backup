@@ -1,6 +1,52 @@
 # `backup version` command + richer schema-mismatch error
 
-**Status**: proposed, not yet implemented.
+**Status**: implemented (2026-08-14).
+
+## What was actually built, and where it differed from the plan
+
+Followed the plan below closely; a few concrete deviations, all found while implementing rather
+than anticipated:
+
+- **Commit date uses `git show -s --format=%cs`** (short `YYYY-MM-DD`), not the plan's `%cI` (full
+  ISO 8601 with time-of-day/offset). A time-of-day doesn't add anything actionable for "which
+  commit is this" and just makes the one-line summary noisier - `%cs` alone already matches what
+  VSCode/IntelliJ show.
+- **No accessor was added to `rusqlite_migration::Migrations`** - it has no public way to ask "how
+  many migrations do you have" (checked its actual source, not assumed). Used a separate, hand-
+  maintained `pub const CURRENT_SCHEMA_VERSION: usize = 1` in `migrations.rs` instead (re-exported
+  from `db/src/lib.rs`), documented as needing a manual bump alongside `migrations()` if a second
+  migration is ever appended - acceptable since that's already a rare, deliberate event here (see
+  `SCHEMA_V1`'s own doc comment on why there's only ever been one migration).
+- **Found and fixed a real bug before it shipped**: naively wiring `Cli::command().version(...)` to
+  the same `"backup 0.1.0 (...)"` string `version` prints doubled the app name - clap's `-V`/
+  `--version` already prepends the command's own name (`backup`) to whatever `.version(...)` is set
+  to. Split into `version_number()` (no `backup` prefix, what `.version()` gets) and `version_line()`
+  (`format!("backup {}", version_number())`, what `version`'s own first `println!` uses) - both
+  end up showing `backup 0.1.0 (857c46c5, 2026-08-14)`, just built from opposite ends.
+- **Wired via the builder call `Cli::command().version(...)`**, not the plan's `#[command(version =
+  ...)]` derive attribute - that attribute needs a literal/const expression, not a value assembled
+  at runtime via `format!`; `main.rs` already builds `Cli::command()` explicitly as a two-step
+  equivalent of `Cli::parse()` (for `usage_log`'s benefit), so there was already a natural place to
+  chain `.version(...)` onto.
+- `Command::version` needs a `&'static str`; `env!(...)`-only values would have been fine as
+  `&'static str` directly, but the version string is assembled at runtime via `format!`, so it's an
+  owned `String` - resolved with a one-time, deliberate `Box::leak`, harmless for a value computed
+  once per process at startup.
+- The dirty-working-tree flag noted as an open, non-blocking question below was left out - not
+  revisited, no new information changed the original "nice-to-have, not needed" assessment.
+
+Verification: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo
+test --workspace`, `cargo doc --no-deps --workspace` all clean. New tests: `cli::version::tests`
+(the version line includes `CARGO_PKG_VERSION`; the repository-schema line reports the actual
+version for a freshly initialized repo, is best-effort/`unavailable` for a missing repo, and reports
+both numbers side by side when the schema is too new); `db`'s two existing
+`..._when_the_schema_is_too_new` tests extended to also assert `supported_version:
+CURRENT_SCHEMA_VERSION`. Manually ran `backup version`, `backup --version`, `backup -V` against this
+checkout.
+
+---
+
+**Original plan follows.**
 
 ## Motivation
 

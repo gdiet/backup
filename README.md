@@ -74,6 +74,18 @@ All commands take `-r <repo>`/`--repo <repo>` for the repository directory
 repository-relative (`/`-separated), not filesystem paths, unless noted
 otherwise.
 
+## Show Version
+
+```bash
+backup version
+# or: backup --version / backup -V
+```
+
+`version` prints the app version plus the git commit (short hash and date) it was built from, the
+database schema version this build supports, and - best-effort, if `-r`/`--repo` resolves to an
+initialized repository - that repository's own current schema version, for a direct comparison.
+`-V`/`--version` show the same app version/hash/date line alone.
+
 ## Initialize A Repository
 
 ```bash

@@ -52,8 +52,14 @@ pub enum Error {
     /// [`rusqlite_migration::Migrations::current_version`]) rather than left
     /// to surface as the much less actionable
     /// [`rusqlite_migration::MigrationDefinitionError::DatabaseTooFarAhead`]
-    /// error `to_latest` would otherwise fail with.
-    SchemaTooNew { db_version: usize },
+    /// error `to_latest` would otherwise fail with. `supported_version` is this build's own
+    /// [`crate::CURRENT_SCHEMA_VERSION`], carried alongside `db_version` so the message (and
+    /// `backup version`, which reports the same two numbers) can say which upgrade would actually
+    /// fix this rather than just that something's wrong.
+    SchemaTooNew {
+        db_version: usize,
+        supported_version: usize,
+    },
     /// [`crate::open_repository_read_only`] found migrations that haven't
     /// been applied yet - a read-only connection can't apply them itself,
     /// unlike [`crate::open_repository`].
@@ -126,10 +132,14 @@ impl fmt::Display for Error {
             Self::Io(err) => write!(f, "I/O error: {err}"),
             Self::Sqlite(err) => write!(f, "SQLite error: {err}"),
             Self::Migration(err) => write!(f, "database migration error: {err}"),
-            Self::SchemaTooNew { db_version } => write!(
+            Self::SchemaTooNew {
+                db_version,
+                supported_version,
+            } => write!(
                 f,
-                "this repository's database schema (version {db_version}) is newer than this \
-                 version of `backup` understands - please update `backup`"
+                "this repository's database schema (version {db_version}) is newer than what \
+                 this build of `backup` supports (schema version {supported_version}) - please \
+                 update `backup`, or run `backup version` for details"
             ),
             Self::MigrationsPending => write!(
                 f,

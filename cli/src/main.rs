@@ -30,6 +30,7 @@ mod store;
 mod temp_dir;
 mod undelete;
 mod usage_log;
+mod version;
 
 /// Deduplicating backup application.
 #[derive(Parser)]
@@ -90,6 +91,9 @@ enum Command {
     /// its `data/` directory) into this, already-initialized but empty,
     /// repository - re-chunking and re-hashing all content along the way.
     MigrateScalaRepo(migrate_scala_repo::MigrateScalaRepoArgs),
+    /// Show the app version (with git commit/date) and schema version info,
+    /// same as `-V`/`--version` plus schema details.
+    Version,
 }
 
 #[derive(Args)]
@@ -130,7 +134,15 @@ fn main() -> ExitCode {
     // available afterward for `usage_log::log_invocation`, which needs
     // them to find out which optional flags were actually passed. See
     // `docs/plans/implemented/usage-log.md`.
-    let command = Cli::command();
+    // Overrides clap's default `-V`/`--version` output (otherwise just
+    // `CARGO_PKG_VERSION`) with the same git hash/date the `version`
+    // subcommand shows, so both spellings of "what version is this" agree -
+    // clap prepends the app name itself, hence `version_number` not
+    // `version_line` here (see that function's doc comment). `Command::
+    // version` needs a `&'static str`; leaking is fine for a
+    // once-per-process startup value this size.
+    let command =
+        Cli::command().version(Box::leak(version::version_number().into_boxed_str()) as &str);
     let matches = command.clone().get_matches();
     let cli = match Cli::from_arg_matches(&matches) {
         Ok(cli) => cli,
@@ -173,6 +185,7 @@ fn main() -> ExitCode {
         Command::MigrateScalaRepo(args) => {
             migrate_scala_repo::run_migrate_scala_repo(&cli.repo, args)
         }
+        Command::Version => version::run_version(&cli.repo),
     }
 }
 

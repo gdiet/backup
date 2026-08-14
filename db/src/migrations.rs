@@ -224,6 +224,15 @@ pub(crate) fn migrations() -> Migrations<'static> {
     Migrations::new(vec![M::up(SCHEMA_V1)])
 }
 
+/// The schema version (`PRAGMA user_version`) this build's `migrations()` brings a database up
+/// to - i.e. `migrations().len()`, if `rusqlite_migration::Migrations` exposed one; it doesn't, so
+/// this is kept as a separate constant instead and must be updated by hand alongside `migrations`
+/// whenever a new migration is appended (a single schema, `SCHEMA_V1`'s own doc comment explains
+/// why there's only ever been one so far). Surfaced to users via [`crate::Error::SchemaTooNew`]
+/// and the `backup version` command, so they can see at a glance whether upgrading `backup` would
+/// actually help open a given repository.
+pub const CURRENT_SCHEMA_VERSION: usize = 1;
+
 #[cfg(test)]
 mod tests {
     use super::*;

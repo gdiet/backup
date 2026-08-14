@@ -35,6 +35,7 @@ pub use error::Error;
 pub use maintenance::{
     ReclaimStats, reclaim_space, soft_delete, soft_delete_and_replace_with_empty, undelete,
 };
+pub use migrations::CURRENT_SCHEMA_VERSION;
 pub use query::{
     ChunkInfo, DeletedEntry, PathEntry, SubtreeStats, all_chunks, chunk_extents,
     chunk_extents_sorted, contents_for_chunk, deleted_entries, entries_for_content, file_size,
@@ -320,6 +321,7 @@ fn reject_if_schema_too_new(conn: &Connection) -> Result<(), Error> {
     if let SchemaVersion::Outside(db_version) = migrations::migrations().current_version(conn)? {
         return Err(Error::SchemaTooNew {
             db_version: db_version.get(),
+            supported_version: CURRENT_SCHEMA_VERSION,
         });
     }
     Ok(())
@@ -913,7 +915,13 @@ mod tests {
         let result = open_repository_read_only(&repo_root);
 
         assert!(
-            matches!(result, Err(Error::SchemaTooNew { db_version: 99 })),
+            matches!(
+                result,
+                Err(Error::SchemaTooNew {
+                    db_version: 99,
+                    supported_version: CURRENT_SCHEMA_VERSION
+                })
+            ),
             "{result:?}"
         );
     }
@@ -934,7 +942,13 @@ mod tests {
         let result = open_repository(&repo_root);
 
         assert!(
-            matches!(result, Err(Error::SchemaTooNew { db_version: 99 })),
+            matches!(
+                result,
+                Err(Error::SchemaTooNew {
+                    db_version: 99,
+                    supported_version: CURRENT_SCHEMA_VERSION
+                })
+            ),
             "{result:?}"
         );
     }
