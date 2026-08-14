@@ -1,21 +1,24 @@
 # Audit: long file/directory names and paths, across all commands, on Linux and Windows
 
-**Status**: empirically tested on Linux (2026-08-11) and, since, on a real WinFSP-installed
-Windows machine ("julius", 2026-08-12 - first remote via SSH, then natively, see "Findings" below
-and "Windows findings" further down). The one concrete gap found (`mount --read-write`'s
-`mkdir`/`create`/`rename` accepting unbounded name lengths) is **fixed and confirmed working via
-real WinFSP**, not just Linux/FUSE. As of 2026-08-12 the fix and its tests live in `mountfs`
-itself, not `cli` - see "Moved to `mountfs`" below for why and where exactly. `restore` also now
-has its own regression test for the complementary case (a too-long name already *in* the
-repository, restored to a real filesystem that rejects it) - see "cli-level tests" below.
-Everything else checked so far already behaved reasonably without needing a code change. Native
-Windows SMB re-export of a WinFSP mount was checked (2026-08-12, see "Windows findings") and
-showed no length behavior beyond what direct WinFSP access already does. The remaining gap - the
-SMB *wire protocol's* own limits, independent of any Win32 client - was closed on 2026-08-13: a
+**Status**: closed (2026-08-14). Empirically tested on Linux (2026-08-11) and, since, on a real
+WinFSP-installed Windows machine ("julius", 2026-08-12 through 2026-08-14 - first remote via SSH,
+then natively, see "Findings" below and "Windows findings" further down). The one concrete gap
+found (`mount --read-write`'s `mkdir`/`create`/`rename` accepting unbounded *single-component* name
+lengths) is **fixed and confirmed working via real WinFSP**, not just Linux/FUSE. As of 2026-08-12
+the fix and its tests live in `mountfs` itself, not `cli` - see "Moved to `mountfs`" below for why
+and where exactly. `restore` also now has its own regression test for the complementary case (a
+too-long name already *in* the repository, restored to a real filesystem that rejects it) - see
+"cli-level tests" below. Everything else checked so far already behaved reasonably without needing
+a code change. Native Windows SMB re-export of a WinFSP mount was checked (2026-08-12, see
+"Windows findings") and showed no length behavior beyond what direct WinFSP access already does.
+The SMB *wire protocol's* own limits, independent of any Win32 client, were closed on 2026-08-13: a
 real `smbclient` (Samba, run from a Docker container on the Linux/WSL2 side, network-reachable to
 julius once SSH connectivity to it was set up) against a real WinFSP-mounted, SMB-shared
-repository on julius confirmed the identical 255/256-byte boundary, with no gap - see "Windows
-findings" below for the session record.
+repository on julius confirmed the identical 255/256-byte boundary, with no gap. Finally, the one
+item this doc had explicitly flagged as "not yet tested" since its very first (2026-08-11) revision
+- **long total paths (deep nesting) via a real native WinFSP mount**, as opposed to single
+long component names, or deep paths only exercised via `restore`/`store` against WSL2's DrvFs - was
+closed on 2026-08-14; see "Deep-path findings" below.
 
 ## Why this needs checking at all
 
@@ -336,3 +339,48 @@ a repository for real (a direct DB-to-DB import, no `mount` involved) and would 
 next candidate, but wasn't added now - it needs a full Scala-export test fixture, disproportionate
 effort for this pass; noted here as a known, lower-priority open item rather than silently
 skipped.
+
+## Deep-path findings (2026-08-14, empirical, real WinFSP on "julius")
+
+The one item left open since this doc's first (2026-08-11) revision: everything above tested a
+single *long component name*; the separate question of a long *total* path (many nested
+directories, each individually short/legal) via a real WinFSP mount was explicitly flagged "not
+yet tested" and never revisited even once julius became available for the component-length work -
+attention went to the actual bug (component length) and the SMB wire-protocol gap instead. Closed
+now with `backup mount --read-write` on julius, native release build:
+
+- Built a 20-level-deep directory tree (each level a 40-character name) under a fresh
+  `--read-write` mount, via PowerShell's `New-Item`/`Set-Content` using `\\?\`-prefixed
+  ("verbatim") paths - **766 characters classic, 770 verbatim, both well past classic `MAX_PATH`
+  (260)**.
+  - **Creation, content write, and read-back all succeeded** via the verbatim path - a file at the
+    bottom of the tree round-tripped its content byte-for-byte.
+  - **Listing an intermediate level (10 levels deep) via the verbatim path succeeded**, correctly
+    showing the next level down as a child - confirms `mountfs`'s Windows dispatch and
+    `db::resolve_path`'s component-by-component walk both handle a long, deeply-nested path
+    correctly end to end, not just a single long leaf name.
+  - **Accessing the exact same path via the classic (non-verbatim) API failed cleanly** - `Test-Path`
+    returned `False`, `Get-ChildItem` reported an ordinary "path cannot be found" error. No crash,
+    hang, or corruption - this is standard Windows behavior for any filesystem once a path exceeds
+    `MAX_PATH` without opting into the extended-length API, not something this project's own code
+    does right or wrong.
+- **`backup find` against the resulting repository correctly reconstructs and prints the full
+  20-level path with no truncation** - confirms the database itself stored it intact (needed a
+  `db compact` first, since the mount had been killed abruptly to unmount, leaving an
+  uncheckpointed WAL - expected, matches `docs/plans/implemented/cross-process-repository-locking.md`'s
+  own findings, not a new issue).
+- **`restore` of that same 20-level tree onto a fresh native Windows target (not WSL2's DrvFs this
+  time) succeeded**, producing a 786-character destination path with byte-identical content -
+  confirms the DrvFs-only result from the original 2026-08-11 finding also holds for a genuinely
+  native Windows restore target, closing that doc's own "Not yet tested: a native WinFSP mount"
+  callout on the `restore` side too.
+
+Test repository, mount, and generated tree all torn down afterward - nothing left behind on
+julius.
+
+### Conclusion
+
+No code changes resulted - both the mount and `restore` already handle long total paths correctly
+on real Windows, the same way `std::fs`'s own automatic verbatim-path handling already explained
+the DrvFs result. This was purely a verification gap (an untested claim, not a suspected bug), now
+closed with real evidence instead of an inference from adjacent findings.
