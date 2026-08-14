@@ -20,12 +20,26 @@ pub struct UndeleteArgs {
     /// Reactivate at a different repository path instead of the entry's
     /// original one. Use this if the original location is now occupied by
     /// an active entry (reactivating there fails otherwise, rather than
-    /// silently renaming). The target's parent directory must already
-    /// exist. Only the named entry itself moves - a `--recursive`
-    /// reactivation's descendants keep their existing structure underneath
-    /// it.
+    /// silently renaming, unless `--replace` is also given). The target's
+    /// parent directory must already exist. Only the named entry itself
+    /// moves - a `--recursive` reactivation's descendants keep their
+    /// existing structure underneath it.
     #[arg(long)]
     to: Option<String>,
+
+    /// If the target location (the original path, or `--to` if given) is
+    /// occupied by an active entry, replace it instead of failing - a file
+    /// replaces a file, an empty directory replaces an empty directory
+    /// (matching the mount's own `[deleted]`-folder drag-out recovery
+    /// gesture). The replaced entry is soft-deleted, not gone - it stays
+    /// recoverable via `backup deleted`/a second `undelete`. An
+    /// incompatible kind (e.g. a file where an active directory already is)
+    /// or a non-empty target directory still fails, `--replace` or not. Off
+    /// by default: unlike the mount (where a client only reaches this after
+    /// its own overwrite-confirmation prompt), this command has no such
+    /// prior confirmation, so silently replacing isn't the safe default.
+    #[arg(long)]
+    replace: bool,
 }
 
 pub fn run_undelete(repo: &Path, args: UndeleteArgs) -> ExitCode {
@@ -92,19 +106,12 @@ pub fn run_undelete(repo: &Path, args: UndeleteArgs) -> ExitCode {
         }
     };
 
-    // `no_replace: true` - unlike the mount's `[deleted]`-folder drag-out
-    // gesture (which mirrors an already-confirmed "yes, replace" from the
-    // client), this CLI command's `--to` doc comment explicitly promises
-    // "fails otherwise, rather than silently renaming" if the target is
-    // occupied - silently replacing an active entry here would break that
-    // documented contract and risk surprising data loss for a command a
-    // user runs deliberately, not through a GUI's own overwrite prompt.
     match db::undelete(
         &mut conn,
         args.id,
         args.recursive,
         relocate_to,
-        true,
+        !args.replace,
         now_millis(),
     ) {
         Ok(count) => {
@@ -115,8 +122,20 @@ pub fn run_undelete(repo: &Path, args: UndeleteArgs) -> ExitCode {
         Err(db::Error::AlreadyExists { name, .. }) => {
             eprintln!(
                 "error: an active entry named '{name}' already exists at the target location; \
-                 pass --to to reactivate elsewhere"
+                 pass --to to reactivate elsewhere, or --replace to replace it"
             );
+            ExitCode::FAILURE
+        }
+        Err(db::Error::TargetIsADirectory { name, .. }) => {
+            eprintln!("error: '{name}' is an active directory - can't replace it with a file");
+            ExitCode::FAILURE
+        }
+        Err(db::Error::TargetIsAFile { name, .. }) => {
+            eprintln!("error: '{name}' is an active file - can't replace it with a directory");
+            ExitCode::FAILURE
+        }
+        Err(db::Error::TargetNotEmpty { name, .. }) => {
+            eprintln!("error: '{name}' is a non-empty active directory - can't replace it");
             ExitCode::FAILURE
         }
         Err(err) => {
@@ -163,6 +182,7 @@ mod tests {
             id,
             recursive: false,
             to: None,
+            replace: false,
         }
     }
 
@@ -239,6 +259,75 @@ mod tests {
             db::resolve_path(&conn, "a-recovered.txt")
                 .unwrap()
                 .is_some()
+        );
+    }
+
+    #[test]
+    fn replace_reactivates_over_a_compatible_active_entry() {
+        let (_temp_dir, repo_root) = init_repo();
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_write_connection().unwrap();
+        conn.execute(
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind, deleted_at) VALUES (1, 0, 'a.txt', 0, 'file', 1000)",
+            (),
+        )
+        .unwrap();
+        let replaced_id: i64 = conn
+            .query_row(
+                "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (0, 'a.txt', 0, 'file') RETURNING id",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        drop(conn);
+
+        let mut with_replace = args(1);
+        with_replace.replace = true;
+        assert_eq!(run_undelete(&repo_root, with_replace), ExitCode::SUCCESS);
+
+        let conn = db::open_repository(&repo_root)
+            .unwrap()
+            .open_read_connection()
+            .unwrap();
+        let entry = db::resolve_path(&conn, "a.txt").unwrap().unwrap();
+        assert_eq!(entry.id, 1, "the recovered entry now occupies the name");
+        assert_eq!(
+            db::is_deleted(&conn, replaced_id).unwrap(),
+            Some(true),
+            "the replaced entry is soft-deleted, not gone"
+        );
+    }
+
+    #[test]
+    fn replace_still_fails_on_an_incompatible_kind() {
+        let (_temp_dir, repo_root) = init_repo();
+        let repository = db::open_repository(&repo_root).unwrap();
+        let conn = repository.open_write_connection().unwrap();
+        conn.execute(
+            "INSERT INTO tree_entries (id, parent_id, name, time, kind, deleted_at) VALUES (1, 0, 'a.txt', 0, 'file', 1000)",
+            (),
+        )
+        .unwrap();
+        // An active directory now occupies the name - a file can't replace it.
+        conn.execute(
+            "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (0, 'a.txt', 0, 'dir')",
+            (),
+        )
+        .unwrap();
+        drop(conn);
+
+        let mut with_replace = args(1);
+        with_replace.replace = true;
+        assert_eq!(run_undelete(&repo_root, with_replace), ExitCode::FAILURE);
+
+        let conn = db::open_repository(&repo_root)
+            .unwrap()
+            .open_read_connection()
+            .unwrap();
+        assert_eq!(
+            db::is_deleted(&conn, 1).unwrap(),
+            Some(true),
+            "left untouched on an incompatible-kind conflict"
         );
     }
 }

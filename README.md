@@ -415,14 +415,19 @@ given path:
 backup undelete <id>
 backup undelete <id> --to <path>
 backup undelete <id> --recursive
+backup undelete <id> --replace
 ```
 
 Reactivates a deleted entry by the `id` shown above. Refuses (rather than
 silently overwriting) if an active entry already occupies its original
 location; pass `--to <path>` to reactivate it at a different location
-instead. `--recursive` also reactivates descendants that were deleted at the
-exact same timestamp - mirroring `del --recursive`'s cascade in reverse, so
-it won't accidentally resurrect a descendant that was deleted separately,
+instead, or `--replace` to replace the occupying entry instead (a file
+replaces a file, an empty directory replaces an empty directory - the
+replaced entry is soft-deleted, not gone, so it stays recoverable the same
+way; an incompatible kind or a non-empty target directory still refuses
+either way). `--recursive` also reactivates descendants that were deleted at
+the exact same timestamp - mirroring `del --recursive`'s cascade in reverse,
+so it won't accidentally resurrect a descendant that was deleted separately,
 before or after.
 
 Prefer `backup restore --deleted <id>` above instead if the goal is just to
