@@ -51,7 +51,7 @@ pub use tree::{
 use std::fs;
 use std::path::Path;
 
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use rusqlite_migration::SchemaVersion;
 
 /// Directory (relative to the repository root) holding the metadata database.
@@ -325,6 +325,57 @@ fn reject_if_schema_too_new(conn: &Connection) -> Result<(), Error> {
     Ok(())
 }
 
+/// The exact `(length, hash)` [`EMPTY_CONTENT_ID`]'s seed row must have -
+/// BLAKE3's XOF output for an empty input, truncated to 20 bytes (see
+/// [`EMPTY_CONTENT_ID`]'s own doc comment). Kept here as a plain byte
+/// literal, matching the same value hardcoded as a SQL hex literal in
+/// `migrations.rs`'s `SCHEMA_V1` seed `INSERT` - a `const &str` SQL
+/// migration string can't interpolate a Rust constant, so the two can't
+/// share a single source of truth; [`verify_empty_content_seed`] is what
+/// catches the two ever drifting apart (or the seed never having run at
+/// all - see its own doc comment).
+const EMPTY_CONTENT_HASH: [u8; 20] = [
+    0xaf, 0x13, 0x49, 0xb9, 0xf5, 0xf9, 0xa1, 0xa6, 0xa0, 0x40, 0x4d, 0xea, 0x36, 0xdc, 0xc9, 0x49,
+    0x9b, 0xcb, 0x25, 0xc9,
+];
+
+/// Fails with [`Error::EmptyContentSeedMismatch`] unless `contents.id =
+/// EMPTY_CONTENT_ID` holds exactly the seeded empty-content row this
+/// crate's schema is supposed to guarantee (`length = 0`, `hash =
+/// EMPTY_CONTENT_HASH`). Catches, loudly and at open time, a repository
+/// that predates this seed: `SCHEMA_V1` is a single, already-squashed
+/// migration (see its own doc comment), so `to_latest` never re-runs it for
+/// a database already at `user_version = 1` - which is every repository
+/// ever `init`ed, since there's only one schema version. Without this
+/// check, the first command to persist an empty file against such a
+/// repository would silently call [`resolve_content`] and get back
+/// `EMPTY_CONTENT_ID`, aliasing the new "empty" file onto whatever
+/// unrelated content already happened to occupy that id - no foreign-key
+/// violation, no error, just wrong data read back later. Found for real in
+/// a repository that predated this check - see `docs/plans/implemented/
+/// verify-empty-content-seed-on-open.md`.
+///
+/// Deliberately just a loud failure, not a migration that fixes it in
+/// place: every repository known to be affected today is disposable test
+/// data (delete and re-`init`), so a real in-place migration (relocating
+/// the empty-content row to an id that isn't already taken, and repointing
+/// every existing `content_id`-NULL-as-empty row at it) is a bigger, more
+/// careful piece of work than is justified until an actual real repository
+/// needs it.
+fn verify_empty_content_seed(conn: &Connection) -> Result<(), Error> {
+    let found: Option<(i64, Vec<u8>)> = conn
+        .query_row(
+            "SELECT length, hash FROM contents WHERE id = ?1",
+            [EMPTY_CONTENT_ID],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    match found {
+        Some((0, hash)) if hash == EMPTY_CONTENT_HASH => Ok(()),
+        _ => Err(Error::EmptyContentSeedMismatch),
+    }
+}
+
 /// Creates the `meta`/`data` directory layout at `repo_root` and initializes
 /// the metadata database within it: the schema (which seeds the root tree
 /// entry) and the given `settings`. Shared by [`init_repository`] and
@@ -490,6 +541,7 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
     let mut conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE))?;
     reject_if_schema_too_new(&conn)?;
     migrations::migrations().to_latest(&mut conn)?;
+    verify_empty_content_seed(&conn)?;
 
     let (cdc_target_size_bits, chunking): (u32, String) = conn.query_row(
         "SELECT cdc_target_size_bits, chunking FROM repository_settings WHERE id = 1",
@@ -546,6 +598,7 @@ pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> 
     if migrations::migrations().pending_migrations(&conn)? > 0 {
         return Err(Error::MigrationsPending);
     }
+    verify_empty_content_seed(&conn)?;
 
     let (cdc_target_size_bits, chunking): (u32, String) = conn.query_row(
         "SELECT cdc_target_size_bits, chunking FROM repository_settings WHERE id = 1",
@@ -647,6 +700,72 @@ mod tests {
         assert_eq!(repo.settings().cdc_target_size_bits(), 18);
         assert_eq!(repo.settings().chunking(), Chunking::None);
         assert_eq!(repo.data_dir(), repo_root.join(DATA_DIR));
+    }
+
+    /// A repository `init`ed by current code already has `EMPTY_CONTENT_ID`
+    /// correctly seeded - both open paths must accept it without complaint,
+    /// the common case `verify_empty_content_seed` must stay a no-op for.
+    #[test]
+    fn open_repository_accepts_a_correctly_seeded_empty_content_row() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+
+        assert!(open_repository(&repo_root).is_ok());
+        assert!(open_repository_read_only(&repo_root).is_ok());
+    }
+
+    /// Regression test for `docs/plans/implemented/
+    /// verify-empty-content-seed-on-open.md`: a repository that predates
+    /// `EMPTY_CONTENT_ID`'s seed row (simulated here by deleting it after
+    /// the fact - `SCHEMA_V1`'s squashed-migration seed can't otherwise be
+    /// un-run to reproduce the real scenario) must be refused, not silently
+    /// accepted.
+    #[test]
+    fn open_repository_refuses_a_missing_empty_content_row() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
+        conn.execute("DELETE FROM contents WHERE id = 1", ())
+            .unwrap();
+        drop(conn);
+
+        assert!(matches!(
+            open_repository(&repo_root),
+            Err(Error::EmptyContentSeedMismatch)
+        ));
+        assert!(matches!(
+            open_repository_read_only(&repo_root),
+            Err(Error::EmptyContentSeedMismatch)
+        ));
+    }
+
+    /// The actual collision case found for real in `backup-repository/`:
+    /// `contents.id = 1` already taken by unrelated content (different
+    /// `length`/`hash`) rather than being absent - must be refused just as
+    /// loudly as the missing-row case above, not treated as "close enough".
+    #[test]
+    fn open_repository_refuses_a_mismatched_empty_content_row() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo_root = temp_dir.path().join("repo");
+        init_repository(&repo_root, &test_settings()).unwrap();
+        let conn = open_connection(&repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
+        conn.execute(
+            "UPDATE contents SET length = 101, hash = x'AABBCC' WHERE id = 1",
+            (),
+        )
+        .unwrap();
+        drop(conn);
+
+        assert!(matches!(
+            open_repository(&repo_root),
+            Err(Error::EmptyContentSeedMismatch)
+        ));
+        assert!(matches!(
+            open_repository_read_only(&repo_root),
+            Err(Error::EmptyContentSeedMismatch)
+        ));
     }
 
     #[test]

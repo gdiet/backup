@@ -66,6 +66,15 @@ pub enum Error {
     /// is ruled out first). An empty `-wal`/any `-shm` don't trigger this -
     /// see [`crate::open_repository_read_only`]'s own doc comment for why.
     UncheckpointedWal,
+    /// [`crate::open_repository`]/[`crate::open_repository_read_only`] found
+    /// `contents.id = EMPTY_CONTENT_ID` missing, or present with a different
+    /// `length`/`hash` than expected - this repository predates
+    /// `EMPTY_CONTENT_ID`'s seed row (a single-migration schema never
+    /// re-runs its seed data for an already-`init`ed database) or that id
+    /// was already taken by unrelated content before the seed could claim
+    /// it. Using this repository further risks silently aliasing a future
+    /// empty file's content onto whatever already occupies that id.
+    EmptyContentSeedMismatch,
     /// A write connection failed with SQLite's generic `SQLITE_CANTOPEN`
     /// ("unable to open database file") - see `classify_open_error` in
     /// `lib.rs` for the full reasoning. Deliberately doesn't claim a
@@ -141,6 +150,14 @@ impl fmt::Display for Error {
                  without --read-write) doesn't need write access at all",
                 path.display()
             ),
+            Self::EmptyContentSeedMismatch => write!(
+                f,
+                "this repository predates the shared empty-content row every empty file is \
+                 supposed to share, or that row has been overwritten by something else - it \
+                 isn't safe to use further as-is (a future empty file could silently alias onto \
+                 unrelated content). If this is disposable test data, delete the repository and \
+                 run `init` again; there is no supported in-place fix for this"
+            ),
         }
     }
 }
@@ -163,6 +180,7 @@ impl std::error::Error for Error {
             Self::MigrationsPending => None,
             Self::UncheckpointedWal => None,
             Self::CannotOpenForWriting(_) => None,
+            Self::EmptyContentSeedMismatch => None,
         }
     }
 }
