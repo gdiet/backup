@@ -31,6 +31,47 @@ const DRAIN_PIECE_SIZE: u64 = 256 * 1024;
 /// held - the actual store write happens afterward, using the already-
 /// reserved ranges), so contention cost is negligible even with many
 /// parallel `store` workers calling it concurrently.
+///
+/// **Deliberately `reserve`-only, no `release`/`free` method** - even
+/// though a caller can end up reserving (and physically writing) a range it
+/// never ends up needing. This happens on the losing side of the
+/// `apply_backup_batch`/`db::resolve_content` dedup-insert race (see that
+/// function's own doc comment on `ON CONFLICT ... DO NOTHING`): two callers
+/// discovering the same new chunk content at once each reserve and write
+/// their own extent, but only the winner's extent ever gets a
+/// `chunk_extents` row, so the loser's reservation is permanently gone from
+/// *this process's* `gaps` for the rest of its run.
+///
+/// Raised and rejected as a "give it back immediately" idea (2026-08-15, no
+/// code changed): it looks like a small addition (interval-merge the
+/// released range back into `gaps`) but isn't. `reserve` only ever touches
+/// `gaps[0]` today, so a real `release` would need proper sorted insertion
+/// plus merging with adjacent gaps to avoid needlessly fragmenting the
+/// list, logic that doesn't exist here at all yet. More fundamentally,
+/// *knowing* a reservation turned out to be redundant only happens inside
+/// `db::resolve_content`, in the `db` crate, which has no notion of
+/// `SpaceAllocator` at all (this type lives in `cli`, one layer up, and
+/// `db` mustn't depend back on it); surfacing "these specific extents are
+/// now orphaned" up to whoever holds the allocator would mean changing
+/// `resolve_content`'s return contract, affecting every caller
+/// (`apply_backup_batch`, the Scala migration tool), not just this one.
+/// And the payoff is small while the downside isn't: the waste is already
+/// bounded (one chunk's worth per race, and races require genuinely
+/// identical new content written at almost the same moment, rare in
+/// practice) and self-healing, since the *next* `store`/`mount
+/// --read-write` run rebuilds this allocator from
+/// `db::chunk_extents_sorted` (the DB's real `chunk_extents` table, which
+/// the loser's write was never added to), so its range shows up as an
+/// ordinary gap again with no explicit reclaim needed. A buggy `release`
+/// handing out a range that turns out to still be genuinely referenced
+/// would instead be silent data corruption, not wasted space - and a
+/// mid-run `release` would reintroduce non-monotonic allocation, exactly
+/// the kind of layout churn `docs/plans/store-vs-mount-slow-drive-write-path.md`
+/// had to rule out as a candidate cause of the slow-drive regression there,
+/// so "fixing" this could plausibly make that problem worse for the
+/// workloads most sensitive to it, not better. See
+/// `docs/plans/persist-worker-thread-pool.md`'s "Still open" section for
+/// where this is tracked.
 pub struct SpaceAllocator {
     /// Sorted by `start`, non-overlapping. The final entry's `stop` is
     /// always `u64::MAX`: the open-ended region past the last known extent,

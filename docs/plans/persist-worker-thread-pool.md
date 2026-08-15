@@ -203,3 +203,8 @@ itself.
   it** (e.g. 2 writer threads on a device that *does* tolerate some concurrency) - not measured;
   item 1 above targets exactly-1 first since that's what the sweep actually confirmed converges
   with mount's existing behavior, not a range.
+- **Giving a dedup-race loser's now-orphaned reservation back to `SpaceAllocator` immediately,
+  instead of waiting for the next process start to implicitly reclaim it** - raised and rejected
+  (2026-08-15, no code changed): looks small, isn't. Full reasoning now lives as a doc comment on
+  `SpaceAllocator` itself (`cli/src/chunk_store.rs`) since that's where a future reader would
+  actually run into the question; not repeated here.
