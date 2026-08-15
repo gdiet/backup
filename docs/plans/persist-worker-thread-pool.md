@@ -44,10 +44,30 @@ correctness) below are done, on `cli/src/mount.rs`:
   `pooled_persist_dedupes_identical_new_content_raced_across_files`) drive genuine concurrent
   persists via `std::thread::scope`, not just FUSE dispatch timing - each run 15x in a row on Linux
   with zero flakiness before trusting them.
-- **Not done as part of this**: no fresh performance re-measurement against
-  `docs/plans/implemented/copy-performance-comparison.md`'s scenarios (item 5 below still applies -
-  worth doing, especially the small-file case this pool specifically targets, but is its own
-  separate pass, not a correctness gate for shipping the mechanism itself).
+- **Scoped re-measurement (2026-08-15, real hardware, `julius`)**: not the full item-5 matrix
+  (that explicitly wants item 1 done too, still isn't - see below), just scenario 2 (mount, first
+  write, all-new small files) re-run against the new pool (default `--persist-workers`, 4 on this
+  machine), 1 rep, same 3,000 x 4 KiB profile as the original:
+
+  | | wall (before -> after) | CPU (before -> after) |
+  |---|---|---|
+  | `fast-ssd-C` | 31.2s -> **24.99s** (-20%) | 26.7s -> **20.98s** (-21%) |
+  | `slow-usb-I` | 220.4s -> **216.1s** (-2%, noise-level) | 26.4s -> **23.9s** (-9%) |
+
+  Matches the design intent exactly: a real, if modest, improvement where chunk/hash was the
+  bottleneck (`fast-ssd-C`, CPU-bound), essentially no change where it wasn't (`slow-usb-I` - the
+  physical write still funnels through one thread by design, and disk I/O was never the pool's
+  target there). **Notably smaller than `store`'s ~18x advantage on the identical fast-SSD
+  profile** - expected, not a red flag: `store` parallelizes physical writes too (the thing item 1
+  would still need to bring to `store` itself, unmeasured here), while this pool deliberately keeps
+  every physical write serialized through `persist_writer` regardless of pool size (see that
+  function's own doc comment for why) - once chunk/hash stops being the bottleneck, the single
+  writer thread's own share of the work becomes comparatively more prominent and caps how much
+  pooling alone can close the gap. Consistent with, not a contradiction of, the reasoning in item
+  1's own "Risk" paragraph above.
+- **Still not done**: the full item-5 matrix (both profiles, both drives, `store`-side item 1
+  included) - this was a smaller, scoped check of just what actually shipped, not a substitute for
+  that larger pass, and only 1 rep (not the original's median-of-3).
 
 ## The evidence for it
 
@@ -164,12 +184,12 @@ itself.
    to a stage (`mount`'s chunk/hash) that's currently compute-saturated on a single thread with
    idle cores sitting next to it, and it doesn't touch the physical-write shape (already a single
    thread today, staying a single thread) - so there's no existing behavior on the write side to
-   regress. **Verify**: re-run the small-file profile from `docs/plans/implemented/
-   copy-performance-comparison.md` and confirm mount's write time moves toward `store`'s (currently
-   ~18x apart); re-run the large-file/slow-drive profile too, specifically to confirm this
-   *doesn't* reintroduce the item-1 regression on the mount side (a pool feeding a single writer
-   thread should be immune to it by construction, but that's exactly the kind of assumption this
-   project's conventions say to re-verify, not trust).
+   regress. **Verify - done for the small-file/fast-SSD half (see "Implemented" above): 31.2s ->
+   24.99s, -20%**, moving toward `store`'s number but nowhere near closing the ~18x gap (expected,
+   see "Implemented" for why) - re-running the large-file/slow-drive profile specifically to
+   re-confirm no item-1-style regression on the mount side is still open (the "Implemented" section
+   above only re-ran the small-file profile there, though a pool feeding a single writer thread
+   should be immune to it by construction).
 3. **DONE (2026-08-14, see "Implemented" above). Re-verify the original worker-pool-exhaustion
    rationale still holds** for whatever the
    chunk/hash pool size ends up being (see `docs/plans/implemented/06-fuse-mount-readwrite.md` and
