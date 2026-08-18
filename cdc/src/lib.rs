@@ -321,19 +321,12 @@ pub struct LengthHash {
 /// A [`Chunker`]-adapter that hashes each chunk as it is identified.
 ///
 /// Wraps any [`Chunker`] and a [`ChunkHasher`], feeding each completed chunk
-/// through the hasher and emitting [`LengthHash`] values.
-///
-/// Currently unused by any command (`store`/`mount` both need a completed
-/// chunk's raw bytes too, for writing a dedup miss - see `cli::
-/// spilling_chunker::SpillingHashingChunker`, which duplicates this type's
-/// slicing loop rather than wrapping it, since this type hashes and
-/// discards each byte slice internally without ever exposing it). Kept as
-/// the simpler hash-only building block this crate's other types are
-/// described against (see their own doc comments), and as a plausible fit
-/// for a future dedup-only use case (e.g. a dry-run/verify mode that only
-/// needs to detect duplicates, never write new chunk bytes) - not proven
-/// premature, since removing and later re-adding an identical ~15-line
-/// type costs more than leaving it.
+/// through the hasher and emitting [`LengthHash`] values. Exposes
+/// [`bytes_into_chunk`](Self::bytes_into_chunk), delegating to the wrapped
+/// `Chunker`, so a caller that also needs each chunk's raw bytes (which this
+/// type hashes and discards internally without ever exposing) can still
+/// wrap it and drive its own buffering off the same chunk-boundary
+/// arithmetic - see `cli::spilling_chunker::SpillingHashingChunker`.
 pub struct HashingChunker<H, C> {
     chunker: C,
     hasher: H,
@@ -342,6 +335,12 @@ pub struct HashingChunker<H, C> {
 impl<H: ChunkHasher, C: Chunker> HashingChunker<H, C> {
     pub fn new(hasher: H, chunker: C) -> Self {
         Self { chunker, hasher }
+    }
+
+    /// Returns the number of bytes accumulated so far in the current
+    /// incomplete chunk. Delegates to the wrapped [`Chunker`].
+    pub fn bytes_into_chunk(&self) -> u64 {
+        self.chunker.bytes_into_chunk()
     }
 
     /// Feed `data` to the chunker. Returns all chunks completed by this call.

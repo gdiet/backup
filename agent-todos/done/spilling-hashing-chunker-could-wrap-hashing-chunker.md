@@ -24,3 +24,15 @@ slicing loop without losing any capability.
 Not urgent (both versions are correct today; this is a de-duplication opportunity, not a bug) -
 worth a deliberate look next time `spilling_chunker.rs` or `cdc`'s `HashingChunker` are touched
 anyway.
+
+## Done
+
+**Done**: 2026-08-18, by Linux/WSL2 session.
+
+Added `HashingChunker::bytes_into_chunk()` (delegates to the wrapped `Chunker`).
+`SpillingHashingChunker` now holds a `HashingChunker<H, C>` instead of separate `chunker`/`hasher`
+fields, uses it for the hashing half via its `next`/`flush`, and drives its own `WriteCache`
+buffering off `bytes_into_chunk()` plus the returned `LengthHash`/`length` - same behavior, no
+duplicated slicing loop. Also fixed a stale doc reference to a non-existent
+`cdc::BufferingHashingChunker` (the real type is `HashingChunker`) picked up while touching the
+same doc comments. `cargo fmt --check`, `cargo clippy -- -D warnings`, and `cargo test` all pass.

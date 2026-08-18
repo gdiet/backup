@@ -1,14 +1,13 @@
-//! A `cdc`-chunker + hasher combination, like `cdc::BufferingHashingChunker`,
-//! but backed by a RAM-budgeted, disk-spilling [`WriteCache`] for each
-//! chunk's raw bytes instead of a plain growing `Vec<u8>`.
+//! A `cdc::HashingChunker` wrapper that additionally buffers each chunk's
+//! raw bytes, backed by a RAM-budgeted, disk-spilling [`WriteCache`] instead
+//! of a plain growing `Vec<u8>`.
 //!
-//! `BufferingHashingChunker` buffers a completed chunk's bytes so a caller
-//! can write a new (non-duplicate) chunk without re-reading the source -
-//! necessary (see its own doc comment on why re-reading isn't safe: the
-//! source can change between reads), but its plain `Vec<u8>` buffer means a
-//! single very large chunk fully lives in RAM at once. Under CDC that's
-//! bounded by the configured max chunk size (up to ~16.6 GB at the largest
-//! allowed `target_size_bits`); under `chunking: none`
+//! A caller writing a new (non-duplicate) chunk needs those raw bytes to
+//! write it without re-reading the source (the source can change between
+//! reads, so re-reading isn't safe) - but a plain `Vec<u8>` buffer would
+//! mean a single very large chunk fully lives in RAM at once. Under CDC
+//! that's bounded by the configured max chunk size (up to ~16.6 GB at the
+//! largest allowed `target_size_bits`); under `chunking: none`
 //! (`cdc::SingleChunkChunker`) it's the *entire file*, however large. This
 //! type keeps the same read-once, buffer-until-resolved shape but spills to
 //! a temp file once a shared RAM budget is exhausted (the same mechanism
@@ -23,7 +22,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use cdc::{ChunkHasher, Chunker, LengthHash};
+use cdc::{ChunkHasher, Chunker, HashingChunker, LengthHash};
 
 use spillcache::{RamBudget, WriteCache};
 
@@ -43,8 +42,7 @@ pub(crate) struct SpilledChunk {
 /// its own [`WriteCache`] (handed to the caller via [`SpilledChunk`]), so a
 /// new one is needed for whatever comes next.
 pub(crate) struct SpillingHashingChunker<H, C, F> {
-    chunker: C,
-    hasher: H,
+    hashing_chunker: HashingChunker<H, C>,
     buffer: WriteCache,
     ram_budget: Arc<RamBudget>,
     make_spill_path: F,
@@ -59,8 +57,7 @@ where
     pub fn new(hasher: H, chunker: C, ram_budget: Arc<RamBudget>, mut make_spill_path: F) -> Self {
         let buffer = WriteCache::new(Arc::clone(&ram_budget), make_spill_path(), 0);
         Self {
-            chunker,
-            hasher,
+            hashing_chunker: HashingChunker::new(hasher, chunker),
             buffer,
             ram_budget,
             make_spill_path,
@@ -77,54 +74,42 @@ where
     }
 
     /// Feed `data` to the chunker. Returns every chunk completed by this
-    /// call, each with its own bytes - mirrors `cdc::BufferingHashingChunker
-    /// ::next`'s slicing logic (duplicated here rather than wrapped, for
-    /// the same reason that type's own doc comment gives: `HashingChunker`
-    /// hashes and discards internally without exposing the bytes).
+    /// call, each with its own bytes - drives its own buffer management off
+    /// `HashingChunker::bytes_into_chunk` plus each returned `length`, since
+    /// `HashingChunker` itself hashes and discards each byte slice
+    /// internally without exposing it.
     pub fn next(&mut self, data: &[u8]) -> std::io::Result<Vec<SpilledChunk>> {
-        let mut bytes_into_chunk = self.chunker.bytes_into_chunk();
-        let chunk_lengths = self.chunker.next(data);
+        let mut bytes_into_chunk = self.hashing_chunker.bytes_into_chunk();
+        let length_hashes = self.hashing_chunker.next(data);
         let mut result = Vec::new();
         let mut data = data;
 
-        for length in chunk_lengths {
+        for length_hash in length_hashes {
             // A chunk boundary reported for this call always falls within
             // the current `data` slice, so the byte offset within it fits
             // in `usize`.
-            let end_in_data = (length - bytes_into_chunk) as usize;
+            let end_in_data = (length_hash.length - bytes_into_chunk) as usize;
             let slice = &data[..end_in_data];
-            self.hasher.update(slice);
             self.append(slice)?;
             data = &data[end_in_data..];
             let fresh = self.fresh_buffer();
             let bytes = std::mem::replace(&mut self.buffer, fresh);
-            result.push(SpilledChunk {
-                length_hash: LengthHash {
-                    length,
-                    hash: self.hasher.finalize_reset(),
-                },
-                bytes,
-            });
+            result.push(SpilledChunk { length_hash, bytes });
             bytes_into_chunk = 0;
         }
 
-        self.hasher.update(data);
         self.append(data)?;
         Ok(result)
     }
 
     /// Flush the last incomplete chunk, if any. Resets the chunker.
     pub fn flush(&mut self) -> std::io::Result<Option<SpilledChunk>> {
-        let Some(length) = self.chunker.flush() else {
+        let Some(length_hash) = self.hashing_chunker.flush() else {
             return Ok(None);
         };
-        let hash = self.hasher.finalize_reset();
         let fresh = self.fresh_buffer();
         let bytes = std::mem::replace(&mut self.buffer, fresh);
-        Ok(Some(SpilledChunk {
-            length_hash: LengthHash { length, hash },
-            bytes,
-        }))
+        Ok(Some(SpilledChunk { length_hash, bytes }))
     }
 }
 
