@@ -145,6 +145,33 @@ The developer is an experienced programmer but still lacks in-depth Rust experie
 particularly around ownership/lifetime edge cases and idioms that differ from what a background in
 other languages would suggest.
 
+## Working Across Environments
+
+This project is, at least occasionally, worked on from more than one environment/machine - an agent
+in one environment can hit a wall that's trivial for an agent in another (needs a real Windows
+console, WinFSP, network access to a specific host, etc.). Cross-environment operational knowledge lives in skills, not inline here, since it's
+only relevant on the (comparatively rare) occasions this actually comes up - see the
+`wsl-windows-sync` and `julius-winfsp-ssh` skills. Load the relevant one before doing that kind of
+work rather than re-deriving it from scratch.
+
+## Agent TODOs (Cross-Environment Handoffs)
+
+`agent-todos/` (see its own `README.md` for the exact file format) is where a task that needs an
+environment/capability the current agent doesn't have gets parked, instead of silently dropped.
+
+When starting work in this repo, check `agent-todos/` for open items:
+
+- **Small item** (a doc/comment fix, a quick local check, anything low-risk and quick): just do it
+  yourself, right away, no need to ask first - then move its file to `agent-todos/done/` with a
+  short note on what you did.
+- **Medium/large item**: read it, but confirm with the user before starting - the file's own
+  "Size" field is a starting guess, not a substitute for judgment; if in doubt, ask.
+- Don't silently delete an `agent-todos/` file instead of moving it to `done/` - the record of what
+  was done (and by which environment) is the point, for whichever agent looks next.
+- If you hit a wall yourself that another environment could clear, add a new file there (see the
+  README's format) rather than leaving a comment only in chat/session history that won't survive
+  past this conversation.
+
 ## Verification Of Changes
 
 Scope which checks apply by what actually changed, not by how large the change looks:
@@ -153,6 +180,9 @@ Scope which checks apply by what actually changed, not by how large the change l
 - Only non-Rust files touched (docs, requirements, `migration/`): the Rust suite is a no-op; verify
   what is actually at risk instead (e.g. cross-references in changed docs still resolve).
 - Mixed changes: run the full suite.
+- While iterating mid-task, before actually proposing a commit, `cargo check` is a fine faster
+  substitute for `cargo build` to get a quick compile signal. It is not a substitute for the full
+  suite below, which still has to run once before proposing a commit.
 
 Full suite:
 - `cargo build`
@@ -161,8 +191,16 @@ Full suite:
   explicitly and locally with a comment explaining why, do not leave it unaddressed
 - `cargo test`
 - `cargo doc --no-deps` and confirm no warnings
-- Check whether `requirements/`, `migration/`, or `README.md` describe behavior this change
-  affects, and update them — stale docs actively mislead the next reader
+- Check whether `requirements/`, `migration/`, `docs/design/`, or `README.md` describe behavior
+  this change affects, and update them — stale docs actively mislead the next reader. Move a
+  design doc under `docs/design/implemented/` once the decision it describes has actually shipped.
+- Same check, but for plain code comments in the files you are touching (not just `///` doc
+  comments, which `cargo doc` above already covers): a comment stating *why* code is shaped a
+  certain way rarely goes stale on its own, but a comment stating a *current status* ("not
+  implemented yet", a specific measured number, "X does not support Y") can silently drift once
+  that status changes, with nothing forcing a revisit — `cargo doc`/tests/clippy will not catch
+  prose going stale. Update or remove such a comment if the change you are making falsifies it,
+  even if it is outside the files you would otherwise touch for the change itself.
 
 Suggest an English semantic commit message following Conventional Commits.
 
@@ -253,3 +291,32 @@ hand-editing `Cargo.toml` so `Cargo.lock` stays in sync.
 Never run an unscoped recursive filesystem search (`find /`, `find / -maxdepth N`). Prefer `cargo
 metadata`/`cargo tree` for locating crate sources; otherwise scope `find`/`grep` to a known
 directory.
+
+## Code Quality
+
+- Follow Rust idioms and conventions; prefer simple, idiomatic code.
+- Keep functions focused and testable; write self-documenting code with clear variable names.
+- Avoid complex or non-obvious logic where avoidable; where it is genuinely unavoidable, add an
+  explaining comment.
+- Doc comments (`///`) describe an item's public contract — what it is, how to use it, its
+  invariants. Keep pure implementation rationale (why this internal representation was chosen over
+  an alternative) out of `///` and in a regular `//` comment next to the code instead, so `cargo
+  doc` output for public API stays focused on what callers need. This matters most for `pub` items
+  in library crates; private items in a binary crate's own code have no external consumers, so the
+  distinction is less load-bearing there.
+- In production code (not tests), never use a bare `.unwrap()`. Use `.expect("...")` instead, with
+  a message that states *why* the failure cannot happen here (a poisoned mutex, a value just
+  established a few lines above, a hardcoded literal that cannot fail to parse, etc.). If the
+  failure genuinely *can* happen at runtime (I/O, external input, anything filesystem- or
+  network-dependent), return a `Result`/`Errno` instead of panicking — this matters especially in a
+  FUSE/WinFSP mount callback, where a panic can take down the whole mount session, not just the one
+  request. Bare `.unwrap()` remains fine in `#[cfg(test)]` code.
+- **Self-check before adding a sentence to a code comment that goes beyond what the type
+  signature already shows**: is this already visible from the signature or the trait it
+  implements (a borrow, a return type, a delegated method)? Is it describing a hypothetical
+  caller or use case that does not actually exist yet in this codebase, rather than an actual
+  constraint? Is the technical claim itself verified against the real, current implementation —
+  not written from memory, general algorithm knowledge, or plausibility? A recurring pattern:
+  speculative "here is how you might use this" prose, or a claim about a caller's needs that
+  turns out wrong on inspection, both cost more to write and later un-write than just describing
+  what the code does and its actual, checked constraints.
