@@ -24,7 +24,7 @@ Each requirement inside a `functional/`/`non-functional/` file:
 ```markdown
 ### REQ-<AREA>-<NNN>: <short title>
 Status: draft | agreed | rejected | superseded-by REQ-...
-Priority: must | should | could
+Importance: must | should | could
 
 <description>
 
@@ -38,3 +38,18 @@ because Y">
 `CHUNKING`, `CLI`), `<NNN>` a zero-padded 3-digit number (`001`, `002`, ...). IDs are permanent
 once assigned: a rejected or superseded requirement keeps its ID and gets an updated `Status`
 rather than being deleted or renumbered, so any `REQ-...` reference elsewhere stays valid.
+
+## Cross-Referencing Another Requirement
+
+When prose in one requirement points at a specific requirement elsewhere, cite the ID as plain text
+and link the file it lives in, e.g.:
+
+```markdown
+see REQ-MOUNT-003 in [`mount.md`](mount.md)
+```
+
+Do not link a heading anchor (`mount.md#req-mount-003-optional-read-write-mount`) — GitHub derives
+that anchor from the heading's title text, so retitling the requirement silently breaks the link.
+The plain-text ID has no such dependency, which is the same reason IDs are permanent (see "ID
+Scheme" above). Do not use `[[wiki-link]]` syntax either — it does not render as a link on GitHub,
+where this repository lives.
