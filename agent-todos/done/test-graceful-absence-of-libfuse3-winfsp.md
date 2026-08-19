@@ -27,3 +27,30 @@ Two ways to close this:
 Not urgent (the documented behavior is a reasoned expectation from reading the code, not a known
 bug) - but worth closing before relying on "mounting fails gracefully when the library is missing"
 as a tested guarantee rather than an assumption.
+
+## Done
+
+**Completed**: 2026-08-19, by Desktop App session (WSL side), with the Windows-side run relayed
+back by a native Windows session and the developer.
+
+Closed option 1 (a genuinely isolated environment) on both platforms, rather than the
+dependency-injection refactor:
+
+- **Linux**: added `scripts/test-linux-without-libfuse.sh`, mirroring the equivalent script already
+  proven in the sibling `rust2` project - builds `mountfs/examples/preflight_check` here (nothing
+  links against libfuse3 at build time, only `dlopen` at runtime), then runs it inside a
+  `debian:bookworm-slim` container that never had libfuse3 installed. Output:
+  `preflight: library not available (libfuse3 not found (libfuse3.so.3: cannot open shared object
+  file: No such file or directory) - install it (Debian/Ubuntu: apt install libfuse3-3; Fedora:
+  usually already present as fuse3))` - `PASS: reported absence gracefully, no crash`.
+- **Windows**: added `mountfs/examples/preflight_check.rs` (did not previously exist in this crate,
+  unlike `rust2/mountfs`), cross-built it for `x86_64-pc-windows-msvc` via
+  `scripts/build-windows-docker.sh`'s Docker image, and ran it from native Windows PowerShell on
+  this same WSL host's own Windows side (confirmed genuinely missing WinFSP), reached via a
+  `\\wsl.localhost\...` UNC path straight to the WSL-built `.exe` - no Rust toolchain needed on the
+  Windows side at all, working around that host having no `cargo`/`rustc` installed. Output:
+  `preflight: library not available (WinFSP not found (winfsp-x64.dll) - install it from
+  https://github.com/winfsp/winfsp)`, exit code `0`.
+
+Confirms `exports()`'s documented graceful-absence behavior end to end, on the real, unmodified
+production code path, on both platforms - no dependency-injection seam needed.
