@@ -99,16 +99,15 @@ provide.
   inside `winfsp-x64.dll`) - not a functional gap in practice: WinFSP already unmounts cleanly and
   returns from its own blocking call on Ctrl+C without this crate doing anything, mirroring real
   libfuse's own `SIGINT` handling on Linux (see `windows`'s own module doc comment).
-
-## Unverified assumptions
-
-Not a known problem - a design choice reasoned from documentation rather than confirmed against
-real behavior, kept distinct from an actual limitation above so this list does not overstate
-uncertainty about something that may well turn out to be simply correct.
-
-- `RENAME_NOREPLACE`'s flag-bit convention on the Windows side is reasoned from WinFSP's documented
-  FUSE-compatibility claim, not yet empirically confirmed against a real WinFSP mount (see
-  `agent-todos/verify-rename-noreplace-against-real-winfsp.md`).
+- WinFSP's Windows backend never reports a no-replace rename request to this crate. A plain move
+  without an explicit overwrite request (what Explorer or PowerShell's `Move-Item` do by default)
+  asks the filesystem not to replace an existing target - on Linux, that request reaches this
+  crate's `rename` dispatch as `no_replace = true` (`RENAME_NOREPLACE`, `renameat2(2)`'s flag).
+  Confirmed against real WinFSP (`mountfs/tests/rename_noreplace.rs`) that Windows never surfaces
+  this: WinFSP rejects a colliding no-replace move itself, before ever calling into this crate, so
+  `rename` sees `no_replace = false` on every call that does reach it. The caller-visible result is
+  the same either way - a colliding move is rejected on both platforms - but an implementation
+  cannot itself observe or react to a no-replace request on Windows.
 
 Revisit if: real-world use ever needs a mount mechanism outside the FUSE/WinFSP family (e.g. Samba
 or WebDAV, both left open by REQ-MOUNT-001) - that would not fit this trait's current shape without

@@ -22,3 +22,28 @@ needs a Windows-specific variant instead of the single shared implementation it 
 
 Not urgent (the current behavior is a reasoned default, not a known-wrong one) - worth doing
 whenever `mountfs`'s Windows backend is next verified on real hardware anyway.
+
+## Done
+
+**Completed**: 2026-08-19, by Desktop App session, via the `julius-winfsp-ssh` machine.
+
+Confirmed, empirically, that the bit convention does *not* match Linux's: WinFSP's `cygfuse` layer
+never sets `RENAME_NOREPLACE`. Found via a small probe filesystem
+(`mountfs/src/bin/rename_noreplace_probe.rs`) that logs every `rename` call's observed
+`no_replace` value, driven first by raw `MoveFileExW` calls from a PowerShell script (three cases:
+no-replace against an existing target, replace against an existing target, no-replace against a
+nonexistent target), then turned into a permanent regression test
+(`mountfs/tests/rename_noreplace.rs`), which passes running natively on Julius against real
+WinFSP:
+
+- A no-replace move against an existing target fails at the OS level (`ERROR_ALREADY_EXISTS`)
+  without `MountFilesystem::rename` ever being called - WinFSP rejects the collision itself.
+- Every call that does reach `rename` (a replacing move, or a no-replace move with no collision)
+  arrives with `no_replace = false`, regardless of which Win32-level flag the original caller used.
+
+Net effect: `parse_rename_flags` does not need a Windows-specific variant (there is no bit to
+parse differently), and the caller-visible behavior stays correct (WinFSP itself blocks the
+collision case) - but an implementation cannot itself observe or act on `no_replace = true` on
+Windows. Documented in `RENAME_NOREPLACE`'s and `MountFilesystem::rename`'s doc comments
+(`mountfs/src/lib.rs`) and moved from "Unverified assumptions" to "Known limitations" in
+`docs/design/mount-abstraction.md`.

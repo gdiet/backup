@@ -111,11 +111,15 @@ fn reject_if_name_too_long(path: &str) -> Result<(), Errno> {
 /// high-level `rename` callback's own `flags` parameter - "do not replace
 /// an existing `new_path`, fail instead" (see
 /// [`MountFilesystem::rename`]'s doc comment for how this crate surfaces
-/// it). WinFSP's Windows backend is documented (see `linux`'s own module
-/// doc comment) to emulate this same high-level libfuse3 API via its
-/// `cygfuse` layer, so its own `flags` parameter is expected to use the
-/// identical bit convention - not yet empirically confirmed against real
-/// WinFSP, only reasoned about from that documented compatibility claim.
+/// it). Confirmed against real WinFSP (`mountfs/tests/rename_noreplace.rs`)
+/// that its `cygfuse` layer never actually sets this bit: WinFSP enforces
+/// "reject if the destination already exists" itself, before ever calling
+/// into this crate's `rename` dispatch, and passes `flags = 0` for every
+/// call that does reach it - regardless of which Win32-level flag the
+/// original caller used. An implementation's own `no_replace` handling is
+/// therefore unreachable on Windows via an ordinary rename; the collision
+/// behavior a caller would want is still correct end to end, just enforced
+/// by WinFSP itself rather than by the filesystem.
 const RENAME_NOREPLACE: u32 = 1 << 0;
 
 /// `RENAME_EXCHANGE` bit - an atomic two-way swap of two already-existing
@@ -201,8 +205,15 @@ pub trait MountFilesystem: Send + Sync + 'static {
     /// [`Errno::EEXIST`] regardless of what replacing it would otherwise
     /// have done. Implementations are not required to support replacing an
     /// existing `new_path` at all - returning [`Errno::EEXIST`]
-    /// unconditionally remains a valid, documented limitation, not a bug
-    /// (see the plan doc).
+    /// unconditionally remains a valid, documented limitation, not a bug.
+    ///
+    /// On Windows, `no_replace` is confirmed always `false` for an
+    /// ordinary rename (see `docs/design/mount-abstraction.md`'s "Known
+    /// limitations"). WinFSP already rejects a colliding no-replace
+    /// rename before this method is ever called, so the caller-visible
+    /// behavior is still correct; only an implementation that
+    /// specifically depends on observing `no_replace = true` itself
+    /// (rather than just the collision being rejected) is affected.
     fn rename(&self, old_path: &str, new_path: &str, no_replace: bool) -> Result<(), Errno> {
         let _ = (old_path, new_path, no_replace);
         Err(Errno::EROFS)
