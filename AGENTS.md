@@ -45,8 +45,7 @@ to keep it.
 
 The one thing this does not apply to is the small core of product requirements this software
 actually needs to meet (see "Core" in `requirements/goals-non-goals.md`) — what a user depends on.
-Everything about *how* that
-gets delivered is open to reconsideration.
+Everything about *how* that gets delivered is open to reconsideration.
 
 ## Successor Status And Migration
 
@@ -141,23 +140,37 @@ too: weigh a benchmark or a design property on its own merits, not by naming `ru
 Use the same language as the developer for chat interactions, but English as the project language
 for code, comments, docs, and commit messages.
 
-The developer is an experienced programmer but still lacks in-depth Rust experience. Call out subtle mistakes, not just obvious ones,
-particularly around ownership/lifetime edge cases and idioms that differ from what a background in
-other languages would suggest.
+The developer is an experienced programmer but still lacks in-depth Rust experience. Call out
+subtle mistakes, not just obvious ones, particularly around ownership/lifetime edge cases and
+idioms that differ from what a background in other languages would suggest.
+
+In German chat prose, be careful with anglicized verb conjugations of technical jargon. Some are
+fully naturalized in German developer speech and read fine (`committen`/`committed`,
+`pushen`/`gepusht`, `mergen`/`gemergt`) - but many are not, and forcing an uncommon English term
+into German verb conjugation (e.g. `vendorte` for "vendor") reads as invented German, not
+established jargon. When in doubt, either paraphrase in German (e.g. "eingebettete/mitgelieferte
+Kopie" instead of "vendorte Kopie") or leave the English term uninflected as a technical term ("die
+Header im `vendor`-Verzeichnis") rather than conjugating it.
 
 ## Working Across Environments
 
 This project is, at least occasionally, worked on from more than one environment/machine - an agent
-in one environment can hit a wall that's trivial for an agent in another (needs a real Windows
-console, WinFSP, network access to a specific host, etc.). Cross-environment operational knowledge lives in skills, not inline here, since it's
-only relevant on the (comparatively rare) occasions this actually comes up - see the
-`wsl-windows-sync` and `julius-winfsp-ssh` skills. Load the relevant one before doing that kind of
-work rather than re-deriving it from scratch.
+in one environment can hit a wall that is trivial for an agent in another (needs a real Windows
+console, WinFSP, network access to a specific host, etc.). Cross-environment operational knowledge
+lives in skills, not inline here, since it is only relevant on the (comparatively rare) occasions
+this actually comes up - see the `wsl-windows-sync` and `julius-winfsp-ssh` skills. Load the
+relevant one before doing that kind of work rather than re-deriving it from scratch.
+
+Before reaching for one of those, though: `scripts/build-windows-docker.sh` cross-compiles the
+Windows backend from right here via Docker (see `docs/design/mount-abstraction.md`'s "Verifying
+the Windows backend from Linux") - a compile/link check, not a substitute for real WinFSP
+behavior, but worth running first for anything touching `mountfs/src/windows/` before escalating
+to a real Windows/WinFSP environment.
 
 ## Agent TODOs (Cross-Environment Handoffs)
 
 `agent-todos/` (see its own `README.md` for the exact file format) is where a task that needs an
-environment/capability the current agent doesn't have gets parked, instead of silently dropped.
+environment/capability the current agent does not have gets parked, instead of silently dropped.
 
 When starting work in this repo, check `agent-todos/` for open items:
 
@@ -169,7 +182,7 @@ When starting work in this repo, check `agent-todos/` for open items:
 - Don't silently delete an `agent-todos/` file instead of moving it to `done/` - the record of what
   was done (and by which environment) is the point, for whichever agent looks next.
 - If you hit a wall yourself that another environment could clear, add a new file there (see the
-  README's format) rather than leaving a comment only in chat/session history that won't survive
+  README's format) rather than leaving a comment only in chat/session history that will not survive
   past this conversation.
 
 ## Verification Of Changes
