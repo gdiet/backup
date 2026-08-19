@@ -55,3 +55,18 @@ affected range instead is available as an explicit, deliberate opt-in.
 Rationale: silently returning wrong data through a mount is worse than an application seeing a
 read error — but once a user already knows a file is affected and specifically wants whatever
 partial data remains (e.g. a mostly-intact image), that should still be possible on request.
+
+### REQ-MOUNT-006: WinFSP attribution wherever it is required
+Status: draft
+Importance: must
+
+Wherever a build links against WinFSP (directly or dynamically) to provide Windows mount support,
+the copyright notice and repository link WinFSP's FLOSS exception requires (see
+[`../../NOTICE.md`](../../NOTICE.md)) appears somewhere a user of that build actually sees — a
+`--version`/about command and the README, not only an internal notice file a build process reads
+but a user never opens.
+
+Rationale: WinFSP's GPLv3 FLOSS exception is what makes using it from an MIT/Apache-2.0 project
+legally viable at all, and is conditioned specifically on that notice reaching a user, not just
+existing somewhere in the repository — a `NOTICE.md` nobody using the built software ever opens
+does not satisfy that on its own.
