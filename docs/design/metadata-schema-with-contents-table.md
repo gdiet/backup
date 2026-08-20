@@ -14,13 +14,20 @@ unprotected sentinel rows, two missing sanity constraints, and one inconsistent 
 ## Schema
 
 ```sql
+-- The directory/file tree
 CREATE TABLE tree_entries (
   id         INTEGER PRIMARY KEY,
   parent_id  INTEGER NOT NULL REFERENCES tree_entries(id),
+  -- TODO: looks like "empty" would only be allowed for the root entry - should we add a check for that?
+  -- TODO: consider naming the root node e.g. "dedupfs:" if that would facilitate the above check
   name       TEXT    NOT NULL,
   time       INTEGER NOT NULL,
   deleted_at INTEGER,
+  -- content_id is NULL for directories and for placeholder files.
+  -- TODO explain why / for what we need placeholder files
   content_id INTEGER REFERENCES contents(id),
+  -- TODO: consider a one-byte row to save space, or even things like "if time is NULL, it's a directory"
+  -- TODO: document proposed constants to use here.
   kind       TEXT    NOT NULL,
   CONSTRAINT chk_tree_entries_kind CHECK (kind IN ('dir', 'file'))
 );
@@ -29,9 +36,16 @@ CREATE INDEX tree_entries_content_id_idx ON tree_entries(content_id);
 CREATE INDEX tree_entries_deleted_at_idx ON tree_entries(deleted_at) WHERE deleted_at IS NOT NULL;
 CREATE INDEX tree_entries_parent_id_idx ON tree_entries(parent_id);
 
+-- Each content id is for a unique (length, hash) *file* (as opposed to chunk) content pair.
+-- Note that a file's content, while being a logical entity, consists of a sequence of 0..N chunks.
+-- TODO add a short note that deduplicating here saves noticeable amounts of metadata space
 CREATE TABLE contents (
   id        INTEGER PRIMARY KEY,
+  -- TODO: add a note that lenght can diverge from the sum of its chunks' lengths, and that this would be a data integrity problem
   length    INTEGER NOT NULL,
+  -- TODO add a note how we propose to calculate this hash. I would not like to see that each byte is blake3-hashed twice,
+  -- TODO because with slow CPUs the CPU **can** be the bottleneck. I have an idea for something much faster, but let's
+  -- TODO see what you propose and then compare it to my idea.
   hash      BLOB    NOT NULL,
   ref_count INTEGER NOT NULL DEFAULT 0,
   UNIQUE (length, hash),
@@ -47,9 +61,12 @@ CREATE TABLE content_chunks (
 );
 CREATE INDEX content_chunks_chunk_id_idx ON content_chunks(chunk_id);
 
+-- Each chunk id is for a unique (length, hash) *chunk* (as opposed to file).
+-- Note that a chunk, while being a logical entity, can still be physically spread across multiple extents (see chunk_extents below).
 CREATE TABLE chunks (
   id        INTEGER PRIMARY KEY,
   length    INTEGER NOT NULL,
+  -- TODO add a note how we propose to calculate this hash.
   hash      BLOB    NOT NULL,
   ref_count INTEGER NOT NULL DEFAULT 0,
   UNIQUE (length, hash),
