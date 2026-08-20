@@ -41,6 +41,18 @@ backup run just to discover that it deduplicates — for the common case of a mo
 backed up repeatedly (e.g. nightly), skipping that discovery cost entirely is a large, practical
 speed difference.
 
+### REQ-INGEST-005: Preserved timestamps
+Status: draft
+Importance: must
+
+A stored file's or directory's modification time reflects the source's own modification time at
+the moment it was read, not when the import ran.
+
+Rationale: REQ-INGEST-003's unchanged-file detection depends on comparing against real source
+modification times; and a directory populated by import would otherwise end up showing only "when
+the import happened" (REQ-TREE-005 in [`tree.md`](tree.md)), silently losing the source's own
+history the moment it is imported.
+
 ### REQ-INGEST-004: Resilience to per-item failures
 Status: draft
 Importance: must

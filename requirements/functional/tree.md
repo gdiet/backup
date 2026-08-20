@@ -44,3 +44,18 @@ overwritten by the next one.
 
 Rationale: without this, deleting-and-recreating the same path would silently lose recoverability
 of everything but the most recent deletion at that path.
+
+### REQ-TREE-005: Directory modification time reflects entry changes
+Status: draft
+Importance: should
+
+A directory's modification time updates whenever the set of entries directly inside it changes —
+an entry created, removed, or renamed — matching ordinary POSIX filesystem behavior. Modifying an
+existing entry's own content does not, on its own, count as such a change to its parent directory.
+Does not apply to a directory populated by a directed import - REQ-INGEST-005 in
+[`ingest.md`](ingest.md) governs that case instead.
+
+Rationale: tools that decide what to re-scan or re-sync based on a directory's modification time
+(relied on by `find -newer` and similar tools) would silently miss changes if this did not hold —
+mounting the repository as a real filesystem (REQ-MOUNT-001 in
+[`mount.md`](mount.md)) should not surprise tools that already assume ordinary POSIX semantics.
