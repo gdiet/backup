@@ -1,0 +1,338 @@
+# Metadata Storage
+
+Re-examines rust2's metadata-storage design from first principles (see "This Is A Rewrite, Not A
+Port" in `AGENTS.md`) — `rust/db`'s SQLite-based schema is raw material to weigh, not a
+specification to carry over unexamined. The sections below are worked through in order, top to
+bottom: the storage engine choice (1-2) bounds the writer/concurrency model (3), which in turn
+bounds what the schema-level review (4) is even evaluating against. Crate structure (5) is
+independent of the rest and deliberately left for last.
+
+## 1. SQL database or something else
+
+Status: decided - a SQL database.
+
+The metadata this needs to hold is genuinely relational: a filesystem tree (parent/child,
+soft-delete), a many-to-many deduplication mapping between file contents and content-addressed
+chunks with reference counts that must stay consistent on both sides, ordered chunk sequences,
+byte-range extents, and multi-table writes that must succeed or fail as a unit (registering a new
+tree entry can simultaneously introduce a new content row, several content-chunk rows, and several
+ref-count updates). Ad-hoc queries - path filters, aggregations, "which tree entries reference
+chunk X" - are also a first-class need (`find`, `list`, `stats`, `check`). Referential integrity,
+multi-table transactions, declarative ad-hoc queries, and trigger-maintained invariants are
+exactly what a relational database is built to provide; any alternative has to reimplement some or
+all of them in application code.
+
+### Alternatives considered and rejected
+
+**Embedded key-value store** (e.g. sled, redb, fjall) or **LMDB** (via heed): fast, ACID
+transactions, but no native support for referential integrity, joins, or triggers - every
+consistency invariant this schema gets from DB triggers (reference counting in particular) would
+move into hand-written application code, exactly the kind of correctness-critical bookkeeping most
+likely to go subtly wrong.
+
+**A custom on-disk format**, purpose-built for this schema: viable for a genuinely simple,
+single-purpose layout (the byte store already does this, successfully, for a sequential
+write-once structure) but not for a schema with several cross-referencing, independently-queried
+tables - this would mean building a bespoke index, transaction, and query layer, competing against
+one of the most thoroughly tested pieces of software that exists (SQLite) for a role where
+correctness matters enormously: losing or corrupting the index effectively loses track of
+otherwise-intact backed-up data.
+
+**An embedded analytical (OLAP) engine** (e.g. DuckDB): optimized for large scans and columnar
+aggregation, not the workload here - many small, transactional single-row/few-row writes
+(OLTP-shaped), which a row-oriented engine serves better.
+
+**A document/NoSQL store** (e.g. MongoDB): typically a separate server process, which conflicts
+with REQ-OPERABILITY-001 in
+[`../../requirements/non-functional/operability.md`](../../requirements/non-functional/operability.md)
+(no separately managed database server); even an embedded document store would still face the same
+referential-integrity and trigger gap as the key-value alternatives above, since it is
+schema-flexible by design rather than built for normalized, cross-referencing tables.
+
+Revisit if: the schema turns out to need far fewer cross-table relationships and ad-hoc query
+shapes than expected, tipping the balance toward a simpler key-value layout - no evidence of that
+today.
+
+## 2. SQLite or another engine
+
+Status: decided - SQLite.
+
+Relevant constraints: REQ-OPERABILITY-001 in
+[`../../requirements/non-functional/operability.md`](../../requirements/non-functional/operability.md)
+(no separately managed database server, small bounded memory footprint, easy installation) and
+REQ-OPERABILITY-002 in the same file (mirrorable with generic file-sync tools - mirror-safety only
+needs to hold while no process is using the repository, now documented directly in that
+requirement). Correctness matters enormously for this role: losing or corrupting the metadata
+index effectively loses track of otherwise-intact stored data.
+
+SQLite satisfies all of this and more: embeddable with no server process at all, full SQL feature
+coverage including triggers, foreign keys, and partial indexes (exactly what section 1 established
+this schema needs), one of the most thoroughly tested pieces of software that exists, a mature
+Rust binding (`rusqlite`), and - via `rusqlite`'s "bundled" feature - can be compiled directly into
+the binary with no runtime dependency at all, going beyond "no separate server" to "nothing to
+install separately, period."
+
+### Alternatives considered and rejected
+
+**libSQL/Turso**: a SQLite fork adding features such as built-in networked replication - not
+needed here (no networked-sync requirement), and a smaller, newer project carrying more fork-drift
+risk than upstream SQLite for no corresponding benefit.
+
+**Firebird Embedded**: a real embedded SQL option, but a substantially smaller ecosystem and
+thinner, less actively maintained Rust bindings than SQLite - no advantage large enough to justify
+that.
+
+**A JVM-based engine** (e.g. H2): would pull in an entire JVM runtime as a dependency, directly
+conflicting with REQ-OPERABILITY-001's low-footprint, no-separate-runtime requirement, in an
+otherwise pure-Rust project.
+
+**DuckDB**: excluded already in section 1 for being OLAP-shaped rather than a fit for this
+workload's many small transactional writes.
+
+**A pure-Rust SQL engine**: none identified with maturity, feature coverage, or ecosystem support
+comparable to SQLite.
+
+Revisit if: a future requirement needs something SQLite structurally cannot provide (e.g. true
+concurrent multi-writer transactions at a scale WAL mode cannot serve - see section 3) that a
+specific alternative demonstrably solves.
+
+## 3. Writer/concurrency model
+
+Status: decided - one coordinated writer, many concurrent readers, within a single writing
+process; concurrent writing processes against the same repository are refused outright
+(REQ-MAINTENANCE-004 in
+[`../../requirements/functional/maintenance.md`](../../requirements/functional/maintenance.md)),
+not merely assumed not to happen.
+
+SQLite itself only ever allows one write transaction in progress at a time, regardless of how many
+connections attempt to write - WAL mode lets readers proceed concurrently with the single writer,
+but grants no additional write concurrency. A single coordinated writer is therefore not an
+arbitrary constraint but the correct way to use SQLite from a multi-threaded producer: it avoids
+lock contention and retries between connections that would only ever serialize against each other
+anyway, and it can batch several pending writes into one transaction, which independent connections
+racing for the write lock cannot coordinate to do.
+
+REQ-PERFORMANCE-002 in
+[`../../requirements/non-functional/performance.md`](../../requirements/non-functional/performance.md)'s
+cross-stream parallelism target is satisfied above this layer: the CPU-bound work of chunking and
+hashing a stream's content happens fully in parallel across worker threads, entirely before any
+database interaction. Those threads only hand off to the single coordinated writer once they have
+something to persist (a chunk-existence check, an insert, reference-count bookkeeping) - a small
+volume of work relative to the I/O of writing the chunk content itself, not a throughput bottleneck
+for this workload.
+
+### Alternatives considered and rejected
+
+**Multiple writer connections**, relying on SQLite's busy-timeout/retry to arbitrate: strictly
+worse than a single coordinated writer given SQLite's own single-write-transaction limit - only
+adds contention and retry overhead, with no additional real concurrency to show for it.
+
+**Sharding across multiple database files** (e.g. by directory): would fragment deduplication,
+which needs a single global content-address space - a chunk already stored under one shard would
+not be found when the same content is written again under another, either losing cross-shard
+deduplication or requiring a separate global index anyway, defeating the purpose.
+
+**An asynchronous or eventual write queue** (an operation is reported as complete before it is
+actually persisted): unnecessary complexity for an embedded, single-machine tool, and conflicts
+with stored content actually being durable once an operation reports it as stored.
+
+Revisit if: multiple independent processes writing to the same repository at the same time becomes
+an actual target scenario - no such scenario is known today.
+
+## 4. Database structure
+
+Status: provisional - the developer wants to revisit this before treating it as final.
+
+Reviewed `rust/db`'s schema (`rust/db/src/migrations.rs`) table by table, column by column,
+constraint by constraint, trigger by trigger, cross-checked against actual query/update code, not
+just its own doc comments. Six tables (`repository_settings`, `chunks`, `chunk_extents`,
+`contents`, `content_chunks`, `tree_entries`) - see that file's own top-of-file doc comment for the
+full description each one currently carries. Findings below; anything not mentioned is judged
+sound as inherited and carries over unchanged - in particular: the `repository_settings`
+single-row-via-`CHECK(id = 1)` pattern; the partial unique index enforcing one active
+`(parent_id, name)` per directory, including the self-referencing root row that makes a non-null
+`parent_id` possible everywhere; the plain (non-partial) index on `tree_entries.parent_id` (added
+for a measured reason: an unscoped recursive query against a real ~7.16M-row repository never
+finished in under an hour without it, 1m48s with it); the `ON DELETE CASCADE` chains on
+`chunk_extents`/`content_chunks`; and soft-delete deliberately not decrementing a content's
+reference count (a soft-deleted entry stays recoverable until actually purged).
+
+### Ref-count maintenance did not cover in-place `content_id` updates
+
+`tree_entries_ref_count_ins`/`_del` only fire on `INSERT`/`DELETE`. One call site
+(`finalize_as_empty_if_undecided` in `rust/db/src/tree.rs`) updates `tree_entries.content_id` in
+place - a deliberate, narrow, explicitly-documented exception to an otherwise-followed
+"never mutate `content_id` in place" rule - and compensates by hand, incrementing the target
+content's reference count in the same transaction, in Rust code rather than via a trigger. Correct
+today, but fragile: any future code path that updates `content_id` in place without also
+remembering this manual step would silently desynchronize the reference count from what actually
+references it, with no immediate symptom.
+
+Closed by adding a genuine `AFTER UPDATE OF content_id` trigger, so the invariant holds regardless
+of how many places update `content_id` in place, present or future - removing the need for
+call-site-specific manual compensation entirely:
+
+```sql
+CREATE TRIGGER tree_entries_ref_count_upd AFTER UPDATE OF content_id ON tree_entries
+  WHEN NEW.content_id IS NOT OLD.content_id
+BEGIN
+  UPDATE contents SET ref_count = ref_count - 1 WHERE id = OLD.content_id;
+  UPDATE contents SET ref_count = ref_count + 1 WHERE id = NEW.content_id;
+END;
+```
+
+`IS NOT` (not `!=`) is required for correctness here: an ordinary inequality comparison evaluates
+to unknown, not true, whenever either side is `NULL`, which would silently skip the trigger's
+`WHEN` condition exactly in the two cases (a placeholder settling to real content, or content
+being cleared) where the reference-count change actually matters. Each `UPDATE ... WHERE id =
+OLD/NEW.content_id` naturally matches zero rows on its own when that side is `NULL` (`id = NULL`
+is never true in SQL), so the trigger body needs no separate `NULL` handling beyond that. The
+`WHEN` guard itself is not required for correctness (an update that re-sets `content_id` to its
+existing value nets to an exact no-op, decrementing and immediately re-incrementing the same row
+within the same transaction) - it exists to skip that pointless round-trip write, since
+`AFTER UPDATE OF content_id` fires whenever a statement's `SET` clause mentions the column at all,
+whether or not the value actually changes.
+
+### Guard the two fixed sentinel rows against deletion
+
+Two rows are load-bearing fixed anchors that application code currently protects only by
+convention, not by anything the database itself enforces: `tree_entries` id `0` (the tree's root,
+its own parent) and `contents` id `1` (`EMPTY_CONTENT_ID`, the row every empty file resolves to,
+deliberately kept even at `ref_count = 0`). A future code path that deletes unreferenced rows
+without knowing about either exception - a simplified rewrite of a cleanup routine, a generic
+admin command - would silently delete one of them; the failure that follows is loud (the next
+insert referencing the now-missing row violates a foreign key) but avoidable entirely. Cheap to
+close with a guard trigger per table - the `WHEN` condition is a single integer comparison,
+evaluated per deleted row, negligible next to the cost of the `DELETE` itself:
+
+```sql
+CREATE TRIGGER contents_protect_empty_row BEFORE DELETE ON contents
+  WHEN OLD.id = 1
+BEGIN
+  SELECT RAISE(ABORT, 'cannot delete the shared empty-content row');
+END;
+
+CREATE TRIGGER tree_entries_protect_root BEFORE DELETE ON tree_entries
+  WHEN OLD.id = 0
+BEGIN
+  SELECT RAISE(ABORT, 'cannot delete the root tree entry');
+END;
+```
+
+### Hash width: 160 bits (20 bytes), truncated from BLAKE3's full output
+
+Both `chunks.hash` and `contents.hash` truncate BLAKE3's extendable-output function (XOF) to 20
+bytes rather than storing its full 256-bit output. Truncating costs nothing in compute (the XOF
+already computes enough internal state to extract more output; extracting less is not cheaper), so
+the only real trade-off is a smaller stored/indexed value against a smaller collision margin.
+
+Accidental collisions are not a realistic concern at this width, at any repository size this
+project could plausibly reach: the birthday-bound collision probability for n hashed items in a
+160-bit space is approximately n²/2¹⁶¹. Even for an implausibly large repository of 10^11 (one
+hundred billion) chunks - already far beyond REQ-OPERABILITY-001's "modest hardware" scope - that
+probability is about 3×10⁻²⁷, negligible next to far more likely failure modes such as an
+undetected memory bit flip.
+
+Deliberately engineered collisions are a different question: the relevant figure for a hash this
+wide is its birthday-bound collision resistance, ~2⁸⁰ hash evaluations, not the full 2¹⁶⁰ - below
+what current cryptographic guidance (generally at least a 128-bit security margin for a new
+design) considers a comfortable margin, though still far beyond casual reach. Judged not to matter
+here: exploiting an engineered collision would require an attacker to already control what content
+lands in the victim's backup before it is stored, at which point directly tampering with that
+content is a far simpler attack than manufacturing a BLAKE3 collision - a threat model this
+project (a personal backup tool, not a multi-tenant deduplication service where cross-tenant
+collisions would be a genuinely different concern) does not need to defend against.
+
+Revisit if: this project's actual scale or threat model changes materially from what is assumed
+today (e.g. shared/multi-tenant use, or repositories large enough to make the
+accidental-collision margin above worth recomputing).
+
+### Missing sanity constraints
+
+Neither `chunks.hash` nor `contents.hash` constrains its length, and `chunk_extents` has no
+`CHECK` ensuring a half-open range is actually well-formed. Both are cheap, DB-enforced guards
+against a bug elsewhere silently inserting malformed data that would otherwise surface much later,
+if at all:
+
+```sql
+-- on chunks and contents:
+CONSTRAINT chk_..._hash_length CHECK (length(hash) = 20)
+
+-- on chunk_extents:
+CONSTRAINT chk_chunk_extents_range CHECK (stop > start)
+```
+
+### `contents` should key on `(length, hash)`, matching `chunks`
+
+`chunks` deduplicates on `(length, hash)` rather than `hash` alone, narrowing the damage a hash
+collision could do: two different chunks that happened to collide would still be told apart if
+their lengths differ. `contents` currently deduplicates on `hash` alone, even though it has its
+own `length` column (the file's total logical size) sitting right there unused for this purpose.
+
+The asymmetry does not hold up: `contents.hash` hashes the ordered sequence of each referenced
+chunk's `(length, hash)` pair, not raw file bytes, but a hash's output is not less collision-prone
+merely because its input is structured rather than raw - two different chunk sequences can easily
+share the same total length while differing in exact composition (e.g. one 100-byte chunk plus one
+200-byte chunk vs. one 50-byte chunk plus one 250-byte chunk: 300 bytes either way, clearly
+different content), so `contents.length` is not implied by a `contents.hash` collision any more
+than `chunks.length` is implied by a `chunks.hash` collision. The only real difference is
+cardinality - a typical repository has fewer `contents` rows than `chunks` rows, so the
+birthday-bound collision probability is lower in absolute terms - a difference of degree, not of
+kind, and not a reason to skip a safeguard that costs nothing (the column already exists).
+Change `UNIQUE (hash)` to `UNIQUE (length, hash)` on `contents`, matching `chunks`.
+
+### Why `contents.hash`/deduplicating whole contents at all
+
+Worth stating explicitly, since it is not needed for integrity verification - chunk-level
+verification (each `chunks.hash` checked against its own bytes, in the order `content_chunks`
+records) already establishes a file's correctness on its own, transitively, with no need for a
+whole-file-level hash. `contents`-level deduplication exists purely to avoid redundant metadata:
+without it, every file with byte-identical content to another - a common case in backup workloads
+(the same template copied across projects, the same photo in more than one album) - would get its
+own `contents` row and its own full set of `content_chunks` rows, even though the underlying
+chunks stay deduplicated either way. One instance of this is already load-bearing in the schema as
+it stands: every empty file across an entire repository shares the single `EMPTY_CONTENT_ID` row
+rather than each getting its own. Computing the hash costs nothing extra - it accumulates from data
+already produced while chunking.
+
+### `contents.length`: stored, not derived - but not database-verified either
+
+`contents.length` (the file's total logical size) could be derived by summing the lengths of its
+referenced chunks instead of being stored directly. Kept as a stored column: `getattr`/`stat`/
+`list`/`find`-style lookups need a file's size often and cheaply, and a stored integer read is far
+cheaper than an aggregate join computed on every such call - the same column is also needed as a
+real column, not a computed one, for the composite uniqueness key above. The cost is a consistency
+risk a `CHECK` constraint cannot close (SQLite `CHECK` constraints cannot aggregate across other
+tables): nothing today stops `contents.length` from silently drifting away from the actual sum of
+its referenced chunks' lengths if it were ever set incorrectly at insert time. Rather than paying
+for a derived value on every read to close that gap, worth ensuring the repository's integrity
+check (REQ-INTEGRITY-001 in
+[`../../requirements/functional/integrity.md`](../../requirements/functional/integrity.md))
+explicitly compares stored `contents.length` against the actual sum, if it does not already.
+
+## 5. Migration approach
+
+Status: open
+
+Whether `rust/db`'s internal schema-migration tooling (`rusqlite_migration`) is the right approach
+for rust2, or a better alternative exists. Distinct from repository migration from the Scala
+implementation (`migration/from-scala.md`), which is out of scope here.
+
+## 6. Crate structure
+
+Status: open
+
+Whether metadata management belongs in its own crate with a deliberately narrow public interface,
+or something else. Independent of the decisions above, but easier to settle once the shape of what
+that interface actually needs to expose is known.
+
+## 7. Remove references to `rust/`
+
+Status: open
+
+Sections 1-6 above cite `rust/db` deliberately, as the raw material being weighed. Once each
+decision is actually made, replace those citations with self-contained descriptions of the chosen
+properties and trade-offs, matching how `cdc-chunking.md` and `mount-abstraction.md` do not
+reference `rust/`, `scala/`, or `go/` inline (see "Relationship To Other Implementations" in
+`AGENTS.md`). This section itself is removed once that cleanup is done — it describes a step to
+take, not a decision to record.

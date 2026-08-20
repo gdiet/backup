@@ -24,6 +24,11 @@ metadata format, and without re-transferring stored content that has not actuall
 Metadata is small relative to the bulk data it describes, so re-transferring it in full on every
 sync run stays cheap even though, unlike the bulk data, it does change on every run.
 
+This guarantee holds while no process is using the repository - a mirror taken while a process is
+actively reading or writing it may be inconsistent (e.g. capturing the metadata file mid-write,
+without whatever journal/write-ahead state belongs with it at that instant). Staying mirrorable
+while a process is actively using the repository is a bonus, not a requirement.
+
 Rationale: operators maintaining an offline or secondary copy of a repository — especially a large
 one — need that sync to be fast and to rely on tooling they already trust; building and trusting a
 repository-specific sync mechanism would cost more than reusing what already works. This depends

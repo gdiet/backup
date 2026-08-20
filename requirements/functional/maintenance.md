@@ -34,12 +34,19 @@ store permanently bloated, and reclaiming that space should not cost meaningful 
 Status: draft
 Importance: must
 
-Operations that physically allocate or relocate stored bytes are mutually exclusive with each
-other against the same repository, preventing the data corruption that would result from two such
-operations running concurrently. Read-only operations remain unaffected and unblocked throughout.
+Only one repository-mutating operation runs against a repository at a time: if such an operation is
+already in progress, a second one is refused rather than allowed to proceed. Read-only operations
+remain unaffected and unblocked throughout, regardless of whether a mutating operation is currently
+running.
 
-Rationale: users should be able to safely run a query or a check at any time — including while a
-backup is in progress — without needing to reason about internal timing to know it is safe.
+Rationale: an operation that physically allocates or relocates stored bytes, or that
+wholesale-replaces the metadata store, would corrupt the repository if it ran concurrently with
+another such operation. An operation that only writes metadata would not — the database engine's
+own cross-process locking already serializes those safely — but requiring the same exclusivity for
+every mutating operation, without exception, is simpler for users to reason about than a rule that
+depends on which specific kind of write is involved, and does not rely on that safety margin
+holding indefinitely as the code around it changes. An occasional unnecessary refusal is a far
+smaller cost than the alternative.
 
 ### REQ-MAINTENANCE-005: Local usage logging
 Status: draft
@@ -51,3 +58,15 @@ actually been used.
 
 Rationale: knowing which features actually see real use, well after the fact, is what makes it
 possible to confidently simplify or remove the ones that do not.
+
+### REQ-MAINTENANCE-006: Wait instead of immediate refusal
+Status: draft
+Importance: should
+
+Instead of being refused immediately, a caller can specify a duration to wait for a conflicting
+operation (see REQ-MAINTENANCE-004) to finish before being refused.
+
+Rationale: retrying manually after being refused is a routine annoyance for a caller that already
+knows the conflicting operation will finish soon (e.g. a scheduled backup script) — waiting once,
+up to a bound the caller controls, avoids that without weakening the safety REQ-MAINTENANCE-004
+provides.
