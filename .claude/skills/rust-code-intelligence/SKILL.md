@@ -24,13 +24,22 @@ not a real problem with the binary.
 
 ## 2. Check the Claude Code plugin
 
-Run `/plugin marketplace list` and `/plugin list` (or equivalent - check what your Claude Code
-version actually offers) to see whether a Rust LSP plugin is already installed and enabled. Also
-check this repository's `.claude/settings.json` for an `enabledPlugins` entry naming a Rust LSP
-plugin, since a project can enable one for everyone without it being personally installed. Plugin
-naming may have changed since this skill was written - if `rust-lsp@claude-plugins-official`
-(the name used in Claude's own docs at the time) is not found, check `/plugin marketplace` for the
-current equivalent rather than assuming it does not exist.
+**`/plugin` is unavailable in a Claude Desktop WSL session** (confirmed live, both from the agent
+side - no such tool - and from the developer's own terminal: `/plugin isn't available in this
+environment`) - matches the docs' own "Plugins aren't available in WSL sessions" note for Desktop.
+If you are in exactly that setup, skip straight to reporting this and stop; do not keep retrying
+`/plugin` variants. Retry the actual install from a Terminal-CLI session or a native-Windows
+Desktop session instead, where `/plugin` should work normally.
+
+Where `/plugin` *is* available: run `/plugin marketplace list` and `/plugin list` to see whether a
+Rust LSP plugin is already installed and enabled. Also check this repository's
+`.claude/settings.json` for an `enabledPlugins` entry naming one, since a project can enable a
+plugin for everyone without it being personally installed. Plugin naming may have changed since
+this skill was written - as of 2026-08-21 the correct name is `rust-analyzer-lsp` (found via
+`~/.claude/plugins/marketplaces/claude-plugins-official/plugins/` on disk, since `/plugin` itself
+was unavailable to check this the intended way) - **not** `rust-lsp`, the name used in Claude's own
+docs at the time this skill was first written. Check `/plugin marketplace` for the current name if
+this one is also gone by the time you read this, rather than assuming no such plugin exists.
 
 ## 3. If either is missing
 
@@ -45,9 +54,8 @@ Once confirmed:
 rustup component add rust-analyzer
 ```
 
-Then install the plugin (`/plugin install <name>@<marketplace>`, using whatever step 2 found to be
-current), adding the marketplace first with `/plugin marketplace add ...` if it is not already
-configured.
+Then install the plugin (`/plugin install rust-analyzer-lsp@claude-plugins-official`, or whatever
+name step 2 found to be current) - only where `/plugin` is actually available, per step 2 above.
 
 ## 4. Verify, do not just assume
 

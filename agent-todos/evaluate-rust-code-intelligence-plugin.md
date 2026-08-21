@@ -1,8 +1,10 @@
 # Evaluate a Rust code-intelligence plugin
 
-**Needs**: nothing environment-blocking to *evaluate* - this file exists mainly to carry the one
-concrete finding forward, since installing anything touches the developer's machine and is better
-done with a quick heads-up than silently.
+**Needs**: a Terminal-CLI or native-Windows Desktop session - `/plugin` is confirmed unavailable in
+a Claude Desktop WSL session (both from the agent side and the developer's own terminal:
+`/plugin isn't available in this environment`), matching the docs' "Plugins aren't available in
+WSL sessions" note. The `rustup component` half of this item does not have that restriction and is
+already done (see below).
 **Size**: small
 **Opened**: 2026-08-21, by a Claude Desktop/WSL2 session. Carried over from
 `docs/agent-setup-plan.md` item 8 when that document was closed out and condensed.
@@ -11,25 +13,20 @@ a code intelligence plugin connects Claude Code to a language server (LSP) so it
 definitions and find references directly instead of grep/file-read chains, worth it for a
 Rust-heavy repository this size. Requires the language's language server binary installed locally.
 
-For Rust, that is `rust-analyzer`. Checked on this machine (2026-08-21): a `rust-analyzer` shim
-exists at `~/.cargo/bin/rust-analyzer` (placed there by `rustup`), but running it fails with
-`error: Unknown binary 'rust-analyzer' in official toolchain 'stable-x86_64-unknown-linux-gnu'` -
-`rustup component list` confirms `rust-analyzer-x86_64-unknown-linux-gnu` is not marked
-`(installed)`. The actual binary is not present yet; `rustup component add rust-analyzer` would
-install it.
+For Rust, that is `rust-analyzer`. This whole check-and-install procedure is now a skill,
+`.claude/skills/rust-code-intelligence/` - the "open question" this file originally carried
+(one-off todo vs. repeatable skill) is resolved in favor of the skill, confirmed useful the very
+first time it ran: it caught that the plugin's name had changed (`rust-lsp` → `rust-analyzer-lsp`)
+and, this session, the WSL/Desktop `/plugin` unavailability documented in **Needs** above.
 
-To finish this: confirm with the developer before installing anything (a rustup component plus a
-Claude Code plugin, both touching machine-level tooling, not just this repository), then run
-`rustup component add rust-analyzer` and `/plugin install rust-lsp@claude-plugins-official` (or
-the current equivalent plugin name - check `/plugin marketplace` first, naming may have changed).
-Confirm it actually improves symbol lookups on a real task in this repo before treating this as
-done, rather than just confirming the install succeeded.
+## Status (2026-08-21)
 
-**Open question to resolve when this is picked up**: this project is worked on from more than one
-environment/machine (WSL2 here, native Windows, possibly others later), and the availability check
-above (`rust-analyzer` present or not, which plugin marketplace is reachable) is inherently
-per-machine - the answer found on this machine does not tell you the answer on another one. Given
-that, should checking/installing this be a repeatable [skill](https://code.claude.com/docs/en/skills)
-instead of a one-off agent-todo, so the same check-and-install procedure is available on demand
-wherever it comes up again, rather than re-deriving it from scratch (or re-writing a fresh
-agent-todo) each time? Decide this when actually acting on the item, not before.
+- **`rust-analyzer`**: installed on this machine (`rustup component add rust-analyzer`), confirmed
+  working (`rust-analyzer --version` → `1.97.0`).
+- **`rust-analyzer-lsp` plugin**: not installed - blocked by this environment's `/plugin`
+  unavailability (see **Needs** above), not by anything specific to this repository. Pick this
+  file back up in a Terminal-CLI or native-Windows session: run
+  `/plugin install rust-analyzer-lsp@claude-plugins-official` (the marketplace itself,
+  `claude-plugins-official`, is already configured locally). Confirm it actually improves symbol
+  lookups on a real task in this repo before treating this as fully done, not just that the install
+  command succeeded.
