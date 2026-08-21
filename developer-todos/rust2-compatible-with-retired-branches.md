@@ -20,3 +20,20 @@ several different things, e.g.
   be pushed to, or coexist safely with, the retired branches on the shared remote).
 
 Clarify with the developer what is actually meant before acting on this.
+
+## Update: found the missing context (2026-08-21)
+
+`main`'s `development-hints.md`, "Retiring Branches" section, documents an established
+convention on this shared origin: fake-merge a branch that is not going to `main` anytime soon
+into `retired_branches` (`git checkout retired_branches && git merge -s ours origin/branch-to-
+retire && git push`, then delete the original remote branch) - keeps the commit reachable "just
+in case" without cluttering the branch list. Confirmed `origin/retired_branches` exists; its
+current tree is old retired Scala source, no instructions file of its own (the instructions live
+in `main`, not on that branch).
+
+This makes a concrete, plausible reading of the original question available: `rust2-intermediate`
+(flagged in the session handoff this developer-todo grew out of as "superseded, safe to
+ignore/delete once verified, not verified yet") is the obvious local candidate for exactly this
+retiring process, rather than being deleted outright or left dangling indefinitely. Still needs
+the developer's confirmation that this is actually what was meant, and that `rust2-intermediate`
+is indeed safe to retire this way, before acting.
