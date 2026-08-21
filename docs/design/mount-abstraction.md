@@ -7,7 +7,7 @@ interface (`getattr`, `readdir`, `open`/`read`/`write`/`release`, and the usual 
 operations) - implemented once and served on Linux via real libfuse3 and on Windows via WinFSP,
 behind the identical trait and dispatch logic.
 
-## Why the high-level FUSE API, not the low-level protocol
+## DESIGN-MOUNT-001: Why the high-level FUSE API, not the low-level protocol
 
 FUSE-family libraries offer two distinct kinds of API: a *high-level*, synchronous, path-based API
 (`struct fuse_operations`, `fuse_main()`) and a *low-level*, asynchronous, inode-based protocol
@@ -21,7 +21,40 @@ WinFSP's emulation of the identical shape. A low-level-protocol binding would on
 Linux, requiring an entirely separate implementation path for Windows regardless of what that path
 turned out to be.
 
-## Why path-based, not inode-based
+### Alternatives considered and rejected
+
+#### Windows' built-in virtualization APIs (ProjFS / CfApi)
+
+Both are architecturally a "hydrate to local disk on access, evict later" cache model, not a
+pass-through streaming model - reading through a mount backed by either would materialize accessed
+content onto the local volume the mount lives on.
+
+Rejected: for a large deduplicated repository on external or otherwise size-constrained storage,
+silently mirroring accessed content onto the system volume defeats the point of not storing it
+there twice - especially during a full-tree read/verify pass, which touches most of the
+repository's content at once.
+
+#### Dokan
+
+A third-party-driver alternative to WinFSP, MIT-licensed (cleaner than WinFSP's GPL-plus-exception
+terms).
+
+Rejected: not pursued once binding against WinFSP's FUSE-compatible API directly proved viable -
+switching drivers would add a second Windows-specific integration path for a licensing preference
+alone, with no functional benefit.
+
+#### A native WinFSP backend (`FSP_FILE_SYSTEM_INTERFACE`)
+
+WinFSP's own native, non-FUSE-compatible interface - a COM-style callback interface, distinct from
+its FUSE-compatibility shim.
+
+Rejected as the primary approach (though it remains the fallback if the shared FUSE-shaped
+approach ever hits a real blocker on Windows): it would need its own hand-written bindings and its
+own translation into `MountFilesystem`, on top of the Linux backend's separate implementation -
+twice the platform-specific code for no capability the FUSE-compatible shim does not already
+provide.
+
+## DESIGN-MOUNT-002: Why path-based, not inode-based
 
 The high-level API this crate binds against is path-based, not inode-based, and WinFSP's own
 compatibility layer is as well - an inode-numbering layer would have no natural backing on either
@@ -29,7 +62,7 @@ platform's actual API and would only add a translation cost without abstracting 
 [`Handle`](../../mountfs/src/lib.rs), the opaque per-open-file token this crate's trait uses
 instead, is filesystem-chosen and stored verbatim by both backends, matching that shape.
 
-## Why runtime dynamic loading, not build-time linking
+## DESIGN-MOUNT-003: Why runtime dynamic loading, not build-time linking
 
 Both backends resolve their platform library's exports at runtime (`dlopen`/`dlsym` on Linux,
 `LoadLibraryW`/`GetProcAddress` on Windows, with a registry-key fallback matching WinFSP's own
@@ -47,7 +80,7 @@ Windows check ran the same example, cross-built via `scripts/build-windows-docke
 against a real Windows install genuinely missing WinFSP (see `agent-todos/done/
 test-graceful-absence-of-libfuse3-winfsp.md` for both results).
 
-## Licensing
+## DESIGN-MOUNT-004: Licensing
 
 libfuse itself is dual LGPL-2.1/GPL-2.0 (the userspace library ordinary programs link against is
 the LGPL part); dynamically loading it from an MIT/Apache-2.0 project is the standard case that
@@ -59,39 +92,6 @@ WinFSP's own published headers (vendored - copied into this repository unmodifie
 `mountfs/vendor/winfsp/`, rather than fetched at build time - see that directory's own
 `NOTICE.md`), rather than depending on a wrapper crate that bundles its own, different license
 terms, keeps the licensing story limited to WinFSP's own terms alone.
-
-## Alternatives considered and rejected
-
-### Windows' built-in virtualization APIs (ProjFS / CfApi)
-
-Both are architecturally a "hydrate to local disk on access, evict later" cache model, not a
-pass-through streaming model - reading through a mount backed by either would materialize accessed
-content onto the local volume the mount lives on.
-
-Rejected: for a large deduplicated repository on external or otherwise size-constrained storage,
-silently mirroring accessed content onto the system volume defeats the point of not storing it
-there twice - especially during a full-tree read/verify pass, which touches most of the
-repository's content at once.
-
-### Dokan
-
-A third-party-driver alternative to WinFSP, MIT-licensed (cleaner than WinFSP's GPL-plus-exception
-terms).
-
-Rejected: not pursued once binding against WinFSP's FUSE-compatible API directly proved viable -
-switching drivers would add a second Windows-specific integration path for a licensing preference
-alone, with no functional benefit.
-
-### A native WinFSP backend (`FSP_FILE_SYSTEM_INTERFACE`)
-
-WinFSP's own native, non-FUSE-compatible interface - a COM-style callback interface, distinct from
-its FUSE-compatibility shim.
-
-Rejected as the primary approach (though it remains the fallback if the shared FUSE-shaped
-approach ever hits a real blocker on Windows): it would need its own hand-written bindings and its
-own translation into `MountFilesystem`, on top of the Linux backend's separate implementation -
-twice the platform-specific code for no capability the FUSE-compatible shim does not already
-provide.
 
 ## Known limitations
 

@@ -118,7 +118,9 @@ When adding or reorganizing requirements:
 Non-trivial implementation-design decisions (an algorithm choice, alternatives weighed, benchmarks
 or research that informed the decision) live in `docs/design/` — one file per decision or closely
 related group of decisions, moved into `docs/design/implemented/` once the decision has actually
-shipped in code, mirroring how `requirements/` distinguishes `draft` from `agreed`.
+shipped in code, mirroring how `requirements/` distinguishes `draft` from `agreed`. See
+`docs/design/README.md` for the `DESIGN-...` ID scheme a settled decision gets, so code can cite
+it directly, and for the one-way `code → design → requirement` reference rule that comes with it.
 
 A design document captures the decision and *why* — including alternatives that were considered
 and rejected, per "Documentation Philosophy" above — at the level of properties and trade-offs, not
@@ -134,6 +136,11 @@ moment the conversation ends.
 The "reference nowhere else" rule under "Relationship To Other Implementations" above applies here
 too: weigh a benchmark or a design property on its own merits, not by naming `rust/`, `scala/`, or
 `go/` as the source.
+
+When code cites either kind of ID: cite the `DESIGN-...` decision when there is a non-trivial one
+behind the code (it explains *why*, not just *what*); cite the `REQ-...` directly when the code is
+a straightforward implementation of an unambiguous requirement with no separate decision worth its
+own `docs/design/` entry — do not manufacture a design entry just to have something to cite.
 
 ## Interaction With The Developer
 
@@ -298,6 +305,11 @@ seemingly intentional override).
 
 Suggest dependencies, but do not add them without explicit permission. Prefer `cargo add` over
 hand-editing `Cargo.toml` so `Cargo.lock` stays in sync.
+
+Check a dependency's license is compatible with this project's MIT/Apache-2.0 licensing before
+proposing it. When it is not, that is not automatically disqualifying (see WinFSP, DESIGN-MOUNT-004
+in [`docs/design/mount-abstraction.md`](docs/design/mount-abstraction.md)), but the exception needs
+its own reasoning recorded in `docs/design/`, not just adopted silently.
 
 ## Shell Commands
 

@@ -12,7 +12,7 @@ bytes have been processed as the fingerprint register is wide (31 bytes for a 32
 31-bit table values, for example) — a boundary decision depends on a short, fixed-size trailing
 window of content, never on the whole stream since the last boundary.
 
-## Why content-defined, not fixed-size, chunking
+## DESIGN-CDC-001: Why content-defined, not fixed-size, chunking
 
 Fixed-size chunking (splitting every N bytes) breaks under insertion or deletion: a single byte
 added near the start of a file shifts every following chunk boundary, so a file that changed only
@@ -23,7 +23,7 @@ the same chunk hashes, as before the edit. For a backup workload with files that
 incrementally (logs, documents, databases), this is what makes chunk-level dedup actually pay off
 run over run, not just on the first backup of an unchanged tree.
 
-## Why normalized chunking, not a plain fixed-window rolling hash
+## DESIGN-CDC-002: Why normalized chunking, not a plain fixed-window rolling hash
 
 A fixed-window rolling hash (boundary decided purely by a hash of the last ~48-64 bytes, with no
 memory of how long the current chunk has grown) can be evaluated at arbitrary offsets
@@ -34,9 +34,7 @@ more predictable size distribution in exchange for being inherently sequential p
 whether a boundary is even eligible to be considered at a given position depends on how many bytes
 have accumulated since the last one.
 
-## Alternatives considered and rejected
-
-### Intra-file parallel chunking (forced boundaries at fixed super-block splits)
+### Alternative considered and rejected: intra-file parallel chunking (forced boundaries at fixed super-block splits)
 
 A single very large file could be split into large fixed-size super-blocks up front, each chunked
 independently and in parallel, accepting a forced (non-content-defined) boundary at each split.
@@ -56,7 +54,7 @@ Revisit if: a workload with very large individual files on storage fast enough f
 chunking speed to become the bottleneck emerges (e.g. large-file transfer between very fast local
 drives) — no such case is known today.
 
-### An external content-defined-chunking library
+## DESIGN-CDC-003: An external content-defined-chunking library
 
 Mature options exist, but couple chunking to a `Read`/`AsyncRead`-based streaming model — they own
 the I/O.
