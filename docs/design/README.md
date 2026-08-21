@@ -2,8 +2,9 @@
 
 This directory records non-trivial implementation-design decisions — an algorithm choice,
 alternatives weighed, benchmarks or research that informed a decision — at the level of properties
-and trade-offs, not implementation mechanics. See "Design Documentation" in
-[`../../AGENTS.md`](../../AGENTS.md) for what belongs here versus in code comments.
+and trade-offs, not implementation mechanics. See
+[`../../.claude/rules/design-docs.md`](../../.claude/rules/design-docs.md) for what belongs here
+versus in code comments.
 
 ## Layout
 
@@ -56,6 +57,6 @@ requirement itself, and a design free to be reimplemented differently without ne
 requirement it still satisfies.
 
 Not a mandatory chain: a `DESIGN-...` entry only exists where a non-trivial decision was actually
-made (see "Design Documentation" in [`../../AGENTS.md`](../../AGENTS.md)). Code implementing a
+made (see [`../../.claude/rules/design-docs.md`](../../.claude/rules/design-docs.md)). Code implementing a
 requirement with no such decision behind it has no design entry to cite, and cites the `REQ-...`
 directly instead.
