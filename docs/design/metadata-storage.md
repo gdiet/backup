@@ -461,6 +461,30 @@ corruption - it validates nothing (neither existing data against the revised con
 consistency with the table's indexes and triggers) and risks corrupting the database file if done
 incorrectly. No real alternative to the rebuild procedure above.
 
+### Pre-release: a single, freely rewritten `v1` migration
+
+Before this implementation's first release, the migration list holds exactly one migration
+(`v1`), edited in place whenever a schema change is needed, rather than followed by a `v2`, `v3`,
+and so on accumulating on top of it.
+
+No released repository exists yet whose schema history the migration list would need to preserve,
+so nothing forces a schema change to layer a new migration on top of a decision later found
+wrong - `v1` itself can simply become correct. This also means the table-rebuild procedure above,
+and the version-compatibility concerns it exists to manage, do not apply yet: rewriting `v1`
+in place is not constrained by `ALTER TABLE`'s limitations the way a genuine post-release migration
+would be, since there is no prior `v1` shape any already-migrated database needs to stay compatible
+with.
+
+The practical consequence for any repository created against an earlier shape of `v1` - in
+particular, this project's own test and tryout repositories - is that it is not migrated forward:
+it is simply deleted and recreated against the current `v1` once a schema change lands. `v1` only
+ever needs to handle the schema shape it currently has, not any shape it used to have.
+
+This ends at the first release: from that point on, a real repository's schema history has to be
+preserved, and a schema change goes back to being a genuine new migration appended after `v1`, not
+an edit to it - the table-rebuild procedure above becomes the actual mechanism for that, not merely
+a documented fallback.
+
 ## DESIGN-METADATA-006: Crate structure
 
 Status: decided - its own crate, named `db`, with a deliberately narrow public interface.
