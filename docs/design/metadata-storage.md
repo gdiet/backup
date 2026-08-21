@@ -4,7 +4,7 @@ Re-examines rust2's metadata-storage design from first principles (see "This Is 
 Port" in `AGENTS.md`) — `rust/db`'s SQLite-based schema is raw material to weigh, not a
 specification to carry over unexamined. The sections below are worked through in order, top to
 bottom: the storage engine choice (1-2) bounds the writer/concurrency model (3), which in turn
-bounds what the schema-level review (4) is even evaluating against. Crate structure (5) is
+bounds what the schema-level review (4) is even evaluating against. Crate structure (6) is
 independent of the rest and deliberately left for last.
 
 ## 1. SQL database or something else
@@ -141,7 +141,12 @@ an actual target scenario - no such scenario is known today.
 
 ## 4. Database structure
 
-Status: provisional - the developer wants to revisit this before treating it as final.
+Status: decided - keep a `contents` table, deduplicating whole-file content in addition to
+chunk-level deduplication. See
+[`metadata-schema-comparison.md`](metadata-schema-comparison.md) for the trade-offs weighed against
+the rejected alternative (no `contents` table) and the reasoning behind the decision, and
+[`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) for the chosen
+schema itself.
 
 Reviewed `rust/db`'s schema (`rust/db/src/migrations.rs`) table by table, column by column,
 constraint by constraint, trigger by trigger, cross-checked against actual query/update code, not

@@ -1,15 +1,15 @@
-# Metadata Schema Proposal: Keep A `contents` Table
+# Metadata Schema: Keep A `contents` Table
 
-One of two schema proposals being compared for point 4 of
-[`metadata-storage.md`](metadata-storage.md); see
-[`metadata-schema-comparison.md`](metadata-schema-comparison.md) for the trade-offs against the
-alternative in [`metadata-schema-without-contents-table.md`](metadata-schema-without-contents-table.md).
-Neither is decided yet.
+Decided schema for point 4 of [`metadata-storage.md`](metadata-storage.md): keeps a `contents`
+table deduplicating whole-file content, rather than the rejected alternative in
+[`metadata-schema-without-contents-table.md`](metadata-schema-without-contents-table.md) - see
+[`metadata-schema-comparison.md`](metadata-schema-comparison.md) for the trade-offs weighed and why
+this one was chosen.
 
-This proposal keeps a dedicated `contents` table deduplicating whole-file content (an ordered
+This schema keeps a dedicated `contents` table deduplicating whole-file content (an ordered
 chunk sequence) independently of `chunks` deduplicating individual chunks, plus the fixes found by
 reviewing `rust/db`'s equivalent schema table by table: two missing sanity constraints, one
-inconsistent uniqueness key, a guard trigger for the one sentinel row this proposal still has (the
+inconsistent uniqueness key, a guard trigger for the one sentinel row this schema still has (the
 tree's root entry), and - unlike `rust/db` - no separate sentinel for empty file content at all,
 which the ordinary content dedup path already handles on its own (see "In-progress files are not
 written to the database" below). That same section covers a further difference, avoiding a
@@ -180,7 +180,7 @@ removes two things `rust/db` needed for the opposite approach (inserting the row
 ## Triggers
 
 ```sql
--- Chunk-level ref-counting: unchanged in either proposal.
+-- Chunk-level ref-counting: unchanged from rust/db.
 CREATE TRIGGER content_chunks_ref_count_ins AFTER INSERT ON content_chunks BEGIN
   UPDATE chunks SET ref_count = ref_count + 1 WHERE id = NEW.chunk_id;
 END;
@@ -212,7 +212,7 @@ END;
 
 ## Performance of the new additions
 
-The two `CHECK` constraints and one trigger this proposal adds beyond `rust/db`'s original schema
+The two `CHECK` constraints and one trigger this schema adds beyond `rust/db`'s original schema
 (the hash-length `CHECK`s, `chk_chunk_extents_range`, and the root-guard trigger) were measured
 against a same-shape schema without them, in-memory, 5 interleaved repeats per variant (alternating
 rather than running one variant fully before the other, to cancel out systematic drift rather than

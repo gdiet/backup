@@ -1,14 +1,14 @@
 # Metadata Schema Comparison: `contents` Table Or Not
 
-Compares the two schema proposals in
-[`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) and
-[`metadata-schema-without-contents-table.md`](metadata-schema-without-contents-table.md) for point
-4 of [`metadata-storage.md`](metadata-storage.md). Neither proposal is decided; this document lays
-out the known trade-offs side by side rather than recommending one.
+Decision record for point 4 of [`metadata-storage.md`](metadata-storage.md), comparing
+[`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) (chosen) against
+[`metadata-schema-without-contents-table.md`](metadata-schema-without-contents-table.md) (rejected,
+kept for reference). The sections below lay out the trade-offs as weighed at the time; see
+"Decision" at the end for the outcome and reasoning.
 
 ## At a glance
 
-| | With `contents` | Without `contents` |
+| | With `contents` (chosen) | Without `contents` (rejected) |
 |---|---|---|
 | Tables (files + content) | 5 | 4 |
 | Ref-count-maintaining triggers | 2 | 1 |
@@ -124,12 +124,12 @@ verify it explicitly, not by a schema-level constraint.
 both proposals. Chunk-level deduplication, the primary mechanism behind REQ-STORAGE-001/002, is
 unaffected either way.
 
-## Recommendation
+## Decision
 
-Status: proposed - awaiting the developer's review; may be approved or changed.
+Status: decided - keep a `contents` table
+([`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md)).
 
-Leaning toward the with-`contents` proposal
-([`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md)):
+Reasons for the decision:
 
 - The empirical measurement above is not a constructed worst case - it is the measured behavior of
   a real, long-used personal backup archive, which is the kind of workload this project is built
@@ -140,16 +140,16 @@ Leaning toward the with-`contents` proposal
   architecturally (no row is ever inserted before its content is settled, so there is no in-place
   update to guard against in the first place), the second by removing the empty-content sentinel
   entirely rather than protecting it, plus a guard trigger for the one sentinel row that remains
-  (the tree's root) - documented in that proposal - they no longer weigh against it the way they
-  did before those fixes existed.
+  (the tree's root) - documented in the chosen schema - they no longer weigh against it the way
+  they did before those fixes existed.
 - `contents` preserves a direct, cheap "find every other file with this exact content" lookup,
   useful if blacklisting-with-delete-copies is later adopted (still an open question in
   [`../../requirements/open-questions.md`](../../requirements/open-questions.md)), at no ongoing
   cost.
-- The remaining complexity difference against the without-`contents` proposal (two more
-  triggers, one more table) is modest and fully documented, unlike the metadata-size difference,
-  which scales with how much duplication a given repository actually contains.
+- The remaining complexity difference against the rejected alternative (two more triggers, one
+  more table) is modest and fully documented, unlike the metadata-size difference, which scales
+  with how much duplication a given repository actually contains.
 
 No third structural alternative surfaced during this review that avoids the trade-off entirely
 (see [`metadata-storage.md`](metadata-storage.md) point 4 and the schema review that preceded
-these two proposals).
+these two schemas).

@@ -1,16 +1,15 @@
-# Metadata Schema Proposal: No `contents` Table
+# Metadata Schema (Rejected Alternative): No `contents` Table
 
-One of two schema proposals being compared for point 4 of
-[`metadata-storage.md`](metadata-storage.md); see
-[`metadata-schema-comparison.md`](metadata-schema-comparison.md) for the trade-offs against the
-alternative in [`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md).
-Neither is decided yet.
+Rejected alternative for point 4 of [`metadata-storage.md`](metadata-storage.md), kept for
+reference. [`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) is
+the chosen schema; see [`metadata-schema-comparison.md`](metadata-schema-comparison.md) for the
+trade-offs weighed and why that one was chosen over this one.
 
-This proposal removes whole-file (`contents`-level) deduplication entirely: `tree_entries` gains
-its own `length` column, and `content_chunks` references a tree entry directly instead of an
-intermediate `contents` row. Chunk-level deduplication (`chunks`, `chunk_extents`) is unaffected -
-stored bytes stay fully deduplicated either way; what changes is only how a file's chunk sequence
-is anchored in the metadata.
+This alternative would have removed whole-file (`contents`-level) deduplication entirely:
+`tree_entries` gains its own `length` column, and `content_chunks` references a tree entry directly
+instead of an intermediate `contents` row. Chunk-level deduplication (`chunks`, `chunk_extents`) is
+unaffected either way - stored bytes stay fully deduplicated regardless of which schema is used;
+what differs is only how a file's chunk sequence is anchored in the metadata.
 
 ## Schema
 
@@ -88,7 +87,7 @@ two kinds that exist today.
 ## Triggers
 
 ```sql
--- Chunk-level ref-counting: unchanged from the other proposal, and from rust/db - the only
+-- Chunk-level ref-counting: unchanged from the chosen schema, and from rust/db - the only
 -- ref-count trigger this schema needs at all.
 CREATE TRIGGER content_chunks_ref_count_ins AFTER INSERT ON content_chunks BEGIN
   UPDATE chunks SET ref_count = ref_count + 1 WHERE id = NEW.chunk_id;
@@ -97,7 +96,7 @@ CREATE TRIGGER content_chunks_ref_count_del AFTER DELETE ON content_chunks BEGIN
   UPDATE chunks SET ref_count = ref_count - 1 WHERE id = OLD.chunk_id;
 END;
 
--- Guards the root tree entry against deletion - same rationale as the other proposal, unrelated
+-- Guards the root tree entry against deletion - same rationale as the chosen schema, unrelated
 -- to whether a contents table exists.
 CREATE TRIGGER tree_entries_protect_root BEFORE DELETE ON tree_entries
   WHEN OLD.id = 0
@@ -106,27 +105,27 @@ BEGIN
 END;
 ```
 
-No content-level ref-counting trigger exists in this proposal, and none is needed:
+No content-level ref-counting trigger exists in this alternative, and none is needed:
 `content_chunks` rows now belong to exactly the one tree entry that owns them (created together,
 `ON DELETE CASCADE`-removed together), never shared and never re-pointed at a different owner in
-place. The entire class of problem the `AFTER UPDATE OF content_id` trigger closes in the other
-proposal does not exist here, because there is no `content_id` column left to update.
+place. The entire class of problem the `AFTER UPDATE OF content_id` trigger closes in the chosen
+schema does not exist here, because there is no `content_id` column left to update.
 
 ## Magic values
 
 - **Root tree entry**: `id = 0`, its own parent (`parent_id = 0`), and the only entry with an
-  empty `name` - same as the other proposal, same rationale (a non-null `parent_id` everywhere, so
+  empty `name` - same as the chosen schema, same rationale (a non-null `parent_id` everywhere, so
   the partial unique index on `(parent_id, name)` enforces uniqueness at the top level too, and
   root already needs special-casing regardless, so an empty name costs nothing extra).
-- **Hash width**: 20 bytes (160 bits) on `chunks.hash` - same reasoning as the other proposal (see
-  `metadata-storage.md` point 4). No `contents.hash` exists in this proposal to also constrain.
-- **`KIND_DIR = 0`, `KIND_FILE = 1`**: `tree_entries.kind`'s encoding - same as the other proposal.
+- **Hash width**: 20 bytes (160 bits) on `chunks.hash` - same reasoning as the chosen schema (see
+  `metadata-storage.md` point 4). No `contents.hash` exists in this alternative to also constrain.
+- **`KIND_DIR = 0`, `KIND_FILE = 1`**: `tree_entries.kind`'s encoding - same as the chosen schema.
 
 No `EMPTY_CONTENT_ID`-equivalent exists or is needed: an empty file is simply
 `length = 0` with zero `content_chunks` rows, indistinguishable in kind from any other settled
 file - just one with an empty chunk sequence. `length IS NULL` only for a directory - see
 "In-progress files are not written to the database" below for why a file's row never carries an
-"undecided" `length` the way it did in an earlier version of this proposal.
+"undecided" `length` the way it did in an earlier version of this alternative.
 
 ```sql
 INSERT INTO tree_entries (id, parent_id, name, time, kind)
@@ -172,7 +171,7 @@ SELECT entry_id FROM content_chunks WHERE chunk_id = ?1 AND seq = 0;
 For each candidate, load its full ordered chunk sequence and compare it against the target's,
 confirming a true match rather than merely a shared first chunk. A content-addressed `chunk_id` is
 high-cardinality, so step 1 should narrow to a small candidate set in the typical case - close to
-just the true duplicates themselves. The one case where this costs more than the other proposal's
+just the true duplicates themselves. The one case where this costs more than the chosen schema's
 direct lookup: many files that happen to share a first chunk (e.g. a common header) but differ
 later - step 1 cannot distinguish those from true duplicates on its own, so step 2 has more
 candidates to rule out. Still far cheaper than a full scan comparing every tree entry's chunk
