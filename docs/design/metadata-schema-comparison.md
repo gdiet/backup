@@ -11,22 +11,30 @@ out the known trade-offs side by side rather than recommending one.
 | | With `contents` | Without `contents` |
 |---|---|---|
 | Tables (files + content) | 5 | 4 |
-| Ref-count-maintaining triggers | 3 | 1 |
-| Sentinel rows needing guard protection | 2 (root entry, empty content) | 1 (root entry only) |
+| Ref-count-maintaining triggers | 2 | 1 |
+| Sentinel rows needing guard protection | 1 (root entry only) | 1 (root entry only) |
 | Whole-file content deduplicated in metadata | yes | no (chunk-level dedup only) |
 | "Find every file sharing this content" | direct index lookup | narrow-by-first-chunk, then verify |
 | New schema elements needed beyond point 4's other fixes | none | `tree_entries.length`, `content_chunks` FK retarget |
 
 ## Structural complexity and correctness risk
 
-Removing `contents` removes an entire class of problem the schema review surfaced: with
-`content_chunks` scoped 1:1 to the tree entry that owns it (created and cascade-deleted together,
-never re-pointed), there is no shared, mutable content identity left to keep a ref-count
-synchronized against. The `AFTER UPDATE OF content_id` trigger and the `contents`-row guard
-trigger both exist specifically to close gaps that only exist because a content can be shared and
-re-pointed in the first place - without `contents`, those gaps do not open. Fewer tables, fewer
-triggers, and one fewer sentinel row to remember and protect are a real, ongoing complexity cost
-either way, independent of which proposal is chosen later.
+Removing `contents` removes a class of problem the schema review originally surfaced around
+in-place `content_id` mutation - though that specific gap is now closed architecturally for both
+proposals regardless: a `tree_entries` row for a file is never inserted before its content is
+settled (see "In-progress files are not written to the database" in each schema document), so
+`content_id`/`length` is never mutated in place in either design, and neither needs an `AFTER
+UPDATE` trigger to guard against it.
+
+What removing `contents` still avoids: the two `tree_entries` ref-count triggers, which have
+nothing to maintain once there is no shared, mutable content identity to keep synchronized in the
+first place - with `content_chunks` scoped 1:1 to the tree entry that owns it (created and
+cascade-deleted together, never re-pointed), that identity does not exist at all in the
+without-`contents` proposal. Fewer tables and fewer triggers are a real, ongoing complexity cost
+either way, independent of which proposal is chosen later. (Sentinel-row count is no longer a
+differentiator between the two proposals: neither keeps a distinct, pre-seeded empty-content row -
+see "In-progress files are not written to the database" in
+`metadata-schema-with-contents-table.md`.)
 
 ## Metadata overhead for duplicate files
 
@@ -128,16 +136,19 @@ Leaning toward the with-`contents` proposal
   for. A duplication factor around 8 turning into several hundred MB of avoidable metadata
   overhead is a real cost, not a theoretical one.
 - The correctness concerns that originally counted against `contents` (the ref-count gap on an
-  in-place `content_id` update, the two unprotected sentinel rows) are now closed by concrete
-  fixes (the `AFTER UPDATE OF content_id` trigger, the two guard triggers) documented in that
-  proposal - they no longer weigh against it the way they did before those fixes existed.
+  in-place `content_id` update, the two unprotected sentinel rows) are now closed - the first
+  architecturally (no row is ever inserted before its content is settled, so there is no in-place
+  update to guard against in the first place), the second by removing the empty-content sentinel
+  entirely rather than protecting it, plus a guard trigger for the one sentinel row that remains
+  (the tree's root) - documented in that proposal - they no longer weigh against it the way they
+  did before those fixes existed.
 - `contents` preserves a direct, cheap "find every other file with this exact content" lookup,
   useful if blacklisting-with-delete-copies is later adopted (still an open question in
   [`../../requirements/open-questions.md`](../../requirements/open-questions.md)), at no ongoing
   cost.
-- The remaining complexity difference against the without-`contents` proposal (two more triggers,
-  one more table) is modest and fully documented, unlike the metadata-size difference, which
-  scales with how much duplication a given repository actually contains.
+- The remaining complexity difference against the without-`contents` proposal (two more
+  triggers, one more table) is modest and fully documented, unlike the metadata-size difference,
+  which scales with how much duplication a given repository actually contains.
 
 No third structural alternative surfaced during this review that avoids the trade-off entirely
 (see [`metadata-storage.md`](metadata-storage.md) point 4 and the schema review that preceded

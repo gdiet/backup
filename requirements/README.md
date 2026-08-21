@@ -23,7 +23,7 @@ Each requirement inside a `functional/`/`non-functional/` file:
 
 ```markdown
 ### REQ-<AREA>-<NNN>: <short title>
-Status: draft | agreed | rejected | superseded-by REQ-...
+Status: draft | agreed | rejected | superseded-by REQ-... | moved-to REQ-...
 Importance: must | should | could
 
 <description>
@@ -36,8 +36,14 @@ because Y">
 
 `REQ-<AREA>-<NNN>` — `<AREA>` an uppercase short code for the topic area (e.g. `STORAGE`,
 `CHUNKING`, `CLI`), `<NNN>` a zero-padded 3-digit number (`001`, `002`, ...). IDs are permanent
-once assigned: a rejected or superseded requirement keeps its ID and gets an updated `Status`
-rather than being deleted or renumbered, so any `REQ-...` reference elsewhere stays valid.
+once assigned: a rejected, superseded, or relocated requirement keeps its ID and gets an updated
+`Status` rather than being deleted or renumbered, so any `REQ-...` reference elsewhere stays valid.
+
+`superseded-by` and `moved-to` mark different things - keep them distinct rather than using
+`superseded-by` for both: `superseded-by` means the requirement itself changed (a new decision
+replaces the old one, with different content); `moved-to` means the content is unchanged, only its
+`<AREA>` is - filed at a new ID because it turned out to belong under a different topic area, not
+because anything about the requirement was reconsidered.
 
 ## Cross-Referencing Another Requirement
 

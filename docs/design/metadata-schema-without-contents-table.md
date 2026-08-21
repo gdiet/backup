@@ -18,12 +18,21 @@ is anchored in the metadata.
 CREATE TABLE tree_entries (
   id         INTEGER PRIMARY KEY,
   parent_id  INTEGER NOT NULL REFERENCES tree_entries(id),
+  -- Empty only for the root entry (id = 0), enforced below.
   name       TEXT    NOT NULL,
   time       INTEGER NOT NULL,
   deleted_at INTEGER,
+  -- NULL only for a directory (kind = KIND_DIR, always).
   length     INTEGER,
-  kind       TEXT    NOT NULL,
-  CONSTRAINT chk_tree_entries_kind CHECK (kind IN ('dir', 'file'))
+  -- KIND_DIR/KIND_FILE (see "Magic values" below) - kept as a separate
+  -- column rather than inferred from length; see "Why kind is a separate
+  -- column" below.
+  kind       INTEGER NOT NULL,
+  CONSTRAINT chk_tree_entries_kind CHECK (kind IN (0, 1)),
+  CONSTRAINT chk_tree_entries_kind_length CHECK (
+    (kind = 0 AND length IS NULL) OR (kind = 1 AND length IS NOT NULL)
+  ),
+  CONSTRAINT chk_tree_entries_name_nonempty CHECK (id = 0 OR name != '')
 );
 CREATE UNIQUE INDEX tree_entries_active_name_idx ON tree_entries(parent_id, name) WHERE deleted_at IS NULL;
 CREATE INDEX tree_entries_deleted_at_idx ON tree_entries(deleted_at) WHERE deleted_at IS NOT NULL;
@@ -65,6 +74,17 @@ Dropped: the `tree_entries_content_id_idx` index (no `content_id` column left to
 `contents_id_idx`-style content-lookup path generally - see "Finding duplicate content" below for
 what replaces it.
 
+## Why `kind` is a separate column
+
+`length IS NULL` happens to coincide exactly with "is a directory" for the two kinds this schema
+has today, but `kind` is kept as its own column rather than derived from that coincidence:
+readable without recalling the convention, and not coupled to it staying true forever. A future
+kind this schema does not have yet - a symbolic link, say (REQ-TREE-007 in
+[`../../requirements/functional/tree.md`](../../requirements/functional/tree.md)) - would also
+have `length IS NULL` without being a directory, breaking the inference. The
+`chk_tree_entries_kind_length` `CHECK` above keeps `kind` and `length` from drifting apart for the
+two kinds that exist today.
+
 ## Triggers
 
 ```sql
@@ -94,22 +114,45 @@ proposal does not exist here, because there is no `content_id` column left to up
 
 ## Magic values
 
-- **Root tree entry**: `id = 0`, its own parent (`parent_id = 0`) - same as the other proposal,
-  same rationale (a non-null `parent_id` everywhere, so the partial unique index on
-  `(parent_id, name)` enforces uniqueness at the top level too).
+- **Root tree entry**: `id = 0`, its own parent (`parent_id = 0`), and the only entry with an
+  empty `name` - same as the other proposal, same rationale (a non-null `parent_id` everywhere, so
+  the partial unique index on `(parent_id, name)` enforces uniqueness at the top level too, and
+  root already needs special-casing regardless, so an empty name costs nothing extra).
 - **Hash width**: 20 bytes (160 bits) on `chunks.hash` - same reasoning as the other proposal (see
   `metadata-storage.md` point 4). No `contents.hash` exists in this proposal to also constrain.
+- **`KIND_DIR = 0`, `KIND_FILE = 1`**: `tree_entries.kind`'s encoding - same as the other proposal.
 
 No `EMPTY_CONTENT_ID`-equivalent exists or is needed: an empty file is simply
 `length = 0` with zero `content_chunks` rows, indistinguishable in kind from any other settled
-file - just one with an empty chunk sequence. `length IS NULL` still means "not decided yet" (the
-mount's `create()` placeholder before its first write), matching the three-state meaning
-`content_id` carried in the other proposal, without a sentinel row to protect.
+file - just one with an empty chunk sequence. `length IS NULL` only for a directory - see
+"In-progress files are not written to the database" below for why a file's row never carries an
+"undecided" `length` the way it did in an earlier version of this proposal.
 
 ```sql
 INSERT INTO tree_entries (id, parent_id, name, time, kind)
-  VALUES (0, 0, '', CAST(strftime('%s', 'now') AS INTEGER) * 1000, 'dir');
+  VALUES (0, 0, '', 0, 0);  -- KIND_DIR; time=0 is immediately superseded once anything is
+                            -- created at top level, see REQ-TREE-005
 ```
+
+## In-progress files are not written to the database
+
+A file the mount has `create()`d, or opened for writing, does not get a `tree_entries` row until
+its content is actually settled - a real `length` (and its `content_chunks` rows, if any) once the
+write is done, or `length = 0` with zero `content_chunks` rows if the file is closed without ever
+being written to. Until then, its existence is tracked purely as in-memory state on the mount's own
+side, the same way the file's actual in-progress bytes already are (buffered, with spillover, never
+written to the durable store until settled) - applying the same reasoning to the metadata side that
+already applies to the byte side.
+
+This is required, not just convenient: REQ-TREE-006 in
+[`../../requirements/functional/tree.md`](../../requirements/functional/tree.md) requires that a
+write's content becomes visible to a different process only once it is complete. A `tree_entries`
+row with `length IS NULL`, visible to any reader through the database, would make an in-progress,
+empty-so-far file indistinguishable from a genuinely settled empty file (`length = 0`) to a
+concurrent `find`/`stats` command reading the database directly - exactly the kind of partial state
+that requirement rules out. Keeping the row out of the database entirely until settled satisfies
+that by construction, rather than needing special-cased handling to hide an in-progress row from
+readers that are not the file's own mount session.
 
 ## Finding duplicate content
 
@@ -144,7 +187,7 @@ erDiagram
         integer parent_id FK
         text name
         integer length
-        text kind
+        integer kind
     }
     content_chunks {
         integer entry_id "PK, FK"
@@ -172,3 +215,34 @@ erDiagram
 
 `time`/`deleted_at` omitted from the diagram - present in the schema above, not relevant to the
 content-sharing structure this diagram is about.
+
+## Future extension: symbolic links (not currently planned)
+
+REQ-TREE-007 in [`../../requirements/functional/tree.md`](../../requirements/functional/tree.md)
+is a `could`-importance requirement with no implementation currently planned - this section records
+a representation choice for if/when it is, so the decision is not lost between now and then, not a
+commitment to build it.
+
+Add a third `kind` value (`KIND_SYMLINK = 2`) and a separate, nullable `target TEXT` column holding
+the link's target path - `NULL` for a directory or file, populated only for a symlink.
+
+### Alternative considered and rejected: encoding the target inside `kind` itself
+
+Instead of a separate column, encode `kind` as a `TEXT` value: `'D'`/`'F'` for a directory/file,
+`'S' || target` (the tag character followed directly by the target path) for a symlink - avoiding
+a second column that is `NULL` for every non-symlink row.
+
+Costs almost the same either way: SQLite's record format stores a `NULL` column as a single header
+byte with no body, so a separate `target` column costs one byte more than the merged encoding per
+row for a directory or file (`kind` alone: 1 byte via the free 0/1 constant encoding, or 2 bytes
+for `KIND_SYMLINK`, plus a 1-byte `NULL` header for `target`) - for a symlink row, the merged
+encoding is about a byte cheaper still (one column header instead of two). Given symlinks are
+expected to be a small minority of a typical tree, the aggregate difference across a whole
+repository is negligible.
+
+Rejected on clarity grounds instead: the `kind`/`length` consistency `CHECK` added elsewhere in
+this document would need a `LIKE 'S%'` pattern match for the symlink case instead of a plain value
+comparison, `kind` would carry two different jobs (a type tag, and payload data) depending on which
+value it holds, and any future per-symlink attribute (e.g. a "target no longer exists" flag) would
+need further ad-hoc string encoding rather than just another column. Not worth trading that clarity
+for roughly one byte per symlink row.

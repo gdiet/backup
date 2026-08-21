@@ -193,17 +193,25 @@ within the same transaction) - it exists to skip that pointless round-trip write
 `AFTER UPDATE OF content_id` fires whenever a statement's `SET` clause mentions the column at all,
 whether or not the value actually changes.
 
+**Superseded**: this trigger is no longer part of either schema proposal. A better fix removes the
+underlying problem instead of patching around it - a `tree_entries` row for a file is never
+inserted until its content is actually settled (see "In-progress files are not written to the
+database" in both `metadata-schema-with-contents-table.md` and
+`metadata-schema-without-contents-table.md`), so `content_id`/`length` is never mutated in place at
+all, not just in the one call site this trigger closed. Kept here for the reasoning behind
+`IS NOT`/`WHEN` above, which is still relevant to any future trigger written against this pattern.
+
 ### Guard the two fixed sentinel rows against deletion
 
-Two rows are load-bearing fixed anchors that application code currently protects only by
-convention, not by anything the database itself enforces: `tree_entries` id `0` (the tree's root,
-its own parent) and `contents` id `1` (`EMPTY_CONTENT_ID`, the row every empty file resolves to,
-deliberately kept even at `ref_count = 0`). A future code path that deletes unreferenced rows
-without knowing about either exception - a simplified rewrite of a cleanup routine, a generic
-admin command - would silently delete one of them; the failure that follows is loud (the next
-insert referencing the now-missing row violates a foreign key) but avoidable entirely. Cheap to
-close with a guard trigger per table - the `WHEN` condition is a single integer comparison,
-evaluated per deleted row, negligible next to the cost of the `DELETE` itself:
+Two rows were, at the time of this review, load-bearing fixed anchors that application code
+protected only by convention, not by anything the database itself enforced: `tree_entries` id `0`
+(the tree's root, its own parent) and `contents` id `1` (`EMPTY_CONTENT_ID`, the row every empty
+file resolved to, deliberately kept even at `ref_count = 0`). A future code path that deletes
+unreferenced rows without knowing about either exception - a simplified rewrite of a cleanup
+routine, a generic admin command - would silently delete one of them; the failure that follows is
+loud (the next insert referencing the now-missing row violates a foreign key) but avoidable
+entirely. Cheap to close with a guard trigger per table - the `WHEN` condition is a single integer
+comparison, evaluated per deleted row, negligible next to the cost of the `DELETE` itself:
 
 ```sql
 CREATE TRIGGER contents_protect_empty_row BEFORE DELETE ON contents
@@ -218,6 +226,17 @@ BEGIN
   SELECT RAISE(ABORT, 'cannot delete the root tree entry');
 END;
 ```
+
+**Refined**: the guard trigger for the root tree entry (`tree_entries_protect_root`) still applies
+as described. The guard trigger for the empty-content row (`contents_protect_empty_row`) does not:
+neither schema proposal keeps `EMPTY_CONTENT_ID` as a distinct, pre-seeded sentinel at all - an
+empty file's content is instead found or inserted through the same `(length, hash)` dedup lookup
+used for any other content, eligible for ordinary purge like any other unreferenced row. See
+"In-progress files are not written to the database" in `metadata-schema-with-contents-table.md` for
+why - the disambiguation problem `EMPTY_CONTENT_ID` originally existed to solve (telling "no
+content decided yet" apart from "decided, and empty") does not arise once a file's row is never
+inserted before its content is settled. `metadata-schema-without-contents-table.md` never had an
+`EMPTY_CONTENT_ID`-equivalent to begin with.
 
 ### Hash width: 160 bits (20 bytes), truncated from BLAKE3's full output
 
@@ -291,9 +310,10 @@ without it, every file with byte-identical content to another - a common case in
 (the same template copied across projects, the same photo in more than one album) - would get its
 own `contents` row and its own full set of `content_chunks` rows, even though the underlying
 chunks stay deduplicated either way. One instance of this is already load-bearing in the schema as
-it stands: every empty file across an entire repository shares the single `EMPTY_CONTENT_ID` row
-rather than each getting its own. Computing the hash costs nothing extra - it accumulates from data
-already produced while chunking.
+it stands: every empty file across an entire repository shares one `contents` row (found or
+created through the ordinary dedup lookup, like any other content - see "Guard the two fixed
+sentinel rows against deletion" above) rather than each getting its own. Computing the hash costs
+nothing extra - it accumulates from data already produced while chunking.
 
 ### `contents.length`: stored, not derived - but not database-verified either
 
@@ -310,6 +330,28 @@ check (REQ-INTEGRITY-001 in
 [`../../requirements/functional/integrity.md`](../../requirements/functional/integrity.md))
 explicitly compares stored `contents.length` against the actual sum, if it does not already.
 
+### Root entry's seed `time`: no need to compute "now" at all
+
+`rust/db`'s seed `INSERT` for the root tree entry computes the current time in SQL
+(`CAST(strftime('%s', 'now') AS INTEGER) * 1000`) - unwieldy compared to the same computation done
+in Rust, and, on reflection, unnecessary in the first place: the root is `kind = KIND_DIR` like any
+other directory, so REQ-TREE-005 in
+[`../../requirements/functional/tree.md`](../../requirements/functional/tree.md) (a directory's
+modification time reflects changes to its direct entries) applies to it the same as to any other
+directory. Its seed value is superseded the moment anything is created at the top level - true for
+essentially every repository that sees real use - so the value only needs to be a valid
+placeholder, not a plausible "now." Both schema proposals seed it as `time = 0` instead, with a
+comment explaining why, rather than computing an actual timestamp anywhere. The one cost: a freshly
+initialized but never-populated repository would show the mounted root's modification time as the
+Unix epoch rather than its actual creation time - cosmetic, not a correctness concern, but worth
+noting so it does not read as a bug later.
+
+Note in passing: REQ-TREE-005 itself (updating a directory's `time` when a direct entry is created,
+removed, or renamed) is deliberately not a database trigger - see
+[`directory-mtime-touch.md`](directory-mtime-touch.md) for why (a trigger would fire unconditionally
+for a directed import's bulk population too, which needs different behavior per REQ-INGEST-005).
+That decision is already made; only the write-path code implementing it does not exist yet.
+
 ## 5. Migration approach
 
 Status: open
@@ -317,6 +359,32 @@ Status: open
 Whether `rust/db`'s internal schema-migration tooling (`rusqlite_migration`) is the right approach
 for rust2, or a better alternative exists. Distinct from repository migration from the Scala
 implementation (`migration/from-scala.md`), which is out of scope here.
+
+### Changing a constraint always needs a full table rebuild
+
+Not itself a decision, but a mechanical constraint any migration approach chosen above has to work
+within: SQLite's `ALTER TABLE` supports only `RENAME TO`, `RENAME COLUMN`, `ADD COLUMN`, and `DROP
+COLUMN` - there is no `ADD CONSTRAINT`/`DROP CONSTRAINT`, and no way to change an existing `CHECK`
+in place, named or not. Giving a `CHECK` a name (as this document's schema proposals do throughout)
+buys readability and shows up in the constraint-violation error message - it does not make the
+constraint any easier to change later.
+
+Changing one - e.g. widening `chk_tree_entries_kind_content_id`/`chk_tree_entries_kind_length` from
+two `kind` values to three if REQ-TREE-007 (symbolic links) is ever implemented, see "Future
+extension: symbolic links" in `metadata-schema-with-contents-table.md` and
+`metadata-schema-without-contents-table.md` - needs the table-rebuild procedure SQLite's own
+documentation recommends for schema changes `ALTER TABLE` cannot express directly: create a new
+table with the revised schema, copy the data across, drop the old table, rename the new one into
+place, then recreate whatever indexes and triggers belonged to the original table (a rebuild drops
+those along with the table). `tree_entries` specifically also has a self-referencing foreign key
+(`parent_id REFERENCES tree_entries(id)`), which needs `PRAGMA foreign_keys=OFF` for the duration
+and a `PRAGMA foreign_key_check` afterward, per that same documented procedure.
+
+Considered and rejected as a shortcut: editing `sqlite_master.sql` directly via `PRAGMA
+writable_schema=ON`. SQLite itself advises against this outside of manual recovery from
+corruption - it validates nothing (neither existing data against the revised constraint, nor
+consistency with the table's indexes and triggers) and risks corrupting the database file if done
+incorrectly. No real alternative to the rebuild procedure above.
 
 ## 6. Crate structure
 

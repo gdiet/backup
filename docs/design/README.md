@@ -49,8 +49,13 @@ see DESIGN-METADATA-003 in [`metadata-schema-with-contents-table.md`](metadata-s
 
 ## Reference Direction: One Way Only
 
-References go **code → design → requirement**, never the other way. A design document may cite the
-requirement(s) it satisfies; a requirement never cites a design document or code. This keeps a
+References only ever point downward - code may cite a design decision or a requirement, a design
+document may cite a requirement, a requirement never cites a design document or code. This keeps a
 requirement free to be satisfied by a different design later without needing to change the
 requirement itself, and a design free to be reimplemented differently without needing to change the
 requirement it still satisfies.
+
+Not a mandatory chain: a `DESIGN-...` entry only exists where a non-trivial decision was actually
+made (see "Design Documentation" in [`../../AGENTS.md`](../../AGENTS.md)). Code implementing a
+requirement with no such decision behind it has no design entry to cite, and cites the `REQ-...`
+directly instead.
