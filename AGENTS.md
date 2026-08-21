@@ -11,8 +11,7 @@ DedupFS is a deduplicating backup application. This Rust implementation is the c
 **Reliable, git-level fact**: this repository's origin (`git@backup:gdiet/backup.git`) also holds - among others -
 `main` (the Scala implementation), `rust` (a previous Rust implementation), and
 `go`/`go2`/`go3` (successive Go implementation stages) as branches. This means `git push` / branch-deletion commands act on a remote
-shared with the other implementations — never push, delete, or force-update a branch other than
-`rust2` from this checkout unless explicitly instructed to do so by the developer.
+shared with the other implementations.
 
 **Not reliable, filesystem-level fact**: on some machines (some of) those other branches also happen to be checked out as sibling directories next to this one
 (`rust/`, `scala/`, `go/`), forming a combined workspace. That layout is **not guaranteed to exist** — check for it (e.g. `ls ..`) rather than
