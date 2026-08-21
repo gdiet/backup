@@ -26,9 +26,9 @@ Status: draft
 Importance: should
 
 When explicitly enabled, the mount also supports structural changes (creating/removing/moving
-entries) and real content writes, committed back into the repository. This is an ongoing,
-ad-hoc way to write into the repository, distinct from the directed, one-shot import covered by
-REQ-INGEST-001 in [`ingest.md`](ingest.md).
+entries), setting a file's or directory's modification time, and real content writes, committed
+back into the repository. This is an ongoing, ad-hoc way to write into the repository, distinct
+from the directed, one-shot import covered by REQ-INGEST-001 in [`ingest.md`](ingest.md).
 
 Rationale: some workflows genuinely need to edit backed-up content in place (or organize a backup
 tree) using ordinary file-manager operations rather than a sequence of dedicated commands.
