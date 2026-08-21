@@ -24,12 +24,18 @@ not a real problem with the binary.
 
 ## 2. Check the Claude Code plugin
 
-**`/plugin` is unavailable in a Claude Desktop WSL session** (confirmed live, both from the agent
-side - no such tool - and from the developer's own terminal: `/plugin isn't available in this
-environment`) - matches the docs' own "Plugins aren't available in WSL sessions" note for Desktop.
-If you are in exactly that setup, skip straight to reporting this and stop; do not keep retrying
-`/plugin` variants. Retry the actual install from a Terminal-CLI session or a native-Windows
-Desktop session instead, where `/plugin` should work normally.
+**`/plugin` is unavailable in the Claude Desktop app, WSL or native Windows alike** - confirmed
+live in both. The WSL case matches the docs' own "Plugins aren't available in WSL sessions" note;
+the native-Windows case does not match any documented restriction, so this looks like a Desktop-app-
+wide gap rather than a WSL-specific one. Concretely, in a native-Windows Desktop session there is no
+`/plugin`-equivalent tool at all - a `ToolSearch` for "plugin marketplace install" only turns up
+`ListPlugins`/`SearchPlugins`/`SuggestPluginInstall`, which are the claude.ai connector-plugin
+catalog, an unrelated system - and `~/.claude/plugins/` does not even exist on disk, meaning no
+marketplace has ever been added there. If you are in a Desktop session (WSL or native Windows),
+skip straight to reporting this and stop; do not keep retrying `/plugin` variants. Retry the actual
+install from a Terminal-CLI session instead, where `/plugin` is expected to work - this has not
+actually been confirmed yet in this repository as of this writing; treat it as the next thing to
+verify, not an established fact.
 
 Where `/plugin` *is* available: run `/plugin marketplace list` and `/plugin list` to see whether a
 Rust LSP plugin is already installed and enabled. Also check this repository's
@@ -62,3 +68,10 @@ name step 2 found to be current) - only where `/plugin` is actually available, p
 After installing, confirm it actually improves symbol lookups on a real task in this repository
 (a go-to-definition or find-references that previously would have needed grep/file reads) before
 treating this as done - a successful install command is not the same as a working setup.
+
+If `/plugin` is unavailable (step 2), this verification is not possible in Claude Code itself,
+regardless of whether `rustup component add rust-analyzer` succeeded - installing the binary alone
+does not connect it to Claude Code. Say so plainly rather than treating a successful
+`rustup component add` as if it verified anything about Claude Code's own symbol lookups; the
+binary may still be worth installing for other tooling (e.g. an editor's own `rust-analyzer`
+extension) even though this half of the check stays open.
