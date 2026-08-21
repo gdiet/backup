@@ -77,10 +77,10 @@ the metadata store's total size, not a rounding error.
 
 ## Finding duplicate content
 
-`rust/db` has a real, existing feature that depends on `contents`-level grouping:
-`entries_for_content` (a single `WHERE content_id = ?` lookup) powers
-`blacklist process --delete-copies`, which finds every other occurrence of a blacklisted file's
-content so all copies can be removed together, not just the one explicitly blacklisted.
+With `contents`, "which other files share this exact content" is a single
+`WHERE content_id = ?` lookup - directly useful for `blacklist process --delete-copies`, finding
+every other occurrence of a blacklisted file's content so all copies can be removed together, not
+just the one explicitly blacklisted.
 
 Without `contents`, the same question is answered by narrowing on an existing index
 (`content_chunks_chunk_id_idx`, filtered to each candidate's first chunk) and then verifying full
@@ -91,9 +91,9 @@ in the typical case (a content-addressed chunk id is high-cardinality, so the ca
 usually small), with a real but bounded cost specifically when many files happen to share a first
 chunk without being fully identical (e.g. a common document header).
 
-Blacklisting-with-delete-copies is not yet a confirmed rust2 requirement - it is still an open
-question in [`../../requirements/open-questions.md`](../../requirements/open-questions.md) - so
-this trade-off is not urgent today, but is relevant if that requirement is later adopted.
+Blacklisting-with-delete-copies is not yet a confirmed requirement - it is still an open question
+in [`../../requirements/open-questions.md`](../../requirements/open-questions.md) - so this
+trade-off is not urgent today, but is relevant if that requirement is later adopted.
 
 ## Diagnosing a broken chunk
 

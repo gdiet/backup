@@ -87,8 +87,7 @@ two kinds that exist today.
 ## Triggers
 
 ```sql
--- Chunk-level ref-counting: unchanged from the chosen schema, and from rust/db - the only
--- ref-count trigger this schema needs at all.
+-- Chunk-level ref-counting: the only ref-count trigger this schema needs at all.
 CREATE TRIGGER content_chunks_ref_count_ins AFTER INSERT ON content_chunks BEGIN
   UPDATE chunks SET ref_count = ref_count + 1 WHERE id = NEW.chunk_id;
 END;
@@ -155,10 +154,13 @@ readers that are not the file's own mount session.
 
 ## Finding duplicate content
 
-Without a `contents` table, "which other files share this exact content" (in `rust/db`, a single
-`WHERE content_id = ?` query - used by `blacklist process --delete-copies` to find every other
-occurrence of a blacklisted file's content) has no equally direct equivalent, since
-`content_chunks` no longer groups multiple tree entries under one shared identity.
+Without a `contents` table, "which other files share this exact content" (in the chosen schema, a
+single `WHERE content_id = ?` query) has no equally direct equivalent, since `content_chunks` no
+longer groups multiple tree entries under one shared identity. Relevant if
+blacklisting-with-delete-copies (finding every other occurrence of a blacklisted file's content, so
+all copies can be removed together) is ever adopted - still an open question in
+[`../../requirements/open-questions.md`](../../requirements/open-questions.md), not a confirmed
+requirement today.
 
 Reasonably efficient replacement: narrow first, using the chunk index that already exists for an
 unrelated purpose (`problems`' broken-chunk-to-affected-files lookup), then verify.

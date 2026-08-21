@@ -1,8 +1,7 @@
 # Metadata Storage
 
-Re-examines rust2's metadata-storage design from first principles (see "This Is A Rewrite, Not A
-Port" in `AGENTS.md`) — `rust/db`'s SQLite-based schema is raw material to weigh, not a
-specification to carry over unexamined. The sections below are worked through in order, top to
+Re-examines this implementation's metadata-storage design from first principles (see "This Is A
+Rewrite, Not A Port" in `AGENTS.md`). The sections below are worked through in order, top to
 bottom: the storage engine choice (1-2) bounds the writer/concurrency model (3), which in turn
 bounds what the schema-level review (4) is even evaluating against. Crate structure (6) is
 independent of the rest and deliberately left for last.
@@ -105,10 +104,10 @@ in section 4 and 5 already assumes its specific API shape (parameter binding via
 
 Status: decided - `rusqlite`.
 
-The mature, de facto standard synchronous Rust binding for SQLite, already used throughout
-`rust/db` and, via `rusqlite_migration` (see section 5), the migration tooling this project also
-keeps. Its "bundled" feature compiles SQLite directly into the binary, matching
-REQ-OPERABILITY-001's "nothing to install separately" bar noted above.
+The mature, de facto standard synchronous Rust binding for SQLite, paired with
+`rusqlite_migration` (see section 5) for migration tooling. Its "bundled" feature compiles SQLite
+directly into the binary, matching REQ-OPERABILITY-001's "nothing to install separately" bar noted
+above.
 
 **Alternatives considered and rejected**:
 
@@ -178,34 +177,31 @@ the rejected alternative (no `contents` table) and the reasoning behind the deci
 [`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) for the chosen
 schema itself.
 
-Reviewed `rust/db`'s schema (`rust/db/src/migrations.rs`) table by table, column by column,
-constraint by constraint, trigger by trigger, cross-checked against actual query/update code, not
-just its own doc comments. Six tables (`repository_settings`, `chunks`, `chunk_extents`,
-`contents`, `content_chunks`, `tree_entries`) - see that file's own top-of-file doc comment for the
-full description each one currently carries. Findings below; anything not mentioned is judged
-sound as inherited and carries over unchanged - in particular: the `repository_settings`
-single-row-via-`CHECK(id = 1)` pattern; the partial unique index enforcing one active
-`(parent_id, name)` per directory, including the self-referencing root row that makes a non-null
-`parent_id` possible everywhere; the plain (non-partial) index on `tree_entries.parent_id` (added
-for a measured reason: an unscoped recursive query against a real ~7.16M-row repository never
-finished in under an hour without it, 1m48s with it); the `ON DELETE CASCADE` chains on
-`chunk_extents`/`content_chunks`; and soft-delete deliberately not decrementing a content's
-reference count (a soft-deleted entry stays recoverable until actually purged).
+Reached by a full review of the schema, table by table, column by column, constraint by
+constraint, trigger by trigger, six tables in total (`repository_settings`, `chunks`,
+`chunk_extents`, `contents`, `content_chunks`, `tree_entries`). Findings that led to a change are
+detailed below; several properties were reviewed and kept as sound without changes - in
+particular: the `repository_settings` single-row-via-`CHECK(id = 1)` pattern; the partial unique
+index enforcing one active `(parent_id, name)` per directory, including the self-referencing root
+row that makes a non-null `parent_id` possible everywhere; a plain (non-partial) index on
+`tree_entries.parent_id` (needed for a measured reason: an unscoped recursive query against a real
+~7.16M-row repository never finished in under an hour without it, 1m48s with it); `ON DELETE
+CASCADE` chains on `chunk_extents`/`content_chunks`; and soft-delete deliberately not decrementing
+a content's reference count (a soft-deleted entry stays recoverable until actually purged).
 
-### Ref-count maintenance did not cover in-place `content_id` updates
+### Alternative considered and rejected: a genuine `AFTER UPDATE OF content_id` trigger
 
-`tree_entries_ref_count_ins`/`_del` only fire on `INSERT`/`DELETE`. One call site
-(`finalize_as_empty_if_undecided` in `rust/db/src/tree.rs`) updates `tree_entries.content_id` in
-place - a deliberate, narrow, explicitly-documented exception to an otherwise-followed
-"never mutate `content_id` in place" rule - and compensates by hand, incrementing the target
-content's reference count in the same transaction, in Rust code rather than via a trigger. Correct
-today, but fragile: any future code path that updates `content_id` in place without also
-remembering this manual step would silently desynchronize the reference count from what actually
+A ref-count-maintaining `INSERT`/`DELETE` trigger pair only fires on `INSERT`/`DELETE` - a design
+that also allows a row's content reference to be set later via an in-place `UPDATE` (e.g. a
+placeholder row settling once its content becomes known) needs something more: either a genuine
+`AFTER UPDATE OF content_id` trigger alongside the `INSERT`/`DELETE` pair, or every call site that
+performs such an update remembering a manual, hand-written compensation step - fragile, since a
+single forgotten call site would silently desynchronize the reference count from what actually
 references it, with no immediate symptom.
 
-Closed by adding a genuine `AFTER UPDATE OF content_id` trigger, so the invariant holds regardless
-of how many places update `content_id` in place, present or future - removing the need for
-call-site-specific manual compensation entirely:
+A genuine trigger would close that gap so the invariant holds regardless of how many call sites
+update `content_id` in place, present or future, with no call-site-specific manual compensation
+needed at all:
 
 ```sql
 CREATE TRIGGER tree_entries_ref_count_upd AFTER UPDATE OF content_id ON tree_entries
@@ -228,13 +224,12 @@ within the same transaction) - it exists to skip that pointless round-trip write
 `AFTER UPDATE OF content_id` fires whenever a statement's `SET` clause mentions the column at all,
 whether or not the value actually changes.
 
-**Superseded**: this trigger is no longer part of either schema proposal. A better fix removes the
-underlying problem instead of patching around it - a `tree_entries` row for a file is never
-inserted until its content is actually settled (see "In-progress files are not written to the
-database" in both `metadata-schema-with-contents-table.md` and
-`metadata-schema-without-contents-table.md`), so `content_id`/`length` is never mutated in place at
-all, not just in the one call site this trigger closed. Kept here for the reasoning behind
-`IS NOT`/`WHEN` above, which is still relevant to any future trigger written against this pattern.
+Rejected in favor of removing the underlying problem instead of patching around it: a
+`tree_entries` row for a file is never inserted until its content is actually settled (see
+"In-progress files are not written to the database" in `metadata-schema-with-contents-table.md`),
+so `content_id` is never mutated in place at all - no in-place `UPDATE` call site exists for this
+trigger to guard. Kept here for the `IS NOT`/`WHEN` reasoning above, still relevant to any future
+trigger written against this general pattern.
 
 ### Guard the two fixed sentinel rows against deletion
 
@@ -367,10 +362,11 @@ explicitly compares stored `contents.length` against the actual sum, if it does 
 
 ### Root entry's seed `time`: no need to compute "now" at all
 
-`rust/db`'s seed `INSERT` for the root tree entry computes the current time in SQL
-(`CAST(strftime('%s', 'now') AS INTEGER) * 1000`) - unwieldy compared to the same computation done
-in Rust, and, on reflection, unnecessary in the first place: the root is `kind = KIND_DIR` like any
-other directory, so REQ-TREE-005 in
+Computing the current time directly in SQL for the root tree entry's seed row
+(`CAST(strftime('%s', 'now') AS INTEGER) * 1000`, converting seconds to the milliseconds this
+schema uses elsewhere) is unwieldy compared to the same computation done in Rust, and, on
+reflection, unnecessary in the first place: the root is `kind = KIND_DIR` like any other directory,
+so REQ-TREE-005 in
 [`../../requirements/functional/tree.md`](../../requirements/functional/tree.md) (a directory's
 modification time reflects changes to its direct entries) applies to it the same as to any other
 directory. Its seed value is superseded the moment anything is created at the top level - true for
@@ -392,9 +388,9 @@ That decision is already made; only the write-path code implementing it does not
 Status: decided - `rusqlite_migration`. Distinct from repository migration from the Scala
 implementation (`migration/from-scala.md`), which is out of scope here.
 
-`rust/db`'s internal schema-migration tooling (`rusqlite_migration`) is also the right approach for
-rust2: purpose-built for exactly this project's already-decided pairing (`rusqlite` against SQLite
-only, not a multi-backend abstraction), tracks the applied schema version via `PRAGMA user_version`,
+`rusqlite_migration` is the right migration tooling for this project: purpose-built for exactly
+the already-decided pairing (`rusqlite` against SQLite only, not a multi-backend abstraction),
+tracks the applied schema version via `PRAGMA user_version`,
 wraps each migration in a transaction, and - beyond plain SQL - supports running Rust code
 alongside a migration's SQL via a hook with access to the live `&rusqlite::Transaction`
 (`M::up_with_hook`), which the table-rebuild note below already relies on being available. No
@@ -406,17 +402,17 @@ to a different SQLite binding than `rusqlite` (e.g. `sqlx`'s own migration suppo
 the binding choice
 decided in section 2, not just the migration-tool choice.
 
-Also kept from `rust/db`: opening a repository for writing (`open_repository`) applies any pending
-migration automatically and transparently; opening it read-only refuses instead of migrating
-silently. No separate, explicit "upgrade" command is needed, since applying a migration already
+Opening a repository for writing (`open_repository`) applies any pending migration automatically
+and transparently; opening it read-only refuses instead of migrating silently. No separate,
+explicit "upgrade" command is needed, since applying a migration already
 requires the deliberate, consequential step of opening for writing - but a read-only session never
 mutates the schema out from under a concurrent reader.
 
 ### Migration source: inline Rust constants, not separate `.sql` files
 
 `rusqlite_migration` supports either: SQL embedded directly as Rust string literals in a migration
-list (as `rust/db/src/migrations.rs` does throughout), or separate `.sql` files loaded via
-`include_str!` or the crate's `from-directory` feature. rust2 keeps inline Rust constants.
+list, or separate `.sql` files loaded via `include_str!` or the crate's `from-directory` feature.
+This project keeps inline Rust constants.
 
 What favors separate files: real SQL syntax highlighting, formatting, and linting in editors and
 SQL tooling without special configuration, and the ability to run a migration directly against a
@@ -430,8 +426,8 @@ than sitting together as one `M::up_with_hook(sql, hook)` call a reader can see 
 Separate files also add a discovery mechanism (either manual `include_str!` calls kept in sync with
 the file list, or the `from-directory` feature's file-naming convention) that inline constants get
 for free: migration order is just array order, with nothing to keep in sync. Both costs matter more
-than the tooling convenience gained: rust2's migrations are expected to be occasional, deliberate,
-hand-reviewed schema changes accumulated over the project's lifetime, not a high-volume, rapidly
+than the tooling convenience gained: this project's migrations are expected to be occasional,
+deliberate, hand-reviewed schema changes accumulated over its lifetime, not a high-volume, rapidly
 iterated stream where dedicated SQL-file tooling would pay for itself.
 
 ### Changing a constraint always needs a full table rebuild
@@ -463,11 +459,11 @@ incorrectly. No real alternative to the rebuild procedure above.
 
 Status: decided - its own crate, named `db`, with a deliberately narrow public interface.
 
-The rust2 workspace already holds two crates built the same way (`cdc`, a `Chunker` trait behind a
+This workspace already holds two crates built the same way (`cdc`, a `Chunker` trait behind a
 narrow interface; `mountfs`, a mount abstraction behind its own) - a third for metadata management
-is consistent with that pattern, not a new kind of ceremony introduced just for this. Named `db`
-rather than something else: matches `rust/db`, easing comparison during the rewrite, and no reason
-to diverge surfaced.
+is consistent with that pattern, not a new kind of ceremony introduced just for this. Named `db`:
+short, unambiguous within the workspace, and consistent with the scoped-test invocation style used
+elsewhere in this document (`cargo test -p db ...`).
 
 More than precedent alone motivates a crate boundary here specifically: sections 4 and 5 above
 establish that a correctness invariant depends on metadata access being funneled through curated
@@ -487,16 +483,4 @@ and vice versa.
 
 The exact shape of the public interface (which operations it exposes, their signatures) is
 deliberately not decided here - premature ahead of actually implementing `store`/`restore`/etc.,
-and, per the crate's own future top-of-file doc comment (matching `rust/db`'s convention), better
-worked out against real call sites than designed speculatively in advance.
-
-## 7. Remove references to `rust/`
-
-Status: open
-
-Sections 1-6 above cite `rust/db` deliberately, as the raw material being weighed. Once each
-decision is actually made, replace those citations with self-contained descriptions of the chosen
-properties and trade-offs, matching how `cdc-chunking.md` and `mount-abstraction.md` do not
-reference `rust/`, `scala/`, or `go/` inline (see "Relationship To Other Implementations" in
-`AGENTS.md`). This section itself is removed once that cleanup is done — it describes a step to
-take, not a decision to record.
+and better worked out against real call sites than designed speculatively in advance.

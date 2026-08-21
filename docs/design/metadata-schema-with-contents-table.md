@@ -7,13 +7,14 @@ table deduplicating whole-file content, rather than the rejected alternative in
 this one was chosen.
 
 This schema keeps a dedicated `contents` table deduplicating whole-file content (an ordered
-chunk sequence) independently of `chunks` deduplicating individual chunks, plus the fixes found by
-reviewing `rust/db`'s equivalent schema table by table: two missing sanity constraints, one
-inconsistent uniqueness key, a guard trigger for the one sentinel row this schema still has (the
-tree's root entry), and - unlike `rust/db` - no separate sentinel for empty file content at all,
-which the ordinary content dedup path already handles on its own (see "In-progress files are not
-written to the database" below). That same section covers a further difference, avoiding a
-ref-count-maintenance gap architecturally rather than patching it with an extra trigger.
+chunk sequence) independently of `chunks` deduplicating individual chunks. Its `chunks` and
+`contents` tables each constrain their hash length, `chunk_extents` constrains its range to be
+well-formed, and `contents` keys on `(length, hash)` (matching `chunks`) rather than `hash` alone.
+The only sentinel row it needs is the tree's root entry, protected by a guard trigger - no separate
+sentinel for empty file content exists at all, since the ordinary content dedup path already
+handles that case on its own (see "In-progress files are not written to the database" below). That
+same section covers a further property: it avoids a ref-count-maintenance gap architecturally
+rather than patching it with an extra trigger.
 
 ## Schema
 
@@ -163,24 +164,25 @@ IS NULL` on a file row (the `CHECK` above forbids it), so there is no in-progres
 for a genuinely settled empty file.
 
 The same fact - a file's row is inserted exactly once, already at its final `content_id` - also
-removes two things `rust/db` needed for the opposite approach (inserting the row early, at
-`content_id = NULL`, then updating it once settled):
+means two things an opposite approach would need (inserting the row early, at `content_id = NULL`,
+then updating it once settled) are not needed here:
 
-- **`EMPTY_CONTENT_ID`**: a fixed, pre-seeded `contents` row kept alive even at `ref_count = 0`,
-  needed there so `content_id IS NULL` could unambiguously mean "not decided yet" rather than
+- **A fixed, pre-seeded empty-content row**, kept alive even at `ref_count = 0`: that approach
+  would need one so `content_id IS NULL` could unambiguously mean "not decided yet" rather than
   "decided, and empty." That disambiguation problem does not arise here, so an empty file's content
   is just an ordinary `contents` row - found or inserted through the same `(length, hash)` dedup
   lookup as any other content, purged like any other unreferenced row.
 - **The `AFTER UPDATE OF content_id` trigger**: `tree_entries_ref_count_ins`/`_del` alone keep
   `contents.ref_count` correct, since `content_id` is never mutated on an existing row. The single
-  call site that needed the trigger in `rust/db` (settling a `create()`d-but-never-written file to
-  `EMPTY_CONTENT_ID` via an in-place `UPDATE` - see `metadata-storage.md` point 4) does not exist
+  call site that approach would need the trigger for (settling a `create()`d-but-never-written file
+  to its empty-content row via an in-place `UPDATE` - see "Alternative considered and rejected: a
+  genuine `AFTER UPDATE OF content_id` trigger" in `metadata-storage.md` point 4) does not exist
   here: that transition instead happens by inserting the row for the first time, already resolved.
 
 ## Triggers
 
 ```sql
--- Chunk-level ref-counting: unchanged from rust/db.
+-- Chunk-level ref-counting.
 CREATE TRIGGER content_chunks_ref_count_ins AFTER INSERT ON content_chunks BEGIN
   UPDATE chunks SET ref_count = ref_count + 1 WHERE id = NEW.chunk_id;
 END;
@@ -201,8 +203,8 @@ BEGIN
 END;
 
 -- Guard the root tree entry against deletion by code that does not know it is special - see
--- "Magic values" below. Absent from rust/db's schema, where it is protected only by the
--- convention that reclaim-space's cleanup query knows to skip it.
+-- "Magic values" below. Without this, protection would rest purely on convention (e.g. a cleanup
+-- routine remembering to skip this row) - the kind of gap this trigger closes structurally.
 CREATE TRIGGER tree_entries_protect_root BEFORE DELETE ON tree_entries
   WHEN OLD.id = 0
 BEGIN
@@ -212,9 +214,9 @@ END;
 
 ## Performance of the new additions
 
-The two `CHECK` constraints and one trigger this schema adds beyond `rust/db`'s original schema
-(the hash-length `CHECK`s, `chk_chunk_extents_range`, and the root-guard trigger) were measured
-against a same-shape schema without them, in-memory, 5 interleaved repeats per variant (alternating
+These two `CHECK` constraints and the one trigger (the hash-length `CHECK`s,
+`chk_chunk_extents_range`, and the root-guard trigger) were measured against a same-shape schema
+without them, in-memory, 5 interleaved repeats per variant (alternating
 rather than running one variant fully before the other, to cancel out systematic drift rather than
 have it look like a real difference). An identical, unchanged trigger present in both variants (ordinary `tree_entries`
 inserts) still showed a ~6% swing between runs - the noise floor of this measurement, and the scale
