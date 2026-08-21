@@ -32,3 +32,13 @@ andere' dort auch aufnehmen." Two asks:
 Do this before `retired_branches` is ever pushed with the two new fake-merge commits (retiring
 `rust2-intermediate` and `rust`) already sitting on it locally, so the recipe/`.gitignore` land in
 the same push rather than a separate follow-up.
+
+## Done
+
+**Completed**: 2026-08-21, on the local `retired_branches` branch (not yet pushed - lands in the
+same push as the two fake-merges above). Added `README.md` (the recipe, plus the
+`--allow-unrelated-histories` note, plus a note on tagging a branch before retiring it if the name
+is wanted back) and `.gitignore` containing just `*` - the "broad, everything-untracked" reading
+was confirmed correct by the developer. Also removed the old, tracked `.hgignore` (content just
+`src/tryout`, a Mercurial-era leftover, now superseded by the `.gitignore`) in the same commit,
+per the developer noticing it while this was in progress.
