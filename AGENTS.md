@@ -142,6 +142,11 @@ behind the code (it explains *why*, not just *what*); cite the `REQ-...` directl
 a straightforward implementation of an unambiguous requirement with no separate decision worth its
 own `docs/design/` entry — do not manufacture a design entry just to have something to cite.
 
+Currently running as a live experiment: whether this harness automatically loads a directory-scoped
+`AGENTS.md` the way it loads this repository-root one. See `docs/design/AGENTS.md` — temporary,
+self-describing, not a real instructions file for that directory (the actual conventions live in
+`docs/design/README.md`).
+
 ## Interaction With The Developer
 
 Use the same language as the developer for chat interactions, but English as the project language
