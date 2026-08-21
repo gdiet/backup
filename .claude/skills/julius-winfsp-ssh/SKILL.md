@@ -26,5 +26,9 @@ hard way across several sessions:
 - The hostname itself may not resolve from WSL2 (no NetBIOS/mDNS there) - `ping <host>` in `cmd.exe`
   may only return a link-local IPv6 address unreachable from WSL2's own virtual network;
   `ping /4 <host>` returns a usable IPv4 LAN address instead.
+- A `Connection timed out` (not a fast refusal) usually means julius's SSH server is not running,
+  not a network or firewall problem - confirmed concretely: a timeout resolved immediately once
+  the SSH service was started on julius's end. Ask for the service to be started rather than
+  assuming a network issue.
 - A WinFSP mountpoint can't itself be an SMB share root (`ERROR_SHARING_VIOLATION`) - share the
   parent directory instead; the mount is then reachable as a subfolder of that share.
