@@ -1,7 +1,7 @@
 # Metadata Schema: Keep A `contents` Table
 
-Decided schema for point 4 of [`metadata-storage.md`](metadata-storage.md): keeps a `contents`
-table deduplicating whole-file content, rather than the rejected alternative in
+Decided schema for DESIGN-METADATA-004 in [`metadata-storage.md`](metadata-storage.md): keeps a
+`contents` table deduplicating whole-file content, rather than the rejected alternative in
 [`metadata-schema-without-contents-table.md`](metadata-schema-without-contents-table.md) - see
 [`metadata-schema-comparison.md`](metadata-schema-comparison.md) for the trade-offs weighed and why
 this one was chosen.
@@ -109,7 +109,7 @@ have `content_id IS NULL` without being a directory, breaking the inference. The
 `chk_tree_entries_kind_content_id` `CHECK` above keeps `kind` and `content_id` from drifting apart
 for the two kinds that exist today.
 
-## Hash computation
+## DESIGN-METADATA-007: Hash computation
 
 A second, separate BLAKE3 hasher runs alongside the chunking pass, fed only each chunk's
 already-computed `(length, hash)` pair (28 bytes) as it is resolved, not the chunk's actual
@@ -146,7 +146,7 @@ order-independent (two files with the same chunks in different order would hash 
 self-cancelling (two adjacent identical chunks contribute nothing at all), either of which would be
 a real correctness gap in a value this schema's `UNIQUE (length, hash)` constraint depends on.
 
-## In-progress files are not written to the database
+## DESIGN-METADATA-008: In-progress files are not written to the database
 
 A file the mount has `create()`d, or opened for writing, does not get a `tree_entries` row until
 its content is actually settled - a real `content_id`, resolved through the ordinary content dedup
@@ -176,8 +176,9 @@ then updating it once settled) are not needed here:
   `contents.ref_count` correct, since `content_id` is never mutated on an existing row. The single
   call site that approach would need the trigger for (settling a `create()`d-but-never-written file
   to its empty-content row via an in-place `UPDATE` - see "Alternative considered and rejected: a
-  genuine `AFTER UPDATE OF content_id` trigger" in `metadata-storage.md` point 4) does not exist
-  here: that transition instead happens by inserting the row for the first time, already resolved.
+  genuine `AFTER UPDATE OF content_id` trigger" in `metadata-storage.md` DESIGN-METADATA-004) does
+  not exist here: that transition instead happens by inserting the row for the first time, already
+  resolved.
 
 ## Triggers
 
@@ -243,7 +244,7 @@ more than constraint/trigger evaluation does.
   - path-building code would then need to strip it back out again wherever paths are constructed,
   for no reduction in how special the root actually is.
 - **Hash width**: 20 bytes (160 bits), truncated from BLAKE3's full 256-bit output - see
-  `metadata-storage.md` point 4 for the collision-probability reasoning.
+  `metadata-storage.md` DESIGN-METADATA-004 for the collision-probability reasoning.
 - **`KIND_DIR = 0`, `KIND_FILE = 1`**: `tree_entries.kind`'s encoding.
 
 ```sql

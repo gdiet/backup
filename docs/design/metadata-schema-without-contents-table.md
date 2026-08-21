@@ -1,6 +1,6 @@
 # Metadata Schema (Rejected Alternative): No `contents` Table
 
-Rejected alternative for point 4 of [`metadata-storage.md`](metadata-storage.md), kept for
+Rejected alternative for DESIGN-METADATA-004 in [`metadata-storage.md`](metadata-storage.md), kept for
 reference. [`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) is
 the chosen schema; see [`metadata-schema-comparison.md`](metadata-schema-comparison.md) for the
 trade-offs weighed and why that one was chosen over this one.
@@ -117,7 +117,7 @@ schema does not exist here, because there is no `content_id` column left to upda
   the partial unique index on `(parent_id, name)` enforces uniqueness at the top level too, and
   root already needs special-casing regardless, so an empty name costs nothing extra).
 - **Hash width**: 20 bytes (160 bits) on `chunks.hash` - same reasoning as the chosen schema (see
-  `metadata-storage.md` point 4). No `contents.hash` exists in this alternative to also constrain.
+  `metadata-storage.md` DESIGN-METADATA-004). No `contents.hash` exists in this alternative to also constrain.
 - **`KIND_DIR = 0`, `KIND_FILE = 1`**: `tree_entries.kind`'s encoding - same as the chosen schema.
 
 No `EMPTY_CONTENT_ID`-equivalent exists or is needed: an empty file is simply

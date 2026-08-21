@@ -2,11 +2,12 @@
 
 Re-examines this implementation's metadata-storage design from first principles (see "This Is A
 Rewrite, Not A Port" in `AGENTS.md`). The sections below are worked through in order, top to
-bottom: the storage engine choice (1-2) bounds the writer/concurrency model (3), which in turn
-bounds what the schema-level review (4) is even evaluating against. Crate structure (6) is
-independent of the rest and deliberately left for last.
+bottom: the storage engine choice (DESIGN-METADATA-001/002) bounds the writer/concurrency model
+(DESIGN-METADATA-003), which in turn bounds what the schema-level review (DESIGN-METADATA-004) is
+even evaluating against. Crate structure (DESIGN-METADATA-006) is independent of the rest and
+deliberately left for last.
 
-## 1. SQL database or something else
+## DESIGN-METADATA-001: SQL database or something else
 
 Status: decided - a SQL database.
 
@@ -52,7 +53,7 @@ Revisit if: the schema turns out to need far fewer cross-table relationships and
 shapes than expected, tipping the balance toward a simpler key-value layout - no evidence of that
 today.
 
-## 2. SQLite or another engine
+## DESIGN-METADATA-002: SQLite or another engine
 
 Status: decided - SQLite.
 
@@ -65,7 +66,8 @@ requirement). Correctness matters enormously for this role: losing or corrupting
 index effectively loses track of otherwise-intact stored data.
 
 SQLite satisfies all of this and more: embeddable with no server process at all, full SQL feature
-coverage including triggers, foreign keys, and partial indexes (exactly what section 1 established
+coverage including triggers, foreign keys, and partial indexes (exactly what DESIGN-METADATA-001
+established
 this schema needs), one of the most thoroughly tested pieces of software that exists, a mature
 Rust binding (`rusqlite`), and - via `rusqlite`'s "bundled" feature - can be compiled directly into
 the binary with no runtime dependency at all, going beyond "no separate server" to "nothing to
@@ -85,34 +87,38 @@ that.
 conflicting with REQ-OPERABILITY-001's low-footprint, no-separate-runtime requirement, in an
 otherwise pure-Rust project.
 
-**DuckDB**: excluded already in section 1 for being OLAP-shaped rather than a fit for this
+**DuckDB**: excluded already in DESIGN-METADATA-001 for being OLAP-shaped rather than a fit for this
 workload's many small transactional writes.
 
 **A pure-Rust SQL engine**: none identified with maturity, feature coverage, or ecosystem support
 comparable to SQLite.
 
 Revisit if: a future requirement needs something SQLite structurally cannot provide (e.g. true
-concurrent multi-writer transactions at a scale WAL mode cannot serve - see section 3) that a
+concurrent multi-writer transactions at a scale WAL mode cannot serve - see DESIGN-METADATA-003)
+that a
 specific alternative demonstrably solves.
 
 ### Rust binding: `rusqlite`
 
 Named in passing above as one reason SQLite fits, but not, until now, decided in its own right - a
 gap worth closing explicitly, since every schema example, trigger, and migration hook discussed
-in section 4 and 5 already assumes its specific API shape (parameter binding via `params![...]`,
+in DESIGN-METADATA-004 and DESIGN-METADATA-005 already assumes its specific API shape (parameter
+binding via `params![...]`,
 `&rusqlite::Transaction` in migration hooks).
 
 Status: decided - `rusqlite`.
 
 The mature, de facto standard synchronous Rust binding for SQLite, paired with
-`rusqlite_migration` (see section 5) for migration tooling. Its "bundled" feature compiles SQLite
+`rusqlite_migration` (see DESIGN-METADATA-005) for migration tooling. Its "bundled" feature compiles
+SQLite
 directly into the binary, matching REQ-OPERABILITY-001's "nothing to install separately" bar noted
 above.
 
 **Alternatives considered and rejected**:
 
 - **`sqlx`**: async-first (built around `tokio`/`async-std`), with compile-time-checked queries.
-  Async is a structural mismatch here, not a stylistic one: section 3's single-coordinated-writer
+  Async is a structural mismatch here, not a stylistic one: DESIGN-METADATA-003's
+  single-coordinated-writer
   model is synchronous throughout, and nothing else in this project runs an async runtime (the CLI,
   the FUSE mount via `fuser`, and `rayon`-based parallel chunking are all thread-based). Pulling in
   an async runtime solely for the database layer would be a large, unjustified dependency-surface
@@ -125,7 +131,7 @@ above.
   already provides safely (row mapping, statement caching, parameter binding, error handling) -
   avoidable, unjustified risk and effort.
 
-## 3. Writer/concurrency model
+## DESIGN-METADATA-003: Writer/concurrency model
 
 Status: decided - one coordinated writer, many concurrent readers, within a single writing
 process; concurrent writing processes against the same repository are refused outright
@@ -168,7 +174,7 @@ with stored content actually being durable once an operation reports it as store
 Revisit if: multiple independent processes writing to the same repository at the same time becomes
 an actual target scenario - no such scenario is known today.
 
-## 4. Database structure
+## DESIGN-METADATA-004: Database structure
 
 Status: decided - keep a `contents` table, deduplicating whole-file content in addition to
 chunk-level deduplication. See
@@ -383,7 +389,7 @@ removed, or renamed) is deliberately not a database trigger - see
 for a directed import's bulk population too, which needs different behavior per REQ-INGEST-005).
 That decision is already made; only the write-path code implementing it does not exist yet.
 
-## 5. Migration approach
+## DESIGN-METADATA-005: Migration approach
 
 Status: decided - `rusqlite_migration`. Distinct from repository migration from the Scala
 implementation (`migration/from-scala.md`), which is out of scope here.
@@ -400,7 +406,7 @@ check-and-apply loop would reimplement transaction wrapping and version bookkeep
 `rusqlite_migration` already does correctly, for no identified benefit; and any migration tool tied
 to a different SQLite binding than `rusqlite` (e.g. `sqlx`'s own migration support) would reopen
 the binding choice
-decided in section 2, not just the migration-tool choice.
+decided in DESIGN-METADATA-002, not just the migration-tool choice.
 
 Opening a repository for writing (`open_repository`) applies any pending migration automatically
 and transparently; opening it read-only refuses instead of migrating silently. No separate,
@@ -455,7 +461,7 @@ corruption - it validates nothing (neither existing data against the revised con
 consistency with the table's indexes and triggers) and risks corrupting the database file if done
 incorrectly. No real alternative to the rebuild procedure above.
 
-## 6. Crate structure
+## DESIGN-METADATA-006: Crate structure
 
 Status: decided - its own crate, named `db`, with a deliberately narrow public interface.
 

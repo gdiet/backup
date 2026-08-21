@@ -1,6 +1,6 @@
 # Metadata Schema Comparison: `contents` Table Or Not
 
-Decision record for point 4 of [`metadata-storage.md`](metadata-storage.md), comparing
+Decision record for DESIGN-METADATA-004 in [`metadata-storage.md`](metadata-storage.md), comparing
 [`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) (chosen) against
 [`metadata-schema-without-contents-table.md`](metadata-schema-without-contents-table.md) (rejected,
 kept for reference). The sections below lay out the trade-offs as weighed at the time; see
@@ -15,7 +15,7 @@ kept for reference). The sections below lay out the trade-offs as weighed at the
 | Sentinel rows needing guard protection | 1 (root entry only) | 1 (root entry only) |
 | Whole-file content deduplicated in metadata | yes | no (chunk-level dedup only) |
 | "Find every file sharing this content" | direct index lookup | narrow-by-first-chunk, then verify |
-| New schema elements needed beyond point 4's other fixes | none | `tree_entries.length`, `content_chunks` FK retarget |
+| New schema elements needed beyond DESIGN-METADATA-004's other fixes | none | `tree_entries.length`, `content_chunks` FK retarget |
 
 ## Structural complexity and correctness risk
 
@@ -119,8 +119,8 @@ verify it explicitly, not by a schema-level constraint.
 
 ## What is unaffected by this choice
 
-`chunks` and `chunk_extents` - and everything decided about them in point 4 of
-`metadata-storage.md` (the hash-width choice, the two new `CHECK` constraints) - are identical in
+`chunks` and `chunk_extents` - and everything decided about them in DESIGN-METADATA-004
+(`metadata-storage.md`) (the hash-width choice, the two new `CHECK` constraints) - are identical in
 both proposals. Chunk-level deduplication, the primary mechanism behind REQ-STORAGE-001/002, is
 unaffected either way.
 
@@ -150,6 +150,6 @@ Reasons for the decision:
   more table) is modest and fully documented, unlike the metadata-size difference, which scales
   with how much duplication a given repository actually contains.
 
-No third structural alternative surfaced during this review that avoids the trade-off entirely
-(see [`metadata-storage.md`](metadata-storage.md) point 4 and the schema review that preceded
-these two schemas).
+No third structural alternative surfaced during this review that avoids the trade-off entirely (see
+[`metadata-storage.md`](metadata-storage.md) DESIGN-METADATA-004 and the schema review that
+preceded these two schemas).
