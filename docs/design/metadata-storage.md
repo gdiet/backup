@@ -96,6 +96,36 @@ Revisit if: a future requirement needs something SQLite structurally cannot prov
 concurrent multi-writer transactions at a scale WAL mode cannot serve - see section 3) that a
 specific alternative demonstrably solves.
 
+### Rust binding: `rusqlite`
+
+Named in passing above as one reason SQLite fits, but not, until now, decided in its own right - a
+gap worth closing explicitly, since every schema example, trigger, and migration hook discussed
+in section 4 and 5 already assumes its specific API shape (parameter binding via `params![...]`,
+`&rusqlite::Transaction` in migration hooks).
+
+Status: decided - `rusqlite`.
+
+The mature, de facto standard synchronous Rust binding for SQLite, already used throughout
+`rust/db` and, via `rusqlite_migration` (see section 5), the migration tooling this project also
+keeps. Its "bundled" feature compiles SQLite directly into the binary, matching
+REQ-OPERABILITY-001's "nothing to install separately" bar noted above.
+
+**Alternatives considered and rejected**:
+
+- **`sqlx`**: async-first (built around `tokio`/`async-std`), with compile-time-checked queries.
+  Async is a structural mismatch here, not a stylistic one: section 3's single-coordinated-writer
+  model is synchronous throughout, and nothing else in this project runs an async runtime (the CLI,
+  the FUSE mount via `fuser`, and `rayon`-based parallel chunking are all thread-based). Pulling in
+  an async runtime solely for the database layer would be a large, unjustified dependency-surface
+  increase for a mismatch, not a fit, with the rest of the architecture. It also targets several
+  database engines, which SQLite-only `rusqlite_migration` deliberately does not.
+- **The `sqlite` crate**: a lower-level, less widely used binding with a much smaller ecosystem and
+  thinner tooling around it than `rusqlite` - no concrete advantage identified over the
+  already-proven choice.
+- **Raw `libsqlite3-sys` FFI directly, no wrapper**: would mean reimplementing what `rusqlite`
+  already provides safely (row mapping, statement caching, parameter binding, error handling) -
+  avoidable, unjustified risk and effort.
+
 ## 3. Writer/concurrency model
 
 Status: decided - one coordinated writer, many concurrent readers, within a single writing
@@ -359,25 +389,63 @@ That decision is already made; only the write-path code implementing it does not
 
 ## 5. Migration approach
 
-Status: open
-
-Whether `rust/db`'s internal schema-migration tooling (`rusqlite_migration`) is the right approach
-for rust2, or a better alternative exists. Distinct from repository migration from the Scala
+Status: decided - `rusqlite_migration`. Distinct from repository migration from the Scala
 implementation (`migration/from-scala.md`), which is out of scope here.
+
+`rust/db`'s internal schema-migration tooling (`rusqlite_migration`) is also the right approach for
+rust2: purpose-built for exactly this project's already-decided pairing (`rusqlite` against SQLite
+only, not a multi-backend abstraction), tracks the applied schema version via `PRAGMA user_version`,
+wraps each migration in a transaction, and - beyond plain SQL - supports running Rust code
+alongside a migration's SQL via a hook with access to the live `&rusqlite::Transaction`
+(`M::up_with_hook`), which the table-rebuild note below already relies on being available. No
+alternative considered offered a concrete advantage: `refinery` does the same job but abstracts
+over several database backends this project will never use; hand-rolling a `PRAGMA user_version`
+check-and-apply loop would reimplement transaction wrapping and version bookkeeping
+`rusqlite_migration` already does correctly, for no identified benefit; and any migration tool tied
+to a different SQLite binding than `rusqlite` (e.g. `sqlx`'s own migration support) would reopen
+the binding choice
+decided in section 2, not just the migration-tool choice.
+
+Also kept from `rust/db`: opening a repository for writing (`open_repository`) applies any pending
+migration automatically and transparently; opening it read-only refuses instead of migrating
+silently. No separate, explicit "upgrade" command is needed, since applying a migration already
+requires the deliberate, consequential step of opening for writing - but a read-only session never
+mutates the schema out from under a concurrent reader.
+
+### Migration source: inline Rust constants, not separate `.sql` files
+
+`rusqlite_migration` supports either: SQL embedded directly as Rust string literals in a migration
+list (as `rust/db/src/migrations.rs` does throughout), or separate `.sql` files loaded via
+`include_str!` or the crate's `from-directory` feature. rust2 keeps inline Rust constants.
+
+What favors separate files: real SQL syntax highlighting, formatting, and linting in editors and
+SQL tooling without special configuration, and the ability to run a migration directly against a
+scratch database (`sqlite3 < migration.sql`) or open it in a database GUI without first extracting
+it from a string.
+
+What decided against them: a migration needing a Rust hook - already a real, not hypothetical, case
+(the table-rebuild note below) - would split across two files, an `.sql` file for the schema change
+and a separate Rust function for the hook, connected only by naming convention or a comment, rather
+than sitting together as one `M::up_with_hook(sql, hook)` call a reader can see in one place.
+Separate files also add a discovery mechanism (either manual `include_str!` calls kept in sync with
+the file list, or the `from-directory` feature's file-naming convention) that inline constants get
+for free: migration order is just array order, with nothing to keep in sync. Both costs matter more
+than the tooling convenience gained: rust2's migrations are expected to be occasional, deliberate,
+hand-reviewed schema changes accumulated over the project's lifetime, not a high-volume, rapidly
+iterated stream where dedicated SQL-file tooling would pay for itself.
 
 ### Changing a constraint always needs a full table rebuild
 
 Not itself a decision, but a mechanical constraint any migration approach chosen above has to work
 within: SQLite's `ALTER TABLE` supports only `RENAME TO`, `RENAME COLUMN`, `ADD COLUMN`, and `DROP
 COLUMN` - there is no `ADD CONSTRAINT`/`DROP CONSTRAINT`, and no way to change an existing `CHECK`
-in place, named or not. Giving a `CHECK` a name (as this document's schema proposals do throughout)
-buys readability and shows up in the constraint-violation error message - it does not make the
+in place, named or not. Giving a `CHECK` a name (as this document's schema does throughout) buys
+readability and shows up in the constraint-violation error message - it does not make the
 constraint any easier to change later.
 
-Changing one - e.g. widening `chk_tree_entries_kind_content_id`/`chk_tree_entries_kind_length` from
-two `kind` values to three if REQ-TREE-007 (symbolic links) is ever implemented, see "Future
-extension: symbolic links" in `metadata-schema-with-contents-table.md` and
-`metadata-schema-without-contents-table.md` - needs the table-rebuild procedure SQLite's own
+Changing one - e.g. widening `chk_tree_entries_kind_content_id` from two `kind` values to three if
+REQ-TREE-007 (symbolic links) is ever implemented, see "Future extension: symbolic links" in
+`metadata-schema-with-contents-table.md` - needs the table-rebuild procedure SQLite's own
 documentation recommends for schema changes `ALTER TABLE` cannot express directly: create a new
 table with the revised schema, copy the data across, drop the old table, rename the new one into
 place, then recreate whatever indexes and triggers belonged to the original table (a rebuild drops
