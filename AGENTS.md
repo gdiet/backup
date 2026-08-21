@@ -164,6 +164,11 @@ established jargon. When in doubt, either paraphrase in German (e.g. "eingebette
 Kopie" instead of "vendorte Kopie") or leave the English term uninflected as a technical term ("die
 Header im `vendor`-Verzeichnis") rather than conjugating it.
 
+If you see that the developer has staged changes themselves (likely to track further edits
+against that baseline via `git status`/a staged diff), do not run `git add` again until they say
+otherwise - even for a change that would normally get staged as part of proposing a commit.
+Staging on top of their own would erase the very distinction they are using it to see.
+
 ## Working Across Environments
 
 This project is, at least occasionally, worked on from more than one environment/machine - an agent
