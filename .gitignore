@@ -1,0 +1,6 @@
+# This branch is a retirement landing point, not a working codebase (see README.md) - its tree
+# is not meant to accumulate new content. Ignore everything except what is already tracked, so
+# checking this branch out for IDE/tooling reasons (as happened when this file was added) does not
+# make stray build artifacts or editor state look like something worth committing here.
+
+*
