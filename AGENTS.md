@@ -202,6 +202,25 @@ When starting work in this repo, check `agent-todos/` for open items:
   README's format) rather than leaving a comment only in chat/session history that will not survive
   past this conversation.
 
+## Developer TODOs
+
+`developer-todos/` (see its own `README.md` for the exact file format) is where the developer parks
+something they want looked at or acted on later, without derailing whatever is currently being
+worked on.
+
+When starting work in this repo, check `developer-todos/` for open items, the same as
+`agent-todos/`:
+
+- **Small item**: just do it yourself, right away, no need to ask first - then move its file to
+  `developer-todos/done/` with a short note on what you did.
+- **Medium/large item**: read it, but confirm with the developer before starting.
+- Don't silently delete a `developer-todos/` file instead of moving it to `done/` - the record of
+  what was done is the point, for whichever agent looks next.
+
+If the developer hands over a TODO mid-conversation, write it to `developer-todos/` right then - do
+not just note it in chat and move on. A note that only exists in chat history does not survive past
+that conversation, which defeats the entire point of this mechanism.
+
 ## Verification Of Changes
 
 Scope which checks apply by what actually changed, not by how large the change looks:
