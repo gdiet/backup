@@ -1,11 +1,11 @@
 # Evaluate a Rust code-intelligence plugin
 
-**Needs**: a Terminal-CLI session, specifically. `/plugin` is now confirmed unavailable in the
-Claude Desktop app on *both* WSL and native Windows (see 2026-08-21 update below) - this looks like
-a Desktop-app-wide gap, not a WSL-specific one as first suspected. A Terminal-CLI session has not
-yet been tried; that is the next thing to actually check, not an assumed fallback. The `rustup
-component` half of this item does not have this restriction and is done on both machines tried so
-far (see below).
+**Needs**: a genuine Terminal-CLI session, specifically. `/plugin` is now confirmed unavailable in
+the Claude Desktop app on *both* WSL and native Windows, and in the VSCode extension too (see
+2026-08-21 updates below) - this looks like a "not a Terminal-CLI session" gap, not one tied to a
+specific platform or app. A genuine Terminal-CLI session has not yet been tried; that is the next
+thing to actually check, not an assumed fallback. The `rustup component` half of this item does not
+have this restriction and is done on all three machines/sessions tried so far (see below).
 **Size**: small
 **Opened**: 2026-08-21, by a Claude Desktop/WSL2 session. Carried over from
 `docs/agent-setup-plan.md` item 8 when that document was closed out and condensed.
@@ -49,3 +49,35 @@ the WSL `/plugin` unavailability, and now the native-Windows `/plugin` unavailab
 - **Remaining open question**: does `/plugin` actually work from a Terminal-CLI session (as
   opposed to the Desktop app)? Neither session tried has been a Terminal-CLI session; this is the
   next environment to actually test, not something to assume works from the docs alone.
+
+## Status (2026-08-21, VSCode-extension session, later the same day)
+
+- **New environment tried**: the VSCode native extension - distinct from both the Desktop app and
+  a Terminal-CLI session, and not previously tested.
+- **`rust-analyzer`**: already installed on this machine (WSL2, `rustup component list` →
+  `rust-analyzer-x86_64-unknown-linux-gnu (installed)`) - this is the same physical machine as the
+  2026-08-21 WSL2 Desktop-app session above, so no new install/confirmation was needed here.
+- **`/plugin` finding generalized further**: also unavailable in the VSCode extension. `ToolSearch`
+  for "plugin marketplace install" and for "plugin" alone found nothing at all - not even the
+  unrelated `ListPlugins`/`SearchPlugins`/`SuggestPluginInstall` connector-catalog tools that showed
+  up in the native-Windows Desktop session. This rules out "Desktop app" as the specific cause and
+  points to "not a genuine Terminal-CLI session" as the real boundary.
+- **New finding: a non-interactive escape hatch exists**. The `claude` CLI binary was reachable on
+  `PATH` (`/home/georg/.local/bin/claude`, v2.1.220) and its `plugin` subcommand works standalone
+  via `Bash` (`claude plugin marketplace list`, `claude plugin list` both ran and returned real
+  data - a `claude-plugins-official` marketplace was already configured on this machine, no plugins
+  installed yet). This is a genuinely different code path from the in-session `/plugin` tool: it
+  runs as a separate process, would not hot-load into the invoking session, and so could not have
+  been used to satisfy step 4 (real symbol-lookup verification) even if run. Asked the developer
+  whether to actually run `claude plugin install rust-analyzer-lsp@claude-plugins-official` this
+  way; they declined for now (treat as unavailable here) and asked instead how to start a genuine
+  Terminal-CLI session on this machine to resolve the actual remaining open question.
+- **`rust-analyzer-lsp` plugin**: not installed in this session, for the same reason as both prior
+  sessions - no in-session `/plugin` tool available. The CLI escape hatch above was found but not
+  used.
+- **Verification (skill step 4)**: not possible here either, same reasoning as both prior sessions.
+- **Remaining open question, still open**: does `/plugin` work from a genuine Terminal-CLI session?
+  Three sessions now (WSL Desktop, native-Windows Desktop, VSCode extension) have all confirmed
+  `/plugin` absence; none has been a genuine Terminal-CLI session yet. Next step: run `claude` from
+  an actual terminal (not an IDE-embedded session) and retry
+  `/plugin install rust-analyzer-lsp@claude-plugins-official` there.

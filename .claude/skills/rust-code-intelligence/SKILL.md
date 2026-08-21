@@ -24,18 +24,30 @@ not a real problem with the binary.
 
 ## 2. Check the Claude Code plugin
 
-**`/plugin` is unavailable in the Claude Desktop app, WSL or native Windows alike** - confirmed
-live in both. The WSL case matches the docs' own "Plugins aren't available in WSL sessions" note;
-the native-Windows case does not match any documented restriction, so this looks like a Desktop-app-
-wide gap rather than a WSL-specific one. Concretely, in a native-Windows Desktop session there is no
-`/plugin`-equivalent tool at all - a `ToolSearch` for "plugin marketplace install" only turns up
-`ListPlugins`/`SearchPlugins`/`SuggestPluginInstall`, which are the claude.ai connector-plugin
-catalog, an unrelated system - and `~/.claude/plugins/` does not even exist on disk, meaning no
-marketplace has ever been added there. If you are in a Desktop session (WSL or native Windows),
-skip straight to reporting this and stop; do not keep retrying `/plugin` variants. Retry the actual
-install from a Terminal-CLI session instead, where `/plugin` is expected to work - this has not
-actually been confirmed yet in this repository as of this writing; treat it as the next thing to
-verify, not an established fact.
+**`/plugin` is unavailable in the Claude Desktop app (WSL or native Windows) and in the VSCode
+extension alike** - confirmed live in all three. The WSL Desktop case matches the docs' own
+"Plugins aren't available in WSL sessions" note; the native-Windows Desktop and VSCode-extension
+cases do not match any documented restriction, so this looks like a "not a Terminal-CLI session"
+gap rather than one tied to a specific platform or app. Concretely, in none of the three is there a
+`/plugin`-equivalent tool - a `ToolSearch` for "plugin marketplace install" finds nothing at all in
+the VSCode extension, and in the native-Windows Desktop app turns up only
+`ListPlugins`/`SearchPlugins`/`SuggestPluginInstall`, the unrelated claude.ai connector-plugin
+catalog. `~/.claude/plugins/` may or may not exist on disk depending on whether a Terminal-CLI
+session on that same machine has already added a marketplace there (it existed in the VSCode-
+extension case below, on a machine where a prior WSL Desktop session had already run
+`rustup component add rust-analyzer` - but that does not mean `/plugin` itself became available;
+plugin state on disk and the in-session `/plugin` tool are independent). If you are in a Desktop
+session or the VSCode extension, skip straight to reporting this and stop; do not keep retrying
+`/plugin` variants. There is a separate, non-interactive escape hatch worth knowing about but not
+using without asking first: the `claude` CLI binary itself (if on `PATH`) has a `plugin` subcommand
+(`claude plugin install/list/marketplace ...`) that works standalone via a plain shell command, in
+any environment where the binary is reachable - confirmed working via `Bash` in the VSCode-extension
+case below. This does not substitute for the in-session `/plugin` tool: it runs as a separate
+process and will not hot-load into, or become verifiable from, the session that invoked it (plugins
+load at session start) - useful only to prepare a future Terminal-CLI session, not to satisfy step 4
+of this checklist. Retry the actual in-session install from a genuine Terminal-CLI session instead,
+where `/plugin` is expected to work - this has not actually been confirmed yet in this repository as
+of this writing; treat it as the next thing to verify, not an established fact.
 
 Where `/plugin` *is* available: run `/plugin marketplace list` and `/plugin list` to see whether a
 Rust LSP plugin is already installed and enabled. Also check this repository's
