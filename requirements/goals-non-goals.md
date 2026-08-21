@@ -32,7 +32,7 @@ filesystem (ZFS, Btrfs), not a full storage-stack replacement.
 ## Non-Goals
 
 - **General-purpose filesystem semantics** — this does not aim to replicate everything a
-  general-purpose filesystem provides: for example, fine-grained permissions, hard links, and
-  block-level (random-write) access are explicitly out of scope. The goal is a backup archive
-  usable like a
-  filesystem for reading and organizing content, not a drop-in replacement for one.
+  general-purpose filesystem provides: for example, fine-grained permissions, hard links,
+  block-level (random-write) access, access-time tracking, and file-locking mechanisms are
+  explicitly out of scope. The goal is a backup archive usable like a filesystem for reading and
+  organizing content, not a drop-in replacement for one.
