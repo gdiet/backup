@@ -1,2 +1,7 @@
+# sort alphabetically
+# add comments where not obvious
+# keep ! negations directly after the rules they override
+
 /.idea/
+/.vscode/
 /target/
