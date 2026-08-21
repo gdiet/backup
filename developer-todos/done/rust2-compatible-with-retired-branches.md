@@ -37,3 +37,22 @@ ignore/delete once verified, not verified yet") is the obvious local candidate f
 retiring process, rather than being deleted outright or left dangling indefinitely. Still needs
 the developer's confirmation that this is actually what was meant, and that `rust2-intermediate`
 is indeed safe to retire this way, before acting.
+
+## Done
+
+**Completed**: 2026-08-21. Confirmed with the developer, then carried out: both `rust2-intermediate`
+and `rust` (the previous Rust implementation this file's own wording above refers to) were retired
+via exactly this convention - fake-merged into `retired_branches` with
+`--allow-unrelated-histories` (needed since both are orphan branches, no common ancestor with
+`retired_branches`'s Scala-descended history), then their `origin` refs deleted. `rust`'s tip is
+additionally tagged `rust-1st-attempt`, pushed, for a permanent pointer independent of the branch
+or the merge commit. `retired_branches` itself gained a `README.md` documenting the recipe and a
+`.gitignore` - the "no instructions file of its own" observation above no longer holds; that was
+true only at the time it was written.
+
+**Terminology note for reading this file's own wording above**: at the time it was written, "rust2"
+meant this implementation's working-title branch, and "rust" meant the previous, now-retired
+implementation. Since then, the working title was dropped project-wide and "rust2" was renamed to
+"rust" - so "rust" now refers to *this* implementation's branch, the opposite of what it meant
+above. Read "rust2" (above the "Update" heading) as "this implementation", and "rust" (above,
+outside this Done section) as "the old, now-retired implementation".
