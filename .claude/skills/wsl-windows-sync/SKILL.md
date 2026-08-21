@@ -1,6 +1,6 @@
 ---
 name: wsl-windows-sync
-description: Sync the Windows checkout of this repo (backup, rust2/) with its WSL clone, run Linux-specific verification (real FUSE mount tests, cargo build/clippy/test as they'd actually run on Linux) via WSL, or run any single command that spans both a Windows-native shell (PowerShell/cmd) and a WSL/Linux shell (e.g. `wsl.exe ... -- bash -c '...'`, or reaching a WSL-built binary from PowerShell). Use whenever work touches both the Windows and WSL sides of this project, or hits shell-quoting/path oddities that only show up when a command crosses that boundary.
+description: Sync the Windows checkout of this repo (backup, rust/) with its WSL clone, run Linux-specific verification (real FUSE mount tests, cargo build/clippy/test as they'd actually run on Linux) via WSL, or run any single command that spans both a Windows-native shell (PowerShell/cmd) and a WSL/Linux shell (e.g. `wsl.exe ... -- bash -c '...'`, or reaching a WSL-built binary from PowerShell). Use whenever work touches both the Windows and WSL sides of this project, or hits shell-quoting/path oddities that only show up when a command crosses that boundary.
 ---
 
 # Working Across Windows And WSL
