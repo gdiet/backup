@@ -15,5 +15,5 @@ of work rather than re-deriving it from scratch.
 Before reaching for one of those, though: `scripts/build-windows-docker.sh` cross-compiles the
 Windows backend from right here via Docker (see `docs/design/mount-abstraction.md`'s "Verifying
 the Windows backend from Linux") - a compile/link check, not a substitute for real WinFSP
-behavior, but worth running first for anything touching `mountfs/src/windows/` before escalating
+behavior, but worth running first for anything touching `crates/mountfs/src/windows/` before escalating
 to a real Windows/WinFSP environment.

@@ -3,7 +3,7 @@
 //!
 //! Exists because `mountfs::windows::mount` has no working in-process
 //! clean-shutdown call (see `docs/design/mount-abstraction.md`) -
-//! `mountfs/src/windows/mod.rs`'s integration test runs this as a real
+//! `crates/mountfs/src/windows/mod.rs`'s integration test runs this as a real
 //! child process instead, so it can terminate the mount by killing the
 //! process (exactly how a user would stop a mount on Windows today: close
 //! the console / Ctrl+C / task manager) rather than by calling anything

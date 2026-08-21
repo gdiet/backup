@@ -85,7 +85,7 @@ files, and per-directory `CLAUDE.md` files. That proposal has since been carried
 [`.claude/rules/requirements.md`](../.claude/rules/requirements.md),
 [`.claude/rules/design-docs.md`](../.claude/rules/design-docs.md),
 [`.claude/rules/rust-code-quality.md`](../.claude/rules/rust-code-quality.md),
-[`mountfs/CLAUDE.md`](../mountfs/CLAUDE.md), and
+[`mountfs/CLAUDE.md`](../crates/mountfs/CLAUDE.md), and
 [`.claude/skills/attributed-commits/`](../.claude/skills/attributed-commits/) directly, rather than
 the now-historical reasoning that led to them. The confirmed mechanism behind all of it: a
 subdirectory's own `CLAUDE.md` loads "at launch when started from that directory, or on demand when

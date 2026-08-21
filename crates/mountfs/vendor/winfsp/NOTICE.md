@@ -23,7 +23,7 @@ reimplemented directly in `windows/sys.rs` instead of vendoring that much
 larger header. These headers are consulted purely as the authoritative
 reference for exact struct layouts (`fuse_operations`, `fuse_file_info`,
 `fuse_stat`, `fuse_statvfs`, `fsp_fuse_env`, ...), which are then
-hand-transcribed into `mountfs/src/windows/sys.rs` - not compiled directly
+hand-transcribed into `crates/mountfs/src/windows/sys.rs` - not compiled directly
 (unlike the Linux backend, where real system libfuse3 is loaded at runtime
 and its headers matter for the Linux build itself, not just as
 documentation).
@@ -34,7 +34,7 @@ WinFSP is Copyright (C) Bill Zissimopoulos, licensed under GPLv3 with an
 explicit FLOSS exception permitting linking with (and, per WinFSP's own
 practice of publishing these headers for exactly this purpose, referencing
 the structure of) a platform-specific WinFsp DLL from FLOSS software such
-as this project (MIT OR Apache-2.0) - see [`../../../NOTICE.md`](../../../NOTICE.md)
+as this project (MIT OR Apache-2.0) - see [`../../../../NOTICE.md`](../../../../NOTICE.md)
 for the exception's full text and this project's compliance notes.
 
 > WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos

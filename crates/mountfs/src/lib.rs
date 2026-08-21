@@ -111,7 +111,7 @@ fn reject_if_name_too_long(path: &str) -> Result<(), Errno> {
 /// high-level `rename` callback's own `flags` parameter - "do not replace
 /// an existing `new_path`, fail instead" (see
 /// [`MountFilesystem::rename`]'s doc comment for how this crate surfaces
-/// it). Confirmed against real WinFSP (`mountfs/tests/rename_noreplace.rs`)
+/// it). Confirmed against real WinFSP (`crates/mountfs/tests/rename_noreplace.rs`)
 /// that its `cygfuse` layer never actually sets this bit: WinFSP enforces
 /// "reject if the destination already exists" itself, before ever calling
 /// into this crate's `rename` dispatch, and passes `flags = 0` for every

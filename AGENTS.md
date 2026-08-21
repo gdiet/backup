@@ -132,8 +132,9 @@ Staging on top of their own would erase the very distinction they are using it t
 This project is, at least occasionally, worked on from more than one environment/machine - an agent
 in one environment can hit a wall that is trivial for an agent in another (needs a real Windows
 console, WinFSP, network access to a specific host, etc.). In this repository, that mostly comes up
-in `mountfs/`, the cross-platform FUSE/WinFSP mount crate - see
-[`mountfs/CLAUDE.md`](mountfs/CLAUDE.md) (loads automatically when working under `mountfs/`) for
+in `crates/mountfs/`, the cross-platform FUSE/WinFSP mount crate - see
+[`crates/mountfs/CLAUDE.md`](crates/mountfs/CLAUDE.md) (loads automatically when working under
+`crates/mountfs/`) for
 which skills to load and when a Docker cross-compile check is enough before escalating to a real
 Windows/WinFSP environment.
 

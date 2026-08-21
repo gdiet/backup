@@ -1,4 +1,4 @@
-//! Integration test (not a unit test in `mountfs/src/windows/mod.rs`),
+//! Integration test (not a unit test in `crates/mountfs/src/windows/mod.rs`),
 //! specifically so `CARGO_BIN_EXE_rename_noreplace_probe` is available:
 //! Cargo only sets that for integration tests/benches, not a lib crate's
 //! own unit tests.

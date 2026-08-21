@@ -14,8 +14,8 @@ see [`migration/`](migration/) for the migration path and feature-parity trackin
 
 Early development. What exists so far:
 
-- [`cdc`](cdc/) — content-defined chunking, the basis for sub-file deduplication.
-- [`mountfs`](mountfs/) — a cross-platform mount backend (Linux via libfuse3, Windows via WinFSP)
+- [`cdc`](crates/cdc/) — content-defined chunking, the basis for sub-file deduplication.
+- [`mountfs`](crates/mountfs/) — a cross-platform mount backend (Linux via libfuse3, Windows via WinFSP)
   behind a single trait. See [`docs/design/mount-abstraction.md`](docs/design/mount-abstraction.md)
   for the design.
 

@@ -59,7 +59,7 @@ provide.
 The high-level API this crate binds against is path-based, not inode-based, and WinFSP's own
 compatibility layer is as well - an inode-numbering layer would have no natural backing on either
 platform's actual API and would only add a translation cost without abstracting anything real.
-[`Handle`](../../mountfs/src/lib.rs), the opaque per-open-file token this crate's trait uses
+[`Handle`](../../crates/mountfs/src/lib.rs), the opaque per-open-file token this crate's trait uses
 instead, is filesystem-chosen and stored verbatim by both backends, matching that shape.
 
 ## DESIGN-MOUNT-003: Why runtime dynamic loading, not build-time linking
@@ -89,7 +89,7 @@ kind of dynamic linking without requiring this project to be GPLv3-licensed itse
 carrying a specific attribution notice - see [`../../NOTICE.md`](../../NOTICE.md) for the exception's
 full text and this project's compliance notes. Writing hand-written bindings directly against
 WinFSP's own published headers (vendored - copied into this repository unmodified, under
-`mountfs/vendor/winfsp/`, rather than fetched at build time - see that directory's own
+`crates/mountfs/vendor/winfsp/`, rather than fetched at build time - see that directory's own
 `NOTICE.md`), rather than depending on a wrapper crate that bundles its own, different license
 terms, keeps the licensing story limited to WinFSP's own terms alone.
 
@@ -103,7 +103,7 @@ terms, keeps the licensing story limited to WinFSP's own terms alone.
   without an explicit overwrite request (what Explorer or PowerShell's `Move-Item` do by default)
   asks the filesystem not to replace an existing target - on Linux, that request reaches this
   crate's `rename` dispatch as `no_replace = true` (`RENAME_NOREPLACE`, `renameat2(2)`'s flag).
-  Confirmed against real WinFSP (`mountfs/tests/rename_noreplace.rs`) that Windows never surfaces
+  Confirmed against real WinFSP (`crates/mountfs/tests/rename_noreplace.rs`) that Windows never surfaces
   this: WinFSP rejects a colliding no-replace move itself, before ever calling into this crate, so
   `rename` sees `no_replace = false` on every call that does reach it. The caller-visible result is
   the same either way - a colliding move is rejected on both platforms - but an implementation
@@ -135,14 +135,14 @@ exactly the artifact to copy over and run there.
 Neither backend generates its C struct bindings (`linux/sys.rs`, `windows/sys.rs`) automatically -
 no `bindgen`, no build-time codegen. Each `#[repr(C)]` type is hand-transcribed once, field by
 field, from the authoritative C definition (real system libfuse3 headers on Linux; the vendored,
-unmodified copies under `mountfs/vendor/winfsp/` on Windows, consulted purely as a struct-layout
+unmodified copies under `crates/mountfs/vendor/winfsp/` on Windows, consulted purely as a struct-layout
 reference and never compiled). This already found one real bug: WinFSP's `fuse3_file_info`
 bitfield group is 33 bits total, which MSVC packs into two 4-byte storage units, not one - getting
 that wrong silently shifted a later field's offset (see `windows/sys.rs`'s `fuse_file_info` doc
 comment).
 
 Redo this whenever targeting a WinFSP version newer than the one vendored (currently v2.0, see
-`mountfs/vendor/winfsp/NOTICE.md` for the exact tag/commit) - do not assume a newer version's
+`crates/mountfs/vendor/winfsp/NOTICE.md` for the exact tag/commit) - do not assume a newer version's
 struct layouts are unchanged just because the API surface looks the same:
 
 1. Fetch the new version's headers from WinFSP's own repository and diff them against the vendored
@@ -153,7 +153,7 @@ struct layouts are unchanged just because the API surface looks the same:
    packing gotcha above. Bitfields specifically need working out by hand every time, since Rust has
    no native bitfield syntax and `#[repr(C)]` does not replicate C's packing rules on its own.
 3. Replace the vendored header copies with the new version and update
-   `mountfs/vendor/winfsp/NOTICE.md`'s referenced tag/commit.
+   `crates/mountfs/vendor/winfsp/NOTICE.md`'s referenced tag/commit.
 4. Re-run the Docker cross-build check (see above), then verify against real WinFSP on real
    hardware before trusting the update - a struct layout mismatch is exactly the class of bug a
    compile-only check cannot catch.

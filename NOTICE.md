@@ -9,9 +9,9 @@ does not itself distribute.
 
 [WinFSP](https://github.com/winfsp/winfsp) is Copyright (C) Bill
 Zissimopoulos, licensed under GPLv3. The Windows mount backend
-(`mountfs/src/windows/`) dynamically loads WinFSP's `winfsp-x64.dll` at
+(`crates/mountfs/src/windows/`) dynamically loads WinFSP's `winfsp-x64.dll` at
 runtime and calls its `fsp_fuse3_*` exports (see
-[`mountfs/src/windows/sys.rs`](mountfs/src/windows/sys.rs)) - this counts
+[`crates/mountfs/src/windows/sys.rs`](crates/mountfs/src/windows/sys.rs)) - this counts
 as "linking" for the purposes of the license below, even though there is
 no build-time dependency on WinFSP (no import library, nothing declared in
 this project's own `Cargo.toml`).
@@ -50,7 +50,7 @@ exists yet for that notice to appear in.
 > WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos
 > https://github.com/winfsp/winfsp
 
-See also [`mountfs/vendor/winfsp/NOTICE.md`](mountfs/vendor/winfsp/NOTICE.md)
+See also [`crates/mountfs/vendor/winfsp/NOTICE.md`](crates/mountfs/vendor/winfsp/NOTICE.md)
 for the WinFSP header copies kept there and used as a struct-layout reference.
 
 [FSD]: https://www.gnu.org/philosophy/free-sw.html

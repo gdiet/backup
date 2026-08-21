@@ -3,7 +3,7 @@
 # Visual Studio install needed).
 #
 # See ../../docs/design/mount-abstraction.md for why MSVC/xwin instead of
-# mingw-w64: mountfs hand-binds WinFSP's C API (mountfs/src/windows/sys.rs),
+# mingw-w64: mountfs hand-binds WinFSP's C API (crates/mountfs/src/windows/sys.rs),
 # and only an MSVC build has ever been verified against real WinFSP - this
 # keeps the same ABI instead of introducing an untested GNU/mingw
 # combination alongside it.

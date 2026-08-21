@@ -1,6 +1,6 @@
 //! Hand-written bindings to WinFSP's *FUSE3-compatible* API
-//! (`fuse3/fuse.h`, vendored unmodified under `mountfs/vendor/winfsp/` -
-//! see `mountfs/vendor/winfsp/NOTICE.md`) - the same high-level, path-based
+//! (`fuse3/fuse.h`, vendored unmodified under `crates/mountfs/vendor/winfsp/` -
+//! see `crates/mountfs/vendor/winfsp/NOTICE.md`) - the same high-level, path-based
 //! shape as real libfuse3's API that `linux/sys.rs` binds directly, which
 //! is the entire point of this crate (see `docs/design/mount-abstraction.md`).
 //!
