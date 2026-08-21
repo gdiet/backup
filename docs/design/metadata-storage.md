@@ -461,11 +461,34 @@ incorrectly. No real alternative to the rebuild procedure above.
 
 ## 6. Crate structure
 
-Status: open
+Status: decided - its own crate, named `db`, with a deliberately narrow public interface.
 
-Whether metadata management belongs in its own crate with a deliberately narrow public interface,
-or something else. Independent of the decisions above, but easier to settle once the shape of what
-that interface actually needs to expose is known.
+The rust2 workspace already holds two crates built the same way (`cdc`, a `Chunker` trait behind a
+narrow interface; `mountfs`, a mount abstraction behind its own) - a third for metadata management
+is consistent with that pattern, not a new kind of ceremony introduced just for this. Named `db`
+rather than something else: matches `rust/db`, easing comparison during the rewrite, and no reason
+to diverge surfaced.
+
+More than precedent alone motivates a crate boundary here specifically: sections 4 and 5 above
+establish that a correctness invariant depends on metadata access being funneled through curated
+operations rather than ad hoc SQL. REQ-TREE-006 (atomic visibility) holds only because a file's
+`tree_entries` row is never inserted before its content is settled - never with `content_id IS
+NULL` as an in-progress placeholder. If code anywhere in `mountfs` or a future `cli` crate could
+issue arbitrary SQL against the metadata database directly, that invariant would rest on discipline
+alone. A crate boundary with a narrow `pub fn` surface - no `pub` `rusqlite::Connection`, no raw SQL
+strings exposed to callers - makes it structurally enforced instead: violating it would require
+first widening the crate's own public interface, not just writing a careless query somewhere else
+in the workspace.
+
+Also gains what `cdc` and `mountfs` already benefit from: scoped tests
+(`cargo test -p db tree_entries_maintain_content_ref_count`-style, without a mount or CLI harness),
+and a compile boundary - a migration or trigger change does not force a rebuild of unrelated crates,
+and vice versa.
+
+The exact shape of the public interface (which operations it exposes, their signatures) is
+deliberately not decided here - premature ahead of actually implementing `store`/`restore`/etc.,
+and, per the crate's own future top-of-file doc comment (matching `rust/db`'s convention), better
+worked out against real call sites than designed speculatively in advance.
 
 ## 7. Remove references to `rust/`
 
