@@ -1,6 +1,6 @@
 ---
 name: rust-code-intelligence
-description: Check whether this machine has a working Rust code-intelligence setup (the rust-analyzer language server plus a Claude Code LSP plugin), and set it up if not - after confirming with the developer, since installing anything here touches machine-level tooling, not just this repository. Use when starting Rust work in a new environment, when asked to check/install/set up rust-analyzer or code intelligence, or when symbol lookups (go to definition, find references) seem to be falling back to grep/file reads instead of the language server.
+description: Check and set up rust-analyzer plus a Claude Code Rust LSP plugin for code intelligence (go to definition, find references) on this machine. Use for dev environment setup or new-machine setup in this repo, when asked to check/install/set up rust-analyzer or code intelligence, or when symbol lookups seem to be falling back to grep/file reads instead of the language server.
 ---
 
 # Rust Code Intelligence Setup

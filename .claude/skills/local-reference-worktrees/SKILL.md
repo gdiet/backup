@@ -6,10 +6,11 @@ description: Set up or add to .local/ (git-excluded, this-machine-only) - a scra
 # Local Reference Worktrees
 
 This project's history holds several implementations as branches of the same origin
-(`rust`, `main` for Scala, `go`/`go2`/`go3`, plus the active branch this checkout itself tracks).
-Only one branch's files exist in the main working tree at a time - `.local/` holds ordinary
-`git worktree` checkouts of the others, purely for reading/grepping/comparing, never for editing
-or committing.
+(`main` for Scala, `go`/`go2`/`go3`, plus the active branch this checkout itself tracks) - a
+previous Rust attempt is retired (tag `rust-1st-attempt`, merged into `retired_branches`, see that
+branch's own `README.md`). Only one branch's files exist in the main working tree at a time -
+`.local/` holds ordinary `git worktree` checkouts of the others, purely for
+reading/grepping/comparing, never for editing or committing.
 
 ## `.local/` itself
 
