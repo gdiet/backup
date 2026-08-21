@@ -81,3 +81,45 @@ the WSL `/plugin` unavailability, and now the native-Windows `/plugin` unavailab
   `/plugin` absence; none has been a genuine Terminal-CLI session yet. Next step: run `claude` from
   an actual terminal (not an IDE-embedded session) and retry
   `/plugin install rust-analyzer-lsp@claude-plugins-official` there.
+
+## Status (2026-08-21, genuine Terminal-CLI session, later the same day) - RESOLVED
+
+- **Environment confirmed genuine Terminal-CLI**: `claude --version` -> `2.1.239 (Claude Code)`,
+  invoked directly from a shell (not Desktop app, not an IDE extension). `claude doctor` reported no
+  installation issues.
+- **`rust-analyzer`**: already installed on this machine (same WSL2 machine as the earlier WSL
+  Desktop and VSCode-extension sessions above) - `rustup component list` showed
+  `rust-analyzer-x86_64-unknown-linux-gnu (installed)`. No new install needed.
+- **Before install: the agent itself still has no `/plugin`-equivalent tool here either.**
+  `ToolSearch` for "plugin marketplace install", "plugin", and "marketplace" all found nothing, and
+  the project's `.claude/settings.json` had no `enabledPlugins` entry. This refines the answer to
+  the open question above: it is not that Terminal-CLI sessions expose `/plugin` to the *agent* -
+  they do not, same as all three other environments. What is different about a genuine Terminal-CLI
+  session is that a **human** can type `/plugin` themselves, interactively, in the same running
+  session, and have it actually work - `/plugin` is a client-side REPL affordance intercepted before
+  reaching the model, not an agent-callable tool or action, in *any* of the four environments tried.
+  The Desktop-app/VSCode-extension unavailability documented above was never really about those
+  being the wrong environment for the agent; the agent was never going to be able to invoke it
+  anywhere. The missing piece in this session specifically was just having an interactive human at
+  the keyboard to type it.
+- **Install, done by the developer typing it directly**: the developer ran
+  `/plugin install rust-analyzer-lsp@claude-plugins-official` themselves in the terminal (after
+  confirming) - `[OK] Installed rust-analyzer-lsp. Plugin is now active.` A subsequent `ToolSearch`
+  in the same session (no restart) found a new `LSP` tool, confirming the plugin hot-loaded without
+  needing a session restart.
+- **Verification (skill step 4): done, and it is a real improvement.** Ran `LSP` operations against
+  `cdc/src/lib.rs` in this repository:
+  - `hover` on `CdcChunker` (line 178) returned real rust-analyzer-computed info a grep/file-read
+    could not produce on its own: full struct signature, `size = 32 (0x20), align = 0x8, no Drop`,
+    and its doc comment.
+  - `workspaceSymbol` with query `CdcChunker` found the struct directly.
+  - `findReferences` on `CdcChunker`'s definition initially returned "no references found" (indexing
+    still in progress right after install), then on retry a few tool calls later found all 9 real
+    references across the file (matching what a manual `grep -rn CdcChunker` independently
+    confirmed) - so a fresh install may need a short indexing delay before `findReferences` is
+    reliable; `hover`/`workspaceSymbol` were responsive immediately.
+- **Net result**: `rust-analyzer` + `rust-analyzer-lsp` are both installed and confirmed working on
+  this machine, in this Terminal-CLI session. This item's core open question is answered: `/plugin`
+  is a human-typed, interactive-terminal-only action everywhere, never an agent-invocable one; the
+  practical implication for future setup is that this step always needs a human present to type it,
+  regardless of which of the four session types is running.
