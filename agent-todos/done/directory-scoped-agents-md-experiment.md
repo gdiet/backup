@@ -1,8 +1,8 @@
 # Experiment — Not A Real Instructions File
 
 This file is a live experiment, not a real instructions file for `docs/design/`. The actual
-conventions for this directory live in [`README.md`](README.md); the repository's real agent
-instructions live in [`../../AGENTS.md`](../../AGENTS.md).
+conventions for this directory live in [`../../docs/design/README.md`](../../docs/design/README.md);
+the repository's real agent instructions live in [`../../AGENTS.md`](../../AGENTS.md).
 
 ## What this tests
 
@@ -35,8 +35,25 @@ the root file — moving `docs/design/`-specific content here, and content for o
 where it would similarly pay off elsewhere — but only after asking, both for the idea in general
 and again before touching any specific directory.
 
-## Status
+## Status (was: "Temporary")
 
-Temporary. Once the question above is answered, this file gets deleted or completely rewritten
-into whatever the actual convention turns out to be — nothing here should be treated as a lasting
-rule.
+Closed without the live test ever completing — answered directly by current official
+documentation instead (code.claude.com/docs/en/memory, "How CLAUDE.md files load"): Claude Code
+never reads a file named `AGENTS.md`, anywhere, regardless of directory. It reads `CLAUDE.md`
+only. This is exactly the reason the original `rust2/` (now `rust/`) root `AGENTS.md` was never
+auto-loading either, before a root `CLAUDE.md` containing `@AGENTS.md` was added.
+
+The underlying idea this experiment was chasing — relieving the root instructions file by scoping
+conventions to the directory they apply to — **does work**, just via a different, already-
+documented mechanism: a directory's own `CLAUDE.md` (not `AGENTS.md`) loads automatically "at
+launch when started from that directory, or on demand when Claude reads a file there" (see
+code.claude.com/docs/en/large-codebases, "Layer CLAUDE.md files by directory"). So does a
+`.claude/rules/*.md` file with `paths:` frontmatter scoped to a glob. Splitting `AGENTS.md`'s
+content into either of those is tracked as a separate, deliberate piece of work
+(`docs/agent-setup-plan.md`, item 7) rather than something this file needed to keep existing for.
+
+## Done
+
+**Completed**: 2026-08-21, by Claude Desktop/WSL2 session. Moved here from `docs/design/AGENTS.md`
+(deleted) once the question above was settled by documentation rather than by this file ever
+actually being live-tested.

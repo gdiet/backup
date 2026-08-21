@@ -142,10 +142,13 @@ behind the code (it explains *why*, not just *what*); cite the `REQ-...` directl
 a straightforward implementation of an unambiguous requirement with no separate decision worth its
 own `docs/design/` entry — do not manufacture a design entry just to have something to cite.
 
-Currently running as a live experiment: whether this harness automatically loads a directory-scoped
-`AGENTS.md` the way it loads this repository-root one. See `docs/design/AGENTS.md` — temporary,
-self-describing, not a real instructions file for that directory (the actual conventions live in
-`docs/design/README.md`).
+A directory-scoped `AGENTS.md` (e.g. one placed under `docs/design/`) would **not** auto-load the
+way this repository-root file does — confirmed against current Claude Code documentation, not
+merely assumed: the harness reads `CLAUDE.md`, never `AGENTS.md`, regardless of directory. A
+directory's own `CLAUDE.md` does auto-load on demand, and this repository's root `CLAUDE.md`
+currently just imports this file (`@AGENTS.md`). See `agent-todos/done/directory-scoped-agents-md-experiment.md`
+for how this was settled, and `docs/agent-setup-plan.md` for the still-open question of splitting
+this file's content into per-directory `CLAUDE.md`/`.claude/rules/` files.
 
 ## Interaction With The Developer
 
