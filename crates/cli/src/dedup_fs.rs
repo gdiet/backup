@@ -37,6 +37,7 @@ fn to_errno(err: db::Error) -> Errno {
         | db::Error::TargetNotEmpty(_)
         | db::Error::NoRepositoryHere(_)
         | db::Error::Poisoned
+        | db::Error::WalUnavailable(_)
         | db::Error::Io(_)
         | db::Error::Sqlite(_)
         | db::Error::Migration(_) => Errno::EIO,

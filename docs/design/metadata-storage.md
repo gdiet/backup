@@ -542,3 +542,88 @@ and vice versa.
 The exact shape of the public interface (which operations it exposes, their signatures) is
 deliberately not decided here - premature ahead of actually implementing `store`/`restore`/etc.,
 and better worked out against real call sites than designed speculatively in advance.
+
+## DESIGN-METADATA-012: SQLite connection pragmas
+
+Status: draft
+
+Every connection this crate opens (both `init_repository`'s and `open_repository`'s - there is
+only one connection type today, per `Repository`'s own doc comment) is configured the same way,
+via `crates/db/src/connection.rs`, in this order. The five settings split into two genuinely
+different kinds, not one uniform "connection setup" step:
+
+**Per-connection - SQLite keeps no record of these in the database file itself, so each of them
+needs setting again on every single connection, forever, regardless of what any earlier connection
+already set:**
+
+1. `foreign_keys = ON` - off by default per connection in SQLite. Without it, this schema's
+   `REFERENCES`/`ON DELETE CASCADE` constraints (DESIGN-METADATA-004) are pure documentation - not
+   enforced, and cascade deletes silently do not happen at all.
+2. `synchronous = NORMAL` - the standard pairing with WAL mode (below): safe against database
+   corruption even on a crash or power loss, at the cost of potentially losing the last few
+   committed transactions - an acceptable trade for the performance `FULL` would give up, and no
+   worse than what DESIGN-REPOSITORY-001's own crash-safety reasoning already assumes at the
+   file-rename level.
+3. `busy_timeout = 5000` (milliseconds) - wait instead of failing outright with `SQLITE_BUSY` on
+   *transient* contention (e.g. another connection mid-checkpoint). Not a substitute for
+   REQ-MAINTENANCE-004's real cross-process exclusivity, which still needs its own mechanism
+   (not built yet) - this only smooths over momentary lock collisions.
+
+**Persistent, whole-database properties - stored in the database file's own header, so any
+connection that ever opens that file afterward already sees the effect, with no need to ask
+again:**
+
+4. `auto_vacuum = INCREMENTAL` - lets a future `db compact` (REQ-MAINTENANCE-003) reclaim SQLite's
+   own internal free pages on demand (`PRAGMA incremental_vacuum`) rather than automatically on
+   every commit (`FULL`) or never (`NONE`). Ordering matters here specifically: `auto_vacuum` only
+   takes effect for free on a database that does not have any tables yet - once a table exists (or
+   once the database has switched to WAL, next), changing it silently does nothing further until a
+   full, blocking `VACUUM` is run. This is why it is set here, in Rust code, before running the `v1`
+   migration - not inside the migration's own SQL, which only runs once the database already has
+   (or is about to gain) its schema, and which has no notion of connection-level pragmas as part of
+   its own, separately-tracked (`PRAGMA user_version`) versioning anyway.
+5. `journal_mode = WAL` - what DESIGN-METADATA-003's "WAL mode lets readers proceed concurrently
+   with the single writer" already assumes, but nothing before this decision ever actually set it;
+   SQLite defaults to rollback-journal mode otherwise. Checked, not merely requested: SQLite
+   silently falls back to a different mode instead of failing outright if WAL is unsupported (e.g.
+   some network filesystems), so the pragma's returned value is compared against `"wal"` and
+   surfaced as an error (`Error::WalUnavailable`) on a mismatch, rather than continuing under a
+   silently different concurrency model than the rest of this design assumes.
+
+Deliberately left untouched, since nothing has measured a need to: `cache_size`, `mmap_size`,
+`temp_store`, `wal_autocheckpoint`.
+
+### Re-asserting the persistent settings on every open is deliberate, not merely harmless
+
+Since `auto_vacuum`/`journal_mode` are already durably set after the very first connection
+(`init_repository`'s own, before `v1` ever runs), every later `open_repository` call re-requesting
+them is redundant in the common case - but not removed, for a reason beyond "harmless enough to
+leave alone": a repository this crate did not itself create - in particular, a future
+REQ-MIGRATION-001 import from a Scala repository - would not otherwise be guaranteed to already
+have either property set correctly. Re-asserting on every open makes `open_repository` a
+self-normalizing check for that case too, at negligible per-open cost, rather than a second,
+import-specific code path needing to remember to configure these the same way.
+
+### The same configuration serves both a mount session and a bulk operation
+
+Whether a caller issues many small transactions in quick succession (an interactive read-write
+mount session) or fewer, larger ones (a bulk `store` run, a future migration or maintenance
+command) does not change any of the above: DESIGN-METADATA-003 already establishes that SQLite
+itself only ever admits one write transaction at a time regardless of connection count or
+transaction size, so there is no scenario here where a different pragma configuration would
+unlock more write concurrency - only `busy_timeout` ever masks contention, and it does so the same
+way regardless of what kind of operation is contending.
+
+### Not yet built: a lighter configuration for a genuinely read-only connection
+
+`Repository` holds one connection for both reads and writes today (see its own doc comment) - the
+full configuration above applies to it. Once reads split onto their own connection(s), a
+read-only connection needs only `busy_timeout` from the per-connection group -
+`foreign_keys`/`synchronous` have nothing to enforce on a connection that never writes. Nothing
+from the persistent group needs setting there either, for the ordinary reason any persistent
+property does not (already true by the time a read-only connection opens) - but a plain
+`SQLITE_OPEN_READ_ONLY` connection cannot issue `PRAGMA journal_mode = WAL` even as a no-op
+re-assertion (no write permission to check), so the read-only path cannot simply reuse this same
+function at all, unlike how `init_repository` and `open_repository` do today. Not designed further
+here - premature ahead of that split actually happening, per DESIGN-METADATA-006's own "better
+worked out against real call sites" reasoning.

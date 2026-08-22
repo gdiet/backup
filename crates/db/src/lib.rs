@@ -9,6 +9,7 @@
 //! guarantee holds only because every write to this database goes through
 //! curated operations, never ad hoc SQL from elsewhere in the workspace.
 
+mod connection;
 mod migrations;
 mod settings;
 mod tree;
@@ -57,6 +58,10 @@ pub enum Error {
     CannotRemoveRoot,
     /// Another thread using this [`Repository`] panicked while holding its connection lock.
     Poisoned,
+    /// SQLite reported a `journal_mode` other than `wal` after `configure_write_connection`
+    /// requested it - e.g. an unsupported filesystem (SQLite silently falls back instead of
+    /// failing outright). Carries whatever mode SQLite actually settled on.
+    WalUnavailable(String),
     Io(std::io::Error),
     Sqlite(rusqlite::Error),
     Migration(rusqlite_migration::Error),
@@ -89,6 +94,12 @@ impl std::fmt::Display for Error {
             }
             Error::CannotRemoveRoot => write!(f, "cannot remove the root entry"),
             Error::Poisoned => write!(f, "repository connection lock was poisoned"),
+            Error::WalUnavailable(mode) => {
+                write!(
+                    f,
+                    "WAL journal mode unavailable - SQLite reports {mode:?} instead"
+                )
+            }
             Error::Io(err) => write!(f, "{err}"),
             Error::Sqlite(err) => write!(f, "{err}"),
             Error::Migration(err) => write!(f, "{err}"),
@@ -233,6 +244,7 @@ pub fn init_repository(repo_root: &Path, settings: RepositorySettings) -> Result
     fs::create_dir(&staging_meta)?;
 
     let mut conn = Connection::open(staging_meta.join(META_DB_FILE))?;
+    connection::configure_write_connection(&conn)?;
     migrations::migrations().to_latest(&mut conn)?;
     conn.execute(
         "INSERT INTO repository_settings (id, cdc_target_size_bits, creation_time) VALUES (1, ?1, ?2)",
@@ -256,6 +268,7 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
 
     let db_path = meta_dir.join(META_DB_FILE);
     let mut conn = Connection::open(&db_path)?;
+    connection::configure_write_connection(&conn)?;
     migrations::migrations().to_latest(&mut conn)?;
 
     let (cdc_target_size_bits, creation_time_millis): (Option<u32>, i64) = conn.query_row(
@@ -341,6 +354,124 @@ mod tests {
 
         let repo = open_repository(&repo_root).expect("open must succeed");
         assert_eq!(repo.settings(), settings());
+    }
+
+    #[test]
+    fn open_repository_actually_runs_in_wal_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+
+        let mode: String = repo
+            .with_connection(
+                |conn| Ok(conn.query_row("PRAGMA journal_mode", (), |row| row.get(0))?),
+            )
+            .unwrap();
+        assert_eq!(mode, "wal");
+    }
+
+    #[test]
+    fn init_repository_actually_enables_incremental_auto_vacuum() {
+        // auto_vacuum only takes effect for free on a database with no tables yet - a real,
+        // previously-hit regression here specifically is it silently staying at NONE (0) because
+        // something ran after tables already existed. 2 = INCREMENTAL.
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+
+        let mode: i64 = repo
+            .with_connection(|conn| Ok(conn.query_row("PRAGMA auto_vacuum", (), |row| row.get(0))?))
+            .unwrap();
+        assert_eq!(mode, 2, "expected INCREMENTAL (2), got {mode}");
+    }
+
+    #[test]
+    fn open_repository_enforces_foreign_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+
+        let err = repo
+            .with_connection(|conn| {
+                Ok(conn.execute(
+                    "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (999, 0, 999)",
+                    (),
+                )?)
+            })
+            .unwrap_err();
+        assert!(matches!(err, Error::Sqlite(_)));
+    }
+
+    #[test]
+    fn deleting_a_content_row_cascades_to_content_chunks_and_chunk_ref_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+
+        repo.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO chunks (id, length, hash) \
+                 VALUES (1, 3, X'0102030405060708090A0B0C0D0E0F1011121314')",
+                (),
+            )?;
+            conn.execute(
+                "INSERT INTO contents (id, length, hash) \
+                 VALUES (1, 3, X'2122232425262728292A2B2C2D2E2F3031323334')",
+                (),
+            )?;
+            conn.execute(
+                "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (1, 0, 1)",
+                (),
+            )?;
+            Ok(())
+        })
+        .expect("inserts must succeed");
+
+        let chunk_ref_count: i64 = repo
+            .with_connection(|conn| {
+                Ok(
+                    conn.query_row("SELECT ref_count FROM chunks WHERE id = 1", (), |row| {
+                        row.get(0)
+                    })?,
+                )
+            })
+            .unwrap();
+        assert_eq!(chunk_ref_count, 1);
+
+        repo.with_connection(|conn| Ok(conn.execute("DELETE FROM contents WHERE id = 1", ())?))
+            .expect("delete must succeed");
+
+        let content_chunks_left: i64 = repo
+            .with_connection(|conn| {
+                Ok(conn.query_row(
+                    "SELECT COUNT(*) FROM content_chunks WHERE content_id = 1",
+                    (),
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(
+            content_chunks_left, 0,
+            "ON DELETE CASCADE must have removed it"
+        );
+
+        let chunk_ref_count: i64 = repo
+            .with_connection(|conn| {
+                Ok(
+                    conn.query_row("SELECT ref_count FROM chunks WHERE id = 1", (), |row| {
+                        row.get(0)
+                    })?,
+                )
+            })
+            .unwrap();
+        assert_eq!(
+            chunk_ref_count, 0,
+            "the cascade delete must have fired content_chunks_ref_count_del too"
+        );
     }
 
     #[test]
