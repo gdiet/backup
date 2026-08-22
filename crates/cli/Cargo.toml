@@ -1,0 +1,13 @@
+[package]
+name = "cli"
+version.workspace = true
+edition = "2024"
+publish = false
+license.workspace = true
+
+[[bin]]
+name = "dfs"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.6.6", features = ["derive"] }
