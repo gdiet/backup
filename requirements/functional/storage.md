@@ -44,7 +44,10 @@ Importance: must
 
 Storage occupied by content no longer referenced by any file can be reclaimed. Reclaimed byte
 ranges are tracked and reused by future writes before the store grows further, so repeated
-delete/write cycles do not make storage grow without bound.
+delete/write cycles do not make storage grow without bound. Reclaiming a range makes it eligible
+for reuse without itself altering any byte still on disk - this is what creates the staleness risk
+REQ-MAINTENANCE-007 in [`maintenance.md`](maintenance.md) requires a warning for, whether or not
+the range is ever actually reused afterward.
 
 Rationale: without reuse, a repository under continuous use (files added and removed over years)
 would grow monotonically even though its live content stays roughly constant.
@@ -55,7 +58,10 @@ Importance: should
 
 Beyond reclaiming and reusing gaps internally, the store can be defragmented on demand — live
 content relocated into a contiguous layout and the backing storage shrunk to match, actually
-returning freed space to the underlying filesystem/OS.
+returning freed space to the underlying filesystem/OS. Unlike reclamation's gradual reuse, this
+relocation itself immediately changes the physical position of content that is still live; see
+REQ-MAINTENANCE-007 in [`maintenance.md`](maintenance.md) for the resulting staleness risk to an
+already-taken metadata backup.
 
 Rationale: reclamation alone keeps growth bounded but never gives space back; an operator who
 needs the disk space back (not just bounded future growth) needs an explicit, on-demand path to
