@@ -70,3 +70,17 @@ Rationale: retrying manually after being refused is a routine annoyance for a ca
 knows the conflicting operation will finish soon (e.g. a scheduled backup script) — waiting once,
 up to a bound the caller controls, avoids that without weakening the safety REQ-MAINTENANCE-004
 provides.
+
+### REQ-MAINTENANCE-007: Stale-backup warning after reclamation or compaction
+Status: draft
+Importance: must
+
+Restoring a metadata backup warns the user if any operation that may have physically relocated or
+invalidated stored bytes — space reclamation and compaction in particular — has run against the
+repository since that backup was taken, because the backup's tree entries may then resolve to the
+wrong physical bytes.
+
+Rationale: without this warning, restoring an outdated-but-not-obviously-outdated backup after such
+an operation would silently read back wrong bytes for some entries, with no symptom pointing at the
+cause — this directly undermines the trust REQ-MAINTENANCE-001/002 exist to provide in the first
+place, not just a convenience gap.
