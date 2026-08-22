@@ -12,7 +12,7 @@ Rationale: not every tool a user wants to point at their backups can be taught t
 repository directly — a standard, filesystem-style view removes that limitation entirely.
 
 ### REQ-MOUNT-002: Read-only by default
-Status: draft
+Status: agreed
 Importance: must
 
 Mounting does not allow modifying repository content unless read-write access is explicitly
@@ -22,7 +22,7 @@ Rationale: a mount is a much larger blast radius for an accidental change than a
 command — defaulting to read-only avoids exposing that risk unless it is specifically wanted.
 
 ### REQ-MOUNT-003: Optional read-write mount
-Status: draft
+Status: agreed
 Importance: should
 
 When explicitly enabled, the mount also supports structural changes (creating/removing/moving
