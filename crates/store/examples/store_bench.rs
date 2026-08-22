@@ -8,9 +8,16 @@
 //! system temp dir, which only shows the syscall-count effect, not what it costs on slower
 //! storage.
 //!
+//! The round count (2000 read-cache rounds x 8 files, 20000 lazy-directory rounds) is tuned for
+//! a fast local disk, where each round costs microseconds. On storage with real per-call latency
+//! (a network mount), that round count can turn a few seconds into tens of minutes for no added
+//! precision - pass a second argument to scale it down (applied directly to the read-cache
+//! rounds; the lazy-directory rounds scale with it, keeping their default 10x ratio).
+//!
 //! ```bash
 //! cargo run --release -p store --example store_bench
 //! cargo run --release -p store --example store_bench -- /path/on/slow/storage
+//! cargo run --release -p store --example store_bench -- /path/on/slow/storage 200
 //! ```
 
 use std::env;
@@ -24,14 +31,25 @@ use store::ByteStore;
 const FILE_SIZE: u64 = 100_000_000;
 
 fn main() {
-    let base = env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| {
+    let mut args = env::args().skip(1);
+    let base = args.next().map(PathBuf::from).unwrap_or_else(|| {
         env::temp_dir().join(format!("dedupfs-store-bench-{}", std::process::id()))
     });
+    let read_rounds: u64 = args
+        .next()
+        .map(|s| {
+            s.parse()
+                .expect("rounds argument must be a positive integer")
+        })
+        .unwrap_or(2000);
     fs::create_dir_all(&base).expect("create bench base directory");
-    println!("Benchmarking against {}", base.display());
+    println!(
+        "Benchmarking against {} ({read_rounds} read-cache rounds)",
+        base.display()
+    );
 
-    bench_read_handle_cache(&base.join("read"));
-    bench_lazy_directory_creation(&base.join("write"));
+    bench_read_handle_cache(&base.join("read"), read_rounds);
+    bench_lazy_directory_creation(&base.join("write"), read_rounds * 10);
 
     let _ = fs::remove_dir_all(&base);
 }
@@ -54,7 +72,7 @@ fn path_for(dir: &Path, file_index: u64) -> PathBuf {
         .join(format!("{:010}", file_index * FILE_SIZE))
 }
 
-fn bench_read_handle_cache(dir: &Path) {
+fn bench_read_handle_cache(dir: &Path, rounds: u64) {
     fs::create_dir_all(dir).unwrap();
     let store = ByteStore::new(dir, false);
     // Within the cache's own capacity (store::READ_HANDLE_CACHE_CAPACITY, currently 8) - this
@@ -66,7 +84,6 @@ fn bench_read_handle_cache(dir: &Path) {
         store.write(i * FILE_SIZE, &[i as u8]).unwrap();
     }
 
-    let rounds = 2000;
     let mut buf = [0u8; 1];
 
     let start = Instant::now();
@@ -90,9 +107,8 @@ fn bench_read_handle_cache(dir: &Path) {
     report("read handle cache", baseline, optimized);
 }
 
-fn bench_lazy_directory_creation(dir: &Path) {
+fn bench_lazy_directory_creation(dir: &Path, rounds: u64) {
     fs::create_dir_all(dir).unwrap();
-    let rounds = 20_000;
 
     let baseline_dir = dir.join("baseline");
     let baseline_leaf = baseline_dir.join("00").join("00");

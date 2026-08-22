@@ -129,7 +129,11 @@ opening one fresh every time. `write` does not get this treatment.
 Measured directly (a runnable benchmark example cites this decision, not the reverse - see
 "Reference Direction: One Way Only" in `docs/design/README.md`), within the cache's own capacity -
 the case it exists for: roughly 2x faster than opening fresh per call, on this development
-machine's local filesystem. No write cache was built to measure against - see "Alternative
+machine's local filesystem. Measured again against a real network filesystem mount over Wi-Fi to
+another machine: consistently far larger, 130x-190x across four independent runs (roughly 150x on
+average) - the full round trip a network mount pays for every fresh open dominates far more there
+than on local disk, exactly the mount-driven small-read scenario this cache exists for. No write
+cache was built to measure against - see "Alternative
 considered and rejected" below for why, reasoning rather than a benchmark result, since there is
 no write-side prototype here to have measured. The read/write asymmetry itself is expected: a write
 call's own I/O (writing potentially a whole chunk at once) already dominates the cost of opening a
@@ -198,11 +202,22 @@ do, and after the first write into a given `dir1`/`dir2` pair, every later write
 otherwise pay that cost for no reason.
 
 Measured directly: roughly 1.3-1.5x faster once the target directory already exists (the
-steady-state case after the first write), on this development machine's local filesystem.
+steady-state case after the first write), on this development machine's local filesystem. Measured
+again against a real network filesystem mount over Wi-Fi: no measurable benefit there - four
+independent runs averaged almost exactly 1.0x (0.87x-1.15x), well within the link's own run-to-run
+jitter. The round trip this skips is small relative to the total latency a network mount already
+pays for the write itself, unlike on local disk where syscall count is what dominates the cost.
 
 Unlike the read handle cache above, this has no real downside worth weighing against - no
 cross-call state to keep correct, no invalidation question, just a cheaper path to the exact same
-guarantee (the directory exists by the time the file is opened).
+guarantee (the directory exists by the time the file is opened). Kept regardless of the network
+mount result above: it costs nothing extra to keep, and the case it measurably helps - any
+locally-attached storage, not only an internal disk but also, for many real backups, a fast
+external USB drive used as the backup medium - is this project's actual write path, not a network
+mount. The distinction the measurement above actually turns on is local-filesystem-call versus
+network-round-trip, not internal-versus-external storage: a USB-attached drive is still reached
+through the same local filesystem call path as an internal disk, with no network protocol in
+between, so the syscall-count argument applies to it the same way.
 
 ## DESIGN-STORE-003: Where allocation and reclaim logic lives
 Status: draft
