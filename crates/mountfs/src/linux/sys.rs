@@ -217,7 +217,7 @@ fn exports() -> io::Result<&'static Exports> {
                     .into_owned();
                 return Err(format!(
                     "libfuse3 not found ({reason}) - install it (Debian/Ubuntu: `apt install \
-                     libfuse3-3`; Fedora: usually already present as `fuse3`)"
+                     libfuse3-3`)"
                 ));
             }
             let main_real = unsafe { resolve(handle, c"fuse_main_real") }
