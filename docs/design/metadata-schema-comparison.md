@@ -126,8 +126,10 @@ unaffected either way.
 
 ## Decision
 
-Status: decided - keep a `contents` table
-([`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md)).
+Keep a `contents` table
+([`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md)) - the
+authoritative decision and its implementation status are tracked once, at DESIGN-METADATA-004 in
+[`metadata-storage.md`](metadata-storage.md).
 
 Reasons for the decision:
 

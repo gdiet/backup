@@ -7,12 +7,16 @@ paths:
 
 Non-trivial implementation-design decisions (an algorithm choice, alternatives weighed, benchmarks
 or research that informed the decision) live in `docs/design/` - one file per decision or closely
-related group of decisions. Each decision's heading carries a `Status:` line stating whether it is
-implemented yet (see `docs/design/README.md`'s "Status" section) - this is the sole tracker of
-implementation state; files never move based on it, since a file bundling several decisions cannot
-cleanly signal "implemented" as one unit once those decisions ship on different timelines. See
-`docs/design/README.md` for the `DESIGN-...` ID scheme a settled decision gets, so code can cite
-it directly, and for the one-way `code → design → requirement` reference rule that comes with it.
+related group of decisions. Each decision's heading carries a `Status:` line, one of `idea`,
+`decided`, or `implemented` (see `docs/design/README.md`'s "Status" section) - this is the sole
+tracker of implementation state; files never move based on it, since a file bundling several
+decisions cannot cleanly signal "implemented" as one unit once those decisions ship on different
+timelines. Nothing beyond the bare value goes on this line - what was decided, and once
+implemented, where it lives, belong in the prose below the heading instead. `Status: decided -
+SQLite.` or `Status: implemented (crates/db/src/hash.rs)` each read as one fact but are actually
+two, and are harder to skim as either one. See `docs/design/README.md` for the `DESIGN-...` ID
+scheme a settled decision gets, so code can cite it directly, and for the one-way
+`code → design → requirement` reference rule that comes with it.
 
 A design document captures the decision and *why* - including alternatives that were considered
 and rejected, per AGENTS.md's "Documentation Philosophy" - at the level of properties and

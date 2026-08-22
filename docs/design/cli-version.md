@@ -7,7 +7,7 @@ carries the Windows mount backend — by the WinFSP attribution REQ-MOUNT-006 in
 [`../../requirements/functional/mount.md`](../../requirements/functional/mount.md) requires.
 
 ## DESIGN-CLI-001: Version token — package version, date, short commit hash
-Status: decided - implemented (`crates/cli/build.rs`, `crates/cli/src/main.rs`)
+Status: implemented
 
 The version token is three space-separated fields:
 
@@ -50,7 +50,7 @@ AGENTS.md's "Dependencies") when a short `build.rs` using `std::process::Command
 what is needed, with full control over the fallback behavior above.
 
 ## DESIGN-CLI-002: WinFSP attribution, included only on builds that carry it
-Status: decided - implemented (`crates/cli/src/main.rs`)
+Status: implemented
 
 When the binary is built for Windows (and therefore includes `mountfs`'s Windows backend, capable
 of dynamically loading WinFSP at runtime — DESIGN-MOUNT-003 in

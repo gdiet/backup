@@ -12,19 +12,23 @@ versus in code comments.
 
 ## Status
 
-Directly under a decision's `DESIGN-...` heading, a `Status:` line states whether it has actually
-shipped in code yet:
+Directly under a decision's heading, a `Status:` line, one of three values:
 
 ```markdown
 ## DESIGN-METADATA-003: Hash computation
-Status: decided - not yet implemented
+Status: decided
 ```
 
-Once code exists for it, update the line to say so, ideally pointing at where:
+- `idea` - still being weighed, not yet settled. A heading at this stage has no `DESIGN-...` ID
+  yet (see "ID Scheme" below: an ID is assigned only once a decision actually is settled).
+- `decided` - settled, not yet shipped in code.
+- `implemented` - settled and shipped in code.
 
-```markdown
-Status: decided - implemented (`crates/db/src/hash.rs`)
-```
+This progression is linear, not two independent facts - shipping in code implies the decision was
+already settled - so one field covers it. Nothing beyond the bare value goes on this line: what
+was decided, and once implemented (or, for `decided`, why not yet), goes as the opening of the
+prose that follows instead - never a file or path there (see "Reference Direction: One Way Only"
+below).
 
 This is the only place implementation state is tracked - a decision never moves file or directory
 based on it. A file bundling several closely related decisions (see "Layout" above) cannot

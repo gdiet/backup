@@ -6,6 +6,8 @@ use clap::Parser;
     about = "DedupFS: a deduplicating backup filesystem",
     arg_required_else_help = true
 )]
+// Version token format: DESIGN-CLI-001 in docs/design/cli-version.md.
+// WinFSP notice on Windows builds only: DESIGN-CLI-002 in the same file.
 #[cfg_attr(
     windows,
     command(version = concat!(

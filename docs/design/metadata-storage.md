@@ -2,21 +2,23 @@
 
 Re-examines this implementation's metadata-storage design from first principles (see "This Is A
 Rewrite, Not A Port" in `AGENTS.md`). The sections below are worked through in order, top to
-bottom: the storage engine choice (DESIGN-METADATA-001/002) bounds the writer/concurrency model
-(DESIGN-METADATA-003), which in turn bounds what the schema-level review (DESIGN-METADATA-004) is
-even evaluating against. Crate structure (DESIGN-METADATA-006) is independent of the rest and
-deliberately left for last.
+bottom: the storage engine choice (DESIGN-METADATA-001/002) settles both the Rust binding
+(DESIGN-METADATA-010) and the writer/concurrency model (DESIGN-METADATA-003) - two separate
+consequences of that same choice, not sequential to each other - and the writer/concurrency model
+in turn bounds what the schema-level review (DESIGN-METADATA-004) is even evaluating against.
+Crate structure (DESIGN-METADATA-006) is independent of the rest and deliberately left for last.
 
 ## DESIGN-METADATA-001: SQL database or something else
 
-Status: decided - a SQL database.
+Status: decided
 
-The metadata this needs to hold is genuinely relational: a filesystem tree (parent/child,
-soft-delete), a many-to-many deduplication mapping between file contents and content-addressed
-chunks with reference counts that must stay consistent on both sides, ordered chunk sequences,
-byte-range extents, and multi-table writes that must succeed or fail as a unit (registering a new
-tree entry can simultaneously introduce a new content row, several content-chunk rows, and several
-ref-count updates). Ad-hoc queries - path filters, aggregations, "which tree entries reference
+A SQL database. The metadata this needs to hold is genuinely relational: a filesystem tree
+(parent/child, soft-delete), a many-to-many deduplication mapping between file contents and
+content-addressed chunks with reference counts that must stay consistent on both sides, ordered
+chunk sequences, byte-range extents, and multi-table writes that must succeed or fail as a unit
+(registering a new tree entry can simultaneously introduce a new content row, several
+content-chunk rows, and several ref-count updates). Ad-hoc queries - path filters, aggregations,
+"which tree entries reference
 chunk X" - are also a first-class need (`find`, `list`, `stats`, `check`). Referential integrity,
 multi-table transactions, declarative ad-hoc queries, and trigger-maintained invariants are
 exactly what a relational database is built to provide; any alternative has to reimplement some or
@@ -55,9 +57,9 @@ today.
 
 ## DESIGN-METADATA-002: SQLite or another engine
 
-Status: decided - SQLite.
+Status: decided
 
-Relevant constraints: REQ-OPERABILITY-001 in
+SQLite. Relevant constraints: REQ-OPERABILITY-001 in
 [`../../requirements/non-functional/operability.md`](../../requirements/non-functional/operability.md)
 (no separately managed database server, small bounded memory footprint, easy installation) and
 REQ-OPERABILITY-002 in the same file (mirrorable with generic file-sync tools - mirror-safety only
@@ -98,7 +100,7 @@ concurrent multi-writer transactions at a scale WAL mode cannot serve - see DESI
 that a
 specific alternative demonstrably solves.
 
-### Rust binding: `rusqlite`
+## DESIGN-METADATA-010: Rust binding
 
 Named in passing above as one reason SQLite fits, but not, until now, decided in its own right - a
 gap worth closing explicitly, since every schema example, trigger, and migration hook discussed
@@ -106,7 +108,7 @@ in DESIGN-METADATA-004 and DESIGN-METADATA-005 already assumes its specific API 
 binding via `params![...]`,
 `&rusqlite::Transaction` in migration hooks).
 
-Status: decided - `rusqlite`.
+Status: decided
 
 The mature, de facto standard synchronous Rust binding for SQLite, paired with
 `rusqlite_migration` (see DESIGN-METADATA-005) for migration tooling. Its "bundled" feature compiles
@@ -114,7 +116,7 @@ SQLite
 directly into the binary, matching REQ-OPERABILITY-001's "nothing to install separately" bar noted
 above.
 
-**Alternatives considered and rejected**:
+### Alternatives considered and rejected
 
 - **`sqlx`**: async-first (built around `tokio`/`async-std`), with compile-time-checked queries.
   Async is a structural mismatch here, not a stylistic one: DESIGN-METADATA-003's
@@ -133,9 +135,10 @@ above.
 
 ## DESIGN-METADATA-003: Writer/concurrency model
 
-Status: decided - one coordinated writer, many concurrent readers, within a single writing
-process; concurrent writing processes against the same repository are refused outright
-(REQ-MAINTENANCE-004 in
+Status: decided
+
+One coordinated writer, many concurrent readers, within a single writing process; concurrent
+writing processes against the same repository are refused outright (REQ-MAINTENANCE-004 in
 [`../../requirements/functional/maintenance.md`](../../requirements/functional/maintenance.md)),
 not merely assumed not to happen.
 
@@ -176,10 +179,12 @@ an actual target scenario - no such scenario is known today.
 
 ## DESIGN-METADATA-004: Database structure
 
-Status: decided - keep a `contents` table, deduplicating whole-file content in addition to
-chunk-level deduplication. See
-[`metadata-schema-comparison.md`](metadata-schema-comparison.md) for the trade-offs weighed against
-the rejected alternative (no `contents` table) and the reasoning behind the decision, and
+Status: decided
+
+Keep a `contents` table, deduplicating whole-file content in addition to chunk-level
+deduplication. See [`metadata-schema-comparison.md`](metadata-schema-comparison.md) for the
+trade-offs weighed against the rejected alternative (no `contents` table) and the reasoning behind
+the decision, and
 [`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) for the chosen
 schema itself.
 
@@ -391,8 +396,10 @@ That decision is already made; only the write-path code implementing it does not
 
 ## DESIGN-METADATA-005: Migration approach
 
-Status: decided - `rusqlite_migration`. Distinct from repository migration from the Scala
-implementation (`migration/from-scala.md`), which is out of scope here.
+Status: decided
+
+`rusqlite_migration`. Distinct from repository migration from the Scala implementation
+(`migration/from-scala.md`), which is out of scope here.
 
 `rusqlite_migration` is the right migration tooling for this project: purpose-built for exactly
 the already-decided pairing (`rusqlite` against SQLite only, not a multi-backend abstraction),
@@ -487,9 +494,10 @@ a documented fallback.
 
 ## DESIGN-METADATA-006: Crate structure
 
-Status: decided - its own crate, named `db`, with a deliberately narrow public interface.
+Status: decided
 
-This workspace already holds two crates built the same way (`cdc`, a `Chunker` trait behind a
+Its own crate, named `db`, with a deliberately narrow public interface. This workspace already
+holds two crates built the same way (`cdc`, a `Chunker` trait behind a
 narrow interface; `mountfs`, a mount abstraction behind its own) - a third for metadata management
 is consistent with that pattern, not a new kind of ceremony introduced just for this. Named `db`:
 short, unambiguous within the workspace, and consistent with the scoped-test invocation style used

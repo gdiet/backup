@@ -196,8 +196,10 @@ then updating it once settled) are not needed here:
 
 ## DESIGN-METADATA-009: Repository settings
 
-Status: decided - a single-row `repository_settings` table, holding only the one setting this
-project's requirements currently call for: `cdc_target_size_bits`. REQ-STORAGE-003 in
+Status: decided
+
+A single-row `repository_settings` table, holding only the one setting this project's
+requirements currently call for: `cdc_target_size_bits`. REQ-STORAGE-003 in
 [`../../requirements/functional/storage.md`](../../requirements/functional/storage.md) requires
 the chunking strategy and target chunk size to be configurable at repository creation and fixed
 for the repository's lifetime; nothing else in `requirements/` currently calls for a
