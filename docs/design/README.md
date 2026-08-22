@@ -12,23 +12,43 @@ versus in code comments.
 
 ## Status
 
-Directly under a decision's heading, a `Status:` line, one of three values:
+Directly under a decision's heading, a `Status:` line. The values split along one real axis - has
+this heading actually been assigned a `DESIGN-...` ID (see "ID Scheme" below) or not:
 
 ```markdown
 ## DESIGN-METADATA-003: Hash computation
 Status: decided
 ```
 
-- `idea` - still being weighed, not yet settled. A heading at this stage has no `DESIGN-...` ID
-  yet (see "ID Scheme" below: an ID is assigned only once a decision actually is settled).
+Without an ID:
+
+- `idea` - still being weighed, no decision recorded here yet.
+
+With an ID:
+
+- `draft` - formalized enough to have an ID and be citable, not yet settled.
 - `decided` - settled, not yet shipped in code.
 - `implemented` - settled and shipped in code.
+- `rejected` - considered and explicitly not going forward, superseded by nothing in particular.
+- `superseded-by DESIGN-...` - a later decision replaces this one's content.
+- `moved-to DESIGN-...` - unchanged content, filed under a different `<AREA>` than originally (see
+  "ID Scheme" below) - not a reconsideration of the decision itself.
 
-This progression is linear, not two independent facts - shipping in code implies the decision was
-already settled - so one field covers it. Nothing beyond the bare value goes on this line: what
-was decided, and once implemented (or, for `decided`, why not yet), goes as the opening of the
-prose that follows instead - never a file or path there (see "Reference Direction: One Way Only"
-below).
+`decided`/`implemented` form a linear progression, not two independent facts - shipping in code
+implies the decision was already settled - so one field covers both. Nothing beyond the bare value
+(or, for `superseded-by`/`moved-to`, the target ID) goes on this line: what was decided, and once
+implemented (or, for `decided`, why not yet), goes as the opening of the prose that follows instead
+- never a file or path there (see "Reference Direction: One Way Only" below).
+
+Requirements in `requirements/` use a parallel but not identical vocabulary (`draft` / `agreed` /
+`rejected` / `superseded-by REQ-...` / `moved-to REQ-...`, plus the same no-ID `idea` stage) - see
+[`../../requirements/README.md`](../../requirements/README.md). `agreed` there and `decided` here
+name the same "settled" point deliberately with different words: a requirement's `agreed` is
+consensus that a described behavior is actually wanted; a design's `decided` is a choice made among
+technical alternatives, with no separate party to reach consensus with beyond the choice being
+sound. Design additionally distinguishes `decided` from `implemented`, which requirements
+deliberately do not track at all - see `implemented`'s own entry above for why design needs that
+distinction and requirements do not.
 
 This is the only place implementation state is tracked - a decision never moves file or directory
 based on it. A file bundling several closely related decisions (see "Layout" above) cannot
@@ -40,9 +60,10 @@ be one more place for that fact to silently go stale in.
 
 `DESIGN-<AREA>-<NNN>` — `<AREA>` an uppercase short code for the decision family a file (or closely
 related group of files) belongs to (e.g. `CDC`, `MOUNT`, `METADATA`), `<NNN>` a zero-padded 3-digit
-number (`001`, `002`, ...). IDs are permanent once assigned: a decision later superseded or reversed
-keeps its ID and gets a note to that effect, rather than being deleted or renumbered, so any
-`DESIGN-...` reference elsewhere (in particular, from code) stays valid.
+number (`001`, `002`, ...). IDs are permanent once assigned: a decision later dropped or superseded
+keeps its ID and gets `Status: rejected` or `Status: superseded-by DESIGN-...` (see "Status" above)
+rather than being deleted or renumbered, so any `DESIGN-...` reference elsewhere (in particular,
+from code) stays valid.
 
 If a decision turns out to belong under a different `<AREA>` than the one it was first filed under,
 it gets a new ID there - the original ID is not reused or deleted, only turned into a one-line
@@ -60,8 +81,11 @@ Only the heading that actually states a decision gets an ID - a supporting subse
 "Alternative considered and rejected" subheading underneath it) is part of explaining that same
 decision, not a separate one, and stays unnumbered.
 
-Assign IDs only once a decision is actually settled, not while a proposal is still being weighed -
-numbering something still in flux just churns the numbering once it is decided or dropped.
+Assign an ID once a decision is at least a formalized, citable proposal (`Status: draft`) - not
+for a passing thought still being weighed with no shape yet (that stays `Status: idea`, unnumbered,
+until it is). A `draft` that is later dropped keeps its ID and moves to `Status: rejected` rather
+than being deleted or renumbered - permanence (see above) already absorbs the "numbering churn"
+concern this might otherwise raise.
 
 ## Cross-Referencing A Design Decision
 

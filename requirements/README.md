@@ -32,6 +32,13 @@ Rationale: <why, and optionally: "an alternative approach of X was considered an
 because Y">
 ```
 
+`Status: idea` is the one exception to this format, for a question with no `REQ-...` ID yet - too
+unformed to be a citable candidate requirement (see `open-questions.md`, where these entries live,
+without the `### REQ-<AREA>-<NNN>:`/`Importance:` structure above, until formulated enough to
+become a proper draft). This mirrors `docs/design/`'s own `idea` stage for design decisions - see
+its README's "Status" section for the parallel, and for why the two directories otherwise use
+different words for "settled" (`agreed` here, `decided` there).
+
 ## ID Scheme
 
 `REQ-<AREA>-<NNN>` — `<AREA>` an uppercase short code for the topic area (e.g. `STORAGE`,

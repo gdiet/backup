@@ -7,9 +7,11 @@ paths:
 
 Non-trivial implementation-design decisions (an algorithm choice, alternatives weighed, benchmarks
 or research that informed the decision) live in `docs/design/` - one file per decision or closely
-related group of decisions. Each decision's heading carries a `Status:` line, one of `idea`,
-`decided`, or `implemented` (see `docs/design/README.md`'s "Status" section) - this is the sole
-tracker of implementation state; files never move based on it, since a file bundling several
+related group of decisions. Each decision's heading carries a `Status:` line - `idea` (no ID yet)
+or, once it has a `DESIGN-...` ID, `draft` / `decided` / `implemented` / `rejected` /
+`superseded-by DESIGN-...` / `moved-to DESIGN-...` (see `docs/design/README.md`'s "Status"
+section for what each means). `decided`/`implemented` is the sole tracker of implementation state;
+files never move based on it, since a file bundling several
 decisions cannot cleanly signal "implemented" as one unit once those decisions ship on different
 timelines. Nothing beyond the bare value goes on this line - what was decided, and once
 implemented, where it lives, belong in the prose below the heading instead. `Status: decided -
