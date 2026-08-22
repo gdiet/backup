@@ -166,3 +166,32 @@ Windows's native "Date created" column) to carry deletion time without touching 
 file-manager column for an equivalent field, which would make the feature meaningfully weaker or
 absent on one platform; the `[time]` view achieves the same chronological-browsing goal identically
 on both, using only what the mount abstraction already exposes.
+
+### REQ-MOUNT-009: Rename/move semantics matching the host platform's native filesystem
+Status: draft
+Importance: should
+
+A rename or move through the mount behaves the way NTFS does via Explorer on Windows, or ext4 does
+via a Linux file manager or `mv`, rather than inventing bespoke semantics - concretely:
+
+- Renaming a file onto an existing file's name replaces it, unless the caller specifically asked
+  not to (`RENAME_NOREPLACE`/`renameat2(2)`); `mountfs::MountFilesystem::rename`'s own `no_replace`
+  parameter already carries this distinction through to the mount, on both platforms (see that
+  method's doc comment in `crates/mountfs/src/lib.rs` for the Windows `no_replace` caveat).
+- Renaming a directory onto an existing name - whether that name is a file or another directory -
+  is always refused (`EEXIST`), never silently replaced or merged. Native filesystems differ here
+  (POSIX `rename(2)` allows replacing an *empty* target directory; Windows generally does not, and
+  neither platform's everyday file-manager workflow expects a silent replace-or-merge), so "match
+  the native filesystem" alone does not settle this case - refusing uniformly is the one behavior
+  that is never a surprise on either platform, and `mountfs`'s own trait already documents
+  unconditional refusal as a valid, supported implementation choice.
+- Renaming a directory to become its own descendant is always refused - on both platforms, this
+  would create a cycle a tree structure cannot represent. Distinct from renaming a path onto
+  itself, the exact same source and target path, which is not a cycle at all and succeeds as a
+  no-op.
+- Renaming into a location whose parent directory does not exist fails (`ENOENT`), matching
+  `mountfs::MountFilesystem::mkdir`/`create`'s own "the parent must already exist" rule.
+
+Rationale: a mount's whole purpose is to let ordinary tools operate on the repository without
+knowing anything about it - behavior that would surprise a real NTFS or ext4 volume undermines that
+purpose specifically where it matters most (an interactive drag-and-drop or `mv` in a script).
