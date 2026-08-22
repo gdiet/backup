@@ -37,3 +37,18 @@ complexity and reduced dedup quality that splitting a single stream's chunking a
 would cost (forced, non-content-defined boundaries at the split points). Should a workload with
 very large individual files/streams on storage fast enough for single-thread chunking speed to
 become the bottleneck emerge, this would need revisiting — no such case is known today.
+
+### REQ-PERFORMANCE-003: Reading stored content in smaller pieces does not cost proportionally more
+Status: agreed
+Importance: should
+
+Reading a piece of stored content via several smaller reads costs close to what reading the same
+bytes in one larger read would — overhead that is not proportional to the actual bytes
+transferred does not dominate at the read sizes this project's mount (REQ-MOUNT-001 in
+[`../functional/mount.md`](../functional/mount.md)) and restore (REQ-RESTORE-001 in
+[`../functional/restore.md`](../functional/restore.md)) paths actually produce.
+
+Rationale: a mount, in particular, reads a file through however many separate read calls the
+client/OS chooses to issue, at a granularity this project does not control — a store whose own
+per-call overhead is significant relative to typical read sizes would make ordinary file access
+through the mount slower for reasons unrelated to how much data is actually being read.
