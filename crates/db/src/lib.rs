@@ -11,13 +11,16 @@
 
 mod migrations;
 mod settings;
+mod tree;
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use rusqlite::Connection;
 
 pub use settings::RepositorySettings;
+pub use tree::{Entry, EntryKind};
 
 // Repository on-disk layout - DESIGN-REPOSITORY-001 in
 // docs/design/repository-layout.md.
@@ -35,6 +38,25 @@ pub enum Error {
     /// [`open_repository`] was called against a `repo_root` with no `meta/` subdirectory - nothing
     /// ever created a repository there.
     NoRepositoryHere(PathBuf),
+    /// No live entry with this id exists (a stale id, or one that was since soft-deleted).
+    NoSuchEntry(i64),
+    /// The entry is a file where a directory was required, or vice versa.
+    WrongKind(i64),
+    /// [`Repository::rmdir`] was called against a directory that still has live children
+    /// (REQ-TREE-008).
+    DirectoryNotEmpty(i64),
+    /// The target name is already taken by another live entry in the same directory.
+    EntryAlreadyExists {
+        parent_id: i64,
+        name: String,
+    },
+    /// [`Repository::rename`] would move a directory into its own subtree, which a tree cannot
+    /// represent (REQ-MOUNT-009).
+    WouldCreateCycle,
+    /// The root entry cannot be removed.
+    CannotRemoveRoot,
+    /// Another thread using this [`Repository`] panicked while holding its connection lock.
+    Poisoned,
     Io(std::io::Error),
     Sqlite(rusqlite::Error),
     Migration(rusqlite_migration::Error),
@@ -56,6 +78,17 @@ impl std::fmt::Display for Error {
                     path.display()
                 )
             }
+            Error::NoSuchEntry(id) => write!(f, "no live entry with id {id}"),
+            Error::WrongKind(id) => write!(f, "entry {id} is not the expected kind"),
+            Error::DirectoryNotEmpty(id) => write!(f, "directory {id} is not empty"),
+            Error::EntryAlreadyExists { parent_id, name } => {
+                write!(f, "{name:?} already exists in directory {parent_id}")
+            }
+            Error::WouldCreateCycle => {
+                write!(f, "cannot move a directory into its own subtree")
+            }
+            Error::CannotRemoveRoot => write!(f, "cannot remove the root entry"),
+            Error::Poisoned => write!(f, "repository connection lock was poisoned"),
             Error::Io(err) => write!(f, "{err}"),
             Error::Sqlite(err) => write!(f, "{err}"),
             Error::Migration(err) => write!(f, "{err}"),
@@ -84,10 +117,17 @@ impl From<rusqlite_migration::Error> for Error {
 }
 
 /// A handle to an existing, open repository.
+///
+/// Holds one connection for its whole lifetime, behind a mutex, rather than opening a fresh one
+/// per call - DESIGN-METADATA-003's "one coordinated writer" model requires exactly that for
+/// writes. Reads share the same connection/lock for now too: a simplification for this first
+/// directory-only mount milestone, not a correctness requirement - WAL mode already supports
+/// splitting reads onto their own, unlocked connections (DESIGN-METADATA-003), worth doing once
+/// read concurrency under a real mount actually needs it.
 #[derive(Debug)]
 pub struct Repository {
-    repo_root: PathBuf,
     settings: RepositorySettings,
+    conn: Mutex<Connection>,
 }
 
 impl Repository {
@@ -95,18 +135,62 @@ impl Repository {
         self.settings
     }
 
-    /// The directory holding the byte store's data files (REQ-STORAGE-007).
-    pub fn data_dir(&self) -> PathBuf {
-        self.repo_root.join(DATA_DIR)
+    fn with_connection<T>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let conn = self.conn.lock().map_err(|_| Error::Poisoned)?;
+        f(&conn)
     }
 
-    fn meta_db_path(&self) -> PathBuf {
-        self.repo_root.join(META_DIR).join(META_DB_FILE)
+    /// Looks up the live entry at `path` (`/`-separated, e.g. `/a/b`; `/` itself resolves to the
+    /// root). `Ok(None)` if any path component does not exist (or is soft-deleted) - not itself
+    /// an error, since "does this path exist" is a legitimate question to ask.
+    pub fn resolve_path(&self, path: &str) -> Result<Option<Entry>, Error> {
+        self.with_connection(|conn| tree::resolve_path(conn, path))
     }
 
-    /// Opens a new connection to this repository's metadata database.
-    pub fn open_connection(&self) -> Result<Connection, Error> {
-        Ok(Connection::open(self.meta_db_path())?)
+    /// Lists the live, direct children of the directory entry `parent_id`.
+    pub fn list_children(&self, parent_id: i64) -> Result<Vec<(String, EntryKind)>, Error> {
+        self.with_connection(|conn| tree::list_children(conn, parent_id))
+    }
+
+    /// Creates a new, empty directory named `name` inside the directory `parent_id`, bumping its
+    /// parent's modification time (REQ-TREE-005). Returns the new entry's id.
+    pub fn mkdir(&self, parent_id: i64, name: &str, time_millis: i64) -> Result<i64, Error> {
+        self.with_connection(|conn| tree::mkdir(conn, parent_id, name, time_millis))
+    }
+
+    /// Soft-deletes the directory entry `id` (REQ-TREE-002), refusing if it still has live
+    /// children (REQ-TREE-008). Bumps its parent's modification time.
+    pub fn rmdir(&self, id: i64, time_millis: i64) -> Result<(), Error> {
+        self.with_connection(|conn| tree::rmdir(conn, id, time_millis))
+    }
+
+    /// Moves/renames the entry named `old_name` inside `old_parent_id` to `new_name` inside
+    /// `new_parent_id` - REQ-MOUNT-009. Bumps both parents' modification times (one, if they are
+    /// the same directory).
+    #[allow(clippy::too_many_arguments)]
+    pub fn rename(
+        &self,
+        old_parent_id: i64,
+        old_name: &str,
+        new_parent_id: i64,
+        new_name: &str,
+        no_replace: bool,
+        time_millis: i64,
+    ) -> Result<(), Error> {
+        self.with_connection(|conn| {
+            tree::rename(
+                conn,
+                old_parent_id,
+                old_name,
+                new_parent_id,
+                new_name,
+                no_replace,
+                time_millis,
+            )
+        })
     }
 }
 
@@ -176,8 +260,8 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
     )?;
 
     Ok(Repository {
-        repo_root: repo_root.to_path_buf(),
         settings: RepositorySettings::new(cdc_target_size_bits, creation_time_millis),
+        conn: Mutex::new(conn),
     })
 }
 
@@ -261,16 +345,12 @@ mod tests {
         init_repository(&repo_root, settings()).expect("init must succeed");
 
         let repo = open_repository(&repo_root).expect("open must succeed");
-        let conn = repo.open_connection().expect("connection must open");
-        let (parent_id, kind): (i64, i64) = conn
-            .query_row(
-                "SELECT parent_id, kind FROM tree_entries WHERE id = 0",
-                (),
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .expect("root row must exist");
-        assert_eq!(parent_id, 0);
-        assert_eq!(kind, 0);
+        let root = repo
+            .resolve_path("/")
+            .expect("resolve must succeed")
+            .expect("root must exist");
+        assert_eq!(root.id, 0);
+        assert_eq!(root.kind, EntryKind::Dir);
     }
 
     #[test]
@@ -279,35 +359,36 @@ mod tests {
         let repo_root = dir.path().join("repo");
         init_repository(&repo_root, settings()).expect("init must succeed");
         let repo = open_repository(&repo_root).expect("open must succeed");
-        let conn = repo.open_connection().expect("connection must open");
 
-        conn.execute(
-            "INSERT INTO contents (id, length, hash) \
-             VALUES (2, 3, X'0102030405060708090A0B0C0D0E0F1011121314')",
-            (),
-        )
-        .expect("insert must succeed");
-        conn.execute(
-            "INSERT INTO tree_entries (id, parent_id, name, time, content_id, kind) \
-             VALUES (1, 0, 'a.txt', 0, 2, 1)",
-            (),
-        )
-        .expect("insert must succeed");
+        repo.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO contents (id, length, hash) \
+                 VALUES (2, 3, X'0102030405060708090A0B0C0D0E0F1011121314')",
+                (),
+            )?;
+            conn.execute(
+                "INSERT INTO tree_entries (id, parent_id, name, time, content_id, kind) \
+                 VALUES (1, 0, 'a.txt', 0, 2, 1)",
+                (),
+            )?;
+            Ok(())
+        })
+        .expect("inserts must succeed");
 
-        let ref_count: i64 = conn
-            .query_row("SELECT ref_count FROM contents WHERE id = 2", (), |row| {
-                row.get(0)
+        let ref_count = |repo: &Repository| {
+            repo.with_connection(|conn| {
+                Ok(
+                    conn.query_row("SELECT ref_count FROM contents WHERE id = 2", (), |row| {
+                        row.get::<_, i64>(0)
+                    })?,
+                )
             })
-            .expect("row must exist");
-        assert_eq!(ref_count, 1);
+            .expect("row must exist")
+        };
+        assert_eq!(ref_count(&repo), 1);
 
-        conn.execute("DELETE FROM tree_entries WHERE id = 1", ())
+        repo.with_connection(|conn| Ok(conn.execute("DELETE FROM tree_entries WHERE id = 1", ())?))
             .expect("delete must succeed");
-        let ref_count: i64 = conn
-            .query_row("SELECT ref_count FROM contents WHERE id = 2", (), |row| {
-                row.get(0)
-            })
-            .expect("row must exist");
-        assert_eq!(ref_count, 0);
+        assert_eq!(ref_count(&repo), 0);
     }
 }
