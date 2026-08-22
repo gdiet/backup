@@ -32,3 +32,7 @@ surprise disk usage and lets the user control backup cadence themselves.
 Is a graphical entry point (for mounting, or for routine operations) in scope, or is this
 CLI-and-mount-only for the foreseeable future? Affects how much of "Goals And Non-Goals" needs to
 say about interfaces at all.
+
+### Repository creation date
+The repository's creation date should be reliably determinable. Stub only - not yet formulated in
+detail (what it is used for, where it is stored, how it survives migration/restore).
