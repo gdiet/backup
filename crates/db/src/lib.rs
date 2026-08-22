@@ -167,6 +167,11 @@ impl Repository {
         self.with_connection(|conn| tree::rmdir(conn, id, time_millis))
     }
 
+    /// Sets `id`'s own modification time (REQ-MOUNT-003's `utimens`).
+    pub fn set_mtime(&self, id: i64, time_millis: i64) -> Result<(), Error> {
+        self.with_connection(|conn| tree::set_mtime(conn, id, time_millis))
+    }
+
     /// Moves/renames the entry named `old_name` inside `old_parent_id` to `new_name` inside
     /// `new_parent_id` - REQ-MOUNT-009. Bumps both parents' modification times (one, if they are
     /// the same directory).

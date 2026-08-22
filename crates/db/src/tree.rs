@@ -111,6 +111,13 @@ pub(crate) fn list_children(
     rows.collect::<Result<Vec<_>, _>>().map_err(Error::from)
 }
 
+/// Sets `id`'s own modification time directly (REQ-MOUNT-003's `utimens`) - distinct from
+/// [`touch`], which bumps a *parent* as a side effect of a structural change to it.
+pub(crate) fn set_mtime(conn: &Connection, id: i64, time_millis: i64) -> Result<(), Error> {
+    get_by_id(conn, id)?.ok_or(Error::NoSuchEntry(id))?;
+    touch(conn, id, time_millis)
+}
+
 pub(crate) fn mkdir(
     conn: &Connection,
     parent_id: i64,
@@ -325,6 +332,23 @@ mod tests {
         assert!(repo.resolve_path("/a").unwrap().is_none());
         let root = repo.resolve_path("/").unwrap().unwrap();
         assert_eq!(root.time_millis, 200);
+    }
+
+    #[test]
+    fn set_mtime_updates_the_entry_itself_not_its_parent() {
+        let (repo, _dir) = repo();
+        let id = repo.mkdir(0, "a", 100).unwrap();
+        repo.set_mtime(id, 300).expect("set_mtime must succeed");
+
+        assert_eq!(repo.resolve_path("/a").unwrap().unwrap().time_millis, 300);
+        assert_eq!(repo.resolve_path("/").unwrap().unwrap().time_millis, 100);
+    }
+
+    #[test]
+    fn set_mtime_refuses_a_nonexistent_entry() {
+        let (repo, _dir) = repo();
+        let err = repo.set_mtime(999, 100).unwrap_err();
+        assert!(matches!(err, Error::NoSuchEntry(999)));
     }
 
     #[test]
