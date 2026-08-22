@@ -7,11 +7,80 @@
 //! the design doc above), so an existing Scala repository's `data/` directory can be reused
 //! unchanged.
 
+use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 const FILE_SIZE: u64 = 100_000_000;
+
+/// How many recently-used read file handles each thread keeps open - see
+/// [`with_read_handle`]'s doc comment for why, and `docs/design/byte-store.md`'s
+/// `DESIGN-STORE-004` for the measurement behind this. Not chosen from any specific
+/// measurement itself, just a modest cap against unbounded file-descriptor growth.
+const READ_HANDLE_CACHE_CAPACITY: usize = 8;
+
+thread_local! {
+    // One small LRU per OS thread, not one shared cache - avoids a lock/contention point on
+    // what would otherwise be a fully lock-free read path. Keyed by absolute path, so this
+    // stays correct even if a single thread uses more than one ByteStore. Most-recently-used
+    // at the front; a linear scan to find/evict is fine at this small a capacity.
+    static READ_HANDLES: RefCell<VecDeque<(PathBuf, File)>> = const { RefCell::new(VecDeque::new()) };
+}
+
+/// Runs `f` with a read handle for `path`, reusing a cached one for this thread if there is
+/// one, opening (and caching) a fresh one otherwise. Returns `Ok(None)` if `path` does not
+/// exist - a normal, expected condition for [`ByteStore::read`]'s callers, not an error to
+/// propagate as one.
+///
+/// Every successfully opened handle is cached after use regardless of what `f` returned - `f`
+/// always seeks to an absolute position before reading, so a handle's cursor position never
+/// carries meaning across calls, and a transient read error does not mean the handle itself is
+/// broken. A write through a *different* handle to the same file is always immediately visible
+/// here, cached or not - ordinary same-file-different-handle behavior, not something this cache
+/// has to do anything special for.
+///
+/// A file removed by [`ByteStore::truncate_to`] is a different case: on a system where deleting
+/// a file does not invalidate handles already open to it (true of the platforms this project
+/// targets), a handle cached here before that removal would go on reading the old content
+/// instead of correctly reporting it missing, for as long as it stays cached. Not addressed
+/// here, on the assumption that nothing calls `truncate_to` for a range a concurrent read could
+/// still legitimately want; enforcing that is a caller/allocator concern (DESIGN-STORE-003 in
+/// `docs/design/byte-store.md`, not yet decided), not this cache's.
+fn with_read_handle<T>(
+    path: &Path,
+    f: impl FnOnce(&mut File) -> io::Result<T>,
+) -> io::Result<Option<T>> {
+    let cached = READ_HANDLES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache
+            .iter()
+            .position(|(p, _)| p == path)
+            .map(|i| cache.remove(i).expect("just found via position").1)
+    });
+
+    let mut file = match cached {
+        Some(file) => file,
+        None => match File::open(path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        },
+    };
+
+    let result = f(&mut file);
+
+    READ_HANDLES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= READ_HANDLE_CACHE_CAPACITY {
+            cache.pop_back();
+        }
+        cache.push_front((path.to_path_buf(), file));
+    });
+
+    result.map(Some)
+}
 
 /// Whether a [`ByteStore::read`] call's full requested range was backed by real on-disk data.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,14 +123,31 @@ impl ByteStore {
         while !data.is_empty() {
             let (path, _, offset_in_file, room) = self.locate(position);
             let n = (data.len() as u64).min(room) as usize;
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let mut file = OpenOptions::new()
+            // Try opening directly first - DESIGN-STORE-005 in docs/design/byte-store.md. The
+            // common case, once the first write into a given dir1/dir2 has already created it,
+            // is that it already exists, and create_dir_all still costs a syscall to confirm
+            // that even when it has nothing to do. Only pay for it on the actual first write
+            // into a new directory (a plain NotFound from open, not yet knowing whether the file
+            // or an ancestor directory is what's actually missing).
+            let mut file = match OpenOptions::new()
                 .write(true)
                 .create(true)
                 .truncate(false)
-                .open(&path)?;
+                .open(&path)
+            {
+                Ok(file) => file,
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                    if let Some(parent) = path.parent() {
+                        fs::create_dir_all(parent)?;
+                    }
+                    OpenOptions::new()
+                        .write(true)
+                        .create(true)
+                        .truncate(false)
+                        .open(&path)?
+                }
+                Err(e) => return Err(e),
+            };
             file.seek(SeekFrom::Start(offset_in_file))?;
             file.write_all(&data[..n])?;
             data = &data[n..];
@@ -80,18 +166,15 @@ impl ByteStore {
         while buf_offset < buf.len() {
             let (path, relative_path, offset_in_file, room) = self.locate(position);
             let n = ((buf.len() - buf_offset) as u64).min(room) as usize;
-            match File::open(&path) {
-                Ok(mut file) => {
-                    file.seek(SeekFrom::Start(offset_in_file))?;
-                    let read = read_fully(&mut file, &mut buf[buf_offset..buf_offset + n])?;
-                    if read < n {
-                        missing_or_short.push(relative_path);
-                    }
-                }
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                    missing_or_short.push(relative_path);
-                }
-                Err(e) => return Err(e),
+            let target = &mut buf[buf_offset..buf_offset + n];
+            let read = with_read_handle(&path, |file| {
+                file.seek(SeekFrom::Start(offset_in_file))?;
+                read_fully(file, target)
+            })?;
+            match read {
+                Some(read) if read < n => missing_or_short.push(relative_path),
+                Some(_) => {}
+                None => missing_or_short.push(relative_path),
             }
             position += n as u64;
             buf_offset += n;
@@ -402,5 +485,39 @@ mod tests {
         store.write(FILE_SIZE * 100 * 100, b"x").unwrap();
         store.truncate_to(0).unwrap();
         assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn a_write_after_a_cached_read_is_visible_on_the_next_read() {
+        let (_dir, store) = store();
+        store.write(0, b"before").unwrap();
+        let mut buf = [0u8; 6];
+        assert_eq!(store.read(0, &mut buf).unwrap(), ReadIntegrity::Complete);
+        assert_eq!(&buf, b"before");
+
+        store.write(0, b"after!").unwrap();
+        let mut buf = [0u8; 6];
+        assert_eq!(store.read(0, &mut buf).unwrap(), ReadIntegrity::Complete);
+        assert_eq!(&buf, b"after!");
+    }
+
+    #[test]
+    fn reading_more_distinct_files_than_the_cache_capacity_still_returns_correct_data() {
+        let (_dir, store) = store();
+        let file_count = READ_HANDLE_CACHE_CAPACITY + 4;
+        for i in 0..file_count {
+            store.write(i as u64 * FILE_SIZE, &[i as u8]).unwrap();
+        }
+        // Two rounds: the second re-reads files the first round's later files should have
+        // evicted from the small per-thread cache - must still return correct data, not
+        // whatever another file's now-reused handle happens to contain.
+        for _ in 0..2 {
+            for i in 0..file_count {
+                let mut buf = [0u8; 1];
+                let integrity = store.read(i as u64 * FILE_SIZE, &mut buf).unwrap();
+                assert_eq!(integrity, ReadIntegrity::Complete);
+                assert_eq!(buf, [i as u8]);
+            }
+        }
     }
 }
