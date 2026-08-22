@@ -28,11 +28,13 @@ const DATA_DIR: &str = "data";
 
 #[derive(Debug)]
 pub enum Error {
-    /// `repo_root` (or, for [`open_repository`], its `meta/` subdirectory)
-    /// already holds a repository.
+    /// [`init_repository`] was called against a `repo_root` that already holds a repository.
     RepositoryAlreadyExists(PathBuf),
-    /// `repo_root` already exists and is not empty.
+    /// [`init_repository`] was called against a `repo_root` that already exists and is not empty.
     TargetNotEmpty(PathBuf),
+    /// [`open_repository`] was called against a `repo_root` with no `meta/` subdirectory - nothing
+    /// ever created a repository there.
+    NoRepositoryHere(PathBuf),
     Io(std::io::Error),
     Sqlite(rusqlite::Error),
     Migration(rusqlite_migration::Error),
@@ -46,6 +48,13 @@ impl std::fmt::Display for Error {
             }
             Error::TargetNotEmpty(path) => {
                 write!(f, "{} already exists and is not empty", path.display())
+            }
+            Error::NoRepositoryHere(path) => {
+                write!(
+                    f,
+                    "no repository at {} (no meta/ directory)",
+                    path.display()
+                )
             }
             Error::Io(err) => write!(f, "{err}"),
             Error::Sqlite(err) => write!(f, "{err}"),
@@ -128,12 +137,11 @@ pub fn init_repository(repo_root: &Path, settings: RepositorySettings) -> Result
     // Built in a staging directory and only renamed into place once fully
     // committed, so a process killed mid-creation leaves either no meta/ at
     // all or a complete one - never a half-initialized meta/ that a later
-    // open (or re-run of this function) could mistake for a real repository.
+    // open could mistake for a real repository. repo_root is already known
+    // empty at this point (checked above), so staging_meta cannot already
+    // exist here.
     let staging_meta = repo_root.join(META_TMP_DIR);
-    if staging_meta.exists() {
-        fs::remove_dir_all(&staging_meta)?;
-    }
-    fs::create_dir_all(&staging_meta)?;
+    fs::create_dir(&staging_meta)?;
 
     let mut conn = Connection::open(staging_meta.join(META_DB_FILE))?;
     migrations::migrations().to_latest(&mut conn)?;
@@ -152,7 +160,12 @@ pub fn init_repository(repo_root: &Path, settings: RepositorySettings) -> Result
 /// was created with. Applies any pending schema migration automatically
 /// (DESIGN-METADATA-005).
 pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
-    let db_path = repo_root.join(META_DIR).join(META_DB_FILE);
+    let meta_dir = repo_root.join(META_DIR);
+    if !meta_dir.is_dir() {
+        return Err(Error::NoRepositoryHere(repo_root.to_path_buf()));
+    }
+
+    let db_path = meta_dir.join(META_DB_FILE);
     let mut conn = Connection::open(&db_path)?;
     migrations::migrations().to_latest(&mut conn)?;
 
@@ -206,10 +219,19 @@ mod tests {
     }
 
     #[test]
+    fn init_repository_refuses_a_leftover_staging_directory_from_a_killed_prior_attempt() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir(dir.path().join("meta.tmp")).unwrap();
+
+        let err = init_repository(dir.path(), settings()).unwrap_err();
+        assert!(matches!(err, Error::TargetNotEmpty(_)));
+    }
+
+    #[test]
     fn open_repository_fails_on_a_directory_that_was_never_created_as_one() {
         let dir = tempfile::tempdir().unwrap();
         let err = open_repository(dir.path()).unwrap_err();
-        assert!(matches!(err, Error::Sqlite(_)));
+        assert!(matches!(err, Error::NoRepositoryHere(_)));
     }
 
     #[test]
