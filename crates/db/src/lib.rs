@@ -206,6 +206,13 @@ mod tests {
     }
 
     #[test]
+    fn open_repository_fails_on_a_directory_that_was_never_created_as_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = open_repository(dir.path()).unwrap_err();
+        assert!(matches!(err, Error::Sqlite(_)));
+    }
+
+    #[test]
     fn init_repository_refuses_an_already_initialized_repository() {
         let dir = tempfile::tempdir().unwrap();
         let repo_root = dir.path().join("repo");
