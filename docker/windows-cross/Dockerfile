@@ -25,4 +25,4 @@ RUN rustup target add x86_64-pc-windows-msvc \
 
 WORKDIR /workspace
 
-CMD ["cargo", "xwin", "build", "--release", "--target", "x86_64-pc-windows-msvc", "-p", "mountfs"]
+CMD ["cargo", "xwin", "build", "--release", "--target", "x86_64-pc-windows-msvc", "-p", "cli"]

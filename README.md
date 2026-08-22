@@ -40,6 +40,11 @@ Every other planned operation is expected to need neither.
 The Windows mount backend links against WinFSP under its FLOSS exception to GPLv3 — see
 [`NOTICE.md`](NOTICE.md) for the exception's full text and this project's compliance notes.
 
+## For Developers
+
+Building from source, running tests, crate layout etc. are covered in
+[docs/development.md](docs/development.md), not here.
+
 ## License
 
 Licensed under either of [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option. See
