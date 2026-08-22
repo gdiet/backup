@@ -27,6 +27,10 @@ CREATE TABLE repository_settings (
   -- NULL selects whole-file chunking (no CDC); a value selects CDC chunking with that
   -- target_size_bits - mirrors cdc::ChunkerConfig's own Option<u32> shape exactly.
   cdc_target_size_bits INTEGER,
+  -- Unix epoch milliseconds, matching tree_entries.time's own unit - REQ-STORAGE-008. The actual
+  -- creation moment for a natively created repository; a migrated repository's source root tree
+  -- entry's own time for one adopted from Scala (see "Repository settings" below).
+  creation_time        INTEGER NOT NULL,
   CONSTRAINT chk_repository_settings_id CHECK (id = 1),
   CONSTRAINT chk_repository_settings_cdc_target_size_bits CHECK (
     cdc_target_size_bits IS NULL OR cdc_target_size_bits BETWEEN 6 AND 30
@@ -202,12 +206,12 @@ then updating it once settled) are not needed here:
 
 Status: decided
 
-A single-row `repository_settings` table, holding only the one setting this project's
-requirements currently call for: `cdc_target_size_bits`. REQ-STORAGE-003 in
+A single-row `repository_settings` table, holding the settings this project's requirements
+currently call for: `cdc_target_size_bits` and `creation_time`. REQ-STORAGE-003 in
 [`../../requirements/functional/storage.md`](../../requirements/functional/storage.md) requires
 the chunking strategy and target chunk size to be configurable at repository creation and fixed
-for the repository's lifetime; nothing else in `requirements/` currently calls for a
-repository-creation-time setting.
+for the repository's lifetime; REQ-STORAGE-008 in the same file requires a repository's creation
+date to be reliably determinable, the same way.
 
 `cdc_target_size_bits` is nullable rather than paired with a separate `chunking` enum column:
 `NULL` selects whole-file chunking (`cdc::SingleChunkChunker`), a value selects CDC chunking with
@@ -247,15 +251,8 @@ different `target_size_bits` changes `base_size` and the mask width from the fir
 so dedup against the repository's prior history quietly gets much worse - the entire value
 proposition behind REQ-STORAGE-001/002 - with no error, warning, or symptom pointing at the cause.
 
-A second trigger closes this, independently of the range `CHECK`:
-
-```sql
-CREATE TRIGGER repository_settings_cdc_target_size_bits_immutable
-  BEFORE UPDATE OF cdc_target_size_bits ON repository_settings
-BEGIN
-  SELECT RAISE(ABORT, 'cdc_target_size_bits is fixed for the repository''s lifetime (REQ-STORAGE-003)');
-END;
-```
+A second trigger closes this, independently of the range `CHECK` - see
+`repository_settings_cdc_target_size_bits_immutable` in "Triggers" below.
 
 This makes REQ-STORAGE-003's "fixed for the repository's lifetime" structurally enforced rather
 than resting on every future `db`-crate call site remembering not to touch this column - the same
@@ -274,6 +271,18 @@ this on purpose.
 Revisit if: a genuine repository-wide re-chunking feature is actually designed - that would be the
 point to work out this trigger's role in such a tool concretely, not something to assume a shape
 for speculatively now.
+
+### `creation_time`: immutable the same way, no CLI validation needed
+
+Guarded by its own trigger, the same pattern as `cdc_target_size_bits` above, since it is the same
+kind of fact - fixed once at creation, REQ-STORAGE-008 (see
+`repository_settings_creation_time_immutable` in "Triggers" below).
+
+No range `CHECK` is meaningful here the way `cdc_target_size_bits` has one (any timestamp is a
+structurally valid one), and no CLI-side validation is needed either - unlike
+`cdc_target_size_bits`, which a user supplies and could get wrong, `creation_time` is always
+computed by this application itself (`create-repo`'s own current time, or the source repository's
+root entry's `time` during `migrate-scala-repo`), never typed in by a user.
 
 ### CLI validation: reuse `cdc::ChunkerConfig::new`, do not reimplement it
 
@@ -342,6 +351,13 @@ CREATE TRIGGER repository_settings_cdc_target_size_bits_immutable
   BEFORE UPDATE OF cdc_target_size_bits ON repository_settings
 BEGIN
   SELECT RAISE(ABORT, 'cdc_target_size_bits is fixed for the repository''s lifetime (REQ-STORAGE-003)');
+END;
+
+-- Guard creation_time against being changed after creation - see "Repository settings" below.
+CREATE TRIGGER repository_settings_creation_time_immutable
+  BEFORE UPDATE OF creation_time ON repository_settings
+BEGIN
+  SELECT RAISE(ABORT, 'creation_time is fixed for the repository''s lifetime (REQ-STORAGE-008)');
 END;
 ```
 

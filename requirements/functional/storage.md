@@ -97,3 +97,21 @@ once it is sealed, is what makes it possible for generic, repository-unaware too
 file has not changed" cheaply and correctly (see REQ-OPERABILITY-002 in
 [`../non-functional/operability.md`](../non-functional/operability.md)) — an unbounded or
 frequently-rewritten layout would defeat that.
+
+### REQ-STORAGE-008: Repository creation date
+Status: agreed
+Importance: should
+
+A repository records its own creation date, set once when the repository is created and never
+changed afterward — independent of any individual file's modification time, and not derived from
+the tree's root entry's own `time` field (deliberately superseded by ordinary modification-time
+semantics — see "Root entry's seed `time`" in
+[`../../docs/design/metadata-storage.md`](../../docs/design/metadata-storage.md)). Exposed as part
+of repository statistics (REQ-QUERY-003 in [`query.md`](query.md)). For a repository migrated from
+a Scala predecessor (REQ-MIGRATION-001 in
+[`repository-migration.md`](repository-migration.md)), this is the source repository's own root
+entry's `time` — confirmed against a real production Scala database that its schema never updates
+that value after creation, so it reliably reflects that repository's own true creation date.
+
+Rationale: knowing how long a repository has existed is basic operational context, the same kind
+of fact REQ-QUERY-003 already gathers.

@@ -393,6 +393,27 @@ removed, or renamed) is deliberately not a database trigger - see
 for a directed import's bulk population too, which needs different behavior per REQ-INGEST-005).
 That decision is already made; only the write-path code implementing it does not exist yet.
 
+## DESIGN-METADATA-011: Timestamp representation
+
+Status: decided
+
+Milliseconds since the Unix epoch (UTC), stored as a plain `INTEGER` column - every timestamp in
+this schema (`tree_entries.time`, `repository_settings.creation_time` in
+[`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md), REQ-STORAGE-008
+in [`../../requirements/functional/storage.md`](../../requirements/functional/storage.md)) uses
+this representation.
+
+No requirement calls for finer precision: REQ-INGEST-005 and REQ-RESTORE-001 in
+[`../../requirements/functional/ingest.md`](../../requirements/functional/ingest.md) and
+[`../../requirements/functional/restore.md`](../../requirements/functional/restore.md) speak of a
+modification time being "reflected"/"preserved", not matched to a specific precision, and
+millisecond granularity is already far finer than what "did this file change" (REQ-INGEST-003)
+needs in practice - two genuinely distinct edits to the same file landing inside the same
+millisecond is not a realistic concern for this project's workload. Seconds alone would be a
+real, avoidable precision loss against what modern filesystems actually report; nanoseconds would
+cost nothing extra to store (SQLite `INTEGER` is 8 bytes regardless) but buy nothing either, given
+the paragraph above - milliseconds is the point past which more precision has no identified use.
+
 ## DESIGN-METADATA-005: Migration approach
 
 Status: decided

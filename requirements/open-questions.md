@@ -33,10 +33,6 @@ Is a graphical entry point (for mounting, or for routine operations) in scope, o
 CLI-and-mount-only for the foreseeable future? Affects how much of "Goals And Non-Goals" needs to
 say about interfaces at all.
 
-### Repository creation date
-The repository's creation date should be reliably determinable. Stub only - not yet formulated in
-detail (what it is used for, where it is stored, how it survives migration/restore).
-
 ### Deleted-directory display path and non-cascading delete
 When a deleted directory is listed (REQ-TREE-003 in
 [`functional/tree.md`](functional/tree.md)), what path is it shown under - particularly once an

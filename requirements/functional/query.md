@@ -25,9 +25,9 @@ Status: agreed
 Importance: should
 
 Repository-wide or path-scoped statistics are available on demand: item counts, logical size
-(as if nothing were deduplicated) versus actual physical storage used, and the resulting
-deduplication ratio. Whether repository age (see "Repository creation date" in
-[`../open-questions.md`](../open-questions.md)) belongs among these statistics is not yet decided.
+(as if nothing were deduplicated) versus actual physical storage used, the resulting deduplication
+ratio, and — repository-wide only, not path-scoped — repository age, derived from the repository's
+creation date (REQ-STORAGE-008 in [`storage.md`](storage.md)).
 
 Rationale: understanding how much deduplication is actually saving, and how a repository is
 growing, is what tells an operator whether the system is working as intended and when to reclaim
