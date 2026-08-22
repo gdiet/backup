@@ -399,11 +399,13 @@ more than constraint/trigger evaluation does.
 INSERT INTO tree_entries (id, parent_id, name, time, kind)
   VALUES (0, 0, '', 0, 0);  -- KIND_DIR; time=0 is immediately superseded once anything is
                             -- created at top level, see REQ-TREE-005
-
--- BLAKE3's XOF output for an empty input, truncated to 20 bytes.
-INSERT INTO contents (id, length, hash)
-  VALUES (1, 0, X'af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9');
 ```
+
+No seed row exists for `contents` - an empty file's content is found or inserted through the
+ordinary `(length, hash)` dedup lookup like any other content, per "In-progress files are not
+written to the database" above. A distinct, pre-seeded `EMPTY_CONTENT_ID` row was considered and
+dropped instead - see "Guard the two fixed sentinel rows against deletion" under DESIGN-METADATA-004
+in [`metadata-storage.md`](metadata-storage.md) for why.
 
 ## Diagram
 
