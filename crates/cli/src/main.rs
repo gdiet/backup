@@ -1,4 +1,14 @@
-use clap::Parser;
+mod mount;
+
+use std::path::PathBuf;
+
+use clap::{Parser, Subcommand};
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Mounts a temporary in-memory playground filesystem - not a DedupFS repository yet.
+    Mount { mountpoint: PathBuf },
+}
 
 #[derive(Parser)]
 #[command(
@@ -23,8 +33,13 @@ use clap::Parser;
         env!("CARGO_PKG_VERSION"), " ", env!("DFS_VERSION_DATE"), " ", env!("DFS_VERSION_HASH"),
     ))
 )]
-struct Cli {}
+struct Cli {
+    #[command(subcommand)]
+    command: Commands,
+}
 
 fn main() {
-    Cli::parse();
+    match Cli::parse().command {
+        Commands::Mount { mountpoint } => mount::run(&mountpoint),
+    }
 }
