@@ -15,9 +15,11 @@ The version token is three space-separated fields:
 0.0.1 2026-08-22 a1b2c3d4
 ```
 
-- **Package version** (`0.0.1`): `CARGO_PKG_VERSION` of the binary crate, from a single
-  `[workspace.package].version` shared across the workspace, following
-  [Semantic Versioning](https://semver.org).
+- **Package version** (`0.0.1`): `CARGO_PKG_VERSION` of the binary crate, following
+  [Semantic Versioning](https://semver.org). Every crate of our own in this workspace shares one
+  `[workspace.package].version` (`version.workspace = true`) - not just the binary crate this
+  version token happens to be read from - unless and until it is published as an
+  independently-versioned library in its own right.
 - **Date** (`2026-08-22`): the date of whichever commit is currently checked out, not the
   wall-clock time the build happened to run. Two builds from the same commit therefore always
   print the same token, and the date answers "how old is this code", not "when did someone type

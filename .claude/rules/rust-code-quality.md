@@ -6,6 +6,16 @@ paths:
 # Code Quality
 
 - Follow Rust idioms and conventions; prefer simple, idiomatic code.
+- A crate with real value outside this specific application (`cdc`, `mountfs`, and any future crate
+  of the same shape - a chunker, a mount abstraction, anything with no dependency on this project's
+  own domain) is structured and documented as if it might be published as a standalone library
+  someday: a narrow, deliberate public API rather than whatever the current caller happens to need
+  exposed ad hoc, and doc comments a reader with no other context on this project could still
+  follow. A discipline goal, not a commitment to actually publish - see DESIGN-CLI-001 in
+  [`../../docs/design/cli-version.md`](../../docs/design/cli-version.md) for what publishing one
+  would actually change (`publish = false` dropped, its own independent version instead of the
+  shared workspace one). `cli` itself, and any crate inherently specific to this application's own
+  domain, is exempt - there is nothing to keep reusable there.
 - Keep functions focused and testable; write self-documenting code with clear variable names.
 - Avoid complex or non-obvious logic where avoidable; where it is genuinely unavoidable, add an
   explaining comment.
