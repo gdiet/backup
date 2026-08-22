@@ -14,11 +14,25 @@ The only sentinel row it needs is the tree's root entry, protected by a guard tr
 sentinel for empty file content exists at all, since the ordinary content dedup path already
 handles that case on its own (see "In-progress files are not written to the database" below). That
 same section covers a further property: it avoids a ref-count-maintenance gap architecturally
-rather than patching it with an extra trigger.
+rather than patching it with an extra trigger. A separate `repository_settings` row holds the one
+setting fixed at repository creation (chunking granularity), similarly guarded by its own trigger
+against being changed afterward - see "Repository settings" below.
 
 ## Schema
 
 ```sql
+-- Single-row (id = 1) settings fixed at repository creation - see "Repository settings" below.
+CREATE TABLE repository_settings (
+  id                   INTEGER PRIMARY KEY,
+  -- NULL selects whole-file chunking (no CDC); a value selects CDC chunking with that
+  -- target_size_bits - mirrors cdc::ChunkerConfig's own Option<u32> shape exactly.
+  cdc_target_size_bits INTEGER,
+  CONSTRAINT chk_repository_settings_id CHECK (id = 1),
+  CONSTRAINT chk_repository_settings_cdc_target_size_bits CHECK (
+    cdc_target_size_bits IS NULL OR cdc_target_size_bits BETWEEN 6 AND 30
+  )
+);
+
 -- The directory/file tree.
 CREATE TABLE tree_entries (
   id         INTEGER PRIMARY KEY,
@@ -180,6 +194,108 @@ then updating it once settled) are not needed here:
   not exist here: that transition instead happens by inserting the row for the first time, already
   resolved.
 
+## DESIGN-METADATA-009: Repository settings
+
+Status: decided - a single-row `repository_settings` table, holding only the one setting this
+project's requirements currently call for: `cdc_target_size_bits`. REQ-STORAGE-003 in
+[`../../requirements/functional/storage.md`](../../requirements/functional/storage.md) requires
+the chunking strategy and target chunk size to be configurable at repository creation and fixed
+for the repository's lifetime; nothing else in `requirements/` currently calls for a
+repository-creation-time setting.
+
+`cdc_target_size_bits` is nullable rather than paired with a separate `chunking` enum column:
+`NULL` selects whole-file chunking (`cdc::SingleChunkChunker`), a value selects CDC chunking with
+that `target_size_bits` (`cdc::CdcChunker`) - mirroring `cdc::ChunkerConfig::new`'s own
+`Option<u32>` parameter exactly (`crates/cdc/src/lib.rs`). A two-column representation (an enum
+plus an always-`NOT NULL` magnitude column) can represent a state that is never actually
+meaningful - a stored bits value while chunking is disabled - which then has to be prevented by
+convention alone; the single nullable column makes that state impossible to represent at all.
+
+### Bounds: 6 to 30, sourced from `cdc`, not assumed
+
+`chk_repository_settings_cdc_target_size_bits` matches `cdc::ChunkerConfig::new`'s own validation
+(`crates/cdc/src/lib.rs`) exactly: `target_size_bits` between 6 and 30 inclusive. The lower bound
+is a real correctness constraint of the chunking algorithm itself, not a stylistic choice - below
+6, `base_size` (`2^(target_size_bits-1)`) drops under 31, and the fingerprint warm-up computation
+underflows. The upper bound keeps the chunk-boundary mask comfortably narrower than the rolling
+fingerprint table's own 31-bit entries.
+
+A `db`-crate test asserts these bounds against `cdc::ChunkerConfig::new`'s actual validation
+directly (attempting an insert at `bits = 5` and `bits = 31`, expecting both to fail the same way
+`cdc` itself would reject them) rather than only documenting the two crates' bounds as "kept in
+sync by convention" - this schema's own review already found one instance of exactly this drift (a
+prior, now-superseded `10..30` assumption, versus this crate's actual `6..30`), reason enough not
+to trust a hand-maintained comment alone to catch the next one.
+
+### Immutable after creation, independently of the range `CHECK`
+
+The range `CHECK` above and REQ-STORAGE-003's "fixed for the repository's lifetime" guard against
+two different failures, not the same one twice. The `CHECK` only rejects a value `cdc` could not
+safely operate on at all; it does nothing to stop an in-range change on an existing repository,
+which is its own, more consequential problem: `cdc_target_size_bits` only affects how *newly*
+written content is chunked going forward - existing `chunks`/`content_chunks` rows stay exactly as
+they are, still correctly referenced. Changing the value on a live repository therefore corrupts
+nothing, but it silently degrades deduplication: content written afterward is very unlikely to
+reproduce the same chunk boundaries as byte-identical content written before the change (a
+different `target_size_bits` changes `base_size` and the mask width from the first byte onward),
+so dedup against the repository's prior history quietly gets much worse - the entire value
+proposition behind REQ-STORAGE-001/002 - with no error, warning, or symptom pointing at the cause.
+
+A second trigger closes this, independently of the range `CHECK`:
+
+```sql
+CREATE TRIGGER repository_settings_cdc_target_size_bits_immutable
+  BEFORE UPDATE OF cdc_target_size_bits ON repository_settings
+BEGIN
+  SELECT RAISE(ABORT, 'cdc_target_size_bits is fixed for the repository''s lifetime (REQ-STORAGE-003)');
+END;
+```
+
+This makes REQ-STORAGE-003's "fixed for the repository's lifetime" structurally enforced rather
+than resting on every future `db`-crate call site remembering not to touch this column - the same
+reasoning DESIGN-METADATA-004 already applies to the root tree entry's guard trigger.
+
+Not a barrier to a genuine future repository-wide re-chunking tool, if one is ever built: such a
+tool already needs full, deliberate access to re-derive `chunks`/`content_chunks` from the byte
+store from scratch (re-reading, re-chunking, and re-hashing every stored content - a distinct, much
+larger operation than a schema migration, not something changing this one setting alone would
+accomplish), at which point dropping and recreating this one trigger around that work is negligible
+boilerplate - the same pattern DESIGN-METADATA-005 already uses for `PRAGMA foreign_keys=OFF`
+during a table rebuild. What the trigger actually prevents is an *ordinary*, undeclared `db`-crate
+call site changing the value in passing, not a tool built specifically, and deliberately, to do
+this on purpose.
+
+Revisit if: a genuine repository-wide re-chunking feature is actually designed - that would be the
+point to work out this trigger's role in such a tool concretely, not something to assume a shape
+for speculatively now.
+
+### CLI validation: reuse `cdc::ChunkerConfig::new`, do not reimplement it
+
+A future `create-repo` CLI command should call `cdc::ChunkerConfig::new` directly with the
+user-supplied `target_size_bits` and surface its `Display` error immediately, before creating any
+repository file - reusing the crate's own validation rather than duplicating its bounds a third
+time in CLI-argument-parsing code. This keeps exactly one place (`cdc::ChunkerConfig::new`)
+deciding what counts as a valid `target_size_bits` at all; the `db`-crate test above keeps the SQL
+`CHECK` in sync with that same source, and the CLI reusing the same function keeps user-facing
+validation in sync with it too - all three without a fourth, independently-maintained copy of the
+bounds anywhere.
+
+### `store_generation`: deferred, not carried forward
+
+A prior implementation's equivalent table also has a `store_generation` counter, bumped whenever
+reclaim/compaction may have physically relocated stored bytes, letting a restore operation warn if
+a metadata backup might now resolve some entries to the wrong physical bytes. REQ-MAINTENANCE-007
+in [`../../requirements/functional/maintenance.md`](../../requirements/functional/maintenance.md)
+now requires exactly this warning behavior - but *how* the repository detects staleness (a
+generation counter or something else) is not decided, and is not included in this table yet:
+REQ-MAINTENANCE-001/002/003 and REQ-STORAGE-004/005, the backup/restore/reclaim/compact operations
+this mechanism would actually serve, do not exist yet to design a concrete mechanism against.
+Adding one now would be exactly the kind of speculative design this project's conventions ask to
+avoid. Recorded instead as an open design question in
+[`stale-backup-detection.md`](stale-backup-detection.md); free to add once backup/restore is
+actually being implemented, at no migration cost before the first release (see "Pre-release: a
+single, freely rewritten `v1` migration" in `metadata-storage.md`).
+
 ## Triggers
 
 ```sql
@@ -210,6 +326,16 @@ CREATE TRIGGER tree_entries_protect_root BEFORE DELETE ON tree_entries
   WHEN OLD.id = 0
 BEGIN
   SELECT RAISE(ABORT, 'cannot delete the root tree entry');
+END;
+
+-- Guard cdc_target_size_bits against being changed after creation - see "Repository settings"
+-- below. A deliberate repository-wide re-chunking tool can still DROP/CREATE this trigger around
+-- its own work, same as DESIGN-METADATA-005 already does with PRAGMA foreign_keys=OFF for a table
+-- rebuild.
+CREATE TRIGGER repository_settings_cdc_target_size_bits_immutable
+  BEFORE UPDATE OF cdc_target_size_bits ON repository_settings
+BEGIN
+  SELECT RAISE(ABORT, 'cdc_target_size_bits is fixed for the repository''s lifetime (REQ-STORAGE-003)');
 END;
 ```
 
@@ -300,7 +426,8 @@ erDiagram
 ```
 
 `time`/`deleted_at` omitted from the diagram - present in the schema above, not relevant to the
-content-sharing structure this diagram is about.
+content-sharing structure this diagram is about. `repository_settings` omitted entirely for the
+same reason: a standalone, unreferenced settings row, not part of the content-sharing graph.
 
 ## Future extension: symbolic links (not currently planned)
 
