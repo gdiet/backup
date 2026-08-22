@@ -50,7 +50,12 @@ then commit with a real message while preserving the original author's identity 
 GIT_AUTHOR_NAME="..." GIT_AUTHOR_EMAIL="..." GIT_AUTHOR_DATE="..." git commit -m "<real message>"
 ```
 
-Never add your own attribution trailer to a commit whose content is someone else's direct edit.
+Preserving the original author does not mean skipping your own attribution: the git Author field
+answers "who ran the commit / whose content this primarily is," `Co-Authored-By`/`Generated-By`
+answers "who contributed to the content" - different questions. If you drafted or substantively
+shaped the content (even though the human typed and committed it themselves), it still gets your
+trailer, per the `attributed-commits` skill's own author/co-author determination - only skip the
+trailer when the content is genuinely someone else's independent work you are merely relocating.
 
 ## 3. Combine commits, if asked, by content - not by mechanical squash
 
