@@ -7,7 +7,7 @@ writing into the repository through a mounted view (see REQ-MOUNT-003 in
 ad-hoc reads and writes rather than a bulk copy step.
 
 ### REQ-INGEST-001: Store files and directories into the repository
-Status: draft
+Status: agreed
 Importance: must
 
 One or more files/directories from the real filesystem can be copied into the repository, with
@@ -17,7 +17,7 @@ Rationale: bringing content in from the real filesystem is what gives every othe
 restoring, browsing, checking, mounting — something to work with.
 
 ### REQ-INGEST-002: Per-directory exclusion rules
-Status: draft
+Status: agreed
 Importance: should
 
 A source directory can declare files and subdirectories to exclude from being stored, via a small
@@ -29,7 +29,7 @@ that decision is naturally scoped to the directory it applies to rather than a s
 repository-wide configuration.
 
 ### REQ-INGEST-003: Accelerated re-ingest via reference
-Status: draft
+Status: agreed
 Importance: should
 
 An earlier backup of largely-the-same source tree can be supplied as a reference; a source file
@@ -42,7 +42,7 @@ backed up repeatedly (e.g. nightly), skipping that discovery cost entirely is a 
 speed difference.
 
 ### REQ-INGEST-005: Preserved timestamps
-Status: draft
+Status: agreed
 Importance: must
 
 A stored file's or directory's modification time reflects the source's own modification time at
@@ -58,7 +58,11 @@ Status: draft
 Importance: must
 
 A source file or directory that cannot be read (a permission error, something that disappears
-mid-run) is logged as a warning and skipped; the rest of the run completes rather than aborting.
+mid-run) is logged as a warning and skipped; the rest of the run completes rather than aborting. A
+caller (script or tool) can tell the three possible outcomes of a run apart afterward - complete
+success, success with some items skipped as warnings, or abort on an error - without having to
+parse log output to do so.
 
 Rationale: a single unreadable file (a locked file, a permissions edge case) should not be able to
-prevent backing up everything else that is readable.
+prevent backing up everything else that is readable, but a caller automating ingest still needs a
+reliable way to notice that some items were silently skipped, not just a human reading the log.

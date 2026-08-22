@@ -10,7 +10,7 @@ structure and each file's recorded last-modified time.
 Rationale: a backup that cannot be restored is not a backup.
 
 ### REQ-RESTORE-002: Restore a deleted entry directly
-Status: draft
+Status: agreed
 Importance: should
 
 A soft-deleted entry can be restored straight to disk by its history-entry identity, without first
@@ -20,7 +20,7 @@ Rationale: getting the bytes of something that was deleted should not require ch
 repository's live state first, especially when the goal is a one-off look at old content.
 
 ### REQ-RESTORE-003: Fail loudly on corrupted or missing content by default
-Status: draft
+Status: agreed
 Importance: must
 
 If content being restored is missing, incomplete, or (when verification is requested) does not
@@ -32,12 +32,14 @@ Rationale: silently writing corrupted-looking-valid data is worse than failing v
 restored file that looks fine but is silently wrong defeats the purpose of restoring at all.
 
 ### REQ-RESTORE-004: Non-destructive toward existing files by default
-Status: draft
+Status: agreed
 Importance: must
 
 Restoring never overwrites a file that already exists at the destination unless explicitly told
 to.
 
-Rationale: a restore is often run to compare against or supplement existing files, not necessarily
-replace them — silently overwriting local changes would be a surprising and potentially costly
+Rationale: a restore is often run to inspect an old version alongside a current one already on
+disk - e.g. restoring yesterday's copy of a file next to today's working copy, to diff them or
+recover just a piece of the old content by hand - not necessarily to replace what is already there.
+Silently overwriting local changes in that case would be a surprising and potentially costly
 default.

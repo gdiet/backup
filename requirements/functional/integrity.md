@@ -21,7 +21,7 @@ an adjustable confidence level, rather than two separately named tools whose dif
 explained.
 
 ### REQ-INTEGRITY-002: Remediate files affected by missing data
-Status: draft
+Status: agreed
 Importance: should
 
 A file affected by missing or short stored data can be soft-deleted in bulk, optionally leaving a
@@ -35,14 +35,17 @@ state directly rather than continuing to reference content that is not there. On
 something this system can safely act on by itself; a mismatch where wrong-but-present data was
 found needs investigation, not an automatic response.
 
-### REQ-INTEGRITY-003: Automatic reference-count consistency
-Status: draft
+### REQ-INTEGRITY-003: Automatic safe-to-purge tracking
+Status: agreed
 Importance: must
 
-The internal reference counts that determine what content is safe to purge are always kept
-consistent with what actually references it, without requiring manual accounting or a separate
-repair step in normal operation.
+The system always knows, accurately and without requiring manual accounting or a separate repair
+step in normal operation, which stored content is no longer referenced by any tree entry and is
+therefore safe to purge.
 
-Rationale: reference counts that can silently drift would risk purging content still in use, or
-never being able to reclaim content that is genuinely unused — both unacceptable for data users are
-trusting the system to keep safe.
+Rationale: this knowledge silently drifting out of sync with what is actually referenced would risk
+purging content still in use, or never being able to reclaim content that is genuinely unused - or,
+short of either extreme, would force a purge operation to verify references itself before trusting
+anything it deletes, turning what should be a cheap, already-known lookup into a slow,
+full-repository scan every time it runs. All three are unacceptable when users are trusting the
+system to keep their data safe.

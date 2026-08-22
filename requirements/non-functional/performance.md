@@ -1,7 +1,7 @@
 # Performance
 
 ### REQ-PERFORMANCE-001: Verification cost scales with physical, not logical, data volume
-Status: draft
+Status: agreed
 Importance: should
 
 When verifying content that participates in deduplication (see REQ-STORAGE-002 in

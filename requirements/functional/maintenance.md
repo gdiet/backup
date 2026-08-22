@@ -1,27 +1,36 @@
 # Maintenance
 
 ### REQ-MAINTENANCE-001: Point-in-time metadata backup
-Status: draft
+Status: agreed
 Importance: must
 
-The repository's metadata can be backed up to a self-contained, timestamped snapshot without
-blocking, or being blocked by, ongoing use of the repository.
+The repository's metadata can be backed up to a self-contained, timestamped snapshot. Doing so
+without blocking, or being blocked by, another operation already using the repository at the same
+time (see REQ-MAINTENANCE-004: backup itself does not mutate the repository) is desirable wherever
+the storage engine actually allows it - not guaranteed here as an unconditional property, left to
+design to determine how far it holds in practice.
 
 Rationale: metadata is what makes stored bytes meaningful at all — losing it without a way back
 would make the actual stored content effectively unusable, even though the bytes are still there.
 
 ### REQ-MAINTENANCE-002: Metadata restore
-Status: draft
+Status: agreed
 Importance: must
 
 The repository's metadata can be restored from a prior backup, recovering the repository to that
-backup's point in time.
+backup's point in time. Restoring wholesale-replaces the metadata store, so it is a mutating
+operation like any other under REQ-MAINTENANCE-004's concurrent-access safety: no other mutating
+operation runs at the same time. REQ-MAINTENANCE-004's read-only-operations-stay-unblocked
+guarantee is not assumed to hold through the actual replace step specifically: a concurrent read
+may fail or see an inconsistent result while the store is being swapped. That is an accepted,
+documented limitation of this operation, not something this requirement commits to preventing -
+unless a specific implementation approach turns out to avoid it at no real cost.
 
 Rationale: a backup that cannot be restored provides no actual safety — this is the other half of
 REQ-MAINTENANCE-001.
 
 ### REQ-MAINTENANCE-003: Metadata compaction
-Status: draft
+Status: agreed
 Importance: should
 
 Space freed inside the metadata store by past deletions can be compacted back down without
@@ -31,7 +40,7 @@ Rationale: metadata churn (files added and removed over years of use) should not
 store permanently bloated, and reclaiming that space should not cost meaningful downtime.
 
 ### REQ-MAINTENANCE-004: Concurrent-access safety
-Status: draft
+Status: agreed
 Importance: must
 
 Only one repository-mutating operation runs against a repository at a time: if such an operation is
@@ -49,7 +58,7 @@ holding indefinitely as the code around it changes. An occasional unnecessary re
 smaller cost than the alternative.
 
 ### REQ-MAINTENANCE-005: Local usage logging
-Status: draft
+Status: agreed
 Importance: could
 
 Every operation run against a repository is recorded locally (what ran, which options were used —
@@ -60,7 +69,7 @@ Rationale: knowing which features actually see real use, well after the fact, is
 possible to confidently simplify or remove the ones that do not.
 
 ### REQ-MAINTENANCE-006: Wait instead of immediate refusal
-Status: draft
+Status: agreed
 Importance: should
 
 Instead of being refused immediately, a caller can specify a duration to wait for a conflicting
@@ -72,7 +81,7 @@ up to a bound the caller controls, avoids that without weakening the safety REQ-
 provides.
 
 ### REQ-MAINTENANCE-007: Stale-backup warning after reclamation or compaction
-Status: draft
+Status: agreed
 Importance: must
 
 Restoring a metadata backup warns the user if any operation that may have physically relocated or

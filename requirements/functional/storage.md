@@ -12,7 +12,7 @@ Rationale: this is the core value proposition — keeping many full backups over
 storage growing anywhere near as fast as a plain copy would.
 
 ### REQ-STORAGE-002: Sub-file (chunk-level) deduplication
-Status: draft
+Status: agreed
 Importance: must
 
 Content is deduplicated at a granularity smaller than a whole file (content-defined chunking), so
@@ -24,7 +24,7 @@ rejected — it misses the common case of large files that change slightly betwe
 growing log or a lightly edited document), which then cost full additional storage on every run.
 
 ### REQ-STORAGE-003: Configurable chunking granularity
-Status: draft
+Status: agreed
 Importance: should
 
 The chunking strategy - content-defined chunking (REQ-STORAGE-002) or a cheaper whole-file mode,
@@ -68,12 +68,17 @@ needs the disk space back (not just bounded future growth) needs an explicit, on
 get it, separate from routine operation.
 
 ### REQ-STORAGE-006: Durable, independently recoverable storage format
-Status: draft
+Status: agreed
 Importance: should
 
 Stored content bytes are kept in a plain, simple on-disk layout rather than a proprietary or
 compressed opaque format, so that even in a worst-case metadata-loss scenario, there is still a
-realistic chance of recovering stored data by inspecting the storage directly.
+realistic chance of recovering stored data by inspecting the storage directly. This chance is
+necessarily bounded by sub-file deduplication (REQ-STORAGE-002) itself: a file's content is split
+into chunks, and a single chunk's bytes are not guaranteed to be stored contiguously - without any
+metadata at all, the plain layout by itself does not reveal a specific file's chunk boundaries or
+their order, only that the bytes are stored unencrypted and uncompressed rather than hidden behind
+an opaque format.
 
 Rationale: for a backup system specifically, resilience against metadata corruption matters more
 than the storage-efficiency or convenience a more complex format might offer.

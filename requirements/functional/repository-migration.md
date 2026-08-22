@@ -5,7 +5,7 @@ Requirements for adopting an existing repository created by a predecessor implem
 this enables.
 
 ### REQ-MIGRATION-001: Preserve the complete tree, including deletion history
-Status: draft
+Status: agreed
 Importance: must
 
 Migrating an existing repository carries over its entire tree, including soft-deleted entries —
@@ -15,18 +15,21 @@ Rationale: recoverability of deleted-but-not-yet-purged history is a property us
 predecessor repository already relied on; migration should not be the event that quietly loses it.
 
 ### REQ-MIGRATION-002: No wholesale recopy of stored content
-Status: draft
+Status: agreed
 Importance: should
 
 Migration does not require rewriting or recopying already-stored byte content wholesale — it may
 read existing bytes as needed to derive new metadata, but does not need to duplicate storage to
-adopt it.
+adopt it. This assumes the predecessor's stored-byte layout is directly usable, or convertible in
+place, by this implementation's storage backend; establishing that compatibility concretely is
+[`../../migration/from-scala.md`](../../migration/from-scala.md)'s responsibility, not decided
+here.
 
 Rationale: a migration that copies every stored byte would cost time and temporary disk space
 proportional to the entire repository's size, for data that is already sitting on disk correctly.
 
 ### REQ-MIGRATION-003: Safely resumable after failure
-Status: draft
+Status: agreed
 Importance: should
 
 A migration that fails or is interrupted partway through can be re-run from scratch without manual
