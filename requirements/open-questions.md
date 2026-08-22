@@ -42,16 +42,3 @@ Status: idea
 Is a graphical entry point (for mounting, or for routine operations) in scope, or is this
 CLI-and-mount-only for the foreseeable future? Affects how much of "Goals And Non-Goals" needs to
 say about interfaces at all.
-
-### Deleted-directory display path and non-cascading delete
-Status: idea
-
-When a deleted directory is listed (REQ-TREE-003 in
-[`functional/tree.md`](functional/tree.md)), what path is it shown under - particularly once an
-ancestor directory is later renamed, moved, or itself deleted, which could leave a deleted entry's
-original path no longer resolving to anything live, or resolving through another deleted ancestor
-entirely? Separately: can a directory be deleted while it still has live
-(not yet deleted) children, or does deleting a directory require its children to already be
-deleted first? Both need a deliberate answer, not an incidental one - the first affects how deleted
-history stays navigable across later reorganization of the live tree, the second affects whether
-delete is a single-entry or whole-subtree operation.

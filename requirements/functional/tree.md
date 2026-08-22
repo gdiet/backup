@@ -23,15 +23,22 @@ turns an accidental or premature deletion into a recoverable event instead of a 
 without requiring a restore from an older backup.
 
 ### REQ-TREE-003: Deletion history and recovery
-Status: agreed
+Status: draft
 Importance: must
 
-A deleted entry can be listed (with when it was deleted) and either reactivated back into the live
-tree, or have its content restored directly to disk without first reactivating it in the
-repository. What display path a deleted directory is listed under, especially once an ancestor is
-later renamed or moved, and whether deleting a directory requires all its children to already be
-deleted, are both open - see "Deleted-directory display path and non-cascading delete" in
-[`../open-questions.md`](../open-questions.md).
+A given tree location has at most one live entry at a time, but can have any number (0..N) of
+deleted entries that previously occupied it - each one an independent history entry (REQ-TREE-004),
+carrying its own timestamp of when it was deleted. A deleted entry's ancestors are resolved the same
+way as any entry's - by their current names and positions - so its path automatically reflects
+whatever has happened to those ancestors since (a rename, a move, or an ancestor being deleted
+itself); no separate mechanism records the path as it looked at deletion time. A deleted entry can
+be reactivated back into the live tree, or have its content restored directly to disk without first
+reactivating it in the repository.
+
+How deleted entries and their history are displayed and addressed through a specific interface -
+including disambiguating same-location repeat deletions in a listing - is covered separately, not
+here: REQ-MOUNT-004 in [`mount.md`](mount.md) for the mount; a CLI-listing requirement for this is
+not yet specified. See REQ-TREE-008 for whether a directory delete cascades to its children.
 
 Rationale: recovering a deleted file should not require restoring the whole repository to an
 earlier point in time, and not every recovery should require touching the repository's live state
@@ -97,6 +104,22 @@ typical Linux JDK/JRE installation alone commonly contains dozens of them, some 
 locations outside the tree being backed up entirely; supporting them keeps a backed-up tree
 faithful to what was actually on disk, instead of silently skipping them, following them to
 whatever they currently point at, or otherwise altering them on the way in.
+
+### REQ-TREE-008: Directory delete through the mount requires an empty directory
+Status: agreed
+Importance: must
+
+Deleting a directory through the mount requires that it have no live (not yet deleted) children -
+the mount's delete does not cascade to a directory's contents. See REQ-CLI-003 in
+[`cli-commands.md`](cli-commands.md) for a separate, explicit bulk-delete capability outside the
+mount.
+
+Rationale: matches ordinary POSIX `rmdir` semantics for the mount specifically, consistent with
+REQ-TREE-005's general goal of not surprising tools that already assume them - a mount whose
+`rmdir` silently cascaded would violate exactly that expectation. A caller that wants an entire live
+subtree gone through the mount already gets that for free via any ordinary recursive tool (`rm -rf`
+deletes leaves before their parent directories); REQ-CLI-003 covers the same goal for a caller that
+does not want to mount at all.
 
 Until implemented, encountering a symbolic link during ingest is treated the same as a per-item
 failure (REQ-INGEST-004 in [`ingest.md`](ingest.md)) - skipped with a warning, never silently
