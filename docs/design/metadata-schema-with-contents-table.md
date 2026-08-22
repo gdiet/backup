@@ -416,11 +416,8 @@ INSERT INTO tree_entries (id, parent_id, name, time, kind)
                             -- created at top level, see REQ-TREE-005
 ```
 
-No seed row exists for `contents` - an empty file's content is found or inserted through the
-ordinary `(length, hash)` dedup lookup like any other content, per "In-progress files are not
-written to the database" above. A distinct, pre-seeded `EMPTY_CONTENT_ID` row was considered and
-dropped instead - see "Guard the two fixed sentinel rows against deletion" under DESIGN-METADATA-004
-in [`metadata-storage.md`](metadata-storage.md) for why.
+No seed row exists for `contents` - see "In-progress files are not written to the database" above
+for why.
 
 ## Diagram
 
