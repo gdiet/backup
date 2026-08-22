@@ -19,8 +19,10 @@ CREATE TABLE repository_settings (
   )
 );
 
+-- AUTOINCREMENT (unlike every other table's id): a purged entry's id must never be reused by a
+-- later insert - see "Why tree_entries.id is AUTOINCREMENT" in metadata-schema-with-contents-table.md.
 CREATE TABLE tree_entries (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   parent_id  INTEGER NOT NULL REFERENCES tree_entries(id),
   name       TEXT    NOT NULL,
   time       INTEGER NOT NULL,

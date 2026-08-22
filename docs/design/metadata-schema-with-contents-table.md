@@ -39,7 +39,7 @@ CREATE TABLE repository_settings (
 
 -- The directory/file tree.
 CREATE TABLE tree_entries (
-  id         INTEGER PRIMARY KEY,
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
   parent_id  INTEGER NOT NULL REFERENCES tree_entries(id),
   -- Empty only for the root entry (id = 0), enforced below.
   name       TEXT    NOT NULL,
@@ -115,6 +115,21 @@ CREATE TABLE chunk_extents (
 );
 CREATE INDEX chunk_extents_start_idx ON chunk_extents(start);
 ```
+
+## Why `tree_entries.id` is `AUTOINCREMENT`
+
+Unlike every other table's `id`, `tree_entries.id` uses `INTEGER PRIMARY KEY AUTOINCREMENT` rather
+than a bare `INTEGER PRIMARY KEY` (SQLite rowid alias). Without `AUTOINCREMENT`, SQLite picks a new
+rowid as "current max + 1" - if a row holding the table's current maximum id is ever hard-deleted (a
+purge) before any later row is inserted, the next insert can reuse that same id. `tree_entries.id`
+specifically needs to stay a stable, never-reused identity for a deleted entry, since it can remain
+addressable through the deletion-history view (REQ-TREE-003 in
+[`../../requirements/functional/tree.md`](../../requirements/functional/tree.md)) and is the
+guaranteed disambiguation fallback REQ-MOUNT-008 in
+[`../../requirements/functional/mount.md`](../../requirements/functional/mount.md) relies on - a
+reused id there would let one history entry's id silently start referring to an unrelated later
+entry. No other table's id is ever exposed to a caller as a stable, cross-session identity the way
+`tree_entries.id` is, so none of them need the same guarantee.
 
 ## Why `kind` is a separate column
 
