@@ -27,13 +27,16 @@ growing log or a lightly edited document), which then cost full additional stora
 Status: draft
 Importance: should
 
-The chunking strategy and its target chunk size are configurable at repository creation and fixed
-for the repository's lifetime. A cheaper whole-file mode is available for cases where sub-file
-matching is not worth its overhead.
+The chunking strategy - content-defined chunking (REQ-STORAGE-002) or a cheaper whole-file mode,
+for cases where sub-file matching is not worth its overhead - is configurable at repository
+creation and fixed for the repository's lifetime. For content-defined chunking specifically, its
+target chunk size is configurable and fixed the same way; whole-file mode has no target size to
+configure.
 
 Rationale: smaller chunks find more overlap between similar files at the cost of more metadata
 overhead per byte stored; the right trade-off depends on the data being stored, not on the
-software.
+software. Whole-file mode trades away REQ-STORAGE-002's sub-file matching entirely, for cases where
+even that overhead is not worth paying.
 
 ### REQ-STORAGE-004: Space reclamation
 Status: draft
