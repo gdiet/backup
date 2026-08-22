@@ -53,17 +53,16 @@ backed up and then deleted, say - should not have to wait for, or explicitly tri
 just to get that guarantee for the one entry they actually care about.
 
 ### REQ-CLI-005: Create a new repository
-Status: draft
+Status: agreed
 Importance: must
 
 A command initializes a new, empty repository at a given path, accepting the chunking-granularity
-configuration REQ-STORAGE-003 requires be fixed at creation. The target path may already exist as
-long as it is empty (a freshly mounted external drive's mount point, in particular, already exists
-by the time it is mountable at all - it cannot itself be "not yet existing"); if it exists and is
-not empty, or already holds a repository, the command fails rather than silently reinitializing or
-mixing into whatever is already there.
+configuration fixed at creation (REQ-STORAGE-003 in [`storage.md`](storage.md)). The target path may
+already exist, as long as it is empty - a freshly mounted external drive's mount point, in
+particular, already exists by the time it is mountable at all, so it can never itself be "not yet
+existing". If it exists and is not empty, the command fails.
 
 Rationale: every other command (store, mount, restore, ...) needs a repository to already exist -
-this is the one, deliberate entry point that brings one into being. Refusing a non-empty or
-already-initialized target protects against a mistaken re-run destroying real backed-up data, while
-still accepting the common case of an already-existing, empty target directory.
+this is the one, deliberate entry point that brings one into being. Refusing a non-empty target
+protects against a mistaken re-run destroying real backed-up data, while still accepting the common
+case of an already-existing, empty target directory.

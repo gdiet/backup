@@ -13,10 +13,10 @@ A repository's root directory holds exactly two top-level entries once created: 
 the metadata database (see [`metadata-storage.md`](metadata-storage.md) for the database itself),
 and `data/`, holding the byte store (REQ-STORAGE-007 in
 [`../../requirements/functional/storage.md`](../../requirements/functional/storage.md)'s
-fixed-maximum-size, sequentially filled data files). Nothing else lives at the root by convention -
-a user is free to place unrelated files there (that is what the "may already exist, if empty"
-carve-out in REQ-CLI-005 is for - the directory is not exclusively DedupFS's the moment it exists,
-only once `meta/` appears inside it), but nothing DedupFS itself writes touches the root directly.
+fixed-maximum-size, sequentially filled data files). Nothing else lives at the root: `create-repo`
+requires the root directory to be empty at creation time (REQ-CLI-005 in
+[`../../requirements/functional/cli-commands.md`](../../requirements/functional/cli-commands.md)),
+so `meta/` and `data/` are the only two entries it ever creates there.
 
 `meta/` holds the SQLite database file (`repository.sqlite3`) plus whatever sidecar files SQLite
 itself creates alongside it during ordinary operation (`-wal`/`-shm` in WAL mode). Creation builds
