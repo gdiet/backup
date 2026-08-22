@@ -102,13 +102,12 @@ specific alternative demonstrably solves.
 
 ## DESIGN-METADATA-010: Rust binding
 
-Named in passing above as one reason SQLite fits, but not, until now, decided in its own right - a
-gap worth closing explicitly, since every schema example, trigger, and migration hook discussed
-in DESIGN-METADATA-004 and DESIGN-METADATA-005 already assumes its specific API shape (parameter
-binding via `params![...]`,
-`&rusqlite::Transaction` in migration hooks).
-
 Status: decided
+
+`rusqlite`. Named in passing above as one reason SQLite fits, but not, until now, decided in its
+own right - a gap worth closing explicitly, since every schema example, trigger, and migration hook
+discussed in DESIGN-METADATA-004 and DESIGN-METADATA-005 already assumes its specific API shape
+(parameter binding via `params![...]`, `&rusqlite::Transaction` in migration hooks).
 
 The mature, de facto standard synchronous Rust binding for SQLite, paired with
 `rusqlite_migration` (see DESIGN-METADATA-005) for migration tooling. Its "bundled" feature compiles

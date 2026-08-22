@@ -9,6 +9,8 @@ behind the identical trait and dispatch logic.
 
 ## DESIGN-MOUNT-001: Why the high-level FUSE API, not the low-level protocol
 
+Status: implemented
+
 FUSE-family libraries offer two distinct kinds of API: a *high-level*, synchronous, path-based API
 (`struct fuse_operations`, `fuse_main()`) and a *low-level*, asynchronous, inode-based protocol
 binding directly to the kernel's `/dev/fuse` interface. WinFSP's own FUSE compatibility layer
@@ -56,6 +58,8 @@ provide.
 
 ## DESIGN-MOUNT-002: Why path-based, not inode-based
 
+Status: implemented
+
 The high-level API this crate binds against is path-based, not inode-based, and WinFSP's own
 compatibility layer is as well - an inode-numbering layer would have no natural backing on either
 platform's actual API and would only add a translation cost without abstracting anything real.
@@ -63,6 +67,8 @@ platform's actual API and would only add a translation cost without abstracting 
 instead, is filesystem-chosen and stored verbatim by both backends, matching that shape.
 
 ## DESIGN-MOUNT-003: Why runtime dynamic loading, not build-time linking
+
+Status: implemented
 
 Both backends resolve their platform library's exports at runtime (`dlopen`/`dlsym` on Linux,
 `LoadLibraryW`/`GetProcAddress` on Windows, with a registry-key fallback matching WinFSP's own
@@ -81,6 +87,8 @@ against a real Windows install genuinely missing WinFSP (see `agent-todos/done/
 test-graceful-absence-of-libfuse3-winfsp.md` for both results).
 
 ## DESIGN-MOUNT-004: Licensing
+
+Status: implemented
 
 libfuse itself is dual LGPL-2.1/GPL-2.0 (the userspace library ordinary programs link against is
 the LGPL part); dynamically loading it from an MIT/Apache-2.0 project is the standard case that

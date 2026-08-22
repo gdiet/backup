@@ -9,6 +9,8 @@ is not yet decided.
 
 ## Not yet decided: how staleness is detected
 
+Status: idea
+
 No design decision recorded here yet - this file exists so the question is not lost between now
 and when REQ-MAINTENANCE-001/002 (metadata backup/restore) and REQ-STORAGE-004/005 (reclamation/
 compaction) are actually implemented, since none of the operations REQ-MAINTENANCE-007 is about
@@ -23,7 +25,7 @@ value against the repository's current one and warns (not refuses) on a mismatch
 against alternatives yet, and not assumed to be the answer - named here only so the option is not
 lost before this gets picked up.
 
-## Reclamation is the natural arming point, not the eventual overwrite
+### Reclamation is the natural arming point, not the eventual overwrite
 
 Reclamation and compaction affect stored bytes differently, but that difference argues for arming
 the warning at reclamation time, not against it:

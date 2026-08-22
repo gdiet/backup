@@ -14,6 +14,8 @@ window of content, never on the whole stream since the last boundary.
 
 ## DESIGN-CDC-001: Why content-defined, not fixed-size, chunking
 
+Status: implemented
+
 Fixed-size chunking (splitting every N bytes) breaks under insertion or deletion: a single byte
 added near the start of a file shifts every following chunk boundary, so a file that changed only
 slightly re-chunks as entirely new content on the next backup. Content-defined boundaries are a
@@ -24,6 +26,8 @@ incrementally (logs, documents, databases), this is what makes chunk-level dedup
 run over run, not just on the first backup of an unchanged tree.
 
 ## DESIGN-CDC-002: Why normalized chunking, not a plain fixed-window rolling hash
+
+Status: implemented
 
 A fixed-window rolling hash (boundary decided purely by a hash of the last ~48-64 bytes, with no
 memory of how long the current chunk has grown) can be evaluated at arbitrary offsets
@@ -55,6 +59,8 @@ chunking speed to become the bottleneck emerges (e.g. large-file transfer betwee
 drives) — no such case is known today.
 
 ## DESIGN-CDC-003: An external content-defined-chunking library
+
+Status: implemented
 
 Mature options exist, but couple chunking to a `Read`/`AsyncRead`-based streaming model — they own
 the I/O.

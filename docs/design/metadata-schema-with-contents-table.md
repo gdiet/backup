@@ -125,6 +125,8 @@ for the two kinds that exist today.
 
 ## DESIGN-METADATA-007: Hash computation
 
+Status: decided
+
 A second, separate BLAKE3 hasher runs alongside the chunking pass, fed only each chunk's
 already-computed `(length, hash)` pair (28 bytes) as it is resolved, not the chunk's actual
 content:
@@ -161,6 +163,8 @@ self-cancelling (two adjacent identical chunks contribute nothing at all), eithe
 a real correctness gap in a value this schema's `UNIQUE (length, hash)` constraint depends on.
 
 ## DESIGN-METADATA-008: In-progress files are not written to the database
+
+Status: decided
 
 A file the mount has `create()`d, or opened for writing, does not get a `tree_entries` row until
 its content is actually settled - a real `content_id`, resolved through the ordinary content dedup
