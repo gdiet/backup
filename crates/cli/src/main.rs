@@ -1,4 +1,5 @@
 mod create_repo;
+mod dedup_fs;
 mod mount;
 
 use std::path::PathBuf;
@@ -25,8 +26,15 @@ enum Commands {
         #[command(flatten)]
         chunking: ChunkingArgs,
     },
-    /// Mounts a temporary in-memory playground filesystem - not a DedupFS repository yet.
-    Mount { mountpoint: PathBuf },
+    /// Mounts REPO as a real filesystem at MOUNTPOINT (REQ-MOUNT-001).
+    Mount {
+        repo: PathBuf,
+        mountpoint: PathBuf,
+        /// Allow structural changes (currently: directories only - REQ-MOUNT-003) through the
+        /// mount. Without this, the mount is read-only (REQ-MOUNT-002).
+        #[arg(long)]
+        read_write: bool,
+    },
 }
 
 #[derive(Parser)]
@@ -67,6 +75,10 @@ fn main() {
             };
             create_repo::run(&path, cdc_target_size_bits);
         }
-        Commands::Mount { mountpoint } => mount::run(&mountpoint),
+        Commands::Mount {
+            repo,
+            mountpoint,
+            read_write,
+        } => mount::run(&repo, &mountpoint, read_write),
     }
 }
