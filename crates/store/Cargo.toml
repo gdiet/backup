@@ -1,0 +1,13 @@
+[package]
+name = "store"
+version.workspace = true
+edition = "2024"
+publish = false
+license.workspace = true
+
+[lib]
+name = "store"
+path = "src/lib.rs"
+
+[dev-dependencies]
+tempfile = "3.27.0"
