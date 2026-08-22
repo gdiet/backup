@@ -9,7 +9,28 @@ versus in code comments.
 ## Layout
 
 - One file per decision or closely related group of decisions.
-- `implemented/` — decisions that have actually shipped in code, moved here once they have.
+
+## Status
+
+Directly under a decision's `DESIGN-...` heading, a `Status:` line states whether it has actually
+shipped in code yet:
+
+```markdown
+## DESIGN-METADATA-003: Hash computation
+Status: decided - not yet implemented
+```
+
+Once code exists for it, update the line to say so, ideally pointing at where:
+
+```markdown
+Status: decided - implemented (`crates/db/src/hash.rs`)
+```
+
+This is the only place implementation state is tracked - a decision never moves file or directory
+based on it. A file bundling several closely related decisions (see "Layout" above) cannot
+otherwise signal "implemented" as one unit once those decisions ship on different timelines, and a
+second, file-location-based signal duplicating the same fact this line already states would only
+be one more place for that fact to silently go stale in.
 
 ## ID Scheme
 

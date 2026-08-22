@@ -7,8 +7,10 @@ paths:
 
 Non-trivial implementation-design decisions (an algorithm choice, alternatives weighed, benchmarks
 or research that informed the decision) live in `docs/design/` - one file per decision or closely
-related group of decisions, moved into `docs/design/implemented/` once the decision has actually
-shipped in code, mirroring how `requirements/` distinguishes `draft` from `agreed`. See
+related group of decisions. Each decision's heading carries a `Status:` line stating whether it is
+implemented yet (see `docs/design/README.md`'s "Status" section) - this is the sole tracker of
+implementation state; files never move based on it, since a file bundling several decisions cannot
+cleanly signal "implemented" as one unit once those decisions ship on different timelines. See
 `docs/design/README.md` for the `DESIGN-...` ID scheme a settled decision gets, so code can cite
 it directly, and for the one-way `code → design → requirement` reference rule that comes with it.
 

@@ -7,6 +7,7 @@ carries the Windows mount backend — by the WinFSP attribution REQ-MOUNT-006 in
 [`../../requirements/functional/mount.md`](../../requirements/functional/mount.md) requires.
 
 ## DESIGN-CLI-001: Version token — package version, date, short commit hash
+Status: decided - implemented (`crates/cli/build.rs`, `crates/cli/src/main.rs`)
 
 The version token is three space-separated fields:
 
@@ -15,7 +16,8 @@ The version token is three space-separated fields:
 ```
 
 - **Package version** (`0.0.1`): `CARGO_PKG_VERSION` of the binary crate, from a single
-  `[workspace.package].version` shared across the workspace.
+  `[workspace.package].version` shared across the workspace, following
+  [Semantic Versioning](https://semver.org).
 - **Date** (`2026-08-22`): the date of whichever commit is currently checked out, not the
   wall-clock time the build happened to run. Two builds from the same commit therefore always
   print the same token, and the date answers "how old is this code", not "when did someone type
@@ -48,6 +50,7 @@ AGENTS.md's "Dependencies") when a short `build.rs` using `std::process::Command
 what is needed, with full control over the fallback behavior above.
 
 ## DESIGN-CLI-002: WinFSP attribution, included only on builds that carry it
+Status: decided - implemented (`crates/cli/src/main.rs`)
 
 When the binary is built for Windows (and therefore includes `mountfs`'s Windows backend, capable
 of dynamically loading WinFSP at runtime — DESIGN-MOUNT-003 in
