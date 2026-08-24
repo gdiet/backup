@@ -45,6 +45,32 @@ One fact lives in exactly one of these - don't duplicate the same content across
 Once loaded, a skill's content stays in context for the rest of the session - every line is a
 recurring cost. State what to do, not why or how it works internally.
 
+## Structuring a larger skill
+
+Past a single short procedure, split content instead of growing SKILL.md indefinitely:
+
+- `scripts/` - code Claude executes rather than reads (deterministic/repetitive steps)
+- `references/` - detailed docs loaded only when the skill points to them
+- `assets/` - files used in the output itself (templates, fixed content)
+
+Link each file from SKILL.md's body - an unreferenced file never gets read. Keep SKILL.md itself
+under 500 lines; past that, split a references file out (with its own table of contents once that
+file is long).
+
+## Testing whether it actually works
+
+Triggering is necessary but not sufficient - it means Claude found the skill, not that following
+it produced the right result. For anything beyond a trivial change, run a couple of realistic
+prompts in a fresh session with the skill available and again with it disabled, and compare - a
+fresh session matters, since context left over from authoring the skill masks gaps in the written
+instructions.
+
+The `skill-creator` skill automates this (test cases, isolated subagent runs, grading, description
+trigger-tuning) - reach for it before hardening a description you're not confident about. It isn't
+installed in every session; `/plugin install skill-creator@claude-plugins-official` installs it,
+but that's an interactive command only the developer can run - ask them to, or just do the
+before/after comparison by hand.
+
 ## Self-check before committing
 
 - Does the description lead with words the actual request would use?
