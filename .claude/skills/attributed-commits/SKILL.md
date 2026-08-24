@@ -31,7 +31,13 @@ Generated-By: <agent-name> (harness: <harness>; model: <model>; role: author|co-
 - If you do need to show a change for review, do not paste a raw unified diff into chat - present
   a prose summary grouped by file/concern, or point the developer at a proper diff tool.
 - `harness` is the interface this session is running through (terminal CLI, Desktop app, web app,
-  an IDE extension, etc.) - not reliably inferable, so ask for it rather than guessing.
+  an IDE extension, etc.) - not reliably inferable, so ask for it rather than guessing, *unless*
+  your system prompt already tells you this session is running in a managed, ephemeral remote
+  execution environment (a cloud container, reclaimed after inactivity or session end). In that
+  case, use `Claude Code on the web` without asking - that names the execution backend, not
+  whichever client the developer happens to be viewing the session through (Desktop app, browser,
+  mobile, a GitHub Action, ...); the same cloud session can be opened from any of those and the
+  harness stays the same.
 
 ## Distinct Git Author Identity For Agent-Authored Commits
 
@@ -53,15 +59,18 @@ When `role: co-author` applies, leave the git Author identity alone (ambient/hum
 trailer changes.
 
 **Ask early, not at commit time.** As soon as it looks like a commit will eventually be wanted in
-this session, ask once, before you are mid-commit:
+this session, resolve the harness once, before you are mid-commit - either by recognizing the
+remote-execution-environment case above, or, otherwise, by asking:
 
 > "Über welche Oberfläche läuft diese Session?" ("Which interface is this session running
 > through?") - options along the lines of: Terminal-CLI · Desktop-App · Web-App (claude.ai) ·
 > VSCode-Extension · JetBrains-Extension · (something else, free text)
 
-List the IDE options separately, not bundled as "VSCode/JetBrains". The harness is tied to how
-*this session* was launched, not to the machine/environment it runs in - do not cache the answer
-anywhere durable; just hold onto it for the rest of the current session once asked.
+List the IDE options separately, not bundled as "VSCode/JetBrains". The harness describes how this
+session actually executes - in a detected remote execution environment that is "Claude Code on the
+web" regardless of which client opened or is viewing it; otherwise it is that client itself. Do not
+cache the answer anywhere durable either way - just hold onto it for the rest of the current
+session once it is resolved.
 
 ## Verify Git Identity Before Committing (Privacy)
 
