@@ -135,10 +135,12 @@ in `crates/mountfs/`, the cross-platform FUSE/WinFSP mount crate - see
 which skills to load and when a Docker cross-compile check is enough before escalating to a real
 Windows/WinFSP environment.
 
-## Agent TODOs (Cross-Environment Handoffs)
+## Agent TODOs (Cross-Environment Handoffs And Out-Of-Scope Findings)
 
-`agent-todos/` (see its own `README.md` for the exact file format) is where a task that needs an
-environment/capability the current agent does not have gets parked, instead of silently dropped.
+`agent-todos/` (see its own `README.md` for the exact file format) is where a task gets parked
+instead of silently dropped - either because it needs an environment/capability the current agent
+does not have, or because it came up while working on something else and is genuinely outside that
+task's scope.
 
 When starting work in this repo, check `agent-todos/` for open items:
 
@@ -152,6 +154,11 @@ When starting work in this repo, check `agent-todos/` for open items:
 - If you hit a wall yourself that another environment could clear, add a new file there (see the
   README's format) rather than leaving a comment only in chat/session history that will not survive
   past this conversation.
+- The same goes for something you notice unprompted while working on a different task: if it is
+  small enough to just fix now without derailing what you were asked to do, do that instead of
+  parking it - a TODO is for things that genuinely need their own, later attention, not an excuse
+  to defer trivial fixes. Otherwise, mention it briefly to the developer in your response *and* add
+  a file here - a passing mention in chat does not survive past that conversation, the file does.
 
 ## Developer TODOs
 
