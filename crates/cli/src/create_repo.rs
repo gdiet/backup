@@ -1,35 +1,16 @@
-//! `dfs create-repo` - REQ-CLI-005 in requirements/functional/cli-commands.md, and REQ-CLI-006's
-//! default repository path in the same file.
+//! `dfs create-repo` - REQ-CLI-005 in requirements/functional/cli-commands.md. REQ-CLI-006's
+//! default repository path (shared with `mount`) lives in `crate::repo_path`.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-/// REQ-CLI-006's default repository directory name, created next to the running executable.
-const DEFAULT_REPO_DIR_NAME: &str = "dedupfs-repository";
-
-/// Resolves REQ-CLI-006's default repository path: a `dedupfs-repository` directory next to the
-/// running executable. A thin wrapper around `std::env::current_exe()` - the actual resolution
-/// logic lives in [`default_repo_path_from`], which takes the executable path as a plain
-/// parameter so it stays testable without depending on where the test binary itself happens to
-/// run from.
-pub fn default_repo_path() -> std::io::Result<PathBuf> {
-    std::env::current_exe().map(|exe_path| default_repo_path_from(&exe_path))
-}
-
-fn default_repo_path_from(exe_path: &Path) -> PathBuf {
-    exe_path
-        .parent()
-        .unwrap_or(exe_path)
-        .join(DEFAULT_REPO_DIR_NAME)
-}
 
 /// `create-repo`'s core logic, separated from `main`'s process-exit/println side effects so it
 /// stays testable: returns the message to print on success, or the message to print (to stderr,
 /// followed by a non-zero exit) on failure. `default_path_used` distinguishes a `path` the
-/// operator gave explicitly from one resolved via [`default_repo_path`], so a failure can point
-/// at passing the path explicitly only when there was no explicit path already (REQ-CLI-006,
-/// REQ-OPERABILITY-004) - pointing an operator who already gave an explicit path back at that
-/// same path would not be actionable.
+/// operator gave explicitly from one resolved via [`crate::repo_path::default_repo_path`], so a
+/// failure can point at passing the path explicitly only when there was no explicit path already
+/// (REQ-CLI-006, REQ-OPERABILITY-004) - pointing an operator who already gave an explicit path
+/// back at that same path would not be actionable.
 fn try_run(
     path: &Path,
     cdc_target_size_bits: Option<u32>,
@@ -88,34 +69,8 @@ pub fn run(path: &Path, cdc_target_size_bits: Option<u32>, default_path_used: bo
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicU32, Ordering};
-
-    #[test]
-    fn default_repo_path_from_joins_the_dir_name_onto_the_executables_parent() {
-        assert_eq!(
-            default_repo_path_from(Path::new("/opt/dfs/bin/dfs")),
-            Path::new("/opt/dfs/bin/dedupfs-repository")
-        );
-    }
-
-    #[test]
-    fn default_repo_path_from_handles_an_executable_directly_under_root() {
-        assert_eq!(
-            default_repo_path_from(Path::new("/dfs")),
-            Path::new("/dedupfs-repository")
-        );
-    }
-
-    #[test]
-    fn default_repo_path_from_falls_back_to_the_input_itself_when_it_has_no_parent() {
-        // Path::new("/").parent() is None - the one case the `unwrap_or(exe_path)` fallback
-        // exists for (current_exe() is not expected to ever actually return "/", but the
-        // fallback must still behave sensibly rather than panic).
-        assert_eq!(
-            default_repo_path_from(Path::new("/")),
-            Path::new("/dedupfs-repository")
-        );
-    }
 
     static COUNTER: AtomicU32 = AtomicU32::new(0);
 

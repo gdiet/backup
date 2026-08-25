@@ -1,6 +1,7 @@
 mod create_repo;
 mod dedup_fs;
 mod mount;
+mod repo_path;
 
 use std::path::PathBuf;
 
@@ -46,9 +47,14 @@ enum Commands {
         #[command(flatten)]
         chunking: ChunkingArgs,
     },
-    /// Mounts REPO as a real filesystem at MOUNTPOINT (REQ-MOUNT-001).
+    /// Mounts a repository as a real filesystem at MOUNTPOINT (REQ-MOUNT-001).
     Mount {
-        repo: PathBuf,
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        // A flag, not a positional like create-repo's `path`: clap does not allow an optional
+        // positional ahead of a required one, and MOUNTPOINT below must stay required.
+        #[arg(long)]
+        repo: Option<PathBuf>,
         mountpoint: PathBuf,
         /// Allow structural changes (currently: directories only - REQ-MOUNT-003) through the
         /// mount. Without this, the mount is read-only (REQ-MOUNT-002).
@@ -85,30 +91,42 @@ struct Cli {
     command: Commands,
 }
 
+/// Resolves an optional repository-path argument into `(path, default_path_used)` - the
+/// operator's own path when given, or REQ-CLI-006's default when omitted. Exits with an
+/// actionable message if the default itself cannot be determined (a `std::env::current_exe()`
+/// failure).
+fn resolve_repo_path(path: Option<PathBuf>) -> (PathBuf, bool) {
+    match path {
+        Some(path) => (path, false),
+        None => match repo_path::default_repo_path() {
+            Ok(path) => (path, true),
+            Err(err) => {
+                eprintln!(
+                    "error: could not determine the default repository location: {err}\n\
+                     Pass the path explicitly instead."
+                );
+                std::process::exit(1);
+            }
+        },
+    }
+}
+
 fn main() {
     match Cli::parse().command {
         Commands::CreateRepo { path, chunking } => {
             let cdc_target_size_bits =
                 resolve_cdc_target_size_bits(chunking.whole_file, chunking.cdc_target_size_bits);
-            match path {
-                Some(path) => create_repo::run(&path, cdc_target_size_bits, false),
-                None => match create_repo::default_repo_path() {
-                    Ok(path) => create_repo::run(&path, cdc_target_size_bits, true),
-                    Err(err) => {
-                        eprintln!(
-                            "error: could not determine the default repository location: \
-                             {err}\nPass the path explicitly instead."
-                        );
-                        std::process::exit(1);
-                    }
-                },
-            }
+            let (path, default_path_used) = resolve_repo_path(path);
+            create_repo::run(&path, cdc_target_size_bits, default_path_used);
         }
         Commands::Mount {
             repo,
             mountpoint,
             read_write,
-        } => mount::run(&repo, &mountpoint, read_write),
+        } => {
+            let (repo, default_path_used) = resolve_repo_path(repo);
+            mount::run(&repo, &mountpoint, read_write, default_path_used);
+        }
     }
 }
 

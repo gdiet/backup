@@ -2,7 +2,7 @@
 
 ## DESIGN-CLI-003: Distributed as a portable download, not an installed package
 
-Status: decided
+Status: implemented
 
 `dfs` is obtained as a plain, self-contained binary download and run directly from wherever the
 operator places it, rather than through a package manager or an installer that puts it in a fixed,
@@ -36,7 +36,7 @@ pointed at an unwritable location) covers that case without needing to prevent i
 
 ## DESIGN-CLI-004: Default repository location - a `dedupfs-repository` sibling of the executable
 
-Status: decided
+Status: implemented
 
 REQ-CLI-006's default resolves via `std::env::current_exe()`, then that path's parent directory,
 then a `dedupfs-repository` child of it - not the current working directory the command happens to
@@ -61,14 +61,16 @@ would not intuitively look there either. It also does not support DESIGN-CLI-003
 travels-with-the-drive pattern at all, since it is tied to whichever machine's OS profile currently
 holds it, not to the executable's own location.
 
-### Not writable, or not actually holding a repository
+### An actionable error only for a defaulted path, never a silent fallback
 
-`create-repo` gives a clear, actionable message (REQ-OPERABILITY-004) pointing at passing the path
-explicitly instead of a raw filesystem error, specifically when a *defaulted* path turns out
-unusable - never a silent fallback to some other location, and never that same hint for a path the
-operator already gave explicitly (nothing more specific to tell them in that case). The equivalent
-"no repository found here" case for `mount` - REQ-CLI-006's other repository-needing command - is
-not implemented yet; see "Not yet implemented" below.
+A *defaulted* path that turns out unusable gets a clear, actionable message pointing at passing
+the path explicitly, instead of surfacing the raw underlying error (REQ-OPERABILITY-004) - never a
+silent fallback to some other location. An explicitly-given path that turns out unusable gets the
+plain underlying error instead - there is nothing more specific to tell an operator who already
+made that choice themselves. This distinction belongs to the default-path mechanism itself, not to
+any one command: what actually counts as "unusable" differs by what a command does with the path
+(`create-repo`: cannot create a repository there; `mount`: nothing to open there), so each reports
+its own natural error in that case - only the actionable-vs-plain policy is shared.
 
 ## Known limitations
 
@@ -77,15 +79,11 @@ a moved-while-running binary on Linux appending a `(deleted)` marker) - not expe
 the ordinary "run the binary where it sits" case this default targets, but worth being aware of if
 a report ever comes in of the default resolving somewhere unexpected.
 
-## Not yet implemented
+## Verification
 
-- `mount`'s `repo` becoming optional, defaulting per REQ-CLI-006 when omitted.
-- The clear, actionable "no repository found here, pass the path explicitly" error
-  REQ-OPERABILITY-004 calls for, for `mount`.
-
-`create-repo`'s share of both is done, covered by `crates/cli/src/create_repo.rs`'s own tests: the
-default-path resolution (`default_repo_path_from`) directly, against several `exe_path` shapes, via
-the same executable-path-as-a-plain-parameter split this file's own reasoning above relies on for
-testability; the defaulted and an explicit chunking choice each reported correctly on success; and
-the actionable-message wording, specifically for a defaulted (not an explicit) path that turns out
-unusable.
+The default-path resolution itself (`default_repo_path_from` in `crates/cli/src/repo_path.rs`) is
+covered directly, against several `exe_path` shapes, via the executable-path-as-a-plain-parameter
+split this file's own reasoning above relies on for testability. Each command's own `try_run`
+(`crates/cli/src/create_repo.rs`, `crates/cli/src/mount.rs`) covers its actionable-vs-plain error
+message, specifically distinguishing a defaulted from an explicit unusable path; `create-repo`'s
+also covers the defaulted and an explicit chunking choice each reported correctly on success.
