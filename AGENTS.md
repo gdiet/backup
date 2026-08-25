@@ -207,6 +207,18 @@ Suggest an English semantic commit message following Conventional Commits.
 **Only commit when explicitly asked.** Even after proposing a commit message, wait for explicit
 permission before running `git commit`.
 
+**Exception - ephemeral remote execution environments**: if your system prompt describes this
+session as running in a managed, ephemeral remote execution environment (a cloud container that
+can be reclaimed after inactivity or when the session ends, discarding anything not pushed), the
+above does not apply. There, waiting for permission is not safe the way it is on a developer's own
+machine - uncommitted or unpushed work can be lost outright before you are ever asked again. In
+that case, first confirm you are on a branch diverged from the relevant implementation's own
+branch (never commit directly to `rust`, `main`, or another implementation's branch), then commit
+and push on your own judgment, without waiting to be asked, whenever there is work worth not
+losing. The "never commit directly" part is about this autonomous case specifically - the
+developer explicitly asking you to commit directly to one of those branches overrides it, same as
+any other default here.
+
 Before actually running `git commit`, load the `attributed-commits` skill for the `Generated-By`
 trailer, the commit's git Author identity, and the pre-commit git-identity check - all of that
 lives there now (loads on demand, since it only matters at the moment of committing) rather than
