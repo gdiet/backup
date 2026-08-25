@@ -34,3 +34,31 @@ one — need that sync to be fast and to rely on tooling they already trust; bui
 repository-specific sync mechanism would cost more than reusing what already works. This depends
 on the storage layout described in REQ-STORAGE-007 in
 [`../functional/storage.md`](../functional/storage.md).
+
+### REQ-OPERABILITY-003: Reasonable defaults over required configuration
+Status: agreed
+Importance: should
+
+Where a parameter has one choice that is right for typical, personal use, a command defaults to
+that choice rather than requiring the operator to supply it explicitly on every invocation - an
+explicit override stays available wherever a different choice is genuinely needed.
+
+Rationale: a parameter an operator would just copy out of the documentation anyway gains nothing
+from being required - it adds friction to the common case without buying a genuinely more informed
+choice. Where a default's absence would leave a *permanent, unfixable* choice unexplained (e.g.
+REQ-STORAGE-003 in [`../functional/storage.md`](../functional/storage.md)'s chunking
+configuration), the fix is making that permanence clearly visible wherever the choice is made, not
+withholding the default itself.
+
+### REQ-OPERABILITY-004: Actionable error messages for foreseeable failures
+Status: agreed
+Importance: should
+
+A foreseeable failure - a missing or unwritable path, a malformed argument, a repository that does
+not exist or is already in use, and similar cases a command can reasonably anticipate - is reported
+with a clear, specific message that says what went wrong and, where there is one, what to do about
+it - never a raw OS error code or an internal panic message standing in as the only explanation.
+
+Rationale: an operator hitting a foreseeable problem should be able to fix it from the error
+message alone, without needing to guess, consult external documentation, or read this project's
+source.

@@ -62,7 +62,37 @@ already exist, as long as it is empty - a freshly mounted external drive's mount
 particular, already exists by the time it is mountable at all, so it can never itself be "not yet
 existing". If it exists and is not empty, the command fails.
 
+Where the chunking configuration is not given explicitly, it defaults to content-defined chunking
+with a 20-bit target size (REQ-OPERABILITY-003 in
+[`../non-functional/operability.md`](../non-functional/operability.md)) - an average chunk size a
+little above 1 MiB, a reasonable general-purpose choice absent a specific reason to pick
+differently. `--whole-file`, or an explicit different target size, remain available as an override
+- this is still, deliberately, the one setting REQ-STORAGE-003 fixes for the repository's lifetime,
+so the command states that plainly wherever the choice is made (its own `--help` text and its
+confirmation output), rather than relying on requiring the flag to carry that warning implicitly.
+
 Rationale: every other command (store, mount, restore, ...) needs a repository to already exist -
 this is the one, deliberate entry point that brings one into being. Refusing a non-empty target
 protects against a mistaken re-run destroying real backed-up data, while still accepting the common
 case of an already-existing, empty target directory.
+
+### REQ-CLI-006: Default repository location relative to the executable
+Status: agreed
+Importance: should
+
+Where a command needs a repository path and none is given explicitly, it defaults to a
+`dedupfs-repository` directory next to the running executable itself - the directory containing
+the executable, not the current working directory the command happens to be invoked from. If the
+resolved default is unusable (unwritable for REQ-CLI-005's `create-repo`; does not actually hold a
+repository for any other command), the command fails with a clear, actionable message asking for an
+explicit `--repo`/path argument (REQ-OPERABILITY-004 in
+[`../non-functional/operability.md`](../non-functional/operability.md)), never a raw filesystem
+error standing in as the only explanation.
+
+Rationale: DESIGN-CLI-003/004 in
+[`../../docs/design/distribution.md`](../../docs/design/distribution.md) record the full
+reasoning behind this specific default - in short, it only makes sense together with distributing
+the executable as a portable download the operator places wherever they keep the repository (often
+removable/external storage) rather than through a system installer, and existing precisely to
+satisfy REQ-OPERABILITY-003's general "reasonable defaults" principle for this specific,
+recurring parameter.
