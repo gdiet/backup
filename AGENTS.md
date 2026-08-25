@@ -209,6 +209,10 @@ Full suite:
   prose going stale. Update or remove such a comment if the change you are making falsifies it,
   even if it is outside the files you would otherwise touch for the change itself.
 
+If a situation is not obviously covered by an existing convention in this file, check `git log`/
+commit messages for an established precedent before guessing or silently omitting a convention -
+the project may already have settled this.
+
 Suggest an English semantic commit message following Conventional Commits.
 
 **Only commit when explicitly asked.** Even after proposing a commit message, wait for explicit
@@ -231,6 +235,36 @@ trailer, the commit's git Author identity, and the pre-commit git-identity check
 lives there now (loads on demand, since it only matters at the moment of committing) rather than
 inline here.
 
+## Debugging Discipline
+
+- **Verify a regression test actually catches the bug, not just that it is green.** Before treating
+  a new regression test as done, temporarily revert the fix it protects (keep the test), confirm the
+  test fails, then restore the fix and confirm it passes again. A test that never ran red could be
+  passing vacuously - wrong setup, or an assertion that does not actually exercise the failure path
+  - and this red/green cycle is often the only reliable way to tell two distinct, overlapping bugs
+  in the same code path apart.
+- **Run a negative control against the unmodified baseline before blaming the change just made.** A
+  failure surfacing right after an edit is not necessarily caused by that edit - reproduce it
+  against the pre-change baseline first, before spending time investigating the new code for a bug
+  that may not be there.
+- **Verify uncertain library/runtime behavior empirically, not from memory or a reading of the
+  spec.** A short, throwaway standalone snippet settles an ambiguous case (a type-conversion
+  subtlety, an equality/ordering edge case, an API's exact error behavior) far more reliably than
+  reasoning about it - write it, run it, then discard it. This is the same discipline
+  `.claude/rules/rust-code-quality.md`'s comment self-check already asks for regarding written
+  claims in code comments; it applies just as much mid-investigation, before a claim ever reaches a
+  comment.
+- **When the same bug needs reproducing across more than one platform or backend - relevant here
+  across `crates/mountfs`'s FUSE and WinFSP backends, or across a future read connection versus the
+  write connection in `crates/db`'s single-writer model - check for architectural differences
+  between them, not just a diff of the affected file.** Code that looks identical on both sides can
+  still be driven by a different underlying process or component, changing where a reproduction
+  actually needs to happen.
+- **When building a branch to reproduce or investigate a bug for the developer to review,
+  structure it as a sequence of individually checkoutable, self-explanatory commits** (one scenario
+  per commit - e.g. "before fix", "after fix", "experiment reverted") rather than one bundled
+  commit, so the developer can jump straight to any one scenario without manually toggling state.
+
 ## Dependencies
 
 Suggest dependencies, but do not add them without explicit permission. Prefer `cargo add` over
@@ -240,6 +274,13 @@ Check a dependency's license is compatible with this project's MIT/Apache-2.0 li
 proposing it. When it is not, that is not automatically disqualifying (see WinFSP, DESIGN-MOUNT-004
 in [`docs/design/mount-abstraction.md`](docs/design/mount-abstraction.md)), but the exception needs
 its own reasoning recorded in `docs/design/`, not just adopted silently.
+
+When pinning or overriding a dependency version for a specific, temporary reason (a CVE fix, a bug
+not yet released upstream), phrase the accompanying comment with a precise, machine-checkable
+removal condition, not just the rationale - e.g. "remove this override once `<dependency>` depends
+on `<package>` >= `<version>`" rather than just "pinned because of CVE-XXXX-XXXXX". That lets a
+later cleanup, by a human or an agent, verify directly whether the override is still needed instead
+of re-researching it from scratch.
 
 ## Shell Commands
 
