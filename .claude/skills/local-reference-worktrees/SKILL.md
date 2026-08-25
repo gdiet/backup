@@ -1,6 +1,6 @@
 ---
 name: local-reference-worktrees
-description: Set up or add to .local/ (git-excluded, this-machine-only) - a scratch area for read-only reference checkouts of this project's other branches or tags, kept as ordinary git worktrees so an old implementation (e.g. the rust branch, or a retired branch's tag like rust-1st-attempt) stays browsable on disk even after the main checkout moves elsewhere. Use to create .local/ on its own, or to add a worktree for a specific branch or tag into it (e.g. "check out branch X into .local as Y", or "check out tag X into .local as Y").
+description: Set up or add to .local/ (git-excluded, this-machine-only) - a scratch area for read-only reference checkouts of this project's other branches or tags, kept as ordinary git worktrees so an old implementation (e.g. main for Scala, or a retired branch's tag like rust-1st-attempt) stays browsable on disk even after the main checkout moves elsewhere. Use to create .local/ on its own, or to add a worktree for a specific branch or tag into it (e.g. "check out branch X into .local as Y", or "check out tag X into .local as Y").
 ---
 
 # Local Reference Worktrees

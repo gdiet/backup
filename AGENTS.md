@@ -8,33 +8,29 @@ DedupFS is a deduplicating backup application. This Rust implementation is the c
 
 ## Relationship To Other Implementations (Read Once, Reference Nowhere Else)
 
-**Reliable, git-level fact**: this repository's origin (`git@backup:gdiet/backup.git`) also holds - among others -
-`main` (the Scala implementation), `rust` (a previous Rust implementation), and
-`go`/`go2`/`go3` (successive Go implementation stages) as branches. This means `git push` / branch-deletion commands act on a remote
-shared with the other implementations.
+**Reliable, git-level fact**: this implementation's own history lives on the `rust` branch of this
+repository's origin (`git@backup:gdiet/backup.git`), which also holds - among others - `main` (the
+Scala implementation) and `go`/`go2`/`go3` (successive Go implementation stages) as branches. This
+means `git push` / branch-deletion commands act on a remote shared with the other implementations.
 
-**Not reliable, filesystem-level fact**: on some machines (some of) those other branches also happen to be checked out as sibling directories next to this one
-(`rust/`, `scala/`, `go/`), forming a combined workspace. That layout is **not guaranteed to exist** — check for it (e.g. `ls ..`) rather than
-assume it, and do not treat its absence as an error or something worth remarking on.
+To look at another implementation's code - as an agent or as the developer - use the
+`local-reference-worktrees` skill to set up a read-only `.local/` checkout of it. Do not assume
+such a checkout already exists; `.local/` is machine-local and git-excluded, set up on demand
+rather than ambiently present.
 
-Where that workspace layout does exist, this section exists so an agent has that orientation once
-— it must not be repeated or re-litigated anywhere else in this repo: not in code comments, not in
-`README.md`, not in `requirements/`, not in `docs/design/`, not in commit messages. Documentation
-in this project describes this implementation as it is, forward-looking; it does not narrate how it
-differs from or improves on prior implementations.
+This section exists so an agent has that orientation once - it must not be repeated or
+re-litigated anywhere else in this repo: not in code comments, not in `README.md`, not in
+`requirements/`, not in `docs/design/`, not in commit messages. Documentation in this project
+describes this implementation as it is, forward-looking; it does not narrate how it differs from
+or improves on prior implementations.
 
-- `rust/`, where present, is a separate, independently maintained project, not something this
-  repository extends or formally supersedes. Do not reference it for rationale ("unlike rust/,
-  we..."). If you genuinely need prior-art orientation (e.g. "has anyone solved this kind of
-  problem before"), that is a one-off research question to raise with the developer, not something
-  to embed in this repo's documentation.
-- `go/`, where present, never reached an official status and is even less relevant here than
-  `rust/`. Essentially never reference it; if a comparison is ever truly needed (e.g. a performance
-  figure), keep it as rare and narrow as the equivalent rule in `rust/AGENTS.md`.
+- The `go`/`go2`/`go3` implementation stages never reached an official status and are essentially
+  never relevant here. Essentially never reference them; if a comparison is ever truly needed (e.g.
+  a performance figure), keep it as rare and narrow as possible.
 
 ## This Is A Rewrite, Not A Port
 
-Existing design and behavior in `scala/` or `rust/` — architecture, storage layout, code
+Existing design and behavior in the Scala implementation — architecture, storage layout, code
 structure, tooling, requirements, anything — is raw material for understanding what problem this
 software solves, not a specification to carry forward by default. When a design question comes
 up, actively ask whether the answer a predecessor happened to land on is still the right one here,
@@ -48,7 +44,7 @@ Everything about *how* that gets delivered is open to reconsideration.
 
 ## Successor Status And Migration
 
-This Rust implementation is the official successor to the Scala implementation (`scala/`). This
+This Rust implementation is the official successor to the Scala implementation. This
 carries two concrete obligations, tracked as first-class deliverables rather than incidental notes:
 
 - **Migration path**: `migration/from-scala.md` documents how an existing Scala-DedupFS repository
@@ -61,8 +57,8 @@ carries two concrete obligations, tracked as first-class deliverables rather tha
   missing features.
 
 Both files describe the Scala relationship on their own terms (it is their explicit purpose) — this
-is not covered by the "reference nowhere else" rule above, which is specifically about `rust/` and
-`go/`.
+is not covered by the "reference nowhere else" rule above, which is specifically about the
+`go`/`go2`/`go3` implementation stages.
 
 ## Documentation Philosophy
 
@@ -74,8 +70,9 @@ that way, not the history of how it got there. Concretely:
 - It is fine, and often useful, to note a rejected alternative inline to save the next reader from
   re-treading it: "an alternative approach of doing X was considered and rejected because Y."
   That is a forward-looking safeguard, not a change narrative.
-- This applies regardless of whether the rejected alternative happens to be what `rust/`, `scala/`,
-  or `go/` did — phrase it about the approach itself, not about which prior implementation used it.
+- This applies regardless of whether the rejected alternative happens to be what the Scala or Go
+  implementations did — phrase it about the approach itself, not about which prior implementation
+  used it.
 - Write in formal, contraction-free prose ("does not", not "doesn't") throughout — this applies to
   every document in this repo, `AGENTS.md` included, not only user-facing or specification-style
   documents.
