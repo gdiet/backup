@@ -2,7 +2,7 @@
 
 ## DESIGN-MOUNT-005: Case-sensitive storage, with a Windows-only case-insensitive lookup fallback
 
-Status: decided
+Status: implemented
 
 `tree_entries` name comparison (REQ-MOUNT-010 in
 [`../../requirements/functional/mount.md`](../../requirements/functional/mount.md)) stays
@@ -10,18 +10,20 @@ case-sensitive at the storage level on every platform - no schema change, no `CO
 column or its unique index, identical behavior to what the schema already does today. A
 Windows-specific fallback sits on top of this, entirely in application code, not in the schema:
 every place `crates/db/src/tree.rs` needs to answer "does this name already exist under this
-parent" (`find_child_id`, used by lookup, by `mkdir`/`create`'s collision pre-check, and by
-`rename`'s target-existence check) tries an exact, case-sensitive match first - the existing
-indexed path, unchanged - and only on a miss, under a Windows build, fetches the parent's active
-children and compares them case-insensitively in Rust. If more than one still matches, the
-highest-`id` (most recently created) entry wins.
+parent" (`find_child_id`, used by lookup, by `mkdir`'s collision pre-check, and by `rename`'s
+target-existence check) tries an exact, case-sensitive match first - the existing indexed path,
+unchanged - and only on a miss, under a Windows build (`find_child_id_case_insensitive`, dispatched
+via a `cfg!(windows)` runtime check kept deliberately un-cfg-gated itself so its logic stays
+testable on every platform), fetches the parent's active children and compares them
+case-insensitively in Rust (`case_insensitive_match`/`fold_key`). If more than one still matches,
+the highest-`id` (most recently created) entry wins.
 
 A rename whose fallback match resolves to the entry being renamed itself (not a different one) is
 not a collision: the operation succeeds and updates the stored spelling in place, matching e.g.
-renaming `install.txt` to `Install.txt` in Explorer on real NTFS. Implementing this needs an
-explicit identity check (compare the fallback match's `id` against the source entry's `id`), not
-just "was a match found" - conflating the two would make this case, and REQ-MOUNT-009's plain
-same-path no-op case, indistinguishable from a real collision.
+renaming `install.txt` to `Install.txt` in Explorer on real NTFS. This needs an explicit identity
+check (the fallback match's `id` compared against the source entry's `id`), not just "was a match
+found" - conflating the two would make this case, and REQ-MOUNT-009's plain same-path no-op case,
+indistinguishable from a real collision.
 
 Because collision detection is reached through the same helper as lookup, `mkdir`/`create`/
 `rename` running on a Windows build of `dfs` cannot itself introduce a case-only-differing pair -
@@ -79,14 +81,14 @@ what the schema itself defines as "equal".
 
 ### Known limitations
 
-- The case fold itself (once implemented) uses Rust's `str::to_uppercase()`/`to_lowercase()` - full
-  Unicode case mapping, locale-independent (deterministic regardless of the running system's
-  locale, which is a wanted property, not just a side effect). It is not guaranteed to match NTFS's
-  own internal per-codepoint upcase table exactly in every corner case - full case mapping can
-  change a string's length (e.g. German `ß` → `SS`), which a simpler per-character table may not
-  do the same way. Spot-check the known Unicode `SpecialCasing` exceptions (`ß`, Turkish `İ`/`ı`,
-  Greek final sigma) against real WinFSP (`julius-winfsp-ssh` skill) once implemented, rather than
-  trusting the Unicode data alone.
+- The case fold itself (`fold_key`) uses Rust's `str::to_uppercase()` - full Unicode case mapping,
+  locale-independent (deterministic regardless of the running system's locale, which is a wanted
+  property, not just a side effect). It is not guaranteed to match NTFS's own internal
+  per-codepoint upcase table exactly in every corner case - full case mapping can change a
+  string's length (e.g. German `ß` → `SS`), which a simpler per-character table may not do the
+  same way. Not yet spot-checked against real WinFSP for the known Unicode `SpecialCasing`
+  exceptions (`ß`, Turkish `İ`/`ı`, Greek final sigma) - do that (`julius-winfsp-ssh` skill) rather
+  than trusting the Unicode data alone.
 - Unicode normalization (NFC vs. NFD - e.g. `é` as one codepoint versus `e` plus a combining
   accent) is a separate, unrelated concern this decision does not address.
 
@@ -95,13 +97,11 @@ becomes measurably slow on a Windows build - see the persisted-fold-column alter
 and `developer-todos/performance-baselines-tree-and-content-operations.md` for the broader,
 currently unanswered question of what "large enough to matter" actually is on real hardware.
 
-## Not yet implemented
-
-- The Windows-gated fallback-plus-tiebreak in `find_child_id` (`crates/db/src/tree.rs`).
-- The self-rename-by-identity special case in `rename` (compare the fallback match's `id` against
-  the entry being renamed, not just whether a match was found).
-- Regression tests: ASCII fallback lookup and tiebreak; the `install.txt` → `Install.txt`
-  self-rename case; `mkdir`/`create` refusing a case-only collision under a Windows build; the
-  known Unicode-fold limitation above, spot-checked against real WinFSP.
-- `crates/db/src/tree.rs`'s module doc comment, which currently describes case-sensitivity as an
-  open, undecided question rather than this decision.
+Verification split by what a Linux development machine can actually exercise: the fold/tiebreak
+logic and the SQLite query behind it are covered by ordinary, always-compiled unit tests
+(`crates/db/src/tree.rs`'s `tree::tests` module - `case_insensitive_match_*`,
+`find_child_id_case_insensitive_*`), since neither is itself `#[cfg(windows)]`-gated. The full
+stack through `Repository::mkdir`/`rename` is covered by `#[cfg(windows)]`-gated tests in the same
+module, compiled and checked only on a Windows build (the Docker cross-compile check, and real
+WinFSP via the `julius-winfsp-ssh` skill) - not yet run against real WinFSP, only against a
+same-process SQLite connection on a cross-compiled binary.

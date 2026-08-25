@@ -1,5 +1,5 @@
 //! Directory-tree operations against `tree_entries` - REQ-TREE-001/002/004/005/008,
-//! REQ-MOUNT-002/003/009. Directories only for now: `kind` is always [`EntryKind::Dir`] in
+//! REQ-MOUNT-002/003/009/010. Directories only for now: `kind` is always [`EntryKind::Dir`] in
 //! practice today, since nothing yet creates a file entry (REQ-STORAGE-007's byte store does not
 //! exist yet) - the rename logic below still handles a file target correctly regardless, since
 //! REQ-MOUNT-009 already specifies that case and the cost of also handling it now is small.
@@ -7,10 +7,14 @@
 //! `pub(crate)` only: never part of `db`'s public API directly (DESIGN-METADATA-006) - reached
 //! exclusively through [`crate::Repository`]'s own methods, which own connection access.
 //!
-//! Name comparison is whatever SQLite's default `TEXT` comparison does - case-sensitive, byte-
-//! exact - which is not a deliberate decision here: tree namespace case-sensitivity is an open
-//! question (see "Tree namespace case-sensitivity" in `requirements/open-questions.md`), and this
-//! is simply what falls out of not having decided otherwise yet.
+//! Name comparison is case-sensitive at the storage level on every platform (REQ-MOUNT-010 in
+//! `requirements/functional/mount.md`) - [`find_child_id`] additionally falls back to a
+//! case-insensitive match (DESIGN-MOUNT-005 in `docs/design/tree-namespace-case-sensitivity.md`)
+//! on a Windows build's exact-match miss. Every caller that needs to know whether a name already
+//! exists goes through that one function - plain lookup ([`resolve_path`]), [`mkdir`]'s collision
+//! pre-check, and [`rename`]'s target-existence check - so `create`/`mkdir`/`rename` running on a
+//! Windows build cannot itself introduce a case-only-differing pair, while one already present
+//! (e.g. written from Linux) stays representable and reachable.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -65,13 +69,57 @@ fn require_dir(conn: &Connection, id: i64) -> Result<Entry, Error> {
 }
 
 fn find_child_id(conn: &Connection, parent_id: i64, name: &str) -> Result<Option<i64>, Error> {
-    Ok(conn
+    let exact: Option<i64> = conn
         .query_row(
             "SELECT id FROM tree_entries WHERE parent_id = ?1 AND name = ?2 AND deleted_at IS NULL",
             params![parent_id, name],
             |row| row.get(0),
         )
-        .optional()?)
+        .optional()?;
+    if exact.is_some() {
+        return Ok(exact);
+    }
+    if !cfg!(windows) {
+        return Ok(None);
+    }
+    find_child_id_case_insensitive(conn, parent_id, name)
+}
+
+/// DESIGN-MOUNT-005's Unicode case fold for the lookup fallback below - Rust's full case mapping,
+/// locale-independent by construction (deterministic regardless of the running system's locale).
+/// Not guaranteed to match NTFS's own per-codepoint upcase table in every corner case (e.g. German
+/// `ß`, whose uppercase form changes length) - see that design doc's "Known limitations".
+fn fold_key(name: &str) -> String {
+    name.to_uppercase()
+}
+
+/// Among `candidates`, the highest-`id` (most recently created) entry whose name
+/// case-insensitively equals `target`, if any - DESIGN-MOUNT-005's deterministic tiebreak.
+fn case_insensitive_match(candidates: &[(i64, String)], target: &str) -> Option<i64> {
+    let target_key = fold_key(target);
+    candidates
+        .iter()
+        .filter(|(_, name)| fold_key(name) == target_key)
+        .map(|(id, _)| *id)
+        .max()
+}
+
+/// [`find_child_id`]'s Windows-only fallback body, factored out and left unconditionally compiled
+/// (not itself `#[cfg(windows)]`) so its actual query-and-match logic can be exercised by tests on
+/// any platform, even though [`find_child_id`] only ever calls it on a real Windows build.
+fn find_child_id_case_insensitive(
+    conn: &Connection,
+    parent_id: i64,
+    name: &str,
+) -> Result<Option<i64>, Error> {
+    let mut stmt = conn.prepare(
+        "SELECT id, name FROM tree_entries \
+         WHERE parent_id = ?1 AND deleted_at IS NULL AND id != 0",
+    )?;
+    let candidates: Vec<(i64, String)> = stmt
+        .query_map(params![parent_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    Ok(case_insensitive_match(&candidates, name))
 }
 
 fn touch(conn: &Connection, id: i64, time_millis: i64) -> Result<(), Error> {
@@ -125,6 +173,13 @@ pub(crate) fn mkdir(
     time_millis: i64,
 ) -> Result<i64, Error> {
     require_dir(conn, parent_id)?;
+
+    if find_child_id(conn, parent_id, name)?.is_some() {
+        return Err(Error::EntryAlreadyExists {
+            parent_id,
+            name: name.to_string(),
+        });
+    }
 
     let result = conn.execute(
         "INSERT INTO tree_entries (parent_id, name, time, kind) VALUES (?1, ?2, ?3, ?4)",
@@ -227,25 +282,31 @@ pub(crate) fn rename(
     }
 
     if let Some(target_id) = find_child_id(conn, new_parent_id, new_name)? {
-        if no_replace {
-            return Err(Error::EntryAlreadyExists {
-                parent_id: new_parent_id,
-                name: new_name.to_string(),
-            });
+        // DESIGN-MOUNT-005: under the Windows lookup fallback, the match found here can be the
+        // entry being renamed itself (a case-only respelling, e.g. install.txt -> Install.txt) -
+        // not a distinct existing target, so not a collision at all. Falls through to the plain
+        // rename below, which updates the stored spelling.
+        if target_id != old_id {
+            if no_replace {
+                return Err(Error::EntryAlreadyExists {
+                    parent_id: new_parent_id,
+                    name: new_name.to_string(),
+                });
+            }
+            let target_entry = get_by_id(conn, target_id)?.ok_or(Error::NoSuchEntry(target_id))?;
+            // REQ-MOUNT-009: a directory on either side of the collision is always refused, never
+            // silently replaced or merged - only a file replacing an existing file goes through.
+            if old_entry.kind == EntryKind::Dir || target_entry.kind == EntryKind::Dir {
+                return Err(Error::EntryAlreadyExists {
+                    parent_id: new_parent_id,
+                    name: new_name.to_string(),
+                });
+            }
+            conn.execute(
+                "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+                params![time_millis, target_id],
+            )?;
         }
-        let target_entry = get_by_id(conn, target_id)?.ok_or(Error::NoSuchEntry(target_id))?;
-        // REQ-MOUNT-009: a directory on either side of the collision is always refused, never
-        // silently replaced or merged - only a file replacing an existing file goes through.
-        if old_entry.kind == EntryKind::Dir || target_entry.kind == EntryKind::Dir {
-            return Err(Error::EntryAlreadyExists {
-                parent_id: new_parent_id,
-                name: new_name.to_string(),
-            });
-        }
-        conn.execute(
-            "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
-            params![time_millis, target_id],
-        )?;
     }
 
     conn.execute(
@@ -443,6 +504,175 @@ mod tests {
 
         repo.rename(0, "old.txt", 0, "new.txt", false, 200)
             .expect("replacing an existing file must succeed without no_replace");
+        let replaced = repo.resolve_path("/new.txt").unwrap().unwrap();
+        assert_eq!(replaced.id, 1);
+    }
+
+    // DESIGN-MOUNT-005: the fold/tiebreak logic itself, platform-independent - runs on every
+    // platform regardless of which one actually reaches it through `find_child_id`.
+
+    #[test]
+    fn case_insensitive_match_finds_an_ascii_case_variant() {
+        let candidates = vec![(1, "Foo".to_string())];
+        assert_eq!(super::case_insensitive_match(&candidates, "foo"), Some(1));
+    }
+
+    #[test]
+    fn case_insensitive_match_ignores_a_genuinely_different_name() {
+        let candidates = vec![(1, "bar".to_string())];
+        assert_eq!(super::case_insensitive_match(&candidates, "foo"), None);
+    }
+
+    #[test]
+    fn case_insensitive_match_picks_the_highest_id_among_several_matches() {
+        let candidates = vec![
+            (3, "foo".to_string()),
+            (7, "Foo".to_string()),
+            (5, "FOO".to_string()),
+        ];
+        assert_eq!(super::case_insensitive_match(&candidates, "foo"), Some(7));
+    }
+
+    #[test]
+    fn case_insensitive_match_folds_non_ascii_case_too() {
+        let candidates = vec![(1, "café".to_string())];
+        assert_eq!(super::case_insensitive_match(&candidates, "CAFÉ"), Some(1));
+    }
+
+    // DESIGN-MOUNT-005's query-and-match fallback, called directly (bypassing `find_child_id`'s
+    // `cfg!(windows)` dispatch) so the real SQLite-backed logic is exercised on every platform,
+    // not only a real Windows build.
+
+    #[test]
+    fn find_child_id_case_insensitive_finds_a_case_variant_sibling() {
+        let (repo, _dir) = repo();
+        let id = repo.mkdir(0, "foo", 100).unwrap();
+
+        let found = repo
+            .with_connection(|conn| super::find_child_id_case_insensitive(conn, 0, "FOO"))
+            .unwrap();
+        assert_eq!(found, Some(id));
+    }
+
+    #[test]
+    fn find_child_id_case_insensitive_returns_none_without_a_match() {
+        let (repo, _dir) = repo();
+        repo.mkdir(0, "foo", 100).unwrap();
+
+        let found = repo
+            .with_connection(|conn| super::find_child_id_case_insensitive(conn, 0, "bar"))
+            .unwrap();
+        assert_eq!(found, None);
+    }
+
+    #[test]
+    fn find_child_id_case_insensitive_ignores_a_deleted_entry() {
+        let (repo, _dir) = repo();
+        let id = repo.mkdir(0, "foo", 100).unwrap();
+        repo.rmdir(id, 200).unwrap();
+
+        let found = repo
+            .with_connection(|conn| super::find_child_id_case_insensitive(conn, 0, "FOO"))
+            .unwrap();
+        assert_eq!(found, None);
+    }
+
+    // The base, case-sensitive behavior (REQ-MOUNT-010) must stay exactly as it was outside the
+    // Windows fallback - this would fail if `find_child_id`'s `cfg!(windows)` dispatch above were
+    // ever accidentally widened to every platform.
+
+    #[test]
+    #[cfg(not(windows))]
+    fn mkdir_allows_a_case_only_variant_outside_windows() {
+        let (repo, _dir) = repo();
+        let foo = repo.mkdir(0, "foo", 100).unwrap();
+
+        let variant = repo
+            .mkdir(0, "Foo", 200)
+            .expect("a case-only variant must succeed outside the Windows lookup fallback");
+        assert_ne!(foo, variant);
+    }
+
+    // DESIGN-MOUNT-005's full Windows-only stack, through the public `Repository` API - cannot
+    // run on this development platform, but is compiled and checked wherever a Windows build is
+    // (the Docker cross-compile check, and real WinFSP via the `julius-winfsp-ssh` skill).
+
+    #[test]
+    #[cfg(windows)]
+    fn mkdir_refuses_a_case_only_variant_on_windows() {
+        let (repo, _dir) = repo();
+        repo.mkdir(0, "foo", 100).unwrap();
+
+        let err = repo.mkdir(0, "Foo", 200).unwrap_err();
+        assert!(matches!(err, Error::EntryAlreadyExists { .. }));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn rename_case_only_respelling_of_self_succeeds_and_updates_spelling() {
+        // REQ-MOUNT-010's own example (install.txt -> Install.txt), exercised via mkdir since no
+        // file-creation path exists yet (REQ-STORAGE-007) - the distinction does not matter here,
+        // the self-identity check runs before any file/directory-kind logic.
+        let (repo, _dir) = repo();
+        let id = repo.mkdir(0, "install.txt", 100).unwrap();
+
+        repo.rename(0, "install.txt", 0, "Install.txt", false, 200)
+            .expect("a case-only respelling of the same entry must succeed");
+
+        let entry = repo.resolve_path("/Install.txt").unwrap().unwrap();
+        assert_eq!(entry.id, id);
+        // Lookup stays case-insensitive regardless of which spelling is currently stored.
+        assert_eq!(repo.resolve_path("/install.txt").unwrap().unwrap().id, id);
+        let names: Vec<String> = repo
+            .list_children(0)
+            .unwrap()
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        assert_eq!(names, vec!["Install.txt".to_string()]);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn rename_refuses_a_different_entrys_case_variant_directory() {
+        let (repo, _dir) = repo();
+        repo.mkdir(0, "a", 100).unwrap();
+        repo.mkdir(0, "B", 100).unwrap();
+
+        // "b" does not exist exactly, but case-insensitively resolves to "B" - REQ-MOUNT-009's
+        // directory-collision refusal still applies to that resolved target.
+        let err = repo.rename(0, "a", 0, "b", false, 200).unwrap_err();
+        assert!(matches!(err, Error::EntryAlreadyExists { .. }));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn rename_replaces_a_different_entrys_case_variant_file() {
+        let (repo, _dir) = repo();
+        repo.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO contents (id, length, hash) \
+                 VALUES (2, 0, X'0102030405060708090A0B0C0D0E0F1011121314')",
+                (),
+            )?;
+            conn.execute(
+                "INSERT INTO tree_entries (id, parent_id, name, time, content_id, kind) \
+                 VALUES (1, 0, 'old.txt', 0, 2, 1)",
+                (),
+            )?;
+            conn.execute(
+                "INSERT INTO tree_entries (id, parent_id, name, time, content_id, kind) \
+                 VALUES (2, 0, 'New.txt', 0, 2, 1)",
+                (),
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        // "new.txt" does not exist exactly, but case-insensitively resolves to "New.txt" - the
+        // existing file-replaces-file rule (REQ-MOUNT-009) still applies to that resolved target.
+        repo.rename(0, "old.txt", 0, "new.txt", false, 200)
+            .expect("replacing an existing file's case variant must succeed");
         let replaced = repo.resolve_path("/new.txt").unwrap().unwrap();
         assert_eq!(replaced.id, 1);
     }
