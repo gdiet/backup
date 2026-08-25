@@ -168,7 +168,7 @@ absent on one platform; the `[time]` view achieves the same chronological-browsi
 on both, using only what the mount abstraction already exposes.
 
 ### REQ-MOUNT-009: Rename/move semantics matching the host platform's native filesystem
-Status: draft
+Status: agreed
 Importance: should
 
 A rename or move through the mount behaves the way NTFS does via Explorer on Windows, or ext4 does
@@ -195,3 +195,63 @@ via a Linux file manager or `mv`, rather than inventing bespoke semantics - conc
 Rationale: a mount's whole purpose is to let ordinary tools operate on the repository without
 knowing anything about it - behavior that would surprise a real NTFS or ext4 volume undermines that
 purpose specifically where it matters most (an interactive drag-and-drop or `mv` in a script).
+
+How "an existing name" is determined - case-sensitively, with a case-insensitive fallback on a
+Windows build of `dfs` - is REQ-MOUNT-010's own concern; the bullets above hold under either
+resolution.
+
+### REQ-MOUNT-010: Tree namespace comparison stays case-sensitive, with a Windows-only lookup fallback
+Status: agreed
+Importance: should
+
+A name comparison within one directory (`tree_entries` uniqueness, lookup, collision detection on
+`mkdir`/`create`/`rename`) is case-sensitive everywhere, matching ext4's own behavior and requiring
+no distinction in how the repository itself stores or compares names on any platform.
+
+On a Windows build of `dfs`, lookup and collision detection additionally fall back to a
+case-insensitive match whenever no exact match exists: an exact, case-sensitive match is always
+tried first; only if none exists is the (typically small) set of the parent's active entries
+compared case-insensitively, and if more than one still matches, the most recently created one
+(highest `id`) is used. This fallback is shared by every operation that needs to answer "does this
+name already exist here" - not only a plain lookup (`open`/`getattr`), but also `mkdir`/`create`'s
+own collision pre-check and `rename`'s target-existence check (REQ-MOUNT-009) - so `mkdir`/
+`create`/`rename` running on a Windows build cannot itself introduce a case-only-differing pair,
+even though the underlying comparison rule never becomes case-insensitive at the storage level.
+This applies uniformly to every `dfs` command that touches the tree, not only the mount - `mkdir`/
+`create`/`rename` are `crates/db/src/tree.rs` operations reached from `create-repo`, `mount`, and
+any future repository-writing command alike.
+
+ASCII letters must fold the same way Explorer/NTFS does - this is the load-bearing case, and the
+one an everyday application (opening `Readme.TXT` when the file is actually named `readme.txt`)
+actually depends on. Beyond ASCII, the fallback only needs to broadly match NTFS's own
+case-insensitive behavior; matching it exactly for every individual Unicode character (some are
+known to case-fold differently under different rules, e.g. German `ß`, Turkish `İ`/`ı`) is not
+required.
+
+A rename whose case-insensitive fallback match resolves to the very entry being renamed (not a
+different one) is not a collision: it succeeds and updates the entry's stored spelling in place -
+matching, for example, renaming `install.txt` to `Install.txt` in Explorer on real NTFS.
+
+Rationale: this repository can be populated from a real ext4 tree - which can legally (if usually
+only accidentally, via some other tool) contain entries differing only in case. A tree namespace
+that is case-insensitive at the storage level could not represent that state without either
+refusing to store it or silently colliding two distinct source entries - unacceptable data loss
+for a tool whose purpose is fidelity to the source. At the same time, a large amount of ordinary
+Windows software performs case-insensitive
+name lookups routinely (opening `Readme.TXT` when the file is actually named `readme.txt` succeeds
+on real NTFS without anyone noticing) - a mount that is case-sensitive with no exception at all
+would surprise everyday Windows use in exactly the way REQ-MOUNT-009's own "behave like the native
+platform expects" principle exists to avoid. Splitting the two - case-sensitive storage, with a
+Windows-build-only case-insensitive lookup layered on top - satisfies both without compromising
+either.
+
+Rejected: case-insensitive comparison at the storage level (a `NOCASE` or custom `COLLATE` on
+`tree_entries.name` itself, or its unique index). Besides the data-loss risk above, this repository
+is a portable SQLite file that can be opened by a Linux or a Windows build of `dfs` at different
+times - fixing the comparison rule into the schema would fix it identically for whichever build
+opens the file next, rather than letting it depend on which platform is actually accessing it.
+
+Rejected: case-sensitive everywhere, with no platform-specific exception at all. Simpler, and it is
+where the repository's storage layer stays regardless - but taken as the *only* rule, it reproduces
+the everyday Windows-lookup surprise described above. The chosen design keeps this as the base
+layer and adds the Windows-only lookup fallback on top, rather than discarding it.
