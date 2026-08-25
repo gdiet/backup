@@ -6,23 +6,43 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand};
 
+/// REQ-CLI-005's default when neither `--cdc-target-size-bits` nor `--whole-file` is given -
+/// content-defined chunking with an average chunk size a little above 1 MiB.
+const DEFAULT_CDC_TARGET_SIZE_BITS: u32 = 20;
+
 #[derive(Args)]
-#[group(required = true, multiple = false)]
+#[group(multiple = false)]
 struct ChunkingArgs {
     /// Use content-defined chunking with this target chunk size, in bits (6-30) - average chunk
-    /// size ends up slightly above 2^bits.
+    /// size ends up slightly above 2^bits. Defaults to 20 if neither this nor --whole-file is
+    /// given. This choice is fixed for the repository's lifetime once created - it cannot be
+    /// changed later.
     #[arg(long)]
     cdc_target_size_bits: Option<u32>,
-    /// Use whole-file chunking - no sub-file deduplication.
+    /// Use whole-file chunking - no sub-file deduplication. Fixed for the repository's lifetime
+    /// once created, same as --cdc-target-size-bits.
     #[arg(long)]
     whole_file: bool,
+}
+
+/// Resolves `ChunkingArgs` into the value `create_repo::run` expects: `None` for whole-file
+/// chunking, `Some(bits)` for content-defined chunking at an explicit or defaulted target size
+/// (REQ-CLI-005).
+fn resolve_cdc_target_size_bits(whole_file: bool, explicit_bits: Option<u32>) -> Option<u32> {
+    if whole_file {
+        None
+    } else {
+        Some(explicit_bits.unwrap_or(DEFAULT_CDC_TARGET_SIZE_BITS))
+    }
 }
 
 #[derive(Subcommand)]
 enum Commands {
     /// Creates a new, empty repository at PATH.
     CreateRepo {
-        path: PathBuf,
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        path: Option<PathBuf>,
         #[command(flatten)]
         chunking: ChunkingArgs,
     },
@@ -68,17 +88,46 @@ struct Cli {
 fn main() {
     match Cli::parse().command {
         Commands::CreateRepo { path, chunking } => {
-            let cdc_target_size_bits = if chunking.whole_file {
-                None
-            } else {
-                chunking.cdc_target_size_bits
-            };
-            create_repo::run(&path, cdc_target_size_bits);
+            let cdc_target_size_bits =
+                resolve_cdc_target_size_bits(chunking.whole_file, chunking.cdc_target_size_bits);
+            match path {
+                Some(path) => create_repo::run(&path, cdc_target_size_bits, false),
+                None => match create_repo::default_repo_path() {
+                    Ok(path) => create_repo::run(&path, cdc_target_size_bits, true),
+                    Err(err) => {
+                        eprintln!(
+                            "error: could not determine the default repository location: \
+                             {err}\nPass the path explicitly instead."
+                        );
+                        std::process::exit(1);
+                    }
+                },
+            }
         }
         Commands::Mount {
             repo,
             mountpoint,
             read_write,
         } => mount::run(&repo, &mountpoint, read_write),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_cdc_target_size_bits_defaults_to_20_when_neither_flag_given() {
+        assert_eq!(resolve_cdc_target_size_bits(false, None), Some(20));
+    }
+
+    #[test]
+    fn resolve_cdc_target_size_bits_respects_an_explicit_target_size() {
+        assert_eq!(resolve_cdc_target_size_bits(false, Some(24)), Some(24));
+    }
+
+    #[test]
+    fn resolve_cdc_target_size_bits_whole_file_overrides_to_none() {
+        assert_eq!(resolve_cdc_target_size_bits(true, None), None);
     }
 }

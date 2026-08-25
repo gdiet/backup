@@ -63,9 +63,12 @@ holds it, not to the executable's own location.
 
 ### Not writable, or not actually holding a repository
 
-Already REQ-CLI-006's own concern, not a gap this design leaves open: the command fails with a
-clear, actionable message (REQ-OPERABILITY-004) asking for an explicit `--repo` argument - never a
-raw permission error, and never a silent fallback to some other location.
+`create-repo` gives a clear, actionable message (REQ-OPERABILITY-004) pointing at passing the path
+explicitly instead of a raw filesystem error, specifically when a *defaulted* path turns out
+unusable - never a silent fallback to some other location, and never that same hint for a path the
+operator already gave explicitly (nothing more specific to tell them in that case). The equivalent
+"no repository found here" case for `mount` - REQ-CLI-006's other repository-needing command - is
+not implemented yet; see "Not yet implemented" below.
 
 ## Known limitations
 
@@ -76,12 +79,13 @@ a report ever comes in of the default resolving somewhere unexpected.
 
 ## Not yet implemented
 
-- `create-repo`'s `path` and `mount`'s `repo` becoming optional, defaulting per REQ-CLI-006 when
-  omitted.
-- `create-repo`'s chunking arguments becoming optional, defaulting to CDC at a 20-bit target size
-  per REQ-CLI-005 when neither `--cdc-target-size-bits` nor `--whole-file` is given.
-- `--cdc-target-size-bits`'s `--help` text stating the setting is fixed for the repository's
-  lifetime - a pre-existing gap noticed while working out this default, not caused by it, but
-  worth fixing at the same time.
-- The clear, actionable "path not writable" / "no repository found here, pass --repo explicitly"
-  error REQ-CLI-006 and REQ-OPERABILITY-004 call for.
+- `mount`'s `repo` becoming optional, defaulting per REQ-CLI-006 when omitted.
+- The clear, actionable "no repository found here, pass the path explicitly" error
+  REQ-OPERABILITY-004 calls for, for `mount`.
+
+`create-repo`'s share of both is done, covered by `crates/cli/src/create_repo.rs`'s own tests: the
+default-path resolution (`default_repo_path_from`) directly, against several `exe_path` shapes, via
+the same executable-path-as-a-plain-parameter split this file's own reasoning above relies on for
+testability; the defaulted and an explicit chunking choice each reported correctly on success; and
+the actionable-message wording, specifically for a defaulted (not an explicit) path that turns out
+unusable.
