@@ -15,6 +15,10 @@ avatars):
 Generated-By: <agent-name> (harness: <harness>; model: <model>; role: author|co-author)
 ```
 
+When `role: author`, also add a `Prompt-By: <name>` footer line (see "Attributing The Prompt"
+below) - not needed for `role: co-author`, where the git Author field already identifies the
+human.
+
 - `role: co-author` - a human genuinely reviewed *this specific change* before it was committed:
   read the diff/content, asked questions about it, requested revisions, or otherwise engaged with
   what was actually produced. `role: author` - the agent produced the change from a short or
@@ -58,19 +62,55 @@ committed" when the two differ.
 When `role: co-author` applies, leave the git Author identity alone (ambient/human) - only the
 trailer changes.
 
+## Attributing The Prompt (`role: author` Only)
+
+A `role: author` commit's git Author field points at the agent, not the developer - so it is the
+one case where nothing else in the commit records who actually gave the instruction behind it.
+Carry that as a `Prompt-By: <name>` footer line, `<name>` being the developer whose prompt drove
+the commit.
+
+Resolve `<name>` the same way as `harness` below - early, not at commit time, preferring
+derivation over asking:
+
+- Check `git config user.name` first - this is the identity the developer has actually chosen for
+  commits on this project, which is not necessarily the name they happen to introduce themselves
+  by in conversation (their given name, say, rather than the project handle they commit under) -
+  the git identity is the one that belongs in the trailer. Only trust it if it does not look like
+  an agent identity (e.g. "Claude", "Claude Sonnet 5") - an ephemeral remote session's own ambient
+  identity can itself read as an agent name (see "Verify Git Identity" below), which is exactly
+  the case this check must not be fooled by; if it does look like one, fall through to the next
+  step instead.
+- Otherwise, check this conversation: the developer may already have introduced themselves, signed
+  a message, or otherwise named themselves earlier in the session.
+- Otherwise, derive it from git history: `git log --format='%an <%ae>'` over recent commits on the
+  current branch (its ancestry already reaches back through any shared branch), filtering out
+  agent-authored ones (a `Generated-By` trailer, or an author name matching a known agent identity
+  such as "Claude Sonnet 5"/"Claude") - the remaining, most common author is the developer, under
+  their existing project identity (e.g. `gdiet` on this repository).
+- If neither is conclusive (a fresh repository with no prior human commits, several equally
+  plausible human authors, ...), ask once, early - fold it into the same early question as
+  `harness` below rather than a second interruption. Cache the answer for the rest of the session,
+  same as `harness`.
+
 **Ask early, not at commit time.** As soon as it looks like a commit will eventually be wanted in
-this session, resolve the harness once, before you are mid-commit - either by recognizing the
-remote-execution-environment case above, or, otherwise, by asking:
+this session, resolve the harness and (for a likely `role: author` commit) the prompt-attribution
+name together, once, before you are mid-commit - each either by recognizing it from context (the
+remote-execution-environment case for harness, the git-history derivation above for the name), or,
+for whichever one is not resolvable that way, by asking:
 
 > "Über welche Oberfläche läuft diese Session?" ("Which interface is this session running
 > through?") - options along the lines of: Terminal-CLI · Desktop-App · Web-App (claude.ai) ·
 > VSCode-Extension · JetBrains-Extension · (something else, free text)
+>
+> If the prompt-attribution name is not derivable either, ask that in the same turn: "Unter
+> welchem Namen sollen Prompts in `role: author`-Commits attribuiert werden?" ("What name should
+> `role: author` commits attribute prompts to?")
 
 List the IDE options separately, not bundled as "VSCode/JetBrains". The harness describes how this
 session actually executes - in a detected remote execution environment that is "Claude Code on the
 web" regardless of which client opened or is viewing it; otherwise it is that client itself. Do not
-cache the answer anywhere durable either way - just hold onto it for the rest of the current
-session once it is resolved.
+cache either answer anywhere durable - just hold onto them for the rest of the current session once
+resolved.
 
 ## Verify Git Identity Before Committing (Privacy)
 
