@@ -1,7 +1,7 @@
 //! `MountFilesystem` backed by a real, open `db::Repository` - REQ-MOUNT-001/002/003/009.
 //! Directory operations only for now: `create`/`write`/`truncate`/`unlink` stay at
-//! `mountfs`'s own default `EROFS` (no store crate exists yet to hold file content -
-//! REQ-STORAGE-007).
+//! `mountfs`'s own default `EROFS` - `crates/store`'s byte store exists (REQ-STORAGE-007) but is
+//! not wired in here yet.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 

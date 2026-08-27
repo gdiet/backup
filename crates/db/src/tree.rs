@@ -1,8 +1,9 @@
 //! Directory-tree operations against `tree_entries` - REQ-TREE-001/002/004/005/008,
 //! REQ-MOUNT-002/003/009/010. Directories only for now: `kind` is always [`EntryKind::Dir`] in
-//! practice today, since nothing yet creates a file entry (REQ-STORAGE-007's byte store does not
-//! exist yet) - the rename logic below still handles a file target correctly regardless, since
-//! REQ-MOUNT-009 already specifies that case and the cost of also handling it now is small.
+//! practice today, since nothing yet creates a file entry (REQ-STORAGE-007's byte store exists as
+//! its own crate, `crates/store`, but nothing here is wired up to it yet) - the rename logic
+//! below still handles a file target correctly regardless, since REQ-MOUNT-009 already specifies
+//! that case and the cost of also handling it now is small.
 //!
 //! `pub(crate)` only: never part of `db`'s public API directly (DESIGN-METADATA-006) - reached
 //! exclusively through [`crate::Repository`]'s own methods, which own connection access.
