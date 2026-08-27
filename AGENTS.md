@@ -199,8 +199,10 @@ Full suite:
 - `cargo test`
 - `cargo doc --no-deps` and confirm no warnings
 - Check whether `requirements/`, `migration/`, `docs/design/`, or `README.md` describe behavior
-  this change affects, and update them — stale docs actively mislead the next reader. Move a
-  design doc under `docs/design/implemented/` once the decision it describes has actually shipped.
+  this change affects, and update them — stale docs actively mislead the next reader. Update a
+  shipped decision's own `Status:` line to `implemented` (see
+  [`.claude/rules/design-docs.md`](.claude/rules/design-docs.md)); the file itself never moves
+  based on that alone.
 - Same check, but for plain code comments in the files you are touching (not just `///` doc
   comments, which `cargo doc` above already covers): a comment stating *why* code is shaped a
   certain way rarely goes stale on its own, but a comment stating a *current status* ("not
