@@ -135,6 +135,21 @@ in `crates/mountfs/`, the cross-platform FUSE/WinFSP mount crate - see
 which skills to load and when a Docker cross-compile check is enough before escalating to a real
 Windows/WinFSP environment.
 
+Concrete navigational facts about one specific environment - which tools are actually installed
+(a Rust toolchain? Docker? real `/dev/fuse` access? WinFSP?), where a sibling checkout of this
+project lives on the same machine's other OS side (e.g. a WSL clone next to a native Windows
+checkout), a machine's hostname or its documented alias (where one exists) - do not belong in any
+committed file. They are true of one environment's current setup, not of the project, and they
+drift independently of it (a checkout gets moved, a tool gets installed) with nothing to force a
+revisit the way a stale code comment at least risks a failing test. Keep them instead in
+`.local/agent-environment.md` - the same `.local/` "Relationship To Other Implementations" above
+uses for reference worktrees, excluded via this clone's own `.git/info/exclude` rather than a
+committed `.gitignore` (see the `local-reference-worktrees` skill's own note on why, and its
+idempotent snippet for setting that exclusion up if `.local/` is not already excluded here). Check
+`.local/agent-environment.md` at the start of work in an environment this session has not already
+characterized; add to it (a short, dated bullet is enough) whenever you work out something like
+this the hard way, so a later session on the same environment does not have to rediscover it.
+
 ## Agent TODOs (Cross-Environment Handoffs And Out-Of-Scope Findings)
 
 `agent-todos/` (see its own `README.md` for the exact file format) is where a task gets parked

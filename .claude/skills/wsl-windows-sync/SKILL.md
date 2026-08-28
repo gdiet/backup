@@ -1,30 +1,42 @@
 ---
 name: wsl-windows-sync
-description: Sync the Windows checkout of this repo (backup, rust/) with its WSL clone, run Linux-specific verification (real FUSE mount tests, cargo build/clippy/test as they'd actually run on Linux) via WSL, or run any single command that spans both a Windows-native shell (PowerShell/cmd) and a WSL/Linux shell (e.g. `wsl.exe ... -- bash -c '...'`, or reaching a WSL-built binary from PowerShell). Use whenever work touches both the Windows and WSL sides of this project, or hits shell-quoting/path oddities that only show up when a command crosses that boundary.
+description: Sync a Windows-native checkout of this repo with its WSL clone on the same machine, run Linux-specific verification (real FUSE mount tests, cargo build/clippy/test as they'd actually run on Linux) via WSL, or run any single command that spans both a Windows-native shell (PowerShell/cmd) and a WSL/Linux shell (e.g. `wsl.exe ... -- bash -c '...'`, or reaching a WSL-built binary from PowerShell). Use whenever work touches both the Windows and WSL sides of this project, or hits shell-quoting/path oddities that only show up when a command crosses that boundary.
 ---
 
 # Working Across Windows And WSL
 
-The primary checkout is on the Windows filesystem (this repository's location under
-`C:\...`). Linux-specific verification (real FUSE mount tests, `cargo build`/`clippy`/
-`test` as they'd actually run on Linux) needs WSL - but run it against the native WSL
-clone at `~/git/backup` (Linux `ext4`), not against the Windows checkout reached via
-`/mnt/c/...`. `cargo` through the `/mnt/c` DrvFs/9p bridge is noticeably slower and can
-surface filesystem quirks (permissions, locking, `/dev/fuse` access) that don't reflect
-real Linux behavior - the whole point of testing on WSL in the first place.
+On a machine with both a Windows-native checkout and a WSL clone of this repo, check
+`.local/agent-environment.md` first for this environment's actual current paths (which directory
+holds which checkout, whether one syncs from the other or both are worked in directly) - do not
+assume a specific path or layout; it is machine-specific and can change. If that file does not
+have them yet, locate both checkouts (e.g. search for a directory containing this repo's own
+`AGENTS.md`, or check a Windows shell's `%USERPROFILE%` for a likely dev-projects folder) and
+record what you found there before proceeding, so a later session on this same environment does
+not have to rediscover it.
 
-Keep the two in sync through the shared remote, never by copying files directly:
+Linux-specific verification (real FUSE mount tests, `cargo build`/`clippy`/`test` as they'd
+actually run on Linux) needs the WSL clone's own native filesystem, not the Windows checkout
+reached via `/mnt/c/...` - `cargo` through the `/mnt/c` DrvFs/9p bridge is noticeably slower and
+can surface filesystem quirks (permissions, locking, `/dev/fuse` access) that do not reflect real
+Linux behavior, the whole point of testing on WSL in the first place.
 
-- Make and commit all changes in the Windows checkout, same as always.
-- After pushing from the Windows checkout, sync `~/git/backup` with:
-  `git fetch origin <branch> && git merge --ff-only origin/<branch>`
-  (fast-forward only - if that fails, something unexpected changed `~/git/backup`
-  itself; investigate rather than force it).
-- Verify `git status --short` is clean in `~/git/backup` right after syncing, before
-  trusting any build/test output from it.
-- Never make or commit changes directly in `~/git/backup` - it exists only to verify
-  Linux behavior against what's already pushed, not as a second place to develop. If a
-  Linux-only fix is needed, make it in the Windows checkout, push, then sync as above.
+This is one instance of a general rule, not a repo-checkout-specific one: treat `/mnt/c/...` as
+read-mostly from a WSL shell - fine for fetching or referencing a file that only exists on the
+Windows side, not a place to do real work. Any scratch files, generated output, or actual command
+execution from within WSL belongs on WSL's own filesystem (e.g. under `~`), for the same DrvFs/9p
+reasons as the repo checkout above - this also holds for work that has nothing to do with this
+repository's build/test process, such as ad-hoc measurement scripts or temporary data. A build
+artifact that genuinely needs to reach the other side (e.g. a WSL-cross-built `.exe` a native
+Windows session has no toolchain to build itself) is the one deliberate exception - copy just that
+one file across, through the shared remote's `git fetch`/`push` where the artifact is source-
+controlled, or directly via `/mnt/c/...` when it is a gitignored build output.
+
+Keep the two checkouts' git history in sync through the shared remote (`git fetch`/`push`/`merge
+--ff-only`), never by copying source files directly. Which checkout is the actual working copy for
+a given piece of work - where changes actually get made and committed - is a per-environment
+convention, not a fixed rule this skill can state up front: check `.local/agent-environment.md` for
+what sessions on this environment have actually been doing, or ask the developer if it is not
+recorded there yet.
 
 ## Shell quoting across environments
 
