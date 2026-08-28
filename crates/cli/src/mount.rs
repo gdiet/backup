@@ -31,6 +31,20 @@ fn try_run(
         Err(err) => return Err(format!("error: {err}")),
     };
 
+    // Linux's FUSE backend refuses to mount onto a path that does not already exist, and only
+    // reports that via a raw line on stderr, not through this crate's `Err`. Catching it here
+    // first gives an actionable message instead (REQ-OPERABILITY-004) - Windows needs no such
+    // check, since WinFSP creates the mountpoint itself.
+    #[cfg(target_os = "linux")]
+    if !mountpoint.is_dir() {
+        return Err(format!(
+            "error: mountpoint {} does not exist. Create it first (e.g. `mkdir -p`) - unlike on \
+             Windows, this platform's FUSE backend does not create the mountpoint directory \
+             itself.",
+            mountpoint.display()
+        ));
+    }
+
     if let Err(err) = mountfs::preflight() {
         return Err(format!("error: {err}"));
     }
@@ -68,6 +82,29 @@ mod tests {
             message.contains("explicitly"),
             "expected a hint to pass the path explicitly, got: {message}"
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn try_run_gives_an_actionable_message_when_the_mountpoint_does_not_exist() {
+        let repo_path = std::env::temp_dir().join("dfs-mount-test-mountpoint-does-not-exist-repo");
+        let _ = std::fs::remove_dir_all(&repo_path);
+        db::init_repository(
+            &repo_path,
+            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+        )
+        .expect("repository setup for this test must succeed");
+        let mountpoint = std::env::temp_dir().join("dfs-mount-test-mountpoint-does-not-exist-mnt");
+        let _ = std::fs::remove_dir_all(&mountpoint);
+
+        let message = try_run(&repo_path, &mountpoint, false, false)
+            .expect_err("must fail - mountpoint does not exist");
+        assert!(
+            message.contains("does not exist"),
+            "expected an actionable does-not-exist message, got: {message}"
+        );
+
+        std::fs::remove_dir_all(&repo_path).expect("test cleanup must succeed");
     }
 
     #[test]

@@ -55,6 +55,9 @@ enum Commands {
         // positional ahead of a required one, and MOUNTPOINT below must stay required.
         #[arg(long)]
         repo: Option<PathBuf>,
+        /// Directory to mount at. On Linux, this directory must already exist - fuse3 refuses to
+        /// mount onto a path that does not. On Windows, it does not need to already exist - WinFSP
+        /// creates it itself and removes it again on unmount.
         mountpoint: PathBuf,
         /// Allow structural changes (currently: directories only - REQ-MOUNT-003) through the
         /// mount. Without this, the mount is read-only (REQ-MOUNT-002).
