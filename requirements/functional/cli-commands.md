@@ -89,9 +89,8 @@ explicit `--repo`/path argument (REQ-OPERABILITY-004 in
 error standing in as the only explanation.
 
 Rationale: DESIGN-CLI-003/004 in
-[`../../docs/design/distribution.md`](../../docs/design/distribution.md) record the full
-reasoning behind this specific default - in short, it only makes sense together with distributing
-the executable as a portable download the operator places wherever they keep the repository (often
-removable/external storage) rather than through a system installer, and existing precisely to
-satisfy REQ-OPERABILITY-003's general "reasonable defaults" principle for this specific,
-recurring parameter.
+[`../../docs/design/distribution.md`](../../docs/design/distribution.md) records the full
+reasoning - in short, this only makes sense together with distributing the executable as a
+portable download the operator places wherever they keep the repository (often removable/external
+storage), rather than through a system installer; it satisfies REQ-OPERABILITY-003's general
+"reasonable defaults" principle for this specific, recurring parameter.
