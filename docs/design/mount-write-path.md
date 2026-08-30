@@ -33,10 +33,11 @@ cross-stream parallelism, regardless of which write path (this mount, or a futur
 the streams arrive through.
 
 Not decided here: how a failure discovered only during this background processing - after
-`release()` has already returned success - gets surfaced to the user, and how "a mutating
-operation is in progress" (REQ-MAINTENANCE-004) is scoped once work outlives the FUSE call that
-started it. See [`../../requirements/open-questions.md`](../../requirements/open-questions.md)'s
-"Mount write-path failure handling and single-writer scope".
+`release()` has already returned success - gets surfaced to the user. See
+[`../../requirements/open-questions.md`](../../requirements/open-questions.md)'s "Mount write-path
+failure handling". How REQ-MAINTENANCE-004's single-writer scope relates to a background job
+outliving the FUSE call that started it turned out not to need an answer at this level at all - see
+DESIGN-MOUNT-008 below.
 
 ## DESIGN-MOUNT-007: Same-session readers see a write's in-progress state
 Status: decided
@@ -56,3 +57,22 @@ would otherwise have: the writer and this second reader share one process, so if
 crashes, both go away together - no reader survives to have observed content that, once the
 repository recovers, behaves as though it had never been written. A reader in a genuinely separate
 process could outlive exactly that crash, which is why it does not get the same treatment here.
+
+## DESIGN-MOUNT-008: A read-write mount holds the single-writer slot for its whole session
+Status: decided
+
+REQ-MAINTENANCE-004's "only one mutating operation runs against a repository at a time" is scoped,
+for a read-write mount, to the mount's entire session - from the moment it starts with write access
+until it unmounts and flushes - not to any individual FUSE call or any individual background
+chunking/storage-write job. As long as a read-write mount process is running, no other
+repository-mutating operation (another read-write mount, a directed import, reclaim, compaction,
+...) can start; a second one is refused (or waits, per REQ-MAINTENANCE-006 in
+[`../../requirements/functional/maintenance.md`](../../requirements/functional/maintenance.md)),
+same as REQ-MAINTENANCE-004 already says for any other pair of mutating operations.
+
+This is simpler than tracking DESIGN-MOUNT-006's background job pool's own queue/in-flight state
+for concurrency-control purposes: the read-write mount session itself already holds the single-writer
+slot for as long as it exists, so a reclaim/compaction request cannot race a background chunking job
+that outlived the FUSE call that spawned it (the concern DESIGN-MOUNT-006's non-blocking `release()`
+raised) - it stays refused (or waiting) for the whole time the mount is up, regardless of whether
+any specific write is actually active at that instant.

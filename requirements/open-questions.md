@@ -43,7 +43,7 @@ Is a graphical entry point (for mounting, or for routine operations) in scope, o
 CLI-and-mount-only for the foreseeable future? Affects how much of "Goals And Non-Goals" needs to
 say about interfaces at all.
 
-### Mount write-path failure handling and single-writer scope
+### Mount write-path failure handling
 Status: idea
 
 DESIGN-MOUNT-006 in [`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md)
@@ -67,15 +67,7 @@ affecting anything else in flight. Telling the two apart is also unsolved here -
 technical hook, but distinguishing a transient systemic blip (a network mount reconnecting on its
 own) from a genuinely permanent one is still open.
 
-One further sub-question, surfaced while discussing this but not yet answered (a related one, about
-which processes can see a not-yet-committed write, is settled - see DESIGN-MOUNT-007 in
-[`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md)):
-
-- **How "a mutating operation is in progress" is scoped for REQ-MAINTENANCE-004** once a write's
-  background chunking job can outlive the FUSE call that started it (DESIGN-MOUNT-006's
-  non-blocking `release()`). The developer's stated intent is that Reclaim/Compaction must not be
-  able to start while any such background job is still running, not only while a FUSE call is
-  syntactically in progress - meaning whatever tracks "a mutating operation is active" needs to be
-  a property of the background job pool itself (queue and in-flight count both empty), not of the
-  FUSE dispatch layer, which has no visibility into when a background job actually finishes. Not
-  yet confirmed as the final answer.
+Two related questions this entry originally also raised are now settled, not open anymore: which
+processes can see a not-yet-committed write (DESIGN-MOUNT-007), and how REQ-MAINTENANCE-004's
+single-writer scope relates to a background job outliving its FUSE call (DESIGN-MOUNT-008) - both
+in [`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md).
