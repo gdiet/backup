@@ -32,6 +32,13 @@ non-blocking handoff is also what lets multiple concurrent write streams reach R
 cross-stream parallelism, regardless of which write path (this mount, or a future directed import)
 the streams arrive through.
 
+Not yet decided: the exact backpressure mechanism once the shared pool's queue is full. One
+candidate worth evaluating: rather than an abrupt block/no-block threshold, scale a small delay
+into every `write()` call proportional to how backed up the queue already is (e.g. queued bytes ×
+queue depth) - backpressure that grows smoothly with load, applied at `write()` (already a
+synchronous FUSE call, unlike the deliberately non-blocking `release()` above) rather than as a
+hard stop once some fixed limit is hit. Not evaluated against alternatives yet.
+
 Not decided here: how a failure discovered only during this background processing - after
 `release()` has already returned success - gets surfaced to the user. See
 [`../../requirements/open-questions.md`](../../requirements/open-questions.md)'s "Mount write-path
