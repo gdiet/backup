@@ -12,13 +12,12 @@ result usable at the file level. Cost scaling with respect to deduplication is c
 by REQ-PERFORMANCE-001 in
 [`non-functional/performance.md`](../non-functional/performance.md).
 
-Rationale: a backup system's core promise is that stored data is still what it claims to be — that
-promise needs a way to actually check it, not just assume it. A thorough, hash-verifying check has
-to read every byte back from disk, which can take a long time over a large repository; that cost
-should be something chosen deliberately, not paid every time just to confirm data physically
-exists. Making thoroughness a depth on one capability keeps "is my data OK" a single question with
-an adjustable confidence level, rather than two separately named tools whose difference has to be
-explained.
+Rationale: a backup system's core promise is that stored data is still what it claims to be - that
+needs a way to actually check it, not just assume it. A thorough, hash-verifying check reads every
+byte back from disk, which can take a long time over a large repository; that cost should be chosen
+deliberately, not paid every time just to confirm data physically exists. Making thoroughness a
+depth on one capability keeps "is my data OK" a single question with an adjustable confidence
+level, rather than two separately named tools whose difference needs explaining.
 
 ### REQ-INTEGRITY-002: Remediate files affected by missing data
 Status: agreed
