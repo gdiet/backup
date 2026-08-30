@@ -43,34 +43,18 @@ Is a graphical entry point (for mounting, or for routine operations) in scope, o
 CLI-and-mount-only for the foreseeable future? Affects how much of "Goals And Non-Goals" needs to
 say about interfaces at all.
 
-### Mount write-path thread-pool architecture and failure handling
+### Mount write-path failure handling and single-writer scope
 Status: idea
 
-How the future mount write path (REQ-MOUNT-003's real content writes - `create`/`write`/
-`truncate`/`unlink` are still `mountfs`'s default `EROFS`, not yet implemented) schedules its work,
-and how it surfaces a failure only discovered after a file handle's `release()` has already
-returned.
-
-Three areas have genuinely different scheduling needs: the FUSE/WinFSP dispatch callbacks
-themselves (I/O-dispatch-latency-bound, thread count owned by libfuse/WinFSP, not this project);
-CDC chunking and hashing (CPU-bound, ideally sized to CPU core count); and writing the result into
-`store` (this project's own I/O, different characteristics again). The dispatch pool should stay
-separate from the other two, so slow chunking/hashing never ties up the limited pool libfuse/WinFSP
-manages for every other concurrent mount request. Whether chunking/hashing and the storage write
-need two separate pools of their own, rather than sharing one, is secondary - start shared unless a
-measured reason emerges to split them.
-
-Whether `release()` should block until that pool finishes before returning is a real trade-off, not
-a nicety: backing up many moderate-size files one after another is typically CPU-bound and
-sequential at the client (close one file, then open the next) - a blocking `release()` would
-prevent files from ever actually processing in parallel, however many workers the pool has,
-collapsing exactly the throughput a separate pool exists to provide. A non-blocking `release()`
-(handing work off and returning immediately, blocking only as ordinary backpressure once the pool's
-own queue is full) keeps that overlap, but means a failure discovered later, purely during
-background processing, can no longer be reported through `close()`'s return value - REQ-MOUNT-005's
+DESIGN-MOUNT-006 in [`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md)
+settles how the future mount write path schedules its work (a non-blocking `release()`, background
+chunking/hashing/storage-write). Left open by that decision: how a failure discovered only during
+that background processing - after `release()` has already returned success - gets surfaced to the
+user, since it can no longer be reported through `close()`'s own return value. REQ-MOUNT-005's
 "fail visibly" guarantee does not cover this at all today, since it is scoped to reads. Surfacing
 such a failure needs its own durable mechanism - the write-side counterpart of REQ-INTEGRITY-002's
-read-time remediation, for a write discovered incomplete or failed after the fact, not solved here.
+read-time remediation, for a write discovered incomplete or failed after the fact - not solved
+here.
 
 The systemic-vs-isolated distinction matters here too, for a related but separate reason: a
 systemic failure (disk full, the underlying storage disappearing) discovered during background
@@ -82,3 +66,23 @@ affecting anything else in flight. Telling the two apart is also unsolved here -
 (`StorageFull`, generic I/O errors) versus this project's own typed logic errors is the natural
 technical hook, but distinguishing a transient systemic blip (a network mount reconnecting on its
 own) from a genuinely permanent one is still open.
+
+Two further sub-questions, surfaced while discussing this but not yet answered:
+
+- **Cross-process visibility of an uncommitted write.** Once bytes are physically written to
+  `store` but before the corresponding `chunk_extents` row is committed in `db`, can a completely
+  separate process (not just a second read handle within the same mount session, which
+  REQ-TREE-006 in [`functional/tree.md`](functional/tree.md) already leaves to the implementation's
+  choice either way) read that not-yet-durable content? The developer's stated intent is yes - as
+  soon as it is physically written, it should be readable, uncommitted or not. Still open: if a
+  crash happens in that window, such a reader would have seen content that the repository, once
+  recovered, behaves as if had never been written at all - whether that is acceptable, or whether
+  cross-process visibility needs to wait for the `db` commit specifically, is not yet settled.
+- **How "a mutating operation is in progress" is scoped for REQ-MAINTENANCE-004** once a write's
+  background chunking job can outlive the FUSE call that started it (DESIGN-MOUNT-006's
+  non-blocking `release()`). The developer's stated intent is that Reclaim/Compaction must not be
+  able to start while any such background job is still running, not only while a FUSE call is
+  syntactically in progress - meaning whatever tracks "a mutating operation is active" needs to be
+  a property of the background job pool itself (queue and in-flight count both empty), not of the
+  FUSE dispatch layer, which has no visibility into when a background job actually finishes. Not
+  yet confirmed as the final answer.
