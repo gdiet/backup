@@ -1,0 +1,21 @@
+date: 2026-08-28
+machine: 3327
+environment: native-windows
+power_profile: custom-scheme-aeeed979-846d-4e51-bb46-e7b4f140eb43 + OVERLAY_SCHEME_MIN (best-power-efficiency / power saver)
+io_device: local-nvme-ssd
+dfs_build: 3022a2b1 (rust-performance-test-idea) - not applicable, native script exercises no DedupFS code
+operation: read-file-100b
+location: native
+tool: "[System.IO.File]::ReadAllBytes (PowerShell 5.1), result discarded via $null ="
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: ~47700
+content_size: 100
+result:
+  unit: ops_per_second
+  mean: 1562.0
+  range: [1144.4, 2076.0]
+  n: 5
+  discarded_warmup_run: false
+notes: warm-cache (dataset a few MB); wide 1.8x spread, upward drift - non-isolated machine, treat mean as approximate

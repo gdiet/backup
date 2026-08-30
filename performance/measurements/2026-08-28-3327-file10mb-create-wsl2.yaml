@@ -1,0 +1,21 @@
+date: 2026-08-28
+machine: 3327
+environment: wsl2
+power_profile: custom-scheme-aeeed979-846d-4e51-bb46-e7b4f140eb43 + OVERLAY_SCHEME_MIN (best-power-efficiency)
+io_device: local-ssd
+dfs_build: deadac0e (rust-performance-test-idea) - not applicable, native script exercises no DedupFS code
+operation: create-file-10mb
+location: native
+tool: bash redirection, content from perf-gen
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 5250
+content_size: 10485760
+result:
+  unit: ops_per_second
+  mean: 52.0
+  range: [47, 54]
+  n: 5
+  discarded_warmup_run: false
+notes: ~520 MB/s, write-volume-bound; ample free space, no window reduction needed

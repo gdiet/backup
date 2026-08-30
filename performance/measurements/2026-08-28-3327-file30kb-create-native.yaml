@@ -1,0 +1,21 @@
+date: 2026-08-28
+machine: 3327
+environment: native-windows
+power_profile: custom-scheme-aeeed979-846d-4e51-bb46-e7b4f140eb43 + OVERLAY_SCHEME_MIN (best-power-efficiency / power saver)
+io_device: local-nvme-ssd
+dfs_build: 3022a2b1 (rust-performance-test-idea) - not applicable, native script exercises no DedupFS code
+operation: create-file-30kb
+location: native
+tool: "[System.IO.File]::WriteAllBytes (PowerShell 5.1), template-and-poke content"
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: ~52000
+content_size: 30720
+result:
+  unit: ops_per_second
+  mean: 519.5
+  range: [490.1, 577.8]
+  n: 5
+  discarded_warmup_run: false
+notes: still in the same ~450-520 band as 0B/100B create - content write not yet dominant at 30 KB

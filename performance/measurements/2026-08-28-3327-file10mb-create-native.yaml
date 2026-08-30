@@ -1,0 +1,21 @@
+date: 2026-08-28
+machine: 3327
+environment: native-windows
+power_profile: custom-scheme-aeeed979-846d-4e51-bb46-e7b4f140eb43 + OVERLAY_SCHEME_MIN (best-power-efficiency / power saver)
+io_device: local-nvme-ssd
+dfs_build: 3022a2b1 (rust-performance-test-idea) - not applicable, native script exercises no DedupFS code
+operation: create-file-10mb
+location: native
+tool: "[System.IO.File]::WriteAllBytes (PowerShell 5.1), template-and-poke content"
+mode: sequential
+parallel_n:
+window_seconds: 5
+scale: ~2440
+content_size: 10485760
+result:
+  unit: ops_per_second
+  mean: 97.3
+  range: [86.0, 126.4]
+  n: 5
+  discarded_warmup_run: false
+notes: window reduced 20s->5s to bound disk footprint (~24 GB); ~970 MB/s, write-volume-bound; run 1 fastest (cold, empty tree)
