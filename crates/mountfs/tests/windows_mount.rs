@@ -2,6 +2,10 @@
 //! specifically so `CARGO_BIN_EXE_windows_mount_spike_helper` is available:
 //! Cargo only sets that for integration tests/benches, not a lib crate's
 //! own unit tests.
+//!
+//! Both tests need a real WinFSP install and are prefixed `real_mount_`, same convention as
+//! `mountfs::linux`'s equivalent libfuse3 tests - see `docs/development.md`'s "Tests" section for
+//! the `--skip real_mount` filter that excludes them in an environment known not to have WinFSP.
 
 #![cfg(target_os = "windows")]
 
@@ -63,7 +67,7 @@ fn wait_for_mount_ready(child: &mut Child, mount_path: &std::path::Path) -> Vec<
 /// is about the read-only op set, not shutdown, and a hard kill is the
 /// simpler way to end it once done.
 #[test]
-fn mounts_and_serves_the_full_read_only_op_set_via_real_winfsp() {
+fn real_mount_serves_the_full_read_only_op_set_via_winfsp() {
     let helper = env!("CARGO_BIN_EXE_windows_mount_spike_helper");
     let parent_dir = tempfile::tempdir().unwrap();
     let mount_path = parent_dir.path().join("mnt");
@@ -110,7 +114,7 @@ fn mounts_and_serves_the_full_read_only_op_set_via_real_winfsp() {
 /// `dispatch_mkdir`/`dispatch_create` here too, same as on a real
 /// read-write mount.
 #[test]
-fn dispatch_rejects_a_name_over_max_name_bytes_before_reaching_the_filesystem() {
+fn real_mount_dispatch_rejects_a_name_over_max_name_bytes_before_reaching_the_filesystem() {
     let helper = env!("CARGO_BIN_EXE_windows_mount_spike_helper");
     let parent_dir = tempfile::tempdir().unwrap();
     let mount_path = parent_dir.path().join("mnt");

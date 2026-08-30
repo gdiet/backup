@@ -116,6 +116,12 @@ terms, keeps the licensing story limited to WinFSP's own terms alone.
   `rename` sees `no_replace = false` on every call that does reach it. The caller-visible result is
   the same either way - a colliding move is rejected on both platforms - but an implementation
   cannot itself observe or react to a no-replace request on Windows.
+- The two backends disagree on whether `mountpoint` must already exist: `linux::mount` requires it
+  (libfuse does not create it, and fails outright if it is missing - see that function's own doc
+  comment), `windows::mount` does not (WinFSP creates it itself once the mount is live). A caller
+  targeting both platforms from one code path needs to account for this itself; found the hard way
+  while writing `performance/scripts/dfs-mount-dir-create.sh`'s libfuse3 counterpart to the
+  already-existing WinFSP script, which had assumed the WinFSP behavior held on Linux too.
 
 Revisit if: real-world use ever needs a mount mechanism outside the FUSE/WinFSP family (e.g. Samba
 or WebDAV, both left open by REQ-MOUNT-001) - that would not fit this trait's current shape without

@@ -392,6 +392,9 @@ pub fn preflight() -> io::Result<()> {
     sys::check_available()
 }
 
+/// `mountpoint` does not need to already exist - unlike `linux::mount`, WinFSP creates it itself
+/// once the mount is live (see `../../performance/scripts/dfs-mount-dir-create.ps1`'s own comment
+/// to that effect). Blocks until the mount is unmounted (Ctrl+C, or the process being killed).
 pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> io::Result<()> {
     let ops = sys::fuse_operations {
         getattr: Some(dispatch_getattr::<T>),

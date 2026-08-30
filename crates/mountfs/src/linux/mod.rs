@@ -369,6 +369,11 @@ pub fn preflight() -> io::Result<()> {
     sys::check_available()
 }
 
+/// `mountpoint` must already exist as a directory - unlike `windows::mount`, libfuse does not
+/// create it, and fails outright if it does not. libfuse prints its own diagnostic directly to
+/// stderr in that case ("bad mount point: No such file or directory") - this call's own `Err`
+/// only carries `fuse_main_real`'s exit code, not that message. Blocks until the mount is
+/// unmounted (Ctrl+C, `fusermount3 -u`, or the process being killed).
 pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> io::Result<()> {
     let ops = sys::fuse_operations {
         getattr: Some(dispatch_getattr::<T>),
@@ -435,6 +440,10 @@ pub fn mount<T: MountFilesystem>(fs: T, mountpoint: &Path, read_only: bool) -> i
     }
 }
 
+// Tests prefixed `real_mount_` need a real libfuse3 mount (`/dev/fuse` access) and are excluded
+// by `cargo test -- --skip real_mount` in an environment known not to have it - see
+// `docs/development.md`'s "Tests" section. They still run by default otherwise: the prefix is a
+// skip filter, not an `#[ignore]`.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -539,7 +548,7 @@ mod tests {
     /// not `fuser`), reads it back - including a nested directory - through
     /// ordinary `std::fs` calls, and unmounts with `fusermount3 -u`.
     #[test]
-    fn mounts_and_serves_the_full_read_only_op_set_via_real_libfuse3() {
+    fn real_mount_serves_the_full_read_only_op_set_via_libfuse3() {
         let mut files = BTreeMap::new();
         files.insert("/top.txt", b"top level content".as_slice());
         files.insert("/sub/nested.txt", b"hello from a subdirectory".as_slice());
@@ -624,7 +633,7 @@ mod tests {
     /// is exactly the signal that distinguishes "rejected for being too
     /// long" from "rejected for an unrelated reason".
     #[test]
-    fn dispatch_rejects_a_name_over_max_name_bytes_before_reaching_the_filesystem() {
+    fn real_mount_dispatch_rejects_a_name_over_max_name_bytes_before_reaching_the_filesystem() {
         let fs = TestFs {
             files: BTreeMap::new(),
         };

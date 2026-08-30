@@ -211,7 +211,9 @@ Full suite:
 - `cargo fmt` (or `cargo fmt --check` to verify without modifying)
 - `cargo clippy -- -D warnings` — treat all warnings as errors; silence a genuine false positive
   explicitly and locally with a comment explaining why, do not leave it unaddressed
-- `cargo test`
+- `cargo test` (in an environment known not to have `/dev/fuse`/WinFSP access, `cargo test
+  --workspace -- --skip real_mount` instead - see
+  [`crates/mountfs/CLAUDE.md`](crates/mountfs/CLAUDE.md))
 - `cargo doc --no-deps` and confirm no warnings
 - Check whether `requirements/`, `migration/`, `docs/design/`, or `README.md` describe behavior
   this change affects, and update them — stale docs actively mislead the next reader. Update a

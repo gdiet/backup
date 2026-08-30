@@ -85,6 +85,15 @@ cargo run --release -p cli -- --version
 cargo test
 ```
 
+By default this includes `mountfs`'s real-mount tests (`libfuse3` on Linux, WinFSP on Windows -
+whichever the target OS compiles), each named with a `real_mount_` prefix. In an environment known
+not to have `/dev/fuse`/WinFSP access (a sandboxed CI runner, a container without the FUSE device),
+skip them explicitly rather than treating their failure as a real regression:
+
+```bash
+cargo test --workspace -- --skip real_mount
+```
+
 ## Linter (Clippy)
 
 ```bash
@@ -109,6 +118,9 @@ cargo fmt --check # check without modifying (e.g. in CI)
 ```bash
 cargo build && cargo fmt --check && cargo clippy -- -D warnings && cargo test && cargo doc --no-deps
 ```
+
+In an environment known not to have `/dev/fuse`/WinFSP access, replace `cargo test` above with
+`cargo test --workspace -- --skip real_mount` (see "Tests" above).
 
 ## Other, manual checks
 
