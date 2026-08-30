@@ -73,12 +73,10 @@ Importance: should
 
 Stored content bytes are kept in a plain, simple on-disk layout rather than a proprietary or
 compressed opaque format, so that even in a worst-case metadata-loss scenario, there is still a
-realistic chance of recovering stored data by inspecting the storage directly. This chance is
-necessarily bounded by sub-file deduplication (REQ-STORAGE-002) itself: a file's content is split
-into chunks, and a single chunk's bytes are not guaranteed to be stored contiguously - without any
-metadata at all, the plain layout by itself does not reveal a specific file's chunk boundaries or
-their order, only that the bytes are stored unencrypted and uncompressed rather than hidden behind
-an opaque format.
+realistic chance of recovering stored data by inspecting the storage directly. Bounded by sub-file
+deduplication (REQ-STORAGE-002) itself: a file's chunks are not guaranteed to be stored
+contiguously, so without metadata the plain layout does not reveal a file's chunk boundaries or
+order - only that bytes are stored unencrypted and uncompressed, not hidden behind an opaque format.
 
 Rationale: for a backup system specifically, resilience against metadata corruption matters more
 than the storage-efficiency or convenience a more complex format might offer.
