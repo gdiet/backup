@@ -20,11 +20,10 @@ Importance: must
 The repository's metadata can be restored from a prior backup, recovering the repository to that
 backup's point in time. Restoring wholesale-replaces the metadata store, so it is a mutating
 operation like any other under REQ-MAINTENANCE-004's concurrent-access safety: no other mutating
-operation runs at the same time. REQ-MAINTENANCE-004's read-only-operations-stay-unblocked
-guarantee is not assumed to hold through the actual replace step specifically: a concurrent read
-may fail or see an inconsistent result while the store is being swapped. That is an accepted,
-documented limitation of this operation, not something this requirement commits to preventing -
-unless a specific implementation approach turns out to avoid it at no real cost.
+operation runs at the same time. REQ-MAINTENANCE-004's read-only-unblocked guarantee does not hold through the actual replace step: a
+concurrent read may fail or see an inconsistent result while the store is being swapped - an
+accepted, documented limitation, not something this requirement commits to preventing unless an
+implementation avoids it at no real cost.
 
 Rationale: a backup that cannot be restored provides no actual safety — this is the other half of
 REQ-MAINTENANCE-001.
