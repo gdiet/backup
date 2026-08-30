@@ -26,19 +26,18 @@ without requiring a restore from an older backup.
 Status: draft
 Importance: must
 
-A given tree location has at most one live entry at a time, but can have any number (0..N) of
-deleted entries that previously occupied it - each one an independent history entry (REQ-TREE-004),
-carrying its own timestamp of when it was deleted. A deleted entry's ancestors are resolved the same
-way as any entry's - by their current names and positions - so its path automatically reflects
-whatever has happened to those ancestors since (a rename, a move, or an ancestor being deleted
-itself); no separate mechanism records the path as it looked at deletion time. A deleted entry can
-be reactivated back into the live tree, or have its content restored directly to disk without first
-reactivating it in the repository.
+A given tree location has at most one live entry at a time, but any number (0..N) of deleted
+entries that previously occupied it - each an independent history entry (REQ-TREE-004), carrying
+its own deletion timestamp. A deleted entry's ancestors resolve the same way as any entry's (by
+current name/position), so its path reflects whatever has since happened to them (a rename, a
+move, an ancestor also deleted) - no separate mechanism records the path as it looked at deletion
+time. A deleted entry can be reactivated into the live tree, or have its content restored directly
+to disk without first reactivating it.
 
 How deleted entries and their history are displayed and addressed through a specific interface -
-including disambiguating same-location repeat deletions in a listing - is covered separately, not
-here: REQ-MOUNT-004 in [`mount.md`](mount.md) for the mount; a CLI-listing requirement for this is
-not yet specified. See REQ-TREE-008 for whether a directory delete cascades to its children.
+including disambiguating same-location repeat deletions in a listing - is covered separately:
+REQ-MOUNT-004 in [`mount.md`](mount.md) for the mount; a CLI-listing requirement is not yet
+specified. See REQ-TREE-008 for whether a directory delete cascades to its children.
 
 Rationale: recovering a deleted file should not require restoring the whole repository to an
 earlier point in time, and not every recovery should require touching the repository's live state
