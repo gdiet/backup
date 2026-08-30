@@ -103,6 +103,10 @@ locations outside the tree being backed up entirely; supporting them keeps a bac
 faithful to what was actually on disk, instead of silently skipping them, following them to
 whatever they currently point at, or otherwise altering them on the way in.
 
+Until implemented, encountering a symbolic link during ingest is treated the same as a per-item
+failure (REQ-INGEST-004 in [`ingest.md`](ingest.md)) - skipped with a warning, never silently
+dereferenced or duplicated into the backup, and never causing the whole run to fail.
+
 ### REQ-TREE-008: Directory delete through the mount requires an empty directory
 Status: agreed
 Importance: must
@@ -118,7 +122,3 @@ REQ-TREE-005's general goal of not surprising tools that already assume them - a
 subtree gone through the mount already gets that for free via any ordinary recursive tool (`rm -rf`
 deletes leaves before their parent directories); REQ-CLI-003 covers the same goal for a caller that
 does not want to mount at all.
-
-Until implemented, encountering a symbolic link during ingest is treated the same as a per-item
-failure (REQ-INGEST-004 in [`ingest.md`](ingest.md)) - skipped with a warning, never silently
-dereferenced or duplicated into the backup, and never causing the whole run to fail.
