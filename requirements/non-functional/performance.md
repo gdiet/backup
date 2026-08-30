@@ -23,20 +23,19 @@ Importance: must
 Content arriving through multiple concurrent write streams — whether a directed import (see
 REQ-INGEST-001 in [`../functional/ingest.md`](../functional/ingest.md)) processing many source
 files, or a read-write mount (see REQ-MOUNT-003 in
-[`../functional/mount.md`](../functional/mount.md)) with several files being written to it at
-once — can be chunked and hashed on multiple CPU cores concurrently; one stream's chunking work
-does not block another's. Chunking a single stream's content is not required to be internally
-parallelized; the parallelism this needs to support is across concurrently-active streams, not
-splitting one stream's chunking across multiple threads.
+[`../functional/mount.md`](../functional/mount.md)) with several files being written at once — can
+be chunked and hashed on multiple CPU cores concurrently; one stream's chunking does not block
+another's. A single stream's own chunking need not be internally parallelized - the parallelism
+required is across streams, not within one.
 
-Rationale: the workload this is built for is many files and large volumes of data in aggregate
-(see "Core" in [`../goals-non-goals.md`](../goals-non-goals.md)), not a few very large individual
-files or a single write stream — cross-stream parallelism delivers the available speedup for that
-shape of workload regardless of which write path the streams arrive through, without the added
-complexity and reduced dedup quality that splitting a single stream's chunking across threads
-would cost (forced, non-content-defined boundaries at the split points). Should a workload with
-very large individual files/streams on storage fast enough for single-thread chunking speed to
-become the bottleneck emerge, this would need revisiting — no such case is known today.
+Rationale: the workload this is built for is many files and large volumes of data in aggregate (see
+"Core" in [`../goals-non-goals.md`](../goals-non-goals.md)), not a few very large individual files
+or a single write stream — cross-stream parallelism delivers the available speedup for that shape
+of workload regardless of which write path the streams arrive through, without the complexity and
+reduced dedup quality splitting a single stream's chunking across threads would cost (forced,
+non-content-defined boundaries at the split points). Should a workload with very large individual
+streams on storage fast enough for single-thread chunking speed to bottleneck emerge, this would
+need revisiting — no such case is known today.
 
 ### REQ-PERFORMANCE-003: Reading stored content in smaller pieces does not cost proportionally more
 Status: agreed
