@@ -37,3 +37,22 @@ Not decided here: how a failure discovered only during this background processin
 operation is in progress" (REQ-MAINTENANCE-004) is scoped once work outlives the FUSE call that
 started it. See [`../../requirements/open-questions.md`](../../requirements/open-questions.md)'s
 "Mount write-path failure handling and single-writer scope".
+
+## DESIGN-MOUNT-007: Same-session readers see a write's in-progress state
+Status: decided
+
+Within the same mount session, a second read handle on a file being written sees content as soon
+as it is physically written to `store`, even before the corresponding `chunk_extents` row is
+committed in `db` - not only the file's last fully-committed state. REQ-TREE-006 in
+[`../../requirements/functional/tree.md`](../../requirements/functional/tree.md) already leaves
+this choice to the mount's own implementation ("either is acceptable"); this picks the more
+permissive of the two.
+
+Deliberately scoped to *this* mount session only - a completely separate process (a second `dfs
+mount`, a `dfs query` run concurrently) does not get this same-process visibility; REQ-TREE-006's
+cross-process guarantee (visible to a different process only once complete) applies there
+unchanged. This scoping is also what avoids a crash-consistency problem the cross-process case
+would otherwise have: the writer and this second reader share one process, so if that process
+crashes, both go away together - no reader survives to have observed content that, once the
+repository recovers, behaves as though it had never been written. A reader in a genuinely separate
+process could outlive exactly that crash, which is why it does not get the same treatment here.

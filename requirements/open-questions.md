@@ -67,17 +67,10 @@ affecting anything else in flight. Telling the two apart is also unsolved here -
 technical hook, but distinguishing a transient systemic blip (a network mount reconnecting on its
 own) from a genuinely permanent one is still open.
 
-Two further sub-questions, surfaced while discussing this but not yet answered:
+One further sub-question, surfaced while discussing this but not yet answered (a related one, about
+which processes can see a not-yet-committed write, is settled - see DESIGN-MOUNT-007 in
+[`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md)):
 
-- **Cross-process visibility of an uncommitted write.** Once bytes are physically written to
-  `store` but before the corresponding `chunk_extents` row is committed in `db`, can a completely
-  separate process (not just a second read handle within the same mount session, which
-  REQ-TREE-006 in [`functional/tree.md`](functional/tree.md) already leaves to the implementation's
-  choice either way) read that not-yet-durable content? The developer's stated intent is yes - as
-  soon as it is physically written, it should be readable, uncommitted or not. Still open: if a
-  crash happens in that window, such a reader would have seen content that the repository, once
-  recovered, behaves as if had never been written at all - whether that is acceptable, or whether
-  cross-process visibility needs to wait for the `db` commit specifically, is not yet settled.
 - **How "a mutating operation is in progress" is scoped for REQ-MAINTENANCE-004** once a write's
   background chunking job can outlive the FUSE call that started it (DESIGN-MOUNT-006's
   non-blocking `release()`). The developer's stated intent is that Reclaim/Compaction must not be
