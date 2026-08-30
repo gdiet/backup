@@ -1,0 +1,10 @@
+[package]
+name = "perf-gen"
+version.workspace = true
+edition = "2024"
+publish = false
+license.workspace = true
+
+[[bin]]
+name = "perf-gen"
+path = "src/main.rs"
