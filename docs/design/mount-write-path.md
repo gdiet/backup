@@ -43,8 +43,10 @@ DESIGN-MOUNT-008 below.
 Status: decided
 
 Within the same mount session, a second read handle on a file being written sees content as soon
-as it is physically written to `store`, even before the corresponding `chunk_extents` row is
-committed in `db` - not only the file's last fully-committed state. REQ-TREE-006 in
+as it lands in the mount's own write cache - ordinary POSIX same-process read-after-write
+behavior, the same immediacy buffered I/O on a real filesystem already gives two file descriptors
+on the same host - not gated on chunking, hashing, the `store` write, or the corresponding
+`chunk_extents` row being committed in `db`, any of which can still be pending. REQ-TREE-006 in
 [`../../requirements/functional/tree.md`](../../requirements/functional/tree.md) already leaves
 this choice to the mount's own implementation ("either is acceptable"); this picks the more
 permissive of the two.
