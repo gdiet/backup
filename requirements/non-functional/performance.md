@@ -97,7 +97,7 @@ closed, not while it is being written, so the next file's data can already be ar
 client into the mount's cache while the previous file's chunking/hashing is still running —
 sequential from the client's point of view, pipelined underneath.
 
-Rationale: an operator copying files sequentially onto a mount should not need to know or care that
-parallelism is what makes it fast — the speedup this requirement describes needs to be an
-architectural property of how the mount defers and pipelines this work, not something that only
-shows up when a client happens to write multiple files concurrently itself.
+Rationale: this speedup needs to be an architectural property of how the mount defers and pipelines
+work, not something that only shows up when a client happens to write multiple files concurrently
+itself — an operator copying files sequentially should not need to know or care that pipelining is
+what makes it fast.
