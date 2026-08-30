@@ -39,24 +39,33 @@ failure handling". How REQ-MAINTENANCE-004's single-writer scope relates to a ba
 outliving the FUSE call that started it turned out not to need an answer at this level at all - see
 DESIGN-MOUNT-008 below.
 
-## DESIGN-MOUNT-007: Same-session readers see a write's in-progress state
+## DESIGN-MOUNT-007: Same-session reads see a file's not-yet-persisted state
 Status: decided
 
-Within the same mount session, a second read handle on a file being written sees content as soon
-as it lands in the mount's own write cache - ordinary POSIX same-process read-after-write
-behavior, the same immediacy buffered I/O on a real filesystem already gives two file descriptors
-on the same host - not gated on chunking, hashing, the `store` write, or the corresponding
-`chunk_extents` row being committed in `db`, any of which can still be pending. REQ-TREE-006 in
+Within the same mount session, any read of a file whose content has been written but not yet
+durably committed sees that content - not only a second read handle already open while the write
+is happening, but also a handle opened fresh after `release()`, for as long as the corresponding
+background chunking/hashing/storage-write/`chunk_extents`-commit job (DESIGN-MOUNT-006) has not yet
+finished. This is ordinary POSIX same-process read-after-write behavior, the same immediacy
+buffered I/O on a real filesystem already gives two file descriptors on the same host, extended to
+cover the whole window a background persist job can still be in flight, not only the moment the
+client is actively writing. REQ-TREE-006 in
 [`../../requirements/functional/tree.md`](../../requirements/functional/tree.md) already leaves
-this choice to the mount's own implementation ("either is acceptable"); this picks the more
-permissive of the two.
+the same-session case to the mount's own implementation ("either is acceptable"); this picks the
+more permissive end of that range for the whole window, not just the actively-writing part of it.
+
+Keeping this correct means the mount looks up a file's not-yet-persisted state by file identity,
+not by open handle - a fresh `open()` on a file with a background job still running for it needs to
+find the same pending state a handle that stayed open throughout would have seen, falling back to
+the durably committed state (`chunk_extents` via `db`, bytes via `store`) only once nothing is
+still pending for that file.
 
 Deliberately scoped to *this* mount session only - a completely separate process (a second `dfs
 mount`, a `dfs query` run concurrently) does not get this same-process visibility; REQ-TREE-006's
 cross-process guarantee (visible to a different process only once complete) applies there
 unchanged. This scoping is also what avoids a crash-consistency problem the cross-process case
-would otherwise have: the writer and this second reader share one process, so if that process
-crashes, both go away together - no reader survives to have observed content that, once the
+would otherwise have: the writer and any same-session reader share one process, so if that process
+crashes, all of them go away together - no reader survives to have observed content that, once the
 repository recovers, behaves as though it had never been written. A reader in a genuinely separate
 process could outlive exactly that crash, which is why it does not get the same treatment here.
 
