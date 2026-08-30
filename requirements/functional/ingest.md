@@ -63,6 +63,15 @@ caller (script or tool) can tell the three possible outcomes of a run apart afte
 success, success with some items skipped as warnings, or abort on an error - without having to
 parse log output to do so.
 
+The distinction is which side fails. A *source*-read failure - the file being backed up cannot be
+read - is exactly the per-item, skip-and-continue case above. A *backend* failure - writing
+already-read content into the repository fails (the store write itself, not the source read) - is
+not: it triggers the third outcome instead, an immediate, controlled abort of the whole run, not a
+per-item skip.
+
 Rationale: a single unreadable file (a locked file, a permissions edge case) should not be able to
 prevent backing up everything else that is readable, but a caller automating ingest still needs a
-reliable way to notice that some items were silently skipped, not just a human reading the log.
+reliable way to notice that some items were silently skipped, not just a human reading the log. A
+backend failure gets the opposite treatment because it is not expected to be specific to the one
+item being processed when it was discovered - continuing to feed more items into a repository that
+just failed to accept a write risks repeating, not containing, the same failure.
