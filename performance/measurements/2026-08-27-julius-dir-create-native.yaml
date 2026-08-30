@@ -1,0 +1,20 @@
+date: 2026-08-27
+machine: julius
+environment: native-windows
+power_profile: balanced           # base scheme only; overlay not captured, developer reports it was best-performance at the time - see the .md's retroactive addendum
+io_device: local-ssd
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: mkdir
+location: native
+tool: New-Item -ItemType Directory (PowerShell)
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 82223                      # total directories created across the 5 kept runs
+content_size:
+result:
+  unit: ops_per_second
+  mean: 821.9
+  range: [763.4, 857.8]
+  n: 5
+  discarded_warmup_run: false

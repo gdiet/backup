@@ -1,0 +1,20 @@
+date: 2026-08-28
+machine: julius
+environment: wsl2
+power_profile: power-saver             # Balanced base scheme, OVERLAY_SCHEME_MIN overlay on the Windows host, WSL2 shares it
+io_device: local-ssd
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: read-file-30kb
+location: native
+tool: cat to /dev/null (WSL2 coreutils)
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 53194                      # total reads across the 5 kept runs, against a fixed 9,391-file set
+content_size: 30720
+result:
+  unit: ops_per_second
+  mean: 531.4
+  range: [502, 547]
+  n: 5
+  discarded_warmup_run: false

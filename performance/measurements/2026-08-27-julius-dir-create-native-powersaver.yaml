@@ -1,0 +1,20 @@
+date: 2026-08-27
+machine: julius
+environment: native-windows
+power_profile: power-saver             # overlay 961cc777-2547-4f9d-8174-7d86181b8a7a on top of the unchanged Balanced base scheme
+io_device: local-ssd
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: mkdir
+location: native
+tool: New-Item -ItemType Directory (PowerShell)
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 92937                      # total directories created across the 5 kept runs
+content_size:
+result:
+  unit: ops_per_second
+  mean: 929.1
+  range: [879.5, 959.8]
+  n: 5
+  discarded_warmup_run: false

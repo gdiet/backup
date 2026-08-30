@@ -1,0 +1,20 @@
+date: 2026-08-28
+machine: julius
+environment: native-windows
+power_profile: power-saver             # Balanced base scheme, OVERLAY_SCHEME_MIN overlay, confirmed via powercfg /query
+io_device: local-ssd
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: dir-lookup
+location: native
+tool: Test-Path (PowerShell)
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 100000                     # fixed lookup-tree size (directories), built once, not per-run
+content_size:
+result:
+  unit: ops_per_second
+  mean: 2145.5
+  range: [2095.6, 2186.7]
+  n: 5
+  discarded_warmup_run: false

@@ -1,0 +1,20 @@
+date: 2026-08-28
+machine: julius
+environment: native-windows
+power_profile: power-saver             # Balanced base scheme, OVERLAY_SCHEME_MIN overlay, confirmed via powercfg /query
+io_device: local-ssd
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: read-file-30kb
+location: native
+tool: ReadAllBytes (PowerShell)
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 376246                     # total reads across the 5 kept runs, against a fixed 20,970-file set
+content_size: 30720
+result:
+  unit: ops_per_second
+  mean: 3760.9
+  range: [3645.7, 3811.1]
+  n: 5
+  discarded_warmup_run: false

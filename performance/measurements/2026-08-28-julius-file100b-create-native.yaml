@@ -1,0 +1,20 @@
+date: 2026-08-28
+machine: julius
+environment: native-windows
+power_profile: power-saver             # Balanced base scheme, OVERLAY_SCHEME_MIN overlay, confirmed via powercfg /query
+io_device: local-ssd
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: create-file-100b
+location: native
+tool: WriteAllBytes (PowerShell)
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 24281                      # total files created across the 5 kept runs
+content_size: 100
+result:
+  unit: ops_per_second
+  mean: 242.6
+  range: [225.3, 275.5]
+  n: 5
+  discarded_warmup_run: false

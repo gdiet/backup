@@ -1,0 +1,20 @@
+date: 2026-08-28
+machine: julius
+environment: wsl2
+power_profile: power-saver             # Balanced base scheme, OVERLAY_SCHEME_MIN overlay on the Windows host, WSL2 shares it
+io_device: local-ssd
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: create-file-30kb
+location: native
+tool: bash redirection, content from perf-gen (WSL2)
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 9391                       # total files created across the 5 kept runs
+content_size: 30720
+result:
+  unit: ops_per_second
+  mean: 93.6
+  range: [91, 96]
+  n: 5
+  discarded_warmup_run: false

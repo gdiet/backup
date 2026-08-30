@@ -1,0 +1,20 @@
+date: 2026-08-27
+machine: julius
+environment: wsl2
+power_profile: balanced           # base scheme only; overlay not captured, developer reports it was best-performance at the time - see the .md's retroactive addendum
+io_device: local-ssd
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: create-file-0b
+location: native
+tool: touch (WSL2 coreutils)
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 66789                      # total files created across the 5 kept runs
+content_size: 0
+result:
+  unit: ops_per_second
+  mean: 667.4
+  range: [655, 672]
+  n: 5
+  discarded_warmup_run: false

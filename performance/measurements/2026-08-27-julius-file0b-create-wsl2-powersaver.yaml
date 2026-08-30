@@ -1,0 +1,20 @@
+date: 2026-08-27
+machine: julius
+environment: wsl2
+power_profile: power-saver             # overlay 961cc777-2547-4f9d-8174-7d86181b8a7a on the Windows host, WSL2 shares it
+io_device: local-ssd
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: create-file-0b
+location: native
+tool: touch (WSL2 coreutils)
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 56132                      # total files created across the 5 kept runs
+content_size: 0
+result:
+  unit: ops_per_second
+  mean: 560.8
+  range: [540, 600]
+  n: 5
+  discarded_warmup_run: false

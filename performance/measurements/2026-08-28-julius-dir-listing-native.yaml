@@ -1,0 +1,20 @@
+date: 2026-08-28
+machine: julius
+environment: native-windows
+power_profile: power-saver             # Balanced base scheme, OVERLAY_SCHEME_MIN overlay, confirmed via powercfg /query
+io_device: local-ssd
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: dir-listing
+location: native
+tool: Get-ChildItem (PowerShell)
+mode: sequential
+parallel_n:
+window_seconds: 20                # nominal; actual per-run elapsed 20.55-21.67s, see .md Notes
+scale: 50000                      # fixed listing-directory size (entries), built once, not per-run
+content_size:
+result:
+  unit: ops_per_second
+  mean: 0.51
+  range: [0.49, 0.52]
+  n: 5
+  discarded_warmup_run: false

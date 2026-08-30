@@ -1,0 +1,20 @@
+date: 2026-08-28
+machine: julius
+environment: native-windows
+power_profile: power-saver             # Balanced base scheme, OVERLAY_SCHEME_MIN overlay, confirmed via powercfg /query
+io_device: usb2-stick              # drive I:, NTFS, ~4 GB, ~8.7-10.5 MB/s measured write throughput
+dfs_build: n/a (native filesystem baseline, no DedupFS code exercised)
+operation: create-file-10mb
+location: native
+tool: WriteAllBytes (PowerShell)
+mode: sequential
+parallel_n:
+window_seconds: 20                # nominal; actual per-run elapsed 20.05-21.07s, see .md Notes
+scale: 108                        # total files created across the 5 kept runs (~1.08 GB)
+content_size: 10485760
+result:
+  unit: ops_per_second
+  mean: 1.05
+  range: [0.95, 1.12]
+  n: 5
+  discarded_warmup_run: false
