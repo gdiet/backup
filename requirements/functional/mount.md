@@ -119,46 +119,41 @@ that risk.
 Status: agreed
 Importance: should
 
-Agreement here carries the same conditioning REQ-MOUNT-004 states for this whole area: a working,
-wanted design, not yet confirmed behavior - specifically, that a real Explorer/Thunar/Nautilus
-listing actually displays and sorts the suffixed/prefixed names as assumed here has not yet been
-verified.
+Agreed carries the same conditioning as REQ-MOUNT-004: a wanted design, not yet confirmed - that a
+real Explorer/Thunar/Nautilus listing actually displays and sorts the suffixed/prefixed names as
+assumed here is unverified.
 
 Within the view, an entry whose bare name collides with another deleted entry at the same location
 is shown with a deletion-timestamp suffix before its extension (`photo [2026-08-22_140414].jpg`;
-`.env [2026-08-22_140414]` for a dot-file, at the end, since it has no splittable extension in the
-usual sense) - an unambiguous name is shown as-is. If the timestamp-suffixed name would not fit
-`mountfs::MAX_NAME_BYTES`, the shorter id-only form (`photo [42].jpg`) is used instead; if even
-that does not fit, the base name is truncated to make room, but the id suffix is always kept
-intact, since it - unlike a truncated or timestamp-only name - is the part of the display name
-meant to be unique (`tree_entries.id`, which can realistically reach 8-9 decimal digits over a
-long-lived, actively-used repository, not just the one or two digits a short example suggests).
+`.env [2026-08-22_140414]` for a dot-file, since it has no splittable extension) - an unambiguous
+name is shown as-is. If the timestamp-suffixed name would not fit `mountfs::MAX_NAME_BYTES`, the
+shorter id-only form (`photo [42].jpg`) is used instead; if even that does not fit, the base name is
+truncated, but the id suffix is always kept intact - it, unlike a truncated or timestamp-only name,
+is the part meant to be unique (`tree_entries.id`, which can realistically reach 8-9 digits, not
+just the one or two a short example suggests).
 
 The view is additionally reachable at a `[time]` path directly under it, listing the same entries
-with the timestamp always prefixed to the display name instead - a second presentation of the same
-underlying data, not a different one. `st_mtime` for any entry is always its own real, stored
-modification time, never the deletion time, in either presentation.
+with the timestamp always prefixed instead - a second presentation of the same data, not a
+different one. `st_mtime` for any entry is always its own real, stored modification time, never the
+deletion time, in either presentation.
 
-Rationale: a deletion timestamp is more informative at a glance than an opaque id, and sorting a
-plain listing by name only gives a meaningful chronological order when the timestamp is both always
-present and at the start of the name - which conflicts with keeping an unambiguous entry's
-original, recognizable name intact. Offering both - suffix-only-when-needed for recognizability,
-always-prefixed under `[time]` for chronological browsing - serves both needs without compromising
-either, rather than picking one purpose for a single view to serve badly.
+Rationale: a deletion timestamp is more informative at a glance than an opaque id, and sorting by
+name only gives a meaningful chronological order when the timestamp is always present and at the
+start - which conflicts with keeping an unambiguous entry's original name intact. Offering both -
+suffix-only-when-needed for recognizability, always-prefixed under `[time]` for chronological
+browsing - serves both needs rather than picking one purpose for a single view to serve badly.
 
-Rejected: repurposing `st_mtime` to show deletion time while inside the view. This would silently
-contradict REQ-TREE-005's own "mtime is genuine content-modification time" guarantee for exactly
-the entries being browsed, lose the real modification time as a visible fact (a user checking "when
-did I actually last edit this" would get the wrong answer), and require an implementation to keep
-a getattr-time-only override cleanly separate from the stored value, so that recovering an entry
-does not resurrect it with a corrupted mtime.
+Rejected: repurposing `st_mtime` to show deletion time inside the view. This would contradict
+REQ-TREE-005's "mtime is genuine content-modification time" guarantee for exactly the entries being
+browsed, lose the real modification time as a visible fact, and require keeping a getattr-time-only
+override cleanly separate from the stored value, so recovering an entry does not resurrect it with
+a corrupted mtime.
 
-Rejected: extending `mountfs::Attr` with a new, dedicated timestamp field (e.g. surfaced as
-Windows's native "Date created" column) to carry deletion time without touching the display name or
-`st_mtime` at all. Workable on Windows, but Linux lacks an equally common, easily-enabled
-file-manager column for an equivalent field, which would make the feature meaningfully weaker or
-absent on one platform; the `[time]` view achieves the same chronological-browsing goal identically
-on both, using only what the mount abstraction already exposes.
+Rejected: extending `mountfs::Attr` with a dedicated timestamp field (e.g. Windows's native "Date
+created" column) instead. Workable on Windows, but Linux lacks an equally common file-manager
+column for it, weakening the feature on one platform; the `[time]` view achieves the same
+chronological-browsing goal identically on both, using only what the mount abstraction already
+exposes.
 
 ### REQ-MOUNT-009: Rename/move semantics matching the host platform's native filesystem
 Status: agreed
