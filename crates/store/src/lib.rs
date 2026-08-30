@@ -47,7 +47,7 @@ thread_local! {
 /// instead of correctly reporting it missing, for as long as it stays cached. Not addressed
 /// here, on the assumption that nothing calls `truncate_to` for a range a concurrent read could
 /// still legitimately want; enforcing that is a caller/allocator concern (DESIGN-STORE-003 in
-/// `docs/design/byte-store.md`, not yet decided), not this cache's.
+/// `docs/design/byte-store.md`), not this cache's.
 fn with_read_handle<T>(
     path: &Path,
     f: impl FnOnce(&mut File) -> io::Result<T>,

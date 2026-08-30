@@ -96,8 +96,7 @@ to act on them, not just how much is missing in total.
 
 Rationale for the split itself: a small, single-purpose byte-mover with no dependency on the
 metadata database is straightforward to test in isolation (feed it positions and bytes, read them
-back) and reusable regardless of how allocation ends up being decided - see
-DESIGN-STORE-003 below, not yet settled.
+back) and reusable independent of allocation, which lives elsewhere - see DESIGN-STORE-003 below.
 
 Opened with an explicit read-only flag, checked once at construction rather than per call:
 a caller that only ever intends to read (`list`, `stats`, `check`, ...) opens the store that way,
@@ -178,7 +177,7 @@ the platforms this project targets, deleting a file does not invalidate handles 
 it - a stale cached handle would go on returning the file's old content instead of correctly
 reporting it missing. This is only safe because nothing is expected to call `truncate_to` for a
 range a concurrent read could still legitimately want - a caller/allocator responsibility
-(DESIGN-STORE-003 below, not yet decided), not something this cache enforces itself.
+(DESIGN-STORE-003 below), not something this cache enforces itself.
 
 ### Alternative considered and rejected: also caching write handles
 
@@ -220,16 +219,43 @@ through the same local filesystem call path as an internal disk, with no network
 between, so the syscall-count argument applies to it the same way.
 
 ## DESIGN-STORE-003: Where allocation and reclaim logic lives
-Status: draft
+Status: decided
 
-Not yet decided where the logic answering "which byte range is free to write new content into"
-and "which ranges did reclaiming just free up" actually lives - a dedicated module inside `db`
-(closest to `chunk_extents`, the data it is derived from), a new small crate of its own, or inside
-`cli`. REQ-STORAGE-004 (reclaim) and REQ-STORAGE-005 (compaction) in
+A dedicated module inside `db` (parallel to `tree.rs`), not a new crate of its own or a place
+inside `cli`, answers "which byte range is free to write new content into" and "which ranges did
+reclaiming just free up" - REQ-STORAGE-004 (reclaim) and REQ-STORAGE-005 (compaction) in
 [`../../requirements/functional/storage.md`](../../requirements/functional/storage.md) both need
-this, and neither is settled yet either (`Status: draft`).
+this; this decision is about where the logic lives, independent of their own remaining details
+(both still `Status: draft`).
 
-Revisit once REQ-STORAGE-004/005 themselves settle, and once DESIGN-METADATA-003's single
-coordinated writer (in [`metadata-storage.md`](metadata-storage.md)) is actually implemented -
-whether the allocator needs its own concurrency handling at all depends on whether more than one
-thread can ever reach it concurrently, which that decision governs.
+The free-range state this logic answers from is derived entirely from `chunk_extents`, which
+already lives in the metadata database - keeping the module there lets an allocation decision and
+the extent row recording it happen inside the same database transaction, real atomicity instead of
+a two-phase commit coordinated across a crate boundary. It also inherits DESIGN-METADATA-003's
+single coordinated writer (in [`metadata-storage.md`](metadata-storage.md)) for free: every writer
+already goes through `db::Repository`'s one connection, so the allocator needs no concurrency
+mechanism of its own.
+
+This module still only decides *where* - `crates/store`'s `ByteStore` remains the one place that
+actually reads or writes bytes at a given position (DESIGN-STORE-002 above); `db` does not gain a
+dependency on `store` for this. Whatever orchestrates a real content write (a future mount write
+path, an ingest path) is the one holding both: it reserves a position from `db`, writes the bytes
+through `store`, then records the resulting extent row back in `db` - an ordering this decision
+makes available, not one it enforces.
+
+### Alternative considered and rejected: a new dedicated crate
+
+Would only earn its own crate the way `cdc`/`mountfs` do (see the crate-structuring guidance in
+`.claude/rules/rust-code-quality.md`) if the logic were genuinely reusable outside this specific
+application. It is not: the allocator is intrinsically shaped by `chunk_extents`' own schema and
+this project's own REQ-STORAGE-004/005/007 semantics, not a generic byte-range allocator someone
+else could plausibly reuse.
+
+### Alternative considered and rejected: living inside `cli`
+
+Both a future mount write path and any future CLI-driven ingest path need this logic, and both
+already reach `db::Repository` today. Putting the allocator there instead of `cli` means one
+implementation both entry points share, rather than `cli` re-coordinating `db` and `store`
+separately at each call site - which would also risk exactly the write-then-crash-before-commit
+inconsistency REQ-TREE-006 in [`../../requirements/functional/tree.md`](../../requirements/functional/tree.md)
+exists to rule out.
