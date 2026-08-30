@@ -37,16 +37,14 @@ tree) using ordinary file-manager operations rather than a sequence of dedicated
 Status: agreed
 Importance: should
 
-Agreement here means this working design is the current, wanted answer, explicitly conditioned on
-confirming it against real file managers before any of its details (REQ-MOUNT-007/008 below) count
-as settled rather than a plausible design - behavior this dependent on how real tools happen to act
-cannot be fully validated on paper alone.
+Agreed here means this design is the wanted answer, conditioned on confirming REQ-MOUNT-007/008's
+details against real file managers before they count as settled - behavior this dependent on real
+tools cannot be fully validated on paper.
 
 A directory's deletion history is visible and browsable in place through the mount, off by default
-and enabled only by an explicit mount-time opt-in, and (on a read-write mount) an entry can be
-recovered by moving it out of that view into the live tree. REQ-MOUNT-007 covers what other
-mutating operations are, and are not, allowed against the view itself; REQ-MOUNT-008 covers how its
-entries are displayed and disambiguated.
+and enabled only by an explicit mount-time opt-in; on a read-write mount, an entry can be recovered
+by moving it out of that view into the live tree. REQ-MOUNT-007 covers other mutating operations
+against the view; REQ-MOUNT-008 covers how entries are displayed and disambiguated.
 
 Rationale: recovering a deleted file should be possible with the same ordinary file-manager
 gesture (drag, cut-and-paste) a user would already reach for, not only via a separate command-line
