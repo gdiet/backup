@@ -58,18 +58,17 @@ Importance: must
 
 A command initializes a new, empty repository at a given path, accepting the chunking-granularity
 configuration fixed at creation (REQ-STORAGE-003 in [`storage.md`](storage.md)). The target path may
-already exist, as long as it is empty - a freshly mounted external drive's mount point, in
-particular, already exists by the time it is mountable at all, so it can never itself be "not yet
-existing". If it exists and is not empty, the command fails.
+already exist, as long as it is empty - a freshly mounted external drive's mount point already
+exists once it is mountable at all, so can never itself be "not yet existing". If it exists and is
+not empty, the command fails.
 
 Where the chunking configuration is not given explicitly, it defaults to content-defined chunking
 with a 20-bit target size (REQ-OPERABILITY-003 in
 [`../non-functional/operability.md`](../non-functional/operability.md)) - an average chunk size a
-little above 1 MiB, a reasonable general-purpose choice absent a specific reason to pick
-differently. `--whole-file`, or an explicit different target size, remain available as an override
-- this is still, deliberately, the one setting REQ-STORAGE-003 fixes for the repository's lifetime,
-so the command states that plainly wherever the choice is made (its own `--help` text and its
-confirmation output), rather than relying on requiring the flag to carry that warning implicitly.
+little above 1 MiB, reasonable absent a specific reason to pick differently. `--whole-file`, or an
+explicit target size, remain available as an override - since REQ-STORAGE-003 still fixes this
+choice for the repository's lifetime, the command states that plainly wherever the choice is made
+(its `--help` text and confirmation output), not just via the flag itself.
 
 Rationale: every other command (store, mount, restore, ...) needs a repository to already exist -
 this is the one, deliberate entry point that brings one into being. Refusing a non-empty target
