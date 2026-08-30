@@ -87,38 +87,33 @@ does not satisfy that on its own.
 Status: agreed
 Importance: should
 
-Not yet verified for real: how Explorer/Thunar/Nautilus/`rm -rf` actually behave against this -
-needs real, instrumented testing (capturing actual syscalls against a live mount, not assuming
-from documentation) before counting as settled. Working assumption in the meantime: a
-WinFSP-mounted volume is not eligible for the Windows Recycle Bin at all (the same way a network
-drive, or a volume not formatted NTFS, is not - `$Recycle.Bin` is an NTFS/Explorer-specific
-convention a third-party filesystem driver does not participate in), so a delete through Explorer
-against this mount should reach `unlink`/`rmdir` directly, with no intermediate "moved to the
-Windows trash" step to account for.
+Not yet verified for real: how Explorer/Thunar/Nautilus/`rm -rf` actually behave here - needs
+instrumented testing against a live mount, not just documentation, before counting as settled.
+Working assumption: a WinFSP-mounted volume is not eligible for the Windows Recycle Bin (like a
+network drive or a non-NTFS volume - `$Recycle.Bin` is an NTFS/Explorer-specific convention), so an
+Explorer delete against this mount reaches `unlink`/`rmdir` directly, with no intermediate "moved
+to trash" step.
 
-Two independent, escalating mount-time opt-ins. The base one (REQ-MOUNT-004) makes the view
-visible and browsable and supports the recovery move-out. A second, further opt-in additionally
-allows deleting an entry from inside the view, which permanently purges it (REQ-CLI-004's
-operation, reached through the mount instead of the CLI) rather than doing nothing. Without the
-second opt-in, any attempt to delete, create, rename, or move something into or within the view -
-other than the recovery move-out itself - fails with a clear error (`EACCES`/`EPERM`), never a
-false success. Moving the view itself (renaming it) is always refused, under either opt-in.
+Two independent, escalating mount-time opt-ins. The base one (REQ-MOUNT-004) makes the view visible
+and browsable, supporting the recovery move-out. A second opt-in additionally allows deleting an
+entry from inside the view, permanently purging it (REQ-CLI-004's operation, reached through the
+mount). Without the second opt-in, any delete/create/rename/move into or within the view - other
+than the recovery move-out - fails with a clear error (`EACCES`/`EPERM`), never a false success.
+Renaming the view itself is always refused, under either opt-in.
 
-Rationale: an operator who wants to browse and recover, without any risk that a script or a
-careless recursive delete could destroy history, should be able to have exactly that; a second,
-separate opt-in unlocks the trash-can-emptying behavior deliberately, rather than making it the
-automatic consequence of merely turning on visibility. This also means a recursive delete tool
-(`rm -rf`, a file manager's "delete folder") reaching into a directory's view under the second
-opt-in purges its history as it descends, which incidentally resolves whether such a directory can
-ever be fully removed at all - it can, once its history is gone, the same way an ordinary directory
-becomes removable once its live contents are gone.
+Rationale: an operator who wants to browse and recover, without risk of a script or careless
+recursive delete destroying history, should be able to have exactly that - a second, separate
+opt-in unlocks the trash-emptying behavior deliberately rather than as visibility's automatic
+consequence. This also means a recursive delete (`rm -rf`, "delete folder") descending into a
+directory's view under the second opt-in purges its history as it goes, incidentally settling that
+such a directory can eventually be fully removed, once its history is gone.
 
-Rejected: reporting success without actually purging when only the base opt-in is active, so a
-delete attempt against the view would appear to succeed but do nothing. This would make the
-mount's own return value inconsistent with the repository's actual state - a caller (a script
-checking the result, a file manager doing an optimistic UI update before its next refresh) would
-observe the entry still present or reappearing, which reads as a bug rather than a deliberate
-safety feature. An honest refusal communicates the same safety property without that risk.
+Rejected: reporting success without actually purging under only the base opt-in, so a delete
+attempt against the view would appear to succeed but do nothing. This would make the mount's return
+value inconsistent with the repository's actual state - a caller (a script, a file manager's
+optimistic UI update) would see the entry still present or reappearing, reading as a bug rather
+than a deliberate safety feature. An honest refusal communicates the same safety property without
+that risk.
 
 ### REQ-MOUNT-008: Disambiguating and displaying deleted entries in the view
 Status: agreed
