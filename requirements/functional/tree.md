@@ -73,23 +73,22 @@ mounting the repository as a real filesystem (REQ-MOUNT-001 in
 Status: agreed
 Importance: must
 
-A write to a file's content becomes visible to a different process only once it is complete — a
+A write to a file's content becomes visible to a different process only once complete — a
 concurrent read from another process sees the file's last complete state (its content before this
-write began, or nothing yet, if the file did not exist before), never a partial, in-progress
-result. (Whether a second read handle within the same mount session sees the write's in-progress
-state, or also only its last complete state, is left to the mount's own implementation — either is
+write began, or nothing yet if it did not exist before), never a partial, in-progress result.
+(Whether a second read handle within the same mount session sees the write's in-progress state, or
+also only its last complete state, is left to the mount's own implementation — either is
 acceptable.) The same holds across a crash or hard kill interrupting a write: once the system is
-back, the affected file's content is either the complete state from before the interrupted write
-began, or the complete state the write would have produced had it finished — never a partial, torn
-result of the interruption. Content still being written when such an interruption happens is not
-required to survive it — only that whatever remains visible afterward, to a different process, is
-never partial.
+back, the affected file's content is either the complete state from before the interrupted write,
+or the complete state the write would have produced had it finished — never a partial, torn result.
+Content still being written when such an interruption happens is not required to survive it — only
+that whatever remains visible afterward is never partial.
 
 Rationale: a backup archive silently containing truncated, corrupted-looking content — whether
-glimpsed mid-write by a concurrent process or left behind by an unclean shutdown, and either way
-indistinguishable from a file that genuinely only ever had that content — would undermine trust in
-the archive far more than a concurrent reader seeing slightly stale (but always complete) content,
-or losing work still in progress when power was cut.
+glimpsed mid-write or left behind by an unclean shutdown, and either way indistinguishable from a
+file that genuinely only ever had that content — would undermine trust in the archive far more than
+a concurrent reader seeing slightly stale (but always complete) content, or losing in-progress work
+when power was cut.
 
 ### REQ-TREE-007: Symbolic link support
 Status: agreed
