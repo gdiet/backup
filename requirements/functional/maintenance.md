@@ -47,13 +47,12 @@ already in progress, a second one is refused rather than allowed to proceed. Rea
 remain unaffected and unblocked throughout, regardless of whether a mutating operation is currently
 running.
 
-Rationale: an operation that physically allocates or relocates stored bytes, or that
-wholesale-replaces the metadata store, would corrupt the repository if it ran concurrently with
-another such operation. An operation that only writes metadata would not — the database engine's
-own cross-process locking already serializes those safely — but requiring the same exclusivity for
-every mutating operation, without exception, is simpler for users to reason about than a rule that
-depends on which specific kind of write is involved, and does not rely on that safety margin
-holding indefinitely as the code around it changes. An occasional unnecessary refusal is a far
+Rationale: an operation that physically allocates or relocates stored bytes, or wholesale-replaces
+the metadata store, would corrupt the repository if run concurrently with another such operation.
+One that only writes metadata would not — the database engine's own cross-process locking already
+serializes those — but requiring the same exclusivity for every mutating operation is simpler to
+reason about than a rule depending on which kind of write is involved, and does not rely on that
+safety margin holding indefinitely as the code changes. An occasional unnecessary refusal is a far
 smaller cost than the alternative.
 
 ### REQ-MAINTENANCE-005: Local usage logging
