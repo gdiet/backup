@@ -175,6 +175,7 @@ dependencies = [
  "mountfs",
  "store",
  "tempfile",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -3,6 +3,7 @@ mod create_repo;
 mod dedup_fs;
 mod mount;
 mod repo_path;
+mod write_cache;
 
 use std::path::PathBuf;
 
