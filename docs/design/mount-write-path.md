@@ -1,12 +1,11 @@
 # Mount Write-Path Scheduling
 
-How the future mount write path (REQ-MOUNT-003's real content writes in
+How the mount write path (REQ-MOUNT-003's real content writes in
 [`../../requirements/functional/mount.md`](../../requirements/functional/mount.md) -
-`create`/`write`/`truncate`/`unlink` are still `mountfs`'s default `EROFS`, not yet implemented)
-schedules its work.
+`create`/`write`/`truncate`/`unlink`) schedules its work.
 
 ## DESIGN-MOUNT-006: Separate dispatch pool from chunking/storage-write pool; non-blocking `release()`
-Status: decided
+Status: implemented (crates/cli/src/settle_pool.rs, crates/cli/src/dedup_fs.rs)
 
 Three areas have genuinely different scheduling needs: the FUSE/WinFSP dispatch callbacks
 themselves (I/O-dispatch-latency-bound, thread count owned by libfuse/WinFSP, not this project);
@@ -39,15 +38,16 @@ work at full speed until some fixed limit is hit and then stopping outright. The
 this delay scales with - and why it does not need its own separate backlog metric - is
 DESIGN-MOUNT-010 below.
 
-Not decided here: how a failure discovered only during this background processing - after
-`release()` has already returned success - gets surfaced to the user. See
-[`../../requirements/open-questions.md`](../../requirements/open-questions.md)'s "Mount write-path
-failure handling". How REQ-MAINTENANCE-004's single-writer scope relates to a background job
-outliving the FUSE call that started it turned out not to need an answer at this level at all - see
-DESIGN-MOUNT-008 below.
+How a failure discovered only during this background processing - after `release()` has already
+returned success - gets surfaced is DESIGN-MOUNT-009 below; a queryable or mount-browsable form of
+that same record beyond its first version's plain log file is left open, see
+[`../../requirements/open-questions.md`](../../requirements/open-questions.md)'s "Queryable/
+mount-browsable surfacing of background write failures". How REQ-MAINTENANCE-004's single-writer
+scope relates to a background job outliving the FUSE call that started it turned out not to need an
+answer at this level at all - see DESIGN-MOUNT-008 below.
 
 ## DESIGN-MOUNT-007: Same-session reads see a file's not-yet-persisted state
-Status: decided
+Status: implemented (crates/cli/src/pending_files.rs, crates/cli/src/dedup_fs.rs)
 
 Within the same mount session, any read of a file whose content has been written but not yet
 durably committed sees that content - not only a second read handle already open while the write
@@ -78,7 +78,7 @@ repository recovers, behaves as though it had never been written. A reader in a 
 process could outlive exactly that crash, which is why it does not get the same treatment here.
 
 ## DESIGN-MOUNT-008: A read-write mount holds the single-writer slot for its whole session
-Status: decided
+Status: implemented (crates/cli/src/mount.rs)
 
 REQ-MAINTENANCE-004's "only one mutating operation runs against a repository at a time" is scoped,
 for a read-write mount, to the mount's entire session - from the moment it starts with write access
@@ -97,7 +97,7 @@ raised) - it stays refused (or waiting) for the whole time the mount is up, rega
 any specific write is actually active at that instant.
 
 ## DESIGN-MOUNT-009: Background write failures are logged to a file in `meta/`; a systemic failure degrades the mount to read-only
-Status: decided
+Status: implemented (crates/cli/src/failure_log.rs, crates/cli/src/dedup_fs.rs)
 
 A background chunking/hashing/storage-write job (DESIGN-MOUNT-006) can fail after `release()` has
 already returned success, with no FUSE call left to report it through. The first version of this
@@ -138,7 +138,7 @@ when to remount, is simpler and fails safe; a smarter distinction is a later ref
 prerequisite for a first version.
 
 ## DESIGN-MOUNT-010: Write cache buffers in memory up to a shared session budget, then spills to disk per file
-Status: decided
+Status: implemented (crates/cli/src/write_cache.rs)
 
 DESIGN-MOUNT-007's not-yet-persisted state - a file's content from the moment it is written until
 DESIGN-MOUNT-006's background job durably commits it - lives in memory first. Memory usage is
@@ -250,7 +250,7 @@ regardless of how the background pool is actually doing. Scoping the signal to r
 already-queued work ties the delay to a backlog `write()`'s throttling can actually help drain.
 
 ## DESIGN-MOUNT-012: The write cache tracks only session-written byte ranges, not a full copy
-Status: decided
+Status: implemented (crates/cli/src/write_cache.rs)
 
 Opening an already-existing file for writing does not copy its current content into the write
 cache up front. The cache starts empty and records only the byte ranges this session actually
@@ -285,7 +285,7 @@ budget for a large file - real, avoidable cost paid on every open, not just an i
 inconvenience.
 
 ## DESIGN-MOUNT-013: Per-file write caches form a chain, so a fresh write-intent open never blocks on a still-settling one
-Status: decided
+Status: implemented (crates/cli/src/pending_files.rs)
 
 DESIGN-MOUNT-007 requires looking up a file's not-yet-persisted state by file identity, but leaves
 open what that lookup finds when a client releases every handle on a file, then opens it again for
@@ -350,7 +350,7 @@ constant-time operation it can otherwise stay.
 Status: superseded-by DESIGN-MOUNT-015
 
 ## DESIGN-MOUNT-015: `create()` settles the canonical empty content immediately, giving a new file a real identity from the start
-Status: decided
+Status: implemented (crates/cli/src/dedup_fs.rs)
 
 DESIGN-MOUNT-013's chain is keyed by file identity, which DESIGN-MOUNT-007 already requires -
 straightforward for a file that already has a `tree_entries` row before this session ever touches

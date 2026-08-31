@@ -1,6 +1,7 @@
 mod content_reader;
 mod create_repo;
 mod dedup_fs;
+mod failure_log;
 mod mount;
 mod pending_files;
 mod repo_path;

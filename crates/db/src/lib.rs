@@ -40,6 +40,13 @@ pub fn data_dir(repo_root: &Path) -> PathBuf {
     repo_root.join(DATA_DIR)
 }
 
+/// `repo_root`'s metadata directory (DESIGN-REPOSITORY-001), alongside the database itself -
+/// where a caller placing its own repository-scoped file next to it (e.g. DESIGN-MOUNT-009's
+/// background write-failure log) points it.
+pub fn meta_dir(repo_root: &Path) -> PathBuf {
+    repo_root.join(META_DIR)
+}
+
 #[derive(Debug)]
 pub enum Error {
     /// [`init_repository`] was called against a `repo_root` that already holds a repository.

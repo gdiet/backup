@@ -4,9 +4,10 @@
 //! [`PendingFiles::release`](crate::pending_files::PendingFiles::release) hands off. `submit`
 //! never blocks on the job itself finishing - the point of a separate pool at all.
 //!
-//! What happens when a job actually fails is not this module's concern (DESIGN-MOUNT-009 in the
-//! same design document, not yet implemented) - a caller-supplied `on_failure` hook is the only
-//! seam for that, kept deliberately generic here. Used by `crate::dedup_fs::DedupFs`.
+//! What happens when a job actually fails is not this module's concern - a caller-supplied
+//! `on_failure` hook is the only seam for that, kept deliberately generic here; DESIGN-MOUNT-009's
+//! actual log-file/read-only-degradation behavior lives in `crate::failure_log`, wired to this
+//! hook by `crate::dedup_fs::DedupFs`.
 
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -48,6 +49,36 @@ impl std::fmt::Display for JobError {
 }
 
 impl std::error::Error for JobError {}
+
+impl JobError {
+    /// Whether this failure's underlying cause would just as certainly doom every other queued
+    /// or future job, not only this one - DESIGN-MOUNT-009's systemic/isolated split
+    /// (`docs/design/mount-write-path.md`). An I/O failure (`crates/store` or, via `crates/db`,
+    /// the metadata database itself becoming unusable) is systemic; this project's own typed
+    /// logic errors, tied to this one settle attempt's specific file/parent/name, are isolated.
+    pub fn is_systemic(&self) -> bool {
+        match self {
+            JobError::Settle(crate::settle::SettleError::Io(_)) => true,
+            JobError::Settle(crate::settle::SettleError::Db(err)) | JobError::Commit(err) => {
+                is_systemic_db_error(err)
+            }
+        }
+    }
+}
+
+fn is_systemic_db_error(err: &db::Error) -> bool {
+    matches!(
+        err,
+        db::Error::Io(_)
+            | db::Error::Sqlite(_)
+            | db::Error::WalUnavailable(_)
+            | db::Error::Migration(_)
+            // A poisoned connection mutex (an earlier panic while holding it) stays poisoned
+            // forever, dooming every future access through this same `db::Repository` - not
+            // specific to this one settle attempt.
+            | db::Error::Poisoned
+    )
+}
 
 /// See [`JobPool::new`]'s `on_failure` parameter.
 type FailureHook = Box<dyn Fn(&SettleJob, JobError) + Send + Sync>;
@@ -188,6 +219,39 @@ mod tests {
     use super::*;
     use crate::pending_files::{NewGeneration, PendingFiles};
     use crate::write_cache::MemoryBudget;
+
+    #[test]
+    fn an_io_failure_is_systemic_regardless_of_which_stage_it_came_from() {
+        assert!(
+            JobError::Settle(crate::settle::SettleError::Io(io::Error::other(
+                "disk full"
+            )))
+            .is_systemic()
+        );
+        assert!(
+            JobError::Settle(crate::settle::SettleError::Db(db::Error::Io(
+                io::Error::other("disk full")
+            )))
+            .is_systemic()
+        );
+        assert!(JobError::Commit(db::Error::Io(io::Error::other("disk full"))).is_systemic());
+    }
+
+    #[test]
+    fn a_typed_logic_error_tied_to_one_settle_attempt_is_isolated() {
+        assert!(
+            !JobError::Settle(crate::settle::SettleError::Db(db::Error::NoSuchEntry(1)))
+                .is_systemic()
+        );
+        assert!(!JobError::Commit(db::Error::WrongKind(1)).is_systemic());
+        assert!(
+            !JobError::Commit(db::Error::EntryAlreadyExists {
+                parent_id: 1,
+                name: "a".to_string(),
+            })
+            .is_systemic()
+        );
+    }
 
     fn repo_and_store() -> (
         Arc<db::Repository>,

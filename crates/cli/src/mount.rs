@@ -61,11 +61,9 @@ fn try_run(
         return Err(format!("error: {err}"));
     }
     let store = store::ByteStore::new(db::data_dir(repo_path), !read_write);
-    if let Err(err) = mountfs::mount(
-        DedupFs::new(repo, store, read_write),
-        mountpoint,
-        !read_write,
-    ) {
+    let fs = DedupFs::new(repo, store, read_write, repo_path)
+        .map_err(|err| format!("error: could not open the write-failure log: {err}"))?;
+    if let Err(err) = mountfs::mount(fs, mountpoint, !read_write) {
         return Err(format!("mount failed: {err}"));
     }
     Ok(())

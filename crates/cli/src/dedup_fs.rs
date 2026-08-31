@@ -1,18 +1,21 @@
 //! `MountFilesystem` backed by a real, open `db::Repository` - REQ-MOUNT-001/002/003/009.
 //! Read-only operations, directory structure, and content writes
-//! (`create`/`write`/`truncate`/`unlink`, DESIGN-MOUNT-006/010/012/013/015 in
+//! (`create`/`write`/`truncate`/`unlink`, DESIGN-MOUNT-006/009/010/012/013/015 in
 //! `docs/design/mount-write-path.md`) are all wired in: a write-intent open/create registers with
 //! [`crate::pending_files::PendingFiles`], `write`/`truncate` land in its write-cache chain, and
 //! `release` hands a fully-released generation off to [`crate::settle_pool::JobPool`]'s background
-//! settle job - never blocking the releasing call itself (DESIGN-MOUNT-006).
+//! settle job - never blocking the releasing call itself (DESIGN-MOUNT-006). A job that fails is
+//! recorded in [`crate::failure_log::FailureLog`], degrading the session to read-only on a
+//! systemic failure (DESIGN-MOUNT-009).
 
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use mountfs::{Attr, DirEntry, Errno, FileKind, Handle, MountFilesystem, StatfsInfo};
 
+use crate::failure_log::{Failure, FailureLog};
 use crate::pending_files::{NewGeneration, PendingFiles};
 use crate::settle_pool::{JobPool, SettleJob};
 use crate::write_cache::MemoryBudget;
@@ -26,29 +29,50 @@ pub struct DedupFs {
     pool: JobPool,
     budget: Arc<MemoryBudget>,
     temp_dir: PathBuf,
+    /// `None` for a read-only mount, which never submits a settle job that could produce a
+    /// failure to log (DESIGN-MOUNT-009) in the first place.
+    failure_log: Option<Arc<FailureLog>>,
 }
 
 impl DedupFs {
-    pub fn new(repo: db::Repository, store: store::ByteStore, read_write: bool) -> Self {
+    /// `repo_root` is only needed to open DESIGN-MOUNT-009's failure log alongside the metadata
+    /// database (`db::meta_dir`) - `repo`/`store` are otherwise already fully open.
+    pub fn new(
+        repo: db::Repository,
+        store: store::ByteStore,
+        read_write: bool,
+        repo_root: &Path,
+    ) -> io::Result<Self> {
         let cdc_target_size_bits = repo.settings().cdc_target_size_bits();
         let repo = Arc::new(repo);
         let store = Arc::new(store);
+        let failure_log = if read_write {
+            Some(Arc::new(FailureLog::open(&db::meta_dir(repo_root))?))
+        } else {
+            None
+        };
         let worker_count = std::thread::available_parallelism()
             .map(std::num::NonZero::get)
             .unwrap_or(1);
+        let failure_log_for_pool = failure_log.clone();
         let pool = JobPool::new(
             worker_count,
             Arc::clone(&repo),
             Arc::clone(&store),
             cdc_target_size_bits,
-            // Placeholder until DESIGN-MOUNT-009's actual log-file/read-only-degradation
-            // handling exists - a background settle failure must not vanish silently even before
-            // that lands.
-            |job: &SettleJob, err| {
-                eprintln!("dfs: background settle failed for {}: {err}", job.name);
+            move |job: &SettleJob, err| {
+                if let Some(log) = &failure_log_for_pool {
+                    log.record(Failure {
+                        parent_id: job.parent_id,
+                        name: &job.name,
+                        time_millis: now_millis(),
+                        systemic: err.is_systemic(),
+                        message: err.to_string(),
+                    });
+                }
             },
         );
-        Self {
+        Ok(Self {
             repo,
             store,
             read_write,
@@ -57,7 +81,8 @@ impl DedupFs {
             pool,
             budget: Arc::new(MemoryBudget::default()),
             temp_dir: std::env::temp_dir(),
-        }
+            failure_log,
+        })
     }
 }
 
@@ -123,6 +148,24 @@ impl DedupFs {
             Ok(())
         } else {
             Err(Errno::EROFS)
+        }
+    }
+
+    /// DESIGN-MOUNT-009: refuses a new content write once a systemic background settle failure
+    /// has degraded this session to read-only - checked by a write-intent `open`/`create`, a bare
+    /// `truncate`, and `write` itself (for a handle that was already open before the session
+    /// degraded). Directory structure operations (`mkdir`/`rmdir`/`rename`/`utimens`) and
+    /// `unlink` are unaffected: none of them need `crates/store` space, so none of them are
+    /// doomed to repeat whatever systemic cause (e.g. storage full) triggered the degradation.
+    fn require_not_degraded(&self) -> Result<(), Errno> {
+        if self
+            .failure_log
+            .as_ref()
+            .is_some_and(|log| log.is_degraded())
+        {
+            Err(Errno::EROFS)
+        } else {
+            Ok(())
         }
     }
 
@@ -210,6 +253,7 @@ impl MountFilesystem for DedupFs {
         }
         if write_intent {
             self.require_read_write()?;
+            self.require_not_degraded()?;
         }
         // Every open counts toward the same handle count, read or write intent alike - a
         // lingering reader delays a written generation's hand-off to the settle pool, which only
@@ -264,6 +308,7 @@ impl MountFilesystem for DedupFs {
 
     fn create(&self, path: &str) -> Result<Handle, Errno> {
         self.require_read_write()?;
+        self.require_not_degraded()?;
         let (parent_path, name) = split_path(path)?;
         let parent = self.resolve_required(parent_path)?;
         // DESIGN-MOUNT-015: settles the canonical empty content immediately, so the new file has
@@ -329,6 +374,7 @@ impl MountFilesystem for DedupFs {
     }
 
     fn write(&self, handle: Handle, offset: u64, data: &[u8]) -> Result<u32, Errno> {
+        self.require_not_degraded()?;
         let file_id = handle.0 as i64;
         let (base_content_id, base_size) = self.base_for_write(file_id)?;
         self.pending
@@ -344,6 +390,7 @@ impl MountFilesystem for DedupFs {
 
     fn truncate(&self, path: &str, size: u64) -> Result<(), Errno> {
         self.require_read_write()?;
+        self.require_not_degraded()?;
         let entry = self.resolve_required(path)?;
         if entry.kind != db::EntryKind::File {
             return Err(Errno::EISDIR);
@@ -388,7 +435,7 @@ mod tests {
         let verify_repo = db::open_repository(&repo_root).unwrap();
         let verify_store = store::ByteStore::new(db::data_dir(&repo_root), true);
         let fs_store = store::ByteStore::new(db::data_dir(&repo_root), !read_write);
-        let fs = DedupFs::new(fs_repo, fs_store, read_write);
+        let fs = DedupFs::new(fs_repo, fs_store, read_write, &repo_root).unwrap();
         (fs, verify_repo, verify_store, repo_dir)
     }
 
@@ -506,5 +553,44 @@ mod tests {
         assert_eq!(fs.create("/a.txt").unwrap_err(), Errno::EROFS);
         assert_eq!(fs.truncate("/a.txt", 5).unwrap_err(), Errno::EROFS);
         assert_eq!(fs.unlink("/a.txt").unwrap_err(), Errno::EROFS);
+    }
+
+    #[test]
+    fn a_systemic_settle_failure_degrades_the_session_to_read_only_and_is_logged() {
+        let repo_dir = tempfile::tempdir().unwrap();
+        let repo_root = repo_dir.path().join("repo");
+        db::init_repository(
+            &repo_root,
+            db::RepositorySettings::new(Some(12), 1_700_000_000_000),
+        )
+        .unwrap();
+        let fs_repo = db::open_repository(&repo_root).unwrap();
+        // A read-only store deterministically fails every real chunk write, standing in for
+        // DESIGN-MOUNT-009's systemic case (e.g. storage full) without actually needing to fill a
+        // disk. `create`'s own empty-content settle never calls `store.write` at all (no chunks),
+        // so it still succeeds even here - only a settle with real bytes hits this.
+        let fs_store = store::ByteStore::new(db::data_dir(&repo_root), true);
+        let fs = DedupFs::new(fs_repo, fs_store, true, &repo_root).unwrap();
+
+        let handle = fs.create("/a.txt").unwrap();
+        fs.write(handle, 0, b"hello").unwrap();
+        fs.release(handle);
+
+        // The failure is recorded asynchronously (DESIGN-MOUNT-006's non-blocking `release`) -
+        // poll a fresh write-intent open until it starts observing the degradation.
+        let mut degraded = false;
+        for _ in 0..500 {
+            if fs.create("/probe.txt") == Err(Errno::EROFS) {
+                degraded = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(degraded, "session did not degrade to read-only in time");
+
+        let log = std::fs::read_to_string(db::meta_dir(&repo_root).join("write-failures.log"))
+            .expect("the failure log file must exist");
+        assert!(log.contains("systemic"), "log contents: {log}");
+        assert!(log.contains("a.txt"), "log contents: {log}");
     }
 }
