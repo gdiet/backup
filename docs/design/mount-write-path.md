@@ -427,3 +427,74 @@ machinery, and with DESIGN-METADATA-008's schema-level `CHECK` that a live file 
 non-null `content_id` - relaxing either specifically to accommodate this one case would reintroduce
 exactly the in-place-mutation and partial-state complexity those decisions were written to avoid,
 for every reader of the schema, not only the mount's own write path.
+
+## DESIGN-MOUNT-016: A `create()`-only empty placeholder, still untouched at its first real settle, is hard-deleted instead of historized
+Status: decided
+
+DESIGN-MOUNT-015's empty-content row exists purely so a newly created file has a real identity from
+the moment `create()` returns - it is never independently meaningful the way an ordinary file's
+content is. Left to DESIGN-MOUNT-011's ordinary rule, the file's first real write still soft-deletes
+it as its own history entry: a permanent, empty, otherwise-content-free row for every file this mount
+ever creates and then actually writes to - by far the common case, not an edge case, so this cost is
+paid on essentially every file a client saves through the mount.
+
+When the entry a settling job is about to replace is still exactly the row `create()` itself
+inserted for this same file, unmodified since, that row is hard-deleted (`DELETE`, not the ordinary
+soft-deleting `UPDATE ... SET deleted_at`) before the new, real-content row is inserted - it carries
+nothing worth recovering (an empty file, that specific empty state never actually asked for by a
+client, only ever a byproduct of how a new file's identity gets established) and correctly leaves
+DESIGN-MOUNT-011's ordinary history-preserving replacement as the rule for every other case,
+including a file that already existed with genuinely empty content before this session touched it.
+This still needs no `content_id` update-in-place: the replacement is `DELETE` then `INSERT`, the same
+shape DESIGN-MOUNT-011 already uses, just choosing `DELETE` instead of the soft-deleting `UPDATE` for
+this one specific, narrow case - `tree_entries_ref_count_ins`/`_del`
+(`metadata-schema-with-contents-table.md`) already correctly maintain `contents.ref_count` across a
+plain `DELETE`, so no new trigger is needed either.
+
+### Eligibility: only the file's own first generation, only when `create()` itself is what put it there
+
+Two conditions together, both necessary:
+
+- **Structural**: the settling generation must be the first one this session ever created for this
+  file identity - DESIGN-MOUNT-013's chain never applies this to a second or later write, which
+  always replaces a generation that itself holds real, already-meaningful content (even if that
+  content happens to be empty - a deliberate `truncate` to zero on a file with prior content is a
+  real, user-initiated state, not a byproduct, and REQ-TREE-004 in
+  [`../../requirements/functional/tree.md`](../../requirements/functional/tree.md) already commits to
+  every deletion staying its own independently recoverable history entry regardless of the deleted
+  content's size - collapsing it would quietly carve out an undocumented exception to that guarantee).
+- **Provenance, not just current content**: the row must be one `create()` itself inserted this
+  session, not merely a row that happens to currently hold the canonical empty content - a file that
+  was already empty before this session ever opened it is not this mechanism's concern, for the same
+  REQ-TREE-004 reason above. This is recorded at `create()` time (`crates/cli/src/pending_files.rs`),
+  not inferred later from the content itself.
+
+### Safety: re-verified live, by id, inside the same transaction as the replacement
+
+Since a settling job can run an arbitrary amount of time after it was queued (DESIGN-MOUNT-006's
+non-blocking `release()`), what was eligible when queued is re-verified live at the moment of the
+actual replacement, not trusted from when the generation was created: the row `create()` inserted
+must still be exactly what is live at that `(parent_id, name)` right now. Skipping this check would
+let a job that has become stale hard-delete whatever now actually occupies that name - not merely a
+missing history entry (the acceptable cost `create()`-then-quick-`unlink()` already risks, per
+DESIGN-MOUNT-015's own "Known limitation") but active loss of an unrelated, possibly
+already-real-content entry: a second generation already chained and settled ahead of this one leaves
+a real-content row at that id or name; an `unlink()` followed by a fresh, unrelated `create()` at the
+same name leaves a different file's id there entirely.
+
+Checking the row's own id already proves this, with no separate check of its content needed:
+`tree_entries.id` is `AUTOINCREMENT` specifically so an id, once used, is never reused by a later row
+(`metadata-schema-with-contents-table.md`'s "Why `tree_entries.id` is `AUTOINCREMENT`") - so a row
+still live under the exact id `create()` returned is, by construction, still that exact row, holding
+whatever content it was inserted with (never mutated in place, per DESIGN-MOUNT-011's own reasoning) -
+still the canonical empty content, unconditionally.
+
+### Alternative considered and rejected: collapsing whenever the entry being replaced currently holds empty content, regardless of provenance
+
+Checking only "is the content about to be replaced empty" - without also requiring it to be a row
+`create()` itself inserted this session - was considered and rejected: it reads as a strictly more
+useful generalization (why not also collapse an already-empty file's first real write, not just a
+brand new one?), but it quietly narrows REQ-TREE-004's "every deletion stays its own recoverable
+history entry" guarantee for every already-empty file, not just this mechanism's own byproduct rows -
+a real product guarantee to weaken, not an implementation detail to optimize, and not this design
+decision's place to make unilaterally.
