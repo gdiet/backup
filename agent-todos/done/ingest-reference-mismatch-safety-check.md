@@ -31,3 +31,7 @@ being told immediately.
 If pursued, this belongs as a new `REQ-INGEST-...` entry (or an addition to REQ-INGEST-003's own
 text if the difference stays crisp) in `requirements/functional/ingest.md`, following this
 project's usual `Status: draft` → `agreed` process - not something to decide unilaterally here.
+
+**Done**: the developer confirmed this should become a real requirement. Added as REQ-INGEST-006
+in `requirements/functional/ingest.md`, `Status: draft` (the exact match threshold is left open in
+its own text, not yet decided).

@@ -29,3 +29,7 @@ caller's script does that" is the intended, deliberately minimal answer.
 If pursued, this is a `requirements/` addition (likely to `ingest.md` or `cli-commands.md`),
 following the usual `Status: draft` → `agreed` process - including deciding the actual syntax
 independently rather than copying it from elsewhere.
+
+**Done**: the developer confirmed this should become a real requirement. Added as REQ-INGEST-007
+in `requirements/functional/ingest.md`, `Status: draft` (covers both the date-substitution
+placeholder and the existence-assertion path-segment prefix as one requirement).

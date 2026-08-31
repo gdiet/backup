@@ -49,8 +49,17 @@ for reuse without itself altering any byte still on disk - this is what creates 
 REQ-MAINTENANCE-007 in [`maintenance.md`](maintenance.md) requires a warning for, whether or not
 the range is ever actually reused afterward.
 
+A soft-deleted entry (REQ-TREE-002 in [`tree.md`](tree.md)) only becomes eligible for reclamation
+once it has stayed soft-deleted for at least a caller-chosen minimum age, defaulting to reclaiming
+immediately (no minimum) when a caller does not specify one. This lets a routine or scheduled
+reclamation run preserve a recent-deletion recovery window on its own, without the operator having
+to time reclaim runs around it manually.
+
 Rationale: without reuse, a repository under continuous use (files added and removed over years)
-would grow monotonically even though its live content stays roughly constant.
+would grow monotonically even though its live content stays roughly constant. Without a
+caller-chosen minimum age, an operator who wants both routine, automated reclamation and a
+guaranteed recovery window for a recent accidental deletion would have to choose one or the other,
+or build the timing logic themselves outside the tool.
 
 ### REQ-STORAGE-005: On-demand store compaction
 Status: draft

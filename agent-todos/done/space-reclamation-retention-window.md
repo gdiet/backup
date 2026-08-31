@@ -27,3 +27,7 @@ deliberate choice anywhere in `requirements/`.
 If pursued, this is a `requirements/` change (likely amending REQ-STORAGE-004's own text, or a new
 requirement it points to for the exact parameter), following the usual `Status: draft` → `agreed`
 process.
+
+**Done**: the developer confirmed this should become a real requirement. Amended REQ-STORAGE-004 in
+`requirements/functional/storage.md` directly (still `Status: draft`) with a caller-chosen minimum
+age, defaulting to reclaiming immediately when none is given.

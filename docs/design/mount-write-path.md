@@ -157,6 +157,26 @@ disk, one per file whose write cache has grown past its share of the budget. Thi
 DESIGN-MOUNT-007's read-after-write behavior: a read against spilled content is served from that
 temporary file instead of memory, with no visible difference to the caller between the two.
 
+Each spillover file is created sparse, and written to only at the exact positions a client's own
+writes land at - a client writing non-contiguously (a scattered write pattern, or a large
+`truncate`-then-fill sequence) leaves the gaps between those positions as real holes, not zero
+bytes actually committed to disk. A filesystem that supports sparse files then never allocates real
+space for those gaps, whatever fraction of the file they end up being. On Linux this happens
+automatically - an ordinary file written at scattered offsets is already sparse, with no separate
+step needed. A Windows build needs to request this explicitly (`FSCTL_SET_SPARSE`) before writing
+to a spillover file at all, since NTFS treats a plain file as fully allocated by default; without
+that call, a scattered write pattern would needlessly consume real disk space for every gap in
+between.
+
+### Alternative considered and rejected: writing spillover files in full, without sparse support
+
+Always writing a spillover file's full byte range - zero-filling gaps between a client's actual
+write positions instead of leaving them as holes - was considered and rejected: it defeats the
+purpose of bounding memory usage with a byte budget in the first place if the resulting disk usage
+can still be much larger than the content actually written, for exactly the workloads (scattered
+writes, a `truncate`-then-partial-fill pattern) most likely to spill in meaningful volume to begin
+with.
+
 This same tracking is also what DESIGN-MOUNT-006's backpressure keys off, narrowed to one part of
 it: the signal that scales the delay `write()` adds is the spilled-to-disk bytes belonging
 specifically to files that have already been released and are waiting on DESIGN-MOUNT-006's

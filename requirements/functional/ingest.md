@@ -75,3 +75,37 @@ reliable way to notice that some items were silently skipped, not just a human r
 backend failure gets the opposite treatment because it is not expected to be specific to the one
 item being processed when it was discovered - continuing to feed more items into a repository that
 just failed to accept a write risks repeating, not containing, the same failure.
+
+### REQ-INGEST-006: Reference validated against sources before use
+Status: draft
+Importance: should
+
+When a reference (REQ-INGEST-003) is supplied, its own top-level contents are compared against the
+ingest sources' own top-level contents before the reference is trusted for accelerated matching; if
+too few entries correspond between the two (the exact threshold is not yet decided), the run aborts
+instead of silently proceeding. An explicit override lets a caller force the reference through
+regardless of this check.
+
+Rationale: REQ-INGEST-003's whole benefit disappears silently if the supplied reference does not
+actually correspond to what is being backed up - every source file simply falls back to a full read
+one at a time, with no signal that anything is wrong until the run is noticed to have taken far
+longer than expected. Catching a plainly mismatched reference immediately turns a silent
+performance regression into an actionable error at the point a caller can still do something about
+it.
+
+### REQ-INGEST-007: Templated target paths for repeated runs
+Status: draft
+Importance: could
+
+A target path passed to ingest can contain a placeholder resolved against the current date/time at
+run start (e.g. a `[yyyy-MM-dd]`-style segment), so a scheduled or repeated run writes into a fresh,
+self-naming location each time without the caller precomputing and passing a fully-resolved path
+itself. Independently, a path segment can be marked as required to already exist versus created if
+missing, so a typo'd or unexpectedly absent parent does not silently grow a deep, unintended
+directory tree instead of failing outright.
+
+Rationale: a caller automating repeated ingest runs (a nightly backup script, in particular)
+otherwise has to compute the same timestamped-path and existence-checking logic itself before every
+call; folding it into the target-path syntax removes a whole category of scripting boilerplate and,
+for the existence-assertion half, catches a class of accidental-directory-creation mistakes before
+they happen rather than after.
