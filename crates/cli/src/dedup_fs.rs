@@ -326,7 +326,9 @@ impl MountFilesystem for DedupFs {
             .repo
             .settle_file(parent.id, name, now_millis(), empty_content_id)
             .map_err(to_errno)?;
-        self.pending.open(id);
+        // DESIGN-MOUNT-016: marks this row eligible for collapsing (hard delete instead of
+        // history) once its first real write settles, still untouched.
+        self.pending.open_freshly_created(id);
         Ok(Handle(id as u64))
     }
 

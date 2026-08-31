@@ -275,6 +275,30 @@ impl Repository {
         })
     }
 
+    /// Like [`Self::settle_file`], except a live entry that is still exactly id
+    /// `collapsible_placeholder_id` is hard-deleted instead of soft-deleted (DESIGN-MOUNT-016) -
+    /// a `create()`-only empty placeholder still untouched at its own file's first real settle,
+    /// never independently meaningful. Any other live entry there is soft-deleted as usual.
+    pub fn settle_file_collapsing_placeholder(
+        &self,
+        parent_id: i64,
+        name: &str,
+        time_millis: i64,
+        content_id: i64,
+        collapsible_placeholder_id: i64,
+    ) -> Result<i64, Error> {
+        self.with_transaction(|conn| {
+            tree::settle_file_collapsing_placeholder(
+                conn,
+                parent_id,
+                name,
+                time_millis,
+                content_id,
+                collapsible_placeholder_id,
+            )
+        })
+    }
+
     /// Looks up an already-known chunk by its own `(length, hash)` - REQ-STORAGE-002.
     pub fn find_chunk(&self, length: i64, hash: &[u8]) -> Result<Option<i64>, Error> {
         self.with_connection(|conn| content::find_chunk(conn, length, hash))

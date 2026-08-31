@@ -429,7 +429,7 @@ exactly the in-place-mutation and partial-state complexity those decisions were 
 for every reader of the schema, not only the mount's own write path.
 
 ## DESIGN-MOUNT-016: A `create()`-only empty placeholder, still untouched at its first real settle, is hard-deleted instead of historized
-Status: decided
+Status: implemented (crates/db/src/tree.rs, crates/cli/src/pending_files.rs, crates/cli/src/settle_pool.rs)
 
 DESIGN-MOUNT-015's empty-content row exists purely so a newly created file has a real identity from
 the moment `create()` returns - it is never independently meaningful the way an ordinary file's

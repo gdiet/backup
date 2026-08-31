@@ -247,6 +247,42 @@ pub(crate) fn settle_file(
     time_millis: i64,
     content_id: i64,
 ) -> Result<i64, Error> {
+    settle_file_impl(conn, parent_id, name, time_millis, content_id, None)
+}
+
+/// Like [`settle_file`], except a live entry that is still exactly id `collapsible_placeholder_id`
+/// is hard-deleted (no REQ-TREE-004 history entry) instead of soft-deleted - DESIGN-MOUNT-016's
+/// narrow exception for a `create()`-only empty placeholder still untouched at its own file's
+/// first real settle. Any other live entry there (already replaced by something else since, or
+/// simply a different id) is soft-deleted as usual.
+///
+/// Returns the new entry's id.
+pub(crate) fn settle_file_collapsing_placeholder(
+    conn: &Connection,
+    parent_id: i64,
+    name: &str,
+    time_millis: i64,
+    content_id: i64,
+    collapsible_placeholder_id: i64,
+) -> Result<i64, Error> {
+    settle_file_impl(
+        conn,
+        parent_id,
+        name,
+        time_millis,
+        content_id,
+        Some(collapsible_placeholder_id),
+    )
+}
+
+fn settle_file_impl(
+    conn: &Connection,
+    parent_id: i64,
+    name: &str,
+    time_millis: i64,
+    content_id: i64,
+    collapsible_placeholder_id: Option<i64>,
+) -> Result<i64, Error> {
     require_dir(conn, parent_id)?;
 
     let replaced = find_child_id(conn, parent_id, name)?;
@@ -258,10 +294,18 @@ pub(crate) fn settle_file(
                 name: name.to_string(),
             });
         }
-        conn.execute(
-            "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
-            params![time_millis, old_id],
-        )?;
+        if collapsible_placeholder_id == Some(old_id) {
+            // `old_id` still being live already proves it is still exactly the row the caller
+            // inserted, holding its original content unmodified - tree_entries.id is
+            // AUTOINCREMENT, so no later row can ever reuse it (see "Why tree_entries.id is
+            // AUTOINCREMENT" in metadata-schema-with-contents-table.md).
+            conn.execute("DELETE FROM tree_entries WHERE id = ?1", params![old_id])?;
+        } else {
+            conn.execute(
+                "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+                params![time_millis, old_id],
+            )?;
+        }
     }
 
     conn.execute(
@@ -559,6 +603,92 @@ mod tests {
             })
             .unwrap();
         assert_eq!(old_deleted_at, Some(200));
+    }
+
+    fn row_count(repo: &crate::Repository, id: i64) -> i64 {
+        repo.with_connection(|conn| {
+            Ok(conn.query_row(
+                "SELECT COUNT(*) FROM tree_entries WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )?)
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn settle_file_collapsing_placeholder_hard_deletes_the_expected_placeholder() {
+        let (repo, _dir) = repo();
+        let empty_content = insert_content(&repo, 0, 0xEE);
+        let real_content = insert_content(&repo, 5, 0xAA);
+
+        let placeholder_id = repo.settle_file(0, "a.txt", 100, empty_content).unwrap();
+        let root_time_before = repo.resolve_path("/").unwrap().unwrap().time_millis;
+
+        let new_id = repo
+            .settle_file_collapsing_placeholder(0, "a.txt", 200, real_content, placeholder_id)
+            .unwrap();
+
+        assert_ne!(new_id, placeholder_id);
+        let live = repo.resolve_path("/a.txt").unwrap().unwrap();
+        assert_eq!(live.id, new_id);
+        assert_eq!(live.content_id, Some(real_content));
+        assert_eq!(
+            row_count(&repo, placeholder_id),
+            0,
+            "the placeholder row must be gone entirely, not merely soft-deleted"
+        );
+        assert_eq!(
+            repo.resolve_path("/").unwrap().unwrap().time_millis,
+            root_time_before,
+            "collapsing a placeholder is still a pure content change, not a structural one"
+        );
+    }
+
+    #[test]
+    fn settle_file_collapsing_placeholder_soft_deletes_when_the_live_entry_is_not_the_expected_id()
+    {
+        let (repo, _dir) = repo();
+        let content_a = insert_content(&repo, 1, 0xAA);
+        let content_b = insert_content(&repo, 2, 0xBB);
+
+        let first_id = repo.settle_file(0, "a.txt", 100, content_a).unwrap();
+        // A stale/wrong expected id (e.g. from a superseded generation) must not cause `first_id`
+        // to be hard-deleted - only an exact match does that.
+        let wrong_expected_id = first_id + 1000;
+
+        let second_id = repo
+            .settle_file_collapsing_placeholder(0, "a.txt", 200, content_b, wrong_expected_id)
+            .unwrap();
+
+        assert_ne!(first_id, second_id);
+        assert_eq!(
+            row_count(&repo, first_id),
+            1,
+            "a mismatched expected id must fall back to the ordinary, history-preserving replace"
+        );
+        let old_deleted_at: Option<i64> = repo
+            .with_connection(|conn| {
+                Ok(conn.query_row(
+                    "SELECT deleted_at FROM tree_entries WHERE id = ?1",
+                    [first_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(old_deleted_at, Some(200));
+    }
+
+    #[test]
+    fn settle_file_collapsing_placeholder_refuses_to_replace_a_directory() {
+        let (repo, _dir) = repo();
+        let dir_id = repo.mkdir(0, "a", 100).unwrap();
+        let content_id = insert_content(&repo, 1, 0xAA);
+
+        let err = repo
+            .settle_file_collapsing_placeholder(0, "a", 200, content_id, dir_id)
+            .unwrap_err();
+        assert!(matches!(err, Error::EntryAlreadyExists { .. }));
     }
 
     #[test]

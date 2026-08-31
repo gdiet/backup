@@ -205,7 +205,20 @@ fn run_job(context: &Context, job: SettleJob) {
 
     match crate::settle::settle(repo, store, context.cdc_target_size_bits, size, read) {
         Ok(content_id) => {
-            match repo.settle_file(job.parent_id, &job.name, job.time_millis, content_id) {
+            // DESIGN-MOUNT-016: a still-untouched create()-only empty placeholder is hard-deleted
+            // instead of historized - re-verified live by id inside the same transaction as the
+            // replacement, not trusted from whenever this generation was created.
+            let commit = match job.generation.collapsible_placeholder_id() {
+                Some(placeholder_id) => repo.settle_file_collapsing_placeholder(
+                    job.parent_id,
+                    &job.name,
+                    job.time_millis,
+                    content_id,
+                    placeholder_id,
+                ),
+                None => repo.settle_file(job.parent_id, &job.name, job.time_millis, content_id),
+            };
+            match commit {
                 Ok(_) => job.generation.mark_settled(content_id, size),
                 Err(err) => (context.on_failure)(&job, JobError::Commit(err)),
             }
@@ -325,6 +338,61 @@ mod tests {
 
         assert!(failures.lock().unwrap().is_empty());
         let entry = repo.resolve_path("/hello.txt").unwrap().unwrap();
+        assert_eq!(entry.size, 11);
+    }
+
+    #[test]
+    fn a_job_for_a_freshly_created_files_first_write_collapses_the_placeholder() {
+        let (repo, _rd, store, _sd) = repo_and_store();
+        // Mirrors DedupFs::create's own direct settle_file call for the canonical empty content.
+        let empty_content_id = repo.find_or_create_content(0, &[0xEE; 20], &[]).unwrap();
+        let placeholder_id = repo
+            .settle_file(0, "a.txt", 1_700_000_000_000, empty_content_id)
+            .unwrap();
+
+        let registry = PendingFiles::new();
+        let budget = Arc::new(MemoryBudget::new(1000));
+        let temp_dir = tempfile::tempdir().unwrap();
+        registry.open_freshly_created(placeholder_id);
+        registry
+            .write(
+                placeholder_id,
+                0,
+                b"hello world",
+                NewGeneration {
+                    budget: &budget,
+                    temp_dir: temp_dir.path(),
+                    base_content_id: None,
+                    base_size: 0,
+                },
+            )
+            .unwrap();
+        let generation = registry.release(placeholder_id).unwrap();
+        assert_eq!(
+            generation.collapsible_placeholder_id(),
+            Some(placeholder_id)
+        );
+
+        let failures: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let failures_for_hook = Arc::clone(&failures);
+        let pool = JobPool::new(
+            1,
+            Arc::clone(&repo),
+            Arc::clone(&store),
+            None,
+            move |_job, err| failures_for_hook.lock().unwrap().push(err.to_string()),
+        );
+        pool.submit(SettleJob {
+            parent_id: 0,
+            name: "a.txt".to_string(),
+            time_millis: 1_700_000_000_001,
+            generation,
+        });
+        drop(pool);
+
+        assert!(failures.lock().unwrap().is_empty());
+        let entry = repo.resolve_path("/a.txt").unwrap().unwrap();
+        assert_ne!(entry.id, placeholder_id);
         assert_eq!(entry.size, 11);
     }
 

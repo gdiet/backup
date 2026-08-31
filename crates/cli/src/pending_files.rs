@@ -41,14 +41,27 @@ enum SlotState {
 pub struct GenerationSlot {
     state: Mutex<SlotState>,
     base: Base,
+    /// `Some(file_id)` when this is the very first generation for a file this session's own
+    /// `create()` call inserted with the canonical empty content, still untouched - DESIGN-MOUNT-016's
+    /// eligibility for a settle job to hard-delete that row instead of historizing it. `file_id`
+    /// doubles as the exact row id a settle job must find still live before doing so:
+    /// `tree_entries.id` is `AUTOINCREMENT`, so no later row can ever reuse it, meaning "still
+    /// live" already proves "still holds its original content, untouched".
+    collapsible_placeholder_id: Option<i64>,
 }
 
 impl GenerationSlot {
-    fn new(cache: WriteCache, base: Base) -> Arc<Self> {
+    fn new(cache: WriteCache, base: Base, collapsible_placeholder_id: Option<i64>) -> Arc<Self> {
         Arc::new(Self {
             state: Mutex::new(SlotState::Cache(cache)),
             base,
+            collapsible_placeholder_id,
         })
+    }
+
+    /// See the field doc comment - DESIGN-MOUNT-016.
+    pub fn collapsible_placeholder_id(&self) -> Option<i64> {
+        self.collapsible_placeholder_id
     }
 
     /// Marks this generation settled, dropping its [`WriteCache`] (and whatever memory/spill file
@@ -139,6 +152,11 @@ struct PendingFile {
     /// against. Cleared once it is known to have settled and no handle is open, so the registry
     /// does not keep an entry around forever for a file nothing references anymore.
     latest: Option<Arc<GenerationSlot>>,
+    /// Set only by [`PendingFiles::open_freshly_created`] - DESIGN-MOUNT-016's eligibility marker,
+    /// consulted only while `latest` is still `None` (the file's very first generation this
+    /// session). Left `true` afterward; harmless, since nothing consults it again once a first
+    /// generation already exists.
+    created_this_session_placeholder: bool,
 }
 
 /// Registry of every file with at least one write-intent handle open, or at least one background
@@ -186,8 +204,24 @@ impl PendingFiles {
                 handle_count: 0,
                 writable: None,
                 latest: None,
+                created_this_session_placeholder: false,
             })
             .handle_count += 1;
+    }
+
+    /// Like [`Self::open`], but also marks `file_id` as this session's own freshly created
+    /// placeholder (DESIGN-MOUNT-016) - only `create()` should call this, right after settling
+    /// the file's canonical empty content and before returning a handle to any caller.
+    pub fn open_freshly_created(&self, file_id: i64) {
+        let mut inner = self.inner.lock().expect("not poisoned");
+        let entry = inner.entry(file_id).or_insert(PendingFile {
+            handle_count: 0,
+            writable: None,
+            latest: None,
+            created_this_session_placeholder: false,
+        });
+        entry.handle_count += 1;
+        entry.created_this_session_placeholder = true;
     }
 
     /// Releases one write-intent handle on `file_id`. If this was the last one and it leaves
@@ -285,15 +319,17 @@ impl PendingFiles {
             handle_count: 0,
             writable: None,
             latest: None,
+            created_this_session_placeholder: false,
         });
         if let Some(writable) = &entry.writable {
             return Arc::clone(writable);
         }
-        let (base, size) = match &entry.latest {
-            Some(previous) => (Base::Chain(Arc::clone(previous)), previous.size()),
+        let (base, size, collapsible_placeholder_id) = match &entry.latest {
+            Some(previous) => (Base::Chain(Arc::clone(previous)), previous.size(), None),
             None => (
                 Base::Content(new_generation.base_content_id),
                 new_generation.base_size,
+                entry.created_this_session_placeholder.then_some(file_id),
             ),
         };
         let cache = WriteCache::new(
@@ -301,7 +337,7 @@ impl PendingFiles {
             Arc::clone(new_generation.budget),
             size,
         );
-        let slot = GenerationSlot::new(cache, base);
+        let slot = GenerationSlot::new(cache, base, collapsible_placeholder_id);
         entry.latest = Some(Arc::clone(&slot));
         entry.writable = Some(Arc::clone(&slot));
         slot
@@ -426,6 +462,51 @@ mod tests {
             0,
             "forgotten once nothing needs the settled generation anymore"
         );
+    }
+
+    #[test]
+    fn open_freshly_created_marks_the_first_generation_as_collapsible() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open_freshly_created(1);
+        registry
+            .write(1, 0, b"hello", params(&budget, dir.path(), 0))
+            .unwrap();
+        let generation = registry.release(1).unwrap();
+        assert_eq!(generation.collapsible_placeholder_id(), Some(1));
+    }
+
+    #[test]
+    fn an_ordinary_open_never_marks_a_generation_as_collapsible() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open(1);
+        registry
+            .write(1, 0, b"hello", params(&budget, dir.path(), 0))
+            .unwrap();
+        let generation = registry.release(1).unwrap();
+        assert_eq!(generation.collapsible_placeholder_id(), None);
+    }
+
+    #[test]
+    fn a_chained_second_generation_is_never_collapsible_even_after_open_freshly_created() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        registry.open_freshly_created(1);
+        registry
+            .write(1, 0, b"one", params(&budget, dir.path(), 0))
+            .unwrap();
+        let first = registry.release(1).unwrap();
+        assert_eq!(first.collapsible_placeholder_id(), Some(1));
+
+        // A second write-intent open (even after the same freshly-created file) always chains -
+        // DESIGN-MOUNT-016 only ever applies to a file's very first generation.
+        registry.open(1);
+        registry
+            .write(1, 0, b"two", params(&budget, dir.path(), 3))
+            .unwrap();
+        let second = registry.release(1).unwrap();
+        assert_eq!(second.collapsible_placeholder_id(), None);
     }
 
     #[test]
