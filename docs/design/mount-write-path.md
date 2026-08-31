@@ -283,3 +283,65 @@ proportional to that file's total size regardless of how much of it a session ac
 change, including immediately spilling most of it back out to disk under DESIGN-MOUNT-010's memory
 budget for a large file - real, avoidable cost paid on every open, not just an implementation
 inconvenience.
+
+## DESIGN-MOUNT-013: Per-file write caches form a chain, so a fresh write-intent open never blocks on a still-settling one
+Status: decided
+
+DESIGN-MOUNT-007 requires looking up a file's not-yet-persisted state by file identity, but leaves
+open what that lookup finds when a client releases every handle on a file, then opens it again for
+writing before DESIGN-MOUNT-006's background job for the just-released write has finished settling.
+Ordinary POSIX same-host coherence - the property DESIGN-MOUNT-007 extends across the whole
+still-settling window - gives two guarantees at once that a real filesystem never has to reconcile
+explicitly, because it has no comparable asynchronous-settling window at all: every reader sees one
+single, up-to-date, coherent file, and a writer is never made to wait on outstanding I/O it did not
+itself ask for. Both are asked for here directly: the fresh open must not block on the older job,
+and it must still read exactly what that older job is in the middle of committing, for any byte
+range it has not itself touched yet.
+
+The file's not-yet-persisted state is therefore not one write cache but an ordered chain of them: at
+most one active generation, currently receiving writes through an open handle, plus zero or more
+settling generations behind it, each with its own DESIGN-MOUNT-006 job in flight, oldest job first.
+Releasing the last handle on the active generation does not settle it inline - it moves to the back
+of the settling chain, handed to DESIGN-MOUNT-006's pool, exactly as it already does today with a
+single generation. A write-intent open that finds no active generation - the file's first write this
+session, or every previous handle already released - creates a brand new one immediately, without
+waiting for anything already in the settling chain to finish; this extends DESIGN-MOUNT-006's
+non-blocking `release()` to opens as well, for the same reason: blocking here would tie a file's
+write throughput to how far behind the shared pool happens to be for that one file, serializing a
+workload that rewrites the same file repeatedly and quickly (an editor's save, a periodically
+rewritten log) onto the pool's own backlog instead of just adding another lightweight link.
+
+Correctness without blocking follows directly from DESIGN-MOUNT-012's fallback already being an
+open-ended resolver, not necessarily the durably committed content: a new generation's fallback is
+the chain's next-older generation, resolved against the live chain at the moment of the read, not a
+copy taken when the new generation was created. Reading the newest generation therefore transparently
+sees every older generation's writes for any range it has not itself touched, however many
+generations are currently chained, terminating at the durably committed content
+(`crates/db`/`crates/store`) once nothing older remains. A new generation's own `original_size`
+(DESIGN-MOUNT-012) is likewise the next-older generation's size, not the durably committed size
+directly, so the file's logical size stays correct while more than one generation is in flight.
+Resolving against the live chain rather than a snapshot also means a generation's memory is freed the
+moment its job settles and it is removed from the chain: a still-open hole that would have fallen
+through it instead falls through to the durably committed content the job just produced, which is
+exactly what removing that generation from the chain represents.
+
+DESIGN-MOUNT-010's backpressure already scales `write()`'s delay off the released-but-unsettled
+spilled bytes for a file, regardless of how many separate settling generations that total is spread
+across - a client reopening and rewriting a file faster than the pool can drain it slows down through
+that existing mechanism rather than needing a separate cap on chain depth.
+
+### Alternative considered and rejected: blocking a fresh write-intent open until the file's settling job finishes
+
+Waiting for a file's settling generation to finish before letting a new write-intent open proceed
+was considered and rejected as the simpler-looking option: it reintroduces the coupling
+DESIGN-MOUNT-006's non-blocking `release()` was built to avoid, one layer later - a file's write
+throughput would depend on how far behind the shared pool happens to be, rather than on the client's
+own pace.
+
+### Alternative considered and rejected: copying a still-settling generation's tracked ranges into the new one eagerly
+
+Copying the previous generation's own tracked byte ranges into a fresh generation at creation time,
+rather than falling back to it live through the chain, was considered and rejected: it is
+DESIGN-MOUNT-012's copy-on-open problem recurring one layer down, making creating a new generation
+cost proportional to how much a still-in-flight previous generation had tracked, instead of the
+constant-time operation it can otherwise stay.
