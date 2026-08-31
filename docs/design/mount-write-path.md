@@ -248,3 +248,38 @@ its spillover yet - delaying its own `write()` calls could not relieve that back
 one write responsible for it, with the delay climbing for the rest of that single write's duration
 regardless of how the background pool is actually doing. Scoping the signal to released,
 already-queued work ties the delay to a backlog `write()`'s throttling can actually help drain.
+
+## DESIGN-MOUNT-012: The write cache tracks only session-written byte ranges, not a full copy
+Status: decided
+
+Opening an already-existing file for writing does not copy its current content into the write
+cache up front. The cache starts empty and records only the byte ranges this session actually
+writes - a small set of (position, bytes) entries, each entry replacing or splitting whatever
+existing entries it overlaps, the same way `write()` at a given offset always behaves. Reading a
+range not covered by any entry - a byte a client has not touched this session - falls back to the
+file's content as it stood when this write session began: read through `crates/db`'s existing
+content-resolution path (the same lookup a read-only open already needs) and `crates/store`,
+resolving that logical range against the pre-existing content's own `chunk_extents`. A range
+beyond both the tracked entries and that original size (grown by `truncate`) reads as zero.
+
+This scales with how much of a file a session actually changes, not with the file's total size - a
+one-byte change to a multi-gigabyte file costs one small cache entry and, later, one small
+settling read for that byte plus whatever untouched bytes the resulting chunk boundaries happen to
+span, not a full copy of the file into the cache the moment it is opened. `crates/store` still
+being read-only-safe to use concurrently with itself (DESIGN-STORE-002) is what makes reading the
+original content on demand, interleaved with the session's own in-progress writes, unproblematic.
+
+Settling a write (DESIGN-MOUNT-011) still needs the file's complete resulting byte stream to chunk
+and hash - the entries recorded here and the original-content fallback together are what a settling
+job iterates over, in position order, to reconstruct it; neither on its own is the complete
+picture.
+
+### Alternative considered and rejected: copying the existing content into the cache on open
+
+Reading a file's entire existing content into the write cache the moment it is opened for writing,
+so every subsequent read is answered purely from the cache with no original-content fallback
+needed, was considered and rejected: it makes the cost of opening any existing file for writing
+proportional to that file's total size regardless of how much of it a session actually intends to
+change, including immediately spilling most of it back out to disk under DESIGN-MOUNT-010's memory
+budget for a large file - real, avoidable cost paid on every open, not just an implementation
+inconvenience.
