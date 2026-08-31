@@ -345,3 +345,49 @@ rather than falling back to it live through the chain, was considered and reject
 DESIGN-MOUNT-012's copy-on-open problem recurring one layer down, making creating a new generation
 cost proportional to how much a still-in-flight previous generation had tracked, instead of the
 constant-time operation it can otherwise stay.
+
+## DESIGN-MOUNT-014: A newly created file gets a synthetic, session-local identity before it has a `tree_entries` row
+Status: decided
+
+DESIGN-MOUNT-013's chain is keyed by file identity, which DESIGN-MOUNT-007 already requires -
+straightforward for a file that already has a `tree_entries` row before this session ever touches
+it, since that row's own id is exactly the identity to key on. A file this session `create()`s has
+no such row yet: DESIGN-METADATA-008 in
+[`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) deliberately
+keeps a not-yet-settled file out of the database entirely, so there is no id to reuse until
+settling actually inserts one. DESIGN-MOUNT-007's same-session visibility still applies to such a
+file just as much as an overwrite of an existing one - `getattr`, `readdir`, and a second `open` on
+the same path all need to find its pending state despite the database having nothing to say about
+it at all.
+
+Resolving this reuses DESIGN-MOUNT-013's chain machinery unchanged rather than building a second,
+parallel one: the moment a path is `create()`d, it is assigned a synthetic identity - drawn from a
+range disjoint from every real `tree_entries.id` (negative values, since real ids are always
+non-negative) - and from that point on behaves exactly like a real file identity for chaining,
+write-cache, and settling purposes. A concurrent second `create()`/write-intent `open()` on the same
+still-pending path attaches to the same synthetic identity's chain the same way a second open on an
+existing file's real id already does, including DESIGN-MOUNT-013's non-blocking behavior if the
+first generation has already been released and is settling.
+
+What is genuinely new, not already covered by keying alone, is discovering a synthetic identity
+from a bare path in the first place: `getattr`/`readdir`/`open` are path-based, and for a pending
+create the database cannot answer "what identity does this path have" the way it does for
+everything else. A small path index - `(parent directory, name) -> synthetic identity`, entirely
+in memory, populated on `create()` and cleared once nothing is pending under that name anymore -
+is the only piece this decision adds; `getattr`/`readdir` consult it alongside the database's own
+listing to present a coherent merged view for as long as a create is pending. Settling a
+newly-created file's content resolves this the same way settling an overwrite already does
+(DESIGN-MOUNT-011): once `crates/db`'s `settle_file` inserts the real `tree_entries` row, later
+opens on that path resolve through the database again as normal, and the synthetic identity's own
+chain entry is cleaned up the same way any settled, fully-released generation already is.
+
+### Alternative considered and rejected: inserting a placeholder `tree_entries` row immediately on `create()`
+
+Giving a newly created file a real database row right away - with some sentinel standing in for
+"content not resolved yet" until settling replaces it - was considered and rejected: it directly
+conflicts with DESIGN-METADATA-004's decision (in [`metadata-storage.md`](metadata-storage.md))
+against building `content_id` update-in-place machinery, and with DESIGN-METADATA-008's schema-level
+`CHECK` that a live file entry always has a non-null `content_id` - relaxing either specifically to
+accommodate this one case would reintroduce exactly the in-place-mutation and partial-state
+complexity those decisions were written to avoid, for every reader of the schema, not only the
+mount's own write path.
