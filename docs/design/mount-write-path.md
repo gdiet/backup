@@ -347,47 +347,83 @@ cost proportional to how much a still-in-flight previous generation had tracked,
 constant-time operation it can otherwise stay.
 
 ## DESIGN-MOUNT-014: A newly created file gets a synthetic, session-local identity before it has a `tree_entries` row
+Status: superseded-by DESIGN-MOUNT-015
+
+## DESIGN-MOUNT-015: `create()` settles the canonical empty content immediately, giving a new file a real identity from the start
 Status: decided
 
 DESIGN-MOUNT-013's chain is keyed by file identity, which DESIGN-MOUNT-007 already requires -
 straightforward for a file that already has a `tree_entries` row before this session ever touches
 it, since that row's own id is exactly the identity to key on. A file this session `create()`s has
-no such row yet: DESIGN-METADATA-008 in
-[`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md) deliberately
-keeps a not-yet-settled file out of the database entirely, so there is no id to reuse until
-settling actually inserts one. DESIGN-MOUNT-007's same-session visibility still applies to such a
-file just as much as an overwrite of an existing one - `getattr`, `readdir`, and a second `open` on
-the same path all need to find its pending state despite the database having nothing to say about
-it at all.
+no such row yet under DESIGN-METADATA-008's "not-yet-settled files stay out of the database"
+(`metadata-schema-with-contents-table.md`), which DESIGN-MOUNT-014 took as fixed and worked around
+with a parallel, session-local identity space and a path index to resolve it from a bare path - real
+complexity, duplicating machinery DESIGN-MOUNT-013 already built for the ordinary case of a
+`tree_entries` row that already exists.
 
-Resolving this reuses DESIGN-MOUNT-013's chain machinery unchanged rather than building a second,
-parallel one: the moment a path is `create()`d, it is assigned a synthetic identity - drawn from a
-range disjoint from every real `tree_entries.id` (negative values, since real ids are always
-non-negative) - and from that point on behaves exactly like a real file identity for chaining,
-write-cache, and settling purposes. A concurrent second `create()`/write-intent `open()` on the same
-still-pending path attaches to the same synthetic identity's chain the same way a second open on an
-existing file's real id already does, including DESIGN-MOUNT-013's non-blocking behavior if the
-first generation has already been released and is settling.
+`create()` instead settles the file's content as the canonical empty content immediately - the same
+zero-chunk, zero-length `contents` row [`crate::content::find_or_create_content`] already produces
+for any file that happens to end up empty - via the ordinary [`crate::tree::settle_file`] call,
+before returning a handle at all. This is not a placeholder or a sentinel: it is a real, valid,
+already-meaningful state ("this file exists; its content is presently empty"), the exact same state
+a client would see from `open(O_CREAT | O_TRUNC)` on an ordinary filesystem before writing anything.
+A file this session later actually writes to and releases then settles exactly the way overwriting
+any other existing file already does (DESIGN-MOUNT-011): a new `tree_entries` row, never an in-place
+`content_id` update, so this creates no exception to that decision's own reasoning - a `create()`
+immediately followed by real content simply produces two ordinary history entries instead of one, no
+different in kind from an ordinary quick double-save.
 
-What is genuinely new, not already covered by keying alone, is discovering a synthetic identity
-from a bare path in the first place: `getattr`/`readdir`/`open` are path-based, and for a pending
-create the database cannot answer "what identity does this path have" the way it does for
-everything else. A small path index - `(parent directory, name) -> synthetic identity`, entirely
-in memory, populated on `create()` and cleared once nothing is pending under that name anymore -
-is the only piece this decision adds; `getattr`/`readdir` consult it alongside the database's own
-listing to present a coherent merged view for as long as a create is pending. Settling a
-newly-created file's content resolves this the same way settling an overwrite already does
-(DESIGN-MOUNT-011): once `crates/db`'s `settle_file` inserts the real `tree_entries` row, later
-opens on that path resolve through the database again as normal, and the synthetic identity's own
-chain entry is cleaned up the same way any settled, fully-released generation already is.
+The entire DESIGN-MOUNT-014 apparatus becomes unnecessary as a result: a newly created file has a
+real `tree_entries.id` from the moment `create()` returns, so `getattr`/`readdir`/a second `open`
+all resolve it exactly the way an existing file's overwrite-in-progress already needs to (the pending
+generation's own current size, from DESIGN-MOUNT-013's chain, taking precedence over whatever size
+is currently on the settled row) - one mechanism for both cases, not two. A collision between two
+concurrent `create()` calls for the same new name is resolved by `settle_file`'s own existing
+collision handling (the same uniqueness enforcement an ordinary overwrite's collision already relies
+on), rather than a second, purpose-built check in a separate in-memory index.
 
-### Alternative considered and rejected: inserting a placeholder `tree_entries` row immediately on `create()`
+This is also a closer match to genuine POSIX `creat()` semantics than DESIGN-MOUNT-014's approach
+was: a real filesystem makes an empty file visible - to every process, not only the one that created
+it - the instant `create()` returns, before any content has been written at all. Deliberately keeping
+that same moment invisible outside the current session (as DESIGN-MOUNT-014's synthetic,
+session-local identity would have) was not something REQ-TREE-006 actually required; REQ-TREE-006 is
+about a *write's content* becoming visible to a different process only once complete, not about
+whether the empty file's mere existence is visible immediately.
 
-Giving a newly created file a real database row right away - with some sentinel standing in for
-"content not resolved yet" until settling replaces it - was considered and rejected: it directly
-conflicts with DESIGN-METADATA-004's decision (in [`metadata-storage.md`](metadata-storage.md))
-against building `content_id` update-in-place machinery, and with DESIGN-METADATA-008's schema-level
-`CHECK` that a live file entry always has a non-null `content_id` - relaxing either specifically to
-accommodate this one case would reintroduce exactly the in-place-mutation and partial-state
-complexity those decisions were written to avoid, for every reader of the schema, not only the
-mount's own write path.
+### Known limitation: a lagging settle job can resurrect a file's name after a racing `unlink`
+
+If a client releases a written generation (queuing its DESIGN-MOUNT-006 settle job), then unlinks
+the file before that job finishes, the job's own `settle_file` call - not knowing the name was
+removed in the meantime - finds nothing live at that name anymore and inserts a fresh entry there
+regardless, effectively resurrecting the name with the settled content. This is not new to this
+decision (the same race exists for an ordinary overwrite's settle job racing a concurrent `unlink`,
+independent of how a new file's first content came to be); it is called out here because
+`create()`-then-quickly-`unlink()` is the shape most likely to surface it in practice, e.g. a client
+that creates a temporary file and removes it again while a slow settle job is still catching up.
+Closing this gap needs the settle job to notice a name was removed out from under it before
+committing - not built yet; left as a known limitation of this first version rather than blocking it,
+the same way DESIGN-MOUNT-009's failure handling and DESIGN-MOUNT-010's Windows sparse-file behavior
+are each their own explicitly tracked gap rather than a silent one.
+
+### Alternative considered and rejected: DESIGN-MOUNT-014's synthetic, session-local identity plus a path index
+
+Assigning a newly created file its own identity space, disjoint from real `tree_entries.id` values,
+with a separate in-memory `(parent, name) -> identity` index to resolve it from a bare path, was the
+first decision reached here and is superseded by this one: it worked, but at the cost of a second,
+parallel bookkeeping structure alongside DESIGN-MOUNT-013's chain, entirely to work around treating a
+newly created file's initial state as "nothing yet" rather than "a real, empty file" - a distinction
+that, once examined, was not actually load-bearing for anything DESIGN-METADATA-008 or
+DESIGN-METADATA-004 require.
+
+### Alternative considered and rejected: a placeholder `tree_entries` row with a sentinel standing in for "content not resolved yet"
+
+Giving a newly created file a real database row right away, but with some sentinel (e.g. a null or
+otherwise out-of-band `content_id`) standing in for "content not resolved yet" until settling
+replaces it, was considered and rejected - this is what distinguishes it from the chosen approach
+above, which uses a real, valid, already-meaningful `content_id` rather than a sentinel. A sentinel
+would directly conflict with DESIGN-METADATA-004's decision (in
+[`metadata-storage.md`](metadata-storage.md)) against building `content_id` update-in-place
+machinery, and with DESIGN-METADATA-008's schema-level `CHECK` that a live file entry always has a
+non-null `content_id` - relaxing either specifically to accommodate this one case would reintroduce
+exactly the in-place-mutation and partial-state complexity those decisions were written to avoid,
+for every reader of the schema, not only the mount's own write path.
