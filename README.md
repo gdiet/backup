@@ -21,8 +21,9 @@ Early development. The `dfs` command-line tool exists and can:
   content writes (creating a file, writing to one, truncating, deleting) - all under a
   repository-wide write lock that keeps two writing sessions from running at once. Content changes
   are chunked, hashed, and deduplicated in the background after a file is closed, not while it is
-  being written; a background failure is only reported to standard error for now, not yet to a
-  persistent log or a read-only degradation on a systemic failure.
+  being written; a background failure is recorded to a plain log file in the repository's `meta/`
+  directory, and a systemic failure (e.g. storage full) degrades the session to read-only until
+  the mount is started again.
 
 Underneath the CLI: [`cdc`](crates/cdc/) (content-defined chunking, the basis for sub-file
 deduplication) and [`mountfs`](crates/mountfs/) (a cross-platform mount backend, Linux via
@@ -39,6 +40,11 @@ libfuse3, Windows via WinFSP, behind a single trait - see
   network-mounted repository, where reliability depends on the network filesystem protocol's own
   locking support and how the client/server happen to be configured. Keeping a repository on
   local or removable storage avoids this limitation entirely.
+- **Deleting a file right after writing it can be resurrected by a lagging background settle**:
+  a write's chunking/hashing/storage happens in the background after the file is closed; deleting
+  the file before that finishes can still let it reappear once the background job completes,
+  unaware the name was removed in the meantime. See DESIGN-MOUNT-015's "Known limitation" in
+  [`docs/design/mount-write-path.md`](docs/design/mount-write-path.md) for the details.
 
 ## System Requirements
 
