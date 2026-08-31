@@ -36,6 +36,14 @@ automatically take a metadata backup first, or should backups stay a separate, e
 the user runs on their own schedule? Automatic-before-risk is a safety net; explicit-only avoids
 surprise disk usage and lets the user control backup cadence themselves.
 
+One middle ground worth weighing explicitly rather than only the two extremes above: scoping
+"automatic" to specifically the operations that relocate or invalidate already-stored bytes (space
+reclamation, compaction - the same operations REQ-MAINTENANCE-007 in
+[`functional/maintenance.md`](functional/maintenance.md) already warns a stale backup about),
+rather than every mutating session uniformly. An ordinary read-write mount session, or a plain
+ingest run, does not carry that same category of risk to an existing backup's validity - only
+reclamation/compaction do.
+
 ### User interface beyond the command line
 Status: idea
 
