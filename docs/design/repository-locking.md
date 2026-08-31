@@ -78,3 +78,73 @@ instead of immediately failing with `SQLITE_BUSY` on transient contention. Read 
 this decision and rejected for the same reason SQLite's own transaction-level locking is not
 enough: it only ever smooths over momentary contention between individual transactions, never
 providing the session-spanning exclusivity a whole mutating session actually needs.
+
+## DESIGN-MAINTENANCE-002: Exclusive creation narrows the acquisition race further; a diagnostic marker records who holds it
+Status: decided
+
+DESIGN-MAINTENANCE-001's "Known limitation" is that `flock`'s own cross-process exclusivity is not
+guaranteed on a network-mounted repository, in a way this project cannot detect from inside a lock
+request that reports success either way. Acquisition adds one more gate ahead of `flock` that
+narrows this on a real, common class of such filesystems: exclusive file creation (`O_CREAT|O_EXCL`
+- `create_new` in Rust's `OpenOptions`) is one of the most widely and correctly implemented atomic
+primitives across network filesystems, including several that do not correctly propagate `flock`
+across machines - it needs no server-side lock state held across a session, only a single atomic
+"create this name, or tell me it already exists" operation.
+
+Acquisition tries `create_new` on the lock file first. On success, nothing else could have created
+that name first, so this session is provably the only one that just started acquiring it. On
+`AlreadyExists`, the existing file is opened normally (no `O_EXCL`) and acquisition continues into
+`flock` exactly as DESIGN-MAINTENANCE-001 already describes - this fallback is what preserves that
+decision's crash-recovery property unchanged: a file left behind by a process that exited without
+releasing (a crash, a hard kill) is not itself proof of an active holder, and `flock` is still what
+tells the two apart, since the OS already released that process's own advisory lock the moment its
+file descriptor/handle went away. `flock` is acquired unconditionally on both paths, including right
+after a fresh `create_new` success - without it, a second session's own fallback-and-`flock` attempt
+would find nothing held and incorrectly treat the first session's still-active file as a stale
+leftover.
+
+For this same-name creation race to be narrowed on *every* acquisition, not only the very first one
+ever made against a given repository, a clean release now deletes the lock file, not only releases
+`flock` - done while still holding the lock, immediately before the `flock` guard itself is dropped,
+never after. Releasing in the other order (drop `flock` first, delete second) would leave a window
+where a different process's fallback-and-`flock` attempt already succeeds and considers itself the
+new holder, and this session's later delete of the *same name* would then remove the new holder's
+own lock file out from under it. Deleting first means a later acquirer's `create_new` only ever
+succeeds once this session no longer references that path at all - by the time that happens, this
+session's own lingering hold on the (already unnamed) file is unreachable by any future acquirer and
+irrelevant to correctness, gone entirely once its `flock` guard finishes dropping immediately after.
+
+Once acquired (via either path), the process writes one line identifying itself - hostname, process
+id, and acquisition time - into the file, for a human diagnosing an "already locked" report to see
+who actually holds it. This is diagnostic only, never consulted by the locking logic itself - see
+the rejected alternative below for why using it as a second gate was considered and specifically not
+adopted.
+
+### Known limitation: Windows delete-pending semantics not yet verified against a real mount
+
+Deleting a file while a handle to it is still open succeeds on Windows the same way it does on
+Unix - Rust's default share mode already includes `FILE_SHARE_DELETE` - but NTFS keeps the directory
+entry in a "pending delete" state until every handle referencing it actually closes, which here
+follows only microseconds later as part of the same release (the `flock` guard dropping right after
+the delete call above). Whether a competing acquirer's `create_new` in that narrow window reports
+`AlreadyExists` and needs a caller-visible retry, or is transparently handled by the OS, has not been
+checked against a real Windows/NTFS mount - `agent-todos/` tracks this the same way it already does
+for `write_cache.rs`'s sparse-file behavior.
+
+### Alternative considered and rejected: using the diagnostic marker's own presence as a second locking gate
+
+Treating the marker file's content as itself a signal to gate on - refusing whenever it is
+non-empty, regardless of what `flock` reports - was considered and specifically rejected: it
+reintroduces exactly the failure mode DESIGN-MAINTENANCE-001's own "a manually-written PID/lock
+file" alternative already rejected, since a marker left behind by a crashed process is
+indistinguishable from an active one without a `flock`-equivalent auto-release property, which
+content alone does not have. Concretely, it would make the *reliable* case strictly worse: on local
+or removable storage, where `flock` already recovers correctly and automatically from an unclean
+shutdown, a stale marker would now block every future acquisition attempt permanently, requiring
+manual cleanup - a regression on the one case that works fully today - while only inconsistently
+improving the network-filesystem case it targets, since most such filesystems cache reads (an NFS
+attribute cache, an SMB client cache, a cloud-sync mount's own caching), so a just-written marker
+may not even be visible to a second machine for long enough to matter, in a way this project has no
+way to detect any more reliably than it already cannot detect `flock`'s own silent failure
+(DESIGN-MOUNT-009's "Alternative considered and rejected: attempting transient/permanent detection
+for systemic failures" rejects the same kind of heuristic for the same underlying reason).
