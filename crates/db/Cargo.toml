@@ -6,6 +6,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
+fd-lock = "4.0.4"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 rusqlite_migration = "2.6.0"
 

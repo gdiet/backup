@@ -22,6 +22,17 @@ Early development. What exists so far:
 No command-line tool exists yet — these are library crates, not yet wired into a usable
 application.
 
+## Known Limitations
+
+- **Repository write locking on network-mounted storage**: opening a repository for writing (a
+  read-write mount, in particular) takes an operating-system advisory lock to keep two writing
+  sessions from running against the same repository at once. This is reliably enforced by the
+  operating system for a repository on local or removable storage (an internal disk, an external/
+  USB drive, in any filesystem format, FAT included) - it is *not* guaranteed on a
+  network-mounted repository, where reliability depends on the network filesystem protocol's own
+  locking support and how the client/server happen to be configured. Keeping a repository on
+  local or removable storage avoids this limitation entirely.
+
 ## System Requirements
 
 Once a command-line tool exists, mounting a repository will need a real filesystem-in-userspace

@@ -12,6 +12,7 @@
 mod allocation;
 mod connection;
 mod content;
+mod lock;
 mod migrations;
 mod settings;
 mod tree;
@@ -22,6 +23,7 @@ use std::sync::Mutex;
 
 use rusqlite::Connection;
 
+pub use lock::WriteLock;
 pub use settings::RepositorySettings;
 pub use tree::{Entry, EntryKind};
 
@@ -60,6 +62,10 @@ pub enum Error {
     CannotRemoveRoot,
     /// Another thread using this [`Repository`] panicked while holding its connection lock.
     Poisoned,
+    /// [`acquire_write_lock`] found the repository's write lock already held by another process
+    /// (REQ-MAINTENANCE-004 in `requirements/functional/maintenance.md`) - only one
+    /// repository-mutating session runs at a time.
+    AlreadyLocked(PathBuf),
     /// SQLite reported a `journal_mode` other than `wal` after `configure_write_connection`
     /// requested it - e.g. an unsupported filesystem (SQLite silently falls back instead of
     /// failing outright). Carries whatever mode SQLite actually settled on.
@@ -96,6 +102,13 @@ impl std::fmt::Display for Error {
             }
             Error::CannotRemoveRoot => write!(f, "cannot remove the root entry"),
             Error::Poisoned => write!(f, "repository connection lock was poisoned"),
+            Error::AlreadyLocked(path) => {
+                write!(
+                    f,
+                    "the repository at {} is already locked for writing by another process",
+                    path.display()
+                )
+            }
             Error::WalUnavailable(mode) => {
                 write!(
                     f,
@@ -345,6 +358,20 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
         settings: RepositorySettings::new(cdc_target_size_bits, creation_time_millis),
         conn: Mutex::new(conn),
     })
+}
+
+/// Acquires `repo_root`'s repository-wide write lock, failing immediately (never blocking) if
+/// another process already holds it (`Error::AlreadyLocked`) - REQ-MAINTENANCE-004's "only one
+/// repository-mutating operation runs against a repository at a time", DESIGN-MAINTENANCE-001 in
+/// `docs/design/repository-locking.md`. Every caller that will mutate the repository - a
+/// read-write mount for its whole session (DESIGN-MOUNT-008), a future directed import, reclaim,
+/// or compaction run - acquires this once and holds the returned [`WriteLock`] for as long as
+/// that session runs; a purely read-only caller never needs to call this at all.
+///
+/// `repo_root` must already hold a repository (i.e. [`open_repository`] against it would
+/// succeed) - the `meta/` directory the lock file lives in is not created here.
+pub fn acquire_write_lock(repo_root: &Path) -> Result<WriteLock, Error> {
+    lock::try_acquire_write_lock(&repo_root.join(META_DIR))
 }
 
 #[cfg(test)]

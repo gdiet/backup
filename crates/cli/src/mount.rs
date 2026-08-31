@@ -1,8 +1,10 @@
 //! `dfs mount`'s real implementation - REQ-MOUNT-001. Read-only by default (REQ-MOUNT-002);
 //! `--read-write` opts into the directory operations REQ-MOUNT-003 requires (mkdir/rmdir/rename/
-//! utimens - see `dedup_fs::DedupFs`). No cross-process repository locking yet
-//! (REQ-MAINTENANCE-004) - out of scope for this first mount milestone. REQ-CLI-006's default
-//! repository path (`crate::repo_path`) applies here too - see `try_run`'s `default_path_used`.
+//! utimens - see `dedup_fs::DedupFs`) and, before any of that, the whole-session repository write
+//! lock (REQ-MAINTENANCE-004, DESIGN-MAINTENANCE-001 in
+//! `docs/design/repository-locking.md`) - a read-only mount never acquires it. REQ-CLI-006's
+//! default repository path (`crate::repo_path`) applies here too - see `try_run`'s
+//! `default_path_used`.
 
 use std::path::Path;
 
@@ -29,6 +31,16 @@ fn try_run(
             ));
         }
         Err(err) => return Err(format!("error: {err}")),
+    };
+
+    // Held for the rest of this function, across the blocking `mountfs::mount` call below, for
+    // as long as this read-write mount session runs (DESIGN-MOUNT-008) - dropped, releasing the
+    // lock, once `mountfs::mount` returns after unmount. A read-only mount never acquires it
+    // (REQ-MAINTENANCE-004: read-only operations are unaffected).
+    let _write_lock = if read_write {
+        Some(db::acquire_write_lock(repo_path).map_err(|err| format!("error: {err}"))?)
+    } else {
+        None
     };
 
     // Linux's FUSE backend refuses to mount onto a path that does not already exist, and only
@@ -118,5 +130,32 @@ mod tests {
             !message.contains("Pass a repository path"),
             "did not expect the default-path hint for an explicit path, got: {message}"
         );
+    }
+
+    #[test]
+    fn try_run_read_write_refuses_a_repository_another_process_already_locked_for_writing() {
+        let repo_path =
+            std::env::temp_dir().join("dfs-mount-test-read-write-refused-while-locked-repo");
+        let _ = std::fs::remove_dir_all(&repo_path);
+        db::init_repository(
+            &repo_path,
+            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+        )
+        .expect("repository setup for this test must succeed");
+        let mountpoint = std::env::temp_dir().join("dfs-mount-test-unused-mountpoint-locked");
+
+        // Simulates a second process already holding the write lock - try_run must be refused
+        // before ever reaching the (blocking) mountfs::mount call below.
+        let _held_elsewhere = db::acquire_write_lock(&repo_path)
+            .expect("acquiring the write lock for the first time must succeed");
+
+        let message = try_run(&repo_path, &mountpoint, true, false)
+            .expect_err("must fail - the write lock is already held");
+        assert!(
+            message.contains("already locked"),
+            "expected an actionable already-locked message, got: {message}"
+        );
+
+        std::fs::remove_dir_all(&repo_path).expect("test cleanup must succeed");
     }
 }

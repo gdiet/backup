@@ -566,8 +566,9 @@ already set:**
    file-rename level.
 3. `busy_timeout = 5000` (milliseconds) - wait instead of failing outright with `SQLITE_BUSY` on
    *transient* contention (e.g. another connection mid-checkpoint). Not a substitute for
-   REQ-MAINTENANCE-004's real cross-process exclusivity, which still needs its own mechanism
-   (not built yet) - this only smooths over momentary lock collisions.
+   REQ-MAINTENANCE-004's real cross-process exclusivity, which has its own separate mechanism
+   (DESIGN-MAINTENANCE-001 in [`repository-locking.md`](repository-locking.md)) - this only
+   smooths over momentary lock collisions.
 
 **Persistent, whole-database properties - stored in the database file's own header, so any
 connection that ever opens that file afterward already sees the effect, with no need to ask
