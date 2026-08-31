@@ -12,15 +12,22 @@ see [`migration/`](migration/) for the migration path and feature-parity trackin
 
 ## Status
 
-Early development. What exists so far:
+Early development. The `dfs` command-line tool exists and can:
 
-- [`cdc`](crates/cdc/) — content-defined chunking, the basis for sub-file deduplication.
-- [`mountfs`](crates/mountfs/) — a cross-platform mount backend (Linux via libfuse3, Windows via WinFSP)
-  behind a single trait. See [`docs/design/mount-abstraction.md`](docs/design/mount-abstraction.md)
-  for the design.
+- create a new repository (`dfs create-repo`);
+- mount an existing repository as a real filesystem (`dfs mount`), read-only by default - browsing
+  directories and reading existing files both work;
+- with `--read-write`, also create/remove/rename directories and set modification times, under a
+  repository-wide write lock that keeps two writing sessions from running at once.
 
-No command-line tool exists yet — these are library crates, not yet wired into a usable
-application.
+Real content writes through the mount (creating a file, writing to one, truncating, deleting) are
+not implemented yet - `create`/`write`/`truncate`/`unlink` still refuse with `EROFS` regardless of
+`--read-write`.
+
+Underneath the CLI: [`cdc`](crates/cdc/) (content-defined chunking, the basis for sub-file
+deduplication) and [`mountfs`](crates/mountfs/) (a cross-platform mount backend, Linux via
+libfuse3, Windows via WinFSP, behind a single trait - see
+[`docs/design/mount-abstraction.md`](docs/design/mount-abstraction.md) for the design).
 
 ## Known Limitations
 
@@ -35,8 +42,7 @@ application.
 
 ## System Requirements
 
-Once a command-line tool exists, mounting a repository will need a real filesystem-in-userspace
-driver:
+Mounting a repository needs a real filesystem-in-userspace driver:
 
 - **Linux**: `libfuse3` and `fuse3` installed.
 - **Windows**: [WinFSP](https://github.com/winfsp/winfsp) installed.

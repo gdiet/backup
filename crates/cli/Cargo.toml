@@ -14,3 +14,7 @@ cdc = { version = "0.0.1", path = "../cdc" }
 clap = { version = "4.6.6", features = ["derive"] }
 db = { version = "0.0.1", path = "../db" }
 mountfs = { path = "../mountfs" }
+store = { version = "0.0.1", path = "../store" }
+
+[dev-dependencies]
+tempfile = "3.27.0"

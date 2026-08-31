@@ -74,6 +74,34 @@ pub(crate) fn reserve_and_insert_chunk(
     Ok((chunk_id, ranges))
 }
 
+/// Returns `content_id`'s complete physical layout: every `chunk_extents` `(start, stop)` range
+/// backing it, in logical order - first by the content's own chunk sequence
+/// (`content_chunks.seq`), then by each chunk's own extent sequence
+/// (`chunk_extents.seq`, for a chunk split across more than one reserved range). Concatenating the
+/// bytes at these ranges, in this order, reproduces the content's own bytes exactly; their total
+/// length equals the content's own `length`. An unknown `content_id` returns an empty `Vec`, the
+/// same as a content genuinely made of zero chunks (a zero-length content) - callers that need to
+/// tell the two apart already have the content's own row (e.g. via [`find_content`]).
+pub(crate) fn resolve_extents(
+    conn: &Connection,
+    content_id: i64,
+) -> Result<Vec<(u64, u64)>, Error> {
+    let mut stmt = conn.prepare(
+        "SELECT ce.start, ce.stop \
+         FROM content_chunks cc \
+         JOIN chunk_extents ce ON ce.chunk_id = cc.chunk_id \
+         WHERE cc.content_id = ?1 \
+         ORDER BY cc.seq, ce.seq",
+    )?;
+    stmt.query_map([content_id], |row| {
+        let start: i64 = row.get(0)?;
+        let stop: i64 = row.get(1)?;
+        Ok((start as u64, stop as u64))
+    })?
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(Error::from)
+}
+
 /// Finds or creates the `contents` row for the whole-content `(length, hash)`, linking
 /// `chunk_ids` (in order) via `content_chunks` if it did not already exist - an empty `chunk_ids`
 /// is valid (a zero-length content). Returns the content id.
@@ -183,6 +211,80 @@ mod tests {
             })
             .unwrap();
         assert_eq!(seq_and_chunk, vec![(0, chunk_a), (1, chunk_b)]);
+    }
+
+    #[test]
+    fn resolve_extents_returns_ranges_in_content_chunk_order_not_insertion_order() {
+        let (repo, _dir) = repo();
+        let (chunk_a, ranges_a) = repo
+            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+            .unwrap();
+        let (chunk_b, ranges_b) = repo
+            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 50, HASH_B))
+            .unwrap();
+
+        // Content order is deliberately the reverse of chunk-creation order, so this only passes
+        // if resolve_extents actually follows content_chunks.seq rather than chunk id/insertion
+        // order.
+        let content_id = repo
+            .with_connection(|conn| {
+                super::find_or_create_content(conn, 150, CONTENT_HASH, &[chunk_b, chunk_a])
+            })
+            .unwrap();
+
+        let extents = repo
+            .with_connection(|conn| super::resolve_extents(conn, content_id))
+            .unwrap();
+        let mut expected = ranges_b;
+        expected.extend(ranges_a);
+        assert_eq!(extents, expected);
+    }
+
+    #[test]
+    fn resolve_extents_follows_a_chunk_split_across_multiple_ranges_in_its_own_order() {
+        let (repo, _dir) = repo();
+        // Force chunk_a to spill into two ranges by reserving and freeing a small gap first is
+        // not available here (no reclaim yet) - instead exercise the seq ordering directly via
+        // raw rows, since that is what resolve_extents must actually respect.
+        repo.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO chunks (id, length, hash) VALUES (1, 30, X'0102030405060708090A0B0C0D0E0F1011121314')",
+                (),
+            )?;
+            conn.execute(
+                "INSERT INTO chunk_extents (chunk_id, seq, start, stop) VALUES (1, 1, 1000, 1010)",
+                (),
+            )?;
+            conn.execute(
+                "INSERT INTO chunk_extents (chunk_id, seq, start, stop) VALUES (1, 0, 0, 20)",
+                (),
+            )?;
+            conn.execute(
+                "INSERT INTO contents (id, length, hash) VALUES (1, 30, X'2122232425262728292A2B2C2D2E2F3031323334')",
+                (),
+            )?;
+            conn.execute(
+                "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (1, 0, 1)",
+                (),
+            )?;
+            Ok(())
+        })
+        .unwrap();
+
+        let extents = repo
+            .with_connection(|conn| super::resolve_extents(conn, 1))
+            .unwrap();
+        // seq 0 (0..20) before seq 1 (1000..1010), even though it was inserted second.
+        assert_eq!(extents, vec![(0, 20), (1000, 1010)]);
+    }
+
+    #[test]
+    fn resolve_extents_returns_empty_for_an_unknown_content_id() {
+        let (repo, _dir) = repo();
+        let extents = repo
+            .with_connection(|conn| super::resolve_extents(conn, 999))
+            .unwrap();
+        assert_eq!(extents, Vec::<(u64, u64)>::new());
     }
 
     #[test]

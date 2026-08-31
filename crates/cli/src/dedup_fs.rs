@@ -1,7 +1,7 @@
-//! `MountFilesystem` backed by a real, open `db::Repository` - REQ-MOUNT-001/002/003/009.
-//! Directory operations only for now: `create`/`write`/`truncate`/`unlink` stay at
-//! `mountfs`'s own default `EROFS` - `crates/store`'s byte store exists (REQ-STORAGE-007) but is
-//! not wired in here yet.
+//! `MountFilesystem` backed by a real, open `db::Repository` - REQ-MOUNT-001/002/003/009. Reading
+//! existing file content works (`crate::content_reader`); `create`/`write`/`truncate`/`unlink`
+//! stay at `mountfs`'s own default `EROFS` - the write cache and background settling job
+//! (DESIGN-MOUNT-006/010/012 in `docs/design/mount-write-path.md`) are not wired in here yet.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -9,12 +9,17 @@ use mountfs::{Attr, DirEntry, Errno, FileKind, Handle, MountFilesystem, StatfsIn
 
 pub struct DedupFs {
     repo: db::Repository,
+    store: store::ByteStore,
     read_write: bool,
 }
 
 impl DedupFs {
-    pub fn new(repo: db::Repository, read_write: bool) -> Self {
-        Self { repo, read_write }
+    pub fn new(repo: db::Repository, store: store::ByteStore, read_write: bool) -> Self {
+        Self {
+            repo,
+            store,
+            read_write,
+        }
     }
 }
 
@@ -89,7 +94,7 @@ impl MountFilesystem for DedupFs {
         let entry = self.resolve_required(path)?;
         Ok(Attr {
             kind: kind_to_mountfs(entry.kind),
-            size: 0,
+            size: entry.size,
             mtime_millis: entry.time_millis,
         })
     }
@@ -109,17 +114,26 @@ impl MountFilesystem for DedupFs {
             .collect())
     }
 
-    fn open(&self, path: &str, _write_intent: bool) -> Result<Handle, Errno> {
+    fn open(&self, path: &str, write_intent: bool) -> Result<Handle, Errno> {
         let entry = self.resolve_required(path)?;
-        // No file ever has content to open yet - nothing creates a file entry today.
         match entry.kind {
             db::EntryKind::Dir => Err(Errno::EISDIR),
-            db::EntryKind::File => Err(Errno::EIO),
+            db::EntryKind::File if write_intent => {
+                self.require_read_write()?;
+                // Real content writes (DESIGN-MOUNT-006/010/012) are not wired in here yet.
+                Err(Errno::EIO)
+            }
+            db::EntryKind::File => {
+                let content_id = entry.content_id.expect(
+                    "kind=File entries always have a content_id (chk_tree_entries_kind_content_id)",
+                );
+                Ok(Handle(content_id as u64))
+            }
         }
     }
 
-    fn read(&self, _handle: Handle, _offset: u64, _size: u32) -> Result<Vec<u8>, Errno> {
-        Err(Errno::EIO)
+    fn read(&self, handle: Handle, offset: u64, size: u32) -> Result<Vec<u8>, Errno> {
+        crate::content_reader::read_content(&self.repo, &self.store, handle.0 as i64, offset, size)
     }
 
     fn release(&self, _handle: Handle) {}

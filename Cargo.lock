@@ -173,6 +173,8 @@ dependencies = [
  "clap",
  "db",
  "mountfs",
+ "store",
+ "tempfile",
 ]
 
 [[package]]

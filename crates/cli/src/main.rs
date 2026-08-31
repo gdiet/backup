@@ -1,3 +1,4 @@
+mod content_reader;
 mod create_repo;
 mod dedup_fs;
 mod mount;

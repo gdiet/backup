@@ -45,20 +45,30 @@ pub struct Entry {
     pub id: i64,
     pub kind: EntryKind,
     pub time_millis: i64,
+    /// `Some` for a file, `None` for a directory - `chk_tree_entries_kind_content_id` guarantees
+    /// this matches `kind` exactly.
+    pub content_id: Option<i64>,
+    /// The entry's logical content size - always `0` for a directory; for a file, its content's
+    /// own `contents.length`.
+    pub size: u64,
 }
 
 fn get_by_id(conn: &Connection, id: i64) -> Result<Option<Entry>, Error> {
-    let row: Option<(i64, i64)> = conn
+    let row: Option<(i64, i64, Option<i64>, Option<i64>)> = conn
         .query_row(
-            "SELECT kind, time FROM tree_entries WHERE id = ?1 AND deleted_at IS NULL",
+            "SELECT te.kind, te.time, te.content_id, c.length \
+             FROM tree_entries te LEFT JOIN contents c ON c.id = te.content_id \
+             WHERE te.id = ?1 AND te.deleted_at IS NULL",
             params![id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()?;
-    Ok(row.map(|(kind, time_millis)| Entry {
+    Ok(row.map(|(kind, time_millis, content_id, length)| Entry {
         id,
         kind: EntryKind::from_db(kind),
         time_millis,
+        content_id,
+        size: length.unwrap_or(0) as u64,
     }))
 }
 
@@ -421,10 +431,19 @@ mod tests {
     /// Inserts a bare `contents` row (no chunks) for tests that only need a valid `content_id` to
     /// point a file entry at, not the dedup bookkeeping itself.
     fn insert_content(repo: &crate::Repository, id: i64, hash_byte: u8) -> i64 {
+        insert_content_with_length(repo, id, hash_byte, 0)
+    }
+
+    fn insert_content_with_length(
+        repo: &crate::Repository,
+        id: i64,
+        hash_byte: u8,
+        length: i64,
+    ) -> i64 {
         repo.with_connection(|conn| {
             conn.execute(
-                "INSERT INTO contents (id, length, hash) VALUES (?1, 0, ?2)",
-                (id, vec![hash_byte; 20]),
+                "INSERT INTO contents (id, length, hash) VALUES (?1, ?2, ?3)",
+                (id, length, vec![hash_byte; 20]),
             )?;
             Ok(())
         })
@@ -445,6 +464,27 @@ mod tests {
         assert_eq!(entry.id, id);
         assert_eq!(entry.kind, crate::EntryKind::File);
         assert_eq!(repo.resolve_path("/").unwrap().unwrap().time_millis, 100);
+    }
+
+    #[test]
+    fn a_file_entry_exposes_its_content_id_and_size() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content_with_length(&repo, 1, 0xAA, 12345);
+        repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+
+        let entry = repo.resolve_path("/a.txt").unwrap().unwrap();
+        assert_eq!(entry.content_id, Some(content_id));
+        assert_eq!(entry.size, 12345);
+    }
+
+    #[test]
+    fn a_directory_entry_has_no_content_id_and_zero_size() {
+        let (repo, _dir) = repo();
+        repo.mkdir(0, "a", 100).unwrap();
+
+        let entry = repo.resolve_path("/a").unwrap().unwrap();
+        assert_eq!(entry.content_id, None);
+        assert_eq!(entry.size, 0);
     }
 
     #[test]

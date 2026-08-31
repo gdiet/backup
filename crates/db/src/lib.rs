@@ -34,6 +34,12 @@ const META_TMP_DIR: &str = "meta.tmp";
 const META_DB_FILE: &str = "repository.sqlite3";
 const DATA_DIR: &str = "data";
 
+/// `repo_root`'s byte-store directory (DESIGN-REPOSITORY-001) - where a caller opening
+/// `crates/store`'s `ByteStore` against this same repository points it.
+pub fn data_dir(repo_root: &Path) -> PathBuf {
+    repo_root.join(DATA_DIR)
+}
+
 #[derive(Debug)]
 pub enum Error {
     /// [`init_repository`] was called against a `repo_root` that already holds a repository.
@@ -270,6 +276,14 @@ impl Repository {
         chunk_ids: &[i64],
     ) -> Result<i64, Error> {
         self.with_transaction(|conn| content::find_or_create_content(conn, length, hash, chunk_ids))
+    }
+
+    /// Returns `content_id`'s complete physical layout in `crates/store` - every backing
+    /// `(start, stop)` range, in logical order. Concatenating the bytes at these ranges, in this
+    /// order, reproduces the content's own bytes exactly. An unknown `content_id` returns an
+    /// empty `Vec`, the same as a genuinely zero-length content.
+    pub fn resolve_extents(&self, content_id: i64) -> Result<Vec<(u64, u64)>, Error> {
+        self.with_connection(|conn| content::resolve_extents(conn, content_id))
     }
 
     /// Sets `id`'s own modification time (REQ-MOUNT-003's `utimens`).

@@ -60,7 +60,12 @@ fn try_run(
     if let Err(err) = mountfs::preflight() {
         return Err(format!("error: {err}"));
     }
-    if let Err(err) = mountfs::mount(DedupFs::new(repo, read_write), mountpoint, !read_write) {
+    let store = store::ByteStore::new(db::data_dir(repo_path), !read_write);
+    if let Err(err) = mountfs::mount(
+        DedupFs::new(repo, store, read_write),
+        mountpoint,
+        !read_write,
+    ) {
         return Err(format!("mount failed: {err}"));
     }
     Ok(())
