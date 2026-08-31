@@ -231,6 +231,25 @@ impl Repository {
         self.with_transaction(|conn| tree::rmdir(conn, id, time_millis))
     }
 
+    /// Soft-deletes the live file entry `id` (REQ-TREE-002). Bumps its parent's modification
+    /// time - unlike DESIGN-MOUNT-011's pure content overwrite, removing a name is a structural
+    /// change (REQ-TREE-005). A directory at `id` is refused.
+    pub fn unlink_file(&self, id: i64, time_millis: i64) -> Result<(), Error> {
+        self.with_transaction(|conn| tree::unlink_file(conn, id, time_millis))
+    }
+
+    /// Looks up the live entry by its own id, rather than by path - `Ok(None)` if it does not
+    /// exist or is soft-deleted, the same as [`Self::resolve_path`].
+    pub fn entry_by_id(&self, id: i64) -> Result<Option<Entry>, Error> {
+        self.with_connection(|conn| tree::get_by_id(conn, id))
+    }
+
+    /// The live entry `id`'s current `(parent_id, name)` - `None` if it does not exist or is
+    /// soft-deleted, reflecting any `rename` since `id` was first obtained.
+    pub fn parent_and_name(&self, id: i64) -> Result<Option<(i64, String)>, Error> {
+        self.with_connection(|conn| tree::parent_and_name(conn, id))
+    }
+
     /// Settles a background write job's already-resolved content (see [`Self::find_or_create_content`])
     /// into the tree as a file named `name` inside `parent_id` - DESIGN-METADATA-008/
     /// DESIGN-MOUNT-011 in `docs/design/mount-write-path.md`. If a live entry already occupies

@@ -53,7 +53,7 @@ pub struct Entry {
     pub size: u64,
 }
 
-fn get_by_id(conn: &Connection, id: i64) -> Result<Option<Entry>, Error> {
+pub(crate) fn get_by_id(conn: &Connection, id: i64) -> Result<Option<Entry>, Error> {
     let row: Option<(i64, i64, Option<i64>, Option<i64>)> = conn
         .query_row(
             "SELECT te.kind, te.time, te.content_id, c.length \
@@ -171,6 +171,20 @@ pub(crate) fn list_children(
     rows.collect::<Result<Vec<_>, _>>().map_err(Error::from)
 }
 
+/// The live entry `id`'s current `(parent_id, name)` - `None` if it does not exist or is
+/// soft-deleted. Distinct from resolving a whole path: a caller that already has an id (e.g. a
+/// background settle job resolving where its result belongs) needs this directly, reflecting any
+/// `rename` that happened since the id was first obtained.
+pub(crate) fn parent_and_name(conn: &Connection, id: i64) -> Result<Option<(i64, String)>, Error> {
+    conn.query_row(
+        "SELECT parent_id, name FROM tree_entries WHERE id = ?1 AND deleted_at IS NULL",
+        params![id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
 /// Sets `id`'s own modification time directly (REQ-MOUNT-003's `utimens`) - distinct from
 /// [`touch`], which bumps a *parent* as a side effect of a structural change to it.
 pub(crate) fn set_mtime(conn: &Connection, id: i64, time_millis: i64) -> Result<(), Error> {
@@ -278,6 +292,29 @@ pub(crate) fn rmdir(conn: &Connection, id: i64, time_millis: i64) -> Result<(), 
     )?;
     if has_live_children {
         return Err(Error::DirectoryNotEmpty(id));
+    }
+
+    let parent_id: i64 = conn.query_row(
+        "SELECT parent_id FROM tree_entries WHERE id = ?1",
+        params![id],
+        |row| row.get(0),
+    )?;
+
+    conn.execute(
+        "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+        params![time_millis, id],
+    )?;
+    touch(conn, parent_id, time_millis)?;
+    Ok(())
+}
+
+/// Soft-deletes the live file entry `id` (REQ-TREE-002), bumping its parent's modification time -
+/// removing a name is a structural change (REQ-TREE-005), unlike DESIGN-MOUNT-011's pure content
+/// overwrite. A directory at `id` is refused; the caller's `rmdir` is the directory counterpart.
+pub(crate) fn unlink_file(conn: &Connection, id: i64, time_millis: i64) -> Result<(), Error> {
+    let entry = get_by_id(conn, id)?.ok_or(Error::NoSuchEntry(id))?;
+    if entry.kind != EntryKind::File {
+        return Err(Error::WrongKind(id));
     }
 
     let parent_id: i64 = conn.query_row(
@@ -601,6 +638,84 @@ mod tests {
         let (repo, _dir) = repo();
         let err = repo.rmdir(0, 100).unwrap_err();
         assert!(matches!(err, Error::CannotRemoveRoot));
+    }
+
+    #[test]
+    fn unlink_file_soft_deletes_a_live_file_and_bumps_the_parent() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let id = repo.settle_file(0, "a.txt", 100, content_id).unwrap();
+
+        repo.unlink_file(id, 200).expect("unlink_file must succeed");
+
+        assert!(repo.resolve_path("/a.txt").unwrap().is_none());
+        let root = repo.resolve_path("/").unwrap().unwrap();
+        assert_eq!(root.time_millis, 200);
+    }
+
+    #[test]
+    fn unlink_file_refuses_a_directory() {
+        let (repo, _dir) = repo();
+        let id = repo.mkdir(0, "a", 100).unwrap();
+        let err = repo.unlink_file(id, 200).unwrap_err();
+        assert!(matches!(err, Error::WrongKind(_)));
+    }
+
+    #[test]
+    fn unlink_file_refuses_a_nonexistent_entry() {
+        let (repo, _dir) = repo();
+        let err = repo.unlink_file(999, 200).unwrap_err();
+        assert!(matches!(err, Error::NoSuchEntry(999)));
+    }
+
+    #[test]
+    fn entry_by_id_returns_the_live_entry() {
+        let (repo, _dir) = repo();
+        let id = repo.mkdir(0, "a", 100).unwrap();
+        let entry = repo.entry_by_id(id).unwrap().unwrap();
+        assert_eq!(entry.id, id);
+        assert_eq!(entry.kind, crate::EntryKind::Dir);
+    }
+
+    #[test]
+    fn entry_by_id_returns_none_once_deleted() {
+        let (repo, _dir) = repo();
+        let id = repo.mkdir(0, "a", 100).unwrap();
+        repo.rmdir(id, 200).unwrap();
+        assert!(repo.entry_by_id(id).unwrap().is_none());
+    }
+
+    #[test]
+    fn entry_by_id_returns_none_for_an_unknown_id() {
+        let (repo, _dir) = repo();
+        assert!(repo.entry_by_id(999).unwrap().is_none());
+    }
+
+    #[test]
+    fn parent_and_name_reflects_a_rename() {
+        let (repo, _dir) = repo();
+        let a = repo.mkdir(0, "a", 100).unwrap();
+        let b = repo.mkdir(0, "b", 100).unwrap();
+        let id = repo.mkdir(a, "child", 100).unwrap();
+
+        assert_eq!(
+            repo.parent_and_name(id).unwrap(),
+            Some((a, "child".to_string()))
+        );
+
+        repo.rename(a, "child", b, "renamed", false, 200).unwrap();
+        assert_eq!(
+            repo.parent_and_name(id).unwrap(),
+            Some((b, "renamed".to_string()))
+        );
+    }
+
+    #[test]
+    fn parent_and_name_returns_none_once_deleted() {
+        let (repo, _dir) = repo();
+        let id = repo.mkdir(0, "a", 100).unwrap();
+        repo.rmdir(id, 200).unwrap();
+        assert!(repo.parent_and_name(id).unwrap().is_none());
     }
 
     #[test]
