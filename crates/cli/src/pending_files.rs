@@ -65,11 +65,26 @@ impl GenerationSlot {
         *self.state.lock().expect("not poisoned") = SlotState::Settled { content_id, size };
     }
 
-    fn size(&self) -> u64 {
+    /// This generation's logical size - what a settle job (DESIGN-MOUNT-006, not yet built)
+    /// needs to know how many bytes [`Self::read`] can cover.
+    pub fn size(&self) -> u64 {
         match &*self.state.lock().expect("not poisoned") {
             SlotState::Cache(cache) => cache.size(),
             SlotState::Settled { size, .. } => *size,
         }
+    }
+
+    /// Reads `len` bytes at `position`, composing through however many older generations this
+    /// one's chain still has - see [`read_chain`]. The settle job pool uses this, in windowed
+    /// calls covering `[0, self.size())`, to read the complete byte stream a generation needs
+    /// chunking and hashing.
+    pub fn read(
+        &self,
+        position: u64,
+        len: u32,
+        resolve_content: &impl Fn(i64, u64, u32) -> io::Result<Vec<u8>>,
+    ) -> io::Result<Vec<u8>> {
+        read_chain(self, position, len, resolve_content)
     }
 }
 

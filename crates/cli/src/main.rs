@@ -4,6 +4,7 @@ mod dedup_fs;
 mod mount;
 mod pending_files;
 mod repo_path;
+mod settle;
 mod write_cache;
 
 use std::path::PathBuf;
