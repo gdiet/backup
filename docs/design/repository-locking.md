@@ -80,7 +80,7 @@ enough: it only ever smooths over momentary contention between individual transa
 providing the session-spanning exclusivity a whole mutating session actually needs.
 
 ## DESIGN-MAINTENANCE-002: Exclusive creation narrows the acquisition race further; a diagnostic marker records who holds it
-Status: decided
+Status: implemented (crates/db/src/lock.rs)
 
 DESIGN-MAINTENANCE-001's "Known limitation" is that `flock`'s own cross-process exclusivity is not
 guaranteed on a network-mounted repository, in a way this project cannot detect from inside a lock

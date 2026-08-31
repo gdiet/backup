@@ -39,7 +39,9 @@ libfuse3, Windows via WinFSP, behind a single trait - see
   USB drive, in any filesystem format, FAT included) - it is *not* guaranteed on a
   network-mounted repository, where reliability depends on the network filesystem protocol's own
   locking support and how the client/server happen to be configured. Keeping a repository on
-  local or removable storage avoids this limitation entirely.
+  local or removable storage avoids this limitation entirely. Whoever currently holds the lock is
+  recorded (hostname, process id, acquisition time) in the lock file itself, inside the
+  repository's `meta/` directory, for a human diagnosing an "already locked" report to check.
 - **Deleting a file right after writing it can be resurrected by a lagging background settle**:
   a write's chunking/hashing/storage happens in the background after the file is closed; deleting
   the file before that finishes can still let it reappear once the background job completes,
