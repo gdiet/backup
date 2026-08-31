@@ -32,12 +32,12 @@ non-blocking handoff is also what lets multiple concurrent write streams reach R
 cross-stream parallelism, regardless of which write path (this mount, or a future directed import)
 the streams arrive through.
 
-Not yet decided: the exact backpressure mechanism once the shared pool's queue is full. One
-candidate worth evaluating: rather than an abrupt block/no-block threshold, scale a small delay
-into every `write()` call proportional to how backed up the queue already is (e.g. queued bytes ×
-queue depth) - backpressure that grows smoothly with load, applied at `write()` (already a
-synchronous FUSE call, unlike the deliberately non-blocking `release()` above) rather than as a
-hard stop once some fixed limit is hit. Not evaluated against alternatives yet.
+Backpressure once the shared pool falls behind is not an abrupt block/no-block threshold: `write()`
+(already a synchronous FUSE call, unlike the deliberately non-blocking `release()` above) adds a
+small delay that scales smoothly with how far behind the pipeline already is, rather than admitting
+work at full speed until some fixed limit is hit and then stopping outright. The concrete signal
+this delay scales with - and why it does not need its own separate backlog metric - is
+DESIGN-MOUNT-010 below.
 
 Not decided here: how a failure discovered only during this background processing - after
 `release()` has already returned success - gets surfaced to the user. See
@@ -65,7 +65,8 @@ Keeping this correct means the mount looks up a file's not-yet-persisted state b
 not by open handle - a fresh `open()` on a file with a background job still running for it needs to
 find the same pending state a handle that stayed open throughout would have seen, falling back to
 the durably committed state (`chunk_extents` via `db`, bytes via `store`) only once nothing is
-still pending for that file.
+still pending for that file. DESIGN-MOUNT-010 below settles the concrete write cache this state
+lives in - here, only its externally visible behavior matters, not how it is implemented.
 
 Deliberately scoped to *this* mount session only - a completely separate process (a second `dfs
 mount`, a `dfs query` run concurrently) does not get this same-process visibility; REQ-TREE-006's
@@ -135,3 +136,41 @@ avoid) or storage-specific heuristics that would not generalize across the range
 can be backed by. Degrading unconditionally on any systemic failure, with the operator deciding
 when to remount, is simpler and fails safe; a smarter distinction is a later refinement, not a
 prerequisite for a first version.
+
+## DESIGN-MOUNT-010: Write cache buffers in memory up to a shared session budget, then spills to disk per file
+Status: decided
+
+DESIGN-MOUNT-007's not-yet-persisted state - a file's content from the moment it is written until
+DESIGN-MOUNT-006's background job durably commits it - lives in memory first. Memory usage is
+bounded by a single budget shared across the whole mount session, not one budget per file: it
+covers every byte currently not durably committed anywhere in the session at once, both content
+still arriving through an open handle and content already released but still waiting on its
+background job. A session-wide budget is what actually bounds this mount's memory footprint - a
+per-file budget would let enough concurrent writers multiply it without limit, defeating the point
+of having one at all. The budget is configurable, defaulting to 256 MiB - large enough that the
+common case (an ordinary file, one or a few concurrent writers) never spills at all, small enough
+that even several sessions running on the same machine stay within a modest, predictable memory
+footprint.
+
+Once the shared budget is exhausted, further content spills to a private temporary file on local
+disk, one per file whose write cache has grown past its share of the budget. This is transparent to
+DESIGN-MOUNT-007's read-after-write behavior: a read against spilled content is served from that
+temporary file instead of memory, with no visible difference to the caller between the two.
+
+This same budget is also what DESIGN-MOUNT-006's backpressure keys off: the total bytes currently
+spilled to disk across the session is the signal that scales the delay `write()` adds once the
+pipeline falls behind. This reuses a number already being tracked for the write cache's own memory
+management rather than introducing a second, separate backlog metric (e.g. a queue-depth count)
+alongside it, and ties the delay to an actual resource under pressure - memory exhausted, spilling
+into slower disk I/O - rather than an indirect proxy for it. Zero bytes spilled means zero added
+delay; the delay grows smoothly as the spilled total grows, with no fixed threshold where it turns
+on abruptly.
+
+### Alternative considered and rejected: a per-file memory budget
+
+Giving each file's write cache its own fixed memory budget, rather than one budget shared across
+the whole session, was considered and rejected: it does not actually bound the mount's memory
+footprint, since REQ-PERFORMANCE-002's cross-stream parallelism means several files can genuinely
+be written at once - a per-file budget only bounds how much any *one* of them can use, and the
+total scales with however many are concurrently open. A shared budget bounds the total directly,
+which is the property actually wanted.
