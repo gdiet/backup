@@ -94,3 +94,44 @@ slot for as long as it exists, so a reclaim/compaction request cannot race a bac
 that outlived the FUSE call that spawned it (the concern DESIGN-MOUNT-006's non-blocking `release()`
 raised) - it stays refused (or waiting) for the whole time the mount is up, regardless of whether
 any specific write is actually active at that instant.
+
+## DESIGN-MOUNT-009: Background write failures are logged to a file in `meta/`; a systemic failure degrades the mount to read-only
+Status: decided
+
+A background chunking/hashing/storage-write job (DESIGN-MOUNT-006) can fail after `release()` has
+already returned success, with no FUSE call left to report it through. The first version of this
+mechanism is a plain, append-only log file inside `meta/` (alongside the metadata database, per
+DESIGN-REPOSITORY-001 in [`repository-layout.md`](repository-layout.md)), not a queryable database
+table and not a dedicated mount-browsable path -
+those give a caller a structured way to notice and enumerate failures without reading a log file,
+which is real value but not needed for a first version; both are natural later extensions of this
+same mechanism, once real usage shows the plain log is not enough. Each entry records enough to act
+on later without re-deriving it from surrounding context: which file the job was writing, an error
+category, the underlying error message, and when it happened.
+
+Failures are treated differently depending on whether they are systemic or isolated. A systemic
+failure - the kind where the underlying cause (storage full, the underlying volume gone) dooms
+every other queued or future job just as certainly as the one that just failed - immediately
+degrades the mount session to read-only: new write-intent opens fail with an actionable error
+instead of queuing more work behind a job that would only fail the same way, and any jobs already
+in flight run to completion or failure, landing in the same log either way. Recovering write access
+means unmounting, addressing the underlying cause, and mounting again - there is no automatic
+retry, and no attempt to tell a transient systemic blip (e.g. a network mount reconnecting on its
+own) apart from a permanent one; both are treated the same way and left to the operator to
+diagnose. `io::ErrorKind` (`StorageFull`, and I/O errors generally) is what marks a failure as
+systemic; this project's own typed logic errors (a bug tied to one file's content) mark it as
+isolated instead. An isolated failure only logs that one file's outcome and otherwise does not
+affect the session - nothing else in flight is treated as suspect just because one file's job
+failed.
+
+### Alternative considered and rejected: attempting transient/permanent detection for systemic failures
+
+Trying to tell a transient systemic condition (a brief disk-full spike, a network mount that
+reconnects on its own moments later) apart from a permanent one, so that only a genuinely permanent
+failure would degrade the mount, was considered and rejected for a first version: reliably
+distinguishing the two needs either a retry-and-observe loop (which risks repeating the same
+failure against every job still queued behind it, exactly what the read-only degradation exists to
+avoid) or storage-specific heuristics that would not generalize across the range of things `store`
+can be backed by. Degrading unconditionally on any systemic failure, with the operator deciding
+when to remount, is simpler and fails safe; a smarter distinction is a later refinement, not a
+prerequisite for a first version.

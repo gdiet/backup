@@ -43,31 +43,13 @@ Is a graphical entry point (for mounting, or for routine operations) in scope, o
 CLI-and-mount-only for the foreseeable future? Affects how much of "Goals And Non-Goals" needs to
 say about interfaces at all.
 
-### Mount write-path failure handling
+### Queryable/mount-browsable surfacing of background write failures
 Status: idea
 
-DESIGN-MOUNT-006 in [`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md)
-settles how the future mount write path schedules its work (a non-blocking `release()`, background
-chunking/hashing/storage-write). Left open by that decision: how a failure discovered only during
-that background processing - after `release()` has already returned success - gets surfaced to the
-user, since it can no longer be reported through `close()`'s own return value. REQ-MOUNT-005's
-"fail visibly" guarantee does not cover this at all today, since it is scoped to reads. Surfacing
-such a failure needs its own durable mechanism - the write-side counterpart of REQ-INTEGRITY-002's
-read-time remediation, for a write discovered incomplete or failed after the fact - not solved
-here.
-
-The systemic-vs-isolated distinction matters here too, for a related but separate reason: a
-systemic failure (disk full, the underlying storage disappearing) discovered during background
-processing means every other queued or future job is equally doomed - worth reacting to
-defensively (e.g. an automatic switch to read-only) rather than letting a backlog of certain-to-
-fail jobs run anyway. An isolated failure (a bug tied to one file's content, transient lock
-contention) should only mark that one file's outcome as a problem to discover later, without
-affecting anything else in flight. Telling the two apart is also unsolved here - `io::ErrorKind`
-(`StorageFull`, generic I/O errors) versus this project's own typed logic errors is the natural
-technical hook, but distinguishing a transient systemic blip (a network mount reconnecting on its
-own) from a genuinely permanent one is still open.
-
-Two related questions this entry originally also raised are now settled, not open anymore: which
-processes can see a not-yet-committed write (DESIGN-MOUNT-007), and how REQ-MAINTENANCE-004's
-single-writer scope relates to a background job outliving its FUSE call (DESIGN-MOUNT-008) - both
-in [`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md).
+DESIGN-MOUNT-009 in [`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md)
+gives background write failures (DESIGN-MOUNT-006) a first version: a plain log file in `meta/`,
+plus an unconditional read-only degradation on any systemic failure. Left open as a later
+expansion stage: a queryable record of failures (e.g. a database table) and/or a dedicated
+mount-browsable path for surfacing them, so a caller can notice and enumerate failures without
+reading a log file - not needed for a first version, but a natural next step once real usage shows
+the plain log is not enough.
