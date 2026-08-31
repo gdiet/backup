@@ -66,6 +66,14 @@ pub enum Error {
     /// (REQ-MAINTENANCE-004 in `requirements/functional/maintenance.md`) - only one
     /// repository-mutating session runs at a time.
     AlreadyLocked(PathBuf),
+    /// [`acquire_write_lock`] failed for a reason other than the lock already being held - most
+    /// plausibly the underlying storage not actually enforcing locking at all (DESIGN-MAINTENANCE-001
+    /// in `docs/design/repository-locking.md`'s "Known limitation": expected on a network-mounted
+    /// repository, not on local/removable storage).
+    LockUnavailable {
+        path: PathBuf,
+        source: std::io::Error,
+    },
     /// SQLite reported a `journal_mode` other than `wal` after `configure_write_connection`
     /// requested it - e.g. an unsupported filesystem (SQLite silently falls back instead of
     /// failing outright). Carries whatever mode SQLite actually settled on.
@@ -106,6 +114,15 @@ impl std::fmt::Display for Error {
                 write!(
                     f,
                     "the repository at {} is already locked for writing by another process",
+                    path.display()
+                )
+            }
+            Error::LockUnavailable { path, source } => {
+                write!(
+                    f,
+                    "could not acquire the write lock for the repository at {} ({source}) - this \
+                     can happen on a network-mounted repository, where the underlying storage may \
+                     not actually enforce locking; see README.md's \"Known Limitations\"",
                     path.display()
                 )
             }

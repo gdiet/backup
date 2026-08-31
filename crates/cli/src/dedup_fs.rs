@@ -39,9 +39,10 @@ fn to_errno(err: db::Error) -> Errno {
         | db::Error::Poisoned
         | db::Error::WalUnavailable(_)
         // Never actually reaches here: `mount::try_run` acquires the write lock once, before a
-        // `DedupFs` exists at all - this arm exists only because `db::Error` is matched
+        // `DedupFs` exists at all - these two arms exist only because `db::Error` is matched
         // exhaustively.
         | db::Error::AlreadyLocked(_)
+        | db::Error::LockUnavailable { .. }
         | db::Error::Io(_)
         | db::Error::Sqlite(_)
         | db::Error::Migration(_) => Errno::EIO,

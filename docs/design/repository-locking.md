@@ -18,6 +18,11 @@ OS when its holding file descriptor/handle closes - on a clean exit, but also on
 kill, with no separate cleanup step and no stale-lock state left behind to reconcile on a later
 run.
 
+Acquisition failing for any reason other than the lock already being held - most plausibly the
+"Known limitation" below actually manifesting - gets its own distinct, actionable error rather
+than falling back to a bare OS error code (REQ-OPERABILITY-004's "a repository that ... is already
+in use" is named there as exactly this kind of foreseeable failure).
+
 This is a separate concern from `crate::connection`'s per-process `Mutex<Connection>`: that guards
 this *process's own threads* against racing each other on the one shared connection; this guards
 against a wholly *different process* opening the same repository for writing at the same time.

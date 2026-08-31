@@ -42,7 +42,14 @@ pub(crate) fn try_acquire_write_lock(meta_dir: &Path) -> Result<WriteLock, Error
         Err(err) if err.kind() == ErrorKind::WouldBlock => {
             Err(Error::AlreadyLocked(meta_dir.to_path_buf()))
         }
-        Err(err) => Err(err.into()),
+        // Anything else (REQ-OPERABILITY-004: a foreseeable failure, not a raw OS error left to
+        // stand on its own) - most plausibly the underlying storage not actually enforcing
+        // locking at all, the "Known limitation" DESIGN-MAINTENANCE-001 documents for a
+        // network-mounted repository.
+        Err(source) => Err(Error::LockUnavailable {
+            path: meta_dir.to_path_buf(),
+            source,
+        }),
     }
 }
 
