@@ -157,14 +157,20 @@ disk, one per file whose write cache has grown past its share of the budget. Thi
 DESIGN-MOUNT-007's read-after-write behavior: a read against spilled content is served from that
 temporary file instead of memory, with no visible difference to the caller between the two.
 
-This same budget is also what DESIGN-MOUNT-006's backpressure keys off: the total bytes currently
-spilled to disk across the session is the signal that scales the delay `write()` adds once the
-pipeline falls behind. This reuses a number already being tracked for the write cache's own memory
-management rather than introducing a second, separate backlog metric (e.g. a queue-depth count)
-alongside it, and ties the delay to an actual resource under pressure - memory exhausted, spilling
-into slower disk I/O - rather than an indirect proxy for it. Zero bytes spilled means zero added
-delay; the delay grows smoothly as the spilled total grows, with no fixed threshold where it turns
-on abruptly.
+This same tracking is also what DESIGN-MOUNT-006's backpressure keys off, narrowed to one part of
+it: the signal that scales the delay `write()` adds is the spilled-to-disk bytes belonging
+specifically to files that have already been released and are waiting on DESIGN-MOUNT-006's
+background job - not a file still being actively written through an open handle, even once its own
+share of the budget has spilled. A file not yet released has no background job running for it yet
+(chunking/hashing only start at `release()`), so delaying its `write()` calls would not relieve
+anything - the backlog that delay exists to relieve is specifically the released, not-yet-persisted
+work still waiting on the shared pool. Zero such bytes spilled means zero added delay; the delay
+grows smoothly as that total grows, with no fixed threshold where it turns on abruptly. This still
+reuses tracking the write cache already needs for its own memory management, rather than
+introducing a wholly separate backlog metric (e.g. a queue-depth count) alongside it, and ties the
+delay to an actual resource under pressure for the specific backlog it can affect - memory
+exhausted for released-but-unpersisted work, spilling into slower disk I/O - rather than an
+indirect proxy for it.
 
 ### Alternative considered and rejected: a per-file memory budget
 
@@ -174,3 +180,13 @@ footprint, since REQ-PERFORMANCE-002's cross-stream parallelism means several fi
 be written at once - a per-file budget only bounds how much any *one* of them can use, and the
 total scales with however many are concurrently open. A shared budget bounds the total directly,
 which is the property actually wanted.
+
+### Alternative considered and rejected: backpressure over all spilled bytes, including a still-open write
+
+Scaling the backpressure delay off every currently spilled byte in the session, including a file
+still being actively written and not yet released, was considered and rejected: chunking/hashing
+for such a file has not started (DESIGN-MOUNT-006 starts it at `release()`), so nothing is draining
+its spillover yet - delaying its own `write()` calls could not relieve that backlog, only slow the
+one write responsible for it, with the delay climbing for the rest of that single write's duration
+regardless of how the background pool is actually doing. Scoping the signal to released,
+already-queued work ties the delay to a backlog `write()`'s throttling can actually help drain.
