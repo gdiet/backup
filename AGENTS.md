@@ -107,6 +107,9 @@ here.
 Use the same language as the developer for chat interactions, but English as the project language
 for code, comments, docs, and commit messages.
 
+In German chat prose, address the developer with the traditional capitalized `Du`/`Dir`/`Dein`
+form, not the modern lowercase `du`/`dir`/`dein`.
+
 The developer is an experienced programmer but still lacks in-depth Rust experience. Call out
 subtle mistakes, not just obvious ones, particularly around ownership/lifetime edge cases and
 idioms that differ from what a background in other languages would suggest.
