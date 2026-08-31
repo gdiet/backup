@@ -5,6 +5,7 @@ mod mount;
 mod pending_files;
 mod repo_path;
 mod settle;
+mod settle_pool;
 mod write_cache;
 
 use std::path::PathBuf;

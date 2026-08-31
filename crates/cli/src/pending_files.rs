@@ -74,6 +74,17 @@ impl GenerationSlot {
         }
     }
 
+    /// The bytes currently spilled to disk for this generation specifically - `0` once settled,
+    /// since a settled generation no longer holds a [`WriteCache`] at all. DESIGN-MOUNT-010's
+    /// backpressure signal, for a generation that has already been released and is queued or
+    /// being processed by the settle job pool (DESIGN-MOUNT-006, not yet built).
+    pub fn spilled_bytes(&self) -> u64 {
+        match &*self.state.lock().expect("not poisoned") {
+            SlotState::Cache(cache) => cache.spilled_bytes(),
+            SlotState::Settled { .. } => 0,
+        }
+    }
+
     /// Reads `len` bytes at `position`, composing through however many older generations this
     /// one's chain still has - see [`read_chain`]. The settle job pool uses this, in windowed
     /// calls covering `[0, self.size())`, to read the complete byte stream a generation needs
