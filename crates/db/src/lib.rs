@@ -23,7 +23,7 @@ use std::sync::Mutex;
 
 use rusqlite::Connection;
 
-pub use lock::WriteLock;
+pub use lock::{UnlockOutcome, WriteLock};
 pub use settings::RepositorySettings;
 pub use tree::{Entry, EntryKind};
 
@@ -75,9 +75,11 @@ pub enum Error {
     CannotRemoveRoot,
     /// Another thread using this [`Repository`] panicked while holding its connection lock.
     Poisoned,
-    /// [`acquire_write_lock`] found the repository's write lock already held by another process
-    /// (REQ-MAINTENANCE-004 in `requirements/functional/maintenance.md`) - only one
-    /// repository-mutating session runs at a time.
+    /// [`acquire_write_lock`] found the repository's write lock file already present - either
+    /// genuinely held by another process, or left behind by one that exited without releasing it
+    /// (DESIGN-MAINTENANCE-002 in `docs/design/repository-locking.md` deliberately does not tell
+    /// the two apart here) - REQ-MAINTENANCE-004's "only one repository-mutating session runs at a
+    /// time". [`unlock_stale_write_lock`] is the explicit way to check which case it actually is.
     AlreadyLocked(PathBuf),
     /// [`acquire_write_lock`] failed for a reason other than the lock already being held - most
     /// plausibly the underlying storage not actually enforcing locking at all (DESIGN-MAINTENANCE-001
@@ -126,7 +128,10 @@ impl std::fmt::Display for Error {
             Error::AlreadyLocked(path) => {
                 write!(
                     f,
-                    "the repository at {} is already locked for writing by another process",
+                    "the repository at {} is already locked for writing by another process (or, \
+                     if that process crashed without releasing it, a leftover lock file) - if you \
+                     are sure no other process is using this repository, run `dfs unlock` to check \
+                     and clear it",
                     path.display()
                 )
             }
@@ -453,6 +458,17 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
 /// succeed) - the `meta/` directory the lock file lives in is not created here.
 pub fn acquire_write_lock(repo_root: &Path) -> Result<WriteLock, Error> {
     lock::try_acquire_write_lock(&repo_root.join(META_DIR))
+}
+
+/// Explicitly checks whether `repo_root`'s write lock is genuinely stale (an OS-level `flock`
+/// test, not a heuristic over the diagnostic marker's content) and clears it if so -
+/// DESIGN-MAINTENANCE-003's manual counterpart to [`acquire_write_lock`]'s unconditional refusal
+/// (DESIGN-MAINTENANCE-002) on a merely-present lock file. Never removes an actively held lock: a
+/// still-held lock is reported back as [`UnlockOutcome::StillLocked`], not modified.
+///
+/// `repo_root` must already hold a repository, same as [`acquire_write_lock`].
+pub fn unlock_stale_write_lock(repo_root: &Path) -> Result<UnlockOutcome, Error> {
+    lock::try_unlock_stale_write_lock(&repo_root.join(META_DIR))
 }
 
 #[cfg(test)]

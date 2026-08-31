@@ -79,7 +79,7 @@ this decision and rejected for the same reason SQLite's own transaction-level lo
 enough: it only ever smooths over momentary contention between individual transactions, never
 providing the session-spanning exclusivity a whole mutating session actually needs.
 
-## DESIGN-MAINTENANCE-002: Exclusive creation narrows the acquisition race further; a diagnostic marker records who holds it
+## DESIGN-MAINTENANCE-002: Exclusive creation is trusted outright; a diagnostic marker records who holds it
 Status: implemented (crates/db/src/lock.rs)
 
 DESIGN-MAINTENANCE-001's "Known limitation" is that `flock`'s own cross-process exclusivity is not
@@ -92,33 +92,57 @@ across machines - it needs no server-side lock state held across a session, only
 "create this name, or tell me it already exists" operation.
 
 Acquisition tries `create_new` on the lock file first. On success, nothing else could have created
-that name first, so this session is provably the only one that just started acquiring it. On
-`AlreadyExists`, the existing file is opened normally (no `O_EXCL`) and acquisition continues into
-`flock` exactly as DESIGN-MAINTENANCE-001 already describes - this fallback is what preserves that
-decision's crash-recovery property unchanged: a file left behind by a process that exited without
-releasing (a crash, a hard kill) is not itself proof of an active holder, and `flock` is still what
-tells the two apart, since the OS already released that process's own advisory lock the moment its
-file descriptor/handle went away. `flock` is acquired unconditionally on both paths, including right
-after a fresh `create_new` success - without it, a second session's own fallback-and-`flock` attempt
-would find nothing held and incorrectly treat the first session's still-active file as a stale
-leftover.
+that name first, so this session is provably the only one that just started acquiring it, and it
+proceeds to take `flock` on the file it just created (unconditionally - see below for why this
+still matters even though nothing else can be contending for it at this exact point). On
+`AlreadyExists`, acquisition refuses immediately (REQ-MAINTENANCE-004) and does not attempt `flock`
+on the existing file at all - see "Alternative considered and rejected" below for why a `flock`
+fallback here specifically was considered and rejected. A lock file left behind by a process that
+exited without releasing it (a crash, a hard kill) is therefore not recovered from automatically;
+DESIGN-MAINTENANCE-003 below is the explicit, human-invoked way to recover from it instead.
 
-For this same-name creation race to be narrowed on *every* acquisition, not only the very first one
-ever made against a given repository, a clean release now deletes the lock file, not only releases
-`flock` - done while still holding the lock, immediately before the `flock` guard itself is dropped,
-never after. Releasing in the other order (drop `flock` first, delete second) would leave a window
-where a different process's fallback-and-`flock` attempt already succeeds and considers itself the
-new holder, and this session's later delete of the *same name* would then remove the new holder's
-own lock file out from under it. Deleting first means a later acquirer's `create_new` only ever
-succeeds once this session no longer references that path at all - by the time that happens, this
-session's own lingering hold on the (already unnamed) file is unreachable by any future acquirer and
-irrelevant to correctness, gone entirely once its `flock` guard finishes dropping immediately after.
+`flock` is still taken unconditionally right after every successful `create_new`, even though no
+other process can be contending for it at that exact moment: DESIGN-MAINTENANCE-003's own
+staleness check depends on an active holder's `flock` actually being held, since that check has
+nothing else to test.
 
-Once acquired (via either path), the process writes one line identifying itself - hostname, process
-id, and acquisition time - into the file, for a human diagnosing an "already locked" report to see
-who actually holds it. This is diagnostic only, never consulted by the locking logic itself - see
-the rejected alternative below for why using it as a second gate was considered and specifically not
-adopted.
+A clean release deletes the lock file, not only releases `flock` - done while still holding the
+lock, immediately before the `flock` guard itself is dropped, never after. This now matters even
+for the very next acquisition attempt, not just for narrowing a race: since `AlreadyExists` is an
+unconditional refusal with no fallback, a lock file left behind after even a single, perfectly
+clean acquire-then-release cycle would otherwise block every later acquisition until someone ran
+DESIGN-MAINTENANCE-003's recovery command by hand. Releasing in the other order (drop `flock`
+first, delete second) would, on a filesystem where `flock` propagation is unreliable, leave a
+window where a different process's own fresh `create_new` already succeeds and considers itself
+the new holder, and this session's later delete of the *same name* would then remove the new
+holder's own lock file out from under it. Deleting first means a later acquirer's `create_new` only
+ever succeeds once this session no longer references that path at all - by the time that happens,
+this session's own lingering hold on the (already unnamed) file is unreachable by any future
+acquirer and irrelevant to correctness, gone entirely once its `flock` guard finishes dropping
+immediately after.
+
+Once acquired, the process writes one line identifying itself - hostname, process id, and
+acquisition time - into the file. This is diagnostic: read back by a human inspecting the file
+directly, and by DESIGN-MAINTENANCE-003's recovery command to report who held (or holds) the lock -
+but never consulted by acquisition's own locking logic. See the rejected alternative below for why
+using it as a second gate was considered and specifically not adopted.
+
+### Alternative considered and rejected: falling back to `flock` on `AlreadyExists`
+
+Opening the existing file normally (no `O_EXCL`) and continuing into `flock` on `AlreadyExists`,
+rather than refusing outright, was considered and rejected. It would let a session recover
+automatically from a lock file left behind by a crashed process, matching DESIGN-MAINTENANCE-001's
+original crash-recovery property - but it does so by using `flock` to override exactly the signal
+this gate exists to trust *instead of* `flock` on a filesystem where `flock` does not propagate
+correctly: a `create_new` conflict correctly detected on such a filesystem could then be silently
+waved through by a `flock` call that (on that same filesystem) never actually contends with a
+still-active holder, granting a second, actively-writing session the lock. This is a strictly worse
+failure mode than the inconvenience it would have removed: an occasional unnecessary refusal
+(REQ-MAINTENANCE-004's own accepted cost) against a corrupting concurrent write. Refusing outright
+instead moves the judgment call for whether a leftover lock file is genuinely stale to an explicit,
+separately invoked action - DESIGN-MAINTENANCE-003 - where a human, not unattended code, decides to
+override it, informed by context (e.g. having just killed the process themselves) this code cannot
+have.
 
 ### Known limitation: Windows delete-pending semantics not yet verified against a real mount
 
@@ -127,9 +151,9 @@ Unix - Rust's default share mode already includes `FILE_SHARE_DELETE` - but NTFS
 entry in a "pending delete" state until every handle referencing it actually closes, which here
 follows only microseconds later as part of the same release (the `flock` guard dropping right after
 the delete call above). Whether a competing acquirer's `create_new` in that narrow window reports
-`AlreadyExists` and needs a caller-visible retry, or is transparently handled by the OS, has not been
-checked against a real Windows/NTFS mount - `agent-todos/` tracks this the same way it already does
-for `write_cache.rs`'s sparse-file behavior.
+`AlreadyExists` - now an unconditional, immediately visible refusal rather than something a `flock`
+fallback might have smoothed over - has not been checked against a real Windows/NTFS mount -
+`agent-todos/` tracks this the same way it already does for `write_cache.rs`'s sparse-file behavior.
 
 ### Alternative considered and rejected: using the diagnostic marker's own presence as a second locking gate
 
@@ -148,3 +172,30 @@ may not even be visible to a second machine for long enough to matter, in a way 
 way to detect any more reliably than it already cannot detect `flock`'s own silent failure
 (DESIGN-MOUNT-009's "Alternative considered and rejected: attempting transient/permanent detection
 for systemic failures" rejects the same kind of heuristic for the same underlying reason).
+
+## DESIGN-MAINTENANCE-003: `dfs unlock` - explicit, human-invoked stale-lock recovery
+Status: implemented (crates/db/src/lock.rs, crates/cli/src/unlock.rs)
+
+REQ-MAINTENANCE-008's manual recovery path for a lock file left behind by a process that exited
+without releasing it (a crash, a hard kill) - the only way such a lock is ever cleared, now that
+DESIGN-MAINTENANCE-002's acquisition refuses outright on a merely-present lock file rather than
+attempting to tell a stale one apart from an active one itself.
+
+`dfs unlock PATH` opens the repository's existing lock file (doing nothing if none is present) and
+attempts `flock` on it, non-blocking, exactly as an ordinary acquisition would. If that succeeds,
+nothing currently holds it - genuinely stale - so the command deletes the file (while still holding
+the `flock` it just took, immediately before releasing it, same ordering rationale as
+DESIGN-MAINTENANCE-002's own release path) and reports the previous holder's diagnostic marker, if
+one could be read, for the operator's own record. If `flock` fails because it is still held, the
+command leaves the file untouched and reports the current holder's marker instead, refusing to
+proceed - it never overrides an actively held lock.
+
+This reuses `flock` as the actual staleness test - exactly as reliable as DESIGN-MAINTENANCE-001's
+own acquisition path, since it is the identical mechanism - so on local or removable storage,
+where `flock` already recovers correctly from an unclean shutdown, this command's judgment is just
+as reliable as fully automatic recovery would have been. The difference from automatic recovery is
+entirely about *when* that judgment is applied: only when an operator deliberately decides to check,
+rather than silently, on every acquisition attempt by any process - which is what
+DESIGN-MAINTENANCE-002's "Alternative considered and rejected: falling back to `flock` on
+`AlreadyExists`" above explains is not safe to do unattended on a filesystem where `flock` itself
+may not be trustworthy.

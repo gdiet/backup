@@ -91,3 +91,19 @@ Rationale: without this warning, restoring an outdated-but-not-obviously-outdate
 an operation would silently read back wrong bytes for some entries, with no symptom pointing at the
 cause — this directly undermines the trust REQ-MAINTENANCE-001/002 exist to provide in the first
 place, not just a convenience gap.
+
+### REQ-MAINTENANCE-008: Manual stale-lock recovery
+Status: agreed
+Importance: should
+
+A command explicitly checks whether a repository's write lock (REQ-MAINTENANCE-004) is still
+actually held and clears it if it is not, without ever removing a lock that genuinely is still
+held. This is a separate, explicitly invoked action - REQ-MAINTENANCE-004's refusal on an existing
+lock is unconditional on the ordinary path into a repository, regardless of whether that lock
+happens to be stale.
+
+Rationale: a lock left behind by a process that exited without releasing it (a crash, a hard kill)
+should be recoverable without an operator having to manually delete a file inside the repository
+and hope they judged correctly that nothing is actually still using it - a dedicated command can at
+least verify that mechanically before acting, and puts the final judgment call where it belongs:
+with the operator, not with unattended, automatic behavior.

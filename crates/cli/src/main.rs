@@ -7,6 +7,7 @@ mod pending_files;
 mod repo_path;
 mod settle;
 mod settle_pool;
+mod unlock;
 mod write_cache;
 
 use std::path::PathBuf;
@@ -69,6 +70,13 @@ enum Commands {
         /// mount. Without this, the mount is read-only (REQ-MOUNT-002).
         #[arg(long)]
         read_write: bool,
+    },
+    /// Checks whether PATH's write lock is stale (no process currently holds it) and clears it if
+    /// so - DESIGN-MAINTENANCE-003. Never removes an actively held lock.
+    Unlock {
+        /// Repository path. Defaults to a `dedupfs-repository` directory next to the dfs
+        /// executable when omitted.
+        path: Option<PathBuf>,
     },
 }
 
@@ -135,6 +143,10 @@ fn main() {
         } => {
             let (repo, default_path_used) = resolve_repo_path(repo);
             mount::run(&repo, &mountpoint, read_write, default_path_used);
+        }
+        Commands::Unlock { path } => {
+            let (path, default_path_used) = resolve_repo_path(path);
+            unlock::run(&path, default_path_used);
         }
     }
 }

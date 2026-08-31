@@ -42,6 +42,14 @@ libfuse3, Windows via WinFSP, behind a single trait - see
   local or removable storage avoids this limitation entirely. Whoever currently holds the lock is
   recorded (hostname, process id, acquisition time) in the lock file itself, inside the
   repository's `meta/` directory, for a human diagnosing an "already locked" report to check.
+- **A crashed or forcibly killed process leaves the write lock in place, on any storage**: a
+  process that opened a repository for writing and then exited without cleanly unmounting (a
+  crash, a hard kill) leaves the lock file behind, and the next `mount --read-write` attempt is
+  refused even though nothing is actually still using the repository - this is deliberate, not
+  automatically recovered from, so that recovery is never a guess (see "Repository write locking
+  on network-mounted storage" above for why). Run `dfs unlock PATH` to check whether the lock is
+  actually still held and clear it if it is not; it reports who it was previously held by before
+  removing it, and never touches a lock that genuinely is still held.
 - **Deleting a file right after writing it can be resurrected by a lagging background settle**:
   a write's chunking/hashing/storage happens in the background after the file is closed; deleting
   the file before that finishes can still let it reappear once the background job completes,
