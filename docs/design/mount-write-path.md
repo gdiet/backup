@@ -201,6 +201,44 @@ be written at once - a per-file budget only bounds how much any *one* of them ca
 total scales with however many are concurrently open. A shared budget bounds the total directly,
 which is the property actually wanted.
 
+## DESIGN-MOUNT-011: Overwriting an existing file's content creates a new history entry
+Status: decided
+
+Settling a background write job (DESIGN-MOUNT-006) for a file that already had a live
+`tree_entries` row - as opposed to one just `create()`d - never updates that row's `content_id` in
+place. DESIGN-METADATA-008 in
+[`metadata-schema-with-contents-table.md`](metadata-schema-with-contents-table.md)'s "a
+`tree_entries` row is inserted exactly once, already at its final `content_id`" applies uniformly to
+every settling write, not only a brand new file: the previously-live entry is soft-deleted
+(REQ-TREE-002 in [`../../requirements/functional/tree.md`](../../requirements/functional/tree.md))
+and a new entry is inserted at the same path, holding the just-resolved `content_id`. The two
+entries share no identity - the new one gets its own id, becoming a separate REQ-TREE-004 history
+entry for that path, addressable and recoverable the same way any other deletion at that path
+already is.
+
+This is a direct consequence of DESIGN-METADATA-004's decision (in
+[`metadata-storage.md`](metadata-storage.md)) not to build an `AFTER UPDATE OF content_id` trigger,
+applied consistently rather than carving out an exception for the mount's overwrite case
+specifically: introducing a real in-place `content_id` update for this one call site would reopen
+exactly the ref-count-trigger complexity that decision rejected building at all, and would give a
+mount-written overwrite a weaker survivability guarantee (recoverable only via a separate metadata
+backup, REQ-MAINTENANCE-001 in
+[`../../requirements/functional/maintenance.md`](../../requirements/functional/maintenance.md)) than
+an ordinary delete-then-recreate already has.
+
+REQ-TREE-005 is unaffected by this: soft-deleting and reinserting at the same path changes the
+entry's own identity, not its parent's set of live entries as a whole, so the parent's own
+modification time is not touched by this - same as any other pure content modification.
+
+Rationale: an ordinary save through the mount (a text editor, a periodically rewritten log or VM
+image) becomes a history entry every time, which does mean a frequent-save workload grows history
+proportionally - but REQ-STORAGE-004 in
+[`../../requirements/functional/storage.md`](../../requirements/functional/storage.md)'s
+reclamation (with its own caller-chosen minimum age before an entry becomes eligible) already
+exists to bound that growth without losing recent recoverability, and chunk/content-level
+deduplication (REQ-STORAGE-001/002, same file) means only genuinely new bytes cost real storage
+regardless of how often the metadata row itself gets replaced.
+
 ### Alternative considered and rejected: backpressure over all spilled bytes, including a still-open write
 
 Scaling the backpressure delay off every currently spilled byte in the session, including a file
