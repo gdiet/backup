@@ -1,0 +1,270 @@
+//! Deduplication-index bookkeeping - `contents`/`chunks`/`content_chunks` (REQ-STORAGE-001/002 in
+//! `requirements/functional/storage.md`): find-or-create lookups by `(length, hash)`, and
+//! recording a newly-resolved chunk's reserved byte range(s). Byte positions for a new chunk come
+//! from [`crate::allocation`]; this module never touches `crates/store` itself, only records where
+//! a chunk's bytes belong (DESIGN-STORE-002/003 in `docs/design/byte-store.md`) - actually writing
+//! them there is the caller's job, using the positions returned here.
+//!
+//! `pub(crate)` only, reached exclusively through [`crate::Repository`] (DESIGN-METADATA-006).
+
+use rusqlite::{Connection, OptionalExtension, params};
+
+use crate::Error;
+use crate::allocation;
+
+/// Looks up an existing content by its whole-content `(length, hash)` - DESIGN-METADATA-007's
+/// hash-of-chunk-hashes, not a hash of the content's raw bytes.
+pub(crate) fn find_content(
+    conn: &Connection,
+    length: i64,
+    hash: &[u8],
+) -> Result<Option<i64>, Error> {
+    conn.query_row(
+        "SELECT id FROM contents WHERE length = ?1 AND hash = ?2",
+        params![length, hash],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
+/// Looks up an existing chunk by its own `(length, hash)`.
+pub(crate) fn find_chunk(
+    conn: &Connection,
+    length: i64,
+    hash: &[u8],
+) -> Result<Option<i64>, Error> {
+    conn.query_row(
+        "SELECT id FROM chunks WHERE length = ?1 AND hash = ?2",
+        params![length, hash],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(Error::from)
+}
+
+/// Reserves storage for a chunk not already known (caller already checked [`find_chunk`] returned
+/// `None`) and records it: a fresh `chunks` row plus the `chunk_extents` row(s) covering the
+/// reserved byte range(s). Returns the new chunk id and the exact `(start, stop)` ranges to write
+/// `length` bytes into through `crates/store`, in order.
+///
+/// Recording the reservation before the caller has actually written the bytes through `store` is
+/// safe: the new chunk's `ref_count` stays `0` (nothing links it into any content yet via
+/// `content_chunks`) until [`find_or_create_content`] does so, and nothing else can reserve the
+/// same range in the meantime - the only operation that could (REQ-STORAGE-004's reclaim) is
+/// itself a mutating operation and so cannot run at the same time as this one
+/// (DESIGN-MOUNT-008 in `docs/design/mount-write-path.md`).
+pub(crate) fn reserve_and_insert_chunk(
+    conn: &Connection,
+    length: i64,
+    hash: &[u8],
+) -> Result<(i64, Vec<(u64, u64)>), Error> {
+    let ranges = allocation::reserve(conn, length as u64)?;
+    conn.execute(
+        "INSERT INTO chunks (length, hash) VALUES (?1, ?2)",
+        params![length, hash],
+    )?;
+    let chunk_id = conn.last_insert_rowid();
+    for (seq, &(start, stop)) in ranges.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO chunk_extents (chunk_id, seq, start, stop) VALUES (?1, ?2, ?3, ?4)",
+            params![chunk_id, seq as i64, start as i64, stop as i64],
+        )?;
+    }
+    Ok((chunk_id, ranges))
+}
+
+/// Finds or creates the `contents` row for the whole-content `(length, hash)`, linking
+/// `chunk_ids` (in order) via `content_chunks` if it did not already exist - an empty `chunk_ids`
+/// is valid (a zero-length content). Returns the content id.
+pub(crate) fn find_or_create_content(
+    conn: &Connection,
+    length: i64,
+    hash: &[u8],
+    chunk_ids: &[i64],
+) -> Result<i64, Error> {
+    if let Some(id) = find_content(conn, length, hash)? {
+        return Ok(id);
+    }
+    conn.execute(
+        "INSERT INTO contents (length, hash) VALUES (?1, ?2)",
+        params![length, hash],
+    )?;
+    let content_id = conn.last_insert_rowid();
+    for (seq, &chunk_id) in chunk_ids.iter().enumerate() {
+        conn.execute(
+            "INSERT INTO content_chunks (content_id, seq, chunk_id) VALUES (?1, ?2, ?3)",
+            params![content_id, seq as i64, chunk_id],
+        )?;
+    }
+    Ok(content_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{RepositorySettings, init_repository, open_repository};
+
+    const HASH_A: &[u8] = &[0xAAu8; 20];
+    const HASH_B: &[u8] = &[0xBBu8; 20];
+    const CONTENT_HASH: &[u8] = &[0xCCu8; 20];
+
+    fn repo() -> (crate::Repository, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        let settings = RepositorySettings::new(Some(20), 1_700_000_000_000);
+        init_repository(&repo_root, settings).expect("init must succeed");
+        let repo = open_repository(&repo_root).expect("open must succeed");
+        (repo, dir)
+    }
+
+    #[test]
+    fn find_chunk_and_find_content_return_none_when_nothing_is_stored() {
+        let (repo, _dir) = repo();
+        let found = repo
+            .with_connection(|conn| super::find_chunk(conn, 100, HASH_A))
+            .unwrap();
+        assert_eq!(found, None);
+        let found = repo
+            .with_connection(|conn| super::find_content(conn, 100, CONTENT_HASH))
+            .unwrap();
+        assert_eq!(found, None);
+    }
+
+    #[test]
+    fn reserve_and_insert_chunk_creates_a_findable_chunk_with_extents_at_position_zero() {
+        let (repo, _dir) = repo();
+        let (chunk_id, ranges) = repo
+            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+            .unwrap();
+        assert_eq!(ranges, vec![(0, 100)]);
+
+        let found = repo
+            .with_connection(|conn| super::find_chunk(conn, 100, HASH_A))
+            .unwrap();
+        assert_eq!(found, Some(chunk_id));
+    }
+
+    #[test]
+    fn reserve_and_insert_chunk_a_second_time_extends_past_the_first() {
+        let (repo, _dir) = repo();
+        repo.with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+            .unwrap();
+        let (_id, ranges) = repo
+            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 50, HASH_B))
+            .unwrap();
+        assert_eq!(ranges, vec![(100, 150)]);
+    }
+
+    #[test]
+    fn find_or_create_content_creates_a_new_content_linking_its_chunks_in_order() {
+        let (repo, _dir) = repo();
+        let (chunk_a, _) = repo
+            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+            .unwrap();
+        let (chunk_b, _) = repo
+            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 50, HASH_B))
+            .unwrap();
+
+        let content_id = repo
+            .with_connection(|conn| {
+                super::find_or_create_content(conn, 150, CONTENT_HASH, &[chunk_a, chunk_b])
+            })
+            .unwrap();
+
+        let seq_and_chunk: Vec<(i64, i64)> = repo
+            .with_connection(|conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT seq, chunk_id FROM content_chunks WHERE content_id = ?1 ORDER BY seq",
+                )?;
+                let rows = stmt
+                    .query_map([content_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(rows)
+            })
+            .unwrap();
+        assert_eq!(seq_and_chunk, vec![(0, chunk_a), (1, chunk_b)]);
+    }
+
+    #[test]
+    fn find_or_create_content_returns_the_same_id_for_an_already_known_content() {
+        let (repo, _dir) = repo();
+        let (chunk_a, _) = repo
+            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+            .unwrap();
+
+        let first = repo
+            .with_connection(|conn| {
+                super::find_or_create_content(conn, 100, CONTENT_HASH, &[chunk_a])
+            })
+            .unwrap();
+        let second = repo
+            .with_connection(|conn| {
+                super::find_or_create_content(conn, 100, CONTENT_HASH, &[chunk_a])
+            })
+            .unwrap();
+        assert_eq!(first, second);
+
+        // Only one content_chunks link exists - the second call did not insert a duplicate.
+        let link_count: i64 = repo
+            .with_connection(|conn| {
+                Ok(conn.query_row(
+                    "SELECT COUNT(*) FROM content_chunks WHERE content_id = ?1",
+                    [first],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(link_count, 1);
+    }
+
+    #[test]
+    fn find_or_create_content_supports_a_zero_length_content_with_no_chunks() {
+        let (repo, _dir) = repo();
+        let content_id = repo
+            .with_connection(|conn| super::find_or_create_content(conn, 0, CONTENT_HASH, &[]))
+            .unwrap();
+
+        let found = repo
+            .with_connection(|conn| super::find_content(conn, 0, CONTENT_HASH))
+            .unwrap();
+        assert_eq!(found, Some(content_id));
+    }
+
+    #[test]
+    fn reserve_and_insert_chunk_leaves_ref_count_at_zero_until_linked() {
+        let (repo, _dir) = repo();
+        let (chunk_id, _) = repo
+            .with_connection(|conn| super::reserve_and_insert_chunk(conn, 100, HASH_A))
+            .unwrap();
+
+        let ref_count: i64 = repo
+            .with_connection(|conn| {
+                Ok(conn.query_row(
+                    "SELECT ref_count FROM chunks WHERE id = ?1",
+                    [chunk_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(ref_count, 0);
+
+        repo.with_connection(|conn| {
+            super::find_or_create_content(conn, 100, CONTENT_HASH, &[chunk_id])
+        })
+        .unwrap();
+
+        let ref_count: i64 = repo
+            .with_connection(|conn| {
+                Ok(conn.query_row(
+                    "SELECT ref_count FROM chunks WHERE id = ?1",
+                    [chunk_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(
+            ref_count, 1,
+            "content_chunks_ref_count_ins must have fired once linked"
+        );
+    }
+}

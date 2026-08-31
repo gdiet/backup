@@ -202,7 +202,7 @@ total scales with however many are concurrently open. A shared budget bounds the
 which is the property actually wanted.
 
 ## DESIGN-MOUNT-011: Overwriting an existing file's content creates a new history entry
-Status: decided
+Status: implemented (crates/db/src/tree.rs)
 
 Settling a background write job (DESIGN-MOUNT-006) for a file that already had a live
 `tree_entries` row - as opposed to one just `create()`d - never updates that row's `content_id` in

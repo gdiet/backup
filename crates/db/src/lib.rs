@@ -9,7 +9,9 @@
 //! guarantee holds only because every write to this database goes through
 //! curated operations, never ad hoc SQL from elsewhere in the workspace.
 
+mod allocation;
 mod connection;
+mod content;
 mod migrations;
 mod settings;
 mod tree;
@@ -154,6 +156,21 @@ impl Repository {
         f(&conn)
     }
 
+    /// Like [`Self::with_connection`], but runs `f` inside an explicit transaction, committed only
+    /// if `f` returns `Ok` - a multi-statement operation either lands as a whole or not at all,
+    /// rather than leaving a partial result behind if interrupted partway through (a crash, a
+    /// panic unwinding through `f`, `rusqlite::Transaction`'s own drop-without-commit rollback).
+    fn with_transaction<T>(
+        &self,
+        f: impl FnOnce(&Connection) -> Result<T, Error>,
+    ) -> Result<T, Error> {
+        let mut conn = self.conn.lock().map_err(|_| Error::Poisoned)?;
+        let tx = conn.transaction()?;
+        let result = f(&tx)?;
+        tx.commit()?;
+        Ok(result)
+    }
+
     /// Looks up the live entry at `path` (`/`-separated, e.g. `/a/b`; `/` itself resolves to the
     /// root). `Ok(None)` if any path component does not exist (or is soft-deleted) - not itself
     /// an error, since "does this path exist" is a legitimate question to ask.
@@ -169,13 +186,60 @@ impl Repository {
     /// Creates a new, empty directory named `name` inside the directory `parent_id`, bumping its
     /// parent's modification time (REQ-TREE-005). Returns the new entry's id.
     pub fn mkdir(&self, parent_id: i64, name: &str, time_millis: i64) -> Result<i64, Error> {
-        self.with_connection(|conn| tree::mkdir(conn, parent_id, name, time_millis))
+        self.with_transaction(|conn| tree::mkdir(conn, parent_id, name, time_millis))
     }
 
     /// Soft-deletes the directory entry `id` (REQ-TREE-002), refusing if it still has live
     /// children (REQ-TREE-008). Bumps its parent's modification time.
     pub fn rmdir(&self, id: i64, time_millis: i64) -> Result<(), Error> {
-        self.with_connection(|conn| tree::rmdir(conn, id, time_millis))
+        self.with_transaction(|conn| tree::rmdir(conn, id, time_millis))
+    }
+
+    /// Settles a background write job's already-resolved content (see [`Self::find_or_create_content`])
+    /// into the tree as a file named `name` inside `parent_id` - DESIGN-METADATA-008/
+    /// DESIGN-MOUNT-011 in `docs/design/mount-write-path.md`. If a live entry already occupies
+    /// that name, it is soft-deleted first and the new entry becomes a separate REQ-TREE-004
+    /// history entry for that path, rather than updating the existing row's `content_id` in
+    /// place; a directory at that name is refused. Returns the new entry's id.
+    pub fn settle_file(
+        &self,
+        parent_id: i64,
+        name: &str,
+        time_millis: i64,
+        content_id: i64,
+    ) -> Result<i64, Error> {
+        self.with_transaction(|conn| {
+            tree::settle_file(conn, parent_id, name, time_millis, content_id)
+        })
+    }
+
+    /// Looks up an already-known chunk by its own `(length, hash)` - REQ-STORAGE-002.
+    pub fn find_chunk(&self, length: i64, hash: &[u8]) -> Result<Option<i64>, Error> {
+        self.with_connection(|conn| content::find_chunk(conn, length, hash))
+    }
+
+    /// Reserves storage for a chunk not already known (caller already checked [`Self::find_chunk`]
+    /// returned `None`) and records it - DESIGN-STORE-003 in `docs/design/byte-store.md`. Returns
+    /// the new chunk id and the exact `(start, stop)` ranges to write `length` bytes into through
+    /// `crates/store`, in order.
+    pub fn reserve_and_insert_chunk(
+        &self,
+        length: i64,
+        hash: &[u8],
+    ) -> Result<(i64, Vec<(u64, u64)>), Error> {
+        self.with_transaction(|conn| content::reserve_and_insert_chunk(conn, length, hash))
+    }
+
+    /// Finds or creates the whole-content `(length, hash)` row (DESIGN-METADATA-007's
+    /// hash-of-chunk-hashes), linking `chunk_ids` (in order, from [`Self::find_chunk`]/
+    /// [`Self::reserve_and_insert_chunk`]) if it did not already exist. Returns the content id.
+    pub fn find_or_create_content(
+        &self,
+        length: i64,
+        hash: &[u8],
+        chunk_ids: &[i64],
+    ) -> Result<i64, Error> {
+        self.with_transaction(|conn| content::find_or_create_content(conn, length, hash, chunk_ids))
     }
 
     /// Sets `id`'s own modification time (REQ-MOUNT-003's `utimens`).
@@ -196,7 +260,7 @@ impl Repository {
         no_replace: bool,
         time_millis: i64,
     ) -> Result<(), Error> {
-        self.with_connection(|conn| {
+        self.with_transaction(|conn| {
             tree::rename(
                 conn,
                 old_parent_id,

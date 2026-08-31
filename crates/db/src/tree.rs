@@ -1,9 +1,9 @@
 //! Directory-tree operations against `tree_entries` - REQ-TREE-001/002/004/005/008,
-//! REQ-MOUNT-002/003/009/010. Directories only for now: `kind` is always [`EntryKind::Dir`] in
-//! practice today, since nothing yet creates a file entry (REQ-STORAGE-007's byte store exists as
-//! its own crate, `crates/store`, but nothing here is wired up to it yet) - the rename logic
-//! below still handles a file target correctly regardless, since REQ-MOUNT-009 already specifies
-//! that case and the cost of also handling it now is small.
+//! REQ-MOUNT-002/003/009/010. [`settle_file`] is the one file-creating operation
+//! (DESIGN-METADATA-008/DESIGN-MOUNT-011 in `docs/design/mount-write-path.md`): a file's content
+//! is always already resolved to a `content_id` by the time it reaches this module, via
+//! [`crate::content`] and [`crate::allocation`] - nothing here decides *what* a file's content is,
+//! only how it lands in the tree.
 //!
 //! `pub(crate)` only: never part of `db`'s public API directly (DESIGN-METADATA-006) - reached
 //! exclusively through [`crate::Repository`]'s own methods, which own connection access.
@@ -12,16 +12,17 @@
 //! `requirements/functional/mount.md`) - [`find_child_id`] additionally falls back to a
 //! case-insensitive match (DESIGN-MOUNT-005 in `docs/design/tree-namespace-case-sensitivity.md`)
 //! on a Windows build's exact-match miss. Every caller that needs to know whether a name already
-//! exists goes through that one function - plain lookup ([`resolve_path`]), [`mkdir`]'s collision
-//! pre-check, and [`rename`]'s target-existence check - so `create`/`mkdir`/`rename` running on a
-//! Windows build cannot itself introduce a case-only-differing pair, while one already present
-//! (e.g. written from Linux) stays representable and reachable.
+//! exists goes through that one function - plain lookup ([`resolve_path`]), [`mkdir`]/[`settle_file`]'s
+//! collision pre-check, and [`rename`]'s target-existence check - so `create`/`mkdir`/`rename`
+//! running on a Windows build cannot itself introduce a case-only-differing pair, while one
+//! already present (e.g. written from Linux) stays representable and reachable.
 
 use rusqlite::{Connection, OptionalExtension, params};
 
 use crate::Error;
 
 const KIND_DIR: i64 = 0;
+const KIND_FILE: i64 = 1;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryKind {
@@ -204,6 +205,54 @@ pub(crate) fn mkdir(
     }
 }
 
+/// Settles a background write job's already-resolved content into the tree
+/// (DESIGN-METADATA-008/DESIGN-MOUNT-011): inserts a new file entry already at `content_id`,
+/// never updating an existing row's `content_id` in place. If a live entry already occupies
+/// `(parent_id, name)`, it is soft-deleted first and the new entry becomes a separate
+/// REQ-TREE-004 history entry for that path - a directory at that name is refused instead
+/// (REQ-MOUNT-009's "a directory on either side is always refused"), the same as [`rename`]'s own
+/// replace check. Bumps the parent's modification time only for a genuinely new entry (nothing
+/// live at that name before) - overwriting an existing file does not, matching REQ-TREE-005's
+/// "a pure content change is not a change to the parent's set of entries" (see DESIGN-MOUNT-011).
+///
+/// Returns the new entry's id.
+pub(crate) fn settle_file(
+    conn: &Connection,
+    parent_id: i64,
+    name: &str,
+    time_millis: i64,
+    content_id: i64,
+) -> Result<i64, Error> {
+    require_dir(conn, parent_id)?;
+
+    let replaced = find_child_id(conn, parent_id, name)?;
+    if let Some(old_id) = replaced {
+        let old_entry = get_by_id(conn, old_id)?.ok_or(Error::NoSuchEntry(old_id))?;
+        if old_entry.kind == EntryKind::Dir {
+            return Err(Error::EntryAlreadyExists {
+                parent_id,
+                name: name.to_string(),
+            });
+        }
+        conn.execute(
+            "UPDATE tree_entries SET deleted_at = ?1 WHERE id = ?2",
+            params![time_millis, old_id],
+        )?;
+    }
+
+    conn.execute(
+        "INSERT INTO tree_entries (parent_id, name, time, content_id, kind) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![parent_id, name, time_millis, content_id, KIND_FILE],
+    )?;
+    let id = conn.last_insert_rowid();
+
+    if replaced.is_none() {
+        touch(conn, parent_id, time_millis)?;
+    }
+    Ok(id)
+}
+
 pub(crate) fn rmdir(conn: &Connection, id: i64, time_millis: i64) -> Result<(), Error> {
     if id == 0 {
         // Not guarded by any DB trigger (tree_entries_protect_root only blocks a real DELETE,
@@ -366,6 +415,90 @@ mod tests {
     fn mkdir_refuses_a_nonexistent_parent() {
         let (repo, _dir) = repo();
         let err = repo.mkdir(999, "a", 100).unwrap_err();
+        assert!(matches!(err, Error::NoSuchEntry(999)));
+    }
+
+    /// Inserts a bare `contents` row (no chunks) for tests that only need a valid `content_id` to
+    /// point a file entry at, not the dedup bookkeeping itself.
+    fn insert_content(repo: &crate::Repository, id: i64, hash_byte: u8) -> i64 {
+        repo.with_connection(|conn| {
+            conn.execute(
+                "INSERT INTO contents (id, length, hash) VALUES (?1, 0, ?2)",
+                (id, vec![hash_byte; 20]),
+            )?;
+            Ok(())
+        })
+        .unwrap();
+        id
+    }
+
+    #[test]
+    fn settle_file_creates_a_findable_file_entry_and_bumps_the_parent() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+
+        let id = repo
+            .settle_file(0, "a.txt", 100, content_id)
+            .expect("settle_file must succeed");
+
+        let entry = repo.resolve_path("/a.txt").unwrap().unwrap();
+        assert_eq!(entry.id, id);
+        assert_eq!(entry.kind, crate::EntryKind::File);
+        assert_eq!(repo.resolve_path("/").unwrap().unwrap().time_millis, 100);
+    }
+
+    #[test]
+    fn settle_file_overwriting_an_existing_file_creates_a_new_history_entry() {
+        let (repo, _dir) = repo();
+        let content_a = insert_content(&repo, 1, 0xAA);
+        let content_b = insert_content(&repo, 2, 0xBB);
+
+        let first_id = repo.settle_file(0, "a.txt", 100, content_a).unwrap();
+        // Root's own time must not move on the overwrite below - captured before it happens.
+        let root_time_before = repo.resolve_path("/").unwrap().unwrap().time_millis;
+
+        let second_id = repo.settle_file(0, "a.txt", 200, content_b).unwrap();
+
+        assert_ne!(
+            first_id, second_id,
+            "overwrite must create a new entry, not update the old one in place"
+        );
+        let live = repo.resolve_path("/a.txt").unwrap().unwrap();
+        assert_eq!(live.id, second_id);
+        assert_eq!(
+            repo.resolve_path("/").unwrap().unwrap().time_millis,
+            root_time_before,
+            "a pure content overwrite must not bump the parent's mtime (REQ-TREE-005/DESIGN-MOUNT-011)"
+        );
+
+        // The old entry is soft-deleted, not gone - still visible via a raw lookup by id.
+        let old_deleted_at: Option<i64> = repo
+            .with_connection(|conn| {
+                Ok(conn.query_row(
+                    "SELECT deleted_at FROM tree_entries WHERE id = ?1",
+                    [first_id],
+                    |row| row.get(0),
+                )?)
+            })
+            .unwrap();
+        assert_eq!(old_deleted_at, Some(200));
+    }
+
+    #[test]
+    fn settle_file_refuses_to_replace_a_directory() {
+        let (repo, _dir) = repo();
+        repo.mkdir(0, "a", 100).unwrap();
+        let content_id = insert_content(&repo, 1, 0xAA);
+
+        let err = repo.settle_file(0, "a", 200, content_id).unwrap_err();
+        assert!(matches!(err, Error::EntryAlreadyExists { .. }));
+    }
+
+    #[test]
+    fn settle_file_refuses_a_nonexistent_parent() {
+        let (repo, _dir) = repo();
+        let content_id = insert_content(&repo, 1, 0xAA);
+        let err = repo.settle_file(999, "a.txt", 100, content_id).unwrap_err();
         assert!(matches!(err, Error::NoSuchEntry(999)));
     }
 

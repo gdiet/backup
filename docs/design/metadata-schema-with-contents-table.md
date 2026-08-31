@@ -183,7 +183,7 @@ a real correctness gap in a value this schema's `UNIQUE (length, hash)` constrai
 
 ## DESIGN-METADATA-008: In-progress files are not written to the database
 
-Status: decided
+Status: implemented (crates/db/src/tree.rs)
 
 A file the mount has `create()`d, or opened for writing, does not get a `tree_entries` row until
 its content is actually settled - a real `content_id`, resolved through the ordinary content dedup
