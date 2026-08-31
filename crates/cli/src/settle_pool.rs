@@ -6,12 +6,7 @@
 //!
 //! What happens when a job actually fails is not this module's concern (DESIGN-MOUNT-009 in the
 //! same design document, not yet implemented) - a caller-supplied `on_failure` hook is the only
-//! seam for that, kept deliberately generic here.
-//!
-//! Not wired into the mount write path yet - staged ahead of `dedup_fs.rs`'s
-//! `create`/`write`/`truncate`/`unlink`. Remove the `allow` below once something outside this
-//! module's own tests constructs a [`JobPool`].
-#![allow(dead_code)]
+//! seam for that, kept deliberately generic here. Used by `crate::dedup_fs::DedupFs`.
 
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -128,6 +123,9 @@ impl JobPool {
 
     /// DESIGN-MOUNT-010's backpressure signal - the total spilled-to-disk bytes belonging to
     /// generations released and awaiting or undergoing settling right now.
+    // Not consulted by `write()` yet - the actual delay formula needs its own deliberate choice,
+    // not just wiring; see agent-todos/wire-write-backpressure-delay.md.
+    #[allow(dead_code)]
     pub fn backlog_spilled_bytes(&self) -> u64 {
         self.backlog_spilled_bytes.load(Ordering::Acquire)
     }

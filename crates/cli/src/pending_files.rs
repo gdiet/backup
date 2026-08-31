@@ -3,12 +3,8 @@
 //! are currently open and the chain of [`WriteCache`] generations a read still needs to see
 //! through - at most one *writable* generation currently receiving writes, plus older generations
 //! still settling in the background, each reachable from the next-newer one so a read composes
-//! through however many are in flight without ever blocking a fresh open on them.
-//!
-//! Not wired into the mount write path yet - staged ahead of DESIGN-MOUNT-006's background job
-//! pool and `dedup_fs.rs`'s `create`/`write`/`truncate`/`unlink`. Remove the `allow` below once
-//! something outside this module's own tests constructs a [`PendingFiles`] registry.
-#![allow(dead_code)]
+//! through however many are in flight without ever blocking a fresh open on them. Used by
+//! `crate::dedup_fs::DedupFs`.
 
 use std::collections::HashMap;
 use std::io;
@@ -222,6 +218,28 @@ impl PendingFiles {
         handed_off
     }
 
+    /// The current logical size of `file_id`'s pending write-cache chain, if it has one - `None`
+    /// when nothing is pending, meaning the caller should use the durably committed size instead
+    /// (DESIGN-MOUNT-007/013's same-session visibility, extended to `getattr`).
+    pub fn current_size(&self, file_id: i64) -> Option<u64> {
+        let inner = self.inner.lock().expect("not poisoned");
+        inner
+            .get(&file_id)
+            .and_then(|entry| entry.latest.as_ref())
+            .map(|slot| slot.size())
+    }
+
+    /// Whether `file_id` currently has a generation still accepting writes. A caller about to
+    /// call [`Self::write`]/[`Self::truncate`] can check this first to skip resolving the file's
+    /// durably committed content when it will not actually be needed - `new_generation`'s
+    /// `base_content_id`/`base_size` are consulted only the first time a generation is created.
+    pub fn has_writable(&self, file_id: i64) -> bool {
+        let inner = self.inner.lock().expect("not poisoned");
+        inner
+            .get(&file_id)
+            .is_some_and(|entry| entry.writable.is_some())
+    }
+
     /// Writes `data` at `position` for `file_id`, creating a new writable generation first if
     /// none exists yet - either the file's first write this session, or every previous
     /// write-intent handle already released. `new_generation` describes the file's durably
@@ -427,6 +445,27 @@ mod tests {
             .unwrap();
         let data = registry.read(1, 0, 4, &no_content).unwrap().unwrap();
         assert_eq!(data, b"hi!!");
+    }
+
+    #[test]
+    fn current_size_and_has_writable_reflect_the_generation_lifecycle() {
+        let (budget, dir) = budget_and_dir();
+        let registry = PendingFiles::new();
+        assert_eq!(registry.current_size(1), None);
+        assert!(!registry.has_writable(1));
+
+        registry.open(1);
+        registry
+            .write(1, 0, b"hello", params(&budget, dir.path(), 0))
+            .unwrap();
+        assert_eq!(registry.current_size(1), Some(5));
+        assert!(registry.has_writable(1));
+
+        let settling = registry.release(1).unwrap();
+        // Released - still readable/sized (DESIGN-MOUNT-007), but no longer writable.
+        assert_eq!(registry.current_size(1), Some(5));
+        assert!(!registry.has_writable(1));
+        settling.mark_settled(1, 5);
     }
 
     #[test]

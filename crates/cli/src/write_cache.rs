@@ -2,13 +2,7 @@
 //! memory-first up to a budget shared across the whole mount session, then spilling to a sparse
 //! temporary file; tracks only the byte ranges this session actually writes, falling back to the
 //! file's pre-existing content (via a caller-supplied reader, so this module stays independent of
-//! `crates/db`/`crates/store`) for everything else.
-//!
-//! Not wired into the mount write path yet - staged ahead of DESIGN-MOUNT-006's background job
-//! pool and `dedup_fs.rs`'s `create`/`write`/`truncate`/`unlink`, the next two commits. Remove the
-//! `allow` below once something outside this module's own tests actually constructs a
-//! [`WriteCache`].
-#![allow(dead_code)]
+//! `crates/db`/`crates/store`) for everything else. Used by `crate::pending_files::GenerationSlot`.
 
 use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};

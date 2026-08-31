@@ -1,12 +1,10 @@
 //! Turns a not-yet-persisted generation's complete byte stream into a durably committed
 //! `content_id` (DESIGN-METADATA-007 in `docs/design/metadata-schema-with-contents-table.md`,
 //! DESIGN-MOUNT-006 in `docs/design/mount-write-path.md`): the chunking, hashing, and
-//! `crates/store` write a background settle job runs once a generation is ready to persist.
-//!
-//! Not wired into the mount write path yet - staged ahead of DESIGN-MOUNT-006's actual background
-//! job pool and `dedup_fs.rs`'s `create`/`write`/`truncate`/`unlink`. Remove the `allow` below
-//! once something outside this module's own tests calls [`settle`].
-#![allow(dead_code)]
+//! `crates/store` write a background settle job runs once a generation is ready to persist. Used
+//! by `crate::settle_pool::JobPool` for a released generation's content, and directly by
+//! `crate::dedup_fs::DedupFs::create` to settle a new file's canonical empty content
+//! (DESIGN-MOUNT-015).
 
 use std::io;
 

@@ -17,12 +17,12 @@ Early development. The `dfs` command-line tool exists and can:
 - create a new repository (`dfs create-repo`);
 - mount an existing repository as a real filesystem (`dfs mount`), read-only by default - browsing
   directories and reading existing files both work;
-- with `--read-write`, also create/remove/rename directories and set modification times, under a
-  repository-wide write lock that keeps two writing sessions from running at once.
-
-Real content writes through the mount (creating a file, writing to one, truncating, deleting) are
-not implemented yet - `create`/`write`/`truncate`/`unlink` still refuse with `EROFS` regardless of
-`--read-write`.
+- with `--read-write`, also create/remove/rename directories and set modification times, and real
+  content writes (creating a file, writing to one, truncating, deleting) - all under a
+  repository-wide write lock that keeps two writing sessions from running at once. Content changes
+  are chunked, hashed, and deduplicated in the background after a file is closed, not while it is
+  being written; a background failure is only reported to standard error for now, not yet to a
+  persistent log or a read-only degradation on a systemic failure.
 
 Underneath the CLI: [`cdc`](crates/cdc/) (content-defined chunking, the basis for sub-file
 deduplication) and [`mountfs`](crates/mountfs/) (a cross-platform mount backend, Linux via
