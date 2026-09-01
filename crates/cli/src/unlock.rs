@@ -5,12 +5,17 @@
 //! stale via an OS-level `flock` test - the same test `acquire_write_lock` itself no longer
 //! performs on an existing file - and clears it only when it actually is; an actively held lock is
 //! left untouched. REQ-CLI-006's default repository path applies here too, same as `mount`.
+//!
+//! Deliberately never opens the database itself (`db::ensure_repository_exists`'s guard is a cheap
+//! directory check, not a connection) - this command's whole purpose is recovering a repository
+//! that seems stuck, which includes a repository whose database file cannot currently be opened at
+//! all (e.g. a WAL write-open failing outright over a filesystem that does not support it).
 
 use std::path::Path;
 
 fn try_run(repo_path: &Path, default_path_used: bool) -> Result<String, String> {
-    match db::open_repository(repo_path) {
-        Ok(_repo) => {}
+    match db::ensure_repository_exists(repo_path) {
+        Ok(()) => {}
         Err(db::Error::NoRepositoryHere(_)) if default_path_used => {
             return Err(format!(
                 "error: no repository found at the default location ({}).\n\
@@ -119,6 +124,40 @@ mod tests {
 
         db::acquire_write_lock(&repo_path)
             .expect("acquiring the write lock must succeed once the stale lock is cleared");
+
+        std::fs::remove_dir_all(&repo_path).expect("test cleanup must succeed");
+    }
+
+    #[test]
+    fn try_run_still_works_when_the_database_file_itself_cannot_be_opened() {
+        let repo_path = std::env::temp_dir().join("dfs-unlock-test-unopenable-db-repo");
+        let _ = std::fs::remove_dir_all(&repo_path);
+        db::init_repository(
+            &repo_path,
+            db::RepositorySettings::new(Some(20), 1_700_000_000_000),
+        )
+        .expect("repository setup for this test must succeed");
+
+        // Simulates a database this process cannot actually open - e.g. a WAL write-open failing
+        // outright over a filesystem that does not support it
+        // (agent-todos/network-fs-sqlite-reliability-docs.md) - exactly the situation `dfs unlock`
+        // exists to recover from, so its own guard must not need to open the database at all.
+        std::fs::write(
+            db::meta_dir(&repo_path).join("repository.sqlite3"),
+            b"not a real sqlite file",
+        )
+        .expect("corrupting the db file for this test must succeed");
+        assert!(
+            db::open_repository(&repo_path).is_err(),
+            "sanity check: the corrupted db file must actually be unopenable"
+        );
+
+        let message =
+            try_run(&repo_path, false).expect("must succeed - unlock never opens the database");
+        assert!(
+            message.contains("not locked"),
+            "expected a not-locked message, got: {message}"
+        );
 
         std::fs::remove_dir_all(&repo_path).expect("test cleanup must succeed");
     }

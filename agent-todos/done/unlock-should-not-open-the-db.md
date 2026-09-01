@@ -36,3 +36,19 @@ pass a path explicitly" message for the default-path case.
 Note: if `agent-todos/read-only-db-connection-path.md` lands first, an even lighter option is a
 read-only open - but a no-DB-open guard is strictly better here, since `unlock` should work even
 when the DB file itself is inaccessible.
+
+## Done
+
+**Completed**: 2026-09-01, by Claude Code on the web session (branch `mount-read-write`), during an
+unattended sweep of open `agent-todos`/`developer-todos`.
+
+Added `db::ensure_repository_exists(repo_root) -> Result<(), Error>` (`crates/db/src/lib.rs`) - the
+same `meta/`-is-a-directory check `open_repository` already did first, factored out so a caller can
+use it without opening a connection; `open_repository` itself now calls it too, rather than
+duplicating the check. `unlock::try_run` (`crates/cli/src/unlock.rs`) now calls this instead of
+`db::open_repository`, keeping the existing default-path error message unchanged. Added a
+regression test, `try_run_still_works_when_the_database_file_itself_cannot_be_opened`, which
+corrupts `repository.sqlite3` directly (sanity-checks that `open_repository` against it does fail),
+then confirms `try_run` still succeeds - verified red/green by temporarily reverting `unlock.rs` to
+call `open_repository` again and confirming the new test fails with `error: file is not a database`
+before restoring the fix.

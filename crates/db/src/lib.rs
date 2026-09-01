@@ -440,16 +440,27 @@ pub fn init_repository(repo_root: &Path, settings: RepositorySettings) -> Result
     Ok(())
 }
 
+/// Cheaply checks that `repo_root` looks like a repository - i.e. that [`open_repository`] against
+/// it would not immediately fail with `Error::NoRepositoryHere` - without opening a database
+/// connection or running migrations. For a caller that only needs this existence guard, not the
+/// database itself: notably `dfs unlock`'s own guard, which must keep working even when the
+/// database file itself is unreadable (DESIGN-MAINTENANCE-003 in
+/// `docs/design/repository-locking.md` - exactly the situation it exists to recover from).
+pub fn ensure_repository_exists(repo_root: &Path) -> Result<(), Error> {
+    if repo_root.join(META_DIR).is_dir() {
+        Ok(())
+    } else {
+        Err(Error::NoRepositoryHere(repo_root.to_path_buf()))
+    }
+}
+
 /// Opens an existing repository at `repo_root`, reading back the settings it
 /// was created with. Applies any pending schema migration automatically
 /// (DESIGN-METADATA-005).
 pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
-    let meta_dir = repo_root.join(META_DIR);
-    if !meta_dir.is_dir() {
-        return Err(Error::NoRepositoryHere(repo_root.to_path_buf()));
-    }
+    ensure_repository_exists(repo_root)?;
 
-    let db_path = meta_dir.join(META_DB_FILE);
+    let db_path = repo_root.join(META_DIR).join(META_DB_FILE);
     let mut conn = Connection::open(&db_path)?;
     connection::configure_write_connection(&conn)?;
     migrations::migrations().to_latest(&mut conn)?;
