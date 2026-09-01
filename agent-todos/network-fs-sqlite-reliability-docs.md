@@ -32,12 +32,16 @@ so even read commands (`unlock`, read-only `mount`) do a full WAL write-open.
 | Windows -> `\\<host>\c$` SMB loopback (new) | `create-repo` | OK | - |
 | Windows -> `\\<host>\c$` SMB loopback (existing) | `unlock` (read) | OK | - |
 | Windows -> `\\<host>\c$` SMB loopback (existing) | `mount --read-write` | past DB open **and** write-lock, fails only at WinFSP preflight | `error: WinFSP not found (winfsp-x64.dll) - install it from https://github.com/winfsp/winfsp` |
+| Windows -> `P:` = real mapped SMB drive, corporate DFS namespace (`\\gtv.grp\dfs\Privat\Home_ER_TCG\...`) | `create-repo` (new), `unlock` (read), `mount --read-write` x2, repeated opens | all OK (write path reaches the same WinFSP-preflight stop); no `-wal`/`-shm` left behind afterwards | - / WinFSP-not-found |
 
 Conclusions:
 
-1. **9p/v9fs specifically**, not "network filesystems" in general. SMB loopback to local NTFS
-   works for single-process access - `create-repo`, read (`unlock`), and the `flock` write-lock
-   all succeed.
+1. **9p/v9fs specifically**, not "network filesystems" in general. SMB works for single-process
+   access - tested both loopback (`\\<host>\c$` to local NTFS) and a **real mapped SMB drive with
+   a corporate DFS namespace** (`P:` = `\\gtv.grp\dfs\...`): `create-repo`, read (`unlock`), the
+   `flock` write-lock, and repeated opens all succeed, and Windows SQLite over SMB checkpoints and
+   removes `-wal`/`-shm` on close (no debris). Concurrent multi-process access over a real network
+   link was not tested and stays under the existing README caveat.
 2. **Direction + DB state matter.** Windows -> `\\wsl.localhost` fails on everything, even a clean
    single-file DB, even a read (the first `PRAGMA journal_mode=WAL` cannot get its locks).
    WSL -> `/mnt/c` works for a *clean single-file DB* but fails once a `-wal`/`-shm` pair exists
@@ -49,9 +53,8 @@ Conclusions:
    (`database is locked` / `disk I/O error`), with no network-FS hint (unlike the `flock` lock
    errors, which do have one).
 
-Not yet tested: a real mapped SMB network drive (`P:` = `\\gtv.grp\dfs\Privat\Home_ER_TCG` on this
-machine, `P:\Temp`) - offered by the developer. DFS-namespace + real-network SMB could still
-differ from loopback `c$`; worth one pass if extending the investigation.
+The real mapped SMB drive (`P:`, DFS namespace) has now been tested - see the matrix row; it
+behaves like local disk, no difference from loopback `c$`.
 
 ## The doc changes
 
