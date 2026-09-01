@@ -41,11 +41,11 @@ This project satisfies all three conditions: it is MIT/Apache-2.0
 (satisfies both the [FSD] and the [OSD]), carries the required copyright
 notice and repository link right here, and does not bundle any
 proprietary software. The same notice also appears in
-[`README.md`](README.md#winfsp-notice); a `--version`/`about` command
-carrying it too is still open - see REQ-MOUNT-006 in
-[`requirements/functional/mount.md`](requirements/functional/mount.md) -
-and is needed before any user-facing release, since no command-line tool
-exists yet for that notice to appear in.
+[`README.md`](README.md#winfsp-notice) and in `dfs --version`'s output on
+a Windows build (DESIGN-CLI-002 in
+[`docs/design/cli-version.md`](docs/design/cli-version.md)) - see
+REQ-MOUNT-006 in
+[`requirements/functional/mount.md`](requirements/functional/mount.md).
 
 > WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos
 > https://github.com/winfsp/winfsp
