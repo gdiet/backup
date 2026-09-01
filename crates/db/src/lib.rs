@@ -102,6 +102,13 @@ pub enum Error {
     /// requested it - e.g. an unsupported filesystem (SQLite silently falls back instead of
     /// failing outright). Carries whatever mode SQLite actually settled on.
     WalUnavailable(String),
+    /// A connection-configuring `PRAGMA` (`connection::configure_write_connection`) hard-failed
+    /// with a locking- or I/O-category SQLite error, rather than either succeeding or falling back
+    /// silently (that case is [`Error::WalUnavailable`] instead) - observed over a WSL<->Windows 9p
+    /// bridge, where the filesystem cannot support WAL's locking requirements at all. Distinct from
+    /// [`Error::LockUnavailable`]/[`Error::AlreadyLocked`], which are about DESIGN-MAINTENANCE-001's
+    /// separate `flock`-based write lock, not the database connection itself.
+    ConnectionUnreliable(rusqlite::Error),
     Io(std::io::Error),
     Sqlite(rusqlite::Error),
     Migration(rusqlite_migration::Error),
@@ -168,6 +175,15 @@ impl std::fmt::Display for Error {
                 write!(
                     f,
                     "WAL journal mode unavailable - SQLite reports {mode:?} instead"
+                )
+            }
+            Error::ConnectionUnreliable(source) => {
+                write!(
+                    f,
+                    "could not open the repository's database ({source}) - this can happen on a \
+                     network-mounted or WSL<->Windows-bridged filesystem, where SQLite's WAL \
+                     locking is not reliably supported; run dfs from the machine where the \
+                     repository physically resides. See README.md's \"Known Limitations\""
                 )
             }
             Error::Io(err) => write!(f, "{err}"),
@@ -415,6 +431,25 @@ pub fn init_repository(repo_root: &Path, settings: RepositorySettings) -> Result
         Err(err) => return Err(err.into()),
     }
 
+    if let Err(err) = init_repository_contents(repo_root, settings) {
+        // Best-effort: remove only what this call itself just created (data/, meta.tmp/), so a
+        // retry after a transient failure (e.g. Error::ConnectionUnreliable over an unsupported
+        // filesystem) does not also have to fight a confusing "already exists and is not empty"
+        // pointing at debris from this same failed attempt. Never touch repo_root itself, which
+        // may have pre-existed (REQ-CLI-005's "already-mounted external drive" case) and must be
+        // left exactly as it was found; the cleanup errors themselves are not reported - nothing
+        // useful to do about them, and the original error is what actually matters here.
+        let _ = fs::remove_dir_all(repo_root.join(DATA_DIR));
+        let _ = fs::remove_dir_all(repo_root.join(META_TMP_DIR));
+        return Err(err);
+    }
+
+    Ok(())
+}
+
+/// The actual creation work, factored out of [`init_repository`] so its caller can clean up
+/// whatever partial state this leaves behind on failure.
+fn init_repository_contents(repo_root: &Path, settings: RepositorySettings) -> Result<(), Error> {
     fs::create_dir_all(repo_root.join(DATA_DIR))?;
 
     // Built in a staging directory and only renamed into place once fully
@@ -546,6 +581,39 @@ mod tests {
 
         let err = init_repository(dir.path(), settings()).unwrap_err();
         assert!(matches!(err, Error::TargetNotEmpty(_)));
+    }
+
+    #[test]
+    fn init_repository_cleans_up_data_and_meta_tmp_after_a_failed_attempt() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        // Out of range on purpose - not validated by RepositorySettings::new itself (see its own
+        // doc comment), so this reaches the repository_settings table's CHECK constraint and fails
+        // there, deterministically, only after init_repository_contents has already created data/
+        // and meta.tmp/ - exercising the cleanup path without needing a real unsupported
+        // filesystem.
+        let err = init_repository(
+            &repo_root,
+            RepositorySettings::new(Some(3), 1_700_000_000_000),
+        )
+        .expect_err("an out-of-range cdc_target_size_bits must fail via the CHECK constraint");
+        assert!(
+            matches!(err, Error::Sqlite(_)),
+            "expected a CHECK constraint failure, got: {err:?}"
+        );
+
+        assert!(
+            !repo_root.join(DATA_DIR).exists(),
+            "a failed init_repository must clean up the data/ directory it created"
+        );
+        assert!(
+            !repo_root.join(META_TMP_DIR).exists(),
+            "a failed init_repository must clean up the meta.tmp/ directory it created"
+        );
+        assert!(
+            repo_root.is_dir() && fs::read_dir(&repo_root).unwrap().next().is_none(),
+            "repo_root itself must be left alone - still present and empty, ready for a retry"
+        );
     }
 
     #[test]

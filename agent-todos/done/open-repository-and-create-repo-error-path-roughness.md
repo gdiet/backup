@@ -40,3 +40,34 @@ Fix: on the `init_repository` error path, remove the partial `data/` and `meta.t
 (only what this call created - do not blow away a pre-existing non-empty target). Optionally, make
 the "already exists and is not empty" message recognise a `meta.tmp/`-without-`meta/` directory as
 "a previous `create-repo` here did not finish - remove `data/` and `meta.tmp/` and retry".
+
+## Done
+
+**Completed**: 2026-09-01, by Claude Code on the web session (branch `mount-read-write`), during an
+unattended sweep of open `agent-todos`/`developer-todos`.
+
+**Part 1**: Added `Error::ConnectionUnreliable(rusqlite::Error)` (`crates/db/src/lib.rs`) with an
+actionable Display message matching the style of `LockUnavailable`/`AlreadyLocked`. Added
+`connection::wrap_unreliable_connection_error` (`crates/db/src/connection.rs`), which classifies a
+`rusqlite::Error` by its `ErrorCode` - `DatabaseBusy`/`DatabaseLocked`/`SystemIoFailure` map to the
+new variant, everything else still falls through to the existing `Error::Sqlite`. Every `PRAGMA`
+call in `configure_write_connection` now goes through it. Verified with 5 unit tests constructing
+`rusqlite::Error::SqliteFailure` values directly with each relevant `ErrorCode` (a real two-process
+lock-contention probe was tried first per `AGENTS.md`'s empirical-verification discipline, but did
+not reproduce `SQLITE_BUSY` on this container's local filesystem - consistent with the investigation
+that found this specific 9p/v9fs-only) - confirmed red/green by temporarily dropping `DatabaseBusy`
+from the match and watching its test fail.
+
+**Part 2**: `init_repository` now wraps its actual creation work
+(factored into a new private `init_repository_contents`) and, on any failure, best-effort removes
+`data/` and `meta.tmp/` - never `repo_root` itself, which may have pre-existed. Verified with a
+regression test that forces a deterministic mid-creation failure (an out-of-range
+`cdc_target_size_bits`, rejected by the `repository_settings` table's own `CHECK` constraint - not
+validated earlier by `RepositorySettings::new` on purpose) and asserts both directories are gone
+afterward while `repo_root` itself stays present and empty - confirmed red/green the same way.
+
+The optional third piece (recognizing a `meta.tmp/`-without-`meta/` leftover in the
+`TargetNotEmpty` message as "a previous create-repo did not finish") was deliberately skipped: with
+Part 2 in place, future failures no longer leave that debris behind at all, so the only remaining
+beneficiary would be debris from a pre-release build already superseded by this fix - not worth the
+added message-branching for a case that should no longer arise going forward.
