@@ -20,6 +20,11 @@ operation gets too wide or long to read at a glance.
 | 3327 | WSL2, Ubuntu 24.04 | best performance (custom base scheme) | local SSD | native | sequential | 984.6 (818-1048) | [2026-08-28](measurements/2026-08-28-3327-dir-create-wsl2.md) |
 | 3327 | native Windows | power saver (custom base scheme) | local NVMe SSD | native | sequential | 479.9 (430.7-528.1) | [2026-08-28](measurements/2026-08-28-3327-dir-create-native.md) |
 | julius | native Windows | power saver | USB2 stick | native | sequential | 158.3 (153.7-163.3) | [2026-08-28](measurements/2026-08-28-julius-dir-create-usb.md) |
+| julius | native Windows | power saver | local SSD | db-direct | sequential | 196.0 (108.5-428.0) | [2026-09-01](measurements/2026-09-01-julius-db-direct-mkdir-native.md) |
+
+The `db-direct` row is this project's first measurement at any location other than `native` - see
+that protocol's Notes for a real, monotonic scale-dependent slowdown across its 5 runs (not noise),
+not yet root-caused.
 
 ## Zero-byte file creation
 

@@ -32,17 +32,20 @@ infrastructure and data now exists under `performance/`, so the useful thing at 
 precise account of what that data does and does not cover, checked directly against
 `performance/measurements/*.yaml` (48 protocols) rather than assumed:
 
-- **`location: native` only - the single biggest gap.** Every measurement taken so far is
-  `location: native` (the host filesystem directly, NTFS/ext4) - `grep -h '^location:'
-  performance/measurements/*.yaml | sort -u` returns exactly one value. `location: dfs-mount` and
-  `location: db-direct` both have runnable tooling
-  (`performance/scripts/dfs-mount-dir-create.{ps1,sh}`, `crates/db/examples/db_bench.rs`) that has
-  only ever been trial-validated (scaled-down runs, bugs found and fixed), never actually run as a
-  full 5-run measurement and written up - `performance/README.md`'s own wording already says as
-  much. `location: dfs-cli` has no tooling at all yet (the CLI itself is still early - `create-repo`
-  and `mount` exist, most subcommands do not). Concretely: **nothing measured so far says anything
-  about DedupFS's own performance** - every number to date characterizes the native filesystem
-  DedupFS is compared against, not DedupFS itself.
+- **`location: native` only, except for one new `db-direct` data point.** As of 2026-09-01, one
+  `mkdir` measurement exists at `location: db-direct`
+  (`performance/measurements/2026-09-01-julius-db-direct-mkdir-native.md`, via
+  `crates/db/examples/db_bench.rs`) - the first number in this project that characterizes DedupFS's
+  own code rather than the native filesystem it is compared against. Everything else is still
+  `location: native`. `location: dfs-mount` has runnable tooling
+  (`performance/scripts/dfs-mount-dir-create.{ps1,sh}`) that has only ever been trial-validated
+  (scaled-down runs, bugs found and fixed), never actually run as a full 5-run measurement and
+  written up. `location: dfs-cli` has no tooling at all yet (the CLI itself is still early -
+  `create-repo` and `mount` exist, most subcommands do not). The single `db-direct` `mkdir` result
+  itself surfaced a real, unexplained finding worth following up on: throughput falls monotonically
+  across its 5 runs (428.0 -> 108.5 ops/s, all against one growing sibling directory) - see that
+  protocol's Notes for the suspected cause (unindexed sibling-name lookup in `tree_entries`) and its
+  explicit "not yet root-caused" caveat.
 - **Operations `mkdir`/`create-file-*`/`dir-lookup`/`dir-listing`/`read-file-*` only.** `rename`,
   `delete` (file and directory), and a recursive tree walk (`find`-style) remain unmeasured -
   `methodology.md`'s "Further workloads" list still has no scripts built for any of them.

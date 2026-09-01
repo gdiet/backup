@@ -1,0 +1,20 @@
+date: 2026-09-01
+machine: julius
+environment: native-windows
+power_profile: power-saver        # base scheme Balanced, overlay OVERLAY_SCHEME_MIN (Power Saver) - see .md Setup
+io_device: local-ssd
+dfs_build: fd660860f43faa95f83ef68af7cda2a66b7f5beb (mount-read-write)
+operation: mkdir
+location: db-direct
+tool: db::Repository::mkdir (crates/db/examples/db_bench.rs)
+mode: sequential
+parallel_n:
+window_seconds: 20
+scale: 19602                      # total directories created across the 5 kept runs, all siblings under repo root
+content_size:
+result:
+  unit: ops_per_second
+  mean: 196.0
+  range: [108.5, 428.0]
+  n: 5
+  discarded_warmup_run: false     # run 1 is faster, not slower, than runs 2-5 - the discard rule does not apply
