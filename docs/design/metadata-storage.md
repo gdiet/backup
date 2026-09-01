@@ -545,7 +545,7 @@ and better worked out against real call sites than designed speculatively in adv
 
 ## DESIGN-METADATA-012: SQLite connection pragmas
 
-Status: draft
+Status: implemented (crates/db/src/connection.rs)
 
 Every connection this crate opens (both `init_repository`'s and `open_repository`'s - there is
 only one connection type today, per `Repository`'s own doc comment) is configured the same way,
@@ -590,6 +590,17 @@ again:**
    some network filesystems), so the pragma's returned value is compared against `"wal"` and
    surfaced as an error (`Error::WalUnavailable`) on a mismatch, rather than continuing under a
    silently different concurrency model than the rest of this design assumes.
+
+   `Error::WalUnavailable` only ever catches that *silent* fallback - the `PRAGMA` itself
+   succeeding, just not with `"wal"`. A filesystem that instead makes the `PRAGMA` call hard-fail
+   bypasses it entirely: observed over a WSL<->Windows `9p`/`v9fs` bridge, where every
+   connection-configuring `PRAGMA` (not only `journal_mode`) can fail outright with a locking- or
+   I/O-category SQLite error. That case surfaces as `Error::ConnectionUnreliable` instead (see
+   `crates/db/src/connection.rs`'s `wrap_unreliable_connection_error`) - a distinct failure mode
+   from the silent-fallback one this pragma check exists to catch. See
+   [`../../README.md`](../../README.md)'s "Known Limitations" for the user-facing description,
+   the same cross-reference [`repository-locking.md`](repository-locking.md) already carries for
+   the separate write-lock limitation.
 
 Deliberately left untouched, since nothing has measured a need to: `cache_size`, `mmap_size`,
 `temp_store`, `wal_autocheckpoint`.

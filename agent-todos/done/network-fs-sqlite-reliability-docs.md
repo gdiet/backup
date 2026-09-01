@@ -72,3 +72,27 @@ behaves like local disk, no difference from loopback `c$`.
    outright (observed: 9p/v9fs bridges, SQLITE_BUSY / SQLITE_IOERR) bypasses it and surfaces as a
    raw `Error::Sqlite`. Cross-reference the README limitation, the way `repository-locking.md`
    already does.
+
+## Done
+
+**Completed**: 2026-09-01, by Claude Code on the web session (branch `mount-read-write`), during an
+unattended sweep of open `agent-todos`/`developer-todos`.
+
+Both doc changes made as specified. One update from the original plan: point 2 now says the hard
+`PRAGMA` failure surfaces as the new `Error::ConnectionUnreliable`, not a raw `Error::Sqlite` as
+originally written here - `agent-todos/done/open-repository-and-create-repo-error-path-roughness.md`
+landed first in this same sweep and gave this exact failure category its own actionable error
+variant, so the doc note describes the current, already-fixed behavior rather than the bare-error
+problem as originally observed.
+
+README.md's "Known Limitations" got a new, broader top bullet ("SQLite metadata reliability on
+network or bridged filesystems") covering the whole connection-open layer, kept separate from the
+existing "Repository write locking on network-mounted storage" bullet (now cross-referenced as a
+narrower case of the new one) rather than merging the two, since the write-lock bullet's own
+`dfs unlock` guidance and marker-file details are specific to that mechanism, not to database
+opening in general.
+
+Also fixed, found while editing the same section: `docs/design/metadata-storage.md`'s
+DESIGN-METADATA-012 ("SQLite connection pragmas") was still `Status: draft` despite being fully
+implemented (`crates/db/src/connection.rs`, exercised by real tests) - updated to
+`Status: implemented (crates/db/src/connection.rs)` per `AGENTS.md`'s verification checklist.

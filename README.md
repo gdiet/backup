@@ -32,16 +32,34 @@ libfuse3, Windows via WinFSP, behind a single trait - see
 
 ## Known Limitations
 
+- **SQLite metadata reliability on network or bridged filesystems**: opening a repository's
+  database at all - not only the write lock covered below - depends on the underlying filesystem
+  correctly supporting SQLite's WAL journal mode and its locking. This is reliable on local or
+  removable storage (an internal disk, an external/USB drive, in any filesystem format, FAT
+  included). It is not guaranteed across a network mount, and is actively broken across a
+  WSL<->Windows boundary specifically (both directions go through the `9p`/`v9fs` protocol,
+  whether reached as `\\wsl.localhost\...` from Windows or `/mnt/c/...` from WSL): a repository
+  whose storage physically lives on one side can fail outright when opened from the other -
+  `error: database is locked` or `error: disk I/O error`, even for a single read, before any write
+  lock is even attempted - and reliability is asymmetric (worse once the WAL side-files, `-wal`/
+  `-shm`, already exist) and direction-dependent. SMB has tested reliably for single-process access
+  (both a local loopback share and a real mapped network drive on a corporate DFS namespace);
+  concurrent multi-process access over any network filesystem is untested and stays under the
+  write-locking caveat below regardless. Guidance: run `dfs` from the machine that the
+  repository's storage physically lives on, and prefer keeping a repository on real local or
+  removable storage over a network mount or a WSL<->Windows bridge.
 - **Repository write locking on network-mounted storage**: opening a repository for writing (a
   read-write mount, in particular) takes an operating-system advisory lock to keep two writing
   sessions from running against the same repository at once. This is reliably enforced by the
   operating system for a repository on local or removable storage (an internal disk, an external/
   USB drive, in any filesystem format, FAT included) - it is *not* guaranteed on a
   network-mounted repository, where reliability depends on the network filesystem protocol's own
-  locking support and how the client/server happen to be configured. Keeping a repository on
-  local or removable storage avoids this limitation entirely. Whoever currently holds the lock is
-  recorded (hostname, process id, acquisition time) in the lock file itself, inside the
-  repository's `meta/` directory, for a human diagnosing an "already locked" report to check.
+  locking support and how the client/server happen to be configured (a distinct, narrower case of
+  the broader limitation above - one specifically about the write-lock mechanism itself, not
+  database access in general). Keeping a repository on local or removable storage avoids this
+  limitation entirely. Whoever currently holds the lock is recorded (hostname, process id,
+  acquisition time) in the lock file itself, inside the repository's `meta/` directory, for a human
+  diagnosing an "already locked" report to check.
 - **A crashed or forcibly killed process leaves the write lock in place, on any storage**: a
   process that opened a repository for writing and then exited without cleanly unmounting (a
   crash, a hard kill) leaves the lock file behind, and the next `mount --read-write` attempt is
