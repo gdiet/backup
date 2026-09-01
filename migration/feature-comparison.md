@@ -7,7 +7,7 @@ Status values: `implemented` | `planned` | `not planned` (requires a one-line re
 | Scala Feature | Status | Notes |
 |---|---|---|
 | Whole-file content deduplication (MD5-based) | planned | non-CDC, whole-file chunking exists as a library building block (see REQ-STORAGE-003), using `blake3` instead of MD5, but is not yet reachable through any command |
-| Mount read-write (real content writes: create/write/truncate/unlink) | implemented | `crates/cli/src/dedup_fs.rs`, DESIGN-MOUNT-006/007/008/009/010/012/013/015 in [`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md); `write()` does not yet apply its own designed backpressure delay (see `agent-todos/wire-write-backpressure-delay.md`), and DESIGN-MOUNT-009's failure log is a plain file only, not yet queryable |
+| Mount read-write (real content writes: create/write/truncate/unlink) | implemented | `crates/cli/src/dedup_fs.rs`, DESIGN-MOUNT-006/007/008/009/010/012/013/015 in [`../docs/design/mount-write-path.md`](../docs/design/mount-write-path.md); DESIGN-MOUNT-009's failure log is a plain file only, not yet queryable |
 
 ## Non-Functional Parity
 

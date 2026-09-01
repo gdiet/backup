@@ -388,6 +388,11 @@ impl MountFilesystem for DedupFs {
                 self.new_generation(base_content_id, base_size),
             )
             .map_err(|_| Errno::EIO)?;
+        // DESIGN-MOUNT-006's backpressure delay - see crate::backpressure's own doc comment.
+        std::thread::sleep(crate::backpressure::write_backpressure_delay(
+            self.pool.backlog_spilled_bytes(),
+            data.len(),
+        ));
         Ok(data.len() as u32)
     }
 
@@ -420,7 +425,7 @@ impl MountFilesystem for DedupFs {
 mod tests {
     use super::*;
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     /// `fs` and `verify_repo`/`verify_store` point at the same repository, opened separately -
     /// `fs` owns the connection actually driving the mount, `verify_repo`/`verify_store` let a
@@ -479,6 +484,37 @@ mod tests {
             crate::content_reader::read_content(&verify_repo, &verify_store, content_id, 0, 11)
                 .unwrap();
         assert_eq!(data, b"hello world");
+    }
+
+    #[test]
+    fn write_consults_the_pool_and_sleeps_once_backlog_is_present() {
+        let (mut fs, _verify_repo, _store, _dir) = setup(true);
+        // A tiny budget makes the write below spill immediately.
+        fs.budget = Arc::new(MemoryBudget::new(1));
+
+        // Release a real, spilled generation - DESIGN-MOUNT-013's hand-off submits a SettleJob
+        // carrying its ~4 MiB of spilled_bytes to fs.pool. A single job's backlog contribution
+        // only clears once `run_job` finishes entirely (settle_pool.rs's worker_loop), so it stays
+        // fully present, not partially drained, for as long as this one job is still in flight.
+        let spilling = fs.create("/spills.txt").unwrap();
+        fs.write(spilling, 0, &vec![0xABu8; 4 * 1024 * 1024])
+            .unwrap();
+        fs.release(spilling);
+
+        // Timed immediately after - the settle job above is almost certainly still running, so
+        // fs.pool.backlog_spilled_bytes() (the same signal write() itself consults) should still
+        // be near its full ~4 MiB, giving this write its own 4 MiB call a real, measurable delay
+        // (~22 ms at this crate's SLOPE_DIVISOR) well above ordinary scheduling noise.
+        let other = fs.create("/other.txt").unwrap();
+        let start = Instant::now();
+        fs.write(other, 0, &vec![0u8; 4 * 1024 * 1024]).unwrap();
+        let elapsed = start.elapsed();
+        fs.release(other);
+
+        assert!(
+            elapsed >= Duration::from_millis(5),
+            "write() did not add a backlog-driven delay - elapsed only {elapsed:?}"
+        );
     }
 
     #[test]

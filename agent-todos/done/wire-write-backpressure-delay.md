@@ -115,3 +115,60 @@ the original "no benchmark data" blocker:
    heading (Status stays `implemented`).
 6. Full verification suite (`cargo build`/`fmt`/`clippy`/`test`/`doc`), then move this file to
    `agent-todos/done/`.
+
+## Done
+
+**Completed**: 2026-09-01, by WSL2/Linux session on `3327`, branch `mount-read-write`.
+
+### Calibration
+
+Mounted a fresh repo read-write via real libfuse3 on this machine (12 logical CPUs, so a
+12-worker `JobPool`) and drove two workloads with `crates/perf-gen` content, sampling
+`backlog_spilled_bytes()` via temporary `eprintln!` instrumentation in `submit`/`worker_loop`
+(removed before the final commit - not part of the shipped change):
+
+- **16 concurrent 150 MiB writers** (2.4 GB total): peaked at ~1.5 GiB backlog, then the 12-worker
+  pool drained it in ~3.6 s (~435 MB/s aggregate settle throughput on this machine/storage).
+- **8 sustained parallel streams of 20x50 MiB files** (8 GB total over ~41 s): peaked at only
+  ~450 MB backlog - this machine's settle throughput comfortably keeps up with that ingest rate,
+  matching DESIGN-MOUNT-010's "common case never spills much" framing even under real concurrent
+  load; only a genuine burst (first workload) pushed backlog into the multi-hundred-MB/GB range
+  the delay formula is meant to react to.
+- **Real `write()` call sizes**: instrumented `DedupFs::write` itself and found ~8 KiB was the
+  actual typical length arriving from a real client (`crates/perf-gen`'s own default-buffered
+  stdout, i.e. `std::io::BufWriter`'s default capacity) - not the ~128 KiB the "Open point" section
+  above implicitly assumed when reasoning about effective bandwidth.
+
+### Decision: data_len-scaled, not flat
+
+That last finding settled the "Open point" question: a **flat** per-call delay (option a) would
+throttle an 8 KiB-buffered client to ~32 KiB/s at the 250 ms cap - 16x more punishing than the
+~512 KiB/s a 128 KiB-buffered client would see at the identical backlog, purely because of how the
+client happens to chunk its own writes, not anything about actual backlog severity. Implemented
+option (b): the delay scales with `data_len` as well as `backlog_spilled_bytes`
+(`crates/cli/src/backpressure.rs::write_backpressure_delay`), keeping the effective bytes/sec
+throttle independent of caller write granularity, still capped by `MAX_WRITE_BACKPRESSURE_DELAY`
+(250 ms, unchanged from the Scala anchor) so an unusually large single call cannot itself block a
+dispatch thread far longer than the flat form ever would have. `SLOPE_DIVISOR = 786_432` reproduces
+the same ~512 KiB/s floor at ~1.4 GiB backlog the flat form's own magnitude table assumed for a
+128 KiB writer - now holding for every write size, not just that one.
+
+The `x count` factor stays out of scope, as instructed - `JobPool` still tracks no file count.
+
+### What shipped
+
+- `crates/cli/src/backpressure.rs` (new): `write_backpressure_delay`, `SLOPE_DIVISOR`,
+  `MAX_WRITE_BACKPRESSURE_DELAY`, with unit tests covering the value range, the cap, and that the
+  effective per-byte throttle is granularity-independent.
+- `DedupFs::write` calls it after a successful `self.pending.write(...)`, sleeping on the result.
+- `JobPool::backlog_spilled_bytes`'s `#[allow(dead_code)]` removed.
+- A `dedup_fs.rs` integration test (`write_consults_the_pool_and_sleeps_once_backlog_is_present`)
+  releases a real spilled generation, then times an immediate `write()` on another file - verified
+  red (elapsed ~1.8 ms, no delay) with the `thread::sleep` line temporarily removed, green
+  (elapsed comfortably over the 5 ms assertion) with it restored.
+- `docs/design/mount-write-path.md` DESIGN-MOUNT-006: new "The delay formula" subsection with the
+  shape, the Scala anchor, and the calibration finding above (Status stays `implemented`).
+- `migration/feature-comparison.md`: dropped the now-stale "`write()` does not yet apply its own
+  designed backpressure delay" note.
+- Full verification suite green, including both `real_mount_*` libfuse3 tests (this environment
+  has `/dev/fuse`).

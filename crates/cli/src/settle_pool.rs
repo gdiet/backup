@@ -153,10 +153,8 @@ impl JobPool {
     }
 
     /// DESIGN-MOUNT-010's backpressure signal - the total spilled-to-disk bytes belonging to
-    /// generations released and awaiting or undergoing settling right now.
-    // Not consulted by `write()` yet - the actual delay formula needs its own deliberate choice,
-    // not just wiring; see agent-todos/wire-write-backpressure-delay.md.
-    #[allow(dead_code)]
+    /// generations released and awaiting or undergoing settling right now. Consulted by
+    /// `DedupFs::write` via [`crate::backpressure::write_backpressure_delay`].
     pub fn backlog_spilled_bytes(&self) -> u64 {
         self.backlog_spilled_bytes.load(Ordering::Acquire)
     }

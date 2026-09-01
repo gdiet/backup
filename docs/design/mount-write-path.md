@@ -38,6 +38,38 @@ work at full speed until some fixed limit is hit and then stopping outright. The
 this delay scales with - and why it does not need its own separate backlog metric - is
 DESIGN-MOUNT-010 below.
 
+### The delay formula (`crates/cli/src/backpressure.rs`)
+
+The delay grows linearly with `backlog_spilled_bytes` and, deliberately, with the size of the
+`write()` call it is being added to, capped at a fixed maximum regardless of either input. Scaling
+by call size specifically keeps the delay's effective throttle - bytes of `write()` payload allowed
+through per second, below the cap - independent of whatever write granularity the calling tool
+happens to use, rather than punishing a tool that flushes in small chunks far harder than one
+moving the same total bytes in large ones purely because it makes more, smaller calls. This was
+verified as a real effect, not a theoretical one: a calibration mount session on WSL2/Linux driving
+a real libfuse3 mount observed ~8 KiB as a typical `write()` length from ordinary buffered client
+I/O (`std::io::BufWriter`'s default capacity) - well under the ~128 KiB a size-oblivious, purely
+backlog-scaled version of this formula would implicitly need to assume as "the" write size for its
+effective-bandwidth reasoning to hold.
+
+The formula's slope constant and its 250 ms cap are anchored to the Scala predecessor's own
+severity, not derived from first principles: `Backend.scala`'s equivalent delay reached its own
+"severe but working" point (250 ms per 32 KiB persist-queue chunk, ~131 KiB/s effective) once its
+signal - all queued bytes, not just spilled ones, further multiplied by queue *file count* - grew
+large. This project's signal is narrower (DESIGN-MOUNT-010's spill-only bytes, no file-count
+factor, since the common case never spills at all - see that section below) and a spilled byte here
+is already a worse state than a merely-queued Scala byte, so the same 250 ms cap is kept, chosen to
+land at the same effective-bandwidth floor (~512 KiB/s) once backlog reaches the level of a
+genuinely severe, sustained overflow, independent of the caller's own write size. The cap itself
+also bounds worst-case per-call latency directly - a FUSE/WinFSP dispatch thread blocked this long
+is one fewer available for every other concurrent request meanwhile - which matters most for a
+caller using unusually large individual `write()` calls, where the backlog-and-size-scaled delay
+before capping would otherwise grow furthest past it.
+
+Deliberately left out of this formula: a multiplicative factor for how many files are currently
+queued (Scala's second factor) - `JobPool` tracks no such count, and revisiting that is its own,
+separate, deliberately deferred scope.
+
 How a failure discovered only during this background processing - after `release()` has already
 returned success - gets surfaced is DESIGN-MOUNT-009 below; a queryable or mount-browsable form of
 that same record beyond its first version's plain log file is left open, see
