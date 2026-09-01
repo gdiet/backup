@@ -21,7 +21,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 
 pub use lock::{UnlockOutcome, WriteLock};
 pub use settings::RepositorySettings;
@@ -56,6 +56,15 @@ pub enum Error {
     /// [`open_repository`] was called against a `repo_root` with no `meta/` subdirectory - nothing
     /// ever created a repository there.
     NoRepositoryHere(PathBuf),
+    /// [`open_repository_read_only`] found the repository's schema behind the version this code
+    /// expects - a read-only connection cannot run the pending migration itself (no write
+    /// permission), unlike [`open_repository`], which always migrates automatically
+    /// (DESIGN-METADATA-005).
+    SchemaNeedsMigration(PathBuf),
+    /// A [`Repository`] opened via [`open_repository_read_only`] was asked to perform a
+    /// repository-mutating operation - refused before ever touching the read-only connection,
+    /// rather than surfacing SQLite's own `SQLITE_READONLY` as a bare [`Error::Sqlite`].
+    ReadOnlyRepository,
     /// No live entry with this id exists (a stale id, or one that was since soft-deleted).
     NoSuchEntry(i64),
     /// The entry is a file where a directory was required, or vice versa.
@@ -128,6 +137,21 @@ impl std::fmt::Display for Error {
                     f,
                     "no repository at {} (no meta/ directory)",
                     path.display()
+                )
+            }
+            Error::SchemaNeedsMigration(path) => {
+                write!(
+                    f,
+                    "the repository at {} needs a schema migration, which a read-only open cannot \
+                     perform - open it once with a write-capable operation (e.g. `dfs mount \
+                     --read-write`) first",
+                    path.display()
+                )
+            }
+            Error::ReadOnlyRepository => {
+                write!(
+                    f,
+                    "this repository was opened read-only; this operation needs write access"
                 )
             }
             Error::NoSuchEntry(id) => write!(f, "no live entry with id {id}"),
@@ -217,14 +241,16 @@ impl From<rusqlite_migration::Error> for Error {
 ///
 /// Holds one connection for its whole lifetime, behind a mutex, rather than opening a fresh one
 /// per call - DESIGN-METADATA-003's "one coordinated writer" model requires exactly that for
-/// writes. Reads share the same connection/lock for now too: a simplification for this first
-/// directory-only mount milestone, not a correctness requirement - WAL mode already supports
-/// splitting reads onto their own, unlocked connections (DESIGN-METADATA-003), worth doing once
-/// read concurrency under a real mount actually needs it.
+/// writes. A [`Repository`] from [`open_repository`] shares that same connection/lock between
+/// reads and writes; one from [`open_repository_read_only`] holds a genuinely read-only
+/// connection instead and refuses any mutating call outright (see `with_transaction` below) -
+/// DESIGN-METADATA-003's eventual split of reads onto their own, unlocked connection(s) is still
+/// only this one-connection-per-`Repository` step, not that fuller design.
 #[derive(Debug)]
 pub struct Repository {
     settings: RepositorySettings,
     conn: Mutex<Connection>,
+    read_only: bool,
 }
 
 impl Repository {
@@ -244,10 +270,18 @@ impl Repository {
     /// if `f` returns `Ok` - a multi-statement operation either lands as a whole or not at all,
     /// rather than leaving a partial result behind if interrupted partway through (a crash, a
     /// panic unwinding through `f`, `rusqlite::Transaction`'s own drop-without-commit rollback).
+    ///
+    /// Every mutating [`Repository`] method goes through this one choke point, so a
+    /// [`open_repository_read_only`] connection is refused here, before ever touching the
+    /// connection itself, rather than letting each call site rediscover SQLite's own
+    /// `SQLITE_READONLY` independently.
     fn with_transaction<T>(
         &self,
         f: impl FnOnce(&Connection) -> Result<T, Error>,
     ) -> Result<T, Error> {
+        if self.read_only {
+            return Err(Error::ReadOnlyRepository);
+        }
         let mut conn = self.conn.lock().map_err(|_| Error::Poisoned)?;
         let tx = conn.transaction()?;
         let result = f(&tx)?;
@@ -500,16 +534,65 @@ pub fn open_repository(repo_root: &Path) -> Result<Repository, Error> {
     connection::configure_write_connection(&conn)?;
     migrations::migrations().to_latest(&mut conn)?;
 
+    let settings = read_settings(&conn)?;
+    Ok(Repository {
+        settings,
+        conn: Mutex::new(conn),
+        read_only: false,
+    })
+}
+
+/// Opens an existing repository at `repo_root` for reading only - a genuinely `SQLITE_OPEN_READ_ONLY`
+/// connection (`connection::configure_read_only_connection`), never [`open_repository`]'s WAL/
+/// `auto_vacuum`/`foreign_keys`/`synchronous` setup, since none of that is either meaningful or
+/// permitted on a connection that never writes. Every mutating [`Repository`] method refuses
+/// outright against the result (`Error::ReadOnlyRepository`) rather than reaching SQLite at all.
+///
+/// Unlike [`open_repository`], this never migrates: a read-only connection cannot run one (no
+/// write permission), so a schema behind the version this code expects is
+/// [`Error::SchemaNeedsMigration`] instead - open the repository once with a write-capable
+/// operation first (that migrates it, per DESIGN-METADATA-005), then read-only opens work again.
+///
+/// Meant for a caller that only ever reads - a read-only mount (REQ-MOUNT-002), in particular -
+/// and specifically for one that still needs to work even when the filesystem cannot reliably
+/// support a full write-mode connection open at all (observed over a WSL<->Windows 9p bridge; see
+/// `Error::ConnectionUnreliable` and README.md's "Known Limitations").
+pub fn open_repository_read_only(repo_root: &Path) -> Result<Repository, Error> {
+    ensure_repository_exists(repo_root)?;
+
+    let db_path = repo_root.join(META_DIR).join(META_DB_FILE);
+    let conn = Connection::open_with_flags(
+        &db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY
+            | OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | OpenFlags::SQLITE_OPEN_URI,
+    )?;
+    connection::configure_read_only_connection(&conn)?;
+
+    if migrations::migrations().pending_migrations(&conn)? != 0 {
+        return Err(Error::SchemaNeedsMigration(repo_root.to_path_buf()));
+    }
+
+    let settings = read_settings(&conn)?;
+    Ok(Repository {
+        settings,
+        conn: Mutex::new(conn),
+        read_only: true,
+    })
+}
+
+/// Reads back the single `repository_settings` row - shared by [`open_repository`] and
+/// [`open_repository_read_only`], which differ only in how `conn` itself was opened.
+fn read_settings(conn: &Connection) -> Result<RepositorySettings, Error> {
     let (cdc_target_size_bits, creation_time_millis): (Option<u32>, i64) = conn.query_row(
         "SELECT cdc_target_size_bits, creation_time FROM repository_settings WHERE id = 1",
         (),
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
-
-    Ok(Repository {
-        settings: RepositorySettings::new(cdc_target_size_bits, creation_time_millis),
-        conn: Mutex::new(conn),
-    })
+    Ok(RepositorySettings::new(
+        cdc_target_size_bits,
+        creation_time_millis,
+    ))
 }
 
 /// Acquires `repo_root`'s repository-wide write lock, failing immediately (never blocking) if
@@ -631,6 +714,69 @@ mod tests {
 
         let err = init_repository(&repo_root, settings()).unwrap_err();
         assert!(matches!(err, Error::RepositoryAlreadyExists(_)));
+    }
+
+    #[test]
+    fn open_repository_read_only_fails_on_a_directory_that_was_never_created_as_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = open_repository_read_only(dir.path()).unwrap_err();
+        assert!(matches!(err, Error::NoRepositoryHere(_)));
+    }
+
+    #[test]
+    fn open_repository_read_only_reads_back_the_settings_it_was_created_with() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+
+        let repo = open_repository_read_only(&repo_root).expect("read-only open must succeed");
+        assert_eq!(repo.settings(), settings());
+    }
+
+    #[test]
+    fn open_repository_read_only_can_read_the_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+
+        let repo = open_repository_read_only(&repo_root).expect("read-only open must succeed");
+        let root = repo
+            .resolve_path("/")
+            .expect("resolving the root must succeed on a read-only connection")
+            .expect("the root entry must exist");
+        assert_eq!(root.kind, EntryKind::Dir);
+    }
+
+    #[test]
+    fn open_repository_read_only_refuses_a_mutating_call() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        init_repository(&repo_root, settings()).expect("init must succeed");
+
+        let repo = open_repository_read_only(&repo_root).expect("read-only open must succeed");
+        let err = repo.mkdir(0, "d", 1_700_000_000_000).unwrap_err();
+        assert!(
+            matches!(err, Error::ReadOnlyRepository),
+            "expected ReadOnlyRepository, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn open_repository_read_only_refuses_a_repository_behind_the_expected_schema_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo_root = dir.path().join("repo");
+        // A meta/ directory holding a fresh, unmigrated database (user_version = 0, SQLite's own
+        // default) - simulates a repository older than this code's schema, without needing a real
+        // prior schema version to exist (this crate is pre-release, single-migration - see
+        // DESIGN-METADATA-005's "Pre-release: a single, freely rewritten v1 migration").
+        fs::create_dir_all(repo_root.join(META_DIR)).unwrap();
+        Connection::open(repo_root.join(META_DIR).join(META_DB_FILE)).unwrap();
+
+        let err = open_repository_read_only(&repo_root).unwrap_err();
+        assert!(
+            matches!(err, Error::SchemaNeedsMigration(_)),
+            "expected SchemaNeedsMigration, got: {err:?}"
+        );
     }
 
     #[test]

@@ -21,7 +21,16 @@ fn try_run(
     read_write: bool,
     default_path_used: bool,
 ) -> Result<(), String> {
-    let repo = match db::open_repository(repo_path) {
+    // A read-only mount uses a genuinely read-only connection (DESIGN-METADATA-003) rather than
+    // open_repository's write-mode one - it needs neither WAL/foreign_keys/auto_vacuum setup nor
+    // migration, and it keeps working on a filesystem where a write-mode open is unreliable
+    // (Error::ConnectionUnreliable's case) even though the mount itself never writes.
+    let open = if read_write {
+        db::open_repository
+    } else {
+        db::open_repository_read_only
+    };
+    let repo = match open(repo_path) {
         Ok(repo) => repo,
         Err(db::Error::NoRepositoryHere(_)) if default_path_used => {
             return Err(format!(
@@ -83,7 +92,8 @@ mod tests {
     #[test]
     fn try_run_gives_an_actionable_message_when_the_default_path_holds_no_repository() {
         // No filesystem setup needed: a path that simply does not exist already answers
-        // db::open_repository with NoRepositoryHere, before try_run ever reaches mountfs.
+        // NoRepositoryHere (both db::open_repository and db::open_repository_read_only share the
+        // same ensure_repository_exists guard for this), before try_run ever reaches mountfs.
         let repo_path = std::env::temp_dir().join("dfs-mount-test-no-default-repository-here");
         let mountpoint = std::env::temp_dir().join("dfs-mount-test-unused-mountpoint");
 

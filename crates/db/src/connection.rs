@@ -14,9 +14,9 @@ use crate::Error;
 /// write that closes that window - setting `auto_vacuum` after would silently leave it at `NONE`
 /// forever, recoverable only by a full, blocking `VACUUM`.
 ///
-/// A future read-only connection (once reads split off their own, per DESIGN-METADATA-003) needs
-/// none of this except `busy_timeout` - the rest either only matters for writes, or (for
-/// `journal_mode`) is a persistent, whole-database property already set once here.
+/// A read-only connection (`connection::configure_read_only_connection` below) needs none of this
+/// except `busy_timeout` - the rest either only matters for writes, or (for `journal_mode`) is a
+/// persistent, whole-database property already set once here.
 pub(crate) fn configure_write_connection(conn: &Connection) -> Result<(), Error> {
     conn.pragma_update(None, "foreign_keys", "ON")
         .map_err(wrap_unreliable_connection_error)?;
@@ -33,6 +33,19 @@ pub(crate) fn configure_write_connection(conn: &Connection) -> Result<(), Error>
     if journal_mode != "wal" {
         return Err(Error::WalUnavailable(journal_mode));
     }
+    Ok(())
+}
+
+/// Configures a genuinely `SQLITE_OPEN_READ_ONLY` connection (`crate::open_repository_read_only`).
+/// Sets only `busy_timeout` - `foreign_keys`/`synchronous` have nothing to enforce on a connection
+/// that never writes, and `auto_vacuum`/`journal_mode` are persistent, whole-database properties
+/// already set by whichever write connection created the repository (DESIGN-METADATA-005 in
+/// `docs/design/metadata-storage.md`); a read-only connection could not change them even if it
+/// needed to (no write permission), so there is nothing to check or correct here the way
+/// `configure_write_connection` does for `journal_mode` above.
+pub(crate) fn configure_read_only_connection(conn: &Connection) -> Result<(), Error> {
+    conn.pragma_update(None, "busy_timeout", 5000)
+        .map_err(wrap_unreliable_connection_error)?;
     Ok(())
 }
 

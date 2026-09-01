@@ -101,14 +101,20 @@ fn to_errno(err: db::Error) -> Errno {
         db::Error::EntryAlreadyExists { .. } => Errno::EEXIST,
         db::Error::WouldCreateCycle => Errno::EINVAL,
         db::Error::CannotRemoveRoot => Errno::EINVAL,
+        // Never actually reaches here: mountfs's own `!read_write` guard already refuses every
+        // structural/write call before `DedupFs` ever calls into `Repository` - but a precise
+        // mapping (rather than lumping it into the generic EIO catch-all below) documents intent
+        // for a `db::Error` matched exhaustively.
+        db::Error::ReadOnlyRepository => Errno::EROFS,
         db::Error::RepositoryAlreadyExists(_)
         | db::Error::TargetNotEmpty(_)
         | db::Error::NoRepositoryHere(_)
+        | db::Error::SchemaNeedsMigration(_)
         | db::Error::Poisoned
         | db::Error::WalUnavailable(_)
-        // Never actually reaches here: `mount::try_run` acquires the write lock once, before a
-        // `DedupFs` exists at all - these two arms exist only because `db::Error` is matched
-        // exhaustively.
+        // Never actually reaches here: `mount::try_run` opens the repository (read-only or
+        // read-write) and acquires the write lock once, before a `DedupFs` exists at all - these
+        // arms exist only because `db::Error` is matched exhaustively.
         | db::Error::AlreadyLocked(_)
         | db::Error::LockUnavailable { .. }
         | db::Error::LockFileInaccessible { .. }
